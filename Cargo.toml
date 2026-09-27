@@ -22,7 +22,7 @@ image = { version = "0.25.10", default-features = false, features = ["jpeg", "pn
 tiff = "0.11.3"
 tempfile = "3"
 clap = { version = "4", features = ["derive"] }
-eframe = { version = "=0.36.1", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
+eframe = { version = "=0.36.2", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
 rfd = "0.17.2"
 # The HTTP client behind fastframe-update; rustls with bundled roots needs no
 # system TLS library.
