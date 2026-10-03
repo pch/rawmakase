@@ -1,0 +1,14 @@
+# OmaStore (https://github.com/KitsuneForgering/OmaStore): lists RAWmakase in the
+# Omarchy app store and installs the release tarball into the user's $HOME.
+kind = "app"
+name = "RAWmakase"
+icon = "packaging/icons/rawmakase.svg"
+categories = ["Graphics", "Photography"]
+
+[linux.x86_64]
+asset = "rawmakase-{version}-x86_64-linux.tar.gz"
+exec = "usr/bin/rawmakase"
+
+[linux.aarch64]
+asset = "rawmakase-{version}-aarch64-linux.tar.gz"
+exec = "usr/bin/rawmakase"
