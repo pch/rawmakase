@@ -263,7 +263,7 @@ jobs:
           export CXXFLAGS="-DCMS_NO_REGISTER_KEYWORD"
           cargo build --release --locked --manifest-path release-source/Cargo.toml --target-dir "$GITHUB_WORKSPACE/target"
           python3 packaging/macos/bundle.py target/release/rawmakase dist/RAWmakase.app "$VERSION" "$RUNNER_TEMP/native" --minimum-macos "$MACOSX_DEPLOYMENT_TARGET" --icon-assets compiled-icon/Assets.car
-      - uses: ruby/setup-ruby@a0102e0972be65f351c307e2d64b9314a57c8073 # v1
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
         with:
           ruby-version: '3.3'
       - name: Sign and notarize DMG
@@ -331,7 +331,7 @@ jobs:
           cargo build --release --locked --manifest-path release-source/Cargo.toml --target-dir "$env:GITHUB_WORKSPACE\target"
           packaging/windows/stage.ps1 target\release\rawmakase.exe "$env:RUNNER_TEMP\deps" dist\windows
       - if: steps.source.outputs.windows == 'true'
-        uses: ruby/setup-ruby@a0102e0972be65f351c307e2d64b9314a57c8073 # v1
+        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
         with:
           ruby-version: '3.3'
       - if: steps.source.outputs.windows == 'true'
@@ -423,7 +423,7 @@ jobs:
       - name: Final checksums
         working-directory: dist
         run: sha256sum -- * > SHA256SUMS
-      - uses: ruby/setup-ruby@a0102e0972be65f351c307e2d64b9314a57c8073 # v1
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
         with:
           ruby-version: '3.3'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -435,7 +435,7 @@ jobs:
       # checksums.txt and its Ed25519 signature, which the app's updater
       # verifies against assets/update-public-key.hex before installing.
       - name: Sign update manifest
-        uses: crmne/native-packages/.github/actions/sign-release@dc0cb1586894ca0239c53fd02d4da8064712671c # v0.7.0
+        uses: crmne/native-packages/.github/actions/sign-release@999768410cf53cdc68c8679c09cb14de1a6bca7b # v0.8.1
         with:
           directory: dist
           public-key: release-source/assets/update-public-key.hex
@@ -443,7 +443,7 @@ jobs:
         env:
           RAWMAKASE_UPDATE_SIGNING_KEY: ${{ secrets.RAWMAKASE_UPDATE_SIGNING_KEY }}
       - name: Attest packages
-        uses: crmne/native-packages/.github/actions/attest@dc0cb1586894ca0239c53fd02d4da8064712671c # v0.7.0
+        uses: crmne/native-packages/.github/actions/attest@999768410cf53cdc68c8679c09cb14de1a6bca7b # v0.8.1
         with:
           subject-path: dist/*
       - name: Attach packages to GitHub release
