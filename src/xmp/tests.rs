@@ -266,6 +266,52 @@ fn missing_profiles_unknown_settings_and_looks_never_partially_apply() -> Result
     Ok(())
 }
 #[test]
+fn profile_amount_blocks_strict_presets_and_lenient_application_reports_it() -> Result<()> {
+    let base = Recipe {
+        exposure: 1.,
+        ..Default::default()
+    };
+    let p = parse(
+        Path::new("look.xmp"),
+        &xml(
+            r#"c:Exposure2012="2""#,
+            r#"<c:Look><r:Description c:Name="Adobe Color" c:Amount="0.5"/></c:Look>"#,
+        ),
+    )?;
+    assert!(
+        p.blockers.iter().any(|b| b.contains("Profile Amount 50%")),
+        "{:?}",
+        p.blockers
+    );
+    assert!(p.apply(&base, &Metadata::default(), &[], None).is_err());
+    // An amount Lightroom cannot store is malformed.
+    assert!(
+        parse(
+            Path::new("look.xmp"),
+            &xml(
+                r#"c:Exposure2012="2""#,
+                r#"<c:Look><r:Description c:Name="Adobe Color" c:Amount="-1"/></c:Look>"#,
+            ),
+        )
+        .is_err()
+    );
+    // At 0% the look does nothing, so nothing blocks.
+    let p = parse(
+        Path::new("look.xmp"),
+        &xml(
+            r#"c:Exposure2012="2""#,
+            r#"<c:Look><r:Description c:Name="Adobe Color" c:Amount="0"/></c:Look>"#,
+        ),
+    )?;
+    assert!(p.blockers.is_empty(), "{:?}", p.blockers);
+    assert!(p.look.is_empty());
+    assert_eq!(
+        p.apply(&base, &Metadata::default(), &[], None)?.exposure,
+        2.
+    );
+    Ok(())
+}
+#[test]
 fn malformed_numbers_rejected() -> Result<()> {
     for value in ["NaN", "inf", "oops", "900"] {
         let p = parse(

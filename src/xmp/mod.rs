@@ -2,6 +2,7 @@
 mod apply;
 pub mod descriptive;
 pub mod local;
+pub(crate) mod look;
 pub mod ns;
 mod parse;
 pub mod write;

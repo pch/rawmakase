@@ -1,4 +1,5 @@
 use crate::develop::Recipe;
+use crate::xmp::look::{LookAmount, LookUse};
 use anyhow::{Context, Result, ensure};
 use std::path::PathBuf;
 /// Parse Lightroom's serialized Lua table as data only. No interpreter is used.
@@ -105,19 +106,29 @@ pub fn convert_develop(
         if value.starts_with('{') {
             if key == "Look" && !value[1..value.len() - 1].trim().is_empty() {
                 let look = develop_fields(&format!("s = {value}"))?;
-                if let Some(name) = look.get("Name") {
-                    preset.look = serde_json::from_str(name)?;
-                }
-                if let Some(uuid) = look.get("UUID") {
-                    preset
-                        .settings
-                        .insert("RAWmakaseLookUUID".into(), serde_json::from_str(uuid)?);
-                }
-                if let Some(amount) = look.get("Amount") {
-                    ensure!(
-                        amount.parse::<f32>()? == 1.,
-                        "Profile Amount other than 100% is not supported"
-                    );
+                // An amount RAWmakase cannot render is reported, and the rest of the
+                // edit still applies; Lightroom's record stays in its catalog.
+                let shown = match look.get("Amount").map(|a| LookAmount::parse(a)) {
+                    Some(Ok(amount)) => {
+                        let rendering = amount.rendering();
+                        warnings.extend(rendering.warning);
+                        rendering.look
+                    }
+                    Some(Err(e)) => {
+                        warnings.push(format!("{e:#}; rendered at 100%"));
+                        LookUse::Apply
+                    }
+                    None => LookUse::Apply,
+                };
+                if shown == LookUse::Apply {
+                    if let Some(name) = look.get("Name") {
+                        preset.look = serde_json::from_str(name)?;
+                    }
+                    if let Some(uuid) = look.get("UUID") {
+                        preset
+                            .settings
+                            .insert("RAWmakaseLookUUID".into(), serde_json::from_str(uuid)?);
+                    }
                 }
             } else if crate::xmp::local::KEYS.contains(&key.as_str()) {
                 match crate::xmp::local::Node::from_lua(value) {

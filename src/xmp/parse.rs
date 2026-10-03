@@ -128,13 +128,19 @@ pub fn parse(path: &Path, text: &str) -> Result<Preset> {
                 .map(str::to_string)
                 .or_else(|| child_text(d, "Name"))
                 .unwrap_or_default();
-            if let Some(amount) = d.attribute((CRS, "Amount")) {
-                ensure!(
-                    amount.parse::<f32>()? == 1.,
-                    "Profile Amount other than 100% is not supported"
-                );
+            let rendering = d
+                .attribute((CRS, "Amount"))
+                .map(|amount| super::look::LookAmount::parse(amount).map(|a| a.rendering()))
+                .transpose()?;
+            // A strict preset stays atomic: an amount other than 0 or 100% blocks
+            // `apply`, and lenient application reports it.
+            if let Some(rendering) = rendering {
+                blockers.extend(rendering.warning);
+                if rendering.look == super::look::LookUse::Omit {
+                    look.clear();
+                }
             }
-            if let Some(uuid) = d.attribute((CRS, "UUID")) {
+            if let Some(uuid) = d.attribute((CRS, "UUID")).filter(|_| !look.is_empty()) {
                 settings.insert("RAWmakaseLookUUID".into(), uuid.into());
             }
         } else if name == "Preset" && sidecar {
