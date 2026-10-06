@@ -469,21 +469,11 @@ impl Geometry {
         g.height = (h * factor).round().max(1.) as u32;
         g
     }
-    /// The crop Constrain Crop renders for this geometry's crop. The viewport builds a
-    /// geometry several times a frame, so the last one found is remembered.
+    /// The crop Constrain Crop renders for this geometry's crop. Found again for
+    /// each geometry: the search takes about 5–13 µs in a release build, too little
+    /// to keep a cache for, though the viewport builds several geometries a frame.
     fn constrained_crop(&self) -> [f32; 4] {
-        thread_local! {
-            static LAST: std::cell::Cell<Option<(Geometry, [f32; 4])>> =
-                const { std::cell::Cell::new(None) };
-        }
-        if let Some((key, crop)) = LAST.get()
-            && key == *self
-        {
-            return crop;
-        }
-        let crop = super::crop_constraint::largest_covered(self.crop, self).unwrap_or(self.crop);
-        LAST.set(Some((*self, crop)));
-        crop
+        super::crop_constraint::largest_covered(self.crop, self).unwrap_or(self.crop)
     }
     /// The crop as rendered (0–1 of the straightened photo): the recipe's, or with
     /// Constrain Crop the part of it that has a source pixel everywhere.
