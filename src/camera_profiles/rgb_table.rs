@@ -265,7 +265,7 @@ impl RgbTable {
 }
 /// Tetrahedral interpolation in a grid cell, as the DNG SDK does: the cell is split
 /// into six tetrahedra along its gray diagonal, picked by the order of the fractions.
-fn tetrahedral(at: impl Fn(usize, usize, usize) -> [f32; 3], f: [f32; 3]) -> [f32; 3] {
+pub(crate) fn tetrahedral(at: impl Fn(usize, usize, usize) -> [f32; 3], f: [f32; 3]) -> [f32; 3] {
     let [fr, fg, fb] = f;
     let c000 = at(0, 0, 0);
     let c111 = at(1, 1, 1);

@@ -22,6 +22,7 @@ pub mod guided;
 mod image_space;
 mod local_tone;
 mod local_tone_data;
+pub mod lut3d;
 pub mod masks;
 mod orientation;
 pub mod panels;
