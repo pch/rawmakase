@@ -158,8 +158,20 @@ global sliders in Camera Raw (within 0.006–0.012 encoded, against effects of
 
 ## Testing
 
-- **Tier 1 (stage probes, CI)**: committed probe DNGs and their Camera Raw
-  measurements.
+- **Tier 1 (stage probes, CI)**: `scene_probes_do_not_regress` (`tests/color/scene_probes.rs`)
+  renders synthetic probes to the S3 output tap (`develop::quality::render_stage`) and
+  compares them with Camera Raw 18.7's renders of the same probes
+  (`tests/corpus/camera-raw/scene-probes.json`, from `scripts/corpus/scene-probes.py`):
+  white ramps at W* = 1, 4 and 16 (default, Whites ±50 and ±100), Exposure −2, −1 and +1
+  on ramps at W* = 1 (clipped) and 4 (overrange), black ramps with darkest levels 2^-4
+  and 2^-8 (Blacks ±50 and ±100), a full-frame mask's Whites +50 and Blacks −50, and
+  three synthetic scenes (`probe_scenes.py` seeds 1, 3, 4, committed reduced to 384×256)
+  at Shadows +100/−50, Highlights −100/+50, Dehaze ±40 and Clarity ±50. Ramps are scored
+  by patch means, scenes by 24×16 block luminances; each case records its encoded (gamma
+  1.8) mean and largest error and, for scenes, the mean error of the setting's effect in
+  EV in `scene-probes-baseline.json`. A case fails when it gets further from Camera Raw
+  than its baseline (5% plus 0.0005 mean, 0.003 largest, 0.005 EV effect); intended
+  changes are blessed per case with `RAWMAKASE_BLESS=1`.
 - **Tier 2 (structural, CI)**: stage placement (the full render equals the downstream
   stages replayed from the S3 tap), CPU/GPU equivalence per stage, cached against fresh
   renders, photo measures equal across preview sizes, regions and export.
