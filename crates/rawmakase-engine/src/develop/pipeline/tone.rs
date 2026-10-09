@@ -253,16 +253,13 @@ pub(crate) fn measures_contrast_pivot(r: &Recipe) -> bool {
             .iter()
             .any(|m| m.is_active() && m.adjust.contrast != 0.)
 }
-/// The photo reduced for measuring it, without Clarity's and Texture's gain: a user
+/// The photo reduced for measuring it, without the measured Texture: a user
 /// adjustment that depends on the preview size.
 fn measured_copy(im: Source<'_>) -> std::borrow::Cow<'_, CameraImage> {
-    if let Some(copy) = im.measured {
-        return std::borrow::Cow::Borrowed(copy);
-    }
-    match (im.reduced, im.gain, im.untextured) {
-        (Some(small), None, None) => std::borrow::Cow::Borrowed(small),
-        _ => std::borrow::Cow::Owned(preview_source(
-            Source::new(im.untextured.unwrap_or(im.image), None),
+    match im.measured {
+        Some(copy) => std::borrow::Cow::Borrowed(copy),
+        None => std::borrow::Cow::Owned(preview_source(
+            Source::new(im.untextured.unwrap_or(im.image)),
             crate::develop::local_tone::MAP_EDGE,
         )),
     }

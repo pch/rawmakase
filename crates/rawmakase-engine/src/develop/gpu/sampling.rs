@@ -53,8 +53,6 @@ slots! {
     BLUE: 2,
     VIGNETTING: 2,
     VIGNETTING_AMOUNT: 1,
-    // Reduced width, height.
-    REDUCED: 2,
     // Workgroups per row of the dispatch.
     COUNT: 1,
     // `ManualDistortion`: k (0 when off) and the frame's axes.
@@ -73,7 +71,8 @@ mod tests {
     use super::*;
 
     /// The offsets the shader used when they were written out by hand, less the
-    /// local-tone gain's, which is no longer sampled.
+    /// local-tone gain's, which is no longer sampled, and the reduced size's, which
+    /// nothing reduces on the device any more.
     #[test]
     fn slots_keep_the_offsets_the_shader_was_written_with() {
         let offsets: Vec<(&str, usize)> = ALL.iter().map(|(n, r)| (*n, r.start)).collect();
@@ -106,11 +105,10 @@ mod tests {
                 ("BLUE", 51),
                 ("VIGNETTING", 53),
                 ("VIGNETTING_AMOUNT", 55),
-                ("REDUCED", 56),
-                ("COUNT", 58),
-                ("MANUAL", 59),
+                ("COUNT", 56),
+                ("MANUAL", 57),
             ]
         );
-        assert_eq!(HEADER, 62);
+        assert_eq!(HEADER, 60);
     }
 }

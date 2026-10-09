@@ -4,7 +4,7 @@ use crate::develop::sharpening::Sharpener;
 use crate::develop::{
     pipeline::Toned,
     preview_renderer::Stages,
-    stage_cache::{ReducedKey, StageCache, TextureKey},
+    stage_cache::{StageCache, TextureKey},
 };
 use crate::rendered::Rendered;
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
     develop::{self, Geometry},
     model::{recipe::Recipe, valid::ValidRecipe},
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use rayon::prelude::*;
 use std::sync::{
     Arc,

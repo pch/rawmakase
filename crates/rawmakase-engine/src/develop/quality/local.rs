@@ -70,8 +70,8 @@ pub(super) fn measurement_copy(
     }
 }
 /// `im` (the full-resolution photo `full`, or a pyramid level of it at `scale`) with
-/// the measured Texture, its copies for the Shadows/Highlights map and for
-/// measuring the photo, and the recipe the pixel stage renders it with.
+/// the measured Texture, its copy for measuring the photo, and the recipe the pixel
+/// stage renders it with.
 pub(super) fn local_stage(
     im: &Arc<CameraImage>,
     full: &Arc<CameraImage>,
@@ -92,28 +92,11 @@ pub(super) fn local_stage(
     } else {
         im.clone()
     };
-    let mut toned = Toned {
+    let toned = Toned {
         image: im.clone(),
         scale,
-        reduced: None,
         untextured,
-        measured: Some(measurement_copy(full, cache.as_deref_mut(), cancel)?),
+        measured: Some(measurement_copy(full, cache, cancel)?),
     };
-    // The Shadows/Highlights map starts from a reduced copy of the toned image,
-    // for the global sliders or a mask's.
-    if let Some(cache) = cache
-        && develop::pipeline::pixel_params::needs_reduced(r)
-    {
-        let key = ReducedKey::new(&toned);
-        let bytes = |im: &CameraImage| im.pixels.len() * 12;
-        let reduced = cache.reduced.get_or_try(key, bytes, || {
-            check_cancel(cancel)?;
-            Ok(develop::pipeline::preview_source(
-                toned.source(),
-                develop::local_tone::MAP_EDGE,
-            ))
-        })?;
-        toned.reduced = Some(reduced);
-    }
     Ok((toned, tonal))
 }

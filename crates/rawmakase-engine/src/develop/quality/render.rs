@@ -2,8 +2,8 @@
 use super::*;
 
 /// The GPU path for everything before the per-pixel stage, with the photo (or pyramid
-/// level) `source` kept on the device: the Shadows/Highlights map's reduced input
-/// and the region's samples are made there, then developed and presented. `scale` is
+/// level) `source` kept on the device: the region's samples are made there, then
+/// developed and presented. `scale` is
 /// `source`'s size relative to the full-resolution photo. `None` without a display or
 /// GPU, or when the port does not cover the recipe; the CPU stages then run as before.
 #[allow(clippy::too_many_arguments)]
@@ -57,39 +57,12 @@ fn render_resident(
     } else {
         source.clone()
     };
-    let mut toned = Toned {
+    let toned = Toned {
         image: source.clone(),
         scale,
-        reduced: None,
         untextured,
         measured: Some(measurement_copy(full, Some(&mut *stages.cache), cancel)?),
     };
-    if develop::pipeline::pixel_params::needs_reduced(&base) {
-        let edge = develop::local_tone::MAP_EDGE;
-        let size = if source.width.max(source.height) <= edge {
-            (source.width, source.height)
-        } else {
-            let k = edge as f32 / source.width.max(source.height) as f32;
-            (
-                (source.width as f32 * k).round() as u32,
-                (source.height as f32 * k).round() as u32,
-            )
-        };
-        let key = ReducedKey::new(&toned);
-        let bytes = |im: &CameraImage| im.pixels.len() * 12;
-        let Stages { cache, backend, .. } = stages;
-        let reduced = cache.reduced.get_or_try(key, bytes, || {
-            backend
-                .run_resident(cancel, |gpu| {
-                    gpu.scoped(|gpu| gpu.reduce_toned(source, size, cancel))
-                })
-                .context("GPU reduction failed")
-        });
-        let Ok(reduced) = reduced else {
-            return Ok(None);
-        };
-        toned.reduced = Some(reduced);
-    }
     let Some(mut params) = develop::pipeline::pixel_params::pixel_params(toned.source(), &base)
     else {
         return Ok(None);

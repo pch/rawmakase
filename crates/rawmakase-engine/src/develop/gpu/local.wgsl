@@ -1,5 +1,4 @@
-// Full-resolution stages on the photo kept on the device: the image reduced for the
-// Shadows/Highlights map (`pipeline::preview_source`) and region sampling through
+// Full-resolution stages on the photo kept on the device: region sampling through
 // geometry, lens correction and noise reduction (`pipeline::sample_region`). The CPU
 // versions are the reference; functions keep their names and order. Every entry point
 // uses its own bindings.
@@ -8,7 +7,6 @@
 // before this file; radial tables follow the header (`sampling::HEADER`).
 @group(0) @binding(10) var<storage, read> photo: array<f32>;
 @group(0) @binding(12) var<storage, read> sp: array<f32>;
-@group(0) @binding(13) var<storage, read_write> reduced: array<f32>;
 @group(0) @binding(14) var<storage, read_write> samples: array<f32>;
 @group(0) @binding(15) var<storage, read_write> positions: array<f32>;
 
@@ -244,50 +242,4 @@ fn sample_region(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocat
     samples[3u * i + 2u] = p.z;
     positions[2u * i] = pos.x;
     positions[2u * i + 1u] = pos.y;
-}
-// `pipeline::preview_source`: box integration of the toned photo, in two passes so
-// neighbouring invocations read neighbouring pixels: each row's sums over the boxes'
-// columns, then each box's sum over its rows.
-@group(0) @binding(9) var<storage, read_write> partial: array<f32>;
-
-fn box_columns(x: u32) -> vec2<u32> {
-    let iw = su(S_WIDTH);
-    let w = su(S_REDUCED);
-    let x0 = x * iw / w;
-    return vec2(x0, max((x + 1u) * iw / w, x0 + 1u));
-}
-@compute @workgroup_size(16, 16)
-fn reduce_rows(@builtin(global_invocation_id) id: vec3<u32>) {
-    let w = su(S_REDUCED);
-    if id.x >= w || id.y >= su(S_HEIGHT) { return; }
-    let span = box_columns(id.x);
-    let row = id.y * su(S_WIDTH);
-    var sum = vec3(0.0);
-    for (var x = span.x; x < span.y; x++) {
-        sum += px(row + x);
-    }
-    let i = 3u * (id.y * w + id.x);
-    partial[i] = sum.x;
-    partial[i + 1u] = sum.y;
-    partial[i + 2u] = sum.z;
-}
-@compute @workgroup_size(16, 16)
-fn reduce_toned(@builtin(global_invocation_id) id: vec3<u32>) {
-    let w = su(S_REDUCED);
-    let h = su(S_REDUCED + 1u);
-    if id.x >= w || id.y >= h { return; }
-    let ih = su(S_HEIGHT);
-    let span = box_columns(id.x);
-    let y0 = id.y * ih / h;
-    let y1 = max((id.y + 1u) * ih / h, y0 + 1u);
-    var out = vec3(0.0);
-    for (var y = y0; y < y1; y++) {
-        let i = 3u * (y * w + id.x);
-        out += vec3(partial[i], partial[i + 1u], partial[i + 2u]);
-    }
-    let n = f32((span.y - span.x) * (y1 - y0));
-    let i = id.y * w + id.x;
-    reduced[3u * i] = out.x / n;
-    reduced[3u * i + 1u] = out.y / n;
-    reduced[3u * i + 2u] = out.z / n;
 }

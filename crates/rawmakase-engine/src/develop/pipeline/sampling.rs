@@ -1,35 +1,25 @@
-//! Sampling the camera image: the source with its local-tone gain, previews and footprint sampling.
+//! Sampling the camera image: the source, previews and footprint sampling.
 use super::*;
 
-/// Camera pixels as the pipeline samples them: the image, times the per-pixel local-tone
-/// gain when Clarity or Texture are active.
+/// Camera pixels as the pipeline samples them, with the copies the photo is measured on.
 #[derive(Clone, Copy)]
 pub(crate) struct Source<'a> {
     pub(super) image: &'a CameraImage,
-    pub(super) gain: Option<&'a [f32]>,
-    /// These pixels reduced for the Shadows/Highlights map, when already made.
-    pub(crate) reduced: Option<&'a CameraImage>,
     /// The image before the measured Texture, which the photo's measures leave out.
     pub(crate) untextured: Option<&'a CameraImage>,
     /// The photo's measurement copy (see [`Toned::measured`]).
     pub(crate) measured: Option<&'a CameraImage>,
 }
 impl<'a> Source<'a> {
-    pub(crate) fn new(image: &'a CameraImage, gain: Option<&'a [f32]>) -> Self {
+    pub(crate) fn new(image: &'a CameraImage) -> Self {
         Self {
             image,
-            gain,
-            reduced: None,
             untextured: None,
             measured: None,
         }
     }
     pub(super) fn px(&self, i: usize) -> [f32; 3] {
-        let p = self.image.pixels[i];
-        match self.gain {
-            Some(gain) => p.map(|v| v * gain[i]),
-            None => p,
-        }
+        self.image.pixels[i]
     }
 }
 impl std::ops::Deref for Source<'_> {
@@ -40,7 +30,7 @@ impl std::ops::Deref for Source<'_> {
 }
 impl<'a> From<&'a CameraImage> for Source<'a> {
     fn from(image: &'a CameraImage) -> Self {
-        Self::new(image, None)
+        Self::new(image)
     }
 }
 /// A camera image and its copies, as the pixel stages take them.
@@ -48,9 +38,6 @@ pub(crate) struct Toned {
     pub(crate) image: std::sync::Arc<CameraImage>,
     /// The image's size relative to the full-resolution photo.
     pub(crate) scale: f32,
-    /// The toned image reduced for the Shadows/Highlights map, kept in the stage cache
-    /// so edits do not reduce the full-resolution image again.
-    pub(crate) reduced: Option<std::sync::Arc<CameraImage>>,
     /// `image` before the measured Texture, when it has it.
     pub(crate) untextured: Option<std::sync::Arc<CameraImage>>,
     /// The full-resolution photo (recovered and retouched, without Texture and Clarity)
@@ -61,10 +48,9 @@ pub(crate) struct Toned {
 impl Toned {
     pub(crate) fn source(&self) -> Source<'_> {
         Source {
-            reduced: self.reduced.as_deref(),
             untextured: self.untextured.as_deref(),
             measured: self.measured.as_deref(),
-            ..Source::new(&self.image, None)
+            ..Source::new(&self.image)
         }
     }
 }
@@ -92,11 +78,7 @@ pub fn preview(im: &CameraImage, max: u32) -> CameraImage {
 }
 pub(crate) fn preview_source(im: Source, max: u32) -> CameraImage {
     if im.width.max(im.height) <= max {
-        let mut out = im.image.clone();
-        if im.gain.is_some() {
-            out.pixels = (0..out.pixels.len()).map(|i| im.px(i)).collect();
-        }
-        return out;
+        return im.image.clone();
     }
     let scale = max as f32 / im.width.max(im.height) as f32;
     let w = (im.width as f32 * scale).round() as u32;

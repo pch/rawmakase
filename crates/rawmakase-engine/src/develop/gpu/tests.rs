@@ -319,10 +319,8 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     recipes.push(r);
     let mut gpu = Processor::new()?;
     let cancel = AtomicBool::new(false);
-    // A local-tone gain changes the Shadows/Highlights map's input.
-    let gain: Vec<f32> = (0..64 * 48).map(|i| 0.6 + wave(i, 0.05)).collect();
     // The swatches select part of the test image (the same source for both).
-    let source = Source::new(&image, (point_colors % 2 == 1).then_some(gain.as_slice()));
+    let source = Source::new(&image);
     let without = develop_samples(source, &recipes[point_colors - 1], &samples, &cancel, None)?;
     let with = develop_samples(source, &recipes[point_colors], &samples, &cancel, None)?;
     let changed = (with.pixels.iter().zip(&without.pixels))
@@ -330,7 +328,7 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
         .count();
     assert!(changed > with.pixels.len() / 50, "{changed} pixels changed");
     for (i, recipe) in recipes.iter().enumerate() {
-        let source = Source::new(&image, (i % 2 == 1).then_some(gain.as_slice()));
+        let source = Source::new(&image);
         let params = pixel_params(source, recipe).expect("GPU port covers this recipe");
         let expected = develop_samples(source, recipe, &samples, &cancel, None)?;
         let actual = gpu.develop(&samples, &params, &cancel)?;
@@ -848,7 +846,7 @@ fn shaders_are_valid_wgsl() {
         (
             "local.wgsl",
             super::sampling::wgsl_prelude() + include_str!("local.wgsl"),
-            &["sample_region", "reduce_rows", "reduce_toned"],
+            &["sample_region"],
         ),
         (
             "finish.wgsl",

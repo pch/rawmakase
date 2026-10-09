@@ -507,7 +507,6 @@ mod tests {
         };
         mask.adjust.shadows = 0.5;
         r.masks.push(mask);
-        assert!(crate::develop::pipeline::pixel_params::needs_map(&r));
         for exposure in [0., 0.3] {
             r.exposure = exposure;
             let cached = warm.render(&im, &r, 150, None, &cancel).unwrap();
@@ -517,7 +516,7 @@ mod tests {
             assert_eq!(cached.pixels, fresh.pixels);
         }
         // Exposure comes after the map's input: one reduction serves both renders.
-        assert_eq!(warm.cache.reduced.len(), 1);
+        assert_eq!(warm.cache.measured.len(), 1);
     }
     /// Spot removal renders the same in Fit, 100% regions and exports, and edits to
     /// it patch the cached pyramid correctly.

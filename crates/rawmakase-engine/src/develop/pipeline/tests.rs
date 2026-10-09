@@ -1176,7 +1176,7 @@ fn a_lens_profile_choice_belongs_to_the_lens_corrections_panel() {
 
 /// The Contrast pivot and the Whites curve are the photo's: the same for the GPU's map pass (whose
 /// parameters also run the final pass) as for the plain per-pixel parameters, and not
-/// moved by Clarity's or Texture's gain.
+/// moved by the measured Texture.
 #[test]
 fn contrast_and_the_scene_stage_are_measured_on_the_photo_alone() {
     use crate::develop::basic_tone::TYPICAL_PIVOT;
@@ -1217,13 +1217,7 @@ fn contrast_and_the_scene_stage_are_measured_on_the_photo_alone() {
         map_pass.basic.as_ref().map(|b| &b.lut),
         plain.basic.as_ref().map(|b| &b.lut)
     );
-    let gain: Vec<f32> = (0..im.pixels.len())
-        .map(|i| 0.5 + (i % 7) as f32 * 0.2)
-        .collect();
-    let gained = CurveSet::with_photo_measures(Source::new(&im, Some(&gain)), &r, matrix);
-    assert_eq!(gained.photo, plain.photo);
-    assert_eq!(gained.measures, plain.measures);
-    // Nor the measured Texture, which makes a new image.
+    // The measured Texture, which makes a new image, does not move them.
     let textured = crate::develop::texture::TextureDetail::of(
         &im,
         1.,
@@ -1233,7 +1227,7 @@ fn contrast_and_the_scene_stage_are_measured_on_the_photo_alone() {
     .apply(&im, 1.);
     let source = Source {
         untextured: Some(&im),
-        ..Source::new(&textured, None)
+        ..Source::new(&textured)
     };
     let textured = CurveSet::with_photo_measures(source, &r, matrix);
     assert_eq!(textured.photo, plain.photo);

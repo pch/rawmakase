@@ -1,6 +1,6 @@
 //! Results of the stages before the per-pixel color pipeline, kept between preview
-//! renders: geometry/lens-warp samples, the measured Texture and the reduced image the
-//! Shadows/Highlights map is built from.
+//! renders: geometry/lens-warp samples, the measured Texture and the photo's measurement
+//! copy the Shadows/Highlights map is built from.
 //! Each key holds only the recipe fields its stage reads, so exposure, curve, HSL
 //! and grading edits reuse them and rerun only the per-pixel stage.
 //!
@@ -24,7 +24,6 @@ const BUDGET: usize = 512 << 20;
 #[derive(Default)]
 pub(crate) struct StageCache {
     pub(crate) samples: Lru<SampleKey, Samples>,
-    pub(crate) reduced: Lru<ReducedKey, CameraImage>,
     /// A photo's measurement copy (`Toned::measured`), per full-resolution image.
     pub(crate) measured: Lru<Same<CameraImage>, CameraImage>,
     /// The measured Texture's detail of a camera image, and the image with an amount.
@@ -262,18 +261,6 @@ impl TextureKey {
             image: Same(image.clone()),
             scale: scale.to_bits(),
             amount: amount.to_bits(),
-        }
-    }
-}
-/// The toned image reduced for the Shadows/Highlights map: the camera image.
-#[derive(PartialEq)]
-pub(crate) struct ReducedKey {
-    image: Same<CameraImage>,
-}
-impl ReducedKey {
-    pub(crate) fn new(toned: &Toned) -> Self {
-        Self {
-            image: Same(toned.image.clone()),
         }
     }
 }

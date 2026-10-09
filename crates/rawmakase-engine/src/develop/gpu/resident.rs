@@ -1,18 +1,13 @@
 //! The stages before the per-pixel develop stage, on the device (`local.wgsl`): the
-//! photo is uploaded once and kept there, reduced for the Shadows/Highlights map, and
-//! each region is sampled through geometry, lens correction and noise reduction
+//! photo is uploaded once and kept there, and each region is sampled through geometry, lens correction and noise reduction
 //! straight into the develop stage's input.
 use super::sampling;
 use super::{Processor, develop::DeviceSamples};
 use crate::{camera_data::CameraImage, develop::stage_cache::SampleKey};
-use anyhow::{Context, Result, ensure};
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
-    time::Duration,
+use anyhow::{Result, ensure};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use wgpu::util::DeviceExt;
 
@@ -20,7 +15,7 @@ use wgpu::util::DeviceExt;
 const SAMPLES: usize = 4;
 
 pub(super) struct Resident {
-    /// sample_region, reduce_rows, reduce_toned, with their layouts.
+    /// sample_region, with its layout.
     pipelines: Vec<(wgpu::BindGroupLayout, wgpu::ComputePipeline)>,
     photo: Option<(Arc<CameraImage>, wgpu::Buffer)>,
     pub(super) samples: Vec<(SampleKey, Arc<DeviceSamples>)>,
@@ -33,8 +28,6 @@ struct Parked {
     samples: Vec<(SampleKey, Arc<DeviceSamples>)>,
 }
 const SAMPLE: usize = 0;
-const REDUCE_ROWS: usize = 1;
-const REDUCE: usize = 2;
 
 fn storage(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
@@ -78,25 +71,15 @@ impl Resident {
                 (super::sampling::wgsl_prelude() + include_str!("local.wgsl")).into(),
             ),
         });
-        let entries: [(&str, Vec<wgpu::BindGroupLayoutEntry>); 3] = [
-            (
-                "sample_region",
-                vec![
-                    storage(10, true),
-                    storage(12, true),
-                    storage(14, false),
-                    storage(15, false),
-                ],
-            ),
-            (
-                "reduce_rows",
-                vec![storage(9, false), storage(10, true), storage(12, true)],
-            ),
-            (
-                "reduce_toned",
-                vec![storage(9, false), storage(12, true), storage(13, false)],
-            ),
-        ];
+        let entries: [(&str, Vec<wgpu::BindGroupLayoutEntry>); 1] = [(
+            "sample_region",
+            vec![
+                storage(10, true),
+                storage(12, true),
+                storage(14, false),
+                storage(15, false),
+            ],
+        )];
         let pipelines = entries
             .into_iter()
             .map(|(entry, entries)| {
@@ -222,81 +205,6 @@ impl Processor {
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
-        })
-    }
-    /// The toned photo reduced to `size` (`pipeline::preview_source`), read back for
-    /// the Shadows/Highlights map.
-    pub(crate) fn reduce_toned(
-        &mut self,
-        image: &Arc<CameraImage>,
-        (w, h): (u32, u32),
-        cancel: &AtomicBool,
-    ) -> Result<CameraImage> {
-        ensure!(self.fits_resident(image), "Photo exceeds GPU buffer limits");
-        let photo = self.photo(image);
-        let device = self.device.clone();
-        let mut header = vec![0f32; sampling::HEADER];
-        header[sampling::WIDTH.start] = image.width as f32;
-        header[sampling::HEIGHT.start] = image.height as f32;
-        header[sampling::REDUCED].copy_from_slice(&[w as f32, h as f32]);
-        let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Reduce parameters"),
-            contents: bytemuck::cast_slice(&header),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
-        let bytes = w as u64 * h as u64 * 12;
-        let out = self.buffer("Reduced photo", bytes);
-        let staging = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Reduced readback"),
-            size: bytes,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        let partial = self.buffer("Row sums", w as u64 * image.height as u64 * 12);
-        let resident = self.resident();
-        let mut encoder = device.create_command_encoder(&Default::default());
-        let (layout, pipeline) = &resident.pipelines[REDUCE_ROWS];
-        let group = bind(
-            &device,
-            layout,
-            &[(9, &partial), (10, &photo), (12, &params)],
-        );
-        dispatch(
-            &mut encoder,
-            pipeline,
-            &[&group],
-            (w.div_ceil(16), image.height.div_ceil(16)),
-        );
-        let (layout, pipeline) = &resident.pipelines[REDUCE];
-        let group = bind(&device, layout, &[(9, &partial), (12, &params), (13, &out)]);
-        dispatch(
-            &mut encoder,
-            pipeline,
-            &[&group],
-            (w.div_ceil(16), h.div_ceil(16)),
-        );
-        encoder.copy_buffer_to_buffer(&out, 0, &staging, 0, bytes);
-        ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
-        let submission = super::submit(&self.queue, encoder);
-        let (tx, rx) = mpsc::sync_channel(1);
-        staging.slice(..).map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx.send(r);
-        });
-        super::wait(&device, submission)?;
-        rx.recv_timeout(Duration::from_secs(1))
-            .context("GPU readback timed out")??;
-        let pixels =
-            bytemuck::cast_slice::<u8, [f32; 3]>(&staging.slice(..).get_mapped_range()?).to_vec();
-        staging.unmap();
-        Ok(CameraImage {
-            recovered: Default::default(),
-            width: w,
-            height: h,
-            pixels,
-            metadata: image.metadata.clone(),
-            fast: image.fast,
-            scale_factor: image.scale_factor,
-            scale_clipped: image.scale_clipped,
         })
     }
     /// Samples a region on the device (`pipeline::sample_region`), reusing the samples
