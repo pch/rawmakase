@@ -458,6 +458,7 @@ impl eframe::App for Editor {
 }
 /// The largest PNG stored in an ICO directory. RAWmakase's Windows icon is a
 /// set of PNG images, and the window wants the 256×256 one.
+#[cfg(windows)]
 pub(crate) fn largest_png_in_ico(ico: &[u8]) -> Option<&[u8]> {
     if ico.len() < 6 {
         return None;

@@ -1,3 +1,4 @@
+#[cfg(windows)]
 #[test]
 fn windows_icon_file_contains_the_256_png() {
     let png = super::largest_png_in_ico(include_bytes!("../../packaging/windows/rawmakase.ico"))
