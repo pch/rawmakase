@@ -6,8 +6,6 @@ on:
     paths-ignore:
       - 'website/**'
       - '.github/workflows/website.yml'
-      - 'stats/**'
-      - '.github/workflows/stats.yml'
       - '.github/workflows/codeql.yml'
       - '.github/triage.yml'
       - '.github/workflows/triage.yml'
@@ -16,8 +14,6 @@ on:
     paths-ignore:
       - 'website/**'
       - '.github/workflows/website.yml'
-      - 'stats/**'
-      - '.github/workflows/stats.yml'
       - '.github/workflows/codeql.yml'
       - '.github/triage.yml'
       - '.github/workflows/triage.yml'
@@ -96,8 +92,6 @@ jobs:
           cargo test --locked -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
           cargo test --locked -p rawmakase-protocol -p rawmakase-ctl
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      # Packagers can leave out the usage report (Cargo.toml, `telemetry`).
-      - run: cargo clippy --all-targets --locked --no-default-features -- -D warnings
       # Tests that need private RAW files, camera profiles or a GPU are #[ignore]d.
       # exiftool reads exported metadata back as an independent reader; Arch
       # installs it in vendor_perl, outside PATH.

@@ -6,15 +6,11 @@ on:
     paths-ignore:
       - 'website/**'
       - '.github/workflows/website.yml'
-      - 'stats/**'
-      - '.github/workflows/stats.yml'
   pull_request:
     branches: [main]
     paths-ignore:
       - 'website/**'
       - '.github/workflows/website.yml'
-      - 'stats/**'
-      - '.github/workflows/stats.yml'
   schedule:
     - cron: '23 7 * * 5'
   workflow_dispatch:
@@ -37,7 +33,7 @@ jobs:
       fail-fast: false
       matrix:
         # Preserve the languages and weekly coverage of GitHub's default
-        # setup, while allowing website- and stats-only changes to skip these jobs.
+        # setup, while allowing website-only changes to skip these jobs.
         language: [actions, c-cpp, python, ruby, rust]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

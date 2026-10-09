@@ -73,13 +73,6 @@ fastframe-theme = { git = "https://github.com/crmne/fastframe", tag = "v0.1.7", 
 
 # The terminal a release build's command-line output goes to, and the
 # Desktop and Pictures export folders.
-[features]
-default = ["telemetry"]
-# The opt-in weekly usage report (src/stats.rs). Packagers who don't want it
-# build with --no-default-features: the question, the Preferences row and all
-# reporting are then left out.
-telemetry = []
-
 # MIDI input adapters (src/app/automation/midi.rs). Linux would need ALSA headers.
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 midir = "0.11"

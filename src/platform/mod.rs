@@ -8,18 +8,18 @@ pub(crate) mod web;
 
 /// Whether winit opens windows through Wayland rather than X11 on Linux: it
 /// does whenever the session offers Wayland, by either variable.
-#[cfg(any(target_os = "linux", feature = "telemetry"))]
+#[cfg(target_os = "linux")]
 pub(crate) fn wayland() -> bool {
     wayland_in(|name| std::env::var_os(name))
 }
 
-#[cfg(any(target_os = "linux", feature = "telemetry"))]
+#[cfg(target_os = "linux")]
 fn wayland_in(var: impl Fn(&str) -> Option<std::ffi::OsString>) -> bool {
     let set = |name| var(name).is_some_and(|value| !value.is_empty());
     set("WAYLAND_DISPLAY") || set("WAYLAND_SOCKET")
 }
 
-#[cfg(all(test, any(target_os = "linux", feature = "telemetry")))]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::wayland_in;
     use std::ffi::OsString;

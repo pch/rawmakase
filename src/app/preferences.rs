@@ -355,11 +355,6 @@ impl Editor {
             value(ui, &crate::raw::version());
         });
         form_row(ui, "Updates", |ui| self.automatic_updates_checkbox(ui));
-        #[cfg(feature = "telemetry")]
-        {
-            form_row(ui, "Usage stats", |ui| self.usage_stats_preference(ui));
-            form_row(ui, "", |ui| self.usage_stats_details(ui));
-        }
         gap(ui);
         group(ui, "Locations");
         let data = crate::storage::data_dir();

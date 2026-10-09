@@ -35,8 +35,6 @@ pub(crate) mod catalog_session;
 pub mod comparison;
 pub(crate) mod edit_session;
 pub(crate) mod platform;
-#[cfg(feature = "telemetry")]
-pub(crate) mod stats;
 pub mod updates;
 
 #[cfg(test)]

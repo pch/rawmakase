@@ -143,8 +143,6 @@ impl Editor {
         self.folder_question_window(&ctx);
         self.export_windows(&ctx);
         self.update_notice(&ctx, modal || self.view.shortcuts);
-        #[cfg(feature = "telemetry")]
-        self.usage_stats_notice(&ctx, modal || self.view.shortcuts);
         self.pending_work(&ctx);
         super::panels::keep_resize_cursor(&ctx);
         let collapsed = ctx.data(|d| {

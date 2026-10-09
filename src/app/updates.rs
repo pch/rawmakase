@@ -94,17 +94,6 @@ impl Updates {
             *status = error;
         }
     }
-    /// The update notice is on screen, or would be outside modal windows.
-    #[cfg(feature = "telemetry")]
-    /// Until the first automatic check answers, a notice may still come.
-    pub(super) fn notice_pending(&self) -> bool {
-        if self.automatic && self.requests.is_some() && !self.checked {
-            return true;
-        }
-        self.available.as_ref().is_some_and(|release| {
-            !self.dismissed && self.skipped.as_deref() != Some(release.version.as_str())
-        })
-    }
     /// Drops the update checker's channels at exit. It ends after the request it is
     /// working on; a download cannot be cancelled, so it is not waited for.
     pub(super) fn close(&mut self) {

@@ -55,8 +55,6 @@ pub(crate) struct Editor {
     onboarding_done: bool,
     preferences: preferences::Preferences,
     updates: updates::Updates,
-    #[cfg(feature = "telemetry")]
-    stats: stats::UsageStats,
     themes: theme::Themes,
     exports: export::Exports,
     /// Build Standard-Sized Previews, in the background.
@@ -212,19 +210,6 @@ impl Editor {
         let place = CatalogPlace::of(&session);
         // Only a real session checks GitHub, not an isolated test.
         let updates = updates::Updates::new(&session, session_file.is_some().then_some(ctx));
-        #[cfg(feature = "telemetry")]
-        let adapter = match &backend {
-            worker::RenderBackend::Gpu(Some(render_state)) => Some(render_state.adapter.get_info()),
-            _ => None,
-        };
-        #[cfg(feature = "telemetry")]
-        let stats = stats::UsageStats::new(
-            adapter.as_ref(),
-            session_file
-                .as_deref()
-                .and_then(std::path::Path::parent)
-                .map(|dir| (dir.to_path_buf(), ctx)),
-        );
         let last = session.last_path.clone().filter(|p| p.exists());
         // A first launch opens the default catalog. A catalog used before that
         // is missing now (an unplugged drive) is not replaced by it.
@@ -276,8 +261,6 @@ impl Editor {
             onboarding_done,
             preferences: Default::default(),
             updates,
-            #[cfg(feature = "telemetry")]
-            stats,
             themes: theme::Themes::new(
                 ctx,
                 // Sessions from before `theme_chosen` saved only a palette.
@@ -740,8 +723,6 @@ mod red_eye_tool;
 mod reference;
 mod retouch_tool;
 mod stand_in;
-#[cfg(feature = "telemetry")]
-mod stats;
 mod stroke_outline;
 mod subject_mask;
 mod targeted_tool;
