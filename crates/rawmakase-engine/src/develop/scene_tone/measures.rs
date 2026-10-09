@@ -1,0 +1,83 @@
+//! What the scene tone stage measures of a photo (docs/scene-tone-stage.md, the
+//! measurement-input table).
+
+/// A photo's measures, taken once from its reduced copy at the scene stage's input with
+/// the user's Exposure at 0, so they are the same for every preview size, region and
+/// export. All are log2 scene values; Exposure moves them all by its stops.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct PhotoMeasures {
+    /// The sensor's white for a neutral: the level at which its last channel clips.
+    pub(crate) sensor_white: f32,
+    /// The brightest channel's maximum on a copy reduced to `MAX_EDGE`: bright areas
+    /// count, specks do not.
+    pub(crate) max: f32,
+    /// The darkest luminance on the reduced copy.
+    pub(crate) min: f32,
+    /// Its luminance's 99th percentile: the level Dehaze's response is relative to.
+    pub(crate) p99: f32,
+}
+/// Long edge of the copy the maximum is taken on: on a 920-pixel probe Camera Raw
+/// counts a bright spot fully from about 8 pixels across, and not at 2.
+pub(crate) const MAX_EDGE: u32 = 128;
+
+impl Default for PhotoMeasures {
+    /// A photo whose white is the sensor's at 1 and that reaches it.
+    fn default() -> Self {
+        Self {
+            sensor_white: 0.,
+            max: 0.,
+            min: -12.,
+            p99: -1.,
+        }
+    }
+}
+impl PhotoMeasures {
+    /// The white point (log2 W*) at `exposure` stops: the sensor's white, limited to
+    /// twice the photo's maximum but not below 1; with the sensor's white below 1
+    /// (negative Exposure), that white but not below 0.5, so highlights expand by at
+    /// most a stop.
+    pub(crate) fn white_point(&self, exposure: f32) -> f32 {
+        let sensor = self.sensor_white + exposure;
+        if sensor < 0. {
+            sensor.max(-1.)
+        } else {
+            sensor.min((self.max + exposure + 1.).max(0.))
+        }
+    }
+    /// The black key (log2 of the photo's darkest level) at `exposure` stops.
+    pub(crate) fn black_key(&self, exposure: f32) -> f32 {
+        self.min + exposure
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn white(sensor: f32, max: f32, exposure: f32) -> f32 {
+        PhotoMeasures {
+            sensor_white: sensor.log2(),
+            max: max.log2(),
+            min: -12.,
+            p99: -1.,
+        }
+        .white_point(exposure)
+        .exp2()
+    }
+
+    #[test]
+    fn the_white_point_follows_the_rule_measured_on_probes() {
+        // A photo reaching its sensor's white keeps it as the white point.
+        assert!((white(4., 4., 0.) - 4.).abs() < 1e-5);
+        // A dim photo: twice its maximum.
+        assert!((white(4., 1., 0.) - 2.).abs() < 1e-5);
+        // Never below 1 while the sensor's white is above it.
+        assert!((white(4., 0.25, 0.) - 1.).abs() < 1e-5);
+        // Negative Exposure: the sensor's white, expanded by at most a stop.
+        assert!((white(1., 1., -1.) - 0.5).abs() < 1e-5);
+        assert!((white(1., 1., -2.) - 0.5).abs() < 1e-5);
+        assert!((white(1., 1., -0.5) - 0.5f32.sqrt()).abs() < 1e-5);
+        // Exposure moves the sensor's white and the photo together.
+        assert!((white(2., 2., 1.) - 4.).abs() < 1e-5);
+    }
+}

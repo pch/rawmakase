@@ -36,6 +36,7 @@ pub mod quality;
 mod recipe;
 pub mod red_eye;
 pub mod retouch;
+mod scene_tone;
 mod stage_cache;
 
 pub use crate::color::{mul, srgb_encode};

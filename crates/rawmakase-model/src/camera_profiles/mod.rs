@@ -447,8 +447,10 @@ impl CameraProfile {
         }
         mul(PRO_TO_RGB, rgb).map(|v| v * 2f32.powf(self.exposure))
     }
-    pub fn finish(&self, rgb: [f32; 3]) -> [f32; 3] {
-        let mut p = mul(RGB_TO_PRO, rgb);
+    /// The profile's look and tone curve: linear ProPhoto RGB from the scene tone stage
+    /// in, linear sRGB-primaries display RGB out.
+    pub fn finish(&self, pro: [f32; 3]) -> [f32; 3] {
+        let mut p = pro;
         if let Some(table) = &self.look {
             p = table.apply(p, None, 0.);
         }

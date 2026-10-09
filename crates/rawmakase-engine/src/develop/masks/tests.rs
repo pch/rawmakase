@@ -325,7 +325,11 @@ fn ranges_use_the_developed_colors() {
     assert_eq!(color[5 * 100 + 80], 1.);
     assert_eq!(color[5 * 100 + 20], 0.);
 }
-/// A mask covering the whole photo renders exactly like the same global change.
+/// A mask covering the whole photo renders like the same global change where Camera Raw
+/// renders them alike: Shadows, Highlights, Dehaze, Clarity and Contrast. (A mask's
+/// Exposure keeps the photo's white point, and its Whites and Blacks are curves of
+/// their own: `exposure_of_a_mask_scales_the_scene_as_the_global_slider_does` and
+/// `scene_tone::global`.)
 #[test]
 fn full_frame_mask_equals_the_global_slider() {
     let im = image(120, 80);
@@ -343,16 +347,6 @@ fn full_frame_mask_equals_the_global_slider() {
     for (local, global) in [
         (
             LocalAdjust {
-                exposure: 0.8,
-                ..Default::default()
-            },
-            Recipe {
-                exposure: 0.8,
-                ..base.clone()
-            },
-        ),
-        (
-            LocalAdjust {
                 shadows: 0.5,
                 highlights: -0.4,
                 ..Default::default()
@@ -365,13 +359,26 @@ fn full_frame_mask_equals_the_global_slider() {
         ),
         (
             LocalAdjust {
+                dehaze: 0.4,
+                clarity: 0.3,
+                ..Default::default()
+            },
+            Recipe {
+                effects: crate::model::effects::Effects {
+                    dehaze: 0.4,
+                    clarity: 0.3,
+                    ..base.effects.clone()
+                },
+                ..base.clone()
+            },
+        ),
+        (
+            LocalAdjust {
                 contrast: 0.45,
-                blacks: -0.3,
                 ..Default::default()
             },
             Recipe {
                 contrast: 0.45,
-                blacks: -0.3,
                 ..base.clone()
             },
         ),
@@ -398,6 +405,53 @@ fn full_frame_mask_equals_the_global_slider() {
         assert!(max < 3e-3, "{local:?}: {max}");
     }
 }
+/// The scene a full-frame mask's Exposure leaves the scene tone stage is the global
+/// Exposure's: only the white point stays the photo's, as in Camera Raw.
+#[test]
+fn exposure_of_a_mask_scales_the_scene_as_the_global_slider_does() {
+    let im = image(120, 80);
+    let base = Recipe::with_profiles(&im.metadata, &[]);
+    let everywhere = MaskComponent {
+        invert: true,
+        ..MaskComponent::new(MaskShape::Linear {
+            from: [0., -3.],
+            to: [0., -2.9],
+        })
+    };
+    let masked = Recipe {
+        masks: vec![MaskGroup {
+            components: vec![everywhere],
+            adjust: LocalAdjust {
+                exposure: 0.8,
+                ..Default::default()
+            },
+            ..Default::default()
+        }],
+        ..base.clone()
+    };
+    let global = Recipe {
+        exposure: 0.8,
+        ..base
+    };
+    let scene = |r: &Recipe| {
+        crate::develop::quality::render_stage(
+            &im,
+            r,
+            crate::develop::quality::Stage::SceneInput,
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+        .unwrap()
+    };
+    let (a, b) = (scene(&masked), scene(&global));
+    let max = a
+        .pixels
+        .iter()
+        .flatten()
+        .zip(b.pixels.iter().flatten())
+        .map(|(x, y)| (x - y).abs() / y.abs().max(1e-3))
+        .fold(0., f32::max);
+    assert!(max < 1e-4, "{max}");
+}
 #[test]
 fn partial_masks_blend_and_amount_scales() {
     let im = image(120, 80);
@@ -416,22 +470,25 @@ fn partial_masks_blend_and_amount_scales() {
         amount: 0.5,
         ..Default::default()
     });
-    let masked = crate::develop::render(&im, &r.checked().unwrap(), 0).unwrap();
-    let plain = crate::develop::render(&im, &base.checked().unwrap(), 0).unwrap();
-    let half = crate::develop::render(
-        &im,
-        &Recipe {
-            exposure: 0.5,
-            ..base
-        }
-        .checked()
-        .unwrap(),
-        0,
-    )
-    .unwrap();
+    // Compared where Exposure acts: the scene tone stage's input.
+    let scene = |r: &Recipe| {
+        crate::develop::quality::render_stage(
+            &im,
+            r,
+            crate::develop::quality::Stage::SceneInput,
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+        .unwrap()
+    };
+    let masked = scene(&r);
+    let plain = scene(&base);
+    let half = scene(&Recipe {
+        exposure: 0.5,
+        ..base
+    });
     let at = |im: &crate::rendered::Rendered, x: usize| im.pixels[40 * 120 + x][1];
-    assert!((at(&masked, 20) - at(&half, 20)).abs() < 1e-5);
-    assert!((at(&masked, 100) - at(&plain, 100)).abs() < 1e-5);
+    assert!((at(&masked, 20) / at(&half, 20) - 1.).abs() < 1e-4);
+    assert!((at(&masked, 100) / at(&plain, 100) - 1.).abs() < 1e-4);
     let _ = slot::EXPOSURE;
 }
 

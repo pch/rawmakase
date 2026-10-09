@@ -346,17 +346,22 @@ fn clipped_channels_do_not_make_magenta_highlights() -> Result<()> {
 }
 #[test]
 fn exposure_reveals_retained_highlights() {
-    let im = fixture();
-    let a = adjust([2.; 3], &im.metadata, &Recipe::default());
-    let b = adjust(
-        [2.; 3],
-        &im.metadata,
-        &Recipe {
-            exposure: -2.,
+    // A photo whose highlights were rebuilt to twice the sensor's white.
+    let mut im = fixture();
+    for p in im.pixels.iter_mut().step_by(2) {
+        *p = [2.; 3];
+    }
+    let pixel = |exposure: f32| {
+        let r = Recipe {
+            exposure,
             ..Default::default()
-        },
-    );
-    assert!(a[0] > b[0] && b[0] > 0.5);
+        };
+        let matrix = profile_matrix(&im.metadata, &r);
+        let lut = CurveSet::with_photo_measures((&im).into(), &r, matrix);
+        process_pixel([2.; 3], &r, &lut, matrix, [0., 0.], None)
+    };
+    let (a, b) = (pixel(0.), pixel(-2.));
+    assert!(a[0] > b[0] && b[0] > 0.5, "{a:?} {b:?}");
     assert!(a.iter().all(|v| v.is_finite()));
 }
 #[test]
@@ -1077,7 +1082,7 @@ fn a_lens_profile_choice_belongs_to_the_lens_corrections_panel() {
 /// parameters also run the final pass) as for the plain per-pixel parameters, and not
 /// moved by Clarity's or Texture's gain.
 #[test]
-fn contrast_and_whites_are_measured_on_the_photo_alone() {
+fn contrast_and_the_scene_stage_are_measured_on_the_photo_alone() {
     use crate::develop::basic_tone::TYPICAL_PIVOT;
     let mut im = fixture();
     im.metadata.cam_xyz = [
@@ -1106,14 +1111,12 @@ fn contrast_and_whites_are_measured_on_the_photo_alone() {
     let plain = CurveSet::for_image((&im).into(), &r, matrix, false);
     let pivot = plain.photo.contrast_pivot;
     assert!((pivot - TYPICAL_PIVOT).abs() > 0.01, "{pivot}");
-    assert_ne!(
-        plain.photo.whites,
-        crate::develop::basic_tone::WhitesTable::original()
-    );
-    let tone = pixel_params::tone_params((&im).into(), &r).unwrap();
-    assert_eq!(tone.get("LOCAL_PIVOT"), [pivot]);
+    assert_ne!(plain.measures, Default::default());
+    let gpu = pixel_params::pixel_params((&im).into(), &r).unwrap();
+    assert_eq!(gpu.get("LOCAL_PIVOT"), [pivot]);
     let map_pass = CurveSet::with_photo_measures((&im).into(), &r, matrix);
     assert_eq!(map_pass.photo, plain.photo);
+    assert_eq!(map_pass.measures, plain.measures);
     assert_eq!(
         map_pass.basic.as_ref().map(|b| &b.lut),
         plain.basic.as_ref().map(|b| &b.lut)
@@ -1123,6 +1126,7 @@ fn contrast_and_whites_are_measured_on_the_photo_alone() {
         .collect();
     let gained = CurveSet::with_photo_measures(Source::new(&im, Some(&gain)), &r, matrix);
     assert_eq!(gained.photo, plain.photo);
+    assert_eq!(gained.measures, plain.measures);
     // Nor the measured Texture, which makes a new image.
     let textured = crate::develop::texture::TextureDetail::of(
         &im,
@@ -1137,6 +1141,7 @@ fn contrast_and_whites_are_measured_on_the_photo_alone() {
     };
     let textured = CurveSet::with_photo_measures(source, &r, matrix);
     assert_eq!(textured.photo, plain.photo);
+    assert_eq!(textured.measures, plain.measures);
 }
 
 /// A look's parametric curve: a second curve after the user's, as Camera Raw 18.7

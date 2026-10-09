@@ -11,6 +11,8 @@ pub(crate) struct Source<'a> {
     pub(crate) reduced: Option<&'a CameraImage>,
     /// The image before the measured Texture, which the photo's measures leave out.
     pub(crate) untextured: Option<&'a CameraImage>,
+    /// The photo's measurement copy (see [`Toned::measured`]).
+    pub(crate) measured: Option<&'a CameraImage>,
 }
 impl<'a> Source<'a> {
     pub(crate) fn new(image: &'a CameraImage, gain: Option<&'a [f32]>) -> Self {
@@ -19,6 +21,7 @@ impl<'a> Source<'a> {
             gain,
             reduced: None,
             untextured: None,
+            measured: None,
         }
     }
     pub(super) fn px(&self, i: usize) -> [f32; 3] {
@@ -40,26 +43,28 @@ impl<'a> From<&'a CameraImage> for Source<'a> {
         Self::new(image, None)
     }
 }
-/// A camera image and its local-tone gain, as the pixel stages take them.
+/// A camera image and its copies, as the pixel stages take them.
 pub(crate) struct Toned {
     pub(crate) image: std::sync::Arc<CameraImage>,
     /// The image's size relative to the full-resolution photo.
     pub(crate) scale: f32,
-    pub(crate) gain: Option<std::sync::Arc<Vec<f32>>>,
-    /// What the gain was computed from, when it came from the stage cache.
-    pub(crate) gain_key: Option<crate::develop::stage_cache::LocalKey>,
     /// The toned image reduced for the Shadows/Highlights map, kept in the stage cache
     /// so edits do not reduce the full-resolution image again.
     pub(crate) reduced: Option<std::sync::Arc<CameraImage>>,
     /// `image` before the measured Texture, when it has it.
     pub(crate) untextured: Option<std::sync::Arc<CameraImage>>,
+    /// The full-resolution photo (recovered and retouched, without Texture and Clarity)
+    /// reduced for measuring it, whatever resolution `image` has, so Fit previews,
+    /// regions and exports measure the same pixels.
+    pub(crate) measured: Option<std::sync::Arc<CameraImage>>,
 }
 impl Toned {
     pub(crate) fn source(&self) -> Source<'_> {
         Source {
             reduced: self.reduced.as_deref(),
             untextured: self.untextured.as_deref(),
-            ..Source::new(&self.image, self.gain.as_deref().map(Vec::as_slice))
+            measured: self.measured.as_deref(),
+            ..Source::new(&self.image, None)
         }
     }
 }

@@ -17,7 +17,16 @@ const FIELDS: &[(&str, usize)] = &[
     ("CALIBRATION", 9),
     ("SHADOW_TINT", 1),
     ("EXPOSURE", 1),
-    ("RAMP", 4),
+    // The scene tone stage's white curves (`GlobalTone::gpu_curves`) and its blacks
+    // curve, or -1.
+    ("SCENE_WHITE", 1),
+    ("SCENE_BLACKS", 1),
+    // For masks' Whites and Blacks: their curves (`gpu_mask_table`), or -1; and
+    // `GlobalTone::gpu_keys`.
+    ("SCENE_TABLES", 1),
+    ("SCENE_KEYS", 5),
+    // Dehaze and the level its response is relative to (`SceneTone::dehaze_key`).
+    ("DEHAZE", 2),
     ("LOOK", 5),
     ("ENH", 5),
     ("ENH_CURVE", 1),
@@ -55,7 +64,6 @@ const FIELDS: &[(&str, usize)] = &[
     ("ADJUST", 1),
     ("DEFRINGE", 2),
     ("DEFRINGE_RANGES", 4),
-    ("TONE_ONLY", 1),
     // Masks (see `masks::local`): how many, weight words per pixel, their deltas.
     ("MASKS", 1),
     ("MASK_WORDS", 1),
@@ -80,9 +88,24 @@ pub(crate) fn wgsl_prelude() -> String {
             line
         })
         .collect();
+    use crate::develop::scene_tone::{
+        MASK_VALUES, SLIDER_STEP, SLIDERS, T_FIRST, T_SAMPLES, T_STEP, U_FIRST, U_SAMPLES, U_STEP,
+        Y_FIRST, Y_SAMPLES, Y_STEP,
+    };
     fields
         + &format!(
             "const POINT_CONSTANTS: i32 = {CONSTANT_PARAMS};\nconst POINT_SWATCH: i32 = {SWATCH_PARAMS};\n"
+        )
+        + &format!(
+            "const SCENE_T: vec3<f32> = vec3({T_FIRST:?}, {T_STEP:?}, {T_SAMPLES}.0);\n\
+             const SCENE_Y: vec3<f32> = vec3({Y_FIRST:?}, {Y_STEP:?}, {Y_SAMPLES}.0);\n\
+             const SCENE_U: vec3<f32> = vec3({U_FIRST:?}, {U_STEP:?}, {U_SAMPLES}.0);\n\
+             const SCENE_S: vec3<f32> = vec3(-1.0, {SLIDER_STEP:?}, {SLIDERS}.0);\n\
+             const MASK_VALUES = array<f32, {}>({});\n\
+             const LOCAL_FLOOR: f32 = {:?};\n",
+            MASK_VALUES.len(),
+            MASK_VALUES.map(|v| format!("{v:?}")).join(", "),
+            crate::develop::local_tone::FLOOR
         )
 }
 pub(crate) struct PixelParams {
@@ -171,19 +194,6 @@ pub(crate) fn needs_map(r: &Recipe) -> bool {
 pub(crate) fn needs_reduced(r: &Recipe) -> bool {
     needs_map(r) || super::measures_contrast_pivot(r) || super::measures_whites(r)
 }
-/// Parameters that stop after the tone stage (`tone_stage`, before the map), to tone
-/// the reduced photo the Shadows/Highlights map is built from on the GPU.
-pub(crate) fn tone_params(im: Source, r: &Recipe) -> Option<PixelParams> {
-    if !supported(r) {
-        return None;
-    }
-    let matrix = profile_matrix(&im.metadata, r);
-    // The same parameters run the final pass once the map is built (`with_map`), so
-    // they carry this photo's Contrast pivot.
-    let mut p = fill(r, CurveSet::with_photo_measures(im, r, matrix), matrix)?;
-    p.set("TONE_ONLY", &[1.]);
-    Some(p)
-}
 fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
     p.set("LOCAL", &[1.]);
     p.set("LOCAL_KEYS", &local.keys);
@@ -237,12 +247,6 @@ fn set_rgb_table(p: &mut PixelParams, look: Option<&crate::camera_profiles::RgbL
     p.set("RGB_INTO", into.as_flattened());
     p.set("RGB_BACK", back.as_flattened());
 }
-/// `tone` parameters for the whole stage, with the map built from their result.
-pub(crate) fn with_map(mut p: PixelParams, map: &LocalToneMap) -> PixelParams {
-    p.set("TONE_ONLY", &[0.]);
-    set_local(&mut p, map);
-    p
-}
 fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams> {
     let profile = r.profile.as_ref()?;
     let len = FIELDS.iter().map(|f| f.1).sum();
@@ -265,8 +269,19 @@ fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams>
     p.set("CALIBRATION", lut.calibration.matrix.as_flattened());
     p.set("SHADOW_TINT", &[lut.calibration.shadow]);
     p.set("EXPOSURE", &[lut.exposure_gain]);
-    let ramp = lut.black_ramp.as_ref()?;
-    p.set("RAMP", &[ramp.black, ramp.slope, ramp.radius, ramp.q]);
+    let global = &lut.scene.global;
+    let white = p.push(global.gpu_curves());
+    let blacks = match global.blacks_samples() {
+        Some(b) => p.push(b.iter().copied()),
+        None => -1.,
+    };
+    p.set("SCENE_WHITE", &[white]);
+    p.set("SCENE_BLACKS", &[blacks]);
+    p.set("SCENE_KEYS", &global.gpu_keys());
+    p.set("SCENE_TABLES", &[-1.]);
+    p.set("DEHAZE", &[lut.scene.dehaze, lut.scene.dehaze_key]);
+    let families = p.push(crate::develop::local_tone::gpu_families());
+    p.set("LOCAL_FAMILIES", &[families]);
     p.table("LOOK", t.look);
     p.table("ENH", t.enhanced);
     let curve = match t.enhanced_curve {
@@ -361,7 +376,12 @@ impl PixelParams {
         if n == 0 {
             return true;
         }
-        if n > crate::model::masks::MAX_GROUPS {
+        // A mask's Clarity and Texture render on the CPU (`scene_stage`, `detail`).
+        if n > crate::model::masks::MAX_GROUPS
+            || w.deltas
+                .iter()
+                .any(|d| local::uses(d, &[local::slot::CLARITY, local::slot::TEXTURE]))
+        {
             return false;
         }
         let words = n.div_ceil(4);
@@ -371,8 +391,10 @@ impl PixelParams {
         self.set("MASK_DELTAS", &[deltas]);
         let math = local::LocalMath::new(&im.metadata, r);
         self.set("LOCAL_WB", math.white_balance.as_flattened());
-        let families = self.push(crate::develop::local_tone::gpu_families());
-        self.set("LOCAL_FAMILIES", &[families]);
+        if w.deltas.iter().any(|d| local::uses(d, &local::SCENE_SLOTS)) {
+            let masks = self.push(crate::develop::scene_tone::gpu_mask_table());
+            self.set("SCENE_TABLES", &[masks]);
+        }
         let pixels = w.data.len() / n;
         self.weights = vec![0; pixels * words];
         for (i, pixel) in w.data.chunks_exact(n).enumerate() {

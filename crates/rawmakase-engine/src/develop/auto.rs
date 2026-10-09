@@ -3,10 +3,7 @@
 //! White balance is estimated from the camera pixels. The tone sliders, Vibrance and
 //! Saturation are predicted from a reduced render of the photo before its adjustments,
 //! by linear fits to Lightroom's own Auto values.
-use super::{
-    pipeline::{preview, render},
-    quality::recovered,
-};
+use super::{pipeline::preview, quality::recovered};
 use crate::model::recipe::Recipe;
 use crate::{
     camera_data::{CameraImage, Metadata},
@@ -239,7 +236,13 @@ struct Measure {
 impl Measure {
     fn of(im: &CameraImage, r: &Recipe, cancel: &AtomicBool) -> Result<Self> {
         check_cancel(cancel)?;
-        let out = render(im, &r.checked()?, TONE_EDGE)?;
+        // The render the fit measured (`Stage::AutoBasis`), at the copy's size.
+        let out = crate::develop::quality::render_stage(
+            im,
+            r,
+            crate::develop::quality::Stage::AutoBasis,
+            cancel,
+        )?;
         ensure!(!out.pixels.is_empty(), "Nothing to measure for Auto");
         let mut luma = Vec::with_capacity(out.pixels.len());
         let mut peak = Vec::with_capacity(out.pixels.len());
@@ -488,7 +491,7 @@ mod tests {
         big.pixels = (0..big.width * big.height)
             .map(|i| im.pixels[((i / big.width / 10) * im.width + i % big.width / 10) as usize])
             .collect();
-        let out = render(
+        let out = crate::develop::render(
             &tone_copy(&big, &r, &AtomicBool::new(false)).unwrap(),
             &r.checked().unwrap(),
             0,

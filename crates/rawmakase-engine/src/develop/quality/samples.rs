@@ -94,6 +94,51 @@ pub fn targeted_sample(
         color,
     })
 }
+/// A stage between the per-pixel pipeline's stages (docs/scene-tone-stage.md).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stage {
+    /// Linear ProPhoto RGB entering the scene tone stage.
+    SceneInput,
+    /// Linear ProPhoto RGB leaving it, before the profile's look and tone curve: where
+    /// Camera Raw's renders of a linear-profile DNG compare.
+    SceneOutput,
+    /// The encoded colour Auto tone measures (`PixelOutput::AutoBasis`).
+    AutoBasis,
+}
+/// The whole photo at full size, as linear ProPhoto RGB at `stage`, through the same
+/// sampling, lens correction, retouching and masks as the render: for comparing a
+/// stage with Camera Raw.
+pub fn render_stage(
+    im: &CameraImage,
+    r: &Recipe,
+    stage: Stage,
+    cancel: &AtomicBool,
+) -> Result<crate::rendered::Rendered> {
+    use develop::pipeline::PixelOutput;
+    let shown = r.as_rendered();
+    shown.validate()?;
+    let effective = shown.resolved(&im.metadata);
+    let r = effective.as_ref();
+    if r.lens_ca {
+        crate::lens::auto_ca::prime(im);
+    }
+    let source = retouched(im, r, cancel, None)?;
+    let g = Geometry::new(&source, r, 0);
+    let (toned, tonal) = local_stage(&source, &source, r, 1., cancel, None)?;
+    let output = match stage {
+        Stage::SceneInput => PixelOutput::SceneInput,
+        Stage::SceneOutput => PixelOutput::SceneOutput,
+        Stage::AutoBasis => PixelOutput::AutoBasis,
+    };
+    develop::pipeline::stage_samples(
+        &toned,
+        &tonal,
+        &g,
+        [0, 0, g.width, g.height],
+        output,
+        cancel,
+    )
+}
 /// The mean of 5×5 output pixels around (`u`, `v`) at each of `outputs`' stages.
 fn stage_means<const N: usize>(
     im: &CameraImage,
@@ -114,7 +159,7 @@ fn stage_means<const N: usize>(
     let mut retouch = develop::retouch::RetouchCache::default();
     let source = retouched(im, r, cancel, Some(&mut retouch))?;
     let g = Geometry::new(&source, r, 0);
-    let (toned, tonal) = local_stage(&source, r, 1., cancel, None)?;
+    let (toned, tonal) = local_stage(&source, &source, r, 1., cancel, None)?;
     let at = |t: f32, size: u32| {
         let c = (t.clamp(0., 1.) * size as f32) as u32;
         c.saturating_sub(2).min(size.saturating_sub(5))

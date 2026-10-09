@@ -16,29 +16,37 @@ pub(super) fn process_pixel(
     pos: [f32; 2],
     local: Option<Local>,
 ) -> [f32; 3] {
-    let rgb = tone_stage(p, r, lut, matrix, local);
-    let rgb = match &lut.local {
-        Some(map) => {
-            let sliders = local
-                .filter(|l| local::uses(l.delta, &[slot::SHADOWS, slot::HIGHLIGHTS]))
-                .map(|l| {
-                    [
-                        r.shadows + l.delta[slot::SHADOWS],
-                        r.highlights + l.delta[slot::HIGHLIGHTS],
-                    ]
-                });
-            let gain = match sliders {
-                Some(sliders) => map.gain_with(pos[0], pos[1], rgb, sliders),
-                None => map.gain(pos[0], pos[1], rgb),
-            };
-            rgb.map(|v| v * gain)
-        }
-        None => rgb,
+    let scene = exposure_stage(scene_color(p, r, lut, matrix, local), lut, local);
+    if lut.output == PixelOutput::SceneInput {
+        return scene;
+    }
+    let scene = if lut.output == PixelOutput::AutoBasis {
+        auto_basis(scene, r)
+    } else {
+        scene_stage(scene, r, lut, pos, local)
     };
+    if lut.output == PixelOutput::SceneOutput {
+        return scene;
+    }
+    let rgb = profile_stage(scene, r);
     color_stage(rgb, r, lut, local.map(|l| l.delta))
 }
-/// Camera sample to linear display RGB after the camera profile's tone curve.
+/// Camera sample to linear display RGB after the camera profile's look and tone curve,
+/// through the scene stages S1–S4 (see `docs/scene-tone-stage.md`).
 pub(super) fn tone_stage(
+    p: [f32; 3],
+    r: &Recipe,
+    lut: &CurveSet,
+    matrix: [[f32; 3]; 3],
+    pos: [f32; 2],
+    local: Option<Local>,
+) -> [f32; 3] {
+    let scene = exposure_stage(scene_color(p, r, lut, matrix, local), lut, local);
+    profile_stage(scene_stage(scene, r, lut, pos, local), r)
+}
+/// S1: a camera sample's scene colour: white balance (a mask's too), the profile's
+/// matrix and HueSatMap, and Camera Calibration. Linear, sRGB primaries.
+pub(super) fn scene_color(
     p: [f32; 3],
     r: &Recipe,
     lut: &CurveSet,
@@ -51,7 +59,12 @@ pub(super) fn tone_stage(
         || mul(matrix, p),
         |profile| profile.camera_color(p, matrix, r.temperature),
     );
-    let color = lut.calibration.apply(color);
+    lut.calibration.apply(color)
+}
+/// S2: Exposure (a mask's and its colour too), in linear Rec.2020. Returns linear
+/// ProPhoto RGB, unclamped: the scene tone stage's input. The black point is the scene
+/// tone stage's, as Camera Raw's does not follow the camera's baseline exposure.
+pub(super) fn exposure_stage(color: [f32; 3], lut: &CurveSet, local: Option<Local>) -> [f32; 3] {
     let exposure = local.map_or(0., |l| l.delta[slot::EXPOSURE]);
     let mut rgb = mul(TO_2020, color).map(|v| v * lut.exposure_gain * exposure.exp2());
     if let Some(l) = local {
@@ -59,30 +72,82 @@ pub(super) fn tone_stage(
             *v *= l.delta[slot::COLOR + c].exp2();
         }
     }
-    if let Some(ramp) = &lut.black_ramp {
-        if exposure != 0. {
-            // The ramp's black point follows exposure, as for the global slider.
-            let ramp = ExposureRamp::new(
-                default_black(r) * (r.exposure + r.camera_exposure + exposure).exp2(),
-            );
-            rgb = rgb.map(|v| ramp.eval(v));
+    mul(crate::camera_profiles::RGB_TO_PRO, mul(FROM_2020, rgb))
+}
+/// S3: the scene tone stage, on linear ProPhoto RGB, unclamped: Shadows, Highlights and
+/// Clarity as a gain from the photo's map at sample position `pos`, then Dehaze and the
+/// global curves.
+pub(super) fn scene_stage(
+    pro: [f32; 3],
+    r: &Recipe,
+    lut: &CurveSet,
+    pos: [f32; 2],
+    local: Option<Local>,
+) -> [f32; 3] {
+    let pro = match &lut.local {
+        Some(map) => {
+            let lum = crate::develop::scene_tone::luminance(pro);
+            let sliders = local
+                .filter(|l| local::uses(l.delta, &[slot::SHADOWS, slot::HIGHLIGHTS, slot::CLARITY]))
+                .map(|l| {
+                    [
+                        r.shadows + l.delta[slot::SHADOWS],
+                        r.highlights + l.delta[slot::HIGHLIGHTS],
+                        r.effects.clarity + l.delta[slot::CLARITY],
+                    ]
+                });
+            let gain = match sliders {
+                Some(sliders) => map.gain_with(pos[0], pos[1], lum, sliders),
+                None => map.gain(pos[0], pos[1], lum),
+            };
+            pro.map(|v| v * gain)
+        }
+        None => pro,
+    };
+    lut.scene.apply(pro, local.map(|l| l.delta))
+}
+/// In place of S3 for Auto tone's measurement (`PixelOutput::AutoBasis`): the DNG SDK's
+/// exposure ramp at its default Shadows, with its black at 0.0015 × 2^exposure (none
+/// under a profile whose DefaultBlackRender is None), as RAWmakase rendered the default
+/// before the scene tone stage.
+fn auto_basis(pro: [f32; 3], r: &Recipe) -> [f32; 3] {
+    let black = match r.profile.as_ref().map(|p| p.black_render()) {
+        Some(crate::camera_profiles::BlackRender::None) => 0.,
+        _ => 0.0015 * (r.exposure + r.camera_exposure).exp2(),
+    };
+    let black = black.clamp(0., 0.5);
+    let slope = 1. / (1. - black);
+    let radius = (0.5 * black).min(1. / 16. / slope);
+    let q = if radius > 0. {
+        slope / (4. * radius)
+    } else {
+        0.
+    };
+    // The ramp ran on Rec.2020 channels.
+    let wide = mul(TO_2020, mul(crate::camera_profiles::PRO_TO_RGB, pro)).map(|x| {
+        if x <= black - radius {
+            0.
+        } else if x >= black + radius {
+            (x - black) * slope
         } else {
-            rgb = rgb.map(|v| ramp.eval(v));
+            q * (x - (black - radius)).powi(2)
+        }
+    });
+    mul(crate::camera_profiles::RGB_TO_PRO, mul(FROM_2020, wide))
+}
+/// S4: the profile's look tables and tone curve, from linear ProPhoto RGB to linear
+/// sRGB-primaries display RGB. Without a profile, a scene-referred shoulder anchored
+/// at 18% middle gray, on luminance.
+pub(super) fn profile_stage(pro: [f32; 3], r: &Recipe) -> [f32; 3] {
+    match &r.profile {
+        Some(profile) => profile.finish(pro),
+        None => {
+            let rgb = mul(crate::camera_profiles::PRO_TO_RGB, pro);
+            let y = crate::color::luminance(rgb).max(1e-8);
+            let x = y.max(0.);
+            rgb.map(|v| v * (x / (x + 0.82)) / y)
         }
     }
-    // Dehaze, Whites and Blacks render as measured curves in `apply_reference_curves`,
-    // Shadows and Highlights with the local operator in `local_tone.rs`.
-    let y = luma(rgb).max(1e-8);
-    let mapped = if r.profile.is_some() {
-        y
-    } else {
-        // Scene-referred shoulder anchored at 18% middle gray. No per-channel clipping.
-        let x = y.max(0.);
-        x / (x + 0.82)
-    };
-    rgb = rgb.map(|v| v * mapped / y);
-    let rgb = mul(FROM_2020, rgb);
-    r.profile.as_ref().map_or(rgb, |p| p.finish(rgb))
 }
 /// The tone curves, the color mixer and Point Color: linear display RGB as Point
 /// Color leaves it, and Visualize Range's selection.
@@ -135,7 +200,10 @@ pub(super) fn color_stage(
     match lut.output {
         PixelOutput::PointColor => return mul(crate::camera_profiles::RGB_TO_PRO, rgb),
         PixelOutput::CurveInput | PixelOutput::MixerInput => return rgb,
-        PixelOutput::Display | PixelOutput::ColorInput => {}
+        PixelOutput::Display | PixelOutput::ColorInput | PixelOutput::AutoBasis => {}
+        PixelOutput::SceneInput | PixelOutput::SceneOutput => {
+            unreachable!("process_pixel returns the scene stage's taps")
+        }
     }
     // A look's RGB table: after the colour mixer, before colour grading, as Camera
     // Raw 18.7 applies it (also after the user's tone curves and Saturation).
@@ -204,4 +272,14 @@ pub(crate) enum PixelOutput {
     /// Oklab where the color controls and the black & white mix take a color's hue
     /// to weigh their bands.
     ColorInput,
+    /// Linear ProPhoto RGB entering the scene tone stage (S3): after white balance,
+    /// the profile's matrix and HueSatMap, Calibration, Exposure and the black point.
+    SceneInput,
+    /// Linear ProPhoto RGB leaving the scene tone stage, before the profile's look and
+    /// tone curve: where Camera Raw's renders of a linear-profile DNG compare.
+    SceneOutput,
+    /// The finished colour with the DNG exposure ramp in place of the scene tone stage:
+    /// the render Auto tone's fit measured (docs/tone-controls.md#auto), kept so Auto
+    /// gives the same results.
+    AutoBasis,
 }

@@ -1,15 +1,14 @@
 //! Results of the stages before the per-pixel color pipeline, kept between preview
-//! renders: local-tone blurs, the local-tone image, geometry/lens-warp samples and the
-//! reduced image the Shadows/Highlights map is built from.
+//! renders: geometry/lens-warp samples, the measured Texture and the reduced image the
+//! Shadows/Highlights map is built from.
 //! Each key holds only the recipe fields its stage reads, so exposure, curve, HSL
-//! and grading edits reuse all three and rerun only the per-pixel stage.
+//! and grading edits reuse them and rerun only the per-pixel stage.
 //!
 //! [`stage_recipes`] places every recipe field: a new field does not compile until it
 //! is added to the stages that read it, or to those that only later stages read.
 use super::{
     Geometry,
     pipeline::{Samples, Toned},
-    quality::LocalBlurs,
 };
 use crate::model::recipe::Recipe;
 use crate::{camera_data::CameraImage, model::effects::Effects};
@@ -24,10 +23,10 @@ const BUDGET: usize = 512 << 20;
 
 #[derive(Default)]
 pub(crate) struct StageCache {
-    pub(crate) blurs: Lru<BlurKey, LocalBlurs>,
-    pub(crate) local: Lru<LocalKey, Vec<f32>>,
     pub(crate) samples: Lru<SampleKey, Samples>,
     pub(crate) reduced: Lru<ReducedKey, CameraImage>,
+    /// A photo's measurement copy (`Toned::measured`), per full-resolution image.
+    pub(crate) measured: Lru<Same<CameraImage>, CameraImage>,
     /// The measured Texture's detail of a camera image, and the image with an amount.
     pub(crate) texture_detail: Lru<TextureKey, super::texture::TextureDetail>,
     pub(crate) textured: Lru<TextureKey, CameraImage>,
@@ -97,7 +96,7 @@ impl<K: PartialEq, V> Lru<K, V> {
 }
 
 /// Identity of a shared value. Keys hold the value, so its address stays unique.
-pub(crate) struct Same<T>(Arc<T>);
+pub(crate) struct Same<T>(pub(crate) Arc<T>);
 impl<T> Clone for Same<T> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
@@ -109,9 +108,8 @@ impl<T> PartialEq for Same<T> {
     }
 }
 
-/// The recipe as the cached stages read it: the local-tone blurs and the samples.
+/// The recipe as the cached stages read it: the samples.
 struct StageRecipes {
-    blurs: Recipe,
     samples: Recipe,
 }
 /// Splits `r` into what each cached stage reads. `Recipe` and `Effects` are taken
@@ -119,9 +117,6 @@ struct StageRecipes {
 /// placed: a stage that reads a field it does not key on would reuse stale results.
 fn stage_recipes(r: &Recipe) -> StageRecipes {
     let Recipe {
-        wb,
-        temperature,
-        profile,
         lens_builtin,
         lens_profile,
         lens_profile_choice,
@@ -140,18 +135,20 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         noise_luma,
         noise_chroma,
         effects,
-        // Shadows and Highlights render in the per-pixel stage, from a map built per
-        // render; exposure edits keep the local-tone gain (see `LocalKey`); spot
-        // removal changes the source image, which every key holds.
+        // White balance and the profile render in the per-pixel stage; Shadows and
+        // Highlights there too, from a map built per render; spot removal changes the
+        // source image, which every key holds.
+        wb: _,
+        temperature: _,
+        profile: _,
         exposure: _,
         camera_exposure: _,
         shadows: _,
         highlights: _,
         retouch: _,
         red_eye: _,
-        // The look's strength; its Clarity is keyed by `LocalKey` once
-        // `Recipe::resolved` has added it, and its Shadows and Highlights render per
-        // pixel.
+        // The look's strength; its Clarity, Shadows and Highlights render per pixel
+        // once `Recipe::resolved` has added them.
         profile_amount: _,
         tint: _,
         auto_white_balance: _,
@@ -185,8 +182,8 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         luma_contrast,
         chroma_detail,
         chroma_smoothness,
-        // Keyed by `LocalKey`; positive Clarity is in the map, built per render, and
-        // Texture makes its own image, keyed by `TextureKey`.
+        // Clarity is in the map, built per render, and Texture makes its own image,
+        // keyed by `TextureKey`.
         clarity: _,
         texture: _,
         // Read only by the per-pixel stage and the finishing stages after these.
@@ -218,23 +215,6 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         defringe_ranges: _,
     } = effects;
     StageRecipes {
-        // Log luminance after white balance, profile matrix and lens vignetting.
-        blurs: Recipe {
-            wb: *wb,
-            temperature: *temperature,
-            // The blurs read the camera matrices and tables, not the look.
-            profile: profile.as_ref().map(|p| p.camera_part()),
-            lens_builtin: *lens_builtin,
-            lens_profile: *lens_profile,
-            lens_profile_choice: lens_profile_choice.clone(),
-            lens_vignetting: *lens_vignetting,
-            effects: Effects {
-                lens_vignette: *lens_vignette,
-                lens_vignette_midpoint: *lens_vignette_midpoint,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
         // Geometry, lens correction and noise reduction.
         samples: Recipe {
             crop: *crop,
@@ -268,42 +248,6 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
     }
 }
 
-/// Local-tone blurs: log luminance after white balance, profile matrix and lens
-/// vignetting, before exposure.
-#[derive(Clone, PartialEq)]
-pub(crate) struct BlurKey {
-    image: Same<CameraImage>,
-    scale: u32,
-    texture: bool,
-    recipe: Recipe,
-}
-impl BlurKey {
-    pub(crate) fn new(image: &Arc<CameraImage>, r: &Recipe, scale: f32, texture: bool) -> Self {
-        Self {
-            image: Same(image.clone()),
-            scale: scale.to_bits(),
-            texture,
-            recipe: stage_recipes(r).blurs,
-        }
-    }
-}
-/// The local-tone gain: blurs plus the Clarity and Texture applied to them. Keyed by
-/// the blurs' inputs rather than the blurs themselves, so the gain is found again even
-/// when the blurs were too large to keep (a 61-megapixel photo's), and exposure edits
-/// at 100% do not recompute them.
-#[derive(Clone, PartialEq)]
-pub(crate) struct LocalKey {
-    blurs: BlurKey,
-    sliders: [u32; 2],
-}
-impl LocalKey {
-    pub(crate) fn new(blurs: BlurKey, r: &Recipe) -> Self {
-        Self {
-            blurs,
-            sliders: [r.effects.clarity, r.effects.texture].map(f32::to_bits),
-        }
-    }
-}
 /// The measured Texture's detail and image: the source image, its scale and (for the
 /// image) the amount.
 #[derive(Clone, PartialEq)]
@@ -321,18 +265,15 @@ impl TextureKey {
         }
     }
 }
-/// The toned image reduced for the Shadows/Highlights map: the camera image
-/// and its local-tone gain.
+/// The toned image reduced for the Shadows/Highlights map: the camera image.
 #[derive(PartialEq)]
 pub(crate) struct ReducedKey {
     image: Same<CameraImage>,
-    gain: Option<LocalKey>,
 }
 impl ReducedKey {
     pub(crate) fn new(toned: &Toned) -> Self {
         Self {
             image: Same(toned.image.clone()),
-            gain: toned.gain_key.clone(),
         }
     }
 }
@@ -340,7 +281,6 @@ impl ReducedKey {
 #[derive(PartialEq)]
 pub(crate) struct SampleKey {
     image: Same<CameraImage>,
-    gain: Option<LocalKey>,
     size: [u32; 2],
     region: [u32; 4],
     spread: u32,
@@ -356,7 +296,6 @@ impl SampleKey {
     ) -> Self {
         Self {
             image: Same(toned.image.clone()),
-            gain: toned.gain_key.clone(),
             size: [g.width, g.height],
             region,
             spread: spread.to_bits(),
@@ -412,95 +351,40 @@ mod tests {
             f(&mut r);
             r
         };
-        let changes = |r: &Recipe| {
-            let (a, b) = (stage_recipes(&base), stage_recipes(r));
-            (a.blurs != b.blurs, a.samples != b.samples)
-        };
-        // (edit, changes the blurs, changes the samples)
-        let cases: [(&str, Recipe, bool, bool); 15] = [
-            ("temperature", edit(&|r| r.temperature = 3000.), true, false),
-            (
-                "lens vignetting",
-                edit(&|r| r.lens_vignetting = 0.5),
-                true,
-                true,
-            ),
+        let changes = |r: &Recipe| stage_recipes(&base).samples != stage_recipes(r).samples;
+        // (edit, changes the samples)
+        let cases: [(&str, Recipe, bool); 15] = [
+            ("temperature", edit(&|r| r.temperature = 3000.), false),
+            ("lens vignetting", edit(&|r| r.lens_vignetting = 0.5), true),
             (
                 "manual vignetting",
                 edit(&|r| r.effects.lens_vignette = -0.5),
                 true,
-                true,
             ),
-            ("lens CA", edit(&|r| r.lens_ca = true), false, true),
-            (
-                "distortion",
-                edit(&|r| r.lens_distortion = 0.5),
-                false,
-                true,
-            ),
+            ("lens CA", edit(&|r| r.lens_ca = true), true),
+            ("distortion", edit(&|r| r.lens_distortion = 0.5), true),
             (
                 "manual distortion",
                 edit(&|r| r.lens_manual_distortion = -0.3),
-                false,
                 true,
             ),
-            (
-                "crop",
-                edit(&|r| r.crop = [0.1, 0.1, 0.9, 0.9]),
-                false,
-                true,
-            ),
-            ("straighten", edit(&|r| r.straighten = 2.), false, true),
-            (
-                "constrain crop",
-                edit(&|r| r.constrain_crop = true),
-                false,
-                true,
-            ),
-            ("noise", edit(&|r| r.noise_luma = 0.3), false, true),
+            ("crop", edit(&|r| r.crop = [0.1, 0.1, 0.9, 0.9]), true),
+            ("straighten", edit(&|r| r.straighten = 2.), true),
+            ("constrain crop", edit(&|r| r.constrain_crop = true), true),
+            ("noise", edit(&|r| r.noise_luma = 0.3), true),
             (
                 "chroma detail",
                 edit(&|r| r.effects.chroma_detail = 0.1),
-                false,
                 true,
             ),
-            ("exposure", edit(&|r| r.exposure = 1.), false, false),
-            ("curve", edit(&|r| r.contrast = 0.4), false, false),
-            (
-                "defringe",
-                edit(&|r| r.effects.defringe = [0.5, 0.]),
-                false,
-                false,
-            ),
-            ("sharpening", edit(&|r| r.sharpening = 0.9), false, false),
+            ("exposure", edit(&|r| r.exposure = 1.), false),
+            ("curve", edit(&|r| r.contrast = 0.4), false),
+            ("defringe", edit(&|r| r.effects.defringe = [0.5, 0.]), false),
+            ("sharpening", edit(&|r| r.sharpening = 0.9), false),
         ];
-        for (name, r, blurs, samples) in cases {
-            assert_eq!(changes(&r), (blurs, samples), "{name}");
+        for (name, r, samples) in cases {
+            assert_eq!(changes(&r), samples, "{name}");
         }
-    }
-    /// The blurs read the camera part of the profile only: a look's Profile Amount,
-    /// which `Recipe::resolved` puts into the profile, reuses them.
-    #[test]
-    fn profile_amount_reuses_the_blurs() {
-        let m = crate::camera_data::Metadata {
-            make: "Test".into(),
-            model: "Camera".into(),
-            cam_xyz: [[0.8, -0.2, -0.1], [-0.3, 1.1, 0.2], [-0.05, 0.15, 0.6]],
-            ..Default::default()
-        };
-        let look = Arc::new(crate::camera_profiles::CameraProfile::creative_for_test(&m));
-        let at = |amount: f32| {
-            Recipe {
-                profile: Some(look.clone()),
-                profile_amount: amount,
-                ..Default::default()
-            }
-            .resolved(&m)
-            .into_owned()
-        };
-        let (full, half) = (at(1.), at(0.5));
-        assert_ne!(full.profile, half.profile);
-        assert!(stage_recipes(&full).blurs == stage_recipes(&half).blurs);
     }
     #[test]
     fn lru_keeps_recent_entries_within_budget() -> Result<()> {

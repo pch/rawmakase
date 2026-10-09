@@ -49,9 +49,6 @@ pub(super) const FROM_2020: [[f32; 3]; 3] = [
     [-0.12455, 1.1329, -0.008349],
     [-0.018151, -0.100579, 1.11873],
 ];
-pub(super) fn luma(p: [f32; 3]) -> f32 {
-    0.2627 * p[0] + 0.678 * p[1] + 0.0593 * p[2]
-}
 pub(crate) fn hue_weights(hue: f32) -> [f32; 8] {
     // Centers correspond to red, orange, yellow, green, cyan, blue, purple, magenta in Oklab.
     const CENTERS: [f32; 8] = [0.081, 0.151, 0.305, 0.395, 0.541, 0.733, 0.815, 0.912];

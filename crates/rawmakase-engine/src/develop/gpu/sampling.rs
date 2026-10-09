@@ -25,8 +25,6 @@ macro_rules! slots {
 slots! {
     WIDTH: 1,
     HEIGHT: 1,
-    // 1 when the local-tone gains apply.
-    GAIN: 1,
     // Output width, height.
     OUT: 2,
     // x, y, width, height.
@@ -59,12 +57,6 @@ slots! {
     REDUCED: 2,
     // Workgroups per row of the dispatch.
     COUNT: 1,
-    // Exposure, Clarity, Texture, texture blur.
-    SLIDERS: 4,
-    // x, y, width, height of the pixels `gains` holds.
-    BOX: 4,
-    // Workgroups per row of `region_gain`.
-    BOX_COUNT: 2,
     // `ManualDistortion`: k (0 when off) and the frame's axes.
     MANUAL: 3,
 }
@@ -81,7 +73,7 @@ mod tests {
     use super::*;
 
     /// The offsets the shader used when they were written out by hand, less the
-    /// local gain's Shadows and Highlights, which render per pixel.
+    /// local-tone gain's, which is no longer sampled.
     #[test]
     fn slots_keep_the_offsets_the_shader_was_written_with() {
         let offsets: Vec<(&str, usize)> = ALL.iter().map(|(n, r)| (*n, r.start)).collect();
@@ -90,39 +82,35 @@ mod tests {
             [
                 ("WIDTH", 0),
                 ("HEIGHT", 1),
-                ("GAIN", 2),
-                ("OUT", 3),
-                ("REGION", 5),
-                ("SPREAD", 9),
-                ("CROP", 10),
-                ("ORIENTED", 14),
-                ("ZOOM", 16),
-                ("SIN", 17),
-                ("COS", 18),
-                ("TURNS", 19),
-                ("FLIP", 20),
-                ("INSET", 22),
-                ("TRANSFORM", 26),
-                ("HOMOGRAPHY", 27),
-                ("NOISE", 36),
-                ("LENS", 42),
-                ("CENTER", 43),
-                ("HALF", 45),
-                ("FILL", 46),
-                ("AMOUNT", 47),
-                ("DISTORTION", 48),
-                ("RED", 50),
-                ("BLUE", 52),
-                ("VIGNETTING", 54),
-                ("VIGNETTING_AMOUNT", 56),
-                ("REDUCED", 57),
-                ("COUNT", 59),
-                ("SLIDERS", 60),
-                ("BOX", 64),
-                ("BOX_COUNT", 68),
-                ("MANUAL", 70),
+                ("OUT", 2),
+                ("REGION", 4),
+                ("SPREAD", 8),
+                ("CROP", 9),
+                ("ORIENTED", 13),
+                ("ZOOM", 15),
+                ("SIN", 16),
+                ("COS", 17),
+                ("TURNS", 18),
+                ("FLIP", 19),
+                ("INSET", 21),
+                ("TRANSFORM", 25),
+                ("HOMOGRAPHY", 26),
+                ("NOISE", 35),
+                ("LENS", 41),
+                ("CENTER", 42),
+                ("HALF", 44),
+                ("FILL", 45),
+                ("AMOUNT", 46),
+                ("DISTORTION", 47),
+                ("RED", 49),
+                ("BLUE", 51),
+                ("VIGNETTING", 53),
+                ("VIGNETTING_AMOUNT", 55),
+                ("REDUCED", 56),
+                ("COUNT", 58),
+                ("MANUAL", 59),
             ]
         );
-        assert_eq!(HEADER, 73);
+        assert_eq!(HEADER, 62);
     }
 }

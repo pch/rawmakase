@@ -839,28 +839,16 @@ fn shaders_are_valid_wgsl() {
         valid::{Capabilities, ValidationFlags, Validator},
     };
     let prelude = crate::develop::pipeline::pixel_params::wgsl_prelude();
-    let modules: [(&str, String, &[&str]); 6] = [
+    let modules: [(&str, String, &[&str]); 5] = [
         (
             "develop.wgsl",
-            prelude.clone() + include_str!("develop.wgsl"),
+            prelude + include_str!("develop.wgsl"),
             &["develop"],
-        ),
-        (
-            "logs.wgsl",
-            prelude + include_str!("develop.wgsl") + include_str!("logs.wgsl"),
-            &["log_luminance"],
         ),
         (
             "local.wgsl",
             super::sampling::wgsl_prelude() + include_str!("local.wgsl"),
-            &[
-                "running_sum",
-                "window",
-                "region_gain",
-                "sample_region",
-                "reduce_rows",
-                "reduce_toned",
-            ],
+            &["sample_region", "reduce_rows", "reduce_toned"],
         ),
         (
             "finish.wgsl",

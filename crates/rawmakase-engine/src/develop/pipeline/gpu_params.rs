@@ -1,40 +1,6 @@
 //! Parameters the GPU port of the pipeline takes, built from the same recipe and image.
 use super::*;
 
-/// Parameters of the GPU per-pixel stage for `im` and the resolved recipe `r`, or
-/// `None` when the port does not cover it. The Shadows/Highlights map's tone pass over
-/// the reduced photo also runs on the GPU; the map is then built from its luminance.
-pub(crate) fn gpu_pixel_params(
-    im: Source,
-    r: &Recipe,
-    backend: &mut crate::develop::preview_renderer::Backend,
-    cancel: &std::sync::atomic::AtomicBool,
-) -> Option<pixel_params::PixelParams> {
-    if !pixel_params::needs_map(r) {
-        return pixel_params::pixel_params(im, r);
-    }
-    let tone = pixel_params::tone_params(im, r)?;
-    let small = match im.reduced {
-        Some(small) => std::borrow::Cow::Borrowed(small),
-        None => std::borrow::Cow::Owned(preview_source(im, crate::develop::local_tone::MAP_EDGE)),
-    };
-    let Some(toned) = backend.run(cancel, |gpu| {
-        gpu.scoped(|gpu| gpu.develop_pixels(&small.pixels, &tone, cancel))
-    }) else {
-        return pixel_params::pixel_params(im, r);
-    };
-    let lum = toned
-        .into_iter()
-        .map(crate::develop::local_tone::luminance)
-        .collect();
-    let map = crate::develop::local_tone::LocalToneMap::from_luminance(
-        lum,
-        [small.width, small.height],
-        [im.width, im.height],
-        crate::develop::local_tone::Sliders::of(r),
-    );
-    Some(pixel_params::with_map(tone, &map))
-}
 /// Lens correction for `gpu/local.wgsl`, from `S_LENS` to `S_VIGNETTING_AMOUNT`, with
 /// radial tables appended to `tables` (each: knots, then values) at offsets counted
 /// from `base`. Offsets are -1 for absent tables.
@@ -76,64 +42,4 @@ pub(crate) fn lens_gpu_params(
     out[12..14].copy_from_slice(&vignetting);
     out[14] = warp.vignetting.as_ref().map_or(0., |v| v.amount);
     out
-}
-/// The photo pixels (x, y, width, height) that sampling `region` of the output `g`
-/// reads, found by mapping the region's edges through geometry and lens correction and
-/// adding the bilinear, noise-reduction and footprint taps. Empty when none map inside.
-pub(crate) fn source_bounds(
-    im: &CameraImage,
-    r: &Recipe,
-    g: &Geometry,
-    region: [u32; 4],
-    spread: f32,
-) -> [u32; 4] {
-    let warp = LensWarp::new(im, r);
-    let [x0, y0, w, h] = region;
-    let (mut lo, mut hi) = ([f32::INFINITY; 2], [f32::NEG_INFINITY; 2]);
-    let mut add = |x: u32, y: u32| {
-        let [sx, sy] = g.source(
-            (x as f32 + 0.5) / g.width as f32,
-            (y as f32 + 0.5) / g.height as f32,
-        );
-        let points = match &warp {
-            Some(warp) => warp.positions(sx, sy),
-            None => [[sx, sy]; 3],
-        };
-        for p in points {
-            for c in 0..2 {
-                lo[c] = lo[c].min(p[c]);
-                hi[c] = hi[c].max(p[c]);
-            }
-        }
-    };
-    for x in x0..x0 + w {
-        add(x, y0);
-        add(x, y0 + h - 1);
-    }
-    for y in y0..y0 + h {
-        add(x0, y);
-        add(x0 + w - 1, y);
-    }
-    if !(lo[0] <= hi[0] && lo[1] <= hi[1]) {
-        return [0; 4];
-    }
-    let pad = 2. + spread.ceil();
-    let size = [im.width, im.height];
-    let [a, b] = std::array::from_fn(|c| {
-        let top = (size[c] - 1) as f32;
-        (
-            (lo[c] - pad).clamp(0., top).floor() as u32,
-            (hi[c] + pad).clamp(0., top).ceil() as u32,
-        )
-    });
-    [a.0, b.0, a.1 - a.0 + 1, b.1 - b.0 + 1]
-}
-/// Vignetting (lens profile and manual) for `gpu/logs.wgsl`: centre, half diagonal, amount and the
-/// radial table (knots, then values), or `None`.
-pub(crate) fn vignetting_gpu_params(im: &CameraImage, r: &Recipe) -> Option<([f32; 4], Vec<f32>)> {
-    let v = VignetteField::new(im, r)?;
-    let radial = v.table();
-    let mut table = radial.knots.clone();
-    table.extend(&radial.values);
-    Some(([v.center[0], v.center[1], v.half, v.amount], table))
 }

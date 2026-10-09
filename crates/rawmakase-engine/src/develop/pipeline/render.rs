@@ -122,7 +122,7 @@ pub(crate) fn render_display(
     base.sharpening = 0.;
     base.validate()?;
     let im = toned.source();
-    let Some(mut params) = gpu_pixel_params(im, &base, stages.backend, cancel) else {
+    let Some(mut params) = pixel_params::pixel_params(im, &base) else {
         return Ok(None);
     };
     let key = crate::develop::stage_cache::SampleKey::new(toned, &base, g, region, spread);
@@ -237,8 +237,10 @@ pub(crate) fn mask_weights(
     }
     Ok(Some(weights))
 }
-/// Local Texture and Clarity: the samples scaled by the local-contrast detail of the
-/// camera image at their positions, as the global sliders' gain does.
+/// A mask's Texture: the samples scaled by the measured Texture's detail of the camera
+/// image at their positions (`texture.rs`), by the mask's strength on top of the
+/// global slider's, which the image already has. A mask's Clarity renders in the scene
+/// tone stage.
 pub(super) fn detail(
     toned: &Toned,
     r: &Recipe,
@@ -247,14 +249,13 @@ pub(super) fn detail(
     cache: Option<&mut crate::develop::stage_cache::StageCache>,
     cancel: &std::sync::atomic::AtomicBool,
 ) -> Result<Arc<Samples>> {
-    let Some(weights) = weights.filter(|w| w.uses(&[slot::TEXTURE, slot::CLARITY])) else {
+    let Some(weights) = weights.filter(|w| w.uses(&[slot::TEXTURE])) else {
         return Ok(samples);
     };
-    let texture = weights.uses(&[slot::TEXTURE]);
-    let blurs =
-        crate::develop::quality::blurs(&toned.image, r, toned.scale, texture, cache, cancel)?;
-    let exposure = r.exposure + r.camera_exposure;
-    let (w, h) = (toned.image.width as usize, toned.image.height as usize);
+    let source = toned.untextured.as_ref().unwrap_or(&toned.image);
+    let texture = crate::develop::quality::texture_detail(source, toned.scale, cancel, cache)?;
+    let global = crate::develop::texture::strength(r.effects.texture);
+    let (w, h) = (source.width as usize, source.height as usize);
     let mut out = Samples {
         width: samples.width,
         height: samples.height,
@@ -265,13 +266,15 @@ pub(super) fn detail(
         let Some(d) = weights.delta(i) else {
             return;
         };
-        let (clarity, tex) = (d[slot::CLARITY], d[slot::TEXTURE]);
         let [x, y] = samples.positions[i];
-        if (clarity == 0. && tex == 0.) || x.is_nan() {
+        if d[slot::TEXTURE] == 0. || x.is_nan() {
             return;
         }
-        let gain = blurs.detail_gain(x, y, w, h, exposure, clarity, tex);
-        *p = p.map(|v| v * gain);
+        let s = crate::develop::texture::strength(r.effects.texture + d[slot::TEXTURE]) - global;
+        let detail = texture.at(x, y, w, h);
+        for (v, d) in p.iter_mut().zip(detail) {
+            *v *= (s * d).exp2();
+        }
     });
     Ok(Arc::new(out))
 }

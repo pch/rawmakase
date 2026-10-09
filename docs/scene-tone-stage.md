@@ -71,15 +71,22 @@ XMP RGB-table look.
 
 Camera Raw's default render is not the identity in S3. It maps a white point W* to
 output 1, with a shoulder above about 0.25 (scene-linear), and leaves lower values
-alone (identity when W* = 1):
+alone (identity when W* = 1), with the toe of its black point below about 0.02:
 
-- W* is the sensor's white in scene units after Exposure (the clip level of a neutral,
-  times 2^(baseline exposure + Exposure)), limited to twice the photo's maximum but
-  not below 1. When the sensor's white is below 1 (negative Exposure), W* is that
-  white, but not below 0.5: Camera Raw expands highlights by at most one stop.
-- The photo's maximum is that of its brightest channel on a reduced copy: on a
-  920-pixel probe a bright spot counts fully from about 8 pixels across and not at
-  2 pixels, and twice as large on a probe twice the size.
+- W* is the sensor's white in scene units after Exposure, limited to twice the photo's
+  maximum but not below 1. When the sensor's white is below 1 (negative Exposure), W*
+  is that white, but not below 0.5. The sensor's white is the level at which a
+  neutral's *last* channel clips, times 2^(baseline exposure + Exposure): with the
+  first channel's clip the synthetic chart, whose white balance is not neutral, was
+  0.02–0.04 too bright at +2 and +3 EV; with the last channel's, its gray ramp is within
+  0.001 at Exposure 0 and −1.
+- The photo's maximum is that of its brightest channel on a reduced copy (128 pixels
+  on the long edge): on a 920-pixel probe a bright spot counts fully from about 8 pixels
+  across and not at 2, and twice as large on a probe twice the size. A red highlight
+  counts like a white one.
+- The black point's toe does not follow the camera's baseline exposure. Engine 4 scaled
+  it with the baseline (0.0015 × 2^(baseline + Exposure)), which crushed the deep
+  shadows of files with a large baseline.
 - The curve family is measured on neutral ramps at quarter stops of W*; above W* = 4
   it repeats in two-stop steps. Predicted from the table and this rule, 60 probes with
   different sensor whites, image maxima, sizes of bright areas and Exposure settings
@@ -88,14 +95,46 @@ alone (identity when W* = 1):
 Engine 4 clipped at 1 instead: a probe whose sensor white is at scene 4 rendered
 scene 1.0 at 1.0, where Camera Raw renders 0.69.
 
-### Measurement-input table
+### Whites and Blacks
 
-| Measure | Read from | Used by |
-|---|---|---|
-| Sensor white in scene units | metadata, white balance, baseline exposure, Exposure | white point |
-| Photo maximum (brightest channel) | reduced copy, S2 before Exposure | white point |
-| Photo minimum | reduced copy, S2 before Exposure | negative Blacks |
-| Local keys | reduced copy, S2 | Highlights, Shadows, Clarity |
+- **Whites** is a curve family over scene values, applied RGBTone. Negative Whites
+  depends on the white point only; positive Whites stretches toward the photo's own
+  maximum: a photo 4 stops below its sensor's white gets most of those stops back at
+  +100 (a probe whose maximum is 0.25 maps 0.0625 to white). Two probes with the same
+  white point and maximum but different sensor whites differ too, so the table is
+  measured over sensor white × the photo's maximum below it × Whites (`white3.bin`).
+- **Blacks** composes after the white point and Whites exactly (encoded error 0.0000:
+  Blacks maps their output). Negative Blacks maps the photo's darkest level to black
+  when it lies above a fixed black point (about 0.016 scene); even a 4-pixel dark spot
+  counts, so the minimum is measured at higher resolution than the maximum. Positive
+  Blacks does not depend on it. Negative Blacks works on each channel.
+
+### Local operators
+
+Shadows, Highlights and Clarity are luminance gains from a smooth, edge-aware base
+level: on photo-like synthetic scenes their gain is flat within regions whatever their
+texture, and stops at edges. Their strength follows the photo: a dark square is lifted
++0.9 EV by Shadows +100 in a mid-gray scene and +1.6 EV in a bright one, and dark areas
+of a dark scene are hardly lifted; Highlights −100 pulls the brightest area of a dark
+scene down by up to 5.8 EV. With an ideal key per scene, one gain curve of the base
+level relative to it explains Shadows +100 to 0.056 EV and Highlights −100 to 0.050 EV
+on 40 scenes; the keys RAWmakase predicts from the photo's percentiles (Shadows:
+0.25·p99.9 + 0.75·p99, Highlights: halfway between p75 and p1 of log luminance) leave
+0.17 and 0.11 in cross-validation, against 0.42 and 0.29 for doing nothing. A second
+dimension (the pixel against its base) did not help in cross-validation.
+
+Dehaze works on each channel by its level relative to the photo's bright end (the 99th
+percentile of luminance): no change at the top and about −0.5 EV a few stops below at
++40. A curve per amount explains ±40 to 0.10 (doing nothing: 0.36–0.64) and +100 to
+0.46 (1.22) in cross-validation; the rest is spatial.
+
+### Masks
+
+A full-frame mask's Shadows, Highlights, Dehaze, Clarity and Contrast render like the
+global sliders in Camera Raw (within 0.006–0.012 encoded, against effects of
+0.03–0.12); its Whites and Blacks do not (Blacks +50 differs by 0.07 for an effect of
+0.013). Lightroom stores a mask's Exposure normalised: `LocalExposure2012` 1 is +4 EV
+(0.8 rendered as +3.2 EV).
 
 ## Testing
 
@@ -121,7 +160,7 @@ appears in two sets.
 **Settings.** Each percentage slider (Contrast, Highlights, Shadows, Whites, Blacks,
 Texture, Clarity, Dehaze) at ±25, ±50, ±100; Exposure at −2, −1, +1, +2 EV; Exposure −1
 with Whites +100, Shadows +50 with Highlights −50, Contrast +50 with Blacks −50,
-Dehaze +40 with Clarity +40, a gradient mask with Exposure +0.5 and Shadows +50; and,
+Dehaze +40 with Clarity +40, a gradient mask with Exposure +2 EV and Shadows +50 (0.5 and 0.5 in Lightroom's normalised local units); and,
 with Adobe Color, the default render, Shadows +100, Dehaze +40 and Whites +100 (#354).
 
 **Metric.** Both renders reduced by area to 1024 pixels on the long edge. Per-photo

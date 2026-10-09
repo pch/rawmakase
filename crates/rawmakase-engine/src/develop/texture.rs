@@ -33,7 +33,7 @@ const THRESHOLDS: [f32; LEVELS] = [0.506, 0.098, 0.167, 0.192, 0.135, 0.176];
 const AMOUNTS: [f32; 6] = [-1., -0.5, 0., 0.25, 0.5, 1.];
 const STRENGTH: [f32; 6] = [-0.752, -0.499, 0., 0.334, 0.546, 0.852];
 
-fn strength(amount: f32) -> f32 {
+pub(crate) fn strength(amount: f32) -> f32 {
     let a = amount.clamp(-1., 1.);
     let i = AMOUNTS
         .partition_point(|v| *v <= a)
@@ -94,6 +94,21 @@ impl TextureDetail {
             }
         });
         out
+    }
+    /// The log2 detail of each channel at `x`, `y` of the `width`-wide image it was made
+    /// from, interpolated bilinearly.
+    pub(crate) fn at(&self, x: f32, y: f32, width: usize, height: usize) -> [f32; 3] {
+        let fx = x.clamp(0., (width - 1) as f32);
+        let fy = y.clamp(0., (height - 1) as f32);
+        let (ix, iy) = (fx as usize, fy as usize);
+        let (jx, jy) = ((ix + 1).min(width - 1), (iy + 1).min(height - 1));
+        let (tx, ty) = (fx - ix as f32, fy - iy as f32);
+        self.channels.each_ref().map(|c| {
+            let v = |x: usize, y: usize| c[y * width + x] as f32;
+            ((v(ix, iy) * (1. - tx) + v(jx, iy) * tx) * (1. - ty)
+                + (v(ix, jy) * (1. - tx) + v(jx, jy) * tx) * ty)
+                * DETAIL_STEP
+        })
     }
     pub(crate) fn bytes(&self) -> usize {
         self.channels.iter().map(Vec::len).sum::<usize>() * 2
