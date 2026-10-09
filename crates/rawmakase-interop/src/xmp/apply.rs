@@ -932,8 +932,18 @@ impl Preset {
         settings.assign("PerspectiveScale", &mut t.scale, 0.01, 0.5, 1.5)?;
         settings.assign("PerspectiveX", &mut t.offset_x, 0.01, -1., 1.)?;
         settings.assign("PerspectiveY", &mut t.offset_y, 0.01, -1., 1.)?;
-        for (i, name) in ["Left", "Top", "Right", "Bottom"].iter().enumerate() {
-            settings.assign(&format!("Crop{name}"), &mut r.crop[i], 1., 0., 1.)?;
+        // Camera Raw crops only with HasCrop: without it the photo is uncropped, even
+        // one the camera cropped to another aspect ratio, which Camera Raw records as
+        // a crop. Without HasCrop or crop values the photo keeps its starting crop.
+        if boolean(v, "HasCrop")? == Some(false) {
+            r.crop = [0., 0., 1., 1.];
+            for name in ["Left", "Top", "Right", "Bottom"] {
+                settings.seen.insert(format!("Crop{name}"));
+            }
+        } else {
+            for (i, name) in ["Left", "Top", "Right", "Bottom"].iter().enumerate() {
+                settings.assign(&format!("Crop{name}"), &mut r.crop[i], 1., 0., 1.)?;
+            }
         }
         // Lightroom's Constrain Crop, not to be confused with `CropConstrainToUnitSquare`.
         settings.seen.insert("CropConstrainToWarp".into());

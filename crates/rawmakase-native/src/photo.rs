@@ -59,6 +59,10 @@ pub fn open(path: &Path) -> Result<Raw> {
         if let Some(crop) = dng.crop {
             metadata.apply_default_crop(crop);
         }
+        // Exact where LibRaw rounds it to whole, even pixels.
+        if dng.user_crop.is_some() {
+            metadata.camera_crop = dng.user_crop.filter(|c| *c != [0., 0., 1., 1.]);
+        }
     }
     metadata.lens_profiles = LENS_PROFILES.current().for_photo(metadata);
     Ok(raw)
@@ -180,5 +184,60 @@ mod tests {
         // A camera without a table row would otherwise take the table's median.
         assert_eq!(m.baseline_exposure, Some(0.));
         assert_eq!(crate::camera_profiles::reference::baseline_exposure(&m), 0.);
+    }
+    /// A DNG's DefaultUserCrop is the crop Camera Raw starts from (its in-camera
+    /// aspect ratio, as Adobe DNG Converter writes it), inside the DefaultCrop frame
+    /// that image space and Lightroom's crop values are relative to.
+    #[test]
+    fn dng_default_user_crop_is_the_starting_crop_inside_the_default_crop() {
+        let chart = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/corpus/charts/synthetic-d65.dng"
+        );
+        let original = std::fs::read(chart).unwrap();
+        let first = u32::from_le_bytes(original[4..8].try_into().unwrap()) as usize;
+        let count = u16::from_le_bytes(original[first..first + 2].try_into().unwrap()) as usize;
+        let mut bytes = original.clone();
+        let mut entries: Vec<Vec<u8>> = original[first + 2..first + 2 + count * 12]
+            .as_chunks::<12>()
+            .0
+            .iter()
+            .map(|entry| entry.to_vec())
+            .collect();
+        let longs = |v: &[u32]| v.iter().flat_map(|n| n.to_le_bytes()).collect::<Vec<u8>>();
+        // DefaultCropOrigin and DefaultCropSize (LONG), DefaultUserCrop (RATIONAL top,
+        // left, bottom, right, in tenths and quarters).
+        for (tag, kind, count, data) in [
+            (50719u16, 4u16, 2u32, longs(&[10, 10])),
+            (50720, 4, 2, longs(&[900, 700])),
+            (51125, 5, 4, longs(&[1, 10, 1, 4, 9, 10, 3, 4])),
+        ] {
+            let mut entry = tag.to_le_bytes().to_vec();
+            entry.extend(kind.to_le_bytes());
+            entry.extend(count.to_le_bytes());
+            entry.extend((bytes.len() as u32).to_le_bytes());
+            bytes.extend(data);
+            entries.push(entry);
+        }
+        entries.sort_by_key(|e| u16::from_le_bytes(e[..2].try_into().unwrap()));
+        let offset = (bytes.len() as u32).to_le_bytes();
+        bytes[4..8].copy_from_slice(&offset);
+        bytes.extend((entries.len() as u16).to_le_bytes());
+        for entry in entries {
+            bytes.extend(entry);
+        }
+        bytes.extend(0u32.to_le_bytes());
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("user-crop.dng");
+        std::fs::write(&path, bytes).unwrap();
+        let m = super::open(&path).unwrap().metadata;
+        let frame = [m.crop_left, m.crop_top, m.crop_width, m.crop_height];
+        assert_eq!(frame, [10, 10, 900, 700]);
+        let crop = m.camera_crop.expect("the DNG's default user crop");
+        for (got, want) in crop.iter().zip([0.25, 0.1, 0.75, 0.9]) {
+            assert!((got - want).abs() < 1e-6, "{crop:?}");
+        }
+        let recipe = rawmakase_model::model::recipe::Recipe::with_profiles(&m, &[]);
+        assert_eq!(recipe.crop, crop);
     }
 }

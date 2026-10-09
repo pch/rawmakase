@@ -16,6 +16,12 @@ The Crop tool (R) works on the photo as shown, after its rotation and flips. The
 
 X, O and Shift+O work only while the Crop tool is open and no text field has focus; with the Crop tool open X does not reject the photo.
 
+### In-camera aspect ratio
+
+A raw shot at an aspect ratio other than the sensor's (1:1, 4:3, 16:9 on a 3:2 Canon; 16:9 on an Olympus or Fujifilm) keeps the whole frame, and the camera records the ratio it showed. Camera Raw opens such a photo cropped to that ratio, and the crop can be widened again: Adobe DNG Converter writes it as DefaultUserCrop inside an unchanged DefaultCrop, and Camera Raw's settings carry it as an ordinary crop (`HasCrop` True, `CropLeft` 0.166667 to `CropRight` 0.833333 on an EOS M6 Mark II at 1:1). RAWmakase does the same: the frame (image space, masks, Upright and Lightroom's crop values) is the camera's default crop, and the ratio is `Metadata::camera_crop`, the crop a photo's settings start from (`Recipe::for_metadata`), so Reset returns to it and the Crop panel's Reset removes it. It comes from LibRaw: for a Canon its AspectInfo crop inside SensorInfo's frame, for other makes the second inset crop LibRaw derives from the recorded ratio, and for a DNG its DefaultUserCrop. LibRaw's rectangles are in raw coordinates and are moved to the decoded image's. Settings with `HasCrop` False are the whole frame, as in Camera Raw; settings without crop values keep the starting crop.
+
+Adobe does not treat every camera this way: DNG Converter 18 hard-crops the PowerShot G12 (2010) to its 3:2 setting as the DefaultCrop, while the S120 (2013) and later get a DefaultUserCrop. RAWmakase uses the starting crop for all of them, so a Lightroom crop of a G12 photo shot at 3:2 is read against the 4:3 frame.
+
 ## Constrain Crop
 
 Lightroom's Constrain Crop (`crs:CropConstrainToWarp` 1; the Transform panel's checkbox, `Recipe::constrain_crop`) keeps the white areas that Upright, the Transform sliders and manual Distortion uncover out of the crop. It is not `CropConstrainToUnitSquare`, which only limits Lightroom's crop tool.

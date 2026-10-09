@@ -19,10 +19,17 @@ pub struct Metadata {
     pub height: u32,
     pub raw_width: u32,
     pub raw_height: u32,
+    /// The camera's default crop (Adobe's DNG DefaultCrop) in decoded pixels: the
+    /// frame image space, Lightroom's crop and its positions are relative to.
     pub crop_width: u32,
     pub crop_height: u32,
     pub crop_left: u32,
     pub crop_top: u32,
+    /// The aspect ratio chosen in the camera (1:1, 4:3, 16:9…), as `[left, top,
+    /// right, bottom]` fractions of the default crop. Like Camera Raw's default user
+    /// crop, it is the crop a photo's settings start from, not part of the frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera_crop: Option<[f32; 4]>,
     pub flip: i32,
     pub xtrans: bool,
     #[serde(default)]

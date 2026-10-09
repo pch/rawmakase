@@ -340,6 +340,9 @@ impl Recipe {
             profile: crate::camera_profiles::builtin(m),
             temperature: estimate_temperature(m),
             lens_builtin: m.lens.as_ref().is_none_or(|l| l.default_on),
+            // As Camera Raw: the aspect ratio chosen in the camera is the crop a
+            // photo starts with, which can be widened to the whole frame.
+            crop: m.camera_crop.unwrap_or([0., 0., 1., 1.]),
             ..Default::default()
         }
     }

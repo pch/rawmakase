@@ -324,6 +324,54 @@ fn auto_white_balance_presets_use_the_wb_menus_auto() -> Result<()> {
     );
     Ok(())
 }
+/// A photo the camera cropped to 1:1 starts with that crop, which Camera Raw writes
+/// as a crop of the whole frame (CR3 from an EOS M6 Mark II through DNG Converter:
+/// CropLeft 0.166667, CropRight 0.833333, HasCrop True). Lightroom's crop values
+/// replace it; HasCrop False is the whole frame; an edit without crop keeps it.
+#[test]
+fn lightroom_crops_are_relative_to_the_frame_around_the_camera_crop() -> Result<()> {
+    let m = Metadata {
+        width: 6984,
+        height: 4660,
+        crop_left: 12,
+        crop_top: 12,
+        crop_width: 6960,
+        crop_height: 4640,
+        camera_crop: Some([1. / 6., 0., 5. / 6., 1.]),
+        wb: [2., 1., 1.5],
+        daylight_wb: [2., 1., 1.5],
+        ..Default::default()
+    };
+    let base = Recipe::with_profiles(&m, &[]);
+    assert_eq!(base.crop, [1. / 6., 0., 5. / 6., 1.]);
+    let apply = |attrs: &str| -> Result<Recipe> {
+        parse(Path::new("photo.xmp"), &xml(attrs, ""))?.apply(&base, &m, &[], None)
+    };
+    let adobe = r#"c:HasCrop="True" c:CropTop="0" c:CropLeft="0.166667" c:CropBottom="1" c:CropRight="0.833333""#;
+    let square = apply(adobe)?.crop;
+    for (got, want) in square.iter().zip([0.166667, 0., 0.833333, 1.]) {
+        assert!((got - want).abs() < 1e-6, "{square:?}");
+    }
+    let wider =
+        r#"c:HasCrop="True" c:CropTop="0" c:CropLeft="0.1" c:CropBottom="1" c:CropRight="0.9""#;
+    assert_eq!(apply(wider)?.crop, [0.1, 0., 0.9, 1.]);
+    assert_eq!(apply(r#"c:HasCrop="False""#)?.crop, [0., 0., 1., 1.]);
+    let ignored = r#"c:HasCrop="False" c:CropLeft="0.3" c:CropRight="0.7""#;
+    assert_eq!(apply(ignored)?.crop, [0., 0., 1., 1.]);
+    assert_eq!(apply(r#"c:Exposure2012="0.5""#)?.crop, base.crop);
+    // Written back as Camera Raw writes it, and read back the same.
+    let packet = write::packet(
+        &base,
+        &m,
+        &write::Photo {
+            settings: true,
+            ..Default::default()
+        },
+    );
+    assert!(packet.contains(r#"crs:HasCrop="True""#), "{packet}");
+    assert!(packet.contains(r#"crs:CropLeft="0.166667""#), "{packet}");
+    Ok(())
+}
 #[test]
 fn partial_preset_preserves_omitted_settings_and_zero_resets() -> Result<()> {
     let p = parse(

@@ -14,6 +14,9 @@ pub struct Dng {
     pub profile_calibration_signature: Option<String>,
     /// Left, top, width, height, relative to the active area.
     pub crop: Option<[u32; 4]>,
+    /// DefaultUserCrop as `[left, top, right, bottom]` fractions of the default crop:
+    /// the crop Camera Raw starts from, such as the camera's aspect ratio.
+    pub user_crop: Option<[f32; 4]>,
     /// The profile tags, rewritten as a standalone DCP: the embedded camera
     /// profile when they make one, else at least the file's colour matrices.
     pub profile: Option<Vec<u8>>,
@@ -80,6 +83,17 @@ pub fn read(path: &Path) -> Option<Dng> {
     };
     if let (Some(origin), Some(size)) = (pair(&mut t, 50719), pair(&mut t, 50720)) {
         dng.crop = Some([origin[0], origin[1], size[0], size[1]]);
+    }
+    // Top, left, bottom, right.
+    if let Some(&[top, left, bottom, right]) = raw
+        .get(&51125)
+        .and_then(|e| t.numbers(e))
+        .as_deref()
+        .filter(|v| v.iter().all(|x| (0. ..=1.).contains(x)))
+        && right - left >= 0.01
+        && bottom - top >= 0.01
+    {
+        dng.user_crop = Some([left, top, right, bottom]);
     }
     let vignetting = raw
         .get(&51009)
