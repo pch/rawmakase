@@ -481,12 +481,13 @@ fn measured(t: i32, values: i32, s_in: f32, x: f32) -> f32 {
     }
     return y.x + (y.y - y.x) * b.y;
 }
-// basic_tone::compose at the pixel's local slider values.
+// masks::local::tone's curve: Contrast at the pixel's local slider value (layout:
+// `basic_tone::gpu_tables`).
 fn local_tone_curve(x_in: f32) -> f32 {
     let t = offset(P_LOCAL_TONE);
     let x = x_in;
     let pivot = p(P_LOCAL_PIVOT);
-    return contrast_at(t + 1548, table(t + 1932), pivot, t + 1542, delta[L_CONTRAST], x);
+    return contrast_at(t + 6, table(t + 390), pivot, t, delta[L_CONTRAST], x);
 }
 // basic_tone::contrast_at: the chart's Contrast table at `t` (pivoting at `chart`)
 // moved to `pivot` by a power warp of gamma-2.2 encoded values.

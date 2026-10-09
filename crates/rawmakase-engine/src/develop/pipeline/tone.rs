@@ -1,11 +1,11 @@
-//! Tone preparation: the curve tables a render looks up, and what it measures from the photo first (the contrast pivot, highlights).
+//! Tone preparation: the curve tables a render looks up, and what it measures from the photo first (the scene tone stage's measures, the contrast pivot).
 use super::*;
 
 pub(super) struct CurveSet {
     /// Where the stage stops.
     pub(super) output: PixelOutput,
     pub(super) exposure_gain: f32,
-    /// Dehaze, Contrast, Whites and Blacks as measured Lightroom curves.
+    /// Contrast as a measured Camera Raw curve.
     pub(super) basic: Option<crate::develop::basic_tone::BasicTone>,
     /// The Shadows/Highlights base level, built per image by `for_image`.
     pub(super) local: Option<crate::develop::local_tone::LocalToneMap>,
@@ -22,8 +22,7 @@ pub(super) struct CurveSet {
     /// The profile look's RGB table, at the recipe's Profile Amount.
     pub(super) rgb_table: Option<crate::camera_profiles::RgbLook>,
     pub(super) calibration: crate::develop::calibration::Calibration,
-    /// What Contrast and Whites follow of the photo, for the global sliders and the
-    /// masks'.
+    /// What Contrast follows of the photo, for the global slider and the masks'.
     pub(super) photo: crate::develop::basic_tone::PhotoTone,
     /// The measured parametric curve, when a region is set.
     pub(super) parametric: Option<crate::develop::parametric::ParametricCurve>,
@@ -66,16 +65,8 @@ impl CurveSet {
     pub(super) fn with_photo_measures(im: Source, r: &Recipe, matrix: [[f32; 3]; 3]) -> Self {
         let mut lut = Self::new(r);
         lut.measure(photo_measures(im, r, matrix), r);
-        let (pivot, whites) = (measures_contrast_pivot(r), measures_whites(r));
-        if pivot {
+        if measures_contrast_pivot(r) {
             lut.photo.contrast_pivot = contrast_pivot(im, r, matrix, &lut.measures);
-        }
-        if whites {
-            lut.photo.whites = crate::develop::basic_tone::WhitesTable::for_highlights(
-                photo_highlights(im, r, matrix, &lut.measures),
-            );
-        }
-        if pivot || whites {
             lut.basic = basic_tone(r, &lut.photo);
         }
         lut
@@ -92,8 +83,6 @@ impl CurveSet {
     pub(super) fn new(r: &Recipe) -> Self {
         let photo = crate::develop::basic_tone::PhotoTone {
             contrast_pivot: crate::develop::basic_tone::TYPICAL_PIVOT,
-            // Without the photo, Whites takes the median curve.
-            whites: crate::develop::basic_tone::WhitesTable::original(),
         };
         Self {
             output: PixelOutput::Display,
@@ -138,7 +127,7 @@ fn basic_tone(
     r: &Recipe,
     photo: &crate::develop::basic_tone::PhotoTone,
 ) -> Option<crate::develop::basic_tone::BasicTone> {
-    crate::develop::basic_tone::BasicTone::new(r.contrast, 0., 0., 0., photo)
+    crate::develop::basic_tone::BasicTone::new(r.contrast, photo)
 }
 /// What the scene tone stage measures of the photo: its reduced copy at the stage's
 /// input, with the user's Exposure at 0.
@@ -250,12 +239,6 @@ pub(crate) fn measures_contrast_pivot(r: &Recipe) -> bool {
             .iter()
             .any(|m| m.is_active() && m.adjust.contrast != 0.)
 }
-/// Whether a mask's positive Whites follows the photo's highlights.
-pub(crate) fn measures_whites(r: &Recipe) -> bool {
-    r.masks
-        .iter()
-        .any(|m| m.is_active() && m.adjust.whites > 0.)
-}
 /// The photo reduced for measuring it, without Clarity's and Texture's gain: a user
 /// adjustment that depends on the preview size.
 fn measured_copy(im: Source<'_>) -> std::borrow::Cow<'_, CameraImage> {
@@ -269,28 +252,6 @@ fn measured_copy(im: Source<'_>) -> std::borrow::Cow<'_, CameraImage> {
             crate::develop::local_tone::MAP_EDGE,
         )),
     }
-}
-/// The highlights positive Whites follows: the 98th percentile of the encoded
-/// luminance of the photo's reduced copy as the recipe renders it before the Basic
-/// tone sliders, its Exposure included (measured on the chart).
-fn photo_highlights(
-    im: Source,
-    r: &Recipe,
-    matrix: [[f32; 3]; 3],
-    measures: &crate::develop::scene_tone::PhotoMeasures,
-) -> f32 {
-    let small = measured_copy(im);
-    let mut lut = CurveSet::new(r);
-    lut.measure(*measures, r);
-    let luminance: Vec<f32> = small
-        .pixels
-        .par_iter()
-        .map(|p| {
-            let rgb = tone_stage(*p, r, &lut, matrix, [0.; 2], None);
-            srgb_encode(crate::color::luminance(rgb).max(6e-4).clamp(0., 1.))
-        })
-        .collect();
-    crate::develop::basic_tone::highlights(luminance)
 }
 /// Camera Raw's Contrast pivot for this photo, from its reduced copy rendered as the
 /// recipe's profile, white balance and calibration render it, at the camera's

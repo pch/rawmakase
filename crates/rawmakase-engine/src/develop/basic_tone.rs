@@ -1,68 +1,14 @@
-//! Global Basic-panel tone sliders (Dehaze, Contrast, Whites, Blacks), as measured
-//! Lightroom responses. Each slider is a curve over the rendered image; values between
-//! the measured slider positions are interpolated linearly, with 0 as the identity.
-use super::basic_tone_data::{
-    BLACKS, CONTRAST, CONTRAST_CHART, CONTRAST_PIVOT, DEHAZE, DEHAZE_VALUES, SLIDER_VALUES, WHITES,
-    WHITES_ADAPTIVE, WHITES_EXPOSURES, WHITES_HIGHLIGHTS,
-};
+//! The global Contrast slider, as Camera Raw's measured response on the synthetic
+//! chart moved to each photo's pivot. Values between the measured slider positions are
+//! interpolated linearly, with 0 as the identity.
+use super::basic_tone_data::{CONTRAST_CHART, CONTRAST_PIVOT, SLIDER_VALUES};
 use crate::color::{srgb_decode, srgb_encode};
 
-/// The Whites tables one render uses: per slider position (as `SLIDER_VALUES`), the
-/// curve at 64 bin centres.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct WhitesTable(pub(crate) [[f32; 64]; 6]);
-impl WhitesTable {
-    pub(crate) fn original() -> Self {
-        Self(WHITES)
-    }
-    /// Positive Whites for a photo whose 98th percentile of encoded luminance is
-    /// `highlights`: Camera Raw's curve at the exposure that gives the chart such
-    /// highlights, plus [`WHITES_OFFSET`]. Negative Whites is the same on every photo.
-    pub(crate) fn for_highlights(highlights: f32) -> Self {
-        let ev = interpolate(&WHITES_HIGHLIGHTS, &WHITES_EXPOSURES, highlights) + WHITES_OFFSET;
-        let (j, w) = bracket(&WHITES_EXPOSURES, ev);
-        let mut table = WHITES;
-        for (row, k) in [(3, 0), (4, 1), (5, 2)] {
-            table[row] = std::array::from_fn(|i| {
-                WHITES_ADAPTIVE[j][k][i] * (1. - w) + WHITES_ADAPTIVE[j + 1][k][i] * w
-            });
-        }
-        Self(table)
-    }
-}
-/// How much brighter (EV) photos behave than the chart with the same highlights: fitted
-/// on five photos, whose exposure is then predicted to 0.15 EV.
-const WHITES_OFFSET: f32 = 0.24;
-/// The 98th percentile of encoded luminance of a photo's pixels.
-pub(crate) fn highlights(mut luminance: Vec<f32>) -> f32 {
-    if luminance.is_empty() {
-        return 1.;
-    }
-    let k = ((luminance.len() - 1) as f32 * 0.98) as usize;
-    luminance.select_nth_unstable_by(k, f32::total_cmp);
-    luminance[k]
-}
-/// `ys` at `x` over increasing `xs`, clamped to their range.
-fn interpolate(xs: &[f32], ys: &[f32], x: f32) -> f32 {
-    let (j, w) = bracket(xs, x);
-    ys[j] + (ys[j + 1] - ys[j]) * w
-}
-/// The interval of increasing `xs` that holds `x` (clamped), and the weight of its end.
-fn bracket(xs: &[f32], x: f32) -> (usize, f32) {
-    let x = x.clamp(xs[0], xs[xs.len() - 1]);
-    let j = xs
-        .windows(2)
-        .position(|p| x <= p[1])
-        .unwrap_or(xs.len() - 2);
-    (j, ((x - xs[j]) / (xs[j + 1] - xs[j])).clamp(0., 1.))
-}
-
-/// What a render's Contrast and Whites follow of the photo.
+/// What a render's Contrast follows of the photo.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PhotoTone {
     /// The encoded level Contrast pivots at.
     pub(crate) contrast_pivot: f32,
-    pub(crate) whites: WhitesTable,
 }
 /// The pivot of a photo whose own isn't measured: about the middle of the photos'.
 pub(crate) const TYPICAL_PIVOT: f32 = 0.5;
@@ -127,27 +73,20 @@ const PIVOT_FIT: [f32; 3] = [0.577, 0.568, -0.689];
 
 const SIZE: usize = 1024;
 
-/// Composed Dehaze, Contrast, Whites and Blacks curve, sampled at `SIZE + 1` points
-/// over 0–1. Contrast comes after Whites and Blacks, as in Camera Raw.
+/// The Contrast curve, sampled at `SIZE + 1` points over 0–1.
 #[derive(Clone)]
 pub(crate) struct BasicTone {
     pub(crate) lut: Vec<f32>,
 }
 impl BasicTone {
-    pub(crate) fn new(
-        contrast: f32,
-        whites: f32,
-        blacks: f32,
-        dehaze: f32,
-        photo: &PhotoTone,
-    ) -> Option<Self> {
-        if contrast == 0. && whites == 0. && blacks == 0. && dehaze == 0. {
+    pub(crate) fn new(contrast: f32, photo: &PhotoTone) -> Option<Self> {
+        if contrast == 0. {
             return None;
         }
         let lut = (0..=SIZE)
             .map(|i| {
                 let x = i as f32 / SIZE as f32;
-                compose(contrast, whites, blacks, dehaze, photo, x)
+                contrast_at(contrast, photo.contrast_pivot, x)
             })
             // Measured tables carry small non-monotone noise; tone must never invert.
             .scan(0f32, |max, y| {
@@ -177,44 +116,22 @@ impl BasicTone {
     }
 }
 
-/// The curve `BasicTone` tables at `x`, without its table and monotone clean-up: the
-/// local adjustments evaluate it per pixel.
-pub(crate) fn compose(
-    contrast: f32,
-    whites: f32,
-    blacks: f32,
-    dehaze: f32,
-    photo: &PhotoTone,
-    x: f32,
-) -> f32 {
-    let x = slider(&DEHAZE_VALUES, &DEHAZE, dehaze, x);
-    let x = slider(&SLIDER_VALUES, &photo.whites.0, whites, x);
-    let x = slider(&SLIDER_VALUES, &BLACKS, blacks, x);
-    contrast_at(contrast, photo.contrast_pivot, x)
-}
-/// The measured tables in the order `develop.wgsl`'s local curves read them: Dehaze,
-/// Contrast, Whites, Blacks, each 6 × 64 values, then the slider positions (Dehaze's,
-/// then the others'), the chart's Contrast (6 × 64) and its pivot. Whites is the
-/// render's own table.
-pub(crate) fn gpu_tables(whites: &WhitesTable) -> Vec<f32> {
-    let mut out: Vec<f32> = [&DEHAZE, &CONTRAST, &whites.0, &BLACKS]
-        .into_iter()
-        .flat_map(|t| t.iter().flatten().copied())
-        .collect();
-    out.extend(DEHAZE_VALUES);
-    out.extend(SLIDER_VALUES);
+/// The measured tables in the order `develop.wgsl`'s local Contrast reads them: the
+/// slider positions, the chart's Contrast (6 × 64) and its pivot.
+pub(crate) fn gpu_tables() -> Vec<f32> {
+    let mut out: Vec<f32> = SLIDER_VALUES.to_vec();
     out.extend(CONTRAST_CHART.iter().flatten());
     out.push(CONTRAST_PIVOT);
     out
 }
 /// One measured table: curve for slider `s` at input `x`.
-fn slider(values: &[f32; 6], table: &[[f32; 64]; 6], s: f32, x: f32) -> f32 {
+fn slider(table: &[[f32; 64]; 6], s: f32, x: f32) -> f32 {
     if s == 0. {
         return x;
     }
     let s = s.clamp(-1., 1.);
     // Bracketing measured positions, with the identity at 0.
-    let mut points: Vec<(f32, Option<&[f32; 64]>)> = values
+    let mut points: Vec<(f32, Option<&[f32; 64]>)> = SLIDER_VALUES
         .iter()
         .zip(table)
         .map(|(v, t)| (*v, Some(t)))
@@ -235,14 +152,16 @@ fn slider(values: &[f32; 6], table: &[[f32; 64]; 6], s: f32, x: f32) -> f32 {
 /// The chart's Contrast at slider `s`, moved so it pivots at `pivot` instead of
 /// [`CONTRAST_PIVOT`]: a power warp of gamma-2.2 encoded values takes one pivot to the
 /// other, which fits each photo's Camera Raw Contrast to 0.002–0.01 at every amount.
-fn contrast_at(s: f32, pivot: f32, x: f32) -> f32 {
+/// The local adjustments evaluate it per pixel, without `BasicTone`'s table and
+/// monotone clean-up.
+pub(crate) fn contrast_at(s: f32, pivot: f32, x: f32) -> f32 {
     if s == 0. {
         return x;
     }
     let to = |v: f32| srgb_decode(v.clamp(0., 1.)).powf(1. / 2.2);
     let from = |w: f32| srgb_encode(w.clamp(0., 1.).powf(2.2));
     let k = to(CONTRAST_PIVOT).ln() / to(pivot).ln();
-    let y = slider(&SLIDER_VALUES, &CONTRAST_CHART, s, from(to(x).powf(k)));
+    let y = slider(&CONTRAST_CHART, s, from(to(x).powf(k)));
     from(to(y).powf(1. / k))
 }
 
@@ -258,102 +177,39 @@ fn curve(t: &[f32; 64], x: f32) -> f32 {
 mod tests {
     use super::*;
     #[test]
-    fn neutral_sliders_are_identity_and_curves_are_monotone() {
+    fn neutral_contrast_is_identity_and_curves_are_monotone() {
         let typical = PhotoTone {
             contrast_pivot: TYPICAL_PIVOT,
-            whites: WhitesTable::original(),
         };
-        assert!(BasicTone::new(0., 0., 0., 0., &typical).is_none());
-        for s in [-1., -0.6, -0.1, 0.1, 0.4, 1.] {
-            for (c, w, b, d) in [
-                (s, 0., 0., 0.),
-                (0., s, 0., 0.),
-                (0., 0., s, 0.),
-                (0., 0., 0., s),
-            ] {
-                let t = BasicTone::new(
-                    c,
-                    w,
-                    b,
-                    d,
-                    &PhotoTone {
-                        contrast_pivot: TYPICAL_PIVOT,
-                        whites: WhitesTable::original(),
-                    },
-                )
-                .unwrap();
-                assert!(
-                    t.lut.windows(2).all(|p| p[1] >= p[0] - 1e-4),
-                    "{c} {w} {b} {d}"
-                );
-                assert!(t.lut.iter().all(|v| (0. ..=1.).contains(v)));
-            }
+        assert!(BasicTone::new(0., &typical).is_none());
+        for c in [-1., -0.6, -0.1, 0.1, 0.4, 1.] {
+            let t = BasicTone::new(c, &typical).unwrap();
+            assert!(t.lut.windows(2).all(|p| p[1] >= p[0] - 1e-4), "{c}");
+            assert!(t.lut.iter().all(|v| (0. ..=1.).contains(v)));
         }
         // A small slider value changes the curve only slightly.
-        let t = BasicTone::new(
-            0.01,
-            0.,
-            0.,
-            0.,
-            &PhotoTone {
-                contrast_pivot: TYPICAL_PIVOT,
-                whites: WhitesTable::original(),
-            },
-        )
-        .unwrap();
+        let t = BasicTone::new(0.01, &typical).unwrap();
         assert!((0..=10).all(|i| (t.eval(i as f32 / 10.) - i as f32 / 10.).abs() < 0.01));
         // Positive contrast darkens shadows and brightens highlights.
-        let t = BasicTone::new(
-            0.5,
-            0.,
-            0.,
-            0.,
-            &PhotoTone {
-                contrast_pivot: TYPICAL_PIVOT,
-                whites: WhitesTable::original(),
-            },
-        )
-        .unwrap();
+        let t = BasicTone::new(0.5, &typical).unwrap();
         assert!(t.eval(0.2) < 0.2 && t.eval(0.8) > 0.8);
         let gray = t.apply([0.3; 3]);
         assert!((gray[0] - gray[1]).abs() < 1e-6 && (gray[1] - gray[2]).abs() < 1e-6);
     }
 
     /// Camera Raw 18.7 on the synthetic chart's gray ramp, whose Contrast pivot is the
-    /// chart's: the default level and the level with these sliders (encoded, 0–1).
+    /// chart's: the default level and the level with this Contrast (encoded, 0–1).
     #[test]
-    fn contrast_after_whites_and_blacks_matches_camera_raw_on_the_chart() {
-        let cases: [(f32, f32, [[f32; 2]; 3]); 4] = [
-            (
-                0.5,
-                0.,
-                [[0.2372, 0.1823], [0.4798, 0.4527], [0.6915, 0.7256]],
-            ),
-            (
-                -1.,
-                0.,
-                [[0.1803, 0.2759], [0.4798, 0.5181], [0.7847, 0.7118]],
-            ),
-            (
-                0.5,
-                -0.5,
-                [[0.1803, 0.0649], [0.3845, 0.2861], [0.6915, 0.7046]],
-            ),
-            (
-                1.,
-                0.5,
-                [[0.1345, 0.0628], [0.3845, 0.3394], [0.6915, 0.7817]],
-            ),
+    fn contrast_matches_camera_raw_on_the_chart() {
+        let cases: [(f32, [[f32; 2]; 3]); 2] = [
+            (0.5, [[0.2372, 0.1823], [0.4798, 0.4527], [0.6915, 0.7256]]),
+            (-1., [[0.1803, 0.2759], [0.4798, 0.5181], [0.7847, 0.7118]]),
         ];
-        for (contrast, blacks, levels) in cases {
+        for (contrast, levels) in cases {
             let t = BasicTone::new(
                 contrast,
-                0.,
-                blacks,
-                0.,
                 &PhotoTone {
                     contrast_pivot: CONTRAST_PIVOT,
-                    whites: WhitesTable::original(),
                 },
             )
             .unwrap();
@@ -361,7 +217,7 @@ mod tests {
                 let y = t.eval(x);
                 assert!(
                     (y - expected).abs() < 2. / 255.,
-                    "Contrast {contrast}, Blacks {blacks}: {x} gives {y}, Camera Raw {expected}"
+                    "Contrast {contrast}: {x} gives {y}, Camera Raw {expected}"
                 );
             }
         }
@@ -372,12 +228,8 @@ mod tests {
         for pivot in [0.35, 0.45, 0.6] {
             let t = BasicTone::new(
                 0.8,
-                0.,
-                0.,
-                0.,
                 &PhotoTone {
                     contrast_pivot: pivot,
-                    whites: WhitesTable::original(),
                 },
             )
             .unwrap();
@@ -393,33 +245,5 @@ mod tests {
         assert!(photo_pivot(&dark) < photo_pivot(&flat(0.3)) - 0.15);
         assert_eq!(photo_pivot(&[]), TYPICAL_PIVOT);
         assert_eq!(blocks(&vec![[0.5; 3]; 960 * 640], 960, 640).len(), 48 * 32);
-    }
-
-    /// Camera Raw 18.7's Whites on the chart at Exposure −1.5 (encoded gray-ramp
-    /// levels before and after), whose highlights match a photo's 98th percentile of
-    /// 0.6936 once the photos' offset is added.
-    #[test]
-    fn whites_stretch_dim_highlights_as_camera_raw_does() {
-        let dim = PhotoTone {
-            contrast_pivot: TYPICAL_PIVOT,
-            whites: WhitesTable::for_highlights(0.6936),
-        };
-        for (whites, levels) in [
-            (0.5, [[0.1015, 0.1061], [0.2397, 0.264], [0.4823, 0.5781]]),
-            (1., [[0.0555, 0.0698], [0.1369, 0.2237], [0.2397, 0.4582]]),
-        ] {
-            let t = BasicTone::new(0., whites, 0., 0., &dim).unwrap();
-            for [x, expected] in levels {
-                let y = t.eval(x);
-                assert!(
-                    (y - expected).abs() < 3. / 255.,
-                    "Whites {whites}: {x} gives {y}, Camera Raw {expected}"
-                );
-            }
-        }
-        // Brighter highlights stretch less; negative Whites keeps the measured median.
-        let bright = WhitesTable::for_highlights(0.99);
-        assert!(bright.0[5][40] < dim.whites.0[5][40]);
-        assert_eq!(bright.0[..3], WhitesTable::original().0[..3]);
     }
 }

@@ -192,7 +192,7 @@ pub(crate) fn needs_map(r: &Recipe) -> bool {
 /// Whether a render needs the photo reduced for the Shadows/Highlights map or for
 /// measuring the photo's Contrast pivot; the stage cache keeps it between renders.
 pub(crate) fn needs_reduced(r: &Recipe) -> bool {
-    needs_map(r) || super::measures_contrast_pivot(r) || super::measures_whites(r)
+    needs_map(r) || super::measures_contrast_pivot(r)
 }
 fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
     p.set("LOCAL", &[1.]);
@@ -302,7 +302,7 @@ fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams>
         None => -1.,
     };
     p.set("BASIC", &[basic]);
-    let tone = p.push(crate::develop::basic_tone::gpu_tables(&lut.photo.whites));
+    let tone = p.push(crate::develop::basic_tone::gpu_tables());
     p.set("LOCAL_TONE", &[tone]);
     p.set("LOCAL_PIVOT", &[lut.photo.contrast_pivot]);
     p.set("LEVELS", &[r.black_point, r.white_point, r.midtone]);
