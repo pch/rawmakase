@@ -253,7 +253,11 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     r.black_point = 0.02;
     r.white_point = 0.97;
     r.midtone = 1.2;
+    // Positive Dehaze removes the photo's haze, negative uses the measured tables.
     recipes.push(r.clone());
+    let mut negative = r.clone();
+    negative.effects.dehaze = -0.5;
+    recipes.push(negative);
     // The measured parametric curve, with moved splits, from here on.
     r.effects.parametric = [0.3, 0.2, -0.3, -0.2];
     r.effects.splits = [0.2, 0.45, 0.8];
@@ -765,7 +769,16 @@ fn gpu_masks_match_cpu_pixel_stage() -> Result<()> {
         shadows: 0.2,
         ..Default::default()
     };
-    r.masks = vec![Default::default(), Default::default()];
+    // Active masks, as the weights' would be: what decides that the haze is measured.
+    let shape = crate::model::masks::MaskComponent::new(crate::model::masks::MaskShape::Linear {
+        from: [0.2, 0.5],
+        to: [0.8, 0.5],
+    });
+    let group = crate::model::masks::MaskGroup {
+        components: vec![shape],
+        ..Default::default()
+    };
+    r.masks = vec![group.clone(), group];
     let adjust = [
         LocalAdjust {
             temperature: 0.4,
@@ -807,7 +820,10 @@ fn gpu_masks_match_cpu_pixel_stage() -> Result<()> {
     let cancel = AtomicBool::new(false);
     let source = Source::from(image.as_ref());
     r.whites = 0.3;
-    {
+    // The masks' Dehaze alone, added to a positive slider, and to a negative one where
+    // the sum crosses zero: the photo's haze and the tables on either side.
+    for dehaze in [0., 0.3, -0.1] {
+        r.effects.dehaze = dehaze;
         let mut params = pixel_params(source, &r).expect("GPU port covers this recipe");
         assert!(params.set_masks(source, &r, Some(&weights)));
         let expected = develop_samples(source, &r, &samples, &cancel, Some(&weights))?;
@@ -821,8 +837,11 @@ fn gpu_masks_match_cpu_pixel_stage() -> Result<()> {
             .collect();
         let mean = d.iter().sum::<f32>() / d.len() as f32;
         let max = d.iter().copied().fold(0., f32::max);
-        eprintln!("masks: max {max:.6}, mean {mean:.8}");
-        assert!(max < 2e-3 && mean < 2e-5, "max {max}, mean {mean}");
+        eprintln!("masks, Dehaze {dehaze}: max {max:.6}, mean {mean:.8}");
+        assert!(
+            max < 2e-3 && mean < 2e-5,
+            "Dehaze {dehaze}: max {max}, mean {mean}"
+        );
     }
     Ok(())
 }

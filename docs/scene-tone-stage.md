@@ -63,7 +63,7 @@ XMP RGB-table look.
 | Blacks | S3, after Whites (exact composition) | before | before | per channel (negative) |
 | Highlights, Shadows | S3 | before | before | luminance gain |
 | Clarity | S3 | before | before | luminance gain |
-| Dehaze | S3 | before | before | per channel |
+| Dehaze | S3 | before | before | per channel (positive: from the airlight) |
 | Texture | before the profile curve (full-resolution detail) | before | before | per channel |
 | Contrast | S5, after the profile curve and looks | after | — | RGBTone |
 
@@ -139,14 +139,49 @@ well. Highlights' synthetic tables stay (0.09–0.10 at ±100 on the photos, bet
 tables fitted on them). Clarity's weights keep the percentile key they were fitted
 with.
 
-Dehaze works on each channel by its level relative to the photo's bright end (the 99th
-percentile of luminance): no change at the top and about −0.5 EV a few stops below at
-+40. A curve per amount explains ±40 to 0.10 (doing nothing: 0.36–0.64) and +100 to
-0.46 (1.22) in cross-validation; the rest is spatial. On the 22 training photos the
-same curves fitted on the photos themselves do better at every amount (cross-validated
-by photo, per-channel gain in EV): +100 0.54 against 0.69 for the synthetic curves and
-0.90 for doing nothing, +40 0.16 (0.18, 0.30), −40 0.14 (0.16, 0.57), −100 0.34 (0.39,
-1.45); RAWmakase uses the photo-fitted curves.
+### Dehaze
+
+On synthetic scenes Dehaze works on each channel by its level relative to the photo's
+bright end (the 99th percentile of luminance): no change at the top and about −0.5 EV a
+few stops below at +40. A curve per amount explains ±40 to 0.10 (doing nothing:
+0.36–0.64) and +100 to 0.46 (1.22) in cross-validation; the rest is spatial. On the 22
+training photos the same curves fitted on the photos themselves do better at every
+amount (cross-validated by photo, per-channel gain in EV): +100 0.54 against 0.69 for
+the synthetic curves and 0.90 for doing nothing, +40 0.16 (0.18, 0.30), −40 0.14 (0.16,
+0.57), −100 0.34 (0.39, 1.45). **Negative Dehaze** uses these photo-fitted curves.
+
+**Positive Dehaze** is a dark-channel haze removal model (`scene_tone/haze.rs`), on the
+scene tone stage's input (linear ProPhoto), measured on the photo's measurement copy (512
+pixels on the long edge) at Exposure 0:
+
+1. The dark channel: the minimum of the darkest channel over a (2r+1)² window, clamped
+   at the borders, with r = max(1, round(0.005 × the copy's long edge)) (3 at 512). The
+   airlight A, per channel, is the mean of the pixels at or above the dark channel's 99th
+   percentile (sorted index ⌊(n−1)·0.99⌋).
+2. The haze's density: the same window minimum of min_c(I_c / A_c), smoothed by a guided
+   filter with itself as the guide (box radius 2r, ε = 0.01).
+3. A pixel p at Dehaze s > 0 (the slider plus the masks' Dehaze there) becomes
+   J = (p − g·A) / t + g·A, with t = max(1 − ω(s)·density, 0.3), the density read
+   bilinearly at the pixel's position and g = 2^Exposure. ω is linear between (0, 0),
+   (+20, 0.3), (+40, 0.45) and (+100, 0.9). No channel falls below half of p scaled by
+   the luminance's change, so weak channels of bright saturated colours are not driven
+   to black (on the training photos: +100 3.06 → 3.04; a floor of 0.7 costs 3.18, 1.0
+   costs 4.53). The transmission floor 0.3 costs nothing there (3.06 at 0.1 to 0.3).
+
+The model's few parameters (the window, ε, the transmission floor and ω) were chosen by
+grid search on the 22 training photos against Camera Raw 18.7, by display ΔE00. Median
+over the photos, against the curves above: +100 5.97 → 3.06, +40 2.73 → 1.68, +20 1.42.
+A and the density read exactly what the photo's measures read (white balance, the
+profile, calibration, the camera's exposure), so they are kept with them in the stage
+cache, measured the first time a render has positive Dehaze somewhere; Exposure scales A
+with the scene.
+
+The model is fitted to photos; on synthetic inputs it does less well than the curves.
+On the stage probes at +40 the error of the effect grows on all three scenes (0.048 →
+0.110, 0.069 → 0.152 and 0.036 → 0.044 EV), and on the synthetic chart it darkens Dehaze
++100 more than Camera Raw (p95 ΔE00 11.3 → 17.1, while the mean improves 6.9 → 5.9):
+its wide-gamut cyan patches lose their red, which Camera Raw only reduces, and its dark
+gray field darkens strongly.
 
 ### Masks
 

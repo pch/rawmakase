@@ -486,8 +486,8 @@ mod tests {
     }
     /// The scene tone stage's measures are kept per measurement copy and the settings
     /// they read: white balance, temperature, the profile and calibration measure the
-    /// photo again; Exposure and the tone sliders reuse the measures. Cached renders
-    /// match fresh ones either way.
+    /// photo again; Exposure and the tone sliders reuse the measures, and Dehaze reuses
+    /// the haze measured with them. Cached renders match fresh ones either way.
     #[test]
     fn photo_measures_are_kept_until_their_settings_change() {
         let (w, h) = (300, 200);
@@ -515,12 +515,32 @@ mod tests {
         let metadata = im.metadata.clone();
         // (edit, measures again, the measures change)
         type Case<'a> = (&'a str, &'a dyn Fn(&mut Recipe), bool, bool);
-        let cases: [Case; 9] = [
+        let cases: [Case; 11] = [
             ("exposure", &|r| r.exposure = 0.7, false, false),
+            ("more dehaze", &|r| r.effects.dehaze = 0.8, false, false),
             ("whites", &|r| r.whites = 0.8, false, false),
             ("shadows", &|r| r.shadows = 0.4, false, false),
             ("blacks", &|r| r.blacks = -0.7, false, false),
             ("dehaze", &|r| r.effects.dehaze = -0.3, false, false),
+            // A mask's positive Dehaze adds to the recipe's and reads the same haze.
+            (
+                "mask dehaze",
+                &|r| {
+                    let mut mask = crate::model::masks::MaskGroup {
+                        components: vec![crate::model::masks::MaskComponent::new(
+                            crate::model::masks::MaskShape::Linear {
+                                from: [0.2, 0.5],
+                                to: [0.8, 0.5],
+                            },
+                        )],
+                        ..Default::default()
+                    };
+                    mask.adjust.dehaze = 0.5;
+                    r.masks.push(mask);
+                },
+                false,
+                false,
+            ),
             ("white balance", &|r| r.wb = [1.4, 1., 0.7], true, true),
             // As the Temperature slider sets it: with the white balance it maps to.
             (
@@ -558,11 +578,31 @@ mod tests {
             check(&mut warm, &r);
             // Fit and 100% regions share one measure.
             assert_eq!(warm.cache.measures.lock().unwrap().len(), 1, "{name}");
+            let rendered_haze = warm
+                .cache
+                .measures
+                .lock()
+                .unwrap()
+                .values()
+                .next()
+                .unwrap()
+                .haze
+                .get()
+                .cloned();
             edit(&mut r);
             check(&mut warm, &r);
             let measures = warm.cache.measures.lock().unwrap();
             assert_eq!(measures.len(), 1 + again as usize, "{name}");
-            let values: Vec<_> = measures.values().copied().collect();
+            // The haze is measured with the measures it was kept with, once.
+            let first = measures.values().last().unwrap();
+            let haze = first.haze.get().expect("positive Dehaze measures the haze");
+            if !again {
+                assert!(
+                    Arc::ptr_eq(haze, rendered_haze.as_ref().unwrap()),
+                    "{name}: measured the haze again"
+                );
+            }
+            let values: Vec<_> = measures.values().map(|m| m.measures).collect();
             assert_eq!(
                 values.first() != values.last(),
                 changed,

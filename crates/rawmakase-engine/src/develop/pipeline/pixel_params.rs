@@ -25,8 +25,13 @@ const FIELDS: &[(&str, usize)] = &[
     // `GlobalTone::gpu_keys`.
     ("SCENE_TABLES", 1),
     ("SCENE_KEYS", 6),
-    // Dehaze and the level its response is relative to (`SceneTone::dehaze_key`).
+    // Dehaze and the level negative Dehaze's response is relative to
+    // (`SceneTone::dehaze_key`).
     ("DEHAZE", 2),
+    // Positive Dehaze's haze (`scene_tone::Dehazing`): its density's table, or -1, the
+    // grid's size and scale, then the airlight at the render's Exposure.
+    ("HAZE", 5),
+    ("HAZE_AIR", 3),
     ("LOOK", 5),
     ("ENH", 5),
     ("ENH_CURVE", 1),
@@ -267,6 +272,23 @@ fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams>
     p.set("SCENE_KEYS", &global.gpu_keys());
     p.set("SCENE_TABLES", &[-1.]);
     p.set("DEHAZE", &[lut.scene.dehaze, lut.scene.dehaze_key]);
+    match &lut.scene.haze {
+        Some(h) => {
+            let density = p.push(h.haze.density.iter().copied());
+            p.set(
+                "HAZE",
+                &[
+                    density,
+                    h.haze.width as f32,
+                    h.haze.height as f32,
+                    h.scale[0],
+                    h.scale[1],
+                ],
+            );
+            p.set("HAZE_AIR", &h.air);
+        }
+        None => p.set("HAZE", &[-1., 0., 0., 0., 0.]),
+    }
     let families = p.push(crate::develop::local_tone::gpu_families());
     p.set("LOCAL_FAMILIES", &[families]);
     p.table("LOOK", t.look);

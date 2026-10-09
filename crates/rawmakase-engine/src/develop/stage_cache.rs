@@ -1,7 +1,7 @@
 //! Results of the stages before the per-pixel color pipeline, kept between preview
 //! renders: geometry/lens-warp samples, the measured Texture, the photo's measurement
 //! copy the Shadows/Highlights map is built from, and the scene tone stage's measures
-//! of that copy.
+//! of that copy (with the haze positive Dehaze removes).
 //! Each key holds only the recipe fields its stage reads, so exposure, curve, HSL
 //! and grading edits reuse them and rerun only the per-pixel stage.
 //!
@@ -38,10 +38,11 @@ pub(crate) struct StageCache {
     /// that read them (`Toned::measures`).
     pub(crate) measures: Arc<MeasuresCache>,
 }
-/// The scene tone stage's measures (`pipeline::tone::photo_measures`), per measurement
-/// copy and the settings they read.
+/// The scene tone stage's measures (`pipeline::tone::photo_measures`) and, once a render
+/// needs it, the photo's haze (`pipeline::tone::photo_haze`), per measurement copy and
+/// the settings they read: both read the same scene values.
 pub(crate) type MeasuresCache =
-    std::sync::Mutex<Lru<MeasuresKey, crate::develop::scene_tone::PhotoMeasures>>;
+    std::sync::Mutex<Lru<MeasuresKey, crate::develop::scene_tone::Measured>>;
 
 pub(crate) struct Lru<K, V> {
     /// Most recently used first.

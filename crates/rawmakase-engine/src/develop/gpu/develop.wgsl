@@ -547,6 +547,44 @@ fn local_gain(pos: vec2<f32>, lum: f32) -> f32 {
     }
     return exp2(local_curve(P_SHADOWS, base) + local_curve(P_HIGHLIGHTS, base) + clarity);
 }
+// scene_tone::haze: the fraction of the haze positive Dehaze `s` removes.
+fn haze_omega(s_in: f32) -> f32 {
+    let s = clamp(s_in, 0.0, 1.0);
+    if s <= 0.2 {
+        return 1.5 * s;
+    }
+    if s <= 0.4 {
+        return 0.3 + 0.75 * (s - 0.2);
+    }
+    return 0.45 + 0.75 * (s - 0.4);
+}
+// Dehazing::apply: the photo's haze removed at Dehaze `s` > 0.
+fn dehaze_positive(pro: vec3<f32>, s: f32, pos: vec2<f32>) -> vec3<f32> {
+    let base = offset(P_HAZE);
+    if base < 0 {
+        return pro;
+    }
+    let w = u32(p(P_HAZE + 1u));
+    let h = u32(p(P_HAZE + 2u));
+    let fx = clamp((pos.x + 0.5) * p(P_HAZE + 3u) - 0.5, 0.0, f32(w - 1u));
+    let fy = clamp((pos.y + 0.5) * p(P_HAZE + 4u) - 0.5, 0.0, f32(h - 1u));
+    let ix = u32(fx);
+    let iy = u32(fy);
+    let jx = min(ix + 1u, w - 1u);
+    let jy = min(iy + 1u, h - 1u);
+    let tx = fx - f32(ix);
+    let ty = fy - f32(iy);
+    let top = table(base + i32(iy * w + ix)) * (1.0 - tx) + table(base + i32(iy * w + jx)) * tx;
+    let bottom = table(base + i32(jy * w + ix)) * (1.0 - tx) + table(base + i32(jy * w + jx)) * tx;
+    let density = top * (1.0 - ty) + bottom * ty;
+    let t = max(1.0 - haze_omega(s) * density, 0.3);
+    let air = vec3(p(P_HAZE_AIR), p(P_HAZE_AIR + 1u), p(P_HAZE_AIR + 2u));
+    let j = (pro - air) / t + air;
+    // haze.rs: no channel below half the colour scaled by the luminance's change.
+    let lw = vec3(0.2880402, 0.7118741, 0.0000857);
+    let ratio = max(dot(j, lw), 0.0) / max(dot(pro, lw), 1e-9);
+    return max(j, 0.5 * pro * ratio);
+}
 fn level(v: f32) -> f32 {
     let bp = p(P_LEVELS);
     let wp = p(P_LEVELS + 1u);
@@ -973,7 +1011,9 @@ fn scene_stage(pro_in: vec3<f32>, pos: vec2<f32>) -> vec3<f32> {
     if masked {
         dehaze += delta[L_DEHAZE];
     }
-    if dehaze != 0.0 {
+    if dehaze > 0.0 {
+        pro = dehaze_positive(pro, dehaze, pos);
+    } else if dehaze < 0.0 {
         let key = p(P_DEHAZE + 1u);
         for (var c = 0u; c < 3u; c++) {
             if pro[c] > 0.0 {

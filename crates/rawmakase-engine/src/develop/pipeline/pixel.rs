@@ -75,7 +75,8 @@ pub(super) fn exposure_stage(color: [f32; 3], lut: &CurveSet, local: Option<Loca
     mul(crate::camera_profiles::RGB_TO_PRO, mul(FROM_2020, rgb))
 }
 /// S3: the scene tone stage, on linear ProPhoto RGB, unclamped: Shadows, Highlights and
-/// Clarity as a gain from the photo's map at sample position `pos`, then Dehaze and the
+/// Clarity as a gain from the photo's map at sample position `pos`, then Dehaze (with the
+/// photo's haze at `pos`) and the
 /// global curves.
 pub(super) fn scene_stage(
     pro: [f32; 3],
@@ -104,7 +105,7 @@ pub(super) fn scene_stage(
         }
         None => pro,
     };
-    lut.scene.apply(pro, local.map(|l| l.delta))
+    lut.scene.apply(pro, pos, local.map(|l| l.delta))
 }
 /// In place of S3 for Auto tone's measurement (`PixelOutput::AutoBasis`): the DNG SDK's
 /// exposure ramp at its default Shadows, with its black at 0.0015 × 2^exposure (none

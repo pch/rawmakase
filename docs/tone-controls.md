@@ -37,7 +37,7 @@ Both are luminance gains from an edge-aware base level, in the scene tone stage 
 
 ### Dehaze
 
-Dehaze works on each channel in the scene tone stage, by its level relative to the photo's 99th percentile of luminance, with a measured log2 gain per amount (`DEHAZE` in `local_tone_data.rs`, fitted on synthetic scenes). Its spatial part is not modelled.
+Positive Dehaze removes the photo's haze in the scene tone stage (`scene_tone/haze.rs`): a dark-channel model measured on the photo's 512-pixel measurement copy at Exposure 0 (the airlight from its haziest 1%, and a guided-filtered dark channel relative to it), kept with the photo's measures, so Dehaze edits do not measure it again. Each pixel moves away from the airlight by its transmission, 1 − ω·density, where ω grows with the amount (0.3 at +20, 0.45 at +40, 0.9 at +100). Fitted on the 22 training photos against Camera Raw 18.7, it halves the median display ΔE00 at +100 (5.97 → 3.06). Negative Dehaze works on each channel, by its level relative to the photo's 99th percentile of luminance, with a measured log2 gain per amount (`DEHAZE` in `local_tone_data.rs`). A mask's Dehaze adds to the slider; the sum picks the model. See [Dehaze](scene-tone-stage.md#dehaze).
 
 ### Clarity
 
@@ -125,6 +125,6 @@ A photo takes one render of the reduced copy, after highlight recovery and the r
 ## Remaining
 
 - How Camera Raw adapts Shadows, Highlights, Dehaze and positive Whites to each photo is fitted (keys from the photo's statistics, tables over its measures), not known; see [scene tone stage](scene-tone-stage.md#local-operators) for what the keys leave.
-- Dehaze's spatial part, and Clarity's residual, are not modelled.
+- Negative Dehaze's spatial part, and Clarity's residual, are not modelled.
 - Contrast's pivot is predicted from two statistics of the photo to about 0.03; what Camera Raw measures exactly is unknown.
 - Auto's Whites: Lightroom's choice follows the brightest percentiles only loosely (90th percentile error about 30).

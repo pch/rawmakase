@@ -228,15 +228,21 @@ impl LocalToneMap {
     }
     /// `v` on this grid at camera-image sample position `x`, `y`.
     fn bilinear(&self, x: f32, y: f32, v: &[f32]) -> f32 {
-        let fx = ((x + 0.5) * self.scale[0] - 0.5).clamp(0., (self.width - 1) as f32);
-        let fy = ((y + 0.5) * self.scale[1] - 0.5).clamp(0., (self.height - 1) as f32);
-        let (ix, iy) = (fx as usize, fy as usize);
-        let (jx, jy) = ((ix + 1).min(self.width - 1), (iy + 1).min(self.height - 1));
-        let (tx, ty) = (fx - ix as f32, fy - iy as f32);
-        let top = v[iy * self.width + ix] * (1. - tx) + v[iy * self.width + jx] * tx;
-        let bottom = v[jy * self.width + ix] * (1. - tx) + v[jy * self.width + jx] * tx;
-        top * (1. - ty) + bottom * ty
+        grid_sample(v, [self.width, self.height], self.scale, [x, y])
     }
+}
+/// `v` on a `size` grid at camera-image sample position `pos`, bilinearly; `scale` is
+/// the grid's size relative to the camera image's.
+pub(crate) fn grid_sample(v: &[f32], size: [usize; 2], scale: [f32; 2], pos: [f32; 2]) -> f32 {
+    let [width, height] = size;
+    let fx = ((pos[0] + 0.5) * scale[0] - 0.5).clamp(0., (width - 1) as f32);
+    let fy = ((pos[1] + 0.5) * scale[1] - 0.5).clamp(0., (height - 1) as f32);
+    let (ix, iy) = (fx as usize, fy as usize);
+    let (jx, jy) = ((ix + 1).min(width - 1), (iy + 1).min(height - 1));
+    let (tx, ty) = (fx - ix as f32, fy - iy as f32);
+    let top = v[iy * width + ix] * (1. - tx) + v[iy * width + jx] * tx;
+    let bottom = v[jy * width + ix] * (1. - tx) + v[jy * width + jx] * tx;
+    top * (1. - ty) + bottom * ty
 }
 /// The measured positions a slider is bracketed in, as `Curve::new` builds them: each
 /// position with its table, and the identity at 0 in slot `IDENTITY`.

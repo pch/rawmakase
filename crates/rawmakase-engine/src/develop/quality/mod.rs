@@ -170,18 +170,21 @@ mod tests {
             blacks: -0.3,
             ..Default::default()
         };
-        r.effects.dehaze = 0.3;
         r.effects.clarity = -0.4;
         r.effects.texture = 0.3;
-        let full = render(&im, &r.checked()?, 0, None)?;
-        for [x, y, w, h] in [[0, 0, 20, 30], [30, 25, 40, 40], [80, 60, 16, 20]] {
-            let tile = render(&im, &r.checked()?, 0, Some([x, y, w, h]))?;
-            for yy in 0..h {
-                for xx in 0..w {
-                    let a = tile.pixels[(yy * w + xx) as usize];
-                    let b = full.pixels[((yy + y) * full.width + xx + x) as usize];
-                    for c in 0..3 {
-                        assert!((a[c] - b[c]).abs() < 2e-6);
+        // Negative Dehaze from its tables, positive from the photo's haze.
+        for dehaze in [-0.3, 0.6] {
+            r.effects.dehaze = dehaze;
+            let full = render(&im, &r.checked()?, 0, None)?;
+            for [x, y, w, h] in [[0, 0, 20, 30], [30, 25, 40, 40], [80, 60, 16, 20]] {
+                let tile = render(&im, &r.checked()?, 0, Some([x, y, w, h]))?;
+                for yy in 0..h {
+                    for xx in 0..w {
+                        let a = tile.pixels[(yy * w + xx) as usize];
+                        let b = full.pixels[((yy + y) * full.width + xx + x) as usize];
+                        for c in 0..3 {
+                            assert!((a[c] - b[c]).abs() < 2e-6, "{dehaze}");
+                        }
                     }
                 }
             }

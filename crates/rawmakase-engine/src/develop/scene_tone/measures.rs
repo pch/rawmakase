@@ -17,6 +17,22 @@ pub(crate) struct PhotoMeasures {
     /// a stop below the level Whites stretches toward.
     pub(crate) p99: f32,
 }
+/// What the stage cache keeps of a photo's measurement copy for the settings the
+/// measures read: the measures, and the haze positive Dehaze removes, measured on the
+/// same scene values the first time a render needs it.
+#[derive(Debug)]
+pub(crate) struct Measured {
+    pub(crate) measures: PhotoMeasures,
+    pub(crate) haze: std::sync::OnceLock<std::sync::Arc<super::Haze>>,
+}
+impl Measured {
+    pub(crate) fn new(measures: PhotoMeasures) -> Self {
+        Self {
+            measures,
+            haze: Default::default(),
+        }
+    }
+}
 /// Long edge of the copy the maximum is taken on: on a 920-pixel probe Camera Raw
 /// counts a bright spot fully from about 8 pixels across, and not at 2.
 pub(crate) const MAX_EDGE: u32 = 128;
