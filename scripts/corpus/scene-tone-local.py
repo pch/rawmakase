@@ -83,8 +83,11 @@ def name(kind, v):
     return f'{kind}{int(round(v * 100)):+d}'
 
 
+# Shadows and Dehaze are fitted on photos; their scene renders are scene-probes.py's
+# references.
 SYNTH_RENDERS = {'default': {}} | {name(k, v): {SETTINGS[k]: f'{v * 100:g}'}
-                                   for k, vs in [('H', SH), ('C', CLARITY)] for v in vs}
+                                   for k, vs in [('S', SH), ('H', SH), ('D', DEHAZE), ('C', CLARITY)]
+                                   for v in vs}
 PHOTO_RENDERS = {'default': {}} | {name(k, v): {SETTINGS[k]: f'{v * 100:g}'}
                                    for k, vs in [('S', SH), ('D', DEHAZE)] for v in vs}
 
