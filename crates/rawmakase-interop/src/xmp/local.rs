@@ -803,7 +803,8 @@ fn adjustments(c: &Node) -> Result<LocalAdjust> {
     Ok(LocalAdjust {
         temperature: unit("LocalTemperature"),
         tint: unit("LocalTint"),
-        exposure: v("LocalExposure2012").clamp(-4., 4.),
+        // Normalised to ±1 for ±4 EV, as Camera Raw renders it.
+        exposure: (v("LocalExposure2012") * 4.).clamp(-4., 4.),
         contrast: unit("LocalContrast2012"),
         highlights: unit("LocalHighlights2012"),
         shadows: unit("LocalShadows2012"),

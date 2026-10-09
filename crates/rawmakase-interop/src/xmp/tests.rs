@@ -653,7 +653,9 @@ fn lightroom_spots_and_masks_convert_to_image_space() -> Result<()> {
     assert_eq!(r.masks.len(), 2);
     let sky = &r.masks[0];
     assert_eq!((sky.name.as_str(), sky.amount), ("Sky", 0.8));
-    assert_eq!(sky.adjust.exposure, -0.5);
+    // Lightroom stores a mask's Exposure normalised to ±1 for ±4 EV: Camera Raw 18.7
+    // renders LocalExposure2012 0.25 as the global Exposure +1 does.
+    assert_eq!(sky.adjust.exposure, -2.);
     assert_eq!(sky.adjust.color, [0.5, 0.4]);
     assert!(
         matches!(sky.components[0].shape, MaskShape::Linear { from, to } if near(from, [0.5, 0.1]) && near(to, [0.5, 0.5]))
