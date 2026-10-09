@@ -42,7 +42,7 @@ files should preserve.
 | `lens` | Readers that fill the `optics` model: the tables cameras embed in their RAWs, imported Adobe LCPs and lateral CA measurement, plus profile selection | `embedded.rs`, `lcp.rs`, `auto_ca.rs`, `choice.rs` |
 | `rendered` | Developed pixels as values: an output image, its histogram and clipping overlay, which the renderer produces and export and watermarks use; depends on nothing | `rendered.rs` |
 | `model` | What an edit is, as values shared by the renderer, the catalog and file formats: the `Recipe` with its validation (`ValidRecipe`), saved versions and migration, panel switches, and the settings it is made of: Effects, Heal and Clone, Red Eye, Point Color, masks, Transform with Upright, white balance from metadata, the image space positions are kept in (`image_frame.rs`), the sliders as parameters, the rules an edit follows and the setting groups Copy Settings, Sync and presets use. Depends on camera profiles, lenses and optics, never on rendering | `recipe.rs`, `valid.rs`, `saved_format.rs`, `panels.rs`, `operators.rs`, `effects.rs`, `masks.rs`, `transform.rs` |
-| `develop` | Rendering a recipe: geometry, color processing, curves, effects, local adjustments, detail rendering and the GPU port | `pipeline/`, `quality/`, `geometry.rs`, `gpu/` |
+| `develop` | Rendering a recipe: geometry, color processing, the scene tone stage, curves, effects, local adjustments, detail rendering and the GPU port | `pipeline/`, `scene_tone/`, `quality/`, `geometry.rs`, `gpu/` |
 | `xmp` | Namespace-aware Adobe settings parsing and application to recipes. Settings that ask for Auto measure the photo through `PhotoMeasures`, which `develop::Measures` provides, and packets take the crop as rendered from the caller, so XMP needs no rendering code | `parse.rs`, `apply.rs` |
 | `raw_defaults` | Lightroom's Raw Defaults: the master and per-camera choices and a photo's starting settings. Above `presets`, whose library it reads | `raw_defaults.rs` |
 | `presets` | Native JSON recipe presets, installed XMP collections, favorites and preset import | `native.rs`, `library.rs` |
@@ -160,7 +160,10 @@ inject a temporary file, without changing the process-wide environment.
   data, legacy sidecars, no-clobber publication, ICC/EXIF handling and
   temporary-file write behavior.
 - Rendering math stays in `develop` and `camera_profiles`. Fit previews, regions
-  and exports must continue to share the relevant processing paths.
+  and exports must continue to share the relevant processing paths. What the
+  [scene tone stage](scene-tone-stage.md) measures of a photo comes from one
+  measurement copy of the full-resolution photo (`Toned::measured`, cached per
+  image), never from the region or preview size being rendered.
 - Keep OS integration in `platform` and native decoding/color management in
   `raw`. Use the existing asset-path policy instead of duplicating environment
   variable handling in feature modules.
@@ -252,11 +255,12 @@ the GPU, and `CPU` otherwise.
 
 For the same recipes, the stages before the per-pixel stage also run on the device
 when the photo fits its buffer limits (`gpu/resident.rs`): the photo or pyramid level
-is kept there with its local-tone blurs, the gain is computed only for the pixels a
-region samples, and regions are sampled there through geometry, lens correction and
-noise reduction. Only the reduced input of the
-Shadows/Highlights map is read back; the map is built on the CPU. A failure in these
-stages turns off only this path for the session.
+is kept there, and regions are sampled there through geometry, lens correction and
+noise reduction. Only the reduced input of the Shadows/Highlights map is read back;
+the map (with Clarity's gain) is built on the CPU, and the scene tone stage reads it
+in `develop.wgsl`. Texture's image is made on the CPU, and a mask's Clarity or
+Texture renders the whole preview on the CPU. A failure in these stages turns off
+only this path for the session.
 
 Presented textures are kept per view (the whole photo, or a 100% region) and size,
 two of each, so a slider moving at 100% alternates between the reduced preview's and

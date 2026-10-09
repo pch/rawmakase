@@ -68,10 +68,9 @@ region) still recompute Clarity over the full image on every change.
 The desktop renderer keeps the results of the stages before the per-pixel color
 pipeline (`crates/rawmakase-engine/src/develop/stage_cache.rs`), each keyed by the recipe fields it reads:
 
-- local-tone blurs: log luminance and its box blurs, which depend on white balance,
-  profile and lens vignetting but not on exposure (exposure shifts all of them
-  equally);
-- the local-tone image: the blurs with Clarity and Texture applied;
+- the measurement copy: the full photo reduced to 512 pixels, from which every
+  render takes the scene tone stage's measures and maps (docs/scene-tone-stage.md);
+- the textured image, when Texture is on;
 - samples: each output pixel's camera value after geometry, lens correction and
   noise reduction, and its source position.
 
@@ -244,6 +243,10 @@ on the CPU (about 110 ms for the log luminance, 150–190 ms per box blur and 15
 the gain under this load); see the next section.
 
 ## Photo kept on the GPU
+
+(The log luminance, box blurs and Clarity/Texture gain this section describes were
+removed with the scene tone stage, whose Clarity reads the 512-pixel map; the photo
+is still kept on the device and sampled there.)
 
 The stages before the per-pixel stage now run on the device too (`gpu/logs.wgsl`,
 `gpu/local.wgsl`, `gpu/resident.rs`). The photo, or the pyramid level a Fit renders

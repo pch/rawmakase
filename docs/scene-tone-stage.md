@@ -118,10 +118,19 @@ texture, and stops at edges. Their strength follows the photo: a dark square is 
 of a dark scene are hardly lifted; Highlights −100 pulls the brightest area of a dark
 scene down by up to 5.8 EV. With an ideal key per scene, one gain curve of the base
 level relative to it explains Shadows +100 to 0.056 EV and Highlights −100 to 0.050 EV
-on 40 scenes; the keys RAWmakase predicts from the photo's percentiles (Shadows:
-0.25·p99.9 + 0.75·p99, Highlights: halfway between p75 and p1 of log luminance) leave
-0.17 and 0.11 in cross-validation, against 0.42 and 0.29 for doing nothing. A second
-dimension (the pixel against its base) did not help in cross-validation.
+on 40 scenes; keys predicted from the photo's percentiles (Shadows: 0.25·p99.9 +
+0.75·p99, Highlights: halfway between p75 and p1 of log luminance) leave 0.17 and 0.11
+in cross-validation, against 0.42 and 0.29 for doing nothing. A second dimension (the
+pixel against its base) did not help in cross-validation.
+
+On photos the synthetic Shadows tables did not carry over as well as Highlights'. On
+22 training photos (cross-validated by photo, luminance gain in EV), Shadows' tables
+fitted on the photos themselves against the photo's mean luminance (log2 of the mean
+of the map's luminance) leave 0.12 at +100 and −100, against 0.25 and 0.24 for the
+synthetic tables and 0.43 and 0.34 for doing nothing; the 90th percentile key does as
+well. Highlights' synthetic tables stay (0.09–0.10 at ±100 on the photos, better than
+tables fitted on them). Clarity's weights keep the percentile key they were fitted
+with.
 
 Dehaze works on each channel by its level relative to the photo's bright end (the 99th
 percentile of luminance): no change at the top and about −0.5 EV a few stops below at
