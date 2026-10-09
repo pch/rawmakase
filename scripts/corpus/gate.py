@@ -136,9 +136,12 @@ def photo_metrics(reference, render):
     Returns the median and mean ΔE00 over valid pixels (all pixels of the common frame
     but a 3-pixel border), the fraction of valid pixels, the clipping disagreement, and
     the per-pixel L* of both for the band statistics."""
-    if reference.shape != render.shape:
+    # Reductions of one framing may round to a pixel more or less; anything more is a
+    # different framing.
+    if any(abs(x - y) > 2 for x, y in zip(reference.shape, render.shape)):
         return dict(valid=0., error=f'framing differs: {reference.shape} / {render.shape}')
-    a, b = reference[3:-3, 3:-3], render[3:-3, 3:-3]
+    h, w = min(reference.shape[0], render.shape[0]), min(reference.shape[1], render.shape[1])
+    a, b = reference[3:h - 3, 3:w - 3], render[3:h - 3, 3:w - 3]
     la, lb = lab(a), lab(b)
     d = metrics.de00(la, lb)
     valid = np.isfinite(d)
