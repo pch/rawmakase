@@ -200,7 +200,7 @@ impl Geometry {
         // Off with the Lens Corrections panel, for callers that pass the stored recipe
         // (the white balance picker) rather than the rendered one.
         let lens_panel = r.panels.state(crate::model::panels::Panel::LensCorrections);
-        let manual = (r.engine >= 4 && lens_panel == crate::model::panels::PanelState::On)
+        let manual = (lens_panel == crate::model::panels::PanelState::On)
             .then(|| ManualDistortion::new(r.lens_manual_distortion, frame_width, frame_height))
             .flatten();
         let mut g = Self {
@@ -261,9 +261,6 @@ impl Geometry {
     /// frame, before rotating or flipping the photo, so on a photo turned to portrait
     /// Vertical keystones across the screen (docs/transform.md).
     fn homography(r: &Recipe, width: f32, height: f32) -> Option<[[f32; 3]; 3]> {
-        if r.engine < 4 {
-            return None;
-        }
         let upright = r.upright.correction();
         if upright.is_none() && r.transform.is_identity() {
             return None;
@@ -563,13 +560,8 @@ mod manual_distortion_tests {
                 );
             }
         }
-        // Off at 0 and before engine 4.
+        // Off at 0.
         assert!(Geometry::new(&im, &distorted(0.), 0).manual.is_none());
-        let old = Recipe {
-            engine: 3,
-            ..distorted(0.5)
-        };
-        assert!(Geometry::new(&im, &old, 0).manual.is_none());
         let mut off = distorted(0.5);
         off.panels.set(
             crate::model::panels::Panel::LensCorrections,

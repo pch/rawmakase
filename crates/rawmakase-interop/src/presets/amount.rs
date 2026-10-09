@@ -15,7 +15,6 @@
 //!   style, grain seed) take the preset's choice at any Amount above 0, so 0% is the
 //!   photo as before and every other Amount keeps the preset's character; a look with
 //!   a Profile Amount scales it from 0 instead;
-//! - the process version follows the preset at every Amount, as applying does.
 //!
 //! Point Color swatches scale their shifts. Lens corrections, chromatic aberration,
 //! crop, geometry, Upright, spots, masks and Point Color swatches added or taken away
@@ -83,10 +82,7 @@ impl PresetAmount {
             return self.full.clone();
         }
         if t == 0. {
-            // The process version still follows the preset.
-            let mut r = self.before.clone();
-            process_version(&mut r, &self.full);
-            return r;
+            return self.before.clone();
         }
         blend(&self.before, &self.full, t, m)
     }
@@ -149,25 +145,6 @@ fn same_swatches(a: &Recipe, b: &Recipe) -> bool {
             .collect::<Vec<_>>()
     };
     unshifted(a) == unshifted(b)
-}
-
-fn process_version(r: &mut Recipe, full: &Recipe) {
-    r.engine = full.engine;
-    r.profile_tone = full.profile_tone;
-    r.wide_gamut_curves = full.wide_gamut_curves;
-    r.reference_curves = full.reference_curves;
-    r.reference_calibration = full.reference_calibration;
-    r.reference_color = full.reference_color;
-    r.parametric_model = full.parametric_model;
-    r.contrast_model = full.contrast_model;
-    r.grading_model = full.grading_model;
-    r.mixer_model = full.mixer_model;
-    r.saturation_model = full.saturation_model;
-    r.vibrance_model = full.vibrance_model;
-    r.black_white_model = full.black_white_model;
-    r.calibration_model = full.calibration_model;
-    r.whites_model = full.whites_model;
-    r.gamut_model = full.gamut_model;
 }
 
 /// A slider between `a` and `b`, kept within `lo..=hi` above 100%. Imported values may
@@ -356,7 +333,6 @@ fn effects(a: &Effects, b: &Effects, t: f32) -> Effects {
 fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
     // Taken apart without `..`, so a new setting is a compile error until it is placed.
     let Recipe {
-        engine: _,
         lens_builtin,
         lens_profile,
         lens_profile_choice,
@@ -364,7 +340,6 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         lens_vignetting,
         lens_manual_distortion,
         lens_ca,
-        profile_tone: _,
         effects: b_effects,
         preset_name,
         preset_settings,
@@ -373,29 +348,8 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         sharpening_radius,
         sharpening_detail,
         sharpening_masking,
-        sharpening_model,
         exposure,
         camera_exposure,
-        wide_gamut_curves: _,
-        reference_curves: _,
-        reference_calibration: _,
-        reference_color: _,
-        parametric_model: _,
-        grain_model,
-        clarity_model,
-        texture_model,
-        contrast_model: _,
-        lens_vignette_model,
-        retouch_model,
-        grading_model: _,
-        mixer_model: _,
-        saturation_model: _,
-        vibrance_model: _,
-        black_white_model: _,
-        calibration_model: _,
-        whites_model: _,
-        white_balance_model: _,
-        gamut_model: _,
         temperature,
         tint,
         wb,
@@ -417,7 +371,6 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         grading,
         noise_luma,
         noise_chroma,
-        noise_model,
         sharpening,
         crop,
         straighten,
@@ -471,12 +424,7 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         lens_vignetting: *lens_vignetting,
         lens_manual_distortion: *lens_manual_distortion,
         lens_ca: *lens_ca,
-        lens_vignette_model: *lens_vignette_model,
-        retouch_model: *retouch_model,
         effects: effects(&a.effects, b_effects, t),
-        grain_model: *grain_model,
-        clarity_model: *clarity_model,
-        texture_model: *texture_model,
         preset_name: preset_name.clone(),
         preset_settings: preset_settings.clone(),
         profile: profile.clone(),
@@ -484,7 +432,6 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         sharpening_radius: lerp(a.sharpening_radius, *sharpening_radius, t, 0.5, 3.),
         sharpening_detail: lerp(a.sharpening_detail, *sharpening_detail, t, 0., 1.),
         sharpening_masking: lerp(a.sharpening_masking, *sharpening_masking, t, 0., 1.),
-        sharpening_model: *sharpening_model,
         exposure: lerp_setting(ParameterId::Exposure, a.exposure, *exposure, t),
         camera_exposure: *camera_exposure,
         temperature,
@@ -517,7 +464,6 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         grading: std::array::from_fn(|i| wheel(a.grading[i], grading[i], t)),
         noise_luma: lerp(a.noise_luma, *noise_luma, t, 0., 1.),
         noise_chroma: lerp(a.noise_chroma, *noise_chroma, t, 0., 1.),
-        noise_model: *noise_model,
         sharpening: lerp(a.sharpening, *sharpening, t, 0., 1.),
         crop: *crop,
         straighten: *straighten,
@@ -532,16 +478,12 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         masks: masks.clone(),
         panels: panels.clone(),
         unknown: unknown.clone(),
-        ..Recipe::default()
     };
-    r.white_balance_model = b.white_balance_model;
-    process_version(&mut r, b);
     // The gains follow the controls, unless they are one side's own.
     if (r.temperature, r.tint) == (b.temperature, b.tint) && r.profile == b.profile {
         r.wb = *wb;
         r.auto_white_balance = *auto_white_balance;
     } else if (r.temperature, r.tint) == (a.temperature, a.tint) && r.profile == a.profile {
-        r.white_balance_model = a.white_balance_model;
         r.wb = a.wb;
         r.auto_white_balance = a.auto_white_balance;
     } else {

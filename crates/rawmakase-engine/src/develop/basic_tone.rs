@@ -1,4 +1,4 @@
-//! Global Basic-panel tone sliders (Dehaze, Contrast, Whites, Blacks) for engine 4, as measured
+//! Global Basic-panel tone sliders (Dehaze, Contrast, Whites, Blacks), as measured
 //! Lightroom responses. Each slider is a curve over the rendered image; values between
 //! the measured slider positions are interpolated linearly, with 0 as the identity.
 use super::basic_tone_data::{
@@ -60,27 +60,9 @@ fn bracket(xs: &[f32], x: f32) -> (usize, f32) {
 /// What a render's Contrast and Whites follow of the photo.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PhotoTone {
-    pub(crate) contrast: ContrastCurve,
+    /// The encoded level Contrast pivots at.
+    pub(crate) contrast_pivot: f32,
     pub(crate) whites: WhitesTable,
-}
-impl PhotoTone {
-    /// The original Contrast and Whites, as recipes saved before the adaptive ones.
-    #[cfg(test)]
-    pub(crate) fn original() -> Self {
-        Self {
-            contrast: ContrastCurve::Original,
-            whites: WhitesTable::original(),
-        }
-    }
-}
-
-/// The Contrast curve one render uses.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum ContrastCurve {
-    /// [`ContrastModel::Original`].
-    Original,
-    /// [`ContrastModel::Adaptive`], pivoting at this encoded level.
-    Pivot(f32),
 }
 /// The pivot of a photo whose own isn't measured: about the middle of the photos'.
 pub(crate) const TYPICAL_PIVOT: f32 = 0.5;
@@ -146,8 +128,7 @@ const PIVOT_FIT: [f32; 3] = [0.577, 0.568, -0.689];
 const SIZE: usize = 1024;
 
 /// Composed Dehaze, Contrast, Whites and Blacks curve, sampled at `SIZE + 1` points
-/// over 0–1. Contrast comes before Whites and Blacks in the original model and after
-/// them, as in Camera Raw, in the adaptive one.
+/// over 0–1. Contrast comes after Whites and Blacks, as in Camera Raw.
 #[derive(Clone)]
 pub(crate) struct BasicTone {
     pub(crate) lut: Vec<f32>,
@@ -166,19 +147,7 @@ impl BasicTone {
         let lut = (0..=SIZE)
             .map(|i| {
                 let x = i as f32 / SIZE as f32;
-                let x = slider(&DEHAZE_VALUES, &DEHAZE, dehaze, x);
-                match photo.contrast {
-                    ContrastCurve::Original => {
-                        let x = slider(&SLIDER_VALUES, &CONTRAST, contrast, x);
-                        let x = slider(&SLIDER_VALUES, &photo.whites.0, whites, x);
-                        slider(&SLIDER_VALUES, &BLACKS, blacks, x)
-                    }
-                    ContrastCurve::Pivot(pivot) => {
-                        let x = slider(&SLIDER_VALUES, &photo.whites.0, whites, x);
-                        let x = slider(&SLIDER_VALUES, &BLACKS, blacks, x);
-                        contrast_at(contrast, pivot, x)
-                    }
-                }
+                compose(contrast, whites, blacks, dehaze, photo, x)
             })
             // Measured tables carry small non-monotone noise; tone must never invert.
             .scan(0f32, |max, y| {
@@ -219,18 +188,9 @@ pub(crate) fn compose(
     x: f32,
 ) -> f32 {
     let x = slider(&DEHAZE_VALUES, &DEHAZE, dehaze, x);
-    match photo.contrast {
-        ContrastCurve::Original => {
-            let x = slider(&SLIDER_VALUES, &CONTRAST, contrast, x);
-            let x = slider(&SLIDER_VALUES, &photo.whites.0, whites, x);
-            slider(&SLIDER_VALUES, &BLACKS, blacks, x)
-        }
-        ContrastCurve::Pivot(pivot) => {
-            let x = slider(&SLIDER_VALUES, &photo.whites.0, whites, x);
-            let x = slider(&SLIDER_VALUES, &BLACKS, blacks, x);
-            contrast_at(contrast, pivot, x)
-        }
-    }
+    let x = slider(&SLIDER_VALUES, &photo.whites.0, whites, x);
+    let x = slider(&SLIDER_VALUES, &BLACKS, blacks, x);
+    contrast_at(contrast, photo.contrast_pivot, x)
 }
 /// The measured tables in the order `develop.wgsl`'s local curves read them: Dehaze,
 /// Contrast, Whites, Blacks, each 6 × 64 values, then the slider positions (Dehaze's,
@@ -299,7 +259,11 @@ mod tests {
     use super::*;
     #[test]
     fn neutral_sliders_are_identity_and_curves_are_monotone() {
-        assert!(BasicTone::new(0., 0., 0., 0., &PhotoTone::original()).is_none());
+        let typical = PhotoTone {
+            contrast_pivot: TYPICAL_PIVOT,
+            whites: WhitesTable::original(),
+        };
+        assert!(BasicTone::new(0., 0., 0., 0., &typical).is_none());
         for s in [-1., -0.6, -0.1, 0.1, 0.4, 1.] {
             for (c, w, b, d) in [
                 (s, 0., 0., 0.),
@@ -313,7 +277,7 @@ mod tests {
                     b,
                     d,
                     &PhotoTone {
-                        contrast: ContrastCurve::Pivot(TYPICAL_PIVOT),
+                        contrast_pivot: TYPICAL_PIVOT,
                         whites: WhitesTable::original(),
                     },
                 )
@@ -332,7 +296,7 @@ mod tests {
             0.,
             0.,
             &PhotoTone {
-                contrast: ContrastCurve::Pivot(TYPICAL_PIVOT),
+                contrast_pivot: TYPICAL_PIVOT,
                 whites: WhitesTable::original(),
             },
         )
@@ -345,7 +309,7 @@ mod tests {
             0.,
             0.,
             &PhotoTone {
-                contrast: ContrastCurve::Pivot(TYPICAL_PIVOT),
+                contrast_pivot: TYPICAL_PIVOT,
                 whites: WhitesTable::original(),
             },
         )
@@ -388,7 +352,7 @@ mod tests {
                 blacks,
                 0.,
                 &PhotoTone {
-                    contrast: ContrastCurve::Pivot(CONTRAST_PIVOT),
+                    contrast_pivot: CONTRAST_PIVOT,
                     whites: WhitesTable::original(),
                 },
             )
@@ -412,7 +376,7 @@ mod tests {
                 0.,
                 0.,
                 &PhotoTone {
-                    contrast: ContrastCurve::Pivot(pivot),
+                    contrast_pivot: pivot,
                     whites: WhitesTable::original(),
                 },
             )
@@ -437,7 +401,7 @@ mod tests {
     #[test]
     fn whites_stretch_dim_highlights_as_camera_raw_does() {
         let dim = PhotoTone {
-            contrast: ContrastCurve::Original,
+            contrast_pivot: TYPICAL_PIVOT,
             whites: WhitesTable::for_highlights(0.6936),
         };
         for (whites, levels) in [

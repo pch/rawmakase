@@ -100,7 +100,7 @@ pub fn display_axes(turns: u8, flip_x: bool, flip_y: bool) -> [[f32; 2]; 2] {
 }
 /// The lens settings an analysis is made through, as they render: when any of them
 /// changes, the corrections analysed before no longer fit the photo. A setting a
-/// switched-off panel or an older process version leaves unrendered changes nothing.
+/// switched-off panel leaves unrendered changes nothing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LensInputs {
     builtin: bool,
@@ -111,16 +111,6 @@ pub struct LensInputs {
 }
 impl LensInputs {
     pub fn of(r: &super::recipe::Recipe) -> Self {
-        // Lens corrections render from process version 4.
-        if r.engine < 4 {
-            return Self {
-                builtin: false,
-                profile: false,
-                profile_choice: Default::default(),
-                distortion: 1.,
-                manual_distortion: 0.,
-            };
-        }
         let shown = r.as_rendered();
         Self {
             builtin: shown.lens_builtin,

@@ -8,7 +8,6 @@ pub mod clarity;
 pub mod color;
 pub mod color_grade;
 mod color_grade_curves;
-mod color_grade_data;
 pub mod color_mixer;
 pub mod color_noise;
 mod crop_constraint;
@@ -48,8 +47,5 @@ pub use black_white::{AutoMix, ColorSpread};
 pub use geometry::{Geometry, rendered_crop};
 pub use image_space::ViewMapping;
 pub use orientation::{Mirror, QuarterTurn, mirror, turn};
-pub use pipeline::{
-    neutral_pick, pick_fringe, preview, render, render_cancellable, render_legacy, render_region,
-    render_region_legacy,
-};
+pub use pipeline::{neutral_pick, pick_fringe, preview, render, render_cancellable, render_region};
 pub(crate) use pipeline::{profile_matrix, render_base};

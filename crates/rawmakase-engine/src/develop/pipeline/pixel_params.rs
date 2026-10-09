@@ -1,7 +1,6 @@
 //! The per-pixel stage's inputs, flattened for the GPU port in `gpu/develop.wgsl`.
-//! Only the current engine's reference path is ported: engine 4 with reference curves,
-//! color and calibration and a profile tone curve, which every new photo uses. Other
-//! recipes return `None` and render on the CPU, which stays the reference.
+//! Recipes with a camera profile are ported (every photo has one once resolved); the
+//! rest return `None` and render on the CPU, which stays the reference.
 use super::{CurveSet, Source, profile_matrix};
 use crate::develop::local_tone::LocalToneMap;
 use crate::model::recipe::Recipe;
@@ -32,9 +31,6 @@ const FIELDS: &[(&str, usize)] = &[
     ("HIGHLIGHTS", 4),
     ("BASIC", 1),
     ("LEVELS", 3),
-    ("PARAMETRIC_ON", 1),
-    ("PARAMETRIC", 4),
-    ("SPLITS", 3),
     // The measured parametric curve's table, or -1 (see `parametric::ParametricCurve`).
     ("PARAMETRIC_LUT", 1),
     ("MASTER", 1),
@@ -54,15 +50,11 @@ const FIELDS: &[(&str, usize)] = &[
     ("RGB", 6),
     ("RGB_INTO", 9),
     ("RGB_BACK", 9),
-    // Color grading: tables, samples and operator (see `color_grade::ColorGrade`).
-    ("GRADE", 4),
+    // Color grading: gain tables and samples (see `color_grade::ColorGrade`).
+    ("GRADE", 2),
     ("ADJUST", 1),
     ("DEFRINGE", 2),
     ("DEFRINGE_RANGES", 4),
-    // 1 when out-of-gamut colors clip per channel (`GamutModel::Clip`).
-    ("GAMUT_CLIP", 1),
-    ("MONO", 1),
-    ("GRAY_MIX", 8),
     ("TONE_ONLY", 1),
     // Masks (see `masks::local`): how many, weight words per pixel, their deltas.
     ("MASKS", 1),
@@ -71,7 +63,7 @@ const FIELDS: &[(&str, usize)] = &[
     ("EXPOSURE_EV", 1),
     ("LOCAL_WB", 6),
     ("LOCAL_TONE", 1),
-    // The masks' Contrast pivot, or -1 for the original Contrast before Whites and Blacks.
+    // The masks' Contrast pivot.
     ("LOCAL_PIVOT", 1),
     ("LOCAL_FAMILIES", 1),
     ("LOCAL_KEYS", 2),
@@ -145,18 +137,7 @@ impl PixelParams {
 }
 /// Whether the GPU port renders this (resolved) recipe.
 pub(crate) fn supported(r: &Recipe) -> bool {
-    let grading = r.grading.iter().any(|g| g[1] != 0. || g[2] != 0.)
-        || r.effects.global_grade[1] != 0.
-        || r.effects.global_grade[2] != 0.;
-    r.engine >= 4
-        && r.reference_curves
-        && r.reference_color
-        && r.reference_calibration
-        && r.profile_tone
-        && r.profile.is_some()
-        // The original operator's Blending and Balance outside its tables use the
-        // older operator.
-        && (!grading || crate::develop::color_grade::ColorGrade::new(r).is_some())
+    r.profile.is_some()
 }
 /// Parameters for `im`'s per-pixel stage with the resolved recipe `r`, or `None` when
 /// the GPU port does not cover it.
@@ -180,12 +161,10 @@ fn masks_need_map(r: &Recipe) -> bool {
 /// Whether `r`'s per-pixel stage needs the Shadows/Highlights map of the photo, which
 /// also carries the measured Clarity.
 pub(crate) fn needs_map(r: &Recipe) -> bool {
-    r.engine >= 4
-        && r.reference_curves
-        && (r.shadows != 0.
-            || r.highlights != 0.
-            || crate::develop::clarity::measured(r) != 0.
-            || masks_need_map(r))
+    r.shadows != 0.
+        || r.highlights != 0.
+        || crate::develop::clarity::measured(r) != 0.
+        || masks_need_map(r)
 }
 /// Whether a render needs the photo reduced for the Shadows/Highlights map or for
 /// measuring the photo's Contrast pivot; the stage cache keeps it between renders.
@@ -310,22 +289,9 @@ fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams>
     p.set("BASIC", &[basic]);
     let tone = p.push(crate::develop::basic_tone::gpu_tables(&lut.photo.whites));
     p.set("LOCAL_TONE", &[tone]);
-    p.set(
-        "LOCAL_PIVOT",
-        &[match lut.photo.contrast {
-            crate::develop::basic_tone::ContrastCurve::Original => -1.,
-            crate::develop::basic_tone::ContrastCurve::Pivot(pivot) => pivot,
-        }],
-    );
+    p.set("LOCAL_PIVOT", &[lut.photo.contrast_pivot]);
     p.set("LEVELS", &[r.black_point, r.white_point, r.midtone]);
     let e = &r.effects;
-    // The original per-channel curve runs in `level`, the measured one after it.
-    p.set(
-        "PARAMETRIC_ON",
-        &[(lut.parametric.is_none() && e.parametric != [0.; 4]) as u8 as f32],
-    );
-    p.set("PARAMETRIC", &e.parametric);
-    p.set("SPLITS", &e.splits);
     let parametric = match &lut.parametric {
         Some(c) => p.push(c.values().iter().copied()),
         None => -1.,
@@ -364,32 +330,17 @@ fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams>
     };
     p.set("POINT", &point);
     set_rgb_table(&mut p, lut.rgb_table.as_ref());
-    use crate::develop::color_grade::ColorGrade;
     let grade = match &lut.grade {
-        Some(ColorGrade::Luminance(g)) => [
-            p.push(g.gain.iter().flatten().copied()),
-            p.push(g.offset.iter().flatten().copied()),
-            g.gain.len() as f32,
-            0.,
+        Some(g) => [
+            p.push(g.0.gain.iter().flatten().copied()),
+            g.0.gain.len() as f32,
         ],
-        Some(ColorGrade::Channels(c)) => [
-            p.push(c.gain.iter().flatten().copied()),
-            -1.,
-            c.gain.len() as f32,
-            1.,
-        ],
-        None => [-1., -1., 0., 0.],
+        None => [-1., 0.],
     };
     p.set("GRADE", &grade);
     p.set("ADJUST", &[lut.color_adjustments as u8 as f32]);
     p.set("DEFRINGE", &e.defringe);
     p.set("DEFRINGE_RANGES", e.defringe_ranges.as_flattened());
-    p.set(
-        "GAMUT_CLIP",
-        &[(r.gamut_model == crate::model::operators::GamutModel::Clip) as u8 as f32],
-    );
-    p.set("MONO", &[e.monochrome as u8 as f32]);
-    p.set("GRAY_MIX", &e.gray_mix);
     Some(p)
 }
 impl PixelParams {

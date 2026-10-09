@@ -23,14 +23,13 @@ fn render_resident(
     let Some(display) = stages.display else {
         return Ok(None);
     };
-    // Engine 4 renders Shadows and Highlights per pixel; the gain carries only Clarity
-    // and Texture (see `local_stage`).
-    if !(r.engine >= 4 && r.reference_curves)
-        || !stages
-            .backend
-            .gpu
-            .as_ref()
-            .is_some_and(|gpu| gpu.fits_resident(source))
+    // Shadows and Highlights render per pixel; the gain carries only Clarity and
+    // Texture (see `local_stage`).
+    if !stages
+        .backend
+        .gpu
+        .as_ref()
+        .is_some_and(|gpu| gpu.fits_resident(source))
         || stages.backend.resident_fallback.is_some()
     {
         return Ok(None);
@@ -174,7 +173,9 @@ fn render_resident(
     let e = &base.effects;
     sampling[slot::NOISE].copy_from_slice(&[
         base.noise_luma,
-        base.sampled_noise_chroma(),
+        // The sampling stage's colour term: Color noise reduction runs on the camera
+        // image (`color_noise`).
+        0.,
         e.luma_detail,
         e.chroma_detail,
         e.luma_contrast,
@@ -462,10 +463,7 @@ pub(crate) fn render_preview(
     let local_finish = weights
         .as_ref()
         .is_some_and(|w| w.uses(&[slot::SHARPNESS, slot::NOISE]));
-    let spatial = r.effects.grain != 0.
-        || r.effects.vignette != 0.
-        || r.finished_lens_vignette() != 0.
-        || local_finish;
+    let spatial = r.effects.grain != 0. || r.effects.vignette != 0. || local_finish;
     let mut gpu_sharpened = false;
     let edge = if region.is_some() { 0 } else { max_edge };
     if !spatial

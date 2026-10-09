@@ -61,12 +61,9 @@ pub fn migrate_recipe(value: &mut serde_json::Value) -> Result<()> {
         .get_mut("recipe")
         .and_then(serde_json::Value::as_object_mut)
         .context("Saved recipe must be an object")?;
-    if pipeline.is_some_and(|p| p < 6) {
-        // Engine 4 changed the default rendering; earlier recipes keep their look.
-        recipe.entry("engine").or_insert(3.into());
-    }
     if pipeline.is_some_and(|p| p < 3) {
-        recipe.insert("engine".into(), 2.into());
+        // The first pipelines saved neither a camera profile in today's form nor
+        // sharpening.
         recipe.insert("profile".into(), serde_json::Value::Null);
         recipe.entry("sharpening").or_insert(0.into());
     }
@@ -75,22 +72,20 @@ pub fn migrate_recipe(value: &mut serde_json::Value) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// Every version this build reads migrates; recipes keep the settings they
+    /// were saved with and render with the one engine.
     #[test]
-    fn pre_engine_four_recipes_keep_their_engine() {
-        let mut v = serde_json::json!({"schema": 5, "pipeline": 5, "recipe": {"exposure": 0.5}});
-        super::migrate_recipe(&mut v).unwrap();
-        assert_eq!(v["recipe"]["engine"], 3);
-        let mut v = serde_json::json!({"schema": 5, "pipeline": 5, "recipe": {"engine": 3}});
-        super::migrate_recipe(&mut v).unwrap();
-        assert_eq!(v["recipe"]["engine"], 3);
-        let mut v = serde_json::json!({"schema": 6, "pipeline": 6, "recipe": {}});
-        super::migrate_recipe(&mut v).unwrap();
-        assert!(v["recipe"].get("engine").is_none());
-        let mut v = serde_json::json!({"schema": 7, "pipeline": 7, "recipe": {"retouch": []}});
-        super::migrate_recipe(&mut v).unwrap();
-        assert!(v["recipe"].get("engine").is_none());
-        let mut v = serde_json::json!({"schema": 8, "pipeline": 8, "recipe": {}});
-        super::migrate_recipe(&mut v).unwrap();
+    fn saved_versions_migrate_without_an_engine() {
+        for version in 1..=10 {
+            let mut v = serde_json::json!({"schema": version, "pipeline": version, "recipe": {"exposure": 0.5}});
+            super::migrate_recipe(&mut v).unwrap();
+            assert!(v["recipe"].get("engine").is_none(), "{version}");
+            assert_eq!(v["recipe"]["exposure"], 0.5);
+        }
+        let mut v = serde_json::json!({"schema": 11, "pipeline": 11, "recipe": {}});
+        assert!(super::migrate_recipe(&mut v).is_err());
+        let mut v = serde_json::json!({"schema": 5, "pipeline": 6, "recipe": {}});
+        assert!(super::migrate_recipe(&mut v).is_err());
     }
     /// A look with a Profile Amount saves as version 8 and one with an RGB table as
     /// 9, which releases that reject their fields refuse as newer; everything else
@@ -156,7 +151,6 @@ mod tests {
         "crop",
         "curve",
         "effects",
-        "engine",
         "exposure",
         "flip_x",
         "flip_y",
@@ -174,10 +168,6 @@ mod tests {
         "preset_name",
         "preset_settings",
         "profile",
-        "profile_tone",
-        "reference_calibration",
-        "reference_color",
-        "reference_curves",
         "rotation",
         "saturation",
         "shadows",
@@ -193,7 +183,6 @@ mod tests {
         "wb",
         "white_point",
         "whites",
-        "wide_gamut_curves",
     ];
     /// Spots and masks never enter the saved recipe, which writes exactly the known
     /// fields; and fields from newer releases survive a round trip.

@@ -1,5 +1,5 @@
-// Engine 4 per-pixel color and tone stage: a port of `pipeline::process_pixel` for
-// recipes with the reference curves, color and calibration (see `pixel_params.rs`).
+// The per-pixel color and tone stage: a port of `pipeline::process_pixel` for recipes
+// with a camera profile (see `pixel_params.rs`).
 // The CPU implementation is the reference; functions keep its names and order.
 // `P_*` indices into `params` are generated from `pixel_params::FIELDS`.
 
@@ -392,11 +392,6 @@ fn local_tone_curve(x_in: f32) -> f32 {
     let t = offset(P_LOCAL_TONE);
     var x = measured(t, t + 1536, delta[L_DEHAZE], x_in);
     let pivot = p(P_LOCAL_PIVOT);
-    if pivot < 0.0 {
-        x = measured(t + 384, t + 1542, delta[L_CONTRAST], x);
-        x = measured(t + 768, t + 1542, delta[L_WHITES], x);
-        return measured(t + 1152, t + 1542, delta[L_BLACKS], x);
-    }
     x = measured(t + 768, t + 1542, delta[L_WHITES], x);
     x = measured(t + 1152, t + 1542, delta[L_BLACKS], x);
     return contrast_at(t + 1548, table(t + 1932), pivot, t + 1542, delta[L_CONTRAST], x);
@@ -453,22 +448,6 @@ fn local_gain(pos: vec2<f32>, rgb: vec3<f32>) -> f32 {
     }
     return exp2(local_curve(P_SHADOWS, base) + local_curve(P_HIGHLIGHTS, base) + clarity);
 }
-fn parametric(x: f32) -> f32 {
-    if p(P_PARAMETRIC_ON) == 0.0 {
-        return x;
-    }
-    var anchors = array<f32, 5>(0.0, p(P_SPLITS), p(P_SPLITS + 1u), p(P_SPLITS + 2u), 1.0);
-    var delta = 0.0;
-    for (var i = 0u; i < 4u; i++) {
-        let lo = anchors[i];
-        let hi = anchors[i + 1u];
-        let mid = (lo + hi) * 0.5;
-        let radius = (hi - lo) * 1.5;
-        let w = clamp(1.0 - abs((x - mid) / radius), 0.0, 1.0);
-        delta += p(P_PARAMETRIC + i) * w * w * (3.0 - 2.0 * w) * 0.18;
-    }
-    return clamp(x + delta * 4.0 * x * (1.0 - x), 0.0, 1.0);
-}
 fn level(v: f32) -> f32 {
     let bp = p(P_LEVELS);
     let wp = p(P_LEVELS + 1u);
@@ -479,7 +458,7 @@ fn level(v: f32) -> f32 {
     }
     // Contrast is a measured curve on this path: the S-curve has power 1.
     let low = x;
-    return parametric(low / max(low + (1.0 - x), 1e-8));
+    return low / max(low + (1.0 - x), 1e-8);
 }
 // curve::refine_saturation: Refine Saturation below 100 keeps the colour's channel
 // differences from before the point curve, with the curved colour's luma.
@@ -772,17 +751,9 @@ fn rgb_table(rgb: vec3<f32>) -> vec3<f32> {
     }
     return matrix(P_RGB_BACK) * out;
 }
-// color_grade::ColorGrade
-fn grade_at(base: i32, l: f32) -> vec3<f32> {
-    let bins = u32(p(P_GRADE + 2u));
-    let f = clamp(clamp(l, 0.0, 1.0) * f32(bins) - 0.5, 0.0, f32(bins - 1u));
-    let i = min(u32(f), bins - 2u);
-    let t = f - f32(i);
-    return table3(base + i32(i) * 3) * (1.0 - t) + table3(base + i32(i + 1u) * 3) * t;
-}
 // color_grade_curves::ChannelCurves: a gain curve per channel of linear ProPhoto RGB.
-fn grade_channels(rgb: vec3<f32>) -> vec3<f32> {
-    let bins = u32(p(P_GRADE + 2u));
+fn grade(rgb: vec3<f32>) -> vec3<f32> {
+    let bins = u32(p(P_GRADE + 1u));
     let base = offset(P_GRADE);
     let q = RGB_TO_PRO * rgb;
     var out: vec3<f32>;
@@ -792,22 +763,6 @@ fn grade_channels(rgb: vec3<f32>) -> vec3<f32> {
         let t = f - f32(i);
         let g = table(base + i32(i) * 3 + c) * (1.0 - t) + table(base + i32(i + 1u) * 3 + c) * t;
         out[c] = q[c] * g;
-    }
-    return PRO_TO_RGB * out;
-}
-fn grade(rgb: vec3<f32>) -> vec3<f32> {
-    if p(P_GRADE + 3u) == 1.0 {
-        return grade_channels(rgb);
-    }
-    let y = max(0.2126 * rgb.x + 0.7152 * rgb.y + 0.0722 * rgb.z, 0.0);
-    let l = srgb_encode(min(y, 1.0));
-    let g = grade_at(offset(P_GRADE), l);
-    let o = grade_at(offset(P_GRADE + 1u), l);
-    let q = RGB_TO_PRO * rgb;
-    var out: vec3<f32>;
-    for (var c = 0; c < 3; c++) {
-        let v = max(q[c], 0.0) * exp2(g[c]);
-        out[c] = srgb_decode(clamp(srgb_encode(clamp(v, 0.0, 1.0)) + o[c], 0.0, 1.0));
     }
     return PRO_TO_RGB * out;
 }
@@ -837,23 +792,6 @@ fn lab_to_srgb(q: vec3<f32>) -> vec3<f32> {
         -0.0041960863 * b.x - 0.7034186 * b.y + 1.7076147 * b.z,
     );
 }
-fn hue_weights(hue: f32) -> array<f32, 8> {
-    var centers = array<f32, 8>(0.081, 0.151, 0.305, 0.395, 0.541, 0.733, 0.815, 0.912);
-    var weights = array<f32, 8>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
-    let h0 = rem_euclid(hue, 1.0);
-    for (var i = 0u; i < 8u; i++) {
-        let left = centers[i];
-        let right = select(centers[i + 1u], centers[0] + 1.0, i == 7u);
-        let h = select(h0, h0 + 1.0, h0 < left);
-        if h >= left && h <= right {
-            let t = (h - left) / (right - left);
-            weights[i] = 1.0 - t;
-            weights[(i + 1u) % 8u] = t;
-            break;
-        }
-    }
-    return weights;
-}
 // effects::Effects::defringe_color
 fn defringe_step(x: f32) -> f32 {
     let t = clamp((x + 0.025) / 0.05, 0.0, 1.0);
@@ -877,32 +815,23 @@ fn defringe(lab_in: vec3<f32>, h: f32) -> vec3<f32> {
     }
     return lab;
 }
-/// Oklab color controls with engine 4's measured sliders zeroed: hue angle
-/// round trip, Defringe and Monochrome.
+/// Oklab color controls after the measured mixer: hue angle round trip, Defringe and
+/// Monochrome.
 fn adjust(lab_in: vec3<f32>) -> vec3<f32> {
     var lab = lab_in;
     let chroma = length(lab.yz);
     let hue = rem_euclid(atan2(lab.z, lab.y), TAU) / TAU;
-    let weights = hue_weights(hue);
     let angle = hue * TAU;
     lab.x = clamp(lab.x, 0.0, 1.0);
     lab.y = cos(angle) * chroma;
     lab.z = sin(angle) * chroma;
     lab = defringe(lab, hue);
-    if p(P_MONO) != 0.0 {
-        var shift = 0.0;
-        for (var i = 0u; i < 8u; i++) {
-            shift += p(P_GRAY_MIX + i) * weights[i];
-        }
-        if offset(P_GRAY_GRID) >= 0 {
-            // `black_white::gray`: the chart tables scale the color to its gray.
-            let scaled = mixer(max(lab_to_srgb(lab), vec3(0.0)), offset(P_GRAY_GRID));
-            let y = max(dot(scaled, vec3(0.2126, 0.7152, 0.0722)), 0.0);
-            lab.x = clamp(pow(y, 1.0 / 3.0), 0.0, 1.0);
-        } else {
-            // `gray_mix_shift` in pipeline.rs.
-            lab.x = clamp(lab.x + shift * chroma * select(4.37, 1.78, shift > 0.0), 0.0, 1.0);
-        }
+    // Black & white renders have the mix's grid.
+    if offset(P_GRAY_GRID) >= 0 {
+        // `black_white::gray`: the chart tables scale the color to its gray.
+        let scaled = mixer(max(lab_to_srgb(lab), vec3(0.0)), offset(P_GRAY_GRID));
+        let y = max(dot(scaled, vec3(0.2126, 0.7152, 0.0722)), 0.0);
+        lab.x = clamp(pow(y, 1.0 / 3.0), 0.0, 1.0);
         lab.y = 0.0;
         lab.z = 0.0;
     }
@@ -951,7 +880,7 @@ fn process_pixel(sample: vec3<f32>, pos: vec2<f32>) -> vec3<f32> {
     // color_stage
     rgb = reference_curves(rgb);
     if offset(P_MIXER) >= 0 {
-        // SaturationModel::Gray: below −50, a fade to the luminance the color has
+        // Saturation below −50: a fade to the luminance the color has
         // through the other sliders.
         var source = rgb;
         if offset(P_GRAY_SOURCE) >= 0 {
@@ -985,27 +914,10 @@ fn process_pixel(sample: vec3<f32>, pos: vec2<f32>) -> vec3<f32> {
         lab.x = clamp(lab.x, 0.0, 1.0);
     }
     rgb = lab_to_srgb(lab);
-    lab = srgb_to_lab(rgb);
-    let l = clamp(lab.x, 0.0, 1.0);
-    let gray = l * l * l;
-    var gamut = 1.0;
-    // GamutModel::Clip: each channel clipped on its own, as Camera Raw does.
-    let clip = p(P_GAMUT_CLIP) != 0.0;
-    for (var k = 0; k < 3; k++) {
-        if clip {
-            break;
-        }
-        let v = rgb[k];
-        if v < 0.0 {
-            gamut = min(gamut, gray / max(gray - v, 1e-8));
-        }
-        if v > 1.0 {
-            gamut = min(gamut, (1.0 - gray) / max(v - gray, 1e-8));
-        }
-    }
+    // Each channel clipped on its own, as Camera Raw does.
     var out: vec3<f32>;
     for (var k = 0; k < 3; k++) {
-        out[k] = clamp(srgb_encode(select(gray + (rgb[k] - gray) * gamut, clamp(rgb[k], 0.0, 1.0), clip)), 0.0, 1.0);
+        out[k] = clamp(srgb_encode(clamp(rgb[k], 0.0, 1.0)), 0.0, 1.0);
     }
     if point_selection >= 0.0 {
         out = visualize(out);

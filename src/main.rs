@@ -269,10 +269,6 @@ fn main() -> Result<()> {
                 edit.profile = Some(rawmakase::camera_profiles::load(&p, &r.metadata)?);
                 // A chosen profile starts at 100%, as in the app.
                 edit.profile_amount = 1.;
-                edit.engine = edit.engine.max(3);
-                edit.profile_tone = true;
-                edit.reference_curves = true;
-                edit.wide_gamut_curves = true;
                 edit.use_camera_baseline(&r.metadata);
                 edit.sync_white_balance_controls(&r.metadata);
             }

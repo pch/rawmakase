@@ -1,6 +1,6 @@
 //! Results of the stages before the per-pixel color pipeline, kept between preview
 //! renders: local-tone blurs, the local-tone image, geometry/lens-warp samples and the
-//! reduced image the engine 4 Shadows/Highlights map is built from.
+//! reduced image the Shadows/Highlights map is built from.
 //! Each key holds only the recipe fields its stage reads, so exposure, curve, HSL
 //! and grading edits reuse all three and rerun only the per-pixel stage.
 //!
@@ -119,7 +119,6 @@ struct StageRecipes {
 /// placed: a stage that reads a field it does not key on would reuse stale results.
 fn stage_recipes(r: &Recipe) -> StageRecipes {
     let Recipe {
-        engine,
         wb,
         temperature,
         profile,
@@ -140,9 +139,6 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         upright,
         noise_luma,
         noise_chroma,
-        // The measured operator changes the source image, which every key holds.
-        noise_model: _,
-        lens_vignette_model,
         effects,
         // Shadows/Highlights and their exposure are keyed by `LocalKey`; spot removal
         // changes the source image, which every key holds.
@@ -151,36 +147,12 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         shadows: _,
         highlights: _,
         retouch: _,
-        retouch_model: _,
         red_eye: _,
-        // Read only by the per-pixel stage and the finishing stages after these.
-        profile_tone: _,
         // The look's strength; its Shadows, Highlights and Clarity are keyed by
         // `LocalKey` once `Recipe::resolved` has added them.
         profile_amount: _,
         tint: _,
         auto_white_balance: _,
-        wide_gamut_curves: _,
-        reference_curves: _,
-        reference_calibration: _,
-        reference_color: _,
-        parametric_model: _,
-        grain_model: _,
-        // The measured Clarity is in the map, built per render; the original one is
-        // keyed by `LocalKey` through `effects.clarity`.
-        clarity_model: _,
-        // The measured Texture makes its own image, keyed by `TextureKey`.
-        texture_model: _,
-        contrast_model: _,
-        grading_model: _,
-        mixer_model: _,
-        saturation_model: _,
-        vibrance_model: _,
-        black_white_model: _,
-        calibration_model: _,
-        whites_model: _,
-        white_balance_model: _,
-        gamut_model: _,
         contrast: _,
         whites: _,
         blacks: _,
@@ -198,7 +170,6 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         sharpening_radius: _,
         sharpening_detail: _,
         sharpening_masking: _,
-        sharpening_model: _,
         masks: _,
         // Not read when rendering: switched-off panels are bypassed before the stages
         // (see `Recipe::as_rendered`).
@@ -212,7 +183,8 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         luma_contrast,
         chroma_detail,
         chroma_smoothness,
-        // Keyed by `LocalKey`.
+        // Keyed by `LocalKey`; positive Clarity is in the map, built per render, and
+        // Texture makes its own image, keyed by `TextureKey`.
         clarity: _,
         texture: _,
         // Read only by the per-pixel stage and the finishing stages after these.
@@ -237,8 +209,7 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         vignette_feather: _,
         vignette_highlights: _,
         vignette_style: _,
-        // Manual Vignetting, measured, scales the camera image; the original
-        // operator's only finishes it, so it is keyed on without effect.
+        // Manual Vignetting scales the camera image.
         lens_vignette,
         lens_vignette_midpoint,
         defringe: _,
@@ -247,7 +218,6 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
     StageRecipes {
         // Log luminance after white balance, profile matrix and lens vignetting.
         blurs: Recipe {
-            engine: *engine,
             wb: *wb,
             temperature: *temperature,
             // The blurs read the camera matrices and tables, not the look.
@@ -256,7 +226,6 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
             lens_profile: *lens_profile,
             lens_profile_choice: lens_profile_choice.clone(),
             lens_vignetting: *lens_vignetting,
-            lens_vignette_model: *lens_vignette_model,
             effects: Effects {
                 lens_vignette: *lens_vignette,
                 lens_vignette_midpoint: *lens_vignette_midpoint,
@@ -266,7 +235,6 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         },
         // Geometry, lens correction and noise reduction.
         samples: Recipe {
-            engine: *engine,
             crop: *crop,
             rotation: *rotation,
             straighten: *straighten,
@@ -282,7 +250,6 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
             lens_vignetting: *lens_vignetting,
             lens_manual_distortion: *lens_manual_distortion,
             lens_ca: *lens_ca,
-            lens_vignette_model: *lens_vignette_model,
             noise_luma: *noise_luma,
             noise_chroma: *noise_chroma,
             effects: Effects {
@@ -364,7 +331,7 @@ impl TextureKey {
         }
     }
 }
-/// The toned image reduced for the engine 4 Shadows/Highlights map: the camera image
+/// The toned image reduced for the Shadows/Highlights map: the camera image
 /// and its local-tone gain.
 #[derive(PartialEq)]
 pub(crate) struct ReducedKey {
@@ -470,10 +437,7 @@ mod tests {
             ),
             (
                 "manual vignetting",
-                edit(&|r| {
-                    r.lens_vignette_model = crate::model::operators::LensVignetteModel::Measured;
-                    r.effects.lens_vignette = -0.5;
-                }),
+                edit(&|r| r.effects.lens_vignette = -0.5),
                 true,
                 true,
             ),
@@ -537,7 +501,6 @@ mod tests {
         let look = Arc::new(crate::camera_profiles::CameraProfile::creative_for_test(&m));
         let at = |amount: f32| {
             Recipe {
-                engine: 4,
                 profile: Some(look.clone()),
                 profile_amount: amount,
                 ..Default::default()

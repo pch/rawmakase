@@ -1,4 +1,4 @@
-//! Presence > Texture. [`TextureModel::Measured`] follows Camera Raw 18.7, fitted to
+//! Presence > Texture, following Camera Raw 18.7, fitted to
 //! renders of synthetic charts: sine gratings of 0.004 to 0.25 cycles per pixel at
 //! ±0.1 to ±2 EV, large flats and edges, at Texture −100 to +100.
 //!
@@ -14,19 +14,13 @@
 //! Texture sets. Fitted to the gratings within 0.04 RMS (×gain) and to the edges'
 //! halos within 2.4% of the edge's step.
 use crate::camera_data::CameraImage;
-use crate::model::operators::TextureModel;
 use anyhow::{Result, ensure};
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// The Texture this recipe renders with the measured operator, or 0 when it takes the
-/// original one (older recipes, earlier engines).
+/// The Texture this recipe renders with the measured operator.
 pub(crate) fn measured(r: &crate::model::recipe::Recipe) -> f32 {
-    if r.engine >= 4 && r.texture_model == TextureModel::Measured {
-        r.effects.texture
-    } else {
-        0.
-    }
+    r.effects.texture
 }
 
 /// Pyramid levels, in full-resolution pixels: level `l` holds detail about `2^l`

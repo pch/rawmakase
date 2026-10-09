@@ -194,9 +194,9 @@ fn main() -> Result<()> {
                     "cpu-fit" => cpu.render(&image, &recipe, FIT, None, &cancel)?,
                     "gpu-fit" | "clarity-fit" => gpu.render(&image, &recipe, FIT, None, &cancel)?,
                     // The reduced 100% view shown while dragging, before the full region.
-                    "region-preview" | "clarity-region-preview" => gpu
-                        .render_region_preview(&image, &recipe, region, &cancel)?
-                        .context("No region preview")?,
+                    "region-preview" | "clarity-region-preview" => {
+                        gpu.render_region_preview(&image, &recipe, region, &cancel)?
+                    }
                     _ => gpu.render(&image, &recipe, 0, Some(region), &cancel)?,
                 };
                 let rendered = ms(t);
@@ -241,8 +241,7 @@ fn main() -> Result<()> {
                                 region,
                                 &cancel,
                                 Some(&display),
-                            )?
-                            .context("No region preview")?,
+                            )?,
                         "gpu-region" | "clarity-region" => gpu.render_to(
                             &image,
                             &recipe,

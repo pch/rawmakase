@@ -1,25 +1,15 @@
-//! Basic > Clarity, positive values. [`ClarityModel::Measured`] follows Camera Raw 18.7:
+//! Basic > Clarity, positive values, following Camera Raw 18.7:
 //! a log2 gain of detail at four scales, each an edge-aware blur of the toned photo's
 //! log luminance, weighted by the local base level (`local_tone.rs`) relative to the
 //! photo's highlights. The gain is computed on the Shadows/Highlights map's grid, so
 //! previews, tiles and exports agree. See docs/tone-controls.md#clarity.
-use crate::model::operators::ClarityModel;
 use crate::model::recipe::Recipe;
 use rayon::prelude::*;
 
-/// The Clarity this recipe renders with the measured operator, or 0 when its Clarity
-/// takes the original one (older recipes, negative values, earlier engines).
+/// The Clarity this recipe renders with the measured operator, or 0 when it is not
+/// positive: negative Clarity renders with the local detail gain of `quality::local`.
 pub(crate) fn measured(r: &Recipe) -> f32 {
-    let clarity = r.effects.clarity;
-    if r.engine >= 4
-        && r.reference_curves
-        && r.clarity_model == ClarityModel::Measured
-        && clarity > 0.
-    {
-        clarity
-    } else {
-        0.
-    }
+    r.effects.clarity.max(0.)
 }
 
 /// Blur sizes (Gaussian σ) as a fraction of the map's long edge.
@@ -259,33 +249,6 @@ mod tests {
         // The blur does not cross the 4 EV edge: within 2 EV of each side.
         let [b, ..] = bilateral(&logs, w, h, [4.; 4], RANGE);
         assert!((b[24 * w + 17] + 1.).abs() < 1. && (b[24 * w + 14] + 5.).abs() < 1.);
-    }
-    #[test]
-    fn new_edits_measure_positive_clarity_and_saved_recipes_keep_the_original() {
-        let m = crate::camera_data::Metadata::default();
-        let mut new = Recipe::with_profiles(&m, &[]);
-        assert_eq!(new.clarity_model, ClarityModel::Measured);
-        new.effects.clarity = 0.4;
-        assert_eq!(measured(&new), 0.4);
-        new.effects.clarity = -0.4;
-        assert_eq!(measured(&new), 0.);
-        // A recipe saved before the field renders with the original operator.
-        new.effects.clarity = 0.4;
-        let mut json = serde_json::to_value(&new).unwrap();
-        assert!(json.get("clarity_model").is_some());
-        json.as_object_mut().unwrap().remove("clarity_model");
-        let old: Recipe = serde_json::from_value(json).unwrap();
-        assert_eq!(old.clarity_model, ClarityModel::Original);
-        assert_eq!(measured(&old), 0.);
-        // Clarity added to a photo without any takes the measured operator.
-        let mut edited = old.clone();
-        edited.effects.clarity = 0.2;
-        edited.adopt_measured_clarity(0.);
-        assert_eq!(edited.clarity_model, ClarityModel::Measured);
-        let mut kept = old;
-        kept.effects.clarity = 0.5;
-        kept.adopt_measured_clarity(0.4);
-        assert_eq!(kept.clarity_model, ClarityModel::Original);
     }
     #[test]
     fn weights_interpolate_through_the_fits() {

@@ -104,12 +104,10 @@ pub fn auto_tone_basis(r: &Recipe) -> Recipe {
         grading: d.grading,
         noise_luma: d.noise_luma,
         noise_chroma: d.noise_chroma,
-        noise_model: d.noise_model,
         sharpening: d.sharpening,
         sharpening_radius: d.sharpening_radius,
         sharpening_detail: d.sharpening_detail,
         sharpening_masking: d.sharpening_masking,
-        sharpening_model: d.sharpening_model,
         retouch: Vec::new(),
         red_eye: Default::default(),
         masks: Vec::new(),
@@ -153,16 +151,11 @@ fn analysis_edge(im: &CameraImage, r: &Recipe, edge: u32) -> u32 {
 
 /// The reduced copy the tone sliders are fitted on (see [`analysis_edge`]).
 ///
-/// Engines that recover highlights get a copy reduced from the recovered image, as the
-/// app's preview and exports are, so a small clipped highlight is recovered before
-/// averaging hides it. The copy is marked as already recovered, so rendering it does
-/// not recover it again.
+/// The copy is reduced from the recovered image, as the app's preview and exports
+/// are, so a small clipped highlight is recovered before averaging hides it. The copy
+/// is marked as already recovered, so rendering it does not recover it again.
 fn tone_copy(im: &CameraImage, r: &Recipe, cancel: &AtomicBool) -> Result<CameraImage> {
     let edge = analysis_edge(im, r, TONE_EDGE);
-    // Engines before 3 render without highlight recovery.
-    if r.engine < 3 {
-        return Ok(preview(im, edge));
-    }
     let small = preview(&*recovered(im, cancel)?, edge);
     let _ = small.recovered.set(std::sync::Arc::new(small.clone()));
     Ok(small)
@@ -411,12 +404,12 @@ mod tests {
             scale_clipped: 0,
         }
     }
-    /// Auto measures every photo with the same sharpening, whichever operator and
-    /// Detail settings the edit uses.
+    /// Auto measures every photo with the same sharpening, whichever Detail settings
+    /// the edit uses.
     #[test]
-    fn auto_measures_with_the_default_sharpening_operator() {
+    fn auto_measures_with_the_default_sharpening() {
         let mut r = Recipe::default();
-        r.set_sharpening_defaults(crate::model::operators::SharpeningModel::Measured);
+        r.set_sharpening_defaults();
         r.sharpening_detail = 0.9;
         assert_eq!(auto_tone_basis(&r), auto_tone_basis(&Recipe::default()));
     }
@@ -476,50 +469,6 @@ mod tests {
                 auto.tint
             );
         }
-    }
-
-    #[test]
-    fn legacy_recipes_get_white_balance_controls_that_match_the_gains() {
-        // Engine 3 without a camera profile uses the fallback white balance model.
-        let im = scene([1.3, 1., 0.7], 0.5);
-        let base = Recipe {
-            engine: 3,
-            ..Default::default()
-        };
-        assert!(base.color_profile(&im.metadata).is_none());
-        let auto = auto_white_balance(&im, &base).unwrap();
-        // Moving no slider from here keeps Auto's gains.
-        let mut replayed = auto.clone();
-        replayed.update_wb(&im.metadata);
-        for c in 0..3 {
-            assert!(
-                (replayed.wb[c] / auto.wb[c] - 1.).abs() < 0.01,
-                "{:?} from temperature {} tint {} vs {:?}",
-                replayed.wb,
-                auto.temperature,
-                auto.tint,
-                auto.wb
-            );
-        }
-    }
-
-    #[test]
-    fn legacy_white_balance_beyond_the_controls_follows_the_clamped_controls() {
-        let im = scene([1.; 3], 0.5);
-        let mut r = Recipe {
-            engine: 3,
-            // Far bluer and greener than any Temperature and Tint can show.
-            wb: [0.05, 1., 20.],
-            ..Default::default()
-        };
-        r.sync_white_balance_controls(&im.metadata);
-        let mut replayed = r.clone();
-        replayed.update_wb(&im.metadata);
-        assert_eq!(
-            replayed.wb, r.wb,
-            "temperature {} tint {}",
-            r.temperature, r.tint
-        );
     }
 
     #[test]
@@ -666,7 +615,6 @@ mod tests {
             };
         }
         let r = Recipe::for_metadata(&im.metadata);
-        assert!(r.engine >= 3);
         let recovered = super::super::quality::recover_highlights(&im);
         assert_ne!(recovered.pixels, im.pixels);
         let mut decoded = r.clone();

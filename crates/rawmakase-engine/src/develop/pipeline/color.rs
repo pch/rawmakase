@@ -1,4 +1,4 @@
-//! Colour conversions the pipeline shares: sRGB and Lab, Rec. 2020, the gray mix and hue weights, and the profile matrix.
+//! Colour conversions the pipeline shares: sRGB and Lab, Rec. 2020, hue weights and the profile matrix.
 use super::*;
 
 pub(crate) fn srgb_to_lab(p: [f32; 3]) -> [f32; 3] {
@@ -52,20 +52,6 @@ pub(super) const FROM_2020: [[f32; 3]; 3] = [
 pub(super) fn luma(p: [f32; 3]) -> f32 {
     0.2627 * p[0] + 0.678 * p[1] + 0.0593 * p[2]
 }
-/// The black & white mix's change to Oklab lightness, for the mix's hue-weighted
-/// sum of slider values (-1..=1) at a color of this Oklab chroma. Fitted to Camera
-/// Raw 18.7 renders of the synthetic chart: neutrals stay as they are, the change
-/// grows with chroma, and darkening is stronger than brightening.
-pub(crate) fn gray_mix_shift(mix: f32, chroma: f32) -> f32 {
-    mix * chroma
-        * if mix > 0. {
-            GRAY_MIX_BRIGHTEN
-        } else {
-            GRAY_MIX_DARKEN
-        }
-}
-const GRAY_MIX_BRIGHTEN: f32 = 1.78;
-const GRAY_MIX_DARKEN: f32 = 4.37;
 pub(crate) fn hue_weights(hue: f32) -> [f32; 8] {
     // Centers correspond to red, orange, yellow, green, cyan, blue, purple, magenta in Oklab.
     const CENTERS: [f32; 8] = [0.081, 0.151, 0.305, 0.395, 0.541, 0.733, 0.815, 0.912];
@@ -91,6 +77,5 @@ pub(crate) fn hue_weights(hue: f32) -> [f32; 8] {
 pub(crate) fn profile_matrix(m: &Metadata, r: &Recipe) -> [[f32; 3]; 3] {
     r.profile
         .as_ref()
-        .filter(|_| r.engine >= 3)
         .map_or(m.matrix, |p| p.camera_matrix(r.temperature))
 }

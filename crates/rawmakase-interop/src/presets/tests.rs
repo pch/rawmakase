@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::fs::{self, File};
 #[test]
 #[allow(clippy::approx_constant)] // Exact camera matrix coefficients, not mathematical constants.
-fn embedded_profile_roundtrip_and_old_engine_pixels() -> Result<()> {
+fn embedded_profile_roundtrip_and_first_pipeline_presets() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("profile.json");
     let m = crate::camera_data::Metadata {
@@ -26,7 +26,6 @@ fn embedded_profile_roundtrip_and_old_engine_pixels() -> Result<()> {
     save_preset(&path, &recipe)?;
     assert_eq!(load_preset(&path)?, recipe);
     let mut legacy = Recipe {
-        engine: 2,
         sharpening: 0.,
         exposure: 0.75,
         ..Default::default()
@@ -37,7 +36,6 @@ fn embedded_profile_roundtrip_and_old_engine_pixels() -> Result<()> {
     v["schema"] = 2.into();
     v["pipeline"] = 2.into();
     for key in [
-        "engine",
         "profile",
         "sharpening_radius",
         "sharpening_detail",
@@ -47,7 +45,6 @@ fn embedded_profile_roundtrip_and_old_engine_pixels() -> Result<()> {
     }
     fs::write(&path, serde_json::to_vec(&v)?)?;
     let loaded = load_preset(&path)?;
-    assert_eq!(loaded.engine, 2);
     assert_eq!(loaded.sharpening, 0.);
     assert!(loaded.profile.is_none());
     assert_eq!(loaded, legacy);

@@ -110,19 +110,6 @@ impl PreviewRenderer {
             "Render superseded"
         );
         let recipe = &recipe.checked()?;
-        if recipe.engine < 3 {
-            return match region {
-                Some(region) => super::render_region_legacy(image, recipe, region),
-                // Older engines develop without highlight recovery, so their Fit
-                // uses a reduced copy of the camera image instead of the pyramid.
-                None if max_edge > 0 && image.width.max(image.height) > max_edge * 5 / 2 => {
-                    let shown = super::preview(image, max_edge * 2);
-                    super::render_legacy(&shown, recipe, max_edge)
-                }
-                None => super::render_legacy(image, recipe, max_edge),
-            }
-            .map(Output::Pixels);
-        }
         if region.is_none()
             && max_edge > 0
             && let Some(out) = self.render_fit(image, recipe, max_edge, cancel, display)?
@@ -170,17 +157,16 @@ impl PreviewRenderer {
     }
     /// A 100% `region` at half resolution or less, from the pyramid: immediate
     /// feedback while dragging, before the full-resolution region. The viewport
-    /// stretches it over the region. `None` for engines before 3, which render
-    /// regions directly.
+    /// stretches it over the region.
     pub fn render_region_preview(
         &mut self,
         image: &CameraImage,
         recipe: &Recipe,
         region: [u32; 4],
         cancel: &AtomicBool,
-    ) -> Result<Option<Rendered>> {
+    ) -> Result<Rendered> {
         self.render_region_preview_to(image, recipe, region, cancel, None)
-            .map(|out| out.map(Output::pixels))
+            .map(Output::pixels)
     }
     /// As [`Self::render_region_preview`], presented for `display` when possible.
     pub fn render_region_preview_to(
@@ -190,13 +176,10 @@ impl PreviewRenderer {
         region: [u32; 4],
         cancel: &AtomicBool,
         display: Option<&gpu::Display>,
-    ) -> Result<Option<Output>> {
+    ) -> Result<Output> {
         let shown = recipe.as_rendered();
         let recipe = shown.as_ref();
         self.backend.used_gpu = false;
-        if recipe.engine < 3 {
-            return Ok(None);
-        }
         let recipe = &recipe.checked()?;
         let full = Geometry::new(image, recipe, 0);
         let [x, y, w, h] = region;
@@ -220,7 +203,7 @@ impl PreviewRenderer {
         let (level, source) = self.level(image, recipe, needed, cancel)?;
         let region = [px, py, pw, ph];
         let mut stages = self.stages(display);
-        quality::render_level(&level, &source, recipe, size, region, cancel, &mut stages).map(Some)
+        quality::render_level(&level, &source, recipe, size, region, cancel, &mut stages)
     }
     /// The pyramid level for `needed` source pixels on the long edge, and the level-0
     /// image (recovered and retouched), building the pyramid when the photo changed and
@@ -415,7 +398,9 @@ mod tests {
         r.effects.clarity = 0.4;
         r.effects.texture = 0.3;
         r.effects.vignette = -0.4;
-        r.effects.grain = 0.3;
+        // No grain: the measured grain is noise of the full-resolution photo, whose
+        // pixels the Fit and the resized export average differently (its strength at
+        // each size is `effects::grain`'s).
         let cancel = AtomicBool::new(false);
         for edge in [100, 180, 300] {
             let expected = quality::render(&im, &r.checked().unwrap(), edge, None).unwrap();
@@ -454,7 +439,7 @@ mod tests {
             ..Default::default()
         };
         r.effects.clarity = 0.3;
-        let edits: [&dyn Fn(&mut Recipe); 9] = [
+        let edits: [&dyn Fn(&mut Recipe); 8] = [
             &|_| {},
             &|r| r.exposure = 0.5,
             &|r| r.effects.clarity = -0.2,
@@ -463,7 +448,6 @@ mod tests {
             &|r| r.crop = [0.1, 0., 0.9, 1.],
             &|r| r.noise_luma = 0.4,
             &|r| r.contrast = 0.3,
-            &|r| r.engine = 3,
         ];
         for edit in edits {
             edit(&mut r);
@@ -490,7 +474,6 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let mut warm = PreviewRenderer::default();
         let mut r = Recipe {
-            reference_curves: true,
             ..Default::default()
         };
         let mut mask = MaskGroup {
@@ -668,35 +651,6 @@ mod tests {
             let full = quality::render(&im, &r.checked().unwrap(), 0, Some(region)).unwrap();
             assert_eq!(tile.pixels, full.pixels);
         }
-        // Older process versions render it too, in previews, regions and exports.
-        let legacy = |red_eye: Vec<RedEyeOp>| Recipe {
-            engine: 2,
-            red_eye: red_eye.into(),
-            ..Default::default()
-        };
-        let [x, y] = [eye[0] as u32, eye[1] as u32];
-        for (before, after) in [
-            (
-                super::super::render_legacy(&im, &legacy(vec![]).checked().unwrap(), 0).unwrap(),
-                super::super::render_legacy(&im, &legacy(vec![op.clone()]).checked().unwrap(), 0)
-                    .unwrap(),
-            ),
-            (
-                warm.render(&im, &legacy(vec![]), 0, Some([x, y, 1, 1]), &cancel)
-                    .unwrap(),
-                warm.render(&im, &legacy(vec![op]), 0, Some([x, y, 1, 1]), &cancel)
-                    .unwrap(),
-            ),
-        ] {
-            let i = if before.width == 1 {
-                0
-            } else {
-                (y * w + x) as usize
-            };
-            let (red, fixed) = (before.pixels[i], after.pixels[i]);
-            assert!(red[0] > 3. * red[1], "{red:?}");
-            assert!(fixed[0] < 1.3 * fixed[1], "legacy: {fixed:?} from {red:?}");
-        }
     }
     /// Mask edits (sliders, shapes, ranges, visibility) never reuse stale weights.
     #[test]
@@ -773,10 +727,7 @@ mod tests {
         r.effects.clarity = 0.3;
         let mut p = PreviewRenderer::default();
         let region = [101, 80, 120, 90];
-        let preview = p
-            .render_region_preview(&im, &r, region, &cancel)
-            .unwrap()
-            .unwrap();
+        let preview = p.render_region_preview(&im, &r, region, &cancel).unwrap();
         assert_eq!((preview.width, preview.height), (60, 45));
         let full = p.render(&im, &r, 0, Some(region), &cancel).unwrap();
         let mut error = 0.;
@@ -789,14 +740,5 @@ mod tests {
         }
         let error = error / (60. * 45. * 3.);
         assert!(error < 0.02, "mean error {error}");
-        let legacy = Recipe {
-            engine: 2,
-            ..Default::default()
-        };
-        assert!(
-            p.render_region_preview(&im, &legacy, region, &cancel)
-                .unwrap()
-                .is_none()
-        );
     }
 }

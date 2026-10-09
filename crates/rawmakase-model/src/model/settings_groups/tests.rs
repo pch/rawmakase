@@ -25,7 +25,6 @@ fn camera(make: &str, model: &str) -> Metadata {
 /// A recipe with every setting away from its default.
 fn everything_changed() -> Recipe {
     let mut r = Recipe {
-        engine: 3,
         lens_builtin: false,
         lens_profile: true,
         lens_profile_choice: crate::lens::choice::LensProfileChoice {
@@ -39,7 +38,6 @@ fn everything_changed() -> Recipe {
         lens_vignetting: 1.5,
         lens_manual_distortion: -0.2,
         lens_ca: true,
-        profile_tone: false,
         preset_name: "Film".into(),
         preset_settings: [("Exposure2012".to_string(), "1".to_string())].into(),
         sharpening_radius: 1.5,
@@ -47,28 +45,6 @@ fn everything_changed() -> Recipe {
         sharpening_masking: 0.7,
         exposure: 0.7,
         camera_exposure: 0.3,
-        wide_gamut_curves: true,
-        reference_curves: true,
-        reference_calibration: true,
-        reference_color: true,
-        parametric_model: crate::model::operators::ParametricModel::Layered,
-        sharpening_model: crate::model::operators::SharpeningModel::Measured,
-        grain_model: crate::model::operators::GrainModel::Measured,
-        clarity_model: crate::model::operators::ClarityModel::Measured,
-        texture_model: crate::model::operators::TextureModel::Measured,
-        contrast_model: crate::model::operators::ContrastModel::Adaptive,
-        lens_vignette_model: crate::model::operators::LensVignetteModel::Measured,
-        retouch_model: crate::model::operators::RetouchModel::Measured,
-        noise_model: crate::model::operators::NoiseModel::Measured,
-        grading_model: crate::model::operators::GradingModel::Measured,
-        mixer_model: crate::model::operators::MixerModel::Chart,
-        saturation_model: crate::model::operators::SaturationModel::Gray,
-        vibrance_model: crate::model::operators::VibranceModel::Chart,
-        black_white_model: crate::model::operators::BlackWhiteModel::Chart,
-        calibration_model: crate::model::operators::CalibrationModel::Measured,
-        whites_model: crate::model::operators::WhitesModel::Adaptive,
-        white_balance_model: crate::model::operators::WhiteBalanceModel::Calibrated,
-        gamut_model: crate::model::operators::GamutModel::Clip,
         temperature: 4000.,
         tint: 12.,
         wb: [1.5, 1., 0.8],
@@ -257,11 +233,11 @@ fn each_group_transfers_exactly_its_settings() {
             _ => {}
         }
         if group == SettingGroup::ProcessVersion {
-            // Crossing process version 4 brings the default camera profile, which shows
-            // the same gains as other Temperature and Tint values.
-            expected.extend(["camera_exposure", "temperature", "tint", "wb"].map(String::from));
-            assert!(moved.is_subset(&expected), "{group:?}: {moved:?}");
-            assert!(moved.contains("engine"));
+            // One engine renders every edit: only the target's own baseline comes back.
+            assert!(
+                moved.is_subset(&BTreeSet::from(["camera_exposure".to_string()])),
+                "{group:?}: {moved:?}"
+            );
             continue;
         }
         if group == SettingGroup::TreatmentAndProfile {
@@ -495,26 +471,6 @@ fn a_lens_panel_switched_off_or_another_process_version_needs_a_new_analysis() {
     source.panels.set(Panel::LensCorrections, PanelState::Off);
     let out = transfer(from(&source, &m), &to, &GroupSelection::default(), target);
     assert!(out.recipe.upright.corrections.is_empty());
-    // A pasted process version without a profile resyncs Temperature and Tint to the
-    // gains it keeps.
-    let old = Recipe {
-        engine: 3,
-        ..Default::default()
-    };
-    let mut to = Recipe {
-        temperature: 4500.,
-        ..Default::default()
-    };
-    to.update_wb(&m);
-    let mut selection = GroupSelection::none();
-    selection.set(SettingGroup::ProcessVersion, GroupInclusion::Included);
-    let out = transfer(from(&old, &m), &to, &selection, target).recipe;
-    let mut expected = out.clone();
-    expected.sync_white_balance_controls(&m);
-    assert_eq!(
-        (out.temperature, out.tint),
-        (expected.temperature, expected.tint)
-    );
 }
 
 /// Guides belong to the photo they were drawn on: Upright Mode leaves them behind, a
@@ -592,7 +548,6 @@ fn a_black_and_white_profile_carries_its_treatment_to_another_camera() {
     mono.enhanced.as_mut().unwrap().monochrome = true;
     let source = Recipe {
         profile: Some(Arc::new(mono)),
-        engine: 4,
         ..Default::default()
     };
     assert!(!source.effects.monochrome);

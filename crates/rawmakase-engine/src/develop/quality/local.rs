@@ -1,4 +1,4 @@
-//! Local tone: the blurs Clarity, Texture, Dehaze and (before engine 4) Shadows and Highlights are built on, and the gain they give each pixel.
+//! Local tone: the blurs Clarity, Texture and Dehaze are built on, and the gain they give each pixel.
 use super::*;
 
 pub(super) fn box_blur(
@@ -257,23 +257,16 @@ pub(super) fn local_stage(
     cancel: &AtomicBool,
     cache: Option<&mut StageCache>,
 ) -> Result<(Toned, Recipe)> {
-    // Engine 4 renders Shadows and Highlights in the pixel pipeline (local_tone.rs);
-    // this pre-pass then only carries Clarity and Texture.
-    let measured = r.engine >= 4 && r.reference_curves;
+    // Shadows and Highlights render in the pixel pipeline (local_tone.rs); this
+    // pre-pass only carries negative Clarity and what Texture leaves.
     let mut spatial = r.clone();
-    if measured {
-        spatial.shadows = 0.;
-        spatial.highlights = 0.;
-    }
+    spatial.shadows = 0.;
+    spatial.highlights = 0.;
     // The measured positive Clarity is part of the map (clarity.rs).
     if develop::clarity::measured(r) != 0. {
         spatial.effects.clarity = 0.;
     }
-    let mut tonal = r.clone();
-    if !measured {
-        tonal.shadows = 0.;
-        tonal.highlights = 0.;
-    }
+    let tonal = r.clone();
     let mut cache = cache;
     // The measured Texture makes a new camera image, channel by channel (texture.rs);
     // the gain below then carries the rest.

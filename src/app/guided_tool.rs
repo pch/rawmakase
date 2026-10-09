@@ -96,10 +96,6 @@ impl Editor {
     /// Opens or closes the Guided tool (Shift+T). Opening it chooses Guided Upright,
     /// as in Lightroom.
     pub(super) fn toggle_guided_tool(&mut self) {
-        if !self.view.is(Tool::Guided) && self.document.edit.recipe().engine < 4 {
-            self.status = "Update the process in Calibration to use Transform".into();
-            return;
-        }
         self.view.toggle(Tool::Guided);
         if self.view.is(Tool::Guided) {
             self.choose_guided();

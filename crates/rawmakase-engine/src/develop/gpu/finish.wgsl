@@ -28,13 +28,11 @@ fn blur_horizontal(@builtin(global_invocation_id) id: vec3<u32>) {
     scratch[id.y*p.width+id.x] = value;
 }
 // `sharpening::Sharpener::delta` for a non-negative `amount` (strength already
-// applied): the original operator clips at 0.08 (halo 0); the measured one shapes the
-// high-pass, dark halos at `dark` of light ones.
+// applied): the high-pass shaped, dark halos at `dark` of light ones.
 fn sharpen_delta(d: f32, amount: f32, threshold: f32, halo: f32, dark: f32) -> f32 {
     var mask = 1.0;
     if threshold != 0.0 { mask = clamp(abs(d) / threshold, 0.0, 1.0); }
     let k = amount * mask;
-    if halo == 0.0 { return clamp(d * k, -0.08, 0.08); }
     let r = abs(d) / halo;
     let shaped = d / (1.0 + r * r * r);
     return k * select(shaped, shaped * dark, shaped < 0.0);

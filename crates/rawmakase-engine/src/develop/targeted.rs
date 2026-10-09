@@ -4,10 +4,10 @@
 //! shared among the sliders as the render weighs them for that color:
 //!
 //! - Tone Curve: the parametric region the pixel's curve input falls in.
-//! - Color Mixer, engine 4: each band's measured change to that color (the size of
-//!   its ±100 tables there, which the slider scales).
-//! - Color Mixer before engine 4, and the black & white mix: the two bands either
-//!   side of the color's Oklab hue, as the render interpolates them.
+//! - Color Mixer: each band's measured change to that color (the size of its ±100
+//!   tables there, which the slider scales).
+//! - The black & white mix: the two bands either side of the color's Oklab hue, as
+//!   the render interpolates them.
 //!
 //! The band most involved moves with the pointer and the others in proportion.
 use crate::develop::effects::EffectsRendering;
@@ -58,9 +58,9 @@ impl HslChannel {
 pub struct TargetSample {
     /// The parametric curve's input, 0–1.
     pub tone: f32,
-    /// Linear ProPhoto RGB where the engine 4 color mixer works.
+    /// Linear ProPhoto RGB where the color mixer works.
     pub mixer: [f32; 3],
-    /// Oklab where the earlier color mixer and the black & white mix take the hue.
+    /// Oklab where the black & white mix takes the hue.
     pub color: [f32; 3],
 }
 
@@ -86,7 +86,7 @@ impl TargetWeights {
     pub fn new(target: Target, sample: &TargetSample, r: &Recipe) -> Self {
         // Neutral where the shares come from: the measured mixer's input, or the
         // Oklab color the hue weights take.
-        let neutral = if matches!(target, Target::Hsl(_)) && measured_mixer(r) {
+        let neutral = if matches!(target, Target::Hsl(_)) {
             let max = sample.mixer.into_iter().fold(0f32, f32::max);
             let min = sample.mixer.into_iter().fold(f32::INFINITY, f32::min);
             max <= 1e-6 || (max - min) / max < NEUTRAL_SATURATION
@@ -100,10 +100,11 @@ impl TargetWeights {
                 shares[r.effects.parametric_region(sample.tone)] = 1.;
                 shares
             }
-            Target::Hsl(channel) if measured_mixer(r) => normalized(
-                super::color_mixer::band_responses(sample.mixer, channel.index(), r.mixer_model),
-            ),
-            Target::Hsl(_) | Target::BlackWhite => hue_shares(sample.color),
+            Target::Hsl(channel) => normalized(super::color_mixer::band_responses(
+                sample.mixer,
+                channel.index(),
+            )),
+            Target::BlackWhite => hue_shares(sample.color),
         };
         Self { target, shares }
     }
@@ -171,11 +172,6 @@ impl TargetWeights {
         };
         (name, format!("{:+.0}", value * 100.))
     }
-}
-
-/// Whether `r` renders the Color Mixer through the measured engine 4 mixer.
-fn measured_mixer(r: &Recipe) -> bool {
-    r.engine >= 4 && r.reference_curves
 }
 
 /// The bands either side of the Oklab `color`'s hue, weighted as the render
@@ -277,14 +273,10 @@ mod tests {
     }
 
     #[test]
-    fn engine_4_shares_rank_bands_by_how_much_they_change_the_color() {
+    fn shares_rank_bands_by_how_much_they_change_the_color() {
         // A skin tone, in linear ProPhoto RGB as the measured mixer sees it.
         let skin = [0.42, 0.30, 0.22];
-        let r = Recipe {
-            engine: 4,
-            reference_curves: true,
-            ..Default::default()
-        };
+        let r = Recipe::default();
         let pro_to_rgb = |p| crate::color::mul(crate::camera_profiles::PRO_TO_RGB, p);
         for channel in HslChannel::ALL {
             let w = TargetWeights::new(
@@ -334,19 +326,5 @@ mod tests {
         };
         let w = TargetWeights::new(Target::Hsl(HslChannel::Saturation), &grayed, &r);
         assert_eq!(w.shares[1], 1., "{:?}", w.shares);
-    }
-
-    #[test]
-    fn earlier_processes_share_by_the_oklab_hue_weights() {
-        let r = Recipe::default();
-        assert!(!measured_mixer(&r));
-        let w = TargetWeights::new(Target::Hsl(HslChannel::Hue), &sample(oklab(0.395, 0.1)), &r);
-        // On the green centre: green alone.
-        let mut expected = [0.; 8];
-        expected[3] = 1.;
-        assert_eq!(w.shares, expected);
-        let mut moved = r.clone();
-        w.apply(&r, 0.1, &mut moved);
-        assert_eq!(w.step(&moved), ("Green Hue".to_string(), "+10".to_string()));
     }
 }

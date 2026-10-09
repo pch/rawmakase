@@ -15,11 +15,9 @@ pub trait EffectsRendering {
     /// How strongly Highlights protects bright pixels. As in Lightroom, it applies only to
     /// Highlight Priority and Color Priority, and only when the vignette darkens.
     fn vignette_highlight_protection(&self) -> f32;
-    fn calibrate(&self, p: [f32; 3]) -> [f32; 3];
     /// The parametric curve's region (0 Shadows, 1 Darks, 2 Lights, 3 Highlights) an
     /// input `x` falls in, between the split points.
     fn parametric_region(&self, x: f32) -> usize;
-    fn parametric(&self, x: f32) -> f32;
     /// As [`Self::pick_fringe_hue`], for the fringe colour `rgb` (encoded sRGB, as
     /// shown).
     #[cfg(test)]
@@ -45,45 +43,8 @@ impl EffectsRendering for Effects {
             _ => 0.,
         }
     }
-    fn calibrate(&self, mut p: [f32; 3]) -> [f32; 3] {
-        for c in 0..3 {
-            let [h, s] = self.calibration[c];
-            if h == 0. && s == 0. {
-                continue;
-            }
-            let source = p[c];
-            let a = (c + 1) % 3;
-            let b = (c + 2) % 3;
-            p[a] += source * h * 0.12;
-            p[b] -= source * h * 0.12;
-            let gray = (p[0] + p[1] + p[2]) / 3.;
-            p[c] += (p[c] - gray) * s * 0.35;
-        }
-        let y = (crate::color::luminance(p)).max(0.);
-        let tint = self.shadow_tint * (-y * 8.).exp() * y * 0.3;
-        p[1] += tint;
-        p[0] -= tint * 0.5;
-        p[2] -= tint * 0.5;
-        p
-    }
     fn parametric_region(&self, x: f32) -> usize {
         self.splits.iter().filter(|s| x > **s).count()
-    }
-    fn parametric(&self, x: f32) -> f32 {
-        if self.parametric == [0.; 4] {
-            return x;
-        }
-        let anchors = [0., self.splits[0], self.splits[1], self.splits[2], 1.];
-        let mut delta = 0.;
-        for i in 0..4 {
-            let lo = anchors[i];
-            let hi = anchors[i + 1];
-            let mid = (lo + hi) * 0.5;
-            let radius = (hi - lo) * 1.5;
-            let w = (1. - ((x - mid) / radius).abs()).clamp(0., 1.);
-            delta += self.parametric[i] * w * w * (3. - 2. * w) * 0.18;
-        }
-        (x + delta * 4. * x * (1. - x)).clamp(0., 1.)
     }
     #[cfg(test)]
     fn pick_fringe(&mut self, rgb: [f32; 3]) -> Option<usize> {
@@ -168,14 +129,13 @@ pub(crate) fn spatial_finish_scaled(
     scale: f32,
 ) {
     let e = &r.effects;
-    let lens_vignette = r.finished_lens_vignette();
-    if e.grain == 0. && e.vignette == 0. && lens_vignette == 0. {
+    if e.grain == 0. && e.vignette == 0. {
         return;
     }
     let vignette = PostCropVignette::new(e, full);
     // `full` is the whole output, `scale` its pixels per full-resolution pixel.
     let edge = full[0].max(full[1]) as f32 / scale;
-    let grain = GrainField::new(e, r.grain_model, edge);
+    let grain = GrainField::new(e, edge);
     im.pixels.par_iter_mut().enumerate().for_each(|(i, p)| {
         let x = origin[0] + i as u32 % im.width;
         let y = origin[1] + i as u32 / im.width;
@@ -185,10 +145,6 @@ pub(crate) fn spatial_finish_scaled(
         if let Some(v) = &vignette {
             *p = v.apply(*p, v.mask(nx, ny));
         }
-        let lens = ((nx * nx + ny * ny - e.lens_vignette_midpoint).max(0.)
-            / (2. - e.lens_vignette_midpoint))
-            .clamp(0., 1.);
-        let gain = 2f32.powf(-lens_vignette * lens * 2.);
         let (gx, gy) = if scale == 1. {
             (x as f32, y as f32)
         } else {
@@ -199,7 +155,7 @@ pub(crate) fn spatial_finish_scaled(
         };
         let noise = grain.noise(gx, gy, scale, l);
         for v in p {
-            *v = (*v * gain + noise).clamp(0., 1.);
+            *v = (*v + noise).clamp(0., 1.);
         }
     });
 }
@@ -349,30 +305,5 @@ mod tests {
         assert_eq!(e.pick_fringe([0.8, 0.2, 0.2]), None);
         assert_eq!(e.pick_fringe([0.5, 0.5, 0.5]), None);
         assert_eq!(e, before);
-    }
-    #[test]
-    fn fringe_selector_turns_back_hsl_hue_shifts() {
-        let purple = [0.6, 0.3, 0.8];
-        let pick = |hue_shift: f32| {
-            let mut r = crate::model::recipe::Recipe {
-                engine: 3,
-                ..Default::default()
-            };
-            for band in &mut r.hsl {
-                band[0] = hue_shift;
-            }
-            assert_eq!(
-                crate::develop::pick_fringe(&mut r, &Default::default(), purple),
-                Some(0)
-            );
-            r.effects.defringe_ranges[0][0]
-        };
-        // Every band turned by 0.4 turns hues by 0.05, a tenth of the Hue slider.
-        assert!(
-            (pick(0.) - pick(0.4) - 0.1).abs() < 0.01,
-            "{} {}",
-            pick(0.),
-            pick(0.4)
-        );
     }
 }

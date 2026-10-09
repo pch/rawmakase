@@ -8,7 +8,7 @@ use crate::develop::{
     pipeline::pixel_params::PixelParams,
     quality,
 };
-use crate::model::{operators::GrainModel, recipe::Recipe};
+use crate::model::recipe::Recipe;
 use crate::rendered::{ClipOverlay, Histogram};
 use anyhow::{Context, Result, ensure};
 use std::{
@@ -429,15 +429,10 @@ impl Processor {
             None => None,
         };
         let e = &recipe.effects;
-        let lens_vignette = recipe.finished_lens_vignette();
-        let effects = e.grain != 0. || e.vignette != 0. || lens_vignette != 0.;
+        let effects = e.grain != 0. || e.vignette != 0.;
         let [cx, cy, cw, ch] = finish.crop;
         let vignette = PostCropVignette::new(e, finish.full);
-        let grain = GrainField::new(
-            e,
-            recipe.grain_model,
-            finish.full[0].max(finish.full[1]) as f32 / finish.scale,
-        );
+        let grain = GrainField::new(e, finish.full[0].max(finish.full[1]) as f32 / finish.scale);
         let parameters = |shown: bool| -> wgpu::Buffer {
             let values = PresentParams {
                 width,
@@ -477,14 +472,11 @@ impl Processor {
                 vignette_power: vignette.map_or(2., |v| v.power),
                 vignette_midpoint: vignette.map_or(0., |v| v.midpoint),
                 vignette_feather: vignette.map_or(1., |v| v.feather),
-                lens_vignette,
-                lens_vignette_midpoint: e.lens_vignette_midpoint,
                 effects: effects as u32,
                 count: shown as u32,
                 halo: sharpener.halo,
                 dark: sharpener.dark,
                 grain_fine: grain.fine,
-                grain_measured: (grain.model == GrainModel::Measured) as u32,
                 ..Default::default()
             };
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

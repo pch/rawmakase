@@ -88,7 +88,6 @@ fn rendered(im: &CameraImage, ops: &[RedEyeOp]) -> CameraImage {
         crate::develop::retouch::Retouching {
             red_eye: ops,
             retouch: &[],
-            model: Default::default(),
         },
     )
 }

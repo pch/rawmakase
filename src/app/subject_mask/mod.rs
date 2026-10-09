@@ -219,7 +219,6 @@ fn content(recipe: &Recipe) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     serde_json::to_string(&(
         &recipe.retouch,
-        &recipe.retouch_model,
         &recipe.red_eye,
         recipe.camera_exposure.to_bits(),
         [

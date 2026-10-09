@@ -1,42 +1,41 @@
 //! Tone preparation: the curve tables a render looks up, and what it measures from the photo first (the contrast pivot, highlights).
 use super::*;
-use crate::develop::effects::EffectsRendering;
 
 pub(super) struct CurveSet {
     /// Where the stage stops.
     pub(super) output: PixelOutput,
     pub(super) exposure_gain: f32,
-    /// Engine 4: Contrast, Whites and Blacks as measured Lightroom curves.
-    pub(super) basic_curves: bool,
+    /// Dehaze, Contrast, Whites and Blacks as measured Lightroom curves.
     pub(super) basic: Option<crate::develop::basic_tone::BasicTone>,
-    /// Engine 4 Shadows/Highlights base level, built per image by `with_local`.
+    /// The Shadows/Highlights base level, built per image by `for_image`.
     pub(super) local: Option<crate::develop::local_tone::LocalToneMap>,
-    /// Engine 4 measured color mixer, Saturation and Vibrance.
+    /// The measured color mixer, Saturation and Vibrance.
     pub(super) mixer: Option<crate::develop::color_mixer::ColorMixer>,
-    /// `BlackWhiteModel::Chart`'s grid for the mix (`black_white::gray_grid`).
+    /// The black & white mix's grid (`black_white::gray_grid`), for black & white
+    /// renders.
     pub(crate) gray_grid: Option<Vec<[f32; 3]>>,
-    /// Engine 4 Point Color swatches.
+    /// Point Color swatches.
     pub(super) point_colors: Option<crate::develop::point_color::PointColors>,
-    /// Engine 4 measured color grading, when its settings are covered by the tables.
+    /// The measured color grading, when grading is active.
     pub(super) grade: Option<crate::develop::color_grade::ColorGrade>,
-    /// Engine 4: the DNG exposure ramp's black point (Adobe's default Shadows of 5).
+    /// The DNG exposure ramp's black point (Adobe's default Shadows of 5).
     pub(super) black_ramp: Option<ExposureRamp>,
     pub(super) color_adjustments: bool,
     /// The profile look's RGB table, at the recipe's Profile Amount.
     pub(super) rgb_table: Option<crate::camera_profiles::RgbLook>,
     pub(super) calibration: crate::develop::calibration::Calibration,
     /// What Contrast and Whites follow of the photo, for the global sliders and the
-    /// masks' (engine 4).
+    /// masks'.
     pub(super) photo: crate::develop::basic_tone::PhotoTone,
-    /// Engine 4's measured parametric curve, when the recipe uses it and a region is set.
+    /// The measured parametric curve, when a region is set.
     pub(super) parametric: Option<crate::develop::parametric::ParametricCurve>,
     pub(super) master: CurveLut,
     pub(super) channels: [CurveLut; 3],
 }
 impl CurveSet {
-    /// Curves plus, for engine 4, the Shadows/Highlights map of this image (which also
-    /// carries the measured Clarity); built also when `local_tone` (masks change
-    /// Shadows or Highlights).
+    /// Curves plus the Shadows/Highlights map of this image (which also carries the
+    /// measured Clarity); built also when `local_tone` (masks change Shadows or
+    /// Highlights).
     pub(super) fn for_image(
         im: Source,
         r: &Recipe,
@@ -44,15 +43,12 @@ impl CurveSet {
         local_tone: bool,
     ) -> Self {
         let mut lut = Self::with_photo_measures(im, r, matrix);
-        if lut.basic_curves {
-            let local = crate::develop::local_tone::LocalToneMap::build(
-                im,
-                crate::develop::local_tone::Sliders::of(r),
-                local_tone,
-                |p| tone_stage(p, &im.metadata, r, &lut, matrix, None).0,
-            );
-            lut.local = local;
-        }
+        lut.local = crate::develop::local_tone::LocalToneMap::build(
+            im,
+            crate::develop::local_tone::Sliders::of(r),
+            local_tone,
+            |p| tone_stage(p, r, &lut, matrix, None),
+        );
         lut
     }
     /// Curves with Contrast at this image's pivot and Whites for its highlights, when
@@ -61,8 +57,7 @@ impl CurveSet {
         let mut lut = Self::new(r);
         let (pivot, whites) = (measures_contrast_pivot(r), measures_whites(r));
         if pivot {
-            lut.photo.contrast =
-                crate::develop::basic_tone::ContrastCurve::Pivot(contrast_pivot(im, r, matrix));
+            lut.photo.contrast_pivot = contrast_pivot(im, r, matrix);
         }
         if whites {
             lut.photo.whites = crate::develop::basic_tone::WhitesTable::for_highlights(
@@ -81,58 +76,39 @@ impl CurveSet {
         lut
     }
     pub(super) fn new(r: &Recipe) -> Self {
-        let basic_curves = r.engine >= 4 && r.reference_curves;
         let photo = crate::develop::basic_tone::PhotoTone {
-            contrast: match r.contrast_model {
-                crate::model::operators::ContrastModel::Original => {
-                    crate::develop::basic_tone::ContrastCurve::Original
-                }
-                crate::model::operators::ContrastModel::Adaptive => {
-                    crate::develop::basic_tone::ContrastCurve::Pivot(
-                        crate::develop::basic_tone::TYPICAL_PIVOT,
-                    )
-                }
-            },
-            // Without the photo, adaptive Whites takes the original median curve.
+            contrast_pivot: crate::develop::basic_tone::TYPICAL_PIVOT,
+            // Without the photo, Whites takes the median curve.
             whites: crate::develop::basic_tone::WhitesTable::original(),
         };
         Self {
             output: PixelOutput::Display,
             exposure_gain: 2f32.powf(r.exposure + r.camera_exposure),
-            basic_curves,
-            basic: basic_curves
-                .then(|| {
-                    crate::develop::basic_tone::BasicTone::new(
-                        r.contrast,
-                        r.whites,
-                        r.blacks,
-                        r.effects.dehaze,
-                        &photo,
-                    )
-                })
-                .flatten(),
+            basic: crate::develop::basic_tone::BasicTone::new(
+                r.contrast,
+                r.whites,
+                r.blacks,
+                r.effects.dehaze,
+                &photo,
+            ),
             local: None,
             photo,
-            mixer: basic_curves
-                .then(|| crate::develop::color_mixer::ColorMixer::new(r))
-                .flatten(),
-            gray_grid: (r.effects.monochrome
-                && r.black_white_model == crate::model::operators::BlackWhiteModel::Chart)
+            mixer: crate::develop::color_mixer::ColorMixer::new(r),
+            gray_grid: r
+                .effects
+                .monochrome
                 .then(|| crate::develop::black_white::gray_grid(r.effects.gray_mix)),
             // Camera Raw leaves Point Color out of black & white renders.
-            point_colors: (basic_curves && !r.effects.monochrome)
+            point_colors: (!r.effects.monochrome)
                 .then(|| crate::develop::point_color::PointColors::new(&r.point_colors))
                 .flatten(),
-            grade: (basic_curves && r.reference_color)
-                .then(|| crate::develop::color_grade::ColorGrade::new(r))
-                .flatten(),
-            black_ramp: basic_curves.then(|| {
-                ExposureRamp::new(default_black(r) * 2f32.powf(r.exposure + r.camera_exposure))
-            }),
+            grade: crate::develop::color_grade::ColorGrade::new(r),
+            black_ramp: Some(ExposureRamp::new(
+                default_black(r) * 2f32.powf(r.exposure + r.camera_exposure),
+            )),
             rgb_table: r
                 .profile
                 .as_ref()
-                .filter(|_| r.engine >= 3)
                 .and_then(|p| p.enhanced.as_ref()?.rgb().cloned()),
             color_adjustments: r.vibrance != 0.
                 || r.saturation != 0.
@@ -142,11 +118,8 @@ impl CurveSet {
             calibration: crate::develop::calibration::Calibration::new(
                 r.effects.calibration,
                 r.effects.shadow_tint,
-                r.calibration_model,
             ),
-            parametric: (basic_curves && r.parametric_model.is_measured())
-                .then(|| parametric_curve(r))
-                .flatten(),
+            parametric: parametric_curve(r),
             master: CurveLut::new(&r.curve),
             channels: std::array::from_fn(|c| CurveLut::new(&r.effects.channels[c])),
         }
@@ -156,35 +129,27 @@ impl CurveSet {
 /// curve at its Profile Amount, as Camera Raw applies it.
 fn parametric_curve(r: &Recipe) -> Option<crate::develop::parametric::ParametricCurve> {
     use crate::develop::parametric::ParametricCurve;
-    use crate::model::operators::ParametricModel;
     let user = ParametricCurve::new(r.effects.parametric, r.effects.splits);
     let look = r
         .profile
         .as_ref()
-        .filter(|_| r.parametric_model == ParametricModel::Layered)
         .and_then(|p| p.enhanced.as_ref())
         .and_then(|look| ParametricCurve::new(look.settings.parametric, look.settings.splits));
     ParametricCurve::then(user, look)
 }
 /// Whether the recipe's Contrast pivots where the photo's own measure puts it.
 pub(crate) fn measures_contrast_pivot(r: &Recipe) -> bool {
-    r.engine >= 4
-        && r.reference_curves
-        && r.contrast_model == crate::model::operators::ContrastModel::Adaptive
-        && (r.contrast != 0.
-            || r.masks
-                .iter()
-                .any(|m| m.is_active() && m.adjust.contrast != 0.))
+    r.contrast != 0.
+        || r.masks
+            .iter()
+            .any(|m| m.is_active() && m.adjust.contrast != 0.)
 }
 /// Whether the recipe's positive Whites follows the photo's highlights.
 pub(crate) fn measures_whites(r: &Recipe) -> bool {
-    r.engine >= 4
-        && r.reference_curves
-        && r.whites_model == crate::model::operators::WhitesModel::Adaptive
-        && (r.whites > 0.
-            || r.masks
-                .iter()
-                .any(|m| m.is_active() && m.adjust.whites > 0.))
+    r.whites > 0.
+        || r.masks
+            .iter()
+            .any(|m| m.is_active() && m.adjust.whites > 0.)
 }
 /// The photo reduced for measuring it, without Clarity's and Texture's gain: a user
 /// adjustment that depends on the preview size.
@@ -207,7 +172,7 @@ fn photo_highlights(im: Source, r: &Recipe, matrix: [[f32; 3]; 3]) -> f32 {
         .pixels
         .par_iter()
         .map(|p| {
-            let rgb = tone_stage(*p, &im.metadata, r, &lut, matrix, None).0;
+            let rgb = tone_stage(*p, r, &lut, matrix, None);
             srgb_encode(crate::develop::local_tone::luminance(rgb).clamp(0., 1.))
         })
         .collect();
@@ -226,11 +191,7 @@ fn contrast_pivot(im: Source, r: &Recipe, matrix: [[f32; 3]; 3]) -> f32 {
     let encoded: Vec<[f32; 3]> = small
         .pixels
         .par_iter()
-        .map(|p| {
-            tone_stage(*p, &im.metadata, &default, &lut, matrix, None)
-                .0
-                .map(|v| srgb_encode(v.clamp(0., 1.)))
-        })
+        .map(|p| tone_stage(*p, &default, &lut, matrix, None).map(|v| srgb_encode(v.clamp(0., 1.))))
         .collect();
     crate::develop::basic_tone::photo_pivot(&crate::develop::basic_tone::blocks(
         &encoded,
@@ -245,11 +206,8 @@ pub(super) fn apply_reference_curves(
     local: Option<&LocalDelta>,
 ) -> [f32; 3] {
     let p = curve_input(rgb, r, lut, local);
-    let p = match &lut.parametric {
-        Some(curve) => curve.apply(p),
-        // The original curve, the identity when no region is set.
-        None => p.map(|x| r.effects.parametric(x)),
-    };
+    // No region set: the identity.
+    let p = lut.parametric.as_ref().map_or(p, |curve| curve.apply(p));
     let lo = p.into_iter().fold(f32::INFINITY, f32::min);
     let hi = p.into_iter().fold(0f32, f32::max);
     let a = lut.master.evaluate(lo);
@@ -265,7 +223,7 @@ pub(super) fn apply_reference_curves(
 }
 
 /// The parametric curve's input in each channel of encoded ProPhoto RGB: the basic
-/// tone curves, a mask's tone, Levels and (before engine 4) Contrast applied.
+/// tone curves, a mask's tone and Levels applied.
 pub(super) fn curve_input(
     rgb: [f32; 3],
     r: &Recipe,
@@ -278,35 +236,12 @@ pub(super) fn curve_input(
         Some(d) if local::uses(d, &local::TONE_SLOTS) => local::tone(d, p, &lut.photo),
         _ => p,
     };
-    let contrast = if lut.basic_curves { 0. } else { r.contrast };
     p.map(|v| {
         let x = ((v - r.black_point) / (r.white_point - r.black_point))
             .clamp(0., 1.)
             .powf(1. / r.midtone);
-        let power = 2f32.powf(contrast);
-        let low = x.powf(power);
-        low / (low + (1. - x).powf(power)).max(1e-8)
+        // Contrast renders in the basic tone curves; this is its S-curve at 0, which
+        // the GPU port also applies.
+        x / (x + (1. - x)).max(1e-8)
     })
-}
-
-pub(super) fn apply_curve(encoded: f32, c: usize, r: &Recipe, lut: &CurveSet) -> f32 {
-    let level = ((encoded - r.black_point) / (r.white_point - r.black_point))
-        .clamp(0., 1.)
-        .powf(1. / r.midtone);
-    let contrast = if r.wide_gamut_curves && r.contrast != 0. {
-        // A bounded S-curve preserves black/white endpoints and avoids the
-        // premature clipping of the legacy affine contrast adjustment.
-        let power = 2f32.powf(r.contrast);
-        let low = level.powf(power);
-        low / (low + (1. - level).powf(power)).max(1e-8)
-    } else {
-        ((level - 0.5) * (1. + r.contrast) + 0.5).clamp(0., 1.)
-    };
-    let master = lut.master.evaluate(r.effects.parametric(contrast));
-    let curve = &r.effects.channels[c];
-    if curve.points == [[0., 0.], [1., 1.]] {
-        master
-    } else {
-        lut.channels[c].evaluate(master)
-    }
 }

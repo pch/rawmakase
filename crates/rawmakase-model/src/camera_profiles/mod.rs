@@ -380,24 +380,6 @@ impl CameraProfile {
     pub fn white_balance(&self, temperature: f32, tint: f32, m: &Metadata) -> Option<[f32; 3]> {
         self.white_balance_calibrated(temperature, tint, m, self.neutral_calibration(m))
     }
-    pub(crate) fn legacy_white_balance(
-        &self,
-        temperature: f32,
-        tint: f32,
-        m: &Metadata,
-    ) -> Option<[f32; 3]> {
-        self.white_balance_calibrated(temperature, tint, m, self.legacy_neutral_calibration(m))
-    }
-    fn legacy_neutral_calibration(&self, m: &Metadata) -> [f32; 3] {
-        if self.calibration_signature == "com.adobe"
-            && m.make.eq_ignore_ascii_case("Fujifilm")
-            && m.model.eq_ignore_ascii_case("X100F")
-        {
-            [0.9883, 1., 1.031]
-        } else {
-            [1.; 3]
-        }
-    }
     fn white_balance_calibrated(
         &self,
         temperature: f32,
@@ -419,9 +401,6 @@ impl CameraProfile {
     }
     pub fn as_shot_white_balance(&self, m: &Metadata) -> Option<[f32; 2]> {
         self.as_shot_calibrated(m, self.neutral_calibration(m))
-    }
-    pub(crate) fn legacy_as_shot_white_balance(&self, m: &Metadata) -> Option<[f32; 2]> {
-        self.as_shot_calibrated(m, self.legacy_neutral_calibration(m))
     }
     fn as_shot_calibrated(&self, m: &Metadata, calibration: [f32; 3]) -> Option<[f32; 2]> {
         let neutral = std::array::from_fn(|c| 1. / (m.wb[c].max(1e-6) * calibration[c]));
@@ -468,7 +447,7 @@ impl CameraProfile {
         }
         mul(PRO_TO_RGB, rgb).map(|v| v * 2f32.powf(self.exposure))
     }
-    pub fn finish(&self, rgb: [f32; 3], profile_tone: bool) -> [f32; 3] {
+    pub fn finish(&self, rgb: [f32; 3]) -> [f32; 3] {
         let mut p = mul(RGB_TO_PRO, rgb);
         if let Some(table) = &self.look {
             p = table.apply(p, None, 0.);
@@ -488,26 +467,18 @@ impl CameraProfile {
             let t = ((x - a[0]) / (b[0] - a[0])).clamp(0., 1.);
             a[1] * (1. - t) + b[1] * t
         };
-        if profile_tone {
-            // Map the darkest and brightest channels; preserve the middle channel's
-            // relative position. This preserves hue without flattening saturation.
-            p = p.map(|v| v.clamp(0., 1.));
-            let low = p.into_iter().fold(f32::INFINITY, f32::min);
-            let high = p.into_iter().fold(0., f32::max);
-            let a = evaluate(low);
-            let b = evaluate(high);
-            p = if high - low > 1e-8 {
-                p.map(|v| a + (b - a) * (v - low) / (high - low))
-            } else {
-                [a; 3]
-            };
+        // Map the darkest and brightest channels; preserve the middle channel's
+        // relative position. This preserves hue without flattening saturation.
+        p = p.map(|v| v.clamp(0., 1.));
+        let low = p.into_iter().fold(f32::INFINITY, f32::min);
+        let high = p.into_iter().fold(0., f32::max);
+        let a = evaluate(low);
+        let b = evaluate(high);
+        p = if high - low > 1e-8 {
+            p.map(|v| a + (b - a) * (v - low) / (high - low))
         } else {
-            // Preserve the original renderer for saved recipes.
-            let v = p.into_iter().fold(0., f32::max);
-            if v > 1e-8 {
-                p = p.map(|q| q * evaluate(v) / v);
-            }
-        }
+            [a; 3]
+        };
         if let Some(look) = &self.enhanced {
             p = look.apply_curve(p);
         }

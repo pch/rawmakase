@@ -1,4 +1,4 @@
-//! Engine 4 Shadows and Highlights: an edge-aware local tone operator fitted to Camera
+//! Shadows and Highlights: an edge-aware local tone operator fitted to Camera
 //! Raw. The base level is a guided filter of log2 luminance of the toned image, with a
 //! radius of 3.2% of the long edge and ε = 1.5 (log2 units squared). The measured
 //! tables in `local_tone_data.rs` give the log2 gain for each base level relative to an

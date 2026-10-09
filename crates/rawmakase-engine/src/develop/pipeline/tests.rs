@@ -1,11 +1,9 @@
 use super::*;
 use crate::develop::curve::ToneCurve;
 use crate::develop::effects::EffectsRendering;
-use crate::develop::recipe::RenderedRecipe;
 fn adjust(p: [f32; 3], m: &Metadata, r: &Recipe) -> [f32; 3] {
     process_pixel(
         p,
-        m,
         r,
         &CurveSet::new(r),
         profile_matrix(m, r),
@@ -35,102 +33,41 @@ fn fixture() -> CameraImage {
         scale_clipped: 0,
     }
 }
+/// Settings earlier releases saved to choose a rendering engine and its operators are
+/// kept as they were, unread: one engine renders every recipe.
 #[test]
-fn old_recipes_keep_original_profile_tones() {
-    let mut json = serde_json::to_value(Recipe::default()).unwrap();
-    for field in [
-        "profile_tone",
-        "camera_exposure",
-        "wide_gamut_curves",
-        "reference_curves",
-        "reference_calibration",
-        "reference_color",
-        "parametric_model",
-        "contrast_model",
-        "grading_model",
-        "mixer_model",
-        "saturation_model",
-        "vibrance_model",
-        "black_white_model",
-        "calibration_model",
-        "whites_model",
-        "gamut_model",
-    ] {
-        json.as_object_mut().unwrap().remove(field);
+fn engine_and_operator_settings_of_earlier_releases_are_kept_unread() -> anyhow::Result<()> {
+    let im = fixture();
+    let plain = Recipe::for_metadata(&im.metadata);
+    let mut json = serde_json::to_value(&plain)?;
+    let fields = serde_json::json!({
+        "engine": 3,
+        "profile_tone": false,
+        "wide_gamut_curves": false,
+        "reference_curves": false,
+        "reference_calibration": false,
+        "reference_color": false,
+        "contrast_model": "Original",
+        "sharpening_model": "Original",
+        "gamut_model": "Compress",
+    });
+    for (key, value) in fields.as_object().unwrap() {
+        json[key] = value.clone();
     }
-    let old: Recipe = serde_json::from_value(json).unwrap();
-    assert!(!old.profile_tone);
-    assert_eq!(old.camera_exposure, 0.);
-    assert!(!old.wide_gamut_curves);
-    assert!(!old.reference_color);
-    assert!(!old.reference_curves);
-    assert!(!old.reference_calibration);
+    let old: Recipe = serde_json::from_value(json)?;
     assert_eq!(
-        old.parametric_model,
-        crate::model::operators::ParametricModel::Original
+        old.unknown.keys().collect::<Vec<_>>(),
+        fields.as_object().unwrap().keys().collect::<Vec<_>>()
     );
+    assert_eq!(serde_json::to_value(&old)?["engine"], 3);
     assert_eq!(
-        old.contrast_model,
-        crate::model::operators::ContrastModel::Original
+        crate::develop::render(&im, &old.checked()?, 0)?.pixels,
+        crate::develop::render(&im, &plain.checked()?, 0)?.pixels
     );
-    assert_eq!(
-        old.whites_model,
-        crate::model::operators::WhitesModel::Original
-    );
-    assert!(Recipe::default().profile_tone);
-    assert_eq!(
-        old.gamut_model,
-        crate::model::operators::GamutModel::Compress
-    );
-    assert_eq!(
-        old.grading_model,
-        crate::model::operators::GradingModel::Original
-    );
-    assert_eq!(
-        old.mixer_model,
-        crate::model::operators::MixerModel::Original
-    );
-    assert_eq!(
-        old.saturation_model,
-        crate::model::operators::SaturationModel::Original
-    );
-    assert_eq!(
-        old.vibrance_model,
-        crate::model::operators::VibranceModel::Original
-    );
-    assert_eq!(
-        old.black_white_model,
-        crate::model::operators::BlackWhiteModel::Original
-    );
-    assert_eq!(
-        old.calibration_model,
-        crate::model::operators::CalibrationModel::Original
-    );
-    // The measured parametric curve and grading are saved, and read back.
-    let measured = Recipe {
-        parametric_model: crate::model::operators::ParametricModel::Layered,
-        contrast_model: crate::model::operators::ContrastModel::Adaptive,
-        grading_model: crate::model::operators::GradingModel::Measured,
-        whites_model: crate::model::operators::WhitesModel::Adaptive,
-        gamut_model: crate::model::operators::GamutModel::Clip,
-        mixer_model: crate::model::operators::MixerModel::Chart,
-        saturation_model: crate::model::operators::SaturationModel::Gray,
-        vibrance_model: crate::model::operators::VibranceModel::Chart,
-        black_white_model: crate::model::operators::BlackWhiteModel::Chart,
-        calibration_model: crate::model::operators::CalibrationModel::Measured,
-        ..Recipe::default()
-    };
-    let back: Recipe = serde_json::from_value(serde_json::to_value(&measured).unwrap()).unwrap();
-    assert_eq!(back.parametric_model, measured.parametric_model);
-    assert_eq!(back.contrast_model, measured.contrast_model);
-    assert_eq!(back.grading_model, measured.grading_model);
-    assert_eq!(back.whites_model, measured.whites_model);
-    assert_eq!(back.gamut_model, measured.gamut_model);
-    assert_eq!(back.mixer_model, measured.mixer_model);
-    assert_eq!(back.saturation_model, measured.saturation_model);
-    assert_eq!(back.vibrance_model, measured.vibrance_model);
-    assert_eq!(back.black_white_model, measured.black_white_model);
-    assert_eq!(back.calibration_model, measured.calibration_model);
+    // A recipe saved now has none of them.
+    let saved: Recipe = serde_json::from_value(serde_json::to_value(&plain)?)?;
+    assert!(saved.unknown.is_empty());
+    Ok(())
 }
 
 #[test]
@@ -210,8 +147,6 @@ fn constrain_crop_is_omitted_while_off_and_round_trips() {
 fn reference_color_extremes_stay_finite_and_in_gamut() {
     let im = fixture();
     let mut r = Recipe {
-        reference_color: true,
-        wide_gamut_curves: true,
         ..Default::default()
     };
     for amount in [-1., 0., 1.] {
@@ -237,18 +172,6 @@ fn reference_color_extremes_stay_finite_and_in_gamut() {
                 "{output:?}"
             );
         }
-    }
-}
-#[test]
-fn inactive_reference_color_preserves_the_baseline() {
-    let im = fixture();
-    let mut r = Recipe::default();
-    for p in &im.pixels {
-        r.reference_color = false;
-        let old = adjust(*p, &im.metadata, &r);
-        r.reference_color = true;
-        let new = adjust(*p, &im.metadata, &r);
-        assert!(old.iter().zip(new).all(|(a, b)| (a - b).abs() < 2e-6));
     }
 }
 
@@ -355,10 +278,6 @@ fn viewport_matches_full_export_with_detail_and_geometry() -> Result<()> {
         sharpening: 0.4,
         exposure: 0.5,
         camera_exposure: 0.15,
-        wide_gamut_curves: true,
-        reference_color: true,
-        reference_curves: true,
-        reference_calibration: true,
         vibrance: 0.6,
         grading: [[0.6, 0.3, 0.1]; 3],
         ..Default::default()
@@ -402,29 +321,28 @@ fn neutral_picker_balances_channels() {
     assert_eq!(neutral_pick(&im, &r, 0.5, 0.5), [0.5, 1., 2.]);
 }
 #[test]
-fn clipped_channels_do_not_make_magenta_highlights() {
-    let mut m = fixture().metadata;
-    m.wb = [2.5, 1., 1.4];
-    m.matrix = [
+fn clipped_channels_do_not_make_magenta_highlights() -> Result<()> {
+    let mut im = fixture();
+    im.metadata.wb = [2.5, 1., 1.4];
+    im.metadata.matrix = [
         [2.0124, -0.9049, -0.1075],
         [-0.1196, 1.564, -0.4444],
         [0.0402, -0.4608, 1.4206],
     ];
+    // Every channel clipped: highlight recovery makes the pixel neutral.
+    im.pixels.fill([2.5, 1., 1.4]);
     for exposure in [-3., 0., 2.] {
-        let p = adjust(
-            [2.5, 1., 1.4],
-            &m,
-            &Recipe {
-                engine: 2,
-                exposure,
-                ..Default::default()
-            },
-        );
+        let r = Recipe {
+            exposure,
+            ..Recipe::for_metadata(&im.metadata)
+        };
+        let p = render(&im, &r.checked()?, 0)?.pixels[0];
         assert!(
             (p[0] - p[1]).abs() < 0.0001 && (p[1] - p[2]).abs() < 0.0001,
             "{p:?}"
         );
     }
+    Ok(())
 }
 #[test]
 fn exposure_reveals_retained_highlights() {
@@ -440,26 +358,6 @@ fn exposure_reveals_retained_highlights() {
     );
     assert!(a[0] > b[0] && b[0] > 0.5);
     assert!(a.iter().all(|v| v.is_finite()));
-}
-#[test]
-fn wide_contrast_preserves_endpoints_and_is_monotonic() {
-    let mut recipe = Recipe {
-        wide_gamut_curves: true,
-        ..Default::default()
-    };
-    let lut = CurveSet::new(&recipe);
-    for contrast in [-1., -0.4, 0., 0.2, 1.] {
-        recipe.contrast = contrast;
-        assert_eq!(apply_curve(0., 0, &recipe, &lut), 0.);
-        assert_eq!(apply_curve(1., 0, &recipe, &lut), 1.);
-        assert!((apply_curve(0.5, 0, &recipe, &lut) - 0.5).abs() < 1e-6);
-        let mut previous = 0.;
-        for i in 0..=1000 {
-            let value = apply_curve(i as f32 / 1000., 0, &recipe, &lut);
-            assert!(value >= previous && value <= 1.);
-            previous = value;
-        }
-    }
 }
 #[test]
 fn invalid_recipes_rejected() {
@@ -522,48 +420,24 @@ fn neutral_color_fast_path_matches_general_processing() {
         matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
         ..Default::default()
     };
-    for engine in [2, 3] {
-        for reference_color in [false, true] {
-            let recipe = Recipe {
-                engine,
-                reference_color,
-                exposure: 0.4,
-                ..Recipe::default()
-            };
-            let fast = CurveSet::new(&recipe);
-            let mut general = CurveSet::new(&recipe);
-            general.color_adjustments = true;
-            for i in 0..4096 {
-                let p = [
-                    (i % 16) as f32 / 8.,
-                    ((i / 16) % 16) as f32 / 8.,
-                    (i / 256) as f32 / 8.,
-                ];
-                let a = process_pixel(
-                    p,
-                    &metadata,
-                    &recipe,
-                    &fast,
-                    metadata.matrix,
-                    [0., 0.],
-                    None,
-                );
-                let b = process_pixel(
-                    p,
-                    &metadata,
-                    &recipe,
-                    &general,
-                    metadata.matrix,
-                    [0., 0.],
-                    None,
-                );
-                for c in 0..3 {
-                    assert!(
-                        (a[c] - b[c]).abs() < 2e-5,
-                        "{engine}, {reference_color}, {p:?}: {a:?} vs {b:?}"
-                    );
-                }
-            }
+    let recipe = Recipe {
+        exposure: 0.4,
+        ..Recipe::default()
+    };
+    let fast = CurveSet::new(&recipe);
+    let mut general = CurveSet::new(&recipe);
+    general.color_adjustments = true;
+    let matrix = profile_matrix(&metadata, &recipe);
+    for i in 0..4096 {
+        let p = [
+            (i % 16) as f32 / 8.,
+            ((i / 16) % 16) as f32 / 8.,
+            (i / 256) as f32 / 8.,
+        ];
+        let a = process_pixel(p, &recipe, &fast, matrix, [0., 0.], None);
+        let b = process_pixel(p, &recipe, &general, matrix, [0., 0.], None);
+        for c in 0..3 {
+            assert!((a[c] - b[c]).abs() < 2e-5, "{p:?}: {a:?} vs {b:?}");
         }
     }
 }
@@ -592,8 +466,8 @@ fn builtin_lens_correction_brightens_corners_and_keeps_regions_consistent() {
         ..on.clone()
     };
     let lum = |p: [f32; 3]| p.iter().sum::<f32>();
-    let a = render_legacy(&im, &on.checked().unwrap(), 0).unwrap();
-    let b = render_legacy(&im, &off.checked().unwrap(), 0).unwrap();
+    let a = render(&im, &on.checked().unwrap(), 0).unwrap();
+    let b = render(&im, &off.checked().unwrap(), 0).unwrap();
     let corner = |r: &Rendered| lum(r.pixels[0]);
     let centre = |r: &Rendered| lum(r.pixels[(4 * r.width + 6) as usize]);
     assert!(corner(&a) > corner(&b) + 0.01);
@@ -607,9 +481,6 @@ fn builtin_lens_correction_brightens_corners_and_keeps_regions_consistent() {
             assert!((0..3).all(|c| (p[c] - q[c]).abs() < 2e-6));
         }
     }
-    // Older engines never apply the correction.
-    let old = Recipe { engine: 3, ..on };
-    assert!(old.lens_correction(&im.metadata).is_none());
 }
 #[test]
 fn transform_scales_and_fills_uncovered_area_with_white() {
@@ -645,44 +516,17 @@ fn transform_scales_and_fills_uncovered_area_with_white() {
     assert!(r.validate().is_err());
 }
 #[test]
-fn fringe_selector_reaches_the_hue_defringe_tests_through_grading() {
-    // A purple fringe as Defringe sees it, shown greener by legacy colour grading.
-    let hue = 0.85f32;
-    let angle = hue * std::f32::consts::TAU;
-    let lab = [0.6, angle.cos() * 0.08, angle.sin() * 0.08];
-    let mut r = Recipe {
-        engine: 3,
-        ..Default::default()
-    };
-    r.effects.global_grade = [0.4, 0.4, 0.];
-    let lut = CurveSet::new(&r);
-    let shown = finish_color(lab, &r, &lut);
-    let chroma = |lab: [f32; 3]| lab[1].hypot(lab[2]);
-    assert_eq!(pick_fringe(&mut r, &Metadata::default(), shown), Some(0));
-    assert!(chroma(r.effects.defringe_color(lab, hue)) < chroma(lab) * 0.6);
-}
-#[test]
-fn fringe_selector_reaches_the_hue_defringe_tests_through_channel_curves() {
-    // A green fringe as Defringe sees it, darkened and turned by a lowered legacy green
-    // channel curve.
-    let hue = 0.45f32;
-    let angle = hue * std::f32::consts::TAU;
-    let lab = [0.6, angle.cos() * 0.08, angle.sin() * 0.08];
-    let mut r = Recipe {
-        engine: 3,
-        reference_curves: false,
-        wide_gamut_curves: false,
-        ..Default::default()
-    };
-    r.effects.channels[1] = ToneCurve {
-        points: vec![[0., 0.], [1., 0.6]],
-        ..Default::default()
-    };
-    let lut = CurveSet::new(&r);
-    let shown = finish_color(lab, &r, &lut);
-    let chroma = |lab: [f32; 3]| lab[1].hypot(lab[2]);
-    assert_eq!(pick_fringe(&mut r, &Metadata::default(), shown), Some(1));
-    assert!(chroma(r.effects.defringe_color(lab, hue)) < chroma(lab) * 0.6);
+fn fringe_selector_reaches_the_hue_defringe_tests() {
+    // A purple and a green fringe as Defringe sees them.
+    for (hue, range) in [(0.85f32, 0), (0.45, 1)] {
+        let angle = hue * std::f32::consts::TAU;
+        let lab = [0.6, angle.cos() * 0.08, angle.sin() * 0.08];
+        let mut r = Recipe::default();
+        let shown = finish_color(lab);
+        let chroma = |lab: [f32; 3]| lab[1].hypot(lab[2]);
+        assert_eq!(pick_fringe(&mut r, shown), Some(range));
+        assert!(chroma(r.effects.defringe_color(lab, hue)) < chroma(lab) * 0.6);
+    }
 }
 
 /// Refine Saturation 0 keeps each colour's channel spread (encoded ProPhoto, before the
@@ -691,7 +535,6 @@ fn fringe_selector_reaches_the_hue_defringe_tests_through_channel_curves() {
 #[test]
 fn refine_saturation_zero_keeps_the_colours_saturation_through_the_point_curve() {
     let mut recipe = Recipe {
-        reference_curves: true,
         ..Default::default()
     };
     recipe.curve = ToneCurve {
@@ -761,11 +604,10 @@ fn constrain_crop_renders_no_white() {
     assert!((aspect - 1.5).abs() < 0.06, "{aspect}");
     assert!(constrained.width < free.width && constrained.width > 45);
 }
-/// A look's RGB table goes after the colour controls, also on engine 3, where they
-/// are the Oklab HSL and Saturation rather than the measured mixer: a fully
-/// desaturated gray still takes the table's tint, and Monochrome still makes it gray.
+/// A look's RGB table goes after the colour controls: a fully desaturated gray still
+/// takes the table's tint, and Monochrome still makes it gray.
 #[test]
-fn rgb_tables_follow_the_colour_controls_on_every_engine() {
+fn rgb_tables_follow_the_colour_controls() {
     let m = Metadata {
         make: "Test".into(),
         model: "Camera".into(),
@@ -775,25 +617,20 @@ fn rgb_tables_follow_the_colour_controls_on_every_engine() {
     let profile = crate::camera_profiles::CameraProfile::creative_for_test(&m)
         .with_test_rgb_tables()
         .remove(0);
-    for engine in [3, 4] {
-        let r = Recipe {
-            engine,
-            profile: Some(Arc::new(profile.clone())),
-            saturation: -1.,
-            reference_curves: engine >= 4,
-            reference_color: engine >= 4,
-            ..Default::default()
-        };
-        let spread = |r: &Recipe| {
-            let out = color_stage([0.05, 0.2, 0.1], 1., r, &CurveSet::new(r), None);
-            out.iter().fold(0f32, |a, v| a.max(*v)) - out.iter().fold(1f32, |a, v| a.min(*v))
-        };
-        assert!(spread(&r) > 0.01, "engine {engine}");
-        // Monochrome comes after the table and stays gray.
-        let mut mono = r.clone();
-        mono.effects.monochrome = true;
-        assert!(spread(&mono) < 1e-3, "engine {engine}");
-    }
+    let r = Recipe {
+        profile: Some(Arc::new(profile)),
+        saturation: -1.,
+        ..Default::default()
+    };
+    let spread = |r: &Recipe| {
+        let out = color_stage([0.05, 0.2, 0.1], r, &CurveSet::new(r), None);
+        out.iter().fold(0f32, |a, v| a.max(*v)) - out.iter().fold(1f32, |a, v| a.min(*v))
+    };
+    assert!(spread(&r) > 0.01);
+    // Monochrome comes after the table and stays gray.
+    let mut mono = r;
+    mono.effects.monochrome = true;
+    assert!(spread(&mono) < 1e-3);
 }
 #[test]
 fn point_colors_render_in_color_only_and_round_trip() -> anyhow::Result<()> {
@@ -801,8 +638,6 @@ fn point_colors_render_in_color_only_and_round_trip() -> anyhow::Result<()> {
     use crate::model::point_color::PointColor;
     let im = fixture();
     let plain = Recipe {
-        reference_curves: true,
-        reference_color: true,
         ..Default::default()
     };
     // A swatch whose ranges hold every color, so the fixture's greens change.
@@ -840,8 +675,6 @@ fn point_colors_dropper_samples_the_photo_as_rendered() -> anyhow::Result<()> {
     use crate::{develop::point_color::add_sample, model::point_color::PointColor};
     let im = fixture();
     let plain = Recipe {
-        reference_curves: true,
-        reference_color: true,
         ..Default::default()
     };
     let cancel = std::sync::atomic::AtomicBool::new(false);
@@ -878,8 +711,6 @@ fn visualize_range_leaves_what_it_does_not_select_gray_under_grading() -> anyhow
     use crate::model::point_color::{PointColor, visualize_range};
     let im = fixture();
     let mut r = Recipe {
-        reference_curves: true,
-        reference_color: true,
         ..Default::default()
     };
     // Color grading tints everything after Point Color.
@@ -902,9 +733,10 @@ fn visualize_range_leaves_color_range_masks_selecting_the_photo() -> anyhow::Res
     use crate::model::masks::{LocalAdjust, MaskComponent, MaskGroup, MaskShape};
     use crate::model::point_color::{PointColor, visualize_range};
     let im = fixture();
+    // Without sharpening, which works on luminance across neighbours and so differs
+    // between a gray and the colours it grays.
     let mut r = Recipe {
-        reference_curves: true,
-        reference_color: true,
+        sharpening: 0.,
         ..Default::default()
     };
     // A magenta swatch, which none of the fixture's greens is.
@@ -966,9 +798,6 @@ fn targeted_adjustments_sample_the_photo_where_each_control_sees_it() -> anyhow:
         scale_clipped: 0,
     };
     let r = Recipe {
-        engine: 4,
-        reference_curves: true,
-        reference_color: true,
         ..Default::default()
     };
     let cancel = std::sync::atomic::AtomicBool::new(false);
@@ -982,20 +811,16 @@ fn targeted_adjustments_sample_the_photo_where_each_control_sees_it() -> anyhow:
         Ok(out.pixels[5 * out.width as usize + patch * 10 + 5])
     };
     let luma = |p: [f32; 3]| crate::color::luminance(p);
-    // Tone Curve: the region chosen is the one whose slider changes the patch most.
+    // Tone Curve: the region chosen is the one the patch's tone falls in, between the
+    // splits, and raising it brightens the patch.
     for patch in [0, 2] {
-        let w = TargetWeights::new(Target::ToneCurve, &sample(&r, patch)?, &r);
+        let s = sample(&r, patch)?;
+        let w = TargetWeights::new(Target::ToneCurve, &s, &r);
         let chosen = (0..4).find(|i| w.shares[*i] == 1.).unwrap();
-        let change = |region: usize| -> anyhow::Result<f32> {
-            let mut moved = r.clone();
-            moved.effects.parametric[region] = 1.;
-            Ok(luma(shown(&moved, patch)?) - luma(shown(&r, patch)?))
-        };
-        let changes = (0..4).map(change).collect::<anyhow::Result<Vec<_>>>()?;
-        let most = (0..4)
-            .max_by(|a, b| changes[*a].total_cmp(&changes[*b]))
-            .unwrap();
-        assert_eq!(chosen, most, "patch {patch}: {changes:?}");
+        assert_eq!(chosen, r.effects.parametric_region(s.tone), "patch {patch}");
+        let mut moved = r.clone();
+        moved.effects.parametric[chosen] = 1.;
+        assert!(luma(shown(&moved, patch)?) > luma(shown(&r, patch)?) + 0.01);
     }
     let dark = sample(&r, 0)?.tone;
     assert!(dark < 0.25 && sample(&r, 2)?.tone > 0.5, "{dark}");
@@ -1253,8 +1078,7 @@ fn a_lens_profile_choice_belongs_to_the_lens_corrections_panel() {
 /// moved by Clarity's or Texture's gain.
 #[test]
 fn contrast_and_whites_are_measured_on_the_photo_alone() {
-    use crate::develop::basic_tone::{ContrastCurve, TYPICAL_PIVOT};
-    use crate::model::operators::ContrastModel;
+    use crate::develop::basic_tone::TYPICAL_PIVOT;
     let mut im = fixture();
     im.metadata.cam_xyz = [
         [1.1434, -0.4948, -0.121],
@@ -1273,21 +1097,14 @@ fn contrast_and_whites_are_measured_on_the_photo_alone() {
         crate::camera_profiles::CameraProfile::camera_matrix_default(&im.metadata).unwrap();
     let r = Recipe {
         profile: Some(std::sync::Arc::new(profile)),
-        reference_curves: true,
-        reference_color: true,
-        reference_calibration: true,
-        contrast_model: ContrastModel::Adaptive,
         contrast: 0.6,
-        whites_model: crate::model::operators::WhitesModel::Adaptive,
         whites: 0.5,
         shadows: 0.3,
         ..Default::default()
     };
     let matrix = profile_matrix(&im.metadata, &r);
     let plain = CurveSet::for_image((&im).into(), &r, matrix, false);
-    let ContrastCurve::Pivot(pivot) = plain.photo.contrast else {
-        panic!("{:?}", plain.photo.contrast);
-    };
+    let pivot = plain.photo.contrast_pivot;
     assert!((pivot - TYPICAL_PIVOT).abs() > 0.01, "{pivot}");
     assert_ne!(
         plain.photo.whites,
@@ -1322,11 +1139,11 @@ fn contrast_and_whites_are_measured_on_the_photo_alone() {
     assert_eq!(textured.photo, plain.photo);
 }
 
-/// A look's parametric curve: added to the user's regions by the measured model, a
-/// second curve after the user's by the layered one, as Camera Raw 18.7 renders it.
+/// A look's parametric curve: a second curve after the user's, as Camera Raw 18.7
+/// renders it.
 #[test]
 fn a_looks_parametric_curve_follows_the_users() {
-    use crate::{develop::parametric::ParametricCurve, model::operators::ParametricModel};
+    use crate::develop::parametric::ParametricCurve;
     let mut m = fixture().metadata;
     m.cam_xyz = [
         [1.1434, -0.4948, -0.121],
@@ -1339,40 +1156,24 @@ fn a_looks_parametric_curve_follows_the_users() {
     settings.splits = [0.25, 0.5, 0.75];
     let mut r = Recipe {
         profile: Some(std::sync::Arc::new(look)),
-        engine: 4,
-        reference_curves: true,
         ..Default::default()
     };
     r.effects.parametric = [0., 0.3, 0., 0.];
     let user = ParametricCurve::new([0., 0.3, 0., 0.], [0.25, 0.5, 0.75]).unwrap();
     let own = ParametricCurve::new([0., -0.15, -0.2, -0.33], [0.25, 0.5, 0.75]).unwrap();
-    r.parametric_model = ParametricModel::Layered;
     let layered = r.with_profile_adjustments().into_owned();
     assert_eq!(layered.effects.parametric, [0., 0.3, 0., 0.]);
     let curve = CurveSet::new(&layered).parametric.unwrap();
     for x in [0.1, 0.3, 0.5, 0.7, 0.9] {
         assert!((curve.eval(x) - own.eval(user.eval(x))).abs() < 1e-3, "{x}");
     }
-    // Off the measured path the layered curve has no curve of its own for the look,
-    // so the look's regions join the user's there.
-    r.reference_curves = false;
-    let legacy = r.with_profile_adjustments().into_owned();
-    assert!((legacy.effects.parametric[1] - 0.15).abs() < 1e-6);
-    r.reference_curves = true;
-    r.parametric_model = ParametricModel::Measured;
-    let added = r.with_profile_adjustments().into_owned();
-    assert!((added.effects.parametric[1] - 0.15).abs() < 1e-6);
-    let curve = CurveSet::new(&added).parametric.unwrap();
-    assert!((curve.eval(0.3) - own.eval(user.eval(0.3))).abs() > 1e-3);
 }
 
 #[test]
 fn measured_manual_vignetting_darkens_the_photo_not_the_crop() {
-    use crate::model::operators::LensVignetteModel;
     let mut im = fixture();
     im.pixels = vec![[0.1; 3]; 96];
     let mut r = Recipe::for_metadata(&im.metadata);
-    r.lens_vignette_model = LensVignetteModel::Measured;
     r.effects.lens_vignette = -0.5;
     let lum = |p: [f32; 3]| p.iter().sum::<f32>();
     let full = render(&im, &r.checked().unwrap(), 0).unwrap();
@@ -1391,77 +1192,21 @@ fn measured_manual_vignetting_darkens_the_photo_not_the_crop() {
     // The gain belongs to the whole photo: a crop keeps each pixel's.
     let cropped = Recipe {
         crop: [0.5, 0., 1., 1.],
-        ..r.clone()
+        ..r
     };
     let half = render(&im, &cropped.checked().unwrap(), 0).unwrap();
     assert!((at(&half, half.width - 1, 0) - corner).abs() < 1e-3);
-    // Recipes saved before keep the original operator, which lightened at -0.5.
-    let original = Recipe {
-        lens_vignette_model: LensVignetteModel::Original,
-        ..r.clone()
-    };
-    assert!(
-        at(
-            &render(&im, &original.checked().unwrap(), 0).unwrap(),
-            11,
-            0
-        ) > centre
-    );
-    let json = serde_json::to_value(&original).unwrap();
-    assert!(json.get("lens_vignette_model").is_none());
-    let back: Recipe = serde_json::from_value(serde_json::to_value(&r).unwrap()).unwrap();
-    assert_eq!(back.lens_vignette_model, LensVignetteModel::Measured);
-    // An old recipe takes the measured operator once its Amount leaves 0, not before.
-    let mut old = Recipe {
-        lens_vignette_model: LensVignetteModel::Original,
-        ..Recipe::default()
-    };
-    old.adopt_measured_vignette(0.);
-    assert_eq!(old.lens_vignette_model, LensVignetteModel::Original);
-    old.effects.lens_vignette = 0.3;
-    let mut kept = old.clone();
-    kept.adopt_measured_vignette(0.2);
-    assert_eq!(kept.lens_vignette_model, LensVignetteModel::Original);
-    old.adopt_measured_vignette(0.);
-    assert_eq!(old.lens_vignette_model, LensVignetteModel::Measured);
 }
 
 #[test]
-fn new_edits_clip_out_of_gamut_channels_as_camera_raw() {
-    use crate::model::operators::GamutModel;
-    let im = fixture();
-    let r = Recipe::with_profiles(&im.metadata, &[]);
-    assert_eq!(r.gamut_model, GamutModel::Clip);
-    // Clipping keeps the channels inside sRGB as they are; compression desaturates
-    // every channel toward the color's neutral.
-    let out_of_gamut = [1.3, 0.2, -0.1];
-    assert_eq!(GamutModel::Clip.into_srgb(out_of_gamut, 0.7), [1., 0.2, 0.]);
-    let compressed = GamutModel::Compress.into_srgb(out_of_gamut, 0.7);
-    assert!(compressed[1] > 0.2 && compressed[2] > 0., "{compressed:?}");
-}
-/// Updating an old process gives the sharpening Amount of the recipe's operator: the
-/// original's on an old edit, Lightroom's after Detail's reset chose the measured one.
-#[test]
-fn process_update_sharpens_with_the_recipe_operator_default() {
-    use crate::model::operators::{SharpeningModel, SharpeningSliders};
-    let mut old = Recipe {
-        engine: 1,
-        ..Default::default()
-    };
-    old.update_process(None);
-    assert_eq!(old.engine, 4);
-    assert_eq!(
-        old.sharpening,
-        SharpeningSliders::defaults(SharpeningModel::Original).amount
+fn out_of_gamut_channels_clip_as_camera_raw() {
+    // Clipping keeps the channels inside sRGB as they are.
+    let lab = srgb_to_lab([1.3, 0.2, -0.1]);
+    let out = finish_color(lab).map(srgb_decode);
+    assert!(
+        (out[0] - 1.).abs() < 1e-5 && (out[1] - 0.2).abs() < 1e-3 && out[2] == 0.,
+        "{out:?}"
     );
-    let mut reset = Recipe {
-        engine: 1,
-        ..Default::default()
-    };
-    reset.set_sharpening_defaults(SharpeningModel::Measured);
-    assert_eq!(reset.sharpening, 0.);
-    reset.update_process(None);
-    assert_eq!(reset.sharpening, 40. / 150.);
 }
 /// New edits render Grain as strong as Camera Raw 18.7 does: Amount 50, Size 25 on a
 /// flat mid gray 1500 pixels wide measured an L* standard deviation of 7.3 there.
@@ -1514,11 +1259,9 @@ fn new_edits_render_grain_at_camera_raw_strength() -> anyhow::Result<()> {
 }
 /// New edits start at Lightroom's Color noise reduction of 25 with the measured
 /// operator, which reduces a flat's colour noise as Camera Raw does: its chart's
-/// chroma noise dropped from 5.0 to 2.7 at that setting. Saved recipes keep the
-/// original operator.
+/// chroma noise dropped from 5.0 to 2.7 at that setting.
 #[test]
 fn new_edits_reduce_colour_noise_as_camera_raw() -> anyhow::Result<()> {
-    use crate::model::operators::NoiseModel;
     let (width, height) = (160, 120);
     let m = Metadata {
         width,
@@ -1552,10 +1295,7 @@ fn new_edits_reduce_colour_noise_as_camera_raw() -> anyhow::Result<()> {
         scale_clipped: 0,
     };
     let mut r = Recipe::with_profiles(&m, &[]);
-    assert_eq!(
-        (r.noise_model, r.noise_chroma),
-        (NoiseModel::Measured, 0.25)
-    );
+    assert_eq!(r.noise_chroma, 0.25);
     r.sharpening = 0.;
     let chroma_noise = |r: &Recipe| -> anyhow::Result<f32> {
         let out = crate::develop::render(&im, &r.checked()?, 0)?;
@@ -1576,63 +1316,10 @@ fn new_edits_reduce_colour_noise_as_camera_raw() -> anyhow::Result<()> {
             .sqrt())
     };
     let on = chroma_noise(&r)?;
-    let mut off = r.clone();
+    let mut off = r;
     off.noise_chroma = 0.;
     let off = chroma_noise(&off)?;
     let ratio = on / off;
     assert!((0.35..0.7).contains(&ratio), "{ratio}");
-    // The original operator at 25 barely touched it.
-    let mut original = r;
-    original.noise_model = NoiseModel::Original;
-    assert!(chroma_noise(&original)? / off > 0.75);
-    let saved: Recipe = serde_json::from_value(serde_json::to_value(Recipe::default())?)?;
-    assert_eq!(saved.noise_model, NoiseModel::Original);
     Ok(())
-}
-/// Engines before 3 develop without the measured Color noise reduction, so a recipe
-/// there keeps applying its Color amount with the original filter.
-#[test]
-fn legacy_engines_keep_the_original_colour_noise_filter() {
-    use crate::model::operators::NoiseModel;
-    let mut r = Recipe {
-        engine: 2,
-        noise_chroma: 0.25,
-        noise_model: NoiseModel::Measured,
-        ..Default::default()
-    };
-    assert!(r.chroma_denoise().is_none());
-    assert_eq!(r.sampled_noise_chroma(), 0.25);
-    r.engine = 4;
-    assert!(r.chroma_denoise().is_some());
-    assert_eq!(r.sampled_noise_chroma(), 0.);
-}
-/// New edits render Texture with the measured operator; edits saved before keep the
-/// original, until Texture is added to a photo that had none.
-#[test]
-fn texture_operator_is_kept_by_old_edits() {
-    use crate::model::operators::TextureModel;
-    let im = fixture();
-    assert_eq!(
-        Recipe::with_profiles(&im.metadata, &[]).texture_model,
-        TextureModel::Measured
-    );
-    let mut saved: Recipe = serde_json::from_value(
-        serde_json::to_value(Recipe {
-            effects: crate::model::effects::Effects {
-                texture: 0.4,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(saved.texture_model, TextureModel::Original);
-    saved.effects.texture = 0.6;
-    saved.adopt_measured_texture(0.4);
-    assert_eq!(saved.texture_model, TextureModel::Original);
-    let mut none = Recipe::default();
-    none.effects.texture = 0.3;
-    none.adopt_measured_texture(0.);
-    assert_eq!(none.texture_model, TextureModel::Measured);
 }

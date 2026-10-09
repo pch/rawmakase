@@ -191,18 +191,21 @@ mod tests {
     }
     #[test]
     fn local_tone_is_the_global_curve_and_hue_rotates() {
-        use crate::develop::basic_tone::{BasicTone, ContrastCurve, PhotoTone, WhitesTable};
+        use crate::develop::basic_tone::{BasicTone, PhotoTone, TYPICAL_PIVOT, WhitesTable};
         let mut d = [0.; LEN];
-        let original = PhotoTone::original();
-        assert_eq!(tone(&d, [0.2, 0.4, 0.6], &original), [0.2, 0.4, 0.6]);
+        let typical = PhotoTone {
+            contrast_pivot: TYPICAL_PIVOT,
+            whites: WhitesTable::original(),
+        };
+        assert_eq!(tone(&d, [0.2, 0.4, 0.6], &typical), [0.2, 0.4, 0.6]);
         d[slot::CONTRAST] = 0.5;
         d[slot::WHITES] = 0.4;
         d[slot::BLACKS] = -0.3;
         let adaptive = PhotoTone {
-            contrast: ContrastCurve::Pivot(0.45),
+            contrast_pivot: 0.45,
             whites: WhitesTable::for_highlights(0.8),
         };
-        for photo in [original, adaptive] {
+        for photo in [typical, adaptive] {
             let global = BasicTone::new(0.5, 0.4, -0.3, 0., &photo).unwrap();
             for p in [[0.2; 3], [0.1, 0.5, 0.9]] {
                 let (a, b) = (tone(&d, p, &photo), global.apply(p));

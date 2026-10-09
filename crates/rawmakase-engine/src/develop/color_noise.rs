@@ -1,4 +1,4 @@
-//! Detail > Color noise reduction. [`NoiseModel::Measured`] follows Camera Raw 18.7,
+//! Detail > Color noise reduction, following Camera Raw 18.7,
 //! fitted to the frequency response of its renders of synthetic noisy charts (Amount
 //! 10–100 at two noise levels, Detail and Smoothness 0–100).
 //!

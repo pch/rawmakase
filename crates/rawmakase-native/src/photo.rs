@@ -141,14 +141,6 @@ mod tests {
                 edited.temperature = 5600.;
                 edited.tint = 12.;
                 edited.update_wb(&m);
-                let mut legacy = edited.clone();
-                legacy.white_balance_model =
-                    rawmakase_model::model::operators::WhiteBalanceModel::Original;
-                legacy.update_wb(&m);
-                assert_eq!(
-                    legacy.wb, expected,
-                    "matrix-only fallback must preserve legacy conversion"
-                );
                 let mut restored: rawmakase_model::model::recipe::Recipe =
                     serde_json::from_str(&serde_json::to_string(&edited).unwrap()).unwrap();
                 restored.update_wb(&m);

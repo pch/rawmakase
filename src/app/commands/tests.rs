@@ -723,34 +723,6 @@ fn absolute_controls_preserve_endpoints_neutral_and_monotonicity() {
     }
 }
 #[test]
-fn clarity_added_by_command_takes_the_measured_operator() {
-    use crate::model::operators::ClarityModel;
-    let (mut e, ctx) = editor();
-    e.document.edit.setup_mut().clarity_model = ClarityModel::Original;
-    e.execute_command(
-        Command::new(Operation::Set(Param::Setting(ParameterId::Clarity), 30.)),
-        &ctx,
-    )
-    .unwrap();
-    assert_ne!(e.document.edit.recipe().effects.clarity, 0.);
-    assert_eq!(
-        e.document.edit.recipe().clarity_model,
-        ClarityModel::Measured
-    );
-    // Clarity an old recipe already had keeps its operator.
-    e.document.edit.setup_mut().clarity_model = ClarityModel::Original;
-    e.execute_command(
-        Command::new(Operation::Set(Param::Setting(ParameterId::Clarity), 50.)),
-        &ctx,
-    )
-    .unwrap();
-    assert_eq!(
-        e.document.edit.recipe().clarity_model,
-        ClarityModel::Original
-    );
-}
-
-#[test]
 fn the_protocol_states_the_curve_limits_the_app_enforces() {
     use crate::color::curve::{MAX_POINTS, MIN_INPUT_SPACING};
     use rawmakase_protocol::curve::{MINIMUM_INPUT_SPACING, POINT_COUNT};

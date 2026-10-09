@@ -2,7 +2,7 @@
 use super::*;
 
 /// Camera pixels as the pipeline samples them: the image, times the per-pixel local-tone
-/// gain when Clarity, Texture or (before engine 4) Shadows and Highlights are active.
+/// gain when Clarity or Texture are active.
 #[derive(Clone, Copy)]
 pub(crate) struct Source<'a> {
     pub(super) image: &'a CameraImage,
@@ -152,8 +152,8 @@ pub(crate) fn footprint_spread(footprint: f32) -> f32 {
 }
 pub(super) fn detail_sample(im: Source, x: f32, y: f32, r: &Recipe) -> [f32; 3] {
     let p = sample(im, x, y);
-    let noise_chroma = r.sampled_noise_chroma();
-    if r.noise_luma == 0. && noise_chroma == 0. {
+    // Color noise reduction runs on the camera image (`color_noise`), Luminance here.
+    if r.noise_luma == 0. {
         return p;
     }
     let center = (p[0] + 2. * p[1] + p[2]) / 4.;
@@ -177,7 +177,6 @@ pub(super) fn detail_sample(im: Source, x: f32, y: f32, r: &Recipe) -> [f32; 3] 
     std::array::from_fn(|c| {
         center
             + (avgl - center) * r.noise_luma * (1. - r.effects.luma_contrast * 0.5)
-            + (p[c] - center) * (1. - noise_chroma)
-            + (avg[c] - avgl) * noise_chroma * (0.5 + r.effects.chroma_smoothness)
+            + (p[c] - center)
     })
 }
