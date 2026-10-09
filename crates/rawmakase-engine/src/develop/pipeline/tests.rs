@@ -343,6 +343,38 @@ fn clipped_channels_do_not_make_magenta_highlights() -> Result<()> {
     }
     Ok(())
 }
+/// The photo's maximum is measured with the camera's as-shot colour: a Temperature
+/// change under a profile whose matrices follow the illuminant leaves it in place.
+#[test]
+fn temperature_leaves_the_photos_maximum_in_place() -> anyhow::Result<()> {
+    let mut im = fixture();
+    for p in im.pixels.iter_mut().step_by(3) {
+        *p = [0.9, 0.5, 0.2];
+    }
+    let profile: crate::camera_profiles::CameraProfile =
+        serde_json::from_value(serde_json::json!({
+            "name": "dual", "camera": "", "copyright": "",
+            "color1": [[1.2, -0.1, -0.1], [-0.2, 1.1, 0.1], [0.0, 0.2, 0.9]],
+            "color2": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            "forward1": [[0.5, 0.3, 0.2], [0.2, 0.7, 0.1], [0.0, 0.1, 0.8]],
+            "forward2": [[0.8, 0.1, 0.1], [0.3, 0.6, 0.1], [0.0, 0.0, 0.9]],
+            "kelvin1": 2856.0, "kelvin2": 6504.0,
+            "hue1": null, "hue2": null, "look": null, "tone": [], "exposure": 0.0
+        }))?;
+    let maximum = |temperature: f32| {
+        let r = Recipe {
+            profile: Some(std::sync::Arc::new(profile.clone())),
+            temperature,
+            ..Default::default()
+        };
+        let matrix = profile_matrix(&im.metadata, &r);
+        CurveSet::with_photo_measures((&im).into(), &r, matrix)
+            .measures
+            .max
+    };
+    assert_eq!(maximum(3000.), maximum(7500.));
+    Ok(())
+}
 /// Every scene stage control, and the settings after the stage that read the photo.
 fn scene_stage_recipe() -> Recipe {
     let mut r = Recipe {

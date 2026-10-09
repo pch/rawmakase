@@ -24,7 +24,7 @@ const FIELDS: &[(&str, usize)] = &[
     // For masks' Whites and Blacks: their curves (`gpu_mask_table`), or -1; and
     // `GlobalTone::gpu_keys`.
     ("SCENE_TABLES", 1),
-    ("SCENE_KEYS", 5),
+    ("SCENE_KEYS", 6),
     // Dehaze and the level its response is relative to (`SceneTone::dehaze_key`).
     ("DEHAZE", 2),
     ("LOOK", 5),

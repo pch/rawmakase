@@ -143,11 +143,19 @@ pub(super) fn photo_measures(
     };
     let lut = CurveSet::new(&base);
     // The white point and the photo's maximum are the camera's: measured at the as-shot
-    // white balance, so a white balance change keeps them (the synthetic chart's).
+    // white balance, so a white balance change keeps them (the synthetic chart's). A
+    // profile's matrices follow the temperature, so its as-shot one is used too.
+    let metadata = &im.metadata;
     let as_shot = Recipe {
         wb: [1.; 3],
+        temperature: r
+            .profile
+            .as_ref()
+            .and_then(|p| p.as_shot_white_balance(metadata))
+            .map_or(r.temperature, |[temperature, _]| temperature),
         ..base.clone()
     };
+    let shot_matrix = super::profile_matrix(metadata, &as_shot);
     let scene: Vec<[f32; 3]> = small
         .pixels
         .par_iter()
@@ -156,7 +164,13 @@ pub(super) fn photo_measures(
     let camera: Vec<[f32; 3]> = small
         .pixels
         .par_iter()
-        .map(|p| exposure_stage(scene_color(*p, &as_shot, &lut, matrix, None), &lut, None))
+        .map(|p| {
+            exposure_stage(
+                scene_color(*p, &as_shot, &lut, shot_matrix, None),
+                &lut,
+                None,
+            )
+        })
         .collect();
     let edge = crate::develop::scene_tone::MAX_EDGE;
     let max = box_reduce(&camera, small.width, small.height, edge)
@@ -182,7 +196,7 @@ pub(super) fn photo_measures(
         .map(|c| im.metadata.wb[c].max(1e-3))
         .fold(0f32, f32::max);
     let white = crate::develop::scene_tone::luminance(exposure_stage(
-        scene_color([clip; 3], &as_shot, &lut, matrix, None),
+        scene_color([clip; 3], &as_shot, &lut, shot_matrix, None),
         &lut,
         None,
     ));

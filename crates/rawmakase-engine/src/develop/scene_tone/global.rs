@@ -25,6 +25,8 @@ static WHITE: &[u8] = include_bytes!("white.bin");
 static BLACKS: &[u8] = include_bytes!("blacks.bin");
 static MASKS: &[u8] = include_bytes!("masks.bin");
 /// The masks' slider positions in `masks.bin`; 0 is the identity.
+/// The toe's output above which, without a black point, the white curves resolve it.
+const LINEAR_TOE: f32 = 1. / 512.;
 pub(crate) const MASK_VALUES: [f32; 8] = [-1., -0.75, -0.5, -0.25, 0.25, 0.5, 0.75, 1.];
 
 /// log2 sensor whites of `white3.bin` and the stops below them.
@@ -106,7 +108,8 @@ fn evaluate_with(first: f32, step: f32, n: usize, x: f32, at: impl Fn(usize) -> 
 /// middle one keeping its place), then Blacks on each channel.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct GlobalTone {
-    /// log2 of the photo's maximum (at the render's Exposure).
+    /// log2 of the photo's maximum (at the render's Exposure), within the measured
+    /// range of sensor whites and maxima.
     top: f32,
     black_key: f32,
     black_point: bool,
@@ -121,6 +124,9 @@ pub(crate) struct GlobalTone {
     tail: Box<[f32; T_SAMPLES]>,
     /// Without a black point: the toe to divide out (the default curve at W* = 1).
     toe: Option<Box<[f32; T_SAMPLES]>>,
+    /// Without a black point: the scene value below which the curve continues linearly,
+    /// where the 16-bit white curves no longer resolve the toe.
+    linear_below: f32,
     blacks_curve: Option<Box<[f32; Y_SAMPLES]>>,
 }
 impl GlobalTone {
@@ -135,6 +141,12 @@ impl GlobalTone {
         black_key: f32,
         black_point: bool,
     ) -> Self {
+        // Outside the measured sensor whites and maxima the nearest curves apply to the
+        // scene values as they are: the curves are over x relative to the maximum, so it
+        // is clamped with them, and Exposure keeps its effect.
+        let last = SENSOR_FIRST + (SENSORS - 1) as f32 * SENSOR_STEP;
+        let sensor = sensor.clamp(SENSOR_FIRST, last);
+        let top = sensor - (sensor - top).clamp(0., (BELOWS - 1) as f32 * BELOW_STEP);
         let (i, ti) = bracket(sensor, SENSOR_FIRST, SENSOR_STEP, SENSORS);
         let (j, tj) = bracket(sensor - top, 0., BELOW_STEP, BELOWS);
         let at = |i: usize, j: usize, s: usize, k: usize| {
@@ -153,6 +165,13 @@ impl GlobalTone {
         }));
         let one = ((0. - WHITE_FIRST) / WHITE_STEP) as usize;
         let toe = (!black_point).then(|| Box::new(std::array::from_fn(|k| row(one, k))));
+        let linear_below = toe.as_ref().map_or(0., |toe| {
+            let k = toe
+                .iter()
+                .position(|y| *y >= LINEAR_TOE)
+                .unwrap_or(T_SAMPLES - 1);
+            (T_FIRST + k as f32 * T_STEP).exp2()
+        });
         let blacks_curve = (blacks != 0.).then(|| {
             let corners = blacks_corners(black_key, blacks);
             Box::new(std::array::from_fn(|k| blacks_sample(&corners, k)))
@@ -167,6 +186,7 @@ impl GlobalTone {
             white: [0.; U_SAMPLES],
             tail,
             toe,
+            linear_below,
             blacks_curve,
         };
         tone.white = tone.row_at(whites);
@@ -194,6 +214,9 @@ impl GlobalTone {
             }
         };
         match &self.toe {
+            Some(_) if x > 0. && x < self.linear_below => {
+                self.white_at(curve, self.linear_below) * x / self.linear_below
+            }
             Some(toe) if x > 0. => y * x.min(1.) / evaluate(&toe[..], T_FIRST, T_STEP, x).max(1e-9),
             _ => y,
         }
@@ -221,14 +244,16 @@ impl GlobalTone {
         }
     }
     /// What the GPU reads with the curves: the photo's maximum, the black key, whether
-    /// there is a black point, and the recipe's Whites and Blacks.
-    pub(crate) fn gpu_keys(&self) -> [f32; 5] {
+    /// there is a black point, the recipe's Whites and Blacks, and where the curve
+    /// continues linearly without a black point.
+    pub(crate) fn gpu_keys(&self) -> [f32; 6] {
         [
             self.top,
             self.black_key,
             self.black_point as u8 as f32,
             self.whites,
             self.blacks,
+            self.linear_below,
         ]
     }
     /// The curves for the GPU port: the white rows, then the tail and the toe (the tail
@@ -313,6 +338,37 @@ mod tests {
     /// A photo whose maximum is its sensor's white at 2^`sensor`.
     fn reaching(sensor: f32, whites: f32, blacks: f32, black_point: bool) -> GlobalTone {
         GlobalTone::new([sensor, sensor, sensor], whites, blacks, -8., black_point)
+    }
+
+    /// Beyond the measured sensor whites and maxima the curves keep the scene's scale:
+    /// Exposure keeps darkening a photo far below its white, and a maximum far below the
+    /// sensor's white does not brighten the photo.
+    #[test]
+    fn exposure_keeps_working_outside_the_measured_range() {
+        let gray = |sensor: f32| reaching(sensor, 0., 0., true).apply([0.18 * sensor.exp2(); 3])[1];
+        for sensor in [-2., -3., -4., -5., -6.] {
+            assert!(gray(sensor - 1.) < gray(sensor) * 0.75, "{sensor}");
+        }
+        let dim = |top: f32| {
+            GlobalTone::new([0., top, 0.], 0., 0., -8., true).apply([2f32.powf(-7.); 3])[1]
+        };
+        assert!(
+            (dim(-6.) / dim(-10.) - 1.).abs() < 0.1,
+            "{} {}",
+            dim(-6.),
+            dim(-10.)
+        );
+    }
+
+    /// Without a black point the darkest values stay linear, below the levels the 16-bit
+    /// white curves resolve.
+    #[test]
+    fn without_a_black_point_the_darkest_values_stay_linear() {
+        let tone = reaching(0., 0., 0., false);
+        for x in [1e-4f32, 3e-5, 1e-5] {
+            let (a, b) = (tone.apply([x; 3])[1], tone.apply([2. * x; 3])[1]);
+            assert!(a > 0. && (b / a - 2.).abs() < 0.05, "{x}: {a} {b}");
+        }
     }
 
     #[test]
