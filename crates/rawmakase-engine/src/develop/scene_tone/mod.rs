@@ -33,6 +33,7 @@ impl SceneTone {
             global: GlobalTone::new(
                 [
                     measures.sensor_white + r.exposure,
+                    measures.max + r.exposure,
                     measures.whites_top(r.exposure),
                     measures.white_point(r.exposure),
                 ],

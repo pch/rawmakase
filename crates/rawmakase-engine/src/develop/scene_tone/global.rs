@@ -137,7 +137,7 @@ impl GlobalTone {
     /// level) and whether the profile has Camera Raw's default black point (its
     /// DefaultBlackRender is Auto).
     pub(crate) fn new(
-        [sensor, top, white_point]: [f32; 3],
+        [sensor, top, stretch, white_point]: [f32; 4],
         whites: f32,
         blacks: f32,
         black_key: f32,
@@ -148,29 +148,56 @@ impl GlobalTone {
         // is clamped with them, and Exposure keeps its effect.
         let last = SENSOR_FIRST + (SENSORS - 1) as f32 * SENSOR_STEP;
         let sensor = sensor.clamp(SENSOR_FIRST, last);
-        let top = sensor - (sensor - top).clamp(0., (BELOWS - 1) as f32 * BELOW_STEP);
-        let (i, ti) = bracket(sensor, SENSOR_FIRST, SENSOR_STEP, SENSORS);
-        let (j, tj) = bracket(sensor - top, 0., BELOW_STEP, BELOWS);
-        // A measured curve at this photo's sample `k`: the same scene value, relative to
-        // that curve's own maximum (its last sample above it).
-        let at = |i: usize, j: usize, s: usize, k: usize| {
-            let corner = SENSOR_FIRST + i as f32 * SENSOR_STEP - j as f32 * BELOW_STEP;
-            let f = ((k as f32 * U_STEP + top - corner) / U_STEP).clamp(0., (U_SAMPLES - 1) as f32);
-            let n = (f as usize).min(U_SAMPLES - 2);
-            let base = ((i * BELOWS + j) * SLIDERS + s) * U_SAMPLES;
-            let t = f - n as f32;
-            value16(WHITE3, base + n) * (1. - t) + value16(WHITE3, base + n + 1) * t
-        };
-        let rows: Box<[[f32; U_SAMPLES]; SLIDERS]> = Box::new(std::array::from_fn(|s| {
-            std::array::from_fn(|k| {
-                (at(i, j, s, k) * (1. - tj) + at(i, j + 1, s, k) * tj) * (1. - ti)
-                    + (at(i + 1, j, s, k) * (1. - tj) + at(i + 1, j + 1, s, k) * tj) * ti
-            })
-        }));
+        let within = |t: f32| sensor - (sensor - t).clamp(0., (BELOWS - 1) as f32 * BELOW_STEP);
+        let (top, stretch) = (within(top), within(stretch));
         let row = |w: usize, k: usize| value(WHITE, (w * SLIDERS + SLIDERS / 2) * T_SAMPLES + k);
         let (w, tw) = bracket(white_point, WHITE_FIRST, WHITE_STEP, WHITE_POINTS);
-        let tail = Box::new(std::array::from_fn(|k| {
+        let tail: Box<[f32; T_SAMPLES]> = Box::new(std::array::from_fn(|k| {
             row(w, k) * (1. - tw) + row(w + 1, k) * tw
+        }));
+        let tail_at = |log: f32| evaluate(&tail[..], T_FIRST, T_STEP, log.exp2());
+        // The measured curves around a sensor white and maximum `max` at Whites row `s`,
+        // read at log2 scene value `log` each (relative to its own maximum) and blended.
+        // Above a curve's maximum it rolls on to white with the default curve, as
+        // `white_at` does above the photo's.
+        let curve = |max: f32, s: usize, log: f32| {
+            let (i, ti) = bracket(sensor, SENSOR_FIRST, SENSOR_STEP, SENSORS);
+            let (j, tj) = bracket(sensor - max, 0., BELOW_STEP, BELOWS);
+            let at = |i: usize, j: usize| {
+                let corner = SENSOR_FIRST + i as f32 * SENSOR_STEP - j as f32 * BELOW_STEP;
+                let base = ((i * BELOWS + j) * SLIDERS + s) * U_SAMPLES;
+                let f = (log - corner - U_FIRST) / U_STEP;
+                if f > (U_SAMPLES - 1) as f32 {
+                    let at_top = value16(WHITE3, base + U_SAMPLES - 1);
+                    let (r, rm) = (tail_at(log), tail_at(corner));
+                    return if rm < 1. {
+                        at_top + (1. - at_top) * ((r - rm) / (1. - rm)).clamp(0., 1.)
+                    } else {
+                        at_top
+                    };
+                }
+                let f = f.max(0.);
+                let n = (f as usize).min(U_SAMPLES - 2);
+                let t = f - n as f32;
+                value16(WHITE3, base + n) * (1. - t) + value16(WHITE3, base + n + 1) * t
+            };
+            (at(i, j) * (1. - tj) + at(i, j + 1) * tj) * (1. - ti)
+                + (at(i + 1, j) * (1. - tj) + at(i + 1, j + 1) * tj) * ti
+        };
+        // The default and negative Whites follow the photo's maximum; positive Whites
+        // adds the stretch toward `stretch` (twice its 99th percentile on photos), so the
+        // rows meet at Whites 0.
+        let zero = SLIDERS / 2;
+        let rows: Box<[[f32; U_SAMPLES]; SLIDERS]> = Box::new(std::array::from_fn(|s| {
+            std::array::from_fn(|k| {
+                let log = top + U_FIRST + k as f32 * U_STEP;
+                let default = curve(top, s.min(zero), log);
+                if s <= zero {
+                    default
+                } else {
+                    default + curve(stretch, s, log) - curve(stretch, zero, log)
+                }
+            })
         }));
         let one = ((0. - WHITE_FIRST) / WHITE_STEP) as usize;
         let toe = (!black_point).then(|| Box::new(std::array::from_fn(|k| row(one, k))));
@@ -346,7 +373,13 @@ mod tests {
 
     /// A photo whose maximum is its sensor's white at 2^`sensor`.
     fn reaching(sensor: f32, whites: f32, blacks: f32, black_point: bool) -> GlobalTone {
-        GlobalTone::new([sensor, sensor, sensor], whites, blacks, -8., black_point)
+        GlobalTone::new(
+            [sensor, sensor, sensor, sensor],
+            whites,
+            blacks,
+            -8.,
+            black_point,
+        )
     }
 
     /// Beyond the measured sensor whites and maxima the curves keep the scene's scale:
@@ -359,7 +392,7 @@ mod tests {
             assert!(gray(sensor - 1.) < gray(sensor) * 0.75, "{sensor}");
         }
         let dim = |top: f32| {
-            GlobalTone::new([0., top, 0.], 0., 0., -8., true).apply([2f32.powf(-7.); 3])[1]
+            GlobalTone::new([0., top, top, 0.], 0., 0., -8., true).apply([2f32.powf(-7.); 3])[1]
         };
         assert!(
             (dim(-6.) / dim(-10.) - 1.).abs() < 0.1,
@@ -385,7 +418,7 @@ mod tests {
     #[test]
     fn curves_between_measured_maxima_keep_mid_gray() {
         let gray = |sensor: f32, top: f32| {
-            GlobalTone::new([sensor, top, sensor], 0., 0., -8., true).apply([0.18; 3])[1]
+            GlobalTone::new([sensor, top, top, sensor], 0., 0., -8., true).apply([0.18; 3])[1]
         };
         let corner = gray(0.5, 0.5);
         for (sensor, top) in [(0.862, 0.726), (0.25, -0.6), (1.7, 0.2)] {
@@ -394,6 +427,41 @@ mod tests {
                 (g / corner - 1.).abs() < 0.005,
                 "{sensor} {top}: {g} against {corner}"
             );
+        }
+    }
+
+    /// Between measured maxima, a measured curve continues past its own maximum with the
+    /// default shoulder rather than stopping: no shoulder appears below the photo's
+    /// maximum (found in review: 0.774 where the curve at W* = 1 gives 0.842).
+    #[test]
+    fn no_shoulder_below_the_photos_maximum() {
+        let x = 0.840896;
+        let between = GlobalTone::new([0., -0.25, -0.25, 0.], 0., 0., -8., true).apply([x; 3])[1];
+        let measured = reaching(0., 0., 0., true).apply([x; 3])[1];
+        assert!(
+            (between - measured).abs() < 0.02,
+            "{between} against {measured}"
+        );
+    }
+
+    /// The level positive Whites stretches toward leaves the default and negative Whites
+    /// as the photo's maximum makes them, and positive Whites meets them at 0.
+    #[test]
+    fn the_stretch_level_moves_only_positive_whites() {
+        let at = |stretch: f32, whites: f32, x: f32| {
+            GlobalTone::new([2., 2., stretch, 2.], whites, 0., -8., true).apply([x; 3])[1]
+        };
+        for whites in [0., -0.5, -1.] {
+            for x in [0.1, 1., 2.] {
+                assert_eq!(at(2., whites, x), at(-1., whites, x), "{whites} {x}");
+            }
+        }
+        for x in [0.1, 1., 2.] {
+            assert!((at(-1., 0.001, x) - at(-1., 0., x)).abs() < 0.005, "{x}");
+        }
+        // Below white, a lower level stretches further.
+        for x in [0.05, 0.1, 0.2] {
+            assert!(at(-1., 1., x) > at(2., 1., x), "{x}");
         }
     }
 
@@ -433,7 +501,7 @@ mod tests {
     fn positive_whites_stretches_a_dim_photo_toward_white() {
         // A photo four stops below its sensor's white: Whites +100 brightens it far more
         // than a photo reaching its white point.
-        let dim = GlobalTone::new([2., -2., 0.], 1., 0., -8., true);
+        let dim = GlobalTone::new([2., -2., -2., 0.], 1., 0., -8., true);
         let bright = reaching(2., 1., 0., true);
         let x = 0.2;
         assert!(dim.apply([x; 3])[0] > bright.apply([x; 3])[0] + 0.2);
@@ -444,7 +512,8 @@ mod tests {
         for (sensor, top) in [(-1., -1.), (0., -2.), (1.3, 1.3), (2., -1.), (3.7, 1.)] {
             for whites in [-1., -0.3, 0., 0.6, 1.] {
                 for blacks in [-1., 0., 0.5, 1.] {
-                    let tone = GlobalTone::new([sensor, top, top + 1.], whites, blacks, -5., true);
+                    let tone =
+                        GlobalTone::new([sensor, top, top, top + 1.], whites, blacks, -5., true);
                     let mut last = -1f32;
                     for i in 0..400 {
                         let x = 2f32.powf(-14. + i as f32 * 0.05);
@@ -478,7 +547,7 @@ mod tests {
 
     #[test]
     fn a_masks_whites_and_blacks_follow_the_global_curves() {
-        let render = GlobalTone::new([1.3, 0.2, 1.2], 0.2, -0.1, -5., true);
+        let render = GlobalTone::new([1.3, 0.2, 0.2, 1.2], 0.2, -0.1, -5., true);
         let p = [0.4f32, 0.3, 0.6];
         assert_eq!(render.apply_at(p, 0., 0.), render.apply(p));
         // Measured: a mask's Whites +50 takes 0.18 (default output 0.177) to 0.240.
