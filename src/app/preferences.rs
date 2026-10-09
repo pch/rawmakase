@@ -761,7 +761,11 @@ impl Editor {
         form_row(ui, "", |ui| {
             hint(
                 ui,
-                "Photos are shown in this profile. Choose your display's calibrated ICC profile, or keep sRGB.",
+                if cfg!(target_os = "macos") {
+                    "Keep sRGB to let macOS match colors to the current display automatically. A custom profile overrides this with manual monitor conversion."
+                } else {
+                    "Photos are shown in this profile. Choose your display's calibrated ICC profile, or keep sRGB."
+                },
             );
         });
         if choose {

@@ -1135,7 +1135,13 @@ impl Editor {
         egui::Panel::bottom("status").show(ui, |ui| {
             ui.horizontal(|ui| {
                 let display = if self.view.monitor.is_some() {
-                    "Display: custom ICC (disable compositor ICC conversion)"
+                    if cfg!(target_os = "macos") {
+                        "Display: custom ICC (manual monitor conversion)"
+                    } else {
+                        "Display: custom ICC (disable compositor ICC conversion)"
+                    }
+                } else if cfg!(target_os = "macos") {
+                    "Display: sRGB (managed by macOS)"
                 } else {
                     "Display: sRGB (compositor may manage the monitor)"
                 };
