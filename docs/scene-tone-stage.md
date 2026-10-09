@@ -103,6 +103,13 @@ scene 1.0 at 1.0, where Camera Raw renders 0.69.
   +100 (a probe whose maximum is 0.25 maps 0.0625 to white). Two probes with the same
   white point and maximum but different sensor whites differ too, so the table is
   measured over sensor white × the photo's maximum below it × Whites (`white3.bin`).
+  On photos the level it stretches toward is not their maximum: a specular highlight
+  at the sensor's white does not stop it. For each of 22 training photos the level
+  that best reproduces Camera Raw's Whites +100 through the table is, within 0.1 stops
+  on average (median 0.06), twice the 99th percentile of the photo's luminance, at most
+  its sensor's white; its maximum misses by 1.0 stops on average, the 99.9th
+  percentile by 0.6. RAWmakase stretches toward that level; the white point keeps the
+  maximum.
 - **Blacks** composes after the white point and Whites exactly (encoded error 0.0000:
   Blacks maps their output). Negative Blacks maps the photo's darkest level to black
   when it lies above a fixed black point (about 0.016 scene); even a 4-pixel dark spot

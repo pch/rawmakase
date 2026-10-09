@@ -13,7 +13,8 @@ pub(crate) struct PhotoMeasures {
     pub(crate) max: f32,
     /// The darkest luminance on the reduced copy.
     pub(crate) min: f32,
-    /// Its luminance's 99th percentile: the level Dehaze's response is relative to.
+    /// Its luminance's 99th percentile: the level Dehaze's response is relative to, and
+    /// a stop below the level Whites stretches toward.
     pub(crate) p99: f32,
 }
 /// Long edge of the copy the maximum is taken on: on a 920-pixel probe Camera Raw
@@ -44,6 +45,12 @@ impl PhotoMeasures {
             sensor.min((self.max + exposure + 1.).max(0.))
         }
     }
+    /// The level Whites stretches toward (log2) at `exposure` stops: twice the 99th
+    /// percentile of luminance, at most the sensor's white (fitted on training photos;
+    /// docs/scene-tone-stage.md#whites-and-blacks).
+    pub(crate) fn whites_top(&self, exposure: f32) -> f32 {
+        (self.p99 + 1.).min(self.sensor_white) + exposure
+    }
     /// The black key (log2 of the photo's darkest level) at `exposure` stops.
     pub(crate) fn black_key(&self, exposure: f32) -> f32 {
         self.min + exposure
@@ -63,6 +70,24 @@ mod tests {
         }
         .white_point(exposure)
         .exp2()
+    }
+
+    /// Whites stretches toward twice the photo's 99th percentile of luminance, not its
+    /// maximum: on 22 training photos that level reproduces Camera Raw's Whites +100 to
+    /// 0.1 stops on average, the maximum to 1.0.
+    #[test]
+    fn whites_stretch_toward_twice_the_99th_percentile() {
+        let measures = |max: f32, p99: f32| PhotoMeasures {
+            sensor_white: 1.,
+            max,
+            min: -12.,
+            p99,
+        };
+        // A specular highlight at the sensor's white does not hold Whites back.
+        assert_eq!(measures(1., -3.).whites_top(0.), -2.);
+        // Never above the sensor's white; Exposure moves it.
+        assert_eq!(measures(1., 0.5).whites_top(0.), 1.);
+        assert_eq!(measures(1., -3.).whites_top(-1.), -3.);
     }
 
     #[test]

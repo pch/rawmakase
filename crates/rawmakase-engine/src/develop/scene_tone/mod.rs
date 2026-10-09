@@ -33,7 +33,7 @@ impl SceneTone {
             global: GlobalTone::new(
                 [
                     measures.sensor_white + r.exposure,
-                    measures.max + r.exposure,
+                    measures.whites_top(r.exposure),
                     measures.white_point(r.exposure),
                 ],
                 r.whites,
@@ -75,5 +75,31 @@ impl SceneTone {
             Some(d) => self.global.apply_at(pro, d[slot::WHITES], d[slot::BLACKS]),
             None => self.global.apply(pro),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A small specular highlight at the sensor's white leaves Whites' stretch as it is
+    /// without it: Camera Raw stretches toward the bulk of the photo's highlights.
+    #[test]
+    fn a_specular_highlight_does_not_hold_whites_back() {
+        let gray = |max: f32| {
+            let measures = PhotoMeasures {
+                sensor_white: 1.,
+                max,
+                min: -12.,
+                p99: -3.,
+            };
+            let r = Recipe {
+                whites: 1.,
+                ..Default::default()
+            };
+            SceneTone::new(&r, &measures).apply([0.05; 3], None)[1]
+        };
+        let (specular, bulk) = (gray(1.), gray(-2.));
+        assert!((specular / bulk - 1.).abs() < 0.01, "{specular} {bulk}");
     }
 }

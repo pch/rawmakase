@@ -4,7 +4,8 @@
 //! - `white3.bin`: output per sensor white (log2, −3 to 4 in half stops), stops the
 //!   photo's maximum is below it (0 to 5 in half stops) and Whites (−100 to 100 in steps
 //!   of 12.5), at log2(x / maximum) −14 to 0 in eighth stops; 16-bit, 0–65535 for 0–1.
-//!   Positive Whites stretches toward the photo's maximum, so the curve needs both.
+//!   Positive Whites stretches toward the photo's maximum, so the curve needs both; on
+//!   photos that level is `PhotoMeasures::whites_top`.
 //! - `white.bin`: output per white point W* (log2, −1 to 5 in quarter stops) and Whites,
 //!   at log2 scene values −16 to 6 in eighth stops, f32. Here only Whites 0: the shoulder
 //!   above a photo's maximum (specks brighter than it), and the toe at W* = 1.
@@ -108,8 +109,8 @@ fn evaluate_with(first: f32, step: f32, n: usize, x: f32, at: impl Fn(usize) -> 
 /// middle one keeping its place), then Blacks on each channel.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct GlobalTone {
-    /// log2 of the photo's maximum (at the render's Exposure), within the measured
-    /// range of sensor whites and maxima.
+    /// log2 of the level Whites stretches toward (at the render's Exposure), within the
+    /// measured range of sensor whites and maxima.
     top: f32,
     black_key: f32,
     black_point: bool,
@@ -130,9 +131,10 @@ pub(crate) struct GlobalTone {
     blacks_curve: Option<Box<[f32; Y_SAMPLES]>>,
 }
 impl GlobalTone {
-    /// For the sensor's white, the photo's maximum and its white point (log2, at the
-    /// render's Exposure), Whites and Blacks (−1 to 1), the photo's black key (log2 of its
-    /// darkest level) and whether the profile has Camera Raw's default black point (its
+    /// For the sensor's white, the level Whites stretches toward (the probes' maximum;
+    /// `PhotoMeasures::whites_top`) and the white point (log2, at the render's
+    /// Exposure), Whites and Blacks (−1 to 1), the photo's black key (log2 of its darkest
+    /// level) and whether the profile has Camera Raw's default black point (its
     /// DefaultBlackRender is Auto).
     pub(crate) fn new(
         [sensor, top, white_point]: [f32; 3],
