@@ -48,7 +48,8 @@ models.
   Background and clicks on the same photo after that are quick.
 - **Catalog only.** The result is a raster stored in the catalog, so it needs a catalog
   photo. A catalog of the first format asks to **Upgrade catalog…**: a backup copy is
-  written beside it, then it becomes format version 2, which older releases refuse.
+  written beside it, then it becomes the current format version, which older releases
+  refuse.
   Close it on other computers first.
 - **What the models see:** the photo at the camera's default crop with the camera
   rendering (no tone, colour, profile or geometry edits; spots and red eye included),

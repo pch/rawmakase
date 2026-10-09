@@ -134,13 +134,17 @@ pub fn encode(history: &SavedHistory) -> Result<Vec<u8>> {
         steps,
         applied: history.applied,
     };
+    compress(&stored)
+}
+
+fn compress(stored: &Stored) -> Result<Vec<u8>> {
     let mut z = ZlibEncoder::new(Vec::new(), Compression::default());
-    serde_json::to_writer(&mut z, &stored)?;
+    serde_json::to_writer(&mut z, stored)?;
     Ok(z.finish()?)
 }
 
-/// The History in `data`; `None` for a format from a newer release.
-pub fn decode(data: &[u8]) -> Result<Option<SavedHistory>> {
+/// The stored History in `data`; `None` for a format from a newer release.
+fn stored(data: &[u8]) -> Result<Option<Stored>> {
     let mut text = Vec::new();
     ZlibDecoder::new(data)
         .take(MAX_BYTES + 1)
@@ -154,7 +158,33 @@ pub fn decode(data: &[u8]) -> Result<Option<SavedHistory>> {
     if version > u64::from(VERSION) {
         return Ok(None);
     }
-    let stored: Stored = serde_json::from_value(value)?;
+    Ok(Some(serde_json::from_value(value)?))
+}
+
+/// `data` with every step's recipe rid of the settings that chose an engine or
+/// operator (`saved_format::OBSOLETE_SETTINGS`), for the catalog's upgrade. `None`
+/// when there were none, or the History can't be read here (from a newer release,
+/// or damaged): it is then left as it is.
+pub(super) fn without_obsolete_settings(data: &[u8]) -> Option<Vec<u8>> {
+    use crate::model::saved_format::{drop_obsolete_settings, is_obsolete};
+    let mut stored = stored(data).ok().flatten()?;
+    let mut changed = false;
+    let states =
+        std::iter::once(&mut stored.origin).chain(stored.steps.iter_mut().map(|s| &mut s.state));
+    for state in states {
+        changed |= drop_obsolete_settings(&mut state.fields);
+        let pooled = state.pooled.len();
+        state.pooled.retain(|key, _| !is_obsolete(key));
+        changed |= state.pooled.len() != pooled;
+    }
+    changed.then(|| compress(&stored).ok()).flatten()
+}
+
+/// The History in `data`; `None` for a format from a newer release.
+pub fn decode(data: &[u8]) -> Result<Option<SavedHistory>> {
+    let Some(stored) = stored(data)? else {
+        return Ok(None);
+    };
     ensure!(
         stored.applied <= stored.steps.len(),
         "Invalid History position"

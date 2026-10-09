@@ -74,6 +74,43 @@ fn sidecar_roundtrip_and_protection() -> Result<()> {
     );
     Ok(())
 }
+/// A sidecar is saved as the one engine's version, which releases before it refuse
+/// as newer; one an earlier release saved loses the settings that chose its engine
+/// and operators, and keeps its sliders and a newer release's setting.
+#[test]
+fn sidecars_migrate_to_the_one_engine_and_earlier_releases_refuse_new_ones() -> Result<()> {
+    use crate::model::saved_format::{BEFORE_ONE_ENGINE, reads};
+    let d = tempfile::tempdir()?;
+    let raw = d.path().join("photo.ARW");
+    fs::write(&raw, b"fixture")?;
+    let store = d.path().join("store");
+    let p = save_at(&raw, &Recipe::default(), &ExportOptions::default(), &store)?;
+    let mut v: serde_json::Value = serde_json::from_reader(File::open(&p)?)?;
+    assert!(!reads(&v, BEFORE_ONE_ENGINE));
+    v["schema"] = 10.into();
+    v["pipeline"] = 10.into();
+    let recipe = v["recipe"].as_object_mut().unwrap();
+    recipe.insert("exposure".into(), 0.75.into());
+    recipe.insert("engine".into(), 3.into());
+    recipe.insert("reference_color".into(), true.into());
+    recipe.insert("sharpening_model".into(), "Original".into());
+    recipe.insert("future_slider".into(), serde_json::json!([1]));
+    fs::write(&p, serde_json::to_vec(&v)?)?;
+    let loaded = load_at(&raw, &store)?.unwrap();
+    assert_eq!(loaded.recipe.exposure, 0.75);
+    assert_eq!(
+        loaded.recipe.unknown,
+        [("future_slider".to_string(), serde_json::json!([1]))].into()
+    );
+    save_at(&raw, &loaded.recipe, &loaded.export, &store)?;
+    let v: serde_json::Value = serde_json::from_reader(File::open(&p)?)?;
+    assert!(!reads(&v, BEFORE_ONE_ENGINE));
+    for key in crate::model::saved_format::OBSOLETE_SETTINGS {
+        assert!(v["recipe"].get(key).is_none(), "{key}");
+    }
+    assert_eq!(v["recipe"]["future_slider"], serde_json::json!([1]));
+    Ok(())
+}
 #[test]
 fn changed_source_refused() -> Result<()> {
     let d = tempfile::tempdir()?;
@@ -84,8 +121,8 @@ fn changed_source_refused() -> Result<()> {
     assert!(load(&p).is_err());
     Ok(())
 }
-/// Spots and masks go to the companion file, so the sidecar itself stays a schema 6
-/// recipe that releases before them read; they load back into the recipe.
+/// Spots and masks go to the companion file, so the sidecar itself stays a recipe
+/// without them; they load back into the recipe.
 #[test]
 fn spots_and_masks_save_beside_a_compatible_sidecar() -> Result<()> {
     let d = tempfile::tempdir()?;
@@ -131,7 +168,7 @@ fn spots_and_masks_save_beside_a_compatible_sidecar() -> Result<()> {
     let v: serde_json::Value = serde_json::from_reader(File::open(&p)?)?;
     assert_eq!(
         (v["schema"].as_u64(), v["pipeline"].as_u64()),
-        (Some(6), Some(6))
+        (Some(11), Some(11))
     );
     let recipe = v["recipe"].as_object().unwrap();
     assert!(

@@ -36,7 +36,7 @@ fn fixture() -> CameraImage {
 /// Settings earlier releases saved to choose a rendering engine and its operators are
 /// kept as they were, unread: one engine renders every recipe.
 #[test]
-fn engine_and_operator_settings_of_earlier_releases_are_kept_unread() -> anyhow::Result<()> {
+fn engine_and_operator_settings_of_earlier_releases_are_dropped() -> anyhow::Result<()> {
     let im = fixture();
     let plain = Recipe::for_metadata(&im.metadata);
     let mut json = serde_json::to_value(&plain)?;
@@ -50,16 +50,15 @@ fn engine_and_operator_settings_of_earlier_releases_are_kept_unread() -> anyhow:
         "contrast_model": "Original",
         "sharpening_model": "Original",
         "gamut_model": "Compress",
+        "a_later_setting": 1,
     });
     for (key, value) in fields.as_object().unwrap() {
         json[key] = value.clone();
     }
     let old: Recipe = serde_json::from_value(json)?;
-    assert_eq!(
-        old.unknown.keys().collect::<Vec<_>>(),
-        fields.as_object().unwrap().keys().collect::<Vec<_>>()
-    );
-    assert_eq!(serde_json::to_value(&old)?["engine"], 3);
+    // Unrelated settings a later release wrote are kept.
+    assert_eq!(old.unknown.keys().collect::<Vec<_>>(), ["a_later_setting"]);
+    assert!(serde_json::to_value(&old)?.get("engine").is_none());
     assert_eq!(
         crate::develop::render(&im, &old.checked()?, 0)?.pixels,
         crate::develop::render(&im, &plain.checked()?, 0)?.pixels

@@ -4,10 +4,12 @@
 //! edit live here, and nowhere else writes those rows; a backend that
 //! detected conflicting edits would do it here.
 //!
-//! Three operations: a checked save or clear ([`write_edit`]), an opaque
-//! copy for virtual copies ([`copy_edit`]), and removal with a virtual copy
-//! ([`delete_edits`]).
-use super::db::{Write, sql};
+//! Four operations: a checked save or clear ([`write_edit`]), an opaque
+//! copy for virtual copies ([`copy_edit`]), removal with a virtual copy
+//! ([`delete_edits`]), and the catalog upgrade's migration of every stored
+//! edit ([`migrate_edits`]).
+use super::db::{Reads, Write, sql};
+use super::value::row;
 use super::{Catalog, EditChange, HistoryUpdate, PhotoId};
 use crate::storage::Identity;
 use anyhow::{Result, ensure};
@@ -181,5 +183,47 @@ pub(super) fn copy_edit(w: &mut Write<'_>, from: PhotoId, to: PhotoId) -> Result
 pub(super) fn delete_edits(w: &mut Write<'_>, photo: PhotoId) -> Result<()> {
     w.execute(sql!("DELETE FROM local_edits WHERE photo=?"), &[&photo])?;
     w.execute(sql!("DELETE FROM develop_history WHERE photo=?"), &[&photo])?;
+    Ok(())
+}
+
+/// Removes the settings that chose an engine or operator
+/// (`saved_format::OBSOLETE_SETTINGS`) from every stored edit and History, in the
+/// catalog's upgrade. Everything else stays as stored, edit times included; rows
+/// this release cannot read are left as they are.
+pub(super) fn migrate_edits(w: &mut Write<'_>) -> Result<()> {
+    use crate::model::saved_format::recipe_text_without_obsolete_settings;
+    row! {
+        struct Edit {
+            id: PhotoId,
+            recipe: String,
+        }
+    }
+    let edits: Vec<Edit> = w.read(
+        sql!("SELECT id, recipe FROM photos WHERE recipe IS NOT NULL"),
+        &[],
+    )?;
+    for edit in edits {
+        if let Some(recipe) = recipe_text_without_obsolete_settings(&edit.recipe) {
+            w.execute(
+                sql!("UPDATE photos SET recipe=? WHERE id=?"),
+                &[&recipe, &edit.id],
+            )?;
+        }
+    }
+    row! {
+        struct History {
+            photo: PhotoId,
+            data: Vec<u8>,
+        }
+    }
+    let histories: Vec<History> = w.read(sql!("SELECT photo, data FROM develop_history"), &[])?;
+    for history in histories {
+        if let Some(data) = super::develop_history::without_obsolete_settings(&history.data) {
+            w.execute(
+                sql!("UPDATE develop_history SET data=? WHERE photo=?"),
+                &[&data, &history.photo],
+            )?;
+        }
+    }
     Ok(())
 }

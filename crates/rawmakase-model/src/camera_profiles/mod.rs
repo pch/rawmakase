@@ -238,11 +238,6 @@ impl Table {
     }
 }
 impl CameraProfile {
-    /// Whether this profile writes the matrix-only DNG signature field.
-    pub(crate) fn has_matrix_calibration_signature(&self) -> bool {
-        self.matrix_calibration_signature.is_some()
-    }
-
     /// This profile with its look at a Profile Amount (see `Enhanced::at_amount`).
     pub fn at_amount(&self, amount: f32) -> Self {
         Self {

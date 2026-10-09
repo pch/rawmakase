@@ -113,19 +113,15 @@ fn a_snapshot_stores_its_rasters_apart_from_the_edit() -> Result<()> {
 }
 
 #[test]
-fn a_catalog_of_the_first_format_refuses_rasters_until_it_is_upgraded() -> Result<()> {
+fn a_catalog_of_the_first_format_is_upgraded_for_rasters_with_a_backup() -> Result<()> {
     let (dir, mut cat, file, id) = catalog()?;
     cat.db_for_tests().execute_batch("PRAGMA user_version=1")?;
     assert!(!cat.supports_raster_masks()?);
-    // Edits without rasters save as they always did.
-    save(&mut cat, id, &file, &Recipe::default())?;
-    let recipe = masked(15);
-    let error = save(&mut cat, id, &file, &recipe).unwrap_err();
-    assert!(error.to_string().contains("upgrad"), "{error}");
     assert_eq!(cat.format_version()?, 1);
 
     let backup = cat.upgrade_for_raster_masks()?.unwrap();
-    assert_eq!(cat.format_version()?, 2);
+    assert_eq!(cat.format_version()?, super::db::VERSION);
+    assert!(cat.supports_raster_masks()?);
     assert!(backup.starts_with(dir.path()) && backup.exists());
     // The backup is a catalog of the first format, as it was.
     let old = rusqlite::Connection::open(&backup)?;
@@ -134,10 +130,12 @@ fn a_catalog_of_the_first_format_refuses_rasters_until_it_is_upgraded() -> Resul
         1
     );
     drop(old);
+    let recipe = masked(15);
     save(&mut cat, id, &file, &recipe)?;
     assert_eq!(stored(&cat, &recipe)?, 1);
     // Upgrading again changes nothing and makes no second backup.
     assert_eq!(cat.upgrade_for_raster_masks()?, None);
+    assert_eq!(cat.upgrade_format()?, None);
     assert_eq!(
         std::fs::read_dir(dir.path())?
             .filter(|e| e
@@ -146,6 +144,23 @@ fn a_catalog_of_the_first_format_refuses_rasters_until_it_is_upgraded() -> Resul
             .count(),
         1
     );
+    Ok(())
+}
+
+/// The second format keeps rasters already; storing an edit still upgrades it
+/// first, and its rasters stay.
+#[test]
+fn a_catalog_of_the_second_format_keeps_its_rasters_through_the_upgrade() -> Result<()> {
+    let (_dir, mut cat, file, id) = catalog()?;
+    let recipe = masked(17);
+    save(&mut cat, id, &file, &recipe)?;
+    cat.db_for_tests().execute_batch("PRAGMA user_version=2")?;
+    assert!(cat.supports_raster_masks()?);
+    assert_eq!(cat.upgrade_for_raster_masks()?, None);
+    assert_eq!(cat.format_version()?, 2);
+    save(&mut cat, id, &file, &recipe)?;
+    assert_eq!(cat.format_version()?, super::db::VERSION);
+    assert_eq!(stored(&cat, &recipe)?, 1);
     Ok(())
 }
 

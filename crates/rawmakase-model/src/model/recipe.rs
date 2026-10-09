@@ -11,7 +11,8 @@ pub const TINT_LIMIT: f32 = 150.;
 /// typed values may go further.
 pub const EXPOSURE_LIMIT: f32 = 8.;
 /// A photo's develop settings. Fields this build does not know (from a newer release)
-/// are kept in `unknown` and saved again, so an older build never drops them.
+/// are kept in `unknown` and saved again, so an older build never drops them; the
+/// selectors of earlier releases' engines and operators are dropped as they are read.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Recipe {
@@ -131,8 +132,13 @@ pub struct Recipe {
     /// Lightroom's panel switches; omitted while every panel is on.
     #[serde(default, skip_serializing_if = "PanelSwitches::all_on")]
     pub panels: PanelSwitches,
-    /// Settings from a newer release, preserved as they were.
-    #[serde(flatten)]
+    /// Settings from a newer release, preserved as they were. Those of earlier
+    /// releases that chose an engine or operator are dropped as they are read
+    /// (`saved_format::OBSOLETE_SETTINGS`).
+    #[serde(
+        flatten,
+        deserialize_with = "crate::model::saved_format::unknown_settings"
+    )]
     pub unknown: std::collections::BTreeMap<String, serde_json::Value>,
 }
 /// A recipe's spot removal, red eye corrections and masks (experimental). They are saved beside the recipe,

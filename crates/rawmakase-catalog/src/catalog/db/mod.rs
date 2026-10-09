@@ -29,10 +29,24 @@ pub(in crate::catalog) use sql::{Sql, SqliteSql, sql, sqlite_sql};
 const APPLICATION_ID: i64 = 0x4f4d4152;
 /// The catalog format version (`PRAGMA user_version`) new catalogs get; older
 /// releases check it too. Version 2 may hold raster mask data, which a release
-/// that cannot read it must not open and rewrite.
-pub(in crate::catalog) const VERSION: i64 = 2;
+/// that cannot read it must not open and rewrite. Version 3 holds edits rendered by
+/// the one engine, which releases before it would render with operators they no
+/// longer choose.
+pub(in crate::catalog) const VERSION: i64 = 3;
 /// The first version, still read and written as it is until a catalog is upgraded.
 pub(in crate::catalog) const FIRST_VERSION: i64 = 1;
+/// The first version that may hold raster masks.
+pub(in crate::catalog) const RASTER_MASKS: i64 = 2;
+/// The newest version the releases before the one engine open.
+#[cfg(test)]
+pub(in crate::catalog) const BEFORE_ONE_ENGINE: i64 = 2;
+
+/// Whether a release that opens versions up to `newest` opens a catalog of
+/// `version`: this one with [`VERSION`], an earlier one with its own (the check is
+/// the same in every release).
+pub(in crate::catalog) fn opens(version: i64, newest: i64) -> bool {
+    (FIRST_VERSION..=newest).contains(&version)
+}
 
 /// The catalog's database. Opaque: nothing outside this module sees which
 /// backend it is or its connection.
@@ -67,8 +81,10 @@ impl Db {
             "Not an RAWmakase catalog"
         );
         ensure!(
-            (FIRST_VERSION..=VERSION)
-                .contains(&db.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?),
+            opens(
+                db.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?,
+                VERSION
+            ),
             "Unsupported RAWmakase catalog version; file left unchanged"
         );
         db.busy_timeout(Duration::from_secs(5))?;
@@ -85,11 +101,17 @@ impl Db {
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?)
     }
 
-    /// Upgrades a version 1 catalog to the current version, after writing a
+    /// Upgrades a catalog of an earlier version to the current one, after writing a
     /// consistent copy of it to `backup` (a path nothing exists at). The copy is
     /// SQLite's own (`VACUUM INTO`), not a copy of the live file, and is checked
-    /// before the upgrade commits. A catalog already upgraded is left as it is.
-    pub(in crate::catalog) fn upgrade(&mut self, backup: &Path) -> Result<()> {
+    /// before the upgrade commits. `migrate` brings the stored rows up to date in
+    /// the upgrade's transaction: when it fails, nothing is changed and the backup
+    /// stays. A catalog already upgraded is left as it is.
+    pub(in crate::catalog) fn upgrade(
+        &mut self,
+        backup: &Path,
+        migrate: impl FnOnce(&mut Write<'_>) -> Result<()>,
+    ) -> Result<()> {
         let Backend::Sqlite(db) = &mut self.backend;
         if db.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? >= VERSION {
             return Ok(());
@@ -122,6 +144,7 @@ impl Db {
         // The upgrade is one immediate transaction that rechecks what it read.
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if tx.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? < VERSION {
+            migrate(&mut Write { db: &tx })?;
             tx.execute_batch(&format!("PRAGMA user_version={VERSION}"))?;
         }
         tx.commit()?;

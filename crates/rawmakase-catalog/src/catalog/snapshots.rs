@@ -89,6 +89,7 @@ impl Catalog {
     /// Saves `recipe` as a new snapshot of the photo named `name`; returns its id.
     pub fn add_snapshot(&mut self, photo: PhotoId, name: &str, recipe: &Recipe) -> Result<i64> {
         recipe.validate()?;
+        self.upgrade_before_storing_recipes()?;
         let assets = self.assets_of(recipe.mask_asset_ids())?;
         let (name, recipe) = (snapshot_name(name)?, serde_json::to_string(recipe)?);
         let id = self.db.write(|w| {
@@ -107,6 +108,7 @@ impl Catalog {
     /// Lightroom's Update with Current Settings: the snapshot now holds `recipe`.
     pub fn update_snapshot(&mut self, id: i64, recipe: &Recipe) -> Result<()> {
         recipe.validate()?;
+        self.upgrade_before_storing_recipes()?;
         let assets = self.assets_of(recipe.mask_asset_ids())?;
         let recipe = serde_json::to_string(recipe)?;
         let n = self.db.write(|w| {
@@ -152,4 +154,30 @@ fn snapshot_name(name: &str) -> Result<&str> {
     (!name.is_empty())
         .then_some(name)
         .context("A snapshot needs a name")
+}
+
+/// Removes the settings that chose an engine or operator
+/// (`saved_format::OBSOLETE_SETTINGS`) from every stored snapshot recipe, in the
+/// catalog's upgrade; ones this release cannot read are left as they are.
+pub(super) fn migrate_snapshots(w: &mut super::db::Write<'_>) -> Result<()> {
+    use crate::model::saved_format::recipe_text_without_obsolete_settings;
+    row! {
+        struct Stored {
+            id: i64,
+            recipe: String,
+        }
+    }
+    let snapshots: Vec<Stored> = w.read(
+        sql!("SELECT id, recipe FROM develop_snapshots WHERE recipe IS NOT NULL"),
+        &[],
+    )?;
+    for snapshot in snapshots {
+        if let Some(recipe) = recipe_text_without_obsolete_settings(&snapshot.recipe) {
+            w.execute(
+                sql!("UPDATE develop_snapshots SET recipe=? WHERE id=?"),
+                &[&recipe, &snapshot.id],
+            )?;
+        }
+    }
+    Ok(())
 }

@@ -137,10 +137,19 @@ inject a temporary file, without changing the process-wide environment.
   empty mask, when one cannot be provided. `edit_rows` stores a save's unsaved
   rasters in the same transaction as the rows naming them and rejects an edit
   whose references do not exist; rasters are never collected. Catalogs that keep
-  them are format version 2 (see [catalogs](catalogs.md)).
+  them are format version 2 or later (see [catalogs](catalogs.md)).
 - A photo's edit (its recipe, export options, identity and edit time, spots
   and masks, and History) is written only by `catalog::edit_rows`: a checked
-  save or clear, an exact copy for a virtual copy, and removal with one.
+  save or clear, an exact copy for a virtual copy, removal with one, and the
+  format upgrade's migration of every stored edit.
+- The settings earlier releases chose an engine or operator with are
+  `model::saved_format::OBSOLETE_SETTINGS`, its one owner. Reading any `Recipe`
+  drops them from its unknown settings (and nothing else), so catalog edits,
+  History, snapshots, presets, sidecars and the session all migrate on the way
+  in; `catalog::format_upgrade` removes them from stored rows, and runs, with
+  its backup, before anything stores a recipe in a catalog of an earlier
+  format (`Catalog::upgrade_before_storing_recipes`, from saving edits and
+  snapshots).
 - Parsing XMP produces settings, while application validates and resolves a
   recipe. Collection discovery and favorites belong in `presets`.
 - Validate recipe changes at domain boundaries. Saved format versions and
@@ -184,10 +193,11 @@ kept for outside callers. `src/lib.rs` exports only the modules they use; the re
 (`catalog_session`, `decode`, `demosaic`, `edit_session`, `platform`, `time`)
 are `pub(crate)`, and the desktop app exposes only `app::run`, so the
 compiler reports what in them nothing uses. The compatibility surface is the saved data: recipe and
-preset envelopes are versioned and migrated by `model::saved_format`; a catalog must
-be exactly version 1 to open (other versions are refused, the file left
-unchanged), and its schema only ever gains tables, applied idempotently on open;
-see [catalogs](catalogs.md#sqlite-format-version-1).
+preset envelopes are versioned and migrated by `model::saved_format` (written as
+version 11, which releases before the one engine refuse); a catalog opens at
+versions 1 to 3 (others are refused, the file left unchanged), is upgraded to 3
+before a recipe is stored in it, and its schema only ever gains tables, applied
+idempotently on open; see [catalogs](catalogs.md#sqlite-format-versions-1-to-3).
 
 ## Validation
 
