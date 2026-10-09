@@ -53,16 +53,6 @@ pub fn intercept() -> Launch {
     fastframe_update::intercept(&config())
 }
 
-/// How this copy was installed, by the updater's rules, on every Mac,
-/// including the Intel ones that aren't offered updates.
-pub fn installation() -> Result<fastframe_update::Installation, Unsupported> {
-    let config = UpdateConfig {
-        mac_target: MacTarget::Universal,
-        ..config()
-    };
-    Updater::new(config, UreqTransport::new()).installation()
-}
-
 pub fn updater() -> Updater {
     Updater::new(config(), UreqTransport::new())
 }

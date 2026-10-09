@@ -60,8 +60,6 @@ pub(super) struct Updates {
     manual: Option<Option<Result<(), String>>>,
     /// Acknowledged after the first frame, so the helper keeps the update.
     receipt: Option<fastframe_update::Receipt>,
-    /// The first automatic check has answered, found or not.
-    checked: bool,
 }
 impl Updates {
     pub(super) fn new(session: &crate::app::session::Session, ctx: Option<&egui::Context>) -> Self {
@@ -190,7 +188,6 @@ impl Editor {
                     installable,
                     manual,
                 } => {
-                    updates.checked = true;
                     match &found {
                         Ok(Some(release)) => {
                             if updates.available.as_ref() != Some(release) {
