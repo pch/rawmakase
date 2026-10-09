@@ -149,8 +149,15 @@ impl GlobalTone {
         let top = sensor - (sensor - top).clamp(0., (BELOWS - 1) as f32 * BELOW_STEP);
         let (i, ti) = bracket(sensor, SENSOR_FIRST, SENSOR_STEP, SENSORS);
         let (j, tj) = bracket(sensor - top, 0., BELOW_STEP, BELOWS);
+        // A measured curve at this photo's sample `k`: the same scene value, relative to
+        // that curve's own maximum (its last sample above it).
         let at = |i: usize, j: usize, s: usize, k: usize| {
-            value16(WHITE3, ((i * BELOWS + j) * SLIDERS + s) * U_SAMPLES + k)
+            let corner = SENSOR_FIRST + i as f32 * SENSOR_STEP - j as f32 * BELOW_STEP;
+            let f = ((k as f32 * U_STEP + top - corner) / U_STEP).clamp(0., (U_SAMPLES - 1) as f32);
+            let n = (f as usize).min(U_SAMPLES - 2);
+            let base = ((i * BELOWS + j) * SLIDERS + s) * U_SAMPLES;
+            let t = f - n as f32;
+            value16(WHITE3, base + n) * (1. - t) + value16(WHITE3, base + n + 1) * t
         };
         let rows: Box<[[f32; U_SAMPLES]; SLIDERS]> = Box::new(std::array::from_fn(|s| {
             std::array::from_fn(|k| {
@@ -368,6 +375,23 @@ mod tests {
         for x in [1e-4f32, 3e-5, 1e-5] {
             let (a, b) = (tone.apply([x; 3])[1], tone.apply([2. * x; 3])[1]);
             assert!(a > 0. && (b / a - 2.).abs() < 0.05, "{x}: {a} {b}");
+        }
+    }
+
+    /// Between the measured sensor whites and maxima the curves blend at the same scene
+    /// value: a mid gray renders as at every measured corner, whatever the photo's maximum.
+    #[test]
+    fn curves_between_measured_maxima_keep_mid_gray() {
+        let gray = |sensor: f32, top: f32| {
+            GlobalTone::new([sensor, top, sensor], 0., 0., -8., true).apply([0.18; 3])[1]
+        };
+        let corner = gray(0.5, 0.5);
+        for (sensor, top) in [(0.862, 0.726), (0.25, -0.6), (1.7, 0.2)] {
+            let g = gray(sensor, top);
+            assert!(
+                (g / corner - 1.).abs() < 0.005,
+                "{sensor} {top}: {g} against {corner}"
+            );
         }
     }
 
