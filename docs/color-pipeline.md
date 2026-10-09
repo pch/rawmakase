@@ -1,8 +1,10 @@
 # Rendering pipeline versions
 
-The description below documents the preserved engine 2 pipeline. Engine 3 is described in [rendering-quality.md](rendering-quality.md), with its stages, camera profiles, preview behavior and version policy.
+Every recipe, whichever release saved it, renders with the one current engine (schema/pipeline 6): the stages, camera profiles and preview behavior in [rendering-quality.md](rendering-quality.md), and the measured controls in [tone controls](tone-controls.md), [color mixer](color-mixer.md), [lens corrections](lens-corrections.md) and [transform](transform.md). Earlier engines (process versions 1–3) and the per-control operator versions are no longer rendered; a saved recipe's fields for them are kept unchanged but ignored.
 
-New photos use engine 4 (schema/pipeline 6). It differs from engine 3 when no camera profile is imported or bundled for the camera: instead of LibRaw's sRGB matrix and a generic scene shoulder, the photo renders like a DNG that carries only a ColorMatrix. LibRaw's XYZ-to-camera matrix (the same Adobe-derived coefficients) becomes a forward matrix adapted to D50, the ACR 3 default tone curve is applied with hue-preserving RGB tone, and white balance temperature/tint are solved through that matrix. The camera exposure baseline applies whether or not a profile is present. On DSCF7853 (X100F) against Lightroom's Adobe Standard export this changes the out-of-the-box result from −1.1 EV / MAE 0.140 to −0.01 EV / MAE 0.030, the same as with the imported Adobe Standard DCP. Saved recipes from earlier pipelines keep engine 3 or lower.
+Without an imported or bundled camera profile, the photo renders like a DNG that carries only a ColorMatrix: LibRaw's XYZ-to-camera matrix (the same Adobe-derived coefficients) becomes a forward matrix adapted to D50, the ACR 3 default tone curve is applied with hue-preserving RGB tone, and white balance temperature/tint are solved through that matrix. The camera exposure baseline applies whether or not a profile is present. On DSCF7853 (X100F) against Lightroom's Adobe Standard export this changed the out-of-the-box result from engine 3's −1.1 EV / MAE 0.140 (LibRaw's sRGB matrix and a generic scene shoulder) to −0.01 EV / MAE 0.030, the same as with the imported Adobe Standard DCP.
+
+The native development boundary, white balance, out-of-gamut and display sections below still apply. The numbered [Rust pipeline](#rust-pipeline) and the saved-version notes at the end are the historical pipeline-1 contract, kept as a record; that pipeline is no longer rendered.
 
 # Color and rendering contract — pipeline version 1
 
@@ -26,6 +28,8 @@ The neutral picker samples a 5 × 5 region in camera space via the same inverse 
 
 ## Rust pipeline
 
+Historical: pipeline version 1, no longer rendered.
+
 1. Cache demosaiced as-shot camera RGB (`CameraImage`, f32). Keep metadata, source orientation, default inset and development diagnostics with it.
 2. Apply relative WB. Use the LibRaw camera-to-linear-sRGB matrix, then a fixed linear-sRGB-to-Rec.2020 matrix. Exposure multiplies by `2^EV`. Negative matrix results and values above one survive this boundary.
 3. Basic edge-aware luma/chroma averaging uses a 3 × 3 camera-space neighborhood at original-image scale. The implementation performs this before WB/color conversion. Fit previews omit it; full exports and 100% regions include it.
@@ -40,12 +44,9 @@ The fit preview area-averages camera data to a maximum 1600-pixel edge before th
 
 ## Out-of-gamut colors
 
-Colors the edit pushes outside sRGB, such as a saturated orange brightened past white or a strong white-balance shift, reach sRGB in one of two ways (`GamutModel` in `develop/pipeline/pixel.rs`, `P_GAMUT_CLIP` in `develop.wgsl`):
+Colors the edit pushes outside sRGB, such as a saturated orange brightened past white or a strong white-balance shift, reach sRGB by clipping (`finish_color` in `develop/pipeline/pixel.rs`, and `develop.wgsl` on the GPU): each linear channel is clipped to 0–1 on its own, as Camera Raw's conversion to sRGB does. A color keeps its in-gamut channels, so a too-bright orange turns toward yellow rather than toward gray. Earlier releases compressed instead: chroma moved toward the neutral of the same Oklab lightness until every channel fit, which kept the hue but desaturated; edits saved with compression now clip too.
 
-- **Clip** (new edits): each linear channel is clipped to 0–1 on its own, as Camera Raw's conversion to sRGB does. A color keeps its in-gamut channels, so a too-bright orange turns toward yellow rather than toward gray.
-- **Compress** (edits saved before this model): chroma moves toward the neutral of the same Oklab lightness until every channel fits, which keeps the hue but desaturates.
-
-On the corpus chart (Camera Raw 18.7, 369 cases), clipping lowers the mean ΔE00 from 1.62 to 1.29: the default render 0.91 → 0.66, white balance at 8000 K under illuminant A 4.22 → 0.89 and at 5000 K 2.45 → 0.69, the parametric curve cases 0.76–2.95 → 0.48–1.15, Color Grading 0.75–2.02 → 0.56–1.43, Point Color 0.83–1.82 → 0.69–1.11 and Camera Calibration 0.97–2.21 → 0.71–2.02. Positive Highlights moves further off (+60: 5.27 → 5.89, +100: 7.98 → 8.66), and Dehaze and Shadows +100 by up to 0.15. The recipe keeps the model (`gamut_model`), so edits saved before keep compression and look as they did.
+On the corpus chart (Camera Raw 18.7, 369 cases), clipping lowered the mean ΔE00 from 1.62 to 1.29: the default render 0.91 → 0.66, white balance at 8000 K under illuminant A 4.22 → 0.89 and at 5000 K 2.45 → 0.69, the parametric curve cases 0.76–2.95 → 0.48–1.15, Color Grading 0.75–2.02 → 0.56–1.43, Point Color 0.83–1.82 → 0.69–1.11 and Camera Calibration 0.97–2.21 → 0.71–2.02. Positive Highlights moves further off (+60: 5.27 → 5.89, +100: 7.98 → 8.66), and Dehaze and Shadows +100 by up to 0.15.
 
 ## Display
 
@@ -61,4 +62,4 @@ Optional monitor ICC conversion maps encoded sRGB bytes to device RGB through Li
 
 WB/tone/color/crop changes reuse the as-shot development. A single replaceable pending render request coalesces slider activity; results carry generation IDs and obsolete results are discarded. Full-resolution loading is serialized and cancelable through LibRaw's progress callback. Thumbnails are limited to 32 neighbors. Export holds an immutable recipe and the active development; navigation waits for it to finish. No texture contains a full 24 MP image just to display a fit preview.
 
-Sidecars record schema 2 and pipeline 2. Version 1 curves load with their original linear interpolation; editing a curve switches it to smooth interpolation. Unknown versions and changed source identities are preserved and disable autosave for that photo. Legacy sidecars and presets migrate on save; their curve shape remains unchanged until edited.
+Historical (pipeline 2): sidecars recorded schema 2 and pipeline 2. Version 1 curves load with their original linear interpolation; editing a curve switches it to smooth interpolation. Unknown versions and changed source identities are preserved and disable autosave for that photo. Legacy sidecars and presets migrate on save; their curve shape remains unchanged until edited.

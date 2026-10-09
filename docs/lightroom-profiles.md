@@ -20,7 +20,7 @@ Importing does not change the current edit. Choose the imported look in **Profil
 
 Two profiles of our own are listed for every camera with a colour matrix, with no files to import. They follow Adobe's two layers: a per-camera base and a camera-independent look.
 
-- **RAWmakase Standard**: the camera's colour matrix (LibRaw's, or the D65 matrix of a DNG's own profile) with the DNG default tone curve. It uses the same colour data as "Default (camera matrix)", which stays in the Profile menu because older edits (engine 3) render that entry with the legacy matrix path.
+- **RAWmakase Standard**: the camera's colour matrix (LibRaw's, or the D65 matrix of a DNG's own profile) with the DNG default tone curve. It uses the same colour data as "Default (camera matrix)", which stays in the Profile menu as the entry for no profile and renders through the same matrix and DNG default tone curve.
 - **RAWmakase Color**: a look on top of Standard, as Adobe Color is on Adobe Standard. A mild contrast curve and a few smooth hue, saturation and brightness shifts (reds, skin, yellows, foliage, aqua, sky), plus a slight saturation roll-off near white. Neutrals stay neutral. The table is generated from the parameters in `src/camera_profiles/open.rs`, not stored or derived from Adobe data.
 
 Both are embedded in the recipe like any other profile, so later changes to the look don't change existing edits. The look was tuned conservatively and has not yet been compared with Camera Raw renders; measured base profiles (ColorChecker shots per camera) can replace the matrix later without changing any preset.
@@ -74,9 +74,9 @@ Measured with Camera Raw 18.7 on the synthetic chart and synthetic RGB-table loo
 | 1D tables | A curve per channel, stored like the 3D samples. | `rgb-1d-100` |
 | The extra word some camera-matching tables end with | No visible effect at 0 or 1. | `rgb-flag-100` |
 
-The table-only cases sit at mean ΔE00 0.68–0.81 from Camera Raw (RAWmakase's default render is 0.91), and the look combining an HSV table, a curve and an RGB table at 1.0–1.14. Gamut extension (used by Modern 02 only) adds back what clipping into the table's space removed, in its encoding; it was not checked closely, because RAWmakase compressed out-of-gamut colours toward gray where Camera Raw clips them; new edits clip per channel too ([out-of-gamut colors](color-pipeline.md#out-of-gamut-colors)).
+The table-only cases sit at mean ΔE00 0.68–0.81 from Camera Raw (RAWmakase's default render is 0.91), and the look combining an HSV table, a curve and an RGB table at 1.0–1.14. Gamut extension (used by Modern 02 only) adds back what clipping into the table's space removed, in its encoding; it was not checked closely, because RAWmakase compressed out-of-gamut colours toward gray where Camera Raw clips them; RAWmakase now clips per channel too ([out-of-gamut colors](color-pipeline.md#out-of-gamut-colors)).
 
-A look's HSV table and curve stay where they were, with the camera profile; only the RGB table goes late. On engine 3 edits, whose HSL and Saturation run later in Oklab, the table follows them and comes before Monochrome; their point curves stay last, as engine 3 has always applied them. Recipes with an RGB-table look save as version 9, which earlier releases refuse as newer instead of dropping the table; the table is stored in Adobe's encoding, about 180 KB for a 32-division table.
+A look's HSV table and curve stay where they were, with the camera profile; only the RGB table goes late. Recipes with an RGB-table look save as version 9, which earlier releases refuse as newer instead of dropping the table; the table is stored in Adobe's encoding, about 180 KB for a 32-division table.
 
 ## Settings inside looks
 
@@ -90,7 +90,7 @@ Vintage 07 and Modern 03 and 04 carry develop settings besides their tables: Exp
 
 The half rate above 100% matched best for the colour, exposure and vignette looks (at 200%, colour 1.4 against 2.3 for full rate, vignette 1.5 against 1.8), and was even for split toning; the parametric look was closer at full rate (4.0 against 4.9), but RAWmakase's parametric curve is already 2.8 off at 100%, as it is for the user's own parametric sliders. The remaining error is that of the existing operators: parametric curve (user Lights −50: 3.7), split toning (user shadows 210°: 2.6) and Exposure above +0.5.
 
-Schema/pipeline 5 embeds the resolved camera profile, enhanced color table, sampled curve, identity and copyright in the recipe. Reopening does not require the source XMP or DCP to remain available. Old schema 1–4 recipes migrate without changing their prior look. Older RAWmakase versions reject version 5 instead of silently dropping enhanced-profile data.
+Schema/pipeline 5 embeds the resolved camera profile, enhanced color table, sampled curve, identity and copyright in the recipe. Reopening does not require the source XMP or DCP to remain available. Old schema 1–4 recipes migrate and render with the current engine. Older RAWmakase versions reject version 5 instead of silently dropping enhanced-profile data.
 
 ## Lightroom comparison — 2026-09-26
 

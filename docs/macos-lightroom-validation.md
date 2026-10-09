@@ -1,5 +1,7 @@
 # macOS and Lightroom validation — 2026-09-25
 
+This is a dated record. The opt-in fields and checkboxes it describes (`reference_curves`, `reference_color`, `reference_calibration`, `wide_gamut_curves`, profile tone rendering) went with the earlier engines: every edit now renders with the one current engine ([rendering engine](rendering-quality.md)), and those fields in saved recipes are ignored.
+
 ## Camera calibration and point curves — 2026-09-26
 
 The preceding macOS/color work was committed as `76d00e3`. This follow-up adds reference-calibrated camera primary controls and corrects point-curve interpolation, transfer function and RGB processing order. All photo experiments used copied RAWs and the separate `Reference.lrcat`; generated ramps contain no private photo data. The original catalog was not used for experimental edits, and no Lightroom files were deleted.

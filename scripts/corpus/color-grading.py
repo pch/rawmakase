@@ -13,7 +13,7 @@ refuses to start while Photoshop has documents open.
 far the fitted operator is from every render (mean CIEDE2000 over the chart, with
 Camera Raw's own default render as input, so only the grading's error is measured).
 
-What the renders show (see docs/color-mixer.md#color-grading-engine-4):
+What the renders show (see docs/color-mixer.md#color-grading):
 - Color grading is a curve per channel of linear ProPhoto RGB: a channel's output
   depends only on that channel's input (predicting every patch from the gray ramp's
   per-channel curves leaves 0.1-0.2 ΔE00; the same curves in sRGB, Display P3,

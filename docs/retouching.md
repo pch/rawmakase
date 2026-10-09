@@ -42,9 +42,8 @@ Paste Settings and presets leave a photo's spots alone, as Lightroom's defaults 
   centre, interpolated between those settings and from a hard edge below 25. On those
   spots the rendered coverage is within a mean 0.003 of Camera Raw's (at most 0.07,
   at Feather 25 on the rim's last pixel); the original smoothstep was 0.06–0.13 off,
-  its soft edge reaching much further in. Recipes saved before keep that original
-  feather (`retouch_model`); new edits, the first spot on a photo and Lightroom's
-  spots take the measured one.
+  its soft edge reaching much further in. Every spot, including those saved with the
+  original feather, renders with the measured one.
 - **Heal** copies the source, then adds a membrane: the difference between
   destination and source on a one-pixel ring around the shape, extended inward by
   solving Laplace's equation (multigrid V-cycles, so large brushed areas solve as
@@ -128,7 +127,7 @@ Shift+R is its Reference View).
   straightening, Transform, rotation and flips. Releases that predate them open the
   photo without them. A correction of a kind a later release adds is not shown, but
   is kept and saved back as it was, and never stops the photo's other spots and masks
-  from loading. Older process versions render corrections (and spots) too.
+  from loading.
 - **Rendering:** on the linear camera image, before Heal and Clone (so a heal copying
   from an eye copies the corrected pupil), with previews recomputing only the tiles a
   change reaches. Inside a soft ellipse every pixel moves towards a dark neutral, as

@@ -41,7 +41,7 @@ files should preserve.
 | `optics` | The lens correction model the renderer evaluates (vignetting, distortion and lateral CA as radial functions), and Adobe lens profiles (LCP) as data; depends only on `xml` | `mod.rs`, `lcp.rs` |
 | `lens` | Readers that fill the `optics` model: the tables cameras embed in their RAWs, imported Adobe LCPs and lateral CA measurement, plus profile selection | `embedded.rs`, `lcp.rs`, `auto_ca.rs`, `choice.rs` |
 | `rendered` | Developed pixels as values: an output image, its histogram and clipping overlay, which the renderer produces and export and watermarks use; depends on nothing | `rendered.rs` |
-| `model` | What an edit is, as values shared by the renderer, the catalog and file formats: the `Recipe` with its validation (`ValidRecipe`), saved versions and migration, panel switches, and the settings it is made of: operator versions, Effects, Heal and Clone, Red Eye, Point Color, masks, Transform with Upright, white balance from metadata, the image space positions are kept in (`image_frame.rs`), the sliders as parameters, the rules an edit follows and the setting groups Copy Settings, Sync and presets use. Depends on camera profiles, lenses and optics, never on rendering | `recipe.rs`, `valid.rs`, `saved_format.rs`, `panels.rs`, `operators.rs`, `effects.rs`, `masks.rs`, `transform.rs` |
+| `model` | What an edit is, as values shared by the renderer, the catalog and file formats: the `Recipe` with its validation (`ValidRecipe`), saved versions and migration, panel switches, and the settings it is made of: Effects, Heal and Clone, Red Eye, Point Color, masks, Transform with Upright, white balance from metadata, the image space positions are kept in (`image_frame.rs`), the sliders as parameters, the rules an edit follows and the setting groups Copy Settings, Sync and presets use. Depends on camera profiles, lenses and optics, never on rendering | `recipe.rs`, `valid.rs`, `saved_format.rs`, `panels.rs`, `operators.rs`, `effects.rs`, `masks.rs`, `transform.rs` |
 | `develop` | Rendering a recipe: geometry, color processing, curves, effects, local adjustments, detail rendering and the GPU port | `pipeline/`, `quality/`, `geometry.rs`, `gpu/` |
 | `xmp` | Namespace-aware Adobe settings parsing and application to recipes. Settings that ask for Auto measure the photo through `PhotoMeasures`, which `develop::Measures` provides, and packets take the crop as rendered from the caller, so XMP needs no rendering code | `parse.rs`, `apply.rs` |
 | `raw_defaults` | Lightroom's Raw Defaults: the master and per-camera choices and a photo's starting settings. Above `presets`, whose library it reads | `raw_defaults.rs` |
@@ -144,8 +144,9 @@ inject a temporary file, without changing the process-wide environment.
 - Parsing XMP produces settings, while application validates and resolves a
   recipe. Collection discovery and favorites belong in `presets`.
 - Validate recipe changes at domain boundaries. Saved format versions and
-  migrations are shared by native presets, catalog edits and legacy sidecars. Changes to recipe defaults
-  must account for older saved edits and rendering-engine choices.
+  migrations are shared by native presets, catalog edits and legacy sidecars. Every saved recipe renders
+  with the one engine, and fields it lacks take the recipe defaults, so changes to
+  recipe defaults must account for older saved edits.
 - Keep original RAWs and Lightroom sources read-only. Preserve unsupported source
   data, legacy sidecars, no-clobber publication, ICC/EXIF handling and
   temporary-file write behavior.
@@ -217,9 +218,10 @@ compute workgroups, without vendor extensions. The current hardware validation i
 Apple M1 Pro; Linux GPU vendors require validation on those machines before claiming
 equivalent performance or numerical precision.
 
-The per-pixel color and tone stage of the current engine runs on the GPU for previews
+The per-pixel color and tone stage runs on the GPU for previews
 (`gpu/develop.wgsl`, fed by `pipeline/pixel_params.rs`), on the stage cache's
-samples; other recipes and all exports use the CPU stage, which is the reference.
+samples, for every recipe resolved with a camera profile; unresolved recipes and
+all exports use the CPU stage, which is the reference.
 When the GPU renders a preview, the developed pixels stay on the device and
 `gpu/present.wgsl` finishes them into a texture that egui draws directly (registered
 as a native texture by the render worker): sharpening, vignettes and grain, the
@@ -228,7 +230,7 @@ profile, interpolated trilinearly) and 8-bit encoding, in the CPU reference's or
 The histogram is counted in the same pass and the Navigator copy is reduced on the
 GPU; only the histogram (3 KB) and, for catalog photos, a 640-pixel library
 thumbnail are read back. Nothing is converted or uploaded on the UI thread. Recipes
-the port does not cover, older engines and machines without a usable adapter render
+the port does not cover and machines without a usable adapter render
 on the CPU, and the worker then prepares the display bytes, histogram and reduced
 copies before the UI uploads the texture. Fit and zoomed-out previews render from a
 resolution pyramid at output size (see

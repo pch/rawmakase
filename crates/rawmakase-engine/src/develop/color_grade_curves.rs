@@ -1,5 +1,5 @@
 //! Color grading as Camera Raw 18.7 renders it, measured on the synthetic chart with
-//! `scripts/corpus/color-grading.py` (see docs/color-mixer.md#color-grading-engine-4).
+//! `scripts/corpus/color-grading.py` (see docs/color-mixer.md#color-grading).
 //!
 //! Camera Raw grades each channel of linear ProPhoto RGB with its own curve: a
 //! channel's output depends on that channel's input only. A region's tint gains are
