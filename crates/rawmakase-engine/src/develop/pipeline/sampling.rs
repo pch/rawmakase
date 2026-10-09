@@ -8,7 +8,9 @@ pub(crate) struct Source<'a> {
     /// The image before the measured Texture, which the photo's measures leave out.
     pub(crate) untextured: Option<&'a CameraImage>,
     /// The photo's measurement copy (see [`Toned::measured`]).
-    pub(crate) measured: Option<&'a CameraImage>,
+    pub(crate) measured: Option<&'a std::sync::Arc<CameraImage>>,
+    /// Where the measures of that copy are kept (see [`Toned::measures`]).
+    pub(crate) measures: Option<&'a crate::develop::stage_cache::MeasuresCache>,
 }
 impl<'a> Source<'a> {
     pub(crate) fn new(image: &'a CameraImage) -> Self {
@@ -16,6 +18,7 @@ impl<'a> Source<'a> {
             image,
             untextured: None,
             measured: None,
+            measures: None,
         }
     }
     pub(super) fn px(&self, i: usize) -> [f32; 3] {
@@ -44,12 +47,16 @@ pub(crate) struct Toned {
     /// reduced for measuring it, whatever resolution `image` has, so Fit previews,
     /// regions and exports measure the same pixels.
     pub(crate) measured: Option<std::sync::Arc<CameraImage>>,
+    /// The stage cache's measures of `measured`, so slider edits that do not change
+    /// them reuse them; without it each render measures the photo.
+    pub(crate) measures: Option<std::sync::Arc<crate::develop::stage_cache::MeasuresCache>>,
 }
 impl Toned {
     pub(crate) fn source(&self) -> Source<'_> {
         Source {
             untextured: self.untextured.as_deref(),
-            measured: self.measured.as_deref(),
+            measured: self.measured.as_ref(),
+            measures: self.measures.as_deref(),
             ..Source::new(&self.image)
         }
     }

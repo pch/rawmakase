@@ -484,6 +484,92 @@ mod tests {
         // The stage cache filled up to its entry limit across the edits.
         assert_eq!(warm.cache.samples.len(), 4);
     }
+    /// The scene tone stage's measures are kept per measurement copy and the settings
+    /// they read: white balance, temperature, the profile and calibration measure the
+    /// photo again; Exposure and the tone sliders reuse the measures. Cached renders
+    /// match fresh ones either way.
+    #[test]
+    fn photo_measures_are_kept_until_their_settings_change() {
+        let (w, h) = (300, 200);
+        let mut im = image(w, h, 0.);
+        im.metadata.cam_xyz = [
+            [1.1434, -0.4948, -0.121],
+            [-0.3746, 1.2042, 0.1903],
+            [-0.0666, 0.1479, 0.52],
+        ];
+        for (i, p) in im.pixels.iter_mut().enumerate() {
+            let (x, y) = ((i as u32 % w) as f32, (i as u32 / w) as f32);
+            let v = 0.02 + 0.6 * (x / w as f32) * (0.6 + 0.4 * (y * 0.05).cos());
+            *p = [v * 1.3, v, v * 0.5 + 0.05 * (x * 0.1).sin().abs()];
+        }
+        // Whites, Blacks and Dehaze follow the measures, so stale ones would show.
+        let mut base = Recipe {
+            profile: Some(Arc::new(
+                crate::camera_profiles::CameraProfile::creative_for_test(&im.metadata),
+            )),
+            whites: 0.5,
+            blacks: -0.4,
+            ..Default::default()
+        };
+        base.effects.dehaze = 0.3;
+        let metadata = im.metadata.clone();
+        // (edit, measures again, the measures change)
+        type Case<'a> = (&'a str, &'a dyn Fn(&mut Recipe), bool, bool);
+        let cases: [Case; 9] = [
+            ("exposure", &|r| r.exposure = 0.7, false, false),
+            ("whites", &|r| r.whites = 0.8, false, false),
+            ("shadows", &|r| r.shadows = 0.4, false, false),
+            ("blacks", &|r| r.blacks = -0.7, false, false),
+            ("dehaze", &|r| r.effects.dehaze = -0.3, false, false),
+            ("white balance", &|r| r.wb = [1.4, 1., 0.7], true, true),
+            // As the Temperature slider sets it: with the white balance it maps to.
+            (
+                "temperature",
+                &|r| {
+                    r.temperature = 3500.;
+                    r.update_wb(&metadata);
+                },
+                true,
+                true,
+            ),
+            (
+                "calibration",
+                &|r| r.effects.calibration[0] = [0.5, 0.4],
+                true,
+                true,
+            ),
+            // The look's strength leaves the measures, but the key keeps the profile
+            // whole: measured again.
+            ("profile amount", &|r| r.profile_amount = 0.5, true, false),
+        ];
+        let cancel = AtomicBool::new(false);
+        for (name, edit, again, changed) in cases {
+            let mut warm = PreviewRenderer::default();
+            let mut r = base.clone();
+            let check = |warm: &mut PreviewRenderer, r: &Recipe| {
+                for (edge, region) in [(80, None), (0, Some([20, 30, 50, 40])), (150, None)] {
+                    let cached = warm.render(&im, r, edge, region, &cancel).unwrap();
+                    let fresh = PreviewRenderer::default()
+                        .render(&im, r, edge, region, &cancel)
+                        .unwrap();
+                    assert_eq!(cached.pixels, fresh.pixels, "{name} {edge} {region:?}");
+                }
+            };
+            check(&mut warm, &r);
+            // Fit and 100% regions share one measure.
+            assert_eq!(warm.cache.measures.lock().unwrap().len(), 1, "{name}");
+            edit(&mut r);
+            check(&mut warm, &r);
+            let measures = warm.cache.measures.lock().unwrap();
+            assert_eq!(measures.len(), 1 + again as usize, "{name}");
+            let values: Vec<_> = measures.values().copied().collect();
+            assert_eq!(
+                values.first() != values.last(),
+                changed,
+                "{name}: {values:?}"
+            );
+        }
+    }
     #[test]
     fn mask_shadows_reduce_the_photo_once() {
         use crate::model::masks::{MaskComponent, MaskGroup, MaskShape};

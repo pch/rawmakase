@@ -70,6 +70,9 @@ pipeline (`crates/rawmakase-engine/src/develop/stage_cache.rs`), each keyed by t
 
 - the measurement copy: the full photo reduced to 512 pixels, from which every
   render takes the scene tone stage's measures and maps (docs/scene-tone-stage.md);
+- the scene tone stage's measures of that copy, keyed by the copy, the profile
+  matrix, white balance, Temperature and Tint, the profile and its amount, the
+  camera's exposure and Camera Calibration (the measures are taken at Exposure 0);
 - the textured image, when Texture is on;
 - samples: each output pixel's camera value after geometry, lens correction and
   noise reduction, and its source position.

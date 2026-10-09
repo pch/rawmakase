@@ -84,6 +84,7 @@ pub(super) fn local_stage(
     // map (local_tone.rs, clarity.rs).
     let tonal = r.clone();
     let mut cache = cache;
+    let measures = cache.as_ref().map(|c| c.measures.clone());
     // The measured Texture makes a new camera image, channel by channel (texture.rs).
     let texture = develop::texture::measured(r);
     let untextured = (texture != 0.).then(|| im.clone());
@@ -97,6 +98,7 @@ pub(super) fn local_stage(
         scale,
         untextured,
         measured: Some(measurement_copy(full, cache, cancel)?),
+        measures,
     };
     Ok((toned, tonal))
 }

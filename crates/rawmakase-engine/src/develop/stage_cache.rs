@@ -1,6 +1,7 @@
 //! Results of the stages before the per-pixel color pipeline, kept between preview
-//! renders: geometry/lens-warp samples, the measured Texture and the photo's measurement
-//! copy the Shadows/Highlights map is built from.
+//! renders: geometry/lens-warp samples, the measured Texture, the photo's measurement
+//! copy the Shadows/Highlights map is built from, and the scene tone stage's measures
+//! of that copy.
 //! Each key holds only the recipe fields its stage reads, so exposure, curve, HSL
 //! and grading edits reuse them and rerun only the per-pixel stage.
 //!
@@ -33,7 +34,14 @@ pub(crate) struct StageCache {
     pub(crate) masks: Lru<MaskKey, super::masks::MaskWeights>,
     /// Brush masks rasterised in image space.
     pub(crate) rasters: super::masks::RasterCache,
+    /// The scene tone stage's measures of a measurement copy, shared with the renders
+    /// that read them (`Toned::measures`).
+    pub(crate) measures: Arc<MeasuresCache>,
 }
+/// The scene tone stage's measures (`pipeline::tone::photo_measures`), per measurement
+/// copy and the settings they read.
+pub(crate) type MeasuresCache =
+    std::sync::Mutex<Lru<MeasuresKey, crate::develop::scene_tone::PhotoMeasures>>;
 
 pub(crate) struct Lru<K, V> {
     /// Most recently used first.
@@ -92,6 +100,11 @@ impl<K: PartialEq, V> Lru<K, V> {
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }
+    /// The kept values, most recently used first.
+    #[cfg(test)]
+    pub(crate) fn values(&self) -> impl Iterator<Item = &V> {
+        self.entries.iter().map(|e| e.1.as_ref())
+    }
 }
 
 /// Identity of a shared value. Keys hold the value, so its address stays unique.
@@ -107,9 +120,10 @@ impl<T> PartialEq for Same<T> {
     }
 }
 
-/// The recipe as the cached stages read it: the samples.
+/// The recipe as the cached stages read it: the samples, and the photo's measures.
 struct StageRecipes {
     samples: Recipe,
+    measures: Recipe,
 }
 /// Splits `r` into what each cached stage reads. `Recipe` and `Effects` are taken
 /// apart without `..`, so adding a field to either is a compile error here until it is
@@ -134,23 +148,26 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         noise_luma,
         noise_chroma,
         effects,
-        // White balance and the profile render in the per-pixel stage; Shadows and
-        // Highlights there too, from a map built per render; spot removal changes the
-        // source image, which every key holds.
-        wb: _,
-        temperature: _,
-        profile: _,
+        // White balance, the profile and the camera's exposure render in the per-pixel
+        // stage, and the photo's measures read them (Temperature and Tint set the
+        // white balance; the look's strength changes the profile once
+        // `Recipe::resolved` has applied it; kept anyway, so they can only
+        // over-invalidate).
+        wb,
+        temperature,
+        tint,
+        auto_white_balance,
+        profile,
+        profile_amount,
+        camera_exposure,
+        // The measures are taken with Exposure at 0. Shadows and Highlights render per
+        // pixel, from a map built per render; spot removal changes the source image,
+        // which every key holds.
         exposure: _,
-        camera_exposure: _,
         shadows: _,
         highlights: _,
         retouch: _,
         red_eye: _,
-        // The look's strength; its Clarity, Shadows and Highlights render per pixel
-        // once `Recipe::resolved` has added them.
-        profile_amount: _,
-        tint: _,
-        auto_white_balance: _,
         contrast: _,
         whites: _,
         blacks: _,
@@ -185,12 +202,14 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         // keyed by `TextureKey`.
         clarity: _,
         texture: _,
+        // Camera Calibration renders in the per-pixel stage, and the photo's measures
+        // read it.
+        calibration,
+        shadow_tint,
         // Read only by the per-pixel stage and the finishing stages after these.
         channels: _,
         parametric: _,
         splits: _,
-        calibration: _,
-        shadow_tint: _,
         monochrome: _,
         gray_mix: _,
         balance: _,
@@ -244,6 +263,40 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
             },
             ..Default::default()
         },
+        // White balance, the profile's colour and calibration, at the camera's exposure.
+        measures: Recipe {
+            wb: *wb,
+            temperature: *temperature,
+            tint: *tint,
+            auto_white_balance: *auto_white_balance,
+            profile: profile.clone(),
+            profile_amount: *profile_amount,
+            camera_exposure: *camera_exposure,
+            effects: Effects {
+                calibration: *calibration,
+                shadow_tint: *shadow_tint,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    }
+}
+
+/// The photo's measures: the measurement copy they are taken on (whose metadata they
+/// read), the profile matrix and the recipe fields they read.
+#[derive(PartialEq)]
+pub(crate) struct MeasuresKey {
+    copy: Same<CameraImage>,
+    matrix: [[u32; 3]; 3],
+    recipe: Recipe,
+}
+impl MeasuresKey {
+    pub(crate) fn new(copy: &Arc<CameraImage>, r: &Recipe, matrix: [[f32; 3]; 3]) -> Self {
+        Self {
+            copy: Same(copy.clone()),
+            matrix: matrix.map(|row| row.map(f32::to_bits)),
+            recipe: stage_recipes(r).measures,
+        }
     }
 }
 
@@ -371,6 +424,29 @@ mod tests {
         ];
         for (name, r, samples) in cases {
             assert_eq!(changes(&r), samples, "{name}");
+        }
+        // (edit, changes the photo's measures)
+        let measures = |r: &Recipe| stage_recipes(&base).measures != stage_recipes(r).measures;
+        let cases: [(&str, Recipe, bool); 12] = [
+            ("white balance", edit(&|r| r.wb = [1.2, 1., 0.8]), true),
+            ("temperature", edit(&|r| r.temperature = 3000.), true),
+            ("tint", edit(&|r| r.tint = 10.), true),
+            ("profile amount", edit(&|r| r.profile_amount = 0.5), true),
+            ("camera exposure", edit(&|r| r.camera_exposure = 0.3), true),
+            (
+                "calibration",
+                edit(&|r| r.effects.calibration[1] = [0.2, 0.]),
+                true,
+            ),
+            ("shadow tint", edit(&|r| r.effects.shadow_tint = 0.2), true),
+            ("exposure", edit(&|r| r.exposure = 1.), false),
+            ("whites", edit(&|r| r.whites = 0.5), false),
+            ("shadows", edit(&|r| r.shadows = 0.5), false),
+            ("dehaze", edit(&|r| r.effects.dehaze = 0.5), false),
+            ("crop", edit(&|r| r.crop = [0.1, 0.1, 0.9, 0.9]), false),
+        ];
+        for (name, r, changed) in cases {
+            assert_eq!(measures(&r), changed, "{name}");
         }
     }
     #[test]

@@ -64,7 +64,7 @@ impl CurveSet {
     /// its pivot when the recipe measures it.
     pub(super) fn with_photo_measures(im: Source, r: &Recipe, matrix: [[f32; 3]; 3]) -> Self {
         let mut lut = Self::new(r);
-        lut.measure(photo_measures(im, r, matrix), r);
+        lut.measure(cached_photo_measures(im, r, matrix), r);
         if measures_contrast_pivot(r) {
             lut.photo.contrast_pivot = contrast_pivot(im, r, matrix, &lut.measures);
             lut.basic = basic_tone(r, &lut.photo);
@@ -129,8 +129,34 @@ fn basic_tone(
 ) -> Option<crate::develop::basic_tone::BasicTone> {
     crate::develop::basic_tone::BasicTone::new(r.contrast, photo)
 }
+/// `photo_measures`, through the stage cache when the source has its measurement copy
+/// and the cache: kept per copy, matrix and the recipe fields they read, so Exposure and
+/// tone edits reuse them.
+fn cached_photo_measures(
+    im: Source,
+    r: &Recipe,
+    matrix: [[f32; 3]; 3],
+) -> crate::develop::scene_tone::PhotoMeasures {
+    let (Some(copy), Some(cache)) = (im.measured, im.measures) else {
+        return photo_measures(im, r, matrix);
+    };
+    let key = crate::develop::stage_cache::MeasuresKey::new(copy, r, matrix);
+    // Not locked while measuring, whose parallel work may run other renders' tasks.
+    let cache = || {
+        cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    };
+    if let Some(measures) = cache().get(&key) {
+        return *measures;
+    }
+    let measures = photo_measures(im, r, matrix);
+    cache().insert(key, Arc::new(measures), std::mem::size_of_val(&measures));
+    measures
+}
 /// What the scene tone stage measures of the photo: its reduced copy at the stage's
-/// input, with the user's Exposure at 0.
+/// input, with the user's Exposure at 0. Reads only the copy (and its metadata), `matrix`
+/// and the recipe fields `stage_cache::MeasuresKey` holds.
 pub(super) fn photo_measures(
     im: Source,
     r: &Recipe,
@@ -145,7 +171,7 @@ pub(super) fn photo_measures(
     // The white point and the photo's maximum are the camera's: measured at the as-shot
     // white balance, so a white balance change keeps them (the synthetic chart's). A
     // profile's matrices follow the temperature, so its as-shot one is used too.
-    let metadata = &im.metadata;
+    let metadata = &small.metadata;
     let as_shot = Recipe {
         wb: [1.; 3],
         temperature: r
@@ -193,7 +219,7 @@ pub(super) fn photo_measures(
     // balance, before the recipe's. Measured on the synthetic chart, whose white
     // balance is not neutral.
     let clip = (0..3)
-        .map(|c| im.metadata.wb[c].max(1e-3))
+        .map(|c| metadata.wb[c].max(1e-3))
         .fold(0f32, f32::max);
     let white = crate::develop::scene_tone::luminance(exposure_stage(
         scene_color([clip; 3], &as_shot, &lut, shot_matrix, None),
@@ -257,7 +283,7 @@ pub(crate) fn measures_contrast_pivot(r: &Recipe) -> bool {
 /// adjustment that depends on the preview size.
 fn measured_copy(im: Source<'_>) -> std::borrow::Cow<'_, CameraImage> {
     match im.measured {
-        Some(copy) => std::borrow::Cow::Borrowed(copy),
+        Some(copy) => std::borrow::Cow::Borrowed(copy.as_ref()),
         None => std::borrow::Cow::Owned(preview_source(
             Source::new(im.untextured.unwrap_or(im.image)),
             crate::develop::local_tone::MAP_EDGE,

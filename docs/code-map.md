@@ -110,7 +110,7 @@ standalone `rawmakase-ctl`). The last two build without the app.
 | [targeted.rs](../crates/rawmakase-engine/src/develop/targeted.rs) | The Targeted Adjustment Tool's targets, and how a drag is shared among the sliders for a sampled color. |
 | [preview_renderer.rs](../crates/rawmakase-engine/src/develop/preview_renderer.rs) | Stateful preview backend selection, the photo's resolution pyramid, GPU diagnostics and CPU fallback. |
 | [pyramid.rs](../crates/rawmakase-engine/src/develop/pyramid.rs) | Resolution pyramid of the recovered (and retouched) camera image for Fit and zoomed-out previews; patched where spot removal changed. |
-| [stage_cache.rs](../crates/rawmakase-engine/src/develop/stage_cache.rs) | Preview cache of geometry samples, the measurement copy, Texture's detail and image, mask weights and brush rasters, keyed by the recipe fields each stage reads. |
+| [stage_cache.rs](../crates/rawmakase-engine/src/develop/stage_cache.rs) | Preview cache of geometry samples, the measurement copy and the scene tone stage's measures of it, Texture's detail and image, mask weights and brush rasters, keyed by the recipe fields each stage reads. |
 | [gpu/mod.rs](../crates/rawmakase-engine/src/develop/gpu/mod.rs) | Optional compute device, bounded/reused buffers, command submission and readback for preview finishing. |
 | [gpu/finish.wgsl](../crates/rawmakase-engine/src/develop/gpu/finish.wgsl) | Portable sharpening and separable Lanczos resize compute kernels. |
 | [gpu/develop.rs](../crates/rawmakase-engine/src/develop/gpu/develop.rs) | GPU per-pixel color and tone stage: sample buffers kept per stage-cache entry, dispatch and readback. |

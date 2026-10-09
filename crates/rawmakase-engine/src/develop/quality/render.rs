@@ -62,6 +62,7 @@ fn render_resident(
         scale,
         untextured,
         measured: Some(measurement_copy(full, Some(&mut *stages.cache), cancel)?),
+        measures: Some(stages.cache.measures.clone()),
     };
     let Some(mut params) = develop::pipeline::pixel_params::pixel_params(toned.source(), &base)
     else {
