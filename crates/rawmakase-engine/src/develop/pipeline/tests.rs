@@ -34,7 +34,7 @@ fn fixture() -> CameraImage {
     }
 }
 /// Settings earlier releases saved to choose a rendering engine and its operators are
-/// kept as they were, unread: one engine renders every recipe.
+/// dropped as they are read: one engine renders every recipe.
 #[test]
 fn engine_and_operator_settings_of_earlier_releases_are_dropped() -> anyhow::Result<()> {
     let im = fixture();
@@ -340,6 +340,71 @@ fn clipped_channels_do_not_make_magenta_highlights() -> Result<()> {
             (p[0] - p[1]).abs() < 0.0001 && (p[1] - p[2]).abs() < 0.0001,
             "{p:?}"
         );
+    }
+    Ok(())
+}
+/// Every scene stage control, and the settings after the stage that read the photo.
+fn scene_stage_recipe() -> Recipe {
+    let mut r = Recipe {
+        exposure: 0.4,
+        whites: 0.5,
+        blacks: -0.3,
+        shadows: 0.4,
+        highlights: -0.5,
+        contrast: 0.3,
+        saturation: 0.2,
+        ..Default::default()
+    };
+    r.effects.dehaze = 0.3;
+    r
+}
+/// The display render is the stages after the scene stage replayed from its output,
+/// with the same photo measures: nothing after the scene stage is folded into it.
+#[test]
+fn the_display_render_replays_the_stages_after_the_scene_stage() {
+    let im = fixture();
+    let r = scene_stage_recipe();
+    let matrix = profile_matrix(&im.metadata, &r);
+    let lut = CurveSet::with_photo_measures((&im).into(), &r, matrix);
+    let mut tap = CurveSet::with_photo_measures((&im).into(), &r, matrix);
+    tap.output = PixelOutput::SceneOutput;
+    for (i, p) in im.pixels.iter().enumerate() {
+        let pos = [(i % 12) as f32, (i / 12) as f32];
+        let shown = process_pixel(*p, &r, &lut, matrix, pos, None);
+        let scene = process_pixel(*p, &r, &tap, matrix, pos, None);
+        assert_eq!(shown, color_stage(profile_stage(scene, &r), &r, &lut, None));
+    }
+}
+/// The scene stage reads nothing computed after it: settings applied after the stage
+/// leave its output unchanged.
+#[test]
+fn settings_after_the_scene_stage_leave_it_unchanged() -> anyhow::Result<()> {
+    let im = fixture();
+    let scene = |r: &Recipe| {
+        crate::develop::quality::render_stage(
+            &im,
+            r,
+            crate::develop::quality::Stage::SceneOutput,
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+    };
+    let base = scene_stage_recipe();
+    let expected = scene(&base)?.pixels;
+    let edits: [&dyn Fn(&mut Recipe); 9] = [
+        &|r| r.contrast = -0.6,
+        &|r| r.curve.points = vec![[0., 0.], [0.5, 0.7], [1., 1.]],
+        &|r| r.effects.parametric = [0.3, -0.2, 0.1, 0.],
+        &|r| r.saturation = -0.5,
+        &|r| r.vibrance = 0.6,
+        &|r| r.hsl[2] = [0.2, -0.4, 0.3],
+        &|r| r.grading[0] = [0.3, 0.4, 0.],
+        &|r| r.effects.vignette = -0.5,
+        &|r| r.effects.monochrome = true,
+    ];
+    for (i, edit) in edits.iter().enumerate() {
+        let mut r = base.clone();
+        edit(&mut r);
+        assert_eq!(scene(&r)?.pixels, expected, "edit {i}");
     }
     Ok(())
 }

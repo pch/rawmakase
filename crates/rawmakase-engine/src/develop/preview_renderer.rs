@@ -439,7 +439,7 @@ mod tests {
             ..Default::default()
         };
         r.effects.clarity = 0.3;
-        let edits: [&dyn Fn(&mut Recipe); 8] = [
+        let edits: [&dyn Fn(&mut Recipe); 16] = [
             &|_| {},
             &|r| r.exposure = 0.5,
             &|r| r.effects.clarity = -0.2,
@@ -448,6 +448,28 @@ mod tests {
             &|r| r.crop = [0.1, 0., 0.9, 1.],
             &|r| r.noise_luma = 0.4,
             &|r| r.contrast = 0.3,
+            &|r| r.whites = 0.6,
+            &|r| r.blacks = -0.4,
+            &|r| r.highlights = -0.5,
+            &|r| r.effects.dehaze = 0.4,
+            &|r| r.effects.calibration[2] = [0.2, -0.1],
+            &|r| r.profile_amount = 0.5,
+            &|r| {
+                use crate::model::masks::{LocalAdjust, MaskComponent, MaskGroup, MaskShape};
+                r.masks.push(MaskGroup {
+                    components: vec![MaskComponent::new(MaskShape::Linear {
+                        from: [0.4, 0.5],
+                        to: [0.6, 0.5],
+                    })],
+                    adjust: LocalAdjust {
+                        exposure: 0.5,
+                        shadows: 0.3,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                });
+            },
+            &|r| r.masks[0].adjust.whites = 0.4,
         ];
         for edit in edits {
             edit(&mut r);

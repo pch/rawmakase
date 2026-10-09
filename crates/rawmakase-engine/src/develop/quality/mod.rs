@@ -160,13 +160,19 @@ mod tests {
     #[test]
     fn region_matches_full_with_large_radius_and_local_tones() -> Result<()> {
         let im = fixture();
-        let r = Recipe {
+        // Every scene stage control: a region measures the whole photo.
+        let mut r = Recipe {
             sharpening_radius: 3.,
             sharpening: 0.8,
             shadows: 0.5,
             highlights: -0.4,
+            whites: 0.5,
+            blacks: -0.3,
             ..Default::default()
         };
+        r.effects.dehaze = 0.3;
+        r.effects.clarity = -0.4;
+        r.effects.texture = 0.3;
         let full = render(&im, &r.checked()?, 0, None)?;
         for [x, y, w, h] in [[0, 0, 20, 30], [30, 25, 40, 40], [80, 60, 16, 20]] {
             let tile = render(&im, &r.checked()?, 0, Some([x, y, w, h]))?;
