@@ -31,7 +31,7 @@ output's white or below 2^-10 are left out of the fits.
   over [-8, 4].
 - Highlights (synthetic scenes): the gain as a function of B minus the key, the mean of
   L's 75th and 1st percentiles, over [-6, 7].
-- Dehaze (synthetic scenes): each channel's gain as a function of its log2 level minus
+- Dehaze (training photos): each channel's gain as a function of its log2 level minus
   L's 99th percentile, over [-12, 1].
   Each is a 48-bin piecewise-linear table per slider position, fitted by least squares
   with a second-difference smoothness penalty.
@@ -84,8 +84,9 @@ def name(kind, v):
 
 
 SYNTH_RENDERS = {'default': {}} | {name(k, v): {SETTINGS[k]: f'{v * 100:g}'}
-                                   for k, vs in [('H', SH), ('D', DEHAZE), ('C', CLARITY)] for v in vs}
-PHOTO_RENDERS = {'default': {}} | {name('S', v): {SETTINGS['S']: f'{v * 100:g}'} for v in SH}
+                                   for k, vs in [('H', SH), ('C', CLARITY)] for v in vs}
+PHOTO_RENDERS = {'default': {}} | {name(k, v): {SETTINGS[k]: f'{v * 100:g}'}
+                                   for k, vs in [('S', SH), ('D', DEHAZE)] for v in vs}
 
 
 # Image helpers.
@@ -269,17 +270,6 @@ def synthetic_tables(folder, tone):
             samples.append(((m.B - (0.5 * pct(m.L, 0.75) + 0.5 * pct(m.L, 0.01)))[ok], t[ok]))
         out['H'].append(fit_table(samples, lo, hi))
         report(name('H', v), samples, out['H'][-1], lo, hi)
-    lo, hi = RANGES['D']
-    out['D'] = []
-    for v in DEHAZE:
-        samples = []
-        for seed, m, inv, render in scenes:
-            d, r = render('default'), render(name('D', v))
-            ok = (d > 2 ** -12) & (r > 2 ** -12) & (d < 0.99) & (r < 0.99) & (m.x > 2 ** -10)
-            t = log_gain(inv(r.reshape(-1)).reshape(r.shape), inv(d.reshape(-1)).reshape(d.shape))
-            samples.append(((np.log2(np.maximum(m.x, 1e-9)) - pct(m.L, 0.99))[ok], t[ok]))
-        out['D'].append(fit_table(samples, lo, hi))
-        report(name('D', v), samples, out['D'][-1], lo, hi)
     features = []
     for seed, m, inv, render in scenes:
         key = 0.25 * pct(m.L, 0.999) + 0.75 * pct(m.L, 0.99)
@@ -300,8 +290,8 @@ def synthetic_tables(folder, tone):
     return out
 
 
-def shadows_table(d):
-    """Shadows from the training photos with complete renders and taps."""
+def photo_tables(d):
+    """Shadows and Dehaze from the training photos with complete renders and taps."""
     photos = []
     for dng in sorted((d / 'dng').glob('*.dng')):
         tap = d / 'maps' / f'{dng.stem}.npz'
@@ -318,20 +308,33 @@ def shadows_table(d):
         # The photo's own global curve: scene output against input luminance, made monotone.
         o = np.argsort(lin.ravel())
         xs, ys = lin.ravel()[o], np.maximum.accumulate((xout @ YW).ravel()[o])
-        photos.append((L, B, lambda y, xs=xs, ys=ys: np.interp(y, ys, xs),
+        photos.append((xin, L, B, lambda y, xs=xs, ys=ys: np.interp(y, ys, xs),
                        {n: area(camera_raw.read_linear(p), *shape) for n, p in renders.items()}))
     print(f'{len(photos)} training photos', flush=True)
     lo, hi = RANGES['S']
     tables = []
     for v in SH:
         samples = []
-        for L, B, inv, renders in photos:
+        for xin, L, B, inv, renders in photos:
             d, r = renders['default'] @ YW, renders[name('S', v)] @ YW
             ok = (d > 2 ** -11) & (r > 2 ** -11) & (renders['default'].max(-1) < 0.98) & (L > -10)
             samples.append(((B - np.log2(np.mean(2.0 ** L)))[ok], log_gain(inv(r), inv(d))[ok]))
         tables.append(fit_table(samples, lo, hi))
         print(f"{name('S', v)}: {sum(t.size for _, t in samples)} samples", flush=True)
-    return tables
+    lo, hi = RANGES['D']
+    dehaze = []
+    for v in DEHAZE:
+        samples = []
+        for xin, L, B, inv, renders in photos:
+            d, r = renders['default'], renders[name('D', v)]
+            for c in range(3):
+                ok = ((d[..., c] > 2 ** -11) & (r[..., c] > 2 ** -11) & (d.max(-1) < 0.98) & (r.max(-1) < 0.98)
+                      & (xin[..., c] > 2 ** -12))
+                u = np.log2(np.maximum(xin[..., c], 1e-9)) - pct(L, 0.99)
+                samples.append((u[ok], log_gain(inv(r[..., c]), inv(d[..., c]))[ok]))
+        dehaze.append(fit_table(samples, lo, hi))
+        print(f"{name('D', v)}: {sum(t.size for _, t in samples)} samples", flush=True)
+    return tables, dehaze
 
 
 # Rust output.
@@ -349,7 +352,7 @@ def family(const, tables, values, lo, hi):
 
 LOCAL_HEADER = '''//! Camera Raw 18.7's Shadows, Highlights and Dehaze on scene values (process version
 //! 2012), measured with a linear profile (`scripts/corpus/scene-tone-local.py`):
-//! Shadows on the training photos, Highlights and Dehaze on synthetic scenes. Each
+//! Shadows and Dehaze on the training photos, Highlights on synthetic scenes. Each
 //! table is a log2 gain as a function of a level relative to an image key: Shadows'
 //! and Highlights' of the local base level (local_tone.rs) and their keys, Dehaze's of
 //! each channel's level relative to the photo's 99th percentile. Rows are the slider
@@ -437,12 +440,12 @@ def photos(args):
 
 
 def tables(args):
-    S = shadows_table(args.photos.resolve())
+    S, D = photo_tables(args.photos.resolve())
     t = synthetic_tables(args.synth.resolve(), args.tone.resolve())
     out = args.out.resolve()
     (out / 'local_tone_data.rs').write_text(
         LOCAL_HEADER + family('SHADOWS', S, SH, *RANGES['S']) + family('HIGHLIGHTS', t['H'], SH, *RANGES['H'])
-        + family('DEHAZE', t['D'], DEHAZE, *RANGES['D']))
+        + family('DEHAZE', D, DEHAZE, *RANGES['D']))
     c = t['C']
     (out / 'clarity_data.rs').write_text(
         CLARITY_HEADER + weights('WEIGHTS_M100', c['C-100']) + weights('WEIGHTS_M50', c['C-50'])

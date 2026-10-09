@@ -142,7 +142,11 @@ with.
 Dehaze works on each channel by its level relative to the photo's bright end (the 99th
 percentile of luminance): no change at the top and about −0.5 EV a few stops below at
 +40. A curve per amount explains ±40 to 0.10 (doing nothing: 0.36–0.64) and +100 to
-0.46 (1.22) in cross-validation; the rest is spatial.
+0.46 (1.22) in cross-validation; the rest is spatial. On the 22 training photos the
+same curves fitted on the photos themselves do better at every amount (cross-validated
+by photo, per-channel gain in EV): +100 0.54 against 0.69 for the synthetic curves and
+0.90 for doing nothing, +40 0.16 (0.18, 0.30), −40 0.14 (0.16, 0.57), −100 0.34 (0.39,
+1.45); RAWmakase uses the photo-fitted curves.
 
 ### Masks
 
