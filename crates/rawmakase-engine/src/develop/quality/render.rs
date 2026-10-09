@@ -61,8 +61,6 @@ fn render_resident(
         source.clone()
     };
     let mut spatial = base.clone();
-    spatial.shadows = 0.;
-    spatial.highlights = 0.;
     if develop::clarity::measured(&base) != 0. {
         spatial.effects.clarity = 0.;
     }
@@ -82,18 +80,15 @@ fn render_resident(
             return Ok(None);
         };
         let vignetting = develop::pipeline::vignetting_gpu_params(source, &spatial);
-        // As `local_blurs`: 16 and 64 px on a 6000 px long edge, and 3 px for Texture.
+        // As `local_blurs`: 16 px on a 6000 px long edge, and 3 px for Texture.
         let long = source.width.max(source.height) as f32;
         let radius = |px: f32| ((px / 6000. * long).round() as u32).max(1);
         let radii = [
             Some(radius(16.)),
-            Some(radius(64.)),
             texture.then(|| ((3. * scale).round() as u32).max(1)),
         ];
         let sliders = [
             spatial.exposure + spatial.camera_exposure,
-            spatial.shadows,
-            spatial.highlights,
             spatial.effects.clarity,
             spatial.effects.texture,
         ];

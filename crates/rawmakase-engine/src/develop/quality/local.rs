@@ -62,12 +62,11 @@ pub(super) fn box_blur(
 pub(crate) struct LocalBlurs {
     logs: Vec<f32>,
     fine: Vec<f32>,
-    broad: Vec<f32>,
     texture: Option<Vec<f32>>,
 }
 impl LocalBlurs {
     fn bytes(&self) -> usize {
-        (self.logs.len() * 3 + self.texture.as_ref().map_or(0, Vec::len)) * 4
+        (self.logs.len() * 2 + self.texture.as_ref().map_or(0, Vec::len)) * 4
     }
     /// The gain local Clarity and Texture give a sample at (`x`, `y`) of the `w` × `h`
     /// image the blurs were made from: the global sliders' formula (`apply_local`) on
@@ -158,13 +157,12 @@ pub(super) fn local_blurs(
             luminance(rgb).max(1e-6).log2()
         })
         .collect();
-    // Radii scale with the image (16 and 64 px on a 6000 px long edge), so previews
-    // rendered from reduced images keep the same local contrast as full renders.
+    // Radii scale with the image (16 px on a 6000 px long edge), so previews rendered
+    // from reduced images keep the same local contrast as full renders.
     let long = im.width.max(im.height) as f32;
     let radius = |px: f32| ((px / 6000. * long).round() as usize).max(1);
     let size = (im.width as usize, im.height as usize);
     let fine = box_blur(&logs, size.0, size.1, radius(16.), cancel)?;
-    let broad = box_blur(&logs, size.0, size.1, radius(64.), cancel)?;
     let texture = if texture {
         let radius = ((3. * scale).round() as usize).max(1);
         Some(box_blur(&logs, size.0, size.1, radius, cancel)?)
@@ -175,12 +173,10 @@ pub(super) fn local_blurs(
     Ok(LocalBlurs {
         logs,
         fine,
-        broad,
         texture,
     })
 }
-/// Shadows, Highlights (before engine 4), Clarity and Texture as a per-pixel gain of
-/// the camera image.
+/// Negative Clarity and Texture as a per-pixel gain of the camera image.
 fn apply_local(b: &LocalBlurs, r: &Recipe, cancel: &AtomicBool) -> Result<Vec<f32>> {
     let exposure = r.exposure + r.camera_exposure;
     let mut gains = vec![0.; b.logs.len()];
@@ -195,15 +191,11 @@ fn apply_local(b: &LocalBlurs, r: &Recipe, cancel: &AtomicBool) -> Result<Vec<f3
             logs + d / (1. + d * d)
         };
         let fine = guide(b.fine[i]);
-        let base = (fine + guide(b.broad[i])) * 0.5;
-        let y = 2f32.powf(base);
-        let shadow = (-y * 6.).exp();
-        let high = y / (y + 0.5);
         let clarity = (logs - fine).clamp(-1., 1.) * r.effects.clarity * 0.6;
         let texture = b.texture.as_ref().map_or(0., |t| {
             (b.logs[i] - t[i]).clamp(-0.5, 0.5) * r.effects.texture * 0.7
         });
-        *gain = 2f32.powf(r.shadows * shadow * 2. + r.highlights * high * 2. + clarity + texture);
+        *gain = 2f32.powf(clarity + texture);
     });
     check_cancel(cancel)?;
     Ok(gains)
@@ -223,8 +215,8 @@ pub(super) fn local_tones(
     }
     Ok(out)
 }
-/// Clarity, Texture and, before engine 4, Shadows and Highlights, as a gain of the
-/// camera image, plus the recipe for the per-pixel stage that follows.
+/// Negative Clarity and Texture as a gain of the camera image, plus the recipe for the
+/// per-pixel stage that follows.
 /// `im` with the measured Texture `amount`: its detail made once per image and kept,
 /// with the result for the amount, in the stage cache when there is one.
 pub(super) fn textured(
@@ -260,8 +252,6 @@ pub(super) fn local_stage(
     // Shadows and Highlights render in the pixel pipeline (local_tone.rs); this
     // pre-pass only carries negative Clarity and what Texture leaves.
     let mut spatial = r.clone();
-    spatial.shadows = 0.;
-    spatial.highlights = 0.;
     // The measured positive Clarity is part of the map (clarity.rs).
     if develop::clarity::measured(r) != 0. {
         spatial.effects.clarity = 0.;
@@ -286,15 +276,11 @@ pub(super) fn local_stage(
         reduced: None,
         untextured,
     };
-    if spatial.shadows != 0.
-        || spatial.highlights != 0.
-        || spatial.effects.clarity != 0.
-        || spatial.effects.texture != 0.
-    {
+    if spatial.effects.clarity != 0. || spatial.effects.texture != 0. {
         let (gain, key) = local_gain(im, &spatial, scale, cancel, cache.as_deref_mut())?;
         (toned.gain, toned.gain_key) = (Some(gain), key);
     }
-    // The engine 4 Shadows/Highlights map starts from a reduced copy of the toned image,
+    // The Shadows/Highlights map starts from a reduced copy of the toned image,
     // for the global sliders or a mask's.
     if let Some(cache) = cache
         && develop::pipeline::pixel_params::needs_reduced(r)

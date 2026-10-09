@@ -5,8 +5,8 @@
 // versions are the reference; functions keep their names and order. Every entry point
 // uses its own bindings.
 //
-// The log luminance and its blurs share one buffer, `n` values each: logs, fine,
-// broad and, for Texture, the texture blur. The gain is computed from them where it
+// The log luminance and its blurs share one buffer, `n` values each: logs, fine and,
+// for Texture, the texture blur. The gain is computed from them where it
 // is read, and kept only for the pixels a region samples (`region_gain`).
 
 // Box blur along rows (axis 0) or columns (axis 1) as the CPU does it: a running sum
@@ -96,18 +96,12 @@ fn gain_at(i: u32) -> f32 {
     let raw = local_tones[i];
     let logs = raw + exposure;
     let fine = logs + guide(local_tones[n + i] + exposure - logs);
-    let base = (fine + (logs + guide(local_tones[2u * n + i] + exposure - logs))) * 0.5;
-    let y = exp2(base);
-    let shadow = exp(-y * 6.0);
-    let high = y / (y + 0.5);
-    let clarity = clamp(logs - fine, -1.0, 1.0) * s(S_SLIDERS + 3u) * 0.6;
+    let clarity = clamp(logs - fine, -1.0, 1.0) * s(S_SLIDERS + 1u) * 0.6;
     var texture = 0.0;
-    if s(S_SLIDERS + 5u) != 0.0 {
-        texture = clamp(raw - local_tones[3u * n + i], -0.5, 0.5) * s(S_SLIDERS + 4u) * 0.7;
+    if s(S_SLIDERS + 3u) != 0.0 {
+        texture = clamp(raw - local_tones[2u * n + i], -0.5, 0.5) * s(S_SLIDERS + 2u) * 0.7;
     }
-    return exp2(
-        s(S_SLIDERS + 1u) * shadow * 2.0 + s(S_SLIDERS + 2u) * high * 2.0 + clarity + texture,
-    );
+    return exp2(clarity + texture);
 }
 // The local-tone gain of the pixels a region samples, kept for `px`.
 @compute @workgroup_size(256)

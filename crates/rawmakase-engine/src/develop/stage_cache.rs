@@ -140,16 +140,18 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         noise_luma,
         noise_chroma,
         effects,
-        // Shadows/Highlights and their exposure are keyed by `LocalKey`; spot removal
-        // changes the source image, which every key holds.
+        // Shadows and Highlights render in the per-pixel stage, from a map built per
+        // render; exposure edits keep the local-tone gain (see `LocalKey`); spot
+        // removal changes the source image, which every key holds.
         exposure: _,
         camera_exposure: _,
         shadows: _,
         highlights: _,
         retouch: _,
         red_eye: _,
-        // The look's strength; its Shadows, Highlights and Clarity are keyed by
-        // `LocalKey` once `Recipe::resolved` has added them.
+        // The look's strength; its Clarity is keyed by `LocalKey` once
+        // `Recipe::resolved` has added it, and its Shadows and Highlights render per
+        // pixel.
         profile_amount: _,
         tint: _,
         auto_white_balance: _,
@@ -285,32 +287,20 @@ impl BlurKey {
         }
     }
 }
-/// The local-tone gain: blurs plus the sliders applied to them. Exposure only
-/// matters to Shadows and Highlights. Keyed by the blurs' inputs rather than the blurs
-/// themselves, so the gain is found again even when the blurs were too large to keep
-/// (a 61-megapixel photo's), and exposure edits at 100% do not recompute them.
+/// The local-tone gain: blurs plus the Clarity and Texture applied to them. Keyed by
+/// the blurs' inputs rather than the blurs themselves, so the gain is found again even
+/// when the blurs were too large to keep (a 61-megapixel photo's), and exposure edits
+/// at 100% do not recompute them.
 #[derive(Clone, PartialEq)]
 pub(crate) struct LocalKey {
     blurs: BlurKey,
-    sliders: [u32; 5],
+    sliders: [u32; 2],
 }
 impl LocalKey {
     pub(crate) fn new(blurs: BlurKey, r: &Recipe) -> Self {
-        let exposure = if r.shadows != 0. || r.highlights != 0. {
-            r.exposure + r.camera_exposure
-        } else {
-            0.
-        };
         Self {
             blurs,
-            sliders: [
-                exposure,
-                r.shadows,
-                r.highlights,
-                r.effects.clarity,
-                r.effects.texture,
-            ]
-            .map(f32::to_bits),
+            sliders: [r.effects.clarity, r.effects.texture].map(f32::to_bits),
         }
     }
 }

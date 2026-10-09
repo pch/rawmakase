@@ -59,8 +59,8 @@ slots! {
     REDUCED: 2,
     // Workgroups per row of the dispatch.
     COUNT: 1,
-    // Exposure, Shadows, Highlights, Clarity, Texture, texture blur.
-    SLIDERS: 6,
+    // Exposure, Clarity, Texture, texture blur.
+    SLIDERS: 4,
     // x, y, width, height of the pixels `gains` holds.
     BOX: 4,
     // Workgroups per row of `region_gain`.
@@ -80,7 +80,8 @@ pub(crate) fn wgsl_prelude() -> String {
 mod tests {
     use super::*;
 
-    /// The offsets the shader used when they were written out by hand.
+    /// The offsets the shader used when they were written out by hand, less the
+    /// local gain's Shadows and Highlights, which render per pixel.
     #[test]
     fn slots_keep_the_offsets_the_shader_was_written_with() {
         let offsets: Vec<(&str, usize)> = ALL.iter().map(|(n, r)| (*n, r.start)).collect();
@@ -117,11 +118,11 @@ mod tests {
                 ("REDUCED", 57),
                 ("COUNT", 59),
                 ("SLIDERS", 60),
-                ("BOX", 66),
-                ("BOX_COUNT", 70),
-                ("MANUAL", 72),
+                ("BOX", 64),
+                ("BOX_COUNT", 68),
+                ("MANUAL", 70),
             ]
         );
-        assert_eq!(HEADER, 75);
+        assert_eq!(HEADER, 73);
     }
 }

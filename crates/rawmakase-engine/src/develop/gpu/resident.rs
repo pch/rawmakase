@@ -37,8 +37,8 @@ const SAMPLES: usize = 4;
 pub(crate) struct LocalTones {
     buffer: wgpu::Buffer,
     texture: bool,
-    /// Exposure, Shadows, Highlights, Clarity, Texture.
-    sliders: [f32; 5],
+    /// Exposure, Clarity, Texture.
+    sliders: [f32; 3],
 }
 pub(super) struct Resident {
     logs_layout: wgpu::BindGroupLayout,
@@ -320,23 +320,23 @@ impl Processor {
     }
     /// The local-tone stage of `image` on the device, as `quality::local_blurs`
     /// computes its blurs on the CPU; the gain follows from `sliders` (exposure,
-    /// Shadows, Highlights, Clarity, Texture) where it is read. `camera` holds the camera
+    /// Clarity, Texture) where it is read. `camera` holds the camera
     /// stage of the blurs' recipe; `vignetting` the built-in vignetting and its radial
-    /// table; `radii` the fine, broad and (for Texture) texture box radii.
+    /// table; `radii` the fine and (for Texture) texture box radii.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn local_tones(
         &mut self,
         image: &Arc<CameraImage>,
         camera: &PixelParams,
         vignetting: Option<&([f32; 4], Vec<f32>)>,
-        radii: [Option<u32>; 3],
-        sliders: [f32; 5],
+        radii: [Option<u32>; 2],
+        sliders: [f32; 3],
         key: BlurKey,
         cancel: &AtomicBool,
     ) -> Result<LocalTones> {
         ensure!(self.fits_resident(image), "Photo exceeds GPU buffer limits");
         let photo = self.photo(image);
-        let texture = radii[2].is_some();
+        let texture = radii[1].is_some();
         if let Some((kept, buffer)) = &self.resident().blurs
             && *kept == key
         {
@@ -350,7 +350,7 @@ impl Processor {
         let device = self.device.clone();
         let (w, h) = (image.width, image.height);
         let n = w as u64 * h as u64;
-        let tones = self.buffer("Local tones", n * 4 * (3 + texture as u64));
+        let tones = self.buffer("Local tones", n * 4 * (2 + texture as u64));
         let mut encoder = device.create_command_encoder(&Default::default());
         let init = |label, contents: &[u8], usage| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -420,7 +420,7 @@ impl Processor {
         let prefix = self.buffer("Running sums", n * 4);
         let rows = self.buffer("Row blur", n * 4);
         let radii: Vec<u32> = radii.into_iter().flatten().collect();
-        ensure!(radii.len() >= 2, "Missing blur radii");
+        ensure!(!radii.is_empty(), "Missing blur radii");
         for (slot, radius) in radii.into_iter().enumerate() {
             // Rows of the logs into `rows`, then its columns into the blur's slot.
             let target = (slot as u32 + 1) * n as u32;
@@ -464,7 +464,7 @@ impl Processor {
         if let Some(t) = tones {
             header[sampling::GAIN.start] = 1.;
             let [sliders @ .., blur] = &mut header[sampling::SLIDERS] else {
-                unreachable!("six slider slots")
+                unreachable!("four slider slots")
             };
             sliders.copy_from_slice(&t.sliders);
             *blur = t.texture as u8 as f32;
