@@ -447,6 +447,8 @@ impl eframe::App for Editor {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         // AppKit moves the traffic lights back during layout passes.
         fastframe_macos::align_traffic_lights(frame, ui.ctx(), workspace::BAR_HEIGHT);
+        #[cfg(windows)]
+        crate::platform::taskbar_icon(frame);
         self.draw(ui);
     }
     // fastframe-macos turns on eframe's glow feature, which adds the context.
@@ -454,13 +456,59 @@ impl eframe::App for Editor {
         self.exit();
     }
 }
+/// The largest PNG stored in an ICO directory. RAWmakase's Windows icon is a
+/// set of PNG images, and the window wants the 256×256 one.
+pub(crate) fn largest_png_in_ico(ico: &[u8]) -> Option<&[u8]> {
+    if ico.len() < 6 {
+        return None;
+    }
+    let count = u16::from_le_bytes(ico[4..6].try_into().ok()?) as usize;
+    let mut best: Option<(u32, &[u8])> = None;
+    for index in 0..count {
+        let entry = ico.get(6 + index * 16..6 + (index + 1) * 16)?;
+        let width = match entry[0] {
+            0 => 256,
+            width => u32::from(width),
+        };
+        let size = u32::from_le_bytes(entry[8..12].try_into().ok()?) as usize;
+        let offset = u32::from_le_bytes(entry[12..16].try_into().ok()?) as usize;
+        let bytes = ico.get(offset..offset.checked_add(size)?)?;
+        if bytes.starts_with(b"\x89PNG") && best.is_none_or(|(chosen, _)| width > chosen) {
+            best = Some((width, bytes));
+        }
+    }
+    best.map(|(_, bytes)| bytes)
+}
+
+fn window_icon() -> egui::IconData {
+    #[cfg(windows)]
+    if let Some(icon) = windows_window_icon() {
+        return icon;
+    }
+    egui::IconData::default()
+}
+
+#[cfg(windows)]
+fn windows_window_icon() -> Option<egui::IconData> {
+    let png = largest_png_in_ico(include_bytes!("../../packaging/windows/rawmakase.ico"))?;
+    let image = image::load_from_memory(png).ok()?.into_rgba8();
+    let (width, height) = (image.width(), image.height());
+    Some(egui::IconData {
+        rgba: image.into_raw(),
+        width,
+        height,
+    })
+}
+
 pub fn run(path: Option<PathBuf>, launch: crate::updates::Launch) -> anyhow::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("RAWmakase")
-            // An empty icon keeps the bundle's and desktop entry's icon;
-            // otherwise eframe replaces it with egui's logo while running.
-            .with_icon(egui::IconData::default())
+            // An empty icon keeps the macOS bundle's and Linux desktop entry's
+            // icon; otherwise eframe replaces it with egui's logo while running.
+            // On Windows that empty value leaves the title bar blank, so the
+            // window gets the same artwork embedded in the executable.
+            .with_icon(window_icon())
             .with_inner_size([1440., 960.])
             .with_min_inner_size([900., 650.])
             // On macOS the workspace bar is the title bar, under the traffic
