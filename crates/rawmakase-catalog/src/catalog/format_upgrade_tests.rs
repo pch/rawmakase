@@ -280,3 +280,123 @@ fn a_failed_upgrade_leaves_the_catalog_and_its_backup_intact() -> Result<()> {
     );
     Ok(())
 }
+
+/// A save or snapshot that fails its checks, or fails as it writes, leaves an
+/// earlier catalog as it was: the upgrade belongs to the write that needs it.
+#[test]
+fn a_failed_save_or_snapshot_does_not_upgrade_the_catalog() -> Result<()> {
+    let (dir, path, file, id) = earlier_catalog()?;
+    let before = stored(&Connection::open(&path)?, id)?;
+    let mut cat = Catalog::open(&path)?;
+    let edit = cat.load_edit(id, &file)?.unwrap();
+    // Checks first: a missing file, a changed one, a snapshot without a name.
+    let missing = dir.path().join("photos/missing.dng");
+    assert!(
+        cat.save_edit(
+            id,
+            &missing,
+            &edit.recipe,
+            &edit.export,
+            HistoryUpdate::Keep
+        )
+        .is_err()
+    );
+    let changed = dir.path().join("photos/changed.dng");
+    std::fs::write(&changed, b"another file")?;
+    assert!(
+        cat.save_edit(
+            id,
+            &changed,
+            &edit.recipe,
+            &edit.export,
+            HistoryUpdate::Keep
+        )
+        .is_err()
+    );
+    assert!(cat.add_snapshot(id, "  ", &edit.recipe).is_err());
+    assert_eq!(cat.format_version()?, 2);
+    assert!(backups(dir.path())?.is_empty());
+    // A write that fails: the upgrade rolls back with it.
+    assert!(cat.update_snapshot(i64::MAX, &edit.recipe).is_err());
+    assert_eq!(cat.format_version()?, 2);
+    drop(cat);
+    let after = stored(&Connection::open(&path)?, id)?;
+    assert_eq!(
+        (after.recipe, after.snapshot, after.history),
+        (before.recipe, before.snapshot, before.history)
+    );
+    Ok(())
+}
+
+/// The upgrade removes the obsolete settings from History's recipes and nothing
+/// else: fields of a later History format stay where they were.
+#[test]
+fn the_upgrade_keeps_what_it_does_not_know_in_a_history() -> Result<()> {
+    let (_dir, path, file, id) = earlier_catalog()?;
+    let mut origin = earlier_fields(0.);
+    origin.insert("big_setting".into(), 0.into());
+    let history = serde_json::json!({
+        "version": 1,
+        "pool": [{"long": "value"}],
+        "origin": {"fields": origin, "pooled": {"big_setting": 0}, "state_extra": 1},
+        "steps": [{"name": "Exposure", "value": "+0.50", "state": {"fields": earlier_fields(0.5)},
+                   "step_extra": [1]}],
+        "applied": 1,
+        "history_extra": {"a": true},
+    });
+    let db = Connection::open(&path)?;
+    db.execute(
+        "UPDATE develop_history SET data=?1 WHERE photo=?2",
+        rusqlite::params![compress(&history)?, id.0],
+    )?;
+    drop(db);
+    let mut cat = Catalog::open(&path)?;
+    let edit = cat.load_edit(id, &file)?.unwrap();
+    cat.save_edit(id, &file, &edit.recipe, &edit.export, HistoryUpdate::Keep)?;
+    drop(cat);
+    let after = decompress(&stored(&Connection::open(&path)?, id)?.history)?;
+    let mut expected = history;
+    for pointer in ["/origin/fields", "/steps/0/state/fields"] {
+        let fields = expected
+            .pointer_mut(pointer)
+            .unwrap()
+            .as_object_mut()
+            .unwrap();
+        crate::model::saved_format::drop_obsolete_settings(fields);
+    }
+    assert_eq!(after, expected);
+    Ok(())
+}
+
+/// A damaged edit (here a setting given twice) is not one the upgrade reads, so it
+/// stays as it was, still refused, rather than made readable by the rewrite.
+#[test]
+fn the_upgrade_leaves_a_damaged_edit_as_it_was() -> Result<()> {
+    let (_dir, path, file, id) = earlier_catalog()?;
+    let damaged = r#"{"engine":3,"exposure":0.5,"exposure":1.5}"#;
+    // A History giving a setting twice: reading collapses it, so it isn't rewritten.
+    let history = format!(
+        r#"{{"version":1,"pool":[],"origin":{{"fields":{damaged}}},"steps":[],"applied":0}}"#
+    );
+    let mut z = ZlibEncoder::new(Vec::new(), Compression::default());
+    z.write_all(history.as_bytes())?;
+    let history = z.finish()?;
+    let db = Connection::open(&path)?;
+    db.execute(
+        "UPDATE develop_snapshots SET recipe=?1 WHERE photo=?2",
+        rusqlite::params![damaged, id.0],
+    )?;
+    db.execute(
+        "UPDATE develop_history SET data=?1 WHERE photo=?2",
+        rusqlite::params![history, id.0],
+    )?;
+    drop(db);
+    let mut cat = Catalog::open(&path)?;
+    let edit = cat.load_edit(id, &file)?.unwrap();
+    cat.save_edit(id, &file, &edit.recipe, &edit.export, HistoryUpdate::Keep)?;
+    assert_eq!(cat.format_version()?, VERSION);
+    drop(cat);
+    let after = stored(&Connection::open(&path)?, id)?;
+    assert_eq!((after.snapshot.as_str(), after.history), (damaged, history));
+    Ok(())
+}

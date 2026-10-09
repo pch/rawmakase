@@ -137,14 +137,14 @@ pub fn encode(history: &SavedHistory) -> Result<Vec<u8>> {
     compress(&stored)
 }
 
-fn compress(stored: &Stored) -> Result<Vec<u8>> {
+fn compress(stored: &impl Serialize) -> Result<Vec<u8>> {
     let mut z = ZlibEncoder::new(Vec::new(), Compression::default());
     serde_json::to_writer(&mut z, stored)?;
     Ok(z.finish()?)
 }
 
-/// The stored History in `data`; `None` for a format from a newer release.
-fn stored(data: &[u8]) -> Result<Option<Stored>> {
+/// The stored History in `data` as JSON; `None` for a format from a newer release.
+fn stored_json(data: &[u8]) -> Result<Option<(Vec<u8>, Value)>> {
     let mut text = Vec::new();
     ZlibDecoder::new(data)
         .take(MAX_BYTES + 1)
@@ -158,26 +158,100 @@ fn stored(data: &[u8]) -> Result<Option<Stored>> {
     if version > u64::from(VERSION) {
         return Ok(None);
     }
-    Ok(Some(serde_json::from_value(value)?))
+    Ok(Some((text, value)))
+}
+
+/// The stored History in `data`; `None` for a format from a newer release.
+fn stored(data: &[u8]) -> Result<Option<Stored>> {
+    stored_json(data)?
+        .map(|(_, value)| Ok(serde_json::from_value(value)?))
+        .transpose()
 }
 
 /// `data` with every step's recipe rid of the settings that chose an engine or
-/// operator (`saved_format::OBSOLETE_SETTINGS`), for the catalog's upgrade. `None`
-/// when there were none, or the History can't be read here (from a newer release,
-/// or damaged): it is then left as it is.
+/// operator (`saved_format::OBSOLETE_SETTINGS`), for the catalog's upgrade: only
+/// the recipes' objects change, every other JSON value (including fields of a
+/// later History format) stays as stored. `None` when there were none, or the
+/// History is not one this release reads (from a newer release, damaged, or with a
+/// key given twice, which reading would silently collapse): it is then left as it is.
 pub(super) fn without_obsolete_settings(data: &[u8]) -> Option<Vec<u8>> {
     use crate::model::saved_format::{drop_obsolete_settings, is_obsolete};
-    let mut stored = stored(data).ok().flatten()?;
-    let mut changed = false;
-    let states =
-        std::iter::once(&mut stored.origin).chain(stored.steps.iter_mut().map(|s| &mut s.state));
-    for state in states {
-        changed |= drop_obsolete_settings(&mut state.fields);
-        let pooled = state.pooled.len();
-        state.pooled.retain(|key, _| !is_obsolete(key));
-        changed |= state.pooled.len() != pooled;
+    decode(data).ok().flatten()?;
+    let (text, mut value) = stored_json(data).ok().flatten()?;
+    if has_duplicate_keys(&text) {
+        return None;
     }
-    changed.then(|| compress(&stored).ok()).flatten()
+    // Each state: `fields`, and `pooled` naming settings stored once in `pool`.
+    let strip = |state: &mut Value| {
+        let mut changed = false;
+        if let Some(fields) = state.get_mut("fields").and_then(Value::as_object_mut) {
+            changed |= drop_obsolete_settings(fields);
+        }
+        if let Some(pooled) = state.get_mut("pooled").and_then(Value::as_object_mut) {
+            let before = pooled.len();
+            pooled.retain(|key, _| !is_obsolete(key));
+            changed |= pooled.len() != before;
+        }
+        changed
+    };
+    let mut changed = value.get_mut("origin").is_some_and(strip);
+    if let Some(steps) = value.get_mut("steps").and_then(Value::as_array_mut) {
+        for state in steps.iter_mut().filter_map(|step| step.get_mut("state")) {
+            changed |= strip(state);
+        }
+    }
+    changed.then(|| compress(&value).ok()).flatten()
+}
+
+/// Whether any JSON object in `text` gives a key twice.
+fn has_duplicate_keys(text: &[u8]) -> bool {
+    struct Unique;
+    impl<'de> serde::de::DeserializeSeed<'de> for Unique {
+        type Value = ();
+        fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> Result<(), D::Error> {
+            d.deserialize_any(self)
+        }
+    }
+    impl<'de> serde::de::Visitor<'de> for Unique {
+        type Value = ();
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("JSON")
+        }
+        fn visit_bool<E>(self, _: bool) -> Result<(), E> {
+            Ok(())
+        }
+        fn visit_i64<E>(self, _: i64) -> Result<(), E> {
+            Ok(())
+        }
+        fn visit_u64<E>(self, _: u64) -> Result<(), E> {
+            Ok(())
+        }
+        fn visit_f64<E>(self, _: f64) -> Result<(), E> {
+            Ok(())
+        }
+        fn visit_str<E>(self, _: &str) -> Result<(), E> {
+            Ok(())
+        }
+        fn visit_unit<E>(self) -> Result<(), E> {
+            Ok(())
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+            while seq.next_element_seed(Unique)?.is_some() {}
+            Ok(())
+        }
+        fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+            let mut keys = std::collections::HashSet::new();
+            while let Some(key) = map.next_key::<String>()? {
+                if !keys.insert(key) {
+                    return Err(serde::de::Error::custom("duplicate key"));
+                }
+                map.next_value_seed(Unique)?;
+            }
+            Ok(())
+        }
+    }
+    let mut d = serde_json::Deserializer::from_slice(text);
+    serde::de::DeserializeSeed::deserialize(Unique, &mut d).is_err()
 }
 
 /// The History in `data`; `None` for a format from a newer release.

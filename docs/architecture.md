@@ -146,10 +146,10 @@ inject a temporary file, without changing the process-wide environment.
   `model::saved_format::OBSOLETE_SETTINGS`, its one owner. Reading any `Recipe`
   drops them from its unknown settings (and nothing else), so catalog edits,
   History, snapshots, presets, sidecars and the session all migrate on the way
-  in; `catalog::format_upgrade` removes them from stored rows, and runs, with
-  its backup, before anything stores a recipe in a catalog of an earlier
-  format (`Catalog::upgrade_before_storing_recipes`, from saving edits and
-  snapshots).
+  in; `catalog::format_upgrade` removes them from stored rows after a backup,
+  in the same transaction as the first write of a recipe into a catalog of an
+  earlier format (`Catalog::write_recipes`, from saving edits and snapshots),
+  once that write's checks have passed.
 - Parsing XMP produces settings, while application validates and resolves a
   recipe. Collection discovery and favorites belong in `presets`.
 - Validate recipe changes at domain boundaries. Saved format versions and

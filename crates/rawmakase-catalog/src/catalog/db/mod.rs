@@ -104,18 +104,20 @@ impl Db {
     /// Upgrades a catalog of an earlier version to the current one, after writing a
     /// consistent copy of it to `backup` (a path nothing exists at). The copy is
     /// SQLite's own (`VACUUM INTO`), not a copy of the live file, and is checked
-    /// before the upgrade commits. `migrate` brings the stored rows up to date in
-    /// the upgrade's transaction: when it fails, nothing is changed and the backup
-    /// stays. A catalog already upgraded is left as it is.
-    pub(in crate::catalog) fn upgrade(
+    /// before the upgrade commits. `migrate` brings the stored rows up to date and
+    /// `then` writes what needed the upgrade, both in the upgrade's transaction:
+    /// when either fails, nothing is changed and the backup stays. On a catalog
+    /// already upgraded, only `then` runs, as a [`write`](Self::write).
+    pub(in crate::catalog) fn upgrade<R>(
         &mut self,
         backup: &Path,
         migrate: impl FnOnce(&mut Write<'_>) -> Result<()>,
-    ) -> Result<()> {
-        let Backend::Sqlite(db) = &mut self.backend;
-        if db.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? >= VERSION {
-            return Ok(());
+        then: impl FnOnce(&mut Write<'_>) -> Result<R>,
+    ) -> Result<R> {
+        if self.version()? >= VERSION {
+            return self.write(then);
         }
+        let Backend::Sqlite(db) = &mut self.backend;
         ensure!(
             !backup.exists(),
             "A backup already exists: {}",
@@ -147,8 +149,9 @@ impl Db {
             migrate(&mut Write { db: &tx })?;
             tx.execute_batch(&format!("PRAGMA user_version={VERSION}"))?;
         }
+        let result = then(&mut Write { db: &tx })?;
         tx.commit()?;
-        Ok(())
+        Ok(result)
     }
 
     /// Gives a catalog from an earlier release the tables added since. On

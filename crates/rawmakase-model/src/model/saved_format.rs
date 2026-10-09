@@ -62,8 +62,10 @@ pub fn drop_obsolete_settings(recipe: &mut serde_json::Map<String, serde_json::V
 }
 
 /// A recipe stored as JSON text without its [`OBSOLETE_SETTINGS`]; `None` when it
-/// has none, or is not a JSON object (a damaged edit stays as it is, protected).
+/// has none, or is not a recipe this release reads (a damaged edit, such as one
+/// giving a setting twice, stays as it is, protected, rather than made readable).
 pub fn recipe_text_without_obsolete_settings(text: &str) -> Option<String> {
+    serde_json::from_str::<super::recipe::Recipe>(text).ok()?;
     let serde_json::Value::Object(mut recipe) = serde_json::from_str(text).ok()? else {
         return None;
     };
@@ -217,6 +219,10 @@ mod tests {
             None
         );
         assert_eq!(super::recipe_text_without_obsolete_settings("[1]"), None);
+        // Nor one `Recipe` refuses, such as a setting given twice.
+        let damaged = r#"{"engine":3,"exposure":0.5,"exposure":1.5}"#;
+        assert!(serde_json::from_str::<crate::model::recipe::Recipe>(damaged).is_err());
+        assert_eq!(super::recipe_text_without_obsolete_settings(damaged), None);
     }
     /// Every recipe is written as the first version of the one engine, which the
     /// releases before it refuse as newer.

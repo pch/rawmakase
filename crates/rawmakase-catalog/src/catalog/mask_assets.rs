@@ -82,8 +82,9 @@ impl Assets {
 }
 
 impl Catalog {
-    /// The rasters a write that refers to `ids` has to store or find. Refused in a
-    /// catalog of the first format, whose older releases would not understand them.
+    /// The rasters a write that refers to `ids` has to store or find. Every write
+    /// of them stores a recipe, which upgrades a catalog of the first format in the
+    /// same transaction (`Catalog::write_recipes`), so none reaches one.
     pub(super) fn assets_of<'a>(&self, ids: impl IntoIterator<Item = &'a str>) -> Result<Assets> {
         let mut required: Vec<String> = ids.into_iter().map(str::to_string).collect();
         required.sort();
@@ -91,10 +92,6 @@ impl Catalog {
         if required.is_empty() {
             return Ok(Assets::default());
         }
-        ensure!(
-            self.supports_raster_masks()?,
-            "This catalog needs upgrading before it can keep masks made from a selection"
-        );
         let unsaved = mask_assets::unsaved(required.iter().map(String::as_str));
         Ok(Assets { unsaved, required })
     }

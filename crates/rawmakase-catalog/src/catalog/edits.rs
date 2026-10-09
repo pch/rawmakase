@@ -68,9 +68,6 @@ impl Catalog {
     /// Saves or clears several photos' edits in one transaction. Clearing returns a
     /// photo to having no RAWmakase edit: no recipe, spots, masks or History.
     pub fn change_edits(&mut self, changes: &[EditChange<'_, '_>]) -> Result<()> {
-        if changes.iter().any(|c| matches!(c, EditChange::Save(_))) {
-            self.upgrade_before_storing_recipes()?;
-        }
         // Checked first: reading files and the stored edits takes no lock.
         let checked = changes
             .iter()
@@ -78,12 +75,19 @@ impl Catalog {
             .collect::<Result<Vec<_>>>()?;
         // One time for the whole change, as a Sync to many photos is one edit.
         let edited_at = rawmakase_model::time::now_text();
-        self.db.write(|w| {
+        let write = |w: &mut super::db::Write<'_>| {
             for change in &checked {
                 super::edit_rows::write_edit(w, change, &edited_at)?;
             }
             Ok(())
-        })?;
+        };
+        // Saving a recipe upgrades an earlier catalog with the write; clearing
+        // stores none.
+        if changes.iter().any(|c| matches!(c, EditChange::Save(_))) {
+            self.write_recipes(write)?;
+        } else {
+            self.db.write(write)?;
+        }
         checked.iter().for_each(|change| change.committed());
         Ok(())
     }

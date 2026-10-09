@@ -5,7 +5,8 @@
 //! Version 3 is the one engine's: every stored recipe (edits, History, snapshots)
 //! loses the settings earlier releases chose an engine or operator with
 //! (`saved_format::OBSOLETE_SETTINGS`), and a catalog is upgraded before this
-//! release stores any recipe in it ([`Catalog::upgrade_before_storing_recipes`]),
+//! release stores any recipe in it, in the same transaction as that write
+//! ([`Catalog::write_recipes`]),
 //! so a release that would render those recipes with other operators never opens
 //! it. Opening, browsing and rating leave an older catalog as it is.
 use super::db::Write;
@@ -28,14 +29,24 @@ impl Catalog {
         }
         let CatalogLocation::File(path) = &self.location;
         let backup = backup_path(path)?;
-        self.db.upgrade(&backup, migrate_recipes)?;
+        self.db.upgrade(&backup, migrate_recipes, |_| Ok(()))?;
         Ok(Some(backup))
     }
-    /// Called before anything stores a recipe (an edit, its History, a
-    /// snapshot): one this release saves is for the one engine, so the catalog
-    /// must first be of the version older releases refuse.
-    pub(super) fn upgrade_before_storing_recipes(&mut self) -> Result<()> {
-        self.upgrade_format().map(|_| ())
+    /// The write that stores a recipe (an edit, its History, a snapshot), checked
+    /// beforehand by the caller. A recipe this release saves is for the one engine,
+    /// so a catalog of an earlier format is upgraded in the same transaction, after
+    /// its backup: when `write` fails, the catalog stays as it was (the backup is
+    /// left beside it).
+    pub(super) fn write_recipes<R>(
+        &mut self,
+        write: impl FnOnce(&mut Write<'_>) -> Result<R>,
+    ) -> Result<R> {
+        if self.db.version()? >= super::db::VERSION {
+            return self.db.write(write);
+        }
+        let CatalogLocation::File(path) = &self.location;
+        let backup = backup_path(path)?;
+        self.db.upgrade(&backup, migrate_recipes, write)
     }
 }
 
