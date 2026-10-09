@@ -312,6 +312,52 @@ fn jpeg_carries_camera_exif_gps_and_xmp() -> Result<()> {
     Ok(())
 }
 #[test]
+fn a_tiff_export_writes_camera_text_tiff_cannot_hold_as_is() -> Result<()> {
+    // Fujifilm X100F files pad Artist with spaces, and Copyright's photographer and
+    // editor parts too, with a NUL between them, which a TIFF ASCII value cannot hold.
+    let padded = |tag, text: &[u8]| crate::exif::Field {
+        tag,
+        kind: crate::tiff::kind::ASCII,
+        count: text.len() as u32,
+        bytes: text.to_vec(),
+    };
+    let dir = tempfile::tempdir()?;
+    let source = dir.path().join("source.RAF");
+    fs::write(&source, b"source")?;
+    let image = Rendered {
+        width: 8,
+        height: 4,
+        pixels: vec![[0.5; 3]; 32],
+    };
+    let embed = Embed {
+        camera: Some(crate::exif::CameraExif {
+            main: vec![
+                crate::exif::Field::ascii(0x010f, "FUJIFILM"),
+                padded(0x013b, b"        \0"),
+                padded(0x8298, b"   \0    \0"),
+                padded(0x0110, b"Caf\xe9\0"),
+            ],
+            exif: Vec::new(),
+            gps: Vec::new(),
+        }),
+        ..Default::default()
+    };
+    let tif = dir.path().join("out.tif");
+    export_with(
+        &tif,
+        &source,
+        &image,
+        &Metadata::default(),
+        &ExportOptions::default(),
+        &embed,
+        Replace::NoClobber,
+    )?;
+    assert!(image::open(&tif).is_ok());
+    let bytes = fs::read(&tif)?;
+    assert!(bytes.windows(4).any(|w| w == b"Caf?"));
+    Ok(())
+}
+#[test]
 fn capture_times_take_lightroom_form_with_three_digit_subseconds() {
     use crate::exif::lightroom_time;
     let t = |date, sub| lightroom_time(date, sub);

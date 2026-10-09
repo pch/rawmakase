@@ -133,6 +133,20 @@ pub(super) fn insert_xmp(jpeg: Vec<u8>, xmp: &str) -> Result<Vec<u8>> {
 
 /// Writes one EXIF field into a TIFF directory with its own type. BYTE, SBYTE
 /// and UNDEFINED values are written as bytes.
+/// A camera's text as a TIFF ASCII value can hold it: 7-bit, without NULs. Parts a
+/// NUL separates (Copyright's photographer and editor) are joined, padding trimmed,
+/// and other characters replaced.
+fn tiff_text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes)
+        .split('\0')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ")
+        .chars()
+        .map(|c| if c.is_ascii() { c } else { '?' })
+        .collect()
+}
 fn write_field<W: Write + Seek, K: TiffKind>(
     dir: &mut DirectoryEncoder<'_, W, K>,
     f: &Field,
@@ -149,7 +163,12 @@ fn write_field<W: Write + Seek, K: TiffKind>(
             .map(|c| c.as_chunks::<4>().0)
     };
     match f.kind {
-        ASCII => dir.write_tag(tag, f.text().unwrap_or_default().as_str())?,
+        ASCII => {
+            let text = tiff_text(&f.bytes);
+            if !text.is_empty() {
+                dir.write_tag(tag, text.as_str())?;
+            }
+        }
         SHORT => dir.write_tag(
             tag,
             halves()
