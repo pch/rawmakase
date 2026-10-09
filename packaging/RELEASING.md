@@ -16,6 +16,8 @@ notarization must pass before anything is published. No AUR pushes occur.
 | Linux archive | `rawmakase-VERSION-x86_64-linux.tar.gz`, `rawmakase-VERSION-aarch64-linux.tar.gz` | Same system baseline as DEB/RPM; not a universal static binary |
 | Windows x86_64 installer | `rawmakase-vVERSION-x86_64-pc-windows-msvc-setup.exe` | Windows 10+; per-user install, no administrator rights |
 | Windows x86_64 archive | `rawmakase-vVERSION-x86_64-pc-windows-msvc.zip` | Windows 10+ |
+| Windows ARM64 installer | `rawmakase-vVERSION-aarch64-pc-windows-msvc-setup.exe` | Windows 11 on ARM64; per-user install, no administrator rights |
+| Windows ARM64 archive | `rawmakase-vVERSION-aarch64-pc-windows-msvc.zip` | Windows 11 on ARM64 |
 
 The Mac, DEB and RPM packages contain private imaging libraries. Mac users do
 not need Homebrew. The Linux tarball contains the same `/usr` layout, including
@@ -23,11 +25,12 @@ private libraries; run the extracted `usr/bin/rawmakase` or install the whole
 tree under `/usr`. Do not copy just its executable. Linux still needs system
 Vulkan/graphics drivers, window-system libraries and a working file-dialog portal.
 
-The Windows installer and archive hold the same folder: `rawmakase.exe`, with
+Each Windows architecture's installer and archive hold the same folder: `rawmakase.exe`, with
 LibRaw, Little CMS and the C runtime linked in statically (so no Visual C++
 Redistributable is needed), and the licenses. Neither is code-signed yet, so SmartScreen warns on first run;
 signing can be added later as an `after_package` hook on the `windows-amd64`
-target, before checksums are recorded.
+and `windows-arm64` targets, before checksums are recorded. Both installers
+share one `AppId`, so installing either replaces the other.
 
 The current local `packaging/macos/app.sh` remains a development helper using
 Homebrew dependencies. It does not produce the standalone release app.
@@ -71,7 +74,8 @@ release by hand, and a new key must first ship alongside the old one (see
 fastframe-update's notes on rotating the publisher key).
 
 The updater looks for `rawmakase-vVERSION-macos-arm64.dmg` and
-`rawmakase-vVERSION-x86_64-pc-windows-msvc-setup.exe` by name. A copy the Windows
+`rawmakase-vVERSION-<x86_64|aarch64>-pc-windows-msvc-setup.exe` by name, for
+the architecture of the running executable. A copy the Windows
 installer set up (it writes `rawmakase-installer.txt` beside the executable)
 updates by running the next release's setup program silently. Intel Macs, Linux
 installs and the Windows archive are shown the release page instead. Never
@@ -188,7 +192,10 @@ pkg-config files. Windows builds link the C runtime statically
 (`.cargo/config.toml`) and compile the wrapper without OpenMP, so
 `rawmakase.exe` imports only Windows' own DLLs: the updater runs a copy of it
 alone as its helper. `packaging/windows/stage.ps1` copies the executable and
-licenses and fails if the executable imports any other DLL. The `windows-amd64` target in `native-packages.yaml` runs
+licenses and fails if the executable imports any other DLL. `deps.ps1`, `stage.ps1`
+and `setup.ps1` build natively for the runner's architecture: x64 on `windows-2025`, ARM64 on
+`windows-11-arm`. On ARM64, ring assembles with clang, so `deps.ps1` puts LLVM on
+PATH. The `windows-amd64` and `windows-arm64` targets in `native-packages.yaml` run
 `packaging/windows/setup.ps1`, which compiles `packaging/windows/rawmakase.iss`
 with Inno Setup. Never change that script's `AppId`: it is how Windows tells an
 update from a second installation.
@@ -267,5 +274,5 @@ or photo development. Before announcing the first packaged release, test a
 downloaded DMG on a Mac without Homebrew and the Linux packages on real desktops:
 add a photo folder to the Library, preview and edit, import a catalog/profile, export JPEG
 and TIFF, and upgrade while preserving settings. Test both Mac architectures,
-Linux Wayland/X11, and the Windows installer and an in-app update on a real PC. Do not claim older OS compatibility without testing the
+Linux Wayland/X11, and both Windows installers and an in-app update on real x64 and ARM64 PCs. Do not claim older OS compatibility without testing the
 executable and every bundled library against that baseline.

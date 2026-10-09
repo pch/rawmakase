@@ -4,6 +4,7 @@
 #   pwsh packaging/windows/stage.ps1 target\release\rawmakase.exe C:\path\to\deps dist\windows
 #
 # Fails the build if the executable imports any DLL that is not part of Windows.
+# Stages natively for this Windows' architecture: x64 or ARM64.
 param(
     [Parameter(Mandatory)][string]$Executable,
     [Parameter(Mandatory)][string]$Deps,
@@ -12,6 +13,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
+$arm64 = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64'
 
 if (Test-Path $Output) { throw "$Output already exists" }
 New-Item -ItemType Directory $Output | Out-Null
@@ -24,15 +26,16 @@ Copy-Item (Join-Path $Deps 'notices\*') $licenses
 # The ONNX Runtime that runs the subject selection model, opened lazily from beside
 # the executable; rawmakase.exe does not import it, so the updater's helper copy
 # still starts alone.
-python (Join-Path $root 'packaging\onnxruntime.py') windows x86_64 $Output $licenses
+python (Join-Path $root 'packaging\onnxruntime.py') windows $(if ($arm64) { 'aarch64' } else { 'x86_64' }) $Output $licenses
 if (-not (Test-Path (Join-Path $Output 'onnxruntime.dll'))) { throw 'ONNX Runtime was not staged' }
 
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-$vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+$component, $bin = if ($arm64) { 'ARM64', 'Hostarm64\arm64' } else { 'x86.x64', 'Hostx64\x64' }
+$vs = & $vswhere -latest -products * -requires "Microsoft.VisualStudio.Component.VC.Tools.$component" -property installationPath
 if (-not $vs) { throw 'Visual Studio with the C++ tools is not installed' }
 $tools = Get-ChildItem (Join-Path $vs 'VC\Tools\MSVC') -Directory | Where-Object Name -Match '^\d+(\.\d+)+$' |
     Sort-Object { [version]$_.Name } | Select-Object -Last 1
-$dumpbin = Join-Path $tools.FullName 'bin\Hostx64\x64\dumpbin.exe'
+$dumpbin = Join-Path $tools.FullName "bin\$bin\dumpbin.exe"
 
 # The updater copies rawmakase.exe alone into a staging folder and runs it as
 # its helper, so it must not need any DLL that ships beside it.

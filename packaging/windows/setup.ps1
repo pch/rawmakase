@@ -1,4 +1,5 @@
-# native-packages' Inno Setup recipe for the windows-amd64 target:
+# native-packages' Inno Setup recipe for the windows-amd64 and windows-arm64
+# targets, each built natively on its own architecture:
 #
 #   pwsh packaging/windows/setup.ps1 PAYLOAD PACKAGE VERSION
 #
@@ -18,7 +19,8 @@ if (-not $iscc) { $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.
 if (-not (Test-Path $iscc)) { throw 'Inno Setup 6 is not installed (choco install innosetup)' }
 
 $output = [System.IO.Path]::GetFullPath($Package)
-& $iscc /Q "/DVersion=$Version" "/DNumericVersion=$($Version.Split('-')[0])" `
+$architectures = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'x64compatible' }
+& $iscc /Q "/DVersion=$Version" "/DNumericVersion=$($Version.Split('-')[0])" "/DArchitectures=$architectures" `
     "/DPayload=$([System.IO.Path]::GetFullPath($Payload))" `
     "/DOutputDir=$([System.IO.Path]::GetDirectoryName($output))" `
     "/DOutputName=$([System.IO.Path]::GetFileNameWithoutExtension($output))" `

@@ -300,10 +300,24 @@ jobs:
           if-no-files-found: error
 
   windows:
-    name: Windows installer and archive (x86_64)
+    name: Windows installer and archive (${{ matrix.arch }})
     needs: prepare
-    runs-on: windows-2025
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    # Each architecture builds natively. setup-ruby has no Ruby 3.3 for
+    # Windows on ARM64.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: x86_64
+            target: windows-amd64
+            ruby: '3.3'
+          - runner: windows-11-arm
+            arch: aarch64
+            target: windows-arm64
+            ruby: '3.4'
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
     steps:
@@ -336,7 +350,7 @@ jobs:
       - if: steps.source.outputs.windows == 'true'
         uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
         with:
-          ruby-version: '3.3'
+          ruby-version: ${{ matrix.ruby }}
       - if: steps.source.outputs.windows == 'true'
         name: Installer and portable archive
         run: |
@@ -346,21 +360,21 @@ jobs:
           }
           gem install native-packages --version 0.7.0 --no-document
           $env:SOURCE_DATE_EPOCH = git show -s --format=%ct HEAD
-          native-packages build --version $env:VERSION --target windows-amd64 --defer-recipes --output "$env:RUNNER_TEMP\windows-packages"
+          native-packages build --version $env:VERSION --target ${{ matrix.target }} --defer-recipes --output "$env:RUNNER_TEMP\windows-packages"
           New-Item -ItemType Directory dist\upload | Out-Null
-          Copy-Item "$env:RUNNER_TEMP\windows-packages\packages\windows-amd64\inno\*.exe" dist\upload\
+          Copy-Item "$env:RUNNER_TEMP\windows-packages\packages\${{ matrix.target }}\inno\*.exe" dist\upload\
           # The portable archive has no updater marker: like the Linux archive,
           # it is told about new releases rather than replacing itself.
-          $name = "rawmakase-v$env:VERSION-x86_64-pc-windows-msvc"
+          $name = "rawmakase-v$env:VERSION-${{ matrix.arch }}-pc-windows-msvc"
           Copy-Item dist\windows "dist\$name" -Recurse
           Compress-Archive -Path "dist\$name" -DestinationPath "dist\upload\$name.zip"
       - if: steps.source.outputs.windows == 'true'
         name: Verify the finished download
-        run: packaging/windows/verify.ps1 "dist\upload\rawmakase-v$env:VERSION-x86_64-pc-windows-msvc-setup.exe" $env:VERSION
+        run: packaging/windows/verify.ps1 "dist\upload\rawmakase-v$env:VERSION-${{ matrix.arch }}-pc-windows-msvc-setup.exe" $env:VERSION
       - if: steps.source.outputs.windows == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-windows-amd64
+          name: release-${{ matrix.target }}
           path: dist/upload/*
           if-no-files-found: error
 

@@ -44,6 +44,10 @@ ASSETS = {
         f"onnxruntime-win-x64-{VERSION}.zip",
         "0b38df9af21834e41e73d602d90db5cb06dbd1ca618948b8f1d66d607ac9f3cd",
         "lib/onnxruntime.dll", "onnxruntime.dll"),
+    ("windows", "aarch64"): (
+        f"onnxruntime-win-arm64-{VERSION}.zip",
+        "1cfe88b6435df3b5fb0e9f6bd7d6f5df1e887b6174de7f6e2a47bab956f3f168",
+        "lib/onnxruntime.dll", "onnxruntime.dll"),
 }
 NOTICES = ("LICENSE", "ThirdPartyNotices.txt")
 
