@@ -38,6 +38,9 @@ STRATA = [('low', 0., 40.), ('mid', 40., 75.), ('high', 75., 101.)]
 EDGE = 2048          # renders are made at this long edge ...
 SCORE_EDGE = 1024    # ... and scored after an area reduction to this one
 ADOBE_COLOR = 'Adobe Color'
+# Camera Raw's Adobe Color is a look over Adobe Standard.
+ADOBE_COLOR_LOOK = Path('/Library/Application Support/Adobe/CameraRaw/Settings/Adobe/Profiles/Adobe Raw/'
+                        'Adobe Color.xmp')
 MASK = ('<crs:MaskGroupBasedCorrections><rdf:Seq><rdf:li><rdf:Description crs:What="Correction" '
         'crs:CorrectionAmount="1" crs:LocalExposure2012="0.5" crs:LocalShadows2012="0.5">'
         '<crs:CorrectionMasks><rdf:Seq><rdf:li crs:What="Mask/Gradient" crs:MaskBlendMode="0" '
@@ -244,6 +247,13 @@ def gate_xmp(profile, settings_, extra):
     return text.replace('></rdf:Description>', '>' + extra + '</rdf:Description>', 1) if extra else text
 
 
+def camera_profile(profile):
+    """The CameraProfile Camera Raw renders a gate profile with, and its look."""
+    if profile == ADOBE_COLOR:
+        return 'Adobe Standard', dict(file=str(ADOBE_COLOR_LOOK), amount=1)
+    return profile, None
+
+
 def reference(args):
     manifest = json.loads(args.manifest.read_text())
     out = args.out.resolve()
@@ -257,9 +267,12 @@ def reference(args):
             raise ValueError(f'{photo["raw"]}: changed since the manifest was frozen')
         for name, (s, profile, magnitude, extra) in chosen.items():
             target = out / 'references' / f'{i}-{name}.tif'
-            job = dict(source=photo['raw'], settings=dict(s, CameraProfile=profile), out=str(target), edge=EDGE)
+            base, look = camera_profile(profile)
+            job = dict(source=photo['raw'], settings=dict(s, CameraProfile=base), out=str(target), edge=EDGE)
+            if look:
+                job['look'] = look
             if extra:
-                job['xmp_text'] = gate_xmp(profile, s, extra)
+                job['xmp_text'] = gate_xmp(base, s, extra)
             jobs.append(job)
             plan.append(dict(photo=i, name=name, reference=str(target.relative_to(out))))
     failures = camera_raw.render(jobs, work=out / 'work', chunk=args.chunk)
@@ -274,9 +287,11 @@ def reference(args):
         if not xmp.exists():
             xmp.write_bytes(subprocess.check_output(['exiftool', '-b', '-XMP', str(target)]))
         s, profile, _, _ = chosen[c['name']]
+        base, look = camera_profile(profile)
         tags = json.loads(subprocess.check_output(['exiftool', '-j', '-n', '-XMP-crs:all', str(xmp)]))[0]
-        if tags.get('CameraProfile') != profile:
-            raise ValueError(f'{target.name}: rendered with {tags.get("CameraProfile")!r}, expected {profile!r}')
+        if tags.get('CameraProfile') != base or (look and tags.get('LookName') != profile):
+            raise ValueError(f'{target.name}: rendered with {tags.get("CameraProfile")!r} '
+                             f'{tags.get("LookName", "")!r}, expected {profile!r}')
         for k, v in s.items():
             if abs(float(tags.get(k, 'nan')) - float(v)) > 1e-4:
                 raise ValueError(f'{target.name}: {k} = {tags.get(k)!r}, expected {v}')
@@ -288,6 +303,7 @@ def reference(args):
 
 
 def render(args):
+    """One `rawmakase render-batch` per photo: it develops the RAW once."""
     refs = args.refs.resolve()
     frozen = json.loads((refs / 'references.json').read_text())
     out = args.out.resolve()
@@ -295,16 +311,25 @@ def render(args):
     env = dict(os.environ)
     if args.data_dir:
         env['RAWMAKASE_DATA_DIR'] = str(args.data_dir)
-    for c in frozen['cases']:
-        target = out / Path(c['reference']).name
-        if target.exists():
+    for i, photo in enumerate(frozen['photos']):
+        done = lambda name: (out / name).exists() or (out / name).with_suffix('.npy').exists()
+        jobs = [dict(xmp=str(refs / c['xmp']), output=str(out / Path(c['reference']).name), max_edge=EDGE)
+                for c in frozen['cases'] if c['photo'] == i and not done(Path(c['reference']).name)]
+        if not jobs:
             continue
-        photo = frozen['photos'][c['photo']]
-        result = subprocess.run([str(args.rawmakase), 'render', photo['raw'], str(target), '--xmp',
-                                 str(refs / c['xmp']), '--max-edge', str(EDGE), '--overwrite'],
+        listing = out / f'jobs-{i}.json'
+        listing.write_text(json.dumps(jobs))
+        result = subprocess.run([str(args.rawmakase), 'render-batch', photo['raw'], str(listing)],
                                 capture_output=True, text=True, env=env)
-        if result.returncode:
-            print(f'{target.name}: {result.stderr.strip()[:200]}', file=sys.stderr)
+        listing.unlink()
+        if result.returncode or result.stderr.strip():
+            print(f'photo {i}: {result.stderr.strip()[:400]}', file=sys.stderr)
+        # Keep what the metric reads: the render reduced to SCORE_EDGE.
+        for job in jobs:
+            tif = Path(job['output'])
+            if tif.exists():
+                np.save(tif.with_suffix('.npy'), reduce(render_srgb(tif)).astype(np.float32))
+                tif.unlink()
 
 
 # Scoring and acceptance -----------------------------------------------------------
@@ -320,10 +345,12 @@ def score(args):
         row = dict(photo=c['photo'], name=c['name'], stratum=photo['stratum'])
         if digest(ref) != c['reference_sha256']:
             raise ValueError(f'{ref.name}: reference changed since it was frozen')
-        if not out.exists():
+        reduced = out.with_suffix('.npy')
+        if not out.exists() and not reduced.exists():
             rows.append(dict(row, valid=0., error='not rendered'))
             continue
-        m = photo_metrics(reduce(reference_srgb(ref)), reduce(render_srgb(out)))
+        rendered = np.load(reduced).astype(np.float64) if reduced.exists() else reduce(render_srgb(out))
+        m = photo_metrics(reduce(reference_srgb(ref)), rendered)
         L = (m.pop('L_ref', None), m.pop('L_out', None))
         if L[0] is not None:
             pixels.setdefault((c['name'], photo['stratum']), []).append(L)
