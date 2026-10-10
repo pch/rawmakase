@@ -1,5 +1,6 @@
-// Release builds on Windows open no console window beside the app.
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// A console subsystem puts the generic console icon on the Windows taskbar.
+// Command output still attaches to the parent console when there is one.
+#![cfg_attr(windows, windows_subsystem = "windows")]
 use anyhow::Result;
 mod mcp;
 use clap::{Parser, Subcommand};

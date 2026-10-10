@@ -1,3 +1,12 @@
+#[cfg(windows)]
+#[test]
+fn windows_icon_file_contains_the_256_png() {
+    let png = super::largest_png_in_ico(include_bytes!("../../packaging/windows/rawmakase.ico"))
+        .expect("icon");
+    let image = image::load_from_memory(png).expect("png").into_rgba8();
+    assert_eq!([image.width(), image.height()], [256, 256]);
+}
+
 use super::widgets::tone_curve_ui;
 use super::*;
 use crate::camera_data::{CameraImage, Metadata};
