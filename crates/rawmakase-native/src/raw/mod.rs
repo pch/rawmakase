@@ -280,7 +280,7 @@ mod tests {
         assert!(super::Raw::open_file(f.path()).is_err());
     }
     /// A 64×64 NEF from `model` whose raw data, Nikon-compressed for LibRaw, starts with `data`.
-    fn nef(model: &str, data: &[u8]) -> tempfile::NamedTempFile {
+    fn nef(model: &str, data: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {
         fn dir(f: &mut Vec<u8>, entries: &[(u16, u16, u32, Vec<u8>)]) {
             let mut extra = f.len() + 2 + 12 * entries.len() + 4;
             let mut values: Vec<u8> = Vec::new();
@@ -339,9 +339,11 @@ mod tests {
         );
         assert_eq!(f.len(), data_offset);
         f.extend(raw);
-        let file = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(file.path(), f).unwrap();
-        file
+        // A closed file: Windows' LibRaw cannot open one a NamedTempFile holds open.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("photo.nef");
+        std::fs::write(&path, f).unwrap();
+        (dir, path)
     }
     #[test]
     fn nikon_high_efficiency_raws_are_refused_on_every_body() {
@@ -357,9 +359,9 @@ mod tests {
                 Decode::Full(Demosaic::Libraw),
                 Decode::Full(Demosaic::Rawmakase),
             ] {
-                let file = nef(model, &JPEG_XS);
+                let (_dir, path) = nef(model, &JPEG_XS);
                 // Opened, so the embedded preview can stand in.
-                let raw = super::Raw::open_file(file.path()).unwrap();
+                let raw = super::Raw::open_file(&path).unwrap();
                 let error = raw
                     .develop(decode, &AtomicBool::new(false))
                     .err()
@@ -370,8 +372,8 @@ mod tests {
                 );
             }
         }
-        let file = nef("NIKON Z5_2", &[0; 4]);
-        let raw = super::Raw::open_file(file.path()).unwrap();
+        let (_dir, path) = nef("NIKON Z5_2", &[0; 4]);
+        let raw = super::Raw::open_file(&path).unwrap();
         assert!(raw.develop(Decode::Half, &AtomicBool::new(false)).is_ok());
     }
     #[test]
