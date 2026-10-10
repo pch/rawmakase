@@ -49,7 +49,7 @@ md-5 = "0.11"
 # Installed fonts for text watermarks are mapped, not read whole.
 memmap2 = "0.9"
 # Glyph outlines for text watermarks (also behind egui's text).
-skrifa = "0.47"
+skrifa = "0.48"
 clap = { version = "4", features = ["derive"] }
 eframe = { version = "=0.36.2", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
 # eframe's windowing, to run its event loop (see app::run).
