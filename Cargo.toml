@@ -25,7 +25,7 @@ rawmakase-ctl = { path = "tools/rawmakase-ctl", version = "0.1.0" }
 # Local MCP adapter; no HTTP server or remote authorization stack.
 rmcp = { version = "3.5", default-features = false, features = ["server", "macros", "transport-io"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
-base64 = "0.22"
+base64 = "0.23"
 # Verifies a downloaded or imported selection model against its pinned digest.
 sha2 = "0.11"
 getrandom = "0.4"
@@ -49,7 +49,7 @@ md-5 = "0.11"
 # Installed fonts for text watermarks are mapped, not read whole.
 memmap2 = "0.9"
 # Glyph outlines for text watermarks (also behind egui's text).
-skrifa = "0.47"
+skrifa = "0.48"
 clap = { version = "4", features = ["derive"] }
 eframe = { version = "=0.36.2", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
 # eframe's windowing, to run its event loop (see app::run).
@@ -84,10 +84,13 @@ telemetry = []
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 midir = "0.11"
 
-# Quit through the window's close guard (src/platform/quit.rs).
+# Native quit handling and display color management (src/platform/).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSWindow"] }
+dispatch2 = "0.3"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSWindow", "objc2-quartz-core"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColorSpace"] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "CAMetalLayer", "objc2-core-graphics"] }
 
 # The desktop's text size through the desktop portal (src/platform/text_scale.rs);
 # the same blocking zbus fastframe-text already uses, so no new crates.

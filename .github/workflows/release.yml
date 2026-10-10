@@ -64,7 +64,7 @@ jobs:
           fi
           mkdir -p "$RUNNER_TEMP/release-notes"
           cp "$notes" "$RUNNER_TEMP/release-notes/notes.md"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: reviewed-notes
           path: ${{ runner.temp }}/release-notes/notes.md
@@ -133,7 +133,7 @@ jobs:
             cp packaging/native-deps.sh "$RUNNER_TEMP/native-sources/build/"
             tar -C "$RUNNER_TEMP/native-sources" -czf "dist/upload/rawmakase-$VERSION-native-sources.tar.gz" .
           fi
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-${{ matrix.target }}
           path: dist/upload/*
@@ -180,7 +180,7 @@ jobs:
           cp "dist/arch/rawmakase-$VERSION.tar.gz" "dist/upload/rawmakase-$VERSION-source.tar.gz"
           tar -C dist/arch -czf "dist/upload/rawmakase-$VERSION-arch-recipe.tar.gz" PKGBUILD .SRCINFO
           # AUR pushes are intentionally disabled. GitHub is the distribution channel.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-arch
           path: dist/upload/*
@@ -209,7 +209,7 @@ jobs:
             --app-icon RAWmakase --platform macosx --minimum-deployment-target 15.0 \
             --output-partial-info-plist compiled-icon/partial.plist
           test -s compiled-icon/Assets.car
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos-icon
           path: compiled-icon/Assets.car
@@ -244,7 +244,7 @@ jobs:
           path: release-source
           persist-credentials: false
       - name: Download the compiled Liquid Glass icon
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: macos-icon
           path: compiled-icon
@@ -293,7 +293,7 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
         run: bash packaging/macos/verify.sh "dist/upload/rawmakase-v$VERSION-macos-$ARCH.dmg" "$ARCH"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-${{ matrix.target }}
           path: dist/upload/*
@@ -377,7 +377,7 @@ jobs:
         name: Verify the finished download
         run: packaging/windows/verify.ps1 "dist\upload\rawmakase-v$env:VERSION-${{ matrix.arch }}-pc-windows-msvc-setup.exe" $env:VERSION
       - if: steps.source.outputs.windows == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-${{ matrix.target }}
           path: dist/upload/*
@@ -392,12 +392,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: release-*
           path: dist
           merge-multiple: true
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: package-inputs
           path: |
@@ -427,16 +427,16 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: release-*
           path: dist
           merge-multiple: true
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: reviewed-notes
           path: release-notes
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: native-packages
           path: native-packages
@@ -486,7 +486,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "RAWmakase ${RELEASE_TAG#v}" --notes-file release-notes/notes.md
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: expected-checksums
           path: ${{ runner.temp }}/expected-checksums.txt
@@ -500,7 +500,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: expected-checksums
           path: expected

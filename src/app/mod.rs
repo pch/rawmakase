@@ -474,6 +474,7 @@ impl eframe::App for Editor {
         // AppKit moves the traffic lights back during layout passes.
         fastframe_macos::align_traffic_lights(frame, ui.ctx(), workspace::BAR_HEIGHT);
         self.draw(ui);
+        display::paint(ui, frame, self.view.monitor.is_some());
     }
     // fastframe-macos turns on eframe's glow feature, which adds the context.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
@@ -719,6 +720,7 @@ mod commands;
 mod crop_tool;
 mod curve_menu;
 mod dialogs;
+mod display;
 mod export;
 pub(crate) mod folder_locations;
 mod guided_tool;
