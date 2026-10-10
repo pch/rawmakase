@@ -668,6 +668,7 @@ fn matmul(a: Matrix, b: Matrix) -> Matrix {
 
 mod dcp;
 mod enhanced;
+pub mod film;
 mod library;
 mod look_settings;
 pub mod open;

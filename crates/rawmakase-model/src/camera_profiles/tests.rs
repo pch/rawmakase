@@ -254,3 +254,62 @@ fn a7cr_native_units_use_their_own_daylight_metadata() {
         assert_eq!(profile.neutral_calibration(&m), [1.; 3]);
     }
 }
+
+#[test]
+fn every_film_look_file_is_listed_and_parses() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/looks");
+    let mut on_disk: Vec<_> = std::fs::read_dir(&root)
+        .unwrap()
+        .flatten()
+        .map(|f| f.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".xmp"))
+        .collect();
+    let mut listed: Vec<_> = film::FILES.iter().map(|(p, _)| p.to_string()).collect();
+    on_disk.sort();
+    listed.sort();
+    assert_eq!(on_disk, listed, "assets/looks and film::FILES differ");
+    assert_eq!(
+        film::looks().len(),
+        film::FILES.len(),
+        "a film look fails to parse"
+    );
+}
+
+/// Film looks are listed for any camera with a colour matrix, always over RAWmakase
+/// Standard, with Lightroom's Profile Amount.
+#[test]
+fn film_looks_go_over_rawmakase_standard() {
+    let looks = film::profiles(&x100f());
+    assert_eq!(looks.len(), film::FILES.len());
+    let mut uuids = std::collections::BTreeSet::new();
+    for p in &looks {
+        assert!(p.name.starts_with("RMKS Film: "), "{}", p.name);
+        let look = p.enhanced.as_ref().unwrap();
+        assert_eq!(look.base_name, open::STANDARD, "{}", p.name);
+        assert!(look.amount.is_some() && look.rgb().is_some(), "{}", p.name);
+        assert!(uuids.insert(look.uuid.clone()), "{}", p.name);
+    }
+    let no_matrix = Metadata {
+        cam_xyz: [[0.; 3]; 3],
+        ..x100f()
+    };
+    assert!(film::profiles(&no_matrix).is_empty());
+}
+
+/// A film look keeps a correctly exposed gray near neutral and near mid gray: the
+/// film is balanced on it, as a lab balances a print or a scan. Not exactly: the
+/// models leave casts (Kodachrome's slide cool, blue 18% over red in linear light;
+/// Portra's print warm, 5%), which this allows; a broken table does not pass.
+#[test]
+fn film_looks_keep_mid_gray_neutral() {
+    let gray = 0.1842;
+    for p in film::profiles(&x100f()) {
+        let out = p.enhanced.as_ref().unwrap().rgb().unwrap().apply([gray; 3]);
+        let (lo, hi) = (
+            out.iter().copied().fold(f32::INFINITY, f32::min),
+            out.iter().copied().fold(0., f32::max),
+        );
+        assert!((hi - lo) / gray < 0.25, "{}: {out:?}", p.name);
+        assert!((out[1] / gray - 1.).abs() < 0.15, "{}: {out:?}", p.name);
+    }
+}

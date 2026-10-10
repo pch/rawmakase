@@ -25,6 +25,19 @@ Two profiles of our own are listed for every camera with a colour matrix, with n
 
 Both are embedded in the recipe like any other profile, so later changes to the look don't change existing edits. The look was tuned conservatively and has not yet been compared with Camera Raw renders; measured base profiles (ColorChecker shots per camera) can replace the matrix later without changing any preset.
 
+### Film looks
+
+Four creative looks over RAWmakase Standard model film from Kodak's published technical datasheets, for every camera with a colour matrix:
+
+- **RMKS Film: Portra-ish 400**: a colour negative (Kodak publication E-4050), scanned.
+- **RMKS Film: Portra-ish 400 Print**: the same negative printed on Endura Premier paper (E-4070).
+- **RMKS Film: Kodachrome-ish 64**: a slide (E-55), projected with the datasheet's 3200 K lamp.
+- **RMKS Film: Kodachrome-ish 64 Print**: the same slide printed on Ektachrome Radiance III paper (E-1766).
+
+`scripts/film/` downloads the datasheets, reads their spectral sensitivity, characteristic and dye density curves out of the PDFs' vector paths, and follows the light: a spectrum for each colour (Jakob and Hanika's model), the exposure of each layer, its density after standard processing, then a scan, a projection or a print viewed in daylight. Exposure therefore moves a photo along the film's response, as over- and underexposing film does. The result is an RGB table in Lightroom's look format (`assets/looks`), so the looks also work in Lightroom; the Presets panel's Film group chooses each with the film's grain.
+
+They are modelled, not matched: no film was shot or scanned to check them. What the datasheets don't give is assumed and stated in the scripts: densitometry as narrow bands at each dye's peak, a scanner calibrated on a ColorChecker, printer lights balanced on mid gray with the three channels brought to a common gamma, 1% viewing flare on prints, and Portra's grain (its datasheet gives only a print grain index). The prints come out more contrasty than a scan, and the models leave mid gray with slight casts: Kodachrome-ish 64 cool (blue 18% over red in linear light, about 0.02 encoded), Portra-ish 400 Print warm (5%). A look always goes over RAWmakase Standard, even with Adobe Standard imported, so it renders the same everywhere, and like every profile it is embedded in the edits that use it.
+
 ## Rendering
 
 An enhanced XMP profile is resolved against its matching camera DCP. The profile name remains, for example, **Adobe Color**, but the combined rendering contains that camera's matrices and calibration tables plus the XMP look's table and curve. Camera matching is mandatory.

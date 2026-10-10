@@ -5,7 +5,15 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 /// Built-in groups in the order the Presets panel lists them, before imported ones.
-pub const GROUPS: &[&str] = &["Color", "Creative", "B&W", "Curve", "Grain", "Vignetting"];
+pub const GROUPS: &[&str] = &[
+    "Color",
+    "Creative",
+    "Film",
+    "B&W",
+    "Curve",
+    "Grain",
+    "Vignetting",
+];
 
 macro_rules! files {
     ($($path:literal),* $(,)?) => {
@@ -21,6 +29,10 @@ pub(super) const FILES: &[(&str, &str)] = files![
     "Color/Matte.xmp",
     "Creative/Concrete Haze.xmp",
     "Creative/Faded Gold.xmp",
+    "Film/Portra-ish 400.xmp",
+    "Film/Portra-ish 400 Print.xmp",
+    "Film/Kodachrome-ish 64.xmp",
+    "Film/Kodachrome-ish 64 Print.xmp",
     "BandW/Neutral.xmp",
     "BandW/High Contrast.xmp",
     "BandW/Soft.xmp",
