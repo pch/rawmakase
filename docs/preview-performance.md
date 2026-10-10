@@ -69,8 +69,10 @@ The desktop renderer keeps the results of the stages before the per-pixel color
 pipeline (`crates/rawmakase-engine/src/develop/stage_cache.rs`), each keyed by the recipe fields it reads:
 
 - the measurement copy: the full photo reduced to 512 pixels, from which every
-  render takes the scene tone stage's measures and maps (docs/scene-tone-stage.md);
-- the scene tone stage's measures of that copy, keyed by the copy, the profile
+  render takes the scene tone stage's measures and maps (docs/scene-tone-stage.md),
+  and with red eye corrections or spot removal, its copy without them (for the
+  darkest level the default black follows);
+- the scene tone stage's measures of that copy, keyed by the copies, the profile
   matrix, white balance, Temperature and Tint, the profile and its amount, the
   camera's exposure and Camera Calibration (the measures are taken at Exposure 0);
 - the textured image, when Texture is on;

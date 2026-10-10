@@ -29,7 +29,7 @@ RAWmakase renders this: the chart's measured Contrast (`CONTRAST_CHART`, Camera 
 
 ### Whites and Blacks
 
-Whites and Blacks are curves of the scene tone stage, measured on neutral ramps (`scene_tone/global.rs`, tables `white3.bin`, `white.bin` and `blacks.bin`, written by `scripts/corpus/scene-tone-tables.py`). The default render's white point rolls off toward the sensor's white or twice the photo's maximum; Whites is one curve with it, applied DNG RGBTone fashion, and positive Whites stretches toward the photo's own maximum. Blacks follows on each channel, over the photo's darkest level. A mask's Whites and Blacks are Camera Raw's separate curves after the global ones (`masks.bin`). See [Whites and Blacks](scene-tone-stage.md#whites-and-blacks).
+Whites and Blacks are curves of the scene tone stage, measured on neutral ramps (`scene_tone/global.rs`, tables `white3.bin`, `white.bin`, `default_black.bin` and `blacks.bin`, written by `scripts/corpus/scene-tone-tables.py`). The default render's white point rolls off toward the sensor's white or twice the photo's maximum; Whites is one curve with it, applied DNG RGBTone fashion, and positive Whites stretches toward the photo's own maximum. Camera Raw's default black, which deepens as the photo's darkest level (its 0.1th percentile) rises toward the sensor's white, and then Blacks follow on each channel, over that level. A mask's Whites and Blacks are Camera Raw's separate curves after the global ones (`masks.bin`). See [Whites and Blacks](scene-tone-stage.md#whites-and-blacks).
 
 ### Shadows and Highlights
 

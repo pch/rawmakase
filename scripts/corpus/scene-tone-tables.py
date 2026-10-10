@@ -3,8 +3,9 @@
 
   render  DIR   writes neutral-ramp probe DNGs (scripts/corpus/probe_dng.py) into DIR
                 and renders them in Camera Raw (Photoshop 2026; camera_raw.py)
-  tables  DIR   reads the renders and writes white.bin, white3.bin, blacks.bin and
-                masks.bin in crates/rawmakase-engine/src/develop/scene_tone
+  tables  DIR   reads the renders and writes white.bin, white3.bin, blacks.bin,
+                default_black.bin and masks.bin in
+                crates/rawmakase-engine/src/develop/scene_tone
 
 Probes: a ramp of 192 neutral patches from 2^-14 to 1 of the sensor's white, with a
 linear profile tone curve, so Camera Raw's ProPhoto output is its scene tone stage's
@@ -25,6 +26,13 @@ linear profile tone curve, so Camera Raw's ProPhoto output is its scene tone sta
   in steps of 12.5. Blacks applies after the white point and Whites, to their output,
   so the table maps the default render's output (log2, -16 to 0 in eighth stops) to
   the Blacks render's, per black key and Blacks.
+- Default black (default_black.bin): Camera Raw's default black adapts to the photo's
+  darkest level. The white ramps (darkest patch 2^-14 of their maximum) show almost
+  none; the black ramps' default renders a much stronger one that depends on the key.
+  The table maps the white ramp's default output at a sensor white of 4 (what the
+  white curves give) to the black ramp's default output at the same scene value
+  (log2, −16 to 0 in eighth stops), per black key, made monotone. Below the darkest
+  patch it is 0: undefined, as no pixel of a photo with that key is darker.
 - Masks (masks.bin): the ramp at a sensor white of 1 and 4 with a mask covering the
   whole frame, at its Whites and then its Blacks −100 to +100 in steps of 25. A mask's
   Whites and Blacks apply after the global curves, as a fixed function of their
@@ -193,6 +201,25 @@ def blacks_table(d):
     return out
 
 
+def default_black_table(d):
+    w = white_ramp(2.0)
+    xw = np.log2(np.array(w.values))
+    yw = w.measure(camera_raw.read_linear(d / 'white+2.00-default.tif'))
+    out = np.zeros((len(BLACK_KEYS), len(Y)), np.float32)
+    for i, key in enumerate(BLACK_KEYS):
+        g = black_ramp(key)
+        yb = g.measure(camera_raw.read_linear(d / f'black{key:+.1f}-default.tif'))
+        # The white curves' output at the black ramp's scene values.
+        ywx = np.interp(np.log2(np.array(g.values)), xw, yw)
+        order = np.argsort(ywx)
+        x = np.log2(np.maximum(ywx[order], 2.0 ** -20))
+        y = np.maximum.accumulate(yb[order])
+        row = np.interp(Y, x, y, right=1.0)
+        row[Y < x[0]] = 0.
+        out[i] = row
+    return out
+
+
 def masks_table(d):
     out = np.zeros((2, len(MASK_VALUES), len(Y)), np.float32)
     for i, kind in enumerate(('Whites', 'Blacks')):
@@ -217,20 +244,23 @@ def masks_table(d):
 def tables(args):
     d = args.dir.resolve()
     white, white3, blacks = white_table(d), white3_table(d), blacks_table(d)
-    masks = masks_table(d)
-    OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / 'white.bin').write_bytes(white.astype('<f4').tobytes())
-    (OUT / 'white3.bin').write_bytes(white3.tobytes())
-    (OUT / 'blacks.bin').write_bytes(blacks.astype('<f4').tobytes())
-    (OUT / 'masks.bin').write_bytes(masks.astype('<f4').tobytes())
-    print(f'white {white.shape}, white3 {white3.shape}, blacks {blacks.shape}, masks {masks.shape}'
-          f' -> {OUT.relative_to(ROOT)}')
+    masks, default_black = masks_table(d), default_black_table(d)
+    out = args.out.resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    (out / 'white.bin').write_bytes(white.astype('<f4').tobytes())
+    (out / 'white3.bin').write_bytes(white3.tobytes())
+    (out / 'blacks.bin').write_bytes(blacks.astype('<f4').tobytes())
+    (out / 'default_black.bin').write_bytes(default_black.astype('<f4').tobytes())
+    (out / 'masks.bin').write_bytes(masks.astype('<f4').tobytes())
+    print(f'white {white.shape}, white3 {white3.shape}, blacks {blacks.shape}, masks {masks.shape},'
+          f' default black {default_black.shape} -> {out}')
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('step', choices=['render', 'tables'])
     p.add_argument('dir', type=Path, help='folder for the probes and their renders (outside the repository)')
+    p.add_argument('--out', type=Path, default=OUT, help='folder for the tables (default: the engine\'s)')
     args = p.parse_args()
     {'render': render, 'tables': tables}[args.step](args)
 

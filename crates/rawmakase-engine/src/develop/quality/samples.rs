@@ -10,6 +10,16 @@ pub fn recovered(im: &CameraImage, cancel: &AtomicBool) -> Result<Arc<CameraImag
     let recovered = Arc::new(recover_highlights_cancellable(im, cancel)?);
     Ok(im.recovered.get_or_init(|| recovered).clone())
 }
+/// The retouched photo at full resolution, and the image it was retouched from.
+#[derive(Clone)]
+pub(crate) struct Retouched {
+    /// Recovered, with Color noise reduction, red eye corrections and spot removal.
+    pub(crate) image: Arc<CameraImage>,
+    /// `image` without red eye corrections and spot removal, which the photo's darkest
+    /// level is measured on (`PhotoMeasures::dark`): a local repair does not move the
+    /// whole photo's black. The same image when the recipe has none.
+    pub(crate) unretouched: Arc<CameraImage>,
+}
 /// The recovered image with the measured Color noise reduction, then the recipe's red
 /// eye corrections and spot removal, so those stay within their shapes: from the
 /// preview's cache, updated where the operations changed, or built at once (exports).
@@ -18,26 +28,32 @@ pub(crate) fn retouched(
     r: &Recipe,
     cancel: &AtomicBool,
     cache: Option<&mut develop::retouch::RetouchCache>,
-) -> Result<Arc<CameraImage>> {
+) -> Result<Retouched> {
     let recovered = recovered(im, cancel)?;
     let ops = develop::retouch::Retouching::of(r);
     let denoise = r.chroma_denoise();
-    match cache {
+    let (base, image) = match cache {
         Some(cache) => {
             let base = cache.denoised(&recovered, denoise, cancel)?;
-            cache.get(&base, ops, cancel)
+            let image = cache.get(&base, ops, cancel)?;
+            (base, image)
         }
         None => {
             let base = match denoise {
                 Some(d) => Arc::new(d.apply(&recovered, cancel)?),
                 None => recovered,
             };
-            Ok(match ops.is_empty() {
-                true => base,
+            let image = match ops.is_empty() {
+                true => base.clone(),
                 false => Arc::new(develop::retouch::apply(&base, ops)),
-            })
+            };
+            (base, image)
         }
-    }
+    };
+    Ok(Retouched {
+        image,
+        unretouched: base,
+    })
 }
 /// Point Color's dropper at (`u`, `v`) of the shown photo: the color Point Color sees
 /// there, averaged over 5×5 output pixels, rendered as the photo is (lens corrections,
@@ -123,8 +139,8 @@ pub fn render_stage(
         crate::lens::auto_ca::prime(im);
     }
     let source = retouched(im, r, cancel, None)?;
-    let g = Geometry::new(&source, r, 0);
-    let (toned, tonal) = local_stage(&source, &source, r, 1., cancel, None)?;
+    let g = Geometry::new(&source.image, r, 0);
+    let (toned, tonal) = local_stage(&source.image, &source, r, 1., cancel, None)?;
     let output = match stage {
         Stage::SceneInput => PixelOutput::SceneInput,
         Stage::SceneOutput => PixelOutput::SceneOutput,
@@ -158,8 +174,8 @@ fn stage_means<const N: usize>(
     // Through a fresh retouch cache, which checks `cancel` between operations.
     let mut retouch = develop::retouch::RetouchCache::default();
     let source = retouched(im, r, cancel, Some(&mut retouch))?;
-    let g = Geometry::new(&source, r, 0);
-    let (toned, tonal) = local_stage(&source, &source, r, 1., cancel, None)?;
+    let g = Geometry::new(&source.image, r, 0);
+    let (toned, tonal) = local_stage(&source.image, &source, r, 1., cancel, None)?;
     let at = |t: f32, size: u32| {
         let c = (t.clamp(0., 1.) * size as f32) as u32;
         c.saturating_sub(2).min(size.saturating_sub(5))

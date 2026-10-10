@@ -9,6 +9,8 @@ pub(crate) struct Source<'a> {
     pub(crate) untextured: Option<&'a CameraImage>,
     /// The photo's measurement copy (see [`Toned::measured`]).
     pub(crate) measured: Option<&'a std::sync::Arc<CameraImage>>,
+    /// Its copy without retouching (see [`Toned::unretouched`]).
+    pub(crate) unretouched: Option<&'a std::sync::Arc<CameraImage>>,
     /// Where the measures of that copy are kept (see [`Toned::measures`]).
     pub(crate) measures: Option<&'a crate::develop::stage_cache::MeasuresCache>,
 }
@@ -18,6 +20,7 @@ impl<'a> Source<'a> {
             image,
             untextured: None,
             measured: None,
+            unretouched: None,
             measures: None,
         }
     }
@@ -47,6 +50,9 @@ pub(crate) struct Toned {
     /// reduced for measuring it, whatever resolution `image` has, so Fit previews,
     /// regions and exports measure the same pixels.
     pub(crate) measured: Option<std::sync::Arc<CameraImage>>,
+    /// `measured` without red eye corrections and spot removal (the same copy without
+    /// them), for the photo's darkest level (`PhotoMeasures::dark`).
+    pub(crate) unretouched: Option<std::sync::Arc<CameraImage>>,
     /// The stage cache's measures of `measured`, so slider edits that do not change
     /// them reuse them; without it each render measures the photo.
     pub(crate) measures: Option<std::sync::Arc<crate::develop::stage_cache::MeasuresCache>>,
@@ -56,6 +62,7 @@ impl Toned {
         Source {
             untextured: self.untextured.as_deref(),
             measured: self.measured.as_ref(),
+            unretouched: self.unretouched.as_ref(),
             measures: self.measures.as_deref(),
             ..Source::new(&self.image)
         }

@@ -158,7 +158,7 @@ fn cached_photo_measures(
             needs_haze.then(|| Arc::new(photo_haze(im, r, matrix))),
         );
     };
-    let key = crate::develop::stage_cache::MeasuresKey::new(copy, r, matrix);
+    let key = crate::develop::stage_cache::MeasuresKey::new(copy, im.unretouched, r, matrix);
     // Not locked while measuring, whose parallel work may run other renders' tasks.
     let cache = || {
         cache
@@ -207,6 +207,16 @@ pub(super) fn photo_measures(
     };
     let lut = CurveSet::new(&base);
     let scene = measured_scene(&small, &base, &lut, matrix);
+    // The copy without retouching, when it differs, for the darkest level.
+    let mut unretouched: Vec<f32> = match (im.measured, im.unretouched) {
+        (Some(copy), Some(plain)) if !Arc::ptr_eq(copy, plain) => {
+            measured_scene(plain, &base, &lut, matrix)
+                .into_iter()
+                .map(crate::develop::scene_tone::luminance)
+                .collect()
+        }
+        _ => Vec::new(),
+    };
     // The white point and the photo's maximum are the camera's: measured at the as-shot
     // white balance, so a white balance change keeps them (the synthetic chart's). A
     // profile's matrices follow the temperature, so its as-shot one is used too.
@@ -242,6 +252,19 @@ pub(super) fn photo_measures(
         .map(|p| crate::develop::scene_tone::luminance(*p))
         .collect();
     let min = lum.iter().copied().fold(f32::INFINITY, f32::min);
+    // The 0.1th percentile, before red eye corrections and spot removal: a few dark
+    // pixels do not move it, and a local repair does not move the whole photo's black.
+    let dark_lum = if unretouched.is_empty() {
+        &mut lum
+    } else {
+        &mut unretouched
+    };
+    let dark = if dark_lum.is_empty() {
+        min
+    } else {
+        let k = (dark_lum.len() - 1) / 1000;
+        *dark_lum.select_nth_unstable_by(k, f32::total_cmp).1
+    };
     let k = (lum.len().max(1) - 1) * 99 / 100;
     let p99 = if lum.is_empty() {
         1.
@@ -265,6 +288,7 @@ pub(super) fn photo_measures(
         // Highlights rebuilt above the sensor's clip do not raise it.
         max: max.min(white).log2(),
         min: min.max(2f32.powi(-20)).log2(),
+        dark: dark.max(2f32.powi(-20)).log2(),
         p99: crate::develop::local_tone::level(p99),
     }
 }

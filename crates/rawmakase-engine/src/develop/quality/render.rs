@@ -9,7 +9,7 @@ use super::*;
 #[allow(clippy::too_many_arguments)]
 fn render_resident(
     source: &Arc<CameraImage>,
-    full: &Arc<CameraImage>,
+    full: &Retouched,
     r: &Recipe,
     scale: f32,
     g: &Geometry,
@@ -57,11 +57,13 @@ fn render_resident(
     } else {
         source.clone()
     };
+    let (measured, unretouched) = measurement_copies(full, Some(&mut *stages.cache), cancel)?;
     let toned = Toned {
         image: source.clone(),
         scale,
         untextured,
-        measured: Some(measurement_copy(full, Some(&mut *stages.cache), cancel)?),
+        measured: Some(measured),
+        unretouched: Some(unretouched),
         measures: Some(stages.cache.measures.clone()),
     };
     let Some(mut params) = develop::pipeline::pixel_params::pixel_params(toned.source(), &base)
@@ -132,7 +134,7 @@ fn render_resident(
 /// `size` output.
 pub(crate) fn render_level(
     level: &Arc<CameraImage>,
-    full: &Arc<CameraImage>,
+    full: &Retouched,
     r: &ValidRecipe,
     size: (u32, u32),
     region: [u32; 4],
@@ -145,7 +147,8 @@ pub(crate) fn render_level(
     if let Some(p) = &r.profile {
         p.ensure_camera(&level.metadata)?;
     }
-    let level_scale = level.width.max(level.height) as f32 / full.width.max(full.height) as f32;
+    let level_scale =
+        level.width.max(level.height) as f32 / full.image.width.max(full.image.height) as f32;
     let mut g = Geometry::new(level, r, 0);
     let footprint = g.width.max(g.height) as f32 / size.0.max(size.1) as f32;
     (g.width, g.height) = size;
@@ -290,7 +293,7 @@ pub(crate) fn render_preview(
         crate::lens::auto_ca::prime(im);
     }
     let source = retouched(im, r, cancel, stages.as_mut().map(|s| &mut *s.retouch))?;
-    let g = Geometry::new(&source, r, 0);
+    let g = Geometry::new(&source.image, r, 0);
     let [x, y, w, h] = region.unwrap_or([0, 0, g.width, g.height]);
     ensure!(
         w > 0
@@ -327,14 +330,23 @@ pub(crate) fn render_preview(
             crop: [x - left, y - top, w, h],
         };
         let frame = render_resident(
-            &source, &source, r, 1., &g, base, 0., &finish, cancel, stages,
+            &source.image,
+            &source,
+            r,
+            1.,
+            &g,
+            base,
+            0.,
+            &finish,
+            cancel,
+            stages,
         )?;
         if let Some(frame) = frame {
             return Ok(Output::Frame(Box::new(frame)));
         }
     }
     let (toned, tonal_recipe) = local_stage(
-        &source,
+        &source.image,
         &source,
         r,
         1.,

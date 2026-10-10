@@ -17,9 +17,10 @@ const FIELDS: &[(&str, usize)] = &[
     ("CALIBRATION", 9),
     ("SHADOW_TINT", 1),
     ("EXPOSURE", 1),
-    // The scene tone stage's white curves (`GlobalTone::gpu_curves`) and its blacks
-    // curve, or -1.
+    // The scene tone stage's white curves (`GlobalTone::gpu_curves`), its default
+    // black and its blacks curve, or -1 each.
     ("SCENE_WHITE", 1),
+    ("SCENE_DEFAULT_BLACK", 1),
     ("SCENE_BLACKS", 1),
     // For masks' Whites and Blacks: their curves (`gpu_mask_table`), or -1; and
     // `GlobalTone::gpu_keys`.
@@ -263,11 +264,16 @@ fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams>
     p.set("EXPOSURE", &[lut.exposure_gain]);
     let global = &lut.scene.global;
     let white = p.push(global.gpu_curves());
+    let default_black = match global.default_black_samples() {
+        Some(b) => p.push(b.iter().copied()),
+        None => -1.,
+    };
     let blacks = match global.blacks_samples() {
         Some(b) => p.push(b.iter().copied()),
         None => -1.,
     };
     p.set("SCENE_WHITE", &[white]);
+    p.set("SCENE_DEFAULT_BLACK", &[default_black]);
     p.set("SCENE_BLACKS", &[blacks]);
     p.set("SCENE_KEYS", &global.gpu_keys());
     p.set("SCENE_TABLES", &[-1.]);

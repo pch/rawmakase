@@ -12,6 +12,15 @@
 //! - `blacks.bin`: the default render's output to the Blacks render's, per black key
 //!   (log2 of the photo's darkest level: −8, then −6.5 to −2 in half stops) and Blacks,
 //!   at log2 outputs −16 to 0 in eighth stops, f32.
+//! - `default_black.bin`: Camera Raw's default black, which adapts to the photo's
+//!   darkest level. The white curves come from ramps whose darkest patch is 2^-14 of
+//!   their maximum and show almost none; per black key (as `blacks.bin`), the white
+//!   curves' default output to the black ramp's at the same scene value, at log2
+//!   outputs −16 to 0 in eighth stops, f32; 0 below the ramp's darkest patch. Measured
+//!   at a sensor white of 4, so the rows sit at black keys 2 stops lower relative to
+//!   the sensor's white, which the default black follows (the photo's 0.1th
+//!   percentile of luminance, `PhotoMeasures::dark`). Applied per channel after
+//!   the white curve and before Blacks, with a profile's default black only.
 //!
 //! - `masks.bin`: a mask's Whites, then its Blacks: the global stage's output to the
 //!   output with the mask, at −1, −0.75, −0.5, −0.25, 0.25, 0.5, 0.75 and 1, over log2
@@ -25,6 +34,15 @@ static WHITE3: &[u8] = include_bytes!("white3.bin");
 static WHITE: &[u8] = include_bytes!("white.bin");
 static BLACKS: &[u8] = include_bytes!("blacks.bin");
 static MASKS: &[u8] = include_bytes!("masks.bin");
+static DEFAULT_BLACK: &[u8] = include_bytes!("default_black.bin");
+/// The default black follows the black key relative to the sensor's white. The log2
+/// sensor white `default_black.bin` was measured at: its rows sit at `BLACK_KEYS` less
+/// this.
+const DEFAULT_BLACK_SENSOR: f32 = 2.;
+/// The relative black key at and below which there is no default black, fading in
+/// linearly toward the first row: the synthetic chart sits at −11.6 and Camera Raw
+/// renders it without one (as the white ramps, at −14).
+const NO_DEFAULT_BLACK: f32 = -11.5;
 /// The masks' slider positions in `masks.bin`; 0 is the identity.
 /// The toe's output above which, without a black point, the white curves resolve it.
 const LINEAR_TOE: f32 = 1. / 512.;
@@ -128,25 +146,33 @@ pub(crate) struct GlobalTone {
     /// Without a black point: the scene value below which the curve continues linearly,
     /// where the 16-bit white curves no longer resolve the toe.
     linear_below: f32,
+    /// With a black point: Camera Raw's default black at the photo's black key relative
+    /// to the sensor's white, over log2 outputs (`default_black.bin`); none at or below
+    /// `NO_DEFAULT_BLACK`.
+    default_black: Option<Box<[f32; Y_SAMPLES]>>,
     blacks_curve: Option<Box<[f32; Y_SAMPLES]>>,
 }
 impl GlobalTone {
     /// For the sensor's white, the level Whites stretches toward (the probes' maximum;
     /// `PhotoMeasures::whites_top`) and the white point (log2, at the render's
     /// Exposure), Whites and Blacks (−1 to 1), the photo's black key (log2 of its darkest
-    /// level) and whether the profile has Camera Raw's default black point (its
+    /// level, for Blacks), the level the default black follows (log2 of its 0.1th
+    /// percentile; `PhotoMeasures::dark_key`) and whether the profile has Camera Raw's default black point (its
     /// DefaultBlackRender is Auto).
     pub(crate) fn new(
         [sensor, top, stretch, white_point]: [f32; 4],
         whites: f32,
         blacks: f32,
         black_key: f32,
+        dark_key: f32,
         black_point: bool,
     ) -> Self {
         // Outside the measured sensor whites and maxima the nearest curves apply to the
         // scene values as they are: the curves are over x relative to the maximum, so it
         // is clamped with them, and Exposure keeps its effect.
         let last = SENSOR_FIRST + (SENSORS - 1) as f32 * SENSOR_STEP;
+        // Exposure moves both, so the default black does not follow it.
+        let relative_key = dark_key - sensor;
         let sensor = sensor.clamp(SENSOR_FIRST, last);
         let within = |t: f32| sensor - (sensor - t).clamp(0., (BELOWS - 1) as f32 * BELOW_STEP);
         let (top, stretch) = (within(top), within(stretch));
@@ -208,6 +234,8 @@ impl GlobalTone {
                 .unwrap_or(T_SAMPLES - 1);
             (T_FIRST + k as f32 * T_STEP).exp2()
         });
+        let default_black = (black_point && relative_key > NO_DEFAULT_BLACK)
+            .then(|| Box::new(std::array::from_fn(|k| default_black(relative_key, k))));
         let blacks_curve = (blacks != 0.).then(|| {
             let corners = blacks_corners(black_key, blacks);
             Box::new(std::array::from_fn(|k| blacks_sample(&corners, k)))
@@ -223,6 +251,7 @@ impl GlobalTone {
             tail,
             toe,
             linear_below,
+            default_black,
             blacks_curve,
         };
         tone.white = tone.row_at(whites);
@@ -259,6 +288,17 @@ impl GlobalTone {
     }
     pub(crate) fn apply(&self, p: [f32; 3]) -> [f32; 3] {
         let p = rgb_tone(p, |x| self.white_at(&self.white, x));
+        let p = match &self.default_black {
+            // Above white (positive Whites' overshoot) it leaves the output alone.
+            Some(curve) => p.map(|v| {
+                if v < 1. {
+                    evaluate(&curve[..], Y_FIRST, Y_STEP, v)
+                } else {
+                    v
+                }
+            }),
+            None => p,
+        };
         match &self.blacks_curve {
             Some(blacks) => p.map(|v| evaluate(&blacks[..], Y_FIRST, Y_STEP, v)),
             None => p,
@@ -299,6 +339,10 @@ impl GlobalTone {
         out.extend(self.tail.iter());
         out.extend(self.toe.as_deref().unwrap_or(&self.tail).iter());
         out
+    }
+    /// The default black's samples, for the GPU port.
+    pub(crate) fn default_black_samples(&self) -> Option<&[f32]> {
+        self.default_black.as_deref().map(|b| &b[..])
     }
     /// The blacks curve's samples, for the GPU port.
     pub(crate) fn blacks_samples(&self) -> Option<&[f32]> {
@@ -354,6 +398,33 @@ fn blacks_sample(corners: &[(usize, f32); 4], k: usize) -> f32 {
         .map(|(r, w)| value(BLACKS, r * Y_SAMPLES + k) * w)
         .sum()
 }
+/// Camera Raw's default black at black key `relative` (relative to the sensor's white),
+/// at the `k`th log2 output: identity at `NO_DEFAULT_BLACK` blending linearly into the
+/// first measured key, the measured keys interpolated linearly, the last one above them.
+fn default_black(relative: f32, k: usize) -> f32 {
+    let y = (Y_FIRST + k as f32 * Y_STEP).exp2();
+    let key = relative + DEFAULT_BLACK_SENSOR;
+    let first = BLACK_KEYS[0] - DEFAULT_BLACK_SENSOR;
+    if relative <= first {
+        let t = ((relative - NO_DEFAULT_BLACK) / (first - NO_DEFAULT_BLACK)).clamp(0., 1.);
+        return y * (1. - t) + default_black_row(0, k) * t;
+    }
+    let (b, t) = bracket_in(&BLACK_KEYS, key);
+    default_black_row(b, k) * (1. - t) + default_black_row(b + 1, k) * t
+}
+/// Row `b` of `default_black.bin` at its `k`th sample. Below the ramp's darkest patch
+/// (where the row is 0) it keeps the ratio of the first measured sample.
+fn default_black_row(b: usize, k: usize) -> f32 {
+    let at = |j: usize| value(DEFAULT_BLACK, b * Y_SAMPLES + j);
+    let first = (0..Y_SAMPLES)
+        .find(|&j| at(j) > 0.)
+        .unwrap_or(Y_SAMPLES - 1);
+    if k >= first {
+        at(k)
+    } else {
+        at(first) * (Y_STEP * (k as f32 - first as f32)).exp2()
+    }
+}
 /// DNG RGBTone: `curve` maps the brightest and darkest channel, and the middle one
 /// keeps its relative place between them.
 fn rgb_tone(p: [f32; 3], curve: impl Fn(f32) -> f32) -> [f32; 3] {
@@ -378,6 +449,7 @@ mod tests {
             whites,
             blacks,
             -8.,
+            -8.,
             black_point,
         )
     }
@@ -392,7 +464,8 @@ mod tests {
             assert!(gray(sensor - 1.) < gray(sensor) * 0.75, "{sensor}");
         }
         let dim = |top: f32| {
-            GlobalTone::new([0., top, top, 0.], 0., 0., -8., true).apply([2f32.powf(-7.); 3])[1]
+            GlobalTone::new([0., top, top, 0.], 0., 0., -8., -8., true).apply([2f32.powf(-7.); 3])
+                [1]
         };
         assert!(
             (dim(-6.) / dim(-10.) - 1.).abs() < 0.1,
@@ -418,7 +491,7 @@ mod tests {
     #[test]
     fn curves_between_measured_maxima_keep_mid_gray() {
         let gray = |sensor: f32, top: f32| {
-            GlobalTone::new([sensor, top, top, sensor], 0., 0., -8., true).apply([0.18; 3])[1]
+            GlobalTone::new([sensor, top, top, sensor], 0., 0., -8., -8., true).apply([0.18; 3])[1]
         };
         let corner = gray(0.5, 0.5);
         for (sensor, top) in [(0.862, 0.726), (0.25, -0.6), (1.7, 0.2)] {
@@ -436,7 +509,8 @@ mod tests {
     #[test]
     fn no_shoulder_below_the_photos_maximum() {
         let x = 0.840896;
-        let between = GlobalTone::new([0., -0.25, -0.25, 0.], 0., 0., -8., true).apply([x; 3])[1];
+        let between =
+            GlobalTone::new([0., -0.25, -0.25, 0.], 0., 0., -8., -8., true).apply([x; 3])[1];
         let measured = reaching(0., 0., 0., true).apply([x; 3])[1];
         assert!(
             (between - measured).abs() < 0.02,
@@ -449,7 +523,7 @@ mod tests {
     #[test]
     fn the_stretch_level_moves_only_positive_whites() {
         let at = |stretch: f32, whites: f32, x: f32| {
-            GlobalTone::new([2., 2., stretch, 2.], whites, 0., -8., true).apply([x; 3])[1]
+            GlobalTone::new([2., 2., stretch, 2.], whites, 0., -8., -8., true).apply([x; 3])[1]
         };
         for whites in [0., -0.5, -1.] {
             for x in [0.1, 1., 2.] {
@@ -470,6 +544,7 @@ mod tests {
         assert_eq!(WHITE3.len(), 2 * SENSORS * BELOWS * SLIDERS * U_SAMPLES);
         assert_eq!(WHITE.len(), 4 * WHITE_POINTS * SLIDERS * T_SAMPLES);
         assert_eq!(BLACKS.len(), 4 * BLACK_KEYS.len() * SLIDERS * Y_SAMPLES);
+        assert_eq!(DEFAULT_BLACK.len(), 4 * BLACK_KEYS.len() * Y_SAMPLES);
     }
 
     #[test]
@@ -501,7 +576,7 @@ mod tests {
     fn positive_whites_stretches_a_dim_photo_toward_white() {
         // A photo four stops below its sensor's white: Whites +100 brightens it far more
         // than a photo reaching its white point.
-        let dim = GlobalTone::new([2., -2., -2., 0.], 1., 0., -8., true);
+        let dim = GlobalTone::new([2., -2., -2., 0.], 1., 0., -8., -8., true);
         let bright = reaching(2., 1., 0., true);
         let x = 0.2;
         assert!(dim.apply([x; 3])[0] > bright.apply([x; 3])[0] + 0.2);
@@ -512,8 +587,14 @@ mod tests {
         for (sensor, top) in [(-1., -1.), (0., -2.), (1.3, 1.3), (2., -1.), (3.7, 1.)] {
             for whites in [-1., -0.3, 0., 0.6, 1.] {
                 for blacks in [-1., 0., 0.5, 1.] {
-                    let tone =
-                        GlobalTone::new([sensor, top, top, top + 1.], whites, blacks, -5., true);
+                    let tone = GlobalTone::new(
+                        [sensor, top, top, top + 1.],
+                        whites,
+                        blacks,
+                        -5.,
+                        -5.,
+                        true,
+                    );
                     let mut last = -1f32;
                     for i in 0..400 {
                         let x = 2f32.powf(-14. + i as f32 * 0.05);
@@ -547,7 +628,7 @@ mod tests {
 
     #[test]
     fn a_masks_whites_and_blacks_follow_the_global_curves() {
-        let render = GlobalTone::new([1.3, 0.2, 0.2, 1.2], 0.2, -0.1, -5., true);
+        let render = GlobalTone::new([1.3, 0.2, 0.2, 1.2], 0.2, -0.1, -5., -5., true);
         let p = [0.4f32, 0.3, 0.6];
         assert_eq!(render.apply_at(p, 0., 0.), render.apply(p));
         // Measured: a mask's Whites +50 takes 0.18 (default output 0.177) to 0.240.
@@ -561,9 +642,59 @@ mod tests {
         assert!(dark < plain.apply([0.05; 3])[0]);
     }
 
+    /// Camera Raw's default black adapts to the photo's darkest level (its 0.1th
+    /// percentile) relative to the sensor's white: a photo whose darkest level is high
+    /// (8.5 stops below the sensor's white) renders its darkest values darker than one
+    /// whose darkest level is low (14 stops below, as the white ramps the white curves
+    /// come from: none), and mid gray the same. The synthetic chart, 11.6 stops below,
+    /// has none either.
+    #[test]
+    fn the_default_black_follows_the_photos_darkest_level() {
+        // The minimum (Blacks' key) at 2^-14 throughout: the default black reads the
+        // percentile only.
+        let keyed = |dark: f32, black_point: bool| {
+            GlobalTone::new([0., 0., 0., 0.], 0., 0., -14., dark, black_point)
+        };
+        assert!(keyed(-14., true).default_black_samples().is_none());
+        assert!(keyed(-11.6, true).default_black_samples().is_none());
+        assert_eq!(
+            GlobalTone::new([0.; 4], 0., 0., -8.5, -8.5, true).default_black_samples(),
+            keyed(-8.5, true).default_black_samples()
+        );
+        // Relative to the sensor's white: Exposure, which moves both, leaves it alone.
+        let shifted = GlobalTone::new([2., 2., 2., 2.], 0., 0., -12., -6.5, true);
+        assert_eq!(
+            shifted.default_black_samples(),
+            keyed(-8.5, true).default_black_samples()
+        );
+        let (high, low) = (keyed(-8.5, true), keyed(-14., true));
+        for x in [2f32.powf(-8.), 2f32.powf(-7.5)] {
+            let (h, l) = (high.apply([x; 3])[1], low.apply([x; 3])[1]);
+            assert!(h < 0.95 * l, "{x}: {h} against {l}");
+        }
+        let (h, l) = (high.apply([0.18; 3])[1], low.apply([0.18; 3])[1]);
+        assert!((h / l - 1.).abs() < 0.01, "{h} against {l}");
+        // Without a default black the level changes nothing.
+        for x in [2f32.powf(-10.), 2f32.powf(-6.), 0.18] {
+            assert_eq!(
+                keyed(-8.5, false).apply([x; 3]),
+                keyed(-14., false).apply([x; 3])
+            );
+        }
+    }
+
+    /// Through the white curve; the default black after it works on each channel, so
+    /// the photo's darkest level is where it has none.
     #[test]
     fn the_middle_channel_keeps_its_place() {
-        let tone = reaching(2., 0.5, 0., true);
+        let tone = GlobalTone::new(
+            [2.; 4],
+            0.5,
+            0.,
+            2. + NO_DEFAULT_BLACK,
+            2. + NO_DEFAULT_BLACK,
+            true,
+        );
         let [r, g, b] = tone.apply([1.2, 0.6, 0.3]);
         assert!(r > g && g > b);
         assert!(((g - b) / (r - b) - (0.6 - 0.3) / (1.2 - 0.3)).abs() < 1e-5);

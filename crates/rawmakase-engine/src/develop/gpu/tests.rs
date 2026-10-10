@@ -201,6 +201,16 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
         scale_factor: 1.,
         scale_clipped: 0,
     });
+    // The same with its darkest level lifted to about 2^-6, where Camera Raw's default
+    // black adapts to it (`GlobalTone`'s default black).
+    let lifted = Arc::new(CameraImage {
+        pixels: image
+            .pixels
+            .iter()
+            .map(|p| p.map(|v| 0.02 + 0.9 * v))
+            .collect(),
+        ..(*image).clone()
+    });
     let n = 4000;
     let samples = Arc::new(Samples {
         width: 80,
@@ -254,6 +264,7 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     r.white_point = 0.97;
     r.midtone = 1.2;
     // Positive Dehaze removes the photo's haze, negative uses the measured tables.
+    let toned = recipes.len();
     recipes.push(r.clone());
     let mut negative = r.clone();
     negative.effects.dehaze = -0.5;
@@ -331,8 +342,11 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
         .filter(|(a, b)| (0..3).any(|c| (a[c] - b[c]).abs() > 0.01))
         .count();
     assert!(changed > with.pixels.len() / 50, "{changed} pixels changed");
-    for (i, recipe) in recipes.iter().enumerate() {
-        let source = Source::new(&image);
+    let lifted_recipes = [recipes[1].clone(), recipes[toned].clone()];
+    let cases =
+        (recipes.iter().map(|r| (&image, r))).chain(lifted_recipes.iter().map(|r| (&lifted, r)));
+    for (i, (image, recipe)) in cases.enumerate() {
+        let source = Source::new(image);
         let params = pixel_params(source, recipe).expect("GPU port covers this recipe");
         let expected = develop_samples(source, recipe, &samples, &cancel, None)?;
         let actual = gpu.develop(&samples, &params, &cancel)?;

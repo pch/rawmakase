@@ -214,21 +214,25 @@ impl PreviewRenderer {
         recipe: &Recipe,
         needed: f32,
         cancel: &AtomicBool,
-    ) -> Result<(Arc<CameraImage>, Arc<CameraImage>)> {
+    ) -> Result<(Arc<CameraImage>, quality::Retouched)> {
         if recipe.lens_ca {
             crate::lens::auto_ca::prime(image);
         }
         let source = quality::retouched(image, recipe, cancel, Some(&mut self.retouch))?;
         match &mut self.pyramid {
-            Some(p) if Arc::ptr_eq(p.source(), &source) => {}
+            Some(p) if Arc::ptr_eq(p.source(), &source.image) => {}
             Some(p) if self.retouch.changed_from(p.source()).is_some() => {
                 let rects = self.retouch.changed_from(p.source()).unwrap().to_vec();
-                p.update(source, &rects);
+                p.update(source.image.clone(), &rects);
             }
-            _ => self.pyramid = Some(Pyramid::new(source)),
+            _ => self.pyramid = Some(Pyramid::new(source.image.clone())),
         }
         let pyramid = self.pyramid.as_mut().unwrap();
-        Ok((pyramid.level_for(needed), pyramid.source().clone()))
+        let full = quality::Retouched {
+            image: pyramid.source().clone(),
+            unretouched: source.unretouched,
+        };
+        Ok((pyramid.level_for(needed), full))
     }
     #[cfg(test)]
     pub(crate) fn finish(
@@ -731,6 +735,81 @@ mod tests {
         )
         .unwrap();
         assert!(healed.pixels[0][1] > dusty.pixels[0][1] + 0.2);
+    }
+    /// A local repair does not move the whole photo's darkest level
+    /// (`PhotoMeasures::dark`, which the default black follows): a red eye correction
+    /// darkening a pupil and spot removal healing a dark speck leave it as without
+    /// them, in Fit and 100% regions alike, while the minimum (Blacks') sees them.
+    #[test]
+    fn retouching_leaves_the_photos_darkest_level() {
+        use crate::model::{
+            red_eye::RedEyeOp,
+            retouch::{RetouchMode, RetouchOp, RetouchShape},
+        };
+        let (w, h) = (480, 320);
+        let spot = [300., 120.];
+        // A spot of `color` 12 pixels across at `spot` (0.3% of the photo, more than
+        // the percentile) on a lighter background.
+        let photo = |color: [f32; 3]| {
+            let mut im = image(w, h, 0.);
+            for (i, p) in im.pixels.iter_mut().enumerate() {
+                let (x, y) = ((i as u32 % w) as f32, (i as u32 / w) as f32);
+                *p = if (x - spot[0]).hypot(y - spot[1]) < 12. {
+                    color
+                } else {
+                    [0.5, 0.33, 0.25]
+                };
+            }
+            im
+        };
+        let cancel = AtomicBool::new(false);
+        let measures = |im: &CameraImage, r: &Recipe| {
+            let mut warm = PreviewRenderer::default();
+            warm.render(im, r, 150, None, &cancel).unwrap();
+            warm.render(im, r, 0, Some([40, 30, 60, 50]), &cancel)
+                .unwrap();
+            let cached = warm.cache.measures.lock().unwrap();
+            assert_eq!(cached.len(), 1, "Fit and regions share the measures");
+            cached.values().next().unwrap().measures
+        };
+        let frame = crate::model::image_frame::ImageFrame::new(&image(w, h, 0.));
+        let eye = photo([0.6, 0.03, 0.03]);
+        let fixed = Recipe {
+            red_eye: vec![RedEyeOp {
+                kind: Default::default(),
+                center: frame.to_image(spot[0], spot[1]),
+                radius: [12. / 480.; 2],
+                correlation: 0.,
+                pupil_size: 0.5,
+                darken: 1.,
+            }]
+            .into(),
+            ..Default::default()
+        };
+        let speck = photo([0.02; 3]);
+        let healed = Recipe {
+            retouch: vec![RetouchOp {
+                mode: RetouchMode::Heal,
+                shape: RetouchShape::Spot {
+                    center: frame.to_image(spot[0], spot[1]),
+                    radius: 20. / 480.,
+                },
+                feather: 0.4,
+                opacity: 1.,
+                offset: [-0.2, 0.2],
+            }],
+            ..Default::default()
+        };
+        for (name, im, r) in [("red eye", &eye, &fixed), ("spot", &speck, &healed)] {
+            let (plain, retouched) = (measures(im, &Recipe::default()), measures(im, r));
+            assert!(
+                (retouched.min - plain.min).abs() > 0.5,
+                "{name}: the repair changes the photo ({} {})",
+                retouched.min,
+                plain.min
+            );
+            assert_eq!(retouched.dark, plain.dark, "{name}");
+        }
     }
     /// A red eye correction stays on its eye through crop, straightening, rotation and
     /// flips, and renders the same in Fit, regions and exports.

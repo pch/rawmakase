@@ -367,7 +367,15 @@ fn mask_curve(kind: u32, s_in: f32, y: f32) -> f32 {
     let t = (s - mask_position(j)) / (mask_position(j + 1u) - mask_position(j));
     return mix(mask_output(kind, j, y), mask_output(kind, j + 1u, y), t);
 }
-// GlobalTone::apply: the white curve (RGBTone), then Blacks per channel.
+// GlobalTone::apply's default black on one channel: identity at and above white.
+fn default_black(base: i32, y: f32) -> f32 {
+    if y >= 1.0 {
+        return y;
+    }
+    return log_curve(base, SCENE_Y, y);
+}
+// GlobalTone::apply: the white curve (RGBTone), then the default black and Blacks per
+// channel.
 fn scene_global(q: vec3<f32>) -> vec3<f32> {
     let whites = p(P_SCENE_KEYS + 3u);
     let lo = min(min(q.x, q.y), q.z);
@@ -377,6 +385,10 @@ fn scene_global(q: vec3<f32>) -> vec3<f32> {
     var out = vec3(ya);
     if hi - lo > 1e-12 {
         out = ya + (yb - ya) * (q - lo) / (hi - lo);
+    }
+    let black = offset(P_SCENE_DEFAULT_BLACK);
+    if black >= 0 {
+        out = vec3(default_black(black, out.x), default_black(black, out.y), default_black(black, out.z));
     }
     let blacks = offset(P_SCENE_BLACKS);
     if blacks >= 0 {

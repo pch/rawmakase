@@ -53,6 +53,7 @@ impl SceneTone {
                 r.whites,
                 r.blacks,
                 measures.black_key(r.exposure),
+                measures.dark_key(r.exposure),
                 r.profile
                     .as_ref()
                     .is_none_or(|p| p.black_render() != crate::camera_profiles::BlackRender::None),
@@ -161,6 +162,7 @@ mod tests {
                 sensor_white: 1.,
                 max,
                 min: -12.,
+                dark: -12.,
                 p99: -3.,
             };
             let r = Recipe {

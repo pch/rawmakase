@@ -375,6 +375,36 @@ fn temperature_leaves_the_photos_maximum_in_place() -> anyhow::Result<()> {
     assert_eq!(maximum(3000.), maximum(7500.));
     Ok(())
 }
+/// The level the default black follows is the photo's 0.1th percentile of luminance:
+/// a few dark pixels (a darkened red-eye pupil) move the minimum, which Blacks reads,
+/// but not it.
+#[test]
+fn a_few_dark_pixels_move_the_minimum_but_not_the_dark_level() {
+    let (width, height) = (128, 96);
+    let mut im = fixture();
+    im.width = width;
+    im.height = height;
+    im.metadata.width = width;
+    im.metadata.height = height;
+    im.pixels = (0..(width * height) as usize)
+        .map(|i| [0.05 + (i % 128) as f32 / 400.; 3])
+        .collect();
+    let r = Recipe::default();
+    let matrix = profile_matrix(&im.metadata, &r);
+    let measures = |im: &CameraImage| CurveSet::with_photo_measures(im.into(), &r, matrix).measures;
+    let plain = measures(&im);
+    for (x, y) in [(60, 40), (61, 40), (60, 41), (61, 41)] {
+        im.pixels[y * width as usize + x] = [0.001; 3];
+    }
+    let spotted = measures(&im);
+    assert!(
+        spotted.min < plain.min - 3.,
+        "{} {}",
+        spotted.min,
+        plain.min
+    );
+    assert_eq!(spotted.dark, plain.dark);
+}
 /// Every scene stage control, and the settings after the stage that read the photo.
 fn scene_stage_recipe() -> Recipe {
     let mut r = Recipe {

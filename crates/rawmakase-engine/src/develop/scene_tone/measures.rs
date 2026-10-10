@@ -13,6 +13,9 @@ pub(crate) struct PhotoMeasures {
     pub(crate) max: f32,
     /// The darkest luminance on the reduced copy.
     pub(crate) min: f32,
+    /// Its luminance's 0.1th percentile: a darkest level a few dark pixels do not move,
+    /// which Camera Raw's default black follows.
+    pub(crate) dark: f32,
     /// Its luminance's 99th percentile: the level Dehaze's response is relative to, and
     /// a stop below the level Whites stretches toward.
     pub(crate) p99: f32,
@@ -44,6 +47,7 @@ impl Default for PhotoMeasures {
             sensor_white: 0.,
             max: 0.,
             min: -12.,
+            dark: -12.,
             p99: -1.,
         }
     }
@@ -71,6 +75,11 @@ impl PhotoMeasures {
     pub(crate) fn black_key(&self, exposure: f32) -> f32 {
         self.min + exposure
     }
+    /// The level the default black follows (log2, the 0.1th percentile of luminance) at
+    /// `exposure` stops.
+    pub(crate) fn dark_key(&self, exposure: f32) -> f32 {
+        self.dark + exposure
+    }
 }
 
 #[cfg(test)]
@@ -82,6 +91,7 @@ mod tests {
             sensor_white: sensor.log2(),
             max: max.log2(),
             min: -12.,
+            dark: -12.,
             p99: -1.,
         }
         .white_point(exposure)
@@ -97,6 +107,7 @@ mod tests {
             sensor_white: 1.,
             max,
             min: -12.,
+            dark: -12.,
             p99,
         };
         // A specular highlight at the sensor's white does not hold Whites back.

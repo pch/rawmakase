@@ -288,13 +288,21 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
 #[derive(PartialEq)]
 pub(crate) struct MeasuresKey {
     copy: Same<CameraImage>,
+    /// The copy without retouching, which the darkest level is measured on.
+    unretouched: Option<Same<CameraImage>>,
     matrix: [[u32; 3]; 3],
     recipe: Recipe,
 }
 impl MeasuresKey {
-    pub(crate) fn new(copy: &Arc<CameraImage>, r: &Recipe, matrix: [[f32; 3]; 3]) -> Self {
+    pub(crate) fn new(
+        copy: &Arc<CameraImage>,
+        unretouched: Option<&Arc<CameraImage>>,
+        r: &Recipe,
+        matrix: [[f32; 3]; 3],
+    ) -> Self {
         Self {
             copy: Same(copy.clone()),
+            unretouched: unretouched.map(|u| Same(u.clone())),
             matrix: matrix.map(|row| row.map(f32::to_bits)),
             recipe: stage_recipes(r).measures,
         }

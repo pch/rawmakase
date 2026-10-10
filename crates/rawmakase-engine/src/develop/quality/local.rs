@@ -46,9 +46,9 @@ pub(super) fn textured(
         || Ok(detail.apply(im, amount)),
     )
 }
-/// `full` (the recovered and retouched photo at full resolution) reduced for measuring
-/// it (`Toned::measured`), through the stage cache when there is one.
-pub(super) fn measurement_copy(
+/// `full` (the photo at full resolution) reduced for measuring it, through the stage
+/// cache when there is one.
+fn measurement_copy(
     full: &Arc<CameraImage>,
     cache: Option<&mut StageCache>,
     cancel: &AtomicBool,
@@ -69,12 +69,27 @@ pub(super) fn measurement_copy(
         None => make().map(Arc::new),
     }
 }
+/// The photo's measurement copies: the retouched photo's (`Toned::measured`) and the
+/// unretouched one's (`Toned::unretouched`), one copy when they are the same image.
+pub(super) fn measurement_copies(
+    full: &Retouched,
+    mut cache: Option<&mut StageCache>,
+    cancel: &AtomicBool,
+) -> Result<(Arc<CameraImage>, Arc<CameraImage>)> {
+    let measured = measurement_copy(&full.image, cache.as_deref_mut(), cancel)?;
+    let unretouched = if Arc::ptr_eq(&full.image, &full.unretouched) {
+        measured.clone()
+    } else {
+        measurement_copy(&full.unretouched, cache, cancel)?
+    };
+    Ok((measured, unretouched))
+}
 /// `im` (the full-resolution photo `full`, or a pyramid level of it at `scale`) with
 /// the measured Texture, its copy for measuring the photo, and the recipe the pixel
 /// stage renders it with.
 pub(super) fn local_stage(
     im: &Arc<CameraImage>,
-    full: &Arc<CameraImage>,
+    full: &Retouched,
     r: &Recipe,
     scale: f32,
     cancel: &AtomicBool,
@@ -93,11 +108,13 @@ pub(super) fn local_stage(
     } else {
         im.clone()
     };
+    let (measured, unretouched) = measurement_copies(full, cache, cancel)?;
     let toned = Toned {
         image: im.clone(),
         scale,
         untextured,
-        measured: Some(measurement_copy(full, cache, cancel)?),
+        measured: Some(measured),
+        unretouched: Some(unretouched),
         measures,
     };
     Ok((toned, tonal))

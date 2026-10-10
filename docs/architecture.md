@@ -163,7 +163,9 @@ inject a temporary file, without changing the process-wide environment.
   and exports must continue to share the relevant processing paths. What the
   [scene tone stage](scene-tone-stage.md) measures of a photo comes from one
   measurement copy of the full-resolution photo (`Toned::measured`, cached per
-  image), never from the region or preview size being rendered.
+  image), never from the region or preview size being rendered; the darkest level
+  the default black follows comes from the same copy without red eye corrections
+  and spot removal (`Toned::unretouched`, the same copy when there are none).
 - Keep OS integration in `platform` and native decoding/color management in
   `raw`. Use the existing asset-path policy instead of duplicating environment
   variable handling in feature modules.
