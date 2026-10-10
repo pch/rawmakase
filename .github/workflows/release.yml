@@ -318,6 +318,11 @@ jobs:
             arch: aarch64
             target: windows-arm64
             ruby: '3.4'
+    # runs-on is a matrix expression, so name the shell Windows uses by default
+    # (and tell actionlint these steps are PowerShell).
+    defaults:
+      run:
+        shell: pwsh
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
     steps:

@@ -110,6 +110,11 @@ jobs:
             arch: aarch64
             target: windows-arm64
             ruby: '3.4'
+    # runs-on is a matrix expression, so name the shell Windows uses by default
+    # (and tell actionlint these steps are PowerShell).
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
