@@ -81,6 +81,12 @@ A panel should call the domain API responsible for an operation, rather than
 implementing file formats, SQL or pixel processing itself. Thumbnail decoding
 belongs to `raw`; library browsing does not call into the preview renderer.
 
+`app::display` installs a paint callback for the macOS surface color declaration;
+`platform::display` owns the AppKit/Metal layer access. The default sRGB mode lets
+the compositor match the current display. Manual monitor conversion keeps its
+existing device-RGB output and bypasses compositor conversion. Neither mode
+changes the renderer's output color space or export profiles.
+
 Each load/render task owns its generation, cancellation token and lifecycle.
 The single-slot mailbox replaces pending work. The app discards obsolete results,
 and a failure only finishes its owning task. Worker messages use named fields;

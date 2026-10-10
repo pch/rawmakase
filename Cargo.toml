@@ -84,10 +84,13 @@ telemetry = []
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 midir = "0.11"
 
-# Quit through the window's close guard (src/platform/quit.rs).
+# Native quit handling and display color management (src/platform/).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSWindow"] }
+dispatch2 = "0.3"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSWindow", "objc2-quartz-core"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColorSpace"] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "CAMetalLayer", "objc2-core-graphics"] }
 
 # The desktop's text size through the desktop portal (src/platform/text_scale.rs);
 # the same blocking zbus fastframe-text already uses, so no new crates.
