@@ -172,7 +172,20 @@ engine's own global curves, so they were refitted once the default black (below)
 added: the earlier taps lacked it and the fit had taken Camera Raw's black for Shadows'
 gain (median ΔE00 on the training photos, Shadows +100 1.55 → 1.53 and +50 1.16 → 1.11,
 Highlights unchanged within 0.02); the cross-validated figures above are from the earlier
-taps. Clarity's weights keep the percentile key they were fitted
+taps.
+
+**Open: Shadows +100 in small dark areas.** On the training photos Shadows +100 leaves
+the darkest display tones (L* below 15) 5–7 L* too light on average, almost all of it
+from photos where they are small areas (0.2–3.5% of the frame) inside brighter
+surroundings: Camera Raw lifts them by about 2.3 EV in its linear output, RAWmakase by
+about 3 EV, the gain large dark areas get at the same base level (those match within
+about 1.5 L*). What was tried, on the training photos: a second table dimension for the
+pixel against its base (Camera Raw does lift darker-than-their-base pixels less; in
+cross-validation 0.66 → 0.52 EV error in the deep shadows, but the display error only
+6.6 → 5.0 L*), including pixels below 2^-10 in the fit (no change), smoother bases
+(guided filter ε 0.03–8, radius 1.6–6% of the long edge, refitted: no change), and
+applying the default black before the local gain (5.0 L*, but Blacks ±50 and the
+default render get worse). None is in the engine. Clarity's weights keep the percentile key they were fitted
 with.
 
 ### Dehaze
