@@ -5,9 +5,10 @@
 //!   are fractions of the half diagonal, distortion is in percent, CA a radius
 //!   fraction, vignetting the remaining illumination in percent.
 //! - Sony ARW: raw SubIFD tags 0x7032 (vignetting), 0x7035 (CA) and 0x7037
-//!   (distortion), signed shorts led by the number of knots, spread evenly from the
-//!   centre to the corner. Distortion is in 2^-14, CA in 2^-21 units; vignetting v
-//!   restores 2^(2^(v/8192 - 1) - 0.5).
+//!   (distortion), signed shorts led by the number of values and padded with zeros
+//!   to a fixed length (ZV-1: 11 distortion knots in 16 slots). Knots are spread
+//!   evenly from the centre to the corner. Distortion is in 2^-14, CA in 2^-21
+//!   units; vignetting v restores 2^(2^(v/8192 - 1) - 0.5).
 //!
 //! The Fujifilm vignetting agrees with the FixVignetteRadial opcode Adobe writes into
 //! DNGs of the same file to within 1% (see docs/lens-corrections.md).
@@ -96,25 +97,31 @@ fn sony(t: &mut Tiff) -> Option<LensCorrection> {
             .map(|i| i as f32 / (n - 1) as f32)
             .collect::<Vec<_>>()
     };
-    let single = |v: Option<Vec<f32>>, f: &dyn Fn(f32) -> f32| {
+    // The count's values, from storage that may be longer: a ZV-1 stores 11 distortion
+    // knots in 16 slots. Anything stored past the count must be zero padding.
+    let counted = |v: Option<Vec<f32>>, per_count: usize| {
         let v = v?;
-        let n = *v.first()? as usize;
-        (n >= 2 && v.len() == n + 1)
-            .then(|| Radial::new(knots(n), v[1..].iter().map(|x| f(*x)).collect()))?
+        let count = *v.first()? as usize;
+        let values = v.get(1..=count)?;
+        (count >= 2 * per_count
+            && count.is_multiple_of(per_count)
+            && v[count + 1..].iter().all(|x| *x == 0.))
+        .then(|| values.to_vec())
+    };
+    let single = |v: Option<Vec<f32>>, f: &dyn Fn(f32) -> f32| {
+        let v = counted(v, 1)?;
+        Radial::new(knots(v.len()), v.iter().map(|x| f(*x)).collect())
     };
     let vignetting = single(vignetting, &|v| (2f32.powf(v / 8192. - 1.) - 0.5).exp2())
         .filter(|r| r.values.iter().any(|v| (v - 1.).abs() > 1e-4));
     let distortion = single(distortion, &|d| 1. + d / 16384.)
         .filter(|r| r.values.iter().any(|v| (v - 1.).abs() > 1e-6));
-    let chromatic = chromatic.and_then(|v| {
-        let n = *v.first()? as usize / 2;
-        if n < 2 || v.len() != 2 * n + 1 {
-            return None;
-        }
+    let chromatic = counted(chromatic, 2).and_then(|v| {
+        let n = v.len() / 2;
         let scale = |s: &[f32]| s.iter().map(|x| 1. + x / 2_097_152.).collect();
         Some([
-            Radial::new(knots(n), scale(&v[1..=n]))?,
-            Radial::new(knots(n), scale(&v[n + 1..]))?,
+            Radial::new(knots(n), scale(&v[..n]))?,
+            Radial::new(knots(n), scale(&v[n..]))?,
         ])
     });
     Some(LensCorrection {
@@ -205,6 +212,75 @@ mod tests {
         let [red, blue] = c.chromatic.as_ref().unwrap();
         assert!((red.eval(0.5) - (1. - 384. / 2_097_152.)).abs() < 1e-7);
         assert_eq!(blue.eval(0.5), 1.);
+    }
+    fn sony_file(
+        dir: &std::path::Path,
+        vig: &[i16],
+        ca: &[i16],
+        dist: &[i16],
+    ) -> std::path::PathBuf {
+        let entry = |tag, v: &[i16]| (tag, 8, v.len() as u32, shorts(v));
+        let bytes = tiff(&[
+            vec![(0x14a, 4, 1, vec![0; 4])],
+            vec![entry(0x7032, vig), entry(0x7035, ca), entry(0x7037, dist)],
+        ]);
+        let p = dir.join("a.arw");
+        std::fs::write(&p, bytes).unwrap();
+        p
+    }
+    /// A ZV-1 stores fewer knots than its fixed 16 (CA: 32) slots, padded with zeros (#403).
+    const ZV1_VIG: [i16; 17] = [
+        16, 0, 0, 0, 15, 63, 193, 413, 715, 1107, 1576, 2126, 2749, 3443, 4523, 5509, 6639,
+    ];
+    const ZV1_CA: [i16; 33] = [
+        22, 0, 256, 384, 128, 128, 256, 384, 640, 896, 1152, 1408, 0, 1280, 1664, 1664, 1280, 896,
+        512, 256, 128, 0, 256, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    const ZV1_DIST: [i16; 17] = [
+        11, 1265, 1218, 1083, 860, 562, 209, -179, -580, -972, -1353, -1725, 0, 0, 0, 0, 0,
+    ];
+    #[test]
+    fn reads_sony_tables_padded_to_fixed_slots() {
+        let d = tempfile::tempdir().unwrap();
+        let c = super::read(&sony_file(d.path(), &ZV1_VIG, &ZV1_CA, &ZV1_DIST)).unwrap();
+        let dist = c.distortion.as_ref().unwrap();
+        assert_eq!(dist.knots.len(), 11);
+        assert_eq!(dist.knots[1], 0.1);
+        assert!((dist.eval(0.) - (1. + 1265. / 16384.)).abs() < 1e-6);
+        assert!((dist.eval(1.) - (1. - 1725. / 16384.)).abs() < 1e-6);
+        let [red, blue] = c.chromatic.as_ref().unwrap();
+        assert_eq!(red.knots.len(), 11);
+        assert!((red.eval(1.) - (1. + 1408. / 2_097_152.)).abs() < 1e-7);
+        assert!((blue.eval(0.1) - (1. + 1280. / 2_097_152.)).abs() < 1e-7);
+        assert!((blue.eval(1.) - (1. + 256. / 2_097_152.)).abs() < 1e-7);
+        assert_eq!(c.vignetting.as_ref().unwrap().knots.len(), 16);
+    }
+    #[test]
+    fn rejects_malformed_sony_tables() {
+        fn with<const N: usize>(mut v: [i16; N], i: usize, x: i16) -> [i16; N] {
+            v[i] = x;
+            v
+        }
+        let d = tempfile::tempdir().unwrap();
+        for (name, dist, ca) in [
+            (
+                "data past the count",
+                with(ZV1_DIST, 16, 1),
+                with(ZV1_CA, 32, 1),
+            ),
+            (
+                "count past the stored values",
+                with(ZV1_DIST, 0, 17),
+                with(ZV1_CA, 0, 34),
+            ),
+            ("a single knot", with(ZV1_DIST, 0, 1), with(ZV1_CA, 0, 2)),
+        ] {
+            let c = super::read(&sony_file(d.path(), &ZV1_VIG, &ca, &dist)).unwrap();
+            assert!(c.distortion.is_none() && c.chromatic.is_none(), "{name}");
+        }
+        let odd = with(ZV1_CA, 0, 21);
+        let c = super::read(&sony_file(d.path(), &ZV1_VIG, &odd, &ZV1_DIST)).unwrap();
+        assert!(c.chromatic.is_none(), "odd CA count");
     }
     #[test]
     fn reads_fujifilm_raf_tables() {
