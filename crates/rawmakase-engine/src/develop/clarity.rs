@@ -104,7 +104,13 @@ fn gain(weights: &[[f32; KNOTS]; 4], base: f32, details: [f32; 4]) -> f32 {
 /// piecewise linear bilateral filter of Durand and Dorsey, with Gaussian range weights
 /// at levels `range / 2.5` apart. Each level is blurred on a grid reduced to about a
 /// third of its σ and sampled back bilinearly, as a bilateral grid.
-fn bilateral(x: &[f32], w: usize, h: usize, sigmas: [f32; 4], range: f32) -> [Vec<f32>; 4] {
+pub(super) fn bilateral<const N: usize>(
+    x: &[f32],
+    w: usize,
+    h: usize,
+    sigmas: [f32; N],
+    range: f32,
+) -> [Vec<f32>; N] {
     let (lo, hi) = x
         .iter()
         .fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), v| {
@@ -115,7 +121,7 @@ fn bilateral(x: &[f32], w: usize, h: usize, sigmas: [f32; 4], range: f32) -> [Ve
     let level = |j: usize| lo - range + step * j as f32;
     let factors = sigmas.map(|s| ((s / 3.).floor() as usize).max(1));
     // Per level, per scale: the filtered value on that scale's grid.
-    let filtered: Vec<[Grid; 4]> = (0..count)
+    let filtered: Vec<[Grid; N]> = (0..count)
         .into_par_iter()
         .map(|j| {
             let l = level(j);

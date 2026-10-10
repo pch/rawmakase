@@ -3,9 +3,13 @@
 //! curve (docs/scene-tone-stage.md). The base level is a guided filter of log2 scene
 //! luminance, with a radius of 3.2% of the long edge and ε = 0.5 (log2 units squared).
 //! The measured tables in `local_tone_data.rs` give the log2 gain for each base level
-//! relative to an image key. The base level and keys come from the photo's measurement
-//! copy, so the result does not depend on the rendered region or preview size.
-use super::local_tone_data::{Family, HIGHLIGHTS, SHADOWS};
+//! relative to an image key. Positive Shadows also reads a regional level, a much wider
+//! edge-aware blur ([`REGION_SCALE`], [`REGION_RANGE`]): its gain is a table of the base
+//! level less the regional level plus a table of the regional level less the key, so a
+//! small dark area inside brighter surroundings is lifted less than a large one. The
+//! levels and keys come from the photo's measurement copy, so the result does not
+//! depend on the rendered region or preview size.
+use super::local_tone_data::{Family, HIGHLIGHTS, SHADOWS, SHADOWS_DETAIL, SHADOWS_REGION};
 use rayon::prelude::*;
 
 /// Long edge of the reduced image the base level is computed on.
@@ -14,6 +18,10 @@ const RADIUS: f32 = 0.032;
 const EPSILON: f32 = 0.5;
 /// The darkest scene luminance the map tells apart (−14 stops).
 pub(crate) const FLOOR: f32 = 6.103_515_6e-5;
+/// The regional level positive Shadows reads: a bilateral blur of log2 luminance with a
+/// spatial σ of this fraction of the long edge and a range σ of `REGION_RANGE` stops.
+const REGION_SCALE: f32 = 0.25;
+const REGION_RANGE: f32 = 4.;
 
 pub(crate) struct LocalToneMap {
     pub(crate) width: usize,
@@ -25,6 +33,12 @@ pub(crate) struct LocalToneMap {
     pub(crate) scale: [f32; 2],
     pub(crate) shadows: Option<Curve>,
     pub(crate) highlights: Option<Curve>,
+    /// The regional level on this grid, when positive Shadows may read it (the slider or
+    /// masks).
+    pub(crate) region: Option<Vec<f32>>,
+    /// Positive Shadows' tables at the slider: of the base level less the regional
+    /// level, and of the regional level less the Shadows key.
+    pub(crate) lift: Option<[Curve; 2]>,
     /// Image keys of Shadows and Highlights, for masks that evaluate them at their own
     /// slider values.
     pub(crate) keys: [f32; 2],
@@ -130,15 +144,17 @@ impl LocalToneMap {
             [small.width, small.height],
             source,
             sliders,
+            local,
         ))
     }
     /// The map from scene luminance at `size` pixels of a `source`-sized photo, as
-    /// `build` computes it.
+    /// `build` computes it; `local` when masks change Shadows or Highlights.
     pub(crate) fn from_luminance(
         lum: Vec<f32>,
         size: [u32; 2],
         source: [u32; 2],
         sliders: Sliders,
+        local: bool,
     ) -> Self {
         let (w, h) = (size[0] as usize, size[1] as usize);
         let logs: Vec<f32> = lum.iter().map(|y| level(*y)).collect();
@@ -185,6 +201,24 @@ impl LocalToneMap {
             .as_ref()
             .filter(|_| sliders.clarity != 0.)
             .map(|d| d.field(sliders.clarity));
+        let region = (sliders.shadows > 0. || local).then(|| {
+            let [k] = super::clarity::bilateral(
+                &logs,
+                w,
+                h,
+                [REGION_SCALE * w.max(h) as f32],
+                REGION_RANGE,
+            );
+            k
+        });
+        let lift = (sliders.shadows > 0.)
+            .then(|| {
+                Some([
+                    Curve::new(&SHADOWS_DETAIL, sliders.shadows, 0.)?,
+                    Curve::new(&SHADOWS_REGION, sliders.shadows, keys[0])?,
+                ])
+            })
+            .flatten();
         Self {
             width: w,
             height: h,
@@ -193,6 +227,8 @@ impl LocalToneMap {
             scale: [w as f32 / source[0] as f32, h as f32 / source[1] as f32],
             shadows: Curve::new(&SHADOWS, sliders.shadows, keys[0]),
             highlights: Curve::new(&HIGHLIGHTS, sliders.highlights, keys[1]),
+            region,
+            lift,
             keys,
             clarity,
             clarity_detail: detail.filter(|_| sliders.mask_clarity),
@@ -202,8 +238,12 @@ impl LocalToneMap {
     /// position `x`, `y`.
     pub(crate) fn gain(&self, x: f32, y: f32, lum: f32) -> f32 {
         let base = self.base(x, y, lum);
-        let ev = self.shadows.as_ref().map_or(0., |c| c.eval(base))
+        let mut ev = self.shadows.as_ref().map_or(0., |c| c.eval(base))
             + self.highlights.as_ref().map_or(0., |c| c.eval(base));
+        if let (Some([detail, region]), Some(k)) = (&self.lift, &self.region) {
+            let k = self.bilinear(x, y, k);
+            ev += detail.eval(base - k) + region.eval(k);
+        }
         (ev + self.clarity(x, y)).exp2()
     }
     /// As [`Self::gain`], with Shadows, Highlights and Clarity at the given slider
@@ -214,8 +254,14 @@ impl LocalToneMap {
             Some(d) => d.at(|v| self.bilinear(x, y, v), sliders[2]),
             None => self.clarity(x, y),
         };
+        let lift = self.region.as_ref().map_or(0., |k| {
+            let k = self.bilinear(x, y, k);
+            family(&SHADOWS_DETAIL, sliders[0], 0., base - k)
+                + family(&SHADOWS_REGION, sliders[0], self.keys[0], k)
+        });
         (family(&SHADOWS, sliders[0], self.keys[0], base)
             + family(&HIGHLIGHTS, sliders[1], self.keys[1], base)
+            + lift
             + clarity)
             .exp2()
     }
@@ -280,11 +326,18 @@ pub(crate) fn family(f: &Family, s: f32, key: f32, base: f32) -> f32 {
     let (y0, y1) = (t0.map_or(0., bin), t1.map_or(0., bin));
     y0 + (y1 - y0) * w
 }
-/// The measured families for `develop.wgsl`: Shadows, Highlights and Dehaze, each its
-/// 6 × 48 table values, `lo` and `hi`, then its six slider positions.
+/// The measured families for `develop.wgsl`: Shadows, Highlights, Dehaze and positive
+/// Shadows' detail and region tables, each its 6 × 48 table values, `lo` and `hi`, then
+/// its six slider positions.
 pub(crate) fn gpu_families() -> Vec<f32> {
     let mut out = Vec::new();
-    for f in [&SHADOWS, &HIGHLIGHTS, &super::local_tone_data::DEHAZE] {
+    for f in [
+        &SHADOWS,
+        &HIGHLIGHTS,
+        &super::local_tone_data::DEHAZE,
+        &SHADOWS_DETAIL,
+        &SHADOWS_REGION,
+    ] {
         out.extend(f.tables.iter().flatten());
         out.extend([f.lo, f.hi]);
         out.extend(f.values);
@@ -337,30 +390,99 @@ mod tests {
     #[test]
     fn curves_interpolate_and_vanish_at_zero() {
         assert!(Curve::new(&SHADOWS, 0., 0.).is_none());
-        let c = Curve::new(&SHADOWS, 0.5, -1.).unwrap();
-        // Positive Shadows lifts dark bases and leaves the key level almost unchanged.
-        assert!(c.eval(-7.) > 0.5);
+        // Negative Shadows darkens dark bases and leaves the key level almost unchanged.
+        let c = Curve::new(&SHADOWS, -0.5, -1.).unwrap();
+        assert!(c.eval(-7.) < -0.3, "{}", c.eval(-7.));
         assert!(c.eval(-1.).abs() < 0.1);
-        let half = Curve::new(&SHADOWS, 0.125, -1.).unwrap();
-        let full = Curve::new(&SHADOWS, 0.25, -1.).unwrap();
+        let half = Curve::new(&SHADOWS, -0.125, -1.).unwrap();
+        let full = Curve::new(&SHADOWS, -0.25, -1.).unwrap();
         assert!((half.eval(-6.) - full.eval(-6.) / 2.).abs() < 1e-5);
+        // Positive Shadows is the lift alone: the base family has no positive rows, and
+        // the lift's families none for negative positions.
+        assert!((-8..=4).all(|u| family(&SHADOWS, 0.7, 0., u as f32) == 0.));
+        assert!((-8..=4).all(|u| family(&SHADOWS_DETAIL, -0.7, 0., u as f32) == 0.));
+        assert!((-8..=4).all(|u| family(&SHADOWS_REGION, -0.7, 0., u as f32) == 0.));
         // Negative Highlights darkens bases above its key.
         let h = Curve::new(&HIGHLIGHTS, -0.5, -3.).unwrap();
         assert!(h.eval(0.) < -0.2);
         // Per-pixel evaluation matches the interpolated table.
         for base in [-8., -3., -1., 0.2] {
-            assert!(
-                (family(&SHADOWS, 0.45, -1., base)
-                    - Curve::new(&SHADOWS, 0.45, -1.).unwrap().eval(base))
-                .abs()
-                    < 1e-5
-            );
-            assert!(
-                (family(&HIGHLIGHTS, -0.8, -3., base)
-                    - Curve::new(&HIGHLIGHTS, -0.8, -3.).unwrap().eval(base))
-                .abs()
-                    < 1e-5
-            );
+            for (f, s, key) in [
+                (&SHADOWS, -0.45, -1.),
+                (&SHADOWS_DETAIL, 0.45, 0.),
+                (&SHADOWS_REGION, 0.8, -1.),
+                (&HIGHLIGHTS, -0.8, -3.),
+            ] {
+                let table = Curve::new(f, s, key).unwrap().eval(base);
+                assert!((family(f, s, key, base) - table).abs() < 1e-5);
+            }
         }
+    }
+
+    /// A 240 × 160 map of log2 luminance -2.5 with ±0.3 stops of pixel noise, `dark`
+    /// rectangles (x, y, width, height) 4 stops darker, as scene luminance.
+    fn scene(dark: &[[usize; 4]]) -> Vec<f32> {
+        let (w, h) = (240, 160);
+        (0..w * h)
+            .map(|i| {
+                let (x, y) = (i % w, i / w);
+                let noise = ((i as u32).wrapping_mul(2_654_435_761) >> 16) as f32 / 65536. - 0.5;
+                let inside = dark.iter().any(|[dx, dy, dw, dh]| {
+                    (*dx..dx + dw).contains(&x) && (*dy..dy + dh).contains(&y)
+                });
+                (-2.5 + 0.6 * noise - if inside { 4. } else { 0. }).exp2()
+            })
+            .collect()
+    }
+    fn map(lum: &[f32], shadows: f32, local: bool) -> LocalToneMap {
+        let sliders = Sliders {
+            shadows,
+            ..Default::default()
+        };
+        LocalToneMap::from_luminance(lum.to_vec(), [240, 160], [240, 160], sliders, local)
+    }
+
+    #[test]
+    fn positive_shadows_lifts_small_dark_areas_less_than_large_ones() {
+        // Measured on photos: a small dark area inside brighter surroundings is lifted
+        // less than a large dark area at the same level.
+        let lum = scene(&[[20, 30, 100, 100], [190, 75, 8, 8]]);
+        let m = map(&lum, 1., false);
+        let at = |x: usize, y: usize| m.gain(x as f32, y as f32, lum[y * 240 + x]).log2();
+        let (large, small) = (at(70, 80), at(194, 79));
+        assert!(
+            large > 1. && small < large - 0.2,
+            "large {large}, small {small}"
+        );
+        // The surround is hardly changed.
+        assert!(at(200, 20).abs() < 0.3, "{}", at(200, 20));
+    }
+
+    #[test]
+    fn masks_read_the_same_shadows_as_the_slider() {
+        // `gain_with` (masks) and `gain` (the global slider) are one operator.
+        let lum = scene(&[[20, 30, 100, 100], [190, 75, 8, 8]]);
+        for s in [-1., -0.3, 0.4, 1.] {
+            let global = map(&lum, s, false);
+            let masked = map(&lum, s, true);
+            for (x, y) in [(70, 80), (194, 79), (200, 20), (5, 155)] {
+                let l = lum[y * 240 + x];
+                let (x, y) = (x as f32, y as f32);
+                let a = global.gain(x, y, l);
+                let b = masked.gain_with(x, y, l, [s, 0., 0.]);
+                assert!((a - b).abs() < 1e-4 * a, "s {s}: {a} against {b}");
+            }
+        }
+    }
+
+    #[test]
+    fn only_positive_shadows_reads_the_regional_level() {
+        let lum = scene(&[[20, 30, 100, 100]]);
+        let negative = map(&lum, -0.6, false);
+        assert!(negative.region.is_none() && negative.lift.is_none());
+        let positive = map(&lum, 0.6, false);
+        assert!(positive.region.is_some() && positive.lift.is_some());
+        // Masks may lift Shadows anywhere, so the level is there for them.
+        assert!(map(&lum, -0.6, true).region.is_some());
     }
 }
