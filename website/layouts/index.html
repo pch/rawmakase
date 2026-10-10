@@ -13,7 +13,7 @@
 {{- $dl := printf "%s/releases/download/v%s/" $repo $v -}}
 {{- $releases := printf "%s/releases/latest" $repo -}}
 {{- $css := resources.Get "css/main.css" | minify | fingerprint -}}
-{{- $shot := resources.Get "images/screenshot-2026-09-30.png" -}}
+{{- $shot := resources.Get "images/screenshot-2026-10-10.png" -}}
 {{- $shotLarge := $shot.Resize "1600x webp q82" -}}
 {{- $shotSmall := $shot.Resize "800x webp q80" -}}
 <!doctype html>
@@ -68,7 +68,7 @@
 
     <section class="video wrap" aria-label="Video tour">
       <figure class="frame">
-        <img src="{{ $shotLarge.RelPermalink }}" srcset="{{ $shotSmall.RelPermalink }} 800w, {{ $shotLarge.RelPermalink }} 1600w" sizes="(max-width: 1180px) 100vw, 1120px" width="{{ $shotLarge.Width }}" height="{{ $shotLarge.Height }}" alt="RAWmakase Develop view with presets, the photo and curve and color controls" loading="eager">
+        <img src="{{ $shotLarge.RelPermalink }}" srcset="{{ $shotSmall.RelPermalink }} 800w, {{ $shotLarge.RelPermalink }} 1600w" sizes="(max-width: 1180px) 100vw, 1120px" width="{{ $shotLarge.Width }}" height="{{ $shotLarge.Height }}" alt="RAWmakase Develop view with presets, the photo, and the Basic and Tone Curve panels" loading="eager">
         <div class="play">
           <span class="disc" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg></span>
           <span class="play-label">Video tour coming soon</span>
