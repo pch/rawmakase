@@ -21,6 +21,8 @@ gain on scene values: both the slider's render and the default render are mapped
 through the default render's global curve, and the gain is their log2 difference. The
 synthetic scenes use the curve measured on the white ramps at their white point; a
 training photo uses its own curve, RAWmakase's scene output against its scene input.
+The taps must come from the engine the tables are for: its global curves, the default
+black included, are what the gains are measured through.
 
 Each image is box-averaged to a map of 512 pixels on the long edge, with L the log2 of
 its luminance (floor 2^-14) and B a self-guided box filter of L (radius 0.032 of the

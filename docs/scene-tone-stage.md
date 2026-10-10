@@ -167,7 +167,12 @@ well. Highlights' synthetic tables match the photos' luminance gain (0.09–0.10
 photos: rendered with tables fitted on the other half of the photos (two folds, 22
 photos), median ΔE00 at +100 is 1.80 against 1.91 for the synthetic tables, at +50 1.57
 against 1.69. At −100 the photo tables gain nothing (1.63 against 1.64), so negative
-Highlights keeps the synthetic tables. Clarity's weights keep the percentile key they were fitted
+Highlights keeps the synthetic tables. The photo tables are measured through the
+engine's own global curves, so they were refitted once the default black (below) was
+added: the earlier taps lacked it and the fit had taken Camera Raw's black for Shadows'
+gain (median ΔE00 on the training photos, Shadows +100 1.55 → 1.53 and +50 1.16 → 1.11,
+Highlights unchanged within 0.02); the cross-validated figures above are from the earlier
+taps. Clarity's weights keep the percentile key they were fitted
 with.
 
 ### Dehaze
