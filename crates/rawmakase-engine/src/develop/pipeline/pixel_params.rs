@@ -44,6 +44,10 @@ const FIELDS: &[(&str, usize)] = &[
     ("LOCAL_A", 3),
     ("SHADOWS", 4),
     ("HIGHLIGHTS", 4),
+    // Positive Shadows' detail and region curves (as SHADOWS), and the regional level's
+    // grid or -1 (see `local_tone::LocalToneMap::lift`).
+    ("LIFT", 8),
+    ("LOCAL_REGION", 1),
     ("BASIC", 1),
     ("LEVELS", 3),
     // The measured parametric curve's table, or -1 (see `parametric::ParametricCurve`).
@@ -199,16 +203,24 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
         None => -1.,
     };
     p.set("LOCAL_A", &[a, b, clarity]);
-    for (name, curve) in [
-        ("SHADOWS", &local.shadows),
-        ("HIGHLIGHTS", &local.highlights),
-    ] {
-        let values = match curve {
-            Some(c) => [p.push(c.table), c.key, c.lo, c.hi],
-            None => [-1., 0., 0., 0.],
-        };
-        p.set(name, &values);
-    }
+    let region = match &local.region {
+        Some(k) => p.push(k.iter().copied()),
+        None => -1.,
+    };
+    p.set("LOCAL_REGION", &[region]);
+    let mut curve = |c: Option<&crate::develop::local_tone::Curve>| match c {
+        Some(c) => [p.push(c.table), c.key, c.lo, c.hi],
+        None => [-1., 0., 0., 0.],
+    };
+    let shadows = curve(local.shadows.as_ref());
+    let highlights = curve(local.highlights.as_ref());
+    let [detail, region] = match &local.lift {
+        Some([d, r]) => [curve(Some(d)), curve(Some(r))],
+        None => [curve(None), curve(None)],
+    };
+    p.set("SHADOWS", &shadows);
+    p.set("HIGHLIGHTS", &highlights);
+    p.set("LIFT", &[detail, region].concat());
 }
 fn set_rgb_table(p: &mut PixelParams, look: Option<&crate::camera_profiles::RgbLook>) {
     use crate::camera_profiles::{Dimensions, Gamut};

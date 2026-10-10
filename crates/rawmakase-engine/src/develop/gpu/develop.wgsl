@@ -456,7 +456,8 @@ fn bracket(values: i32, s: f32) -> vec2<f32> {
     let s1 = slider_point(values, j + 1u);
     return vec2(f32(j), (s - s0) / (s1 - s0));
 }
-// local_tone::family: a Shadows (0), Highlights (1) or Dehaze (2) gain at slider `s`
+// local_tone::family: a Shadows (0), Highlights (1), Dehaze (2), Shadows detail (3) or
+// Shadows region (4) gain at slider `s`
 // (layout: `local_tone::gpu_families`).
 fn family(f: u32, s_in: f32, key: f32, base: f32) -> f32 {
     if s_in == 0.0 {
@@ -551,13 +552,29 @@ fn local_gain(pos: vec2<f32>, lum: f32) -> f32 {
         let bottom = table(c + i32(jy * w + ix)) * (1.0 - tx) + table(c + i32(jy * w + jx)) * tx;
         clarity = top * (1.0 - ty) + bottom * ty;
     }
+    // Positive Shadows' regional level (local_tone::LocalToneMap::lift), on the same grid.
+    var region = 0.0;
+    let r = offset(P_LOCAL_REGION);
+    if r >= 0 {
+        let top = table(r + i32(iy * w + ix)) * (1.0 - tx) + table(r + i32(iy * w + jx)) * tx;
+        let bottom = table(r + i32(jy * w + ix)) * (1.0 - tx) + table(r + i32(jy * w + jx)) * tx;
+        region = top * (1.0 - ty) + bottom * ty;
+    }
     if masked && (delta[L_SHADOWS] != 0.0 || delta[L_HIGHLIGHTS] != 0.0) {
         let s = p(P_GLOBAL_SH) + delta[L_SHADOWS];
         let h = p(P_GLOBAL_SH + 1u) + delta[L_HIGHLIGHTS];
+        var lift = 0.0;
+        if r >= 0 {
+            lift = family(3u, s, 0.0, base - region) + family(4u, s, p(P_LOCAL_KEYS), region);
+        }
         return exp2(family(0u, s, p(P_LOCAL_KEYS), base)
-            + family(1u, h, p(P_LOCAL_KEYS + 1u), base) + clarity);
+            + family(1u, h, p(P_LOCAL_KEYS + 1u), base) + lift + clarity);
     }
-    return exp2(local_curve(P_SHADOWS, base) + local_curve(P_HIGHLIGHTS, base) + clarity);
+    var lift = 0.0;
+    if r >= 0 {
+        lift = local_curve(P_LIFT, base - region) + local_curve(P_LIFT + 4u, region);
+    }
+    return exp2(local_curve(P_SHADOWS, base) + local_curve(P_HIGHLIGHTS, base) + lift + clarity);
 }
 // scene_tone::haze: the fraction of the haze positive Dehaze `s` removes.
 fn haze_omega(s_in: f32) -> f32 {

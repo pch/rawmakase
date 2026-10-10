@@ -8,7 +8,8 @@
   photos  DIR LIST   prepares the training photos listed in LIST (one RAW path per
                      line): linear-profile DNGs (linear_profile.py) in DIR/dng, Camera
                      Raw renders at each Shadows position in DIR/renders, and RAWmakase's
-                     scene-input and scene-output taps (--rawmakase) in DIR/maps;
+                     scene-input and scene-output taps (--rawmakase) in DIR/maps (512
+                     pixels) and DIR/taps (the renders' size);
                      existing renders and taps are kept, so delete DIR/maps to
                      refit after an engine change
   tables  SYNTH PHOTOS TONE
@@ -31,12 +32,21 @@ its luminance (floor 2^-14) and B a self-guided box filter of L (radius 0.032 of
 long edge, eps 0.5), as local_tone.rs computes them. Pixels near black, near the
 output's white or below 2^-10 are left out of the fits.
 
-- Shadows (training photos): the gain as a function of B minus the key log2(mean Y),
-  over [-8, 4].
+- Negative Shadows (training photos): the gain as a function of B minus the key
+  log2(mean Y), over [-8, 4].
+- Positive Shadows (training photos), the two-scale lift: the gain as a function of B
+  minus the regional level K (a bilateral grid of the map's L, σ 0.25 of the long edge,
+  range 4 stops, as clarity.rs computes it) plus a function of K minus the key, both
+  over [-8, 4], fitted together at the renders' size (DIR/taps) with B and K read from
+  the map as local_tone.rs reads them.
 - Highlights: the gain as a function of B minus the key, the mean of L's 75th and 1st
   percentiles, over [-6, 7]; negative Highlights on the synthetic scenes, positive on
-  the training photos (closer to Camera Raw on held-out photos: display ΔE00 +100 1.91
-  → 1.80, +50 1.69 → 1.57; −100 even).
+  the training photos where they have samples and the synthetic scenes where they have
+  few (a bin's weight is its photo samples / (samples + HIGHLIGHT_SUPPORT)): the photos
+  have almost no bright regions far above a dark photo's key, where the photo table dipped
+  to half the lift of its neighbours. The photo tables are closer to Camera Raw than the
+  synthetic ones on held-out photos (display ΔE00 +100 1.91 → 1.80, +50 1.69 → 1.57;
+  −100 even).
 - Dehaze (training photos): each channel's gain as a function of its log2 level minus
   L's 99th percentile, over [-12, 1].
   Each is a 48-bin piecewise-linear table per slider position, fitted by least squares
@@ -205,6 +215,19 @@ def fit_table(samples, lo, hi, n=48, smooth=3e-2):
     return np.linalg.solve(M, A.T @ t)
 
 
+def support(samples, lo, hi, n=48):
+    """Samples per bin (bin-centre table, smoothed over 5 bins)."""
+    u = np.concatenate([u for u, _ in samples])
+    f = np.clip((u - lo) / (hi - lo) * n - 0.5, 0, n - 1 - 1e-9)
+    count = np.bincount(f.astype(int), minlength=n).astype(float)
+    return np.convolve(np.pad(count, 2, mode='edge'), np.ones(5) / 5, 'valid')
+
+
+# Positive Highlights: the photo table where its bins have this many samples (weight
+# count / (count + HIGHLIGHT_SUPPORT)), the synthetic scenes' table where they have few.
+HIGHLIGHT_SUPPORT = 20000.
+
+
 def synthetic(seed):
     """Scene `seed` as written to its DNG, and its baseline exposure: the sensor's white
     is 2^0.5 (clipping the brightest regions) in half the scenes, else just above the
@@ -323,7 +346,8 @@ def photo_tables(d):
     print(f'{len(photos)} training photos', flush=True)
     lo, hi = RANGES['S']
     tables = []
-    for v in SH:
+    # Negative Shadows; positive Shadows is the two-scale lift (lift_tables).
+    for v in [v for v in SH if v < 0]:
         samples = []
         for xin, L, B, inv, renders in photos:
             d, r = renders['default'] @ YW, renders[name('S', v)] @ YW
@@ -340,7 +364,7 @@ def photo_tables(d):
             ok = (d > 2 ** -11) & (r > 2 ** -11) & (renders['default'].max(-1) < 0.98) & (L > -10)
             key = 0.5 * pct(L, 0.75) + 0.5 * pct(L, 0.01)
             samples.append(((B - key)[ok], log_gain(inv(r), inv(d))[ok]))
-        highlights.append(fit_table(samples, lo, hi))
+        highlights.append((fit_table(samples, lo, hi), support(samples, lo, hi)))
         print(f"{name('H', v)}: {sum(t.size for _, t in samples)} samples", flush=True)
     lo, hi = RANGES['D']
     dehaze = []
@@ -356,6 +380,136 @@ def photo_tables(d):
         dehaze.append(fit_table(samples, lo, hi))
         print(f"{name('D', v)}: {sum(t.size for _, t in samples)} samples", flush=True)
     return tables, highlights, dehaze
+
+
+# Positive Shadows: the two-scale lift.
+
+LIFT_SCALE, LIFT_RANGE = 0.25, 4.0     # the regional level: bilateral σ (of the long edge) and range
+
+
+def grid_bilateral(x, sigma, rng):
+    """clarity.rs's `bilateral` at one scale: Gaussian range weights at levels rng/2.5 apart,
+    each level reduced by floor(sigma/3)-pixel blocks, blurred by three box passes and sampled
+    back bilinearly (a bilateral grid)."""
+    def boxes(v, r):
+        w = v.shape[-1]
+        for _ in range(3):
+            pad = np.concatenate([np.repeat(v[..., :1], r + 1, -1), v, np.repeat(v[..., -1:], r, -1)], -1)
+            c = np.cumsum(pad.astype(np.float64), -1)
+            v = ((c[..., 2 * r + 1:2 * r + 1 + w] - c[..., :w]) / (2 * r + 1)).astype(np.float32)
+        return v
+
+    def gauss(v, sg):
+        if sg < 0.5:
+            return v
+        r = max(1, int(np.round(np.sqrt(12 * sg * sg / 3 + 1) / 2)))
+        return boxes(boxes(v, r).T, r).T
+
+    def reduce(v, f):
+        if f == 1:
+            return v
+        h, w = v.shape
+        pad = np.full((-(-h // f) * f, -(-w // f) * f), np.nan); pad[:h, :w] = v
+        return np.nanmean(pad.reshape(pad.shape[0] // f, f, pad.shape[1] // f, f), (1, 3)).astype(np.float32)
+
+    x = x.astype(np.float32)
+    lo, hi = float(x.min()), float(x.max())
+    step = rng / 2.5
+    count = max(2, int(np.floor((hi - lo + 2 * rng) / step)) + 1)
+    f = max(1, int(np.floor(sigma / 3)))
+    levels = []
+    for j in range(count):
+        d = (x - np.float32(lo - rng + step * j)) / rng
+        wt = np.exp(-0.5 * d * d).astype(np.float32)
+        num, den = gauss(reduce(wt * x, f), sigma / f), gauss(reduce(wt, f), sigma / f)
+        levels.append(grid_sample(num / np.maximum(den, 1e-12), x.shape, f))
+    j = np.minimum(np.maximum(np.floor((x - lo + rng) / step), 0).astype(int), count - 2)
+    t = np.clip((x - (lo - rng + step * j)) / step, 0, 1)
+    v = np.array(levels)
+    r, c = np.indices(x.shape)
+    return v[j, r, c] * (1 - t) + v[j + 1, r, c] * t
+
+
+def grid_sample(v, shape, factor=None):
+    """`v` read bilinearly at the pixel centres of a `shape` image covering the same frame
+    (local_tone::grid_sample), or of an image `factor` times finer."""
+    gh, gw = v.shape
+    h, w = shape
+    sy, sx = (gh / h, gw / w) if factor is None else (1 / factor, 1 / factor)
+    fx = np.clip((np.arange(w) + 0.5) * sx - 0.5, 0, gw - 1)
+    fy = np.clip((np.arange(h) + 0.5) * sy - 0.5, 0, gh - 1)
+    ix, iy = fx.astype(int), fy.astype(int)
+    jx, jy = np.minimum(ix + 1, gw - 1), np.minimum(iy + 1, gh - 1)
+    tx, ty = (fx - ix)[None, :], (fy - iy)[:, None]
+    top = v[iy][:, ix] * (1 - tx) + v[iy][:, jx] * tx
+    bottom = v[jy][:, ix] * (1 - tx) + v[jy][:, jx] * tx
+    return top * (1 - ty) + bottom * ty
+
+
+def table_weights(u, lo, hi, n=48):
+    """(N, n) weights of the bin-centre table lookup local_tone.rs does (clamped at both ends)."""
+    f = np.clip((u - lo) / (hi - lo) * n - 0.5, 0, n - 1)
+    i = np.minimum(f.astype(int), n - 2)
+    w = f - i
+    A = np.zeros((u.size, n))
+    A[np.arange(u.size), i] = 1 - w
+    A[np.arange(u.size), i + 1] = w
+    return A
+
+
+def lift_tables(d):
+    """Positive Shadows' detail table (of the base level less the regional level) and region
+    table (of the regional level less the Shadows key), fitted together by least squares on the
+    training photos at the renders' size, with a second-difference penalty on each and the
+    region table held at 0 at the key."""
+    lo, hi = RANGES['S']
+    n = 48
+    systems = {v: [np.zeros((2 * n, 2 * n)), np.zeros(2 * n), 0] for v in SH if v > 0}
+    for dng in sorted((d / 'dng').glob('*.dng')):
+        tap, small = d / 'taps' / f'{dng.stem}.npz', d / 'maps' / f'{dng.stem}.npz'
+        renders = {nm: d / 'renders' / f'{dng.stem}-{nm}.tif' for nm in ['default'] + [name('S', v) for v in systems]}
+        if not tap.exists() or not small.exists() or not all(p.exists() for p in renders.values()):
+            print(f'{dng.name}: no taps or renders, left out of the lift', flush=True)
+            continue
+        z, zs = np.load(tap), np.load(small)
+        xin, xout = z['xin'].astype(np.float64), z['xout'].astype(np.float64)
+        lin = xin @ YW
+        L = np.log2(np.maximum(lin, FLOOR))
+        L512 = np.log2(np.maximum(zs['xin'].astype(np.float64) @ YW, FLOOR))
+        r = max(1, round(RADIUS * max(L512.shape)))
+        m, m2 = box(L512, r), box(L512 * L512, r)
+        var = np.maximum(m2 - m * m, 0)
+        a = var / (var + EPS)
+        a, b = box(a, r), box(m - a * m, r)
+        B = grid_sample(a, L.shape) * L + grid_sample(b, L.shape)
+        K = grid_sample(grid_bilateral(L512, LIFT_SCALE * max(L512.shape), LIFT_RANGE), L.shape)
+        key = np.log2(np.mean(2.0 ** L512))
+        o = np.argsort(lin.ravel())
+        xs, ys = lin.ravel()[o], np.maximum.accumulate((xout @ YW).ravel()[o])
+        default = camera_raw.read_linear(renders['default'])
+        dl = default @ YW
+        for v, system in systems.items():
+            rl = camera_raw.read_linear(renders[name('S', v)]) @ YW
+            ok = (dl > 2 ** -11) & (rl > 2 ** -11) & (default.max(-1) < 0.98) & (L > -10)
+            X = np.hstack([table_weights((B - K)[ok], lo, hi), table_weights((K - key)[ok], lo, hi)])
+            t = log_gain(np.interp(rl, ys, xs), np.interp(dl, ys, xs))[ok]
+            system[0] += X.T @ X
+            system[1] += X.T @ t
+            system[2] += t.size
+        print(f'{dng.stem}: lift', flush=True)
+    D = np.diff(np.eye(n), 2, axis=0)
+    smooth = np.zeros((2 * n, 2 * n))
+    smooth[:n, :n] = smooth[n:, n:] = D.T @ D
+    gauge = np.zeros(2 * n)
+    gauge[n:] = table_weights(np.array([0.]), lo, hi)[0]
+    detail, region = [], []
+    for v, (A, b, count) in systems.items():
+        M = A + 3e-2 * count / n * smooth + 1e3 * count / n * np.outer(gauge, gauge) + 1e-6 * np.eye(2 * n)
+        c = np.linalg.solve(M, b)
+        detail.append(c[:n])
+        region.append(c[n:])
+        print(f"{name('S', v)}: lift fitted on {count} samples", flush=True)
+    return detail, region
 
 
 # Rust output.
@@ -377,8 +531,10 @@ LOCAL_HEADER = '''//! Camera Raw 18.7's Shadows, Highlights and Dehaze on scene 
 //! on synthetic scenes. Each table is a log2 gain as a function of a level relative to
 //! an image key: Shadows' and Highlights' of the local base level (local_tone.rs) and
 //! their keys, Dehaze's of each channel's level relative to the photo's 99th
-//! percentile. Rows are the slider positions `values`; columns are bin centres over
-//! [lo, hi].
+//! percentile. Positive Shadows is the two-scale lift instead: `SHADOWS_DETAIL` of the
+//! base level less the regional level, `SHADOWS_REGION` of the regional level less the
+//! Shadows key, fitted together; the rows a family leaves to another are 0. Rows are
+//! the slider positions `values`; columns are bin centres over [lo, hi].
 #![allow(clippy::excessive_precision, clippy::approx_constant)]
 pub(crate) struct Family {
     pub values: [f32; 6],
@@ -458,15 +614,25 @@ def photos(args):
             else:
                 shape = size(taps['xin'].shape, MAP)
                 np.savez(target, **{k: area(v, *shape).astype(np.float32) for k, v in taps.items()})
+                # At the renders' size too, for the lift (lift_tables).
+                h, w = tifffile.TiffFile(str(d / 'renders' / f'{dng.stem}-default.tif')).pages[0].shape[:2]
+                (d / 'taps').mkdir(exist_ok=True)
+                np.savez(d / 'taps' / f'{dng.stem}.npz', **{k: area(v, w, h).astype(np.float32) for k, v in taps.items()})
                 print(target, flush=True)
 
 
 def tables(args):
     S, H, D = photo_tables(args.photos.resolve())
+    detail, region = lift_tables(args.photos.resolve())
     t = synthetic_tables(args.synth.resolve(), args.tone.resolve())
     out = args.out.resolve()
+    none = [np.zeros(48)] * 3
     (out / 'local_tone_data.rs').write_text(
-        LOCAL_HEADER + family('SHADOWS', S, SH, *RANGES['S']) + family('HIGHLIGHTS', t['H'][:3] + H, SH, *RANGES['H'])
+        LOCAL_HEADER + family('SHADOWS', S + none, SH, *RANGES['S'])
+        + family('SHADOWS_DETAIL', none + detail, SH, *RANGES['S'])
+        + family('SHADOWS_REGION', none + region, SH, *RANGES['S'])
+        + family('HIGHLIGHTS', t['H'][:3] + [w * photo + (1 - w) * synth for (photo, count), synth in zip(H, t['H'][3:])
+                                             for w in [count / (count + HIGHLIGHT_SUPPORT)]], SH, *RANGES['H'])
         + family('DEHAZE', D, DEHAZE, *RANGES['D']))
     c = t['C']
     (out / 'clarity_data.rs').write_text(

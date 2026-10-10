@@ -174,34 +174,88 @@ gain (median ΔE00 on the training photos, Shadows +100 1.55 → 1.53 and +50 1.
 Highlights unchanged within 0.02); the cross-validated figures above are from the earlier
 taps.
 
-**Open: Shadows +100 in small dark areas.** On the training photos Shadows +100 leaves
-the darkest display tones (L* below 15) 5–7 L* too light on average, almost all of it
-from photos where they are small areas (0.2–3.5% of the frame) inside brighter
-surroundings: Camera Raw lifts them by about 2.3 EV in its linear output, RAWmakase by
-about 3 EV, the gain large dark areas get at the same base level (those match within
-about 1.5 L*). What was tried, on the training photos: a second table dimension for the
-pixel against its base (Camera Raw does lift darker-than-their-base pixels less; in
-cross-validation 0.66 → 0.52 EV error in the deep shadows, but the display error only
-6.6 → 5.0 L*), including pixels below 2^-10 in the fit (no change), smoother bases
-(guided filter ε 0.03–8, radius 1.6–6% of the long edge, refitted: no change), and
-applying the default black before the local gain (5.0 L*, but Blacks ±50 and the
-default render get worse). None is in the engine.
+**Positive Highlights' bright end.** The photo tables have few samples far above the
+key: in a dark photo with a bright object, the region 5–7 stops above the key, the
++100 table lifted 1.09 EV at +5, 0.50 at +6 and 1.03 at +7, a fitting artefact. Positive
+Highlights now takes each bin from the photo table weighted by its photo samples
+(count / (count + 20,000), smoothed over five bins) and from the synthetic scenes' table
+for the rest, which carries the lift on smoothly (+100: 1.43, 1.56, 1.94 EV at +5, +6, +7)
+and is the photo table below +4. Training photos render as before (median ΔE00 at +100
+1.37, at +50 1.12 against 1.13); on validation Highlights +100 now passes on mid photos.
 
-The likely mechanism is a multi-scale one. Camera Raw's tone controls since process
-version 2012 are reported to use local Laplacian filtering (Paris, Hasinoff, Kautz,
-"Local Laplacian Filters", SIGGRAPH 2011; the University College London impact case
-study on its adoption in Lightroom). A prototype on the training photos, a fast local
-Laplacian filter (Aubry et al., 2014) on log2 luminance with the Shadows curve fitted
-through it (the output is linear in the curve), confirms it: at a detail threshold of
-2 stops the error in the scene values falls from 0.238 to 0.211 EV in cross-validation,
-and in display renders the small dark areas come out as Camera Raw's (Shadows +100,
-L* below 15: Leica M10-R 6.4 → 0.2, Nikon D5 7.0 → 0.8, Sony A9 II 5.9 → 1.2 too
-light). Computed on the 512-pixel measurement copy and upsampled, though, it loses
-what the full-resolution filter keeps (a pixel's own level against its neighbourhood)
-and the median ΔE00 rises (+100 1.53 → 1.70). A full-resolution fast local Laplacian
-for Shadows and Highlights (and Clarity as its detail term) is the follow-up. It
-follows the published method and our own measurements, not Adobe's code or patents. Clarity's weights keep the percentile key they were fitted
-with.
+Still open on low-key photos: a dark photo's bright object a couple of stops above the key
+(the moon in a night sky, 2.2 stops above it) is lifted about 1.6 EV by Camera Raw at
+Highlights +100, as bright spots two stops above a dark surround are on the probes, and
+0.35 by the table, which on the training photos only meets such levels near white. A
+second table of the base level itself (headroom to white) helps in cross-validation
+(Highlights +100 typical error 0.061 → 0.041 EV) but predicts 0.36 for the moon: the
+training photos have no such scene. Highlights −100 on bright photos is short of the
+rule's material improvement (1.53 against engine 4's 1.67). A median key for Highlights
+fitted the photos' scene gain better in cross-validation at every position but rendered
+the training photos worse (+100 1.37 → 1.44, −100 1.30 → 1.41), so the key is unchanged.
+
+**Positive Shadows: the two-scale lift.** On the training photos Shadows +100 left the
+darkest display tones (L* below 15) 5–7 L* too light, almost all of it from small dark
+areas (0.2–3.5% of the frame) inside brighter surroundings, which Camera Raw lifts less
+than large dark areas at the same base level. A second level fixes most of it: the
+*regional level* K, a bilateral blur of the map's log luminance much wider than the base
+(σ 25% of the long edge, range σ 4 stops; `clarity.rs`'s bilateral grid at one scale).
+Positive Shadows' gain is a table of the base level less K plus a table of K less the
+Shadows key (`SHADOWS_DETAIL`, `SHADOWS_REGION`), fitted together by least squares on the
+training photos at the renders' size (1024 pixels), with the region table held at 0 at
+the key (a constant could otherwise move between the tables). K is read from the map like
+the base level, so region and preview size do not change it. Negative Shadows keeps the
+base-level table: an earlier two-scale fit made Shadows −100 worse on validation (bands
+20–40 L* about 3.5 too light on bright photos). Masks read the same three tables at their own
+slider value.
+
+Chosen on the training photos alone (cross-validated by photo, 2 and 4 folds, EV of scene
+gain): at Shadows +100 the error falls from 0.248 to 0.163 and in the deep shadows (base
+4 stops below the key) from 1.06 to 0.39, at +50 from 0.123 to 0.082, and Shadows +50
+with Highlights −50 from 0.161 to 0.117. A plain Gaussian regional level does most of it
+(+100 0.185, +50 0.094); narrower edge-aware ones (σ 8–15%, range 2) less in the deep
+shadows. The validation gate was also used during development (seven runs of earlier
+fits and settings; of σ 25, 35 and 50% at range 4 it preferred 25%, 37, 38 and 40 failing
+setting/stratum pairs against 40 before). With these tables Shadows +100 passes in all
+three strata: its darkest band goes from 5.8 to 2.2 L* too light on mid photos and
+6.3 → 0.5 (10–20 L*) on bright ones, with Adobe Color 4.8 → 1.7 and 9.1 → 1.8; per photo,
+the band 0–10 L* of photos whose darkest tones are under 3% of the frame goes from 2.2–14.1
+to −0.2–6.1 L*. Still failing: Shadows +100 with Adobe Color on bright photos
+(median 1.56 against the rule's 1.53) and Shadows +50 with Highlights −50 on one mid photo
+(Sony A6100: 0.94 with engine 4, 2.38 here, as before this change; each slider alone is
+within 1.3), where Camera Raw's Highlights darkens bright areas less when Shadows is raised
+than the sum of the two gains does.
+
+What did not work, on the same photos:
+
+- *A second table dimension for the pixel against its base* (Camera Raw does lift
+  darker-than-their-base pixels less; cross-validation 0.66 → 0.52 EV in the deep shadows,
+  display 6.6 → 5.0 L*), pixels below 2^-10 in the fit, smoother bases (guided ε 0.03–8,
+  radius 1.6–6%), the default black before the gain, and a key from the brightest levels
+  (0.25·p99.9 + 0.75·p99) for the regional table (cross-validated error doubled).
+- *A full-resolution fast local Laplacian filter* (Paris, Hasinoff, Kautz 2011; Aubry et
+  al. 2014) on log2 luminance with the Shadows curve fitted through it (the output is
+  linear in the curve), with the curve's value at the reference level inside a detail
+  threshold of 1–3 stops and edges following the curve, with and without a fitted detail
+  slope per level. It reproduces the small dark areas (darkest band about 0 L* on those
+  photos at a 2-stop threshold) but is blotchy: within the threshold, neighbouring regions
+  share one gain where Camera Raw lifts them separately, and the median ΔE00 at Shadows
+  +100 rose from 1.53 to 1.98 (1.64 with the detail slope). Its scale behaviour is also
+  the reverse of Camera Raw's on synthetic probes (below). It follows the published
+  method, not Adobe's code or patents, and is not in the engine.
+
+**Probes.** Single squares 4 stops below a flat 0.18 surround, Shadows +100, rendered at
+1024 and 4096 pixels: perfectly flat squares of 8–32 pixels (at 1024) are lifted 2.2 EV,
+64 pixels 0.95, 128–256 pixels 0.3–0.5, with no halo and the same gain over the whole
+square; the size counts relative to the image (4096-pixel renders match at four times
+the pixels), and squares below about 6 pixels are not lifted at any size. The same dark
+area scattered as 16-pixel spots is lifted 1.7–1.9 EV, so the dependence is spatial, not
+on the histogram. With texture (±0.3 EV noise or ±0.5 EV blobs on everything) a 256-pixel
+square is lifted 2.4–2.5 EV: the weak lift of large regions holds only for perfectly flat
+areas, and is why the synthetic chart's flat patches stay far from Camera Raw at
+Shadows ±60 and ±100 (mean ΔE00 4–7). On bright spots in a dark surround, Highlights ±100
+is size-independent from about 8 pixels. Clarity's weights keep the percentile key they
+were fitted with.
 
 ### Dehaze
 
