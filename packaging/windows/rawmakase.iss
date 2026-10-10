@@ -3,8 +3,8 @@
 ;
 ; Installs for the current user under %LOCALAPPDATA%\Programs\RAWmakase, so
 ; it needs no administrator rights. The installer marker tells the app's
-; updater that this copy updates by running the next release's setup program,
-; rawmakase-v<version>-x86_64-pc-windows-msvc-setup.exe.
+; updater that this copy updates by running the next release's setup program
+; for its architecture, rawmakase-v<version>-<x86_64|aarch64>-pc-windows-msvc-setup.exe.
 
 #ifndef Version
   #error Version must be defined on the ISCC command line
@@ -20,6 +20,10 @@
 #endif
 #ifndef OutputName
   #error OutputName must be defined on the ISCC command line
+#endif
+; x64compatible for the x86_64 build, arm64 for the ARM64 build.
+#ifndef Architectures
+  #define Architectures "x64compatible"
 #endif
 
 #define AppName "RAWmakase"
@@ -39,8 +43,8 @@ DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed={#Architectures}
+ArchitecturesInstallIn64BitMode={#Architectures}
 MinVersion=10.0
 LicenseFile={#Payload}\LICENSE
 OutputDir={#OutputDir}

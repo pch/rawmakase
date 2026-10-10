@@ -167,7 +167,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~\AppData\Local\vcpkg\archives
-          key: vcpkg-${{ steps.image.outputs.version }}-${{ hashFiles('packaging/windows/deps.ps1', 'packaging/windows/vcpkg-ports/**') }}
+          key: vcpkg-${{ runner.arch }}-${{ steps.image.outputs.version }}-${{ hashFiles('packaging/windows/deps.ps1', 'packaging/windows/vcpkg-ports/**') }}
       - if: steps.source.outputs.windows == 'true'
         name: LibRaw and Little CMS
         run: packaging/windows/deps.ps1 "$env:RUNNER_TEMP\deps"

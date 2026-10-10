@@ -93,9 +93,28 @@ jobs:
   # The release's Windows job, from this checkout: MSVC build, the Inno Setup
   # installer through native-packages, then a silent install and uninstall.
   windows:
+    name: windows (${{ matrix.arch }})
     if: inputs.version == ''
-    runs-on: windows-2025
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    # As in release.yml: each architecture builds natively.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: x86_64
+            target: windows-amd64
+            ruby: '3.3'
+          - runner: windows-11-arm
+            arch: aarch64
+            target: windows-arm64
+            ruby: '3.4'
+    # runs-on is a matrix expression, so name the shell Windows uses by default
+    # (and tell actionlint these steps are PowerShell).
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,7 +132,7 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~\AppData\Local\vcpkg\archives
-          key: vcpkg-${{ steps.image.outputs.version }}-${{ hashFiles('packaging/windows/deps.ps1', 'packaging/windows/vcpkg-ports/**') }}
+          key: vcpkg-${{ runner.arch }}-${{ steps.image.outputs.version }}-${{ hashFiles('packaging/windows/deps.ps1', 'packaging/windows/vcpkg-ports/**') }}
       - name: LibRaw and Little CMS
         run: packaging/windows/deps.ps1 "$env:RUNNER_TEMP\deps"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -126,7 +145,7 @@ jobs:
           packaging/windows/stage.ps1 target\release\rawmakase.exe "$env:RUNNER_TEMP\deps" dist\windows
       - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
         with:
-          ruby-version: '3.3'
+          ruby-version: ${{ matrix.ruby }}
       - name: Installer
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
@@ -134,17 +153,17 @@ jobs:
             choco install innosetup --yes --no-progress
           }
           gem install native-packages --version 0.7.0 --no-document
-          native-packages doctor --target windows-amd64 --defer-recipes
+          native-packages doctor --target ${{ matrix.target }} --defer-recipes
           $version = ((cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages | Where-Object name -eq 'rawmakase').version
           "VERSION=$version" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           $env:SOURCE_DATE_EPOCH = git show -s --format=%ct HEAD
-          native-packages build --version $version --target windows-amd64 --defer-recipes --output "$env:RUNNER_TEMP\windows-packages"
+          native-packages build --version $version --target ${{ matrix.target }} --defer-recipes --output "$env:RUNNER_TEMP\windows-packages"
       - name: Install, run and uninstall
-        run: packaging/windows/verify.ps1 "$env:RUNNER_TEMP\windows-packages\packages\windows-amd64\inno\rawmakase-v$env:VERSION-x86_64-pc-windows-msvc-setup.exe" $env:VERSION
+        run: packaging/windows/verify.ps1 "$env:RUNNER_TEMP\windows-packages\packages\${{ matrix.target }}\inno\rawmakase-v$env:VERSION-${{ matrix.arch }}-pc-windows-msvc-setup.exe" $env:VERSION
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: windows-installer
-          path: ${{ runner.temp }}/windows-packages/packages/windows-amd64/inno/*.exe
+          name: windows-installer-${{ matrix.arch }}
+          path: ${{ runner.temp }}/windows-packages/packages/${{ matrix.target }}/inno/*.exe
           if-no-files-found: error
 
   # native-packages' shared workflow installs nfpm and builds the DEB and RPM

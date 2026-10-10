@@ -2,7 +2,7 @@
 
 [graph]
 # The platforms we ship: the two Linux packages, both macOS architectures and
-# the Windows installer. Windows and macOS crates are target-specific, so leaving
+# both Windows installers. Windows and macOS crates are target-specific, so leaving
 # their targets out drops four windows-sys versions and the objc2 bindings from
 # the graph and audits nothing for those builds.
 targets = [
@@ -11,6 +11,7 @@ targets = [
     "x86_64-apple-darwin",
     "aarch64-apple-darwin",
     "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
 ]
 
 [advisories]
