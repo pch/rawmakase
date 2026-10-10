@@ -477,18 +477,24 @@ fn exposure_reveals_retained_highlights() {
     for p in im.pixels.iter_mut().step_by(2) {
         *p = [2.; 3];
     }
-    let pixel = |exposure: f32| {
+    let pixel = |exposure: f32, v: f32| {
         let r = Recipe {
             exposure,
             ..Default::default()
         };
         let matrix = profile_matrix(&im.metadata, &r);
         let lut = CurveSet::with_photo_measures((&im).into(), &r, matrix);
-        process_pixel([2.; 3], &r, &lut, matrix, [0., 0.], None)
+        process_pixel([v; 3], &r, &lut, matrix, [0., 0.], None)
     };
-    let (a, b) = (pixel(0.), pixel(-2.));
-    assert!(a[0] > b[0] && b[0] > 0.5, "{a:?} {b:?}");
-    assert!(a.iter().all(|v| v.is_finite()));
+    // At Exposure 0 everything above the sensor's white rolls on to the top; lower
+    // Exposure separates the rebuilt levels again. The photo's maximum stays at the
+    // top, as the white point follows Exposure.
+    let (a, b) = (pixel(0., 1.5)[1], pixel(0., 2.)[1]);
+    assert!((a - b).abs() < 1e-4, "{a} {b}");
+    let (a, b) = (pixel(-2., 1.5)[1], pixel(-2., 2.)[1]);
+    assert!(a < b - 0.05 && a > 0.5, "{a} {b}");
+    assert!(pixel(-2., 1.)[1] < a - 0.05);
+    assert!(pixel(0., 2.).iter().all(|v| v.is_finite()));
 }
 #[test]
 fn invalid_recipes_rejected() {
