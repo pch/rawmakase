@@ -76,6 +76,7 @@ fn open_profiles(
     [open::standard(m), open::color(m)]
         .into_iter()
         .flatten()
+        .chain(crate::camera_profiles::film::profiles(m))
         .map(std::sync::Arc::new)
         .collect()
 }
@@ -144,6 +145,13 @@ fn builtin_presets_apply_without_imported_profiles() {
         let r = p
             .apply(&base, &m, &profiles, None)
             .unwrap_or_else(|e| panic!("{}: {e:#}", p.name));
+        if p.group == "Film" {
+            // A film preset chooses its look, which is always there.
+            let look = r.profile.as_ref().unwrap();
+            assert_eq!(format!("RMKS Film: {}", p.name), look.name);
+            assert!(p.profile_substitute(&m, &profiles).is_none());
+            continue;
+        }
         match p.settings.get("CameraProfile") {
             Some(_) => {
                 assert_eq!(

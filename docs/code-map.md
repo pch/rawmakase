@@ -141,6 +141,7 @@ standalone `rawmakase-ctl`). The last two build without the app.
 | [reference.rs](../crates/rawmakase-model/src/camera_profiles/reference.rs) | A photo's baseline exposure (DNG tag or camera table) and verified neutral calibration data. |
 | [dng_tone.rs](../crates/rawmakase-model/src/camera_profiles/dng_tone.rs) | Adobe DNG default tone-curve data. |
 | [open.rs](../crates/rawmakase-model/src/camera_profiles/open.rs) | RAWmakase Standard and Color, our own profiles for every camera with a colour matrix. |
+| [film.rs](../crates/rawmakase-model/src/camera_profiles/film.rs) | The film looks over RAWmakase Standard, embedded from `assets/looks`, which `scripts/film/` makes from Kodak's datasheets. See [film looks](lightroom-profiles.md#film-looks). |
 
 ## Lens corrections
 
@@ -384,6 +385,7 @@ sibling `tests.rs`. Keep regressions with the domain that owns the behavior.
 | [tests/data/README.md](../tests/data/README.md), [curve samples](../tests/data/lightroom-point-curves.json) | Small checked-in Lightroom point-curve reference data and its provenance. |
 | [scripts/make-curve-fixtures.py](../scripts/make-curve-fixtures.py) | Generates synthetic TIFF ramps for manual Lightroom curve comparisons. |
 | [scripts/compare-preview.py](../scripts/compare-preview.py) | Compares resized sRGB previews without exposure/color fitting; distinct from the Rust comparison command. |
+| [scripts/film/](../scripts/film/README.md) | Makes the film looks in `assets/looks` and their presets from Kodak's datasheets, downloaded on every run. |
 
 Use the [README's development section](../README.md#development) for the standard
 suite. Private fixture checks require external data and are explicitly ignored by
