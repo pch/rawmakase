@@ -341,8 +341,11 @@ impl Recipe {
             temperature: estimate_temperature(m),
             lens_builtin: m.lens.as_ref().is_none_or(|l| l.default_on),
             // As Camera Raw: the aspect ratio chosen in the camera is the crop a
-            // photo starts with, which can be widened to the whole frame.
-            crop: m.camera_crop.unwrap_or([0., 0., 1., 1.]),
+            // photo starts with, which can be widened to the whole frame. The camera
+            // records it on the unrotated frame; the crop is of the photo as shown.
+            crop: m.camera_crop.map_or([0., 0., 1., 1.], |c| {
+                crate::model::image_frame::ImageFrame::for_metadata(m).rect_from_unrotated(c)
+            }),
             ..Default::default()
         }
     }

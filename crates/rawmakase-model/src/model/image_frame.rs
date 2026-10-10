@@ -88,6 +88,13 @@ impl ImageFrame {
     pub fn from_unrotated(&self, p: [f32; 2]) -> [f32; 2] {
         turn((4 - self.turns) % 4, p[0], p[1])
     }
+    /// Image-space `[left, top, right, bottom]` of a rectangle in the unrotated frame,
+    /// such as the camera's aspect-ratio crop.
+    pub fn rect_from_unrotated(&self, [l, t, r, b]: [f32; 4]) -> [f32; 4] {
+        let [x0, y0] = self.from_unrotated([l, t]);
+        let [x1, y1] = self.from_unrotated([r, b]);
+        [x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1)]
+    }
     /// Decoded sample coordinates of an image-space position.
     pub fn to_source(&self, p: [f32; 2]) -> [f32; 2] {
         let [x, y] = turn(self.turns, p[0], p[1]);
@@ -146,5 +153,33 @@ mod tests {
             let turned = flip == 5 || flip == 6;
             assert_eq!(size, if turned { [190., 280.] } else { [280., 190.] });
         }
+    }
+    /// The camera's aspect-ratio crop is a crop of the unrotated frame; a photo held
+    /// upright starts from the same area of the sensor, turned with it.
+    #[test]
+    fn camera_crop_turns_with_the_photo() {
+        let square = [1. / 6., 0., 5. / 6., 1.];
+        for (flip, want) in [
+            (0, square),
+            (3, square),
+            (6, [0., 1. / 6., 1., 5. / 6.]),
+            (5, [0., 1. / 6., 1., 5. / 6.]),
+        ] {
+            let mut m = image(flip).metadata;
+            m.camera_crop = Some([1. / 6., 0., 5. / 6., 1.]);
+            let crop = crate::model::recipe::Recipe::for_metadata(&m).crop;
+            for (got, want) in crop.iter().zip(want) {
+                assert!((got - want).abs() < 1e-6, "flip {flip}: {crop:?}");
+            }
+        }
+        // An off-centre crop keeps its place on the sensor.
+        let mut m = image(6).metadata;
+        m.camera_crop = Some([0., 0., 0.5, 1.]);
+        let [x, y] = ImageFrame::for_metadata(&m).from_unrotated([0.25, 0.5]);
+        let crop = crate::model::recipe::Recipe::for_metadata(&m).crop;
+        assert!(
+            crop[0] <= x && x <= crop[2] && crop[1] <= y && y <= crop[3],
+            "{crop:?}"
+        );
     }
 }
