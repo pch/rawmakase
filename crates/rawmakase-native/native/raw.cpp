@@ -100,15 +100,38 @@ static void correct_black(LibRaw& raw) {
     col.black=unsigned(masked);
     std::fill(std::begin(col.cblack), std::end(col.cblack), 0u);
 }
+static void message(char* err, const char* text) { std::snprintf(err, 512, "%s", text); }
+// Nikon's High Efficiency raws are JPEG XS, which LibRaw cannot decode. It knows them
+// only on the bodies it lists (the Z 9, Z 8, Z f and Z6_3); on others, such as the
+// Z5_2, it reads them as lossless compressed: noise, with a warning and no error.
+// So any NEF whose data starts with JPEG XS's SOC and CAP markers is refused.
+static bool nikon_high_efficiency(Raw& raw) {
+    const char* decoder=raw.unpack_function_name();
+    if(!std::strcmp(decoder,"nikon_he_load_raw()")) return true;
+    if(std::strcmp(decoder,"nikon_load_raw()")) return false;
+    auto* internal=raw.get_internal_data_pointer();
+    auto* input=internal->internal_data.input;
+    const unsigned char jpeg_xs[4]={0xff,0x10,0xff,0x50};
+    unsigned char head[4];
+    // unpack() seeks to the data itself.
+    return input && !input->seek(internal->unpacker_data.data_offset,SEEK_SET)
+        && input->read(head,1,4)==4 && !std::memcmp(head,jpeg_xs,4);
+}
 struct Handle {
     Raw raw;
     Cancel cancel = nullptr;
     void* context = nullptr;
     // LibRaw rejects a second unpack(); the CFA path may unpack before falling back.
     bool unpacked = false;
-    int unpack() {
+    // Fills err when it fails.
+    int unpack(char* err) {
         if(unpacked) return 0;
+        if(nikon_high_efficiency(raw)) {
+            message(err,"Nikon High Efficiency NEF files are not supported yet");
+            return LIBRAW_FILE_UNSUPPORTED;
+        }
         int rc=raw.unpack();
+        if(rc) message(err,libraw_strerror(rc));
         unpacked = rc==0;
         if(unpacked) correct_black(raw);
         return rc;
@@ -118,7 +141,6 @@ static int progress(void* p, LibRaw_progress, int, int) {
     auto h = static_cast<Handle*>(p);
     return h->cancel && h->cancel(h->context);
 }
-static void message(char* err, const char* text) { std::snprintf(err, 512, "%s", text); }
 // Paths arrive as UTF-8. Windows' narrow file API uses the ANSI code page, so
 // they are widened for LibRaw's wide-character open there.
 static int open_path(Raw& raw, const char* path) {
@@ -222,8 +244,9 @@ int ora_develop(void* ptr, int fast, Cancel cancel, void* context,
         // AHD for Bayer. For X-Trans, quality 2 selects 1-pass Markesteijn (darktable's
         // default), about three times faster than the 3-pass variant.
         p.half_size=fast; p.user_qual=fast ? 0 : (raw.imgdata.idata.filters==9 ? 2 : 3);
-        int rc=handle.unpack();
-        if(!rc) rc=raw.dcraw_process();
+        int rc=handle.unpack(err);
+        if(rc) return rc;
+        rc=raw.dcraw_process();
         if(rc) { message(err,libraw_strerror(rc)); return rc; }
         *w=raw.imgdata.sizes.width; *h=raw.imgdata.sizes.height;
         *gain=raw.decode_gain; *scale=raw.scale_factor; *clipped=raw.scale_clipped;
@@ -237,8 +260,8 @@ int ora_develop(void* ptr, int fast, Cancel cancel, void* context,
 int ora_cfa_open(void* ptr, unsigned* w, unsigned* h, unsigned char* pattern, char* err) {
     try {
         auto& handle=*static_cast<Handle*>(ptr); auto& raw=handle.raw;
-        int rc=handle.unpack();
-        if(rc) { message(err,libraw_strerror(rc)); return rc; }
+        int rc=handle.unpack(err);
+        if(rc) return rc;
         auto& d=raw.imgdata;
         if(!d.rawdata.raw_image || d.idata.colors!=3 || !d.idata.filters || d.rawdata.color.maximum<=d.rawdata.color.black) {
             message(err,"Not single-channel CFA data"); return 1;
