@@ -67,12 +67,15 @@ Optional monitor ICC conversion maps encoded sRGB bytes to device RGB through
 Little CMS with relative-colorimetric intent and black-point compensation.
 Choosing this manual override on macOS leaves the Metal surface unmanaged to
 avoid applying a second conversion; choosing Use sRGB restores system color
-management. Failure of the manual transform still falls back to sRGB with a
-visible error. Automatic monitor-profile discovery for manual conversion and
-HDR output are outside this release. Native tests check the actual Metal layer
-tag, surface reset/replacement and switching manual conversion on and off; the
-Little CMS test proves an sRGB-profile round trip within one byte. Visual matching
-with other applications still requires validation on the chosen display.
+management. Failure of the manual transform still shows the sRGB bytes with a
+visible error, but on macOS the surface stays unmanaged while a custom profile
+is selected, so that fallback is not matched to the display and can look
+oversaturated on wide-gamut monitors. Automatic monitor-profile discovery for
+manual conversion and HDR output are outside this release. Native tests check
+the actual Metal layer tag, surface reset/replacement and switching manual
+conversion on and off; the Little CMS test proves an sRGB-profile round trip
+within one byte. Visual matching with other applications still requires
+validation on the chosen display.
 
 ## Invalidation and ownership
 
