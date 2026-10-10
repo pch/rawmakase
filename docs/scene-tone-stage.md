@@ -174,6 +174,26 @@ gain (median ΔE00 on the training photos, Shadows +100 1.55 → 1.53 and +50 1.
 Highlights unchanged within 0.02); the cross-validated figures above are from the earlier
 taps.
 
+**Positive Highlights' bright end.** The photo tables have few samples far above the
+key: in a dark photo with a bright object, the region 5–7 stops above the key, the
++100 table lifted 1.09 EV at +5, 0.50 at +6 and 1.03 at +7, a fitting artefact. Positive
+Highlights now takes each bin from the photo table weighted by its photo samples
+(count / (count + 20,000), smoothed over five bins) and from the synthetic scenes' table
+for the rest, which carries the lift on smoothly (+100: 1.43, 1.56, 1.94 EV at +5, +6, +7)
+and is the photo table below +4. Training photos render as before (median ΔE00 at +100
+1.37, at +50 1.12 against 1.13); on validation Highlights +100 now passes on mid photos.
+
+Still open on low-key photos: a dark photo's bright object a couple of stops above the key
+(the moon in a night sky, 2.2 stops above it) is lifted about 1.6 EV by Camera Raw at
+Highlights +100, as bright spots two stops above a dark surround are on the probes, and
+0.35 by the table, which on the training photos only meets such levels near white. A
+second table of the base level itself (headroom to white) helps in cross-validation
+(Highlights +100 typical error 0.061 → 0.041 EV) but predicts 0.36 for the moon: the
+training photos have no such scene. Highlights −100 on bright photos is short of the
+rule's material improvement (1.53 against engine 4's 1.67). A median key for Highlights
+fitted the photos' scene gain better in cross-validation at every position but rendered
+the training photos worse (+100 1.37 → 1.44, −100 1.30 → 1.41), so the key is unchanged.
+
 **Positive Shadows: the two-scale lift.** On the training photos Shadows +100 left the
 darkest display tones (L* below 15) 5–7 L* too light, almost all of it from small dark
 areas (0.2–3.5% of the frame) inside brighter surroundings, which Camera Raw lifts less

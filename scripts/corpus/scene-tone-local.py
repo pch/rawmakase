@@ -41,8 +41,12 @@ output's white or below 2^-10 are left out of the fits.
   the map as local_tone.rs reads them.
 - Highlights: the gain as a function of B minus the key, the mean of L's 75th and 1st
   percentiles, over [-6, 7]; negative Highlights on the synthetic scenes, positive on
-  the training photos (closer to Camera Raw on held-out photos: display ΔE00 +100 1.91
-  → 1.80, +50 1.69 → 1.57; −100 even).
+  the training photos where they have samples and the synthetic scenes where they have
+  few (a bin's weight is its photo samples / (samples + HIGHLIGHT_SUPPORT)): the photos
+  have almost no bright regions far above a dark photo's key, where the photo table dipped
+  to half the lift of its neighbours. The photo tables are closer to Camera Raw than the
+  synthetic ones on held-out photos (display ΔE00 +100 1.91 → 1.80, +50 1.69 → 1.57;
+  −100 even).
 - Dehaze (training photos): each channel's gain as a function of its log2 level minus
   L's 99th percentile, over [-12, 1].
   Each is a 48-bin piecewise-linear table per slider position, fitted by least squares
@@ -211,6 +215,19 @@ def fit_table(samples, lo, hi, n=48, smooth=3e-2):
     return np.linalg.solve(M, A.T @ t)
 
 
+def support(samples, lo, hi, n=48):
+    """Samples per bin (bin-centre table, smoothed over 5 bins)."""
+    u = np.concatenate([u for u, _ in samples])
+    f = np.clip((u - lo) / (hi - lo) * n - 0.5, 0, n - 1 - 1e-9)
+    count = np.bincount(f.astype(int), minlength=n).astype(float)
+    return np.convolve(np.pad(count, 2, mode='edge'), np.ones(5) / 5, 'valid')
+
+
+# Positive Highlights: the photo table where its bins have this many samples (weight
+# count / (count + HIGHLIGHT_SUPPORT)), the synthetic scenes' table where they have few.
+HIGHLIGHT_SUPPORT = 20000.
+
+
 def synthetic(seed):
     """Scene `seed` as written to its DNG, and its baseline exposure: the sensor's white
     is 2^0.5 (clipping the brightest regions) in half the scenes, else just above the
@@ -347,7 +364,7 @@ def photo_tables(d):
             ok = (d > 2 ** -11) & (r > 2 ** -11) & (renders['default'].max(-1) < 0.98) & (L > -10)
             key = 0.5 * pct(L, 0.75) + 0.5 * pct(L, 0.01)
             samples.append(((B - key)[ok], log_gain(inv(r), inv(d))[ok]))
-        highlights.append(fit_table(samples, lo, hi))
+        highlights.append((fit_table(samples, lo, hi), support(samples, lo, hi)))
         print(f"{name('H', v)}: {sum(t.size for _, t in samples)} samples", flush=True)
     lo, hi = RANGES['D']
     dehaze = []
@@ -614,7 +631,8 @@ def tables(args):
         LOCAL_HEADER + family('SHADOWS', S + none, SH, *RANGES['S'])
         + family('SHADOWS_DETAIL', none + detail, SH, *RANGES['S'])
         + family('SHADOWS_REGION', none + region, SH, *RANGES['S'])
-        + family('HIGHLIGHTS', t['H'][:3] + H, SH, *RANGES['H'])
+        + family('HIGHLIGHTS', t['H'][:3] + [w * photo + (1 - w) * synth for (photo, count), synth in zip(H, t['H'][3:])
+                                             for w in [count / (count + HIGHLIGHT_SUPPORT)]], SH, *RANGES['H'])
         + family('DEHAZE', D, DEHAZE, *RANGES['D']))
     c = t['C']
     (out / 'clarity_data.rs').write_text(
