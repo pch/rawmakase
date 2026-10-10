@@ -88,9 +88,13 @@ fn a_file_found_again_is_checked_back_online() -> Result<()> {
     // Restored in place: counted offline until it is found again.
     std::fs::rename(folder.join("moved"), &file)?;
     assert!(!library.is_available(&stored));
+    assert_eq!(library.available_count(), 0);
     library.found(&stored);
+    // Counted online again while it is checked, as every photo is.
+    assert_eq!(library.available_count(), 1);
     library.wait_for_availability();
     assert!(library.is_available(&stored));
+    assert_eq!(library.available_count(), 1);
     Ok(())
 }
 
@@ -360,6 +364,63 @@ fn library_opens_before_the_online_check_and_then_marks_missing_photos() -> Resu
     assert_eq!(l.available_count(), 1);
     assert!(!l.is_available(&gone));
     assert_eq!(l.visible.len(), 1);
+    Ok(())
+}
+
+/// The sidebar asks for the online count every frame; it is kept, and
+/// follows photos leaving the catalog.
+#[test]
+fn the_online_count_follows_photos_removed_from_the_catalog() -> Result<()> {
+    let d = tempfile::tempdir()?;
+    for folder in ["a", "b"] {
+        std::fs::create_dir(d.path().join(folder))?;
+        std::fs::write(d.path().join(folder).join("1.ARW"), b"source")?;
+        std::fs::write(d.path().join(folder).join("2.ARW"), b"source")?;
+    }
+    let db = d.path().join("photos.rawmakase");
+    Catalog::create(&db)?.add_folder(d.path())?;
+    let mut l = Library::load(&db, egui::Context::default())?;
+    l.wait_for_availability();
+    assert_eq!(l.available_count(), 4);
+    let b: HashSet<FolderId> = l
+        .session
+        .folders
+        .iter()
+        .filter(|f| f.path.ends_with("b"))
+        .map(|f| f.id)
+        .collect();
+    assert_eq!(b.len(), 1);
+    l.remove_folders(&b, "b")?;
+    assert_eq!(l.available_count(), 2);
+    Ok(())
+}
+
+/// Once the online check is in, the Library says how many folders have no
+/// photo on this computer; a folder with one of them online is not counted,
+/// nor is a folder without photos, as Lightroom catalogs have.
+#[test]
+fn folders_with_no_photo_online_are_counted_once_the_check_is_in() -> Result<()> {
+    let d = tempfile::tempdir()?;
+    for folder in ["kept", "gone", "partly"] {
+        std::fs::create_dir(d.path().join(folder))?;
+        std::fs::write(d.path().join(folder).join("1.ARW"), b"source")?;
+        std::fs::write(d.path().join(folder).join("2.ARW"), b"source")?;
+    }
+    let db = d.path().join("photos.rawmakase");
+    Catalog::create(&db)?.add_folder(d.path())?;
+    rusqlite::Connection::open(&db)?.execute_batch(
+        "INSERT INTO folders (root,relative_path) SELECT root,'empty/' FROM folders LIMIT 1",
+    )?;
+    std::fs::remove_dir_all(d.path().join("gone"))?;
+    std::fs::remove_file(d.path().join("partly").join("1.ARW"))?;
+    let mut l = Library::load(&db, egui::Context::default())?;
+    l.wait_for_availability();
+    assert!(
+        l.message
+            .starts_with("1 folder isn't found on this computer"),
+        "{}",
+        l.message
+    );
     Ok(())
 }
 

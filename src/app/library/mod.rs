@@ -380,6 +380,8 @@ impl Library {
         }
         let keys = &self.sort_keys.as_ref().unwrap().1;
         self.shown_version += 1;
+        // Filtering follows every change to the photos, so the count does too.
+        self.availability.forget_count();
         self.visible = self.filters.visible(
             &self.session.photos,
             |path| self.availability.is_available(path),

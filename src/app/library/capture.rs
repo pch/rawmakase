@@ -3,6 +3,8 @@
 //! background, a batch at a time. Photos imported from Lightroom already have
 //! theirs.
 use super::Library;
+use crate::catalog::FolderId;
+use std::collections::HashMap;
 
 impl Library {
     /// Once it is known which photos are online, filters again and reads the
@@ -22,19 +24,16 @@ impl Library {
         if std::mem::replace(&mut self.missing_noted, true) || !self.message.is_empty() {
             return;
         }
+        // One pass over the photos: whether each folder has one online.
+        let mut online: HashMap<FolderId, bool> = HashMap::new();
+        for p in &self.session.photos {
+            *online.entry(p.folder).or_default() |= self.is_available(&p.path);
+        }
         let missing = self
             .session
             .folders
             .iter()
-            .filter(|f| {
-                let mut photos = self
-                    .session
-                    .photos
-                    .iter()
-                    .filter(|p| p.folder == f.id)
-                    .peekable();
-                photos.peek().is_some() && photos.all(|p| !self.is_available(&p.path))
-            })
+            .filter(|f| online.get(&f.id) == Some(&false))
             .count();
         if missing > 0 {
             self.message = format!(

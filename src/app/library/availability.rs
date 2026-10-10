@@ -4,6 +4,7 @@
 use crate::catalog::Photo;
 use eframe::egui;
 use std::{
+    cell::Cell,
     collections::HashSet,
     path::{Path, PathBuf},
     sync::mpsc::{Receiver, TryRecvError, channel},
@@ -14,6 +15,9 @@ pub(super) struct Availability {
     /// The check still running, if any.
     checking: Option<Receiver<HashSet<PathBuf>>>,
     available: HashSet<PathBuf>,
+    /// How many photos are online, kept from `count` until the answer or the
+    /// photos change: the sidebar shows it every frame.
+    counted: Cell<Option<usize>>,
 }
 impl Availability {
     /// Finds out which of `photos` are online, in the background. Until the
@@ -28,6 +32,7 @@ impl Availability {
             }
         });
         self.checking = Some(rx);
+        self.forget_count();
     }
     /// Takes the result of the check once it is there (or waits for it).
     /// Returns whether the answer arrived, so the caller can filter again.
@@ -49,6 +54,7 @@ impl Availability {
             }
         }
         self.checking = None;
+        self.forget_count();
         true
     }
     /// Whether a check is still running.
@@ -58,7 +64,17 @@ impl Availability {
     pub(super) fn is_available(&self, path: &Path) -> bool {
         self.checking.is_some() || self.available.contains(path)
     }
+    /// How many of `photos` are online. Kept until `forget_count`, which the
+    /// Library calls whenever its photos change.
     pub(super) fn count(&self, photos: &[Photo]) -> usize {
-        photos.iter().filter(|p| self.is_available(&p.path)).count()
+        if let Some(n) = self.counted.get() {
+            return n;
+        }
+        let n = photos.iter().filter(|p| self.is_available(&p.path)).count();
+        self.counted.set(Some(n));
+        n
+    }
+    pub(super) fn forget_count(&self) {
+        self.counted.set(None);
     }
 }

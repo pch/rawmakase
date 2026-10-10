@@ -5,7 +5,7 @@ pub(crate) mod background;
 mod descriptive;
 
 use crate::catalog::{
-    Catalog, CatalogLocation, Collection, CollectionId, Folder, Photo, PhotoId, RootId,
+    Catalog, CatalogLocation, Collection, CollectionId, Folder, FolderId, Photo, PhotoId, RootId,
 };
 use anyhow::Result;
 pub(crate) use background::Wake;
@@ -153,8 +153,13 @@ impl CatalogSession {
         let mut photos = self.catalog.photos()?;
         photos.retain(|p| !crate::storage::is_hidden(Path::new(&p.filename)));
         let mut folders = self.catalog.folders()?;
+        // One pass over the photos: a large catalog has thousands of folders.
+        let mut counts: HashMap<FolderId, usize> = HashMap::new();
+        for photo in &photos {
+            *counts.entry(photo.folder).or_default() += 1;
+        }
         for folder in &mut folders {
-            folder.count = photos.iter().filter(|p| p.folder == folder.id).count();
+            folder.count = counts.get(&folder.id).copied().unwrap_or(0);
         }
         let collections = self.catalog.collections()?;
         let ids: HashSet<PhotoId> = photos.iter().map(|p| p.id).collect();
