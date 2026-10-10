@@ -279,6 +279,101 @@ mod tests {
         std::fs::write(f.path(), b"not a raw file").unwrap();
         assert!(super::Raw::open_file(f.path()).is_err());
     }
+    /// A 64×64 NEF from `model` whose raw data, Nikon-compressed for LibRaw, starts with `data`.
+    fn nef(model: &str, data: &[u8]) -> tempfile::NamedTempFile {
+        fn dir(f: &mut Vec<u8>, entries: &[(u16, u16, u32, Vec<u8>)]) {
+            let mut extra = f.len() + 2 + 12 * entries.len() + 4;
+            let mut values: Vec<u8> = Vec::new();
+            f.extend((entries.len() as u16).to_le_bytes());
+            for (tag, kind, count, value) in entries {
+                f.extend([tag.to_le_bytes(), kind.to_le_bytes()].concat());
+                f.extend(count.to_le_bytes());
+                if value.len() <= 4 {
+                    f.extend(&value[..]);
+                    f.extend(vec![0; 4 - value.len()]);
+                } else {
+                    f.extend((extra as u32).to_le_bytes());
+                    values.extend(value);
+                    extra += value.len();
+                }
+            }
+            f.extend(0u32.to_le_bytes());
+            f.extend(values);
+        }
+        let text = |s: &str| [s.as_bytes(), &[0]].concat();
+        let long = |v: u32| v.to_le_bytes().to_vec();
+        let short = |v: u16| v.to_le_bytes().to_vec();
+        let (make, model) = (text("NIKON CORPORATION"), text(model));
+        let mut f = b"II*\0".to_vec();
+        f.extend(8u32.to_le_bytes());
+        // The raw directory follows the first one and its two strings.
+        let sub = 8 + 2 + 3 * 12 + 4 + make.len() + model.len();
+        let data_offset = sub + 2 + 9 * 12 + 4;
+        let raw: Vec<u8> = data
+            .iter()
+            .copied()
+            .chain((0..4096).map(|i| i as u8))
+            .collect();
+        dir(
+            &mut f,
+            &[
+                (0x10f, 2, make.len() as u32, make.clone()),
+                (0x110, 2, model.len() as u32, model.clone()),
+                (0x14a, 4, 1, long(sub as u32)),
+            ],
+        );
+        assert_eq!(f.len(), sub);
+        dir(
+            &mut f,
+            &[
+                (0xfe, 4, 1, long(0)),
+                (0x100, 4, 1, long(64)),
+                (0x101, 4, 1, long(64)),
+                (0x102, 3, 1, short(14)),
+                (0x103, 3, 1, short(34713)),
+                (0x106, 3, 1, short(32803)),
+                (0x111, 4, 1, long(data_offset as u32)),
+                (0x115, 3, 1, short(1)),
+                (0x117, 4, 1, long(raw.len() as u32)),
+            ],
+        );
+        assert_eq!(f.len(), data_offset);
+        f.extend(raw);
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), f).unwrap();
+        file
+    }
+    #[test]
+    fn nikon_high_efficiency_raws_are_refused_on_every_body() {
+        use crate::camera_data::{Decode, Demosaic};
+        use std::sync::atomic::AtomicBool;
+        // JPEG XS: start of codestream, then the capabilities marker.
+        const JPEG_XS: [u8; 4] = [0xff, 0x10, 0xff, 0x50];
+        // LibRaw knows the Z 8's High Efficiency raws, and reads the Z5_2's as
+        // lossless compressed: noise and a warning, not an error (issue #411).
+        for model in ["NIKON Z5_2", "NIKON Z 8"] {
+            for decode in [
+                Decode::Half,
+                Decode::Full(Demosaic::Libraw),
+                Decode::Full(Demosaic::Rawmakase),
+            ] {
+                let file = nef(model, &JPEG_XS);
+                // Opened, so the embedded preview can stand in.
+                let raw = super::Raw::open_file(file.path()).unwrap();
+                let error = raw
+                    .develop(decode, &AtomicBool::new(false))
+                    .err()
+                    .unwrap_or_else(|| panic!("{model} developed with {decode:?}"));
+                assert!(
+                    error.to_string().contains("High Efficiency"),
+                    "{model}, {decode:?}: {error}"
+                );
+            }
+        }
+        let file = nef("NIKON Z5_2", &[0; 4]);
+        let raw = super::Raw::open_file(file.path()).unwrap();
+        assert!(raw.develop(Decode::Half, &AtomicBool::new(false)).is_ok());
+    }
     #[test]
     fn monitor_srgb_roundtrip() -> anyhow::Result<()> {
         let d = tempfile::tempdir()?;
