@@ -29,8 +29,10 @@ output's white or below 2^-10 are left out of the fits.
 
 - Shadows (training photos): the gain as a function of B minus the key log2(mean Y),
   over [-8, 4].
-- Highlights (synthetic scenes): the gain as a function of B minus the key, the mean of
-  L's 75th and 1st percentiles, over [-6, 7].
+- Highlights: the gain as a function of B minus the key, the mean of L's 75th and 1st
+  percentiles, over [-6, 7]; negative Highlights on the synthetic scenes, positive on
+  the training photos (closer to Camera Raw on held-out photos: display ΔE00 +100 1.91
+  → 1.80, +50 1.69 → 1.57; −100 even).
 - Dehaze (training photos): each channel's gain as a function of its log2 level minus
   L's 99th percentile, over [-12, 1].
   Each is a 48-bin piecewise-linear table per slider position, fitted by least squares
@@ -89,7 +91,7 @@ SYNTH_RENDERS = {'default': {}} | {name(k, v): {SETTINGS[k]: f'{v * 100:g}'}
                                    for k, vs in [('S', SH), ('H', SH), ('D', DEHAZE), ('C', CLARITY)]
                                    for v in vs}
 PHOTO_RENDERS = {'default': {}} | {name(k, v): {SETTINGS[k]: f'{v * 100:g}'}
-                                   for k, vs in [('S', SH), ('D', DEHAZE)] for v in vs}
+                                   for k, vs in [('S', SH), ('H', SH), ('D', DEHAZE)] for v in vs}
 
 
 # Image helpers.
@@ -294,7 +296,8 @@ def synthetic_tables(folder, tone):
 
 
 def photo_tables(d):
-    """Shadows and Dehaze from the training photos with complete renders and taps."""
+    """Shadows, positive Highlights and Dehaze from the training photos with complete
+    renders and taps."""
     photos = []
     for dng in sorted((d / 'dng').glob('*.dng')):
         tap = d / 'maps' / f'{dng.stem}.npz'
@@ -324,6 +327,17 @@ def photo_tables(d):
             samples.append(((B - np.log2(np.mean(2.0 ** L)))[ok], log_gain(inv(r), inv(d))[ok]))
         tables.append(fit_table(samples, lo, hi))
         print(f"{name('S', v)}: {sum(t.size for _, t in samples)} samples", flush=True)
+    lo, hi = RANGES['H']
+    highlights = []
+    for v in [v for v in SH if v > 0]:
+        samples = []
+        for xin, L, B, inv, renders in photos:
+            d, r = renders['default'] @ YW, renders[name('H', v)] @ YW
+            ok = (d > 2 ** -11) & (r > 2 ** -11) & (renders['default'].max(-1) < 0.98) & (L > -10)
+            key = 0.5 * pct(L, 0.75) + 0.5 * pct(L, 0.01)
+            samples.append(((B - key)[ok], log_gain(inv(r), inv(d))[ok]))
+        highlights.append(fit_table(samples, lo, hi))
+        print(f"{name('H', v)}: {sum(t.size for _, t in samples)} samples", flush=True)
     lo, hi = RANGES['D']
     dehaze = []
     for v in DEHAZE:
@@ -337,7 +351,7 @@ def photo_tables(d):
                 samples.append((u[ok], log_gain(inv(r[..., c]), inv(d[..., c]))[ok]))
         dehaze.append(fit_table(samples, lo, hi))
         print(f"{name('D', v)}: {sum(t.size for _, t in samples)} samples", flush=True)
-    return tables, dehaze
+    return tables, highlights, dehaze
 
 
 # Rust output.
@@ -355,11 +369,12 @@ def family(const, tables, values, lo, hi):
 
 LOCAL_HEADER = '''//! Camera Raw 18.7's Shadows, Highlights and Dehaze on scene values (process version
 //! 2012), measured with a linear profile (`scripts/corpus/scene-tone-local.py`):
-//! Shadows and Dehaze on the training photos, Highlights on synthetic scenes. Each
-//! table is a log2 gain as a function of a level relative to an image key: Shadows'
-//! and Highlights' of the local base level (local_tone.rs) and their keys, Dehaze's of
-//! each channel's level relative to the photo's 99th percentile. Rows are the slider
-//! positions `values`; columns are bin centres over [lo, hi].
+//! Shadows, Dehaze and positive Highlights on the training photos, negative Highlights
+//! on synthetic scenes. Each table is a log2 gain as a function of a level relative to
+//! an image key: Shadows' and Highlights' of the local base level (local_tone.rs) and
+//! their keys, Dehaze's of each channel's level relative to the photo's 99th
+//! percentile. Rows are the slider positions `values`; columns are bin centres over
+//! [lo, hi].
 #![allow(clippy::excessive_precision, clippy::approx_constant)]
 pub(crate) struct Family {
     pub values: [f32; 6],
@@ -443,11 +458,11 @@ def photos(args):
 
 
 def tables(args):
-    S, D = photo_tables(args.photos.resolve())
+    S, H, D = photo_tables(args.photos.resolve())
     t = synthetic_tables(args.synth.resolve(), args.tone.resolve())
     out = args.out.resolve()
     (out / 'local_tone_data.rs').write_text(
-        LOCAL_HEADER + family('SHADOWS', S, SH, *RANGES['S']) + family('HIGHLIGHTS', t['H'], SH, *RANGES['H'])
+        LOCAL_HEADER + family('SHADOWS', S, SH, *RANGES['S']) + family('HIGHLIGHTS', t['H'][:3] + H, SH, *RANGES['H'])
         + family('DEHAZE', D, DEHAZE, *RANGES['D']))
     c = t['C']
     (out / 'clarity_data.rs').write_text(

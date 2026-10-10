@@ -135,8 +135,12 @@ On photos the synthetic Shadows tables did not carry over as well as Highlights'
 fitted on the photos themselves against the photo's mean luminance (log2 of the mean
 of the map's luminance) leave 0.12 at +100 and −100, against 0.25 and 0.24 for the
 synthetic tables and 0.43 and 0.34 for doing nothing; the 90th percentile key does as
-well. Highlights' synthetic tables stay (0.09–0.10 at ±100 on the photos, better than
-tables fitted on them). Clarity's weights keep the percentile key they were fitted
+well. Highlights' synthetic tables match the photos' luminance gain (0.09–0.10 EV at
+±100), but positive Highlights renders closer to Camera Raw with tables fitted on the
+photos: rendered with tables fitted on the other half of the photos (two folds, 22
+photos), median ΔE00 at +100 is 1.80 against 1.91 for the synthetic tables, at +50 1.57
+against 1.69. At −100 the photo tables gain nothing (1.63 against 1.64), so negative
+Highlights keeps the synthetic tables. Clarity's weights keep the percentile key they were fitted
 with.
 
 ### Dehaze
