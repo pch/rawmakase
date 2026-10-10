@@ -185,7 +185,22 @@ cross-validation 0.66 → 0.52 EV error in the deep shadows, but the display err
 6.6 → 5.0 L*), including pixels below 2^-10 in the fit (no change), smoother bases
 (guided filter ε 0.03–8, radius 1.6–6% of the long edge, refitted: no change), and
 applying the default black before the local gain (5.0 L*, but Blacks ±50 and the
-default render get worse). None is in the engine. Clarity's weights keep the percentile key they were fitted
+default render get worse). None is in the engine.
+
+The likely mechanism is a multi-scale one. Camera Raw's tone controls since process
+version 2012 are reported to use local Laplacian filtering (Paris, Hasinoff, Kautz,
+"Local Laplacian Filters", SIGGRAPH 2011; the University College London impact case
+study on its adoption in Lightroom). A prototype on the training photos, a fast local
+Laplacian filter (Aubry et al., 2014) on log2 luminance with the Shadows curve fitted
+through it (the output is linear in the curve), confirms it: at a detail threshold of
+2 stops the error in the scene values falls from 0.238 to 0.211 EV in cross-validation,
+and in display renders the small dark areas come out as Camera Raw's (Shadows +100,
+L* below 15: Leica M10-R 6.4 → 0.2, Nikon D5 7.0 → 0.8, Sony A9 II 5.9 → 1.2 too
+light). Computed on the 512-pixel measurement copy and upsampled, though, it loses
+what the full-resolution filter keeps (a pixel's own level against its neighbourhood)
+and the median ΔE00 rises (+100 1.53 → 1.70). A full-resolution fast local Laplacian
+for Shadows and Highlights (and Clarity as its detail term) is the follow-up. It
+follows the published method and our own measurements, not Adobe's code or patents. Clarity's weights keep the percentile key they were fitted
 with.
 
 ### Dehaze
