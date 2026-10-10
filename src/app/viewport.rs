@@ -534,24 +534,17 @@ impl Editor {
             && let Some(pos) = response.interact_pointer_pos()
             && rect.contains(pos)
         {
-            let metadata = self.document.full().map(|im| im.metadata.clone());
             // The samples must come from the settings the pick is mapped through.
-            let current = self.preview.samples_recipe.as_ref() == Some(&self.effective_recipe());
-            match self
-                .shown_color(pos, rect, region_rect)
-                .filter(|_| current)
-                .zip(metadata)
-            {
-                Some((rgb, m)) => {
-                    match develop::pick_fringe(self.document.edit.recipe_mut(), &m, rgb) {
-                        Some(_) => self.view.tool = Tool::None,
-                        None => {
-                            self.status =
-                                "Cannot set the fringe color: click a purple or green fringe"
-                                    .into();
-                        }
+            let current = self.preview.samples_recipe.as_ref() == Some(&self.effective_recipe())
+                && self.document.full().is_some();
+            match self.shown_color(pos, rect, region_rect).filter(|_| current) {
+                Some(rgb) => match develop::pick_fringe(self.document.edit.recipe_mut(), rgb) {
+                    Some(_) => self.view.tool = Tool::None,
+                    None => {
+                        self.status =
+                            "Cannot set the fringe color: click a purple or green fringe".into();
                     }
-                }
+                },
                 None => self.status = "Wait for the preview to update, then pick again".into(),
             }
         }

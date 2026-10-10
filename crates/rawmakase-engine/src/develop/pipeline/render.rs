@@ -3,32 +3,18 @@ use super::*;
 
 /// Shared full/preview renderer. Geometry is sampled in rows; no full-sized intermediate color image.
 pub fn render(im: &CameraImage, r: &ValidRecipe, max_edge: u32) -> Result<Rendered> {
-    if r.engine < 3 {
-        return render_legacy(im, r, max_edge);
-    }
     crate::develop::quality::render(im, r, max_edge, None)
 }
-/// [`render`], stopping with an error once `cancel` is set. Recipes of the older
-/// engines render to the end once started.
+/// [`render`], stopping with an error once `cancel` is set.
 pub fn render_cancellable(
     im: &CameraImage,
     r: &ValidRecipe,
     max_edge: u32,
     cancel: &std::sync::atomic::AtomicBool,
 ) -> Result<Rendered> {
-    if r.engine < 3 {
-        ensure!(
-            !cancel.load(std::sync::atomic::Ordering::Relaxed),
-            "Cancelled"
-        );
-        return render_legacy(im, r, max_edge);
-    }
     crate::develop::quality::render_cancellable(im, r, max_edge, None, cancel)
 }
 pub fn render_region(im: &CameraImage, r: &ValidRecipe, region: [u32; 4]) -> Result<Rendered> {
-    if r.engine < 3 {
-        return render_region_legacy(im, r, region);
-    }
     crate::develop::quality::render(im, r, 0, Some(region))
 }
 /// Unsharpened render of `region` of the output described by `g`, and the mask weights
@@ -136,7 +122,7 @@ pub(crate) fn render_display(
     base.sharpening = 0.;
     base.validate()?;
     let im = toned.source();
-    let Some(mut params) = gpu_pixel_params(im, &base, stages.backend, cancel) else {
+    let Some(mut params) = pixel_params::pixel_params(im, &base) else {
         return Ok(None);
     };
     let key = crate::develop::stage_cache::SampleKey::new(toned, &base, g, region, spread);
@@ -251,8 +237,10 @@ pub(crate) fn mask_weights(
     }
     Ok(Some(weights))
 }
-/// Local Texture and Clarity: the samples scaled by the local-contrast detail of the
-/// camera image at their positions, as the global sliders' gain does.
+/// A mask's Texture: the samples scaled by the measured Texture's detail of the camera
+/// image at their positions (`texture.rs`), by the mask's strength on top of the
+/// global slider's, which the image already has. A mask's Clarity renders in the scene
+/// tone stage.
 pub(super) fn detail(
     toned: &Toned,
     r: &Recipe,
@@ -261,14 +249,13 @@ pub(super) fn detail(
     cache: Option<&mut crate::develop::stage_cache::StageCache>,
     cancel: &std::sync::atomic::AtomicBool,
 ) -> Result<Arc<Samples>> {
-    let Some(weights) = weights.filter(|w| w.uses(&[slot::TEXTURE, slot::CLARITY])) else {
+    let Some(weights) = weights.filter(|w| w.uses(&[slot::TEXTURE])) else {
         return Ok(samples);
     };
-    let texture = weights.uses(&[slot::TEXTURE]);
-    let blurs =
-        crate::develop::quality::blurs(&toned.image, r, toned.scale, texture, cache, cancel)?;
-    let exposure = r.exposure + r.camera_exposure;
-    let (w, h) = (toned.image.width as usize, toned.image.height as usize);
+    let source = toned.untextured.as_ref().unwrap_or(&toned.image);
+    let texture = crate::develop::quality::texture_detail(source, toned.scale, cancel, cache)?;
+    let global = crate::develop::texture::strength(r.effects.texture);
+    let (w, h) = (source.width as usize, source.height as usize);
     let mut out = Samples {
         width: samples.width,
         height: samples.height,
@@ -279,13 +266,15 @@ pub(super) fn detail(
         let Some(d) = weights.delta(i) else {
             return;
         };
-        let (clarity, tex) = (d[slot::CLARITY], d[slot::TEXTURE]);
         let [x, y] = samples.positions[i];
-        if (clarity == 0. && tex == 0.) || x.is_nan() {
+        if d[slot::TEXTURE] == 0. || x.is_nan() {
             return;
         }
-        let gain = blurs.detail_gain(x, y, w, h, exposure, clarity, tex);
-        *p = p.map(|v| v * gain);
+        let s = crate::develop::texture::strength(r.effects.texture + d[slot::TEXTURE]) - global;
+        let detail = texture.at(x, y, w, h);
+        for (v, d) in p.iter_mut().zip(detail) {
+            *v *= (s * d).exp2();
+        }
     });
     Ok(Arc::new(out))
 }
@@ -406,7 +395,7 @@ fn develop_samples_to(
         *out = if pos[0].is_nan() {
             [1.; 3]
         } else {
-            process_pixel(samples.pixels[i], &im.metadata, r, &lut, matrix, pos, local)
+            process_pixel(samples.pixels[i], r, &lut, matrix, pos, local)
         };
     });
     ensure!(
@@ -416,6 +405,78 @@ fn develop_samples_to(
     Ok(Rendered {
         width: samples.width,
         height: samples.height,
+        pixels,
+    })
+}
+/// One sample per output pixel of `region`, without the stage cache: the per-pixel
+/// stage over the lens-warped or noise-reduced samples.
+pub(super) fn render_region_inner(
+    im: Source,
+    r: &Recipe,
+    g: &Geometry,
+    region: [u32; 4],
+    spread: f32,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<Rendered> {
+    r.validate()?;
+    let matrix = profile_matrix(&im.metadata, r);
+    let lut = CurveSet::for_image(im, r, matrix, false);
+    let [x0, y0, w, h] = region;
+    ensure!(
+        w > 0
+            && h > 0
+            && x0.checked_add(w).is_some_and(|r| r <= g.width)
+            && y0.checked_add(h).is_some_and(|b| b <= g.height),
+        "Invalid viewport region"
+    );
+    let mut pixels = vec![[0.; 3]; w as usize * h as usize];
+    let warp = LensWarp::new(&im, r);
+    let at = |x: u32, y: u32| {
+        let [sx, sy] = g.source(
+            (x as f32 + 0.5) / g.width as f32,
+            (y as f32 + 0.5) / g.height as f32,
+        );
+        if g.outside(sx, sy) {
+            return [1.; 3];
+        }
+        let p = match &warp {
+            Some(w) => w.sample(im, sx, sy, r, spread),
+            None => footprint_sample(im, sx, sy, r, spread),
+        };
+        process_pixel(p, r, &lut, matrix, [sx, sy], None)
+    };
+    pixels.par_iter_mut().enumerate().for_each(|(i, p)| {
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
+        let x = x0 + i as u32 % w;
+        let y = y0 + i as u32 / w;
+        *p = at(x, y);
+        if r.sharpening > 0. {
+            let mut avg = [0.; 3];
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    let q = at(
+                        (x as i64 + dx).clamp(0, g.width as i64 - 1) as u32,
+                        (y as i64 + dy).clamp(0, g.height as i64 - 1) as u32,
+                    );
+                    for c in 0..3 {
+                        avg[c] += q[c] / 9.;
+                    }
+                }
+            }
+            for c in 0..3 {
+                p[c] = (p[c] + (p[c] - avg[c]) * r.sharpening).clamp(0., 1.);
+            }
+        }
+    });
+    ensure!(
+        !cancel.load(std::sync::atomic::Ordering::Relaxed),
+        "Render superseded"
+    );
+    Ok(Rendered {
+        width: w,
+        height: h,
         pixels,
     })
 }

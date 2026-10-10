@@ -16,9 +16,11 @@
   boundaries over speculative abstractions.
 - Capture job inputs once; use the same inputs for execution and cache identity.
   Reject stale results after document changes, deletion or replacement.
-- Keep mechanical refactors separate from behavior changes. Preserve saved-edit
-  compatibility, legacy operators, migrations and unknown fields. Never re-bless
-  rendering references merely to pass a refactor.
+- Keep mechanical refactors separate from behavior changes. Preserve XMP and
+  settings compatibility (Lightroom settings mean what they mean in Lightroom;
+  saved slider values survive), migrations and unknown fields; old edits render
+  with the current engine, not legacy operators. Never re-bless rendering
+  references merely to pass a refactor.
 - Use the existing task infrastructure. Failure, panic, cancellation and
   disconnection must clear busy state. Document worker shutdown behavior; avoid
   unbounded waits and blanket joins in `Drop`.
@@ -48,8 +50,9 @@
 - Review affected callers and error paths, not only the diff. Prioritize data
   integrity, compatibility and user-visible behavior over structural preferences.
 - Verify the architecture and lifecycle invariants above across affected paths,
-  especially saved-edit compatibility, session consistency, job inputs and cache
-  identity, stale results, worker failure and shutdown, and save-before-navigation.
+  especially XMP and settings compatibility, session consistency, job inputs and
+  cache identity, stale results, worker failure and shutdown, and
+  save-before-navigation.
 - Support each actionable finding with severity, an exact file and line,
   triggering scenario, consequence and evidence or a minimal reproduction.
   Suggest the smallest coherent correction when supported by the evidence.

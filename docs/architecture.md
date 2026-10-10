@@ -41,8 +41,8 @@ files should preserve.
 | `optics` | The lens correction model the renderer evaluates (vignetting, distortion and lateral CA as radial functions), and Adobe lens profiles (LCP) as data; depends only on `xml` | `mod.rs`, `lcp.rs` |
 | `lens` | Readers that fill the `optics` model: the tables cameras embed in their RAWs, imported Adobe LCPs and lateral CA measurement, plus profile selection | `embedded.rs`, `lcp.rs`, `auto_ca.rs`, `choice.rs` |
 | `rendered` | Developed pixels as values: an output image, its histogram and clipping overlay, which the renderer produces and export and watermarks use; depends on nothing | `rendered.rs` |
-| `model` | What an edit is, as values shared by the renderer, the catalog and file formats: the `Recipe` with its validation (`ValidRecipe`), saved versions and migration, panel switches, and the settings it is made of: operator versions, Effects, Heal and Clone, Red Eye, Point Color, masks, Transform with Upright, white balance from metadata, the image space positions are kept in (`image_frame.rs`), the sliders as parameters, the rules an edit follows and the setting groups Copy Settings, Sync and presets use. Depends on camera profiles, lenses and optics, never on rendering | `recipe.rs`, `valid.rs`, `saved_format.rs`, `panels.rs`, `operators.rs`, `effects.rs`, `masks.rs`, `transform.rs` |
-| `develop` | Rendering a recipe: geometry, color processing, curves, effects, local adjustments, detail rendering and the GPU port | `pipeline/`, `quality/`, `geometry.rs`, `gpu/` |
+| `model` | What an edit is, as values shared by the renderer, the catalog and file formats: the `Recipe` with its validation (`ValidRecipe`), saved versions and migration, panel switches, and the settings it is made of: Effects, Heal and Clone, Red Eye, Point Color, masks, Transform with Upright, white balance from metadata, the image space positions are kept in (`image_frame.rs`), the sliders as parameters, the rules an edit follows and the setting groups Copy Settings, Sync and presets use. Depends on camera profiles, lenses and optics, never on rendering | `recipe.rs`, `valid.rs`, `saved_format.rs`, `panels.rs`, `operators.rs`, `effects.rs`, `masks.rs`, `transform.rs` |
+| `develop` | Rendering a recipe: geometry, color processing, the scene tone stage, curves, effects, local adjustments, detail rendering and the GPU port | `pipeline/`, `scene_tone/`, `quality/`, `geometry.rs`, `gpu/` |
 | `xmp` | Namespace-aware Adobe settings parsing and application to recipes. Settings that ask for Auto measure the photo through `PhotoMeasures`, which `develop::Measures` provides, and packets take the crop as rendered from the caller, so XMP needs no rendering code | `parse.rs`, `apply.rs` |
 | `raw_defaults` | Lightroom's Raw Defaults: the master and per-camera choices and a photo's starting settings. Above `presets`, whose library it reads | `raw_defaults.rs` |
 | `presets` | Native JSON recipe presets, installed XMP collections, favorites and preset import | `native.rs`, `library.rs` |
@@ -137,20 +137,35 @@ inject a temporary file, without changing the process-wide environment.
   empty mask, when one cannot be provided. `edit_rows` stores a save's unsaved
   rasters in the same transaction as the rows naming them and rejects an edit
   whose references do not exist; rasters are never collected. Catalogs that keep
-  them are format version 2 (see [catalogs](catalogs.md)).
+  them are format version 2 or later (see [catalogs](catalogs.md)).
 - A photo's edit (its recipe, export options, identity and edit time, spots
   and masks, and History) is written only by `catalog::edit_rows`: a checked
-  save or clear, an exact copy for a virtual copy, and removal with one.
+  save or clear, an exact copy for a virtual copy, removal with one, and the
+  format upgrade's migration of every stored edit.
+- The settings earlier releases chose an engine or operator with are
+  `model::saved_format::OBSOLETE_SETTINGS`, its one owner. Reading any `Recipe`
+  drops them from its unknown settings (and nothing else), so catalog edits,
+  History, snapshots, presets, sidecars and the session all migrate on the way
+  in; `catalog::format_upgrade` removes them from stored rows after a backup,
+  in the same transaction as the first write of a recipe into a catalog of an
+  earlier format (`Catalog::write_recipes`, from saving edits and snapshots),
+  once that write's checks have passed.
 - Parsing XMP produces settings, while application validates and resolves a
   recipe. Collection discovery and favorites belong in `presets`.
 - Validate recipe changes at domain boundaries. Saved format versions and
-  migrations are shared by native presets, catalog edits and legacy sidecars. Changes to recipe defaults
-  must account for older saved edits and rendering-engine choices.
+  migrations are shared by native presets, catalog edits and legacy sidecars. Every saved recipe renders
+  with the one engine, and fields it lacks take the recipe defaults, so changes to
+  recipe defaults must account for older saved edits.
 - Keep original RAWs and Lightroom sources read-only. Preserve unsupported source
   data, legacy sidecars, no-clobber publication, ICC/EXIF handling and
   temporary-file write behavior.
 - Rendering math stays in `develop` and `camera_profiles`. Fit previews, regions
-  and exports must continue to share the relevant processing paths.
+  and exports must continue to share the relevant processing paths. What the
+  [scene tone stage](scene-tone-stage.md) measures of a photo comes from one
+  measurement copy of the full-resolution photo (`Toned::measured`, cached per
+  image), never from the region or preview size being rendered; the darkest level
+  the default black follows comes from the same copy without red eye corrections
+  and spot removal (`Toned::unretouched`, the same copy when there are none).
 - Keep OS integration in `platform` and native decoding/color management in
   `raw`. Use the existing asset-path policy instead of duplicating environment
   variable handling in feature modules.
@@ -183,10 +198,11 @@ kept for outside callers. `src/lib.rs` exports only the modules they use; the re
 (`catalog_session`, `decode`, `demosaic`, `edit_session`, `platform`, `time`)
 are `pub(crate)`, and the desktop app exposes only `app::run`, so the
 compiler reports what in them nothing uses. The compatibility surface is the saved data: recipe and
-preset envelopes are versioned and migrated by `model::saved_format`; a catalog must
-be exactly version 1 to open (other versions are refused, the file left
-unchanged), and its schema only ever gains tables, applied idempotently on open;
-see [catalogs](catalogs.md#sqlite-format-version-1).
+preset envelopes are versioned and migrated by `model::saved_format` (written as
+version 11, which releases before the one engine refuse); a catalog opens at
+versions 1 to 3 (others are refused, the file left unchanged), is upgraded to 3
+before a recipe is stored in it, and its schema only ever gains tables, applied
+idempotently on open; see [catalogs](catalogs.md#sqlite-format-versions-1-to-3).
 
 ## Validation
 
@@ -217,9 +233,10 @@ compute workgroups, without vendor extensions. The current hardware validation i
 Apple M1 Pro; Linux GPU vendors require validation on those machines before claiming
 equivalent performance or numerical precision.
 
-The per-pixel color and tone stage of the current engine runs on the GPU for previews
+The per-pixel color and tone stage runs on the GPU for previews
 (`gpu/develop.wgsl`, fed by `pipeline/pixel_params.rs`), on the stage cache's
-samples; other recipes and all exports use the CPU stage, which is the reference.
+samples, for every recipe resolved with a camera profile; unresolved recipes and
+all exports use the CPU stage, which is the reference.
 When the GPU renders a preview, the developed pixels stay on the device and
 `gpu/present.wgsl` finishes them into a texture that egui draws directly (registered
 as a native texture by the render worker): sharpening, vignettes and grain, the
@@ -228,7 +245,7 @@ profile, interpolated trilinearly) and 8-bit encoding, in the CPU reference's or
 The histogram is counted in the same pass and the Navigator copy is reduced on the
 GPU; only the histogram (3 KB) and, for catalog photos, a 640-pixel library
 thumbnail are read back. Nothing is converted or uploaded on the UI thread. Recipes
-the port does not cover, older engines and machines without a usable adapter render
+the port does not cover and machines without a usable adapter render
 on the CPU, and the worker then prepares the display bytes, histogram and reduced
 copies before the UI uploads the texture. Fit and zoomed-out previews render from a
 resolution pyramid at output size (see
@@ -240,11 +257,12 @@ the GPU, and `CPU` otherwise.
 
 For the same recipes, the stages before the per-pixel stage also run on the device
 when the photo fits its buffer limits (`gpu/resident.rs`): the photo or pyramid level
-is kept there with its local-tone blurs, the gain is computed only for the pixels a
-region samples, and regions are sampled there through geometry, lens correction and
-noise reduction. Only the reduced input of the
-Shadows/Highlights map is read back; the map is built on the CPU. A failure in these
-stages turns off only this path for the session.
+is kept there, and regions are sampled there through geometry, lens correction and
+noise reduction. The Shadows/Highlights map (with Clarity's gain) is built on the
+CPU from the photo's measurement copy, and the scene tone stage reads it
+in `develop.wgsl`. Texture's image is made on the CPU, and a mask's Clarity or
+Texture renders the whole preview on the CPU. A failure in these stages turns off
+only this path for the session.
 
 Presented textures are kept per view (the whole photo, or a 100% region) and size,
 two of each, so a slider moving at 100% alternates between the reduced preview's and

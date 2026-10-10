@@ -5,8 +5,9 @@
 //! - Temp and Tint scale the camera channels before white balance, by the white
 //!   balance change of a ±50 mired / ±50 tint shift at ±100.
 //! - Exposure scales linear light with the global Exposure; Color tints it.
-//! - Contrast, Highlights, Shadows, Whites, Blacks and Dehaze run the same measured
-//!   Lightroom responses as the global sliders, at the pixel's slider values.
+//! - Whites and Blacks add to the global sliders in the scene tone stage.
+//! - Highlights, Shadows and Dehaze add to the global sliders in the scene tone stage,
+//!   Contrast runs the global curve after the profile, at the pixel's slider values.
 //! - Texture and Clarity scale the local-contrast detail of the camera image.
 //! - Hue and Saturation rotate and scale Oklab chroma after the colour mixer.
 //! - Sharpness and Noise change the finishing sharpening and noise reduction.
@@ -86,8 +87,10 @@ pub(crate) fn accumulate(sum: &mut LocalDelta, delta: &LocalDelta, weight: f32) 
 pub(crate) fn uses(d: &LocalDelta, slots: &[usize]) -> bool {
     slots.iter().any(|s| d[*s] != 0.)
 }
-pub(crate) const TONE_SLOTS: [usize; 4] =
-    [slot::CONTRAST, slot::WHITES, slot::BLACKS, slot::DEHAZE];
+/// The slots the curve after the profile takes: Contrast.
+pub(crate) const TONE_SLOTS: [usize; 1] = [slot::CONTRAST];
+/// The slots the scene tone stage's global curve takes.
+pub(crate) const SCENE_SLOTS: [usize; 2] = [slot::WHITES, slot::BLACKS];
 
 /// Per-render constants of the local adjustments.
 #[derive(Clone, Debug, Default)]
@@ -123,23 +126,15 @@ impl LocalMath {
         })
     }
 }
-/// Local Contrast, Whites, Blacks and Dehaze: the measured global curves at the pixel's
-/// slider values, applied to ProPhoto-encoded values as DNG RGBTone does.
+/// Local Contrast: the measured global curve at the pixel's slider value, applied to
+/// ProPhoto-encoded values as DNG RGBTone does.
 pub(crate) fn tone(
     d: &LocalDelta,
     p: [f32; 3],
     photo: &crate::develop::basic_tone::PhotoTone,
 ) -> [f32; 3] {
-    let curve = |x| {
-        crate::develop::basic_tone::compose(
-            d[slot::CONTRAST],
-            d[slot::WHITES],
-            d[slot::BLACKS],
-            d[slot::DEHAZE],
-            photo,
-            x,
-        )
-    };
+    let curve =
+        |x| crate::develop::basic_tone::contrast_at(d[slot::CONTRAST], photo.contrast_pivot, x);
     let p = p.map(|v| v.clamp(0., 1.));
     let lo = p.into_iter().fold(f32::INFINITY, f32::min);
     let hi = p.into_iter().fold(0f32, f32::max);
@@ -191,19 +186,18 @@ mod tests {
     }
     #[test]
     fn local_tone_is_the_global_curve_and_hue_rotates() {
-        use crate::develop::basic_tone::{BasicTone, ContrastCurve, PhotoTone, WhitesTable};
+        use crate::develop::basic_tone::{BasicTone, PhotoTone, TYPICAL_PIVOT};
         let mut d = [0.; LEN];
-        let original = PhotoTone::original();
-        assert_eq!(tone(&d, [0.2, 0.4, 0.6], &original), [0.2, 0.4, 0.6]);
-        d[slot::CONTRAST] = 0.5;
-        d[slot::WHITES] = 0.4;
-        d[slot::BLACKS] = -0.3;
-        let adaptive = PhotoTone {
-            contrast: ContrastCurve::Pivot(0.45),
-            whites: WhitesTable::for_highlights(0.8),
+        let typical = PhotoTone {
+            contrast_pivot: TYPICAL_PIVOT,
         };
-        for photo in [original, adaptive] {
-            let global = BasicTone::new(0.5, 0.4, -0.3, 0., &photo).unwrap();
+        assert_eq!(tone(&d, [0.2, 0.4, 0.6], &typical), [0.2, 0.4, 0.6]);
+        d[slot::CONTRAST] = 0.5;
+        let adaptive = PhotoTone {
+            contrast_pivot: 0.45,
+        };
+        for photo in [typical, adaptive] {
+            let global = BasicTone::new(0.5, &photo).unwrap();
             for p in [[0.2; 3], [0.1, 0.5, 0.9]] {
                 let (a, b) = (tone(&d, p, &photo), global.apply(p));
                 assert!(

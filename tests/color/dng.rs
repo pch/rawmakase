@@ -1,5 +1,5 @@
-//! A minimal little-endian DNG writer for the synthetic charts: one IFD holding an
-//! RGGB mosaic as tiles. (RAWmakase rejects three-channel `LinearRaw` DNGs, so the
+//! A minimal little-endian DNG writer for the synthetic charts and the scene tone
+//! stage's probes: one IFD holding an RGGB mosaic as tiles. (RAWmakase rejects three-channel `LinearRaw` DNGs, so the
 //! charts are mosaics; flat patch interiors demosaic exactly.) Tiles are lossless
 //! JPEG with two interleaved components per row, as Adobe's DNG Converter writes
 //! mosaics; LibRaw reads Deflate only for floating-point data.
@@ -30,6 +30,7 @@ pub enum BlackRender {
 
 enum Value {
     Byte(Vec<u8>),
+    Float(Vec<f32>),
     Ascii(String),
     Short(Vec<u16>),
     Long(Vec<u32>),
@@ -40,6 +41,7 @@ impl Value {
     fn kind_count(&self) -> (u16, u32) {
         match self {
             Value::Byte(v) => (1, v.len() as u32),
+            Value::Float(v) => (11, v.len() as u32),
             Value::Ascii(s) => (2, s.len() as u32 + 1),
             Value::Short(v) => (3, v.len() as u32),
             Value::Long(v) => (4, v.len() as u32),
@@ -51,6 +53,7 @@ impl Value {
         let mut out = Vec::new();
         match self {
             Value::Byte(v) => out.extend(v),
+            Value::Float(v) => v.iter().for_each(|x| out.extend(x.to_le_bytes())),
             Value::Ascii(s) => {
                 out.extend(s.as_bytes());
                 out.push(0);
@@ -85,13 +88,13 @@ fn sample(v: f64) -> u16 {
     (v.clamp(0., 1.) * 65535.).round() as u16
 }
 
-fn tile_samples(image: &Image, tx: u32, ty: u32) -> Vec<u16> {
+fn tile_samples(width: u32, height: u32, camera: &[[f64; 3]], tx: u32, ty: u32) -> Vec<u16> {
     let mut out = Vec::with_capacity((TILE * TILE) as usize);
     for y in ty * TILE..(ty + 1) * TILE {
         for x in tx * TILE..(tx + 1) * TILE {
             // Tiles past the image edge are padded by repeating the last pixel.
-            let (cx, cy) = (x.min(image.width - 1), y.min(image.height - 1));
-            let p = image.camera[(cy * image.width + cx) as usize];
+            let (cx, cy) = (x.min(width - 1), y.min(height - 1));
+            let p = camera[(cy * width + cx) as usize];
             // RGGB: CFAPattern [0, 1, 1, 2].
             out.push(sample(
                 p[[[0, 1], [1, 2]][(y % 2) as usize][(x % 2) as usize]],
@@ -101,13 +104,17 @@ fn tile_samples(image: &Image, tx: u32, ty: u32) -> Vec<u16> {
     out
 }
 
-pub fn write(image: &Image, camera: &Camera) -> Vec<u8> {
-    let (across, down) = (image.width.div_ceil(TILE), image.height.div_ceil(TILE));
-    let tiles: Vec<Vec<u8>> = (0..down)
+/// The mosaic of `camera` values as lossless JPEG tiles.
+fn tiles(width: u32, height: u32, camera: &[[f64; 3]]) -> Vec<Vec<u8>> {
+    let (across, down) = (width.div_ceil(TILE), height.div_ceil(TILE));
+    (0..down)
         .flat_map(|ty| (0..across).map(move |tx| (tx, ty)))
-        .map(|(tx, ty)| lossless_jpeg(&tile_samples(image, tx, ty), TILE / 2, TILE))
-        .collect();
+        .map(|(tx, ty)| lossless_jpeg(&tile_samples(width, height, camera, tx, ty), TILE / 2, TILE))
+        .collect()
+}
 
+pub fn write(image: &Image, camera: &Camera) -> Vec<u8> {
+    let tiles = tiles(image.width, image.height, image.camera);
     let mut tags: Vec<(u16, Value)> = vec![
         (254, Value::Long(vec![0])),
         (256, Value::Long(vec![image.width])),
@@ -121,13 +128,6 @@ pub fn write(image: &Image, camera: &Camera) -> Vec<u8> {
         (277, Value::Short(vec![1])),
         (284, Value::Short(vec![1])),
         (305, Value::Ascii("RAWmakase test chart".into())),
-        (322, Value::Long(vec![TILE])),
-        (323, Value::Long(vec![TILE])),
-        (324, Value::Long(vec![0; tiles.len()])), // patched below
-        (
-            325,
-            Value::Long(tiles.iter().map(|t| t.len() as u32).collect()),
-        ),
         (339, Value::Short(vec![1])),
         (33421, Value::Short(vec![2, 2])),
         (33422, Value::Byte(vec![0, 1, 1, 2])),
@@ -181,6 +181,75 @@ pub fn write(image: &Image, camera: &Camera) -> Vec<u8> {
             tags.push((50965, srational(&f2)));
         }
     }
+    assemble(tags, tiles)
+}
+
+/// ProPhoto RGB (ROMM) to XYZ, D50 white.
+const PROPHOTO_TO_XYZ: Matrix = [
+    [0.7976749, 0.1351917, 0.0313534],
+    [0.2880402, 0.7118741, 0.0000857],
+    [0.0000000, 0.0000000, 0.8252100],
+];
+
+/// A scene tone stage probe, as `scripts/corpus/probe_dng.py` writes it: the camera's
+/// RGB is linear ProPhoto, with an embedded profile mapping it to XYZ D50 unchanged,
+/// neutral As Shot white balance and a linear ProfileToneCurve, so Camera Raw's
+/// ProPhoto output is its scene tone stage's. `scene` holds scene values; the sensor
+/// holds them divided by 2^`baseline_exposure`, clipped at its white.
+pub fn write_probe(width: u32, height: u32, scene: &[[f64; 3]], baseline_exposure: f64) -> Vec<u8> {
+    let scale = (-baseline_exposure).exp2();
+    let sensor: Vec<[f64; 3]> = scene.iter().map(|p| p.map(|v| v * scale)).collect();
+    let tiles = tiles(width, height, &sensor);
+    let tags: Vec<(u16, Value)> = vec![
+        (254, Value::Long(vec![0])),
+        (256, Value::Long(vec![width])),
+        (257, Value::Long(vec![height])),
+        (258, Value::Short(vec![16])),
+        (259, Value::Short(vec![7])), // lossless JPEG
+        (262, Value::Short(vec![32803])),
+        (271, Value::Ascii("RAWmakase".into())),
+        (272, Value::Ascii("Probe".into())),
+        (274, Value::Short(vec![1])),
+        (277, Value::Short(vec![1])),
+        (284, Value::Short(vec![1])),
+        (33421, Value::Short(vec![2, 2])),
+        (33422, Value::Byte(vec![0, 1, 1, 2])),
+        (50706, Value::Byte(vec![1, 4, 0, 0])),
+        (50707, Value::Byte(vec![1, 1, 0, 0])),
+        (50708, Value::Ascii("RAWmakase Probe".into())),
+        (50710, Value::Byte(vec![0, 1, 2])),
+        (50711, Value::Short(vec![1])),
+        (50714, Value::Long(vec![0])),
+        (50717, Value::Long(vec![65535])),
+        (50721, srational(&super::chart::invert(&PROPHOTO_TO_XYZ))),
+        (50728, Value::Rational(vec![(1, 1); 3])),
+        (
+            50730,
+            Value::SRational(vec![(
+                (baseline_exposure * DENOMINATOR as f64).round() as i32,
+                DENOMINATOR,
+            )]),
+        ),
+        (50778, Value::Short(vec![23])), // D50
+        (50936, Value::Ascii("RAWmakase Probe".into())),
+        (50940, Value::Float(vec![0., 0., 1., 1.])), // linear ProfileToneCurve
+        (50941, Value::Long(vec![3])),
+        (50964, srational(&PROPHOTO_TO_XYZ)),
+    ];
+    assemble(tags, tiles)
+}
+
+/// The file: `tags` plus the tile tags, then `tiles`.
+fn assemble(mut tags: Vec<(u16, Value)>, tiles: Vec<Vec<u8>>) -> Vec<u8> {
+    tags.extend([
+        (322, Value::Long(vec![TILE])),
+        (323, Value::Long(vec![TILE])),
+        (324, Value::Long(vec![0; tiles.len()])), // patched below
+        (
+            325,
+            Value::Long(tiles.iter().map(|t| t.len() as u32).collect()),
+        ),
+    ]);
     tags.sort_by_key(|(tag, _)| *tag);
 
     // Layout: header, IFD, out-of-line values, tiles.

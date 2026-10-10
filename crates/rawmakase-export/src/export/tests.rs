@@ -312,6 +312,52 @@ fn jpeg_carries_camera_exif_gps_and_xmp() -> Result<()> {
     Ok(())
 }
 #[test]
+fn a_tiff_export_writes_camera_text_tiff_cannot_hold_as_is() -> Result<()> {
+    // Fujifilm X100F files pad Artist with spaces, and Copyright's photographer and
+    // editor parts too, with a NUL between them, which a TIFF ASCII value cannot hold.
+    let padded = |tag, text: &[u8]| crate::exif::Field {
+        tag,
+        kind: crate::tiff::kind::ASCII,
+        count: text.len() as u32,
+        bytes: text.to_vec(),
+    };
+    let dir = tempfile::tempdir()?;
+    let source = dir.path().join("source.RAF");
+    fs::write(&source, b"source")?;
+    let image = Rendered {
+        width: 8,
+        height: 4,
+        pixels: vec![[0.5; 3]; 32],
+    };
+    let embed = Embed {
+        camera: Some(crate::exif::CameraExif {
+            main: vec![
+                crate::exif::Field::ascii(0x010f, "FUJIFILM"),
+                padded(0x013b, b"        \0"),
+                padded(0x8298, b"   \0    \0"),
+                padded(0x0110, b"Caf\xe9\0"),
+            ],
+            exif: Vec::new(),
+            gps: Vec::new(),
+        }),
+        ..Default::default()
+    };
+    let tif = dir.path().join("out.tif");
+    export_with(
+        &tif,
+        &source,
+        &image,
+        &Metadata::default(),
+        &ExportOptions::default(),
+        &embed,
+        Replace::NoClobber,
+    )?;
+    assert!(image::open(&tif).is_ok());
+    let bytes = fs::read(&tif)?;
+    assert!(bytes.windows(4).any(|w| w == b"Caf?"));
+    Ok(())
+}
+#[test]
 fn capture_times_take_lightroom_form_with_three_digit_subseconds() {
     use crate::exif::lightroom_time;
     let t = |date, sub| lightroom_time(date, sub);
@@ -710,15 +756,10 @@ fn descriptive_fields_are_written_as_lightroom_does() -> Result<()> {
     assert!(packet.contains("xmp:CreateDate=\"2024-05-01T12:30:15.120456+02:00\""));
     Ok(())
 }
-/// A recipe that keeps the sharpening, lens vignetting, grain and Clarity from before they were
-/// measured reads back from its own exported XMP with the same operators, while
-/// Lightroom's packets, and RAWmakase's for measured recipes, set the measured ones.
+/// An exported XMP reads back with the settings it was written with, and names no
+/// operators: one engine renders every recipe.
 #[test]
-fn exported_xmp_keeps_the_operators_a_recipe_was_rendered_with() -> Result<()> {
-    use crate::model::operators::{
-        CalibrationModel, ClarityModel, GrainModel, LensVignetteModel, MixerModel, NoiseModel,
-        SaturationModel, SharpeningModel, TextureModel, VibranceModel,
-    };
+fn exported_xmp_reads_back_its_settings_without_operator_markers() -> Result<()> {
     use crate::model::recipe::Recipe;
     let m = Metadata {
         wb: [2., 1., 1.5],
@@ -732,90 +773,43 @@ fn exported_xmp_keeps_the_operators_a_recipe_was_rendered_with() -> Result<()> {
         format: "image/jpeg".into(),
         ..Default::default()
     };
-    let read = |r: &Recipe| -> Result<Recipe> {
-        let packet = crate::xmp::write::packet(r, &m, &photo);
-        crate::xmp::parse(Path::new("export.xmp"), &packet)?.apply(
-            &Recipe::default(),
-            &m,
-            &[],
-            None,
-        )
-    };
-    let mut old = Recipe {
-        sharpening: 0.4,
-        ..Default::default()
-    };
-    old.effects.lens_vignette = -0.3;
-    old.effects.grain = 0.4;
-    old.effects.clarity = 0.3;
-    old.effects.texture = 0.3;
-    old.hsl[5][2] = -0.4;
-    old.effects.calibration[0][0] = 0.3;
-    old.noise_chroma = 0.3;
-    old.saturation = -0.3;
-    old.vibrance = 0.4;
+    let mut r = Recipe::with_profiles(&m, &[]);
+    r.sharpening = 0.4;
+    r.effects.lens_vignette = -0.3;
+    r.effects.grain = 0.4;
+    r.effects.clarity = 0.3;
+    r.effects.texture = 0.3;
+    r.noise_chroma = 0.3;
+    r.saturation = -0.3;
+    r.vibrance = 0.4;
     // Black & white, so the packet carries the mix.
-    old.effects.monochrome = true;
-    old.effects.gray_mix[2] = 0.3;
-    let back = read(&old)?;
-    assert_eq!(back.noise_model, NoiseModel::Original);
-    assert_eq!(back.grain_model, GrainModel::Original);
-    assert_eq!(back.clarity_model, ClarityModel::Original);
-    assert_eq!(back.texture_model, TextureModel::Original);
-    assert_eq!(back.sharpening_model, SharpeningModel::Original);
-    assert_eq!(back.lens_vignette_model, LensVignetteModel::Original);
-    assert_eq!(back.mixer_model, MixerModel::Original);
-    assert_eq!(back.calibration_model, CalibrationModel::Original);
-    assert_eq!(back.saturation_model, SaturationModel::Original);
-    assert_eq!(back.vibrance_model, VibranceModel::Original);
-    assert_eq!(
-        back.black_white_model,
-        crate::model::operators::BlackWhiteModel::Original
-    );
-    // Also onto a new photo's settings, which start on the measured operators.
-    let packet = crate::xmp::write::packet(&old, &m, &photo);
-    let fresh = Recipe::with_profiles(&m, &[]);
-    assert_eq!(fresh.sharpening_model, SharpeningModel::Measured);
-    let back = crate::xmp::parse(Path::new("export.xmp"), &packet)?.apply(&fresh, &m, &[], None)?;
-    assert_eq!(back.sharpening_model, SharpeningModel::Original);
-    assert_eq!(back.lens_vignette_model, LensVignetteModel::Original);
-    assert_eq!(back.grain_model, GrainModel::Original);
-    assert_eq!(back.clarity_model, ClarityModel::Original);
-    assert_eq!(back.texture_model, TextureModel::Original);
-    assert_eq!(back.mixer_model, MixerModel::Original);
-    assert_eq!(back.calibration_model, CalibrationModel::Original);
-    assert_eq!(back.noise_model, NoiseModel::Original);
-    let measured = Recipe {
-        sharpening_model: SharpeningModel::Measured,
-        lens_vignette_model: LensVignetteModel::Measured,
-        grain_model: GrainModel::Measured,
-        clarity_model: ClarityModel::Measured,
-        texture_model: TextureModel::Measured,
-        mixer_model: MixerModel::Chart,
-        calibration_model: CalibrationModel::Measured,
-        noise_model: NoiseModel::Measured,
-        saturation_model: SaturationModel::Gray,
-        vibrance_model: VibranceModel::Chart,
-        black_white_model: crate::model::operators::BlackWhiteModel::Chart,
-        ..old
-    };
-    let packet = crate::xmp::write::packet(&measured, &m, &photo);
-    assert!(!packet.contains("RAWmakaseOriginal"));
-    assert!(packet.contains(r#"crs:RAWmakaseMarkers="3""#), "{packet}");
-    let back = read(&measured)?;
-    assert_eq!(back.sharpening_model, SharpeningModel::Measured);
-    assert_eq!(back.lens_vignette_model, LensVignetteModel::Measured);
-    assert_eq!(back.clarity_model, ClarityModel::Measured);
-    assert_eq!(back.texture_model, TextureModel::Measured);
-    assert_eq!(back.mixer_model, MixerModel::Chart);
-    assert_eq!(back.calibration_model, CalibrationModel::Measured);
-    assert_eq!(back.noise_model, NoiseModel::Measured);
-    assert_eq!(
-        back.black_white_model,
-        crate::model::operators::BlackWhiteModel::Chart
-    );
-    assert_eq!(back.saturation_model, SaturationModel::Gray);
-    assert_eq!(back.vibrance_model, VibranceModel::Chart);
+    r.effects.monochrome = true;
+    r.effects.gray_mix[2] = 0.3;
+    let packet = crate::xmp::write::packet(&r, &m, &photo);
+    for marker in [
+        "RAWmakaseOriginal",
+        "RAWmakaseMarkers",
+        "RAWmakaseWhiteBalanceModel",
+    ] {
+        assert!(!packet.contains(marker), "{marker}: {packet}");
+    }
+    let back = crate::xmp::parse(Path::new("export.xmp"), &packet)?.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+    )?;
+    let near = |a: f32, b: f32| (a - b).abs() < 1e-2;
+    assert!(near(back.sharpening, r.sharpening));
+    assert!(near(back.effects.lens_vignette, r.effects.lens_vignette));
+    assert!(near(back.effects.grain, r.effects.grain));
+    assert!(near(back.effects.clarity, r.effects.clarity));
+    assert!(near(back.effects.texture, r.effects.texture));
+    assert!(near(back.noise_chroma, r.noise_chroma));
+    assert!(near(back.saturation, r.saturation));
+    assert!(near(back.vibrance, r.vibrance));
+    assert!(near(back.effects.gray_mix[2], r.effects.gray_mix[2]));
+    assert!(back.unknown.is_empty(), "{:?}", back.unknown);
     Ok(())
 }
 #[test]

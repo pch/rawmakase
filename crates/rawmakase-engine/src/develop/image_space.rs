@@ -26,7 +26,7 @@ pub(crate) struct LensMap<'a> {
 }
 impl<'a> LensMap<'a> {
     pub(crate) fn new(im: &'a CameraImage, r: &Recipe) -> Option<Self> {
-        let chromatic = crate::lens::auto_ca::measured(im).filter(|_| r.lens_ca && r.engine >= 4);
+        let chromatic = crate::lens::auto_ca::measured(im).filter(|_| r.lens_ca);
         let lens = match r.lens_correction(&im.metadata) {
             Some(lens) => lens,
             // Measured chromatic aberration and manual Vignetting are applied while
@@ -208,11 +208,6 @@ mod tests {
         }
         // The camera's default crop starts 10 pixels in: the margin shows white.
         assert!(b.outside(5., 100.) && !b.outside(15., 100.));
-        r.engine = 3;
-        assert_eq!(
-            Geometry::new(&im, &r, 0).source(0.3, 0.4),
-            a.source(0.3, 0.4)
-        );
     }
     #[test]
     fn lens_inverse_undoes_forward() {

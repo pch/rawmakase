@@ -34,6 +34,10 @@ struct Metadata {
     int highlight_tone_priority;
     float fuji_exposure_shift;
     float sony_daylight_wb[3];
+    // The visible image's offset in the raw data, and the camera's aspect-ratio
+    // crop in raw coordinates, as crop_* are (cleft 0xffff when there is none).
+    unsigned left_margin, top_margin;
+    unsigned aspect_left, aspect_top, aspect_width, aspect_height;
 };
 typedef int (*Cancel)(void*);
 }
@@ -174,9 +178,24 @@ void* ora_open(const char* path, Metadata* m, char* err) {
         *m = {};
         m->width=d.sizes.width; m->height=d.sizes.height;
         m->raw_width=d.sizes.raw_width; m->raw_height=d.sizes.raw_height;
-        m->crop_width=d.sizes.raw_inset_crops[0].cwidth;
-        m->crop_height=d.sizes.raw_inset_crops[0].cheight;
-        m->crop_left=d.sizes.raw_inset_crops[0].cleft; m->crop_top=d.sizes.raw_inset_crops[0].ctop;
+        m->left_margin=d.sizes.left_margin; m->top_margin=d.sizes.top_margin;
+        // The frame Adobe calls the default crop, and the in-camera aspect-ratio crop
+        // inside it (Adobe's default user crop), both in raw coordinates. LibRaw
+        // puts the aspect crop in raw_inset_crops[1], except for Canon, whose
+        // AspectInfo it applies to raw_inset_crops[0]; the sensor's default crop
+        // is then SensorInfo's.
+        auto frame=d.sizes.raw_inset_crops[0], aspect=d.sizes.raw_inset_crops[1];
+        const auto& canon=d.makernotes.canon.DefaultCropAbsolute;
+        if (d.idata.maker_index==LIBRAW_CAMERAMAKER_Canon && !d.idata.dng_version
+            && canon.l>=0 && canon.t>=0 && canon.r>canon.l && canon.b>canon.t) {
+            aspect=frame;
+            frame.cleft=ushort(canon.l); frame.ctop=ushort(canon.t);
+            frame.cwidth=ushort(canon.r-canon.l+1); frame.cheight=ushort(canon.b-canon.t+1);
+        }
+        m->crop_width=frame.cwidth; m->crop_height=frame.cheight;
+        m->crop_left=frame.cleft; m->crop_top=frame.ctop;
+        m->aspect_left=aspect.cleft; m->aspect_top=aspect.ctop;
+        m->aspect_width=aspect.cwidth; m->aspect_height=aspect.cheight;
         m->flip=d.sizes.flip; m->xtrans=d.idata.filters==9;
         m->fuji_dynamic_range=d.makernotes.fuji.DevelopmentDynamicRange;
         m->iso=d.other.iso_speed; m->shutter=d.other.shutter;

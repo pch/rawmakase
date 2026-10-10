@@ -1,7 +1,6 @@
 use super::heal::{self, Placed};
 use super::*;
 use crate::camera_data::CameraImage;
-use crate::model::operators::RetouchModel;
 use crate::model::red_eye::RedEyeOp;
 use crate::model::retouch::{RetouchMode, RetouchShape};
 use std::sync::atomic::AtomicBool;
@@ -64,7 +63,11 @@ fn heal_of_a_constant_field_is_exact() {
             *p = [0.05; 3];
         }
     }
-    let op = spot(RetouchMode::Heal, &im, [25., 40.], 8., [55., 0.]);
+    // Below Feather 25 the edge is hard but for the outer pixels: the dust is inside.
+    let op = RetouchOp {
+        feather: 0.2,
+        ..spot(RetouchMode::Heal, &im, [25., 40.], 8., [55., 0.])
+    };
     let healed = apply(&dusty, heals(&[op]));
     assert!(
         max_error(&healed, &im) < 1e-4,
@@ -86,7 +89,10 @@ fn heal_reproduces_linear_gradients() {
     // A copy from elsewhere on the gradient differs by a smooth amount that heal
     // removes. Linear values would make it exact; the log values heal uses stay within
     // 1% (0.01 EV), and keep textures right (see the next test).
-    let op = spot(RetouchMode::Heal, &im, [80., 60.], 14., [-40., 20.]);
+    let op = RetouchOp {
+        feather: 0.2,
+        ..spot(RetouchMode::Heal, &im, [80., 60.], 14., [-40., 20.])
+    };
     let healed = apply(&dusty, heals(&[op]));
     let error = im
         .pixels
@@ -248,14 +254,6 @@ fn incremental_tiles_match_a_full_rebuild() {
             );
         }
     }
-    // Another feather changes every spot.
-    let measured = Retouching {
-        model: RetouchModel::Measured,
-        ..heals(&ops)
-    };
-    let incremental = cache.get(&base, measured, &cancel).unwrap();
-    assert_eq!(incremental.pixels, apply(&base, measured).pixels);
-    assert_ne!(incremental.pixels, apply(&base, heals(&ops)).pixels);
     check(&mut cache, &ops);
     check(&mut cache, &[]);
 
@@ -274,7 +272,6 @@ fn incremental_tiles_match_a_full_rebuild() {
         let ops = Retouching {
             red_eye: eyes,
             retouch: ops,
-            model: RetouchModel::Original,
         };
         let incremental = cache.get(&base, ops, &cancel).unwrap();
         assert_eq!(incremental.pixels, apply(&base, ops).pixels);
@@ -292,7 +289,6 @@ fn heals(ops: &[RetouchOp]) -> Retouching<'_> {
     Retouching {
         red_eye: &[],
         retouch: ops,
-        model: RetouchModel::Original,
     }
 }
 fn frame_of(im: &CameraImage) -> crate::model::image_frame::ImageFrame {
@@ -381,25 +377,4 @@ fn measured_feather_crosses_half_where_camera_raw_does() {
         half(FeatherProfile::Measured, 0.),
         half(FeatherProfile::Smoothstep, 0.)
     );
-}
-/// Recipes saved before keep the original feather; new edits, a first spot and
-/// Lightroom's spots take the measured one.
-#[test]
-fn old_spots_keep_their_feather() {
-    use crate::model::recipe::Recipe;
-    let im = image(64, 48, |_, _| [0.2; 3]);
-    let op = spot(RetouchMode::Clone, &im, [20., 20.], 6., [20., 0.]);
-    let mut old = Recipe::default();
-    old.retouch.push(op.clone());
-    let json = serde_json::to_value(&old).unwrap();
-    assert!(json.get("retouch_model").is_none());
-    let mut old: Recipe = serde_json::from_value(json).unwrap();
-    assert_eq!(old.retouch_model, RetouchModel::Original);
-    old.add_retouch(op.clone());
-    assert_eq!(old.retouch_model, RetouchModel::Original);
-    let mut first = Recipe::default();
-    first.add_retouch(op);
-    assert_eq!(first.retouch_model, RetouchModel::Measured);
-    let back: Recipe = serde_json::from_value(serde_json::to_value(&first).unwrap()).unwrap();
-    assert_eq!(back.retouch_model, RetouchModel::Measured);
 }

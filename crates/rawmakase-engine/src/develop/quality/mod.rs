@@ -4,7 +4,7 @@ use crate::develop::sharpening::Sharpener;
 use crate::develop::{
     pipeline::Toned,
     preview_renderer::Stages,
-    stage_cache::{BlurKey, LocalKey, ReducedKey, StageCache, TextureKey},
+    stage_cache::{StageCache, TextureKey},
 };
 use crate::rendered::Rendered;
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
     develop::{self, Geometry},
     model::{recipe::Recipe, valid::ValidRecipe},
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use rayon::prelude::*;
 use std::sync::{
     Arc,
@@ -96,33 +96,11 @@ pub use samples::*;
 mod tests {
     use super::*;
     #[test]
-    fn parallel_box_blur_preserves_clipped_support_and_cancels() -> Result<()> {
-        let (w, h) = (17usize, 9usize);
-        let pixels: Vec<f32> = (0..w * h).map(|i| (i as f32 * 0.37).sin() * 3.).collect();
-        let cancel = AtomicBool::new(false);
-        for radius in [0, 1, 3, 64] {
-            let actual = box_blur(&pixels, w, h, radius, &cancel)?;
-            for y in 0..h {
-                for x in 0..w {
-                    let mut sum = 0.;
-                    let mut count = 0;
-                    for yy in y.saturating_sub(radius)..(y + radius + 1).min(h) {
-                        for xx in x.saturating_sub(radius)..(x + radius + 1).min(w) {
-                            sum += pixels[yy * w + xx];
-                            count += 1;
-                        }
-                    }
-                    assert!((actual[y * w + x] - sum / count as f32).abs() < 1e-5);
-                }
-            }
-        }
-        cancel.store(true, Ordering::Relaxed);
-        assert!(box_blur(&pixels, w, h, 3, &cancel).is_err());
+    fn cancelled_highlight_recovery_keeps_nothing() {
+        let cancel = AtomicBool::new(true);
         let image = fixture();
         assert!(recover_highlights_cancellable(&image, &cancel).is_err());
         assert!(image.recovered.get().is_none());
-        assert!(local_tones(&image, &Recipe::default(), 1., &cancel).is_err());
-        Ok(())
     }
     fn fixture() -> CameraImage {
         CameraImage {
@@ -182,22 +160,31 @@ mod tests {
     #[test]
     fn region_matches_full_with_large_radius_and_local_tones() -> Result<()> {
         let im = fixture();
-        let r = Recipe {
+        // Every scene stage control: a region measures the whole photo.
+        let mut r = Recipe {
             sharpening_radius: 3.,
             sharpening: 0.8,
             shadows: 0.5,
             highlights: -0.4,
+            whites: 0.5,
+            blacks: -0.3,
             ..Default::default()
         };
-        let full = render(&im, &r.checked()?, 0, None)?;
-        for [x, y, w, h] in [[0, 0, 20, 30], [30, 25, 40, 40], [80, 60, 16, 20]] {
-            let tile = render(&im, &r.checked()?, 0, Some([x, y, w, h]))?;
-            for yy in 0..h {
-                for xx in 0..w {
-                    let a = tile.pixels[(yy * w + xx) as usize];
-                    let b = full.pixels[((yy + y) * full.width + xx + x) as usize];
-                    for c in 0..3 {
-                        assert!((a[c] - b[c]).abs() < 2e-6);
+        r.effects.clarity = -0.4;
+        r.effects.texture = 0.3;
+        // Negative Dehaze from its tables, positive from the photo's haze.
+        for dehaze in [-0.3, 0.6] {
+            r.effects.dehaze = dehaze;
+            let full = render(&im, &r.checked()?, 0, None)?;
+            for [x, y, w, h] in [[0, 0, 20, 30], [30, 25, 40, 40], [80, 60, 16, 20]] {
+                let tile = render(&im, &r.checked()?, 0, Some([x, y, w, h]))?;
+                for yy in 0..h {
+                    for xx in 0..w {
+                        let a = tile.pixels[(yy * w + xx) as usize];
+                        let b = full.pixels[((yy + y) * full.width + xx + x) as usize];
+                        for c in 0..3 {
+                            assert!((a[c] - b[c]).abs() < 2e-6, "{dehaze}");
+                        }
                     }
                 }
             }

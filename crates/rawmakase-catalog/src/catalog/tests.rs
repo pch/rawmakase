@@ -1287,16 +1287,6 @@ fn profile_corrections_without_the_adobe_profile_use_the_built_in_correction_and
     assert!(!r.resolved(&m).lens_builtin);
     // As the preview and renderer see it: bypassed first, then resolved.
     assert!(!r.as_rendered().resolved(&m).lens_builtin);
-    // An older process version renders no lens correction, so none is claimed.
-    let legacy = Recipe {
-        engine: 3,
-        lens_builtin: false,
-        ..Default::default()
-    };
-    let mut legacy_on = legacy;
-    legacy_on.set_profile_corrections(&m, crate::model::recipe::ProfileCorrections::On);
-    assert!(!legacy_on.lens_builtin);
-    assert_eq!(legacy_on.missing_lens_profile(&m), None);
     Ok(())
 }
 #[test]

@@ -1,15 +1,15 @@
 //! Results of the stages before the per-pixel color pipeline, kept between preview
-//! renders: local-tone blurs, the local-tone image, geometry/lens-warp samples and the
-//! reduced image the engine 4 Shadows/Highlights map is built from.
+//! renders: geometry/lens-warp samples, the measured Texture, the photo's measurement
+//! copy the Shadows/Highlights map is built from, and the scene tone stage's measures
+//! of that copy (with the haze positive Dehaze removes).
 //! Each key holds only the recipe fields its stage reads, so exposure, curve, HSL
-//! and grading edits reuse all three and rerun only the per-pixel stage.
+//! and grading edits reuse them and rerun only the per-pixel stage.
 //!
 //! [`stage_recipes`] places every recipe field: a new field does not compile until it
 //! is added to the stages that read it, or to those that only later stages read.
 use super::{
     Geometry,
     pipeline::{Samples, Toned},
-    quality::LocalBlurs,
 };
 use crate::model::recipe::Recipe;
 use crate::{camera_data::CameraImage, model::effects::Effects};
@@ -24,10 +24,9 @@ const BUDGET: usize = 512 << 20;
 
 #[derive(Default)]
 pub(crate) struct StageCache {
-    pub(crate) blurs: Lru<BlurKey, LocalBlurs>,
-    pub(crate) local: Lru<LocalKey, Vec<f32>>,
     pub(crate) samples: Lru<SampleKey, Samples>,
-    pub(crate) reduced: Lru<ReducedKey, CameraImage>,
+    /// A photo's measurement copy (`Toned::measured`), per full-resolution image.
+    pub(crate) measured: Lru<Same<CameraImage>, CameraImage>,
     /// The measured Texture's detail of a camera image, and the image with an amount.
     pub(crate) texture_detail: Lru<TextureKey, super::texture::TextureDetail>,
     pub(crate) textured: Lru<TextureKey, CameraImage>,
@@ -35,7 +34,15 @@ pub(crate) struct StageCache {
     pub(crate) masks: Lru<MaskKey, super::masks::MaskWeights>,
     /// Brush masks rasterised in image space.
     pub(crate) rasters: super::masks::RasterCache,
+    /// The scene tone stage's measures of a measurement copy, shared with the renders
+    /// that read them (`Toned::measures`).
+    pub(crate) measures: Arc<MeasuresCache>,
 }
+/// The scene tone stage's measures (`pipeline::tone::photo_measures`) and, once a render
+/// needs it, the photo's haze (`pipeline::tone::photo_haze`), per measurement copy and
+/// the settings they read: both read the same scene values.
+pub(crate) type MeasuresCache =
+    std::sync::Mutex<Lru<MeasuresKey, crate::develop::scene_tone::Measured>>;
 
 pub(crate) struct Lru<K, V> {
     /// Most recently used first.
@@ -94,10 +101,15 @@ impl<K: PartialEq, V> Lru<K, V> {
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }
+    /// The kept values, most recently used first.
+    #[cfg(test)]
+    pub(crate) fn values(&self) -> impl Iterator<Item = &V> {
+        self.entries.iter().map(|e| e.1.as_ref())
+    }
 }
 
 /// Identity of a shared value. Keys hold the value, so its address stays unique.
-pub(crate) struct Same<T>(Arc<T>);
+pub(crate) struct Same<T>(pub(crate) Arc<T>);
 impl<T> Clone for Same<T> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
@@ -109,20 +121,16 @@ impl<T> PartialEq for Same<T> {
     }
 }
 
-/// The recipe as the cached stages read it: the local-tone blurs and the samples.
+/// The recipe as the cached stages read it: the samples, and the photo's measures.
 struct StageRecipes {
-    blurs: Recipe,
     samples: Recipe,
+    measures: Recipe,
 }
 /// Splits `r` into what each cached stage reads. `Recipe` and `Effects` are taken
 /// apart without `..`, so adding a field to either is a compile error here until it is
 /// placed: a stage that reads a field it does not key on would reuse stale results.
 fn stage_recipes(r: &Recipe) -> StageRecipes {
     let Recipe {
-        engine,
-        wb,
-        temperature,
-        profile,
         lens_builtin,
         lens_profile,
         lens_profile_choice,
@@ -140,47 +148,27 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         upright,
         noise_luma,
         noise_chroma,
-        // The measured operator changes the source image, which every key holds.
-        noise_model: _,
-        lens_vignette_model,
         effects,
-        // Shadows/Highlights and their exposure are keyed by `LocalKey`; spot removal
-        // changes the source image, which every key holds.
+        // White balance, the profile and the camera's exposure render in the per-pixel
+        // stage, and the photo's measures read them (Temperature and Tint set the
+        // white balance; the look's strength changes the profile once
+        // `Recipe::resolved` has applied it; kept anyway, so they can only
+        // over-invalidate).
+        wb,
+        temperature,
+        tint,
+        auto_white_balance,
+        profile,
+        profile_amount,
+        camera_exposure,
+        // The measures are taken with Exposure at 0. Shadows and Highlights render per
+        // pixel, from a map built per render; spot removal changes the source image,
+        // which every key holds.
         exposure: _,
-        camera_exposure: _,
         shadows: _,
         highlights: _,
         retouch: _,
-        retouch_model: _,
         red_eye: _,
-        // Read only by the per-pixel stage and the finishing stages after these.
-        profile_tone: _,
-        // The look's strength; its Shadows, Highlights and Clarity are keyed by
-        // `LocalKey` once `Recipe::resolved` has added them.
-        profile_amount: _,
-        tint: _,
-        auto_white_balance: _,
-        wide_gamut_curves: _,
-        reference_curves: _,
-        reference_calibration: _,
-        reference_color: _,
-        parametric_model: _,
-        grain_model: _,
-        // The measured Clarity is in the map, built per render; the original one is
-        // keyed by `LocalKey` through `effects.clarity`.
-        clarity_model: _,
-        // The measured Texture makes its own image, keyed by `TextureKey`.
-        texture_model: _,
-        contrast_model: _,
-        grading_model: _,
-        mixer_model: _,
-        saturation_model: _,
-        vibrance_model: _,
-        black_white_model: _,
-        calibration_model: _,
-        whites_model: _,
-        white_balance_model: _,
-        gamut_model: _,
         contrast: _,
         whites: _,
         blacks: _,
@@ -198,7 +186,6 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         sharpening_radius: _,
         sharpening_detail: _,
         sharpening_masking: _,
-        sharpening_model: _,
         masks: _,
         // Not read when rendering: switched-off panels are bypassed before the stages
         // (see `Recipe::as_rendered`).
@@ -212,15 +199,18 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         luma_contrast,
         chroma_detail,
         chroma_smoothness,
-        // Keyed by `LocalKey`.
+        // Clarity is in the map, built per render, and Texture makes its own image,
+        // keyed by `TextureKey`.
         clarity: _,
         texture: _,
+        // Camera Calibration renders in the per-pixel stage, and the photo's measures
+        // read it.
+        calibration,
+        shadow_tint,
         // Read only by the per-pixel stage and the finishing stages after these.
         channels: _,
         parametric: _,
         splits: _,
-        calibration: _,
-        shadow_tint: _,
         monochrome: _,
         gray_mix: _,
         balance: _,
@@ -237,36 +227,15 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         vignette_feather: _,
         vignette_highlights: _,
         vignette_style: _,
-        // Manual Vignetting, measured, scales the camera image; the original
-        // operator's only finishes it, so it is keyed on without effect.
+        // Manual Vignetting scales the camera image.
         lens_vignette,
         lens_vignette_midpoint,
         defringe: _,
         defringe_ranges: _,
     } = effects;
     StageRecipes {
-        // Log luminance after white balance, profile matrix and lens vignetting.
-        blurs: Recipe {
-            engine: *engine,
-            wb: *wb,
-            temperature: *temperature,
-            // The blurs read the camera matrices and tables, not the look.
-            profile: profile.as_ref().map(|p| p.camera_part()),
-            lens_builtin: *lens_builtin,
-            lens_profile: *lens_profile,
-            lens_profile_choice: lens_profile_choice.clone(),
-            lens_vignetting: *lens_vignetting,
-            lens_vignette_model: *lens_vignette_model,
-            effects: Effects {
-                lens_vignette: *lens_vignette,
-                lens_vignette_midpoint: *lens_vignette_midpoint,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
         // Geometry, lens correction and noise reduction.
         samples: Recipe {
-            engine: *engine,
             crop: *crop,
             rotation: *rotation,
             straighten: *straighten,
@@ -282,7 +251,6 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
             lens_vignetting: *lens_vignetting,
             lens_manual_distortion: *lens_manual_distortion,
             lens_ca: *lens_ca,
-            lens_vignette_model: *lens_vignette_model,
             noise_luma: *noise_luma,
             noise_chroma: *noise_chroma,
             effects: Effects {
@@ -296,57 +264,51 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
             },
             ..Default::default()
         },
+        // White balance, the profile's colour and calibration, at the camera's exposure.
+        measures: Recipe {
+            wb: *wb,
+            temperature: *temperature,
+            tint: *tint,
+            auto_white_balance: *auto_white_balance,
+            profile: profile.clone(),
+            profile_amount: *profile_amount,
+            camera_exposure: *camera_exposure,
+            effects: Effects {
+                calibration: *calibration,
+                shadow_tint: *shadow_tint,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
     }
 }
 
-/// Local-tone blurs: log luminance after white balance, profile matrix and lens
-/// vignetting, before exposure.
-#[derive(Clone, PartialEq)]
-pub(crate) struct BlurKey {
-    image: Same<CameraImage>,
-    scale: u32,
-    texture: bool,
+/// The photo's measures: the measurement copy they are taken on (whose metadata they
+/// read), the profile matrix and the recipe fields they read.
+#[derive(PartialEq)]
+pub(crate) struct MeasuresKey {
+    copy: Same<CameraImage>,
+    /// The copy without retouching, which the darkest level is measured on.
+    unretouched: Option<Same<CameraImage>>,
+    matrix: [[u32; 3]; 3],
     recipe: Recipe,
 }
-impl BlurKey {
-    pub(crate) fn new(image: &Arc<CameraImage>, r: &Recipe, scale: f32, texture: bool) -> Self {
+impl MeasuresKey {
+    pub(crate) fn new(
+        copy: &Arc<CameraImage>,
+        unretouched: Option<&Arc<CameraImage>>,
+        r: &Recipe,
+        matrix: [[f32; 3]; 3],
+    ) -> Self {
         Self {
-            image: Same(image.clone()),
-            scale: scale.to_bits(),
-            texture,
-            recipe: stage_recipes(r).blurs,
+            copy: Same(copy.clone()),
+            unretouched: unretouched.map(|u| Same(u.clone())),
+            matrix: matrix.map(|row| row.map(f32::to_bits)),
+            recipe: stage_recipes(r).measures,
         }
     }
 }
-/// The local-tone gain: blurs plus the sliders applied to them. Exposure only
-/// matters to Shadows and Highlights. Keyed by the blurs' inputs rather than the blurs
-/// themselves, so the gain is found again even when the blurs were too large to keep
-/// (a 61-megapixel photo's), and exposure edits at 100% do not recompute them.
-#[derive(Clone, PartialEq)]
-pub(crate) struct LocalKey {
-    blurs: BlurKey,
-    sliders: [u32; 5],
-}
-impl LocalKey {
-    pub(crate) fn new(blurs: BlurKey, r: &Recipe) -> Self {
-        let exposure = if r.shadows != 0. || r.highlights != 0. {
-            r.exposure + r.camera_exposure
-        } else {
-            0.
-        };
-        Self {
-            blurs,
-            sliders: [
-                exposure,
-                r.shadows,
-                r.highlights,
-                r.effects.clarity,
-                r.effects.texture,
-            ]
-            .map(f32::to_bits),
-        }
-    }
-}
+
 /// The measured Texture's detail and image: the source image, its scale and (for the
 /// image) the amount.
 #[derive(Clone, PartialEq)]
@@ -364,26 +326,10 @@ impl TextureKey {
         }
     }
 }
-/// The toned image reduced for the engine 4 Shadows/Highlights map: the camera image
-/// and its local-tone gain.
-#[derive(PartialEq)]
-pub(crate) struct ReducedKey {
-    image: Same<CameraImage>,
-    gain: Option<LocalKey>,
-}
-impl ReducedKey {
-    pub(crate) fn new(toned: &Toned) -> Self {
-        Self {
-            image: Same(toned.image.clone()),
-            gain: toned.gain_key.clone(),
-        }
-    }
-}
 /// Samples of an output region: geometry, lens correction and noise reduction.
 #[derive(PartialEq)]
 pub(crate) struct SampleKey {
     image: Same<CameraImage>,
-    gain: Option<LocalKey>,
     size: [u32; 2],
     region: [u32; 4],
     spread: u32,
@@ -399,7 +345,6 @@ impl SampleKey {
     ) -> Self {
         Self {
             image: Same(toned.image.clone()),
-            gain: toned.gain_key.clone(),
             size: [g.width, g.height],
             region,
             spread: spread.to_bits(),
@@ -455,99 +400,63 @@ mod tests {
             f(&mut r);
             r
         };
-        let changes = |r: &Recipe| {
-            let (a, b) = (stage_recipes(&base), stage_recipes(r));
-            (a.blurs != b.blurs, a.samples != b.samples)
-        };
-        // (edit, changes the blurs, changes the samples)
-        let cases: [(&str, Recipe, bool, bool); 15] = [
-            ("temperature", edit(&|r| r.temperature = 3000.), true, false),
-            (
-                "lens vignetting",
-                edit(&|r| r.lens_vignetting = 0.5),
-                true,
-                true,
-            ),
+        let changes = |r: &Recipe| stage_recipes(&base).samples != stage_recipes(r).samples;
+        // (edit, changes the samples)
+        let cases: [(&str, Recipe, bool); 15] = [
+            ("temperature", edit(&|r| r.temperature = 3000.), false),
+            ("lens vignetting", edit(&|r| r.lens_vignetting = 0.5), true),
             (
                 "manual vignetting",
-                edit(&|r| {
-                    r.lens_vignette_model = crate::model::operators::LensVignetteModel::Measured;
-                    r.effects.lens_vignette = -0.5;
-                }),
-                true,
+                edit(&|r| r.effects.lens_vignette = -0.5),
                 true,
             ),
-            ("lens CA", edit(&|r| r.lens_ca = true), false, true),
-            (
-                "distortion",
-                edit(&|r| r.lens_distortion = 0.5),
-                false,
-                true,
-            ),
+            ("lens CA", edit(&|r| r.lens_ca = true), true),
+            ("distortion", edit(&|r| r.lens_distortion = 0.5), true),
             (
                 "manual distortion",
                 edit(&|r| r.lens_manual_distortion = -0.3),
-                false,
                 true,
             ),
-            (
-                "crop",
-                edit(&|r| r.crop = [0.1, 0.1, 0.9, 0.9]),
-                false,
-                true,
-            ),
-            ("straighten", edit(&|r| r.straighten = 2.), false, true),
-            (
-                "constrain crop",
-                edit(&|r| r.constrain_crop = true),
-                false,
-                true,
-            ),
-            ("noise", edit(&|r| r.noise_luma = 0.3), false, true),
+            ("crop", edit(&|r| r.crop = [0.1, 0.1, 0.9, 0.9]), true),
+            ("straighten", edit(&|r| r.straighten = 2.), true),
+            ("constrain crop", edit(&|r| r.constrain_crop = true), true),
+            ("noise", edit(&|r| r.noise_luma = 0.3), true),
             (
                 "chroma detail",
                 edit(&|r| r.effects.chroma_detail = 0.1),
-                false,
                 true,
             ),
-            ("exposure", edit(&|r| r.exposure = 1.), false, false),
-            ("curve", edit(&|r| r.contrast = 0.4), false, false),
-            (
-                "defringe",
-                edit(&|r| r.effects.defringe = [0.5, 0.]),
-                false,
-                false,
-            ),
-            ("sharpening", edit(&|r| r.sharpening = 0.9), false, false),
+            ("exposure", edit(&|r| r.exposure = 1.), false),
+            ("curve", edit(&|r| r.contrast = 0.4), false),
+            ("defringe", edit(&|r| r.effects.defringe = [0.5, 0.]), false),
+            ("sharpening", edit(&|r| r.sharpening = 0.9), false),
         ];
-        for (name, r, blurs, samples) in cases {
-            assert_eq!(changes(&r), (blurs, samples), "{name}");
+        for (name, r, samples) in cases {
+            assert_eq!(changes(&r), samples, "{name}");
         }
-    }
-    /// The blurs read the camera part of the profile only: a look's Profile Amount,
-    /// which `Recipe::resolved` puts into the profile, reuses them.
-    #[test]
-    fn profile_amount_reuses_the_blurs() {
-        let m = crate::camera_data::Metadata {
-            make: "Test".into(),
-            model: "Camera".into(),
-            cam_xyz: [[0.8, -0.2, -0.1], [-0.3, 1.1, 0.2], [-0.05, 0.15, 0.6]],
-            ..Default::default()
-        };
-        let look = Arc::new(crate::camera_profiles::CameraProfile::creative_for_test(&m));
-        let at = |amount: f32| {
-            Recipe {
-                engine: 4,
-                profile: Some(look.clone()),
-                profile_amount: amount,
-                ..Default::default()
-            }
-            .resolved(&m)
-            .into_owned()
-        };
-        let (full, half) = (at(1.), at(0.5));
-        assert_ne!(full.profile, half.profile);
-        assert!(stage_recipes(&full).blurs == stage_recipes(&half).blurs);
+        // (edit, changes the photo's measures)
+        let measures = |r: &Recipe| stage_recipes(&base).measures != stage_recipes(r).measures;
+        let cases: [(&str, Recipe, bool); 12] = [
+            ("white balance", edit(&|r| r.wb = [1.2, 1., 0.8]), true),
+            ("temperature", edit(&|r| r.temperature = 3000.), true),
+            ("tint", edit(&|r| r.tint = 10.), true),
+            ("profile amount", edit(&|r| r.profile_amount = 0.5), true),
+            ("camera exposure", edit(&|r| r.camera_exposure = 0.3), true),
+            (
+                "calibration",
+                edit(&|r| r.effects.calibration[1] = [0.2, 0.]),
+                true,
+            ),
+            ("shadow tint", edit(&|r| r.effects.shadow_tint = 0.2), true),
+            ("exposure", edit(&|r| r.exposure = 1.), false),
+            ("whites", edit(&|r| r.whites = 0.5), false),
+            ("shadows", edit(&|r| r.shadows = 0.5), false),
+            ("dehaze", edit(&|r| r.effects.dehaze = 0.5), false),
+            ("crop", edit(&|r| r.crop = [0.1, 0.1, 0.9, 0.9]), false),
+        ];
+        for (name, r, changed) in cases {
+            assert_eq!(measures(&r), changed, "{name}");
+        }
     }
     #[test]
     fn lru_keeps_recent_entries_within_budget() -> Result<()> {

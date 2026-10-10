@@ -77,10 +77,6 @@ pub fn preset(r: &Recipe, info: &PresetInfo, groups: &GroupSelection) -> String 
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v.to_string()))
-    .chain([(
-        "RAWmakaseMarkers".to_string(),
-        super::write::MARKERS.to_string(),
-    )])
     .collect();
     attributes.extend(
         settings(r, None)
@@ -115,23 +111,6 @@ pub fn preset(r: &Recipe, info: &PresetInfo, groups: &GroupSelection) -> String 
         .filter(|(key, _)| !attributes.iter().any(|(k, _)| k == key))
         .collect();
     attributes.extend(dormant);
-    // Operators of the chosen groups that the photo keeps from before they were
-    // measured, so applying the preset renders them as the photo does: with the
-    // group they travel with, or with their own settings.
-    let chosen = |key: &str| group_of_key(key).is_some_and(|g| groups.contains(g));
-    let original: Vec<_> = super::write::original_operators(r)
-        .into_iter()
-        .filter(|(name, key)| {
-            chosen(key)
-                || super::write::operator_keys(name)
-                    .iter()
-                    .any(|k| chosen(k.example()))
-        })
-        .map(|(name, _)| name)
-        .collect();
-    if !original.is_empty() {
-        attributes.push(("RAWmakaseOriginal".into(), original.join(",")));
-    }
     // Each chosen panel's switch as the photo has it, on or off, so applying the
     // preset also sets that panel the same way.
     for panel in crate::model::panels::Panel::ALL {
@@ -218,7 +197,6 @@ pub(crate) fn group_of_key(key: &str) -> Option<SettingGroup> {
         "Saturation" => Saturation,
         "CameraProfile" | "ConvertToGrayscale" => TreatmentAndProfile,
         "ProcessVersion" => ProcessVersion,
-        "RAWmakaseWhiteBalanceModel" => WhiteBalance,
         "Sharpness" | "EnableDetail" => Sharpening,
         "LuminanceSmoothing" => LuminanceNoiseReduction,
         "ColorNoiseReduction" => ColorNoiseReduction,
@@ -380,80 +358,6 @@ mod tests {
         }
         Ok(())
     }
-    /// A preset made from a photo that keeps the original sharpening renders it the
-    /// same way where it's applied; without the Sharpening group it says nothing of it.
-    #[test]
-    fn presets_carry_the_original_sharpening_of_their_photo() -> anyhow::Result<()> {
-        use crate::model::operators::SharpeningModel;
-        let info = PresetInfo::new("Crisp", "User Presets");
-        let source = Recipe {
-            sharpening: 0.5,
-            ..Default::default()
-        };
-        assert_eq!(source.sharpening_model, SharpeningModel::Original);
-        let m = crate::camera_data::Metadata {
-            wb: [2., 1., 1.8],
-            daylight_wb: [2., 1., 1.8],
-            matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
-            ..Default::default()
-        };
-        let target = Recipe::with_profiles(&m, &[]);
-        assert_eq!(target.sharpening_model, SharpeningModel::Measured);
-        let mut sharpening = GroupSelection::none();
-        sharpening.set(SettingGroup::Sharpening, GroupInclusion::Included);
-        let text = preset(&source, &info, &sharpening);
-        let applied =
-            crate::xmp::parse(Path::new("Crisp.xmp"), &text)?.apply(&target, &m, &[], None)?;
-        assert_eq!(applied.sharpening_model, SharpeningModel::Original);
-        let mut exposure = GroupSelection::none();
-        exposure.set(SettingGroup::Exposure, GroupInclusion::Included);
-        assert!(!preset(&source, &info, &exposure).contains("RAWmakaseOriginal"));
-        Ok(())
-    }
-    #[test]
-    fn process_version_presets_carry_the_original_mixer_and_calibration() -> anyhow::Result<()> {
-        use crate::model::operators::{CalibrationModel, MixerModel};
-        let info = PresetInfo::new("Old process", "User Presets");
-        let source = Recipe::default();
-        let m = crate::camera_data::Metadata {
-            wb: [2., 1., 1.8],
-            daylight_wb: [2., 1., 1.8],
-            matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
-            ..Default::default()
-        };
-        let target = Recipe::with_profiles(&m, &[]);
-        assert_eq!(target.calibration_model, CalibrationModel::Measured);
-        let mut process = GroupSelection::none();
-        process.set(SettingGroup::ProcessVersion, GroupInclusion::Included);
-        let text = preset(&source, &info, &process);
-        let applied =
-            crate::xmp::parse(Path::new("Old.xmp"), &text)?.apply(&target, &m, &[], None)?;
-        assert_eq!(applied.mixer_model, MixerModel::Original);
-        assert_eq!(applied.calibration_model, CalibrationModel::Original);
-        Ok(())
-    }
-    #[test]
-    fn saturation_presets_carry_the_photos_saturation_operator() -> anyhow::Result<()> {
-        use crate::model::operators::SaturationModel;
-        let info = PresetInfo::new("Muted", "User Presets");
-        let source = Recipe {
-            saturation: -0.8,
-            ..Default::default()
-        };
-        let mut saturation = GroupSelection::none();
-        saturation.set(SettingGroup::Saturation, GroupInclusion::Included);
-        let text = preset(&source, &info, &saturation);
-        assert!(text.contains("Saturation"), "{text}");
-        let target = Recipe::default();
-        let applied = crate::xmp::parse(Path::new("Muted.xmp"), &text)?.apply(
-            &target,
-            &Default::default(),
-            &[],
-            None,
-        )?;
-        assert_eq!(applied.saturation_model, SaturationModel::Original);
-        Ok(())
-    }
     #[test]
     fn every_key_written_belongs_to_a_group() {
         let unplaced: Vec<_> = settings(&edited(), None)
@@ -504,55 +408,6 @@ mod tests {
         let mut exposure = GroupSelection::none();
         exposure.set(SettingGroup::Exposure, GroupInclusion::Included);
         assert!(!preset(&r, &info, &exposure).contains("PointColors"));
-        Ok(())
-    }
-
-    #[test]
-    fn white_balance_version_stays_with_its_partial_preset() -> anyhow::Result<()> {
-        use crate::model::operators::WhiteBalanceModel as W;
-        let m = crate::camera_data::Metadata {
-            wb: [2., 1., 1.5],
-            daylight_wb: [2., 1., 1.5],
-            ..Default::default()
-        };
-        for model in [W::Original, W::Calibrated] {
-            let source = Recipe {
-                white_balance_model: model,
-                ..Recipe::with_profiles(&m, &[])
-            };
-            for group in [
-                SettingGroup::WhiteBalance,
-                SettingGroup::ProcessVersion,
-                SettingGroup::Exposure,
-            ] {
-                let mut groups = GroupSelection::none();
-                groups.set(group, GroupInclusion::Included);
-                let text = preset(&source, &PresetInfo::new("WB", "User Presets"), &groups);
-                let parsed = crate::xmp::parse(Path::new("partial.xmp"), &text)?;
-                assert_eq!(crate::presets::user::groups_of(&parsed), groups);
-                assert_eq!(
-                    parsed.settings.contains_key("RAWmakaseWhiteBalanceModel"),
-                    group == SettingGroup::WhiteBalance
-                );
-                let target = Recipe {
-                    white_balance_model: if model == W::Original {
-                        W::Calibrated
-                    } else {
-                        W::Original
-                    },
-                    ..source.clone()
-                };
-                let applied = parsed.apply(&target, &m, &[], None)?;
-                assert_eq!(
-                    applied.white_balance_model,
-                    if group == SettingGroup::WhiteBalance {
-                        model
-                    } else {
-                        target.white_balance_model
-                    }
-                );
-            }
-        }
         Ok(())
     }
 

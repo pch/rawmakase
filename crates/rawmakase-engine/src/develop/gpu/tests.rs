@@ -201,6 +201,16 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
         scale_factor: 1.,
         scale_clipped: 0,
     });
+    // The same with its darkest level lifted to about 2^-6, where Camera Raw's default
+    // black adapts to it (`GlobalTone`'s default black).
+    let lifted = Arc::new(CameraImage {
+        pixels: image
+            .pixels
+            .iter()
+            .map(|p| p.map(|v| 0.02 + 0.9 * v))
+            .collect(),
+        ..(*image).clone()
+    });
     let n = 4000;
     let samples = Arc::new(Samples {
         width: 80,
@@ -229,9 +239,6 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     let tables = plain.clone().with_test_tables();
     let base = |profile: &CameraProfile| Recipe {
         profile: Some(Arc::new(profile.clone())),
-        reference_curves: true,
-        reference_color: true,
-        reference_calibration: true,
         temperature: 5000.,
         ..Default::default()
     };
@@ -256,9 +263,13 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     r.black_point = 0.02;
     r.white_point = 0.97;
     r.midtone = 1.2;
+    // Positive Dehaze removes the photo's haze, negative uses the measured tables.
+    let toned = recipes.len();
     recipes.push(r.clone());
+    let mut negative = r.clone();
+    negative.effects.dehaze = -0.5;
+    recipes.push(negative);
     // The measured parametric curve, with moved splits, from here on.
-    r.parametric_model = crate::model::operators::ParametricModel::Measured;
     r.effects.parametric = [0.3, 0.2, -0.3, -0.2];
     r.effects.splits = [0.2, 0.45, 0.8];
     r.shadows = 0.5;
@@ -273,23 +284,19 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     r.effects.calibration = [[0.3, -0.2], [-0.4, 0.5], [0.2, 0.1]];
     r.effects.shadow_tint = -0.4;
     recipes.push(r.clone());
-    // Measured grading curves, at Blending and Balance the original tables don't cover.
+    // Grading at other Blending and Balance.
     let mut measured = r.clone();
-    measured.grading_model = crate::model::operators::GradingModel::Measured;
     measured.grading[2] = [0.1, 0.5, 0.2];
     measured.effects.blending = 0.8;
     measured.effects.balance = -0.3;
     recipes.push(measured.clone());
     // Out-of-gamut colors clipped per channel.
-    measured.gamut_model = crate::model::operators::GamutModel::Clip;
     measured.saturation = 0.8;
     recipes.push(measured.clone());
     // Calibration measured on Camera Raw, between its measured slider positions.
-    measured.calibration_model = crate::model::operators::CalibrationModel::Measured;
     measured.effects.calibration = [[0.3, -0.75], [-0.4, 0.5], [0.9, 0.1]];
     recipes.push(measured.clone());
     // Saturation fading to gray below −50, with and without band sliders.
-    measured.saturation_model = crate::model::operators::SaturationModel::Gray;
     measured.saturation = -0.7;
     recipes.push(measured.clone());
     measured.hsl = [[0.; 3]; 8];
@@ -299,7 +306,6 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     // Black & white from the chart tables, with a mix between measured positions.
     let mut mono = r.clone();
     mono.effects.monochrome = true;
-    mono.black_white_model = crate::model::operators::BlackWhiteModel::Chart;
     mono.effects.gray_mix = [0.3, -0.7, 0.1, 0., -0.2, 0.9, 0., -1.];
     recipes.push(mono);
     // Point Color: overlapping swatches, one across red, with Variance and Range.
@@ -328,18 +334,19 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     recipes.push(r);
     let mut gpu = Processor::new()?;
     let cancel = AtomicBool::new(false);
-    // A local-tone gain changes the Shadows/Highlights map's input.
-    let gain: Vec<f32> = (0..64 * 48).map(|i| 0.6 + wave(i, 0.05)).collect();
     // The swatches select part of the test image (the same source for both).
-    let source = Source::new(&image, (point_colors % 2 == 1).then_some(gain.as_slice()));
+    let source = Source::new(&image);
     let without = develop_samples(source, &recipes[point_colors - 1], &samples, &cancel, None)?;
     let with = develop_samples(source, &recipes[point_colors], &samples, &cancel, None)?;
     let changed = (with.pixels.iter().zip(&without.pixels))
         .filter(|(a, b)| (0..3).any(|c| (a[c] - b[c]).abs() > 0.01))
         .count();
     assert!(changed > with.pixels.len() / 50, "{changed} pixels changed");
-    for (i, recipe) in recipes.iter().enumerate() {
-        let source = Source::new(&image, (i % 2 == 1).then_some(gain.as_slice()));
+    let lifted_recipes = [recipes[1].clone(), recipes[toned].clone()];
+    let cases =
+        (recipes.iter().map(|r| (&image, r))).chain(lifted_recipes.iter().map(|r| (&lifted, r)));
+    for (i, (image, recipe)) in cases.enumerate() {
+        let source = Source::new(image);
         let params = pixel_params(source, recipe).expect("GPU port covers this recipe");
         let expected = develop_samples(source, recipe, &samples, &cancel, None)?;
         let actual = gpu.develop(&samples, &params, &cancel)?;
@@ -362,14 +369,6 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
             "recipe {i}: max {max}, 99.9% {p999}, mean {mean}"
         );
     }
-    // Older operators stay on the CPU.
-    let mut legacy = base(&tables);
-    legacy.effects.balance = 0.3;
-    legacy.grading[0] = [0.6, 0.4, 0.];
-    assert!(pixel_params(image.as_ref().into(), &legacy).is_none());
-    legacy = base(&tables);
-    legacy.engine = 3;
-    assert!(pixel_params(image.as_ref().into(), &legacy).is_none());
     Ok(())
 }
 
@@ -474,9 +473,6 @@ fn presented_previews_match_the_cpu_render() -> Result<()> {
         .with_test_tables();
     let base = Recipe {
         profile: Some(Arc::new(profile)),
-        reference_curves: true,
-        reference_color: true,
-        reference_calibration: true,
         temperature: 5000.,
         exposure: 0.4,
         shadows: 0.3,
@@ -507,31 +503,21 @@ fn presented_previews_match_the_cpu_render() -> Result<()> {
         highlights: true,
         ..none
     };
-    use crate::model::operators::LensVignetteModel::{Measured, Original};
-    for (spatial, clipping, ca, (style, vignette), lens_vignette) in [
-        (false, shadows, 0, (HighlightPriority, 0.), Original),
-        (true, none, 0, (HighlightPriority, -0.3), Original),
-        (true, both, 0, (ColorPriority, -0.6), Original),
-        (true, highlights, 0, (PaintOverlay, -0.5), Original),
-        (true, none, 1, (HighlightPriority, 0.5), Original),
-        (true, none, 2, (ColorPriority, 0.4), Original),
-        (true, none, 0, (PaintOverlay, 0.7), Original),
-        // Measured manual Vignetting is sampled with the lens profile's.
-        (true, none, 0, (HighlightPriority, -0.3), Measured),
-        (true, none, 0, (ColorPriority, 0.), Measured),
+    // Manual Vignetting is sampled with the lens profile's; `lens_alone` without lens
+    // data, where the manual gain alone makes the lens stage.
+    for (spatial, clipping, ca, (style, vignette), lens_alone) in [
+        (false, shadows, 0, (HighlightPriority, 0.), false),
+        (true, none, 0, (HighlightPriority, -0.3), false),
+        (true, both, 0, (ColorPriority, -0.6), false),
+        (true, highlights, 0, (PaintOverlay, -0.5), false),
+        (true, none, 1, (HighlightPriority, 0.5), false),
+        (true, none, 2, (ColorPriority, 0.4), false),
+        (true, none, 0, (PaintOverlay, 0.7), false),
+        (true, none, 0, (ColorPriority, 0.), true),
     ] {
         let mut recipe = base.clone();
-        recipe.lens_vignette_model = lens_vignette;
         if spatial {
             recipe.effects.grain = 0.4;
-            // The measured grain on Color Priority cases, the original on the others.
-            if style == ColorPriority {
-                recipe.grain_model = crate::model::operators::GrainModel::Measured;
-            }
-            // The measured Clarity, in the map, on Paint Overlay cases.
-            if style == PaintOverlay {
-                recipe.clarity_model = crate::model::operators::ClarityModel::Measured;
-            }
             recipe.effects.vignette = vignette;
             recipe.effects.vignette_style = style;
             recipe.effects.vignette_highlights = 0.6;
@@ -558,8 +544,7 @@ fn presented_previews_match_the_cpu_render() -> Result<()> {
             recipe.lens_builtin = ca == 2;
             recipe.lens_ca = true;
         }
-        if lens_vignette == Measured && vignette == 0. {
-            // Without lens data: the manual gain alone makes the lens stage.
+        if lens_alone {
             recipe.lens_builtin = false;
             recipe.effects.lens_vignette = -0.6;
         }
@@ -699,9 +684,6 @@ fn panning_never_writes_the_drawn_region() -> Result<()> {
                 .unwrap()
                 .with_test_tables(),
         )),
-        reference_curves: true,
-        reference_color: true,
-        reference_calibration: true,
         ..Default::default()
     };
     let mut gpu = PreviewRenderer::with_gpu();
@@ -795,16 +777,22 @@ fn gpu_masks_match_cpu_pixel_stage() -> Result<()> {
     let profile = CameraProfile::camera_matrix_default(&metadata).unwrap();
     let mut r = Recipe {
         profile: Some(Arc::new(profile)),
-        reference_curves: true,
-        reference_color: true,
-        reference_calibration: true,
         temperature: 5000.,
         exposure: 0.3,
         contrast: 0.2,
         shadows: 0.2,
         ..Default::default()
     };
-    r.masks = vec![Default::default(), Default::default()];
+    // Active masks, as the weights' would be: what decides that the haze is measured.
+    let shape = crate::model::masks::MaskComponent::new(crate::model::masks::MaskShape::Linear {
+        from: [0.2, 0.5],
+        to: [0.8, 0.5],
+    });
+    let group = crate::model::masks::MaskGroup {
+        components: vec![shape],
+        ..Default::default()
+    };
+    r.masks = vec![group.clone(), group];
     let adjust = [
         LocalAdjust {
             temperature: 0.4,
@@ -846,18 +834,10 @@ fn gpu_masks_match_cpu_pixel_stage() -> Result<()> {
     let cancel = AtomicBool::new(false);
     let source = Source::from(image.as_ref());
     r.whites = 0.3;
-    for (model, whites) in [
-        (
-            crate::model::operators::ContrastModel::Original,
-            crate::model::operators::WhitesModel::Original,
-        ),
-        (
-            crate::model::operators::ContrastModel::Adaptive,
-            crate::model::operators::WhitesModel::Adaptive,
-        ),
-    ] {
-        r.contrast_model = model;
-        r.whites_model = whites;
+    // The masks' Dehaze alone, added to a positive slider, and to a negative one where
+    // the sum crosses zero: the photo's haze and the tables on either side.
+    for dehaze in [0., 0.3, -0.1] {
+        r.effects.dehaze = dehaze;
         let mut params = pixel_params(source, &r).expect("GPU port covers this recipe");
         assert!(params.set_masks(source, &r, Some(&weights)));
         let expected = develop_samples(source, &r, &samples, &cancel, Some(&weights))?;
@@ -871,10 +851,10 @@ fn gpu_masks_match_cpu_pixel_stage() -> Result<()> {
             .collect();
         let mean = d.iter().sum::<f32>() / d.len() as f32;
         let max = d.iter().copied().fold(0., f32::max);
-        eprintln!("masks, {model:?}: max {max:.6}, mean {mean:.8}");
+        eprintln!("masks, Dehaze {dehaze}: max {max:.6}, mean {mean:.8}");
         assert!(
             max < 2e-3 && mean < 2e-5,
-            "{model:?}: max {max}, mean {mean}"
+            "Dehaze {dehaze}: max {max}, mean {mean}"
         );
     }
     Ok(())
@@ -890,28 +870,16 @@ fn shaders_are_valid_wgsl() {
         valid::{Capabilities, ValidationFlags, Validator},
     };
     let prelude = crate::develop::pipeline::pixel_params::wgsl_prelude();
-    let modules: [(&str, String, &[&str]); 6] = [
+    let modules: [(&str, String, &[&str]); 5] = [
         (
             "develop.wgsl",
-            prelude.clone() + include_str!("develop.wgsl"),
+            prelude + include_str!("develop.wgsl"),
             &["develop"],
-        ),
-        (
-            "logs.wgsl",
-            prelude + include_str!("develop.wgsl") + include_str!("logs.wgsl"),
-            &["log_luminance"],
         ),
         (
             "local.wgsl",
             super::sampling::wgsl_prelude() + include_str!("local.wgsl"),
-            &[
-                "running_sum",
-                "window",
-                "region_gain",
-                "sample_region",
-                "reduce_rows",
-                "reduce_toned",
-            ],
+            &["sample_region"],
         ),
         (
             "finish.wgsl",

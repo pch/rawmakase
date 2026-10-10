@@ -28,9 +28,8 @@ Paste Settings and presets leave a photo's spots alone, as Lightroom's defaults 
 
 - Spots are stored as parameters (`retouch`) beside the recipe, not in it: in the
   catalog's `local_edits` table, or for photos opened directly in
-  `photo.ARW.rawmakase-local.json` next to the sidecar. The recipe stays schema 6, so
-  earlier releases open the photo with every other edit, just without spots and
-  masks. Positions are in image space: the photo as the camera oriented it, within its default crop, before lens
+  `photo.ARW.rawmakase-local.json` next to the sidecar, so the recipe itself holds
+  none. Positions are in image space: the photo as the camera oriented it, within its default crop, before lens
   correction, Transform, crop and straightening. Spots stay on their dust when those
   change. Sizes are fractions of the long edge.
 - Operations apply in order to the linear, highlight-recovered camera image before
@@ -42,9 +41,8 @@ Paste Settings and presets leave a photo's spots alone, as Lightroom's defaults 
   centre, interpolated between those settings and from a hard edge below 25. On those
   spots the rendered coverage is within a mean 0.003 of Camera Raw's (at most 0.07,
   at Feather 25 on the rim's last pixel); the original smoothstep was 0.06–0.13 off,
-  its soft edge reaching much further in. Recipes saved before keep that original
-  feather (`retouch_model`); new edits, the first spot on a photo and Lightroom's
-  spots take the measured one.
+  its soft edge reaching much further in. Every spot, including those saved with the
+  original feather, renders with the measured one.
 - **Heal** copies the source, then adds a membrane: the difference between
   destination and source on a one-pixel ring around the shape, extended inward by
   solving Laplace's equation (multigrid V-cycles, so large brushed areas solve as
@@ -128,7 +126,7 @@ Shift+R is its Reference View).
   straightening, Transform, rotation and flips. Releases that predate them open the
   photo without them. A correction of a kind a later release adds is not shown, but
   is kept and saved back as it was, and never stops the photo's other spots and masks
-  from loading. Older process versions render corrections (and spots) too.
+  from loading.
 - **Rendering:** on the linear camera image, before Heal and Clone (so a heal copying
   from an eye copies the corrected pupil), with previews recomputing only the tiles a
   change reaches. Inside a soft ellipse every pixel moves towards a dark neutral, as

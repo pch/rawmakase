@@ -3,35 +3,21 @@ use super::*;
 use crate::develop::effects::EffectsRendering;
 
 /// Lightroom's Fringe Color Selector on the shown colour `rgb` (encoded sRGB): the
-/// Purple or Green range is pointed at it (see [`Effects::pick_fringe_hue`]). Defringe
-/// tests the hue before the HSL Hue sliders of engines before 4, colour grading and
-/// legacy channel curves change it, so the picked colour is the one those stages
-/// render closest to the shown colour.
+/// Purple or Green range is pointed at it (see [`Effects::pick_fringe_hue`]). The
+/// picked colour is the one the end of the colour stage, after Defringe, renders
+/// closest to the shown colour.
 ///
 /// [`Effects::pick_fringe_hue`]: crate::model::effects::Effects::pick_fringe_hue
-pub fn pick_fringe(r: &mut Recipe, m: &Metadata, rgb: [f32; 3]) -> Option<usize> {
+pub fn pick_fringe(r: &mut Recipe, rgb: [f32; 3]) -> Option<usize> {
     let hue_of = |lab: [f32; 3]| {
         lab[2].atan2(lab[1]).rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU
     };
     let lab = srgb_to_lab(rgb.map(crate::color::srgb_decode));
     let (shown, chroma) = (hue_of(lab), lab[1].hypot(lab[2]));
-    let effective = r.resolved(m).into_owned();
-    let lut = CurveSet::new(&effective);
-    let turns = !lut.basic_curves && effective.hsl.iter().any(|band| band[0] != 0.);
     // The shown colour of one Defringe sees at lightness `l`, hue `h` and chroma `c`.
     let rendered = |[l, h, c]: [f32; 3]| {
-        let shift: f32 = if turns {
-            effective
-                .hsl
-                .iter()
-                .zip(hue_weights(h))
-                .map(|(band, w)| band[0] * w)
-                .sum()
-        } else {
-            0.
-        };
-        let angle = (h + shift / 8.) * std::f32::consts::TAU;
-        let out = finish_color([l, angle.cos() * c, angle.sin() * c], &effective, &lut);
+        let angle = h * std::f32::consts::TAU;
+        let out = finish_color([l, angle.cos() * c, angle.sin() * c]);
         srgb_to_lab(out.map(crate::color::srgb_decode))
     };
     let miss = |p: [f32; 3]| {

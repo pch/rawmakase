@@ -37,13 +37,6 @@ struct Settings<'a> {
     seen: BTreeSet<String>,
 }
 impl Settings<'_> {
-    /// Whether a packet RAWmakase wrote names `operator` as kept from before it was
-    /// measured, so Lightroom's values for it don't switch it to the measured one.
-    fn keeps_original(&self, operator: &str) -> bool {
-        self.values
-            .get("RAWmakaseOriginal")
-            .is_some_and(|v| v.split(',').any(|name| name.trim() == operator))
-    }
     fn assign(&mut self, key: &str, out: &mut f32, scale: f32, lo: f32, hi: f32) -> Result<()> {
         self.seen.insert(key.to_string());
         if let Some(value) = number(self.values, key)? {
@@ -92,10 +85,11 @@ const METADATA: &[&str] = &[
     "RawFileName",
     // Marks a preset made in RAWmakase, which it may update, rename or delete.
     "RAWmakasePreset",
-    // Operators a RAWmakase recipe keeps from before they were measured.
+    // Operators and white balance a recipe of an earlier RAWmakase kept from before
+    // they were measured; one engine now renders every edit, so they are ignored.
     "RAWmakaseOriginal",
-    // Packets and presets whose RAWmakaseOriginal names every kept operator.
     "RAWmakaseMarkers",
+    "RAWmakaseWhiteBalanceModel",
 ];
 impl Preset {
     /// Apply to a private recipe, publishing only after every stage validates.
@@ -112,9 +106,6 @@ impl Preset {
             seen: METADATA.iter().map(|key| key.to_string()).collect(),
         };
         let mut recipe = base.clone();
-        recipe.engine = recipe.engine.max(3);
-        recipe.profile_tone = true;
-        recipe.reference_color = true;
         self.apply_profile(&mut settings, &mut recipe, m, profiles)?;
         self.apply_basic(&mut settings, &mut recipe)?;
         // Auto white balance is measured on the crop, so geometry comes first.
@@ -158,9 +149,6 @@ impl Preset {
             seen: METADATA.iter().map(|key| key.to_string()).collect(),
         };
         let mut recipe = base.clone();
-        recipe.engine = recipe.engine.max(3);
-        recipe.profile_tone = true;
-        recipe.reference_color = true;
         let mut stage = |recipe: &mut Recipe, result: &dyn Fn(&mut Recipe) -> Result<()>| {
             let backup = recipe.clone();
             if let Err(e) = result(recipe) {
@@ -369,8 +357,6 @@ impl Preset {
                     self.look, m.model
                 )
             })?);
-            r.reference_curves = true;
-            r.wide_gamut_curves = true;
         }
         // A new profile starts at 100%; a look that supports Amount takes the preset's.
         settings.seen.insert(super::look::SETTING.into());
@@ -383,20 +369,8 @@ impl Preset {
         {
             r.profile_amount = super::look::LookAmount::parse(amount)?.0;
         }
-        if r.profile.as_ref().is_some_and(|p| p.enhanced.is_some()) {
-            r.reference_curves = true;
-            r.wide_gamut_curves = true;
-        }
         if v.contains_key("CameraProfile") || !self.look.is_empty() {
             r.use_camera_baseline(m);
-        }
-        // Every curve Camera Raw applies comes with the master curve.
-        if ["ToneCurvePV2012", "ToneCurve"]
-            .iter()
-            .any(|k| self.curves.contains_key(*k))
-        {
-            r.wide_gamut_curves = true;
-            r.reference_curves = true;
         }
         Ok(())
     }
@@ -410,20 +384,6 @@ impl Preset {
         settings.assign("Blacks2012", &mut r.blacks, 0.01, -1., 1.)?;
         settings.assign("Saturation", &mut r.saturation, 0.01, -1., 1.)?;
         settings.assign("Vibrance", &mut r.vibrance, 0.01, -1., 1.)?;
-        // Lightroom's Saturation means Camera Raw's fade to gray, also on a recipe saved
-        // before; RAWmakase's own packet names it when a recipe kept the tables.
-        if settings.values.contains_key("Saturation") {
-            r.saturation_model = crate::model::operators::SaturationModel::Gray;
-        }
-        if settings.keeps_original(super::write::ORIGINAL_SATURATION) {
-            r.saturation_model = crate::model::operators::SaturationModel::Original;
-        }
-        if settings.values.contains_key("Vibrance") {
-            r.vibrance_model = crate::model::operators::VibranceModel::Chart;
-        }
-        if settings.keeps_original(super::write::ORIGINAL_VIBRANCE) {
-            r.vibrance_model = crate::model::operators::VibranceModel::Original;
-        }
         settings.assign("Sharpness", &mut r.sharpening, 1. / 150., 0., 1.)?;
         settings.assign("SharpenRadius", &mut r.sharpening_radius, 1., 0.5, 3.)?;
         settings.assign("SharpenDetail", &mut r.sharpening_detail, 0.01, 0., 1.)?;
@@ -434,38 +394,8 @@ impl Preset {
             0.,
             1.,
         )?;
-        // Lightroom's values mean the measured operator, also on a recipe saved before.
-        if [
-            "Sharpness",
-            "SharpenRadius",
-            "SharpenDetail",
-            "SharpenEdgeMasking",
-        ]
-        .iter()
-        .any(|k| settings.values.contains_key(*k))
-        {
-            r.sharpening_model = crate::model::operators::SharpeningModel::Measured;
-        }
-        // RAWmakase's own packet for a recipe that kept the original operator.
-        if settings.keeps_original(super::write::ORIGINAL_SHARPENING) {
-            r.sharpening_model = crate::model::operators::SharpeningModel::Original;
-        }
         settings.assign("LuminanceSmoothing", &mut r.noise_luma, 0.01, 0., 1.)?;
         settings.assign("ColorNoiseReduction", &mut r.noise_chroma, 0.01, 0., 1.)?;
-        // Lightroom's values mean the measured operator, also on a recipe saved before.
-        if [
-            "ColorNoiseReduction",
-            "ColorNoiseReductionDetail",
-            "ColorNoiseReductionSmoothness",
-        ]
-        .iter()
-        .any(|k| settings.values.contains_key(*k))
-        {
-            r.noise_model = crate::model::operators::NoiseModel::Measured;
-        }
-        if settings.keeps_original(super::write::ORIGINAL_COLOR_NOISE) {
-            r.noise_model = crate::model::operators::NoiseModel::Original;
-        }
         Ok(())
     }
 
@@ -476,12 +406,6 @@ impl Preset {
         m: &Metadata,
         image: Option<&dyn PhotoMeasures>,
     ) -> Result<()> {
-        settings.seen.insert("RAWmakaseWhiteBalanceModel".into());
-        if let Some(value) = settings.values.get("RAWmakaseWhiteBalanceModel") {
-            r.white_balance_model =
-                serde_json::from_value(serde_json::Value::String(value.clone()))
-                    .context("Unsupported RAWmakase white-balance operator")?;
-        }
         let v = settings.values;
         settings.seen.insert("WhiteBalance".into());
         settings.seen.insert("Temperature".into());
@@ -593,56 +517,6 @@ impl Preset {
             )?;
         }
         settings.assign("ShadowTint", &mut r.effects.shadow_tint, 0.01, -1., 1.)?;
-        // Lightroom's values mean the measured operators, also on a recipe saved
-        // before; RAWmakase's own packet names the ones a recipe kept from before.
-        // Lightroom's black & white mix means Camera Raw's measured gray, also on a
-        // recipe saved before; RAWmakase's own packet names it when a recipe kept it.
-        if bands
-            .iter()
-            .any(|band| v.contains_key(&format!("GrayMixer{band}")))
-        {
-            r.black_white_model = crate::model::operators::BlackWhiteModel::Chart;
-        }
-        if settings.keeps_original(super::write::ORIGINAL_BLACK_WHITE) {
-            r.black_white_model = crate::model::operators::BlackWhiteModel::Original;
-        }
-        let mixer_keys = bands.iter().flat_map(|band| {
-            ["Hue", "Saturation", "Luminance"].map(|control| format!("{control}Adjustment{band}"))
-        });
-        if mixer_keys.into_iter().any(|key| v.contains_key(&key)) {
-            r.mixer_model = crate::model::operators::MixerModel::Chart;
-        }
-        if settings.keeps_original(super::write::ORIGINAL_COLOR_MIXER) {
-            r.mixer_model = crate::model::operators::MixerModel::Original;
-        }
-        let primaries = [
-            "RedHue",
-            "RedSaturation",
-            "GreenHue",
-            "GreenSaturation",
-            "BlueHue",
-            "BlueSaturation",
-        ];
-        if primaries.iter().any(|key| v.contains_key(*key)) {
-            r.calibration_model = crate::model::operators::CalibrationModel::Measured;
-        }
-        if settings.keeps_original(super::write::ORIGINAL_CALIBRATION) {
-            r.calibration_model = crate::model::operators::CalibrationModel::Original;
-        }
-        if [
-            "RedHue",
-            "RedSaturation",
-            "GreenHue",
-            "GreenSaturation",
-            "BlueHue",
-            "BlueSaturation",
-            "ShadowTint",
-        ]
-        .iter()
-        .any(|key| v.contains_key(*key))
-        {
-            r.reference_calibration = true;
-        }
         Ok(())
     }
 
@@ -714,12 +588,6 @@ impl Preset {
         image: Option<&dyn PhotoMeasures>,
     ) -> Result<()> {
         settings.seen.insert("AutoGrayscaleMix".into());
-        if self.leaves_auto_gray_mix(r)? {
-            // Lightroom's Auto mix means Camera Raw's measured gray, as its values do.
-            if !settings.keeps_original(super::write::ORIGINAL_BLACK_WHITE) {
-                r.black_white_model = crate::model::operators::BlackWhiteModel::Chart;
-            }
-        }
         if self.leaves_auto_gray_mix(r)?
             && let Some(photo) = image
         {
@@ -802,21 +670,7 @@ impl Preset {
     fn apply_effects(&self, settings: &mut Settings<'_>, r: &mut Recipe) -> Result<()> {
         let v = settings.values;
         settings.assign("Clarity2012", &mut r.effects.clarity, 0.01, -1., 1.)?;
-        // Lightroom's Clarity means the measured operator, also on a recipe saved before.
-        if settings.values.contains_key("Clarity2012") {
-            r.clarity_model = crate::model::operators::ClarityModel::Measured;
-        }
-        if settings.keeps_original(super::write::ORIGINAL_CLARITY) {
-            r.clarity_model = crate::model::operators::ClarityModel::Original;
-        }
         settings.assign("Texture", &mut r.effects.texture, 0.01, -1., 1.)?;
-        // Lightroom's Texture means the measured operator, also on a recipe saved before.
-        if settings.values.contains_key("Texture") {
-            r.texture_model = crate::model::operators::TextureModel::Measured;
-        }
-        if settings.keeps_original(super::write::ORIGINAL_TEXTURE) {
-            r.texture_model = crate::model::operators::TextureModel::Original;
-        }
         settings.assign("Dehaze", &mut r.effects.dehaze, 0.01, -1., 1.)?;
         settings.assign("GrainAmount", &mut r.effects.grain, 0.01, 0., 1.)?;
         settings.assign("GrainSize", &mut r.effects.grain_size, 0.01, 0., 1.)?;
@@ -827,16 +681,6 @@ impl Preset {
             0.,
             1.,
         )?;
-        // Lightroom's values mean the measured grain, also on a recipe saved before.
-        if ["GrainAmount", "GrainSize", "GrainFrequency"]
-            .iter()
-            .any(|k| settings.values.contains_key(*k))
-        {
-            r.grain_model = crate::model::operators::GrainModel::Measured;
-        }
-        if settings.keeps_original(super::write::ORIGINAL_GRAIN) {
-            r.grain_model = crate::model::operators::GrainModel::Original;
-        }
         settings.seen.insert("GrainSeed".into());
         if let Some(seed) = v.get("GrainSeed") {
             r.effects.grain_seed = seed.parse().context("Invalid grain seed")?;
@@ -898,16 +742,6 @@ impl Preset {
             0.,
             1.,
         )?;
-        // Lightroom's values mean the measured operator, also on a recipe saved before.
-        if ["VignetteAmount", "VignetteMidpoint"]
-            .iter()
-            .any(|k| settings.values.contains_key(*k))
-        {
-            r.lens_vignette_model = crate::model::operators::LensVignetteModel::Measured;
-        }
-        if settings.keeps_original(super::write::ORIGINAL_LENS_VIGNETTE) {
-            r.lens_vignette_model = crate::model::operators::LensVignetteModel::Original;
-        }
         for (i, name) in ["Purple", "Green"].iter().enumerate() {
             settings.assign(
                 &format!("Defringe{name}Amount"),
@@ -1086,16 +920,8 @@ impl Preset {
             -1.,
             1.,
         )?;
-        ensure!(
-            r.lens_manual_distortion == 0. || r.engine >= 4,
-            "Manual lens Distortion needs the current process version (Calibration)"
-        );
         settings.seen.insert("AutoLateralCA".into());
         if let Some(ca) = number(v, "AutoLateralCA")? {
-            ensure!(
-                ca == 0. || r.engine >= 4,
-                "Remove Chromatic Aberration needs the current process version (Calibration)"
-            );
             r.lens_ca = ca != 0.;
         }
         let t = &mut r.transform;
@@ -1106,8 +932,18 @@ impl Preset {
         settings.assign("PerspectiveScale", &mut t.scale, 0.01, 0.5, 1.5)?;
         settings.assign("PerspectiveX", &mut t.offset_x, 0.01, -1., 1.)?;
         settings.assign("PerspectiveY", &mut t.offset_y, 0.01, -1., 1.)?;
-        for (i, name) in ["Left", "Top", "Right", "Bottom"].iter().enumerate() {
-            settings.assign(&format!("Crop{name}"), &mut r.crop[i], 1., 0., 1.)?;
+        // Camera Raw crops only with HasCrop: without it the photo is uncropped, even
+        // one the camera cropped to another aspect ratio, which Camera Raw records as
+        // a crop. Without HasCrop or crop values the photo keeps its starting crop.
+        if boolean(v, "HasCrop")? == Some(false) {
+            r.crop = [0., 0., 1., 1.];
+            for name in ["Left", "Top", "Right", "Bottom"] {
+                settings.seen.insert(format!("Crop{name}"));
+            }
+        } else {
+            for (i, name) in ["Left", "Top", "Right", "Bottom"].iter().enumerate() {
+                settings.assign(&format!("Crop{name}"), &mut r.crop[i], 1., 0., 1.)?;
+            }
         }
         // Lightroom's Constrain Crop, not to be confused with `CropConstrainToUnitSquare`.
         settings.seen.insert("CropConstrainToWarp".into());
@@ -1218,8 +1054,6 @@ impl Preset {
             crate::model::image_frame::ImageFrame::for_metadata(m),
         );
         if let Some(retouch) = edits.retouch {
-            // Lightroom's spots mean Camera Raw's feather, also on a recipe saved before.
-            r.retouch_model = crate::model::operators::RetouchModel::Measured;
             r.retouch = retouch;
         }
         if let Some(red_eye) = edits.red_eye {

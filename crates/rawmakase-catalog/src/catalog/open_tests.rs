@@ -35,7 +35,7 @@ fn writing(path: &Path) -> Result<Connection> {
 #[test]
 fn an_unsupported_version_is_refused_with_the_file_unchanged() -> Result<()> {
     let (_dir, path) = ready()?;
-    Connection::open(&path)?.execute_batch("PRAGMA user_version=3")?;
+    Connection::open(&path)?.execute_batch("PRAGMA user_version=4")?;
     let before = std::fs::read(&path)?;
     let error = Catalog::open_as(&path, &computer("linux")).err().unwrap();
     assert!(

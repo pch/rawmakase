@@ -11,26 +11,12 @@ mod heal;
 mod layer;
 mod search;
 
-use crate::model::operators::RetouchModel;
 use crate::model::retouch::RetouchOp;
 
 pub(crate) use heal::FeatherProfile;
 pub(crate) use heal::profile;
 pub(crate) use layer::{RetouchCache, Retouching, apply};
 pub use search::find_source;
-
-/// The soft edge a recipe's Heal and Clone operations render with.
-pub(crate) trait RetouchFeather {
-    fn feather(self) -> FeatherProfile;
-}
-impl RetouchFeather for RetouchModel {
-    fn feather(self) -> FeatherProfile {
-        match self {
-            Self::Original => FeatherProfile::Smoothstep,
-            Self::Measured => FeatherProfile::Measured,
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests;

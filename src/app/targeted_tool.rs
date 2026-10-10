@@ -48,12 +48,6 @@ impl Editor {
     /// Opens the tool for `target`, or puts it away when it is open, and shows the
     /// sliders it moves.
     pub(super) fn toggle_targeted(&mut self, target: Target) {
-        if let Some(steps) =
-            super::point_color_panel::point_color_steps(self.document.edit.recipe())
-        {
-            self.status = format!("{steps} in Calibration to use targeted adjustments");
-            return;
-        }
         if !self.targeted_available(target) {
             self.status = match target {
                 Target::BlackWhite => "The B&W mix adjusts black & white photos".into(),
@@ -75,13 +69,9 @@ impl Editor {
             Target::BlackWhite => {}
         }
     }
-    /// Whether the panel `target` adjusts is the one this photo shows, on the current
-    /// process (as Point Color, older processes render the curves elsewhere).
+    /// Whether the panel `target` adjusts is the one this photo shows.
     pub(super) fn targeted_available(&self, target: Target) -> bool {
         let r = self.document.edit.recipe();
-        if !super::point_color_panel::renders_point_color(r) {
-            return false;
-        }
         let black_white = r.treatment() == Treatment::BlackWhite;
         match target {
             Target::ToneCurve => true,
@@ -391,8 +381,6 @@ mod tests {
             scale_clipped: 0,
         });
         editor.document.set_image(image);
-        editor.document.edit.setup_mut().reference_curves = true;
-        editor.document.edit.setup_mut().reference_color = true;
         editor.preview.texture = Some(
             ctx.load_texture(
                 "photo",
@@ -529,19 +517,6 @@ mod tests {
         assert!(steps[0].name.starts_with("Region "), "{}", steps[0].name);
         e.undo();
         assert_eq!(*e.document.edit.recipe(), before);
-    }
-
-    #[test]
-    fn older_processes_get_no_targeted_tool() {
-        let ctx = egui::Context::default();
-        let mut e = editor(&ctx);
-        e.document.edit.setup_mut().reference_curves = false;
-        e.toggle_targeted(Target::ToneCurve);
-        assert_eq!(e.view.tool, Tool::None);
-        assert_eq!(
-            e.status,
-            "Turn on Reference tone curves in Calibration to use targeted adjustments"
-        );
     }
 
     #[test]

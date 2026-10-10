@@ -1,15 +1,13 @@
-//! Detail > Sharpening. [`SharpeningModel::Measured`] follows Camera Raw 18.7, fitted to
+//! Detail > Sharpening, following Camera Raw 18.7, fitted to
 //! renders of a synthetic chart (slanted edges at three contrasts, sine gratings from
 //! 0.04 to 0.3 cycles per pixel, random texture and noisy flats) at Amount 25 to 150,
 //! Radius 0.5 to 3, Detail 0 to 100 and Masking 10 to 100.
 //!
-//! Both models add an unsharp mask of the encoded luminance to every channel. Camera
-//! Raw's is about 2.4 times as strong on fine detail per Amount as the original, and holds
-//! back halos at strong edges rather than clipping them: the high-pass `d` is shaped as
+//! An unsharp mask of the encoded luminance is added to every channel. Camera Raw's
+//! holds back halos at strong edges rather than clipping them: the high-pass `d` is shaped as
 //! `d / (1 + (|d| / halo)³)`, dark halos at 0.57 of light ones. Detail mostly scales
 //! the strength (0.3× at 0, 2.1× at 100 against the default 25) and Masking leaves out
 //! the weakest detail. Radius maps to a slightly different blur than its value.
-use crate::model::operators::SharpeningModel;
 use crate::model::recipe::Recipe;
 
 /// Radius: the slider's values, the Gaussian sigma and a strength factor.
@@ -26,9 +24,6 @@ const MASKING_THRESHOLD: [f32; 5] = [0., 0.012, 0.09, 0.138, 0.2];
 const MEASURED_GAIN: f32 = 4.872;
 const MEASURED_HALO: f32 = 0.0863;
 const MEASURED_DARK: f32 = 0.574;
-/// The original operator's strength per Amount and its clip.
-const ORIGINAL_GAIN: f32 = 2.;
-const ORIGINAL_CLIP: f32 = 0.08;
 
 fn interpolate(x: f32, xs: &[f32], ys: &[f32]) -> f32 {
     let i = xs.partition_point(|v| *v <= x).clamp(1, xs.len() - 1);
@@ -45,30 +40,21 @@ pub(crate) struct Sharpener {
     pub(crate) gain: f32,
     /// High-pass below which sharpening fades out (0: none).
     pub(crate) threshold: f32,
-    /// The halo shaping's scale; 0 for the original operator, which clips instead.
+    /// The halo shaping's scale.
     pub(crate) halo: f32,
     /// Strength of dark halos relative to light ones.
     pub(crate) dark: f32,
 }
 impl Sharpener {
     pub(crate) fn new(r: &Recipe) -> Self {
-        match r.sharpening_model {
-            SharpeningModel::Original => Self {
-                sigma: r.sharpening_radius,
-                gain: ORIGINAL_GAIN,
-                threshold: r.sharpening_masking * 0.03 * (1. - r.sharpening_detail * 0.8),
-                halo: 0.,
-                dark: 1.,
-            },
-            SharpeningModel::Measured => Self {
-                sigma: interpolate(r.sharpening_radius, &RADIUS, &RADIUS_SIGMA),
-                gain: MEASURED_GAIN
-                    * interpolate(r.sharpening_radius, &RADIUS, &RADIUS_GAIN)
-                    * interpolate(r.sharpening_detail, &DETAIL, &DETAIL_GAIN),
-                threshold: interpolate(r.sharpening_masking, &DETAIL, &MASKING_THRESHOLD),
-                halo: MEASURED_HALO * interpolate(r.sharpening_detail, &DETAIL, &DETAIL_HALO),
-                dark: MEASURED_DARK,
-            },
+        Self {
+            sigma: interpolate(r.sharpening_radius, &RADIUS, &RADIUS_SIGMA),
+            gain: MEASURED_GAIN
+                * interpolate(r.sharpening_radius, &RADIUS, &RADIUS_GAIN)
+                * interpolate(r.sharpening_detail, &DETAIL, &DETAIL_GAIN),
+            threshold: interpolate(r.sharpening_masking, &DETAIL, &MASKING_THRESHOLD),
+            halo: MEASURED_HALO * interpolate(r.sharpening_detail, &DETAIL, &DETAIL_HALO),
+            dark: MEASURED_DARK,
         }
     }
     /// The luminance change for high-pass `d` (luminance minus its blur) at `amount`
@@ -83,9 +69,6 @@ impl Sharpener {
             (d.abs() / self.threshold).clamp(0., 1.)
         };
         let k = amount * self.gain * mask;
-        if self.halo == 0. {
-            return (d * k).clamp(-ORIGINAL_CLIP, ORIGINAL_CLIP);
-        }
         let shaped = d / (1. + (d.abs() / self.halo).powi(3));
         k * if shaped < 0. {
             shaped * self.dark
@@ -101,27 +84,12 @@ mod tests {
 
     fn measured(amount: f32) -> Recipe {
         Recipe {
-            sharpening_model: SharpeningModel::Measured,
             sharpening: amount / 150.,
             sharpening_radius: 1.,
             sharpening_detail: 0.25,
             sharpening_masking: 0.,
             ..Recipe::default()
         }
-    }
-
-    /// Fine detail gains about 2.4 times what the original operator gave it at the same
-    /// Amount; strong edges are held back by the halo shaping instead.
-    #[test]
-    fn measured_strength_at_lightroom_defaults() {
-        let r = measured(40.);
-        let k = Sharpener::new(&r).gain * r.sharpening;
-        let original = Sharpener::new(&Recipe {
-            sharpening_model: SharpeningModel::Original,
-            ..r.clone()
-        });
-        let ratio = k / (original.gain * r.sharpening);
-        assert!((2.3..2.6).contains(&ratio), "{ratio}");
     }
 
     #[test]
@@ -132,7 +100,7 @@ mod tests {
         let large = s.delta(0.3, a) / 0.3;
         assert!(large < small * 0.1, "{small} {large}");
         assert!((s.delta(-0.01, a) / s.delta(0.01, a) + MEASURED_DARK).abs() < 1e-6);
-        // Negative local Sharpness blurs in both models.
+        // Negative local Sharpness blurs.
         assert_eq!(s.delta(0.1, -0.5), -0.05);
     }
 
@@ -152,33 +120,5 @@ mod tests {
         });
         assert_eq!(masked.delta(0., 0.5), 0.);
         assert!(masked.delta(0.02, 0.5) < Sharpener::new(&measured(80.)).delta(0.02, 0.5));
-    }
-
-    #[test]
-    fn new_edits_start_at_lightroom_defaults_and_old_recipes_keep_theirs() {
-        let m = crate::camera_data::Metadata::default();
-        let new = Recipe::with_profiles(&m, &[]);
-        assert_eq!(new.sharpening_model, SharpeningModel::Measured);
-        assert_eq!(
-            [
-                (new.sharpening * 150.).round(),
-                new.sharpening_radius,
-                new.sharpening_detail,
-                new.sharpening_masking
-            ],
-            [40., 1., 0.25, 0.]
-        );
-        let mut json = serde_json::to_value(Recipe::default()).unwrap();
-        json.as_object_mut().unwrap().remove("sharpening_model");
-        let old: Recipe = serde_json::from_value(json).unwrap();
-        assert_eq!(old.sharpening_model, SharpeningModel::Original);
-        assert!(
-            serde_json::to_value(&old)
-                .unwrap()
-                .get("sharpening_model")
-                .is_none()
-        );
-        let back: Recipe = serde_json::from_value(serde_json::to_value(&new).unwrap()).unwrap();
-        assert_eq!(back.sharpening_model, SharpeningModel::Measured);
     }
 }

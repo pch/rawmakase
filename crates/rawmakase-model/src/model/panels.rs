@@ -116,12 +116,8 @@ impl Panel {
                 r.sharpening_radius = defaults.sharpening_radius;
                 r.sharpening_detail = defaults.sharpening_detail;
                 r.sharpening_masking = defaults.sharpening_masking;
-                // Renders nothing at Amount 0; Detail's reset sets the measured one.
-                r.sharpening_model = defaults.sharpening_model;
                 r.noise_luma = 0.;
                 r.noise_chroma = 0.;
-                // Renders nothing at Amount 0; Detail's reset sets the measured one.
-                r.noise_model = defaults.noise_model;
                 e.luma_detail = d.luma_detail;
                 e.luma_contrast = d.luma_contrast;
                 e.chroma_detail = d.chroma_detail;
@@ -140,28 +136,18 @@ impl Panel {
                 e.defringe_ranges = d.defringe_ranges;
                 e.lens_vignette = 0.;
                 e.lens_vignette_midpoint = d.lens_vignette_midpoint;
-                // Renders nothing at Amount 0; a first Vignetting edit sets it.
-                r.lens_vignette_model = defaults.lens_vignette_model;
             }
             Panel::Transform => {
                 r.transform = defaults.transform;
                 r.upright = defaults.upright.clone();
                 r.constrain_crop = defaults.constrain_crop;
             }
-            Panel::Effects => {
-                e.reset_post_crop();
-                // Renders nothing at Amount 0; a first Grain edit sets it.
-                r.grain_model = defaults.grain_model;
-            }
+            Panel::Effects => e.reset_post_crop(),
             Panel::Calibration => {
                 e.calibration = d.calibration;
                 e.shadow_tint = d.shadow_tint;
             }
-            Panel::SpotRemoval => {
-                r.retouch.clear();
-                // Renders nothing without spots; the first spot sets it.
-                r.retouch_model = defaults.retouch_model;
-            }
+            Panel::SpotRemoval => r.retouch.clear(),
             Panel::RedEye => r.red_eye.clear(),
             Panel::Masks => r.masks.clear(),
         }
@@ -233,17 +219,12 @@ mod tests {
         after.lens_profile = !before.lens_profile;
         after.lens_builtin = !before.lens_builtin;
         assert!(Panel::LensCorrections.holds_change(&before, &after));
-        // A first manual Vignetting on an old recipe also sets the measured operator.
         let mut after = before.clone();
         after.effects.lens_vignette = -0.4;
-        after.adopt_measured_vignette(0.);
         assert!(Panel::LensCorrections.holds_change(&before, &after));
-        // A first Grain on an old recipe also sets the measured grain.
         let mut after = before.clone();
         after.effects.grain = 0.4;
-        after.adopt_measured_grain(0.);
         assert!(Panel::Effects.holds_change(&before, &after));
-        // A first spot also sets the measured feather.
         let mut after = before.clone();
         after.add_retouch(crate::model::retouch::RetouchOp {
             mode: crate::model::retouch::RetouchMode::Clone,
@@ -256,11 +237,11 @@ mod tests {
             offset: [0.2, 0.],
         });
         assert!(Panel::SpotRemoval.holds_change(&before, &after));
-        // Detail's reset on an old recipe also sets the measured sharpening.
+        // Detail's reset sets the default sharpening.
         let mut before = before;
         before.sharpening = 0.35;
         let mut after = before.clone();
-        after.set_sharpening_defaults(crate::model::operators::SharpeningModel::Measured);
+        after.set_sharpening_defaults();
         assert!(Panel::Detail.holds_change(&before, &after));
     }
 }

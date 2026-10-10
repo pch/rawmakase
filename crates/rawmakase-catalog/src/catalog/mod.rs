@@ -24,6 +24,7 @@ mod develop_history;
 mod edit_records;
 mod edit_rows;
 mod edits;
+mod format_upgrade;
 mod info;
 mod ingest;
 pub mod legacy_sidecar;
@@ -364,6 +365,8 @@ mod boundary_tests;
 mod descriptive_tests;
 #[cfg(test)]
 mod edit_rows_tests;
+#[cfg(test)]
+mod format_upgrade_tests;
 #[cfg(test)]
 mod locations_tests;
 #[cfg(test)]

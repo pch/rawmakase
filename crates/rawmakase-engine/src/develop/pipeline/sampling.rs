@@ -1,32 +1,31 @@
-//! Sampling the camera image: the source with its local-tone gain, previews and footprint sampling.
+//! Sampling the camera image: the source, previews and footprint sampling.
 use super::*;
 
-/// Camera pixels as the pipeline samples them: the image, times the per-pixel local-tone
-/// gain when Clarity, Texture or (before engine 4) Shadows and Highlights are active.
+/// Camera pixels as the pipeline samples them, with the copies the photo is measured on.
 #[derive(Clone, Copy)]
 pub(crate) struct Source<'a> {
     pub(super) image: &'a CameraImage,
-    pub(super) gain: Option<&'a [f32]>,
-    /// These pixels reduced for the Shadows/Highlights map, when already made.
-    pub(crate) reduced: Option<&'a CameraImage>,
     /// The image before the measured Texture, which the photo's measures leave out.
     pub(crate) untextured: Option<&'a CameraImage>,
+    /// The photo's measurement copy (see [`Toned::measured`]).
+    pub(crate) measured: Option<&'a std::sync::Arc<CameraImage>>,
+    /// Its copy without retouching (see [`Toned::unretouched`]).
+    pub(crate) unretouched: Option<&'a std::sync::Arc<CameraImage>>,
+    /// Where the measures of that copy are kept (see [`Toned::measures`]).
+    pub(crate) measures: Option<&'a crate::develop::stage_cache::MeasuresCache>,
 }
 impl<'a> Source<'a> {
-    pub(crate) fn new(image: &'a CameraImage, gain: Option<&'a [f32]>) -> Self {
+    pub(crate) fn new(image: &'a CameraImage) -> Self {
         Self {
             image,
-            gain,
-            reduced: None,
             untextured: None,
+            measured: None,
+            unretouched: None,
+            measures: None,
         }
     }
     pub(super) fn px(&self, i: usize) -> [f32; 3] {
-        let p = self.image.pixels[i];
-        match self.gain {
-            Some(gain) => p.map(|v| v * gain[i]),
-            None => p,
-        }
+        self.image.pixels[i]
     }
 }
 impl std::ops::Deref for Source<'_> {
@@ -37,29 +36,35 @@ impl std::ops::Deref for Source<'_> {
 }
 impl<'a> From<&'a CameraImage> for Source<'a> {
     fn from(image: &'a CameraImage) -> Self {
-        Self::new(image, None)
+        Self::new(image)
     }
 }
-/// A camera image and its local-tone gain, as the pixel stages take them.
+/// A camera image and its copies, as the pixel stages take them.
 pub(crate) struct Toned {
     pub(crate) image: std::sync::Arc<CameraImage>,
     /// The image's size relative to the full-resolution photo.
     pub(crate) scale: f32,
-    pub(crate) gain: Option<std::sync::Arc<Vec<f32>>>,
-    /// What the gain was computed from, when it came from the stage cache.
-    pub(crate) gain_key: Option<crate::develop::stage_cache::LocalKey>,
-    /// The toned image reduced for the Shadows/Highlights map, kept in the stage cache
-    /// so edits do not reduce the full-resolution image again.
-    pub(crate) reduced: Option<std::sync::Arc<CameraImage>>,
     /// `image` before the measured Texture, when it has it.
     pub(crate) untextured: Option<std::sync::Arc<CameraImage>>,
+    /// The full-resolution photo (recovered and retouched, without Texture and Clarity)
+    /// reduced for measuring it, whatever resolution `image` has, so Fit previews,
+    /// regions and exports measure the same pixels.
+    pub(crate) measured: Option<std::sync::Arc<CameraImage>>,
+    /// `measured` without red eye corrections and spot removal (the same copy without
+    /// them), for the photo's darkest level (`PhotoMeasures::dark`).
+    pub(crate) unretouched: Option<std::sync::Arc<CameraImage>>,
+    /// The stage cache's measures of `measured`, so slider edits that do not change
+    /// them reuse them; without it each render measures the photo.
+    pub(crate) measures: Option<std::sync::Arc<crate::develop::stage_cache::MeasuresCache>>,
 }
 impl Toned {
     pub(crate) fn source(&self) -> Source<'_> {
         Source {
-            reduced: self.reduced.as_deref(),
             untextured: self.untextured.as_deref(),
-            ..Source::new(&self.image, self.gain.as_deref().map(Vec::as_slice))
+            measured: self.measured.as_ref(),
+            unretouched: self.unretouched.as_ref(),
+            measures: self.measures.as_deref(),
+            ..Source::new(&self.image)
         }
     }
 }
@@ -87,11 +92,7 @@ pub fn preview(im: &CameraImage, max: u32) -> CameraImage {
 }
 pub(crate) fn preview_source(im: Source, max: u32) -> CameraImage {
     if im.width.max(im.height) <= max {
-        let mut out = im.image.clone();
-        if im.gain.is_some() {
-            out.pixels = (0..out.pixels.len()).map(|i| im.px(i)).collect();
-        }
-        return out;
+        return im.image.clone();
     }
     let scale = max as f32 / im.width.max(im.height) as f32;
     let w = (im.width as f32 * scale).round() as u32;
@@ -152,8 +153,8 @@ pub(crate) fn footprint_spread(footprint: f32) -> f32 {
 }
 pub(super) fn detail_sample(im: Source, x: f32, y: f32, r: &Recipe) -> [f32; 3] {
     let p = sample(im, x, y);
-    let noise_chroma = r.sampled_noise_chroma();
-    if r.noise_luma == 0. && noise_chroma == 0. {
+    // Color noise reduction runs on the camera image (`color_noise`), Luminance here.
+    if r.noise_luma == 0. {
         return p;
     }
     let center = (p[0] + 2. * p[1] + p[2]) / 4.;
@@ -177,7 +178,6 @@ pub(super) fn detail_sample(im: Source, x: f32, y: f32, r: &Recipe) -> [f32; 3] 
     std::array::from_fn(|c| {
         center
             + (avgl - center) * r.noise_luma * (1. - r.effects.luma_contrast * 0.5)
-            + (p[c] - center) * (1. - noise_chroma)
-            + (avg[c] - avgl) * noise_chroma * (0.5 + r.effects.chroma_smoothness)
+            + (p[c] - center)
     })
 }

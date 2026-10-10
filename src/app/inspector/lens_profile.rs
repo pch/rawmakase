@@ -12,7 +12,7 @@ pub(super) fn profile_menus(ui: &mut egui::Ui, r: &mut Recipe, m: Option<&Metada
     let Some(m) = m.filter(|m| !m.lens_profiles.all().is_empty()) else {
         // Setup stays, so an edit naming a profile that isn't imported can go back to
         // Default or Auto.
-        ui.add_enabled_ui(r.lens_profile && r.engine >= 4, |ui| setup_row(ui, r, None));
+        ui.add_enabled_ui(r.lens_profile, |ui| setup_row(ui, r, None));
         let builtin = m.and_then(|m| m.lens.as_ref());
         control_row(ui, "Profile", |ui| {
             muted(
@@ -31,7 +31,7 @@ pub(super) fn profile_menus(ui: &mut egui::Ui, r: &mut Recipe, m: Option<&Metada
         .or(r.lens_profile_choice.id.as_ref().filter(|id| id.embedded))
         .map(|id| id.label().to_string());
     let menus = ProfileMenus::new(&m.lens_profiles, m);
-    let enabled = r.lens_profile && r.engine >= 4;
+    let enabled = r.lens_profile;
     ui.add_enabled_ui(enabled, |ui| {
         setup_row(ui, r, in_use.as_deref());
         let (make, model, name) = match (&in_use, &named) {

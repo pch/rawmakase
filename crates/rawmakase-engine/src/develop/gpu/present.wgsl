@@ -15,9 +15,8 @@ struct Params {
     // `effects::PostCropVignette`; a zero amount has no vignette.
     grain_seed: u32, vignette: f32, vignette_style: u32, vignette_highlights: f32,
     vignette_scale_x: f32, vignette_scale_y: f32, vignette_power: f32, vignette_midpoint: f32,
-    vignette_feather: f32, lens_vignette: f32, lens_vignette_midpoint: f32, effects: u32,
-    count: u32, halo: f32, dark: f32, pad2: u32,
-    grain_fine: f32, grain_measured: u32, pad3: u32, pad4: u32,
+    vignette_feather: f32, effects: u32, count: u32, halo: f32,
+    dark: f32, grain_fine: f32, pad3: u32, pad4: u32,
 };
 @group(0) @binding(0) var<storage, read_write> pixels: array<f32>;
 @group(0) @binding(1) var<storage, read_write> scratch: array<f32>;
@@ -44,13 +43,11 @@ fn blur_horizontal(@builtin(global_invocation_id) id: vec3<u32>) {
     scratch[id.y * p.width + id.x] = value;
 }
 // `sharpening::Sharpener::delta` for a non-negative `amount` (strength already
-// applied): the original operator clips at 0.08 (halo 0); the measured one shapes the
-// high-pass, dark halos at `dark` of light ones.
+// applied): the high-pass shaped, dark halos at `dark` of light ones.
 fn sharpen_delta(d: f32, amount: f32, threshold: f32, halo: f32, dark: f32) -> f32 {
     var mask = 1.0;
     if threshold != 0.0 { mask = clamp(abs(d) / threshold, 0.0, 1.0); }
     let k = amount * mask;
-    if halo == 0.0 { return clamp(d * k, -0.08, 0.08); }
     let r = abs(d) / halo;
     let shaped = d / (1.0 + r * r * r);
     return k * select(shaped, shaped * dark, shaped < 0.0);
@@ -96,7 +93,7 @@ fn grain_noise(x: f32, y: f32, size: f32, seed: u32) -> f32 {
     let m = hash(ix, iy + 1, seed) * (1.0 - a) + hash(ix + 1, iy + 1, seed) * a;
     return n * (1.0 - b) + m * b;
 }
-// `grain::GrainField::strength` of the measured grain: by encoded luminance.
+// `grain::GrainField::strength`: by encoded luminance.
 const GRAIN_L = array<f32, 9>(0.0, 0.023, 0.156, 0.41, 0.62, 0.8, 0.91, 0.964, 1.0);
 const GRAIN_GAIN = array<f32, 9>(0.0, 0.5, 1.14, 1.08, 1.0, 0.94, 0.86, 0.61, 0.3);
 fn grain_strength(l: f32) -> f32 {
@@ -219,12 +216,6 @@ fn spatial(color: vec3<f32>, x: u32, y: u32) -> vec3<f32> {
     if p.vignette != 0.0 {
         c = vignette(c, vignette_mask(nx, ny));
     }
-    let lens = clamp(
-        max(nx * nx + ny * ny - p.lens_vignette_midpoint, 0.0) / (2.0 - p.lens_vignette_midpoint),
-        0.0,
-        1.0,
-    );
-    let gain = exp2(-p.lens_vignette * lens * 2.0);
     var gx = f32(x);
     var gy = f32(y);
     if p.scale != 1.0 {
@@ -233,18 +224,15 @@ fn spatial(color: vec3<f32>, x: u32, y: u32) -> vec3<f32> {
     }
     var noise = 0.0;
     if p.grain != 0.0 {
-        var averaged = min(p.grain_cell * p.scale, 1.0);
-        var strength = grain_strength(l);
-        if p.grain_measured == 0u {
-            averaged /= min(p.grain_cell, 1.0);
-            strength = 0.13 * max(4.0 * l * (1.0 - l), 0.2);
-        }
+        // Grain below a pixel wide averages away within the pixel.
+        let averaged = min(p.grain_cell * p.scale, 1.0);
+        let strength = grain_strength(l);
         let coarse = grain_noise(gx, gy, p.grain_cell, p.grain_seed) * averaged;
         let fine = hash(i32(round_away(gx)), i32(round_away(gy)), p.grain_seed ^ 0x21f09u)
             * min(p.scale, 1.0);
         noise = (coarse * p.grain_coarse + fine * p.grain_fine) * p.grain * strength;
     }
-    return clamp(c * gain + vec3(noise), vec3(0.0), vec3(1.0));
+    return clamp(c + vec3(noise), vec3(0.0), vec3(1.0));
 }
 // The monitor profile as a lattice over 8-bit input, `lut_size` points per axis at
 // equal byte steps, interpolated trilinearly.

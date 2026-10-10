@@ -51,8 +51,14 @@ pub(super) struct NativeMetadata {
     pub(super) highlight_tone_priority: i32,
     pub(super) fuji_exposure_shift: f32,
     pub(super) sony_daylight_wb: [f32; 3],
+    pub(super) left_margin: u32,
+    pub(super) top_margin: u32,
+    pub(super) aspect_left: u32,
+    pub(super) aspect_top: u32,
+    pub(super) aspect_width: u32,
+    pub(super) aspect_height: u32,
 }
-const _: () = assert!(std::mem::size_of::<NativeMetadata>() == 436);
+const _: () = assert!(std::mem::size_of::<NativeMetadata>() == 460);
 
 /// Size of the error buffers `native/raw.cpp`'s `message` writes into.
 const ERR: usize = 512;

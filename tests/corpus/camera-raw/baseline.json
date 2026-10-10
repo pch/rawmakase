@@ -3,1488 +3,1488 @@
   "charts": {
     "synthetic-a": {
       "default": [
-        0.77,
-        2.045
+        0.261,
+        0.707
       ],
       "temperature-12000": [
-        1.933,
-        3.912
+        2.546,
+        5.243
       ],
       "temperature-2500": [
-        1.684,
-        3.403
+        1.707,
+        2.756
       ],
       "temperature-3200": [
-        0.697,
-        1.842
+        0.224,
+        0.719
       ],
       "temperature-5000": [
-        0.687,
-        1.557
+        0.618,
+        1.936
       ],
       "temperature-8000": [
-        0.894,
-        2.228
+        0.829,
+        2.559
       ]
     },
     "synthetic-d50": {
       "default": [
-        0.661,
-        1.697
+        0.281,
+        0.787
       ]
     },
     "synthetic-d65": {
       "amount-contrast-200": [
-        0.785,
-        1.55
+        0.543,
+        1.383
       ],
       "amount-contrast-50": [
-        0.622,
-        1.565
+        0.336,
+        0.861
       ],
       "amount-curve-200": [
-        0.857,
-        2.55
+        0.762,
+        2.673
       ],
       "amount-curve-50": [
-        0.651,
-        1.503
+        0.359,
+        1.079
       ],
       "amount-look-0": [
-        0.658,
-        1.737
+        0.275,
+        0.874
       ],
       "amount-look-100": [
-        2.066,
-        3.753
+        1.579,
+        3.059
       ],
       "amount-look-150": [
-        2.915,
-        6.236
+        2.219,
+        4.776
       ],
       "amount-look-200": [
-        3.523,
-        8.282
+        2.636,
+        6.304
       ],
       "amount-look-50": [
-        1.104,
-        2.186
+        0.876,
+        1.674
       ],
       "amount-mono-0": [
-        0.514,
-        1.236
+        0.305,
+        1.321
       ],
       "amount-mono-100": [
-        1.352,
-        6.568
+        1.194,
+        6.131
       ],
       "amount-mono-200": [
-        2.497,
-        11.277
+        2.342,
+        10.574
       ],
       "amount-mono-50": [
-        0.859,
-        3.774
+        0.694,
+        3.357
       ],
       "amount-table-200": [
-        0.692,
-        1.979
+        0.169,
+        0.613
       ],
       "amount-table-50": [
-        0.642,
-        1.66
+        0.237,
+        0.7
       ],
       "amount-table-v1-200": [
-        0.647,
-        1.724
+        0.207,
+        0.681
       ],
       "amount-table-v1-50": [
-        0.647,
-        1.724
+        0.207,
+        0.681
       ],
       "amount-tones-200": [
-        1.642,
-        3.402
+        2.468,
+        4.432
       ],
       "amount-tones-50": [
-        0.528,
-        1.139
+        0.828,
+        1.599
       ],
       "blacks+100": [
-        1.652,
-        3.224
+        1.642,
+        3.279
       ],
       "blacks+50": [
-        0.864,
-        1.567
+        0.699,
+        1.397
       ],
       "blacks-100": [
-        1.078,
-        2.665
+        0.381,
+        1.144
       ],
       "blacks-50": [
-        0.747,
-        1.818
+        0.343,
+        0.96
       ],
       "bw-blue-60": [
-        0.77,
-        3.149
+        0.564,
+        2.351
       ],
       "bw-green+60": [
-        0.507,
-        1.247
+        0.322,
+        1.386
       ],
       "bw-mix-auto": [
-        1.751,
-        8.152
+        1.737,
+        8.598
       ],
       "bw-mix-zero": [
-        0.513,
-        1.247
+        0.306,
+        1.315
       ],
       "bw-orange+100": [
-        0.612,
-        1.82
+        0.395,
+        1.776
       ],
       "bw-purple+60": [
-        0.604,
-        1.644
-      ],
-      "bw-red+60": [
-        0.532,
-        1.452
-      ],
-      "bw-yellow-60": [
-        0.824,
-        2.821
-      ],
-      "calibration-blue-hue-50": [
-        0.639,
-        1.42
-      ],
-      "calibration-blue-saturation+50": [
-        0.677,
-        1.629
-      ],
-      "calibration-green-hue-50": [
-        0.639,
-        1.426
-      ],
-      "calibration-green-saturation+50": [
-        0.655,
-        1.45
-      ],
-      "calibration-red-hue+50": [
-        0.625,
-        1.374
-      ],
-      "calibration-red-hue-100": [
-        0.624,
-        1.485
-      ],
-      "calibration-red-saturation+50": [
-        0.664,
-        1.544
-      ],
-      "calibration-shadow-tint+30": [
-        0.71,
-        1.703
-      ],
-      "calibration-shadow-tint-60": [
-        0.911,
-        1.775
-      ],
-      "clarity+100": [
-        5.673,
-        10.67
-      ],
-      "clarity+50": [
-        3.21,
-        6.208
-      ],
-      "clarity-100": [
-        2.427,
-        4.339
-      ],
-      "clarity-50": [
-        1.534,
-        2.657
-      ],
-      "contrast+100": [
-        0.836,
-        2.063
-      ],
-      "contrast+50": [
-        0.716,
-        1.416
-      ],
-      "contrast-100": [
-        1.085,
-        2.68
-      ],
-      "contrast-50": [
-        0.781,
-        2.14
-      ],
-      "curve-green-blue": [
-        0.803,
-        2.299
-      ],
-      "curve-lift-refine-saturation-0": [
-        0.607,
-        1.685
-      ],
-      "curve-red": [
-        0.738,
-        2.067
-      ],
-      "curve-s": [
-        0.656,
-        1.512
-      ],
-      "curve-s-red": [
-        0.724,
-        1.634
-      ],
-      "curve-s-refine-saturation-0": [
-        0.718,
-        1.689
-      ],
-      "curve-s-refine-saturation-50": [
-        0.688,
-        1.592
-      ],
-      "default": [
-        0.658,
-        1.743
-      ],
-      "dehaze+100": [
-        3.983,
-        11.06
-      ],
-      "dehaze+50": [
-        2.133,
-        6.559
-      ],
-      "dehaze-100": [
-        5.993,
-        16.3
-      ],
-      "dehaze-50": [
-        2.958,
-        6.687
-      ],
-      "exposure+1.00": [
-        1.676,
-        4.1
-      ],
-      "exposure+2.00": [
-        2.294,
-        6.639
-      ],
-      "exposure+3.00": [
-        2.856,
-        8.137
-      ],
-      "exposure-1.00": [
-        0.515,
-        1.039
-      ],
-      "exposure-2.00": [
-        0.522,
-        1.091
-      ],
-      "grading-balance-50": [
-        1.341,
-        2.773
-      ],
-      "grading-blending-100": [
-        1.077,
-        2.71
-      ],
-      "grading-global-h210": [
-        0.755,
-        2.235
-      ],
-      "grading-global-h30": [
-        0.748,
-        2.019
-      ],
-      "grading-global-lum+50": [
-        0.618,
-        1.589
-      ],
-      "grading-global-lum-50": [
-        0.708,
-        1.93
-      ],
-      "grading-highlight-lum+50": [
-        0.558,
-        1.29
-      ],
-      "grading-highlight-lum-50": [
-        0.69,
-        1.811
-      ],
-      "grading-highlights-h210": [
-        0.838,
-        2.86
-      ],
-      "grading-highlights-h210-s100": [
-        1.427,
-        3.849
-      ],
-      "grading-highlights-h30": [
-        0.908,
-        2.812
-      ],
-      "grading-midtone-lum+50": [
-        0.669,
-        1.751
-      ],
-      "grading-midtone-lum-50": [
-        0.665,
-        1.704
-      ],
-      "grading-midtones-h210": [
-        0.683,
-        1.758
-      ],
-      "grading-midtones-h30": [
-        0.66,
-        1.702
-      ],
-      "grading-shadow-lum+50": [
-        0.719,
-        1.87
-      ],
-      "grading-shadow-lum-50": [
-        0.652,
-        1.762
-      ],
-      "grading-shadows-h210": [
-        0.709,
-        1.728
-      ],
-      "grading-shadows-h30": [
-        0.753,
+        0.414,
         1.712
       ],
-      "grading-shadows-h30-s100": [
-        1.015,
-        2.13
+      "bw-red+60": [
+        0.315,
+        1.381
       ],
-      "grain-50": [
-        0.872,
-        1.909
+      "bw-yellow-60": [
+        0.635,
+        2.9
       ],
-      "highlights+100": [
-        8.655,
-        15.109
+      "calibration-blue-hue-50": [
+        0.322,
+        0.828
       ],
-      "highlights+60": [
-        5.892,
-        10.069
+      "calibration-blue-saturation+50": [
+        0.423,
+        1.132
       ],
-      "highlights-100": [
-        12.968,
-        19.992
+      "calibration-green-hue-50": [
+        0.312,
+        0.829
       ],
-      "highlights-60": [
-        7.275,
-        11.452
+      "calibration-green-saturation+50": [
+        0.372,
+        0.884
       ],
-      "hue-aqua+100": [
-        0.669,
-        1.749
+      "calibration-red-hue+50": [
+        0.315,
+        0.779
       ],
-      "hue-aqua+50": [
-        0.669,
-        1.743
+      "calibration-red-hue-100": [
+        0.314,
+        0.726
       ],
-      "hue-aqua-100": [
-        0.671,
-        1.731
+      "calibration-red-saturation+50": [
+        0.43,
+        1.131
       ],
-      "hue-aqua-50": [
-        0.709,
-        1.812
+      "calibration-shadow-tint+30": [
+        0.369,
+        0.951
       ],
-      "hue-blue+100": [
-        0.694,
-        1.79
+      "calibration-shadow-tint-60": [
+        0.648,
+        1.326
       ],
-      "hue-blue+50": [
-        0.727,
-        1.89
+      "clarity+100": [
+        3.979,
+        10.352
       ],
-      "hue-blue-100": [
-        0.774,
-        1.965
+      "clarity+50": [
+        2.236,
+        5.898
       ],
-      "hue-blue-50": [
-        0.791,
-        2.024
+      "clarity-100": [
+        0.902,
+        2.498
       ],
-      "hue-green+100": [
-        0.677,
-        1.684
+      "clarity-50": [
+        0.59,
+        1.593
       ],
-      "hue-green+50": [
-        0.731,
-        1.94
-      ],
-      "hue-green-100": [
-        0.667,
-        1.743
-      ],
-      "hue-green-50": [
-        0.667,
-        1.652
-      ],
-      "hue-magenta+100": [
-        0.658,
-        1.74
-      ],
-      "hue-magenta+50": [
-        0.658,
+      "contrast+100": [
+        0.612,
         1.654
       ],
-      "hue-magenta-100": [
-        0.664,
-        1.749
+      "contrast+50": [
+        0.416,
+        1.025
       ],
-      "hue-magenta-50": [
-        0.692,
-        1.749
+      "contrast-100": [
+        0.574,
+        1.097
       ],
-      "hue-orange+100": [
-        0.714,
-        1.79
+      "contrast-50": [
+        0.378,
+        0.925
       ],
-      "hue-orange+50": [
-        0.668,
-        1.753
+      "curve-green-blue": [
+        0.335,
+        0.997
       ],
-      "hue-orange-100": [
-        0.73,
-        1.79
+      "curve-lift-refine-saturation-0": [
+        0.426,
+        1.913
       ],
-      "hue-orange-50": [
-        0.724,
-        1.875
+      "curve-red": [
+        0.272,
+        0.813
       ],
-      "hue-purple+100": [
-        0.699,
-        1.792
+      "curve-s": [
+        0.41,
+        1.272
       ],
-      "hue-purple+50": [
-        0.702,
-        1.794
+      "curve-s-red": [
+        0.428,
+        1.379
       ],
-      "hue-purple-100": [
-        0.713,
-        1.743
+      "curve-s-refine-saturation-0": [
+        0.459,
+        1.538
       ],
-      "hue-purple-50": [
-        0.71,
-        1.782
+      "curve-s-refine-saturation-50": [
+        0.431,
+        1.409
       ],
-      "hue-red+100": [
-        0.702,
-        1.782
+      "default": [
+        0.274,
+        0.882
       ],
-      "hue-red+50": [
-        0.697,
-        1.782
+      "dehaze+100": [
+        5.873,
+        17.123
       ],
-      "hue-red-100": [
-        0.689,
-        1.788
+      "dehaze+50": [
+        2.567,
+        5.505
       ],
-      "hue-red-50": [
-        0.685,
-        1.819
+      "dehaze-100": [
+        7.419,
+        18.329
       ],
-      "hue-yellow+100": [
-        0.724,
-        1.785
+      "dehaze-50": [
+        3.613,
+        8.098
       ],
-      "hue-yellow+50": [
-        0.694,
-        1.749
+      "exposure+1.00": [
+        0.318,
+        1.19
       ],
-      "hue-yellow-100": [
-        0.709,
-        1.749
+      "exposure+2.00": [
+        0.31,
+        1.42
       ],
-      "hue-yellow-50": [
-        0.675,
-        1.743
+      "exposure+3.00": [
+        0.2,
+        0.855
       ],
-      "lens-manual-distortion+50": [
-        1.267,
-        2.983
+      "exposure-1.00": [
+        0.294,
+        1.005
       ],
-      "lens-manual-distortion+50-vertical+30": [
-        1.623,
-        4.488
+      "exposure-2.00": [
+        0.262,
+        0.981
       ],
-      "lens-manual-distortion-50": [
-        1.342,
-        3.347
-      ],
-      "lens-vignetting+50": [
-        0.711,
-        1.692
-      ],
-      "lens-vignetting-50": [
-        0.618,
-        1.74
-      ],
-      "lens-vignetting-50-midpoint20": [
-        0.581,
-        1.584
-      ],
-      "look-color-100": [
-        1.137,
-        3.024
-      ],
-      "look-color-200": [
-        1.348,
-        3.579
-      ],
-      "look-color-50": [
-        0.937,
-        2.083
-      ],
-      "look-color-saturation+30": [
-        1.079,
-        2.899
-      ],
-      "look-exposure-100": [
-        1.041,
-        2.309
-      ],
-      "look-exposure-200": [
-        2.35,
-        3.735
-      ],
-      "look-exposure-50": [
-        0.855,
-        2.099
-      ],
-      "look-parametric-100": [
-        0.882,
-        2.45
-      ],
-      "look-parametric-200": [
-        1.495,
-        2.948
-      ],
-      "look-parametric-50": [
-        0.749,
-        2.089
-      ],
-      "look-parametric-darks+30": [
-        0.889,
-        2.43
-      ],
-      "look-split-100": [
-        0.888,
-        2.306
-      ],
-      "look-split-200": [
-        1.548,
-        3.346
-      ],
-      "look-split-50": [
-        0.764,
-        1.842
-      ],
-      "look-split-grading-shadows-h30": [
-        1.817,
-        3.571
-      ],
-      "look-vignette-100": [
-        0.982,
-        2.85
-      ],
-      "look-vignette-200": [
-        1.271,
-        4.126
-      ],
-      "look-vignette-50": [
-        0.777,
+      "grading-balance-50": [
+        0.846,
         1.996
       ],
-      "look-vignette-user-20": [
-        0.982,
-        2.85
+      "grading-blending-100": [
+        0.535,
+        1.285
       ],
-      "look-warm-contrast": [
-        1.951,
-        3.956
+      "grading-global-h210": [
+        0.297,
+        0.912
       ],
-      "luminance-aqua+100": [
-        0.677,
-        1.746
+      "grading-global-h30": [
+        0.3,
+        0.848
       ],
-      "luminance-aqua+50": [
-        0.672,
-        1.652
+      "grading-global-lum+50": [
+        0.273,
+        0.814
       ],
-      "luminance-aqua-100": [
-        0.719,
-        1.927
+      "grading-global-lum-50": [
+        0.276,
+        0.857
       ],
-      "luminance-aqua-50": [
-        0.757,
-        1.848
+      "grading-highlight-lum+50": [
+        0.316,
+        0.957
       ],
-      "luminance-blue+100": [
-        0.683,
-        1.89
+      "grading-highlight-lum-50": [
+        0.275,
+        0.831
       ],
-      "luminance-blue+50": [
-        0.689,
-        1.782
+      "grading-highlights-h210": [
+        0.327,
+        0.962
       ],
-      "luminance-blue-100": [
-        1.313,
-        5.742
-      ],
-      "luminance-blue-50": [
-        0.863,
-        2.044
-      ],
-      "luminance-green+100": [
-        0.68,
-        1.652
-      ],
-      "luminance-green+50": [
-        0.676,
-        1.622
-      ],
-      "luminance-green-100": [
-        0.806,
-        2.188
-      ],
-      "luminance-green-50": [
-        0.839,
-        2.186
-      ],
-      "luminance-magenta+100": [
-        0.658,
-        1.633
-      ],
-      "luminance-magenta+50": [
-        0.669,
-        1.608
-      ],
-      "luminance-magenta-100": [
-        0.702,
-        1.812
-      ],
-      "luminance-magenta-50": [
-        0.751,
-        1.909
-      ],
-      "luminance-orange+100": [
-        0.773,
-        1.95
-      ],
-      "luminance-orange+50": [
-        0.747,
-        1.875
-      ],
-      "luminance-orange-100": [
-        0.894,
-        2.632
-      ],
-      "luminance-orange-50": [
-        0.872,
-        2.277
-      ],
-      "luminance-purple+100": [
-        0.64,
-        1.557
-      ],
-      "luminance-purple+50": [
-        0.661,
-        1.557
-      ],
-      "luminance-purple-100": [
-        0.959,
-        3.151
-      ],
-      "luminance-purple-50": [
-        0.78,
-        1.944
-      ],
-      "luminance-red+100": [
+      "grading-highlights-h210-s100": [
         0.705,
-        1.794
+        1.324
       ],
-      "luminance-red+50": [
-        0.691,
-        1.749
+      "grading-highlights-h30": [
+        0.308,
+        0.916
       ],
-      "luminance-red-100": [
-        0.764,
-        1.969
+      "grading-midtone-lum+50": [
+        0.278,
+        0.832
       ],
-      "luminance-red-50": [
-        0.786,
-        2.131
+      "grading-midtone-lum-50": [
+        0.301,
+        0.923
       ],
-      "luminance-yellow+100": [
-        0.736,
-        1.773
+      "grading-midtones-h210": [
+        0.309,
+        0.905
       ],
-      "luminance-yellow+50": [
-        0.732,
-        1.753
+      "grading-midtones-h30": [
+        0.285,
+        0.824
       ],
-      "luminance-yellow-100": [
-        0.905,
-        2.337
+      "grading-shadow-lum+50": [
+        0.31,
+        0.885
       ],
-      "luminance-yellow-50": [
-        0.821,
-        1.965
+      "grading-shadow-lum-50": [
+        0.282,
+        0.873
       ],
-      "mixer-all-hue+50": [
-        0.855,
-        2.114
+      "grading-shadows-h210": [
+        0.298,
+        0.845
       ],
-      "mixer-all-luminance+50": [
-        1.139,
-        2.389
+      "grading-shadows-h30": [
+        0.359,
+        0.855
       ],
-      "mixer-all-saturation-50": [
-        1.423,
-        3.897
-      ],
-      "mixer-alternate-luminance": [
-        1.417,
-        4.527
-      ],
-      "mixer-hue-sat-lum-blue": [
-        0.915,
-        2.318
-      ],
-      "mixer-neighbours-saturation+100": [
-        0.748,
-        1.892
-      ],
-      "mixer-skin": [
-        0.834,
-        2.119
-      ],
-      "noise-color+25": [
-        0.667,
-        1.738
-      ],
-      "noise-luminance+50": [
-        0.664,
-        1.7
-      ],
-      "pair-calibration-red-hue+50-hue-red-50": [
-        0.66,
-        1.433
-      ],
-      "pair-clarity+50-contrast+50": [
-        3.405,
-        7.521
-      ],
-      "pair-contrast+100-blacks+50": [
-        1.026,
-        2.157
-      ],
-      "pair-contrast+50-blacks-50": [
-        0.787,
-        1.637
-      ],
-      "pair-contrast+50-saturation+50": [
-        1.481,
-        4.562
-      ],
-      "pair-contrast+50-whites+50": [
-        0.73,
-        2.439
-      ],
-      "pair-contrast-50-blacks-50": [
-        0.874,
-        2.234
-      ],
-      "pair-contrast-50-whites-50": [
-        1.062,
-        2.238
-      ],
-      "pair-dehaze+50-saturation-30": [
-        2.725,
-        6.933
-      ],
-      "pair-exposure+0.75-whites+100": [
+      "grading-shadows-h30-s100": [
         0.753,
-        2.587
+        1.424
       ],
-      "pair-exposure+1-hue-red+50": [
-        1.702,
-        4.1
+      "grain-50": [
+        0.594,
+        1.375
       ],
-      "pair-exposure-1-contrast+50": [
-        0.77,
-        1.623
+      "highlights+100": [
+        6.174,
+        10.335
       ],
-      "pair-exposure-1.5-whites+100": [
-        1.688,
-        4.297
+      "highlights+60": [
+        4.156,
+        6.783
       ],
-      "pair-exposure-1.5-whites+50": [
-        0.761,
-        1.734
+      "highlights-100": [
+        9.334,
+        14.333
       ],
-      "pair-grading-shadows-contrast+50": [
-        0.76,
-        1.492
+      "highlights-60": [
+        4.956,
+        7.72
       ],
-      "pair-highlights-60-whites+50": [
-        4.399,
-        7.196
+      "hue-aqua+100": [
+        0.306,
+        0.886
       ],
-      "pair-hue-orange+50-hue-yellow-50": [
-        0.701,
-        1.753
+      "hue-aqua+50": [
+        0.318,
+        0.919
       ],
-      "pair-parametric-lights+50-vibrance+50": [
-        0.821,
-        2.465
+      "hue-aqua-100": [
+        0.294,
+        0.883
       ],
-      "pair-saturation-red-50-luminance-red+50": [
-        0.799,
-        2.049
+      "hue-aqua-50": [
+        0.331,
+        1.05
       ],
-      "pair-shadows+60-blacks-50": [
-        5.307,
-        11.153
+      "hue-blue+100": [
+        0.315,
+        1.011
       ],
-      "pair-temperature-4000-saturation-blue+50": [
-        1.13,
-        2.612
+      "hue-blue+50": [
+        0.348,
+        1.204
       ],
-      "pair-vibrance+50-saturation-50": [
-        1.575,
-        4.195
+      "hue-blue-100": [
+        0.432,
+        1.415
       ],
-      "pair-whites+50-blacks-50": [
-        0.845,
-        2.454
+      "hue-blue-50": [
+        0.422,
+        1.384
       ],
-      "pair-whites-50-blacks+50": [
-        1.496,
-        2.61
+      "hue-green+100": [
+        0.301,
+        0.858
       ],
-      "parametric-all+50": [
-        0.62,
-        1.643
+      "hue-green+50": [
+        0.353,
+        1.308
       ],
-      "parametric-darks+100": [
-        0.743,
-        1.835
+      "hue-green-100": [
+        0.29,
+        0.883
       ],
-      "parametric-darks+50": [
-        0.675,
-        1.793
+      "hue-green-50": [
+        0.294,
+        0.896
       ],
-      "parametric-darks-100": [
-        0.771,
-        1.847
+      "hue-magenta+100": [
+        0.28,
+        0.888
       ],
-      "parametric-darks-50": [
-        0.691,
-        1.783
+      "hue-magenta+50": [
+        0.277,
+        0.885
       ],
-      "parametric-darks-50-lights+100": [
-        0.785,
-        2.411
+      "hue-magenta-100": [
+        0.284,
+        0.902
       ],
-      "parametric-darks-50-splits-25-65-75": [
-        0.701,
-        1.816
+      "hue-magenta-50": [
+        0.312,
+        1.112
       ],
-      "parametric-fade": [
-        1.001,
-        2.89
+      "hue-orange+100": [
+        0.331,
+        0.988
       ],
-      "parametric-highlights+100": [
-        0.538,
-        1.635
+      "hue-orange+50": [
+        0.306,
+        0.896
       ],
-      "parametric-highlights+50": [
-        0.478,
+      "hue-orange-100": [
+        0.363,
+        1.204
+      ],
+      "hue-orange-50": [
+        0.351,
+        1.246
+      ],
+      "hue-purple+100": [
+        0.322,
+        1.167
+      ],
+      "hue-purple+50": [
+        0.324,
         1.064
       ],
-      "parametric-highlights-100": [
-        1.15,
-        3.202
-      ],
-      "parametric-highlights-50": [
-        0.857,
-        2.381
-      ],
-      "parametric-highlights-50-splits-25-50-90": [
-        0.815,
-        2.488
-      ],
-      "parametric-lights+100": [
-        0.667,
-        1.944
-      ],
-      "parametric-lights+50": [
-        0.525,
-        1.358
-      ],
-      "parametric-lights+50-splits-25-35-75": [
-        0.619,
-        1.716
-      ],
-      "parametric-lights-100": [
-        1.079,
-        3.056
-      ],
-      "parametric-lights-50": [
-        0.831,
-        2.345
-      ],
-      "parametric-s-curve": [
-        0.621,
-        1.778
-      ],
-      "parametric-shadows+100": [
-        0.771,
-        1.782
-      ],
-      "parametric-shadows+50": [
-        0.68,
-        1.753
-      ],
-      "parametric-shadows+50-splits-10-50-75": [
-        0.672,
-        1.753
-      ],
-      "parametric-shadows-100": [
-        0.844,
-        2.017
-      ],
-      "parametric-shadows-50": [
-        0.661,
-        1.753
-      ],
-      "pc-blue-lum-60": [
-        0.687,
-        1.82
-      ],
-      "pc-bw-lum": [
-        0.511,
-        1.234
-      ],
-      "pc-combined": [
-        0.988,
-        2.344
-      ],
-      "pc-eight": [
-        1.047,
-        2.569
-      ],
-      "pc-green-variance+60": [
-        0.709,
-        1.79
-      ],
-      "pc-green-variance-80": [
-        0.727,
-        1.933
-      ],
-      "pc-narrow-ranges": [
-        0.76,
-        1.91
-      ],
-      "pc-neutral-swatch": [
-        0.721,
-        1.882
-      ],
-      "pc-orange-hue+50": [
-        0.735,
-        1.818
-      ],
-      "pc-orange-lum+50": [
-        0.757,
-        1.946
-      ],
-      "pc-orange-sat-80": [
-        0.737,
-        1.835
-      ],
-      "pc-overlap": [
-        0.729,
-        1.79
-      ],
-      "pc-red-wrap-hue+50": [
-        0.718,
-        1.787
-      ],
-      "pc-saturated-sat+100": [
-        0.764,
-        1.861
-      ],
-      "pc-skin-sat+60-range0": [
-        0.695,
-        1.775
-      ],
-      "pc-skin-sat+60-range100": [
-        0.771,
-        1.958
-      ],
-      "rgb-1d-100": [
-        0.755,
-        2.094
-      ],
-      "rgb-bounds-0": [
-        0.683,
-        1.932
-      ],
-      "rgb-bounds-200": [
-        0.713,
-        2.102
-      ],
-      "rgb-extend-100": [
-        0.686,
-        2.064
-      ],
-      "rgb-flag-100": [
-        0.706,
-        2.095
-      ],
-      "rgb-half-100": [
-        0.683,
-        1.932
-      ],
-      "rgb-half-200": [
-        0.706,
-        2.095
-      ],
-      "rgb-half-50": [
-        0.671,
-        1.753
-      ],
-      "rgb-linear-100": [
-        0.701,
-        2.153
-      ],
-      "rgb-look-100": [
-        0.602,
-        1.648
-      ],
-      "rgb-look-50": [
-        0.638,
-        1.596
-      ],
-      "rgb-srgb-100": [
-        0.679,
-        2.0
-      ],
-      "rgb-table-100": [
-        0.706,
-        2.095
-      ],
-      "rgb-table-200": [
-        0.69,
-        1.834
-      ],
-      "rgb-table-50": [
-        0.683,
-        1.932
-      ],
-      "rgb-table-contrast+50": [
-        0.744,
-        1.61
-      ],
-      "rgb-table-exposure+1": [
-        1.567,
-        3.736
-      ],
-      "rgb-table-grading-midtones-h30": [
-        0.7,
-        2.045
-      ],
-      "rgb-table-grading-shadows-h210": [
-        0.753,
-        2.186
-      ],
-      "rgb-table-hue-red+100": [
-        0.732,
-        1.851
-      ],
-      "rgb-table-point-curve": [
-        0.662,
-        1.58
-      ],
-      "rgb-table-saturation+50": [
-        1.534,
-        5.119
-      ],
-      "saturation+100": [
-        2.927,
-        7.744
-      ],
-      "saturation+50": [
-        1.386,
-        4.125
-      ],
-      "saturation-100": [
-        0.652,
-        1.846
-      ],
-      "saturation-50": [
-        1.209,
-        3.685
-      ],
-      "saturation-aqua+100": [
-        0.672,
-        1.751
-      ],
-      "saturation-aqua+50": [
-        0.69,
-        1.775
-      ],
-      "saturation-aqua-100": [
-        0.68,
-        1.747
-      ],
-      "saturation-aqua-50": [
-        0.66,
-        1.72
-      ],
-      "saturation-blue+100": [
-        0.732,
-        1.949
-      ],
-      "saturation-blue+50": [
-        0.72,
-        1.885
-      ],
-      "saturation-blue-100": [
-        0.711,
-        1.824
-      ],
-      "saturation-blue-50": [
-        0.673,
-        1.743
-      ],
-      "saturation-green+100": [
-        0.66,
-        1.743
-      ],
-      "saturation-green+50": [
-        0.687,
-        1.753
-      ],
-      "saturation-green-100": [
-        0.731,
-        1.875
-      ],
-      "saturation-green-50": [
-        0.706,
-        1.753
-      ],
-      "saturation-magenta+100": [
-        0.667,
-        1.748
-      ],
-      "saturation-magenta+50": [
-        0.673,
-        1.749
-      ],
-      "saturation-magenta-100": [
-        0.783,
-        1.918
-      ],
-      "saturation-magenta-50": [
-        0.713,
-        1.794
-      ],
-      "saturation-orange+100": [
-        0.732,
-        1.875
-      ],
-      "saturation-orange+50": [
-        0.733,
-        1.918
-      ],
-      "saturation-orange-100": [
-        1.023,
-        2.721
-      ],
-      "saturation-orange-50": [
-        0.917,
-        2.429
-      ],
-      "saturation-purple+100": [
-        0.718,
-        1.862
-      ],
-      "saturation-purple+50": [
-        0.711,
-        1.918
-      ],
-      "saturation-purple-100": [
-        0.715,
-        1.74
-      ],
-      "saturation-purple-50": [
-        0.664,
-        1.676
-      ],
-      "saturation-red+100": [
-        0.712,
-        1.794
-      ],
-      "saturation-red+50": [
-        0.69,
-        1.783
-      ],
-      "saturation-red-100": [
-        0.897,
-        2.683
-      ],
-      "saturation-red-50": [
-        0.757,
-        1.961
-      ],
-      "saturation-yellow+100": [
-        0.683,
-        1.787
-      ],
-      "saturation-yellow+50": [
-        0.681,
-        1.743
-      ],
-      "saturation-yellow-100": [
-        0.839,
-        2.024
-      ],
-      "saturation-yellow-50": [
-        0.77,
-        1.918
-      ],
-      "shadows+100": [
-        8.531,
-        17.037
-      ],
-      "shadows+60": [
-        5.069,
-        10.302
-      ],
-      "shadows-100": [
-        7.321,
-        12.856
-      ],
-      "shadows-60": [
-        4.583,
-        8.405
-      ],
-      "sharpening-150-radius2": [
-        0.658,
-        1.743
-      ],
-      "sharpening-40": [
-        0.658,
-        1.743
-      ],
-      "temperature-12000": [
-        1.699,
-        2.741
-      ],
-      "temperature-2500": [
-        2.794,
-        7.493
-      ],
-      "temperature-3200": [
-        1.202,
-        3.025
-      ],
-      "temperature-5000": [
-        0.677,
-        1.7
-      ],
-      "temperature-8000": [
-        0.631,
-        1.617
-      ],
-      "texture+100": [
-        1.468,
-        3.617
-      ],
-      "texture+50": [
-        1.126,
-        2.49
-      ],
-      "texture-100": [
-        1.572,
-        3.791
-      ],
-      "texture-50": [
-        1.097,
-        2.477
-      ],
-      "tint+30": [
-        0.776,
-        2.016
-      ],
-      "tint+80": [
-        1.041,
-        2.781
-      ],
-      "tint-30": [
-        0.495,
-        1.104
-      ],
-      "tint-80": [
-        1.034,
-        1.578
-      ],
-      "transform-aspect+50": [
-        1.069,
-        2.784
-      ],
-      "transform-horizontal+30": [
-        1.655,
-        4.843
-      ],
-      "transform-offset-x+10": [
-        0.842,
-        2.229
-      ],
-      "transform-rotate+5": [
-        1.065,
-        2.408
-      ],
-      "transform-scale80": [
-        0.899,
-        2.447
-      ],
-      "vibrance+100": [
-        1.002,
-        2.762
-      ],
-      "vibrance+50": [
+      "hue-purple-100": [
+        0.353,
+        1.311
+      ],
+      "hue-purple-50": [
+        0.338,
+        1.247
+      ],
+      "hue-red+100": [
+        0.314,
+        0.987
+      ],
+      "hue-red+50": [
+        0.305,
+        0.987
+      ],
+      "hue-red-100": [
+        0.316,
+        0.914
+      ],
+      "hue-red-50": [
+        0.307,
+        0.928
+      ],
+      "hue-yellow+100": [
+        0.346,
+        1.06
+      ],
+      "hue-yellow+50": [
+        0.326,
+        0.914
+      ],
+      "hue-yellow-100": [
+        0.338,
+        1.089
+      ],
+      "hue-yellow-50": [
+        0.316,
+        0.905
+      ],
+      "lens-manual-distortion+50": [
+        0.876,
+        2.623
+      ],
+      "lens-manual-distortion+50-vertical+30": [
+        1.351,
+        4.451
+      ],
+      "lens-manual-distortion-50": [
         0.998,
-        2.586
+        2.794
       ],
-      "vibrance-100": [
-        0.83,
-        1.932
+      "lens-vignetting+50": [
+        0.301,
+        0.79
       ],
-      "vibrance-50": [
-        1.345,
-        3.716
+      "lens-vignetting-50": [
+        0.307,
+        0.902
       ],
-      "vignette-color+100": [
-        0.945,
-        2.073
+      "lens-vignetting-50-midpoint20": [
+        0.3,
+        0.883
       ],
-      "vignette-color+60": [
-        0.833,
-        1.947
+      "look-color-100": [
+        0.813,
+        2.973
       ],
-      "vignette-color-60": [
-        1.16,
-        3.834
+      "look-color-200": [
+        1.034,
+        3.345
       ],
-      "vignette-color-60-highlights80": [
-        1.062,
-        3.193
+      "look-color-50": [
+        0.576,
+        1.973
       ],
-      "vignette-highlight+60": [
-        0.866,
-        2.136
+      "look-color-saturation+30": [
+        0.77,
+        2.987
       ],
-      "vignette-highlight-100": [
-        1.879,
-        7.101
+      "look-exposure-100": [
+        0.299,
+        1.039
       ],
-      "vignette-highlight-60": [
-        1.447,
-        5.125
+      "look-exposure-200": [
+        1.895,
+        3.414
       ],
-      "vignette-highlight-60-highlights80": [
-        1.262,
-        3.947
+      "look-exposure-50": [
+        0.288,
+        0.846
       ],
-      "vignette-highlight-60-midpoint20": [
-        2.643,
-        10.752
+      "look-parametric-100": [
+        0.278,
+        0.799
       ],
-      "vignette-highlight-60-midpoint80": [
-        0.923,
-        2.315
+      "look-parametric-200": [
+        0.738,
+        1.241
       ],
-      "vignette-paint+60": [
-        0.707,
-        1.875
+      "look-parametric-50": [
+        0.262,
+        0.84
       ],
-      "vignette-paint-60": [
-        0.681,
-        1.816
+      "look-parametric-darks+30": [
+        0.28,
+        0.837
       ],
-      "vignette-paint-60-midpoint20-feather80": [
-        0.688,
-        1.777
+      "look-split-100": [
+        0.411,
+        0.921
       ],
-      "vignette-paint-60-roundness+100": [
-        0.704,
+      "look-split-200": [
+        1.137,
+        3.228
+      ],
+      "look-split-50": [
+        0.359,
+        0.901
+      ],
+      "look-split-grading-shadows-h30": [
+        1.55,
+        3.475
+      ],
+      "look-vignette-100": [
+        0.553,
         2.055
       ],
+      "look-vignette-200": [
+        0.777,
+        3.217
+      ],
+      "look-vignette-50": [
+        0.381,
+        1.32
+      ],
+      "look-vignette-user-20": [
+        0.553,
+        2.055
+      ],
+      "look-warm-contrast": [
+        1.35,
+        3.327
+      ],
+      "luminance-aqua+100": [
+        0.332,
+        0.985
+      ],
+      "luminance-aqua+50": [
+        0.328,
+        0.939
+      ],
+      "luminance-aqua-100": [
+        0.36,
+        1.325
+      ],
+      "luminance-aqua-50": [
+        0.401,
+        1.308
+      ],
+      "luminance-blue+100": [
+        0.362,
+        1.184
+      ],
+      "luminance-blue+50": [
+        0.342,
+        1.013
+      ],
+      "luminance-blue-100": [
+        0.882,
+        4.491
+      ],
+      "luminance-blue-50": [
+        0.526,
+        1.8
+      ],
+      "luminance-green+100": [
+        0.341,
+        1.055
+      ],
+      "luminance-green+50": [
+        0.329,
+        1.036
+      ],
+      "luminance-green-100": [
+        0.437,
+        1.716
+      ],
+      "luminance-green-50": [
+        0.486,
+        1.735
+      ],
+      "luminance-magenta+100": [
+        0.283,
+        0.914
+      ],
+      "luminance-magenta+50": [
+        0.284,
+        0.914
+      ],
+      "luminance-magenta-100": [
+        0.31,
+        0.987
+      ],
+      "luminance-magenta-50": [
+        0.362,
+        1.321
+      ],
+      "luminance-orange+100": [
+        0.391,
+        1.577
+      ],
+      "luminance-orange+50": [
+        0.374,
+        1.246
+      ],
+      "luminance-orange-100": [
+        0.535,
+        2.439
+      ],
+      "luminance-orange-50": [
+        0.515,
+        2.221
+      ],
+      "luminance-purple+100": [
+        0.301,
+        0.897
+      ],
+      "luminance-purple+50": [
+        0.288,
+        0.939
+      ],
+      "luminance-purple-100": [
+        0.531,
+        1.811
+      ],
+      "luminance-purple-50": [
+        0.389,
+        1.442
+      ],
+      "luminance-red+100": [
+        0.326,
+        0.995
+      ],
+      "luminance-red+50": [
+        0.3,
+        0.914
+      ],
+      "luminance-red-100": [
+        0.373,
+        1.463
+      ],
+      "luminance-red-50": [
+        0.396,
+        1.824
+      ],
+      "luminance-yellow+100": [
+        0.367,
+        1.1
+      ],
+      "luminance-yellow+50": [
+        0.365,
+        1.227
+      ],
+      "luminance-yellow-100": [
+        0.511,
+        2.061
+      ],
+      "luminance-yellow-50": [
+        0.46,
+        1.735
+      ],
+      "mixer-all-hue+50": [
+        0.519,
+        1.686
+      ],
+      "mixer-all-luminance+50": [
+        0.775,
+        1.804
+      ],
+      "mixer-all-saturation-50": [
+        1.226,
+        4.016
+      ],
+      "mixer-alternate-luminance": [
+        1.259,
+        4.917
+      ],
+      "mixer-hue-sat-lum-blue": [
+        0.576,
+        2.053
+      ],
+      "mixer-neighbours-saturation+100": [
+        0.4,
+        1.533
+      ],
+      "mixer-skin": [
+        0.485,
+        1.969
+      ],
+      "noise-color+25": [
+        0.29,
+        0.855
+      ],
+      "noise-luminance+50": [
+        0.273,
+        0.831
+      ],
+      "pair-calibration-red-hue+50-hue-red-50": [
+        0.348,
+        0.928
+      ],
+      "pair-clarity+50-contrast+50": [
+        2.567,
+        6.969
+      ],
+      "pair-contrast+100-blacks+50": [
+        0.914,
+        2.042
+      ],
+      "pair-contrast+50-blacks-50": [
+        0.483,
+        1.408
+      ],
+      "pair-contrast+50-saturation+50": [
+        1.337,
+        4.503
+      ],
+      "pair-contrast+50-whites+50": [
+        0.665,
+        2.099
+      ],
+      "pair-contrast-50-blacks-50": [
+        0.423,
+        1.018
+      ],
+      "pair-contrast-50-whites-50": [
+        0.82,
+        1.659
+      ],
+      "pair-dehaze+50-saturation-30": [
+        2.775,
+        5.754
+      ],
+      "pair-exposure+0.75-whites+100": [
+        0.609,
+        2.796
+      ],
+      "pair-exposure+1-hue-red+50": [
+        0.333,
+        1.259
+      ],
+      "pair-exposure-1-contrast+50": [
+        0.453,
+        1.132
+      ],
+      "pair-exposure-1.5-whites+100": [
+        0.976,
+        2.508
+      ],
+      "pair-exposure-1.5-whites+50": [
+        0.387,
+        1.367
+      ],
+      "pair-grading-shadows-contrast+50": [
+        0.445,
+        1.113
+      ],
+      "pair-highlights-60-whites+50": [
+        1.986,
+        3.504
+      ],
+      "pair-hue-orange+50-hue-yellow-50": [
+        0.369,
+        1.209
+      ],
+      "pair-parametric-lights+50-vibrance+50": [
+        0.76,
+        2.582
+      ],
+      "pair-saturation-red-50-luminance-red+50": [
+        0.434,
+        1.823
+      ],
+      "pair-shadows+60-blacks-50": [
+        4.308,
+        8.489
+      ],
+      "pair-temperature-4000-saturation-blue+50": [
+        0.853,
+        2.282
+      ],
+      "pair-vibrance+50-saturation-50": [
+        1.272,
+        3.941
+      ],
+      "pair-whites+50-blacks-50": [
+        0.634,
+        1.715
+      ],
+      "pair-whites-50-blacks+50": [
+        1.449,
+        2.744
+      ],
+      "parametric-all+50": [
+        0.512,
+        1.942
+      ],
+      "parametric-darks+100": [
+        0.322,
+        1.012
+      ],
+      "parametric-darks+50": [
+        0.271,
+        0.818
+      ],
+      "parametric-darks-100": [
+        0.418,
+        1.212
+      ],
+      "parametric-darks-50": [
+        0.325,
+        0.926
+      ],
+      "parametric-darks-50-lights+100": [
+        0.708,
+        2.401
+      ],
+      "parametric-darks-50-splits-25-65-75": [
+        0.368,
+        1.078
+      ],
+      "parametric-fade": [
+        0.293,
+        0.888
+      ],
+      "parametric-highlights+100": [
+        0.467,
+        1.836
+      ],
+      "parametric-highlights+50": [
+        0.326,
+        1.216
+      ],
+      "parametric-highlights-100": [
+        0.367,
+        1.17
+      ],
+      "parametric-highlights-50": [
+        0.277,
+        0.874
+      ],
+      "parametric-highlights-50-splits-25-50-90": [
+        0.287,
+        0.886
+      ],
+      "parametric-lights+100": [
+        0.601,
+        2.262
+      ],
+      "parametric-lights+50": [
+        0.424,
+        1.52
+      ],
+      "parametric-lights+50-splits-25-35-75": [
+        0.516,
+        1.667
+      ],
+      "parametric-lights-100": [
+        0.303,
+        1.041
+      ],
+      "parametric-lights-50": [
+        0.236,
+        0.808
+      ],
+      "parametric-s-curve": [
+        0.592,
+        1.993
+      ],
+      "parametric-shadows+100": [
+        0.38,
+        1.004
+      ],
+      "parametric-shadows+50": [
+        0.287,
+        0.829
+      ],
+      "parametric-shadows+50-splits-10-50-75": [
+        0.278,
+        0.858
+      ],
+      "parametric-shadows-100": [
+        0.481,
+        1.483
+      ],
+      "parametric-shadows-50": [
+        0.294,
+        0.869
+      ],
+      "pc-blue-lum-60": [
+        0.303,
+        0.943
+      ],
+      "pc-bw-lum": [
+        0.306,
+        1.315
+      ],
+      "pc-combined": [
+        0.693,
+        2.174
+      ],
+      "pc-eight": [
+        0.766,
+        2.426
+      ],
+      "pc-green-variance+60": [
+        0.349,
+        1.052
+      ],
+      "pc-green-variance-80": [
+        0.38,
+        1.25
+      ],
+      "pc-narrow-ranges": [
+        0.363,
+        1.166
+      ],
+      "pc-neutral-swatch": [
+        0.399,
+        1.433
+      ],
+      "pc-orange-hue+50": [
+        0.371,
+        1.255
+      ],
+      "pc-orange-lum+50": [
+        0.461,
+        1.598
+      ],
+      "pc-orange-sat-80": [
+        0.371,
+        1.06
+      ],
+      "pc-overlap": [
+        0.358,
+        1.162
+      ],
+      "pc-red-wrap-hue+50": [
+        0.338,
+        1.003
+      ],
+      "pc-saturated-sat+100": [
+        0.365,
+        1.286
+      ],
+      "pc-skin-sat+60-range0": [
+        0.31,
+        0.928
+      ],
+      "pc-skin-sat+60-range100": [
+        0.406,
+        1.761
+      ],
+      "rgb-1d-100": [
+        0.37,
+        1.534
+      ],
+      "rgb-bounds-0": [
+        0.295,
+        0.876
+      ],
+      "rgb-bounds-200": [
+        0.315,
+        1.061
+      ],
+      "rgb-extend-100": [
+        0.27,
+        0.857
+      ],
+      "rgb-flag-100": [
+        0.311,
+        1.009
+      ],
+      "rgb-half-100": [
+        0.295,
+        0.876
+      ],
+      "rgb-half-200": [
+        0.311,
+        1.009
+      ],
+      "rgb-half-50": [
+        0.282,
+        0.873
+      ],
+      "rgb-linear-100": [
+        0.254,
+        0.84
+      ],
+      "rgb-look-100": [
+        0.396,
+        1.254
+      ],
+      "rgb-look-50": [
+        0.343,
+        0.928
+      ],
+      "rgb-srgb-100": [
+        0.272,
+        0.866
+      ],
+      "rgb-table-100": [
+        0.311,
+        1.009
+      ],
+      "rgb-table-200": [
+        0.334,
+        1.241
+      ],
+      "rgb-table-50": [
+        0.295,
+        0.876
+      ],
+      "rgb-table-contrast+50": [
+        0.442,
+        1.165
+      ],
+      "rgb-table-exposure+1": [
+        0.307,
+        1.061
+      ],
+      "rgb-table-grading-midtones-h30": [
+        0.338,
+        1.039
+      ],
+      "rgb-table-grading-shadows-h210": [
+        0.362,
+        1.311
+      ],
+      "rgb-table-hue-red+100": [
+        0.341,
+        1.146
+      ],
+      "rgb-table-point-curve": [
+        0.422,
+        1.243
+      ],
+      "rgb-table-saturation+50": [
+        1.283,
+        4.538
+      ],
+      "saturation+100": [
+        2.617,
+        7.564
+      ],
+      "saturation+50": [
+        1.135,
+        4.245
+      ],
+      "saturation-100": [
+        0.534,
+        2.086
+      ],
+      "saturation-50": [
+        0.905,
+        3.368
+      ],
+      "saturation-aqua+100": [
+        0.294,
+        0.898
+      ],
+      "saturation-aqua+50": [
+        0.311,
+        0.919
+      ],
+      "saturation-aqua-100": [
+        0.331,
+        1.05
+      ],
+      "saturation-aqua-50": [
+        0.298,
+        0.886
+      ],
+      "saturation-blue+100": [
+        0.354,
+        1.149
+      ],
+      "saturation-blue+50": [
+        0.357,
+        1.136
+      ],
+      "saturation-blue-100": [
+        0.386,
+        1.338
+      ],
+      "saturation-blue-50": [
+        0.324,
+        0.997
+      ],
+      "saturation-green+100": [
+        0.287,
+        0.883
+      ],
+      "saturation-green+50": [
+        0.31,
+        0.987
+      ],
+      "saturation-green-100": [
+        0.375,
+        1.315
+      ],
+      "saturation-green-50": [
+        0.346,
+        1.227
+      ],
+      "saturation-magenta+100": [
+        0.29,
+        0.914
+      ],
+      "saturation-magenta+50": [
+        0.294,
+        0.951
+      ],
+      "saturation-magenta-100": [
+        0.42,
+        1.315
+      ],
+      "saturation-magenta-50": [
+        0.342,
+        1.061
+      ],
+      "saturation-orange+100": [
+        0.358,
+        1.058
+      ],
+      "saturation-orange+50": [
+        0.353,
+        1.049
+      ],
+      "saturation-orange-100": [
+        0.679,
+        2.55
+      ],
+      "saturation-orange-50": [
+        0.569,
+        2.541
+      ],
+      "saturation-purple+100": [
+        0.334,
+        1.247
+      ],
+      "saturation-purple+50": [
+        0.329,
+        1.269
+      ],
+      "saturation-purple-100": [
+        0.366,
+        1.436
+      ],
+      "saturation-purple-50": [
+        0.298,
+        0.899
+      ],
+      "saturation-red+100": [
+        0.337,
+        1.049
+      ],
+      "saturation-red+50": [
+        0.315,
+        0.995
+      ],
+      "saturation-red-100": [
+        0.53,
+        2.35
+      ],
+      "saturation-red-50": [
+        0.383,
+        1.669
+      ],
+      "saturation-yellow+100": [
+        0.31,
+        0.914
+      ],
+      "saturation-yellow+50": [
+        0.305,
+        0.914
+      ],
+      "saturation-yellow-100": [
+        0.488,
+        1.587
+      ],
+      "saturation-yellow-50": [
+        0.418,
+        1.411
+      ],
+      "shadows+100": [
+        6.641,
+        12.109
+      ],
+      "shadows+60": [
+        4.106,
+        7.758
+      ],
+      "shadows-100": [
+        6.157,
+        10.832
+      ],
+      "shadows-60": [
+        3.659,
+        6.419
+      ],
+      "sharpening-150-radius2": [
+        0.274,
+        0.881
+      ],
+      "sharpening-40": [
+        0.274,
+        0.882
+      ],
+      "temperature-12000": [
+        1.785,
+        2.606
+      ],
+      "temperature-2500": [
+        2.861,
+        6.409
+      ],
+      "temperature-3200": [
+        0.787,
+        2.138
+      ],
+      "temperature-5000": [
+        0.331,
+        1.009
+      ],
+      "temperature-8000": [
+        0.266,
+        0.849
+      ],
+      "texture+100": [
+        1.271,
+        3.496
+      ],
+      "texture+50": [
+        0.873,
+        2.519
+      ],
+      "texture-100": [
+        1.408,
+        3.825
+      ],
+      "texture-50": [
+        0.879,
+        2.384
+      ],
+      "tint+30": [
+        0.363,
+        1.113
+      ],
+      "tint+80": [
+        0.648,
+        1.85
+      ],
+      "tint-30": [
+        0.281,
+        0.726
+      ],
+      "tint-80": [
+        1.245,
+        1.756
+      ],
+      "transform-aspect+50": [
+        0.738,
+        2.085
+      ],
+      "transform-horizontal+30": [
+        1.412,
+        4.279
+      ],
+      "transform-offset-x+10": [
+        0.491,
+        1.787
+      ],
+      "transform-rotate+5": [
+        0.737,
+        1.852
+      ],
+      "transform-scale80": [
+        0.607,
+        2.005
+      ],
+      "vibrance+100": [
+        0.668,
+        2.17
+      ],
+      "vibrance+50": [
+        0.678,
+        2.145
+      ],
+      "vibrance-100": [
+        0.515,
+        1.777
+      ],
+      "vibrance-50": [
+        1.136,
+        3.7
+      ],
+      "vignette-color+100": [
+        0.624,
+        1.854
+      ],
+      "vignette-color+60": [
+        0.488,
+        1.738
+      ],
+      "vignette-color-60": [
+        0.784,
+        2.938
+      ],
+      "vignette-color-60-highlights80": [
+        0.875,
+        3.39
+      ],
+      "vignette-highlight+60": [
+        0.542,
+        1.878
+      ],
+      "vignette-highlight-100": [
+        1.289,
+        5.476
+      ],
+      "vignette-highlight-60": [
+        0.923,
+        3.796
+      ],
+      "vignette-highlight-60-highlights80": [
+        0.87,
+        3.612
+      ],
+      "vignette-highlight-60-midpoint20": [
+        1.941,
+        8.336
+      ],
+      "vignette-highlight-60-midpoint80": [
+        0.492,
+        1.662
+      ],
+      "vignette-paint+60": [
+        0.357,
+        0.979
+      ],
+      "vignette-paint-60": [
+        0.437,
+        1.268
+      ],
+      "vignette-paint-60-midpoint20-feather80": [
+        0.318,
+        1.101
+      ],
+      "vignette-paint-60-roundness+100": [
+        0.419,
+        1.224
+      ],
       "vignette-paint-60-roundness-50": [
-        0.888,
-        2.101
+        0.592,
+        1.836
       ],
       "vignette-unset-60": [
-        1.447,
-        5.125
+        0.923,
+        3.796
       ],
       "whites+100": [
-        2.626,
-        5.619
+        1.115,
+        3.501
       ],
       "whites+25": [
-        0.554,
-        1.501
+        0.382,
+        1.19
       ],
       "whites+50": [
-        0.698,
-        2.092
+        0.595,
+        1.742
       ],
       "whites-100": [
-        1.888,
-        3.771
+        1.995,
+        4.14
       ],
       "whites-50": [
-        1.027,
-        1.843
+        0.807,
+        1.662
       ]
     },
     "synthetic-d65-matrix-only": {
       "default": [
-        0.657,
-        1.74
+        0.274,
+        0.86
       ]
     },
     "synthetic-f2": {
       "default": [
-        0.774,
-        1.938
+        0.328,
+        0.735
       ]
     }
   }

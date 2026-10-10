@@ -1,53 +1,7 @@
-//! Fields over the image the geometry stage evaluates: the exposure ramp, vignetting and the lens warp.
+//! Fields over the image the geometry stage evaluates: vignetting and the lens warp.
 use super::*;
 use crate::develop::recipe::RenderedRecipe;
 
-/// Black level of the DNG SDK's exposure ramp at its default Shadows setting of 5
-/// (5 × 0.001, in scene-linear units before exposure).
-const DNG_SHADOWS_BLACK: f32 = 0.0015;
-/// The ramp's black before exposure: none under a profile whose DefaultBlackRender
-/// is None, as Camera Raw renders it.
-pub(super) fn default_black(r: &Recipe) -> f32 {
-    match r.profile.as_ref().map(|p| p.black_render()) {
-        Some(crate::camera_profiles::BlackRender::None) => 0.,
-        _ => DNG_SHADOWS_BLACK,
-    }
-}
-/// dng_function_exposure_ramp with white at 1: values below `black` go to zero through
-/// a quadratic toe, the rest are stretched back to full range.
-pub(super) struct ExposureRamp {
-    pub(super) black: f32,
-    pub(super) slope: f32,
-    pub(super) radius: f32,
-    pub(super) q: f32,
-}
-impl ExposureRamp {
-    pub(super) fn new(black: f32) -> Self {
-        let black = black.clamp(0., 0.5);
-        let slope = 1. / (1. - black);
-        let radius = (0.5 * black).min(1. / 16. / slope);
-        Self {
-            black,
-            slope,
-            radius,
-            q: if radius > 0. {
-                slope / (4. * radius)
-            } else {
-                0.
-            },
-        }
-    }
-    pub(super) fn eval(&self, x: f32) -> f32 {
-        if x <= self.black - self.radius {
-            0.
-        } else if x >= self.black + self.radius {
-            (x - self.black) * self.slope
-        } else {
-            let y = x - (self.black - self.radius);
-            self.q * y * y
-        }
-    }
-}
 /// Vignetting over the camera image: the lens profile's at its Vignetting amount, and
 /// measured manual Vignetting. Radius 1 is the half diagonal; `x`, `y` use sample
 /// coordinates, where pixel `i` is centred at `i`.
@@ -122,12 +76,6 @@ impl<'a> LensWarp<'a> {
             map: crate::develop::image_space::LensMap::new(im, r)?,
             vignetting: VignetteField::new(im, r),
         })
-    }
-    /// Where `sample` reads red, green and blue for sample coordinates `x`, `y`.
-    pub(super) fn positions(&self, x: f32, y: f32) -> [[f32; 2]; 3] {
-        let m = &self.map;
-        let ([dx, dy], scale) = m.scales(x, y);
-        scale.map(|k| [m.center[0] + dx * k - 0.5, m.center[1] + dy * k - 0.5])
     }
     pub(super) fn sample(&self, im: Source, x: f32, y: f32, r: &Recipe, spread: f32) -> [f32; 3] {
         let m = &self.map;

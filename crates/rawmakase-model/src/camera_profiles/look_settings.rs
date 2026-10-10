@@ -328,11 +328,11 @@ mod tests {
         assert!((r.saturation - -0.1).abs() < 1e-6);
         assert!((r.exposure - 0.2).abs() < 1e-6);
         assert_eq!(r.hsl[5][1], -0.3);
-        assert_eq!(r.effects.parametric[2], -0.2);
-        assert_eq!(r.effects.splits[2], 0.8);
-        // The user's own shadow toning wins; the look tones the highlights.
-        assert_eq!(r.grading[0], [0.08, 0.5, 0.]);
-        assert_eq!(r.grading[2], [0.15, 0.2, 0.]);
+        // The look's parametric curve and split toning render as passes of their
+        // own, leaving the user's curve and grading as they are.
+        assert_eq!(r.effects.parametric, user.effects.parametric);
+        assert_eq!(r.effects.splits, user.effects.splits);
+        assert_eq!(r.grading, user.grading);
         // The look's vignette replaces the user's.
         assert_eq!(r.effects.vignette, -0.1);
         assert_eq!(user.saturation, 0.1);
@@ -340,7 +340,6 @@ mod tests {
         user.profile_amount = 0.5;
         let r = user.with_profile_adjustments();
         assert!((r.saturation - 0.).abs() < 1e-6);
-        assert_eq!(r.grading[2], [0.15, 0.1, 0.]);
         assert_eq!(r.effects.vignette, -0.05);
         // Strong toning at 200% stays a valid saturation.
         let mut toned = vintage();
@@ -348,10 +347,10 @@ mod tests {
         let scaled = toned.scaled(1.5);
         assert_eq!(scaled.toning.unwrap().highlights[1], 1.);
         assert!(scaled.validate().is_ok());
-        // At 0% the look leaves the user's vignette and toning alone.
+        // At 0% the look leaves the user's vignette alone.
         user.profile_amount = 0.;
         let r = user.with_profile_adjustments();
-        assert_eq!((r.effects.vignette, r.grading[2]), (-0.3, [0.; 3]));
+        assert_eq!(r.effects.vignette, -0.3);
         user.profile_amount = 0.5;
         // A full-strength vignette at 200% stays within the slider's range.
         let mut strong = user.clone();

@@ -178,19 +178,6 @@ pub fn parse(path: &Path, text: &str) -> Result<Preset> {
     if repaired {
         notes.push("Recovered duplicated XML Group closing tag; original file unchanged".into());
     }
-    // A packet or preset from a RAWmakase that predates `RAWmakaseMarkers` keeps the
-    // operators measured only since, besides any it names.
-    let creator_tool = description
-        .attribute((crate::xml::ns::XMP, "CreatorTool"))
-        .map(str::to_string)
-        .or_else(|| {
-            description
-                .children()
-                .find(|n| n.has_tag_name((crate::xml::ns::XMP, "CreatorTool")))
-                .and_then(|n| n.text())
-                .map(|t| t.trim().to_string())
-        });
-    add_implied_original(&mut settings, creator_tool.as_deref());
     let preset = Preset {
         photo_settings: sidecar,
         id,
@@ -210,58 +197,4 @@ pub fn parse(path: &Path, text: &str) -> Result<Preset> {
         "No camera settings"
     );
     Ok(preset)
-}
-
-/// Names in `RAWmakaseOriginal` the operators a packet or preset from an earlier
-/// RAWmakase kept without naming them, among those whose settings it carries: the
-/// ones its marker format could not name, or, without `RAWmakaseMarkers`, the ones
-/// measured after its release. Presets record no release; theirs is taken as the last
-/// one without the marker.
-fn add_implied_original(settings: &mut BTreeMap<String, String>, creator_tool: Option<&str>) {
-    let rawmakase = settings.contains_key("RAWmakaseMarkers")
-        || settings.contains_key("RAWmakasePreset")
-        || creator_tool.is_some_and(|tool| super::write::rawmakase_version(tool).is_some());
-    if ["WhiteBalance", "Temperature", "Tint"]
-        .iter()
-        .any(|key| settings.contains_key(*key))
-    {
-        settings
-            .entry("RAWmakaseWhiteBalanceModel".into())
-            .or_insert_with(|| if rawmakase { "Original" } else { "Calibrated" }.into());
-    }
-    let unnamed = if let Some(markers) = settings.get("RAWmakaseMarkers") {
-        // An unreadable format is taken as the current one.
-        let markers = markers.trim().parse().unwrap_or(super::write::MARKERS);
-        super::write::unnamed_by_markers(markers)
-    } else {
-        let version = match creator_tool {
-            Some(tool) => super::write::rawmakase_version(tool),
-            None if settings.contains_key("RAWmakasePreset") => Some((0, 1, 15)),
-            None => None,
-        };
-        let Some(version) = version else {
-            return;
-        };
-        super::write::implied_original(version)
-    };
-    let implied: Vec<_> = unnamed
-        .into_iter()
-        .filter(|name| {
-            super::write::operator_keys(name)
-                .iter()
-                .any(|key| settings.keys().any(|k| key.matches(k)))
-        })
-        .collect();
-    if implied.is_empty() {
-        return;
-    }
-    let kept = settings.entry("RAWmakaseOriginal".to_string()).or_default();
-    for name in implied {
-        if !kept.split(',').any(|n| n.trim() == name) {
-            if !kept.is_empty() {
-                kept.push(',');
-            }
-            kept.push_str(name);
-        }
-    }
 }

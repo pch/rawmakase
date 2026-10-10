@@ -1,79 +1,12 @@
-// Full-resolution stages on the photo kept on the device: the local-tone box blurs
-// and gain (`quality::box_blur`, `quality::apply_local`), the toned image reduced for
-// the Shadows/Highlights map (`pipeline::preview_source`) and region sampling through
+// Full-resolution stages on the photo kept on the device: region sampling through
 // geometry, lens correction and noise reduction (`pipeline::sample_region`). The CPU
 // versions are the reference; functions keep their names and order. Every entry point
 // uses its own bindings.
-//
-// The log luminance and its blurs share one buffer, `n` values each: logs, fine,
-// broad and, for Texture, the texture blur. The gain is computed from them where it
-// is read, and kept only for the pixels a region samples (`region_gain`).
-
-// Box blur along rows (axis 0) or columns (axis 1) as the CPU does it: a running sum
-// per line, then window differences, from and to `n`-value slots of their buffers.
-struct Blur {
-    width: u32, height: u32, radius: u32, axis: u32,
-    source: u32, destination: u32, pad0: u32, pad1: u32,
-};
-@group(0) @binding(0) var<storage, read> blur_src: array<f32>;
-@group(0) @binding(1) var<storage, read_write> prefix: array<f32>;
-@group(0) @binding(2) var<storage, read_write> blur_dst: array<f32>;
-@group(0) @binding(3) var<uniform> blur: Blur;
-
-@compute @workgroup_size(64)
-fn running_sum(@builtin(global_invocation_id) id: vec3<u32>) {
-    let w = blur.width;
-    let h = blur.height;
-    var sum = 0.0;
-    if blur.axis == 0u {
-        if id.x >= h { return; }
-        for (var x = 0u; x < w; x++) {
-            let i = id.x * w + x;
-            sum += blur_src[blur.source + i];
-            prefix[i] = sum;
-        }
-    } else {
-        if id.x >= w { return; }
-        for (var y = 0u; y < h; y++) {
-            let i = y * w + id.x;
-            sum += blur_src[blur.source + i];
-            prefix[i] = sum;
-        }
-    }
-}
-@compute @workgroup_size(16, 16)
-fn window(@builtin(global_invocation_id) id: vec3<u32>) {
-    let w = blur.width;
-    let h = blur.height;
-    let r = blur.radius;
-    if id.x >= w || id.y >= h { return; }
-    var at = id.x;
-    var len = w;
-    var line = id.y * w;
-    var step = 1u;
-    if blur.axis == 1u {
-        at = id.y;
-        len = h;
-        line = id.x;
-        step = w;
-    }
-    let a = select(0u, at - r, at > r);
-    let b = min(at + r + 1u, len);
-    // Running sum of the first `k` values of the line.
-    var lower = 0.0;
-    if a > 0u { lower = prefix[line + (a - 1u) * step]; }
-    let upper = prefix[line + (b - 1u) * step];
-    blur_dst[blur.destination + id.y * w + id.x] = (upper - lower) / f32(b - a);
-}
 
 // Sampling parameters, at the `S_*` offsets that `sampling::wgsl_prelude` puts
 // before this file; radial tables follow the header (`sampling::HEADER`).
-@group(0) @binding(4) var<storage, read> local_tones: array<f32>;
-@group(0) @binding(8) var<storage, read_write> gains_out: array<f32>;
 @group(0) @binding(10) var<storage, read> photo: array<f32>;
-@group(0) @binding(11) var<storage, read> gains: array<f32>;
 @group(0) @binding(12) var<storage, read> sp: array<f32>;
-@group(0) @binding(13) var<storage, read_write> reduced: array<f32>;
 @group(0) @binding(14) var<storage, read_write> samples: array<f32>;
 @group(0) @binding(15) var<storage, read_write> positions: array<f32>;
 
@@ -85,52 +18,9 @@ fn s(i: u32) -> f32 {
 fn su(i: u32) -> u32 {
     return u32(sp[i]);
 }
-// Range guidance: the part `quality::apply_local`'s `guide` adds to the log value.
-fn guide(d: f32) -> f32 {
-    return d / (1.0 + d * d);
-}
-// `quality::apply_local` at photo pixel `i`.
-fn gain_at(i: u32) -> f32 {
-    let n = su(S_WIDTH) * su(S_HEIGHT);
-    let exposure = s(S_SLIDERS);
-    let raw = local_tones[i];
-    let logs = raw + exposure;
-    let fine = logs + guide(local_tones[n + i] + exposure - logs);
-    let base = (fine + (logs + guide(local_tones[2u * n + i] + exposure - logs))) * 0.5;
-    let y = exp2(base);
-    let shadow = exp(-y * 6.0);
-    let high = y / (y + 0.5);
-    let clarity = clamp(logs - fine, -1.0, 1.0) * s(S_SLIDERS + 3u) * 0.6;
-    var texture = 0.0;
-    if s(S_SLIDERS + 5u) != 0.0 {
-        texture = clamp(raw - local_tones[3u * n + i], -0.5, 0.5) * s(S_SLIDERS + 4u) * 0.7;
-    }
-    return exp2(
-        s(S_SLIDERS + 1u) * shadow * 2.0 + s(S_SLIDERS + 2u) * high * 2.0 + clarity + texture,
-    );
-}
-// The local-tone gain of the pixels a region samples, kept for `px`.
-@compute @workgroup_size(256)
-fn region_gain(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) local: u32) {
-    let i = (group.y * su(S_BOX_COUNT) + group.x) * 256u + local;
-    let bw = su(S_BOX + 2u);
-    if i >= bw * su(S_BOX + 3u) { return; }
-    gains_out[i] = gain_at((su(S_BOX + 1u) + i / bw) * su(S_WIDTH) + su(S_BOX) + i % bw);
-}
-// The photo's pixel `i` times its local-tone gain (`pipeline::Source::px`).
+// The photo's pixel `i` (`pipeline::Source::px`).
 fn px(i: u32) -> vec3<f32> {
-    let p = vec3(photo[3u * i], photo[3u * i + 1u], photo[3u * i + 2u]);
-    if s(S_GAIN) == 0.0 {
-        return p;
-    }
-    let x = i % su(S_WIDTH);
-    let y = i / su(S_WIDTH);
-    let bx = su(S_BOX);
-    let by = su(S_BOX + 1u);
-    if x >= bx && y >= by && x < bx + su(S_BOX + 2u) && y < by + su(S_BOX + 3u) {
-        return p * gains[(y - by) * su(S_BOX + 2u) + x - bx];
-    }
-    return p * gain_at(i);
+    return vec3(photo[3u * i], photo[3u * i + 1u], photo[3u * i + 2u]);
 }
 fn table_eval(field: u32, r: f32) -> f32 {
     let at = u32(s(field));
@@ -352,58 +242,4 @@ fn sample_region(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocat
     samples[3u * i + 2u] = p.z;
     positions[2u * i] = pos.x;
     positions[2u * i + 1u] = pos.y;
-}
-// `pipeline::preview_source`: box integration of the toned photo, in two passes so
-// neighbouring invocations read neighbouring pixels: each row's sums over the boxes'
-// columns, then each box's sum over its rows.
-@group(0) @binding(9) var<storage, read_write> partial: array<f32>;
-
-// The photo's pixel `i` times its local-tone gain, for passes that keep no gain.
-fn toned(i: u32) -> vec3<f32> {
-    let p = vec3(photo[3u * i], photo[3u * i + 1u], photo[3u * i + 2u]);
-    if s(S_GAIN) == 0.0 {
-        return p;
-    }
-    return p * gain_at(i);
-}
-fn box_columns(x: u32) -> vec2<u32> {
-    let iw = su(S_WIDTH);
-    let w = su(S_REDUCED);
-    let x0 = x * iw / w;
-    return vec2(x0, max((x + 1u) * iw / w, x0 + 1u));
-}
-@compute @workgroup_size(16, 16)
-fn reduce_rows(@builtin(global_invocation_id) id: vec3<u32>) {
-    let w = su(S_REDUCED);
-    if id.x >= w || id.y >= su(S_HEIGHT) { return; }
-    let span = box_columns(id.x);
-    let row = id.y * su(S_WIDTH);
-    var sum = vec3(0.0);
-    for (var x = span.x; x < span.y; x++) {
-        sum += toned(row + x);
-    }
-    let i = 3u * (id.y * w + id.x);
-    partial[i] = sum.x;
-    partial[i + 1u] = sum.y;
-    partial[i + 2u] = sum.z;
-}
-@compute @workgroup_size(16, 16)
-fn reduce_toned(@builtin(global_invocation_id) id: vec3<u32>) {
-    let w = su(S_REDUCED);
-    let h = su(S_REDUCED + 1u);
-    if id.x >= w || id.y >= h { return; }
-    let ih = su(S_HEIGHT);
-    let span = box_columns(id.x);
-    let y0 = id.y * ih / h;
-    let y1 = max((id.y + 1u) * ih / h, y0 + 1u);
-    var out = vec3(0.0);
-    for (var y = y0; y < y1; y++) {
-        let i = 3u * (y * w + id.x);
-        out += vec3(partial[i], partial[i + 1u], partial[i + 2u]);
-    }
-    let n = f32((span.y - span.x) * (y1 - y0));
-    let i = id.y * w + id.x;
-    reduced[3u * i] = out.x / n;
-    reduced[3u * i + 1u] = out.y / n;
-    reduced[3u * i + 2u] = out.z / n;
 }

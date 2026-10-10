@@ -1,5 +1,5 @@
-// Engine 4 per-pixel color and tone stage: a port of `pipeline::process_pixel` for
-// recipes with the reference curves, color and calibration (see `pixel_params.rs`).
+// The per-pixel color and tone stage: a port of `pipeline::process_pixel` for recipes
+// with a camera profile (see `pixel_params.rs`).
 // The CPU implementation is the reference; functions keep its names and order.
 // `P_*` indices into `params` are generated from `pixel_params::FIELDS`.
 
@@ -244,9 +244,9 @@ fn enhanced_curve(rgb: vec3<f32>) -> vec3<f32> {
     let r = rgb_tone_values(q, lut(base, 4096u, lo), lut(base, 4096u, hi), lo, hi);
     return vec3(srgb_decode(r.x), srgb_decode(r.y), srgb_decode(r.z));
 }
-// CameraProfile::finish with profile tone.
-fn profile_finish(rgb: vec3<f32>) -> vec3<f32> {
-    var q = RGB_TO_PRO * rgb;
+// CameraProfile::finish: linear ProPhoto in, linear sRGB primaries out.
+fn profile_finish(pro: vec3<f32>) -> vec3<f32> {
+    var q = pro;
     if offset(P_LOOK) >= 0 {
         q = table_apply(table_at(P_LOOK), q, -1, 0.0);
     }
@@ -273,35 +273,147 @@ fn calibrate(color: vec3<f32>) -> vec3<f32> {
     let direction = select(vec3(-0.331, 0.029, -0.152), vec3(0.116, -0.189, -0.002), shadow > 0.0);
     return q + amount * direction;
 }
-// ExposureRamp::new(black).eval(x), for masks that change exposure.
-fn ramp_with(x: f32, black_in: f32) -> f32 {
-    let black = clamp(black_in, 0.0, 0.5);
-    let slope = 1.0 / (1.0 - black);
-    let radius = min(0.5 * black, 1.0 / 16.0 / slope);
-    let q = select(0.0, slope / (4.0 * radius), radius > 0.0);
-    if x <= black - radius {
-        return 0.0;
-    } else if x >= black + radius {
-        return (x - black) * slope;
+// scene_tone::global::evaluate: a curve sampled at log2 inputs `first` + k·`step`,
+// linear below its first sample and constant above its last.
+fn log_curve(base: i32, grid: vec3<f32>, x: f32) -> f32 {
+    let first = grid.x;
+    let step = grid.y;
+    let n = u32(grid.z);
+    let low = exp2(first);
+    if x <= low {
+        return x * table(base) / low;
     }
-    let y = x - (black - radius);
-    return q * y * y;
-}
-fn ramp(x: f32) -> f32 {
-    let black = p(P_RAMP);
-    let slope = p(P_RAMP + 1u);
-    let radius = p(P_RAMP + 2u);
-    let q = p(P_RAMP + 3u);
-    if x <= black - radius {
-        return 0.0;
-    } else if x >= black + radius {
-        return (x - black) * slope;
+    let f = (log2(x) - first) / step;
+    if f >= f32(n - 1u) {
+        return table(base + i32(n) - 1);
     }
-    let y = x - (black - radius);
-    return q * y * y;
+    let i = u32(f);
+    let t = f - f32(i);
+    return mix(table(base + i32(i)), table(base + i32(i) + 1), t);
 }
-fn luma2020(c: vec3<f32>) -> f32 {
-    return 0.2627 * c.x + 0.678 * c.y + 0.0593 * c.z;
+// scene_tone::global::bracket on a regular grid (first, step, count).
+fn grid_bracket(v: f32, grid: vec3<f32>) -> vec2<f32> {
+    let f = clamp((v - grid.x) / grid.y, 0.0, grid.z - 1.0);
+    let i = min(floor(f), grid.z - 2.0);
+    return vec2(i, f - i);
+}
+// GlobalTone::white_at at Whites `whites` (`gpu_curves` layout: the rows, the tail,
+// the toe).
+fn white_curve(whites: f32, x_in: f32) -> f32 {
+    // Without a black point the curve continues linearly below `linear_below`.
+    let linear_below = p(P_SCENE_KEYS + 5u);
+    let below = p(P_SCENE_KEYS + 2u) == 0.0 && x_in > 0.0 && x_in < linear_below;
+    let x = select(x_in, linear_below, below);
+    let rows = i32(SCENE_U.z);
+    let base = offset(P_SCENE_WHITE);
+    let b = grid_bracket(whites, SCENE_S);
+    let r0 = base + i32(b.x) * rows;
+    let r1 = r0 + rows;
+    let tail = base + i32(SCENE_S.z) * rows;
+    let toe = tail + i32(SCENE_T.z);
+    let top = p(P_SCENE_KEYS);
+    let top_x = exp2(top);
+    var y = 0.0;
+    if x <= top_x {
+        let grid = vec3(top + SCENE_U.x, SCENE_U.y, SCENE_U.z);
+        y = mix(log_curve(r0, grid, x), log_curve(r1, grid, x), b.y);
+    } else {
+        let at_top = mix(table(r0 + rows - 1), table(r1 + rows - 1), b.y);
+        let r = log_curve(tail, SCENE_T, x);
+        let rm = log_curve(tail, SCENE_T, top_x);
+        y = at_top;
+        if rm < 1.0 {
+            y = at_top + (1.0 - at_top) * clamp((r - rm) / (1.0 - rm), 0.0, 1.0);
+        }
+    }
+    if p(P_SCENE_KEYS + 2u) == 0.0 && x > 0.0 {
+        y = y * min(x, 1.0) / max(log_curve(toe, SCENE_T, x), 1e-9);
+    }
+    if below {
+        y = y * x_in / linear_below;
+    }
+    return y;
+}
+// global::mask_curve: a mask's Whites (`kind` 0) or Blacks (1) at `s` on output `y`.
+fn mask_row(kind: u32, row: u32, y: f32) -> f32 {
+    let n = u32(SCENE_Y.z);
+    let base = offset(P_SCENE_TABLES) + i32((kind * 8u + row) * n);
+    return log_curve(base, SCENE_Y, y);
+}
+fn mask_position(slot: u32) -> f32 {
+    if slot == 4u {
+        return 0.0;
+    }
+    return MASK_VALUES[select(slot - 1u, slot, slot < 4u)];
+}
+fn mask_output(kind: u32, slot: u32, y: f32) -> f32 {
+    if slot == 4u {
+        return y;
+    }
+    return mask_row(kind, select(slot - 1u, slot, slot < 4u), y);
+}
+fn mask_curve(kind: u32, s_in: f32, y: f32) -> f32 {
+    if s_in == 0.0 {
+        return y;
+    }
+    let s = clamp(s_in, -1.0, 1.0);
+    var j = 7u;
+    for (var k = 0u; k < 8u; k++) {
+        if s <= mask_position(k + 1u) {
+            j = k;
+            break;
+        }
+    }
+    let t = (s - mask_position(j)) / (mask_position(j + 1u) - mask_position(j));
+    return mix(mask_output(kind, j, y), mask_output(kind, j + 1u, y), t);
+}
+// GlobalTone::apply's default black on one channel: identity at and above white.
+fn default_black(base: i32, y: f32) -> f32 {
+    if y >= 1.0 {
+        return y;
+    }
+    return log_curve(base, SCENE_Y, y);
+}
+// GlobalTone::apply: the white curve (RGBTone), then the default black and Blacks per
+// channel.
+fn scene_global(q: vec3<f32>) -> vec3<f32> {
+    let whites = p(P_SCENE_KEYS + 3u);
+    let lo = min(min(q.x, q.y), q.z);
+    let hi = max(max(q.x, q.y), q.z);
+    let ya = white_curve(whites, lo);
+    let yb = white_curve(whites, hi);
+    var out = vec3(ya);
+    if hi - lo > 1e-12 {
+        out = ya + (yb - ya) * (q - lo) / (hi - lo);
+    }
+    let black = offset(P_SCENE_DEFAULT_BLACK);
+    if black >= 0 {
+        out = vec3(default_black(black, out.x), default_black(black, out.y), default_black(black, out.z));
+    }
+    let blacks = offset(P_SCENE_BLACKS);
+    if blacks >= 0 {
+        out = vec3(log_curve(blacks, SCENE_Y, out.x), log_curve(blacks, SCENE_Y, out.y), log_curve(blacks, SCENE_Y, out.z));
+    }
+    return out;
+}
+// GlobalTone::apply_at: a mask's Whites (RGBTone) and Blacks (per channel) after the
+// global curves.
+fn scene_mask(q: vec3<f32>, whites: f32, blacks: f32) -> vec3<f32> {
+    var out = q;
+    if whites != 0.0 {
+        let lo = min(min(q.x, q.y), q.z);
+        let hi = max(max(q.x, q.y), q.z);
+        let ya = mask_curve(0u, whites, lo);
+        let yb = mask_curve(0u, whites, hi);
+        out = vec3(ya);
+        if hi - lo > 1e-12 {
+            out = ya + (yb - ya) * (q - lo) / (hi - lo);
+        }
+    }
+    if blacks != 0.0 {
+        out = vec3(mask_curve(1u, blacks, out.x), mask_curve(1u, blacks, out.y), mask_curve(1u, blacks, out.z));
+    }
+    return out;
 }
 // local_tone::LocalToneMap::gain
 fn local_curve(i: u32, base: f32) -> f32 {
@@ -344,16 +456,17 @@ fn bracket(values: i32, s: f32) -> vec2<f32> {
     let s1 = slider_point(values, j + 1u);
     return vec2(f32(j), (s - s0) / (s1 - s0));
 }
-// local_tone::family: a Shadows (0) or Highlights (1) gain at slider `s`.
+// local_tone::family: a Shadows (0), Highlights (1) or Dehaze (2) gain at slider `s`
+// (layout: `local_tone::gpu_families`).
 fn family(f: u32, s_in: f32, key: f32, base: f32) -> f32 {
     if s_in == 0.0 {
         return 0.0;
     }
     let s = clamp(s_in, -1.0, 1.0);
-    let t = offset(P_LOCAL_FAMILIES) + i32(f * 290u);
+    let t = offset(P_LOCAL_FAMILIES) + i32(f * 296u);
     let lo = table(t + 288);
     let hi = table(t + 289);
-    let b = bracket(offset(P_LOCAL_FAMILIES) + 580, s);
+    let b = bracket(t + 290, s);
     let j = u32(b.x);
     let x = clamp((base - key - lo) / (hi - lo) * 48.0 - 0.5, 0.0, 47.0);
     let i = min(u32(x), 46u);
@@ -387,19 +500,13 @@ fn measured(t: i32, values: i32, s_in: f32, x: f32) -> f32 {
     }
     return y.x + (y.y - y.x) * b.y;
 }
-// basic_tone::compose at the pixel's local slider values.
+// masks::local::tone's curve: Contrast at the pixel's local slider value (layout:
+// `basic_tone::gpu_tables`).
 fn local_tone_curve(x_in: f32) -> f32 {
     let t = offset(P_LOCAL_TONE);
-    var x = measured(t, t + 1536, delta[L_DEHAZE], x_in);
+    let x = x_in;
     let pivot = p(P_LOCAL_PIVOT);
-    if pivot < 0.0 {
-        x = measured(t + 384, t + 1542, delta[L_CONTRAST], x);
-        x = measured(t + 768, t + 1542, delta[L_WHITES], x);
-        return measured(t + 1152, t + 1542, delta[L_BLACKS], x);
-    }
-    x = measured(t + 768, t + 1542, delta[L_WHITES], x);
-    x = measured(t + 1152, t + 1542, delta[L_BLACKS], x);
-    return contrast_at(t + 1548, table(t + 1932), pivot, t + 1542, delta[L_CONTRAST], x);
+    return contrast_at(t + 6, table(t + 390), pivot, t, delta[L_CONTRAST], x);
 }
 // basic_tone::contrast_at: the chart's Contrast table at `t` (pivoting at `chart`)
 // moved to `pivot` by a power warp of gamma-2.2 encoded values.
@@ -417,7 +524,7 @@ fn gamma22(v: f32) -> f32 {
 fn from_gamma22(w: f32) -> f32 {
     return srgb_encode(powf(clamp(w, 0.0, 1.0), 2.2));
 }
-fn local_gain(pos: vec2<f32>, rgb: vec3<f32>) -> f32 {
+fn local_gain(pos: vec2<f32>, lum: f32) -> f32 {
     let w = u32(p(P_LOCAL_SIZE));
     let h = u32(p(P_LOCAL_SIZE + 1u));
     let fx = clamp((pos.x + 0.5) * p(P_LOCAL_SCALE) - 0.5, 0.0, f32(w - 1u));
@@ -435,8 +542,7 @@ fn local_gain(pos: vec2<f32>, rgb: vec3<f32>) -> f32 {
         let bottom = table(base + i32(jy * w + ix)) * (1.0 - tx) + table(base + i32(jy * w + jx)) * tx;
         coef[k] = top * (1.0 - ty) + bottom * ty;
     }
-    let y = max(0.2126 * rgb.x + 0.7152 * rgb.y + 0.0722 * rgb.z, 6e-4);
-    let base = coef.x * log2(y) + coef.y;
+    let base = coef.x * log2(max(lum, LOCAL_FLOOR)) + coef.y;
     // The measured positive Clarity (clarity.rs), on the same grid.
     var clarity = 0.0;
     let c = offset(P_LOCAL_A + 2u);
@@ -453,21 +559,43 @@ fn local_gain(pos: vec2<f32>, rgb: vec3<f32>) -> f32 {
     }
     return exp2(local_curve(P_SHADOWS, base) + local_curve(P_HIGHLIGHTS, base) + clarity);
 }
-fn parametric(x: f32) -> f32 {
-    if p(P_PARAMETRIC_ON) == 0.0 {
-        return x;
+// scene_tone::haze: the fraction of the haze positive Dehaze `s` removes.
+fn haze_omega(s_in: f32) -> f32 {
+    let s = clamp(s_in, 0.0, 1.0);
+    if s <= 0.2 {
+        return 1.5 * s;
     }
-    var anchors = array<f32, 5>(0.0, p(P_SPLITS), p(P_SPLITS + 1u), p(P_SPLITS + 2u), 1.0);
-    var delta = 0.0;
-    for (var i = 0u; i < 4u; i++) {
-        let lo = anchors[i];
-        let hi = anchors[i + 1u];
-        let mid = (lo + hi) * 0.5;
-        let radius = (hi - lo) * 1.5;
-        let w = clamp(1.0 - abs((x - mid) / radius), 0.0, 1.0);
-        delta += p(P_PARAMETRIC + i) * w * w * (3.0 - 2.0 * w) * 0.18;
+    if s <= 0.4 {
+        return 0.3 + 0.75 * (s - 0.2);
     }
-    return clamp(x + delta * 4.0 * x * (1.0 - x), 0.0, 1.0);
+    return 0.45 + 0.75 * (s - 0.4);
+}
+// Dehazing::apply: the photo's haze removed at Dehaze `s` > 0.
+fn dehaze_positive(pro: vec3<f32>, s: f32, pos: vec2<f32>) -> vec3<f32> {
+    let base = offset(P_HAZE);
+    if base < 0 {
+        return pro;
+    }
+    let w = u32(p(P_HAZE + 1u));
+    let h = u32(p(P_HAZE + 2u));
+    let fx = clamp((pos.x + 0.5) * p(P_HAZE + 3u) - 0.5, 0.0, f32(w - 1u));
+    let fy = clamp((pos.y + 0.5) * p(P_HAZE + 4u) - 0.5, 0.0, f32(h - 1u));
+    let ix = u32(fx);
+    let iy = u32(fy);
+    let jx = min(ix + 1u, w - 1u);
+    let jy = min(iy + 1u, h - 1u);
+    let tx = fx - f32(ix);
+    let ty = fy - f32(iy);
+    let top = table(base + i32(iy * w + ix)) * (1.0 - tx) + table(base + i32(iy * w + jx)) * tx;
+    let bottom = table(base + i32(jy * w + ix)) * (1.0 - tx) + table(base + i32(jy * w + jx)) * tx;
+    let density = top * (1.0 - ty) + bottom * ty;
+    let t = max(1.0 - haze_omega(s) * density, 0.3);
+    let air = vec3(p(P_HAZE_AIR), p(P_HAZE_AIR + 1u), p(P_HAZE_AIR + 2u));
+    let j = (pro - air) / t + air;
+    // haze.rs: no channel below half the colour scaled by the luminance's change.
+    let lw = vec3(0.2880402, 0.7118741, 0.0000857);
+    let ratio = max(dot(j, lw), 0.0) / max(dot(pro, lw), 1e-9);
+    return max(j, 0.5 * pro * ratio);
 }
 fn level(v: f32) -> f32 {
     let bp = p(P_LEVELS);
@@ -479,7 +607,7 @@ fn level(v: f32) -> f32 {
     }
     // Contrast is a measured curve on this path: the S-curve has power 1.
     let low = x;
-    return parametric(low / max(low + (1.0 - x), 1e-8));
+    return low / max(low + (1.0 - x), 1e-8);
 }
 // curve::refine_saturation: Refine Saturation below 100 keeps the colour's channel
 // differences from before the point curve, with the curved colour's luma.
@@ -517,8 +645,7 @@ fn reference_curves(rgb: vec3<f32>) -> vec3<f32> {
         let hi = max(max(max(q.x, q.y), q.z), 0.0);
         q = rgb_tone_values(q, lut(basic, 1024u, lo), lut(basic, 1024u, hi), lo, hi);
     }
-    if masked && (delta[L_CONTRAST] != 0.0 || delta[L_WHITES] != 0.0 || delta[L_BLACKS] != 0.0
-        || delta[L_DEHAZE] != 0.0) {
+    if masked && delta[L_CONTRAST] != 0.0 {
         q = clamp(q, vec3(0.0), vec3(1.0));
         let lo = min(min(q.x, q.y), q.z);
         let hi = max(max(max(q.x, q.y), q.z), 0.0);
@@ -772,17 +899,9 @@ fn rgb_table(rgb: vec3<f32>) -> vec3<f32> {
     }
     return matrix(P_RGB_BACK) * out;
 }
-// color_grade::ColorGrade
-fn grade_at(base: i32, l: f32) -> vec3<f32> {
-    let bins = u32(p(P_GRADE + 2u));
-    let f = clamp(clamp(l, 0.0, 1.0) * f32(bins) - 0.5, 0.0, f32(bins - 1u));
-    let i = min(u32(f), bins - 2u);
-    let t = f - f32(i);
-    return table3(base + i32(i) * 3) * (1.0 - t) + table3(base + i32(i + 1u) * 3) * t;
-}
 // color_grade_curves::ChannelCurves: a gain curve per channel of linear ProPhoto RGB.
-fn grade_channels(rgb: vec3<f32>) -> vec3<f32> {
-    let bins = u32(p(P_GRADE + 2u));
+fn grade(rgb: vec3<f32>) -> vec3<f32> {
+    let bins = u32(p(P_GRADE + 1u));
     let base = offset(P_GRADE);
     let q = RGB_TO_PRO * rgb;
     var out: vec3<f32>;
@@ -792,22 +911,6 @@ fn grade_channels(rgb: vec3<f32>) -> vec3<f32> {
         let t = f - f32(i);
         let g = table(base + i32(i) * 3 + c) * (1.0 - t) + table(base + i32(i + 1u) * 3 + c) * t;
         out[c] = q[c] * g;
-    }
-    return PRO_TO_RGB * out;
-}
-fn grade(rgb: vec3<f32>) -> vec3<f32> {
-    if p(P_GRADE + 3u) == 1.0 {
-        return grade_channels(rgb);
-    }
-    let y = max(0.2126 * rgb.x + 0.7152 * rgb.y + 0.0722 * rgb.z, 0.0);
-    let l = srgb_encode(min(y, 1.0));
-    let g = grade_at(offset(P_GRADE), l);
-    let o = grade_at(offset(P_GRADE + 1u), l);
-    let q = RGB_TO_PRO * rgb;
-    var out: vec3<f32>;
-    for (var c = 0; c < 3; c++) {
-        let v = max(q[c], 0.0) * exp2(g[c]);
-        out[c] = srgb_decode(clamp(srgb_encode(clamp(v, 0.0, 1.0)) + o[c], 0.0, 1.0));
     }
     return PRO_TO_RGB * out;
 }
@@ -837,23 +940,6 @@ fn lab_to_srgb(q: vec3<f32>) -> vec3<f32> {
         -0.0041960863 * b.x - 0.7034186 * b.y + 1.7076147 * b.z,
     );
 }
-fn hue_weights(hue: f32) -> array<f32, 8> {
-    var centers = array<f32, 8>(0.081, 0.151, 0.305, 0.395, 0.541, 0.733, 0.815, 0.912);
-    var weights = array<f32, 8>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
-    let h0 = rem_euclid(hue, 1.0);
-    for (var i = 0u; i < 8u; i++) {
-        let left = centers[i];
-        let right = select(centers[i + 1u], centers[0] + 1.0, i == 7u);
-        let h = select(h0, h0 + 1.0, h0 < left);
-        if h >= left && h <= right {
-            let t = (h - left) / (right - left);
-            weights[i] = 1.0 - t;
-            weights[(i + 1u) % 8u] = t;
-            break;
-        }
-    }
-    return weights;
-}
 // effects::Effects::defringe_color
 fn defringe_step(x: f32) -> f32 {
     let t = clamp((x + 0.025) / 0.05, 0.0, 1.0);
@@ -877,40 +963,30 @@ fn defringe(lab_in: vec3<f32>, h: f32) -> vec3<f32> {
     }
     return lab;
 }
-/// Oklab color controls with engine 4's measured sliders zeroed: hue angle
-/// round trip, Defringe and Monochrome.
+/// Oklab color controls after the measured mixer: hue angle round trip, Defringe and
+/// Monochrome.
 fn adjust(lab_in: vec3<f32>) -> vec3<f32> {
     var lab = lab_in;
     let chroma = length(lab.yz);
     let hue = rem_euclid(atan2(lab.z, lab.y), TAU) / TAU;
-    let weights = hue_weights(hue);
     let angle = hue * TAU;
     lab.x = clamp(lab.x, 0.0, 1.0);
     lab.y = cos(angle) * chroma;
     lab.z = sin(angle) * chroma;
     lab = defringe(lab, hue);
-    if p(P_MONO) != 0.0 {
-        var shift = 0.0;
-        for (var i = 0u; i < 8u; i++) {
-            shift += p(P_GRAY_MIX + i) * weights[i];
-        }
-        if offset(P_GRAY_GRID) >= 0 {
-            // `black_white::gray`: the chart tables scale the color to its gray.
-            let scaled = mixer(max(lab_to_srgb(lab), vec3(0.0)), offset(P_GRAY_GRID));
-            let y = max(dot(scaled, vec3(0.2126, 0.7152, 0.0722)), 0.0);
-            lab.x = clamp(pow(y, 1.0 / 3.0), 0.0, 1.0);
-        } else {
-            // `gray_mix_shift` in pipeline.rs.
-            lab.x = clamp(lab.x + shift * chroma * select(4.37, 1.78, shift > 0.0), 0.0, 1.0);
-        }
+    // Black & white renders have the mix's grid.
+    if offset(P_GRAY_GRID) >= 0 {
+        // `black_white::gray`: the chart tables scale the color to its gray.
+        let scaled = mixer(max(lab_to_srgb(lab), vec3(0.0)), offset(P_GRAY_GRID));
+        let y = max(dot(scaled, vec3(0.2126, 0.7152, 0.0722)), 0.0);
+        lab.x = clamp(pow(y, 1.0 / 3.0), 0.0, 1.0);
         lab.y = 0.0;
         lab.z = 0.0;
     }
     return lab;
 }
-fn process_pixel(sample: vec3<f32>, pos: vec2<f32>) -> vec3<f32> {
-    point_selection = -1.0;
-    // tone_stage
+// S1: scene_color.
+fn scene_color(sample: vec3<f32>) -> vec3<f32> {
     var wb = vec3(1.0);
     if masked {
         let temp = vec3(p(P_LOCAL_WB), p(P_LOCAL_WB + 1u), p(P_LOCAL_WB + 2u));
@@ -923,7 +999,10 @@ fn process_pixel(sample: vec3<f32>, pos: vec2<f32>) -> vec3<f32> {
     if hue >= 0 {
         pro = table_apply(table_at(P_HUE), pro, offset(P_HUE2), p(P_HUE_WEIGHT));
     }
-    let color = calibrate(PRO_TO_RGB * pro * p(P_PROFILE_SCALE));
+    return calibrate(PRO_TO_RGB * pro * p(P_PROFILE_SCALE));
+}
+// S2: exposure_stage, returning linear ProPhoto.
+fn exposure_stage(color: vec3<f32>) -> vec3<f32> {
     var wide = TO_2020 * color;
     if masked {
         let exposure = exp2(delta[L_EXPOSURE]);
@@ -932,26 +1011,43 @@ fn process_pixel(sample: vec3<f32>, pos: vec2<f32>) -> vec3<f32> {
     } else {
         wide = wide * p(P_EXPOSURE);
     }
-    if masked && delta[L_EXPOSURE] != 0.0 {
-        let black = 0.0015 * exp2(p(P_EXPOSURE_EV) + delta[L_EXPOSURE]);
-        wide = vec3(ramp_with(wide.x, black), ramp_with(wide.y, black), ramp_with(wide.z, black));
-    } else {
-        wide = vec3(ramp(wide.x), ramp(wide.y), ramp(wide.z));
-    }
-    let y = max(luma2020(wide), 1e-8);
-    wide = wide * y / y;
-    var rgb = profile_finish(FROM_2020 * wide);
-    // Toning the reduced photo for the Shadows/Highlights map (`tone_params`).
-    if p(P_TONE_ONLY) != 0.0 {
-        return rgb;
-    }
+    return RGB_TO_PRO * (FROM_2020 * wide);
+}
+// S3: scene_stage.
+fn scene_stage(pro_in: vec3<f32>, pos: vec2<f32>) -> vec3<f32> {
+    var pro = pro_in;
     if p(P_LOCAL) != 0.0 {
-        rgb *= local_gain(pos, rgb);
+        pro *= local_gain(pos, dot(pro, vec3(0.2880402, 0.7118741, 0.0000857)));
     }
+    var dehaze = p(P_DEHAZE);
+    if masked {
+        dehaze += delta[L_DEHAZE];
+    }
+    if dehaze > 0.0 {
+        pro = dehaze_positive(pro, dehaze, pos);
+    } else if dehaze < 0.0 {
+        let key = p(P_DEHAZE + 1u);
+        for (var c = 0u; c < 3u; c++) {
+            if pro[c] > 0.0 {
+                pro[c] *= exp2(family(2u, dehaze, key, log2(max(pro[c], LOCAL_FLOOR))));
+            }
+        }
+    }
+    let toned = scene_global(pro);
+    if masked && (delta[L_WHITES] != 0.0 || delta[L_BLACKS] != 0.0) {
+        return scene_mask(toned, delta[L_WHITES], delta[L_BLACKS]);
+    }
+    return toned;
+}
+fn process_pixel(sample: vec3<f32>, pos: vec2<f32>) -> vec3<f32> {
+    point_selection = -1.0;
+    let scene = scene_stage(exposure_stage(scene_color(sample)), pos);
+    // S4: profile_stage.
+    var rgb = profile_finish(scene);
     // color_stage
     rgb = reference_curves(rgb);
     if offset(P_MIXER) >= 0 {
-        // SaturationModel::Gray: below −50, a fade to the luminance the color has
+        // Saturation below −50: a fade to the luminance the color has
         // through the other sliders.
         var source = rgb;
         if offset(P_GRAY_SOURCE) >= 0 {
@@ -985,27 +1081,10 @@ fn process_pixel(sample: vec3<f32>, pos: vec2<f32>) -> vec3<f32> {
         lab.x = clamp(lab.x, 0.0, 1.0);
     }
     rgb = lab_to_srgb(lab);
-    lab = srgb_to_lab(rgb);
-    let l = clamp(lab.x, 0.0, 1.0);
-    let gray = l * l * l;
-    var gamut = 1.0;
-    // GamutModel::Clip: each channel clipped on its own, as Camera Raw does.
-    let clip = p(P_GAMUT_CLIP) != 0.0;
-    for (var k = 0; k < 3; k++) {
-        if clip {
-            break;
-        }
-        let v = rgb[k];
-        if v < 0.0 {
-            gamut = min(gamut, gray / max(gray - v, 1e-8));
-        }
-        if v > 1.0 {
-            gamut = min(gamut, (1.0 - gray) / max(v - gray, 1e-8));
-        }
-    }
+    // Each channel clipped on its own, as Camera Raw does.
     var out: vec3<f32>;
     for (var k = 0; k < 3; k++) {
-        out[k] = clamp(srgb_encode(select(gray + (rgb[k] - gray) * gamut, clamp(rgb[k], 0.0, 1.0), clip)), 0.0, 1.0);
+        out[k] = clamp(srgb_encode(clamp(rgb[k], 0.0, 1.0)), 0.0, 1.0);
     }
     if point_selection >= 0.0 {
         out = visualize(out);

@@ -1,6 +1,6 @@
 # Transform panel
 
-Engine 4 renders Lightroom's Transform panel: the manual sliders (`Recipe::transform`, imported from `crs:Perspective*`) and Upright (`Recipe::upright`, imported from `crs:PerspectiveUpright` and `crs:Upright*`). Areas with no source pixel render white, as in Lightroom.
+RAWmakase renders Lightroom's Transform panel: the manual sliders (`Recipe::transform`, imported from `crs:Perspective*`) and Upright (`Recipe::upright`, imported from `crs:PerspectiveUpright` and `crs:Upright*`). Areas with no source pixel render white, as in Lightroom.
 
 Both are homographies applied after lens correction and before the crop, in the frame the camera recorded: before the photo is rotated or flipped for display, and after the camera's default crop. Camera Raw 18.6 works in that frame, so on a photo the camera turned to portrait, `PerspectiveVertical` keystones across the screen. Lightroom's panel shows the sliders along the displayed photo instead: its Vertical −70 on a photo turned 90° left is stored as `PerspectiveHorizontal` +70. RAWmakase stores them as Lightroom does and shows them the same way (`Transform::displayed`). Upright applies first, then the sliders. Lightroom's manual lens Distortion applies before both, in the same frame ([lens corrections](lens-corrections.md#manual-distortion)).
 
@@ -15,6 +15,12 @@ The Crop tool (R) works on the photo as shown, after its rotation and flips. The
 - **Overlays**: Grid, Thirds, Diagonal, Triangle, Golden Ratio and Golden Spiral. O cycles them in that order, Shift+O turns the Triangle (2 ways) and Golden Spiral (4 corners). The panel's Overlay menu shows when: Always, Auto (the default: with the pointer over the photo, as Lightroom's Auto Show, while the crop or ruler is dragged, and for 1.5 s after an overlay is picked, so choosing one in the panel shows it) or Never. The ruler shows a grid while it is drawn. The overlay and when it shows are a view preference saved in the session, not part of the edit. Lightroom's Aspect Ratios overlay is not implemented.
 
 X, O and Shift+O work only while the Crop tool is open and no text field has focus; with the Crop tool open X does not reject the photo.
+
+### In-camera aspect ratio
+
+A raw shot at an aspect ratio other than the sensor's (1:1, 4:3, 16:9 on a 3:2 Canon; 16:9 on an Olympus or Fujifilm) keeps the whole frame, and the camera records the ratio it showed. Camera Raw opens such a photo cropped to that ratio, and the crop can be widened again: Adobe DNG Converter writes it as DefaultUserCrop inside an unchanged DefaultCrop, and Camera Raw's settings carry it as an ordinary crop (`HasCrop` True, `CropLeft` 0.166667 to `CropRight` 0.833333 on an EOS M6 Mark II at 1:1). RAWmakase does the same: the frame (image space, masks, Upright and Lightroom's crop values) is the camera's default crop, and the ratio is `Metadata::camera_crop`, the crop a photo's settings start from (`Recipe::for_metadata`, turned with the camera's orientation, since the camera records it on the unrotated frame), so Reset returns to it and the Crop panel's Reset removes it. It comes from LibRaw: for a Canon its AspectInfo crop inside SensorInfo's frame, for other makes the second inset crop LibRaw derives from the recorded ratio, and for a DNG its DefaultUserCrop. LibRaw's rectangles are in raw coordinates and are moved to the decoded image's. Settings with `HasCrop` False are the whole frame, as in Camera Raw; settings without crop values keep the starting crop.
+
+Adobe does not treat every camera this way: DNG Converter 18 hard-crops the PowerShot G12 (2010) to its 3:2 setting as the DefaultCrop, while the S120 (2013) and later get a DefaultUserCrop. RAWmakase uses the starting crop for all of them, so a Lightroom crop of a G12 photo shot at 3:2 is read against the 4:3 frame.
 
 ## Constrain Crop
 

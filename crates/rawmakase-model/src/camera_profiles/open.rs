@@ -268,15 +268,15 @@ mod tests {
         color.ensure_camera(&m).unwrap();
         assert_eq!(color.enhanced.as_ref().unwrap().base_name, STANDARD);
         for v in [0., 0.05, 0.18, 0.5, 0.9] {
-            let out = color.finish([v; 3], true);
+            let out = color.finish([v; 3]);
             assert!(
                 (out[0] - out[1]).abs() < 1e-4 && (out[1] - out[2]).abs() < 1e-4,
                 "{v}: {out:?}"
             );
         }
-        let black = color.finish([0.; 3], true);
+        let black = color.finish([0.; 3]);
         assert!(black.iter().all(|c| c.abs() < 1e-4), "{black:?}");
-        let white = color.finish([1.; 3], true);
+        let white = color.finish([1.; 3]);
         assert!(white.iter().all(|c| (c - 1.).abs() < 1e-3), "{white:?}");
     }
 
@@ -291,16 +291,16 @@ mod tests {
             [0.08, 0.15, 0.45],
             [0.5, 0.45, 0.1],
         ] {
-            let a = standard.finish(rgb, true);
-            let b = color.finish(rgb, true);
+            let a = standard.finish(rgb);
+            let b = color.finish(rgb);
             let diff = (0..3).map(|c| (a[c] - b[c]).abs()).fold(0., f32::max);
             assert!(diff > 1e-4 && diff < 0.08, "{rgb:?}: {a:?} vs {b:?}");
         }
         // Contrast: shadows a little darker, highlights a little brighter.
-        let dark = color.finish([0.03; 3], true)[1];
-        let light = color.finish([0.5; 3], true)[1];
-        assert!(dark < standard.finish([0.03; 3], true)[1]);
-        assert!(light > standard.finish([0.5; 3], true)[1]);
+        let dark = color.finish([0.03; 3])[1];
+        let light = color.finish([0.5; 3])[1];
+        assert!(dark < standard.finish([0.03; 3])[1]);
+        assert!(light > standard.finish([0.5; 3])[1]);
     }
 
     #[test]
@@ -315,7 +315,6 @@ mod tests {
             .collect();
         let r = Recipe::with_profiles(&m, &profiles);
         assert_eq!(r.profile.as_ref().unwrap().name, COLOR);
-        assert!(r.wide_gamut_curves);
         // Imported Adobe Color wins, as in Lightroom.
         let mut with_adobe = profiles.clone();
         let mut adobe = color(&m).unwrap();

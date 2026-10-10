@@ -1,4 +1,4 @@
-//! Effects > Grain. [`GrainModel::Measured`] follows Camera Raw 18.7, fitted to the
+//! Effects > Grain, following Camera Raw 18.7, fitted to the
 //! statistics (not the pixels) of renders of flat synthetic DNGs 1500, 3000 and 6000
 //! pixels wide at Amount 25 to 100, Size 0 to 100 and Roughness 0 to 100.
 //!
@@ -14,7 +14,6 @@
 //! the 21 measured settings. Camera Raw's slightly negative pixel-to-pixel correlation
 //! at small sizes (its grain is a little "blue") is not modelled.
 use super::Effects;
-use crate::model::operators::GrainModel;
 
 /// The long edge, in pixels, at which grain sizes below are given.
 const REFERENCE_EDGE: f32 = 6000.;
@@ -33,8 +32,6 @@ const FINE_FADE: f32 = 0.7055;
 /// deviation on flat grays).
 const LUMINANCE: [f32; 9] = [0., 0.023, 0.156, 0.41, 0.62, 0.8, 0.91, 0.964, 1.];
 const LUMINANCE_GAIN: [f32; 9] = [0., 0.5, 1.14, 1.08, 1., 0.94, 0.86, 0.61, 0.3];
-/// The original grain's strength and size.
-const ORIGINAL_STRENGTH: f32 = 0.13;
 
 fn interpolate(x: f32, xs: &[f32], ys: &[f32]) -> f32 {
     let i = xs.partition_point(|v| *v <= x).clamp(1, xs.len() - 1);
@@ -69,7 +66,6 @@ fn value_noise(x: f32, y: f32, cell: f32, seed: u32) -> f32 {
 /// shared by the CPU and the GPU preview.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct GrainField {
-    pub(crate) model: GrainModel,
     pub(crate) amount: f32,
     /// Value-noise lattice spacing, in full-resolution pixels.
     pub(crate) cell: f32,
@@ -79,31 +75,16 @@ pub(crate) struct GrainField {
     pub(crate) seed: u32,
 }
 impl GrainField {
-    pub(crate) fn new(e: &Effects, model: GrainModel, edge: f32) -> Self {
-        match model {
-            GrainModel::Original => Self {
-                model,
-                amount: e.grain,
-                cell: 0.75 + e.grain_size * 5.,
-                coarse: 1. - e.grain_roughness,
-                fine: e.grain_roughness,
-                seed: e.grain_seed,
-            },
-            GrainModel::Measured => {
-                let f = e.grain_roughness;
-                let width = (WIDTH_BASE + WIDTH_PER_SIZE * e.grain_size) * edge / REFERENCE_EDGE
-                    * interpolate(f, &ROUGHNESS, &ROUGHNESS_WIDTH);
-                Self {
-                    model,
-                    amount: e.grain,
-                    cell: 2. * width,
-                    coarse: interpolate(f, &ROUGHNESS, &ROUGHNESS_COARSE),
-                    fine: FINE
-                        * (-width / FINE_FADE).exp()
-                        * interpolate(f, &ROUGHNESS, &ROUGHNESS_FINE),
-                    seed: e.grain_seed,
-                }
-            }
+    pub(crate) fn new(e: &Effects, edge: f32) -> Self {
+        let f = e.grain_roughness;
+        let width = (WIDTH_BASE + WIDTH_PER_SIZE * e.grain_size) * edge / REFERENCE_EDGE
+            * interpolate(f, &ROUGHNESS, &ROUGHNESS_WIDTH);
+        Self {
+            amount: e.grain,
+            cell: 2. * width,
+            coarse: interpolate(f, &ROUGHNESS, &ROUGHNESS_COARSE),
+            fine: FINE * (-width / FINE_FADE).exp() * interpolate(f, &ROUGHNESS, &ROUGHNESS_FINE),
+            seed: e.grain_seed,
         }
     }
     /// The grain at full-resolution position `x`, `y` for an output of `scale` pixels
@@ -113,20 +94,14 @@ impl GrainField {
         if self.amount == 0. {
             return 0.;
         }
-        let averaged = match self.model {
-            GrainModel::Original => (self.cell * scale).min(1.) / self.cell.min(1.),
-            // Grain below a pixel wide averages away within the pixel.
-            GrainModel::Measured => (self.cell * scale).min(1.),
-        };
+        // Grain below a pixel wide averages away within the pixel.
+        let averaged = (self.cell * scale).min(1.);
         let coarse = value_noise(x, y, self.cell, self.seed) * averaged;
         let fine = hash(x.round() as i32, y.round() as i32, self.seed ^ 0x21f09) * scale.min(1.);
         (coarse * self.coarse + fine * self.fine) * self.amount * self.strength(l)
     }
     fn strength(&self, l: f32) -> f32 {
-        match self.model {
-            GrainModel::Original => ORIGINAL_STRENGTH * (4. * l * (1. - l)).max(0.2),
-            GrainModel::Measured => interpolate(l, &LUMINANCE, &LUMINANCE_GAIN),
-        }
+        interpolate(l, &LUMINANCE, &LUMINANCE_GAIN)
     }
 }
 
@@ -163,22 +138,18 @@ mod tests {
             (3000., 0.25, 0., 8.48),
             (3000., 0.25, 1., 5.55),
         ] {
-            let field =
-                GrainField::new(&measured(0.5, size, roughness), GrainModel::Measured, edge);
+            let field = GrainField::new(&measured(0.5, size, roughness), edge);
             let ours = deviation(&field) * 98.;
             assert!(
                 (ours / camera_raw - 1.).abs() < 0.2,
                 "{edge} {size} {roughness}: {ours} against {camera_raw}"
             );
         }
-        // The original grain was a fifth as strong.
-        let original = GrainField::new(&measured(0.5, 0.25, 0.5), GrainModel::Original, 3000.);
-        assert!(deviation(&original) * 98. < 2.5);
     }
 
     #[test]
     fn measured_grain_fades_into_black_and_white() {
-        let field = GrainField::new(&measured(1., 0.25, 0.5), GrainModel::Measured, 3000.);
+        let field = GrainField::new(&measured(1., 0.25, 0.5), 3000.);
         assert_eq!(field.strength(0.), 0.);
         assert!(field.strength(0.97) < field.strength(0.62) * 0.7);
         assert!(field.strength(0.2) > field.strength(0.62));

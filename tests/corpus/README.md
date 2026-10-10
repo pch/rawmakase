@@ -13,6 +13,9 @@ Tests that RAWmakase's colors don't change unnoticed, and how far they are from 
 | `snapshots/*.json` | RAWmakase's own render of every chart and case. |
 | `camera-raw/*.json` | Camera Raw 18.7 renders of the synthetic charts with their embedded profile (no Adobe files involved). |
 | `camera-raw/baseline.json` | RAWmakase's accepted distance from those renders, per case. |
+| `camera-raw/scene-probes.json` | Camera Raw 18.7 renders of the scene tone stage's probes (linear-profile ramps and synthetic scenes, read at the scene stage): the ramps' patch values and layout, and per case the settings and Camera Raw's linear ProPhoto patch means or block luminances. Written by `scripts/corpus/scene-probes.py`; never re-blessed. |
+| `camera-raw/scene-probes-baseline.json` | RAWmakase's accepted distance from those renders, per probe case. |
+| `scene-probes/*.dng` | Three synthetic scenes (`scripts/corpus/probe_scenes.py` seeds 1, 3, 4) reduced to 384×256, as uncompressed probe DNGs (`probe_dng.py`, about 0.2 MB each). |
 | `cameras.json` | LibRaw color matrices of the cameras that get their own chart. |
 | `pixls.json` | CC0 sample RAWs from raw.pixls.us (URL, SHA-256, size). The files themselves are not committed. |
 
@@ -35,9 +38,10 @@ Mosaic charts are used because RAWmakase rejects three-channel `LinearRaw` DNGs.
 - `colors_match_snapshots`: every chart and case against the snapshots. Fails on any patch moving more than ΔE00 0.5, or a case's mean moving more than 0.1, and names the patches with their lightness, chroma and hue change.
 - `exports_match_the_render`: 16-bit TIFF and JPEG exports carry the render's colors.
 - `preview_size_matches_full_size`: a downscaled render keeps the colors of the full render.
+- `scene_probes_do_not_regress`: the scene tone stage's Tier 1 probes (docs/scene-tone-stage.md#testing): ramps (rebuilt by `dng::write_probe`) and the committed scenes rendered to the stage's output and compared with `camera-raw/scene-probes.json`. Fails when a case's encoded mean or largest error, or a scene setting's effect error in EV, exceeds `camera-raw/scene-probes-baseline.json` by more than 5% plus 0.0005, 0.003 or 0.005 EV. With `--nocapture` it prints every case against its baseline.
 - `camera_raw_parity_does_not_regress`: fails when a case gets further from Camera Raw than its baseline (mean +0.1 or p95 +0.3 ΔE00). With `--nocapture` it prints, per case, ΔE00, the tone offset on the gray ramp, the contrast (slope) ratio, the hue error and the chroma difference.
 
-When a color change is intended, run the tests with `RAWMAKASE_BLESS=1` and commit the diff of `snapshots/` (and `camera-raw/baseline.json` if parity moved), saying why in the commit message. Charts are regenerated the same way after a generator change.
+When a color change is intended, run the tests with `RAWMAKASE_BLESS=1` and commit the diff of `snapshots/` (and `camera-raw/baseline.json` or `camera-raw/scene-probes-baseline.json` if parity moved), saying why in the commit message. Charts are regenerated the same way after a generator change.
 
 ## Private tier
 
@@ -72,7 +76,10 @@ All run from the repository root with a Python that has numpy (`/opt/homebrew/bi
 - `scripts/corpus/camera-raw-photos.py`: Camera Raw renders of every corpus photo for the `photos` cases.
 - `scripts/corpus/contrast-curve.py`: renders Contrast on `synthetic-d65`, prints the chart's Contrast table for `basic_tone_data.rs`, and with the private photo references fits the photo's Contrast pivot.
 - `scripts/corpus/color-grading.py`: renders Color Grading's fitting cases (about 740: every region at twelve hues and four saturations, Shadows, Midtones and Highlights over a grid of Blending and Balance, the Luminance sliders, and held-out checks) on `synthetic-d65` as 16-bit ProPhoto RGB and fits `crates/rawmakase-engine/src/develop/color_grade_curves.bin` from them. The renders' patch means stay outside the repository.
-- `scripts/corpus/whites-curve.py`: renders Whites on `synthetic-d65` at 13 exposures, prints the adaptive Whites tables for `basic_tone_data.rs`, and with the private photo references fits the offset between photos and the chart.
+- `scripts/corpus/scene-probes.py`: `references ROOT` writes `camera-raw/scene-probes.json` and `scene-probes/` from the scene tone survey's existing Camera Raw renders under ROOT (`render ROOT` renders missing ramp cases; the scenes come from `scene-tone-local.py synth`).
+- `scripts/corpus/scene-tone-tables.py`: renders neutral-ramp probe DNGs (`probe_dng.py`) in Camera Raw (`camera_raw.py`) and writes the scene tone stage's global tables (white point and Whites, Blacks, masks' Whites and Blacks) in `crates/rawmakase-engine/src/develop/scene_tone/`.
+- `scripts/corpus/scene-tone-local.py`: renders synthetic scenes (`probe_scenes.py`) and prepares training photos with a linear profile (`linear_profile.py`), then fits the local operators' tables (`local_tone_data.rs`, `clarity_data.rs`).
+- `scripts/corpus/gate.py`: the scene tone stage's photo gates (docs/scene-tone-stage.md#photo-gates): Camera Raw references, RAWmakase renders, scores and the acceptance rule; photos and renders stay outside the repository.
 - `scripts/corpus/parametric-curve.py`: renders the parametric curve's fitting cases (about 380 region and split settings) on `synthetic-d65` and fits `crates/rawmakase-engine/src/develop/parametric.bin` from them. The renders' patch means stay outside the repository.
 - `scripts/corpus/pixls.py`: `manifest` (rebuild `pixls.json`), `download` (checks hashes and the budget), `cameras` (rebuild `cameras.json` from the corpus RAWs).
 - `scripts/corpus/migrate-references.py`: reduce existing reference TIFFs (sweeps, Lightroom exports) to block files.

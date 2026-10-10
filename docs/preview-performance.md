@@ -68,15 +68,18 @@ region) still recompute Clarity over the full image on every change.
 The desktop renderer keeps the results of the stages before the per-pixel color
 pipeline (`crates/rawmakase-engine/src/develop/stage_cache.rs`), each keyed by the recipe fields it reads:
 
-- local-tone blurs: log luminance and its box blurs, which depend on white balance,
-  profile and lens vignetting but not on exposure (exposure shifts all of them
-  equally);
-- the local-tone image: the blurs with Clarity, Texture and, before engine 4,
-  Shadows and Highlights applied;
+- the measurement copy: the full photo reduced to 512 pixels, from which every
+  render takes the scene tone stage's measures and maps (docs/scene-tone-stage.md),
+  and with red eye corrections or spot removal, its copy without them (for the
+  darkest level the default black follows);
+- the scene tone stage's measures of that copy, keyed by the copies, the profile
+  matrix, white balance, Temperature and Tint, the profile and its amount, the
+  camera's exposure and Camera Calibration (the measures are taken at Exposure 0);
+- the textured image, when Texture is on;
 - samples: each output pixel's camera value after geometry, lens correction and
   noise reduction, and its source position.
 
-Exposure, curve, HSL, grading and Engine 4 Shadows/Highlights edits therefore rerun
+Exposure, curve, HSL, grading and Shadows/Highlights edits therefore rerun
 only the per-pixel stage; Clarity and Texture edits reuse the blurs. Two entries are
 kept per stage (Fit and a 100% view) within 512 MB per stage; larger results are
 computed and not kept. Export uses no cache. A unit test checks that cached renders
@@ -105,11 +108,10 @@ levels are the next step.
 ## Slider responsiveness
 
 The render worker used to answer each change with a 1024-pixel draft from the
-legacy (engine 2) pipeline, wait 150 ms, then render the full-quality Fit, which
+earlier (engine 2) pipeline, wait 150 ms, then render the full-quality Fit, which
 took one to two seconds. With the pyramid and stage cache, the worker renders the
 current engine at Fit size straight away, with no draft and no wait, so every
-frame shown while dragging is the real rendering. Photos with older engines (before
-3) render Fit from a reduced copy of the camera image instead.
+frame shown while dragging is the real rendering.
 
 At 100%, each change first renders the visible region from the pyramid at half
 resolution or less (at most 0.6 megapixels), which the viewport stretches over the
@@ -146,18 +148,17 @@ change the first update was the 50 ms legacy draft, and the real rendering came
 `crates/rawmakase-engine/src/develop/gpu/develop.wgsl` ports the per-pixel stage (`process_pixel`) of the
 current engine: white balance, camera matrix, DCP HueSatMap (with its two-illuminant
 blend), calibration, exposure and the DNG exposure ramp, LookTable, enhanced-look
-table and curve, the profile tone curve, the engine 4 Shadows/Highlights map,
+table and curve, the profile tone curve, the Shadows/Highlights map,
 measured Basic curves, levels, parametric and point curves, color mixer, color
-grading, Oklab Defringe/Monochrome and gamut compression. It runs on the samples in
+grading, Oklab Defringe/Monochrome and per-channel gamut clipping. It runs on the samples in
 the stage cache, which stay on the device while only the recipe changes; parameters
 and tables (`pixel_params.rs`) are uploaded per render and the result is read back
 for sharpening and spatial effects on the CPU (readback callers such as the benchmark
 and tests), or finished on the device (the desktop).
 
-The port covers engine 4 with reference curves, color and calibration and a profile
-tone curve, which every new photo uses. Older engines, and color grading with
-Blending or Balance outside the measured tables, render on the CPU, as do machines
-without a usable adapter; a GPU failure disables the GPU for the session. Export
+The port covers every recipe resolved with a camera profile, which is every photo
+once it has been resolved (`pixel_params::supported`). Machines without a usable
+adapter render on the CPU; a GPU failure disables the GPU for the session. Export
 always uses the CPU, which remains the reference.
 
 Profile tables are read with explicit trilinear interpolation from a storage buffer
@@ -214,7 +215,7 @@ clipping overlay: at most one level differs, in at most 9 of 48,513 values.
 Also in this change: the local-tone gain and the samples are keyed by what they are
 computed from rather than by the address of the blurs, so a 61-megapixel photo,
 whose blurs exceed the cache budget, no longer recomputes Clarity on every exposure
-change at 100%; and the reduced image the engine 4 Shadows/Highlights map is built
+change at 100%; and the reduced image the Shadows/Highlights map is built
 from is kept in the stage cache instead of being reduced from the full image on
 every render.
 
@@ -248,13 +249,17 @@ the gain under this load); see the next section.
 
 ## Photo kept on the GPU
 
+(The log luminance, box blurs and Clarity/Texture gain this section describes were
+removed with the scene tone stage, whose Clarity reads the 512-pixel map; the photo
+is still kept on the device and sampled there.)
+
 The stages before the per-pixel stage now run on the device too (`gpu/logs.wgsl`,
 `gpu/local.wgsl`, `gpu/resident.rs`). The photo, or the pyramid level a Fit renders
 from, is uploaded once and kept; the log luminance and the box blurs (running sums
 per row and column, as the CPU computes them) are computed and kept there, keyed as
 the stage cache keys them. The Clarity/Texture gain is computed only for the photo
 pixels a region samples (found by mapping the region's edges through geometry and
-lens correction), so a Clarity edit touches the whole photo only when the engine 4
+lens correction), so a Clarity edit touches the whole photo only when the
 Shadows/Highlights map needs its reduced input: that reduction computes the gain as
 it goes, in two passes (row sums over each box's columns, then over its rows) and is
 read back (512 pixels on the long edge). Each region is sampled through geometry,
@@ -303,7 +308,7 @@ Presented per exposure change with Shadows +40, Highlights −30 and Clarity +20
 
 ## Local-tone gain
 
-Clarity, Texture and older engines' Shadows/Highlights compare each pixel's log
+Clarity and Texture compare each pixel's log
 luminance with full-resolution box blurs of it (16 and 64 pixels on a 6000-pixel long
 edge). The stage result is kept as a per-pixel gain that the sampling stage applies
 (4 bytes per pixel), instead of a modified copy of the camera image (12 bytes per

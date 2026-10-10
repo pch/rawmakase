@@ -2,14 +2,14 @@
 use super::*;
 
 /// The GPU path for everything before the per-pixel stage, with the photo (or pyramid
-/// level) `source` kept on the device: the local-tone gain, the Shadows/Highlights
-/// map's reduced input and the region's samples are made there, then developed and
-/// presented. `scale` is `source`'s size relative to the full-resolution photo. `None`
-/// without a display or GPU, or when the port does not cover the recipe; the CPU
-/// stages then run as before.
+/// level) `source` kept on the device: the region's samples are made there, then
+/// developed and presented. `scale` is
+/// `source`'s size relative to the full-resolution photo. `None` without a display or
+/// GPU, or when the port does not cover the recipe; the CPU stages then run as before.
 #[allow(clippy::too_many_arguments)]
 fn render_resident(
     source: &Arc<CameraImage>,
+    full: &Retouched,
     r: &Recipe,
     scale: f32,
     g: &Geometry,
@@ -19,18 +19,14 @@ fn render_resident(
     cancel: &AtomicBool,
     stages: &mut Stages,
 ) -> Result<Option<develop::gpu::Frame>> {
-    use develop::pipeline::{Source, pixel_params::pixel_params};
     let Some(display) = stages.display else {
         return Ok(None);
     };
-    // Engine 4 renders Shadows and Highlights per pixel; the gain carries only Clarity
-    // and Texture (see `local_stage`).
-    if !(r.engine >= 4 && r.reference_curves)
-        || !stages
-            .backend
-            .gpu
-            .as_ref()
-            .is_some_and(|gpu| gpu.fits_resident(source))
+    if !stages
+        .backend
+        .gpu
+        .as_ref()
+        .is_some_and(|gpu| gpu.fits_resident(source))
         || stages.backend.resident_fallback.is_some()
     {
         return Ok(None);
@@ -61,89 +57,16 @@ fn render_resident(
     } else {
         source.clone()
     };
-    let mut spatial = base.clone();
-    spatial.shadows = 0.;
-    spatial.highlights = 0.;
-    if develop::clarity::measured(&base) != 0. {
-        spatial.effects.clarity = 0.;
-    }
-    let mut toned = Toned {
+    let (measured, unretouched) = measurement_copies(full, Some(&mut *stages.cache), cancel)?;
+    let toned = Toned {
         image: source.clone(),
         scale,
-        gain: None,
-        gain_key: None,
-        reduced: None,
         untextured,
+        measured: Some(measured),
+        unretouched: Some(unretouched),
+        measures: Some(stages.cache.measures.clone()),
     };
-    let mut tones = None;
-    if spatial.effects.clarity != 0. || spatial.effects.texture != 0. {
-        let texture = spatial.effects.texture != 0.;
-        let blur_key = BlurKey::new(source, &spatial, scale, texture);
-        let Some(camera) = pixel_params(Source::from(source.as_ref()), &spatial) else {
-            return Ok(None);
-        };
-        let vignetting = develop::pipeline::vignetting_gpu_params(source, &spatial);
-        // As `local_blurs`: 16 and 64 px on a 6000 px long edge, and 3 px for Texture.
-        let long = source.width.max(source.height) as f32;
-        let radius = |px: f32| ((px / 6000. * long).round() as u32).max(1);
-        let radii = [
-            Some(radius(16.)),
-            Some(radius(64.)),
-            texture.then(|| ((3. * scale).round() as u32).max(1)),
-        ];
-        let sliders = [
-            spatial.exposure + spatial.camera_exposure,
-            spatial.shadows,
-            spatial.highlights,
-            spatial.effects.clarity,
-            spatial.effects.texture,
-        ];
-        toned.gain_key = Some(LocalKey::new(blur_key.clone(), &spatial));
-        tones = stages.backend.run_resident(cancel, |gpu| {
-            gpu.scoped(|gpu| {
-                gpu.local_tones(
-                    source,
-                    &camera,
-                    vignetting.as_ref(),
-                    radii,
-                    sliders,
-                    blur_key,
-                    cancel,
-                )
-            })
-        });
-        if tones.is_none() {
-            return Ok(None);
-        }
-    }
-    if develop::pipeline::pixel_params::needs_reduced(&base) {
-        let edge = develop::local_tone::MAP_EDGE;
-        let size = if source.width.max(source.height) <= edge {
-            (source.width, source.height)
-        } else {
-            let k = edge as f32 / source.width.max(source.height) as f32;
-            (
-                (source.width as f32 * k).round() as u32,
-                (source.height as f32 * k).round() as u32,
-            )
-        };
-        let key = ReducedKey::new(&toned);
-        let bytes = |im: &CameraImage| im.pixels.len() * 12;
-        let Stages { cache, backend, .. } = stages;
-        let reduced = cache.reduced.get_or_try(key, bytes, || {
-            backend
-                .run_resident(cancel, |gpu| {
-                    gpu.scoped(|gpu| gpu.reduce_toned(source, tones.as_ref(), size, cancel))
-                })
-                .context("GPU reduction failed")
-        });
-        let Ok(reduced) = reduced else {
-            return Ok(None);
-        };
-        toned.reduced = Some(reduced);
-    }
-    let Some(mut params) =
-        develop::pipeline::gpu_pixel_params(toned.source(), &base, stages.backend, cancel)
+    let Some(mut params) = develop::pipeline::pixel_params::pixel_params(toned.source(), &base)
     else {
         return Ok(None);
     };
@@ -174,7 +97,9 @@ fn render_resident(
     let e = &base.effects;
     sampling[slot::NOISE].copy_from_slice(&[
         base.noise_luma,
-        base.sampled_noise_chroma(),
+        // The sampling stage's colour term: Color noise reduction runs on the camera
+        // image (`color_noise`).
+        0.,
         e.luma_detail,
         e.chroma_detail,
         e.luma_contrast,
@@ -184,23 +109,9 @@ fn render_resident(
     let lens = develop::pipeline::lens_gpu_params(source, &base, slot::HEADER, &mut tables);
     sampling[slot::LENS.start..slot::VIGNETTING_AMOUNT.end].copy_from_slice(&lens);
     sampling.extend(tables);
-    let bounds = match tones {
-        Some(_) => develop::pipeline::source_bounds(source, &base, g, region, spread),
-        None => [0; 4],
-    };
     let backend = &mut *stages.backend;
     let Some(samples) = backend.run_resident(cancel, |gpu| {
-        gpu.scoped(|gpu| {
-            gpu.sample(
-                source,
-                tones.as_ref(),
-                sampling,
-                bounds,
-                (w, h),
-                key,
-                cancel,
-            )
-        })
+        gpu.scoped(|gpu| gpu.sample(source, sampling, (w, h), key, cancel))
     }) else {
         return Ok(None);
     };
@@ -223,7 +134,7 @@ fn render_resident(
 /// `size` output.
 pub(crate) fn render_level(
     level: &Arc<CameraImage>,
-    full: &CameraImage,
+    full: &Retouched,
     r: &ValidRecipe,
     size: (u32, u32),
     region: [u32; 4],
@@ -236,7 +147,8 @@ pub(crate) fn render_level(
     if let Some(p) = &r.profile {
         p.ensure_camera(&level.metadata)?;
     }
-    let level_scale = level.width.max(level.height) as f32 / full.width.max(full.height) as f32;
+    let level_scale =
+        level.width.max(level.height) as f32 / full.image.width.max(full.image.height) as f32;
     let mut g = Geometry::new(level, r, 0);
     let footprint = g.width.max(g.height) as f32 / size.0.max(size.1) as f32;
     (g.width, g.height) = size;
@@ -271,6 +183,7 @@ pub(crate) fn render_level(
     };
     let frame = render_resident(
         level,
+        full,
         r,
         level_scale,
         &g,
@@ -283,7 +196,8 @@ pub(crate) fn render_level(
     if let Some(frame) = frame {
         return Ok(Output::Frame(Box::new(frame)));
     }
-    let (toned, tonal_recipe) = local_stage(level, r, level_scale, cancel, Some(stages.cache))?;
+    let (toned, tonal_recipe) =
+        local_stage(level, full, r, level_scale, cancel, Some(stages.cache))?;
     let frame = develop::pipeline::render_display(
         &toned,
         &tonal_recipe,
@@ -379,7 +293,7 @@ pub(crate) fn render_preview(
         crate::lens::auto_ca::prime(im);
     }
     let source = retouched(im, r, cancel, stages.as_mut().map(|s| &mut *s.retouch))?;
-    let g = Geometry::new(&source, r, 0);
+    let g = Geometry::new(&source.image, r, 0);
     let [x, y, w, h] = region.unwrap_or([0, 0, g.width, g.height]);
     ensure!(
         w > 0
@@ -415,12 +329,24 @@ pub(crate) fn render_preview(
             scale: 1.,
             crop: [x - left, y - top, w, h],
         };
-        let frame = render_resident(&source, r, 1., &g, base, 0., &finish, cancel, stages)?;
+        let frame = render_resident(
+            &source.image,
+            &source,
+            r,
+            1.,
+            &g,
+            base,
+            0.,
+            &finish,
+            cancel,
+            stages,
+        )?;
         if let Some(frame) = frame {
             return Ok(Output::Frame(Box::new(frame)));
         }
     }
     let (toned, tonal_recipe) = local_stage(
+        &source.image,
         &source,
         r,
         1.,
@@ -462,10 +388,7 @@ pub(crate) fn render_preview(
     let local_finish = weights
         .as_ref()
         .is_some_and(|w| w.uses(&[slot::SHARPNESS, slot::NOISE]));
-    let spatial = r.effects.grain != 0.
-        || r.effects.vignette != 0.
-        || r.finished_lens_vignette() != 0.
-        || local_finish;
+    let spatial = r.effects.grain != 0. || r.effects.vignette != 0. || local_finish;
     let mut gpu_sharpened = false;
     let edge = if region.is_some() { 0 } else { max_edge };
     if !spatial

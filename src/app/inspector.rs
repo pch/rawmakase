@@ -15,10 +15,7 @@ use crate::model::panels::{Panel, PanelState};
 use crate::model::params::ParameterId;
 use crate::model::recipe::Recipe;
 use crate::model::recipe::Treatment;
-use crate::model::{
-    operators::{SharpeningModel, SharpeningSliders},
-    white_balance::NamedWhiteBalance,
-};
+use crate::model::{operators::SharpeningSliders, white_balance::NamedWhiteBalance};
 use crate::{app::theme, develop::targeted::Target};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
@@ -546,28 +543,17 @@ impl Editor {
                 treatment_request = Some(treatment);
             }
             let old_profile = r.profile.clone();
-            // From engine 4 the matrix path renders through the DNG default look.
-            let matrix = if r.engine >= 4 {
-                "Default (camera matrix)"
-            } else {
-                "Camera matrix"
-            };
+            // Without a profile the matrix path renders through the DNG default look.
+            let matrix = "Default (camera matrix)";
             control_row(ui, "Profile", |ui| {
                 egui::ComboBox::from_id_salt("camera-profile")
                     .width(ui.available_width())
                     .selected_text(r.profile.as_ref().map_or(matrix, |p| p.name.as_str()))
                     .show_ui(ui, |ui| {
-                        if ui.selectable_value(&mut r.profile, None, matrix).changed() {
-                            r.engine = r.engine.max(3);
-                        }
+                        ui.selectable_value(&mut r.profile, None, matrix);
                         for profile in &profiles {
-                            if ui
-                                .selectable_value(&mut r.profile, Some(profile.clone()), &profile.name)
-                                .on_hover_text(&profile.copyright)
-                                .changed()
-                            {
-                                r.engine = r.engine.max(3);
-                            }
+                            ui.selectable_value(&mut r.profile, Some(profile.clone()), &profile.name)
+                                .on_hover_text(&profile.copyright);
                         }
                         ui.separator();
                         if !adobe.is_empty()
@@ -796,7 +782,6 @@ impl Editor {
                 parametric_curve_ui(
                     ui,
                     &mut r.effects,
-                    r.parametric_model,
                     &histogram,
                     moving.and_then(|w| (0..4).find(|i| w.shares[*i] > 0.)),
                 );
@@ -994,14 +979,7 @@ impl Editor {
                 );
             });
             if view.mixer_tab == MixerTab::PointColor {
-                // Only the current process renders Point Color.
-                let supported = super::point_color_panel::renders_point_color(r);
-                if let Some(steps) = super::point_color_panel::point_color_steps(r) {
-                    hint_row(ui, &format!("{steps} in Calibration to use Point Color."));
-                }
-                ui.add_enabled_ui(supported, |ui| {
-                    super::point_color_panel::point_color_panel(ui, &mut r.point_colors, view)
-                });
+                super::point_color_panel::point_color_panel(ui, &mut r.point_colors, view);
                 return;
             }
             control_row(ui, "Mixer", |ui| {
@@ -1147,24 +1125,18 @@ impl Editor {
         switch.finish(r);
 
         let mut switch = PanelSwitch::new(r, Panel::Detail);
-        let sharpening = SharpeningSliders::defaults(r.sharpening_model);
+        let sharpening = SharpeningSliders::defaults();
         if switched_section(ui, "Detail", &mut switch.state, |ui| {
-            let radius_and_masking = r.engine >= 3;
-            let color_default = if r.noise_model.is_original() {
-                0.
-            } else {
-                0.25
-            };
+            // Lightroom's Color noise reduction default for raw files.
+            let color_default = 0.25;
             let mut control = |ui: &mut egui::Ui, id: ParameterId, default: f32| {
                 setting_slider(ui, id, id.value_mut(r), default);
             };
             subheading(ui, "Sharpening");
             control(ui, ParameterId::SharpeningAmount, sharpening.amount);
-            if radius_and_masking {
-                control(ui, ParameterId::SharpeningRadius, sharpening.radius);
-                control(ui, ParameterId::SharpeningDetail, sharpening.detail);
-                control(ui, ParameterId::SharpeningMasking, sharpening.masking);
-            }
+            control(ui, ParameterId::SharpeningRadius, sharpening.radius);
+            control(ui, ParameterId::SharpeningDetail, sharpening.detail);
+            control(ui, ParameterId::SharpeningMasking, sharpening.masking);
             subheading(ui, "Noise Reduction");
             control(ui, ParameterId::LuminanceNoise, 0.);
             ui.push_id("luma-nr", |ui| {
@@ -1181,14 +1153,8 @@ impl Editor {
             r.noise_luma = 0.;
             r.effects.luma_detail = d.luma_detail;
             r.effects.luma_contrast = d.luma_contrast;
-            // The oldest engines render only the original filter.
-            r.set_color_noise_defaults(if r.engine >= 3 {
-                crate::model::operators::NoiseModel::Measured
-            } else {
-                crate::model::operators::NoiseModel::Original
-            });
-            // Reset brings the current defaults, with the measured operator.
-            r.set_sharpening_defaults(SharpeningModel::Measured);
+            r.set_color_noise_defaults();
+            r.set_sharpening_defaults();
         }
         switch.finish(r);
 
@@ -1196,29 +1162,25 @@ impl Editor {
         if switched_section(ui, "Lens Corrections", &mut switch.state, |ui| {
             let photo = metadata.as_ref();
             subheading(ui, "Profile");
-            ui.add_enabled_ui(r.engine >= 4, |ui| {
-                control_row(ui, "", |ui| {
-                    ui.checkbox(&mut r.lens_ca, "Remove Chromatic Aberration")
-                        .on_hover_text("Remove red/cyan and blue/yellow fringes toward the edges of the frame, measured from the photo itself.")
-                        .on_disabled_hover_text("Update the process version in Calibration to use lens corrections.");
-                });
-                control_row(ui, "", |ui| {
-                    let mut on = r.lens_profile;
-                    if ui
-                        .checkbox(&mut on, "Enable Profile Corrections")
-                        .on_hover_text("Correct distortion and vignetting with an Adobe lens profile, or the lens data the camera stored in the RAW.")
-                        .on_disabled_hover_text("Update the process version in Calibration to use lens corrections.")
-                        .changed()
-                        && let Some(m) = &metadata
-                    {
-                        let state = if on {
-                            crate::model::recipe::ProfileCorrections::On
-                        } else {
-                            crate::model::recipe::ProfileCorrections::Off
-                        };
-                        r.set_profile_corrections(m, state);
-                    }
-                });
+            control_row(ui, "", |ui| {
+                ui.checkbox(&mut r.lens_ca, "Remove Chromatic Aberration")
+                    .on_hover_text("Remove red/cyan and blue/yellow fringes toward the edges of the frame, measured from the photo itself.");
+            });
+            control_row(ui, "", |ui| {
+                let mut on = r.lens_profile;
+                if ui
+                    .checkbox(&mut on, "Enable Profile Corrections")
+                    .on_hover_text("Correct distortion and vignetting with an Adobe lens profile, or the lens data the camera stored in the RAW.")
+                    .changed()
+                    && let Some(m) = &metadata
+                {
+                    let state = if on {
+                        crate::model::recipe::ProfileCorrections::On
+                    } else {
+                        crate::model::recipe::ProfileCorrections::Off
+                    };
+                    r.set_profile_corrections(m, state);
+                }
             });
             let lens = metadata
                 .as_ref()
@@ -1271,9 +1233,7 @@ impl Editor {
             // Lightroom's Manual tab: Distortion, then Defringe and Vignetting.
             subheading(ui, "Distortion");
             ui.push_id("manual-distortion", |ui| {
-                ui.add_enabled_ui(r.engine >= 4, |ui| {
-                    setting_control(ui, r, ParameterId::ManualDistortion, 0., photo);
-                });
+                setting_control(ui, r, ParameterId::ManualDistortion, 0., photo);
             });
             let row = subheading(ui, "Defringe");
             // The Fringe Color Selector, at the row's far left as White Balance's.
@@ -1321,106 +1281,116 @@ impl Editor {
 
         let mut switch = PanelSwitch::new(r, Panel::Transform);
         if switched_section(ui, "Transform", &mut switch.state, |ui| {
-            let supported = r.engine >= 4;
-            if !supported {
-                hint_row(ui, "Update the process in Calibration to use Transform.");
-            }
-            ui.add_enabled_ui(supported, |ui| {
-                use crate::model::transform::UprightMode;
-                // As Lightroom: Update beside the heading, then the modes in two rows.
-                control_row(ui, "Upright", |ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // Guided solves its guides again; without guides it has nothing to go by.
-                        let analysed = match r.upright.mode {
-                            UprightMode::Off => false,
-                            UprightMode::Guided => !r.upright.guides.is_empty(),
-                            _ => true,
-                        };
-                        if ui
-                            .add_enabled(upright_ready && analysed, egui::Button::new("Update"))
-                            .on_hover_text("Analyse the photo again, e.g. after changing lens corrections")
-                            .clicked()
-                        {
-                            upright_request = true;
-                        }
-                    });
-                });
-                let u = &mut r.upright;
-                let before = u.mode;
-                for row in [
-                    [(UprightMode::Off, "Off"), (UprightMode::Auto, "Auto"), (UprightMode::Guided, "Guided")],
-                    [(UprightMode::Level, "Level"), (UprightMode::Vertical, "Vertical"), (UprightMode::Full, "Full")],
-                ] {
-                    let w = ui.available_width();
-                    segmented(ui, &mut u.mode, &row, w);
-                }
-                if u.mode != before {
-                    if u.mode == UprightMode::Guided {
-                        // As in Lightroom, choosing Guided picks up its tool.
-                        guided_action = Some(GuidedAction::Choose);
-                    } else if u.mode != UprightMode::Off && u.corrections.len() <= u.mode.code() {
+            use crate::model::transform::UprightMode;
+            // As Lightroom: Update beside the heading, then the modes in two rows.
+            control_row(ui, "Upright", |ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Guided solves its guides again; without guides it has nothing to go by.
+                    let analysed = match r.upright.mode {
+                        UprightMode::Off => false,
+                        UprightMode::Guided => !r.upright.guides.is_empty(),
+                        _ => true,
+                    };
+                    if ui
+                        .add_enabled(upright_ready && analysed, egui::Button::new("Update"))
+                        .on_hover_text(
+                            "Analyse the photo again, e.g. after changing lens corrections",
+                        )
+                        .clicked()
+                    {
                         upright_request = true;
                     }
-                }
+                });
+            });
+            let u = &mut r.upright;
+            let before = u.mode;
+            for row in [
+                [
+                    (UprightMode::Off, "Off"),
+                    (UprightMode::Auto, "Auto"),
+                    (UprightMode::Guided, "Guided"),
+                ],
+                [
+                    (UprightMode::Level, "Level"),
+                    (UprightMode::Vertical, "Vertical"),
+                    (UprightMode::Full, "Full"),
+                ],
+            ] {
+                let w = ui.available_width();
+                segmented(ui, &mut u.mode, &row, w);
+            }
+            if u.mode != before {
                 if u.mode == UprightMode::Guided {
-                    let count = u.guides.len();
-                    control_row(ui, "Guides", |ui| {
-                        let drawing = view.is(Tool::Guided);
+                    // As in Lightroom, choosing Guided picks up its tool.
+                    guided_action = Some(GuidedAction::Choose);
+                } else if u.mode != UprightMode::Off && u.corrections.len() <= u.mode.code() {
+                    upright_request = true;
+                }
+            }
+            if u.mode == UprightMode::Guided {
+                let count = u.guides.len();
+                control_row(ui, "Guides", |ui| {
+                    let drawing = view.is(Tool::Guided);
+                    if ui
+                        .selectable_label(drawing, "Draw")
+                        .on_hover_text(
+                            "Draw up to four guides along verticals and horizontals · Shift+T",
+                        )
+                        .clicked()
+                    {
+                        guided_action = Some(GuidedAction::Toggle);
+                    }
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{count} of {}",
+                            crate::model::transform::MAX_GUIDES
+                        ))
+                        .color(palette.gray(170)),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
-                            .selectable_label(drawing, "Draw")
-                            .on_hover_text("Draw up to four guides along verticals and horizontals · Shift+T")
+                            .add_enabled(count > 0, egui::Button::new("Clear"))
+                            .on_hover_text("Remove every guide")
                             .clicked()
                         {
-                            guided_action = Some(GuidedAction::Toggle);
+                            guided_action = Some(GuidedAction::Clear);
                         }
-                        ui.label(
-                            egui::RichText::new(format!("{count} of {}", crate::model::transform::MAX_GUIDES))
-                                .color(palette.gray(170)),
-                        );
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui
-                                .add_enabled(count > 0, egui::Button::new("Clear"))
-                                .on_hover_text("Remove every guide")
-                                .clicked()
-                            {
-                                guided_action = Some(GuidedAction::Clear);
-                            }
-                        });
                     });
-                    if view.is(Tool::Guided) {
-                        control_row(ui, "", |ui| {
-                            ui.checkbox(&mut view.guided.loupe, "Show Loupe")
-                                .on_hover_text("Magnify the photo while placing a guide's end");
-                            ui.checkbox(&mut view.guided.grid, "Grid");
-                        });
-                    }
-                } else if view.is(Tool::Guided) {
-                    view.tool = Tool::None;
-                }
-                control_row(ui, "", |ui| {
-                    ui.checkbox(&mut r.constrain_crop, "Constrain Crop")
-                        .on_hover_text("Shrink the crop, keeping its aspect, to leave out the white areas outside the photo");
                 });
-                subheading(ui, "Transform");
-                // Stored as Camera Raw applies them, before the photo is turned for
-                // display; shown, as in Lightroom, along the displayed photo's axes.
-                let turns = metadata.as_ref().map_or(0, |m| {
-                    crate::model::image_frame::ImageFrame::for_metadata(m).turns
-                });
-                let axes = crate::model::transform::display_axes((turns + r.rotation) % 4, r.flip_x, r.flip_y);
-                let mut shown = r.transform.displayed(axes);
-                let t = &mut shown;
-                setting_slider(ui, ParameterId::TransformVertical, &mut t.vertical, 0.);
-                setting_slider(ui, ParameterId::TransformHorizontal, &mut t.horizontal, 0.);
-                setting_slider(ui, ParameterId::TransformRotate, &mut t.rotate, 0.);
-                setting_slider(ui, ParameterId::TransformAspect, &mut t.aspect, 0.);
-                setting_slider(ui, ParameterId::TransformScale, &mut t.scale, 1.);
-                setting_slider(ui, ParameterId::TransformOffsetX, &mut t.offset_x, 0.);
-                setting_slider(ui, ParameterId::TransformOffsetY, &mut t.offset_y, 0.);
-                if shown != r.transform.displayed(axes) {
-                    r.transform = shown.recorded(axes);
+                if view.is(Tool::Guided) {
+                    control_row(ui, "", |ui| {
+                        ui.checkbox(&mut view.guided.loupe, "Show Loupe")
+                            .on_hover_text("Magnify the photo while placing a guide's end");
+                        ui.checkbox(&mut view.guided.grid, "Grid");
+                    });
                 }
+            } else if view.is(Tool::Guided) {
+                view.tool = Tool::None;
+            }
+            control_row(ui, "", |ui| {
+                ui.checkbox(&mut r.constrain_crop, "Constrain Crop")
+                    .on_hover_text("Shrink the crop, keeping its aspect, to leave out the white areas outside the photo");
             });
+            subheading(ui, "Transform");
+            // Stored as Camera Raw applies them, before the photo is turned for
+            // display; shown, as in Lightroom, along the displayed photo's axes.
+            let turns = metadata.as_ref().map_or(0, |m| {
+                crate::model::image_frame::ImageFrame::for_metadata(m).turns
+            });
+            let axes =
+                crate::model::transform::display_axes((turns + r.rotation) % 4, r.flip_x, r.flip_y);
+            let mut shown = r.transform.displayed(axes);
+            let t = &mut shown;
+            setting_slider(ui, ParameterId::TransformVertical, &mut t.vertical, 0.);
+            setting_slider(ui, ParameterId::TransformHorizontal, &mut t.horizontal, 0.);
+            setting_slider(ui, ParameterId::TransformRotate, &mut t.rotate, 0.);
+            setting_slider(ui, ParameterId::TransformAspect, &mut t.aspect, 0.);
+            setting_slider(ui, ParameterId::TransformScale, &mut t.scale, 1.);
+            setting_slider(ui, ParameterId::TransformOffsetX, &mut t.offset_x, 0.);
+            setting_slider(ui, ParameterId::TransformOffsetY, &mut t.offset_y, 0.);
+            if shown != r.transform.displayed(axes) {
+                r.transform = shown.recorded(axes);
+            }
         }) {
             r.transform = Default::default();
             r.upright = Default::default();
@@ -1449,55 +1419,19 @@ impl Editor {
         let mut switch = PanelSwitch::new(r, Panel::Calibration);
         if switched_section(ui, "Calibration", &mut switch.state, |ui| {
             subheading(ui, "Process");
-            if r.engine < 4 {
-                ui.horizontal(|ui| {
-                    ui.small(format!("Version {} (older rendering preserved)", r.engine));
-                    if ui
-                        .small_button("Update")
-                        .on_hover_text(
-                            "Render with the current process, including built-in lens corrections",
-                        )
-                        .clicked()
-                    {
-                        r.update_process(metadata.as_ref());
-                    }
-                });
-            } else {
-                ui.small("Current version");
-            }
-            if r.profile.is_some() {
-                ui.checkbox(&mut r.profile_tone, "Profile tone rendering")
-                    .on_hover_text("Use the camera profile's base tone curve. Older edits retain their original rendering until enabled.");
-                if let Some(m) = &metadata {
-                    let baseline = crate::camera_profiles::reference::baseline_exposure(m);
-                    if baseline != r.camera_exposure
-                        && ui.small_button("Use camera exposure baseline")
-                            .on_hover_text("Apply the camera's reference exposure offset while leaving the Exposure slider unchanged.")
-                            .clicked()
-                    {
-                        r.camera_exposure = baseline;
-                    }
-                }
-            }
-            if ui.checkbox(&mut r.reference_curves, "Reference tone curves")
-                .on_hover_text("Natural cubic curves, hue-preserving master processing and an sRGB transfer in ProPhoto RGB. Older edits keep their saved curve behavior until enabled.")
-                .changed()
-                && r.reference_curves
+            ui.small("Current version");
+            if r.profile.is_some()
+                && let Some(m) = &metadata
             {
-                r.curve.natural = true;
-                r.curve.smooth = true;
-                for curve in &mut r.effects.channels {
-                    curve.natural = true;
-                    curve.smooth = true;
+                let baseline = crate::camera_profiles::reference::baseline_exposure(m);
+                if baseline != r.camera_exposure
+                    && ui.small_button("Use camera exposure baseline")
+                        .on_hover_text("Apply the camera's reference exposure offset while leaving the Exposure slider unchanged.")
+                        .clicked()
+                {
+                    r.camera_exposure = baseline;
                 }
             }
-            if !r.reference_curves {
-                ui.checkbox(&mut r.wide_gamut_curves, "Legacy wide-gamut curves");
-            }
-            ui.checkbox(&mut r.reference_color, "Reference color rendering")
-                .on_hover_text("Updated vibrance, color mixer luminance and RGB-hue split toning. Older saved edits retain their original rendering until enabled.");
-            ui.checkbox(&mut r.reference_calibration, "Reference calibration")
-                .on_hover_text("Neutral-preserving primary adjustments and corrected shadow tint. Older edits keep their saved behavior until enabled.");
             subheading(ui, "Shadows");
             ui.push_id("calibration-shadows", |ui| {
                 setting_slider(ui, ParameterId::ShadowTint, &mut r.effects.shadow_tint, 0.);
@@ -1848,18 +1782,6 @@ fn mask_icon(painter: &egui::Painter, c: Pos2, strong: bool) {
 fn crop_icon(painter: &egui::Painter, c: Pos2, strong: bool) {
     let color = theme::palette(painter.ctx()).gray(if strong { 240 } else { 170 });
     icons::paint_at(painter, Icon::Crop, c, 15., color);
-}
-
-/// A small note aligned with the slider rails.
-fn hint_row(ui: &mut egui::Ui, text: &str) {
-    ui.horizontal(|ui| {
-        ui.add_space(88.);
-        ui.label(
-            egui::RichText::new(text)
-                .size(11.)
-                .color(theme::palette(ui.ctx()).gray(140)),
-        );
-    });
 }
 
 /// What the Transform panel asks of the Guided Upright tool.

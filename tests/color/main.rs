@@ -18,6 +18,7 @@ mod measure;
 mod private;
 mod red_eye;
 mod retouch;
+mod scene_probes;
 
 use chart::{Camera, Illuminant, Layout, Patch};
 use measure::{chroma, delta_e2000, hue_difference, lab};

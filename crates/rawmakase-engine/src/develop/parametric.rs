@@ -4,10 +4,7 @@
 //!
 //! Camera Raw applies it as one curve, DNG RGBTone fashion (the brightest and darkest
 //! channel curved, the middle one keeping its place, so hue holds), in encoded ProPhoto
-//! RGB between the Basic panel's tone and the point curve. Recipes saved before it keep
-//! [`ParametricModel::Original`], an earlier per-channel approximation.
-use crate::develop::effects::EffectsRendering;
-use crate::model::operators::ParametricModel;
+//! RGB between the Basic panel's tone and the point curve.
 
 const SIZE: usize = 1024;
 
@@ -66,18 +63,15 @@ impl ParametricCurve {
     }
 }
 
-/// The parametric curve as `model` renders it at `count + 1` points over 0–1, for
-/// drawing it in the Tone Curve panel.
-pub fn samples(
-    model: ParametricModel,
-    e: &crate::model::effects::Effects,
-    count: usize,
-) -> Vec<f32> {
+/// The parametric curve at `count + 1` points over 0–1, for drawing it in the Tone
+/// Curve panel.
+pub fn samples(e: &crate::model::effects::Effects, count: usize) -> Vec<f32> {
     let at = |i: usize| i as f32 / count as f32;
     // The rendered table, with its monotone clean-up, so the panel shows what renders.
-    match ParametricCurve::new(e.parametric, e.splits).filter(|_| model.is_measured()) {
+    match ParametricCurve::new(e.parametric, e.splits) {
         Some(curve) => (0..=count).map(|i| curve.eval(at(i))).collect(),
-        None => (0..=count).map(|i| e.parametric(at(i))).collect(),
+        // No region set: the identity.
+        None => (0..=count).map(at).collect(),
     }
 }
 

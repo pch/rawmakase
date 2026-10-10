@@ -1,52 +1,5 @@
 use super::*;
 #[test]
-fn matrix_signature_does_not_activate_the_legacy_x100f_profile_correction() {
-    let m = Metadata {
-        baseline_exposure: Some(0.),
-        dng_matrix_profile_signature: Some("com.adobe".into()),
-        dng_neutral_calibration: Some(crate::camera_data::NeutralCalibration {
-            gains: [0.9, 1., 1.1],
-            signature: "com.adobe".into(),
-        }),
-        ..x100f()
-    };
-    let unsigned = CameraProfile::camera_matrix_default(&x100f()).unwrap();
-    let fallback = CameraProfile::camera_matrix_default(&m).unwrap();
-    assert_eq!(
-        fallback.legacy_white_balance(5600., 12., &m),
-        unsigned.white_balance(5600., 12., &x100f())
-    );
-    assert_ne!(
-        fallback.white_balance(5600., 12., &m),
-        fallback.legacy_white_balance(5600., 12., &m)
-    );
-}
-
-#[test]
-fn calibration_upgrade_keeps_old_recipe_white_balance_continuous() {
-    let m = Metadata {
-        make: "Sony".into(),
-        model: "ILCE-7M4".into(),
-        sony_daylight_wb: Some([2456., 1024., 1691.]),
-        ..x100f()
-    };
-    let mut p = CameraProfile::camera_matrix_default(&m).unwrap();
-    p.color1 = Some(m.cam_xyz);
-    p.color2 = Some(m.cam_xyz);
-    p.calibration_signature.clear();
-    let before = p.white_balance(5600., 0., &m).unwrap();
-    p.calibration_signature = "com.adobe".into();
-    let mut recipe = crate::model::recipe::Recipe {
-        temperature: 5600.,
-        tint: 0.,
-        wb: before,
-        profile: Some(std::sync::Arc::new(p)),
-        ..Default::default()
-    };
-    recipe.update_wb(&m);
-    assert_eq!(recipe.wb, before);
-}
-#[test]
 fn a7iv_dng_neutral_solves_adobe_as_shot_and_custom_white_balance() {
     // Public raw.pixls.us A7 IV sample, independently converted with Adobe DNG
     // Converter. These are metadata measurements, not a fit to rendered pixels.
@@ -181,9 +134,9 @@ fn reference_tone_preserves_neutrals_and_channel_order() {
         .enumerate()
         .map(|(i, y)| [i as f32 / 1024., *y])
         .collect();
-    let neutral = p.finish([0.18; 3], true);
+    let neutral = p.finish([0.18; 3]);
     assert!(neutral.iter().all(|v| (v - 0.388).abs() < 0.004));
-    let color = p.finish([0.3, 0.15, 0.05], true);
+    let color = p.finish([0.3, 0.15, 0.05]);
     assert!(color[0] > color[1] && color[1] > color[2]);
     assert!(color.iter().all(|v| v.is_finite()));
 }

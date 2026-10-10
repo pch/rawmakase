@@ -79,7 +79,7 @@ pub fn compare(
         }
     }
     let mse = squared / n;
-    let report = serde_json::json!({"camera":format!("{} {}",image.metadata.make,image.metadata.model),"engine":edit.engine,"profile":edit.profile.as_ref().map(|p|&p.name),"width":render.width,"height":render.height,"crop":[x,y,size,size],"mean_absolute_error_srgb":absolute/n,"rmse_srgb":mse.sqrt(),"psnr_db":if mse>0.{Some(-10.*mse.log10())}else{None},"notes":"Reference must use sRGB and matching white balance, exposure, geometry and lens corrections. Metrics measure differences, not subjective quality. No alignment or exposure matching is applied."});
+    let report = serde_json::json!({"camera":format!("{} {}",image.metadata.make,image.metadata.model),"profile":edit.profile.as_ref().map(|p|&p.name),"width":render.width,"height":render.height,"crop":[x,y,size,size],"mean_absolute_error_srgb":absolute/n,"rmse_srgb":mse.sqrt(),"psnr_db":if mse>0.{Some(-10.*mse.log10())}else{None},"notes":"Reference must use sRGB and matching white balance, exposure, geometry and lens corrections. Metrics measure differences, not subjective quality. No alignment or exposure matching is applied."});
     std::fs::write(
         output.join("report.json"),
         serde_json::to_vec_pretty(&report)?,

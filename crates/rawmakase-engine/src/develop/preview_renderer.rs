@@ -110,19 +110,6 @@ impl PreviewRenderer {
             "Render superseded"
         );
         let recipe = &recipe.checked()?;
-        if recipe.engine < 3 {
-            return match region {
-                Some(region) => super::render_region_legacy(image, recipe, region),
-                // Older engines develop without highlight recovery, so their Fit
-                // uses a reduced copy of the camera image instead of the pyramid.
-                None if max_edge > 0 && image.width.max(image.height) > max_edge * 5 / 2 => {
-                    let shown = super::preview(image, max_edge * 2);
-                    super::render_legacy(&shown, recipe, max_edge)
-                }
-                None => super::render_legacy(image, recipe, max_edge),
-            }
-            .map(Output::Pixels);
-        }
         if region.is_none()
             && max_edge > 0
             && let Some(out) = self.render_fit(image, recipe, max_edge, cancel, display)?
@@ -170,17 +157,16 @@ impl PreviewRenderer {
     }
     /// A 100% `region` at half resolution or less, from the pyramid: immediate
     /// feedback while dragging, before the full-resolution region. The viewport
-    /// stretches it over the region. `None` for engines before 3, which render
-    /// regions directly.
+    /// stretches it over the region.
     pub fn render_region_preview(
         &mut self,
         image: &CameraImage,
         recipe: &Recipe,
         region: [u32; 4],
         cancel: &AtomicBool,
-    ) -> Result<Option<Rendered>> {
+    ) -> Result<Rendered> {
         self.render_region_preview_to(image, recipe, region, cancel, None)
-            .map(|out| out.map(Output::pixels))
+            .map(Output::pixels)
     }
     /// As [`Self::render_region_preview`], presented for `display` when possible.
     pub fn render_region_preview_to(
@@ -190,13 +176,10 @@ impl PreviewRenderer {
         region: [u32; 4],
         cancel: &AtomicBool,
         display: Option<&gpu::Display>,
-    ) -> Result<Option<Output>> {
+    ) -> Result<Output> {
         let shown = recipe.as_rendered();
         let recipe = shown.as_ref();
         self.backend.used_gpu = false;
-        if recipe.engine < 3 {
-            return Ok(None);
-        }
         let recipe = &recipe.checked()?;
         let full = Geometry::new(image, recipe, 0);
         let [x, y, w, h] = region;
@@ -220,7 +203,7 @@ impl PreviewRenderer {
         let (level, source) = self.level(image, recipe, needed, cancel)?;
         let region = [px, py, pw, ph];
         let mut stages = self.stages(display);
-        quality::render_level(&level, &source, recipe, size, region, cancel, &mut stages).map(Some)
+        quality::render_level(&level, &source, recipe, size, region, cancel, &mut stages)
     }
     /// The pyramid level for `needed` source pixels on the long edge, and the level-0
     /// image (recovered and retouched), building the pyramid when the photo changed and
@@ -231,21 +214,25 @@ impl PreviewRenderer {
         recipe: &Recipe,
         needed: f32,
         cancel: &AtomicBool,
-    ) -> Result<(Arc<CameraImage>, Arc<CameraImage>)> {
+    ) -> Result<(Arc<CameraImage>, quality::Retouched)> {
         if recipe.lens_ca {
             crate::lens::auto_ca::prime(image);
         }
         let source = quality::retouched(image, recipe, cancel, Some(&mut self.retouch))?;
         match &mut self.pyramid {
-            Some(p) if Arc::ptr_eq(p.source(), &source) => {}
+            Some(p) if Arc::ptr_eq(p.source(), &source.image) => {}
             Some(p) if self.retouch.changed_from(p.source()).is_some() => {
                 let rects = self.retouch.changed_from(p.source()).unwrap().to_vec();
-                p.update(source, &rects);
+                p.update(source.image.clone(), &rects);
             }
-            _ => self.pyramid = Some(Pyramid::new(source)),
+            _ => self.pyramid = Some(Pyramid::new(source.image.clone())),
         }
         let pyramid = self.pyramid.as_mut().unwrap();
-        Ok((pyramid.level_for(needed), pyramid.source().clone()))
+        let full = quality::Retouched {
+            image: pyramid.source().clone(),
+            unretouched: source.unretouched,
+        };
+        Ok((pyramid.level_for(needed), full))
     }
     #[cfg(test)]
     pub(crate) fn finish(
@@ -415,7 +402,9 @@ mod tests {
         r.effects.clarity = 0.4;
         r.effects.texture = 0.3;
         r.effects.vignette = -0.4;
-        r.effects.grain = 0.3;
+        // No grain: the measured grain is noise of the full-resolution photo, whose
+        // pixels the Fit and the resized export average differently (its strength at
+        // each size is `effects::grain`'s).
         let cancel = AtomicBool::new(false);
         for edge in [100, 180, 300] {
             let expected = quality::render(&im, &r.checked().unwrap(), edge, None).unwrap();
@@ -454,7 +443,7 @@ mod tests {
             ..Default::default()
         };
         r.effects.clarity = 0.3;
-        let edits: [&dyn Fn(&mut Recipe); 9] = [
+        let edits: [&dyn Fn(&mut Recipe); 16] = [
             &|_| {},
             &|r| r.exposure = 0.5,
             &|r| r.effects.clarity = -0.2,
@@ -463,7 +452,28 @@ mod tests {
             &|r| r.crop = [0.1, 0., 0.9, 1.],
             &|r| r.noise_luma = 0.4,
             &|r| r.contrast = 0.3,
-            &|r| r.engine = 3,
+            &|r| r.whites = 0.6,
+            &|r| r.blacks = -0.4,
+            &|r| r.highlights = -0.5,
+            &|r| r.effects.dehaze = 0.4,
+            &|r| r.effects.calibration[2] = [0.2, -0.1],
+            &|r| r.profile_amount = 0.5,
+            &|r| {
+                use crate::model::masks::{LocalAdjust, MaskComponent, MaskGroup, MaskShape};
+                r.masks.push(MaskGroup {
+                    components: vec![MaskComponent::new(MaskShape::Linear {
+                        from: [0.4, 0.5],
+                        to: [0.6, 0.5],
+                    })],
+                    adjust: LocalAdjust {
+                        exposure: 0.5,
+                        shadows: 0.3,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                });
+            },
+            &|r| r.masks[0].adjust.whites = 0.4,
         ];
         for edit in edits {
             edit(&mut r);
@@ -478,6 +488,132 @@ mod tests {
         // The stage cache filled up to its entry limit across the edits.
         assert_eq!(warm.cache.samples.len(), 4);
     }
+    /// The scene tone stage's measures are kept per measurement copy and the settings
+    /// they read: white balance, temperature, the profile and calibration measure the
+    /// photo again; Exposure and the tone sliders reuse the measures, and Dehaze reuses
+    /// the haze measured with them. Cached renders match fresh ones either way.
+    #[test]
+    fn photo_measures_are_kept_until_their_settings_change() {
+        let (w, h) = (300, 200);
+        let mut im = image(w, h, 0.);
+        im.metadata.cam_xyz = [
+            [1.1434, -0.4948, -0.121],
+            [-0.3746, 1.2042, 0.1903],
+            [-0.0666, 0.1479, 0.52],
+        ];
+        for (i, p) in im.pixels.iter_mut().enumerate() {
+            let (x, y) = ((i as u32 % w) as f32, (i as u32 / w) as f32);
+            let v = 0.02 + 0.6 * (x / w as f32) * (0.6 + 0.4 * (y * 0.05).cos());
+            *p = [v * 1.3, v, v * 0.5 + 0.05 * (x * 0.1).sin().abs()];
+        }
+        // Whites, Blacks and Dehaze follow the measures, so stale ones would show.
+        let mut base = Recipe {
+            profile: Some(Arc::new(
+                crate::camera_profiles::CameraProfile::creative_for_test(&im.metadata),
+            )),
+            whites: 0.5,
+            blacks: -0.4,
+            ..Default::default()
+        };
+        base.effects.dehaze = 0.3;
+        let metadata = im.metadata.clone();
+        // (edit, measures again, the measures change)
+        type Case<'a> = (&'a str, &'a dyn Fn(&mut Recipe), bool, bool);
+        let cases: [Case; 11] = [
+            ("exposure", &|r| r.exposure = 0.7, false, false),
+            ("more dehaze", &|r| r.effects.dehaze = 0.8, false, false),
+            ("whites", &|r| r.whites = 0.8, false, false),
+            ("shadows", &|r| r.shadows = 0.4, false, false),
+            ("blacks", &|r| r.blacks = -0.7, false, false),
+            ("dehaze", &|r| r.effects.dehaze = -0.3, false, false),
+            // A mask's positive Dehaze adds to the recipe's and reads the same haze.
+            (
+                "mask dehaze",
+                &|r| {
+                    let mut mask = crate::model::masks::MaskGroup {
+                        components: vec![crate::model::masks::MaskComponent::new(
+                            crate::model::masks::MaskShape::Linear {
+                                from: [0.2, 0.5],
+                                to: [0.8, 0.5],
+                            },
+                        )],
+                        ..Default::default()
+                    };
+                    mask.adjust.dehaze = 0.5;
+                    r.masks.push(mask);
+                },
+                false,
+                false,
+            ),
+            ("white balance", &|r| r.wb = [1.4, 1., 0.7], true, true),
+            // As the Temperature slider sets it: with the white balance it maps to.
+            (
+                "temperature",
+                &|r| {
+                    r.temperature = 3500.;
+                    r.update_wb(&metadata);
+                },
+                true,
+                true,
+            ),
+            (
+                "calibration",
+                &|r| r.effects.calibration[0] = [0.5, 0.4],
+                true,
+                true,
+            ),
+            // The look's strength leaves the measures, but the key keeps the profile
+            // whole: measured again.
+            ("profile amount", &|r| r.profile_amount = 0.5, true, false),
+        ];
+        let cancel = AtomicBool::new(false);
+        for (name, edit, again, changed) in cases {
+            let mut warm = PreviewRenderer::default();
+            let mut r = base.clone();
+            let check = |warm: &mut PreviewRenderer, r: &Recipe| {
+                for (edge, region) in [(80, None), (0, Some([20, 30, 50, 40])), (150, None)] {
+                    let cached = warm.render(&im, r, edge, region, &cancel).unwrap();
+                    let fresh = PreviewRenderer::default()
+                        .render(&im, r, edge, region, &cancel)
+                        .unwrap();
+                    assert_eq!(cached.pixels, fresh.pixels, "{name} {edge} {region:?}");
+                }
+            };
+            check(&mut warm, &r);
+            // Fit and 100% regions share one measure.
+            assert_eq!(warm.cache.measures.lock().unwrap().len(), 1, "{name}");
+            let rendered_haze = warm
+                .cache
+                .measures
+                .lock()
+                .unwrap()
+                .values()
+                .next()
+                .unwrap()
+                .haze
+                .get()
+                .cloned();
+            edit(&mut r);
+            check(&mut warm, &r);
+            let measures = warm.cache.measures.lock().unwrap();
+            assert_eq!(measures.len(), 1 + again as usize, "{name}");
+            // The haze is measured with the measures it was kept with, once.
+            let first = measures.values().last().unwrap();
+            let haze = first.haze.get().expect("positive Dehaze measures the haze");
+            if !again {
+                assert!(
+                    Arc::ptr_eq(haze, rendered_haze.as_ref().unwrap()),
+                    "{name}: measured the haze again"
+                );
+            }
+            let values: Vec<_> = measures.values().map(|m| m.measures).collect();
+            assert_eq!(
+                values.first() != values.last(),
+                changed,
+                "{name}: {values:?}"
+            );
+        }
+    }
     #[test]
     fn mask_shadows_reduce_the_photo_once() {
         use crate::model::masks::{MaskComponent, MaskGroup, MaskShape};
@@ -490,7 +626,6 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let mut warm = PreviewRenderer::default();
         let mut r = Recipe {
-            reference_curves: true,
             ..Default::default()
         };
         let mut mask = MaskGroup {
@@ -502,7 +637,6 @@ mod tests {
         };
         mask.adjust.shadows = 0.5;
         r.masks.push(mask);
-        assert!(crate::develop::pipeline::pixel_params::needs_map(&r));
         for exposure in [0., 0.3] {
             r.exposure = exposure;
             let cached = warm.render(&im, &r, 150, None, &cancel).unwrap();
@@ -512,7 +646,7 @@ mod tests {
             assert_eq!(cached.pixels, fresh.pixels);
         }
         // Exposure comes after the map's input: one reduction serves both renders.
-        assert_eq!(warm.cache.reduced.len(), 1);
+        assert_eq!(warm.cache.measured.len(), 1);
     }
     /// Spot removal renders the same in Fit, 100% regions and exports, and edits to
     /// it patch the cached pyramid correctly.
@@ -602,6 +736,81 @@ mod tests {
         .unwrap();
         assert!(healed.pixels[0][1] > dusty.pixels[0][1] + 0.2);
     }
+    /// A local repair does not move the whole photo's darkest level
+    /// (`PhotoMeasures::dark`, which the default black follows): a red eye correction
+    /// darkening a pupil and spot removal healing a dark speck leave it as without
+    /// them, in Fit and 100% regions alike, while the minimum (Blacks') sees them.
+    #[test]
+    fn retouching_leaves_the_photos_darkest_level() {
+        use crate::model::{
+            red_eye::RedEyeOp,
+            retouch::{RetouchMode, RetouchOp, RetouchShape},
+        };
+        let (w, h) = (480, 320);
+        let spot = [300., 120.];
+        // A spot of `color` 12 pixels across at `spot` (0.3% of the photo, more than
+        // the percentile) on a lighter background.
+        let photo = |color: [f32; 3]| {
+            let mut im = image(w, h, 0.);
+            for (i, p) in im.pixels.iter_mut().enumerate() {
+                let (x, y) = ((i as u32 % w) as f32, (i as u32 / w) as f32);
+                *p = if (x - spot[0]).hypot(y - spot[1]) < 12. {
+                    color
+                } else {
+                    [0.5, 0.33, 0.25]
+                };
+            }
+            im
+        };
+        let cancel = AtomicBool::new(false);
+        let measures = |im: &CameraImage, r: &Recipe| {
+            let mut warm = PreviewRenderer::default();
+            warm.render(im, r, 150, None, &cancel).unwrap();
+            warm.render(im, r, 0, Some([40, 30, 60, 50]), &cancel)
+                .unwrap();
+            let cached = warm.cache.measures.lock().unwrap();
+            assert_eq!(cached.len(), 1, "Fit and regions share the measures");
+            cached.values().next().unwrap().measures
+        };
+        let frame = crate::model::image_frame::ImageFrame::new(&image(w, h, 0.));
+        let eye = photo([0.6, 0.03, 0.03]);
+        let fixed = Recipe {
+            red_eye: vec![RedEyeOp {
+                kind: Default::default(),
+                center: frame.to_image(spot[0], spot[1]),
+                radius: [12. / 480.; 2],
+                correlation: 0.,
+                pupil_size: 0.5,
+                darken: 1.,
+            }]
+            .into(),
+            ..Default::default()
+        };
+        let speck = photo([0.02; 3]);
+        let healed = Recipe {
+            retouch: vec![RetouchOp {
+                mode: RetouchMode::Heal,
+                shape: RetouchShape::Spot {
+                    center: frame.to_image(spot[0], spot[1]),
+                    radius: 20. / 480.,
+                },
+                feather: 0.4,
+                opacity: 1.,
+                offset: [-0.2, 0.2],
+            }],
+            ..Default::default()
+        };
+        for (name, im, r) in [("red eye", &eye, &fixed), ("spot", &speck, &healed)] {
+            let (plain, retouched) = (measures(im, &Recipe::default()), measures(im, r));
+            assert!(
+                (retouched.min - plain.min).abs() > 0.5,
+                "{name}: the repair changes the photo ({} {})",
+                retouched.min,
+                plain.min
+            );
+            assert_eq!(retouched.dark, plain.dark, "{name}");
+        }
+    }
     /// A red eye correction stays on its eye through crop, straightening, rotation and
     /// flips, and renders the same in Fit, regions and exports.
     #[test]
@@ -667,35 +876,6 @@ mod tests {
             let tile = warm.render(&im, &r, 0, Some(region), &cancel).unwrap();
             let full = quality::render(&im, &r.checked().unwrap(), 0, Some(region)).unwrap();
             assert_eq!(tile.pixels, full.pixels);
-        }
-        // Older process versions render it too, in previews, regions and exports.
-        let legacy = |red_eye: Vec<RedEyeOp>| Recipe {
-            engine: 2,
-            red_eye: red_eye.into(),
-            ..Default::default()
-        };
-        let [x, y] = [eye[0] as u32, eye[1] as u32];
-        for (before, after) in [
-            (
-                super::super::render_legacy(&im, &legacy(vec![]).checked().unwrap(), 0).unwrap(),
-                super::super::render_legacy(&im, &legacy(vec![op.clone()]).checked().unwrap(), 0)
-                    .unwrap(),
-            ),
-            (
-                warm.render(&im, &legacy(vec![]), 0, Some([x, y, 1, 1]), &cancel)
-                    .unwrap(),
-                warm.render(&im, &legacy(vec![op]), 0, Some([x, y, 1, 1]), &cancel)
-                    .unwrap(),
-            ),
-        ] {
-            let i = if before.width == 1 {
-                0
-            } else {
-                (y * w + x) as usize
-            };
-            let (red, fixed) = (before.pixels[i], after.pixels[i]);
-            assert!(red[0] > 3. * red[1], "{red:?}");
-            assert!(fixed[0] < 1.3 * fixed[1], "legacy: {fixed:?} from {red:?}");
         }
     }
     /// Mask edits (sliders, shapes, ranges, visibility) never reuse stale weights.
@@ -773,10 +953,7 @@ mod tests {
         r.effects.clarity = 0.3;
         let mut p = PreviewRenderer::default();
         let region = [101, 80, 120, 90];
-        let preview = p
-            .render_region_preview(&im, &r, region, &cancel)
-            .unwrap()
-            .unwrap();
+        let preview = p.render_region_preview(&im, &r, region, &cancel).unwrap();
         assert_eq!((preview.width, preview.height), (60, 45));
         let full = p.render(&im, &r, 0, Some(region), &cancel).unwrap();
         let mut error = 0.;
@@ -789,14 +966,5 @@ mod tests {
         }
         let error = error / (60. * 45. * 3.);
         assert!(error < 0.02, "mean error {error}");
-        let legacy = Recipe {
-            engine: 2,
-            ..Default::default()
-        };
-        assert!(
-            p.render_region_preview(&im, &legacy, region, &cancel)
-                .unwrap()
-                .is_none()
-        );
     }
 }

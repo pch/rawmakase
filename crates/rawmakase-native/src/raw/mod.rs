@@ -50,6 +50,10 @@ impl Raw {
             let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
             String::from_utf8_lossy(&bytes[..end]).into_owned()
         };
+        let margin = [m.left_margin, m.top_margin];
+        let frame = [m.crop_left, m.crop_top, m.crop_width, m.crop_height];
+        let aspect = [m.aspect_left, m.aspect_top, m.aspect_width, m.aspect_height];
+        let [crop_left, crop_top, crop_width, crop_height] = visible(frame, margin);
         let metadata = Metadata {
             make: text(&m.make),
             model: text(&m.model),
@@ -57,10 +61,11 @@ impl Raw {
             height: m.height,
             raw_width: m.raw_width,
             raw_height: m.raw_height,
-            crop_width: m.crop_width,
-            crop_height: m.crop_height,
-            crop_left: m.crop_left,
-            crop_top: m.crop_top,
+            crop_width,
+            crop_height,
+            crop_left,
+            crop_top,
+            camera_crop: camera_crop(frame, aspect, [m.width, m.height], margin),
             flip: m.flip,
             xtrans: m.xtrans != 0,
             fuji_dynamic_range: m.fuji_dynamic_range,
@@ -92,7 +97,7 @@ impl Raw {
         };
         let mut metadata = metadata;
         if let Some(crop) = fuji_crop(path_ref) {
-            metadata.apply_default_crop(crop);
+            metadata.apply_default_crop(visible(crop, margin));
         }
         Ok(Self { handle, metadata })
     }
@@ -176,6 +181,49 @@ impl Raw {
             scale_clipped: clipped,
         })
     }
+}
+/// LibRaw's crop `[left, top, width, height]` in raw coordinates, in the decoded
+/// image's, which start `margin` into the raw data. A crop without a position
+/// (LibRaw's 0xffff) or starting in the margin keeps its size and is centred.
+fn visible([left, top, width, height]: [u32; 4], [x, y]: [u32; 2]) -> [u32; 4] {
+    let at = |v: u32, m: u32| {
+        if v < UNSET && v >= m { v - m } else { UNSET }
+    };
+    [at(left, x), at(top, y), width, height]
+}
+/// LibRaw's mark for a crop position it does not know.
+const UNSET: u32 = 0xffff;
+/// The in-camera aspect-ratio crop `aspect` as `[left, top, right, bottom]`
+/// fractions of the default crop `frame`, both raw-coordinate rectangles; `None`
+/// unless both lie in the decoded image of `size` (after `margin`) and the aspect
+/// crop cuts more than 1% from a side's length, so rounding is not a crop.
+fn camera_crop(
+    frame: [u32; 4],
+    aspect: [u32; 4],
+    size: [u32; 2],
+    margin: [u32; 2],
+) -> Option<[f32; 4]> {
+    let fits = |r: [u32; 4]| {
+        let [left, top, width, height] = visible(r, margin);
+        width > 0
+            && height > 0
+            && left.checked_add(width).is_some_and(|v| v <= size[0])
+            && top.checked_add(height).is_some_and(|v| v <= size[1])
+    };
+    if !fits(frame) || !fits(aspect) {
+        return None;
+    }
+    let [fl, ft, fw, fh] = frame.map(|v| v as f32);
+    let [al, at, aw, ah] = aspect.map(|v| v as f32);
+    let crop = [
+        (al - fl) / fw,
+        (at - ft) / fh,
+        (al + aw - fl) / fw,
+        (at + ah - ft) / fh,
+    ]
+    .map(|v| v.clamp(0., 1.));
+    let (w, h) = (crop[2] - crop[0], crop[3] - crop[1]);
+    (w >= 0.01 && h >= 0.01 && w.min(h) < 0.99).then_some(crop)
 }
 /// The camera's recommended crop from the RAF header directory: tags 0x110 (top, left)
 /// and 0x111 (height, width), big-endian. Lightroom uses it as the default crop.
@@ -272,6 +320,56 @@ mod tests {
         assert_eq!(super::fuji_crop(f.path()), Some([16, 16, 6000, 4000]));
         std::fs::write(f.path(), b"FUJIFILMCCD-RAW").unwrap();
         assert_eq!(super::fuji_crop(f.path()), None);
+    }
+    /// LibRaw's rectangles for a Canon EOS M6 Mark II CR3 shot at 1:1: SensorInfo's
+    /// 6960×4640 frame and the AspectInfo square, in raw coordinates, with a visible
+    /// image of 6984×4660 at (144, 72). Camera Raw crops it to the middle 2/3 of
+    /// the frame (DNG Converter's DefaultUserCrop: 0, 1/6, 1, 5/6).
+    #[test]
+    fn canon_aspect_ratio_crop_is_a_crop_of_the_sensor_frame() {
+        let (frame, square) = ([156, 84, 6960, 4640], [1316, 84, 4640, 4640]);
+        let (size, margin) = ([6984, 4660], [144, 72]);
+        assert_eq!(super::visible(frame, margin), [12, 12, 6960, 4640]);
+        let crop = super::camera_crop(frame, square, size, margin).unwrap();
+        for (got, want) in crop.iter().zip([1. / 6., 0., 5. / 6., 1.]) {
+            assert!((got - want).abs() < 1e-6, "{crop:?}");
+        }
+        // 16:9 (DefaultUserCrop 0.0793, 0, 0.9207, 1).
+        let wide = super::camera_crop(frame, [156, 452, 6960, 3904], size, margin).unwrap();
+        assert!((wide[1] - 0.0793).abs() < 1e-4 && (wide[3] - 0.9207).abs() < 1e-4);
+        // 3:2, and a crop LibRaw only rounded to even rows (PowerShot G15), crop nothing.
+        assert_eq!(super::camera_crop(frame, frame, size, margin), None);
+        let g15 = super::camera_crop(
+            [128, 35, 4000, 3000],
+            [128, 36, 4000, 2999],
+            [4048, 3047],
+            [104, 12],
+        );
+        assert_eq!(g15, None);
+    }
+    #[test]
+    fn crops_without_a_position_or_outside_the_image_are_not_camera_crops() {
+        let unset = [super::UNSET, super::UNSET, 0, 0];
+        let (size, margin) = ([5200, 3904], [0, 0]);
+        // Olympus 16:9: LibRaw's second inset crop inside the 4:3 frame.
+        let frame = [8, 8, 5184, 3888];
+        let wide = super::camera_crop(frame, [8, 494, 5184, 2916], size, margin).unwrap();
+        assert_eq!(wide, [0., 0.125, 1., 0.875]);
+        assert_eq!(super::camera_crop(frame, unset, size, margin), None);
+        // Sony records only a size: its frame is centred, and nothing is cropped.
+        let sony = [super::UNSET, super::UNSET, 6000, 4000];
+        assert_eq!(super::visible(sony, [12, 8]), sony);
+        assert_eq!(super::camera_crop(sony, frame, size, margin), None);
+        // A crop reaching past the decoded image is not trusted.
+        assert_eq!(
+            super::camera_crop(frame, [8, 494, 5300, 2916], size, margin),
+            None
+        );
+        // A position inside the masked margin is unknown.
+        assert_eq!(
+            super::visible([4, 4, 10, 10], [8, 8]),
+            [super::UNSET, super::UNSET, 10, 10]
+        );
     }
     #[test]
     fn corrupt_raw_is_an_error() {

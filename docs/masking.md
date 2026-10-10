@@ -48,7 +48,8 @@ models.
   Background and clicks on the same photo after that are quick.
 - **Catalog only.** The result is a raster stored in the catalog, so it needs a catalog
   photo. A catalog of the first format asks to **Upgrade catalog…**: a backup copy is
-  written beside it, then it becomes format version 2, which older releases refuse.
+  written beside it, then it becomes the current format version, which older releases
+  refuse.
   Close it on other computers first.
 - **What the models see:** the photo at the camera's default crop with the camera
   rendering (no tone, colour, profile or geometry edits; spots and red eye included),
@@ -102,13 +103,14 @@ models.
   chromaticity for Color Range, Oklab lightness for Luminance Range).
 - A pixel's adjustment is the sum over its masks of weight × Amount × sliders, run
   through the normal pipeline at the point each global control acts:
-  - Exposure scales linear light together with the global Exposure (including the
-    DNG exposure ramp's black point), Color tints it.
-  - Contrast, Whites, Blacks and Dehaze use the same measured Camera Raw curves as
-    the global sliders; Highlights and Shadows use the global local-tone operator at
-    the pixel's slider values. A mask covering the whole photo renders like the
-    global slider (tested to within 0.003; exact for Exposure, Highlights and
-    Shadows).
+  - Exposure scales the scene values together with the global Exposure, Color tints
+    them.
+  - Highlights, Shadows, Dehaze and Clarity run in the scene tone stage with the
+    global sliders, at the pixel's summed slider values, and Contrast with the
+    global Contrast after the profile curve: a mask covering the whole photo renders
+    like the global slider, as in Camera Raw. A mask's Whites and Blacks are Camera
+    Raw's separate curves, applied after the global ones
+    ([scene-tone-stage.md](scene-tone-stage.md#masks)).
   - Temp and Tint scale the camera channels by the white balance change of a
     ±50 mired or ±50 tint shift at ±100.
   - Texture and Clarity scale the samples by the local-contrast detail the global

@@ -82,8 +82,9 @@ impl Assets {
 }
 
 impl Catalog {
-    /// The rasters a write that refers to `ids` has to store or find. Refused in a
-    /// catalog of the first format, whose older releases would not understand them.
+    /// The rasters a write that refers to `ids` has to store or find. Every write
+    /// of them stores a recipe, which upgrades a catalog of the first format in the
+    /// same transaction (`Catalog::write_recipes`), so none reaches one.
     pub(super) fn assets_of<'a>(&self, ids: impl IntoIterator<Item = &'a str>) -> Result<Assets> {
         let mut required: Vec<String> = ids.into_iter().map(str::to_string).collect();
         required.sort();
@@ -91,47 +92,21 @@ impl Catalog {
         if required.is_empty() {
             return Ok(Assets::default());
         }
-        ensure!(
-            self.supports_raster_masks()?,
-            "This catalog needs upgrading before it can keep masks made from a selection"
-        );
         let unsaved = mask_assets::unsaved(required.iter().map(String::as_str));
         Ok(Assets { unsaved, required })
     }
-    /// The catalog's format version.
-    pub fn format_version(&self) -> Result<i64> {
-        self.db.version()
-    }
     /// Whether the catalog is of a format that keeps raster masks.
     pub fn supports_raster_masks(&self) -> Result<bool> {
-        Ok(self.db.version()? >= super::db::VERSION)
+        Ok(self.db.version()? >= super::db::RASTER_MASKS)
     }
-    /// Upgrades a catalog of the first format so it can keep raster masks, after
-    /// writing a consistent backup next to it. Returns the backup's path. The
-    /// catalog must not be open anywhere else, and older releases cannot open it
-    /// afterwards. `None` when it already was.
+    /// Upgrades a catalog of the first format so it can keep raster masks (to the
+    /// current format, see [`Catalog::upgrade_format`]). Returns the backup's path;
+    /// `None` when it already could.
     pub fn upgrade_for_raster_masks(&mut self) -> Result<Option<PathBuf>> {
         if self.supports_raster_masks()? {
             return Ok(None);
         }
-        let CatalogLocation::File(path) = &self.location;
-        let name = path.file_name().map_or_else(
-            || "catalog".to_string(),
-            |name| name.to_string_lossy().into_owned(),
-        );
-        let backup = (0..1000)
-            .map(|n| {
-                let suffix = if n == 0 {
-                    String::new()
-                } else {
-                    format!("-{n}")
-                };
-                path.with_file_name(format!("{name}.before-upgrade-backup{suffix}"))
-            })
-            .find(|candidate| !candidate.exists())
-            .ok_or_else(|| anyhow::anyhow!("Too many backups next to the catalog"))?;
-        self.db.upgrade(&backup)?;
-        Ok(Some(backup))
+        self.upgrade_format()
     }
     /// A reader of this catalog's rasters for the mask asset store. It opens its
     /// own connection the first time one is needed, so it can be called from any

@@ -1,7 +1,6 @@
 //! The per-pixel stage's inputs, flattened for the GPU port in `gpu/develop.wgsl`.
-//! Only the current engine's reference path is ported: engine 4 with reference curves,
-//! color and calibration and a profile tone curve, which every new photo uses. Other
-//! recipes return `None` and render on the CPU, which stays the reference.
+//! Recipes with a camera profile are ported (every photo has one once resolved); the
+//! rest return `None` and render on the CPU, which stays the reference.
 use super::{CurveSet, Source, profile_matrix};
 use crate::develop::local_tone::LocalToneMap;
 use crate::model::recipe::Recipe;
@@ -18,7 +17,22 @@ const FIELDS: &[(&str, usize)] = &[
     ("CALIBRATION", 9),
     ("SHADOW_TINT", 1),
     ("EXPOSURE", 1),
-    ("RAMP", 4),
+    // The scene tone stage's white curves (`GlobalTone::gpu_curves`), its default
+    // black and its blacks curve, or -1 each.
+    ("SCENE_WHITE", 1),
+    ("SCENE_DEFAULT_BLACK", 1),
+    ("SCENE_BLACKS", 1),
+    // For masks' Whites and Blacks: their curves (`gpu_mask_table`), or -1; and
+    // `GlobalTone::gpu_keys`.
+    ("SCENE_TABLES", 1),
+    ("SCENE_KEYS", 6),
+    // Dehaze and the level negative Dehaze's response is relative to
+    // (`SceneTone::dehaze_key`).
+    ("DEHAZE", 2),
+    // Positive Dehaze's haze (`scene_tone::Dehazing`): its density's table, or -1, the
+    // grid's size and scale, then the airlight at the render's Exposure.
+    ("HAZE", 5),
+    ("HAZE_AIR", 3),
     ("LOOK", 5),
     ("ENH", 5),
     ("ENH_CURVE", 1),
@@ -32,9 +46,6 @@ const FIELDS: &[(&str, usize)] = &[
     ("HIGHLIGHTS", 4),
     ("BASIC", 1),
     ("LEVELS", 3),
-    ("PARAMETRIC_ON", 1),
-    ("PARAMETRIC", 4),
-    ("SPLITS", 3),
     // The measured parametric curve's table, or -1 (see `parametric::ParametricCurve`).
     ("PARAMETRIC_LUT", 1),
     ("MASTER", 1),
@@ -54,16 +65,11 @@ const FIELDS: &[(&str, usize)] = &[
     ("RGB", 6),
     ("RGB_INTO", 9),
     ("RGB_BACK", 9),
-    // Color grading: tables, samples and operator (see `color_grade::ColorGrade`).
-    ("GRADE", 4),
+    // Color grading: gain tables and samples (see `color_grade::ColorGrade`).
+    ("GRADE", 2),
     ("ADJUST", 1),
     ("DEFRINGE", 2),
     ("DEFRINGE_RANGES", 4),
-    // 1 when out-of-gamut colors clip per channel (`GamutModel::Clip`).
-    ("GAMUT_CLIP", 1),
-    ("MONO", 1),
-    ("GRAY_MIX", 8),
-    ("TONE_ONLY", 1),
     // Masks (see `masks::local`): how many, weight words per pixel, their deltas.
     ("MASKS", 1),
     ("MASK_WORDS", 1),
@@ -71,7 +77,7 @@ const FIELDS: &[(&str, usize)] = &[
     ("EXPOSURE_EV", 1),
     ("LOCAL_WB", 6),
     ("LOCAL_TONE", 1),
-    // The masks' Contrast pivot, or -1 for the original Contrast before Whites and Blacks.
+    // The masks' Contrast pivot.
     ("LOCAL_PIVOT", 1),
     ("LOCAL_FAMILIES", 1),
     ("LOCAL_KEYS", 2),
@@ -88,9 +94,24 @@ pub(crate) fn wgsl_prelude() -> String {
             line
         })
         .collect();
+    use crate::develop::scene_tone::{
+        MASK_VALUES, SLIDER_STEP, SLIDERS, T_FIRST, T_SAMPLES, T_STEP, U_FIRST, U_SAMPLES, U_STEP,
+        Y_FIRST, Y_SAMPLES, Y_STEP,
+    };
     fields
         + &format!(
             "const POINT_CONSTANTS: i32 = {CONSTANT_PARAMS};\nconst POINT_SWATCH: i32 = {SWATCH_PARAMS};\n"
+        )
+        + &format!(
+            "const SCENE_T: vec3<f32> = vec3({T_FIRST:?}, {T_STEP:?}, {T_SAMPLES}.0);\n\
+             const SCENE_Y: vec3<f32> = vec3({Y_FIRST:?}, {Y_STEP:?}, {Y_SAMPLES}.0);\n\
+             const SCENE_U: vec3<f32> = vec3({U_FIRST:?}, {U_STEP:?}, {U_SAMPLES}.0);\n\
+             const SCENE_S: vec3<f32> = vec3(-1.0, {SLIDER_STEP:?}, {SLIDERS}.0);\n\
+             const MASK_VALUES = array<f32, {}>({});\n\
+             const LOCAL_FLOOR: f32 = {:?};\n",
+            MASK_VALUES.len(),
+            MASK_VALUES.map(|v| format!("{v:?}")).join(", "),
+            crate::develop::local_tone::FLOOR
         )
 }
 pub(crate) struct PixelParams {
@@ -145,18 +166,7 @@ impl PixelParams {
 }
 /// Whether the GPU port renders this (resolved) recipe.
 pub(crate) fn supported(r: &Recipe) -> bool {
-    let grading = r.grading.iter().any(|g| g[1] != 0. || g[2] != 0.)
-        || r.effects.global_grade[1] != 0.
-        || r.effects.global_grade[2] != 0.;
-    r.engine >= 4
-        && r.reference_curves
-        && r.reference_color
-        && r.reference_calibration
-        && r.profile_tone
-        && r.profile.is_some()
-        // The original operator's Blending and Balance outside its tables use the
-        // older operator.
-        && (!grading || crate::develop::color_grade::ColorGrade::new(r).is_some())
+    r.profile.is_some()
 }
 /// Parameters for `im`'s per-pixel stage with the resolved recipe `r`, or `None` when
 /// the GPU port does not cover it.
@@ -176,34 +186,6 @@ fn masks_need_map(r: &Recipe) -> bool {
     r.masks
         .iter()
         .any(|m| m.is_active() && (m.adjust.shadows != 0. || m.adjust.highlights != 0.))
-}
-/// Whether `r`'s per-pixel stage needs the Shadows/Highlights map of the photo, which
-/// also carries the measured Clarity.
-pub(crate) fn needs_map(r: &Recipe) -> bool {
-    r.engine >= 4
-        && r.reference_curves
-        && (r.shadows != 0.
-            || r.highlights != 0.
-            || crate::develop::clarity::measured(r) != 0.
-            || masks_need_map(r))
-}
-/// Whether a render needs the photo reduced for the Shadows/Highlights map or for
-/// measuring the photo's Contrast pivot; the stage cache keeps it between renders.
-pub(crate) fn needs_reduced(r: &Recipe) -> bool {
-    needs_map(r) || super::measures_contrast_pivot(r) || super::measures_whites(r)
-}
-/// Parameters that stop after the tone stage (`tone_stage`, before the map), to tone
-/// the reduced photo the Shadows/Highlights map is built from on the GPU.
-pub(crate) fn tone_params(im: Source, r: &Recipe) -> Option<PixelParams> {
-    if !supported(r) {
-        return None;
-    }
-    let matrix = profile_matrix(&im.metadata, r);
-    // The same parameters run the final pass once the map is built (`with_map`), so
-    // they carry this photo's Contrast pivot.
-    let mut p = fill(r, CurveSet::with_photo_measures(im, r, matrix), matrix)?;
-    p.set("TONE_ONLY", &[1.]);
-    Some(p)
 }
 fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
     p.set("LOCAL", &[1.]);
@@ -258,12 +240,6 @@ fn set_rgb_table(p: &mut PixelParams, look: Option<&crate::camera_profiles::RgbL
     p.set("RGB_INTO", into.as_flattened());
     p.set("RGB_BACK", back.as_flattened());
 }
-/// `tone` parameters for the whole stage, with the map built from their result.
-pub(crate) fn with_map(mut p: PixelParams, map: &LocalToneMap) -> PixelParams {
-    p.set("TONE_ONLY", &[0.]);
-    set_local(&mut p, map);
-    p
-}
 fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams> {
     let profile = r.profile.as_ref()?;
     let len = FIELDS.iter().map(|f| f.1).sum();
@@ -286,8 +262,41 @@ fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams>
     p.set("CALIBRATION", lut.calibration.matrix.as_flattened());
     p.set("SHADOW_TINT", &[lut.calibration.shadow]);
     p.set("EXPOSURE", &[lut.exposure_gain]);
-    let ramp = lut.black_ramp.as_ref()?;
-    p.set("RAMP", &[ramp.black, ramp.slope, ramp.radius, ramp.q]);
+    let global = &lut.scene.global;
+    let white = p.push(global.gpu_curves());
+    let default_black = match global.default_black_samples() {
+        Some(b) => p.push(b.iter().copied()),
+        None => -1.,
+    };
+    let blacks = match global.blacks_samples() {
+        Some(b) => p.push(b.iter().copied()),
+        None => -1.,
+    };
+    p.set("SCENE_WHITE", &[white]);
+    p.set("SCENE_DEFAULT_BLACK", &[default_black]);
+    p.set("SCENE_BLACKS", &[blacks]);
+    p.set("SCENE_KEYS", &global.gpu_keys());
+    p.set("SCENE_TABLES", &[-1.]);
+    p.set("DEHAZE", &[lut.scene.dehaze, lut.scene.dehaze_key]);
+    match &lut.scene.haze {
+        Some(h) => {
+            let density = p.push(h.haze.density.iter().copied());
+            p.set(
+                "HAZE",
+                &[
+                    density,
+                    h.haze.width as f32,
+                    h.haze.height as f32,
+                    h.scale[0],
+                    h.scale[1],
+                ],
+            );
+            p.set("HAZE_AIR", &h.air);
+        }
+        None => p.set("HAZE", &[-1., 0., 0., 0., 0.]),
+    }
+    let families = p.push(crate::develop::local_tone::gpu_families());
+    p.set("LOCAL_FAMILIES", &[families]);
     p.table("LOOK", t.look);
     p.table("ENH", t.enhanced);
     let curve = match t.enhanced_curve {
@@ -308,24 +317,11 @@ fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams>
         None => -1.,
     };
     p.set("BASIC", &[basic]);
-    let tone = p.push(crate::develop::basic_tone::gpu_tables(&lut.photo.whites));
+    let tone = p.push(crate::develop::basic_tone::gpu_tables());
     p.set("LOCAL_TONE", &[tone]);
-    p.set(
-        "LOCAL_PIVOT",
-        &[match lut.photo.contrast {
-            crate::develop::basic_tone::ContrastCurve::Original => -1.,
-            crate::develop::basic_tone::ContrastCurve::Pivot(pivot) => pivot,
-        }],
-    );
+    p.set("LOCAL_PIVOT", &[lut.photo.contrast_pivot]);
     p.set("LEVELS", &[r.black_point, r.white_point, r.midtone]);
     let e = &r.effects;
-    // The original per-channel curve runs in `level`, the measured one after it.
-    p.set(
-        "PARAMETRIC_ON",
-        &[(lut.parametric.is_none() && e.parametric != [0.; 4]) as u8 as f32],
-    );
-    p.set("PARAMETRIC", &e.parametric);
-    p.set("SPLITS", &e.splits);
     let parametric = match &lut.parametric {
         Some(c) => p.push(c.values().iter().copied()),
         None => -1.,
@@ -364,32 +360,17 @@ fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams>
     };
     p.set("POINT", &point);
     set_rgb_table(&mut p, lut.rgb_table.as_ref());
-    use crate::develop::color_grade::ColorGrade;
     let grade = match &lut.grade {
-        Some(ColorGrade::Luminance(g)) => [
-            p.push(g.gain.iter().flatten().copied()),
-            p.push(g.offset.iter().flatten().copied()),
-            g.gain.len() as f32,
-            0.,
+        Some(g) => [
+            p.push(g.0.gain.iter().flatten().copied()),
+            g.0.gain.len() as f32,
         ],
-        Some(ColorGrade::Channels(c)) => [
-            p.push(c.gain.iter().flatten().copied()),
-            -1.,
-            c.gain.len() as f32,
-            1.,
-        ],
-        None => [-1., -1., 0., 0.],
+        None => [-1., 0.],
     };
     p.set("GRADE", &grade);
     p.set("ADJUST", &[lut.color_adjustments as u8 as f32]);
     p.set("DEFRINGE", &e.defringe);
     p.set("DEFRINGE_RANGES", e.defringe_ranges.as_flattened());
-    p.set(
-        "GAMUT_CLIP",
-        &[(r.gamut_model == crate::model::operators::GamutModel::Clip) as u8 as f32],
-    );
-    p.set("MONO", &[e.monochrome as u8 as f32]);
-    p.set("GRAY_MIX", &e.gray_mix);
     Some(p)
 }
 impl PixelParams {
@@ -410,7 +391,12 @@ impl PixelParams {
         if n == 0 {
             return true;
         }
-        if n > crate::model::masks::MAX_GROUPS {
+        // A mask's Clarity and Texture render on the CPU (`scene_stage`, `detail`).
+        if n > crate::model::masks::MAX_GROUPS
+            || w.deltas
+                .iter()
+                .any(|d| local::uses(d, &[local::slot::CLARITY, local::slot::TEXTURE]))
+        {
             return false;
         }
         let words = n.div_ceil(4);
@@ -420,8 +406,10 @@ impl PixelParams {
         self.set("MASK_DELTAS", &[deltas]);
         let math = local::LocalMath::new(&im.metadata, r);
         self.set("LOCAL_WB", math.white_balance.as_flattened());
-        let families = self.push(crate::develop::local_tone::gpu_families());
-        self.set("LOCAL_FAMILIES", &[families]);
+        if w.deltas.iter().any(|d| local::uses(d, &local::SCENE_SLOTS)) {
+            let masks = self.push(crate::develop::scene_tone::gpu_mask_table());
+            self.set("SCENE_TABLES", &[masks]);
+        }
         let pixels = w.data.len() / n;
         self.weights = vec![0; pixels * words];
         for (i, pixel) in w.data.chunks_exact(n).enumerate() {

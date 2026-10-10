@@ -69,7 +69,7 @@ impl ColorSpread {
 /// Camera values above this fraction of the white level count as clipped.
 const CLIPPED: f32 = 0.94;
 
-/// `BlackWhiteModel::Chart`'s tables, in the color mixer's grid (hue × saturation ×
+/// The black & white mix's tables, in the color mixer's grid (hue × saturation ×
 /// value of linear ProPhoto RGB): log2 of the gray's luminance over the color's at a
 /// zero mix, then each band's change at `GRAY_MIX_POSITIONS`. 1/4000 per step.
 static GRAY_CHART: &[u8] = include_bytes!("black_white_chart.bin");
@@ -478,7 +478,6 @@ mod tests {
         assert!(!is_monochrome(color.as_deref()));
         // Choosing a black & white profile converts, with the Auto mix.
         r.profile = Some(mono.clone());
-        r.engine = r.engine.max(3);
         r.follow_profile_treatment(color.as_deref(), auto);
         assert!(r.effects.monochrome);
         assert_ne!(r.effects.gray_mix, [0.; 8]);
@@ -489,14 +488,12 @@ mod tests {
         // Leaving a black & white profile for a color one converts back too.
         let mut r = Recipe::with_profiles(&m, &[]);
         r.profile = Some(mono.clone());
-        r.engine = r.engine.max(3);
         r.follow_profile_treatment(None, auto);
         r.profile = color.clone();
         r.follow_profile_treatment(Some(&mono), auto);
         assert_eq!(r.treatment(), Treatment::Color);
         // From one black & white profile to another, a mix never set stays so.
         let mut r = Recipe::with_profiles(&m, &[]);
-        r.engine = r.engine.max(3);
         r.profile = Some(mono.clone());
         let other = monochrome_profile(&m);
         r.profile = Some(other);

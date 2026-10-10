@@ -1,7 +1,7 @@
 //! RAWmakase JSON recipes, including migration of earlier pipeline versions.
 use crate::{
     model::recipe::Recipe,
-    model::saved_format::{migrate_recipe, saved_version},
+    model::saved_format::{SCHEMA, migrate_recipe},
     storage::atomic_json,
 };
 use anyhow::Result;
@@ -36,8 +36,8 @@ pub fn save_preset(path: &Path, r: &Recipe) -> Result<()> {
     atomic_json(
         path,
         &Preset {
-            schema: saved_version(&recipe),
-            pipeline: saved_version(&recipe),
+            schema: SCHEMA,
+            pipeline: SCHEMA,
             recipe,
             masks: local.masks,
         },
@@ -71,7 +71,6 @@ pub fn load_preset(path: &Path) -> Result<Recipe> {
 pub fn applied_to(mut preset: Recipe, photo: &Recipe) -> Recipe {
     use crate::model::panels::Panel;
     preset.retouch = photo.retouch.clone();
-    preset.retouch_model = photo.retouch_model;
     preset.red_eye = photo.red_eye.clone();
     for panel in [Panel::SpotRemoval, Panel::RedEye] {
         preset.panels.set(panel, photo.panels.state(panel));
@@ -98,10 +97,8 @@ mod tests {
             pupil_size: 0.5,
             darken: 0.5,
         });
-        // The photo's spots keep the feather they were made with.
         let mut preset = Recipe {
             exposure: 0.5,
-            retouch_model: crate::model::operators::RetouchModel::Measured,
             ..Default::default()
         };
         preset.panels.set(Panel::RedEye, PanelState::Off);
@@ -109,9 +106,56 @@ mod tests {
         let applied = applied_to(preset, &photo);
         assert_eq!(applied.exposure, 0.5);
         assert_eq!(applied.red_eye, photo.red_eye);
-        assert_eq!(applied.retouch_model, photo.retouch_model);
         assert_eq!(applied.panels.state(Panel::RedEye), PanelState::On);
         assert_eq!(applied.panels.state(Panel::SpotRemoval), PanelState::On);
+    }
+    /// A preset is saved as the one engine's version, which releases before it
+    /// refuse as newer.
+    #[test]
+    fn a_saved_preset_is_refused_by_releases_before_the_one_engine() {
+        use crate::model::saved_format::{BEFORE_ONE_ENGINE, reads};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("p.json");
+        let r = Recipe {
+            exposure: 0.5,
+            ..Default::default()
+        };
+        save_preset(&path, &r).unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            (&saved["schema"], &saved["pipeline"]),
+            (&11.into(), &11.into())
+        );
+        assert!(!reads(&saved, BEFORE_ONE_ENGINE));
+        assert_eq!(load_preset(&path).unwrap().exposure, 0.5);
+    }
+    /// A preset an earlier release saved loses the settings that chose its engine
+    /// and operators, and keeps its sliders and a newer release's setting.
+    #[test]
+    fn an_earlier_preset_loads_without_its_engine_and_operators() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("p.json");
+        let text = serde_json::json!({
+            "schema": 10,
+            "pipeline": 10,
+            "recipe": {
+                "exposure": 0.5,
+                "effects": {"clarity": 0.3},
+                "engine": 3,
+                "profile_tone": true,
+                "clarity_model": "Original",
+                "white_balance_model": "Calibrated",
+                "future_slider": 2,
+            },
+        });
+        std::fs::write(&path, text.to_string()).unwrap();
+        let r = load_preset(&path).unwrap();
+        assert_eq!((r.exposure, r.effects.clarity), (0.5, 0.3));
+        assert_eq!(
+            r.unknown,
+            [("future_slider".to_string(), serde_json::json!(2))].into()
+        );
     }
     #[test]
     fn a_preset_refuses_masks_made_from_a_selection() {
@@ -158,8 +202,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("p.json");
         let value = serde_json::json!({
-            "schema": saved_version(&recipe),
-            "pipeline": saved_version(&recipe),
+            "schema": SCHEMA,
+            "pipeline": SCHEMA,
             "recipe": recipe,
         });
         std::fs::write(&path, value.to_string()).unwrap();

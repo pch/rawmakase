@@ -161,13 +161,6 @@ pub(super) fn settings(r: &Recipe, photo: Option<Frame<'_>>) -> Settings {
     let m = photo.map(|p| p.metadata);
     let mut s = Settings(Vec::new());
     s.text("ProcessVersion", "11.0");
-    s.text(
-        "RAWmakaseWhiteBalanceModel",
-        match r.white_balance_model {
-            crate::model::operators::WhiteBalanceModel::Original => "Original",
-            crate::model::operators::WhiteBalanceModel::Calibrated => "Calibrated",
-        },
-    );
     if let Some(profile) = &r.profile {
         let name = match &profile.enhanced {
             Some(look) => &look.base_name,
@@ -613,174 +606,6 @@ pub fn keyword_lists(keywords: &[KeywordPath]) -> (Vec<String>, Vec<String>) {
     (subject, hierarchical)
 }
 
-/// The operators this recipe keeps from before they were measured in Camera Raw,
-/// each with a Lightroom setting it renders. Lightroom's values for them would read
-/// back as the measured ones, so RAWmakase names them for itself to render the recipe
-/// as it was.
-pub(super) fn original_operators(r: &Recipe) -> Vec<(&'static str, &'static str)> {
-    [
-        (
-            r.sharpening_model.is_original(),
-            ORIGINAL_SHARPENING,
-            "Sharpness",
-        ),
-        (
-            r.lens_vignette_model.is_original(),
-            ORIGINAL_LENS_VIGNETTE,
-            "VignetteAmount",
-        ),
-        (r.grain_model.is_original(), ORIGINAL_GRAIN, "GrainAmount"),
-        (
-            r.clarity_model.is_original(),
-            ORIGINAL_CLARITY,
-            "Clarity2012",
-        ),
-        (r.texture_model.is_original(), ORIGINAL_TEXTURE, "Texture"),
-        // These travel with Process Version, as copying settings does.
-        (
-            r.mixer_model.is_original(),
-            ORIGINAL_COLOR_MIXER,
-            "ProcessVersion",
-        ),
-        (
-            r.calibration_model.is_original(),
-            ORIGINAL_CALIBRATION,
-            "ProcessVersion",
-        ),
-        (
-            r.noise_model.is_original(),
-            ORIGINAL_COLOR_NOISE,
-            "ColorNoiseReduction",
-        ),
-        (
-            r.saturation_model.is_original(),
-            ORIGINAL_SATURATION,
-            "ProcessVersion",
-        ),
-        (
-            r.vibrance_model.is_original(),
-            ORIGINAL_VIBRANCE,
-            "ProcessVersion",
-        ),
-        (
-            r.black_white_model.is_original(),
-            ORIGINAL_BLACK_WHITE,
-            "ProcessVersion",
-        ),
-    ]
-    .into_iter()
-    .filter_map(|(original, name, key)| original.then_some((name, key)))
-    .collect()
-}
-pub(super) const ORIGINAL_SHARPENING: &str = "Sharpening";
-pub(super) const ORIGINAL_LENS_VIGNETTE: &str = "LensVignette";
-pub(super) const ORIGINAL_GRAIN: &str = "Grain";
-pub(super) const ORIGINAL_TEXTURE: &str = "Texture";
-pub(super) const ORIGINAL_CLARITY: &str = "Clarity";
-pub(super) const ORIGINAL_COLOR_MIXER: &str = "ColorMixer";
-pub(super) const ORIGINAL_CALIBRATION: &str = "Calibration";
-pub(super) const ORIGINAL_COLOR_NOISE: &str = "ColorNoise";
-pub(super) const ORIGINAL_SATURATION: &str = "Saturation";
-pub(super) const ORIGINAL_VIBRANCE: &str = "Vibrance";
-pub(super) const ORIGINAL_BLACK_WHITE: &str = "BlackWhite";
-/// Written with every packet and preset: the marker format, which says which of the
-/// operators below its `RAWmakaseOriginal` could name (`MEASURED_SINCE`). Packets
-/// and presets from releases before 0.2.0 lack it.
-pub(super) const MARKERS: u32 = 3;
-
-/// When each operator's measured version first shipped: the RAWmakase release, and
-/// the marker format from which `RAWmakaseOriginal` names it. A packet or preset
-/// that predates either could not name the operator, so it keeps that one.
-pub(super) const MEASURED_SINCE: [(&str, (u32, u32, u32), u32); 10] = [
-    (ORIGINAL_SHARPENING, (0, 1, 15), 2),
-    (ORIGINAL_LENS_VIGNETTE, (0, 1, 15), 2),
-    (ORIGINAL_GRAIN, (0, 1, 15), 2),
-    (ORIGINAL_COLOR_MIXER, (0, 1, 15), 2),
-    (ORIGINAL_CLARITY, (0, 1, 16), 2),
-    (ORIGINAL_CALIBRATION, (0, 1, 16), 2),
-    (ORIGINAL_COLOR_NOISE, (0, 1, 16), 2),
-    (ORIGINAL_SATURATION, (0, 1, 16), 2),
-    (ORIGINAL_VIBRANCE, (0, 2, 1), 3),
-    (ORIGINAL_BLACK_WHITE, (0, 2, 1), 3),
-];
-
-/// A setting key, or the start of one, that belongs to an operator.
-pub(super) enum OperatorKey {
-    Exact(&'static str),
-    Prefix(&'static str),
-}
-impl OperatorKey {
-    pub(super) fn matches(&self, key: &str) -> bool {
-        match self {
-            Self::Exact(k) => key == *k,
-            Self::Prefix(p) => key.starts_with(p),
-        }
-    }
-    /// A key it stands for, to find the settings group it belongs to.
-    pub(super) fn example(&self) -> &'static str {
-        match self {
-            Self::Exact(k) | Self::Prefix(k) => k,
-        }
-    }
-}
-
-/// The settings whose presence in a packet means it carried that operator.
-pub(super) fn operator_keys(operator: &str) -> &'static [OperatorKey] {
-    use OperatorKey::*;
-    match operator {
-        ORIGINAL_SHARPENING => &[Exact("Sharpness")],
-        ORIGINAL_LENS_VIGNETTE => &[Exact("VignetteAmount")],
-        ORIGINAL_GRAIN => &[Exact("GrainAmount")],
-        ORIGINAL_CLARITY => &[Exact("Clarity2012")],
-        ORIGINAL_COLOR_MIXER => &[
-            Prefix("HueAdjustment"),
-            Prefix("SaturationAdjustment"),
-            Prefix("LuminanceAdjustment"),
-        ],
-        ORIGINAL_CALIBRATION => &[
-            Exact("RedHue"),
-            Exact("RedSaturation"),
-            Exact("GreenHue"),
-            Exact("GreenSaturation"),
-            Exact("BlueHue"),
-            Exact("BlueSaturation"),
-        ],
-        ORIGINAL_COLOR_NOISE => &[Exact("ColorNoiseReduction")],
-        ORIGINAL_SATURATION => &[Exact("Saturation")],
-        ORIGINAL_VIBRANCE => &[Exact("Vibrance")],
-        ORIGINAL_BLACK_WHITE => &[Prefix("GrayMixer")],
-        _ => &[],
-    }
-}
-
-/// The release a RAWmakase `xmp:CreatorTool` names, such as "RAWmakase 0.1.15".
-pub(super) fn rawmakase_version(creator_tool: &str) -> Option<(u32, u32, u32)> {
-    let mut parts = creator_tool
-        .strip_prefix("RAWmakase ")?
-        .split(['.', '-', '+'])
-        .map(|p| p.parse::<u32>().ok());
-    Some((parts.next()??, parts.next()??, parts.next()??))
-}
-
-/// The operators a legacy packet or preset from release `version` kept without
-/// naming them: those measured only in a later release.
-pub(super) fn implied_original(version: (u32, u32, u32)) -> Vec<&'static str> {
-    MEASURED_SINCE
-        .iter()
-        .filter(|(_, since, _)| version < *since)
-        .map(|(name, _, _)| *name)
-        .collect()
-}
-
-/// The operators a packet or preset of marker format `markers` could not name.
-pub(super) fn unnamed_by_markers(markers: u32) -> Vec<&'static str> {
-    MEASURED_SINCE
-        .iter()
-        .filter(|(_, _, since)| markers < *since)
-        .map(|(name, _, _)| *name)
-        .collect()
-}
-
 /// The XMP packet for an exported photo.
 pub fn packet(r: &Recipe, m: &Metadata, photo: &Photo) -> String {
     let mut attributes: Vec<(String, String)> = Vec::new();
@@ -826,14 +651,6 @@ pub fn packet(r: &Recipe, m: &Metadata, photo: &Photo) -> String {
             .into_iter()
             .map(|(k, v)| (format!("crs:{k}"), v)),
         );
-        let original: Vec<_> = original_operators(r)
-            .into_iter()
-            .map(|(name, _)| name)
-            .collect();
-        if !original.is_empty() {
-            attributes.push(("crs:RAWmakaseOriginal".into(), original.join(",")));
-        }
-        attributes.push(("crs:RAWmakaseMarkers".into(), MARKERS.to_string()));
         attributes.push(("crs:AlreadyApplied".into(), "True".into()));
     }
     let mut out = format!(

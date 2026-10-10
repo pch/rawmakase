@@ -8,63 +8,60 @@ fn xml(attrs: &str, body: &str) -> String {
         r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><r:RDF xmlns:r="{RDF}"><r:Description xmlns:c="{CRS}" {attrs}>{body}</r:Description></r:RDF></x:xmpmeta>"#
     )
 }
+/// Packets and presets of earlier releases named the operators and white balance a
+/// recipe kept from before they were measured. One engine renders every edit now:
+/// those markers are ignored, whatever they say, and no longer written.
 #[test]
-fn white_balance_versions_roundtrip_and_legacy_imports_stay_legacy() -> Result<()> {
-    use crate::model::operators::WhiteBalanceModel as W;
+fn markers_of_earlier_releases_are_ignored() -> Result<()> {
     let m = Metadata {
         wb: [2., 1., 1.5],
         daylight_wb: [2., 1., 1.5],
         ..Default::default()
     };
     let fresh = Recipe::with_profiles(&m, &[]);
-    for model in [W::Original, W::Calibrated] {
-        let r = Recipe {
-            white_balance_model: model,
-            ..fresh.clone()
-        };
-        let text = write::packet(
-            &r,
-            &m,
-            &write::Photo {
-                settings: true,
-                ..Default::default()
-            },
-        );
-        let back = parse(Path::new("roundtrip.xmp"), &text)?.apply(&fresh, &m, &[], None)?;
-        assert_eq!(back.white_balance_model, model);
-    }
-    for (attrs, expected) in [
-        (r#"c:Temperature="5000" c:Tint="10""#, W::Calibrated),
-        (
-            r#"c:RAWmakaseMarkers="2" c:Temperature="5000""#,
-            W::Original,
-        ),
-        (
-            r#"c:RAWmakasePreset="1" c:WhiteBalance="As Shot""#,
-            W::Original,
-        ),
+    let text = write::packet(
+        &fresh,
+        &m,
+        &write::Photo {
+            settings: true,
+            ..Default::default()
+        },
+    );
+    assert!(!text.contains("RAWmakaseOriginal"), "{text}");
+    assert!(!text.contains("RAWmakaseMarkers"), "{text}");
+    assert!(!text.contains("RAWmakaseWhiteBalanceModel"), "{text}");
+    let plain = r#"c:Temperature="5000" c:Tint="10" c:Sharpness="40" c:Clarity2012="20""#;
+    let expected = parse(Path::new("plain.xmp"), &xml(plain, ""))?.apply(&fresh, &m, &[], None)?;
+    for markers in [
+        r#"c:RAWmakaseMarkers="2""#,
+        r#"c:RAWmakaseMarkers="3" c:RAWmakaseOriginal="Sharpening,Clarity""#,
+        r#"c:RAWmakaseWhiteBalanceModel="Original""#,
+        r#"c:RAWmakaseWhiteBalanceModel="Unknown""#,
+        r#"c:RAWmakasePreset="1""#,
     ] {
-        let back = parse(Path::new("wb.xmp"), &xml(attrs, ""))?.apply(&fresh, &m, &[], None)?;
-        assert_eq!(back.white_balance_model, expected);
+        let attrs = format!("{markers} {plain}");
+        let back = parse(Path::new("old.xmp"), &xml(&attrs, ""))?.apply(&fresh, &m, &[], None)?;
+        assert_eq!(
+            Recipe {
+                preset_name: expected.preset_name.clone(),
+                preset_settings: expected.preset_settings.clone(),
+                ..back
+            },
+            expected,
+            "{markers}"
+        );
     }
-    let future = parse(
-        Path::new("future.xmp"),
-        &xml(r#"c:RAWmakaseWhiteBalanceModel="Unknown""#, ""),
-    )?;
-    assert!(future.apply(&fresh, &m, &[], None).is_err());
     Ok(())
 }
 
 #[test]
-fn lenient_white_balance_failure_preserves_its_version_and_basic_edits() -> Result<()> {
-    use crate::model::operators::WhiteBalanceModel as W;
+fn lenient_white_balance_failure_preserves_its_basic_edits() -> Result<()> {
     let m = Metadata {
         wb: [2., 1., 1.5],
         daylight_wb: [2., 1., 1.5],
         ..Default::default()
     };
     let base = Recipe {
-        white_balance_model: W::Original,
         temperature: 5100.,
         tint: 7.,
         wb: [1.1, 1., 0.9],
@@ -73,12 +70,10 @@ fn lenient_white_balance_failure_preserves_its_version_and_basic_edits() -> Resu
     for attrs in [
         r#"c:Temperature="broken" c:Exposure2012="0.7""#,
         r#"c:WhiteBalance="Unsupported" c:Exposure2012="0.7""#,
-        r#"c:RAWmakaseWhiteBalanceModel="Future" c:Temperature="6000" c:Exposure2012="0.7""#,
     ] {
         let preset = parse(Path::new("broken-wb.xmp"), &xml(attrs, ""))?;
         let (back, warnings) = preset.apply_lenient(&base, &m, &[], None)?;
         assert!(!warnings.is_empty());
-        assert_eq!(back.white_balance_model, base.white_balance_model);
         assert_eq!(
             (back.temperature, back.tint, back.wb),
             (base.temperature, base.tint, base.wb)
@@ -148,7 +143,6 @@ fn legacy_split_toning_restores_full_overlap_but_modern_presets_preserve_it() ->
         ),
     )?;
     let r = old.apply(&base, &Metadata::default(), &[], None)?;
-    assert!(r.reference_color);
     assert_eq!(r.grading[0], [2. / 3., 0.5, 0.]);
     assert_eq!(r.effects.blending, 1.);
     assert_eq!(r.grading[1], [0.; 3]);
@@ -330,6 +324,54 @@ fn auto_white_balance_presets_use_the_wb_menus_auto() -> Result<()> {
     );
     Ok(())
 }
+/// A photo the camera cropped to 1:1 starts with that crop, which Camera Raw writes
+/// as a crop of the whole frame (CR3 from an EOS M6 Mark II through DNG Converter:
+/// CropLeft 0.166667, CropRight 0.833333, HasCrop True). Lightroom's crop values
+/// replace it; HasCrop False is the whole frame; an edit without crop keeps it.
+#[test]
+fn lightroom_crops_are_relative_to_the_frame_around_the_camera_crop() -> Result<()> {
+    let m = Metadata {
+        width: 6984,
+        height: 4660,
+        crop_left: 12,
+        crop_top: 12,
+        crop_width: 6960,
+        crop_height: 4640,
+        camera_crop: Some([1. / 6., 0., 5. / 6., 1.]),
+        wb: [2., 1., 1.5],
+        daylight_wb: [2., 1., 1.5],
+        ..Default::default()
+    };
+    let base = Recipe::with_profiles(&m, &[]);
+    assert_eq!(base.crop, [1. / 6., 0., 5. / 6., 1.]);
+    let apply = |attrs: &str| -> Result<Recipe> {
+        parse(Path::new("photo.xmp"), &xml(attrs, ""))?.apply(&base, &m, &[], None)
+    };
+    let adobe = r#"c:HasCrop="True" c:CropTop="0" c:CropLeft="0.166667" c:CropBottom="1" c:CropRight="0.833333""#;
+    let square = apply(adobe)?.crop;
+    for (got, want) in square.iter().zip([0.166667, 0., 0.833333, 1.]) {
+        assert!((got - want).abs() < 1e-6, "{square:?}");
+    }
+    let wider =
+        r#"c:HasCrop="True" c:CropTop="0" c:CropLeft="0.1" c:CropBottom="1" c:CropRight="0.9""#;
+    assert_eq!(apply(wider)?.crop, [0.1, 0., 0.9, 1.]);
+    assert_eq!(apply(r#"c:HasCrop="False""#)?.crop, [0., 0., 1., 1.]);
+    let ignored = r#"c:HasCrop="False" c:CropLeft="0.3" c:CropRight="0.7""#;
+    assert_eq!(apply(ignored)?.crop, [0., 0., 1., 1.]);
+    assert_eq!(apply(r#"c:Exposure2012="0.5""#)?.crop, base.crop);
+    // Written back as Camera Raw writes it, and read back the same.
+    let packet = write::packet(
+        &base,
+        &m,
+        &write::Photo {
+            settings: true,
+            ..Default::default()
+        },
+    );
+    assert!(packet.contains(r#"crs:HasCrop="True""#), "{packet}");
+    assert!(packet.contains(r#"crs:CropLeft="0.166667""#), "{packet}");
+    Ok(())
+}
 #[test]
 fn partial_preset_preserves_omitted_settings_and_zero_resets() -> Result<()> {
     let p = parse(
@@ -370,7 +412,6 @@ fn names_entities_and_rgb_curves_parse_with_namespace_aliases() -> Result<()> {
     assert_eq!(r.effects.channels[0].points[0], [1. / 255., 12. / 255.]);
     assert_eq!(r.effects.channels[0].evaluate(0.), 12. / 255.);
     assert_eq!(r.effects.channels[0].evaluate(1.), 250. / 255.);
-    assert!(r.reference_curves);
     Ok(())
 }
 #[test]
@@ -641,11 +682,6 @@ fn lightroom_spots_and_masks_convert_to_image_space() -> Result<()> {
     assert_eq!(skipped.len(), 1, "{skipped:?}");
     assert!(skipped[0].contains("Select Subject"));
     assert_eq!(r.exposure, 0.2);
-    // Lightroom's spots render with Camera Raw's feather.
-    assert_eq!(
-        r.retouch_model,
-        crate::model::operators::RetouchModel::Measured
-    );
     let near = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() < 1e-5 && (a[1] - b[1]).abs() < 1e-5;
     let spot = &r.retouch[0];
     assert_eq!(
@@ -665,7 +701,9 @@ fn lightroom_spots_and_masks_convert_to_image_space() -> Result<()> {
     assert_eq!(r.masks.len(), 2);
     let sky = &r.masks[0];
     assert_eq!((sky.name.as_str(), sky.amount), ("Sky", 0.8));
-    assert_eq!(sky.adjust.exposure, -0.5);
+    // Lightroom stores a mask's Exposure normalised to ±1 for ±4 EV: Camera Raw 18.7
+    // renders LocalExposure2012 0.25 as the global Exposure +1 does.
+    assert_eq!(sky.adjust.exposure, -2.);
     assert_eq!(sky.adjust.color, [0.5, 0.4]);
     assert!(
         matches!(sky.components[0].shape, MaskShape::Linear { from, to } if near(from, [0.5, 0.1]) && near(to, [0.5, 0.5]))
@@ -791,17 +829,10 @@ fn remove_chromatic_aberration_imports_and_presets_leave_it_when_omitted() -> Re
     assert!(on.lens_ca);
     assert!(apply(r#"c:Exposure2012="0.5""#, &on)?.lens_ca);
     assert!(!apply(r#"c:AutoLateralCA="0""#, &on)?.lens_ca);
-    // Recipes before engine 4 render without lens corrections, so it is refused.
-    let old = Recipe {
-        engine: 3,
-        ..Default::default()
-    };
-    assert!(apply(r#"c:AutoLateralCA="1""#, &old).is_err());
-    assert!(!apply(r#"c:AutoLateralCA="0""#, &old)?.lens_ca);
     Ok(())
 }
 #[test]
-fn manual_distortion_imports_and_needs_the_current_process_version() -> Result<()> {
+fn manual_distortion_imports() -> Result<()> {
     let apply = |attrs: &str, r: &Recipe| {
         parse(Path::new("d.xmp"), &xml(attrs, ""))?.apply(r, &Metadata::default(), &[], None)
     };
@@ -812,15 +843,6 @@ fn manual_distortion_imports_and_needs_the_current_process_version() -> Result<(
         r.lens_manual_distortion
     );
     assert!(apply(r#"c:LensManualDistortionAmount="101""#, &Recipe::default()).is_err());
-    let old = Recipe {
-        engine: 3,
-        ..Default::default()
-    };
-    assert!(apply(r#"c:LensManualDistortionAmount="20""#, &old).is_err());
-    assert_eq!(
-        apply(r#"c:LensManualDistortionAmount="0""#, &old)?.lens_manual_distortion,
-        0.
-    );
     Ok(())
 }
 /// Settings that change how the lens renders leave no Upright correction analysed
@@ -932,7 +954,6 @@ fn auto_grayscale_mix_uses_stored_mixer_or_estimates_it() -> Result<()> {
     profile.enhanced.as_mut().unwrap().monochrome = true;
     let base = Recipe {
         profile: Some(std::sync::Arc::new(profile)),
-        engine: 3,
         ..Default::default()
     };
     let auto = parse(
@@ -984,14 +1005,6 @@ fn channel_curves_apply_only_as_a_full_set() -> Result<()> {
         )?;
         assert_eq!(r.effects.channels, Recipe::default().effects.channels);
     }
-    // Nor does it switch the current curves to another curve mode.
-    let r = parse(Path::new("partial.xmp"), &xml("", &red))?.apply(
-        &Recipe::default(),
-        &Metadata::default(),
-        &[],
-        None,
-    )?;
-    assert!(!r.reference_curves && !r.wide_gamut_curves);
     Ok(())
 }
 /// Lightroom's Constrain Crop (`CropConstrainToWarp`) imports instead of being refused,
@@ -1216,7 +1229,6 @@ fn black_white_by_profile_writes_its_mix() {
     profile.enhanced.as_mut().unwrap().monochrome = true;
     let mut r = Recipe {
         profile: Some(std::sync::Arc::new(profile)),
-        engine: 3,
         ..Default::default()
     };
     r.effects.gray_mix[5] = -0.4;
@@ -1390,159 +1402,8 @@ fn lens_profile_identity_round_trips() -> Result<()> {
     );
     Ok(())
 }
-/// A packet exported by RAWmakase before the kept-operator marker existed keeps the
-/// operators it could not have rendered with; Lightroom's values select them.
 #[test]
-fn packets_from_earlier_rawmakase_keep_the_operators_measured_since() -> Result<()> {
-    use crate::model::operators::{CalibrationModel, MixerModel, SaturationModel};
-    let m = Metadata::default();
-    let fresh = Recipe::with_profiles(&m, &[]);
-    let settings = r#"c:Saturation="-80" c:RedHue="20" c:HueAdjustmentBlue="30""#;
-    let apply = |creator: &str| {
-        let attrs = format!(
-            r#"xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:CreatorTool="{creator}" {settings}"#
-        );
-        parse(Path::new("p.xmp"), &xml(&attrs, ""))?.apply(&fresh, &m, &[], None)
-    };
-    let old = apply("RAWmakase 0.1.15")?;
-    assert_eq!(old.saturation_model, SaturationModel::Original);
-    assert_eq!(old.calibration_model, CalibrationModel::Original);
-    // The chart mixer shipped in 0.1.15, so its values there mean it.
-    assert_eq!(old.mixer_model, MixerModel::Chart);
-    let older = apply("RAWmakase 0.1.14")?;
-    assert_eq!(older.mixer_model, MixerModel::Original);
-    let lightroom = apply("Adobe Photoshop Lightroom Classic 14.5 (Macintosh)")?;
-    assert_eq!(lightroom.saturation_model, SaturationModel::Gray);
-    assert_eq!(lightroom.calibration_model, CalibrationModel::Measured);
-    // 0.1.15 already named some kept operators; the newer ones are added to them.
-    let attrs = format!(
-        r#"xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:CreatorTool="RAWmakase 0.1.15" c:RAWmakaseOriginal="Sharpening" {settings}"#
-    );
-    let named = parse(Path::new("p.xmp"), &xml(&attrs, ""))?.apply(&fresh, &m, &[], None)?;
-    assert_eq!(named.saturation_model, SaturationModel::Original);
-    assert_eq!(
-        named.sharpening_model,
-        crate::model::operators::SharpeningModel::Original
-    );
-    // A packet with the current marker says it itself.
-    let attrs = format!(
-        r#"xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:CreatorTool="RAWmakase 0.1.15" c:RAWmakaseMarkers="2" {settings}"#
-    );
-    let current = parse(Path::new("p.xmp"), &xml(&attrs, ""))?.apply(&fresh, &m, &[], None)?;
-    assert_eq!(current.saturation_model, SaturationModel::Gray);
-    // A preset from before the marker keeps them too; one written now does not.
-    let old_preset = parse(
-        Path::new("p.xmp"),
-        &xml(&format!(r#"c:RAWmakasePreset="1" {settings}"#), ""),
-    )?
-    .apply(&fresh, &m, &[], None)?;
-    assert_eq!(old_preset.saturation_model, SaturationModel::Original);
-    let new_preset = parse(
-        Path::new("p.xmp"),
-        &xml(
-            &format!(r#"c:RAWmakasePreset="1" c:RAWmakaseMarkers="2" {settings}"#),
-            "",
-        ),
-    )?
-    .apply(&fresh, &m, &[], None)?;
-    assert_eq!(new_preset.saturation_model, SaturationModel::Gray);
-    // The marker written as a child element counts too.
-    let child = parse(
-        Path::new("p.xmp"),
-        &xml(
-            &format!(r#"c:RAWmakasePreset="1" {settings}"#),
-            "<c:RAWmakaseMarkers>2</c:RAWmakaseMarkers>",
-        ),
-    )?
-    .apply(&fresh, &m, &[], None)?;
-    assert_eq!(child.saturation_model, SaturationModel::Gray);
-    // An old preset without these settings leaves the photo's operators alone.
-    let exposure = parse(
-        Path::new("p.xmp"),
-        &xml(r#"c:RAWmakasePreset="1" c:Exposure2012="0.5""#, ""),
-    )?
-    .apply(&fresh, &m, &[], None)?;
-    assert_eq!(exposure.saturation_model, SaturationModel::Gray);
-    assert_eq!(exposure.calibration_model, CalibrationModel::Measured);
-    Ok(())
-}
-/// A packet from 0.2.0 (marker format 2) could not name Vibrance, so it keeps the
-/// earlier Vibrance; format 3 names it when kept.
-#[test]
-fn marker_format_two_keeps_the_earlier_vibrance() -> Result<()> {
-    use crate::model::operators::{SaturationModel, VibranceModel};
-    let m = Metadata::default();
-    let fresh = Recipe::with_profiles(&m, &[]);
-    let apply = |markers: &str| {
-        let attrs = format!(
-            r#"xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:CreatorTool="RAWmakase 0.2.0" c:RAWmakaseMarkers="{markers}" c:Vibrance="-80" c:Saturation="-80" c:ConvertToGrayscale="True" c:GrayMixerRed="-40""#
-        );
-        parse(Path::new("p.xmp"), &xml(&attrs, ""))?.apply(&fresh, &m, &[], None)
-    };
-    let two = apply("2")?;
-    assert_eq!(two.vibrance_model, VibranceModel::Original);
-    assert_eq!(
-        two.black_white_model,
-        crate::model::operators::BlackWhiteModel::Original
-    );
-    assert_eq!(two.saturation_model, SaturationModel::Gray);
-    let three = apply("3")?;
-    assert_eq!(three.vibrance_model, VibranceModel::Chart);
-    assert_eq!(
-        three.black_white_model,
-        crate::model::operators::BlackWhiteModel::Chart
-    );
-    Ok(())
-}
-#[test]
-fn lightroom_auto_black_white_takes_the_measured_gray() -> Result<()> {
-    use crate::model::operators::BlackWhiteModel;
-    // Recipe::default() stands for a recipe saved before the measured gray.
-    let r = parse(
-        Path::new("p.xmp"),
-        &xml(
-            r#"c:ConvertToGrayscale="True" c:AutoGrayscaleMix="True""#,
-            "",
-        ),
-    )?
-    .apply(&Recipe::default(), &Metadata::default(), &[], None)?;
-    assert_eq!(r.black_white_model, BlackWhiteModel::Chart);
-    Ok(())
-}
-#[test]
-fn lightroom_mixer_and_calibration_take_the_measured_operators() -> Result<()> {
-    use crate::model::operators::{CalibrationModel, MixerModel};
-    // Recipe::default() stands for a recipe saved before the measured operators.
-    let apply = |attrs: &str| {
-        parse(Path::new("p.xmp"), &xml(attrs, ""))?.apply(
-            &Recipe::default(),
-            &Metadata::default(),
-            &[],
-            None,
-        )
-    };
-    let r = apply(r#"c:LuminanceAdjustmentBlue="-40" c:RedHue="20" c:Saturation="-30""#)?;
-    assert_eq!(
-        r.saturation_model,
-        crate::model::operators::SaturationModel::Gray
-    );
-    assert_eq!(r.mixer_model, MixerModel::Chart);
-    assert_eq!(r.calibration_model, CalibrationModel::Measured);
-    let r = apply(r#"c:Exposure2012="0.5""#)?;
-    assert_eq!(r.mixer_model, MixerModel::Original);
-    assert_eq!(r.calibration_model, CalibrationModel::Original);
-    // RAWmakase's own packet for a recipe that kept them.
-    let r = apply(
-        r#"c:LuminanceAdjustmentBlue="-40" c:RedHue="20" c:RAWmakaseOriginal="ColorMixer,Calibration""#,
-    )?;
-    assert_eq!(r.mixer_model, MixerModel::Original);
-    assert_eq!(r.calibration_model, CalibrationModel::Original);
-    Ok(())
-}
-#[test]
-fn lightroom_manual_vignetting_takes_the_measured_operator() -> Result<()> {
-    use crate::model::operators::LensVignetteModel;
-    // Recipe::default() stands for a recipe saved before the measured operator.
+fn lightroom_manual_vignetting_imports() -> Result<()> {
     let apply = |attrs: &str| {
         parse(Path::new("p.xmp"), &xml(attrs, ""))?.apply(
             &Recipe::default(),
@@ -1552,10 +1413,8 @@ fn lightroom_manual_vignetting_takes_the_measured_operator() -> Result<()> {
         )
     };
     let r = apply(r#"c:VignetteAmount="-50" c:VignetteMidpoint="20""#)?;
-    assert_eq!(r.lens_vignette_model, LensVignetteModel::Measured);
     assert_eq!(r.effects.lens_vignette, -0.5);
-    let r = apply(r#"c:Exposure2012="0.5""#)?;
-    assert_eq!(r.lens_vignette_model, LensVignetteModel::Original);
+    assert!((r.effects.lens_vignette_midpoint - 0.2).abs() < 1e-6);
     Ok(())
 }
 

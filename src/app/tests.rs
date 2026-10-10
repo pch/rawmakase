@@ -4083,8 +4083,6 @@ fn a_swatch_added_while_visualize_range_is_on_is_visualized_at_once() {
     let ctx = egui::Context::default();
     let (mut editor, _) =
         editor_with_blue_photo(&ctx, crate::app::session::Session::default(), true);
-    editor.document.edit.setup_mut().reference_curves = true;
-    editor.document.edit.setup_mut().reference_color = true;
     editor.view.mixer_tab = state::MixerTab::PointColor;
     editor.view.point_color.visualize = true;
     editor.view.toggle(state::Tool::PointColor);
@@ -4104,9 +4102,6 @@ fn point_colors_dropper_adds_a_selected_swatch_as_one_step_and_visualizes_it() {
     let ctx = egui::Context::default();
     let (mut editor, _) =
         editor_with_blue_photo(&ctx, crate::app::session::Session::default(), true);
-    // The current process, which renders Point Color.
-    editor.document.edit.setup_mut().reference_curves = true;
-    editor.document.edit.setup_mut().reference_color = true;
     editor.view.mixer_tab = state::MixerTab::PointColor;
     editor.view.toggle(state::Tool::PointColor);
     assert!(editor.view.picks_color());
@@ -4217,13 +4212,10 @@ fn point_colors_dropper_adds_a_selected_swatch_as_one_step_and_visualizes_it() {
     });
     assert_eq!(editor.view.tool, state::Tool::None);
     editor.view.mixer_tab = state::MixerTab::PointColor;
-    // Nor in the Library, or with an older process, which doesn't render it.
+    // Nor in the Library.
     editor.module = Module::Library;
     assert_eq!(editor.visualized_swatch(), None);
     editor.module = Module::Develop;
-    editor.document.edit.setup_mut().reference_curves = false;
-    assert_eq!(editor.visualized_swatch(), None);
-    editor.document.edit.setup_mut().reference_curves = true;
     // One History step, which Undo takes back.
     let mut recipe = editor.document.edit.recipe().clone();
     assert!(editor.document.edit.history_mut().undo(&mut recipe));
@@ -4920,8 +4912,6 @@ fn a_swatch_added_while_color_mixer_is_off_turns_it_on() {
     let ctx = egui::Context::default();
     let (mut editor, _) =
         editor_with_blue_photo(&ctx, crate::app::session::Session::default(), true);
-    editor.document.edit.setup_mut().reference_curves = true;
-    editor.document.edit.setup_mut().reference_color = true;
     editor
         .document
         .edit

@@ -479,26 +479,18 @@ fn render(
                 return Ok(());
             }
             if let Some(region) = job.region {
-                let out = if job.recipe.engine < 3 {
-                    Output::Pixels(develop::render_region(
-                        &job.image,
-                        &job.recipe.checked()?,
-                        region,
-                    )?)
-                } else {
+                let out = {
                     // While editing at 100%, a reduced preview keeps sliders responsive;
                     // a newer job cancels the full-resolution render that follows.
                     // Zooming in goes straight to the full region, over the enlarged Fit.
-                    if *showing_region
-                        && !*quick_region
-                        && let Some(out) = processor.render_region_preview_to(
+                    if *showing_region && !*quick_region {
+                        let out = processor.render_region_preview_to(
                             &job.image,
                             &job.recipe,
                             region,
                             &job.cancel,
                             zoomed_display.as_ref(),
-                        )?
-                    {
+                        )?;
                         let gpu = processor.used_gpu();
                         publish(out, RenderStage::Draft, false, gpu);
                     }

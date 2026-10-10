@@ -121,12 +121,10 @@ fn sliders_move_linearly_from_before_through_the_preset() {
 fn the_ends_are_the_photo_before_and_the_preset() {
     let m = metadata();
     let before = Recipe {
-        engine: 3,
         exposure: 0.4,
         ..Default::default()
     };
     let full = Recipe {
-        engine: 4,
         exposure: -0.6,
         temperature: 4300.,
         tint: 12.,
@@ -135,15 +133,8 @@ fn the_ends_are_the_photo_before_and_the_preset() {
     };
     let a = amount(&before, &full);
     assert_eq!(a.at(1., &m), full);
-    // 0% is the photo as before, at the process version the preset brought.
-    let zero = a.at(0., &m);
-    assert_eq!(
-        zero,
-        Recipe {
-            engine: 4,
-            ..before
-        }
-    );
+    // 0% is the photo as before.
+    assert_eq!(a.at(0., &m), before);
     // Each Amount is computed from the same two recipes, so going back and forth
     // ends exactly where a single move would.
     let mut shown = a.at(0.3, &m);
@@ -427,18 +418,7 @@ fn lens_profile_setup_changes_that_render_alike_keep_amount() {
 }
 
 #[test]
-fn zero_amount_keeps_the_white_balance_version() {
-    let before = Recipe::default();
-    let full = Recipe {
-        white_balance_model: crate::model::operators::WhiteBalanceModel::Calibrated,
-        ..before.clone()
-    };
-    assert_eq!(amount(&before, &full).at(0., &metadata()), before);
-}
-
-#[test]
-fn an_amount_rounded_back_to_before_keeps_its_white_balance_conversion() {
-    use crate::model::operators::WhiteBalanceModel;
+fn an_amount_rounded_back_to_before_keeps_its_white_balance() {
     // 5000 K is exactly 200 mired, avoiding reciprocal round-off in this fixture.
     let before = Recipe {
         temperature: 5000.,
@@ -446,17 +426,9 @@ fn an_amount_rounded_back_to_before_keeps_its_white_balance_conversion() {
     };
     let full = Recipe {
         temperature: 7000.,
-        white_balance_model: WhiteBalanceModel::Calibrated,
         ..before.clone()
     };
     let tiny = amount(&before, &full).at(1e-9, &metadata());
     assert_eq!(tiny.temperature, before.temperature);
     assert_eq!(tiny.wb, before.wb);
-    assert_eq!(tiny.white_balance_model, before.white_balance_model);
-    assert_eq!(
-        amount(&before, &full)
-            .at(0.5, &metadata())
-            .white_balance_model,
-        WhiteBalanceModel::Calibrated
-    );
 }

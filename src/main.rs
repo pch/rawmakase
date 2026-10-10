@@ -56,6 +56,13 @@ enum Command {
     Inspect {
         input: PathBuf,
     },
+    /// Render one RAW with several XMP sidecars, developing it once: for comparisons
+    /// with Camera Raw. `jobs` is a JSON list of {"xmp", "output", "max_edge"}; existing
+    /// outputs are skipped.
+    RenderBatch {
+        input: PathBuf,
+        jobs: PathBuf,
+    },
     Thumbnail {
         input: PathBuf,
         output: PathBuf,
@@ -87,12 +94,22 @@ enum Command {
         /// Apply Auto white balance, as the WB menu's Auto does (before --auto).
         #[arg(long)]
         auto_wb: bool,
+        /// Write the photo at a stage of the pipeline instead, as a 32-bit float TIFF
+        /// of linear ProPhoto RGB at full size (docs/scene-tone-stage.md).
+        #[arg(long, value_enum)]
+        tap: Option<Tap>,
     },
     Benchmark {
         input: PathBuf,
         #[arg(long, default_value_t = 20)]
         iterations: usize,
     },
+}
+/// A stage `render --tap` writes.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum Tap {
+    SceneInput,
+    SceneOutput,
 }
 /// A windows-subsystem program starts without a console, so commands run from
 /// a terminal would print nothing. Writes to that terminal instead, unless the
@@ -225,6 +242,56 @@ fn main() -> Result<()> {
                 serde_json::to_string_pretty(&r.metadata)?
             );
         }
+        Some(Command::RenderBatch { input, jobs }) => {
+            #[derive(serde::Deserialize)]
+            struct Job {
+                xmp: PathBuf,
+                output: PathBuf,
+                #[serde(default)]
+                max_edge: u32,
+            }
+            let jobs: Vec<Job> = serde_json::from_str(&std::fs::read_to_string(&jobs)?)?;
+            let photo = rawmakase::photo::open(&input)?;
+            let im = photo.develop(
+                camera_data::Decode::full(Default::default()),
+                &AtomicBool::new(false),
+            )?;
+            let (profiles, _) = rawmakase::camera_profiles::installed(&im.metadata);
+            let base = Recipe::with_profiles(&im.metadata, &profiles);
+            let camera = rawmakase::exif::read(&input);
+            for job in jobs.iter().filter(|j| !j.output.exists()) {
+                let rendered = (|| -> Result<()> {
+                    let preset =
+                        rawmakase::xmp::parse(&job.xmp, &std::fs::read_to_string(&job.xmp)?)?;
+                    let edit = preset.apply(
+                        &base,
+                        &im.metadata,
+                        &profiles,
+                        Some(&rawmakase::develop::Measures(&im)),
+                    )?;
+                    let out = develop::render(&im, &edit.checked()?, job.max_edge)?;
+                    rawmakase::export::export_with(
+                        &job.output,
+                        &input,
+                        &out,
+                        &im.metadata,
+                        &ExportOptions {
+                            max_edge: job.max_edge,
+                            ..Default::default()
+                        },
+                        &rawmakase::export::Embed {
+                            camera: camera.clone(),
+                            ..Default::default()
+                        },
+                        rawmakase::export::Replace::NoClobber,
+                    )?;
+                    Ok(())
+                })();
+                if let Err(e) = rendered {
+                    eprintln!("{}: {e:#}", job.output.display());
+                }
+            }
+        }
         Some(Command::Thumbnail { input, output }) => {
             use std::io::Write;
             let data = rawmakase::photo::open(&input)?.thumbnail()?;
@@ -247,6 +314,7 @@ fn main() -> Result<()> {
             recipe,
             auto,
             auto_wb,
+            tap,
         }) => {
             let t = Instant::now();
             let r = rawmakase::photo::open(&input)?;
@@ -269,10 +337,6 @@ fn main() -> Result<()> {
                 edit.profile = Some(rawmakase::camera_profiles::load(&p, &r.metadata)?);
                 // A chosen profile starts at 100%, as in the app.
                 edit.profile_amount = 1.;
-                edit.engine = edit.engine.max(3);
-                edit.profile_tone = true;
-                edit.reference_curves = true;
-                edit.wide_gamut_curves = true;
                 edit.use_camera_baseline(&r.metadata);
                 edit.sync_white_balance_controls(&r.metadata);
             }
@@ -325,6 +389,23 @@ fn main() -> Result<()> {
             if let Some(path) = save_recipe {
                 anyhow::ensure!(!path.exists(), "Recipe output already exists");
                 rawmakase::presets::save_preset(&path, &edit)?;
+            }
+            if let Some(tap) = tap {
+                let stage = match tap {
+                    Tap::SceneInput => develop::quality::Stage::SceneInput,
+                    Tap::SceneOutput => develop::quality::Stage::SceneOutput,
+                };
+                let out =
+                    develop::quality::render_stage(&im, &edit, stage, &AtomicBool::new(false))?;
+                anyhow::ensure!(overwrite || !output.exists(), "Output already exists");
+                image::Rgb32FImage::from_raw(
+                    out.width,
+                    out.height,
+                    out.pixels.into_iter().flatten().collect(),
+                )
+                .ok_or_else(|| anyhow::anyhow!("Stage image has the wrong size"))?
+                .save_with_format(&output, image::ImageFormat::Tiff)?;
+                return Ok(());
             }
             let developed = t.elapsed();
             let out = develop::render(&im, &edit.checked()?, max_edge)?;
