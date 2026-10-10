@@ -25,7 +25,7 @@ rawmakase-ctl = { path = "tools/rawmakase-ctl", version = "0.1.0" }
 # Local MCP adapter; no HTTP server or remote authorization stack.
 rmcp = { version = "3.5", default-features = false, features = ["server", "macros", "transport-io"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
-base64 = "0.22"
+base64 = "0.23"
 # Verifies a downloaded or imported selection model against its pinned digest.
 sha2 = "0.11"
 getrandom = "0.4"
