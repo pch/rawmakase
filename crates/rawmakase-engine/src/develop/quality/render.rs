@@ -143,7 +143,7 @@ fn render_resident(
         toned.reduced = Some(reduced);
     }
     let Some(mut params) =
-        develop::pipeline::gpu_pixel_params(toned.source(), &base, stages.backend, cancel)
+        develop::pipeline::gpu_pixel_params(&toned, &base, stages.cache, stages.backend, cancel)
     else {
         return Ok(None);
     };

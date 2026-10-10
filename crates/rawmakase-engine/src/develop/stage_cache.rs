@@ -35,6 +35,11 @@ pub(crate) struct StageCache {
     pub(crate) masks: Lru<MaskKey, super::masks::MaskWeights>,
     /// Brush masks rasterised in image space.
     pub(crate) rasters: super::masks::RasterCache,
+    /// The photo's measures and its Shadows/Highlights map before the sliders: what the
+    /// engine 4 tone stage makes of the reduced photo (see [`ToneKey`]).
+    pub(crate) pivots: Lru<ToneKey, f32>,
+    pub(crate) highlights: Lru<ToneKey, f32>,
+    pub(crate) maps: Lru<ToneKey, super::local_tone::MapBase>,
 }
 
 pub(crate) struct Lru<K, V> {
@@ -109,10 +114,12 @@ impl<T> PartialEq for Same<T> {
     }
 }
 
-/// The recipe as the cached stages read it: the local-tone blurs and the samples.
+/// The recipe as the cached stages read it: the local-tone blurs, the samples and the
+/// engine 4 tone stage.
 struct StageRecipes {
     blurs: Recipe,
     samples: Recipe,
+    tone: Recipe,
 }
 /// Splits `r` into what each cached stage reads. `Recipe` and `Effects` are taken
 /// apart without `..`, so adding a field to either is a compile error here until it is
@@ -145,25 +152,28 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         lens_vignette_model,
         effects,
         // Shadows/Highlights and their exposure are keyed by `LocalKey`; spot removal
-        // changes the source image, which every key holds.
-        exposure: _,
-        camera_exposure: _,
+        // changes the source image, which every key holds. The tone stage reads the
+        // exposure; engine 4 applies Shadows and Highlights after it, from the map.
+        exposure,
+        camera_exposure,
         shadows: _,
         highlights: _,
         retouch: _,
         retouch_model: _,
         red_eye: _,
-        // Read only by the per-pixel stage and the finishing stages after these.
-        profile_tone: _,
+        // The profile tone curve ends the tone stage.
+        profile_tone,
         // The look's strength; its Shadows, Highlights and Clarity are keyed by
-        // `LocalKey` once `Recipe::resolved` has added them.
-        profile_amount: _,
-        tint: _,
+        // `LocalKey` once `Recipe::resolved` has added them. The tone stage applies the
+        // look's tables.
+        profile_amount,
+        tint,
         auto_white_balance: _,
         wide_gamut_curves: _,
-        reference_curves: _,
-        reference_calibration: _,
-        reference_color: _,
+        // Which tone stage and calibration render.
+        reference_curves,
+        reference_calibration,
+        reference_color,
         parametric_model: _,
         grain_model: _,
         // The measured Clarity is in the map, built per render; the original one is
@@ -177,7 +187,7 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         saturation_model: _,
         vibrance_model: _,
         black_white_model: _,
-        calibration_model: _,
+        calibration_model,
         whites_model: _,
         white_balance_model: _,
         gamut_model: _,
@@ -215,18 +225,20 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         // Keyed by `LocalKey`.
         clarity: _,
         texture: _,
-        // Read only by the per-pixel stage and the finishing stages after these.
+        // Read only by the per-pixel stage and the finishing stages after these, but
+        // for the calibration the tone stage applies.
         channels: _,
         parametric: _,
         splits: _,
-        calibration: _,
-        shadow_tint: _,
+        calibration,
+        shadow_tint,
         monochrome: _,
         gray_mix: _,
         balance: _,
         blending: _,
         global_grade: _,
-        dehaze: _,
+        // The tone stage applies it before engine 4's measured curve.
+        dehaze,
         grain: _,
         grain_size: _,
         grain_roughness: _,
@@ -245,6 +257,31 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         defringe_ranges: _,
     } = effects;
     StageRecipes {
+        // Engine 4's tone stage (`pipeline::tone_stage`): white balance, camera profile,
+        // calibration, exposure and its black ramp, and the profile's look and tone
+        // curve. Contrast, Whites, Blacks, Shadows and Highlights come after it.
+        tone: Recipe {
+            engine: *engine,
+            wb: *wb,
+            temperature: *temperature,
+            tint: *tint,
+            profile: profile.clone(),
+            profile_tone: *profile_tone,
+            profile_amount: *profile_amount,
+            exposure: *exposure,
+            camera_exposure: *camera_exposure,
+            reference_curves: *reference_curves,
+            reference_calibration: *reference_calibration,
+            reference_color: *reference_color,
+            calibration_model: *calibration_model,
+            effects: Effects {
+                calibration: *calibration,
+                shadow_tint: *shadow_tint,
+                dehaze: *dehaze,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
         // Log luminance after white balance, profile matrix and lens vignetting.
         blurs: Recipe {
             engine: *engine,
@@ -379,6 +416,42 @@ impl ReducedKey {
         }
     }
 }
+/// The recipe as the engine 4 tone stage reads it.
+pub(crate) fn tone_recipe(r: &Recipe) -> Recipe {
+    stage_recipes(r).tone
+}
+/// What the engine 4 tone stage makes of the reduced photo: its Contrast pivot (measured
+/// at the camera's exposure), the highlights positive Whites follows and the
+/// Shadows/Highlights map's base. The photo, its local-tone gain and its image before
+/// Texture, and the recipe as the tone stage reads it.
+#[derive(Clone, PartialEq)]
+pub(crate) struct ToneKey {
+    image: Same<CameraImage>,
+    gain: Option<LocalKey>,
+    untextured: Option<Same<CameraImage>>,
+    recipe: Recipe,
+}
+impl ToneKey {
+    /// For measures at the recipe's exposure.
+    pub(crate) fn new(toned: &Toned, r: &Recipe) -> Self {
+        Self {
+            image: Same(toned.image.clone()),
+            gain: toned.gain_key.clone(),
+            untextured: toned.untextured.clone().map(Same),
+            recipe: stage_recipes(r).tone,
+        }
+    }
+    /// For the Contrast pivot, which the user's Exposure does not move.
+    pub(crate) fn without_exposure(toned: &Toned, r: &Recipe) -> Self {
+        Self::new(
+            toned,
+            &Recipe {
+                exposure: 0.,
+                ..r.clone()
+            },
+        )
+    }
+}
 /// Samples of an output region: geometry, lens correction and noise reduction.
 #[derive(PartialEq)]
 pub(crate) struct SampleKey {
@@ -457,16 +530,23 @@ mod tests {
         };
         let changes = |r: &Recipe| {
             let (a, b) = (stage_recipes(&base), stage_recipes(r));
-            (a.blurs != b.blurs, a.samples != b.samples)
+            (a.blurs != b.blurs, a.samples != b.samples, a.tone != b.tone)
         };
-        // (edit, changes the blurs, changes the samples)
-        let cases: [(&str, Recipe, bool, bool); 15] = [
-            ("temperature", edit(&|r| r.temperature = 3000.), true, false),
+        // (edit, changes the blurs, changes the samples, changes the tone stage)
+        let cases: [(&str, Recipe, bool, bool, bool); 23] = [
+            (
+                "temperature",
+                edit(&|r| r.temperature = 3000.),
+                true,
+                false,
+                true,
+            ),
             (
                 "lens vignetting",
                 edit(&|r| r.lens_vignetting = 0.5),
                 true,
                 true,
+                false,
             ),
             (
                 "manual vignetting",
@@ -476,52 +556,97 @@ mod tests {
                 }),
                 true,
                 true,
+                false,
             ),
-            ("lens CA", edit(&|r| r.lens_ca = true), false, true),
+            ("lens CA", edit(&|r| r.lens_ca = true), false, true, false),
             (
                 "distortion",
                 edit(&|r| r.lens_distortion = 0.5),
                 false,
                 true,
+                false,
             ),
             (
                 "manual distortion",
                 edit(&|r| r.lens_manual_distortion = -0.3),
                 false,
                 true,
+                false,
             ),
             (
                 "crop",
                 edit(&|r| r.crop = [0.1, 0.1, 0.9, 0.9]),
                 false,
                 true,
+                false,
             ),
-            ("straighten", edit(&|r| r.straighten = 2.), false, true),
+            (
+                "straighten",
+                edit(&|r| r.straighten = 2.),
+                false,
+                true,
+                false,
+            ),
             (
                 "constrain crop",
                 edit(&|r| r.constrain_crop = true),
                 false,
                 true,
+                false,
             ),
-            ("noise", edit(&|r| r.noise_luma = 0.3), false, true),
+            ("noise", edit(&|r| r.noise_luma = 0.3), false, true, false),
             (
                 "chroma detail",
                 edit(&|r| r.effects.chroma_detail = 0.1),
                 false,
                 true,
+                false,
             ),
-            ("exposure", edit(&|r| r.exposure = 1.), false, false),
-            ("curve", edit(&|r| r.contrast = 0.4), false, false),
+            ("exposure", edit(&|r| r.exposure = 1.), false, false, true),
+            ("curve", edit(&|r| r.contrast = 0.4), false, false, false),
             (
                 "defringe",
                 edit(&|r| r.effects.defringe = [0.5, 0.]),
                 false,
                 false,
+                false,
             ),
-            ("sharpening", edit(&|r| r.sharpening = 0.9), false, false),
+            (
+                "sharpening",
+                edit(&|r| r.sharpening = 0.9),
+                false,
+                false,
+                false,
+            ),
+            ("whites", edit(&|r| r.whites = 0.5), false, false, false),
+            ("blacks", edit(&|r| r.blacks = -0.5), false, false, false),
+            ("shadows", edit(&|r| r.shadows = 0.5), false, false, false),
+            (
+                "highlights",
+                edit(&|r| r.highlights = -0.5),
+                false,
+                false,
+                false,
+            ),
+            ("hsl", edit(&|r| r.hsl[0][1] = 0.5), false, false, false),
+            (
+                "calibration",
+                edit(&|r| r.effects.calibration[0] = [0.2, 0.1]),
+                false,
+                false,
+                true,
+            ),
+            ("tint", edit(&|r| r.tint = 20.), false, false, true),
+            (
+                "camera exposure",
+                edit(&|r| r.camera_exposure = 0.3),
+                false,
+                false,
+                true,
+            ),
         ];
-        for (name, r, blurs, samples) in cases {
-            assert_eq!(changes(&r), (blurs, samples), "{name}");
+        for (name, r, blurs, samples, tone) in cases {
+            assert_eq!(changes(&r), (blurs, samples, tone), "{name}");
         }
     }
     /// The blurs read the camera part of the profile only: a look's Profile Amount,

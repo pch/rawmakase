@@ -57,6 +57,12 @@ pub const MAX_POINTS: usize = 32;
 pub const MIN_INPUT_SPACING: f32 = 0.00049;
 
 impl ToneCurve {
+    /// Whether the curve maps every value to itself: the line from (0, 0) to (1, 1),
+    /// drawn as a natural spline or straight segments. A smooth curve that is not a
+    /// natural spline bends even through these two points.
+    pub fn is_identity(&self) -> bool {
+        self.points == [[0., 0.], [1., 1.]] && (self.natural || !self.smooth)
+    }
     pub fn validate(&self) -> Result<()> {
         ensure!(
             (2..=MAX_POINTS).contains(&self.points.len()),
@@ -242,6 +248,10 @@ impl CurveLut {
         Self(std::array::from_fn(f))
     }
     pub fn new(curve: &ToneCurve) -> Self {
+        // The same samples as evaluating it (tested), without evaluating it.
+        if curve.is_identity() {
+            return Self::from_fn(|i| i as f32 / 4096.);
+        }
         if curve.natural && curve.smooth {
             let spline = NaturalSpline::new(&curve.points);
             Self(std::array::from_fn(|i| spline.evaluate(i as f32 / 4096.)))
@@ -319,6 +329,44 @@ pub fn refine_saturation(input: [f32; 3], curved: [f32; 3], amount: f32) -> [f32
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// An identity curve's table is the one evaluating it gives, sample for sample, and
+    /// only those curves are identities.
+    #[test]
+    fn identity_tables_are_the_evaluated_ones() {
+        for (natural, smooth) in [(true, true), (true, false), (false, true), (false, false)] {
+            let curve = ToneCurve {
+                points: vec![[0., 0.], [1., 1.]],
+                natural,
+                smooth,
+            };
+            let evaluated: Vec<f32> = (0..4097)
+                .map(|i| {
+                    let x = i as f32 / 4096.;
+                    if natural && smooth {
+                        NaturalSpline::new(&curve.points).evaluate(x)
+                    } else {
+                        curve.evaluate(x)
+                    }
+                })
+                .collect();
+            let identity = evaluated
+                .iter()
+                .enumerate()
+                .all(|(i, v)| *v == i as f32 / 4096.);
+            assert_eq!(
+                curve.is_identity(),
+                identity,
+                "natural {natural}, smooth {smooth}"
+            );
+            assert_eq!(
+                CurveLut::new(&curve).values().as_slice(),
+                evaluated.as_slice()
+            );
+        }
+        let mut bent = ToneCurve::default();
+        bent.points[1] = [1., 0.9];
+        assert!(!bent.is_identity());
+    }
     #[test]
     fn a_table_serializes_as_its_samples_and_reads_back_only_whole() {
         let lut = CurveLut::from_fn(|i| i as f32 / 4096.);

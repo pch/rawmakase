@@ -114,6 +114,7 @@ impl Resident {
             })
         };
         let logs_source = crate::develop::pipeline::pixel_params::wgsl_prelude()
+            + &super::develop::Variant::FULL.constants()
             + include_str!("develop.wgsl")
             + include_str!("logs.wgsl");
         let logs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {

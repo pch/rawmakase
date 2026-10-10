@@ -1,39 +1,95 @@
 //! Parameters the GPU port of the pipeline takes, built from the same recipe and image.
 use super::*;
 
-/// Parameters of the GPU per-pixel stage for `im` and the resolved recipe `r`, or
-/// `None` when the port does not cover it. The Shadows/Highlights map's tone pass over
-/// the reduced photo also runs on the GPU; the map is then built from its luminance.
+/// Parameters of the GPU per-pixel stage for `toned` and the resolved recipe `r`, or
+/// `None` when the port does not cover it. The photo's measures and the
+/// Shadows/Highlights map's base come from `cache` when the tone stage that made them is
+/// unchanged, so the Basic sliders only rebuild their curves; otherwise the map's tone
+/// pass over the reduced photo runs on the GPU and the map is built from its luminance.
 pub(crate) fn gpu_pixel_params(
-    im: Source,
+    toned: &Toned,
     r: &Recipe,
+    cache: &mut crate::develop::stage_cache::StageCache,
     backend: &mut crate::develop::preview_renderer::Backend,
     cancel: &std::sync::atomic::AtomicBool,
 ) -> Option<pixel_params::PixelParams> {
+    use crate::develop::stage_cache::ToneKey;
+    let im = toned.source();
+    // Measures only `r` needs, kept for the tone stage they were made with; a failure
+    // (none is expected) measures again rather than rendering without them.
+    let pivot = measures_contrast_pivot(r).then(|| {
+        let key = ToneKey::without_exposure(toned, r);
+        let made = cache
+            .pivots
+            .get_or_try(key, |_| 4, || Ok(measured_pivot(im, r)));
+        made.map_or_else(|_| measured_pivot(im, r), |v| *v)
+    });
+    let highlights = measures_whites(r).then(|| {
+        let key = ToneKey::new(toned, r);
+        let made = cache
+            .highlights
+            .get_or_try(key, |_| 4, || Ok(measured_highlights(im, r)));
+        made.map_or_else(|_| measured_highlights(im, r), |v| *v)
+    });
+    let measures = PhotoMeasures { pivot, highlights };
+    // The final pass may keep its tone stage for its samples (see `PixelParams::tone`).
+    let keep = |mut p: pixel_params::PixelParams| {
+        p.tone = Some(crate::develop::stage_cache::tone_recipe(r));
+        p
+    };
     if !pixel_params::needs_map(r) {
-        return pixel_params::pixel_params(im, r);
+        return pixel_params::measured_params(im, r, measures, false).map(keep);
     }
-    let tone = pixel_params::tone_params(im, r)?;
-    let small = match im.reduced {
-        Some(small) => std::borrow::Cow::Borrowed(small),
-        None => std::borrow::Cow::Owned(preview_source(im, crate::develop::local_tone::MAP_EDGE)),
-    };
-    let Some(toned) = backend.run(cancel, |gpu| {
-        gpu.scoped(|gpu| gpu.develop_pixels(&small.pixels, &tone, cancel))
-    }) else {
+    let tone = pixel_params::measured_params(im, r, measures, true)?;
+    let sliders = crate::develop::local_tone::Sliders::of(r);
+    // The map's base is built and kept on the device, unless the measured Clarity
+    // needs it on the CPU.
+    if sliders.clarity == 0.
+        && let Some(small) = im.reduced
+    {
+        let key = ToneKey::new(toned, r);
+        let map = backend.run(cancel, |gpu| {
+            gpu.scoped(|gpu| gpu.device_map(key, small, &tone))
+        });
+        if let Some(map) = map {
+            let source = [im.width, im.height];
+            let p = pixel_params::with_device_map(tone, map, source, sliders);
+            return Some(keep(p));
+        }
+    }
+    let base = cache.maps.get_or_try(
+        ToneKey::new(toned, r),
+        crate::develop::local_tone::MapBase::bytes,
+        || {
+            let small = match im.reduced {
+                Some(small) => std::borrow::Cow::Borrowed(small),
+                None => std::borrow::Cow::Owned(preview_source(
+                    im,
+                    crate::develop::local_tone::MAP_EDGE,
+                )),
+            };
+            let toned = backend
+                .run(cancel, |gpu| {
+                    gpu.scoped(|gpu| gpu.develop_pixels(&small.pixels, &tone, cancel))
+                })
+                .ok_or_else(|| anyhow::anyhow!("GPU tone pass failed"))?;
+            let lum = toned
+                .into_iter()
+                .map(crate::develop::local_tone::luminance)
+                .collect();
+            Ok(crate::develop::local_tone::MapBase::new(
+                lum,
+                [small.width, small.height],
+                [im.width, im.height],
+            ))
+        },
+    );
+    let Ok(base) = base else {
+        // As before the map was kept: the CPU builds what the GPU could not.
         return pixel_params::pixel_params(im, r);
     };
-    let lum = toned
-        .into_iter()
-        .map(crate::develop::local_tone::luminance)
-        .collect();
-    let map = crate::develop::local_tone::LocalToneMap::from_luminance(
-        lum,
-        [small.width, small.height],
-        [im.width, im.height],
-        crate::develop::local_tone::Sliders::of(r),
-    );
-    Some(pixel_params::with_map(tone, &map))
+    let map = crate::develop::local_tone::LocalToneMap::from_base(&base, sliders);
+    Some(keep(pixel_params::with_map(tone, &map)))
 }
 /// Lens correction for `gpu/local.wgsl`, from `S_LENS` to `S_VIGNETTING_AMOUNT`, with
 /// radial tables appended to `tables` (each: knots, then values) at offsets counted

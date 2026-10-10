@@ -1322,6 +1322,78 @@ fn contrast_and_whites_are_measured_on_the_photo_alone() {
     assert_eq!(textured.photo, plain.photo);
 }
 
+/// The photo's measures are kept for the tone stage they were made with: Contrast,
+/// Whites and Blacks edits reuse the pivot and the highlights and give the parameters of
+/// measuring again; an Exposure edit measures the highlights again, not the pivot.
+#[test]
+fn kept_measures_give_the_parameters_of_measuring_again() {
+    use crate::develop::preview_renderer::Backend;
+    use crate::develop::stage_cache::StageCache;
+    use crate::model::operators::{ContrastModel, WhitesModel};
+    let mut im = fixture();
+    im.metadata.cam_xyz = [
+        [1.1434, -0.4948, -0.121],
+        [-0.3746, 1.2042, 0.1903],
+        [-0.0666, 0.1479, 0.52],
+    ];
+    for (i, p) in im.pixels.iter_mut().enumerate() {
+        *p = if i % 9 == 0 {
+            [0.9; 3]
+        } else {
+            p.map(|v| v * 0.3)
+        };
+    }
+    let profile =
+        crate::camera_profiles::CameraProfile::camera_matrix_default(&im.metadata).unwrap();
+    let base = Recipe {
+        profile: Some(std::sync::Arc::new(profile)),
+        reference_curves: true,
+        reference_color: true,
+        reference_calibration: true,
+        contrast_model: ContrastModel::Adaptive,
+        contrast: 0.6,
+        whites_model: WhitesModel::Adaptive,
+        whites: 0.5,
+        ..Default::default()
+    };
+    let toned = Toned {
+        image: Arc::new(im.clone()),
+        scale: 1.,
+        gain: None,
+        gain_key: None,
+        reduced: None,
+        untextured: None,
+    };
+    let mut cache = StageCache::default();
+    let mut backend = Backend::default();
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut check = |r: &Recipe, cache: &mut StageCache| {
+        let kept = gpu_pixel_params(&toned, r, cache, &mut backend, &cancel).unwrap();
+        let fresh = pixel_params::pixel_params((&im).into(), r).unwrap();
+        assert_eq!(kept.params, fresh.params);
+        assert_eq!(kept.tables, fresh.tables);
+    };
+    for edit in [
+        |r: &mut Recipe| r.contrast = -0.3,
+        |r: &mut Recipe| r.whites = 0.2,
+        |r: &mut Recipe| r.blacks = -0.4,
+        |r: &mut Recipe| r.contrast = 1.,
+    ] {
+        let mut r = base.clone();
+        edit(&mut r);
+        check(&r, &mut cache);
+    }
+    assert_eq!((cache.pivots.len(), cache.highlights.len()), (1, 1));
+    check(
+        &Recipe {
+            exposure: 0.7,
+            ..base
+        },
+        &mut cache,
+    );
+    assert_eq!((cache.pivots.len(), cache.highlights.len()), (1, 2));
+}
+
 /// A look's parametric curve: added to the user's regions by the measured model, a
 /// second curve after the user's by the layered one, as Camera Raw 18.7 renders it.
 #[test]

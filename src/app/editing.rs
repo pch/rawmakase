@@ -145,7 +145,11 @@ impl Editor {
             self.edited();
         }
         if edited || frame.modes != self.render_modes() || frame.overlay != self.overlay() {
-            self.schedule();
+            if edited {
+                self.schedule_edit();
+            } else {
+                self.schedule();
+            }
         }
         if frame.export != (self.document.export.quality, self.document.export.max_edge) {
             self.document.edit.save_state_mut().mark_changed();

@@ -46,6 +46,11 @@ pub(crate) struct Stages<'a> {
 const PREVIEW_PIXELS: u64 = 600_000;
 impl PreviewRenderer {
     /// A hardware device is optional; failure leaves a fully working CPU renderer.
+    /// The kept stage results, for tests that check what was kept.
+    #[cfg(test)]
+    pub(crate) fn stage_cache(&self) -> &StageCache {
+        &self.cache
+    }
     pub fn with_gpu() -> Self {
         Self::with_processor(gpu::Processor::new())
     }

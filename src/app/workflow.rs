@@ -7,7 +7,7 @@ use crate::{
     develop::Geometry,
 };
 use eframe::egui::{self, Vec2};
-use std::{path::PathBuf, time::Instant};
+use std::{path::PathBuf, sync::Arc, time::Instant};
 
 /// How saving the edit before closing ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -367,20 +367,24 @@ impl Editor {
         self.view.zoom.region(self.view.viewport, g.width, g.height)
     }
     pub(super) fn schedule(&mut self) {
+        self.schedule_render(false);
+    }
+    /// Renders an edit. While a slider moves, each change starts a render; one of
+    /// the same view already running finishes and shows on the way instead of being
+    /// cancelled, or a GPU slower than the changes would show nothing until the
+    /// slider stops.
+    pub(super) fn schedule_edit(&mut self) {
+        self.schedule_render(true);
+    }
+    fn schedule_render(&mut self, edit: bool) {
         let image = self.document.full().cloned();
         if let Some(image) = image {
             self.yield_before();
-            let (id, cancel) = self.preview.task.start();
             let region = self.region();
             self.preview.last_region = region;
             let geometry = Geometry::new(&image, &self.effective_recipe(), 0);
             let RenderEdges { fit, max_edge } = self.render_edges(&geometry);
             self.preview.last_fit_edge = fit;
-            self.preview.pending_crop = geometry.crop();
-            self.preview.pending_mode = region.map_or(
-                super::state::TextureMode::Whole,
-                super::state::TextureMode::Region,
-            );
             // Visualize Range renders the selected swatch's selection instead of its
             // adjustment; never as the photo's thumbnail.
             let mut recipe = self.effective_recipe();
@@ -391,9 +395,30 @@ impl Editor {
             if let Some(list) = visualize {
                 recipe.point_colors = list;
             }
-            // What the shown pixels were rendered with, Visualize Range included, so
-            // a picker never takes a gray preview for the photo.
-            self.preview.pending_recipe = Some(recipe.clone());
+            let view = super::state::RenderView {
+                image: Arc::downgrade(&image),
+                path: self.document.path.clone(),
+                photo: self.document.catalog_photo,
+                region,
+                max_edge,
+            };
+            let same_view = self
+                .preview
+                .last_view
+                .as_ref()
+                .is_some_and(|v| v.same(&view));
+            self.preview.last_view = Some(view);
+            let (id, cancel) = self.preview.start(
+                edit && same_view,
+                super::state::Pending {
+                    recipe: Some(recipe.clone()),
+                    mode: region.map_or(
+                        super::state::TextureMode::Whole,
+                        super::state::TextureMode::Region,
+                    ),
+                    crop: geometry.crop(),
+                },
+            );
             self.renderer.submit(RenderJob {
                 pane: super::worker::Pane::After,
                 max_edge,

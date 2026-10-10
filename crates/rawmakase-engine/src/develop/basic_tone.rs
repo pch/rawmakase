@@ -6,6 +6,7 @@ use super::basic_tone_data::{
     WHITES_ADAPTIVE, WHITES_EXPOSURES, WHITES_HIGHLIGHTS,
 };
 use crate::color::{srgb_decode, srgb_encode};
+use rayon::prelude::*;
 
 /// The Whites tables one render uses: per slider position (as `SLIDER_VALUES`), the
 /// curve at 64 bin centres.
@@ -163,7 +164,13 @@ impl BasicTone {
         if contrast == 0. && whites == 0. && blacks == 0. && dehaze == 0. {
             return None;
         }
-        let lut = (0..=SIZE)
+        let warp = match photo.contrast {
+            ContrastCurve::Pivot(pivot) if contrast != 0. => warp(pivot),
+            _ => 1.,
+        };
+        // Each point on its own: a slider drag builds this table for every frame.
+        let points: Vec<f32> = (0..=SIZE)
+            .into_par_iter()
             .map(|i| {
                 let x = i as f32 / SIZE as f32;
                 let x = slider(&DEHAZE_VALUES, &DEHAZE, dehaze, x);
@@ -173,13 +180,16 @@ impl BasicTone {
                         let x = slider(&SLIDER_VALUES, &photo.whites.0, whites, x);
                         slider(&SLIDER_VALUES, &BLACKS, blacks, x)
                     }
-                    ContrastCurve::Pivot(pivot) => {
+                    ContrastCurve::Pivot(_) => {
                         let x = slider(&SLIDER_VALUES, &photo.whites.0, whites, x);
                         let x = slider(&SLIDER_VALUES, &BLACKS, blacks, x);
-                        contrast_at(contrast, pivot, x)
+                        warped_contrast(contrast, warp, x)
                     }
                 }
             })
+            .collect();
+        let lut = points
+            .into_iter()
             // Measured tables carry small non-monotone noise; tone must never invert.
             .scan(0f32, |max, y| {
                 *max = max.max(y);
@@ -279,11 +289,29 @@ fn contrast_at(s: f32, pivot: f32, x: f32) -> f32 {
     if s == 0. {
         return x;
     }
-    let to = |v: f32| srgb_decode(v.clamp(0., 1.)).powf(1. / 2.2);
+    warped_contrast(s, warp(pivot), x)
+}
+/// Gamma-2.2 encoded values.
+fn to_gamma22(v: f32) -> f32 {
+    srgb_decode(v.clamp(0., 1.)).powf(1. / 2.2)
+}
+/// The power that takes [`CONTRAST_PIVOT`] to `pivot` in [`contrast_at`].
+fn warp(pivot: f32) -> f32 {
+    to_gamma22(CONTRAST_PIVOT).ln() / to_gamma22(pivot).ln()
+}
+/// [`contrast_at`] with the pivot's [`warp`] `k`.
+fn warped_contrast(s: f32, k: f32, x: f32) -> f32 {
+    if s == 0. {
+        return x;
+    }
     let from = |w: f32| srgb_encode(w.clamp(0., 1.).powf(2.2));
-    let k = to(CONTRAST_PIVOT).ln() / to(pivot).ln();
-    let y = slider(&SLIDER_VALUES, &CONTRAST_CHART, s, from(to(x).powf(k)));
-    from(to(y).powf(1. / k))
+    let y = slider(
+        &SLIDER_VALUES,
+        &CONTRAST_CHART,
+        s,
+        from(to_gamma22(x).powf(k)),
+    );
+    from(to_gamma22(y).powf(1. / k))
 }
 
 /// Linear interpolation between bin centres; linear extrapolation to 0 and 1.
@@ -297,6 +325,37 @@ fn curve(t: &[f32; 64], x: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// The table is the curve composed at each point, as `compose` evaluates it, made
+    /// monotone: the same bits, whatever order the points are computed in.
+    #[test]
+    fn the_table_is_the_composed_curve_at_each_point() {
+        for photo in [
+            PhotoTone::original(),
+            PhotoTone {
+                contrast: ContrastCurve::Pivot(0.48),
+                whites: WhitesTable::original(),
+            },
+            PhotoTone {
+                contrast: ContrastCurve::Pivot(0.31),
+                whites: WhitesTable::for_highlights(0.85),
+            },
+        ] {
+            for (c, w, b, d) in [
+                (-0.76, 0., 0., 0.),
+                (0.5, 0.3, -0.2, 0.),
+                (0., 0.4, 0., 0.25),
+                (1., -1., 1., -0.5),
+            ] {
+                let table = BasicTone::new(c, w, b, d, &photo).unwrap();
+                let mut max = 0f32;
+                for (i, v) in table.lut.iter().enumerate() {
+                    let x = i as f32 / SIZE as f32;
+                    max = max.max(compose(c, w, b, d, &photo, x));
+                    assert_eq!(v.to_bits(), max.to_bits(), "{c} {w} {b} {d} at {i}");
+                }
+            }
+        }
+    }
     #[test]
     fn neutral_sliders_are_identity_and_curves_are_monotone() {
         assert!(BasicTone::new(0., 0., 0., 0., &PhotoTone::original()).is_none());

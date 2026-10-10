@@ -373,6 +373,135 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     Ok(())
 }
 
+/// Reads the first `len` values of `buffer` back.
+fn read_buffer(gpu: &Processor, buffer: &wgpu::Buffer, len: usize) -> Result<Vec<f32>> {
+    let bytes = len as u64 * 4;
+    let staging = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: bytes,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    encoder.copy_buffer_to_buffer(buffer, 0, &staging, 0, bytes);
+    gpu.queue.submit([encoder.finish()]);
+    staging.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+    gpu.device.poll(wgpu::PollType::wait_indefinitely())?;
+    let values = bytemuck::cast_slice(&staging.slice(..).get_mapped_range()?).to_vec();
+    Ok(values)
+}
+
+/// The Shadows/Highlights map's base built on the device against the CPU's
+/// (`local_tone::MapBase`) from the same toned pixels: the guided filter's
+/// coefficients to float precision and the keys at the same luminances. The keys of
+/// a second photo show the device found them again rather than keeping the first.
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+#[allow(clippy::approx_constant)] // Exact camera matrix coefficients.
+fn the_device_map_matches_the_cpu_map_base() -> Result<()> {
+    use crate::{
+        camera_data::{CameraImage, Metadata},
+        camera_profiles::CameraProfile,
+        develop::{
+            local_tone::{MapBase, luminance},
+            pipeline::{Toned, pixel_params::tone_params},
+            stage_cache::ToneKey,
+        },
+    };
+    use std::sync::Arc;
+    // Wider than a map's long edge would be, to cover a radius of several pixels.
+    let (w, h) = (331, 213);
+    let metadata = Metadata {
+        width: w,
+        height: h,
+        wb: [2.02, 1., 1.89],
+        cam_xyz: [
+            [1.1434, -0.4948, -0.121],
+            [-0.3746, 1.2042, 0.1903],
+            [-0.0666, 0.1479, 0.5235],
+        ],
+        ..Default::default()
+    };
+    let photo = |gain: f32| {
+        Arc::new(CameraImage {
+            width: w,
+            height: h,
+            pixels: (0..w * h)
+                .map(|i| {
+                    let (x, y) = ((i % w) as f32, (i / w) as f32);
+                    // Edges and smooth gradients, over several stops.
+                    let step = if (x as u32 / 40 + y as u32 / 30).is_multiple_of(2) {
+                        1.
+                    } else {
+                        0.1
+                    };
+                    let v = gain * step * (0.05 + 0.4 * (x * 0.05).sin().abs() * (y / h as f32));
+                    [v * 1.3, v, v * 0.8]
+                })
+                .collect(),
+            metadata: metadata.clone(),
+            recovered: Default::default(),
+            fast: false,
+            scale_factor: 1.,
+            scale_clipped: 0,
+        })
+    };
+    let profile = CameraProfile::camera_matrix_default(&metadata)
+        .unwrap()
+        .with_test_tables();
+    let recipe = Recipe {
+        profile: Some(Arc::new(profile)),
+        reference_curves: true,
+        reference_color: true,
+        reference_calibration: true,
+        shadows: 0.4,
+        ..Default::default()
+    };
+    let mut gpu = Processor::new()?;
+    let cancel = AtomicBool::new(false);
+    let mut keys = Vec::new();
+    for image in [photo(1.), photo(3.)] {
+        let toned = Toned {
+            image: image.clone(),
+            scale: 1.,
+            gain: None,
+            gain_key: None,
+            reduced: None,
+            untextured: None,
+        };
+        let tone = tone_params(toned.source(), &recipe).unwrap();
+        let lum = gpu.develop_pixels(&image.pixels, &tone, &cancel)?;
+        let cpu = MapBase::new(lum.into_iter().map(luminance).collect(), [w, h], [w, h]);
+        let device = gpu.device_map(ToneKey::new(&toned, &recipe), &image, &tone)?;
+        let n = (w * h) as usize;
+        let ab = read_buffer(&gpu, &device.ab, 2 * n)?;
+        let found = read_buffer(&gpu, &device.keys, 2)?;
+        let (a, b, expected) = cpu.parts();
+        let worst = |device: &[f32], cpu: &[f32]| {
+            device
+                .iter()
+                .zip(cpu)
+                .map(|(d, c)| (d - c).abs())
+                .fold(0f32, f32::max)
+        };
+        let (da, db) = (worst(&ab[..n], a), worst(&ab[n..], b));
+        eprintln!("a {da:e}, b {db:e}, keys {found:?} / {expected:?}");
+        // Both round the variance m2 − m² in f32; b = m − a·m carries a's rounding
+        // times the log luminance (about −10 here): under a thousandth of a stop.
+        assert!(da < 1e-4 && db < 1e-3, "a {da}, b {db}");
+        // The same luminances, though log2 may round differently.
+        for k in 0..2 {
+            assert!(
+                (found[k] - expected[k]).abs() < 1e-5,
+                "{found:?} {expected:?}"
+            );
+        }
+        keys.push(found);
+    }
+    assert_ne!(keys[0], keys[1]);
+    Ok(())
+}
+
 /// Reads a presented texture back as RGB bytes.
 fn read_texture(gpu: &Processor, texture: &wgpu::Texture) -> Result<Vec<u8>> {
     let row = (texture.width() * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
@@ -889,11 +1018,26 @@ fn shaders_are_valid_wgsl() {
         front::wgsl,
         valid::{Capabilities, ValidationFlags, Validator},
     };
-    let prelude = crate::develop::pipeline::pixel_params::wgsl_prelude();
-    let modules: [(&str, String, &[&str]); 6] = [
+    let prelude = crate::develop::pipeline::pixel_params::wgsl_prelude()
+        + &super::develop::Variant::FULL.constants();
+    // The leanest develop variant leaves out every feature it can.
+    let lean = crate::develop::pipeline::pixel_params::wgsl_prelude()
+        + &super::develop::Variant {
+            read: true,
+            masks: false,
+            color: false,
+            local: false,
+        }
+        .constants();
+    let modules: [(&str, String, &[&str]); 8] = [
         (
             "develop.wgsl",
             prelude.clone() + include_str!("develop.wgsl"),
+            &["develop"],
+        ),
+        (
+            "develop.wgsl, lean variant",
+            lean + include_str!("develop.wgsl"),
             &["develop"],
         ),
         (
@@ -933,6 +1077,11 @@ fn shaders_are_valid_wgsl() {
             include_str!("reduce.wgsl").into(),
             &["reduce"],
         ),
+        (
+            "map.wgsl",
+            include_str!("map.wgsl").into(),
+            &["prepare", "rows", "cols", "histogram", "resolve"],
+        ),
     ];
     for (name, source, entries) in modules {
         let module = wgsl::parse_str(&source)
@@ -964,4 +1113,104 @@ fn previews_submit_only_once_the_window_surface_is_reconfigured() {
     drop(surface);
     rx.recv_timeout(Duration::from_secs(10)).unwrap();
     preview.join().unwrap();
+}
+
+/// While the Basic sliders move, the photo's measures and its Shadows/Highlights map are
+/// kept for the tone stage that made them (`stage_cache::ToneKey`), and the develop pass
+/// keeps its tone stage and the colour before Exposure: every frame is the one a
+/// renderer that measures and builds everything again presents.
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+#[allow(clippy::approx_constant)] // Exact camera matrix coefficients.
+fn kept_measures_and_maps_present_the_frames_of_a_fresh_renderer() -> Result<()> {
+    use crate::{
+        camera_data::{CameraImage, Metadata},
+        camera_profiles::CameraProfile,
+        develop::{PreviewRenderer, quality::Output},
+        model::operators::{ContrastModel, WhitesModel},
+    };
+    use std::sync::Arc;
+    let (w, h) = (157, 103);
+    let metadata = Metadata {
+        width: w,
+        height: h,
+        wb: [2.02, 1., 1.89],
+        cam_xyz: [
+            [1.1434, -0.4948, -0.121],
+            [-0.3746, 1.2042, 0.1903],
+            [-0.0666, 0.1479, 0.5235],
+        ],
+        ..Default::default()
+    };
+    let image = Arc::new(CameraImage {
+        width: w,
+        height: h,
+        pixels: (0..w * h)
+            .map(|i| {
+                let (x, y) = ((i % w) as f32, (i / w) as f32);
+                let v = 0.2 + 0.25 * (x * 0.17).sin() * (y * 0.11).cos() + 0.15 * (x / w as f32);
+                [v * 1.3, v, v * 0.8]
+            })
+            .collect(),
+        metadata: metadata.clone(),
+        recovered: Default::default(),
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+    });
+    let profile = CameraProfile::camera_matrix_default(&metadata)
+        .unwrap()
+        .with_test_tables();
+    let mut recipe = Recipe {
+        profile: Some(Arc::new(profile)),
+        reference_curves: true,
+        reference_color: true,
+        reference_calibration: true,
+        contrast_model: ContrastModel::Adaptive,
+        whites_model: WhitesModel::Adaptive,
+        highlights: -0.3,
+        ..Default::default()
+    };
+    let display = super::Display {
+        slot: super::Slot::Whole,
+        clipping: crate::rendered::ClipOverlay::NONE,
+        monitor: None,
+        navigator: None,
+        thumbnail: None,
+        samples: false,
+        drawn: Vec::new(),
+    };
+    let cancel = AtomicBool::new(false);
+    let mut warm = PreviewRenderer::with_gpu();
+    let edits: [&dyn Fn(&mut Recipe); 10] = [
+        &|_| {},
+        &|r| r.contrast = 0.4,
+        &|r| r.whites = 0.3,
+        &|r| r.blacks = -0.2,
+        &|r| r.shadows = 0.4,
+        &|r| r.highlights = -0.6,
+        &|r| r.exposure = 0.5,
+        &|r| r.contrast = -0.5,
+        &|r| r.shadows = 0.,
+        &|r| r.exposure = 0.,
+    ];
+    let frame = |renderer: &mut PreviewRenderer, r: &Recipe| -> Result<Vec<u8>> {
+        let Output::Frame(frame) =
+            renderer.render_to(&image, r, 90, None, &cancel, Some(&display))?
+        else {
+            panic!("{:?}", renderer.fallback_reason());
+        };
+        read_texture(renderer.gpu().unwrap(), &frame.texture)
+    };
+    for edit in edits {
+        edit(&mut recipe);
+        let kept = frame(&mut warm, &recipe)?;
+        let fresh = frame(&mut PreviewRenderer::with_gpu(), &recipe)?;
+        assert!(kept == fresh, "{recipe:?}");
+    }
+    // The map was built and kept on the device, and found again, not built per frame.
+    assert!(warm.gpu().unwrap().maps.len() >= 2);
+    assert_eq!(warm.stage_cache().maps.len(), 0);
+    assert_eq!(warm.stage_cache().pivots.len(), 1);
+    Ok(())
 }

@@ -58,31 +58,32 @@ impl CurveSet {
     /// Curves with Contrast at this image's pivot and Whites for its highlights, when
     /// the recipe measures them.
     pub(super) fn with_photo_measures(im: Source, r: &Recipe, matrix: [[f32; 3]; 3]) -> Self {
-        let mut lut = Self::new(r);
-        let (pivot, whites) = (measures_contrast_pivot(r), measures_whites(r));
-        if pivot {
-            lut.photo.contrast =
-                crate::develop::basic_tone::ContrastCurve::Pivot(contrast_pivot(im, r, matrix));
+        Self::with_measures(
+            r,
+            PhotoMeasures {
+                pivot: measures_contrast_pivot(r).then(|| contrast_pivot(im, r, matrix)),
+                highlights: measures_whites(r).then(|| photo_highlights(im, r, matrix)),
+            },
+        )
+    }
+    /// Curves with the photo's measures already taken (see [`PhotoMeasures`]).
+    pub(crate) fn with_measures(r: &Recipe, measures: PhotoMeasures) -> Self {
+        let mut photo = Self::photo_tone(r);
+        if let Some(pivot) = measures.pivot {
+            photo.contrast = crate::develop::basic_tone::ContrastCurve::Pivot(pivot);
         }
-        if whites {
-            lut.photo.whites = crate::develop::basic_tone::WhitesTable::for_highlights(
-                photo_highlights(im, r, matrix),
-            );
+        if let Some(highlights) = measures.highlights {
+            photo.whites = crate::develop::basic_tone::WhitesTable::for_highlights(highlights);
         }
-        if pivot || whites {
-            lut.basic = crate::develop::basic_tone::BasicTone::new(
-                r.contrast,
-                r.whites,
-                r.blacks,
-                r.effects.dehaze,
-                &lut.photo,
-            );
-        }
-        lut
+        let measured = measures.pivot.is_some() || measures.highlights.is_some();
+        Self::with_photo(r, photo, measured)
     }
     pub(super) fn new(r: &Recipe) -> Self {
-        let basic_curves = r.engine >= 4 && r.reference_curves;
-        let photo = crate::develop::basic_tone::PhotoTone {
+        Self::with_photo(r, Self::photo_tone(r), false)
+    }
+    /// What the Basic curve takes from the photo before it is measured.
+    fn photo_tone(r: &Recipe) -> crate::develop::basic_tone::PhotoTone {
+        crate::develop::basic_tone::PhotoTone {
             contrast: match r.contrast_model {
                 crate::model::operators::ContrastModel::Original => {
                     crate::develop::basic_tone::ContrastCurve::Original
@@ -95,12 +96,21 @@ impl CurveSet {
             },
             // Without the photo, adaptive Whites takes the original median curve.
             whites: crate::develop::basic_tone::WhitesTable::original(),
-        };
+        }
+    }
+    /// The curves with the Basic curve built for `photo`; `measured` builds it even
+    /// where the recipe does not use the reference curves.
+    fn with_photo(
+        r: &Recipe,
+        photo: crate::develop::basic_tone::PhotoTone,
+        measured: bool,
+    ) -> Self {
+        let basic_curves = r.engine >= 4 && r.reference_curves;
         Self {
             output: PixelOutput::Display,
             exposure_gain: 2f32.powf(r.exposure + r.camera_exposure),
             basic_curves,
-            basic: basic_curves
+            basic: (basic_curves || measured)
                 .then(|| {
                     crate::develop::basic_tone::BasicTone::new(
                         r.contrast,
@@ -165,6 +175,23 @@ fn parametric_curve(r: &Recipe) -> Option<crate::develop::parametric::Parametric
         .and_then(|p| p.enhanced.as_ref())
         .and_then(|look| ParametricCurve::new(look.settings.parametric, look.settings.splits));
     ParametricCurve::then(user, look)
+}
+/// What a render measures of the photo before building its curves: the Contrast pivot
+/// and the highlights positive Whites follows, each when the recipe uses it. Each depends
+/// only on the photo and the tone stage (see `stage_cache::ToneKey`), so previews keep
+/// them while the Basic sliders move.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct PhotoMeasures {
+    pub(crate) pivot: Option<f32>,
+    pub(crate) highlights: Option<f32>,
+}
+/// [`contrast_pivot`] with the recipe's own profile matrix.
+pub(crate) fn measured_pivot(im: Source, r: &Recipe) -> f32 {
+    contrast_pivot(im, r, profile_matrix(&im.metadata, r))
+}
+/// [`photo_highlights`] with the recipe's own profile matrix.
+pub(crate) fn measured_highlights(im: Source, r: &Recipe) -> f32 {
+    photo_highlights(im, r, profile_matrix(&im.metadata, r))
 }
 /// Whether the recipe's Contrast pivots where the photo's own measure puts it.
 pub(crate) fn measures_contrast_pivot(r: &Recipe) -> bool {

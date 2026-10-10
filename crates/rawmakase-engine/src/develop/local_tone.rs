@@ -10,7 +10,7 @@ use rayon::prelude::*;
 /// Long edge of the reduced image the base level is computed on.
 pub(crate) const MAP_EDGE: u32 = 512;
 const RADIUS: f32 = 0.032;
-const EPSILON: f32 = 1.5;
+pub(crate) const EPSILON: f32 = 1.5;
 
 pub(crate) struct LocalToneMap {
     pub(crate) width: usize,
@@ -129,48 +129,28 @@ impl LocalToneMap {
         source: [u32; 2],
         sliders: Sliders,
     ) -> Self {
-        let (w, h) = (size[0] as usize, size[1] as usize);
-        let logs: Vec<f32> = lum.iter().map(|y| y.log2()).collect();
-        let percentile = |q: f32| {
-            let mut v = lum.clone();
-            let k = ((v.len() - 1) as f32 * q) as usize;
-            v.select_nth_unstable_by(k, f32::total_cmp);
-            v[k].log2()
-        };
-        let r = ((RADIUS * w.max(h) as f32).round() as usize).max(1);
-        // He et al. guided filter with the image as its own guide.
-        let mean = |x: &[f32]| blur(x, w, h, r);
-        let sq: Vec<f32> = logs.iter().map(|v| v * v).collect();
-        let (m, m2) = rayon::join(|| mean(&logs), || mean(&sq));
-        let a: Vec<f32> = m
-            .iter()
-            .zip(&m2)
-            .map(|(m, m2)| {
-                let var = (m2 - m * m).max(0.);
-                var / (var + EPSILON)
-            })
-            .collect();
-        let b: Vec<f32> = m.iter().zip(&a).map(|(m, a)| m - a * m).collect();
-        let (a, b) = rayon::join(|| mean(&a), || mean(&b));
-        // Masks may evaluate either slider, so both keys are kept.
-        let keys = [
-            percentile(SHADOWS.percentile),
-            percentile(HIGHLIGHTS.percentile),
-        ];
+        Self::from_base(&MapBase::new(lum, size, source), sliders)
+    }
+    /// The map of `base` at these slider values: only the curves and the measured
+    /// Clarity depend on them.
+    pub(crate) fn from_base(base: &MapBase, sliders: Sliders) -> Self {
+        let (w, h) = (base.width, base.height);
+        let keys = base.keys;
         let clarity = (sliders.clarity > 0.).then(|| {
-            let base: Vec<f32> = logs
+            let level: Vec<f32> = base
+                .logs
                 .iter()
-                .zip(a.iter().zip(&b))
+                .zip(base.a.iter().zip(&base.b))
                 .map(|(l, (a, b))| a * l + b)
                 .collect();
-            super::clarity::field(&logs, &base, w, h, keys[0], sliders.clarity)
+            super::clarity::field(&base.logs, &level, w, h, keys[0], sliders.clarity)
         });
         Self {
             width: w,
             height: h,
-            a,
-            b,
-            scale: [w as f32 / source[0] as f32, h as f32 / source[1] as f32],
+            a: base.a.clone(),
+            b: base.b.clone(),
+            scale: base.scale,
             shadows: Curve::new(&SHADOWS, sliders.shadows, keys[0]),
             highlights: Curve::new(&HIGHLIGHTS, sliders.highlights, keys[1]),
             keys,
@@ -210,6 +190,97 @@ impl LocalToneMap {
         let bottom = v[jy * self.width + ix] * (1. - tx) + v[jy * self.width + jx] * tx;
         top * (1. - ty) + bottom * ty
     }
+}
+/// What the map takes from the photo, whatever the sliders: the guided filter's
+/// coefficients and the image keys. Built from the reduced photo toned at the recipe's
+/// exposure, so the Shadows, Highlights and Clarity sliders reuse it.
+pub(crate) struct MapBase {
+    width: usize,
+    height: usize,
+    logs: Vec<f32>,
+    a: Vec<f32>,
+    b: Vec<f32>,
+    scale: [f32; 2],
+    keys: [f32; 2],
+}
+impl MapBase {
+    /// From the luminance of the reduced photo toned, `size` pixels of a `source`-sized
+    /// photo.
+    pub(crate) fn new(lum: Vec<f32>, size: [u32; 2], source: [u32; 2]) -> Self {
+        let (w, h) = (size[0] as usize, size[1] as usize);
+        let logs: Vec<f32> = lum.par_iter().map(|y| y.log2()).collect();
+        // Both keys from one copy: the higher percentile first, then the lower one among
+        // the values below it, which holds the same element.
+        let percentiles = |k: [usize; 2]| -> [f32; 2] {
+            let mut v = lum.clone();
+            let (lo, hi) = if k[0] <= k[1] { (0, 1) } else { (1, 0) };
+            v.select_nth_unstable_by(k[hi], f32::total_cmp);
+            let high = v[k[hi]];
+            v[..=k[hi]].select_nth_unstable_by(k[lo], f32::total_cmp);
+            let mut out = [0.; 2];
+            out[hi] = high.log2();
+            out[lo] = v[k[lo]].log2();
+            out
+        };
+        let r = radius(w, h);
+        // He et al. guided filter with the image as its own guide.
+        let mean = |x: &[f32]| blur(x, w, h, r);
+        let sq: Vec<f32> = logs.iter().map(|v| v * v).collect();
+        let (m, m2) = rayon::join(|| mean(&logs), || mean(&sq));
+        let a: Vec<f32> = m
+            .iter()
+            .zip(&m2)
+            .map(|(m, m2)| {
+                let var = (m2 - m * m).max(0.);
+                var / (var + EPSILON)
+            })
+            .collect();
+        let b: Vec<f32> = m.iter().zip(&a).map(|(m, a)| m - a * m).collect();
+        let (a, b) = rayon::join(|| mean(&a), || mean(&b));
+        // Masks may evaluate either slider, so both keys are kept.
+        let keys = percentiles(key_ranks(lum.len()));
+        Self {
+            width: w,
+            height: h,
+            logs,
+            a,
+            b,
+            scale: scale(size, source),
+            keys,
+        }
+    }
+    /// The guided filter's coefficients a and b, and the keys.
+    #[cfg(test)]
+    pub(crate) fn parts(&self) -> (&[f32], &[f32], [f32; 2]) {
+        (&self.a, &self.b, self.keys)
+    }
+    /// Memory held, for the stage cache's budget.
+    pub(crate) fn bytes(&self) -> usize {
+        (self.logs.len() + self.a.len() + self.b.len()) * 4
+    }
+}
+/// The Shadows and Highlights curves at `sliders`, for a map whose keys are on the
+/// device: their own keys are 0.
+pub(crate) fn curves(sliders: Sliders) -> [Option<Curve>; 2] {
+    [
+        Curve::new(&SHADOWS, sliders.shadows, 0.),
+        Curve::new(&HIGHLIGHTS, sliders.highlights, 0.),
+    ]
+}
+/// The guided filter's radius on a `w` × `h` grid.
+pub(crate) fn radius(w: usize, h: usize) -> usize {
+    ((RADIUS * w.max(h) as f32).round() as usize).max(1)
+}
+/// The Shadows and Highlights keys' places among `n` luminances sorted ascending.
+pub(crate) fn key_ranks(n: usize) -> [usize; 2] {
+    [SHADOWS.percentile, HIGHLIGHTS.percentile].map(|q| ((n - 1) as f32 * q) as usize)
+}
+/// Map cells per camera-image pixel, for a `size` map of a `source`-sized photo.
+pub(crate) fn scale(size: [u32; 2], source: [u32; 2]) -> [f32; 2] {
+    [
+        size[0] as f32 / source[0] as f32,
+        size[1] as f32 / source[1] as f32,
+    ]
 }
 /// The measured positions a slider is bracketed in, as `Curve::new` builds them: each
 /// position with its table, and the identity at 0 in slot `IDENTITY`.
@@ -258,40 +329,129 @@ pub(crate) fn gpu_families() -> Vec<f32> {
     out.extend(SLIDER_VALUES);
     out
 }
-/// Mean over a (2r+1)² window, clamped at the borders, via running sums.
+/// Mean over a (2r+1)² window, clamped at the borders, via running sums: along rows,
+/// then along columns. Each line keeps its own `f64` running sum, added to in the same
+/// order whatever the parallelism; the columns are swept in blocks, row by row, so
+/// they read memory in order.
 pub(super) fn blur(x: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
-    // One line: `out[i]` for `len` values read through `get`; lines are independent,
-    // so they run in parallel with the same arithmetic.
-    let line = |len: usize, get: &dyn Fn(usize) -> f32| -> Vec<f32> {
-        let get = |i: isize| get(i.clamp(0, len as isize - 1) as usize) as f64;
-        let mut out = vec![0.; len];
-        let mut sum: f64 = (-(r as isize)..=r as isize).map(get).sum();
+    let n = (2 * r + 1) as f64;
+    // The running sum of a line read through `get`, as each line starts it.
+    let start = |len: usize, get: &dyn Fn(usize) -> f64| -> f64 {
+        (-(r as isize)..=r as isize)
+            .map(|i| get(i.clamp(0, len as isize - 1) as usize))
+            .sum()
+    };
+    let mut rows = vec![0f32; x.len()];
+    rows.par_chunks_mut(w).enumerate().for_each(|(y, out)| {
+        let line = &x[y * w..y * w + w];
+        let get = |i: isize| line[i.clamp(0, w as isize - 1) as usize] as f64;
+        let mut sum = start(w, &|i| line[i] as f64);
         for (i, v) in out.iter_mut().enumerate() {
-            *v = (sum / (2 * r + 1) as f64) as f32;
+            *v = (sum / n) as f32;
             sum += get(i as isize + r as isize + 1) - get(i as isize - r as isize);
         }
-        out
-    };
-    let rows: Vec<f32> = (0..h)
-        .into_par_iter()
-        .flat_map_iter(|y| line(w, &|i| x[y * w + i]))
-        .collect();
-    let columns: Vec<Vec<f32>> = (0..w)
-        .into_par_iter()
-        .map(|c| line(h, &|i| rows[i * w + c]))
-        .collect();
-    let mut out = vec![0.; x.len()];
-    out.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
-        for (c, v) in row.iter_mut().enumerate() {
-            *v = columns[c][y];
-        }
     });
+    const BLOCK: usize = 64;
+    let mut out = vec![0f32; x.len()];
+    let blocks: Vec<(usize, Vec<f32>)> = (0..w.div_ceil(BLOCK))
+        .into_par_iter()
+        .map(|b| {
+            let (c0, c1) = (b * BLOCK, ((b + 1) * BLOCK).min(w));
+            let get = |y: isize, c: usize| rows[y.clamp(0, h as isize - 1) as usize * w + c] as f64;
+            let mut sums: Vec<f64> = (c0..c1)
+                .map(|c| start(h, &|y| rows[y * w + c] as f64))
+                .collect();
+            let mut block = vec![0f32; (c1 - c0) * h];
+            for y in 0..h {
+                for (k, sum) in sums.iter_mut().enumerate() {
+                    block[y * (c1 - c0) + k] = (*sum / n) as f32;
+                    *sum += get(y as isize + r as isize + 1, c0 + k)
+                        - get(y as isize - r as isize, c0 + k);
+                }
+            }
+            (c0, block)
+        })
+        .collect();
+    for (c0, block) in blocks {
+        let width = block.len() / h.max(1);
+        for y in 0..h {
+            out[y * w + c0..y * w + c0 + width].copy_from_slice(&block[y * width..(y + 1) * width]);
+        }
+    }
     out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// The blur as first written, line by line: the reference the faster one keeps to.
+    fn reference_blur(x: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
+        // One line: `out[i]` for `len` values read through `get`; lines are independent,
+        // so they run in parallel with the same arithmetic.
+        let line = |len: usize, get: &dyn Fn(usize) -> f32| -> Vec<f32> {
+            let get = |i: isize| get(i.clamp(0, len as isize - 1) as usize) as f64;
+            let mut out = vec![0.; len];
+            let mut sum: f64 = (-(r as isize)..=r as isize).map(get).sum();
+            for (i, v) in out.iter_mut().enumerate() {
+                *v = (sum / (2 * r + 1) as f64) as f32;
+                sum += get(i as isize + r as isize + 1) - get(i as isize - r as isize);
+            }
+            out
+        };
+        let rows: Vec<f32> = (0..h)
+            .into_par_iter()
+            .flat_map_iter(|y| line(w, &|i| x[y * w + i]))
+            .collect();
+        let columns: Vec<Vec<f32>> = (0..w)
+            .into_par_iter()
+            .map(|c| line(h, &|i| rows[i * w + c]))
+            .collect();
+        let mut out = vec![0.; x.len()];
+        out.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
+            for (c, v) in row.iter_mut().enumerate() {
+                *v = columns[c][y];
+            }
+        });
+        out
+    }
+
+    #[test]
+    fn both_keys_are_the_percentiles_selected_on_their_own() {
+        let lum: Vec<f32> = (0..5000)
+            .map(|i| 1e-3 + ((i * 7919) % 997) as f32 / 300.)
+            .collect();
+        let alone = |q: f32| {
+            let mut v = lum.clone();
+            let k = ((v.len() - 1) as f32 * q) as usize;
+            v.select_nth_unstable_by(k, f32::total_cmp);
+            v[k].log2()
+        };
+        let base = MapBase::new(lum.clone(), [100, 50], [100, 50]);
+        assert_eq!(
+            base.keys,
+            [alone(SHADOWS.percentile), alone(HIGHLIGHTS.percentile)]
+        );
+    }
+    #[test]
+    fn the_blur_keeps_the_line_by_line_arithmetic() {
+        // Sizes around the column block, radii from one pixel to wider than the image.
+        for (w, h, r) in [
+            (1, 1, 1),
+            (5, 3, 2),
+            (64, 9, 4),
+            (65, 40, 16),
+            (341, 512, 16),
+            (130, 7, 90),
+        ] {
+            let x: Vec<f32> = (0..w * h)
+                .map(|i| ((i * 7919) % 1000) as f32 / 37. - 11.)
+                .collect();
+            assert!(
+                blur(&x, w, h, r) == reference_blur(&x, w, h, r),
+                "{w}x{h} r={r}"
+            );
+        }
+    }
     #[test]
     fn blur_preserves_constants_and_means() {
         let x = vec![2.; 30];

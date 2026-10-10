@@ -24,6 +24,9 @@ const FIELDS: &[(&str, usize)] = &[
     ("ENH_CURVE", 1),
     ("TONE", 1),
     ("TONE_COUNT", 1),
+    // 1 when the tone curve's knots are at i / (count - 1), as Adobe's are: the shader
+    // then indexes the curve instead of searching it.
+    ("TONE_UNIFORM", 1),
     ("LOCAL", 1),
     ("LOCAL_SIZE", 2),
     ("LOCAL_SCALE", 2),
@@ -93,37 +96,73 @@ pub(crate) fn wgsl_prelude() -> String {
             "const POINT_CONSTANTS: i32 = {CONSTANT_PARAMS};\nconst POINT_SWATCH: i32 = {SWATCH_PARAMS};\n"
         )
 }
+/// Where parameter `name` starts in `PixelParams::params`, and its length.
+fn field(name: &str) -> (usize, usize) {
+    let mut at = 0;
+    for (field, len) in FIELDS {
+        if *field == name {
+            return (at, *len);
+        }
+        at += len;
+    }
+    unreachable!("Unknown parameter {name}");
+}
 pub(crate) struct PixelParams {
     pub(crate) params: Vec<f32>,
     pub(crate) tables: Vec<f32>,
     /// Mask weights, four bytes per word, `MASK_WORDS` words per pixel; empty
     /// without masks.
     pub(crate) weights: Vec<u32>,
+    /// The recipe as the tone stage reads it, when the develop pass may keep the tone
+    /// stage's output for its samples and reuse it while only the stages after it
+    /// change (see `gpu::develop::Kept`). `None` runs the tone stage every time.
+    pub(crate) tone: Option<Recipe>,
+    /// The Shadows/Highlights map's base on the device, when it was built there: its
+    /// coefficients follow `tables` and its keys go to `LOCAL_KEYS` as the pass is
+    /// recorded (see [`Self::uploaded`]).
+    pub(crate) map: Option<crate::develop::gpu::DeviceMap>,
 }
 impl PixelParams {
-    fn set(&mut self, name: &str, values: &[f32]) {
-        let mut at = 0;
-        for (field, len) in FIELDS {
-            if *field == name {
-                assert_eq!(values.len(), *len, "{name}");
-                self.params[at..at + len].copy_from_slice(values);
-                return;
-            }
-            at += len;
+    /// Parameters of zeros but for `values`, without tables.
+    #[cfg(test)]
+    pub(crate) fn with(values: &[(&str, &[f32])]) -> Self {
+        let mut p = Self {
+            params: vec![0.; FIELDS.iter().map(|f| f.1).sum()],
+            tables: Vec::new(),
+            weights: Vec::new(),
+            tone: None,
+            map: None,
+        };
+        for (name, v) in values {
+            p.set(name, v);
         }
-        unreachable!("Unknown parameter {name}");
+        p
+    }
+    fn set(&mut self, name: &str, values: &[f32]) {
+        let (at, len) = field(name);
+        assert_eq!(values.len(), len, "{name}");
+        self.params[at..at + len].copy_from_slice(values);
+    }
+    /// The parameters as the develop pass reads them: with a map on the device, its
+    /// coefficients a and b are placed after the tables.
+    pub(crate) fn uploaded(&self) -> std::borrow::Cow<'_, [f32]> {
+        let Some(map) = &self.map else {
+            return self.params.as_slice().into();
+        };
+        let mut params = self.params.clone();
+        let at = field("LOCAL_A").0;
+        let a = self.tables.len();
+        params[at..at + 2].copy_from_slice(&[a as f32, (a + map.cells()) as f32]);
+        params.into()
+    }
+    /// Where in the parameters, in bytes, a map on the device puts its keys.
+    pub(crate) fn keys_byte_offset() -> u64 {
+        field("LOCAL_KEYS").0 as u64 * 4
     }
     /// The values of parameter `name`.
-    #[cfg(test)]
     pub(crate) fn get(&self, name: &str) -> &[f32] {
-        let mut at = 0;
-        for (field, len) in FIELDS {
-            if *field == name {
-                return &self.params[at..at + len];
-            }
-            at += len;
-        }
-        unreachable!("Unknown parameter {name}");
+        let (at, len) = field(name);
+        &self.params[at..at + len]
     }
     /// Appends a table and returns its offset as a parameter value.
     fn push(&mut self, values: impl IntoIterator<Item = f32>) -> f32 {
@@ -142,6 +181,16 @@ impl PixelParams {
             &[at, a as f32, b as f32, c as f32, t.srgb() as u8 as f32],
         );
     }
+}
+/// Whether a piecewise-linear curve's knots sit at i / (n - 1), so the knot at or
+/// below `x` is the one at `floor(x * (n - 1))`.
+fn uniform_knots(curve: &[[f32; 2]]) -> bool {
+    let n = curve.len();
+    n >= 2
+        && curve
+            .iter()
+            .enumerate()
+            .all(|(i, p)| p[0] == i as f32 / (n - 1) as f32)
 }
 /// Whether the GPU port renders this (resolved) recipe.
 pub(crate) fn supported(r: &Recipe) -> bool {
@@ -194,15 +243,35 @@ pub(crate) fn needs_reduced(r: &Recipe) -> bool {
 }
 /// Parameters that stop after the tone stage (`tone_stage`, before the map), to tone
 /// the reduced photo the Shadows/Highlights map is built from on the GPU.
+#[cfg(test)]
 pub(crate) fn tone_params(im: Source, r: &Recipe) -> Option<PixelParams> {
     if !supported(r) {
         return None;
     }
     let matrix = profile_matrix(&im.metadata, r);
-    // The same parameters run the final pass once the map is built (`with_map`), so
-    // they carry this photo's Contrast pivot.
     let mut p = fill(r, CurveSet::with_photo_measures(im, r, matrix), matrix)?;
     p.set("TONE_ONLY", &[1.]);
+    Some(p)
+}
+/// Parameters with the photo's measures already taken, for a recipe whose per-pixel
+/// stage needs no Shadows/Highlights map (see [`needs_map`]); `tone_only` stops them
+/// after the tone stage, to tone the reduced photo the map is built from. The same
+/// parameters then run the final pass (`with_map`), so they carry the photo's Contrast
+/// pivot.
+pub(crate) fn measured_params(
+    im: Source,
+    r: &Recipe,
+    measures: super::PhotoMeasures,
+    tone_only: bool,
+) -> Option<PixelParams> {
+    if !supported(r) {
+        return None;
+    }
+    let matrix = profile_matrix(&im.metadata, r);
+    let mut p = fill(r, CurveSet::with_measures(r, measures), matrix)?;
+    if tone_only {
+        p.set("TONE_ONLY", &[1.]);
+    }
     Some(p)
 }
 fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
@@ -217,10 +286,33 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
         None => -1.,
     };
     p.set("LOCAL_A", &[a, b, clarity]);
-    for (name, curve) in [
-        ("SHADOWS", &local.shadows),
-        ("HIGHLIGHTS", &local.highlights),
-    ] {
+    set_curves(p, [&local.shadows, &local.highlights]);
+}
+/// `tone` parameters for the whole stage, with the map's base built on the device
+/// from their result, for a `source`-sized photo. Its coefficients and keys are
+/// placed as the pass is recorded; the Clarity measured on the map is not covered.
+pub(crate) fn with_device_map(
+    mut p: PixelParams,
+    map: crate::develop::gpu::DeviceMap,
+    source: [u32; 2],
+    sliders: crate::develop::local_tone::Sliders,
+) -> PixelParams {
+    p.set("TONE_ONLY", &[0.]);
+    p.set("LOCAL", &[1.]);
+    p.set("LOCAL_SIZE", &map.size.map(|v| v as f32));
+    p.set(
+        "LOCAL_SCALE",
+        &crate::develop::local_tone::scale(map.size, source),
+    );
+    p.set("LOCAL_A", &[-1., -1., -1.]);
+    let [shadows, highlights] = crate::develop::local_tone::curves(sliders);
+    set_curves(&mut p, [&shadows, &highlights]);
+    p.map = Some(map);
+    p
+}
+/// The Shadows and Highlights curves; the shader takes their keys from `LOCAL_KEYS`.
+fn set_curves(p: &mut PixelParams, curves: [&Option<crate::develop::local_tone::Curve>; 2]) {
+    for (name, curve) in ["SHADOWS", "HIGHLIGHTS"].into_iter().zip(curves) {
         let values = match curve {
             Some(c) => [p.push(c.table), c.key, c.lo, c.hi],
             None => [-1., 0., 0., 0.],
@@ -270,7 +362,9 @@ fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams>
     let mut p = PixelParams {
         params: vec![0.; len],
         tables: Vec::new(),
+        tone: None,
         weights: Vec::new(),
+        map: None,
     };
     p.set("CAMERA", matrix.as_flattened());
     p.set("WB", &r.wb);
@@ -298,6 +392,7 @@ fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams>
     let tone = p.push(t.tone.iter().flatten().copied());
     p.set("TONE", &[tone]);
     p.set("TONE_COUNT", &[t.tone.len() as f32]);
+    p.set("TONE_UNIFORM", &[uniform_knots(t.tone) as u8 as f32]);
     p.set("EXPOSURE_EV", &[r.exposure + r.camera_exposure]);
     p.set("GLOBAL_SH", &[r.shadows, r.highlights]);
     if let Some(local) = &lut.local {
@@ -331,13 +426,18 @@ fn fill(r: &Recipe, lut: CurveSet, matrix: [[f32; 3]; 3]) -> Option<PixelParams>
         None => -1.,
     };
     p.set("PARAMETRIC_LUT", &[parametric]);
-    let master = p.push(lut.master.values().iter().copied());
+    // -1 skips the table of a curve that maps each value to itself.
+    let straight = crate::color::curve::ToneCurve::is_identity;
+    let master = match straight(&r.curve) {
+        true => -1.,
+        false => p.push(lut.master.values().iter().copied()),
+    };
     p.set("MASTER", &[master]);
     p.set("REFINE_SATURATION", &[r.curve_saturation.clamp(0., 1.)]);
-    let channels = lut
-        .channels
-        .each_ref()
-        .map(|c| p.push(c.values().iter().copied()));
+    let channels: [f32; 3] = std::array::from_fn(|c| match straight(&r.effects.channels[c]) {
+        true => -1.,
+        false => p.push(lut.channels[c].values().iter().copied()),
+    });
     p.set("CHANNELS", &channels);
     let mixer = match &lut.mixer {
         Some(m) => p.push(m.delta.iter().flatten().copied()),

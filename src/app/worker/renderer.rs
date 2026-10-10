@@ -25,8 +25,24 @@ pub(in crate::app) enum RenderBackend {
 /// Long edges of the Navigator's and the library thumbnail's copies.
 const NAVIGATOR: u32 = 360;
 const THUMBNAIL: u32 = 640;
-/// A full 100% region presented within this needs no reduced preview first.
-const QUICK_REGION: std::time::Duration = std::time::Duration::from_millis(40);
+/// A full render presented within this needs no reduced preview first.
+const QUICK: std::time::Duration = std::time::Duration::from_millis(40);
+/// A reduced whole-photo preview halves the render's long edge until it has at most
+/// this many pixels.
+const DRAFT_PIXELS: f32 = 1_000_000.;
+
+/// The long edge of a reduced preview of a `width` by `height` photo rendered at
+/// `max_edge`, or None when the render is small enough already.
+fn draft_edge(max_edge: u32, width: u32, height: u32) -> Option<u32> {
+    let aspect = width.min(height) as f32 / width.max(height).max(1) as f32;
+    let mut edge = max_edge as f32;
+    let mut halved = 0;
+    while edge * edge * aspect > DRAFT_PIXELS && halved < 4 {
+        edge /= 2.;
+        halved += 1;
+    }
+    (halved > 0).then_some(edge.round() as u32)
+}
 
 /// A finished render and the view it shows.
 struct Shown {
@@ -216,6 +232,8 @@ struct PaneState {
     /// Whether the last full 100% region was presented on the GPU quickly enough that a
     /// reduced preview before it would only add work and a blurry frame.
     quick_region: bool,
+    /// The same for the last full whole-photo render.
+    quick_fit: bool,
     /// The whole photo's histogram for the last edit shown at 100%, so panning
     /// there does not render the whole photo again.
     whole_shown: Option<(Arc<crate::camera_data::CameraImage>, Recipe, Histogram)>,
@@ -240,6 +258,7 @@ fn render(
         zoomed,
         showing_region,
         quick_region,
+        quick_fit,
         whole_shown,
     } = match job.pane {
         Pane::After => after,
@@ -307,6 +326,7 @@ fn render(
             })
         };
         let whole = display(whole_slot, job.navigator, job.thumbnail);
+        let whole_draft = display(whole_slot, false, false);
         let zoomed_display = display(region_slot, false, false);
         let status = |stage: RenderStage, backend: &str, warning: &str| {
             format!(
@@ -511,8 +531,7 @@ fn render(
                         &job.cancel,
                         zoomed_display.as_ref(),
                     )?;
-                    *quick_region =
-                        matches!(out, Output::Frame(_)) && started.elapsed() < QUICK_REGION;
+                    *quick_region = matches!(out, Output::Frame(_)) && started.elapsed() < QUICK;
                     out
                 };
                 let gpu = processor.used_gpu();
@@ -525,6 +544,30 @@ fn render(
                 }
                 return Ok(());
             }
+            // While the whole photo is edited, a reduced preview keeps sliders
+            // responsive on a GPU slower than they change; the full render follows.
+            // Opening a photo or changing the view goes straight to the full render.
+            let editing = !*showing_region
+                && fit.as_ref().is_some_and(|s| {
+                    Arc::ptr_eq(&s.image, &job.image) && s.max_edge == job.max_edge
+                });
+            if editing
+                && !*quick_fit
+                && job.recipe.engine >= 3
+                && let Some(edge) = draft_edge(job.max_edge, job.image.width, job.image.height)
+            {
+                let out = processor.render_to(
+                    &job.image,
+                    &job.recipe,
+                    edge,
+                    None,
+                    &job.cancel,
+                    whole_draft.as_ref(),
+                )?;
+                let gpu = processor.used_gpu();
+                publish(out, RenderStage::Draft, false, gpu);
+            }
+            let started = Instant::now();
             let out = processor.render_to(
                 &job.image,
                 &job.recipe,
@@ -533,6 +576,7 @@ fn render(
                 &job.cancel,
                 whole.as_ref(),
             )?;
+            *quick_fit = matches!(out, Output::Frame(_)) && started.elapsed() < QUICK;
             let gpu = processor.used_gpu();
             *fit = publish(out, RenderStage::Fit, true, gpu).map(|out| Shown::new(&job, out));
             *showing_region = false;
@@ -653,11 +697,25 @@ mod tests {
         recipe: &Recipe,
         region: Option<[u32; 4]>,
     ) -> Vec<(RenderStage, Vec<[f32; 3]>)> {
+        run_at(worker, rx, pane, id, image, recipe, region, 60)
+    }
+    /// `run_in`, for a view whose Fit has the long edge `max_edge`.
+    #[expect(clippy::too_many_arguments)]
+    fn run_at(
+        worker: &Renderer,
+        rx: &std::sync::mpsc::Receiver<Event>,
+        pane: Pane,
+        id: u64,
+        image: &Arc<CameraImage>,
+        recipe: &Recipe,
+        region: Option<[u32; 4]>,
+        max_edge: u32,
+    ) -> Vec<(RenderStage, Vec<[f32; 3]>)> {
         worker.submit(RenderJob {
             id,
             pane,
             image: image.clone(),
-            max_edge: 60,
+            max_edge,
             cancel: Arc::new(AtomicBool::new(false)),
             recipe: recipe.clone(),
             region,
@@ -714,6 +772,35 @@ mod tests {
         let back = run(&worker, &rx, 6, &image, &recipe, None);
         assert_eq!(back.len(), 1);
         assert_ne!(back[0].1, fit[0].1);
+    }
+    #[test]
+    fn a_reduced_preview_halves_the_edge_to_at_most_a_megapixel() {
+        // A 3:2 photo's Fit on a large HiDPI view.
+        assert_eq!(draft_edge(2360, 3000, 2000), Some(1180));
+        assert_eq!(draft_edge(1200, 3000, 2000), None);
+        // Four halvings at most.
+        assert_eq!(draft_edge(20000, 3000, 2000), Some(1250));
+    }
+    #[test]
+    fn editing_the_whole_photo_shows_a_reduced_preview_first() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = renderer(tx, egui::Context::default());
+        let image = image();
+        let mut recipe = Recipe::default();
+        let fit = |id, recipe: &Recipe, edge| {
+            run_at(&worker, &rx, Pane::After, id, &image, recipe, None, edge)
+        };
+        // Opening the photo renders the full Fit directly.
+        assert_eq!(fit(1, &recipe, 1600).len(), 1);
+        // Editing it: a reduced preview, then the full Fit (the CPU is never quick).
+        recipe.exposure = 0.5;
+        let edited = fit(2, &recipe, 1600);
+        assert_eq!(edited.len(), 2);
+        assert_eq!(edited[0].0, RenderStage::Draft);
+        assert_eq!(edited[1].0, RenderStage::Fit);
+        // A view of another size, the window resized say, goes straight to the full render.
+        recipe.exposure = 0.7;
+        assert_eq!(fit(3, &recipe, 1500).len(), 1);
     }
     #[test]
     fn before_renders_beside_the_edit_keep_the_edits_views() {

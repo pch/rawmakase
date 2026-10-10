@@ -242,13 +242,15 @@ For the same recipes, the stages before the per-pixel stage also run on the devi
 when the photo fits its buffer limits (`gpu/resident.rs`): the photo or pyramid level
 is kept there with its local-tone blurs, the gain is computed only for the pixels a
 region samples, and regions are sampled there through geometry, lens correction and
-noise reduction. Only the reduced input of the
-Shadows/Highlights map is read back; the map is built on the CPU. A failure in these
-stages turns off only this path for the session.
+noise reduction. The reduced input of the Shadows/Highlights map is read back once
+per photo or pyramid level; the map's base (`gpu/map.rs`) is then built and kept on
+the device for each tone stage, and the develop pass copies it into its tables. With
+the measured Clarity, which needs the base on the CPU, the map is built there. A
+failure in these stages turns off only this path for the session.
 
 Presented textures are kept per view (the whole photo, or a 100% region) and size,
-two of each, so a slider moving at 100% alternates between the reduced preview's and
-the full region's textures without allocating. Each texture carries a generation that
+two of each, so a slider moving alternates between the reduced preview's and the
+full render's textures without allocating. Each texture carries a generation that
 changes whenever it is written; the worker reuses a finished frame when switching
 views only while its texture still holds it.
 
@@ -260,11 +262,16 @@ creates a new backend. GPU execution already submitted cannot be interrupted;
 obsolete results are discarded before they are published. Full-quality CPU stages check cancellation
 within pixel/row/column work. Pending jobs still coalesce in a single-slot mailbox.
 
-There is no separate interactive draft. Fit renders the current pipeline from the
-smallest pyramid level at or above the physical viewport size on every change;
-at 100% a reduced region from the pyramid is published first (as a draft stage),
-then the full-resolution region. The single-slot mailbox and cancellation keep
-continuous editing on the latest change.
+There is no separate draft pipeline. Fit renders the current pipeline from the
+smallest pyramid level at or above the physical viewport size on every change. While
+an edit is slower to present than 40 ms, a reduced render from the pyramid is
+published first as a draft stage: at 100% the region at half resolution or less, and
+for the whole photo at an edge halved until it has at most a megapixel. The
+single-slot mailbox keeps only the latest pending job. An edit of the same document
+and view (`Editor::schedule_edit`, `Task::supersede`) lets the running render finish,
+and its frame shows with the settings it was asked for, so a GPU slower than the
+slider still shows frames during a drag; any other render, and the next view or
+photo, cancels the running ones, and a result older than the one shown is dropped.
 
 ## Live application control
 

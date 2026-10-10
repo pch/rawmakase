@@ -8,9 +8,10 @@ Lanczos3 resizing of full resolution renders, and finishes previews (sharpening,
 grain, vignettes, clipping overlay, monitor profile) straight into the texture the
 viewport draws (see [presenting on the UI's GPU](#presenting-on-the-uis-gpu)). RAW
 decoding, geometry sampling, local tones and export stay on the CPU. There is no
-separate draft: every slider change renders the real pipeline at Fit size, and at
-100% a half-resolution preview of the region comes first (see
-[slider responsiveness](#slider-responsiveness)). The status line shows `GPU` for
+separate draft pipeline: every slider change renders the real pipeline at Fit size,
+and where that takes more than 40 ms a reduced render of the photo, or at 100% of the
+region, comes first (see [slider responsiveness](#slider-responsiveness) and
+[slow GPUs](#slow-gpus--2026-10-09)). The status line shows `GPU` for
 presented frames and `GPU finish` when only finishing used compute.
 
 The shaders are portable WGSL through wgpu, with no CUDA or Metal-specific code.
@@ -74,7 +75,13 @@ pipeline (`crates/rawmakase-engine/src/develop/stage_cache.rs`), each keyed by t
 - the local-tone image: the blurs with Clarity, Texture and, before engine 4,
   Shadows and Highlights applied;
 - samples: each output pixel's camera value after geometry, lens correction and
-  noise reduction, and its source position.
+  noise reduction, and its source position;
+- the photo's measures and the engine 4 Shadows/Highlights map's base: the Contrast
+  pivot, the highlights positive Whites follows, and the guided filter's coefficients
+  and image keys. All come from the reduced photo through the tone stage, so they are
+  keyed by what the tone stage reads (`ToneKey`: white balance, profile, calibration,
+  exposure; the pivot without the user's Exposure). Contrast, Whites, Blacks, Shadows
+  and Highlights come after it and only rebuild their curves.
 
 Exposure, curve, HSL, grading and Engine 4 Shadows/Highlights edits therefore rerun
 only the per-pixel stage; Clarity and Texture edits reuse the blurs. Two entries are
@@ -114,11 +121,11 @@ frame shown while dragging is the real rendering. Photos with older engines (bef
 At 100%, each change first renders the visible region from the pyramid at half
 resolution or less (at most 0.6 megapixels), which the viewport stretches over the
 region, then the full-resolution region. The worker's mailbox keeps only the latest
-job and a newer job cancels the running one, so while a slider moves the view
-follows the reduced previews, and the sharp region appears when it stops. Pending
-region or quality work never delays a newer slider job beyond the next cancellation
-check (per row in blurs and per pixel in the color stage; a GPU command already
-submitted finishes first).
+job, so while a slider moves the view follows the reduced previews, and the sharp
+region appears when it stops. A newer edit of the same view lets the running render
+finish rather than cancelling it (see [slow GPUs](#slow-gpus--2026-10-09)); a new
+photo or view cancels it at the next cancellation check (per row in blurs and per
+pixel in the color stage; a GPU command already submitted finishes first).
 
 Renderer times per change, same conditions as the stage cache table, but with the
 machine even busier (load average 40–58), so these are upper bounds. Before this
@@ -140,6 +147,153 @@ change the first update was the 50 ms legacy draft, and the real rendering came
 | | 100% preview, local | 41 ms |
 | | 100% preview, Clarity edits | 116 ms |
 | | 100% full region, local | 1469 ms |
+
+## Slow GPUs — 2026-10-09
+
+On an Intel UHD Graphics 620 laptop (i5-8365U, Linux, Vulkan) at display scale 2, a
+Fit render took 235–314 ms by the status line, and dragging a slider showed no frame
+until it stopped. Each changed value cancelled the running render, and with renders
+slower than the slider's changes none ever finished. Two changes address it:
+
+- An edit of the same document and view no longer cancels the running render; it
+  finishes and shows with the settings it was asked for, and the latest change is
+  rendered next. A new photo, view or size still cancels it, and a result older than
+  the one shown is dropped.
+- While the whole photo is edited, a full render slower than 40 ms is preceded by a
+  reduced one, its long edge halved until it has at most a megapixel (701 pixels
+  for that laptop's 934 × 1402 Fit), as 100% regions already were.
+
+`examples/preview_benchmark` on that laptop, release build, a Nikon Z f DNG
+(6064×4040), Adobe Standard, 1600-pixel Fit, median of three; "local" adds Shadows,
+Highlights and Clarity as above. Presented times, until the frame can be drawn:
+
+| Render | Neutral | Local |
+| --- | ---: | ---: |
+| Fit | 63 ms | 449 ms |
+| 100% preview (reduced region) | 14 ms | 256 ms |
+
+Without local adjustments a reduced render is several times faster. With them, the
+CPU work per render that does not depend on the output size (the Shadows/Highlights
+map, the contrast measure, the histogram readback) dominates, and a reduced render
+saves less.
+
+`examples/slider_benchmark` times what the desktop does while each Basic slider is
+dragged at Fit: a frame presented for each new value, from a new photo's recipe with
+Contrast −76 and Highlights −3, on the 934 × 1402 Fit and the half-size draft. On the
+same laptop and photo, per change, the time spent before the per-pixel stage was:
+
+| Stage, per change | Before | Measures and map kept |
+| --- | ---: | ---: |
+| Contrast pivot, measured on the CPU | 47 ms | kept |
+| Reduced photo toned on the GPU and read back | 6 ms | kept |
+| Guided filter and keys on the CPU | 19 ms | kept |
+| Parameters (curves, tables) | <1 ms | 5 ms with the map's upload |
+
+Presented per change, median of 12, in two runs of each build interleaved (the machine
+was shared with other work):
+
+| Slider | Fit before | Fit after | Draft before | Draft after |
+| --- | ---: | ---: | ---: | ---: |
+| Exposure | 136–148 ms | 72–77 ms | 111–112 ms | 43–53 ms |
+| Contrast | 146–149 ms | 58 ms | 123–124 ms | 21 ms |
+| Highlights | 146–150 ms | 59 ms | 124 ms | 22 ms |
+| Shadows | 151–152 ms | 53–59 ms | 124–125 ms | 16–22 ms |
+| Whites | 120–135 ms | 59–75 ms | 151–157 ms | 22–23 ms |
+| Blacks | 150–155 ms | 67–72 ms | 126–128 ms | 20–23 ms |
+
+Exposure changes the tone stage, so it builds the map again (about 30 ms). What is left
+for the other sliders is the per-pixel stage and its finish on the GPU.
+
+The GPU passes of a presented Fit, timed by submitting each on its own (same laptop,
+934 × 1402): develop 23 ms, sharpening 5 ms, and finishing 24 ms, of which nearly all
+was the histogram. Every pixel added to the 774 shared counters with global atomics,
+which serialised on this GPU. Each workgroup now counts into its own copy in
+workgroup memory and adds it once: finishing takes 4 ms (2 ms for the draft), with
+the same counts.
+
+Of the develop pass, about 16 ms was the tone stage (camera profile tables, look
+table and tone curve) and 9 ms what follows it. The tone stage's output per sample
+depends only on the samples and the recipe as the tone stage reads it, so the pass
+keeps it on the device for the last few sample sets (the Fit, its draft and a 100%
+region) and reads it while only the stages after it change: Contrast, Whites, Blacks,
+Shadows, Highlights, curves and colour. It is kept from the second render of a sample
+set with the same tone, so an Exposure drag, where every value is new, does not pay
+for writing it, and only once the pass that writes it is submitted. Mask adjustments
+change the tone stage per pixel, so masked recipes run it every time. The profile tone
+curve's knots are at i / 1024 in Adobe's profiles, so the pass now indexes the curve
+instead of searching it.
+
+With both, per change (median of 12):
+
+| Slider | Fit | Draft |
+| --- | ---: | ---: |
+| Exposure | 69 ms | 47 ms |
+| Contrast | 26 ms | 14 ms |
+| Highlights | 26 ms | 14 ms |
+| Shadows | 26 ms | 14 ms |
+| Whites | 27 ms | 15 ms |
+| Blacks | 27 ms | 14 ms |
+
+The develop shader carried every stage, and compiled to 12,900 instructions, which
+this GPU ran eight pixels at a time. Each pass now runs a pipeline compiled for what
+its parameters use (`gpu::develop::Variant`): reading the kept tone stage or running
+it, with or without mask adjustments, the colour stages (mixer, Point Color, a look's
+RGB table, colour grading, the Oklab controls) and the Shadows/Highlights map. Without
+masks and colour they compile to about 2,300 instructions, run sixteen pixels at a
+time. A pass reading the kept tone stage no longer reads the samples, nor their
+positions without the map, and straight point curves skip their tables. Finishing
+covers a 4 × 4 block of pixels per invocation, so each workgroup adds its histogram
+once per 64 × 64 tile rather than per 16 × 16.
+
+Per change (median of 16, two runs):
+
+| Slider | Fit | Draft |
+| --- | ---: | ---: |
+| Exposure | 55–60 ms | 38–41 ms |
+| Contrast | 23 ms | 12 ms |
+| Highlights | 23 ms | 13 ms |
+| Shadows | 24 ms | 13 ms |
+| Whites | 23–24 ms | 13–14 ms |
+| Blacks | 24–25 ms | 13–14 ms |
+
+An Exposure change builds the map again, for the draft and for the full render, which
+use different pyramid levels. Each build was about 25 ms: the reduced photo toned on
+the GPU and read back (6 ms), then the guided filter and keys on the CPU (13 ms). The
+map's base is now built on the device (`gpu/map.rs`): log luminance, box means that
+sum their windows directly, the coefficients, and both keys by a four-round radix
+select of the luminance's bits. It stays there, keyed like the CPU's, and the develop
+pass copies its coefficients after its tables and its keys into its parameters, so
+nothing is read back or uploaded. A hardware test compares it with the CPU's base:
+the keys agree to 1e-7, a to 3e-5 and b to 3e-4, both rounding the variance in f32.
+With the measured Clarity, which needs the base on the CPU, the map is built there as
+before.
+
+The tone stage runs white balance, the camera matrix, HueSatMap and calibration
+before Exposure, and HueSatMap alone took about 10 ms of a full Fit. The kept tone
+buffer now also holds that colour before Exposure, keyed by the tone stage's recipe
+without Exposure and written from its second render, so an Exposure drag reads it and
+runs only the exposure ramp, LookTable and tone curve.
+
+Per change (median of 16, two runs):
+
+| Slider | Fit | Draft |
+| --- | ---: | ---: |
+| Exposure | 41–44 ms | 24 ms |
+| Contrast | 24–28 ms | 12 ms |
+| Highlights | 25–27 ms | 12 ms |
+| Shadows | 25–28 ms | 12 ms |
+| Whites | 23–26 ms | 12–14 ms |
+| Blacks | 24–32 ms | 11–13 ms |
+
+The other sliders did not change; these runs were noisier than the previous ones.
+
+Building the parameters on the CPU took about 4.3 ms per render, nearly all of it
+curves: the Basic curve was built twice when the photo was measured (once with the
+typical pivot), its 1025 points each recomputed the pivot's power warp, and the
+point curves evaluated their splines at 4097 points even when straight. The Basic
+curve is now built once, with the warp computed once and its points in parallel,
+and an identity curve's table is written directly; a test checks each gives the same
+bits as before. The parameters now take about 1.3 ms.
 
 ## GPU develop stage
 

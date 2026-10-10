@@ -73,6 +73,9 @@ pub(super) fn wait_for(workers: Vec<Stopping>, deadline: std::time::Duration) ->
 #[derive(Default)]
 pub(super) struct Task {
     generation: u64,
+    /// The oldest generation whose results still count: the last `start`. Jobs
+    /// `supersede` started after it share its cancel flag and may still report.
+    floor: u64,
     cancel: Arc<AtomicBool>,
     phase: Phase,
 }
@@ -89,9 +92,23 @@ impl Task {
         self.phase = Phase::Running;
         (self.generation, self.cancel.clone())
     }
+    /// Starts a newer job without cancelling the running ones, whose results then
+    /// still count (see `counts`) until the next `start` or `invalidate` cancels them
+    /// all. For a change whose earlier results are still worth showing on the way.
+    pub(crate) fn supersede(&mut self) -> (u64, Arc<AtomicBool>) {
+        self.generation += 1;
+        self.phase = Phase::Running;
+        (self.generation, self.cancel.clone())
+    }
+    /// Whether a result of job `generation` is still wanted: the latest job's, or an
+    /// earlier one `supersede` let run.
+    pub(crate) fn counts(&self, generation: u64) -> bool {
+        (self.floor..=self.generation).contains(&generation)
+    }
     pub(crate) fn invalidate(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
         self.generation += 1;
+        self.floor = self.generation;
         self.phase = Phase::Idle;
     }
     pub(crate) fn finish(&mut self, generation: u64) {
@@ -183,5 +200,21 @@ mod tests {
         let (_, active) = task.start();
         drop(task);
         assert!(active.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn a_superseded_job_runs_on_and_counts_until_the_next_start() {
+        let mut task = Task::default();
+        let (first, cancel) = task.start();
+        let (second, _) = task.supersede();
+        assert!(second > first);
+        assert!(!cancel.load(Ordering::Relaxed));
+        assert!(task.counts(first) && task.counts(second));
+        let (third, _) = task.start();
+        assert!(cancel.load(Ordering::Relaxed));
+        assert!(!task.counts(first) && !task.counts(second));
+        assert!(task.counts(third));
+        task.invalidate();
+        assert!(!task.counts(third));
     }
 }

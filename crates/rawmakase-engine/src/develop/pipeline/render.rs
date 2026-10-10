@@ -136,7 +136,8 @@ pub(crate) fn render_display(
     base.sharpening = 0.;
     base.validate()?;
     let im = toned.source();
-    let Some(mut params) = gpu_pixel_params(im, &base, stages.backend, cancel) else {
+    let Some(mut params) = gpu_pixel_params(toned, &base, stages.cache, stages.backend, cancel)
+    else {
         return Ok(None);
     };
     let key = crate::develop::stage_cache::SampleKey::new(toned, &base, g, region, spread);
