@@ -28,9 +28,10 @@ The model follows the light, as a film would see it:
    underexposing film does.
 4. Negative film is then scanned: densities are inverted channel by channel
    with each channel's own gamma (so the straight part of the curve stays neutral,
-   as a scanner balanced on mid gray does), the film base is set to black, and a
-   3×3 matrix fitted on the ColorChecker's spectra maps the layers to ProPhoto, as
-   a scanner calibrated on a target would. The base tone curve then renders it.
+   as a scanner balanced on mid gray does), the film base is set to black, and the
+   three channels are written out as sRGB, as a lab scanner outputs them: nothing
+   corrects the film's colour back toward the camera's. The base tone curve then
+   renders it.
    Reversal film is viewed instead: each layer's density becomes an amount of its
    dye, the dyes' spectra filter the projector's light (the datasheet's viewing
    illuminant), and the eye adapts to the film's clear base. The film's own curve
@@ -46,8 +47,8 @@ Amount with the film's grain (GRAIN), for the Presets panel.
 
 What the datasheets don't give is approximated, and the output says so: Status M
 and Status A densitometry are taken as narrow bands at each dye's peak, the
-scanner is a calibrated linear one rather than a model of a Frontier, and there is
-no grain, halation or interlayer effect.
+scanner writes its channels as sRGB rather than through a model of a Frontier, and
+there is no grain, halation or interlayer effect.
 """
 import argparse
 import hashlib
@@ -267,17 +268,6 @@ def colorchecker():
     return np.stack([sd.copy().align(SHAPE).values for sd in sds.values()])
 
 
-def white_preserving_fit(a, b):
-    """The 3×3 M minimising |a M^T - b| with M [1, 1, 1] = [1, 1, 1]."""
-    m = np.zeros((3, 3))
-    ata = a.T @ a
-    for i in range(3):
-        kkt = np.block([[2 * ata, np.ones((3, 1))], [np.ones((1, 3)), np.zeros((1, 1))]])
-        rhs = np.concatenate([2 * a.T @ b[:, i], [1.]])
-        m[i] = np.linalg.solve(kkt, rhs)[:3]
-    return m
-
-
 class Model:
     def __init__(self, film, paper=None, n_hue=72, n_sat=25):
         self.film = film
@@ -315,9 +305,10 @@ class Model:
             self.printer = np.array([inverse(c, t) for c, t in zip(paper.curves, target)])
         elif film.kind == 'negative':
             # Scanned: each channel inverted with its own gamma over two stops either
-            # side of mid gray, the film base set to black, and a 3×3 fitted on the
-            # ColorChecker from the layers to ProPhoto.
-            self.matrix = white_preserving_fit(film.exposure(cc), reflectance_xyz(cc) @ XYZ_TO_PRO.T)
+            # side of mid gray, the film base set to black, and the channels written
+            # out as sRGB. No calibration pulls colours back toward the camera's.
+            self.matrix = colour.matrix_RGB_to_RGB(colour.RGB_COLOURSPACES['sRGB'], PRO,
+                                                   chromatic_adaptation_transform='Bradford')
             self.gamma = gamma
             self.d_min = np.array([c(np.array(-10.)) for c in film.curves])
 
