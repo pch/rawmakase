@@ -8,7 +8,9 @@
   photos  DIR LIST   prepares the training photos listed in LIST (one RAW path per
                      line): linear-profile DNGs (linear_profile.py) in DIR/dng, Camera
                      Raw renders at each Shadows position in DIR/renders, and RAWmakase's
-                     scene-input and scene-output taps (--rawmakase) in DIR/maps
+                     scene-input and scene-output taps (--rawmakase) in DIR/maps;
+                     existing renders and taps are kept, so delete DIR/maps to
+                     refit after an engine change
   tables  SYNTH PHOTOS TONE
                      fits the tables and writes local_tone_data.rs and clarity_data.rs
                      (--out, default crates/rawmakase-engine/src/develop). TONE is
