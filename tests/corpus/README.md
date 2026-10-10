@@ -99,7 +99,7 @@ All run from the repository root with a Python that has numpy (`/opt/homebrew/bi
 Known limitations, not yet addressed:
 
 - **Photo parity baseline not recorded.** `camera-raw-photos/baseline.json` does not exist yet; run `photos_camera_raw_parity_does_not_regress` once with `RAWMAKASE_BLESS=1` (about an hour) before relying on that test.
-- **Not yet run on CI.** The public tests pass on macOS (Apple Silicon). CI builds on Arch Linux x86_64, where floating-point results may differ slightly. Measure the difference and set the snapshot tolerances from it.
+- **Run in CI on Linux.** The public tests pass on macOS (Apple Silicon). CI builds on Arch Linux x86_64, where floating-point results may differ slightly (tolerances not yet specifically calibrated for Linux float variance).
 - **Tolerances are not measured.** The snapshot limits (ΔE00 0.5 per patch, 0.1 mean) and parity margins (+0.1 mean, +0.3 p95) are reasonable guesses, not derived from Mac/Linux or CPU/GPU spread. The GPU preview path is not covered at all.
 - **Local operators are barely covered by charts.** Clarity, Texture and Dehaze have chart cases, but Shadows, Highlights, Dehaze and Clarity adapt to image content, so flat patches (even with the black/white surrounds) say little about them; only the private real photos test them properly.
 - **sRGB only.** RAWmakase outputs sRGB, so the wide-gamut row and very saturated colors are clipped before comparison and saturation errors outside sRGB are invisible. Needs a wide-gamut (ProPhoto or linear) render output in RAWmakase.
