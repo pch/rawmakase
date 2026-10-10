@@ -25,8 +25,9 @@ fn test_render(item: &Item, cancel: &AtomicBool) -> anyhow::Result<image::RgbIma
     }
     if name.starts_with("slow") {
         STARTED.lock().unwrap().push(item.path.clone());
-        let until = Instant::now() + Duration::from_secs(10);
-        while !released(&item.path) && Instant::now() < until {
+        // Wait until this test releases the file or cancels the build. A clock
+        // limit stored the preview when the test thread was slow to cancel.
+        while !released(&item.path) {
             anyhow::ensure!(!cancel.load(Ordering::Relaxed), "Cancelled");
             std::thread::sleep(Duration::from_millis(2));
         }
