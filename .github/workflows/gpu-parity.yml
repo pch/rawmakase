@@ -46,6 +46,10 @@ jobs:
       - name: Show the GPU
         run: system_profiler SPDisplaysDataType
       # Only the GPU tests: the other ignored tests need private RAW files,
-      # catalogs or camera profiles.
+      # catalogs or camera profiles. The workspace build, not `-p rawmakase-engine`:
+      # the engine alone builds wgpu without a platform backend (its dependency
+      # graph has no `metal`), and the tests panic at instance creation. The
+      # app crate's eframe pulls the feature in, and the filter still selects
+      # only develop::gpu.
       - name: GPU tests
-        run: cargo test --locked -p rawmakase-engine --lib 'develop::gpu::' -- --ignored --test-threads=1
+        run: cargo test --locked --workspace develop::gpu -- --ignored --test-threads=1
