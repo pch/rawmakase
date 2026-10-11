@@ -98,6 +98,27 @@ fn guard_termination(app: &objc2_app_kit::NSApplication, window: &objc2_app_kit:
     }
 }
 
+/// What `applicationShouldTerminate:` answers, decided from plain values so
+/// the choice is testable on every host, not just where the objc2 bindings
+/// compile.
+#[cfg(any(test, target_os = "macos"))]
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum TerminateChoice {
+    /// Quit at once: nothing is pending, or there is no window to ask.
+    Quit,
+    /// Close the window so its guard asks first, and cancel this request.
+    AskFirst,
+}
+
+#[cfg(any(test, target_os = "macos"))]
+fn terminate_choice(work_pending: bool, has_window: bool) -> TerminateChoice {
+    if work_pending && has_window {
+        TerminateChoice::AskFirst
+    } else {
+        TerminateChoice::Quit
+    }
+}
+
 /// `applicationShouldTerminate:` (see [`guard_termination`]).
 #[cfg(target_os = "macos")]
 extern "C-unwind" fn should_terminate(
@@ -106,11 +127,20 @@ extern "C-unwind" fn should_terminate(
     app: &objc2_app_kit::NSApplication,
 ) -> objc2_app_kit::NSApplicationTerminateReply {
     use objc2_app_kit::NSApplicationTerminateReply;
-    if !WORK_PENDING.load(Ordering::Relaxed) {
-        return NSApplicationTerminateReply::TerminateNow;
-    }
-    match app.windowWithWindowNumber(WINDOW_NUMBER.load(Ordering::Relaxed)) {
-        Some(window) => {
+    let work_pending = WORK_PENDING.load(Ordering::Relaxed);
+    // Only looked up while pending, as before: no window is sought on the
+    // fast path that quits at once.
+    let window = if work_pending {
+        app.windowWithWindowNumber(WINDOW_NUMBER.load(Ordering::Relaxed))
+    } else {
+        None
+    };
+    match terminate_choice(work_pending, window.is_some()) {
+        TerminateChoice::AskFirst => {
+            // The choice only asks while the window exists.
+            let Some(window) = window else {
+                return NSApplicationTerminateReply::TerminateNow;
+            };
             // The question must be seen: the app may be hidden or behind others,
             // as when quitting from the Dock or logging out.
             app.unhide(None);
@@ -121,10 +151,31 @@ extern "C-unwind" fn should_terminate(
             window.performClose(None);
             NSApplicationTerminateReply::TerminateCancel
         }
-        None => NSApplicationTerminateReply::TerminateNow,
+        TerminateChoice::Quit => NSApplicationTerminateReply::TerminateNow,
     }
 }
 
 /// Elsewhere quitting already closes the window first.
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn through_close_guard(_app: &impl winit::raw_window_handle::HasWindowHandle) {}
+
+#[cfg(test)]
+mod tests {
+    use super::{TerminateChoice, terminate_choice};
+
+    #[test]
+    fn nothing_pending_quits_at_once() {
+        assert_eq!(terminate_choice(false, true), TerminateChoice::Quit);
+        assert_eq!(terminate_choice(false, false), TerminateChoice::Quit);
+    }
+
+    #[test]
+    fn pending_work_asks_through_the_window() {
+        assert_eq!(terminate_choice(true, true), TerminateChoice::AskFirst);
+    }
+
+    #[test]
+    fn pending_work_without_a_window_still_quits() {
+        assert_eq!(terminate_choice(true, false), TerminateChoice::Quit);
+    }
+}
