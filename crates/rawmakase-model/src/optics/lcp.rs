@@ -81,7 +81,7 @@ pub fn parse(text: &str) -> Result<Vec<Entry>> {
     let mut out = Vec::new();
     for d in doc.descendants().filter(|n| {
         n.tag_name().namespace() == Some(RDF)
-            && n.tag_name().name() == "Description"
+            && matches!(n.tag_name().name(), "Description" | "li")
             && attr(*n, "FocalLength").is_some()
     }) {
         let mut lens: Vec<String> = attr(d, "Lens").into_iter().collect();

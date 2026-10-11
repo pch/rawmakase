@@ -623,6 +623,52 @@ mod tests {
         assert!(parse("<x/>").is_err());
     }
     #[test]
+    fn reads_entries_written_as_parse_type_resource() {
+        let text = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/" xmlns:stCamera="http://ns.adobe.com/photoshop/1.0/camera-profile">
+<photoshop:CameraProfiles><rdf:Seq>
+<rdf:li rdf:parseType="Resource">
+<stCamera:Make>NIKON CORPORATION</stCamera:Make>
+<stCamera:CameraRawProfile>True</stCamera:CameraRawProfile>
+<stCamera:Lens>105.0 mm f/2.8</stCamera:Lens>
+<stCamera:LensPrettyName>Nikon AF-S VR Micro-Nikkor 105mm f/2.8G IF-ED</stCamera:LensPrettyName>
+<stCamera:ProfileName>Adobe (Nikon AF-S VR Micro-Nikkor 105mm f/2.8G IF-ED)</stCamera:ProfileName>
+<stCamera:SensorFormatFactor>1.000000</stCamera:SensorFormatFactor>
+<stCamera:FocalLength>105.000000</stCamera:FocalLength>
+<stCamera:ApertureValue>2.970854</stCamera:ApertureValue>
+<stCamera:PerspectiveModel rdf:parseType="Resource">
+<stCamera:FocalLengthX>2.793782</stCamera:FocalLengthX>
+<stCamera:RadialDistortParam1>-0.281840</stCamera:RadialDistortParam1>
+<stCamera:RadialDistortParam2>2.421015</stCamera:RadialDistortParam2>
+<stCamera:ChromaticRedGreenModel rdf:parseType="Resource">
+<stCamera:ScaleFactor>0.999994</stCamera:ScaleFactor>
+<stCamera:RadialDistortParam1>0.000811</stCamera:RadialDistortParam1>
+</stCamera:ChromaticRedGreenModel>
+<stCamera:ChromaticBlueGreenModel rdf:parseType="Resource">
+<stCamera:ScaleFactor>0.999850</stCamera:ScaleFactor>
+<stCamera:RadialDistortParam1>-0.004575</stCamera:RadialDistortParam1>
+</stCamera:ChromaticBlueGreenModel>
+<stCamera:VignetteModel rdf:parseType="Resource">
+<stCamera:VignetteModelParam1>-23.421628</stCamera:VignetteModelParam1>
+<stCamera:VignetteModelParam2>513.557706</stCamera:VignetteModelParam2>
+<stCamera:VignetteModelParam3>-2930.260133</stCamera:VignetteModelParam3>
+</stCamera:VignetteModel>
+</stCamera:PerspectiveModel>
+</rdf:li>
+</rdf:Seq></photoshop:CameraProfiles></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+        let entries = parse(text).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].lens, ["105.0 mm f/2.8"]);
+        assert_eq!(
+            entries[0].name,
+            "Nikon AF-S VR Micro-Nikkor 105mm f/2.8G IF-ED"
+        );
+        assert!(entries[0].raw);
+        assert!(entries[0].distortion.is_some());
+        assert!(entries[0].vignette.is_some());
+        assert!(entries[0].red.is_some() && entries[0].blue.is_some());
+    }
+    #[test]
     fn import_validates_and_copies() {
         let d = tempfile::tempdir().unwrap();
         let src = d.path().join("a.lcp");
