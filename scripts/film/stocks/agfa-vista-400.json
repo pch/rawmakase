@@ -1,0 +1,103 @@
+{
+ "name": "Agfa Vista 400",
+ "look": "Vista-ish 400",
+ "kind": "negative",
+ "iso": 400,
+ "source": "Agfa-Gevaert AG, Technical Data: Range of Agfa standard films, publication F-AF-E6 (2003-05), page 5",
+ "url": "https://125px.com/docs/unsorted/agfa/F-AF-E6_en.pdf",
+ "sha256": "7da4cb84f555daa333d35975127d832e44bf52b263cf449a331733e1bb67d09f",
+ "page": 5,
+ "notes": {
+  "characteristic": "Colour density curves: daylight exposure 1/100 s, process AP 70/C-41, Status A or Status M densitometry (not specified per film); x is lg exposure (lx s). No reference exposure printed.",
+  "sensitivity": "Equi-energy spectrum, 0.5 above minimum density (colour negative films); y is lg sensitivity (relative). Line styles: dashed blue-sensitive, solid green-sensitive, dash-dot red-sensitive layer.",
+  "dye_density": "Absorption of the emulsion dyes: neutral object of medium brightness (medium density) and minimum density; no per-dye curves published."
+ },
+ "grain": {
+  "rms": 4.5,
+  "note": "Granularity (x 1000): RMS 4.5; daylight exposure, visual filter (V lambda), diffuse density 1.0, 48 um scanning aperture."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [
+    445.52,
+    466,
+    581.52,
+    578
+   ],
+   "x": [
+    449.69,
+    -4.0,
+    579.85,
+    1.0
+   ],
+   "y": [
+    574.68,
+    0.0,
+    470.54,
+    4.0
+   ],
+   "min_points": 2,
+   "curves": {
+    "top": [
+     "blue",
+     "green",
+     "red"
+    ]
+   }
+  },
+  "sensitivity": {
+   "region": [
+    445.52,
+    90,
+    581.52,
+    194
+   ],
+   "x": [
+    464.99,
+    400.0,
+    563.62,
+    700.0
+   ],
+   "y": [
+    175.82,
+    0.0,
+    110.14,
+    2.0
+   ],
+   "min_points": 2,
+   "curves": {
+    "index": [
+     "blue",
+     "green",
+     "red"
+    ]
+   }
+  },
+  "dye_density": {
+   "region": [
+    445.52,
+    230,
+    581.52,
+    300
+   ],
+   "x": [
+    464.99,
+    400.0,
+    563.62,
+    700.0
+   ],
+   "y": [
+    298.94,
+    0.0,
+    233.19,
+    2.0
+   ],
+   "curves": {
+    "bottom": [
+     "midscale_neutral",
+     "minimum"
+    ]
+   }
+  }
+ }
+}

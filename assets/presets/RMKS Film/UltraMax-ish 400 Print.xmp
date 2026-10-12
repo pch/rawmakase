@@ -1,0 +1,43 @@
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+   crs:PresetType="Normal"
+   crs:Cluster=""
+   crs:UUID="457FDA6010E0DDC9001E5AEED10B2319"
+   crs:SupportsAmount="True"
+   crs:SupportsColor="True"
+   crs:SupportsMonochrome="False"
+   crs:SupportsHighDynamicRange="True"
+   crs:SupportsNormalDynamicRange="True"
+   crs:SupportsSceneReferred="True"
+   crs:SupportsOutputReferred="False"
+   crs:CameraModelRestriction=""
+   crs:Copyright="RAWmakase contributors, MIT licence"
+   crs:ContactInfo=""
+   crs:Version="18.7"
+   crs:ProcessVersion="15.4"
+   crs:GrainAmount="5"
+   crs:GrainSize="25"
+   crs:GrainFrequency="50"
+   crs:HasSettings="True">
+   <crs:Name>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">UltraMax-ish 400 Print</rdf:li>
+    </rdf:Alt>
+   </crs:Name>
+   <crs:Group>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">RMKS Film</rdf:li>
+    </rdf:Alt>
+   </crs:Group>
+   <crs:Look>
+    <rdf:Description
+     crs:Name="RMKS Film: UltraMax-ish 400 Print"
+     crs:Amount="1"
+     crs:UUID="67E9E086D665B6F11C592C6BDB11372B"
+     crs:SupportsAmount="true"/>
+   </crs:Look>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>

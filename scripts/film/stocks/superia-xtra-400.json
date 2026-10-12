@@ -1,0 +1,47 @@
+{
+ "name": "Fujicolor Superia X-TRA 400",
+ "look": "Superia-ish X-TRA 400",
+ "kind": "negative",
+ "iso": 400,
+ "source": "Fuji Photo Film Co., Ltd., FUJICOLOR SUPERIA X-TRA 400 [CH] Product Information Bulletin, Ref. No. AF3-151E (EIGI-03.2, 2003-02)",
+ "url": "https://125px.com/docs/film/fuji/superia_xtra400_datasheet.pdf",
+ "sha256": "0f2ac1e5d113c5636b495706ece3448554e9b1dc074f92214fc67099d49e3acb",
+ "page": 6,
+ "notes": {
+  "characteristic": "Exposure daylight, 1/125 s, process CN-16, Status M densitometry. No reference log exposure for a normally exposed neutral is printed.",
+  "sensitivity": "Process CN-16, Status M, density 1.0 above D-min; relative sensitivity (log) = reciprocal of the exposure (J/cm2) required. Only a 1.0 log bracket is printed, so 0.0 and 1.0 are the bracketing gridlines (relative, not absolute). A fourth, dashed cyan-sensitive layer is also plotted; it is dropped (null) because the model uses three layers.",
+  "dye_density": "Spectral diffuse density, typical densities for a mid-scale neutral subject and for D-min (no per-dye curves published)."
+ },
+ "grain": {
+  "rms": 4,
+  "note": "Diffuse RMS granularity value; micro-densitometer measurement aperture 48 µm diameter, magnification 12x, sample density 1.0 above minimum density."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [84, 117, 282, 292],
+   "x": [128.39, -3.0, 258.82, 0.0],
+   "y": [270.1, 0.5, 139.44, 3.5],
+   "min_points": 2,
+   "curves": {
+    "top": ["blue", "green", "red"]
+   }
+  },
+  "sensitivity": {
+   "region": [325, 117, 534, 289],
+   "x": [350.42, 400.0, 521.82, 700.0],
+   "y": [231.95, 0.0, 174.76, 1.0],
+   "min_points": 2,
+   "curves": {
+    "peak": ["blue", null, "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [334, 395, 540, 545],
+   "x": [346.09, 400.0, 528.48, 700.0],
+   "y": [515.03, 0.5, 426.19, 2.0],
+   "curves": {
+    "top": ["midscale_neutral", "minimum"]
+   }
+  }
+ }
+}

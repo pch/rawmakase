@@ -1,0 +1,54 @@
+{
+ "name": "Kodak Portra 800",
+ "look": "Portra-ish 800",
+ "kind": "negative",
+ "iso": 800,
+ "source": "Kodak Alaris, KODAK PROFESSIONAL PORTRA 800 Film, publication E-4040 (February 2016)",
+ "url": "https://imaging.kodakalaris.com/sites/default/files/files/products/e4040_portra_800.pdf",
+ "sha256": "9482510dfaaff7349f304905a645c096864b2789d245ee0b646ef5102330b7b9",
+ "page": 4,
+ "log_h_ref": -1.74,
+ "notes": {
+  "characteristic": "EI 800 (normal process) curves; daylight exposure, Status M densitometry, Log H Ref -1.74. The datasheet's x-axis labels on this plot read -4.0, -2.0, -3.0, ... (a label typo); the ticks are evenly spaced and read here as -3.0 and 0.0, as on its push-process plots.",
+  "sensitivity": "Daylight, effective exposure 1/200 s, Status M, density 0.2 above D-min, sensitivity = 1/exposure (erg/cm2).",
+  "dye_density": "Page 5. Process C-41, diffuse spectral density, typical densities for a midscale neutral subject and D-min (no per-dye curves published)."
+ },
+ "grain": {
+  "print_grain_index": {
+   "135, 4x6 in (4.4X)": 48,
+   "135, 8x10 in (8.8X)": 70,
+   "135, 16x20 in (17.8X)": 99,
+   "120 6x6, 4x6 in (2.6X)": 36,
+   "120 6x6, 8x10 in (4.4X)": 48,
+   "120 6x6, 16x20 in (8.8X)": 70
+  },
+  "note": "Print Grain Index (not rms granularity): diffuse-printing illumination, 14 in viewing distance; 25 is the visual threshold, 4 units one just-noticeable difference."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [80, 70, 270, 262],
+   "x": [118.53, -3.0, 229.28, 0.0],
+   "y": [212.8, 1.0, 120.56, 3.0],
+   "curves": {
+    "top": ["blue", "green", "red"]
+   }
+  },
+  "sensitivity": {
+   "region": [348, 312, 552, 467],
+   "x": [370.24, 300.0, 530.87, 700.0],
+   "y": [427.43, 1.0, 351.61, 3.0],
+   "curves": {
+    "x0": ["blue", "green", "red"]
+   }
+  },
+  "dye_density": {
+   "page": 5,
+   "region": [78, 100, 268, 290],
+   "x": [111.78, 450.0, 234.75, 650.0],
+   "y": [249.27, 0.5, 138.63, 2.0],
+   "curves": {
+    "top": ["midscale_neutral", "minimum"]
+   }
+  }
+ }
+}

@@ -1,0 +1,47 @@
+{
+ "name": "Fujichrome Velvia 100",
+ "look": "Velvia-ish 100",
+ "kind": "reversal",
+ "iso": 100,
+ "source": "Fuji Photo Film Co., Ltd., FUJICHROME Velvia 100 Professional [RVP100] Product Information Bulletin, Ref. No. AF3-202E (2005-02), page 8",
+ "url": "https://125px.com/docs/film/fuji/velvia_100_datasheet.pdf",
+ "sha256": "4c57a27b978311ca2ef819f2bf2d74c757639d27f9f0bd94e5f49c4b1c3d5902",
+ "page": 8,
+ "notes": {
+  "characteristic": "Exposure daylight, process E-6/CR-56, Status A densitometry.",
+  "sensitivity": "Process E-6/CR-56, Status A densitometry, density 1.0 above D-min, sensitivity = 1/exposure (J/cm2).",
+  "dye_density": "Spectral diffuse density of each dye, exposure separated, process E-6/CR-56; normalized to a peak of 1.0, no viewing illuminant stated."
+ },
+ "grain": {
+  "rms": 8,
+  "note": "Diffuse RMS granularity, read at a gross diffuse visual density of 1.0 using a 48-micrometre aperture."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [84, 172, 284, 349],
+   "x": [107.57, -3.0, 238.32, 0.0],
+   "y": [326.29, 0.5, 195.66, 3.5],
+   "min_points": 5,
+   "curves": {
+    "top": ["green", "blue", "red"]
+   }
+  },
+  "sensitivity": {
+   "region": [333, 172, 536, 347],
+   "x": [347.05, 400.0, 521.80, 700.0],
+   "y": [205.13, 1.0, 320.39, -1.0],
+   "curves": {
+    "x0": ["blue", "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [331, 447, 536, 599],
+   "x": [344.97, 400.0, 522.19, 700.0],
+   "y": [537.27, 0.5, 477.73, 1.0],
+   "min_points": 6,
+   "curves": {
+    "peak": ["yellow", "magenta", "cyan"]
+   }
+  }
+ }
+}

@@ -1,0 +1,40 @@
+{
+ "name": "Kodak Endura Premier",
+ "kind": "paper",
+ "source": "Kodak Alaris, KODAK PROFESSIONAL ENDURA Premier Paper, publication E-4070 (2017-12)",
+ "url": "https://business.kodakmoments.com/sites/default/files/files/products/e4070.pdf",
+ "sha256": "94ead00f26a4bbf8ce1a991ff73add049514e38f32d6e88aa7a8a1e3e2d7982e",
+ "page": 4,
+ "notes": {
+  "characteristic": "Exposure 0.5 s, process RA-4, Status A densitometry.",
+  "sensitivity": "Effective exposure 0.5 s, RA-4, sensitivity = 1/exposure (erg/cm2).",
+  "dye_density": "Diffuse spectral density of each dye, each normalized to a peak of 1.0 (page 5)."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [364, 80, 552, 258],
+   "x": [426.16, -2.0, 487.72, -1.0],
+   "y": [195.65, 1.0, 134.07, 2.0],
+   "curves": {
+    "top": ["red", "green", "blue"]
+   }
+  },
+  "sensitivity": {
+   "region": [350, 315, 552, 468],
+   "x": [410.75, 400.0, 531.03, 700.0],
+   "y": [353.61, 1.0, 429.41, -1.0],
+   "curves": {
+    "x0": ["blue", "green", "red"]
+   }
+  },
+  "dye_density": {
+   "page": 5,
+   "region": [88, 80, 275, 236],
+   "x": [119.63, 450.0, 242.54, 650.0],
+   "y": [198.02, 0.5, 161.19, 1.0],
+   "curves": {
+    "peak": ["yellow", "magenta", "cyan"]
+   }
+  }
+ }
+}

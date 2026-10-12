@@ -1,0 +1,47 @@
+{
+ "name": "Fujicolor Pro 160S",
+ "look": "Pro-ish 160S",
+ "kind": "negative",
+ "iso": 160,
+ "source": "Fuji Photo Film Co., Ltd., FUJICOLOR PRO 160 S PROFESSIONAL Product Information Bulletin, Ref. No. AF3-174E (EIGI-05.1, 2005-01)",
+ "url": "https://125px.com/docs/film/fuji/pro_160s_datasheet.pdf",
+ "sha256": "024bcb52ea38206b3409bde6d022dfc405cf25b563777d819bebab94cf900ba8",
+ "page": 8,
+ "notes": {
+  "characteristic": "Exposure daylight, 1/125 s, process C-41, Status M densitometry. No reference log exposure for a normally exposed neutral is printed.",
+  "sensitivity": "Process C-41, Status M, density 1.0 above D-min; relative sensitivity (log) = reciprocal of the exposure (J/cm2) required. Only a 1.0 log bracket is printed, so 0.0 and 1.0 are the bracketing gridlines (relative, not absolute). A fourth, dashed cyan-sensitive layer is also plotted; it is dropped (null) because the model uses three layers.",
+  "dye_density": "Spectral diffuse density, typical densities for a mid-scale neutral subject and for D-min (no per-dye curves published)."
+ },
+ "grain": {
+  "rms": 3,
+  "note": "Diffuse RMS granularity value; micro-densitometer measurement aperture 48 µm diameter, sample density +1.0 above minimum density. Based on Fujifilm measurements; not comparable with colour reversal film."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [84, 104, 284, 283],
+   "x": [106.83, -3.5, 261.92, 0.0],
+   "y": [261.32, 0.5, 128.09, 3.5],
+   "min_points": 2,
+   "curves": {
+    "top": ["blue", "green", "red"]
+   }
+  },
+  "sensitivity": {
+   "region": [318, 105, 534, 283],
+   "x": [344.14, 400.0, 520.49, 700.0],
+   "y": [223.49, 0.0, 164.58, 1.0],
+   "min_points": 2,
+   "curves": {
+    "peak": ["blue", null, "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [332, 392, 534, 557],
+   "x": [333.03, 400.0, 520.69, 700.0],
+   "y": [556.91, 0.0, 425.68, 2.0],
+   "curves": {
+    "top": ["midscale_neutral", "minimum"]
+   }
+  }
+ }
+}

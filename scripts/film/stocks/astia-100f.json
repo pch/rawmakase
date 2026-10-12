@@ -1,0 +1,47 @@
+{
+ "name": "Fujichrome Astia 100F",
+ "look": "Astia-ish 100F",
+ "kind": "reversal",
+ "iso": 100,
+ "source": "Fuji Photo Film Co., Ltd., FUJICHROME ASTIA 100F Professional [RAP100F] Product Information Bulletin, Ref. No. AF3-149E (2003-11), page 8",
+ "url": "https://125px.com/docs/film/fuji/astia_100f_datasheet.pdf",
+ "sha256": "a3ed5826d934743b91d750a7ce6c79041c8b3ba0b1afc05ff3cf0b8d175e0809",
+ "page": 8,
+ "notes": {
+  "characteristic": "Exposure daylight 1/50 s, process E-6/CR-56, densitometry Fuji FAD-30S (Status A).",
+  "sensitivity": "Process E-6/CR-56, densitometry Fuji FAD-30S (Status A), density 1.0 above D-min, sensitivity = 1/exposure (J/cm2).",
+  "dye_density": "Spectral diffuse density of each dye, exposure separated light, process E-6/CR-56; normalized to a peak of 1.0, no viewing illuminant stated."
+ },
+ "grain": {
+  "rms": 7,
+  "note": "Diffuse RMS granularity, read at a gross diffuse visual density of 1.0 using a 48-micrometre aperture."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [83, 195, 282, 372],
+   "x": [105.78, -3.0, 236.53, 0.0],
+   "y": [349.73, 0.5, 219.07, 3.5],
+   "min_points": 5,
+   "curves": {
+    "top": ["blue", "green", "red"]
+   }
+  },
+  "sensitivity": {
+   "region": [334, 195, 540, 374],
+   "x": [347.99, 400.0, 525.18, 700.0],
+   "y": [228.24, 1.0, 344.15, -1.0],
+   "curves": {
+    "x0": ["blue", "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [334, 470, 540, 621],
+   "x": [348.57, 400.0, 525.76, 700.0],
+   "y": [559.88, 0.5, 500.35, 1.0],
+   "min_points": 6,
+   "curves": {
+    "peak": ["yellow", "magenta", "cyan"]
+   }
+  }
+ }
+}

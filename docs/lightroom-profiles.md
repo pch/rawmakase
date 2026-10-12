@@ -25,6 +25,27 @@ Two profiles of our own are listed for every camera with a colour matrix, with n
 
 Both are embedded in the recipe like any other profile, so later changes to the look don't change existing edits. The look was tuned conservatively and has not yet been compared with Camera Raw renders; measured base profiles (ColorChecker shots per camera) can replace the matrix later without changing any preset.
 
+### Film looks
+
+The **RMKS Film** looks model film from its manufacturer's published technical datasheet, for every camera with a colour matrix. In the Profile menu they are under an RMKS Film heading, a section per stock:
+
+| Stock | Datasheet |
+|---|---|
+| Portra-ish 160, 400, 800 | Kodak E-4051, E-4050, E-4040 |
+| Ektar-ish 100, Gold-ish 200, UltraMax-ish 400 | Kodak E-4046, E-7022, E-7023 |
+| Pro-ish 160S, Pro-ish 400H, Superia-ish X-TRA 400, Reala-ish 100 | Fujifilm AF3-174E, AF3-176E, AF3-151E, AF3-967E |
+| Vista-ish 200, 400, Ultra-ish 100 | Agfa F-AF-E6 |
+| Kodachrome-ish 25, 64, 200 | Kodak E-55 |
+| Ektachrome-ish E100, E100VS | Kodak E-4000, E-163 |
+| Velvia-ish 100, 100F, Astia-ish 100F, Provia-ish 400X | Fujifilm AF3-202E, AF3-148E, AF3-149E, AF3-0213E |
+| RSX-ish 100 | Agfa F-PF-E4 |
+
+Each stock comes as the film itself, a negative scanned or a slide projected, and as a **Print**: a negative on Kodak Endura Premier paper (E-4070), a slide on Ektachrome Radiance III (E-1766). A negative also comes **+1** and **-1**: exposed a stop over or under, then scanned or printed balanced on gray as a lab would, so the brightness stays and the film's toe and shoulder do the rest. Exposure moves any of them along the film's response, as over- and underexposing film does.
+
+`scripts/film/` reads the datasheets' spectral sensitivity, characteristic and dye density curves out of the PDFs' vector paths and follows the light: a spectrum for each colour (Jakob and Hanika's model), the exposure of each layer, its density after standard processing, then a scanner that writes its three channels as sRGB without calibrating them back toward accurate colour, a slide's dyes under its projector, or an enlarger's lamp through the film's dyes onto the paper's layers, seen under daylight. The result is an RGB table in Lightroom's look format (`assets/looks`), so the looks also work in Lightroom. The Presets panel's RMKS Film group chooses each with the film's grain: from its published rms granularity, or Kodak's Print Grain Index, scaled by the contrast of the scan, projection or print.
+
+They are modelled, not matched: no film was shot or scanned to check them. What the datasheets don't give is assumed and stated in the scripts: densitometry as narrow bands at each dye's peak; the three dyes of a negative, estimated from the published total density of a midscale neutral; the scanner's colour; the enlarger's 3200 K lamp and printer filtration balanced on mid gray; and 1% viewing flare on prints, which lifts their blacks. Fujifilm's slide datasheets share one set of dye curves, and Fujifilm's fourth, cyan-sensitive layer is left out. Prints come out more contrasty than a scan. Every look keeps a correctly exposed gray within 0.01 (encoded) of neutral, except Kodachrome-ish 64 projected, slightly cool (0.02). A look always goes over RAWmakase Standard, even with Adobe Standard imported, so it renders the same everywhere, and like every profile it is embedded in the edits that use it.
+
 ## Rendering
 
 An enhanced XMP profile is resolved against its matching camera DCP. The profile name remains, for example, **Adobe Color**, but the combined rendering contains that camera's matrices and calibration tables plus the XMP look's table and curve. Camera matching is mandatory.

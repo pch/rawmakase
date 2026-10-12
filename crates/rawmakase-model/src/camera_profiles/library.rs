@@ -49,6 +49,7 @@ pub fn installed(m: &Metadata) -> (Vec<Arc<CameraProfile>>, Vec<String>) {
         [super::open::standard(m), super::open::color(m)]
             .into_iter()
             .flatten()
+            .chain(super::film::profiles(m))
             .map(Arc::new),
     );
     let mut files = Vec::new();

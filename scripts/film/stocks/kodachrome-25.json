@@ -1,0 +1,46 @@
+{
+ "name": "Kodak Kodachrome 25",
+ "look": "Kodachrome-ish 25",
+ "kind": "reversal",
+ "iso": 25,
+ "source": "Eastman Kodak, KODACHROME 25, 64, and 200 Professional Film, publication E-55 (2009-06), page 3",
+ "url": "https://125px.com/docs/film/kodak/e55-2009_06.pdf",
+ "sha256": "89ef8788a2a830e84e342d9f6f200336f31b0327adbc4ae5396517b3cfc0d2aa",
+ "page": 3,
+ "viewing_illuminant_k": 3200,
+ "notes": {
+  "characteristic": "Daylight exposure 1/25 s, process K-14, Status A densitometry.",
+  "sensitivity": "Effective exposure 1.4 s, K-14, E.N.D. density 1.00, sensitivity = 1/exposure (erg/cm2).",
+  "dye_density": "Dyes normalized to form a visual density of 1.0 for a viewing illuminant of 3200 K."
+ },
+ "grain": {
+  "rms": 9,
+  "note": "Diffuse rms granularity, read at gross diffuse visual density 1.0, 48 µm aperture, 12X."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [80, 125, 290, 320],
+   "x": [132.74, -1.0, 224.99, 1.0],
+   "y": [273.74, 1.0, 181.48, 3.0],
+   "curves": {
+    "top": ["red", "green", "blue"]
+   }
+  },
+  "sensitivity": {
+   "region": [86, 400, 290, 556],
+   "x": [106.75, 300.0, 267.52, 700.0],
+   "y": [440.68, 1.0, 516.42, -1.0],
+   "curves": {
+    "x0": ["blue", "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [360, 130, 580, 320],
+   "x": [429.82, 500.0, 491.27, 600.0],
+   "y": [254.50, 0.5, 190.99, 1.0],
+   "curves": {
+    "top": ["visual_neutral", "cyan", "magenta", "yellow"]
+   }
+  }
+ }
+}

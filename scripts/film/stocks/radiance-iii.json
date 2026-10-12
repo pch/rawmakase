@@ -1,0 +1,39 @@
+{
+ "name": "Kodak Ektachrome Radiance III",
+ "kind": "paper",
+ "source": "Eastman Kodak, KODAK EKTACHROME RADIANCE III Paper, publication E-1766 (2003-02)",
+ "url": "https://125px.com/docs/unsorted/kodak/e1766.pdf",
+ "sha256": "f44b76b7f19bddbe9ff01f4539f0936abfd32900b77896309c7ace89c998e83c",
+ "page": 5,
+ "notes": {
+  "characteristic": "Reversal paper. Exposure 1/2 s, 2850 K + CC filtration, process R-3, Status A reflection densitometry.",
+  "sensitivity": "Effective exposure 1 s, R-3, sensitivity = 1/exposure (erg/cm2).",
+  "dye_density": "Diffuse spectral density of each dye, process R-3."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [86, 100, 272, 265],
+   "x": [132.77, 1.0, 225.01, 3.0],
+   "y": [217.71, 1.0, 125.47, 3.0],
+   "curves": {
+    "top": ["red", "blue", "green"]
+   }
+  },
+  "sensitivity": {
+   "region": [224, 344, 426, 496],
+   "x": [284.96, 400.0, 385.44, 650.0],
+   "y": [382.38, 1.0, 458.11, -1.0],
+   "curves": {
+    "x0": ["blue", "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [362, 100, 548, 267],
+   "x": [362.79, 400.0, 485.68, 600.0],
+   "y": [229.41, 0.5, 118.81, 2.0],
+   "curves": {
+    "peak": ["yellow", "magenta", "cyan"]
+   }
+  }
+ }
+}

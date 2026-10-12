@@ -1,0 +1,104 @@
+{
+ "name": "Agfa Ultra 100",
+ "look": "Ultra-ish 100",
+ "kind": "negative",
+ "iso": 100,
+ "source": "Agfa-Gevaert AG, Technical Data: Range of Agfa standard films, publication F-AF-E6 (2003-05), page 6",
+ "url": "https://125px.com/docs/unsorted/agfa/F-AF-E6_en.pdf",
+ "sha256": "7da4cb84f555daa333d35975127d832e44bf52b263cf449a331733e1bb67d09f",
+ "page": 6,
+ "notes": {
+  "characteristic": "Colour density curves: daylight exposure 1/100 s, process AP 70/C-41, Status A or Status M densitometry (not specified per film); x is lg exposure (lx s). No reference exposure printed.",
+  "sensitivity": "Equi-energy spectrum, 0.5 above minimum density (colour negative films); y is lg sensitivity (relative). Line styles: dashed blue-sensitive, solid green-sensitive, dash-dot red-sensitive layer. The green-sensitive layer's secondary blue sensitivity (380-440 nm) is drawn as a separate piece, falling below the plot's -1.0 limit, and is joined to the green curve.",
+  "dye_density": "Absorption of the emulsion dyes: neutral object of medium brightness (medium density) and minimum density; no per-dye curves published."
+ },
+ "grain": {
+  "rms": 3.8,
+  "note": "Granularity (x 1000): RMS 3.8; daylight exposure, visual filter (V lambda), diffuse density 1.0, 48 um scanning aperture."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [
+    261.32,
+    466,
+    397.32,
+    578
+   ],
+   "x": [
+    265.49,
+    -4.0,
+    395.65,
+    1.0
+   ],
+   "y": [
+    575.28,
+    0.0,
+    471.14,
+    4.0
+   ],
+   "min_points": 2,
+   "curves": {
+    "top": [
+     "blue",
+     "green",
+     "red"
+    ]
+   }
+  },
+  "sensitivity": {
+   "region": [
+    261.32,
+    90,
+    397.32,
+    194
+   ],
+   "x": [
+    280.79,
+    400.0,
+    379.42,
+    700.0
+   ],
+   "y": [
+    192.1,
+    -1.0,
+    93.44,
+    2.0
+   ],
+   "min_points": 2,
+   "curves": {
+    "index": [
+     "green",
+     "green",
+     "blue",
+     "red"
+    ]
+   }
+  },
+  "dye_density": {
+   "region": [
+    261.32,
+    230,
+    397.32,
+    300
+   ],
+   "x": [
+    280.79,
+    400.0,
+    379.42,
+    700.0
+   ],
+   "y": [
+    298.79,
+    0.0,
+    233.04,
+    2.0
+   ],
+   "curves": {
+    "bottom": [
+     "midscale_neutral",
+     "minimum"
+    ]
+   }
+  }
+ }
+}

@@ -1,0 +1,47 @@
+{
+ "name": "Fujicolor Pro 400H",
+ "look": "Pro-ish 400H",
+ "kind": "negative",
+ "iso": 400,
+ "source": "Fuji Photo Film Co., Ltd., FUJICOLOR PRO 400H PROFESSIONAL Product Information Bulletin, Ref. No. AF3-176E (EIGI-05.1, 2005-01)",
+ "url": "https://125px.com/docs/film/fuji/pro_400h_datasheet.pdf",
+ "sha256": "9a2ca2d506cf57c7747ae5b9557d34a6102a76c009b2bb4eaedde829615205d6",
+ "page": 8,
+ "notes": {
+  "characteristic": "Exposure daylight, 1/125 s, process C-41, Status M densitometry. No reference log exposure for a normally exposed neutral is printed.",
+  "sensitivity": "Process C-41, Status M, density 1.0 above D-min; relative sensitivity (log) = reciprocal of the exposure (J/cm2) required. Only a 1.0 log bracket is printed, so 0.0 and 1.0 are the bracketing gridlines (relative, not absolute). A fourth, dashed cyan-sensitive layer is also plotted; it is dropped (null) because the model uses three layers.",
+  "dye_density": "Spectral diffuse density, typical densities for a mid-scale neutral subject and for D-min (no per-dye curves published)."
+ },
+ "grain": {
+  "rms": 4,
+  "note": "Diffuse RMS granularity value; micro-densitometer measurement aperture 48 µm diameter, sample density +1.0 above minimum density. Based on Fujifilm measurements; not comparable with colour reversal film."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [78, 104, 286, 250],
+   "x": [99.0, -3.5, 264.75, 0.5],
+   "y": [228.73, 0.5, 125.4, 3.0],
+   "min_points": 2,
+   "curves": {
+    "top": ["blue", "green", "red"]
+   }
+  },
+  "sensitivity": {
+   "region": [323, 104, 516, 259],
+   "x": [346.87, 400.0, 504.48, 700.0],
+   "y": [206.96, 0.0, 155.83, 1.0],
+   "min_points": 2,
+   "curves": {
+    "peak": ["blue", null, "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [334, 374, 534, 539],
+   "x": [334.86, 400.0, 522.71, 700.0],
+   "y": [538.69, 0.0, 386.04, 2.0],
+   "curves": {
+    "top": ["midscale_neutral", "minimum"]
+   }
+  }
+ }
+}

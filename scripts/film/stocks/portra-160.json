@@ -1,0 +1,56 @@
+{
+ "name": "Kodak Portra 160",
+ "look": "Portra-ish 160",
+ "kind": "negative",
+ "iso": 160,
+ "source": "Kodak Alaris, KODAK PROFESSIONAL PORTRA 160 Film, publication E-4051 (February 2016)",
+ "url": "https://imaging.kodakalaris.com/sites/default/files/files/products/e4051_portra_160.pdf",
+ "sha256": "a635048fc5e578747868684ff5a98fa2a6582a5d4542dd4ba2e132bc06d951c0",
+ "page": 4,
+ "log_h_ref": -1.051,
+ "notes": {
+  "characteristic": "Daylight exposure, Status M densitometry, Log H Ref -1.051.",
+  "sensitivity": "Daylight, effective exposure 1/50 s, Status M, density 0.2 above D-min, sensitivity = 1/exposure (erg/cm2).",
+  "dye_density": "Diffuse spectral density, typical densities for D-min and a midscale neutral subject (no per-dye curves published)."
+ },
+ "grain": {
+  "print_grain_index": {
+   "135, 4x6 in (4.4X)": 28,
+   "135, 8x10 in (8.8X)": 50,
+   "135, 16x20 in (17.8X)": 79,
+   "120 6x6, 4x6 in (2.6X)": "<25",
+   "120 6x6, 8x10 in (4.4X)": 28,
+   "120 6x6, 16x20 in (8.8X)": 50,
+   "4x5 sheet, 4x6 in (1.2X)": "<25",
+   "4x5 sheet, 8x10 in (2X)": "<25",
+   "4x5 sheet, 16x20 in (4X)": 26
+  },
+  "note": "Print Grain Index (not rms granularity): diffuse-printing illumination, 14 in viewing distance; 25 is the visual threshold, 4 units one just-noticeable difference."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [80, 100, 268, 290],
+   "x": [118.38, -3.0, 229.12, 0.0],
+   "y": [241.32, 1.0, 148.52, 3.0],
+   "curves": {
+    "top": ["blue", "green", "red"]
+   }
+  },
+  "sensitivity": {
+   "region": [72, 346, 276, 501],
+   "x": [93.8, 300.0, 254.17, 700.0],
+   "y": [461.68, 0.0, 385.86, 2.0],
+   "curves": {
+    "x0": ["blue", "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [350, 100, 545, 290],
+   "x": [416.63, 500.0, 478.06, 600.0],
+   "y": [248.62, 0.5, 138.06, 2.0],
+   "curves": {
+    "top": ["midscale_neutral", "minimum"]
+   }
+  }
+ }
+}

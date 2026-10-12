@@ -1,0 +1,46 @@
+{
+ "name": "Kodak Professional Ektachrome E100VS",
+ "look": "Ektachrome-ish E100VS",
+ "kind": "reversal",
+ "iso": 100,
+ "source": "Eastman Kodak, KODAK PROFESSIONAL EKTACHROME Film E100VS, publication E-163 (2005-09), page 5",
+ "url": "https://125px.com/docs/film/kodak/e163-Ektachrome_E100VS.pdf",
+ "sha256": "b9d88213a8bba696cf0b478e9e47145afb7db806319a5dab44a40639d4bc9fcd",
+ "page": 5,
+ "viewing_illuminant_k": 5000,
+ "notes": {
+  "characteristic": "Daylight exposure 1/100 s, process E-6, Status A densitometry.",
+  "sensitivity": "Exposure 0.1 s, E-6, density 1.0 (printed as 'Densitometry: 1.0'), sensitivity = 1/exposure (erg/cm2).",
+  "dye_density": "Dyes normalized to form a visual neutral density of 1.0 for a viewing illuminant of 5000 K, process E-6."
+ },
+ "grain": {
+  "rms": 11,
+  "note": "Diffuse rms granularity, read at gross diffuse visual density 1.0, 48 µm aperture, 12X."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [80, 120, 290, 315],
+   "x": [132.74, -2.0, 224.99, 0.0],
+   "y": [266.23, 1.0, 173.98, 3.0],
+   "curves": {
+    "top": ["blue", "green", "red"]
+   }
+  },
+  "sensitivity": {
+   "region": [362, 90, 565, 245],
+   "x": [382.76, 300.0, 543.53, 700.0],
+   "y": [130.21, 1.0, 205.94, -1.0],
+   "curves": {
+    "x0": ["blue", "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [85, 380, 275, 575],
+   "x": [148.22, 500.0, 209.67, 600.0],
+   "y": [524.03, 0.5, 431.86, 1.5],
+   "curves": {
+    "index": ["cyan", "yellow", "magenta", "visual_neutral"]
+   }
+  }
+ }
+}

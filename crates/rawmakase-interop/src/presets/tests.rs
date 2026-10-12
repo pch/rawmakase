@@ -76,6 +76,7 @@ fn open_profiles(
     [open::standard(m), open::color(m)]
         .into_iter()
         .flatten()
+        .chain(crate::camera_profiles::film::profiles(m))
         .map(std::sync::Arc::new)
         .collect()
 }
@@ -97,14 +98,21 @@ fn every_builtin_file_is_listed_and_parses() {
             }
         }
     }
-    let mut listed: Vec<_> = builtin::FILES.iter().map(|(p, _)| p.to_string()).collect();
+    let mut listed: Vec<_> = builtin::FILES
+        .iter()
+        .chain(builtin::FILM_FILES)
+        .map(|(p, _)| p.to_string())
+        .collect();
     on_disk.sort();
     listed.sort();
     assert_eq!(on_disk, listed, "assets/presets and builtin::FILES differ");
 
     let (presets, errors) = builtin::presets();
     assert!(errors.is_empty(), "{errors:?}");
-    assert_eq!(presets.len(), builtin::FILES.len());
+    assert_eq!(
+        presets.len(),
+        builtin::FILES.len() + builtin::FILM_FILES.len()
+    );
     let mut ids = std::collections::BTreeSet::new();
     let mut names = std::collections::BTreeSet::new();
     for p in &presets {
@@ -144,6 +152,13 @@ fn builtin_presets_apply_without_imported_profiles() {
         let r = p
             .apply(&base, &m, &profiles, None)
             .unwrap_or_else(|e| panic!("{}: {e:#}", p.name));
+        if p.group == "RMKS Film" {
+            // A film preset chooses its look, which is always there.
+            let look = r.profile.as_ref().unwrap();
+            assert_eq!(format!("RMKS Film: {}", p.name), look.name);
+            assert!(p.profile_substitute(&m, &profiles).is_none());
+            continue;
+        }
         match p.settings.get("CameraProfile") {
             Some(_) => {
                 assert_eq!(

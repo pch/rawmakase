@@ -1,0 +1,53 @@
+{
+ "name": "Kodak Gold 200",
+ "look": "Gold-ish 200",
+ "kind": "negative",
+ "iso": 200,
+ "source": "Kodak Alaris, KODAK GOLD 200 Film, publication E-7022 (March 2022)",
+ "url": "https://www.kodakprofessional.com/sites/default/files/wysiwyg/E7022-1.pdf",
+ "sha256": "8e45b8167a365cf961e69192bb3ff7048fff6a14bb9e55cf7c455555614a51b1",
+ "page": 4,
+ "log_h_ref": -1.14,
+ "notes": {
+  "characteristic": "Daylight exposure, Status M densitometry, Log H Ref -1.14.",
+  "sensitivity": "Daylight, effective exposure 1/50 s, Status M, density 0.2 above D-min, sensitivity = 1/exposure (erg/cm2). Drawn as short line pieces, chained; the cyan-forming layer is drawn in two pieces (a 380-460 nm blue bump and 475-690 nm), clipped at 0.0 between them.",
+  "dye_density": "Diffuse spectral density, typical densities for a midscale neutral subject and D-min (no per-dye curves published)."
+ },
+ "grain": {
+  "print_grain_index": {
+   "135, 4x6 in (4.4X)": 44,
+   "135, 8x10 in (4.4X)": 64,
+   "120 6x6, 4x6 in (2.6X)": 33,
+   "120 6x6, 8x10 in (4.4X)": 44,
+   "120 6x6, 16x20 in (8.8X)": 64
+  },
+  "note": "Print Grain Index (not rms granularity): diffuse-printing illumination, 14 in viewing distance; 25 is the visual threshold, 4 units one just-noticeable difference. Magnifications as printed (the 135 8x10 column also reads 4.4X)."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [78, 60, 268, 252],
+   "x": [127.8, -2.0, 220.06, 0.0],
+   "y": [210.31, 1.0, 118.05, 3.0],
+   "curves": {
+    "top": ["blue", "green", "red"]
+   }
+  },
+  "sensitivity": {
+   "region": [74, 316, 277, 471],
+   "x": [94.91, 300.0, 255.36, 700.0],
+   "y": [431.53, 1.0, 355.75, 3.0],
+   "chain": 0.5,
+   "curves": {
+    "x0": ["blue", "green", "red", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [355, 60, 545, 234],
+   "x": [418.54, 500.0, 479.99, 600.0],
+   "y": [202.88, 0.5, 92.27, 2.0],
+   "curves": {
+    "top": ["midscale_neutral", "minimum"]
+   }
+  }
+ }
+}

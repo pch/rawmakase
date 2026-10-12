@@ -1,0 +1,48 @@
+{
+ "name": "Kodak Professional Ektachrome E100",
+ "look": "Ektachrome-ish E100",
+ "kind": "reversal",
+ "iso": 100,
+ "source": "Kodak Alaris, KODAK PROFESSIONAL EKTACHROME Film E100, publication E-4000 (2018-08), pages 3-4",
+ "url": "https://imaging.kodakalaris.com/sites/default/files/files/products/e4000_ektachrome_100.pdf",
+ "sha256": "d6e6fa1497c4fc16010997b1a8510d9df3b4692e34c48599c8a4338d5768fab6",
+ "page": 3,
+ "viewing_illuminant_k": 5000,
+ "notes": {
+  "characteristic": "Daylight exposure 1/100 s, process E-6, Status A densitometry.",
+  "sensitivity": "Effective exposure 1/10 s, E-6, E.N.D. density 1.0, sensitivity = 1/exposure (erg/cm2).",
+  "dye_density": "Dyes normalized to form a visual neutral density of 1.0 for a viewing illuminant of 5000 K, process E-6."
+ },
+ "grain": {
+  "rms": 8,
+  "note": "Diffuse rms granularity, read at gross diffuse visual density 1.0, 48 µm aperture (no magnification stated)."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [368, 355, 555, 545],
+   "x": [415.02, -2.0, 507.61, 0.0],
+   "y": [496.87, 1.0, 404.69, 3.0],
+   "curves": {
+    "top": ["blue", "green", "red"]
+   }
+  },
+  "sensitivity": {
+   "page": 4,
+   "region": [74, 106, 276, 259],
+   "x": [94.40, 300.0, 254.82, 700.0],
+   "y": [106.97, 2.0, 220.64, -1.0],
+   "curves": {
+    "x0": ["blue", "green", "red"]
+   }
+  },
+  "dye_density": {
+   "page": 4,
+   "region": [70, 349, 272, 502],
+   "x": [70.64, 400.0, 271.10, 700.0],
+   "y": [501.08, 0.0, 392.91, 1.0],
+   "curves": {
+    "index": ["yellow", "magenta", "cyan", "visual_neutral"]
+   }
+  }
+ }
+}

@@ -1,0 +1,48 @@
+{
+ "name": "Fujichrome Provia 400X",
+ "look": "Provia-ish 400X",
+ "kind": "reversal",
+ "iso": 400,
+ "source": "Fuji Photo Film Co., Ltd., FUJICHROME PROVIA 400X Professional [RXP] Product Information Bulletin, Ref. No. AF3-0213E (2006-01), page 7",
+ "url": "https://125px.com/docs/film/fuji/Provia_400X_PIB_1007.pdf",
+ "sha256": "7bb846970004e5e45151eca08b473010d008aba28c6dc6bbe3e28d8caeee4927",
+ "page": 7,
+ "notes": {
+  "characteristic": "Exposure daylight 1/50 s, process E-6/CR-56, densitometry Fuji FAD-30S (Status A).",
+  "sensitivity": "Process E-6/CR-56, densitometry Fuji FAD-30S (Status A), density 1.0 above D-min, sensitivity = 1/exposure (J/cm2); log axis drawn 0 to 3 rather than relative.",
+  "dye_density": "Spectral diffuse density of each dye, exposure separated, process E-6/CR-56; normalized to a peak of 1.0, no viewing illuminant stated."
+ },
+ "grain": {
+  "rms": 11,
+  "note": "Diffuse RMS granularity, micro-densitometer aperture 48 um diameter, sample density +1.0 (Fujifilm measurement)."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [80, 105, 289, 289],
+   "x": [82.30, -4.0, 286.28, 0.0],
+   "y": [261.88, 0.5, 134.34, 3.0],
+   "min_points": 5,
+   "curves": {
+    "top": ["green", "blue", "red"]
+   }
+  },
+  "sensitivity": {
+   "region": [330, 105, 540, 290],
+   "x": [342.76, 400.0, 527.09, 700.0],
+   "y": [228.90, 1.0, 169.39, 2.0],
+   "min_points": 5,
+   "curves": {
+    "x0": ["blue", "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [331, 397, 537, 550],
+   "x": [345.08, 400.0, 522.33, 700.0],
+   "y": [487.95, 0.5, 428.41, 1.0],
+   "min_points": 6,
+   "curves": {
+    "peak": ["yellow", "magenta", "cyan"]
+   }
+  }
+ }
+}

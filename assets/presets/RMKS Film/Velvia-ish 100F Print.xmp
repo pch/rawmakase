@@ -1,0 +1,43 @@
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+   crs:PresetType="Normal"
+   crs:Cluster=""
+   crs:UUID="F5B737C88EB8D557805CFC56E4B831AE"
+   crs:SupportsAmount="True"
+   crs:SupportsColor="True"
+   crs:SupportsMonochrome="False"
+   crs:SupportsHighDynamicRange="True"
+   crs:SupportsNormalDynamicRange="True"
+   crs:SupportsSceneReferred="True"
+   crs:SupportsOutputReferred="False"
+   crs:CameraModelRestriction=""
+   crs:Copyright="RAWmakase contributors, MIT licence"
+   crs:ContactInfo=""
+   crs:Version="18.7"
+   crs:ProcessVersion="15.4"
+   crs:GrainAmount="3"
+   crs:GrainSize="25"
+   crs:GrainFrequency="50"
+   crs:HasSettings="True">
+   <crs:Name>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">Velvia-ish 100F Print</rdf:li>
+    </rdf:Alt>
+   </crs:Name>
+   <crs:Group>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">RMKS Film</rdf:li>
+    </rdf:Alt>
+   </crs:Group>
+   <crs:Look>
+    <rdf:Description
+     crs:Name="RMKS Film: Velvia-ish 100F Print"
+     crs:Amount="1"
+     crs:UUID="F3AECB510FA0EA803531AF5D0F26B26E"
+     crs:SupportsAmount="true"/>
+   </crs:Look>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>

@@ -1,0 +1,48 @@
+{
+ "name": "Kodak UltraMax 400",
+ "look": "UltraMax-ish 400",
+ "kind": "negative",
+ "iso": 400,
+ "source": "Kodak Alaris, KODAK ULTRA MAX 400 Film, publication E-7023 (February 2016)",
+ "url": "https://www.kodakprofessional.com/sites/default/files/wysiwyg/pro/resources/E7023_max_400.pdf",
+ "sha256": "598f44c39c2cd420554d9e7395ce7213e8bf9f1815fbf550dadaeb625826c77d",
+ "page": 4,
+ "log_h_ref": -1.44,
+ "notes": {
+  "characteristic": "Daylight exposure, process C-41, Status M densitometry, Log H Ref -1.44.",
+  "sensitivity": "Daylight, effective exposure 1/100 s, Status M, density 0.2 above D-min, sensitivity = 1/exposure (erg/cm2).",
+  "dye_density": "Process C-41, diffuse spectral density, typical densities for a midscale neutral subject (dashed) and D-min (no per-dye curves published)."
+ },
+ "grain": {
+  "print_grain_index": {
+   "135, 4x6 in (4.4X)": 46
+  },
+  "note": "Print Grain Index (not rms granularity): diffuse-printing illumination, 14 in viewing distance; 25 is the visual threshold, 4 units one just-noticeable difference."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [79, 110, 268, 300],
+   "x": [118.04, -3.0, 228.92, 0.0],
+   "y": [251.22, 1.0, 158.88, 3.0],
+   "curves": {
+    "top": ["blue", "green", "red"]
+   }
+  },
+  "sensitivity": {
+   "region": [75, 368, 280, 525],
+   "x": [96.71, 300.0, 257.48, 700.0],
+   "y": [484.72, 1.0, 408.91, 3.0],
+   "curves": {
+    "x0": ["blue", "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [355, 110, 545, 300],
+   "x": [387.92, 450.0, 510.74, 650.0],
+   "y": [260.37, 0.5, 149.85, 2.0],
+   "curves": {
+    "top": ["midscale_neutral", "minimum"]
+   }
+  }
+ }
+}

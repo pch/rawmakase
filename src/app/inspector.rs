@@ -560,7 +560,8 @@ impl Editor {
                         if ui.selectable_value(&mut r.profile, None, matrix).changed() {
                             r.engine = r.engine.max(3);
                         }
-                        for profile in &profiles {
+                        let film = crate::camera_profiles::film::listing;
+                        for profile in profiles.iter().filter(|p| film(p).is_none()) {
                             if ui
                                 .selectable_value(&mut r.profile, Some(profile.clone()), &profile.name)
                                 .on_hover_text(&profile.copyright)
@@ -568,6 +569,47 @@ impl Editor {
                             {
                                 r.engine = r.engine.max(3);
                             }
+                        }
+                        // The film looks under their group, a section per stock, the
+                        // chosen one's open.
+                        let mut stocks: Vec<(&str, Vec<_>)> = Vec::new();
+                        for profile in &profiles {
+                            if let Some((stock, title)) = film(profile) {
+                                match stocks.iter_mut().find(|(s, _)| *s == stock) {
+                                    Some((_, looks)) => looks.push((title, profile)),
+                                    None => stocks.push((stock, vec![(title, profile)])),
+                                }
+                            }
+                        }
+                        if !stocks.is_empty() {
+                            ui.separator();
+                            ui.label(
+                                egui::RichText::new(crate::camera_profiles::film::GROUP).strong(),
+                            );
+                        }
+                        let chosen = r.profile.as_ref().map(|p| p.name.clone());
+                        for (stock, looks) in stocks {
+                            let open = looks
+                                .iter()
+                                .any(|(_, p)| chosen.as_deref() == Some(p.name.as_str()));
+                            egui::CollapsingHeader::new(stock)
+                                .id_salt(("film-stock", stock))
+                                .default_open(open)
+                                .show(ui, |ui| {
+                                    for (title, profile) in looks {
+                                        if ui
+                                            .selectable_value(
+                                                &mut r.profile,
+                                                Some(profile.clone()),
+                                                title,
+                                            )
+                                            .on_hover_text(&profile.copyright)
+                                            .changed()
+                                        {
+                                            r.engine = r.engine.max(3);
+                                        }
+                                    }
+                                });
                         }
                         ui.separator();
                         if !adobe.is_empty()

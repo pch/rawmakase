@@ -1,0 +1,59 @@
+{
+ "name": "Kodak Ektar 100",
+ "look": "Ektar-ish 100",
+ "kind": "negative",
+ "iso": 100,
+ "source": "Kodak Alaris, KODAK PROFESSIONAL EKTAR 100 Film, publication E-4046 (February 2016)",
+ "url": "https://imaging.kodakalaris.com/sites/default/files/files/products/e4046_ektar_100.pdf",
+ "sha256": "e39971d16dc8679fb92742a229c237acde5b0dddb0428a708f8ad68d7a1d5590",
+ "page": 4,
+ "log_h_ref": -0.84,
+ "notes": {
+  "characteristic": "Daylight exposure, Status M densitometry, Log H Ref -0.84.",
+  "sensitivity": "Daylight, effective exposure 1/25 s, Status M, density 0.2 above D-min, sensitivity = 1/exposure (erg/cm2).",
+  "dye_density": "Diffuse spectral density, typical densities for a midscale neutral subject and D-min (no per-dye curves published)."
+ },
+ "grain": {
+  "print_grain_index": {
+   "135, 4x6 in (4.4X)": "<25",
+   "135, 8x10 in (8.8X)": 38,
+   "135, 16x20 in (17.8X)": 66,
+   "120 6x6, 4x6 in (2.6X)": "<25",
+   "120 6x6, 8x10 in (4.4X)": "<25",
+   "120 6x6, 16x20 in (8.8X)": 38,
+   "4x5 sheet, 4x6 in (1.2X)": "<25",
+   "4x5 sheet, 8x10 in (4X)": "<25",
+   "4x5 sheet, 16x20 in (8X)": "<25",
+   "8x10 sheet, 4x6 in (0.6X)": "<25",
+   "8x10 sheet, 8x10 in (1X)": "<25",
+   "8x10 sheet, 16x20 in (2X)": "<25"
+  },
+  "note": "Print Grain Index (not rms granularity): diffuse-printing illumination, 14 in viewing distance; 25 is the visual threshold, 4 units one just-noticeable difference. Magnifications as printed (the 4x5 row reads 1.2X, 4X, 8X)."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [80, 105, 270, 295],
+   "x": [118.09, -2.0, 228.81, 1.0],
+   "y": [246.3, 1.0, 154.03, 3.0],
+   "curves": {
+    "top": ["blue", "green", "red"]
+   }
+  },
+  "sensitivity": {
+   "region": [72, 354, 277, 510],
+   "x": [94.25, 300.0, 254.59, 700.0],
+   "y": [508.04, 0.0, 356.56, 3.0],
+   "curves": {
+    "x0": ["blue", "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [350, 100, 545, 293],
+   "x": [388.18, 450.0, 511.04, 650.0],
+   "y": [253.54, 0.5, 142.87, 2.0],
+   "curves": {
+    "top": ["midscale_neutral", "minimum"]
+   }
+  }
+ }
+}

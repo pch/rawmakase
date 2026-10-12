@@ -1,0 +1,46 @@
+{
+ "name": "Agfachrome RSX II 100 Professional",
+ "look": "RSX-ish 100",
+ "kind": "reversal",
+ "iso": 100,
+ "source": "Agfa-Gevaert AG, Technical Data: Agfa Professional Films, publication F-PF-E4 (2003-07), page 8",
+ "url": "https://125px.com/docs/film/agfa/Datasheet_F_PF_E4.pdf",
+ "sha256": "c973ddaffec66dce5ccdaaf593b005898895bb6004466b05b31cce868682565f",
+ "page": 8,
+ "viewing_illuminant_k": 5000,
+ "notes": {
+  "characteristic": "Colour density curves: daylight exposure 1/100 s, process AP 44/E-6, Status A and Status M densitometry (not specified per film); x is lg exposure (lx s).",
+  "sensitivity": "Equal-energy spectrum, reading density 1.0 above minimum density; y is lg sensitivity (relative).",
+  "dye_density": "Absorption of the emulsion dyes for a neutral subject of medium brightness: yellow, magenta, cyan and visual grey. Agfachrome colour balance is designed for ISO 3664 viewing light (5000 K)."
+ },
+ "grain": {
+  "rms": 10.0,
+  "note": "Granularity (x 1000): RMS 10.0; daylight exposure, visual filter (V lambda), diffuse density 1.0, 48 um reading aperture."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [227, 458, 360, 564],
+   "x": [230.66, -3.0, 331.28, 1.0],
+   "y": [561.91, 0.0, 461.32, 4.0],
+   "curves": {
+    "top": ["green", "red", "blue"]
+   }
+  },
+  "sensitivity": {
+   "region": [227, 76, 360, 177],
+   "x": [245.27, 400.0, 340.56, 700.0],
+   "y": [174.80, -1.0, 79.48, 2.0],
+   "curves": {
+    "x0": ["blue", "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [227, 217, 360, 286],
+   "x": [245.27, 400.0, 340.56, 700.0],
+   "y": [273.41, 0.25, 230.71, 1.25],
+   "curves": {
+    "index": ["visual_neutral", "yellow", "cyan", "magenta"]
+   }
+  }
+ }
+}

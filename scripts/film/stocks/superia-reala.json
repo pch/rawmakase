@@ -1,0 +1,47 @@
+{
+ "name": "Fujicolor Superia Reala",
+ "look": "Reala-ish 100",
+ "kind": "negative",
+ "iso": 100,
+ "source": "Fuji Photo Film Co., Ltd., FUJICOLOR SUPERIA REALA [CS] Data Sheet, Ref. No. AF3-967E (EIGI-00.12, 2000-12)",
+ "url": "https://125px.com/docs/film/fuji/superia_reala_datasheet.pdf",
+ "sha256": "ec54079823e729707202749f9d0dfc8b8c52dbf21b74734098ccd7d05ff7ac27",
+ "page": 4,
+ "notes": {
+  "characteristic": "Exposure daylight, 1/125 s, process CN-16, Status M densitometry. No reference log exposure for a normally exposed neutral is printed.",
+  "sensitivity": "Process CN-16, Status M, density 1.0 above D-min; relative sensitivity (log) = reciprocal of the exposure (J/cm2) required. Only a 1.0 log bracket is printed, so 0.0 and 1.0 are the bracketing gridlines (relative, not absolute). A fourth, dashed cyan-sensitive layer is also plotted; it is dropped (null) because the model uses three layers.",
+  "dye_density": "Spectral diffuse density, typical densities for a mid-scale neutral subject and for D-min (no per-dye curves published)."
+ },
+ "grain": {
+  "rms": 4,
+  "note": "Diffuse RMS granularity value; micro-densitometer measurement aperture 48 µm diameter, magnification 12x, sample density 1.0 above minimum density."
+ },
+ "plots": {
+  "characteristic": {
+   "region": [68, 124, 275, 272],
+   "x": [109.17, -3.0, 233.15, 0.0],
+   "y": [248.92, 0.5, 145.92, 3.0],
+   "min_points": 2,
+   "curves": {
+    "top": ["blue", "green", "red"]
+   }
+  },
+  "sensitivity": {
+   "region": [321, 123, 513, 277],
+   "x": [347.65, 400.0, 499.78, 700.0],
+   "y": [225.59, 0.0, 174.83, 1.0],
+   "min_points": 2,
+   "curves": {
+    "peak": ["blue", null, "green", "red"]
+   }
+  },
+  "dye_density": {
+   "region": [351, 387, 495, 561],
+   "x": [360.01, 400.0, 483.21, 700.0],
+   "y": [519.43, 0.5, 398.4, 2.0],
+   "curves": {
+    "top": ["midscale_neutral", "minimum"]
+   }
+  }
+ }
+}
