@@ -266,12 +266,11 @@ fn section_checkboxes(
     groups: &mut GroupSelection,
     purpose: Transfer,
 ) {
-    // A preset never carries one photo's Upright correction: it names the mode only.
     let shown: Vec<SettingGroup> = section
         .groups
         .iter()
         .copied()
-        .filter(|g| purpose != Transfer::NewPreset || *g != SettingGroup::UprightTransforms)
+        .filter(|g| purpose != Transfer::NewPreset || g.in_new_presets())
         .collect();
     let chosen = shown.iter().filter(|g| groups.contains(**g)).count();
     let mut all = chosen == shown.len();

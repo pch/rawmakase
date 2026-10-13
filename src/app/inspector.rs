@@ -1441,8 +1441,15 @@ impl Editor {
                 setting_control(ui, r, ParameterId::GrainSize, 0.25, photo);
                 setting_control(ui, r, ParameterId::GrainRoughness, 0.5, photo);
             });
+            subheading(ui, "Film Grain");
+            ui.push_id("film_grain", |ui| {
+                setting_control(ui, r, ParameterId::FilmGrainAmount, 0., photo);
+                setting_control(ui, r, ParameterId::FilmGrainSize, 0.25, photo);
+                setting_control(ui, r, ParameterId::FilmGrainRoughness, 0.5, photo);
+                setting_control(ui, r, ParameterId::FilmGrainColor, 0., photo);
+            });
         }) {
-            r.effects.reset_post_crop();
+            r.reset_post_crop();
         }
         switch.finish(r);
 

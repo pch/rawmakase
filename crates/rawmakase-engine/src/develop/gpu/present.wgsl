@@ -18,6 +18,18 @@ struct Params {
     vignette_feather: f32, lens_vignette: f32, lens_vignette_midpoint: f32, effects: u32,
     count: u32, halo: f32, dark: f32, pad2: u32,
     grain_fine: f32, grain_measured: u32, pad3: u32, pad4: u32,
+    // `effects::FilmGrainField`; a zero amount has no film grain.
+    film_amount: f32, film_radius: f32, film_sigma: f32, film_cell: f32,
+    film_max_radius: f32, film_norm: f32, film_seed: u32,
+    // Film Grain's Color, and its red, green and blue dye layers as the mono one above.
+    film_color: f32, film_red_radius: f32, film_red_cell: f32, film_red_max_radius: f32,
+    film_red_norm: f32, film_red_seed: u32, film_green_radius: f32, film_green_cell: f32,
+    film_green_max_radius: f32, film_green_norm: f32, film_green_seed: u32,
+    film_blue_radius: f32, film_blue_cell: f32, film_blue_max_radius: f32,
+    film_blue_norm: f32, film_blue_seed: u32,
+    // Film Grain's clumping: its coarse noise, as a layer, and its strength.
+    film_clumping: f32, film_clump_radius: f32, film_clump_cell: f32, film_clump_max_radius: f32,
+    film_clump_norm: f32, film_clump_seed: u32, film_clump_sigma: f32, pad5: u32, pad6: u32,
 };
 @group(0) @binding(0) var<storage, read_write> pixels: array<f32>;
 @group(0) @binding(1) var<storage, read_write> scratch: array<f32>;
@@ -106,6 +118,130 @@ fn grain_strength(l: f32) -> f32 {
     }
     let t = clamp((l - GRAIN_L[i - 1u]) / (GRAIN_L[i] - GRAIN_L[i - 1u]), 0.0, 1.0);
     return GRAIN_GAIN[i - 1u] + (GRAIN_GAIN[i] - GRAIN_GAIN[i - 1u]) * t;
+}
+// `film_grain::unit_hash`: integer hash to [0, 1) in 24-bit steps.
+fn unit_hash(x: i32, y: i32, seed: u32) -> f32 {
+    var v = (bitcast<u32>(x) * 0x9e3779b9u) ^ (bitcast<u32>(y) * 0x85ebca6bu) ^ seed;
+    v ^= v >> 16u;
+    v *= 0x7feb352du;
+    v ^= v >> 15u;
+    v *= 0x846ca68bu;
+    v ^= v >> 16u;
+    return f32(v >> 8u) / 16777216.0;
+}
+// `film_grain`'s constants.
+const FILM_CANDIDATES = 8u;
+const FILM_CLUMP_COUNT = 2u;
+const FILM_KERNEL = 2.2;
+const FILM_STRENGTH = 0.12;
+const FILM_COLOR_STRENGTH = 1.1;
+const FILM_OUTER_COUPLING = -0.425;
+const FILM_TONE_PEAK = 0.428881;
+const FILM_WIDTH_PER_RADIUS = 2.0;
+const FILM_WIDTH_BASE = 0.8;
+const FILM_R2 = vec2(0.7548777, 0.5698403);
+const TAU = 6.2831855;
+// One `FilmGrainField`: a grain layer.
+struct FilmLayer {
+    radius: f32, cell: f32, max_radius: f32, norm: f32, seed: u32, sigma: f32, count: u32,
+};
+// `film_grain::tone_strength`.
+fn film_tone_strength(l: f32) -> f32 {
+    let t = clamp(1.0 - l, 0.0, 1.0);
+    if t <= 0.0 || t >= 1.0 { return 0.0; }
+    return t * sqrt(-log(t)) / FILM_TONE_PEAK;
+}
+// `FilmGrainField::noise`.
+fn film_noise(layer: FilmLayer, x: f32, y: f32) -> f32 {
+    var sum = 0.0;
+    let cell = layer.cell;
+    let s = layer.sigma;
+    for (var k = 0u; k < layer.count; k++) {
+        let ox = fract(0.5 + f32(k) * FILM_R2.x) * cell;
+        let oy = fract(0.5 + f32(k) * FILM_R2.y) * cell;
+        let lx = x - ox;
+        let ly = y - oy;
+        let cx = i32(floor(lx / cell));
+        let cy = i32(floor(ly / cell));
+        let key = layer.seed ^ (k * 0x632be5abu);
+        for (var j = -1; j <= 1; j++) {
+            for (var i = -1; i <= 1; i++) {
+                let gx = cx + i;
+                let gy = cy + j;
+                let px = (f32(gx) + unit_hash(gx, gy, key ^ 0xb5ad4eceu)) * cell;
+                let py = (f32(gy) + unit_hash(gx, gy, key ^ 0x1b873593u)) * cell;
+                let d2 = (lx - px) * (lx - px) + (ly - py) * (ly - py);
+                if d2 >= cell * cell { continue; }
+                let u = 1.0 - unit_hash(gx, gy, key ^ 0xcc9e2d51u);
+                let angle = unit_hash(gx, gy, key ^ 0x27d4eb2fu);
+                let z = sqrt(-2.0 * log(u)) * cos(TAU * angle);
+                let r = min(layer.radius * exp(s * z - 0.5 * s * s), layer.max_radius);
+                let reach = FILM_KERNEL * r;
+                let b = 1.0 - d2 / (reach * reach);
+                if b <= 0.0 { continue; }
+                let weight = 2.0 * unit_hash(gx, gy, key ^ 0x68e31da4u) - 1.0;
+                sum += weight * b * b;
+            }
+        }
+    }
+    return sum * layer.norm;
+}
+// `FilmGrainField::delta`.
+fn film_delta(layer: FilmLayer, x: f32, y: f32, l: f32) -> f32 {
+    let strength = film_tone_strength(l);
+    if strength == 0.0 { return 0.0; }
+    var n = 1u;
+    var attenuation = 1.0;
+    if p.scale < 1.0 {
+        n = select(1u, 2u, p.scale >= 0.5);
+        let width = FILM_WIDTH_PER_RADIUS * layer.radius + FILM_WIDTH_BASE;
+        attenuation = min(f32(n) * p.scale * width, 1.0);
+    }
+    let footprint = 1.0 / min(p.scale, 1.0);
+    var sum = 0.0;
+    for (var j = 0u; j < n; j++) {
+        for (var i = 0u; i < n; i++) {
+            let ox = ((f32(i) + 0.5) / f32(n) - 0.5) * footprint;
+            let oy = ((f32(j) + 0.5) / f32(n) - 0.5) * footprint;
+            sum += film_noise(layer, x + ox, y + oy);
+        }
+    }
+    return FILM_STRENGTH * p.film_amount * strength * sum / f32(n * n) * attenuation;
+}
+// `FilmGrainLayers::delta`: the mono grain over the luminance, and with Color each dye
+// layer's grain over its own channel less what they add to the luminance.
+fn film_deltas(x: f32, y: f32, c: vec3<f32>) -> vec3<f32> {
+    let mono_layer = FilmLayer(p.film_radius, p.film_cell, p.film_max_radius, p.film_norm, p.film_seed, p.film_sigma, FILM_CANDIDATES);
+    let mono = film_delta(mono_layer, x, y, luminance(c));
+    if p.film_color == 0.0 {
+        if mono == 0.0 { return vec3(0.0); }
+        return vec3(mono * film_clumps(x, y));
+    }
+    let red = FilmLayer(
+        p.film_red_radius, p.film_red_cell, p.film_red_max_radius, p.film_red_norm, p.film_red_seed,
+        p.film_sigma, FILM_CANDIDATES,
+    );
+    let green = FilmLayer(
+        p.film_green_radius, p.film_green_cell, p.film_green_max_radius, p.film_green_norm, p.film_green_seed,
+        p.film_sigma, FILM_CANDIDATES,
+    );
+    let blue = FilmLayer(
+        p.film_blue_radius, p.film_blue_cell, p.film_blue_max_radius, p.film_blue_norm, p.film_blue_seed,
+        p.film_sigma, FILM_CANDIDATES,
+    );
+    let r = film_delta(red, x, y, c.r);
+    let b = film_delta(blue, x, y, c.b);
+    let dye = vec3(r + FILM_OUTER_COUPLING * b, film_delta(green, x, y, c.g), b + FILM_OUTER_COUPLING * r);
+    return (vec3(mono) + FILM_COLOR_STRENGTH * p.film_color * (dye - vec3(luminance(dye)))) * film_clumps(x, y);
+}
+// `FilmGrainLayers::clumps`.
+fn film_clumps(x: f32, y: f32) -> f32 {
+    let a = p.film_clumping;
+    let clump = FilmLayer(
+        p.film_clump_radius, p.film_clump_cell, p.film_clump_max_radius, p.film_clump_norm,
+        p.film_clump_seed, p.film_clump_sigma, FILM_CLUMP_COUNT,
+    );
+    return max(1.0 + a * film_noise(clump, x, y), 0.0) / sqrt(1.0 + a * a);
 }
 // Rust's `round`: halves away from zero (WGSL's `round` goes to even).
 fn round_away(v: f32) -> f32 {
@@ -244,7 +380,11 @@ fn spatial(color: vec3<f32>, x: u32, y: u32) -> vec3<f32> {
             * min(p.scale, 1.0);
         noise = (coarse * p.grain_coarse + fine * p.grain_fine) * p.grain * strength;
     }
-    return clamp(c * gain + vec3(noise), vec3(0.0), vec3(1.0));
+    c = clamp(c * gain + vec3(noise), vec3(0.0), vec3(1.0));
+    if p.film_amount != 0.0 {
+        c = clamp(c + film_deltas(gx, gy, c), vec3(0.0), vec3(1.0));
+    }
+    return c;
 }
 // The monitor profile as a lattice over 8-bit input, `lut_size` points per axis at
 // equal byte steps, interpolated trilinearly.

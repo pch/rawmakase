@@ -3,9 +3,11 @@ use crate::model::effects::{Effects, VignetteStyle};
 use crate::model::recipe::Recipe;
 use crate::rendered::Rendered;
 use rayon::prelude::*;
+mod film_grain;
 mod grain;
 mod lens_vignette;
 mod vignette;
+pub(crate) use film_grain::FilmGrainLayers;
 pub(crate) use grain::GrainField;
 pub(crate) use lens_vignette::{ManualVignette, combined_table};
 pub(crate) use vignette::PostCropVignette;
@@ -157,9 +159,10 @@ fn defringe_strength(amount: f32, chroma: f32) -> f32 {
 pub fn spatial_finish(im: &mut Rendered, r: &Recipe, origin: [u32; 2], full: [u32; 2]) {
     spatial_finish_scaled(im, r, origin, full, 1.);
 }
-/// Vignettes and grain for an output with `scale` pixels per full-resolution pixel.
-/// Grain keeps its full-resolution pattern and, like the full render resized, loses
-/// amplitude where a preview pixel averages several grains.
+/// Vignettes, grain and film grain for an output with `scale` pixels per
+/// full-resolution pixel. Grain keeps its full-resolution pattern and, like the full
+/// render resized, loses amplitude where a preview pixel averages several grains. Film
+/// grain follows the tone the vignettes and grain leave.
 pub(crate) fn spatial_finish_scaled(
     im: &mut Rendered,
     r: &Recipe,
@@ -169,13 +172,14 @@ pub(crate) fn spatial_finish_scaled(
 ) {
     let e = &r.effects;
     let lens_vignette = r.finished_lens_vignette();
-    if e.grain == 0. && e.vignette == 0. && lens_vignette == 0. {
+    if e.grain == 0. && e.vignette == 0. && lens_vignette == 0. && r.film_grain.is_off() {
         return;
     }
     let vignette = PostCropVignette::new(e, full);
     // `full` is the whole output, `scale` its pixels per full-resolution pixel.
     let edge = full[0].max(full[1]) as f32 / scale;
     let grain = GrainField::new(e, r.grain_model, edge);
+    let film = (!r.film_grain.is_off()).then(|| FilmGrainLayers::new(&r.film_grain, edge));
     im.pixels.par_iter_mut().enumerate().for_each(|(i, p)| {
         let x = origin[0] + i as u32 % im.width;
         let y = origin[1] + i as u32 / im.width;
@@ -198,8 +202,14 @@ pub(crate) fn spatial_finish_scaled(
             )
         };
         let noise = grain.noise(gx, gy, scale, l);
-        for v in p {
+        for v in p.iter_mut() {
             *v = (*v * gain + noise).clamp(0., 1.);
+        }
+        if let Some(film) = &film {
+            let delta = film.delta(gx, gy, scale, *p);
+            for (v, d) in p.iter_mut().zip(delta) {
+                *v = (*v + d).clamp(0., 1.);
+            }
         }
     });
 }

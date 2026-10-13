@@ -46,10 +46,14 @@ fn new_uuid() -> String {
 
 /// The preset for `r`'s settings in `groups`.
 pub fn preset(r: &Recipe, info: &PresetInfo, groups: &GroupSelection) -> String {
-    // A preset never carries one photo's Upright correction, so Upright Transforms
-    // brings nothing, not even the Transform panel's switch.
+    // A preset never carries one photo's Upright correction, nor Film Grain, which XMP
+    // has no setting for, so those groups bring nothing, not even their panel's switch.
     let mut groups = groups.clone();
-    groups.set(SettingGroup::UprightTransforms, GroupInclusion::Excluded);
+    for group in SettingGroup::ALL {
+        if !group.in_new_presets() {
+            groups.set(group, GroupInclusion::Excluded);
+        }
+    }
     let groups = &groups;
     // Lightroom's Amount slider, offered when every setting written scales with it.
     // Spots and masks are never written.
@@ -623,6 +627,20 @@ mod tests {
             !text.contains("Transform") && !text.contains("Upright"),
             "{text}"
         );
+        // Film Grain alone, hidden in New Preset but left in a Check All or Copy
+        // selection, doesn't bring the Effects panel's switch either.
+        let mut film = GroupSelection::none();
+        film.set(SettingGroup::FilmGrain, GroupInclusion::Included);
+        let mut grainy = Recipe::default();
+        grainy.film_grain.amount = 0.4;
+        grainy.panels.set(
+            crate::model::panels::Panel::Effects,
+            crate::model::panels::PanelState::Off,
+        );
+        let text = preset(&grainy, &info, &film);
+        for key in crate::model::panels::Panel::Effects.lightroom_keys() {
+            assert!(!text.contains(key), "{key}: {text}");
+        }
         // A color photo's Black & White mix is still written when the group is chosen.
         let mut mix = GroupSelection::none();
         mix.set(SettingGroup::BlackWhiteMix, GroupInclusion::Included);

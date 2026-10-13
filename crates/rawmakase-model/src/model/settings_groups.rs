@@ -45,6 +45,7 @@ pub enum SettingGroup {
     TransformAdjustments,
     PostCropVignetting,
     Grain,
+    FilmGrain,
     ProcessVersion,
     Calibration,
     SpotRemoval,
@@ -60,7 +61,7 @@ pub struct Section {
 }
 
 impl SettingGroup {
-    pub const ALL: [SettingGroup; 33] = [
+    pub const ALL: [SettingGroup; 34] = [
         SettingGroup::WhiteBalance,
         SettingGroup::Exposure,
         SettingGroup::Contrast,
@@ -89,6 +90,7 @@ impl SettingGroup {
         SettingGroup::TransformAdjustments,
         SettingGroup::PostCropVignetting,
         SettingGroup::Grain,
+        SettingGroup::FilmGrain,
         SettingGroup::ProcessVersion,
         SettingGroup::Calibration,
         SettingGroup::SpotRemoval,
@@ -156,7 +158,7 @@ impl SettingGroup {
             },
             Section {
                 title: "Effects",
-                groups: &[PostCropVignetting, Grain],
+                groups: &[PostCropVignetting, Grain, FilmGrain],
             },
             Section {
                 title: "Process & Calibration",
@@ -204,12 +206,22 @@ impl SettingGroup {
             TransformAdjustments => "Transform Adjustments",
             PostCropVignetting => "Post-Crop Vignetting",
             Grain => "Grain",
+            FilmGrain => "Film Grain",
             ProcessVersion => "Process Version",
             Calibration => "Calibration",
             SpotRemoval => "Spot Removal",
             Crop => "Crop",
             Masking => "Masking",
         }
+    }
+    /// Whether a new preset, saved as XMP, can carry this group: not one photo's
+    /// Upright correction (it names the mode only), nor Film Grain, which XMP has no
+    /// setting for.
+    pub fn in_new_presets(self) -> bool {
+        !matches!(
+            self,
+            SettingGroup::UprightTransforms | SettingGroup::FilmGrain
+        )
     }
     /// The panel whose switch travels with this group: every group of a panel with a
     /// switch carries it.
@@ -223,7 +235,7 @@ impl SettingGroup {
             Sharpening | LuminanceNoiseReduction | ColorNoiseReduction => Panel::Detail,
             LensProfileCorrections | ChromaticAberration | LensVignetting => Panel::LensCorrections,
             UprightMode | UprightTransforms | TransformAdjustments => Panel::Transform,
-            PostCropVignetting | Grain => Panel::Effects,
+            PostCropVignetting | Grain | FilmGrain => Panel::Effects,
             Calibration => Panel::Calibration,
             SpotRemoval => Panel::SpotRemoval,
             Masking => Panel::Masks,
@@ -341,6 +353,7 @@ impl SettingGroup {
                 e.grain_seed = f.grain_seed;
                 to.grain_model = from.grain_model;
             }
+            FilmGrain => to.film_grain = from.film_grain,
             ProcessVersion => {
                 to.engine = from.engine;
                 to.profile_tone = from.profile_tone;
@@ -623,6 +636,7 @@ pub(crate) fn every_setting(r: &Recipe) -> Vec<(&'static str, Kind)> {
         grain_model: _,
         clarity_model: _,
         texture_model: _,
+        film_grain: _,
         contrast_model: _,
         lens_vignette_model: _,
         retouch_model: _,
@@ -731,6 +745,7 @@ pub(crate) fn every_setting(r: &Recipe) -> Vec<(&'static str, Kind)> {
         ("reference_color", Group(ProcessVersion)),
         ("parametric_model", Group(ProcessVersion)),
         ("grain_model", Group(Grain)),
+        ("film_grain", Group(FilmGrain)),
         ("clarity_model", Group(Clarity)),
         ("texture_model", Group(Texture)),
         ("contrast_model", Group(ProcessVersion)),

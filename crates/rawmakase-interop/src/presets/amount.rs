@@ -384,6 +384,8 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         grain_model,
         clarity_model,
         texture_model,
+        // XMP presets don't carry it: the photo's own, at every Amount.
+        film_grain,
         contrast_model: _,
         lens_vignette_model,
         retouch_model,
@@ -477,6 +479,7 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         grain_model: *grain_model,
         clarity_model: *clarity_model,
         texture_model: *texture_model,
+        film_grain: *film_grain,
         preset_name: preset_name.clone(),
         preset_settings: preset_settings.clone(),
         profile: profile.clone(),

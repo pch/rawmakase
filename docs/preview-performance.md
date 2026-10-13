@@ -36,7 +36,10 @@ reduced to twice the output size (four times the pixels) and resized it afterwar
 Radius-based effects are scaled to the output: sharpening uses the full-resolution
 radius times the output scale (a three-tap kernel of the same variance below half a
 pixel), Clarity and Texture radii follow the level size, and grain keeps its
-full-resolution pattern with the amplitude a resized export would have. Fit is
+full-resolution pattern with the amplitude a resized export would have. Film Grain
+averages the full-resolution grains under each preview pixel exactly down to half size
+(2×2 samples a pixel); smaller previews, such as Fit, take one sample a pixel and scale
+its strength to the grain a resized export would have. Fit is
 therefore an approximation of the export resized, not identical to it; a unit test
 bounds the mean difference on a textured image with sharpening, local and spatial
 effects, and the benchmark checks each photo. 100% regions and exports are
@@ -467,10 +470,11 @@ discarded. The interactive draft remains an approximation of the final render.
 
 ## Reproduce
 
-Standard tests do not require a GPU. Run hardware checks explicitly:
+Standard tests do not require a GPU. Run hardware checks explicitly (with the
+application package selected too: the engine crate alone enables no wgpu backend):
 
 ```sh
-cargo test --locked -p rawmakase-engine develop::gpu::tests -- --ignored --nocapture
+cargo test --locked -p rawmakase-engine -p rawmakase --lib develop::gpu::tests -- --ignored --nocapture
 cargo run --release --locked --example preview_benchmark -- /path/to/photo.RAF 3
 ```
 

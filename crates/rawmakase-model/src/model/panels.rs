@@ -149,7 +149,7 @@ impl Panel {
                 r.constrain_crop = defaults.constrain_crop;
             }
             Panel::Effects => {
-                e.reset_post_crop();
+                r.reset_post_crop();
                 // Renders nothing at Amount 0; a first Grain edit sets it.
                 r.grain_model = defaults.grain_model;
             }
@@ -243,6 +243,17 @@ mod tests {
         after.effects.grain = 0.4;
         after.adopt_measured_grain(0.);
         assert!(Panel::Effects.holds_change(&before, &after));
+        // Film Grain is the Effects panel's, and switching it off keeps the seed.
+        let mut after = before.clone();
+        after.film_grain.amount = 0.3;
+        assert!(Panel::Effects.holds_change(&before, &after));
+        assert!(!Panel::Detail.holds_change(&before, &after));
+        let mut off = after.clone();
+        off.film_grain.seed = 9;
+        off.panels.set(Panel::Effects, PanelState::Off);
+        let shown = off.as_rendered();
+        assert!(shown.film_grain.is_off());
+        assert_eq!(shown.film_grain.seed, 9);
         // A first spot also sets the measured feather.
         let mut after = before.clone();
         after.add_retouch(crate::model::retouch::RetouchOp {

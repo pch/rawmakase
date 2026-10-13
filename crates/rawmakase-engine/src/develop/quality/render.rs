@@ -471,6 +471,7 @@ pub(crate) fn render_preview(
         .as_ref()
         .is_some_and(|w| w.uses(&[slot::SHARPNESS, slot::NOISE]));
     let spatial = r.effects.grain != 0.
+        || !r.film_grain.is_off()
         || r.effects.vignette != 0.
         || r.finished_lens_vignette() != 0.
         || local_finish;

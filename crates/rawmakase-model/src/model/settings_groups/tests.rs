@@ -56,6 +56,13 @@ fn everything_changed() -> Recipe {
         grain_model: crate::model::operators::GrainModel::Measured,
         clarity_model: crate::model::operators::ClarityModel::Measured,
         texture_model: crate::model::operators::TextureModel::Measured,
+        film_grain: crate::model::film_grain::FilmGrain {
+            amount: 0.3,
+            size: 0.5,
+            roughness: 0.75,
+            color: 0.5,
+            seed: 9,
+        },
         contrast_model: crate::model::operators::ContrastModel::Adaptive,
         lens_vignette_model: crate::model::operators::LensVignetteModel::Measured,
         retouch_model: crate::model::operators::RetouchModel::Measured,
@@ -735,4 +742,18 @@ fn masks_made_from_a_selection_stay_on_their_photo() {
     let out = transfer(from(&full, &m), &to, &selection, target);
     assert_eq!(out.recipe.masks.len(), crate::model::masks::MAX_GROUPS);
     assert_eq!(out.recipe.masks.last(), Some(&own));
+}
+
+/// New presets are XMP: Film Grain, which XMP can't hold, and one photo's Upright
+/// correction are left out of them; everything else can be chosen.
+#[test]
+fn new_presets_offer_every_group_xmp_can_carry() {
+    let left_out: Vec<SettingGroup> = SettingGroup::ALL
+        .into_iter()
+        .filter(|g| !g.in_new_presets())
+        .collect();
+    assert_eq!(
+        left_out,
+        [SettingGroup::UprightTransforms, SettingGroup::FilmGrain]
+    );
 }

@@ -113,6 +113,7 @@ fn gpu_preview_preserves_regions_spatial_effects_and_falls_back() -> Result<()> 
             if spatial {
                 recipe.effects.grain = 0.4;
                 recipe.effects.vignette = -0.3;
+                recipe.film_grain.amount = 0.3;
             }
             // Reduced Fit sizes render from the pyramid on the CPU; full size and
             // regions use GPU finishing.
@@ -528,6 +529,15 @@ fn presented_previews_match_the_cpu_render() -> Result<()> {
             if style == ColorPriority {
                 recipe.grain_model = crate::model::operators::GrainModel::Measured;
             }
+            // Film Grain of another size, roughness and seed with each style.
+            recipe.film_grain = crate::model::film_grain::FilmGrain {
+                amount: 0.35,
+                size: [0.25, 0., 1.][style as usize],
+                roughness: [0.5, 1., 0.][style as usize],
+                // Mono, half and full colour grain.
+                color: [0., 0.5, 1.][style as usize],
+                seed: [42, 7, 123][style as usize],
+            };
             // The measured Clarity, in the map, on Paint Overlay cases.
             if style == PaintOverlay {
                 recipe.clarity_model = crate::model::operators::ClarityModel::Measured;
@@ -964,4 +974,89 @@ fn previews_submit_only_once_the_window_surface_is_reconfigured() {
     drop(surface);
     rx.recv_timeout(Duration::from_secs(10)).unwrap();
     preview.join().unwrap();
+}
+
+/// Film Grain's cost in presented previews, for the benchmark gate: a 3000×2000 photo
+/// at a half and at a ninth of full size (16 samples a pixel), with Film Grain off,
+/// mono and in colour. (A 6000×4000 photo is beyond the device's buffer limits here, so its preview
+/// falls back to the CPU.) `cargo test --release -p rawmakase-engine -p rawmakase --lib film_grain_preview_time
+/// -- --ignored --nocapture`.
+#[test]
+#[ignore = "Requires a hardware compute adapter; timing"]
+fn film_grain_preview_time() -> Result<()> {
+    use crate::{
+        camera_data::{CameraImage, Metadata},
+        develop::{PreviewRenderer, quality::Output},
+    };
+    let (w, h) = (3000u32, 2000u32);
+    #[allow(clippy::approx_constant)] // Exact camera matrix coefficients.
+    let metadata = Metadata {
+        make: "Fujifilm".into(),
+        model: "X100F".into(),
+        width: w,
+        height: h,
+        wb: [2.02, 1., 1.89],
+        cam_xyz: [
+            [1.1434, -0.4948, -0.121],
+            [-0.3746, 1.2042, 0.1903],
+            [-0.0666, 0.1479, 0.5235],
+        ],
+        ..Default::default()
+    };
+    let image = CameraImage {
+        width: w,
+        height: h,
+        pixels: (0..w * h)
+            .map(|i| {
+                let x = (i % w) as f32 / w as f32;
+                [0.1 + 0.6 * x; 3]
+            })
+            .collect(),
+        metadata: metadata.clone(),
+        recovered: Default::default(),
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+    };
+    let profile = crate::camera_profiles::CameraProfile::camera_matrix_default(&metadata)
+        .unwrap()
+        .with_test_tables();
+    let base = Recipe {
+        profile: Some(std::sync::Arc::new(profile)),
+        reference_curves: true,
+        reference_color: true,
+        reference_calibration: true,
+        ..Default::default()
+    };
+    let mut gpu = PreviewRenderer::with_gpu();
+    eprintln!("GPU: {:?}", gpu.adapter_name());
+    let cancel = AtomicBool::new(false);
+    let display = super::Display {
+        slot: super::Slot::Whole,
+        clipping: crate::rendered::ClipOverlay::NONE,
+        monitor: None,
+        navigator: None,
+        thumbnail: None,
+        samples: false,
+        drawn: Vec::new(),
+    };
+    for max_edge in [1500, 330] {
+        for (amount, color) in [(0., 0.), (0.3, 0.), (0.3, 0.5), (0.3, 1.)] {
+            let mut recipe = base.clone();
+            recipe.film_grain.amount = amount;
+            recipe.film_grain.color = color;
+            let mut best = std::time::Duration::MAX;
+            for _ in 0..4 {
+                let start = std::time::Instant::now();
+                let Output::Frame(_) =
+                    gpu.render_to(&image, &recipe, max_edge, None, &cancel, Some(&display))?
+                else {
+                    panic!("{max_edge}: {:?}", gpu.fallback_reason());
+                };
+                best = best.min(start.elapsed());
+            }
+            eprintln!("edge {max_edge}, Film Grain {amount}, Color {color}: {best:?}");
+        }
+    }
+    Ok(())
 }

@@ -454,6 +454,54 @@ mod tests {
             assert!(error < 0.012, "edge {edge}: mean error {error}");
         }
     }
+    /// Film Grain in Fit agrees with the resized export: about the same mean, and grain
+    /// of about the same strength (its root mean square over the render without it).
+    #[test]
+    fn fit_film_grain_approximates_the_resized_export() {
+        let (w, h) = (1200, 800);
+        let mut im = image(w, h, 0.);
+        for (i, p) in im.pixels.iter_mut().enumerate() {
+            let (x, y) = ((i as u32 % w) as f32, (i as u32 / w) as f32);
+            let v = 0.2 + 0.15 * (x * 0.004).sin() * (y * 0.003).cos() + x / w as f32 * 0.2;
+            *p = [v * 1.1, v, v * 0.8];
+        }
+        let plain = Recipe::default();
+        let mut grain = plain.clone();
+        grain.film_grain.amount = 0.4;
+        let cancel = AtomicBool::new(false);
+        let rms = |a: &Rendered, b: &Rendered| {
+            let n = (a.pixels.len() * 3) as f32;
+            let sum: f32 = a
+                .pixels
+                .iter()
+                .flatten()
+                .zip(b.pixels.iter().flatten())
+                .map(|(x, y)| (x - y).powi(2))
+                .sum();
+            (sum / n).sqrt()
+        };
+        let mean =
+            |a: &Rendered| a.pixels.iter().flatten().sum::<f32>() / (a.pixels.len() * 3) as f32;
+        for edge in [100, 180, 300] {
+            let export =
+                |r: &Recipe| quality::render(&im, &r.checked().unwrap(), edge, None).unwrap();
+            let fit = |r: &Recipe| {
+                PreviewRenderer::default()
+                    .render(&im, r, edge, None, &cancel)
+                    .unwrap()
+            };
+            let (export_plain, export_grain) = (export(&plain), export(&grain));
+            let (fit_plain, fit_grain) = (fit(&plain), fit(&grain));
+            let shift = (mean(&fit_grain) - mean(&export_grain)).abs();
+            let ratio = rms(&fit_grain, &fit_plain) / rms(&export_grain, &export_plain);
+            eprintln!("edge {edge}: mean difference {shift}, grain RMS ratio {ratio}");
+            assert!(shift < 0.005, "edge {edge}: mean difference {shift}");
+            assert!(
+                (ratio - 1.).abs() <= 0.4,
+                "edge {edge}: grain RMS ratio {ratio}"
+            );
+        }
+    }
     /// Every edit, including ones that change only cached stages, must render exactly
     /// as a renderer without cached state would.
     #[test]

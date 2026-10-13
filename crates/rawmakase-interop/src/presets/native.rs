@@ -113,6 +113,24 @@ mod tests {
         assert_eq!(applied.panels.state(Panel::RedEye), PanelState::On);
         assert_eq!(applied.panels.state(Panel::SpotRemoval), PanelState::On);
     }
+    /// A native preset is a whole recipe, so it carries Film Grain, which XMP can't.
+    #[test]
+    fn a_native_preset_carries_film_grain() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("grain.json");
+        let mut preset = Recipe::default();
+        preset.film_grain.amount = 0.3;
+        preset.film_grain.size = 0.75;
+        save_preset(&path, &preset).unwrap();
+        let mut photo = Recipe::default();
+        photo.film_grain.size = 0.1;
+        let applied = applied_to(load_preset(&path).unwrap(), &photo);
+        assert_eq!(applied.film_grain, preset.film_grain);
+        // One saved without it gives the photo the defaults, as every other setting.
+        save_preset(&path, &Recipe::default()).unwrap();
+        let applied = applied_to(load_preset(&path).unwrap(), &photo);
+        assert!(applied.film_grain.is_default());
+    }
     #[test]
     fn a_preset_refuses_masks_made_from_a_selection() {
         use crate::model::masks::{

@@ -71,6 +71,13 @@ pub struct Recipe {
         skip_serializing_if = "crate::model::operators::TextureModel::is_original"
     )]
     pub texture_model: crate::model::operators::TextureModel,
+    /// Effects > Film Grain, RAWmakase's own. Kept outside `effects` and omitted at
+    /// its defaults, so releases that predate it read the recipe and keep it.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::model::film_grain::FilmGrain::is_default"
+    )]
+    pub film_grain: crate::model::film_grain::FilmGrain,
     pub preset_name: String,
     pub preset_settings: std::collections::BTreeMap<String, String>,
     pub profile: Option<std::sync::Arc<crate::camera_profiles::CameraProfile>>,
@@ -317,6 +324,7 @@ impl Default for Recipe {
             grain_model: Default::default(),
             clarity_model: Default::default(),
             texture_model: Default::default(),
+            film_grain: Default::default(),
             preset_name: String::new(),
             preset_settings: Default::default(),
             profile: None,
@@ -604,6 +612,7 @@ impl Recipe {
     }
     pub fn validate(&self) -> Result<()> {
         self.effects.validate()?;
+        self.film_grain.validate()?;
         ensure!(
             (1..=4).contains(&self.engine),
             "Unsupported rendering engine"
@@ -875,6 +884,12 @@ impl Recipe {
         self.sharpening_radius = d.radius;
         self.sharpening_detail = d.detail;
         self.sharpening_masking = d.masking;
+    }
+    /// The Effects panel's reset: post-crop vignette, Grain and Film Grain at their
+    /// defaults, the grain seeds kept.
+    pub fn reset_post_crop(&mut self) {
+        self.effects.reset_post_crop();
+        self.film_grain.reset();
     }
     /// After an edit of Grain from Amount `previous`: grain added from none has nothing
     /// of the original operator's to keep, so it takes the measured one.
@@ -1191,6 +1206,7 @@ mod tests {
             "grain_model": "Measured",
             "clarity_model": "Measured",
             "texture_model": "Measured",
+            "film_grain": {"amount": 0.0, "size": 0.5, "roughness": 0.25, "color": 0.5, "seed": 42},
             "profile_amount": 0.5,
             "sharpening_model": "Measured",
             "parametric_model": "Layered",

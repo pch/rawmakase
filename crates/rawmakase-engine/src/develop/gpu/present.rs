@@ -4,7 +4,7 @@
 //! shown pixels for the white balance loupe come back.
 use super::{Processor, develop::Input, uniforms::PresentParams};
 use crate::develop::{
-    effects::{GrainField, PostCropVignette},
+    effects::{FilmGrainLayers, GrainField, PostCropVignette},
     pipeline::pixel_params::PixelParams,
     quality,
 };
@@ -430,7 +430,8 @@ impl Processor {
         };
         let e = &recipe.effects;
         let lens_vignette = recipe.finished_lens_vignette();
-        let effects = e.grain != 0. || e.vignette != 0. || lens_vignette != 0.;
+        let effects =
+            e.grain != 0. || e.vignette != 0. || lens_vignette != 0. || !recipe.film_grain.is_off();
         let [cx, cy, cw, ch] = finish.crop;
         let vignette = PostCropVignette::new(e, finish.full);
         let grain = GrainField::new(
@@ -438,6 +439,11 @@ impl Processor {
             recipe.grain_model,
             finish.full[0].max(finish.full[1]) as f32 / finish.scale,
         );
+        let film = FilmGrainLayers::new(
+            &recipe.film_grain,
+            finish.full[0].max(finish.full[1]) as f32 / finish.scale,
+        );
+        let (mono, [red, green, blue]) = (film.mono, film.layers);
         let parameters = |shown: bool| -> wgpu::Buffer {
             let values = PresentParams {
                 width,
@@ -485,6 +491,36 @@ impl Processor {
                 dark: sharpener.dark,
                 grain_fine: grain.fine,
                 grain_measured: (grain.model == GrainModel::Measured) as u32,
+                film_amount: mono.amount,
+                film_radius: mono.radius,
+                film_sigma: mono.sigma,
+                film_cell: mono.cell,
+                film_max_radius: mono.max_radius,
+                film_norm: mono.norm,
+                film_seed: mono.seed,
+                film_color: film.color,
+                film_red_radius: red.radius,
+                film_red_cell: red.cell,
+                film_red_max_radius: red.max_radius,
+                film_red_norm: red.norm,
+                film_red_seed: red.seed,
+                film_green_radius: green.radius,
+                film_green_cell: green.cell,
+                film_green_max_radius: green.max_radius,
+                film_green_norm: green.norm,
+                film_green_seed: green.seed,
+                film_blue_radius: blue.radius,
+                film_blue_cell: blue.cell,
+                film_blue_max_radius: blue.max_radius,
+                film_blue_norm: blue.norm,
+                film_blue_seed: blue.seed,
+                film_clumping: film.clumping,
+                film_clump_radius: film.clump.radius,
+                film_clump_cell: film.clump.cell,
+                film_clump_max_radius: film.clump.max_radius,
+                film_clump_norm: film.clump.norm,
+                film_clump_seed: film.clump.seed,
+                film_clump_sigma: film.clump.sigma,
                 ..Default::default()
             };
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
