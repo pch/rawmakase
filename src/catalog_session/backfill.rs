@@ -236,29 +236,12 @@ fn read_info(path: &Path) -> Option<Option<PhotoInfo>> {
         ))
     } else {
         let mut info = crate::exif::photo_info(path).unwrap_or_default();
-        // A header that cannot be read yet (a file still being copied) is
+        // A rendered file's size as shown, after its orientation, from its
+        // header alone. A header that cannot be read yet (a file still being copied) is
         // tried again later.
-        info.dimensions = Some(raster_dimensions(path)?);
+        info.dimensions = Some(crate::raster::dimensions(path)?);
         (info != PhotoInfo::default()).then_some(info)
     })
-}
-
-/// A JPEG, TIFF or PNG's size as shown, after its EXIF orientation, from its
-/// header alone.
-fn raster_dimensions(path: &Path) -> Option<(u32, u32)> {
-    use image::ImageDecoder;
-    let mut decoder = image::ImageReader::open(path)
-        .ok()?
-        .with_guessed_format()
-        .ok()?
-        .into_decoder()
-        .ok()?;
-    let (w, h) = decoder.dimensions();
-    let turned = decoder.orientation().is_ok_and(|o| {
-        use image::metadata::Orientation::*;
-        matches!(o, Rotate90 | Rotate270 | Rotate90FlipH | Rotate270FlipH)
-    });
-    Some(if turned { (h, w) } else { (w, h) })
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 //! Opening a JPEG, PNG or TIFF, the files RAWmakase shows without developing.
 use anyhow::{Result, anyhow};
+use image::metadata::Orientation;
 use image::{DynamicImage, ImageDecoder, RgbImage};
 use moxcms::{
     ColorProfile, DataColorSpace, Layout, ToneReprCurve, TransformExecutor, TransformOptions,
@@ -58,7 +59,9 @@ struct Prepared {
     refused: Option<Unsupported>,
 }
 
-fn prepare(path: &Path) -> Result<Prepared> {
+/// The decoder for the file's content (not its extension), with the reason
+/// it can't be edited if any. Applies no size limit.
+fn open_decoder(path: &Path) -> Result<(Box<dyn ImageDecoder>, Option<Unsupported>)> {
     let mut head = [0u8; 64];
     let n = {
         use std::io::Read;
@@ -72,35 +75,38 @@ fn prepare(path: &Path) -> Result<Prepared> {
         }
         n
     };
-    let (mut decoder, refused): (Box<dyn ImageDecoder>, Option<Unsupported>) =
-        match sniff(&head[..n]) {
-            Kind::Webp { animated } => (
-                Box::new(
-                    image::ImageReader::open(path)?
-                        .with_guessed_format()?
-                        .into_decoder()?,
-                ),
-                animated.then(|| Unsupported("animated".into())),
+    Ok(match sniff(&head[..n]) {
+        Kind::Webp { animated } => (
+            Box::new(
+                image::ImageReader::open(path)?
+                    .with_guessed_format()?
+                    .into_decoder()?,
             ),
-            Kind::Jxl => {
-                let file = jxl::JxlFile::open(path)?;
-                let refused = file.refusal();
-                (Box::new(file), refused)
-            }
-            Kind::Avif => {
-                let file = avif::AvifFile::open(path)?;
-                let refused = file.refusal();
-                (Box::new(file), refused)
-            }
-            _ => (
-                Box::new(
-                    image::ImageReader::open(path)?
-                        .with_guessed_format()?
-                        .into_decoder()?,
-                ),
-                None,
+            animated.then(|| Unsupported("animated".into())),
+        ),
+        Kind::Jxl => {
+            let file = jxl::JxlFile::open(path)?;
+            let refused = file.refusal();
+            (Box::new(file), refused)
+        }
+        Kind::Avif => {
+            let file = avif::AvifFile::open(path)?;
+            let refused = file.refusal();
+            (Box::new(file), refused)
+        }
+        _ => (
+            Box::new(
+                image::ImageReader::open(path)?
+                    .with_guessed_format()?
+                    .into_decoder()?,
             ),
-        };
+            None,
+        ),
+    })
+}
+
+fn prepare(path: &Path) -> Result<Prepared> {
+    let (mut decoder, refused) = open_decoder(path)?;
     let (w, h) = decoder.dimensions();
     anyhow::ensure!(
         (w as u64) * (h as u64) <= 150_000_000,
@@ -117,6 +123,19 @@ fn prepare(path: &Path) -> Result<Prepared> {
         orientation,
         profile,
         refused,
+    })
+}
+
+/// The size of the image at `path` as shown, after its orientation, from its
+/// header alone; `None` when it can't be read.
+pub fn dimensions(path: &Path) -> Option<(u32, u32)> {
+    let (mut decoder, _) = open_decoder(path).ok()?;
+    let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+    let (w, h) = decoder.dimensions();
+    use Orientation::*;
+    Some(match orientation {
+        Rotate90 | Rotate270 | Rotate90FlipH | Rotate270FlipH => (h, w),
+        _ => (w, h),
     })
 }
 
@@ -727,6 +746,65 @@ mod tests {
         let damaged = dir.path().join("damaged.jpg");
         std::fs::write(&damaged, b"not a jpeg").unwrap();
         assert!(super::probe(&damaged).is_ok());
+    }
+
+    #[test]
+    fn dimensions_are_upright_and_come_from_the_header() {
+        assert_eq!(super::dimensions(&fixture("rotated.avif")), Some((12, 16)));
+        assert_eq!(super::dimensions(&fixture("rotated.webp")), Some((12, 16)));
+        assert_eq!(super::dimensions(&fixture("metadata.jxl")), Some((16, 12)));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rotated.jpg");
+        rotated_jpeg(&path);
+        assert_eq!(super::dimensions(&path), Some((1, 2)));
+    }
+
+    #[test]
+    fn a_file_opens_by_its_content_whatever_its_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        for (from, to, tolerance) in [
+            ("metadata.webp", "a.jpg", 0),
+            ("ten-bit.avif", "b.png", 0),
+            // A JPEG transcode, so the pixels are only near.
+            ("metadata.jxl", "c.webp", 8),
+        ] {
+            let path = dir.path().join(to);
+            std::fs::copy(fixture(from), &path).unwrap();
+            assert_corners_near(corners(&decode(&path).unwrap()), UPRIGHT, tolerance);
+        }
+    }
+
+    #[test]
+    fn dimensions_have_no_size_cap() {
+        fn crc32(bytes: &[u8]) -> u32 {
+            let mut crc = !0u32;
+            for &b in bytes {
+                crc ^= b as u32;
+                for _ in 0..8 {
+                    crc = (crc >> 1) ^ (0xedb8_8320 & (crc & 1).wrapping_neg());
+                }
+            }
+            !crc
+        }
+        fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], body: &[u8]) {
+            out.extend((body.len() as u32).to_be_bytes());
+            let mut data = kind.to_vec();
+            data.extend(body);
+            out.extend(&data);
+            out.extend(crc32(&data).to_be_bytes());
+        }
+        let mut ihdr = Vec::new();
+        ihdr.extend(20000u32.to_be_bytes());
+        ihdr.extend(10000u32.to_be_bytes());
+        ihdr.extend([8, 2, 0, 0, 0]);
+        let mut file = b"\x89PNG\r\n\x1a\n".to_vec();
+        chunk(&mut file, b"IHDR", &ihdr);
+        chunk(&mut file, b"IDAT", &[0x78, 0x01]);
+        chunk(&mut file, b"IEND", &[]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("huge.png");
+        std::fs::write(&path, file).unwrap();
+        assert_eq!(super::dimensions(&path), Some((20000, 10000)));
     }
 
     /// A 2x1 JPEG whose EXIF says Orientation 6 (rotate 90 clockwise).
