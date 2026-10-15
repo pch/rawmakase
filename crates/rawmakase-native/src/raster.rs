@@ -1,4 +1,4 @@
-//! Opening a JPEG, PNG or TIFF, the files RAWmakase shows without developing.
+//! Opening a JPEG, PNG, TIFF, WebP, AVIF or JPEG XL, the files RAWmakase shows without developing.
 use anyhow::{Result, anyhow};
 use image::metadata::Orientation;
 use image::{DynamicImage, ImageDecoder, RgbImage};
