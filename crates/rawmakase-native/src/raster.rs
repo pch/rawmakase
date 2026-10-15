@@ -9,19 +9,85 @@ use rayon::prelude::*;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+/// What a file's first bytes say it is.
+#[derive(Debug, PartialEq)]
+enum Kind {
+    Avif,
+    Jxl,
+    Webp { animated: bool },
+    Other,
+}
+
+fn sniff(head: &[u8]) -> Kind {
+    if head.len() >= 12 && &head[0..4] == b"RIFF" && &head[8..12] == b"WEBP" {
+        // A VP8X header's flags say whether the file is animated.
+        let animated = head.len() >= 21 && &head[12..16] == b"VP8X" && head[20] & 0x02 != 0;
+        return Kind::Webp { animated };
+    }
+    if head.starts_with(&[0xff, 0x0a])
+        || head.starts_with(&rawmakase_interop::isobmff::JXL_CONTAINER)
+    {
+        return Kind::Jxl;
+    }
+    if head.len() >= 12 && &head[4..8] == b"ftyp" {
+        let brands = &head[8..head.len().min(64)];
+        if brands
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|b| b == b"avif" || b == b"avis")
+        {
+            return Kind::Avif;
+        }
+    }
+    Kind::Other
+}
+
 /// A file's decoder with what both ways of reading it need first: refused
-/// above 150 MP, its orientation, and its embedded ICC profile when it has one
-/// that can be read.
-fn prepare(
-    path: &Path,
-) -> Result<(
-    impl image::ImageDecoder,
-    image::metadata::Orientation,
-    Option<ColorProfile>,
-)> {
-    let mut decoder = image::ImageReader::open(path)?
-        .with_guessed_format()?
-        .into_decoder()?;
+/// above 150 MP, its orientation, its colour profile when it has one that can
+/// be read, and why Develop must not edit it when it must not.
+struct Prepared {
+    decoder: Box<dyn ImageDecoder>,
+    orientation: image::metadata::Orientation,
+    profile: Option<ColorProfile>,
+    /// Why Develop must not edit it, though the Library can show it.
+    refused: Option<Unsupported>,
+}
+
+fn prepare(path: &Path) -> Result<Prepared> {
+    let mut head = [0u8; 64];
+    let n = {
+        use std::io::Read;
+        let mut f = std::fs::File::open(path)?;
+        let mut n = 0;
+        while n < head.len() {
+            match f.read(&mut head[n..])? {
+                0 => break,
+                read => n += read,
+            }
+        }
+        n
+    };
+    let (mut decoder, refused): (Box<dyn ImageDecoder>, Option<Unsupported>) =
+        match sniff(&head[..n]) {
+            Kind::Webp { animated } => (
+                Box::new(
+                    image::ImageReader::open(path)?
+                        .with_guessed_format()?
+                        .into_decoder()?,
+                ),
+                animated.then(|| Unsupported("animated".into())),
+            ),
+            // Tasks 4 and 5 add Jxl and Avif.
+            _ => (
+                Box::new(
+                    image::ImageReader::open(path)?
+                        .with_guessed_format()?
+                        .into_decoder()?,
+                ),
+                None,
+            ),
+        };
     let (w, h) = decoder.dimensions();
     anyhow::ensure!(
         (w as u64) * (h as u64) <= 150_000_000,
@@ -33,7 +99,12 @@ fn prepare(
         .ok()
         .flatten()
         .and_then(|icc| ColorProfile::new_from_slice(&icc).ok());
-    Ok((decoder, orientation, profile))
+    Ok(Prepared {
+        decoder,
+        orientation,
+        profile,
+        refused,
+    })
 }
 
 /// The image at `path` decoded, turned upright and converted from its embedded
@@ -41,7 +112,12 @@ fn prepare(
 /// or with one that cannot be read or does not describe its pixels (RGB, or
 /// grey for a grey image), is taken to be sRGB already.
 pub fn decode(path: &Path) -> Result<RgbImage> {
-    let (decoder, orientation, profile) = prepare(path)?;
+    let Prepared {
+        decoder,
+        orientation,
+        profile,
+        ..
+    } = prepare(path)?;
     let transform = profile.and_then(|profile| ToSrgb::new(&profile, decoder.color_type()));
     let mut image = DynamicImage::from_decoder(decoder)?;
     image.apply_orientation(orientation);
@@ -62,7 +138,15 @@ pub fn decode(path: &Path) -> Result<RgbImage> {
 /// This is the file as decoded, not yet the pseudo-scene Develop renders: open it
 /// for Develop through [`crate::photo::open_source`], which converts it.
 pub(crate) fn open(path: &Path, cancel: &AtomicBool) -> Result<CameraImage> {
-    let (decoder, orientation, profile) = prepare(path)?;
+    let Prepared {
+        decoder,
+        orientation,
+        profile,
+        refused,
+    } = prepare(path)?;
+    if let Some(refused) = refused {
+        return Err(refused.into());
+    }
     let profile = profile.unwrap_or_else(ColorProfile::new_srgb);
     let linear = to_linear(&profile, decoder.color_type())?;
     let mut image = DynamicImage::from_decoder(decoder)?;
@@ -107,7 +191,15 @@ pub(crate) fn open(path: &Path, cancel: &AtomicBool) -> Result<CameraImage> {
 /// opening it says what is wrong.
 pub fn probe(path: &Path) -> std::result::Result<(), Unsupported> {
     match prepare(path) {
-        Ok((decoder, _, Some(profile))) => layout(&profile, decoder.color_type()).map(|_| ()),
+        Ok(Prepared {
+            refused: Some(refused),
+            ..
+        }) => Err(refused),
+        Ok(Prepared {
+            decoder,
+            profile: Some(profile),
+            ..
+        }) => layout(&profile, decoder.color_type()).map(|_| ()),
         _ => Ok(()),
     }
 }
@@ -279,6 +371,48 @@ mod tests {
     use super::decode;
     use image::{ExtendedColorType, ImageEncoder};
     use std::path::Path;
+
+    fn fixture(name: &str) -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/data/formats")
+            .join(name)
+    }
+    /// The colour of the upright image at the centre of each 4×4 corner.
+    fn corners(image: &image::RgbImage) -> [[u8; 3]; 4] {
+        let (w, h) = image.dimensions();
+        [(1, 1), (w - 2, 1), (1, h - 2), (w - 2, h - 2)].map(|(x, y)| image.get_pixel(x, y).0)
+    }
+    const UPRIGHT: [[u8; 3]; 4] = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 255]];
+
+    #[test]
+    fn a_webp_decodes_upright_by_its_exif() {
+        let image = decode(&fixture("rotated.webp")).unwrap();
+        // Orientation 6 turns the 16x12 drawing a quarter clockwise.
+        assert_eq!(image.dimensions(), (12, 16));
+        // Its top-left corner is the drawing's bottom-left (blue).
+        assert_eq!(corners(&image)[0], [0, 0, 255]);
+        let plain = decode(&fixture("metadata.webp")).unwrap();
+        assert_eq!(corners(&plain), UPRIGHT);
+    }
+
+    #[test]
+    fn an_animated_webp_shows_its_first_frame_but_is_refused_for_develop() {
+        let path = fixture("animated.webp");
+        assert_eq!(corners(&decode(&path).unwrap()), UPRIGHT);
+        assert_eq!(super::probe(&path).unwrap_err().0, "animated");
+        let err = super::open(&path, &Default::default()).err().unwrap();
+        assert_eq!(
+            err.downcast_ref::<super::Unsupported>().unwrap().0,
+            "animated"
+        );
+    }
+
+    #[test]
+    fn a_still_webp_opens_for_develop() -> anyhow::Result<()> {
+        let im = super::open(&fixture("metadata.webp"), &Default::default())?;
+        assert_eq!((im.width, im.height), (16, 12));
+        Ok(())
+    }
 
     fn p3() -> Vec<u8> {
         moxcms::ColorProfile::new_display_p3().encode().unwrap()
