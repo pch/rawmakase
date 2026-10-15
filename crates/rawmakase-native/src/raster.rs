@@ -9,6 +9,8 @@ use rayon::prelude::*;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+mod jxl;
+
 /// What a file's first bytes say it is.
 #[derive(Debug, PartialEq)]
 enum Kind {
@@ -78,7 +80,12 @@ fn prepare(path: &Path) -> Result<Prepared> {
                 ),
                 animated.then(|| Unsupported("animated".into())),
             ),
-            // Tasks 4 and 5 add Jxl and Avif.
+            Kind::Jxl => {
+                let file = jxl::JxlFile::open(path)?;
+                let refused = file.refusal();
+                (Box::new(file), refused)
+            }
+            // Task 5 adds Avif.
             _ => (
                 Box::new(
                     image::ImageReader::open(path)?
@@ -383,6 +390,55 @@ mod tests {
         [(1, 1), (w - 2, 1), (1, h - 2), (w - 2, h - 2)].map(|(x, y)| image.get_pixel(x, y).0)
     }
     const UPRIGHT: [[u8; 3]; 4] = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 255]];
+    /// `got` within `tolerance` per channel of `want`: for files that went
+    /// through a lossy JPEG before, whose pixels are not exactly 0 or 255.
+    fn assert_corners_near(got: [[u8; 3]; 4], want: [[u8; 3]; 4], tolerance: u8) {
+        for (g, w) in got.iter().zip(&want) {
+            assert!(
+                g.iter().zip(w).all(|(a, b)| a.abs_diff(*b) <= tolerance),
+                "{got:?} is not within {tolerance} of {want:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_jxl_decodes_with_its_colours() {
+        let image = decode(&fixture("metadata.jxl")).unwrap();
+        assert_corners_near(corners(&image), UPRIGHT, 8);
+    }
+
+    #[test]
+    fn a_jxl_is_not_rotated_again_by_its_exif() {
+        // `jxlinfo` reports codestream Orientation 6 for this file (and 132
+        // bytes of EXIF from the JPEG it was transcoded from); jxl-oxide
+        // renders that orientation itself, so we must not turn it again.
+        let path = fixture("exif-rotated.jxl");
+        let decoded = decode(&path).unwrap();
+        let reference = jxl_oxide::JxlImage::builder().open(&path).unwrap();
+        assert_eq!(
+            decoded.dimensions(),
+            (reference.width(), reference.height())
+        );
+    }
+
+    #[test]
+    fn a_sixteen_bit_jxl_keeps_its_depth_for_develop() -> anyhow::Result<()> {
+        let im = super::open(&fixture("sixteen-bit.jxl"), &Default::default())?;
+        assert_eq!((im.width, im.height), (16, 12));
+        // Red corner, linear ProPhoto: a strong red, no green or blue left.
+        let red = im.pixels[16 + 1];
+        assert!(red[0] > 0.4 && red[1] < 0.1 && red[2] < 0.1, "{red:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn hdr_and_animated_jxls_show_but_are_refused_for_develop() {
+        for (name, reason) in [("pq.jxl", "HDR"), ("animated.jxl", "animated")] {
+            let path = fixture(name);
+            assert!(decode(&path).is_ok(), "{name}");
+            assert_eq!(super::probe(&path).unwrap_err().0, reason, "{name}");
+        }
+    }
 
     #[test]
     fn a_webp_decodes_upright_by_its_exif() {
