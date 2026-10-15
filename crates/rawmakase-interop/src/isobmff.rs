@@ -269,6 +269,13 @@ impl Heif {
     /// `None` when an extent runs past the file. Construction method 1 (`idat`)
     /// and length 0 ("to the end of the file") are not read.
     pub fn data<R: Read + Seek>(&self, r: &mut R, id: u32) -> Option<Vec<u8>> {
+        self.data_up_to(r, id, MAX_ITEM)
+    }
+
+    /// Item `id`'s data as [`Heif::data`] reads it, but `None`, before any
+    /// of it is read, when its extents add up to more than `max` bytes; for
+    /// metadata items, which are never as large as an image.
+    pub fn data_up_to<R: Read + Seek>(&self, r: &mut R, id: u32, max: u64) -> Option<Vec<u8>> {
         let l = self
             .locations
             .iter()
@@ -278,7 +285,7 @@ impl Heif {
         for (offset, len) in &l.extents {
             let end = l.base.checked_add(*offset)?.checked_add(*len)?;
             total = total.checked_add(*len)?;
-            if end > file_len || total > MAX_ITEM {
+            if end > file_len || total > max.min(MAX_ITEM) {
                 return None;
             }
         }
@@ -569,6 +576,39 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn item_data_over_the_cap_is_refused_before_reading() {
+        /// Counts the bytes read through it.
+        struct Counting(Cursor<Vec<u8>>, usize);
+        impl Read for Counting {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let n = self.0.read(buf)?;
+                self.1 += n;
+                Ok(n)
+            }
+        }
+        impl Seek for Counting {
+            fn seek(&mut self, to: SeekFrom) -> std::io::Result<u64> {
+                self.0.seek(to)
+            }
+        }
+        // Three overlapping 8-byte extents of a 16-byte file: 24 bytes.
+        let heif = Heif {
+            locations: vec![Location {
+                id: 1,
+                method: 0,
+                base: 0,
+                extents: vec![(0, 8), (4, 8), (8, 8)],
+            }],
+            ..Heif::default()
+        };
+        let mut r = Counting(Cursor::new((0..16).collect()), 0);
+        assert_eq!(heif.data_up_to(&mut r, 1, 16), None);
+        assert_eq!(r.1, 0);
+        assert_eq!(heif.data_up_to(&mut r, 1, 24).map(|d| d.len()), Some(24));
+        assert_eq!(heif.data(&mut r, 1).map(|d| d.len()), Some(24));
     }
 
     #[test]

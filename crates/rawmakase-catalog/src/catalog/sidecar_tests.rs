@@ -324,3 +324,72 @@ fn a_files_own_xmp_is_read_by_its_extension() -> Result<()> {
     assert_eq!(title_of("N.NEF", &tiff)?, None);
     Ok(())
 }
+
+fn formats_fixture(name: &str, dir: &Path) -> Result<PathBuf> {
+    let from = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/data/formats")
+        .join(name);
+    let file = dir.join(name);
+    std::fs::copy(from, &file)?;
+    Ok(file)
+}
+
+#[test]
+fn webp_avif_and_jxl_files_own_xmp_is_read() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    for name in ["metadata.webp", "metadata.avif", "metadata.jxl"] {
+        let file = formats_fixture(name, dir.path())?;
+        let (read, report) = read_file(&file);
+        assert!(report.unreadable.is_empty(), "{name}: {report:?}");
+        assert_eq!(read.and_then(|r| r.title), set("Fixture title"), "{name}");
+    }
+    Ok(())
+}
+
+#[test]
+fn an_avifs_xmp_item_over_16_mib_is_not_read() -> Result<()> {
+    use rawmakase_interop::isobmff::Heif;
+    let dir = tempfile::tempdir()?;
+    let file = formats_fixture("metadata.avif", dir.path())?;
+    let mut bytes = std::fs::read(&file)?;
+    let heif = Heif::read(&mut std::io::Cursor::new(&bytes)).unwrap();
+    let xmp = heif
+        .describing(*b"cdsc", heif.primary)
+        .into_iter()
+        .find(|id| heif.item(*id).unwrap().content_type == "application/rdf+xml")
+        .unwrap();
+    let (offset, len) = heif.extent(xmp).unwrap();
+    // Point the XMP item at a copy of its packet at the end of the file,
+    // padded with spaces past 16 MiB: still a readable packet, but too big.
+    let mut location = (offset as u32).to_be_bytes().to_vec();
+    location.extend((len as u32).to_be_bytes());
+    let at = bytes
+        .windows(8)
+        .position(|w| w == location.as_slice())
+        .unwrap();
+    let big = (16 << 20) + 1;
+    let mut packet = bytes[offset as usize..(offset + len) as usize].to_vec();
+    packet.resize(big, b' ');
+    let end = bytes.len() as u32;
+    bytes[at..at + 4].copy_from_slice(&end.to_be_bytes());
+    bytes[at + 4..at + 8].copy_from_slice(&(big as u32).to_be_bytes());
+    bytes.extend(packet);
+    std::fs::write(&file, bytes)?;
+    // Skipped unread, as a WebP chunk or JPEG XL box that size is.
+    let (read, report) = read_file(&file);
+    assert!(report.unreadable.is_empty(), "{report:?}");
+    assert_eq!(read.and_then(|r| r.title), None);
+    Ok(())
+}
+
+#[test]
+fn webp_avif_and_jxl_files_without_xmp_read_nothing_and_are_not_unreadable() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    for name in ["animated.webp", "ten-bit.avif", "sixteen-bit.jxl"] {
+        let file = formats_fixture(name, dir.path())?;
+        let (read, report) = read_file(&file);
+        assert!(report.unreadable.is_empty(), "{name}: {report:?}");
+        assert_eq!(read.and_then(|r| r.title), None, "{name}");
+    }
+    Ok(())
+}

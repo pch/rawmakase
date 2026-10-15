@@ -1,5 +1,6 @@
 //! Descriptive metadata read from XMP sidecars and from the XMP inside JPEG,
-//! TIFF and PNG files: when a folder is added, for its new photos, and on Read
+//! TIFF, PNG, WebP, AVIF and JPEG XL files (a JPEG XL's compressed "brob"
+//! boxes are not read): when a folder is added, for its new photos, and on Read
 //! Metadata from Files, for photos already in the catalog. Never at render
 //! time; the catalog stays the source of truth.
 use super::db::{LightroomWrite, Write, sql, sqlite_sql};
@@ -9,6 +10,7 @@ use crate::jpeg::{APP1, Segments};
 use crate::storage::RasterFormat;
 use crate::xml::ns::JPEG_HEADER;
 use crate::xmp::descriptive::{self, Read};
+use crate::{isobmff, riff};
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
@@ -79,8 +81,9 @@ pub fn sidecars(file: &Path) -> Vec<PathBuf> {
     found
 }
 
-/// The XMP inside a JPEG (its standard APP1 packet), TIFF (tag 700) or PNG
-/// (its XMP text chunk).
+/// The XMP inside a JPEG (its standard APP1 packet), TIFF (tag 700), PNG (its
+/// XMP text chunk), WebP ("XMP " chunk), AVIF (its XMP item) or JPEG XL ("xml "
+/// box; compressed "brob" boxes are not read).
 fn embedded(file: &Path) -> Result<Option<String>> {
     match RasterFormat::of(file) {
         Some(RasterFormat::Jpeg) => {
@@ -105,7 +108,9 @@ fn embedded(file: &Path) -> Result<Option<String>> {
         }
         Some(RasterFormat::Tiff) => in_tiff(file),
         Some(RasterFormat::Png) => in_png(file),
-        Some(RasterFormat::Webp | RasterFormat::Avif | RasterFormat::Jxl) => Ok(None),
+        Some(RasterFormat::Webp) => in_webp(file),
+        Some(RasterFormat::Avif) => in_heif(file),
+        Some(RasterFormat::Jxl) => in_jxl(file),
         // A DNG keeps its XMP in the same TIFF tag.
         None if file
             .extension()
@@ -115,6 +120,60 @@ fn embedded(file: &Path) -> Result<Option<String>> {
         }
         None => Ok(None),
     }
+}
+
+/// The XMP in a WebP's "XMP " chunk.
+fn in_webp(file: &Path) -> Result<Option<String>> {
+    let mut f = std::fs::File::open(file)?;
+    let Some(chunk) =
+        riff::webp_chunks(&mut f).and_then(|c| c.into_iter().find(|c| &c.kind == b"XMP "))
+    else {
+        return Ok(None);
+    };
+    text(riff::chunk_data(&mut f, &chunk))
+}
+
+/// The XMP item ("application/rdf+xml") describing an AVIF's primary image.
+fn in_heif(file: &Path) -> Result<Option<String>> {
+    let mut f = std::fs::File::open(file)?;
+    let Some(heif) = isobmff::Heif::read(&mut f) else {
+        return Ok(None);
+    };
+    let xmp = heif
+        .describing(*b"cdsc", heif.primary)
+        .into_iter()
+        .find(|id| {
+            heif.item(*id)
+                .is_some_and(|i| &i.kind == b"mime" && i.content_type == "application/rdf+xml")
+        });
+    match xmp {
+        // No larger than a WebP chunk or a JPEG XL box read for its XMP.
+        Some(id) => text(heif.data_up_to(&mut f, id, 16 << 20)),
+        None => Ok(None),
+    }
+}
+
+/// The XMP in a JPEG XL container's "xml " box; brotli-compressed ("brob")
+/// boxes are not read.
+fn in_jxl(file: &Path) -> Result<Option<String>> {
+    let mut f = std::fs::File::open(file)?;
+    let Some(len) = isobmff::file_len(&mut f) else {
+        return Ok(None);
+    };
+    match isobmff::boxes(&mut f, 0, len)
+        .into_iter()
+        .find(|b| &b.kind == b"xml ")
+    {
+        Some(b) => text(isobmff::read_body(&mut f, &b)),
+        None => Ok(None),
+    }
+}
+
+/// Embedded XMP bytes as text; malformed containers (`None`) have none.
+fn text(bytes: Option<Vec<u8>>) -> Result<Option<String>> {
+    bytes
+        .map(|b| String::from_utf8(b).context("embedded XMP is not valid UTF-8"))
+        .transpose()
 }
 
 /// The XMP in a PNG's "XML:com.adobe.xmp" text chunk, uncompressed as the
@@ -197,7 +256,8 @@ fn decode(bytes: &[u8]) -> Result<String> {
     }
 }
 
-/// The metadata of `file`'s sidecar and, for a JPEG, TIFF or PNG, its own XMP:
+/// The metadata of `file`'s sidecar and, for a JPEG, TIFF, PNG, WebP, AVIF or
+/// JPEG XL, its own XMP:
 /// field by field the sidecar's where it has one, an explicitly empty value
 /// included, else the file's. `None` when neither has any.
 pub fn read_file(file: &Path) -> (Option<Read>, SidecarReport) {
