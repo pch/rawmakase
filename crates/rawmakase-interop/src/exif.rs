@@ -363,11 +363,14 @@ fn directories(path: &Path, keep_main: impl Fn(u16) -> bool) -> Option<CameraExi
         let (at, len) = exif_in_png(&mut File::open(path).ok()?)?;
         (at, Some(len))
     } else if head.starts_with(b"RIFF") && head.get(8..12) == Some(b"WEBP") {
-        (exif_in_webp(&mut File::open(path).ok()?)?, None)
+        let (at, len) = exif_in_webp(&mut File::open(path).ok()?)?;
+        (at, Some(len))
     } else if head.get(4..8) == Some(b"ftyp") && has_heif_brand(&head) {
-        (exif_in_heif(&mut File::open(path).ok()?)?, None)
+        let (at, len) = exif_in_heif(&mut File::open(path).ok()?)?;
+        (at, Some(len))
     } else if head.starts_with(&crate::isobmff::JXL_CONTAINER) {
-        (exif_in_jxl(&mut File::open(path).ok()?)?, None)
+        let (at, len) = exif_in_jxl(&mut File::open(path).ok()?)?;
+        (at, Some(len))
     } else {
         (0, None)
     };
@@ -414,8 +417,8 @@ fn has_heif_brand(head: &[u8]) -> bool {
 }
 
 /// Offset of the TIFF header in a WebP's EXIF chunk (some writers keep
-/// JPEG's "Exif" header in it).
-fn exif_in_webp(f: &mut File) -> Option<u64> {
+/// JPEG's "Exif" header in it), and the length of the TIFF the chunk holds.
+fn exif_in_webp(f: &mut File) -> Option<(u64, u64)> {
     let chunk = crate::riff::webp_chunks(f)?
         .into_iter()
         .find(|c| &c.kind == b"EXIF")?;
@@ -423,8 +426,8 @@ fn exif_in_webp(f: &mut File) -> Option<u64> {
 }
 
 /// Offset of the TIFF header in an AVIF's Exif item, which starts with the
-/// 4-byte offset to it.
-fn exif_in_heif(f: &mut File) -> Option<u64> {
+/// 4-byte offset to it, and the length of the TIFF the item holds.
+fn exif_in_heif(f: &mut File) -> Option<(u64, u64)> {
     let heif = crate::isobmff::Heif::read(f)?;
     let id = heif
         .describing(*b"cdsc", heif.primary)
@@ -435,8 +438,9 @@ fn exif_in_heif(f: &mut File) -> Option<u64> {
 }
 
 /// Offset of the TIFF header in a JPEG XL container's Exif box (also with a
-/// 4-byte offset first). Brotli-compressed ("brob") boxes are not read.
-fn exif_in_jxl(f: &mut File) -> Option<u64> {
+/// 4-byte offset first), and the length of the TIFF the box holds.
+/// Brotli-compressed ("brob") boxes are not read.
+fn exif_in_jxl(f: &mut File) -> Option<(u64, u64)> {
     let len = crate::isobmff::file_len(f)?;
     let exif = crate::isobmff::boxes(f, 0, len)
         .into_iter()
@@ -445,8 +449,9 @@ fn exif_in_jxl(f: &mut File) -> Option<u64> {
 }
 
 /// The TIFF header of the `len` bytes at `start`, after the big-endian u32
-/// offset they begin with; `None` when the offset leaves them.
-fn after_offset(f: &mut File, start: u64, len: u64) -> Option<u64> {
+/// offset they begin with, and the bytes left to the TIFF from there; `None`
+/// when the offset leaves them.
+fn after_offset(f: &mut File, start: u64, len: u64) -> Option<(u64, u64)> {
     use std::io::{Seek, SeekFrom};
     if len < 4 {
         return None;
@@ -460,10 +465,11 @@ fn after_offset(f: &mut File, start: u64, len: u64) -> Option<u64> {
     tiff_after_header(f, at, start.checked_add(len)?)
 }
 
-/// `at`, or past an "Exif\0\0" header there; `None` when `at` is not before
-/// `end` by at least a TIFF header. The "Exif" header is looked for only if
-/// a TIFF header still fits after it.
-fn tiff_after_header(f: &mut File, at: u64, end: u64) -> Option<u64> {
+/// `at`, or past an "Exif\0\0" header there, and the bytes from it to `end`,
+/// which the TIFF may not leave; `None` when `at` is not before `end` by at
+/// least a TIFF header. The "Exif" header is looked for only if a TIFF header
+/// still fits after it.
+fn tiff_after_header(f: &mut File, at: u64, end: u64) -> Option<(u64, u64)> {
     use std::io::{Seek, SeekFrom};
     if at >= end {
         return None;
@@ -477,10 +483,10 @@ fn tiff_after_header(f: &mut File, at: u64, end: u64) -> Option<u64> {
         let mut signature = [0u8; 6];
         f.read_exact(&mut signature).ok()?;
         if signature == *b"Exif\0\0" {
-            return Some(at + 6);
+            return Some((at + 6, end - at - 6));
         }
     }
-    Some(at)
+    Some((at, end - at))
 }
 
 /// Offset of the TIFF header inside a JPEG's EXIF segment, relative to the
@@ -796,5 +802,78 @@ mod container_tests {
         let path = dir.path().join("short.webp");
         std::fs::write(&path, bytes).unwrap();
         assert_eq!(super::camera_names(&path), None);
+    }
+    /// A copy of a fixture followed by a unit of its own container (a WebP
+    /// chunk, a box) holding a big-endian directory with Make "BAD make" and
+    /// Model "BAD model", and where that directory and the Model text are
+    /// from the start of the fixture's TIFF.
+    fn with_bad_directory_after(name: &str) -> (Vec<u8>, usize, usize, usize) {
+        let mut bytes = std::fs::read(fixture(name)).unwrap();
+        let tiff = bytes.windows(4).position(|w| w == b"MM\0*").unwrap();
+        let (make, model) = (b"BAD make\0", b"BAD model\0");
+        let ifd = bytes.len() + 8 - tiff;
+        let text = ifd + 2 + 2 * 12 + 4;
+        let mut body = 2u16.to_be_bytes().to_vec();
+        for (tag, len, at) in [
+            (0x010f_u16, make.len(), text),
+            (0x0110, model.len(), text + make.len()),
+        ] {
+            body.extend(tag.to_be_bytes());
+            body.extend(2u16.to_be_bytes());
+            body.extend((len as u32).to_be_bytes());
+            body.extend((at as u32).to_be_bytes());
+        }
+        body.extend([0; 4]);
+        body.extend(make.iter().chain(model));
+        if name.ends_with("webp") {
+            body.resize(body.len().next_multiple_of(2), 0);
+            bytes.extend(b"JUNK");
+            bytes.extend((body.len() as u32).to_le_bytes());
+            bytes.extend(&body);
+            let riff = (bytes.len() - 8) as u32;
+            bytes[4..8].copy_from_slice(&riff.to_le_bytes());
+        } else {
+            bytes.extend(((body.len() + 8) as u32).to_be_bytes());
+            bytes.extend(b"free");
+            bytes.extend(&body);
+        }
+        (bytes, tiff, ifd, text + make.len())
+    }
+    #[test]
+    fn an_exif_directory_or_value_past_its_chunk_item_or_box_is_not_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let u32_at = |b: &[u8], at: usize| u32::from_be_bytes(b[at..at + 4].try_into().unwrap());
+        for name in ["metadata.webp", "metadata.avif", "metadata.jxl"] {
+            let path = dir.path().join(name);
+            let (bytes, tiff, ifd, bad_model) = with_bad_directory_after(name);
+            // The added chunk or box alone leaves the camera as it was.
+            std::fs::write(&path, &bytes).unwrap();
+            assert_eq!(
+                super::camera_names(&path),
+                Some(("Fixture".into(), "Synthetic 1".into())),
+                "{name}"
+            );
+            // The first directory said to be in the added chunk or box.
+            let mut outside = bytes.clone();
+            outside[tiff + 4..tiff + 8].copy_from_slice(&(ifd as u32).to_be_bytes());
+            std::fs::write(&path, &outside).unwrap();
+            assert_eq!(super::camera_names(&path), None, "{name} directory");
+            // The Model's text said to be there.
+            let mut outside = bytes;
+            let first = tiff + u32_at(&outside, tiff + 4) as usize;
+            let count = u16::from_be_bytes([outside[first], outside[first + 1]]) as usize;
+            let entry = (0..count)
+                .map(|i| first + 2 + 12 * i)
+                .find(|&e| outside[e..e + 2] == 0x0110_u16.to_be_bytes())
+                .unwrap();
+            outside[entry + 4..entry + 8].copy_from_slice(&10u32.to_be_bytes());
+            outside[entry + 8..entry + 12].copy_from_slice(&(bad_model as u32).to_be_bytes());
+            std::fs::write(&path, &outside).unwrap();
+            let model = super::camera_names(&path).map(|(_, model)| model);
+            assert!(
+                model.as_deref().is_none_or(str::is_empty),
+                "{name} value: {model:?}"
+            );
+        }
     }
 }
