@@ -1,8 +1,8 @@
-//! The camera's own EXIF, read from a RAW, JPEG, TIFF or PNG: for an export to
-//! carry as Lightroom's do (capture settings, lens, dates, serial numbers and
-//! GPS), and for the catalog's capture time and photo info. Maker notes,
-//! thumbnail offsets and other pointers into the RAW are left out; they would
-//! not survive the move to a new file.
+//! The camera's own EXIF, read from a RAW, JPEG, TIFF, PNG, WebP, AVIF or JPEG
+//! XL: for an export to carry as Lightroom's do (capture settings, lens, dates,
+//! serial numbers and GPS), and for the catalog's capture time and photo info.
+//! Maker notes, thumbnail offsets and other pointers into the RAW are left out;
+//! they would not survive the move to a new file.
 use crate::{
     jpeg::{APP1, Segments},
     tiff::{
@@ -204,7 +204,7 @@ const SKIP: [u16; 4] = [
 pub const MAX_VALUE: usize = 4096;
 
 /// Reads the camera EXIF of a TIFF-based RAW (ARW, NEF, CR2, DNG, ORF, RW2, PEF…),
-/// a JPEG, TIFF or PNG, or a Fujifilm RAF, whose EXIF lives in its preview JPEG.
+/// a JPEG, TIFF, PNG, WebP, AVIF or JPEG XL, or a Fujifilm RAF, whose EXIF lives in its preview JPEG.
 /// `None` when the file has none that can be read, e.g. a CR3.
 pub fn read(path: &Path) -> Option<CameraExif> {
     directories(path, |tag| MAIN.contains(&tag))
@@ -228,7 +228,7 @@ pub fn capture_time(path: &Path) -> Option<String> {
     })
 }
 
-/// Camera, lens and exposure settings of a JPEG, TIFF, PNG or TIFF-based RAW
+/// Camera, lens and exposure settings of a JPEG, TIFF, PNG, WebP, AVIF, JPEG XL or TIFF-based RAW
 /// from its EXIF; `None` when it has none. Dimensions are not read here.
 pub fn photo_info(path: &Path) -> Option<crate::metadata::PhotoInfo> {
     let exif = directories(path, |tag| tag == MAKE || tag == MODEL)?;
@@ -362,6 +362,12 @@ fn directories(path: &Path, keep_main: impl Fn(u16) -> bool) -> Option<CameraExi
     } else if head.starts_with(b"\x89PNG\r\n\x1a\n") {
         let (at, len) = exif_in_png(&mut File::open(path).ok()?)?;
         (at, Some(len))
+    } else if head.starts_with(b"RIFF") && head.get(8..12) == Some(b"WEBP") {
+        (exif_in_webp(&mut File::open(path).ok()?)?, None)
+    } else if head.get(4..8) == Some(b"ftyp") && has_heif_brand(&head) {
+        (exif_in_heif(&mut File::open(path).ok()?)?, None)
+    } else if head.starts_with(&crate::isobmff::JXL_CONTAINER) {
+        (exif_in_jxl(&mut File::open(path).ok()?)?, None)
     } else {
         (0, None)
     };
@@ -390,6 +396,91 @@ fn directories(path: &Path, keep_main: impl Fn(u16) -> bool) -> Option<CameraExi
         out.gps = fields(&mut t, &ifd, |tag| tag <= 0x1f);
     }
     (!out.exif.is_empty() || !out.main.is_empty()).then_some(out)
+}
+
+/// Whether an `ftyp` box lists the AVIF/HEIF-image brands (`avif`, `avis`,
+/// `mif1`) as major or compatible brand; other ISOBMFF files (Canon CR3, MP4)
+/// are left to the TIFF path.
+fn has_heif_brand(head: &[u8]) -> bool {
+    let Some(brands) = head.get(8..head.len().min(64)) else {
+        return false;
+    };
+    let (brands, _) = brands.as_chunks::<4>();
+    // brands[1] is the minor version, not a brand.
+    brands
+        .iter()
+        .enumerate()
+        .any(|(i, b)| i != 1 && matches!(b, b"avif" | b"avis" | b"mif1"))
+}
+
+/// Offset of the TIFF header in a WebP's EXIF chunk (some writers keep
+/// JPEG's "Exif" header in it).
+fn exif_in_webp(f: &mut File) -> Option<u64> {
+    let chunk = crate::riff::webp_chunks(f)?
+        .into_iter()
+        .find(|c| &c.kind == b"EXIF")?;
+    tiff_after_header(f, chunk.start, chunk.start.checked_add(chunk.size)?)
+}
+
+/// Offset of the TIFF header in an AVIF's Exif item, which starts with the
+/// 4-byte offset to it.
+fn exif_in_heif(f: &mut File) -> Option<u64> {
+    let heif = crate::isobmff::Heif::read(f)?;
+    let id = heif
+        .describing(*b"cdsc", heif.primary)
+        .into_iter()
+        .find(|id| heif.item(*id).is_some_and(|i| &i.kind == b"Exif"))?;
+    let (start, len) = heif.extent(id)?;
+    after_offset(f, start, len)
+}
+
+/// Offset of the TIFF header in a JPEG XL container's Exif box (also with a
+/// 4-byte offset first). Brotli-compressed ("brob") boxes are not read.
+fn exif_in_jxl(f: &mut File) -> Option<u64> {
+    let len = crate::isobmff::file_len(f)?;
+    let exif = crate::isobmff::boxes(f, 0, len)
+        .into_iter()
+        .find(|b| &b.kind == b"Exif")?;
+    after_offset(f, exif.start, exif.size)
+}
+
+/// The TIFF header of the `len` bytes at `start`, after the big-endian u32
+/// offset they begin with; `None` when the offset leaves them.
+fn after_offset(f: &mut File, start: u64, len: u64) -> Option<u64> {
+    use std::io::{Seek, SeekFrom};
+    if len < 4 {
+        return None;
+    }
+    f.seek(SeekFrom::Start(start)).ok()?;
+    let mut offset = [0u8; 4];
+    f.read_exact(&mut offset).ok()?;
+    let at = start
+        .checked_add(4)?
+        .checked_add(u64::from(u32::from_be_bytes(offset)))?;
+    tiff_after_header(f, at, start.checked_add(len)?)
+}
+
+/// `at`, or past an "Exif\0\0" header there; `None` when `at` is not before
+/// `end` by at least a TIFF header. The "Exif" header is looked for only if
+/// a TIFF header still fits after it.
+fn tiff_after_header(f: &mut File, at: u64, end: u64) -> Option<u64> {
+    use std::io::{Seek, SeekFrom};
+    if at >= end {
+        return None;
+    }
+    // A TIFF header is 8 bytes.
+    if end - at < 8 {
+        return None;
+    }
+    if end - at >= 14 {
+        f.seek(SeekFrom::Start(at)).ok()?;
+        let mut signature = [0u8; 6];
+        f.read_exact(&mut signature).ok()?;
+        if signature == *b"Exif\0\0" {
+            return Some(at + 6);
+        }
+    }
+    Some(at)
 }
 
 /// Offset of the TIFF header inside a JPEG's EXIF segment, relative to the
@@ -628,5 +719,82 @@ mod camera_names_tests {
         let path = dir.path().join("a.bin");
         std::fs::write(&path, [0u8; 200]).unwrap();
         assert_eq!(camera_names(&path), None);
+    }
+}
+
+#[cfg(test)]
+mod container_tests {
+    fn fixture(name: &str) -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/data/formats")
+            .join(name)
+    }
+    #[test]
+    fn webp_avif_and_jxl_exif_is_read() {
+        for name in ["metadata.webp", "metadata.avif", "metadata.jxl"] {
+            let path = fixture(name);
+            assert_eq!(
+                super::capture_time(&path).as_deref(),
+                Some("2024-05-04T10:21:33.000"),
+                "{name}"
+            );
+            assert_eq!(
+                super::camera_names(&path),
+                Some(("Fixture".into(), "Synthetic 1".into())),
+                "{name}"
+            );
+        }
+    }
+    #[test]
+    fn files_without_exif_have_none() {
+        for name in ["ten-bit.avif", "animated.webp", "sixteen-bit.jxl"] {
+            assert_eq!(super::camera_names(&fixture(name)), None, "{name}");
+        }
+    }
+    #[test]
+    fn other_isobmff_files_are_not_read_as_heif() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("x.cr3");
+        let mut bytes = vec![0, 0, 0, 24];
+        bytes.extend(b"ftypcrx \0\0\0\x01crx isom");
+        bytes.resize(200, 0);
+        std::fs::write(&path, bytes).unwrap();
+        assert_eq!(super::camera_names(&path), None);
+    }
+    /// A copy of a fixture with the 4-byte Exif offset before its TIFF header
+    /// set to `offset`.
+    fn with_offset(name: &str, offset: u32) -> Vec<u8> {
+        let mut bytes = std::fs::read(fixture(name)).unwrap();
+        let tiff = bytes.windows(4).position(|w| w == b"MM\0*").unwrap();
+        // The AVIF item has "Exif\0\0" between its offset and the TIFF header.
+        let at = if name.ends_with("avif") {
+            tiff - 6
+        } else {
+            tiff
+        };
+        bytes[at - 4..at].copy_from_slice(&offset.to_be_bytes());
+        bytes
+    }
+    #[test]
+    fn an_exif_offset_past_the_item_or_box_is_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["metadata.avif", "metadata.jxl"] {
+            // The AVIF fixture's own offset is 6 ("Exif\0\0"), the JXL's 0.
+            for offset in [0xffff_ffff, 0x7fff_ffff, 1000] {
+                let path = dir.path().join(name);
+                std::fs::write(&path, with_offset(name, offset)).unwrap();
+                assert_eq!(super::camera_names(&path), None, "{name} {offset}");
+            }
+        }
+    }
+    #[test]
+    fn a_webp_exif_chunk_shorter_than_its_header_is_not_read_past() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bytes = std::fs::read(fixture("metadata.webp")).unwrap();
+        let at = bytes.windows(4).position(|w| w == b"EXIF").unwrap();
+        bytes[at + 4..at + 8].copy_from_slice(&3u32.to_le_bytes());
+        let path = dir.path().join("short.webp");
+        std::fs::write(&path, bytes).unwrap();
+        assert_eq!(super::camera_names(&path), None);
     }
 }
