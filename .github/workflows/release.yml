@@ -220,21 +220,26 @@ jobs:
   macos:
     name: macOS (${{ matrix.arch }})
     needs: [prepare, macos-icon]
-    runs-on: ${{ matrix.runner }}
+    # Both architectures build on Apple Silicon: the Intel app is
+    # cross-compiled, which takes about a third of the time the Intel runner
+    # needed and does not wait for one of the scarcer Intel machines.
+    runs-on: macos-15
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
-            arch: arm64
+          - arch: arm64
             target: macos-arm64
-          - runner: macos-15-intel
-            arch: x86_64
+            rust-target: aarch64-apple-darwin
+          - arch: x86_64
             target: macos-amd64
+            rust-target: x86_64-apple-darwin
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       MACOSX_DEPLOYMENT_TARGET: '15.0'
+      ARCH: ${{ matrix.arch }}
+      RUST_TARGET: ${{ matrix.rust-target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -252,8 +257,23 @@ jobs:
           path: compiled-icon
       - name: Build dependencies and app
         run: |
-          brew install autoconf automake libtool pkg-config libomp jpeg-turbo librsvg
-          rustup toolchain install 1.98.1 --profile minimal
+          # Build tools run natively; the libraries the app ships must match its architecture.
+          brew install autoconf automake libtool pkg-config librsvg
+          if [[ "$ARCH" = x86_64 ]]; then
+            # Intel libraries come from an Intel Homebrew in /usr/local, run
+            # under Rosetta: the same bottles the Intel runner installed.
+            arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
+            NONINTERACTIVE=1 arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            # bundle.py records the shipped libraries' formulae with `brew`.
+            mkdir -p "$RUNNER_TEMP/library-brew"
+            printf '#!/bin/sh\nexec arch -x86_64 /usr/local/bin/brew "$@"\n' > "$RUNNER_TEMP/library-brew/brew"
+            chmod +x "$RUNNER_TEMP/library-brew/brew"
+            export PATH="$RUNNER_TEMP/library-brew:$PATH"
+            export PKG_CONFIG_ALLOW_CROSS=1
+            export CC="clang -arch x86_64" CXX="clang++ -arch x86_64"
+          fi
+          brew install libomp jpeg-turbo
+          rustup toolchain install 1.98.1 --profile minimal --target "$RUST_TARGET"
           rustup default 1.98.1
           toolchain_bin=$(dirname "$(rustup which --toolchain 1.98.1 rustc)")
           export PATH="$toolchain_bin:$PATH"
@@ -262,12 +282,16 @@ jobs:
           export CPPFLAGS="-I$jpeg_prefix/include"
           export LDFLAGS="-L$jpeg_prefix/lib"
           bash packaging/native-deps.sh "$RUNNER_TEMP/native"
+          # Cargo's cc builds pass --target themselves.
+          unset CC CXX
           export PKG_CONFIG_PATH="$RUNNER_TEMP/native/lib/pkgconfig:$PKG_CONFIG_PATH"
           LIBOMP_PREFIX=$(brew --prefix libomp)
           export LIBOMP_PREFIX
           export CXXFLAGS="-DCMS_NO_REGISTER_KEYWORD"
-          cargo build --release --locked --manifest-path release-source/Cargo.toml --target-dir "$GITHUB_WORKSPACE/target"
-          python3 packaging/macos/bundle.py target/release/rawmakase dist/RAWmakase.app "$VERSION" "$RUNNER_TEMP/native" --minimum-macos "$MACOSX_DEPLOYMENT_TARGET" --icon-assets compiled-icon/Assets.car
+          cargo build --release --locked --target "$RUST_TARGET" --manifest-path release-source/Cargo.toml --target-dir "$GITHUB_WORKSPACE/target"
+          binary="target/$RUST_TARGET/release/rawmakase"
+          lipo "$binary" -verify_arch "$ARCH"
+          python3 packaging/macos/bundle.py "$binary" dist/RAWmakase.app "$VERSION" "$RUNNER_TEMP/native" --minimum-macos "$MACOSX_DEPLOYMENT_TARGET" --icon-assets compiled-icon/Assets.car
           # A tar keeps the bundle's symlinks and permissions through the artifact.
           tar -C dist -cf "$RUNNER_TEMP/RAWmakase.app.tar" RAWmakase.app
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -278,22 +302,20 @@ jobs:
           retention-days: 7
 
   # Signing and notarization are their own job, so re-running a failed
-  # notarization does not rebuild the app (about 30 minutes on Intel).
+  # notarization does not rebuild the app.
   macos-sign:
     name: macOS sign and notarize (${{ matrix.arch }})
     needs: [prepare, macos]
-    # Each DMG is verified on its own architecture, including running the CLI.
-    runs-on: ${{ matrix.runner }}
+    # The DMG check runs the bundled CLI; the Intel one runs under Rosetta.
+    runs-on: macos-15
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
-            arch: arm64
+          - arch: arm64
             target: macos-arm64
-          - runner: macos-15-intel
-            arch: x86_64
+          - arch: x86_64
             target: macos-amd64
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
@@ -335,7 +357,11 @@ jobs:
       - name: Verify the finished download
         env:
           ARCH: ${{ matrix.arch }}
-        run: bash packaging/macos/verify.sh "dist/upload/rawmakase-v$VERSION-macos-$ARCH.dmg" "$ARCH"
+        run: |
+          if [[ "$ARCH" = x86_64 ]]; then
+            arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+          bash packaging/macos/verify.sh "dist/upload/rawmakase-v$VERSION-macos-$ARCH.dmg" "$ARCH"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-${{ matrix.target }}

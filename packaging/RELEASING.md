@@ -184,6 +184,11 @@ Mac bundling follows transitive dependencies, rewrites library paths, preserves
 native notices and Homebrew source/version metadata, and fails on unresolved
 paths or conflicting library names. JPEG and OpenMP come from the runner's
 Homebrew installation; they are recorded in the app's license directory.
+Both Mac apps build on Apple Silicon runners. The Intel app is cross-compiled
+(`--target x86_64-apple-darwin`); its JPEG and OpenMP come from an Intel
+Homebrew in `/usr/local` run under Rosetta, and LibRaw and Little CMS are
+built with `-arch x86_64`. The Intel DMG check runs its CLI under Rosetta, so
+release automation no longer runs the app on Intel hardware.
 The layered Liquid Glass icon is compiled once with Xcode 26.3 on macOS 26;
 its asset runtime crashes on the macOS 15 runners. Both Mac builds download
 that `Assets.car` and pass it to `bundle.py --icon-assets`. The executables and
