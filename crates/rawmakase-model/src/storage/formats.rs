@@ -10,10 +10,20 @@ pub enum RasterFormat {
     Jpeg,
     Tiff,
     Png,
+    Webp,
+    Avif,
+    Jxl,
 }
 
 impl RasterFormat {
-    pub const ALL: [Self; 3] = [Self::Jpeg, Self::Tiff, Self::Png];
+    pub const ALL: [Self; 6] = [
+        Self::Jpeg,
+        Self::Tiff,
+        Self::Png,
+        Self::Webp,
+        Self::Avif,
+        Self::Jxl,
+    ];
 
     /// The extensions a file of this format has, lower case; the first is
     /// the one RAWmakase names files with.
@@ -22,6 +32,9 @@ impl RasterFormat {
             Self::Jpeg => &["jpg", "jpeg"],
             Self::Tiff => &["tif", "tiff"],
             Self::Png => &["png"],
+            Self::Webp => &["webp"],
+            Self::Avif => &["avif"],
+            Self::Jxl => &["jxl"],
         }
     }
     /// The extension RAWmakase names a file of this format with.
@@ -33,6 +46,9 @@ impl RasterFormat {
             Self::Jpeg => "image/jpeg",
             Self::Tiff => "image/tiff",
             Self::Png => "image/png",
+            Self::Webp => "image/webp",
+            Self::Avif => "image/avif",
+            Self::Jxl => "image/jxl",
         }
     }
     /// The format's name, as the app shows it.
@@ -41,6 +57,9 @@ impl RasterFormat {
             Self::Jpeg => "JPEG",
             Self::Tiff => "TIFF",
             Self::Png => "PNG",
+            Self::Webp => "WebP",
+            Self::Avif => "AVIF",
+            Self::Jxl => "JPEG XL",
         }
     }
     /// The format an extension names, in any case.
@@ -59,8 +78,8 @@ impl RasterFormat {
     }
 }
 
-/// A file RAWmakase takes as a photo: a RAW, or a JPEG, TIFF or PNG, and not
-/// hidden.
+/// A file RAWmakase takes as a photo: a RAW, or a JPEG, TIFF, PNG, WebP, AVIF or
+/// JPEG XL, and not hidden.
 pub fn is_photo(path: &Path) -> bool {
     super::is_raw(path) || (!super::is_hidden(path) && RasterFormat::of(path).is_some())
 }
@@ -78,10 +97,13 @@ mod tests {
             ("A.TIFF", RasterFormat::Tiff),
             ("A.png", RasterFormat::Png),
             ("dir.png/A.PNG", RasterFormat::Png),
+            ("A.webp", RasterFormat::Webp),
+            ("A.AVIF", RasterFormat::Avif),
+            ("A.Jxl", RasterFormat::Jxl),
         ] {
             assert_eq!(RasterFormat::of(Path::new(name)), Some(format), "{name}");
         }
-        for name in ["A.NEF", "A.dng", "A.webp", "A.jpg.xmp", "jpg", "A."] {
+        for name in ["A.NEF", "A.dng", "A.jpg.xmp", "jpg", "A."] {
             assert_eq!(RasterFormat::of(Path::new(name)), None, "{name}");
         }
     }
@@ -96,7 +118,7 @@ mod tests {
         }
     }
     #[test]
-    fn files_are_named_jpg_tif_and_png() {
+    fn each_format_has_its_extension_mime_type_and_name() {
         let named = RasterFormat::ALL.map(|f| (f.extension(), f.mime_type(), f.name()));
         assert_eq!(
             named,
@@ -104,15 +126,18 @@ mod tests {
                 ("jpg", "image/jpeg", "JPEG"),
                 ("tif", "image/tiff", "TIFF"),
                 ("png", "image/png", "PNG"),
+                ("webp", "image/webp", "WebP"),
+                ("avif", "image/avif", "AVIF"),
+                ("jxl", "image/jxl", "JPEG XL"),
             ]
         );
     }
     #[test]
-    fn photos_are_raws_jpegs_tiffs_and_pngs_not_hidden() {
-        for name in ["A.NEF", "A.jpeg", "A.TIF", "A.png"] {
+    fn photos_are_raws_and_rendered_files_not_hidden() {
+        for name in ["A.NEF", "A.jpeg", "A.TIF", "A.png", "A.webp"] {
             assert!(is_photo(Path::new(name)), "{name}");
         }
-        for name in ["._A.jpg", ".A.png", "A.xmp", "A.webp", "A"] {
+        for name in ["._A.jpg", ".A.png", "A.xmp", "A"] {
             assert!(!is_photo(Path::new(name)), "{name}");
         }
     }

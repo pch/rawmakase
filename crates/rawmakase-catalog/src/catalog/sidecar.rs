@@ -105,6 +105,7 @@ fn embedded(file: &Path) -> Result<Option<String>> {
         }
         Some(RasterFormat::Tiff) => in_tiff(file),
         Some(RasterFormat::Png) => in_png(file),
+        Some(RasterFormat::Webp | RasterFormat::Avif | RasterFormat::Jxl) => Ok(None),
         // A DNG keeps its XMP in the same TIFF tag.
         None if file
             .extension()

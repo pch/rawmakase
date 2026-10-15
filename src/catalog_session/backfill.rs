@@ -201,6 +201,7 @@ fn has_capture_time(path: &Path) -> bool {
     use crate::storage::RasterFormat;
     match RasterFormat::of(path) {
         Some(RasterFormat::Jpeg | RasterFormat::Tiff | RasterFormat::Png) => true,
+        Some(RasterFormat::Webp | RasterFormat::Avif | RasterFormat::Jxl) => false,
         None => {
             let extension = path
                 .extension()
@@ -256,7 +257,8 @@ mod tests {
             assert!(has_capture_time(Path::new(name)), "{name}");
         }
         for name in [
-            "A.CR3", "A.crw", "A.X3F", "A.mrw", "A.webp", "A.heic", "A.xmp", "A", "._A.NEF",
+            "A.CR3", "A.crw", "A.X3F", "A.mrw", "A.webp", "A.avif", "A.jxl", "A.heic", "A.xmp",
+            "A", "._A.NEF",
         ] {
             assert!(!has_capture_time(Path::new(name)), "{name}");
         }
