@@ -9,3 +9,15 @@ Reference exports were made on 2026-09-26 with Lightroom Classic 15.5.1 in a dis
 The JSON has 224 rows: sample the center of each strip (`y = 16, 48, …, 208`), then `x = 0, 32, …, 992`. Each row has five RGB16 triplets: Lightroom linear baseline, S master, independent RGB, clipped master, clipped/nonmonotonic RGB. Curve points are defined in the generator and the regression test. Using Lightroom's linear export as input isolates curve behavior from its small ICC round-trip error.
 
 The Rust test checks both RGB cases over all strips and master curves on the neutral strip. Mean absolute RGB error is bounded to 0.0001 (0–1 scale); neutral master error to 0.00003. The looser peak bound accommodates dark clipped RGB values and ICC quantization. **This does not establish full parity:** saturated master-curve colors still differ (whole-ramp MAE 0.00240 for the S curve and 0.00333 for the clipped curve). Parametric curves and non-default Refine Saturation are not covered by these goldens. The latter remains reported as unsupported during XMP import.
+
+# Rendered-format fixtures (`formats/`)
+
+Tiny synthetic WebP, AVIF and JPEG XL files for the decoder and metadata tests, all drawn by
+`python3 scripts/make-format-fixtures.py tests/data/formats` (Pillow with WebP, `avifenc`,
+`cjxl`; the script prints the encoder versions it ran with, which go in the commit
+message). No camera data or photos.
+`corners.png` is the 16×12 source: red, green, blue and white 4×4 corners
+(top-left, top-right, bottom-left, bottom-right) on grey. Metadata fixtures carry Make
+"Fixture", Model "Synthetic 1", DateTimeOriginal 2024:05:04 10:21:33 and the XMP title
+"Fixture title". Orientation fixtures: AVIF `irot`/`imir`, WebP and JXL EXIF Orientation 6.
+`pq.*` use the PQ transfer (HDR), `animated.*` have two frames, `tiled.avif` is a 2×2 grid of 64×64 cells (MIAF forbids smaller tiles).
