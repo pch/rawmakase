@@ -9,6 +9,8 @@ use rayon::prelude::*;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+mod av1;
+mod avif;
 mod jxl;
 
 /// What a file's first bytes say it is.
@@ -85,7 +87,11 @@ fn prepare(path: &Path) -> Result<Prepared> {
                 let refused = file.refusal();
                 (Box::new(file), refused)
             }
-            // Task 5 adds Avif.
+            Kind::Avif => {
+                let file = avif::AvifFile::open(path)?;
+                let refused = file.refusal();
+                (Box::new(file), refused)
+            }
             _ => (
                 Box::new(
                     image::ImageReader::open(path)?
@@ -760,5 +766,119 @@ mod tests {
         let cancel = std::sync::atomic::AtomicBool::new(true);
         assert!(super::open(&path, &cancel).is_err());
         Ok(())
+    }
+
+    #[test]
+    fn an_avif_decodes_upright_by_its_rotation_and_mirror() {
+        // irot 1: a quarter turn anticlockwise; the drawing's top-right (green)
+        // becomes the top-left.
+        let rotated = decode(&fixture("rotated.avif")).unwrap();
+        assert_eq!(rotated.dimensions(), (12, 16));
+        assert_eq!(
+            corners(&rotated),
+            [[0, 255, 0], [255, 255, 255], [255, 0, 0], [0, 0, 255]]
+        );
+        // Then mirrored left to right.
+        let mirrored = decode(&fixture("rotated-mirrored.avif")).unwrap();
+        assert_eq!(
+            corners(&mirrored),
+            [[255, 255, 255], [0, 255, 0], [0, 0, 255], [255, 0, 0]]
+        );
+    }
+
+    #[test]
+    fn a_ten_bit_avif_keeps_its_depth_and_colours() -> anyhow::Result<()> {
+        assert_eq!(corners(&decode(&fixture("ten-bit.avif"))?), UPRIGHT);
+        let im = super::open(&fixture("ten-bit.avif"), &Default::default())?;
+        let red = im.pixels[16 + 1];
+        assert!(red[0] > 0.4 && red[1] < 0.1 && red[2] < 0.1, "{red:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn an_avifs_cicp_colours_are_converted() {
+        // Lossless P3 (nclx 12/13/0, identity matrix): the green corner is P3
+        // green, outside sRGB, so it comes out as the most saturated sRGB green
+        // with no red; without CICP it would be (0, 255, 0) too, so check the
+        // grey (128) instead, which P3 and sRGB share: and a P3 mid-red from the
+        // red corner, whose red stays 255 but whose green must stay 0.
+        // Both within 1: the CMS rounds.
+        let image = decode(&fixture("p3.avif")).unwrap();
+        let grey = image.get_pixel(8, 6).0;
+        assert!(grey.iter().all(|v| v.abs_diff(128) <= 1), "{grey:?}");
+        let [red, ..] = corners(&image);
+        assert_corners_near([red; 4], [[255, 0, 0]; 4], 1);
+        // And the profile Develop sees is P3, not sRGB.
+        let super::Prepared { profile, .. } = super::prepare(&fixture("p3.avif")).unwrap();
+        let p3 = moxcms::ColorProfile::new_display_p3();
+        let profile = profile.expect("a profile from CICP");
+        assert!((profile.red_colorant.x - p3.red_colorant.x).abs() < 1e-3);
+    }
+
+    // libavif writes an image sequence with a primary still item as well,
+    // which the Library shows.
+    #[test]
+    fn hdr_animated_and_tiled_avifs_are_refused_for_develop() {
+        for (name, reason) in [
+            ("pq.avif", "HDR"),
+            ("animated.avif", "animated"),
+            ("tiled.avif", "tiled AVIF"),
+        ] {
+            assert_eq!(
+                super::probe(&fixture(name)).unwrap_err().0,
+                reason,
+                "{name}"
+            );
+        }
+        assert!(decode(&fixture("pq.avif")).is_ok());
+        assert!(decode(&fixture("animated.avif")).is_ok());
+        assert!(decode(&fixture("tiled.avif")).is_err());
+    }
+
+    #[test]
+    fn an_odd_sized_420_avif_decodes_every_pixel() {
+        let image = decode(&fixture("odd-420.avif")).unwrap();
+        assert_eq!(image.dimensions(), (15, 11));
+        // The bottom-right corner block reaches the last row and column.
+        let last = image.get_pixel(14, 10).0;
+        assert!(last.iter().all(|v| *v > 200), "{last:?}");
+    }
+
+    #[test]
+    fn a_truncated_avif_is_an_error_not_a_hang() {
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = std::fs::read(fixture("ten-bit.avif")).unwrap();
+        for keep in [bytes.len() - 10, bytes.len() * 3 / 4, 40] {
+            let path = dir.path().join(format!("cut-{keep}.avif"));
+            std::fs::write(&path, &bytes[..keep]).unwrap();
+            assert!(decode(&path).is_err(), "{keep}");
+        }
+    }
+
+    #[test]
+    fn a_corrupt_avif_is_an_error_not_an_abort() {
+        // One flipped bit in the AV1 data that made rav1d panic inside its C
+        // interface, which aborted the whole app.
+        let dir = tempfile::tempdir().unwrap();
+        let mut bytes = std::fs::read(fixture("rotated.avif")).unwrap();
+        assert_eq!(bytes[325], 0x5c, "rotated.avif was regenerated");
+        bytes[325] = 0x54;
+        let path = dir.path().join("corrupt.avif");
+        std::fs::write(&path, bytes).unwrap();
+        assert!(decode(&path).is_err());
+    }
+
+    #[test]
+    fn an_avif_over_150_megapixels_is_refused_from_its_header() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bytes = std::fs::read(fixture("ten-bit.avif")).unwrap();
+        // Rewrite the ispe property to 20000 x 10000.
+        let at = bytes.windows(4).position(|w| w == b"ispe").unwrap() + 8;
+        bytes[at..at + 4].copy_from_slice(&20_000u32.to_be_bytes());
+        bytes[at + 4..at + 8].copy_from_slice(&10_000u32.to_be_bytes());
+        let path = dir.path().join("huge.avif");
+        std::fs::write(&path, bytes).unwrap();
+        let err = decode(&path).unwrap_err().to_string();
+        assert!(err.contains("too large"), "{err}");
     }
 }
