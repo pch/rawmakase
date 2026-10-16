@@ -10,7 +10,6 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 mod ffi;
-mod nikon_he;
 mod own;
 mod priority;
 use crate::camera_data::{
@@ -1119,7 +1118,7 @@ mod tests {
         // Zeros after it: without maker notes, LibRaw's open reads a Nikon curve
         // length from file offset 2120, inside this small file's raw data.
         let stream = [
-            super::nikon_he::tests::blank_codestream(64, 64),
+            rawmakase_raw::nikon_high_efficiency_test_support::blank_codestream(64, 64),
             vec![0; 2048],
         ]
         .concat();
@@ -1129,7 +1128,8 @@ mod tests {
         for model in ["NIKON Z5_2", "NIKON Z 8"] {
             let (_dir, path) = nef(model, &stream);
             let sensor = super::Raw::open_file(&path).unwrap().sensor().unwrap();
-            let value = super::nikon_he::tests::blank_value().to_le_bytes();
+            let value =
+                rawmakase_raw::nikon_high_efficiency_test_support::blank_value().to_le_bytes();
             let expected: [u8; 32] =
                 <sha2::Sha256 as sha2::Digest>::digest(value.repeat(64 * 64)).into();
             assert_eq!(sensor.data_sha256, expected, "{model}");

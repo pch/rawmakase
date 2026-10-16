@@ -35,7 +35,7 @@ Modules, each with a small `pub(crate)` surface:
 | Module | Owns |
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
-| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Panasonic's blocks and strips, Sony's codings |
+| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings |
 | `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `rw2`, `arw`) |
 | `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`panasonic`, `sony`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |

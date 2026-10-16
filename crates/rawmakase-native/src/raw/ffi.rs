@@ -252,7 +252,14 @@ extern "C" fn high_efficiency(
                 std::slice::from_raw_parts_mut(out, pitch as usize * height as usize),
             )
         };
-        super::nikon_he::decode(data, out, width as usize, height as usize, pitch as usize)
+        rawmakase_raw::decode_nikon_high_efficiency(
+            data,
+            out,
+            width as usize,
+            height as usize,
+            pitch as usize,
+        )
+        .map_err(anyhow::Error::from)
     });
     let message = match result {
         Ok(Ok(())) => return 0,

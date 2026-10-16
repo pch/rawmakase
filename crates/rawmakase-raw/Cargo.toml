@@ -7,6 +7,10 @@ description = "RAWmakase's own RAW decoders in pure Rust: containers, maker note
 license = "MIT"
 publish = false
 
+[features]
+# Synthetic codestreams, for other crates' tests.
+test-support = []
+
 [dependencies]
 rawmakase-tiff = { path = "../rawmakase-tiff", version = "0.1.0" }
 # Deflate-compressed DNG tiles.

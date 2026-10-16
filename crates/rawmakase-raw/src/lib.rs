@@ -30,6 +30,13 @@ pub use sensor::Sensor;
 use std::sync::atomic::AtomicBool;
 pub use variant::Variant;
 
+/// Nikon High Efficiency (JPEG XS) codestream decoding, for the LibRaw
+/// bridge's unpack until RAWmakase's own decoders replace it.
+pub use codec::nikon_he::decode as decode_nikon_high_efficiency;
+/// Synthetic High Efficiency codestreams, for other crates' tests.
+#[cfg(feature = "test-support")]
+pub use codec::nikon_he::tests as nikon_high_efficiency_test_support;
+
 /// The decoders' version, for the About window and fingerprints.
 pub const VERSION: &str = concat!("RAWmakase ", env!("CARGO_PKG_VERSION"));
 
