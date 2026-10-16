@@ -1,0 +1,15 @@
+# Approved decode differences: a field of one dataset file whose decoded value
+# changes on purpose (a decoder change, with its evidence), read by
+# scripts/corpus/dataset-fingerprints.py and dataset-develop.py, which then do
+# not report that change. Each entry names the file by SHA-256, the field by its
+# dotted name in the fingerprint (`header.metadata.wb`, `sensor.white`,
+# `full.pixels_sha256`), its value before and after, the evidence and who
+# approved it. A value other than `after` is still reported.
+#
+# [[delta]]
+# sha256 = "…"
+# field = "sensor.white"
+# before = 15280
+# after = 15100
+# evidence = "Adobe DNG Converter 18.7 WhiteLevel; …"
+# approval = "Piotr, 2026-10-16"

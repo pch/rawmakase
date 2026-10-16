@@ -116,6 +116,15 @@ enum Command {
         #[arg(required = true, num_args = 1..)]
         files: Vec<PathBuf>,
     },
+    /// Print each file's develop fingerprint as a line of JSON: the image each
+    /// decode mode (full, half) makes, hashed, for decoder regression checks.
+    DecodeDump {
+        #[arg(required = true, num_args = 1..)]
+        files: Vec<PathBuf>,
+        /// Also write each full decode that is not a mosaic here, as raw floats.
+        #[arg(long)]
+        floats: Option<PathBuf>,
+    },
     Benchmark {
         input: PathBuf,
         #[arg(long, default_value_t = 20)]
@@ -463,6 +472,12 @@ fn main() -> Result<()> {
             for path in &files {
                 let line = serde_json::to_string(&rawmakase::fingerprint::fingerprint(path))?;
                 println!("{line}");
+            }
+        }
+        Some(Command::DecodeDump { files, floats }) => {
+            for path in &files {
+                let dump = rawmakase::decode_dump::dump(path, floats.as_deref());
+                println!("{}", serde_json::to_string(&dump)?);
             }
         }
         Some(Command::Benchmark { input, iterations }) => {

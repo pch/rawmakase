@@ -44,8 +44,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 COMMITTED = ROOT / 'tests/corpus/dataset/pixls-decode.json'
 PUBLIC_LICENSE = 'CC0-1.0'
+DELTAS = ROOT / 'tests/corpus/decode-deltas.toml'
 # Facts about the run rather than the file, kept out of the comparison.
-NOT_COMPARED = {'path', 'libraw'}
+NOT_COMPARED = {'path', 'libraw', 'decoder'}
 BATCH = 32
 # A file takes seconds; a batch that runs this long has hung.
 BATCH_TIMEOUT = 900
@@ -101,11 +102,12 @@ def load_samples(dataset, manifest):
     return samples
 
 
-def run(rawmakase, files, timeout):
+def run(rawmakase, files, timeout, decoder=None):
     """One JSON object per file, in order; None when the process failed or its
     output does not match the files."""
+    command = [str(rawmakase), 'fingerprint', *(['--decoder', decoder] if decoder else []), *map(str, files)]
     try:
-        p = subprocess.run([str(rawmakase), 'fingerprint', *map(str, files)], capture_output=True,
+        p = subprocess.run(command, capture_output=True,
                            text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return None, f'timed out after {timeout} s'
@@ -121,7 +123,7 @@ def run(rawmakase, files, timeout):
     return lines, None
 
 
-def fingerprint(rawmakase, samples, jobs):
+def fingerprint(rawmakase, samples, jobs, decoder=None):
     """Fingerprints by SHA-256, and the run's problems as (publishable, text).
     A batch that fails is
     run again file by file: a file that fails alone gets the failure as its
@@ -132,12 +134,12 @@ def fingerprint(rawmakase, samples, jobs):
     results, problems, done = {}, [], 0
 
     def batch(chunk):
-        lines, error = run(rawmakase, [s['file'] for s in chunk], BATCH_TIMEOUT)
+        lines, error = run(rawmakase, [s['file'] for s in chunk], BATCH_TIMEOUT, decoder)
         if lines is not None:
             return list(zip(chunk, lines)), None
         out = []
         for s in chunk:
-            alone, why = run(rawmakase, [s['file']], FILE_TIMEOUT)
+            alone, why = run(rawmakase, [s['file']], FILE_TIMEOUT, decoder)
             out.append((s, alone[0] if alone else {'failed': 'crash', 'error': why}))
         return out, f'a batch of {len(chunk)} files failed ({error}); its files were run one by one'
 
@@ -188,12 +190,12 @@ def recorded_by(results, reason):
     commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     dirty = subprocess.run(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=ROOT,
                            capture_output=True, text=True).stdout.strip()
-    libraw = sorted({r.get('libraw') for r in results.values() if r.get('libraw')})
+    decoder = sorted({r.get('decoder') for r in results.values() if r.get('decoder')})
     # LibRaw's version string does not name a master commit; this is the one
     # packaging/native-deps.sh builds, which the build is expected to link.
     pinned = re.search(r'^libraw=(\w+)', (ROOT / 'packaging/native-deps.sh').read_text(), re.M)
     return {'reason': reason, 'date': datetime.date.today().isoformat(),
-            'rawmakase': commit + ('-dirty' if dirty else ''), 'libraw': ', '.join(libraw),
+            'rawmakase': commit + ('-dirty' if dirty else ''), 'decoder': ', '.join(decoder),
             'libraw_pinned': pinned[1] if pinned else None,
             'platform': f'{platform.system()} {platform.machine()}'}
 
@@ -211,10 +213,41 @@ def record(args, samples, results):
         print(f'{len(files)} files recorded in {path} ({len(merged)} in all)')
 
 
-def compare(old, new):
-    """The changed fields: name, before, after."""
-    keys = sorted((old.keys() | new.keys()) - NOT_COMPARED)
-    return [(k, old.get(k), new.get(k)) for k in keys if old.get(k) != new.get(k)]
+def flatten(fingerprint, prefix=''):
+    """A fingerprint's fields by dotted name (`header.metadata.wb`); lists are values."""
+    out = {}
+    for k, v in fingerprint.items():
+        if not prefix and k in NOT_COMPARED:
+            continue
+        if isinstance(v, dict):
+            out.update(flatten(v, f'{prefix}{k}.'))
+        else:
+            out[prefix + k] = v
+    return out
+
+
+def load_deltas(path=DELTAS):
+    """Approved decode differences, by (file SHA-256, field): (before, after)."""
+    import tomllib
+    if not path.is_file():
+        return {}
+    deltas = {}
+    for d in tomllib.loads(path.read_text()).get('delta', []):
+        for key in ('sha256', 'field', 'before', 'after', 'evidence', 'approval'):
+            if key not in d:
+                raise Setup(f'{path.name}: a delta without {key}')
+        deltas[(d['sha256'], d['field'])] = (d['before'], d['after'])
+    return deltas
+
+
+def compare(old, new, sha256=None, deltas=None):
+    """The changed fields: name, before, after; a change the delta file
+    approves (the same before and after) is not one."""
+    old, new = flatten(old), flatten(new)
+    keys = sorted(old.keys() | new.keys())
+    deltas = deltas or {}
+    return [(k, old.get(k), new.get(k)) for k in keys
+            if old.get(k) != new.get(k) and deltas.get((sha256, k)) != (old.get(k), new.get(k))]
 
 
 def check(args, samples, results, problems):
@@ -230,11 +263,12 @@ def check(args, samples, results, problems):
             raise Setup(f'No baseline at {path}: record one with `record --reason …`')
         baselines[path] = loaded[1]
         here = recorded_by(results, None)
-        for key in ('libraw', 'libraw_pinned', 'platform'):
+        for key in ('decoder', 'libraw_pinned', 'platform'):
             if loaded[0].get(key) != here[key]:
                 notes.append(f'{path.name} was recorded with {key} {loaded[0].get(key)}; this run has {here[key]}')
     # Every change, by (make, format): (kind, sample, detail).
     changes = defaultdict(list)
+    deltas = load_deltas()
     for h, s in samples.items():
         old, new = baselines[baseline_path(args.dataset, s)].get(h), results[h]
         group = (s['make'] or '?', (s['ext'] or Path(s['path']).suffix[1:]).lower())
@@ -245,7 +279,7 @@ def check(args, samples, results, problems):
         elif 'failed' not in old and 'failed' in new:
             changes[group].append(('stops opening', s, new.get('error')))
         else:
-            for field in compare(old, new):
+            for field in compare(old, new, h, deltas):
                 changes[group].append(('changed', s, field))
     # With every file selected, a baseline file the dataset no longer has is a change too.
     if not args.manifest:
@@ -307,6 +341,7 @@ def main():
                    help='the dataset checkout (default: $RAWMAKASE_DATASET)')
     p.add_argument('--rawmakase', type=Path, default=ROOT / 'target/release/rawmakase')
     p.add_argument('--manifest', type=Path, help='a dataset.py manifest; default: every file')
+    p.add_argument('--decoder', help="the build's decoder to use, when it has more than one")
     # Each process takes its files one at a time (see `rawmakase fingerprint`).
     p.add_argument('--jobs', type=int, default=min(8, os.cpu_count() or 4), help='rawmakase processes at a time')
     p.add_argument('--reason', help='why the baseline changes (record)')
@@ -322,7 +357,7 @@ def main():
         if not os.access(args.rawmakase, os.X_OK):
             raise Setup(f'No rawmakase build at {args.rawmakase}: cargo build --release, or pass --rawmakase')
         samples = load_samples(args.dataset, args.manifest)
-        results, problems = fingerprint(args.rawmakase, samples, args.jobs)
+        results, problems = fingerprint(args.rawmakase, samples, args.jobs, args.decoder)
         if args.command == 'record':
             if problems:
                 raise Setup('Not recording a run with problems:\n  ' + '\n  '.join(visible(problems, args.public)))

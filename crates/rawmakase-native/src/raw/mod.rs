@@ -41,6 +41,22 @@ pub fn background_pool(
 pub struct Raw {
     handle: ffi::Handle,
     pub metadata: Metadata,
+    pub facts: Facts,
+}
+/// What the decoder read about a file beyond [`Metadata`], before any of
+/// RAWmakase's own crop rules: for decode fingerprints, which compare decoders.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct Facts {
+    /// Where the visible area starts in the raw data: left, top.
+    pub margins: [u32; 2],
+    /// The decoder's default crop and the camera's aspect-ratio crop, `[left,
+    /// top, width, height]` in raw coordinates (0xffff positions when unknown).
+    pub frame: [u32; 4],
+    pub aspect: [u32; 4],
+    /// The canonical make and model of a body sold under several names.
+    pub normalized: [String; 2],
+    /// The DNG version, 0 for a camera's own format.
+    pub dng_version: u32,
 }
 impl Raw {
     /// LibRaw's facts about the file at `path`, and the crop a RAF header
@@ -61,6 +77,13 @@ impl Raw {
             (&text(&m.normalized_make), &text(&m.normalized_model)),
         );
         let margin = [m.left_margin, m.top_margin];
+        let facts = Facts {
+            margins: margin,
+            frame: [m.crop_left, m.crop_top, m.crop_width, m.crop_height],
+            aspect: [m.aspect_left, m.aspect_top, m.aspect_width, m.aspect_height],
+            normalized: [text(&m.normalized_make), text(&m.normalized_model)],
+            dng_version: m.dng_version,
+        };
         let (frame, aspect) = sensor_frame(
             m.dng_version == 0 && make.eq_ignore_ascii_case("sony"),
             panasonic_sensor(path),
@@ -120,7 +143,11 @@ impl Raw {
         if let Some(crop) = fuji_crop(path_ref) {
             metadata.apply_default_crop(visible(crop, margin));
         }
-        Ok(Self { handle, metadata })
+        Ok(Self {
+            handle,
+            metadata,
+            facts,
+        })
     }
     /// The embedded JPEG preview, as stored.
     pub fn thumbnail(&mut self) -> Result<Vec<u8>> {

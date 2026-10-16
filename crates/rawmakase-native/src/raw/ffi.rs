@@ -261,6 +261,8 @@ pub(crate) struct Sensor {
     pub channels: u32,
     /// Where the visible area starts in the raw buffer: left, top.
     pub origin: [u32; 2],
+    /// The size of the area development reads, from `origin`.
+    pub area: [u32; 2],
     /// SHA-256 of the values development reads (the visible area; the stored
     /// rotated area of a Super CCD), `channels` per pixel, row by row,
     /// little-endian. Not the borders: LibRaw leaves rows and columns past some
@@ -411,6 +413,7 @@ impl Handle {
         Ok(Sensor {
             channels: s.channels,
             origin: [s.left, s.top],
+            area: [s.area_width, s.area_height],
             data_sha256: hash.finalize().into(),
             black: std::array::from_fn(|c| s.base_black + black[c]),
             black_pattern: (black[4], black[5], black[6..].to_vec()),
