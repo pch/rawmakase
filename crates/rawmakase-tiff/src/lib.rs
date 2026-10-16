@@ -43,27 +43,28 @@ impl Entry {
         }
     }
 }
-/// Minimal bounded TIFF directory reader. Offsets are relative to `base`.
-pub struct Tiff {
-    f: File,
+/// Minimal bounded TIFF directory reader. Offsets are relative to `base`. It
+/// reads a file, or any other seekable source such as a RAW held in memory.
+pub struct Tiff<R = File> {
+    f: R,
     base: u64,
     /// How many bytes from `base` the TIFF may span; `None` to the file's end.
     len: Option<u64>,
     pub little: bool,
     pub first: u64,
 }
-impl Tiff {
+impl<R: Read + Seek> Tiff<R> {
     /// The TIFF at `base`, reaching to the end of the file, as a RAW's or a
     /// TIFF's own does.
-    pub fn open(f: File, base: u64) -> Option<Self> {
+    pub fn open(f: R, base: u64) -> Option<Self> {
         Self::start(f, base, None)
     }
     /// The TIFF of `len` bytes at `base`, embedded in another file's container
     /// (a JPEG's APP1 segment, a PNG's eXIf chunk): nothing outside it is read.
-    pub fn open_within(f: File, base: u64, len: u64) -> Option<Self> {
+    pub fn open_within(f: R, base: u64, len: u64) -> Option<Self> {
         Self::start(f, base, Some(len))
     }
-    fn start(f: File, base: u64, len: Option<u64>) -> Option<Self> {
+    fn start(f: R, base: u64, len: Option<u64>) -> Option<Self> {
         let mut t = Self {
             f,
             base,
@@ -82,7 +83,7 @@ impl Tiff {
         t.first = t.u32(&h[4..8]) as u64;
         Some(t)
     }
-    pub(crate) fn u16(&self, b: &[u8]) -> u16 {
+    pub fn u16(&self, b: &[u8]) -> u16 {
         let a = [b[0], b[1]];
         if self.little {
             u16::from_le_bytes(a)
@@ -90,7 +91,7 @@ impl Tiff {
             u16::from_be_bytes(a)
         }
     }
-    pub(crate) fn u32(&self, b: &[u8]) -> u32 {
+    pub fn u32(&self, b: &[u8]) -> u32 {
         let a = [b[0], b[1], b[2], b[3]];
         if self.little {
             u32::from_le_bytes(a)
@@ -98,7 +99,8 @@ impl Tiff {
             u32::from_be_bytes(a)
         }
     }
-    pub(crate) fn bytes(&mut self, offset: u64, len: usize) -> Option<Vec<u8>> {
+    /// `len` bytes (at most 1 MiB) at `offset` from `base`.
+    pub fn bytes(&mut self, offset: u64, len: usize) -> Option<Vec<u8>> {
         let end = offset.checked_add(len as u64)?;
         if len > 1 << 20 || self.len.is_some_and(|max| end > max) {
             return None;

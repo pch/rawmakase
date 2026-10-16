@@ -1,0 +1,4 @@
+# XYZ (D65) to camera matrices, in ten-thousandths, for RAWmakase's own RAW
+# decoders (crates/rawmakase-raw/src/facts.rs). source is adobe-dng: the
+# ColorMatrix for illuminant D65 that Adobe DNG Converter 18.7 writes for the
+# camera (scripts/cameras/raw-matrices.py).

@@ -11,11 +11,18 @@ use std::{
 };
 mod ffi;
 mod nikon_he;
+mod own;
 use crate::camera_data::{
     CameraImage, Decode, Demosaic, HighlightTonePriority, Metadata, Source, WhiteBalancePresets,
 };
-pub(crate) use ffi::Sensor;
 pub use ffi::{display_transform, srgb_profile, version};
+/// The version of `decoder`, for fingerprints.
+pub fn version_of(decoder: Decoder) -> String {
+    match decoder {
+        Decoder::Libraw => version(),
+        Decoder::Own => rawmakase_raw::VERSION.to_string(),
+    }
+}
 /// Runs `work` on a thread of its own at background priority: a lower
 /// scheduling priority, and LibRaw decodes on two OpenMP threads. Every worker
 /// that reads or decodes photos behind the user's back starts here or in
@@ -39,9 +46,23 @@ pub fn background_pool(
         .build()
 }
 pub struct Raw {
-    handle: ffi::Handle,
+    backend: Backend,
     pub metadata: Metadata,
     pub facts: Facts,
+}
+/// The decoder behind a [`Raw`]. The app's photos open with LibRaw; RAWmakase's
+/// own decoders are reached only through [`Raw::open_with`], by the commands that
+/// compare the two (`fingerprint`, `decode-dump`), until they replace LibRaw.
+enum Backend {
+    Libraw(ffi::Handle),
+    Own(Box<own::Own>),
+}
+/// Which decoder reads a file, for the commands that compare decoders.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Decoder {
+    #[default]
+    Libraw,
+    Own,
 }
 /// What the decoder read about a file beyond [`Metadata`], before any of
 /// RAWmakase's own crop rules: for decode fingerprints, which compare decoders.
@@ -58,78 +79,154 @@ pub struct Facts {
     /// The DNG version, 0 for a camera's own format.
     pub dng_version: u32,
 }
+/// Unpacked sensor data for RAWmakase's own demosaic.
+pub(crate) struct Cfa {
+    pub width: u32,
+    pub height: u32,
+    /// The colour pattern as a `PATTERN × PATTERN` tile: 0 red, 1 green, 2 blue.
+    pub pattern: [u8; crate::demosaic::PATTERN * crate::demosaic::PATTERN],
+    /// `width × height` values, (raw − black) / (white − black), not white balanced.
+    pub data: Vec<f32>,
+}
+/// The unpacked sensor data with the levels development reads, for decode
+/// fingerprints. Channels are LibRaw's: 0 red, 1 green, 2 blue, 3 second green.
+pub(crate) struct Sensor {
+    /// 1 for a mosaic, 3 or 4 for small RAW files.
+    pub channels: u32,
+    /// Where the visible area starts in the raw buffer: left, top.
+    pub origin: [u32; 2],
+    /// The size of the area development reads, from `origin`.
+    pub area: [u32; 2],
+    /// SHA-256 of the values development reads (the visible area; the stored
+    /// rotated area of a Super CCD), `channels` per pixel, row by row,
+    /// little-endian. Not the borders: LibRaw leaves rows and columns past some
+    /// decoders' data unwritten, so they hold whatever the memory held.
+    pub data_sha256: [u8; 32],
+    pub black: [u32; 4],
+    /// The black pattern added to `black`: rows, columns and every value.
+    pub black_pattern: (u32, u32, Vec<u32>),
+    pub white: u32,
+    pub linear_white: [u32; 4],
+    /// The colour of each visible pixel over one period of the mosaic; empty
+    /// without one.
+    pub pattern: Vec<Vec<u8>>,
+}
+/// A decoder's header facts, as both decoders report them: what [`Metadata`] is
+/// made of.
+pub(crate) struct Header {
+    pub make: String,
+    pub model: String,
+    pub normalized: [String; 2],
+    pub width: u32,
+    pub height: u32,
+    pub raw_width: u32,
+    pub raw_height: u32,
+    pub margins: [u32; 2],
+    pub frame: [u32; 4],
+    pub aspect: [u32; 4],
+    /// Panasonic's sensor borders, and a RAF header's recommended crop, in raw
+    /// coordinates.
+    pub sensor_borders: Option<[u32; 4]>,
+    pub recommended_crop: Option<[u32; 4]>,
+    pub flip: i32,
+    pub xtrans: bool,
+    pub fuji_dynamic_range: u32,
+    pub highlight_tone_priority: i32,
+    pub sraw: bool,
+    pub fuji_exposure_shift: f32,
+    pub iso: f32,
+    pub shutter: f32,
+    pub aperture: f32,
+    pub focal: f32,
+    pub focal_35mm: f32,
+    /// As shot and daylight, relative to green.
+    pub wb: [f32; 3],
+    pub daylight_wb: [f32; 3],
+    /// Daylight, shade, D65 and fine weather.
+    pub presets: [[f32; 3]; 4],
+    pub matrix: [[f32; 3]; 3],
+    pub cam_xyz: [[f32; 3]; 3],
+    pub lens: String,
+    pub lens_id: u32,
+    pub dng_version: u32,
+}
 impl Raw {
-    /// LibRaw's facts about the file at `path`, and the crop a RAF header
+    /// The photo's facts as LibRaw reads them, and the crop a RAF header
     /// recommends. What the file says beyond them (lens tables, a DNG's profile
     /// and hints) and the imported lens profiles are `crate::photo::open`'s.
     pub fn open_file(path: &Path) -> Result<Self> {
-        let path_ref = path;
-        let (handle, m) = ffi::Handle::open(path)?;
-        let text = |bytes: &[std::ffi::c_char]| {
-            let bytes: Vec<u8> = bytes.iter().map(|&c| c as u8).collect();
-            let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-            String::from_utf8_lossy(&bytes[..end]).into_owned()
+        Self::open_with(path, Decoder::Libraw)
+    }
+    /// The file at `path` read by `decoder`; see [`Decoder`].
+    pub fn open_with(path: &Path, decoder: Decoder) -> Result<Self> {
+        let (backend, h) = match decoder {
+            Decoder::Libraw => {
+                let (handle, m) = ffi::Handle::open(path)?;
+                let h = ffi::header(&m, panasonic_sensor(path), fuji_crop(path));
+                (Backend::Libraw(handle), h)
+            }
+            Decoder::Own => {
+                let (own, h) = own::Own::open(path)?;
+                (Backend::Own(Box::new(own)), h)
+            }
         };
-        let (make, model) = (text(&m.make), text(&m.model));
         let adobe_names = rawmakase_model::cameras::adobe_names(
-            &make,
-            &model,
-            (&text(&m.normalized_make), &text(&m.normalized_model)),
+            &h.make,
+            &h.model,
+            (&h.normalized[0], &h.normalized[1]),
         );
-        let margin = [m.left_margin, m.top_margin];
+        let margin = h.margins;
         let facts = Facts {
             margins: margin,
-            frame: [m.crop_left, m.crop_top, m.crop_width, m.crop_height],
-            aspect: [m.aspect_left, m.aspect_top, m.aspect_width, m.aspect_height],
-            normalized: [text(&m.normalized_make), text(&m.normalized_model)],
-            dng_version: m.dng_version,
+            frame: h.frame,
+            aspect: h.aspect,
+            normalized: h.normalized.clone(),
+            dng_version: h.dng_version,
         };
         let (frame, aspect) = sensor_frame(
-            m.dng_version == 0 && make.eq_ignore_ascii_case("sony"),
-            panasonic_sensor(path),
-            [m.crop_left, m.crop_top, m.crop_width, m.crop_height],
-            [m.aspect_left, m.aspect_top, m.aspect_width, m.aspect_height],
-            [m.width, m.height],
+            h.dng_version == 0 && h.make.eq_ignore_ascii_case("sony"),
+            h.sensor_borders,
+            h.frame,
+            h.aspect,
+            [h.width, h.height],
             margin,
         );
         let [crop_left, crop_top, crop_width, crop_height] = visible(frame, margin);
-        let metadata = Metadata {
-            make,
-            model,
-            width: m.width,
-            height: m.height,
-            raw_width: m.raw_width,
-            raw_height: m.raw_height,
+        let mut metadata = Metadata {
+            width: h.width,
+            height: h.height,
+            raw_width: h.raw_width,
+            raw_height: h.raw_height,
             crop_width,
             crop_height,
             crop_left,
             crop_top,
-            camera_crop: camera_crop(frame, aspect, [m.width, m.height], margin),
-            flip: m.flip,
-            xtrans: m.xtrans != 0,
-            fuji_dynamic_range: m.fuji_dynamic_range,
-            highlight_tone_priority: HighlightTonePriority::from_libraw(m.highlight_tone_priority),
-            sraw: m.sraw != 0,
-            // LibRaw leaves -999 when the maker notes have no shift.
-            fuji_exposure_shift: (m.fuji_exposure_shift > -100.).then_some(m.fuji_exposure_shift),
-            iso: m.iso,
-            shutter: m.shutter,
-            aperture: m.aperture,
-            focal: m.focal,
-            focal_35mm: m.focal_35mm,
-            wb: m.wb,
-            daylight_wb: m.daylight_wb,
+            camera_crop: camera_crop(frame, aspect, [h.width, h.height], margin),
+            flip: h.flip,
+            xtrans: h.xtrans,
+            fuji_dynamic_range: h.fuji_dynamic_range,
+            highlight_tone_priority: HighlightTonePriority::from_libraw(h.highlight_tone_priority),
+            sraw: h.sraw,
+            // -999 when the maker notes have no shift.
+            fuji_exposure_shift: (h.fuji_exposure_shift > -100.).then_some(h.fuji_exposure_shift),
+            iso: h.iso,
+            shutter: h.shutter,
+            aperture: h.aperture,
+            focal: h.focal,
+            focal_35mm: h.focal_35mm,
+            wb: h.wb,
+            daylight_wb: h.daylight_wb,
             wb_presets: WhiteBalancePresets {
-                daylight: WhiteBalancePresets::valid(m.preset_daylight),
-                shade: WhiteBalancePresets::valid(m.preset_shade),
-                d65: WhiteBalancePresets::valid(m.preset_d65),
-                fine_weather: WhiteBalancePresets::valid(m.preset_fine_weather),
+                daylight: WhiteBalancePresets::valid(h.presets[0]),
+                shade: WhiteBalancePresets::valid(h.presets[1]),
+                d65: WhiteBalancePresets::valid(h.presets[2]),
+                fine_weather: WhiteBalancePresets::valid(h.presets[3]),
             },
-            matrix: std::array::from_fn(|r| std::array::from_fn(|c| m.matrix[r * 3 + c])),
-            cam_xyz: std::array::from_fn(|r| std::array::from_fn(|c| m.cam_xyz[r * 3 + c])),
+            matrix: h.matrix,
+            cam_xyz: h.cam_xyz,
             lens: None,
-            lens_model: text(&m.lens).trim().to_string(),
-            lens_id: m.lens_id,
+            lens_model: h.lens.trim().to_string(),
+            lens_id: h.lens_id,
             adobe_names,
             baseline_exposure: None,
             dng_neutral_calibration: None,
@@ -138,26 +235,44 @@ impl Raw {
             lens_profiles: Default::default(),
             lateral_ca: Default::default(),
             embedded_dcp: None,
+            make: h.make,
+            model: h.model,
         };
-        let mut metadata = metadata;
-        if let Some(crop) = fuji_crop(path_ref) {
+        if let Some(crop) = h.recommended_crop {
             metadata.apply_default_crop(visible(crop, margin));
         }
         Ok(Self {
-            handle,
+            backend,
             metadata,
             facts,
         })
     }
     /// The embedded JPEG preview, as stored.
     pub fn thumbnail(&mut self) -> Result<Vec<u8>> {
-        self.handle.thumbnail()
+        match &mut self.backend {
+            Backend::Libraw(handle) => handle.thumbnail(),
+            Backend::Own(own) => own.thumbnail(),
+        }
     }
     /// The unpacked sensor data as development reads it, without developing.
     pub(crate) fn sensor(&self) -> Result<Sensor> {
-        self.handle.sensor()
+        match &self.backend {
+            Backend::Libraw(handle) => handle.sensor(),
+            Backend::Own(own) => own.sensor(),
+        }
     }
     pub fn develop(self, decode: Decode, cancel: &AtomicBool) -> Result<CameraImage> {
+        if let Backend::Own(own) = &self.backend {
+            return match decode {
+                Decode::Full(_) => {
+                    let cfa = own.cfa(cancel)?;
+                    self.develop_mosaic(cfa, cancel)?.ok_or_else(|| {
+                        anyhow::anyhow!("RAWmakase's decoders do not develop this file yet")
+                    })
+                }
+                Decode::Half => anyhow::bail!("RAWmakase's decoders do not develop half size yet"),
+            };
+        }
         match decode {
             Decode::Half => self.develop_libraw(true, cancel),
             Decode::Full(Demosaic::Libraw) => self.develop_libraw(false, cancel),
@@ -171,12 +286,18 @@ impl Raw {
     /// Unpacked CFA data demosaiced by `crate::demosaic`; `None` when the file is not
     /// single-channel Bayer or X-Trans data.
     fn develop_cfa(&self, cancel: &AtomicBool) -> Result<Option<CameraImage>> {
-        let Some(ffi::Cfa {
+        let Backend::Libraw(handle) = &self.backend else {
+            return Ok(None);
+        };
+        self.develop_mosaic(handle.cfa()?, cancel)
+    }
+    fn develop_mosaic(&self, cfa: Option<Cfa>, cancel: &AtomicBool) -> Result<Option<CameraImage>> {
+        let Some(Cfa {
             width: w,
             height: h,
             pattern,
             mut data,
-        }) = self.handle.cfa()?
+        }) = cfa
         else {
             return Ok(None);
         };
@@ -215,13 +336,16 @@ impl Raw {
         }))
     }
     fn develop_libraw(self, fast: bool, cancel: &AtomicBool) -> Result<CameraImage> {
+        let Backend::Libraw(handle) = &self.backend else {
+            anyhow::bail!("Not a LibRaw file");
+        };
         let ffi::Developed {
             width: w,
             height: h,
             scale,
             clipped,
             pixels,
-        } = self.handle.develop(fast, cancel)?;
+        } = handle.develop(fast, cancel)?;
         Ok(CameraImage {
             recovered: Default::default(),
             width: w,

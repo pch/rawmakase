@@ -1,0 +1,143 @@
+//! The one policy for camera names: the maker's name as RAWmakase spells it,
+//! the model without the maker's prefix, the body a regional name is
+//! (`facts::name`), and the canonical name of a body sold under several
+//! (`facts::canonical`). Camera tables, profiles and saved edits use these.
+use crate::info::RawInfo;
+
+/// Makers as files write them (case-insensitive prefixes) and as RAWmakase
+/// names them. The first that matches wins.
+const MAKERS: &[(&str, &str)] = &[
+    ("NIKON", "Nikon"),
+    ("SONY", "Sony"),
+    ("FUJIFILM", "Fujifilm"),
+    ("OLYMPUS", "Olympus"),
+    ("OM DIGITAL", "OM Digital"),
+    ("LEICA", "Leica"),
+    ("PENTAX", "Pentax"),
+    ("SAMSUNG", "Samsung"),
+    ("EASTMAN KODAK", "Kodak"),
+    ("KODAK", "Kodak"),
+    ("KONICA MINOLTA", "Minolta"),
+    ("MINOLTA", "Minolta"),
+    ("HUAWEI", "Huawei"),
+    ("LG MOBILE", "LG"),
+    ("LGE", "LG"),
+    ("PHASE ONE", "Phase One"),
+    ("SEIKO EPSON", "Epson"),
+    ("SIGMA", "Sigma"),
+    ("MAMIYA", "Mamiya"),
+    ("SINAR", "Sinar"),
+    ("XIAOYI", "YI"),
+    ("YI TECHNOLOGY", "YI"),
+    ("MOTOROLA", "Motorola"),
+    ("GOOGLE", "Google"),
+    ("HMD GLOBAL", "Nokia"),
+    ("HASSELBLAD", "Hasselblad"),
+    ("PARROT", "Parrot"),
+    ("CANON", "Canon"),
+    ("PANASONIC", "Panasonic"),
+    ("RICOH", "Ricoh"),
+];
+
+/// The maker `make` names, as RAWmakase spells it; another maker's name is
+/// kept, trimmed.
+pub(crate) fn make(make: &str) -> String {
+    let make = make.trim();
+    let upper = make.to_ascii_uppercase();
+    MAKERS
+        .iter()
+        .find(|(prefix, _)| upper.starts_with(prefix))
+        .map_or_else(|| make.to_string(), |(_, name)| (*name).to_string())
+}
+
+/// `model` without the maker's name in front (as `make` is spelled, or as
+/// the file spells it) or "Digital Camera" behind (Canon's "Digital" too),
+/// trimmed.
+pub(crate) fn model(make: &str, file_make: &str, model: &str) -> String {
+    let model = strip_suffix(model.trim(), make == "Canon");
+    let first = file_make.split_whitespace().next().unwrap_or("");
+    for prefix in [make, first] {
+        if prefix.is_empty() {
+            continue;
+        }
+        if let Some(rest) = model
+            .get(..prefix.len())
+            .filter(|p| p.eq_ignore_ascii_case(prefix))
+            && model[rest.len()..].starts_with(' ')
+        {
+            return model[rest.len()..].trim().to_string();
+        }
+    }
+    model.to_string()
+}
+
+fn strip_suffix(model: &str, canon: bool) -> &str {
+    let suffixes: &[&str] = if canon {
+        &[" DIGITAL CAMERA", " DIGITAL"]
+    } else {
+        &[" DIGITAL CAMERA"]
+    };
+    for suffix in suffixes {
+        if model.len() > suffix.len()
+            && model.is_char_boundary(model.len() - suffix.len())
+            && model[model.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+        {
+            return model[..model.len() - suffix.len()].trim_end();
+        }
+    }
+    model
+}
+
+/// Names the camera in `info` from the make and model the file writes: the
+/// maker, the model without its prefix, the body a regional name is, and the
+/// canonical name.
+pub(crate) fn apply(info: &mut RawInfo) {
+    let file_make = std::mem::take(&mut info.make);
+    info.make = make(&file_make);
+    info.model = model(&info.make, &file_make, &info.model);
+    if let Some(body) = crate::facts::name(&info.make, &info.model) {
+        info.model = body.to_string();
+    }
+    let [m, n] = crate::facts::canonical(&info.make, &info.model)
+        .cloned()
+        .unwrap_or_else(|| [info.make.clone(), info.model.clone()]);
+    info.normalized_make = m;
+    info.normalized_model = n;
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn makers_and_models_are_named_without_their_prefixes() {
+        assert_eq!(super::make("NIKON CORPORATION"), "Nikon");
+        assert_eq!(super::make("RICOH      "), "Ricoh");
+        assert_eq!(super::make("Leica Camera AG"), "Leica");
+        assert_eq!(super::make("DJI"), "DJI");
+        assert_eq!(super::model("Canon", "Canon", "Canon EOS 5D"), "EOS 5D");
+        assert_eq!(super::model("Pentax", "PENTAX", "PENTAX K-7"), "K-7");
+        assert_eq!(
+            super::model("Nikon", "NIKON CORPORATION", "NIKON D850"),
+            "D850"
+        );
+        assert_eq!(super::model("Sony", "SONY", "ILCE-7M3"), "ILCE-7M3");
+        assert_eq!(
+            super::model("Leica", "Leica Camera AG", "M9 Digital Camera"),
+            "M9"
+        );
+        assert_eq!(
+            super::model("Canon", "Canon", "Canon EOS 350D DIGITAL"),
+            "EOS 350D"
+        );
+        // Minolta's "Digital" is part of the name.
+        assert_eq!(
+            super::model("Minolta", "KONICA MINOLTA", "ALPHA SWEET DIGITAL"),
+            "ALPHA SWEET DIGITAL"
+        );
+        assert_eq!(
+            super::model("Minolta", "Minolta Co., Ltd.", "ALPHA-7 DIGITAL"),
+            "ALPHA-7 DIGITAL"
+        );
+        // Only a whole word: "Canonet" is not "Canon" "et".
+        assert_eq!(super::model("Canon", "Canon", "Canonet"), "Canonet");
+    }
+}

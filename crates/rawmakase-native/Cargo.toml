@@ -18,6 +18,9 @@ test-support = ["rawmakase-model/test-support", "rawmakase-engine/test-support"]
 rawmakase-engine = { path = "../rawmakase-engine", version = "0.1.0" }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0" }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
+# RAWmakase's own RAW decoders; until they replace LibRaw, only the commands
+# that compare decoders reach them (raw::Decoder::Own).
+rawmakase-raw = { path = "../rawmakase-raw", version = "0.1.0" }
 anyhow = "1"
 bytemuck = { version = "1.25", features = ["derive"] }
 image.workspace = true

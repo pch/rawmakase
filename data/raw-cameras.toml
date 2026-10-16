@@ -1,0 +1,146 @@
+# The camera facts RAWmakase's own RAW decoders need beyond the file
+# (crates/rawmakase-raw/src/facts.rs; docs/raw-decoding.md).
+#
+# [[name]]       a model as files write it (make as RAWmakase names it), and the
+#                body it is (`is`)
+# [[canonical]]  the canonical make and model of a body sold under several names,
+#                which camera profiles may use
+# [[camera]]     decode facts, for the camera's files matching `dng` and
+#                `raw_size` when given: the visible area (`visible`, left, top,
+#                width, height in sensor coordinates) and levels
+#
+# source says where the values come from:
+#   file             a rule from the file's own tags, for files that lack them
+#   adobe-dng        Adobe DNG Converter 18.7's output for the camera
+#   compat-observed  the earlier decoder's (LibRaw at 4f014403) output on the test
+#                    dataset's files, kept so saved edits keep their geometry and
+#                    scale (2026-10-17); never a colour matrix
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark II"
+dng = true
+raw_size = [5792, 3804]
+visible = [158, 52, 5634, 3752]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D"
+dng = true
+raw_size = [5360, 3516]
+visible = [158, 52, 5202, 3464]
+source = "compat-observed"
+
+[[camera]]
+make = "Leica"
+model = "SL2"
+dng = true
+raw_size = [8424, 5632]
+visible = [0, 0, 8392, 5613]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "645D"
+dng = true
+raw_size = [7424, 5552]
+visible = [48, 30, 7328, 5501]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-5"
+dng = true
+raw_size = [4992, 3284]
+visible = [10, 0, 4950, 3284]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-5 II"
+dng = true
+raw_size = [4992, 3284]
+visible = [10, 0, 4950, 3284]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-5 II s"
+dng = true
+raw_size = [4992, 3284]
+visible = [10, 0, 4950, 3284]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-7"
+dng = true
+raw_size = [4736, 3136]
+visible = [0, 2, 4684, 3122]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-r"
+dng = true
+raw_size = [4352, 2868]
+visible = [0, 0, 4309, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-x"
+dng = true
+raw_size = [4352, 2868]
+visible = [0, 0, 4309, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K10D"
+dng = true
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K200D"
+dng = true
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K20D"
+dng = true
+raw_size = [4864, 3136]
+visible = [0, 0, 4688, 3124]
+source = "compat-observed"
+
+[[camera]]
+make = "Ricoh"
+model = "GX200"
+dng = true
+raw_size = [4096, 3014]
+visible = [0, 0, 4014, 3014]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "GX10"
+dng = true
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "GX20"
+dng = true
+raw_size = [4864, 3136]
+visible = [0, 0, 4688, 3124]
+source = "compat-observed"
+

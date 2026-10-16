@@ -3425,6 +3425,7 @@ dependencies = [
  "rawmakase-engine",
  "rawmakase-interop",
  "rawmakase-model",
+ "rawmakase-raw",
  "rayon",
  "serde",
  "serde_json",
@@ -3438,6 +3439,17 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rawmakase-raw"
+version = "0.1.0"
+dependencies = [
+ "miniz_oxide 0.9.1",
+ "rawmakase-tiff",
+ "rayon",
+ "serde",
+ "toml",
 ]
 
 [[package]]

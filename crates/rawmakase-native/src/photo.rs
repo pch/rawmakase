@@ -44,7 +44,13 @@ pub fn open_source(path: &Path, cancel: &AtomicBool) -> Result<Opened> {
 
 /// The photo at `path`, opened for developing.
 pub fn open(path: &Path) -> Result<Raw> {
-    let mut raw = Raw::open_file(path)?;
+    open_with(path, crate::raw::Decoder::Libraw)
+}
+
+/// The photo at `path` read by `decoder`, for the commands that compare
+/// decoders; see [`crate::raw::Decoder`].
+pub fn open_with(path: &Path, decoder: crate::raw::Decoder) -> Result<Raw> {
+    let mut raw = Raw::open_with(path, decoder)?;
     let metadata = &mut raw.metadata;
     metadata.lens = crate::lens::embedded::read(path);
     if let Some(dng) = crate::dng::read(path) {

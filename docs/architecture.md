@@ -35,7 +35,7 @@ files should preserve.
 | Module | Owns | Main extension points |
 | --- | --- | --- |
 | `camera_data` | A RAW's metadata, the demosaic and decode choices and the decoded camera-space image, as values with no native code | `camera_data.rs` |
-| `raw` | LibRaw/Little CMS boundary: reading metadata, decoding into `camera_data` images, oriented embedded thumbnails | RAW decoding and native color management |
+| `raw` | LibRaw/Little CMS boundary: reading metadata, decoding into `camera_data` images, oriented embedded thumbnails; the adapter of RAWmakase's own decoders (`crates/rawmakase-raw`, see [RAW decoding](raw-decoding.md)), which only the decoder-comparison commands reach until they replace LibRaw | RAW decoding and native color management |
 | `photo` | Opening a photo: `open_source` is the one entry point, sending a RAW to LibRaw and a JPEG, PNG or TIFF to `raster`; a RAW's LibRaw facts from `raw`, then the camera's lens tables, a DNG's profile and hints, and the imported lens profiles that fit | `photo.rs` |
 | `raster` | Opening a JPEG, PNG or TIFF: decoded upright and converted from its embedded ICC profile to 8-bit sRGB for previews, or to linear ProPhoto f32 for Develop (pure Rust, `moxcms`) | `raster.rs` |
 | `demosaic` | RAWmakase's own Bayer and X-Trans demosaicing of the unpacked sensor data | `demosaic.rs` |

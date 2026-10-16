@@ -17,6 +17,7 @@
 //! - `ora_thumbnail` and `ora_sensor` point into the handle's own buffers, valid
 //!   until the next call on that handle; `ora_sensor`'s data holds `height` rows
 //!   of `pitch` values and its black levels `black_size` values.
+use super::{Cfa, Header, Sensor};
 use anyhow::{Result, bail, ensure};
 use std::{
     ffi::{CStr, CString, c_char, c_int, c_void},
@@ -142,6 +143,58 @@ unsafe extern "C" {
     fn ora_display(path: *const c_char, data: *mut u8, count: u32) -> c_int;
 }
 
+/// The header facts in LibRaw's metadata, with the Panasonic sensor borders
+/// and RAF crop read from the file beside it.
+pub(super) fn header(
+    m: &NativeMetadata,
+    sensor_borders: Option<[u32; 4]>,
+    recommended_crop: Option<[u32; 4]>,
+) -> Header {
+    let text = |bytes: &[c_char]| {
+        let bytes: Vec<u8> = bytes.iter().map(|&c| c as u8).collect();
+        let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+        String::from_utf8_lossy(&bytes[..end]).into_owned()
+    };
+    let matrix = |m: &[f32; 9]| std::array::from_fn(|r| std::array::from_fn(|c| m[r * 3 + c]));
+    Header {
+        make: text(&m.make),
+        model: text(&m.model),
+        normalized: [text(&m.normalized_make), text(&m.normalized_model)],
+        width: m.width,
+        height: m.height,
+        raw_width: m.raw_width,
+        raw_height: m.raw_height,
+        margins: [m.left_margin, m.top_margin],
+        frame: [m.crop_left, m.crop_top, m.crop_width, m.crop_height],
+        aspect: [m.aspect_left, m.aspect_top, m.aspect_width, m.aspect_height],
+        sensor_borders,
+        recommended_crop,
+        flip: m.flip,
+        xtrans: m.xtrans != 0,
+        fuji_dynamic_range: m.fuji_dynamic_range,
+        highlight_tone_priority: m.highlight_tone_priority,
+        sraw: m.sraw != 0,
+        fuji_exposure_shift: m.fuji_exposure_shift,
+        iso: m.iso,
+        shutter: m.shutter,
+        aperture: m.aperture,
+        focal: m.focal,
+        focal_35mm: m.focal_35mm,
+        wb: m.wb,
+        daylight_wb: m.daylight_wb,
+        presets: [
+            m.preset_daylight,
+            m.preset_shade,
+            m.preset_d65,
+            m.preset_fine_weather,
+        ],
+        matrix: matrix(&m.matrix),
+        cam_xyz: matrix(&m.cam_xyz),
+        lens: text(&m.lens),
+        lens_id: m.lens_id,
+        dng_version: m.dng_version,
+    }
+}
 /// LibRaw's version string.
 pub fn version() -> String {
     // SAFETY: `ora_version` returns LibRaw's static, NUL-terminated version string.
@@ -244,38 +297,6 @@ impl Drop for Handle {
         // SAFETY: the pointer came from `ora_open` and is closed exactly once, here.
         unsafe { ora_close(self.0) }
     }
-}
-/// Unpacked sensor data for RAWmakase's own demosaic.
-pub(super) struct Cfa {
-    pub width: u32,
-    pub height: u32,
-    /// The colour pattern as a `PATTERN × PATTERN` tile: 0 red, 1 green, 2 blue.
-    pub pattern: [u8; crate::demosaic::PATTERN * crate::demosaic::PATTERN],
-    /// `width × height` values, (raw − black) / (white − black), not white balanced.
-    pub data: Vec<f32>,
-}
-/// The unpacked sensor data with the levels development reads, for decode
-/// fingerprints. Channels are LibRaw's: 0 red, 1 green, 2 blue, 3 second green.
-pub(crate) struct Sensor {
-    /// 1 for a mosaic, 3 or 4 for small RAW files.
-    pub channels: u32,
-    /// Where the visible area starts in the raw buffer: left, top.
-    pub origin: [u32; 2],
-    /// The size of the area development reads, from `origin`.
-    pub area: [u32; 2],
-    /// SHA-256 of the values development reads (the visible area; the stored
-    /// rotated area of a Super CCD), `channels` per pixel, row by row,
-    /// little-endian. Not the borders: LibRaw leaves rows and columns past some
-    /// decoders' data unwritten, so they hold whatever the memory held.
-    pub data_sha256: [u8; 32],
-    pub black: [u32; 4],
-    /// The black pattern added to `black`: rows, columns and every value.
-    pub black_pattern: (u32, u32, Vec<u32>),
-    pub white: u32,
-    pub linear_white: [u32; 4],
-    /// The colour of each visible pixel over one period of the mosaic; empty
-    /// without one.
-    pub pattern: Vec<Vec<u8>>,
 }
 /// LibRaw's own development: demosaiced camera-space pixels.
 pub(super) struct Developed {

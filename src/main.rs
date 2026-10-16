@@ -115,6 +115,9 @@ enum Command {
     Fingerprint {
         #[arg(required = true, num_args = 1..)]
         files: Vec<PathBuf>,
+        /// The decoder to read them with.
+        #[arg(long, value_enum, default_value_t = DecoderArg::Libraw)]
+        decoder: DecoderArg,
     },
     /// Print each file's develop fingerprint as a line of JSON: the image each
     /// decode mode (full, half) makes, hashed, for decoder regression checks.
@@ -124,12 +127,29 @@ enum Command {
         /// Also write each full decode that is not a mosaic here, as raw floats.
         #[arg(long)]
         floats: Option<PathBuf>,
+        /// The decoder to read them with.
+        #[arg(long, value_enum, default_value_t = DecoderArg::Libraw)]
+        decoder: DecoderArg,
     },
     Benchmark {
         input: PathBuf,
         #[arg(long, default_value_t = 20)]
         iterations: usize,
     },
+}
+/// The decoders the comparison commands can read a RAW with.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum DecoderArg {
+    Libraw,
+    Own,
+}
+impl From<DecoderArg> for raw::Decoder {
+    fn from(d: DecoderArg) -> Self {
+        match d {
+            DecoderArg::Libraw => raw::Decoder::Libraw,
+            DecoderArg::Own => raw::Decoder::Own,
+        }
+    }
 }
 /// A stage `render --tap` writes.
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -466,17 +486,24 @@ fn main() -> Result<()> {
                 im.scale_clipped
             );
         }
-        Some(Command::Fingerprint { files }) => {
+        Some(Command::Fingerprint { files, decoder }) => {
             // One file at a time: LibRaw opening files side by side can give one
             // of them different white balance multipliers (issue #420).
             for path in &files {
-                let line = serde_json::to_string(&rawmakase::fingerprint::fingerprint(path))?;
+                let line = serde_json::to_string(&rawmakase::fingerprint::fingerprint(
+                    path,
+                    decoder.into(),
+                ))?;
                 println!("{line}");
             }
         }
-        Some(Command::DecodeDump { files, floats }) => {
+        Some(Command::DecodeDump {
+            files,
+            floats,
+            decoder,
+        }) => {
             for path in &files {
-                let dump = rawmakase::decode_dump::dump(path, floats.as_deref());
+                let dump = rawmakase::decode_dump::dump(path, floats.as_deref(), decoder.into());
                 println!("{}", serde_json::to_string(&dump)?);
             }
         }
