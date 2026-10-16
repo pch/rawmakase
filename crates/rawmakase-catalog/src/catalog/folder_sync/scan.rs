@@ -578,15 +578,13 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let photos = [
             "A.NEF", "b.dng", "C.jpg", "D.JPG", "E.jpeg", "F.JPEG", "G.png", "H.PNG", "I.tif",
-            "J.TIF", "K.tiff", "L.Tiff",
+            "J.TIF", "K.tiff", "L.Tiff", "N.webp", "O.avif", "P.jxl", "Q2.WEBP", "R2.Avif",
+            "S2.JXL",
         ];
         let others = [
             "A.NEF.xmp",
             "C.xmp",
             "M.heic",
-            "N.webp",
-            "O.avif",
-            "P.jxl",
             "Q.gif",
             "R.psd",
             "S.mov",

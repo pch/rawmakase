@@ -292,6 +292,20 @@ mod tests {
     }
 
     #[test]
+    fn open_source_opens_webp_avif_and_jxl_as_rendered() {
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        for name in ["metadata.webp", "ten-bit.avif", "metadata.jxl"] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/data/formats")
+                .join(name);
+            match super::open_source(&path, &cancel).unwrap() {
+                super::Opened::Rendered(image) => assert!(image.metadata.is_rendered(), "{name}"),
+                super::Opened::Raw(_) => panic!("{name} must open as rendered"),
+            }
+        }
+    }
+
+    #[test]
     fn open_source_opens_a_png_as_rendered() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("photo.png");

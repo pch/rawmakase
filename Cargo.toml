@@ -15,7 +15,7 @@ members = ["crates/rawmakase-catalog", "crates/rawmakase-engine", "crates/rawmak
 [workspace.dependencies]
 # The rendered formats the app reads and writes (`storage::RasterFormat`): one
 # list for every crate that decodes or encodes them.
-image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "tiff"] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "tiff", "webp"] }
 
 [dependencies]
 rawmakase-catalog = { path = "crates/rawmakase-catalog", version = "0.1.0" }

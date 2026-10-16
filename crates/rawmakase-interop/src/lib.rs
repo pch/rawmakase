@@ -10,8 +10,10 @@ use rawmakase_model::{dng, optics};
 
 pub mod exif;
 pub mod export_settings;
+pub mod isobmff;
 pub mod jpeg;
 pub mod lr_develop;
 pub mod presets;
 pub mod raw_defaults;
+pub mod riff;
 pub mod xmp;
