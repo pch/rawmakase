@@ -33,7 +33,7 @@ check() {
         status=1
     fi
 }
-for crate in rawmakase-model rawmakase-interop rawmakase-catalog rawmakase-protocol; do
+for crate in rawmakase-tiff rawmakase-model rawmakase-interop rawmakase-catalog rawmakase-protocol; do
     check "$crate" "$leaf"
 done
 check rawmakase-engine "rawmakase|rawmakase-catalog|rawmakase-export|$gui|$native|$inference"

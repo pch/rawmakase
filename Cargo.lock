@@ -3401,6 +3401,7 @@ dependencies = [
  "anyhow",
  "flate2",
  "rawmakase-protocol",
+ "rawmakase-tiff",
  "rayon",
  "roxmltree 0.21.1",
  "serde",
@@ -3449,6 +3450,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "rawmakase-tiff"
+version = "0.1.0"
 
 [[package]]
 name = "rawpointer"

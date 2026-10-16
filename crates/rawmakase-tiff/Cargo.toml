@@ -1,0 +1,10 @@
+[package]
+name = "rawmakase-tiff"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+description = "A minimal bounded TIFF directory reader for RAW containers and embedded EXIF, with no RAW knowledge"
+license = "MIT"
+publish = false
+
+[dependencies]
