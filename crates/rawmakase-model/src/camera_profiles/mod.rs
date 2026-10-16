@@ -776,7 +776,8 @@ mod rgb_table;
 pub use dcp::{d65_color_matrix, from_bytes};
 pub use enhanced::RgbLook;
 pub use library::{
-    adobe_installed, builtin, compose_look, import_files, installed, library_dirs, load,
+    Imported, adobe_installed, builtin, compose_look, import_files, import_readable, installed,
+    library_dirs, load,
 };
 pub use look_settings::LookSettings;
 pub use rgb_table::{Dimensions, Gamut};

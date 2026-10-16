@@ -1496,29 +1496,51 @@ impl Editor {
             self.dialog(FileDialog::ImportFolder(kind), &ui.ctx().clone());
         }
         if import_adobe && let Some(m) = self.document.metadata.clone() {
+            let result = crate::camera_profiles::import_readable(&adobe);
             if let Some(key) = adobe_key {
-                ui.ctx()
-                    .data_mut(|d| d.remove::<Vec<std::path::PathBuf>>(key));
+                // Imported or unreadable, none of them is worth offering again.
+                ui.ctx().data_mut(|d| {
+                    if result.is_ok() {
+                        d.insert_temp(key, Vec::<std::path::PathBuf>::new());
+                    } else {
+                        d.remove::<Vec<std::path::PathBuf>>(key);
+                    }
+                });
             }
-            match crate::camera_profiles::import_files(&adobe) {
+            match result {
                 Ok(done) => {
-                    let (profiles, errors) = crate::camera_profiles::installed(&m);
-                    // As the loader's: the raw defaults are resolved again
-                    // after this frame, so changing an unedited photo's recipe
-                    // is not taken for an edit.
-                    let _ = self.tx.send(super::worker::Event::Profiles {
-                        id: self.load.id(),
-                        profiles,
-                        errors,
-                    });
-                    ui.ctx().request_repaint();
-                    self.refresh_library_defaults();
-                    self.status = format!(
-                        "Imported {} Adobe profiles for {} {}. Choose one from the Profile menu.",
-                        done.len(),
-                        m.make,
-                        m.model
-                    );
+                    if !done.imported.is_empty() {
+                        let (profiles, errors) = crate::camera_profiles::installed(&m);
+                        // As the loader's: the raw defaults are resolved again
+                        // after this frame, so changing an unedited photo's recipe
+                        // is not taken for an edit.
+                        let _ = self.tx.send(super::worker::Event::Profiles {
+                            id: self.load.id(),
+                            profiles,
+                            errors,
+                        });
+                        ui.ctx().request_repaint();
+                        self.refresh_library_defaults();
+                    }
+                    let mut reasons: Vec<&str> =
+                        done.skipped.iter().map(|(_, e)| e.as_str()).collect();
+                    reasons.sort_unstable();
+                    reasons.dedup();
+                    let reasons = reasons.join("; ");
+                    self.status = match (done.imported.len(), done.skipped.len()) {
+                        (0, k) => format!(
+                            "No new Adobe profiles for {} {}; skipped {k} ({reasons}).",
+                            m.make, m.model
+                        ),
+                        (n, 0) => format!(
+                            "Imported {n} Adobe profiles for {} {}. Choose one from the Profile menu.",
+                            m.make, m.model
+                        ),
+                        (n, k) => format!(
+                            "Imported {n} Adobe profiles for {} {}, skipped {k} ({reasons}). Choose one from the Profile menu.",
+                            m.make, m.model
+                        ),
+                    };
                 }
                 Err(e) => self.status = format!("Profiles not imported: {e:#}"),
             }

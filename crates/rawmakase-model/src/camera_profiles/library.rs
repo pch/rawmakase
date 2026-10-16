@@ -270,6 +270,46 @@ fn collect(dir: &Path, depth: usize, files: &mut Vec<std::path::PathBuf>) {
 pub fn import_files(paths: &[std::path::PathBuf]) -> Result<Vec<std::path::PathBuf>> {
     import_into(paths, &crate::storage::data_dir().join("camera-profiles"))
 }
+/// What [`import_readable`] did.
+#[derive(Debug, Default)]
+pub struct Imported {
+    /// The library's copies.
+    pub imported: Vec<std::path::PathBuf>,
+    /// Files left out, with why RAWmakase can't read them.
+    pub skipped: Vec<(std::path::PathBuf, String)>,
+}
+/// [`import_files`] for a set the user didn't pick file by file (a camera's
+/// profiles from Camera Raw's folder): DCPs RAWmakase can't read, such as Camera
+/// Raw's HDR profiles, are skipped instead of failing the rest.
+pub fn import_readable(paths: &[std::path::PathBuf]) -> Result<Imported> {
+    import_readable_into(paths, &crate::storage::data_dir().join("camera-profiles"))
+}
+fn import_readable_into(paths: &[std::path::PathBuf], destination: &Path) -> Result<Imported> {
+    let mut readable = Vec::new();
+    let mut skipped = Vec::new();
+    for path in paths {
+        let dcp = path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("dcp"));
+        match std::fs::read(path)
+            .map_err(anyhow::Error::from)
+            .and_then(|bytes| {
+                if dcp {
+                    from_bytes(&bytes)?;
+                }
+                Ok(())
+            }) {
+            Ok(()) => readable.push(path.clone()),
+            Err(e) => skipped.push((path.clone(), format!("{e:#}"))),
+        }
+    }
+    let imported = if readable.is_empty() {
+        Vec::new()
+    } else {
+        import_into(&readable, destination)?
+    };
+    Ok(Imported { imported, skipped })
+}
 fn import_into(
     paths: &[std::path::PathBuf],
     destination: &Path,
@@ -428,16 +468,27 @@ mod tests {
     use super::*;
     /// A minimal DCP: the camera it is for, its name and an identity forward matrix.
     fn dcp(camera: &str, name: &str) -> Vec<u8> {
+        dcp_with(camera, name, [])
+    }
+    /// [`dcp`] with more tags after its own, in ascending order.
+    fn dcp_with<const N: usize>(
+        camera: &str,
+        name: &str,
+        more: [(u16, u16, Vec<u8>); N],
+    ) -> Vec<u8> {
         let text = |s: &str| [s.as_bytes(), b"\0"].concat();
         let matrix: Vec<u8> = (0..9)
             .flat_map(|i| [i32::from(i % 4 == 0), 1])
             .flat_map(i32::to_le_bytes)
             .collect();
-        let entries = [
+        let entries: Vec<_> = [
             (50708u16, 2u16, text(camera)),
             (50936, 2, text(name)),
             (50964, 10, matrix),
-        ];
+        ]
+        .into_iter()
+        .chain(more)
+        .collect();
         let mut data_at = 8 + 2 + entries.len() * 12 + 4;
         let mut b = b"IIRC".to_vec();
         b.extend(8u32.to_le_bytes());
@@ -559,6 +610,25 @@ mod tests {
         let new_dest = temp.path().join("fresh-library");
         assert!(import_into(&[source, unsupported], &new_dest).is_err());
         assert!(!new_dest.exists());
+        Ok(())
+    }
+    #[test]
+    fn importing_a_cameras_adobe_profiles_skips_the_unreadable_ones() -> Result<()> {
+        // Camera Raw files HDR Camera Matching profiles with the others for newer
+        // bodies (Nikon's Z 8, say); one of them must not stop the rest.
+        let temp = tempfile::tempdir()?;
+        let standard = temp.path().join("NIKON Z 8 Adobe Standard.dcp");
+        std::fs::write(&standard, dcp("NIKON Z 8", "Adobe Standard"))?;
+        let hdr = temp.path().join("Nikon Z 8 Camera Flat HDR.dcp");
+        let flag = (52551, 7, vec![1, 0, 0, 0, 0, 0, 0, 0]);
+        std::fs::write(&hdr, dcp_with("NIKON Z 8", "Camera Flat HDR", [flag]))?;
+        let dest = temp.path().join("library");
+        let done = import_readable_into(&[standard, hdr.clone()], &dest)?;
+        assert_eq!(done.imported, [dest.join("NIKON Z 8 Adobe Standard.dcp")]);
+        assert_eq!(done.skipped.len(), 1, "{:?}", done.skipped);
+        assert_eq!(done.skipped[0].0, hdr);
+        assert!(done.skipped[0].1.contains("HDR"), "{}", done.skipped[0].1);
+        assert!(!dest.join("Nikon Z 8 Camera Flat HDR.dcp").exists());
         Ok(())
     }
     #[test]
