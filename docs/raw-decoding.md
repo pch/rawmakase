@@ -88,7 +88,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `Cr3Craw` | Canon CR3 C-RAW: CRX planes in three quantized integer 5/3 wavelet levels (version 2 of the coding with quantization maps) | as `Cr3Lossless`, ITU T.800 Annex F, ITU-T H.265 (quantization steps) |
 | `Cr2LosslessJpeg` | Canon CR2: a mosaic in one lossless JPEG strip cut into vertical slices | TIFF 6, ITU T.81, Laurent Clévy's CR2 write-up, ExifTool's Canon tag names, our own measurements |
 | `Cr2Sraw` | Canon CR2 sRAW and mRAW: luma sampled 2 × 1 or 2 × 2 and chroma in one sliced lossless JPEG strip, converted to RGB | TIFF 6, ITU T.81, Laurent Clévy's CR2 write-up, ExifTool's Canon tag names, our own measurements |
-| `HeaderlessPacked` | CHDK's headerless RAW files (Canon PowerShots), known by their size: packed 10 or 12-bit samples | Our own measurements |
+| `HeaderlessPacked` | Headerless RAW files known by their size (CHDK's from Canon PowerShots, action cameras', the Pentax Optio S4's): packed 10, 12 or 16-bit samples | Our own measurements |
 | `CrwCompressed` | Canon CRW: a CIFF file of Canon's coded blocks of differences | ExifTool's CanonRaw tag names and CRW format notes, black-box measurements of the oracle on synthetic files, our own measurements |
 | `IiqL` | Phase One IIQ L and L16 (Leaf Credo too): rows of differences in runs of even and odd columns, lengths chosen every eight columns | ExifTool's PhaseOne tag names, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
 | `IiqS` | Phase One's first IIQ S: IIQ L's rows, values below 256 on a square-law curve | as `IiqL` |
@@ -446,7 +446,15 @@ older PowerShots, ColorInfo2's as-shot and ColorInfo1's Daylight levels.
 CHDK's headerless files (`container::headerless`) are `[[headerless]]` rows
 by file size: the camera, the image size and bits, the visible area and the
 filter. Samples are packed most significant bit first in 16-bit little-endian
-words; black is measured as for CR2 but on every left border column.
+words; black is measured as for CR2 but on every left border column. The
+same rows know other headerless files RAWmakase has always read by size:
+action cameras' 16-bit words (GITUP's sizes, which other makers' cameras
+write too, with LibRaw's black levels; one size it has always read as a
+Samsung WB550, 10-bit samples in the words' top bits) and the Pentax Optio
+S4's 12-bit samples packed in bytes, rows padded to 3520 bytes. Such a row
+may give the packing word (`word`), the row size (`row_bytes`), a `shift`
+and the levels (`black`, `white`). Their as-shot white balance LibRaw
+derived from its own matrices; without an Adobe matrix it is neutral here.
 
 Phase One (`container::iiq`, `vendor::phase_one`, `codec::phase_one`): IIQ
 files, the Phase One backs' TIFFs and Leaf's Credo IIQs hold Phase One's own

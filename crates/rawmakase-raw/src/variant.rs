@@ -111,7 +111,8 @@ pub enum Variant {
     /// Canon CR2 sRAW and mRAW: luma and chroma in one sliced lossless JPEG
     /// strip, converted to RGB.
     Cr2Sraw,
-    /// A RAW file with no header (CHDK), known by its size: packed samples.
+    /// A RAW file with no header (CHDK's, action cameras'), known by its
+    /// size: packed samples.
     HeaderlessPacked,
     /// Canon CRW: Canon's compressed sensor data in a CIFF file.
     CrwCompressed,

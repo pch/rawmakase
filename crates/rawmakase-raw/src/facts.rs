@@ -151,8 +151,34 @@ pub(crate) struct Headerless {
     /// they are not the borders beside the visible area.
     #[serde(default)]
     pub black_columns: Option<[u32; 2]>,
+    /// The bytes of a packing word (1 for plain bit packing; 2, 16-bit
+    /// little-endian words, when not given), and of a row when rows are
+    /// padded.
+    #[serde(default)]
+    pub word: Option<usize>,
+    #[serde(default)]
+    pub row_bytes: Option<u32>,
+    /// The bits each sample is shifted down by after unpacking.
+    #[serde(default)]
+    pub shift: Option<u32>,
+    /// The black and white levels, where they are not measured on masked
+    /// columns and the samples' range.
+    #[serde(default)]
+    pub black: Option<u32>,
+    #[serde(default)]
+    pub white: Option<u32>,
     #[allow(dead_code)]
     pub source: Source,
+}
+
+impl Headerless {
+    /// The bytes of one row.
+    pub(crate) fn stride(&self) -> u64 {
+        self.row_bytes.map_or_else(
+            || (u64::from(self.raw_size[0]) * u64::from(self.bits)).div_ceil(8),
+            u64::from,
+        )
+    }
 }
 
 /// An XYZ (D65) to camera matrix, in ten-thousandths.
@@ -515,12 +541,13 @@ mod tests {
         for h in &cameras.headerless {
             assert!(sizes.insert(h.file_size), "{h:?}");
             let [w, ht] = h.raw_size;
-            // The size names the file: every sample, no more and no less.
-            assert_eq!(
-                u64::from(w) * u64::from(ht) * u64::from(h.bits),
-                h.file_size * 8
-            );
+            // The size names the file: every row, no more and no less, and a
+            // row holds its samples.
+            assert_eq!(u64::from(ht) * h.stride(), h.file_size, "{h:?}");
+            assert!(u64::from(w) * u64::from(h.bits) <= h.stride() * 8, "{h:?}");
             assert!((1..=16).contains(&h.bits), "{h:?}");
+            assert!(matches!(h.word, None | Some(1 | 2)), "{h:?}");
+            assert!(h.shift.unwrap_or(0) < h.bits, "{h:?}");
             assert!(
                 w <= crate::io::MAX_SIDE && ht <= crate::io::MAX_SIDE,
                 "{h:?}"

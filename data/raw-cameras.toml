@@ -29,7 +29,10 @@
 #                camera, `raw_size`, `bits` per packed sample, the `visible`
 #                area and the `cfa` at the sensor's corner, and the masked
 #                columns (`black_columns`, start and end) black is measured
-#                on where they are not beside the visible area
+#                on where they are not beside the visible area; and where
+#                they are not CHDK's, the packing word's bytes (`word`, 2
+#                when not given), padded rows' size (`row_bytes`), a `shift`
+#                down, and the levels (`black`, `white`)
 #
 # source says where the values come from:
 #   file             a rule from the file's own tags, for files that lack them
@@ -8191,3 +8194,79 @@ model = "Aptus 22"
 dng = false
 white = 15000
 source = "adobe-dng"
+
+# Other headerless files RAWmakase has always read by their size: action
+# cameras' 16-bit little-endian words (the GITUP sizes, whose files other
+# makers' cameras write too, and one size it reads as a Samsung WB550,
+# 10-bit samples in the words' top bits), and the Pentax Optio S4's 12-bit
+# samples packed in padded rows.
+
+[[headerless]]
+file_size = 31850496
+make = "GITUP"
+model = "GIT2 4:3"
+raw_size = [4608, 3456]
+bits = 16
+visible = [0, 0, 4608, 3456]
+black = 3200
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 23887872
+make = "GITUP"
+model = "GIT2 16:9"
+raw_size = [4608, 2592]
+bits = 16
+visible = [0, 0, 4608, 2592]
+black = 3200
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 32257024
+make = "GITUP"
+model = "GIT2P 4:3"
+raw_size = [4624, 3488]
+bits = 16
+visible = [8, 2, 4600, 3484]
+black = 4160
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 24192768
+make = "GITUP"
+model = "GIT2P 16:9"
+raw_size = [4624, 2616]
+bits = 16
+visible = [8, 2, 4600, 2612]
+black = 4160
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 24000000
+make = "Samsung"
+model = "WB550"
+raw_size = [4000, 3000]
+bits = 16
+shift = 6
+visible = [0, 0, 4000, 3000]
+white = 992
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 6114240
+make = "Pentax"
+model = "Optio S4"
+raw_size = [2346, 1737]
+bits = 12
+word = 1
+row_bytes = 3520
+visible = [0, 0, 2324, 1737]
+black = 0
+white = 3968
+cfa = "RGGB"
+source = "compat-observed"

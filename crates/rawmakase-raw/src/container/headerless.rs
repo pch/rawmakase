@@ -1,7 +1,10 @@
-//! RAW files with no header at all (CHDK's from Canon PowerShots): only the
-//! file's size says what it is, so the camera table lists each size with its
-//! camera, image size, bit depth, visible area and colour filter. The samples
-//! are packed, most significant bit first, in 16-bit little-endian words.
+//! RAW files with no header at all (CHDK's from Canon PowerShots, action
+//! cameras', the Pentax Optio S4's): only the file's size says what it is,
+//! so the camera table lists each size with its camera, image size, bit
+//! depth, visible area and colour filter. The samples are packed, most
+//! significant bit first, in 16-bit little-endian words or (where the row
+//! says) bytes, rows padded where it gives their size, shifted down where it
+//! says; black is measured on the masked columns unless the row gives it.
 //!
 //! Sources: our own measurements on the test dataset's files.
 use crate::codec::packed;
@@ -63,29 +66,41 @@ pub(crate) fn decode(
         return Err(crate::error::Error::Cancelled);
     }
     let mut data = crate::io::zeroed(count)?;
-    // Packed most significant bit first in 16-bit little-endian words, one
-    // run over the rows (each row a whole number of words).
+    // Packed most significant bit first in words of the row's (16-bit
+    // little-endian when it says none), each row a whole number of words.
+    let row = plan.row;
     let packing = packed::Packing {
-        bits: plan.row.bits,
-        word: 2,
+        bits: row.bits,
+        word: row.word.unwrap_or(2),
         pad: false,
         swap: false,
     };
-    if !(u64::from(width) * u64::from(plan.row.bits)).is_multiple_of(16) {
+    let stride = usize::try_from(row.stride()).map_err(|_| crate::error::corrupt("row size"))?;
+    if !stride.is_multiple_of(packing.word) || stride < packing.row_bytes(width as usize) {
         return Err(crate::error::Error::Unsupported(
             "headerless rows of part of a word".into(),
         ));
     }
-    let stride = packing.row_bytes(width as usize);
     packed::rows(bytes, packing, width as usize, stride, &mut data, cancel)?;
+    if let Some(shift) = row.shift.filter(|&s| s > 0) {
+        for (i, v) in data.iter_mut().enumerate() {
+            if i % (1 << 20) == 0 && cancel.load(Ordering::Relaxed) {
+                return Err(crate::error::Error::Cancelled);
+            }
+            *v >>= shift.min(15);
+        }
+    }
     let area = [info.margins[0], info.margins[1], info.width, info.height];
     let cfa = info
         .cfa
         .as_ref()
         .ok_or_else(|| crate::error::corrupt("no colour filter"))?;
-    let black =
-        crate::levels::masked_black(&data, width as usize, area, cfa, plan.row.black_columns, 0)
-            .unwrap_or([0; 4]);
+    let black = match row.black {
+        Some(b) => [b; 4],
+        None => crate::levels::masked_black(&data, width as usize, area, cfa, row.black_columns, 0)
+            .unwrap_or([0; 4]),
+    };
+    let bits = row.bits - row.shift.unwrap_or(0).min(row.bits - 1);
     Ok(Sensor {
         width,
         height,
@@ -94,7 +109,7 @@ pub(crate) fn decode(
         area,
         black,
         black_pattern: (0, 0, Vec::new()),
-        white: (1 << plan.row.bits) - 1,
+        white: row.white.unwrap_or((1 << bits) - 1),
         linear_white: [0; 4],
     })
 }
@@ -122,6 +137,35 @@ mod tests {
         assert_eq!(sensor.white, 1023);
         // One byte more or less is no known file.
         assert!(crate::open(&bytes[1..]).is_err());
+        assert_eq!(
+            crate::decode(&info, &bytes, &AtomicBool::new(true)).unwrap_err(),
+            crate::Error::Cancelled
+        );
+    }
+
+    #[test]
+    fn rows_may_be_padded_byte_packed_or_shifted() {
+        // A Pentax Optio S4 file: rows of 2346 12-bit samples packed in
+        // bytes (0x12 0x34 0x56: 0x123 and 0x456), padded to 3520 bytes.
+        let mut row = [0x12u8, 0x34, 0x56].repeat(1173);
+        row.push(0xff);
+        let bytes = row.repeat(1737);
+        let info = crate::open(&bytes).unwrap();
+        assert_eq!(
+            (info.make.as_str(), info.model.as_str()),
+            ("Pentax", "Optio S4")
+        );
+        assert_eq!((info.width, info.height), (2324, 1737));
+        let s = crate::decode(&info, &bytes, &AtomicBool::new(false)).unwrap();
+        assert_eq!(&s.data[..4], &[0x123, 0x456, 0x123, 0x456]);
+        assert_eq!(s.data[2346], 0x123);
+        assert_eq!((s.black, s.white), ([0; 4], 3968));
+        // 10-bit samples in the top bits of 16-bit little-endian words.
+        let bytes = [0xc0u8, 0xff].repeat(12_000_000);
+        let info = crate::open(&bytes).unwrap();
+        let s = crate::decode(&info, &bytes, &AtomicBool::new(false)).unwrap();
+        assert!(s.data.iter().all(|&v| v == 1023));
+        assert_eq!(s.white, 992);
         assert_eq!(
             crate::decode(&info, &bytes, &AtomicBool::new(true)).unwrap_err(),
             crate::Error::Cancelled
