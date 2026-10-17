@@ -7918,3 +7918,17 @@ model = "SP550UZ"
 dng = false
 wb_scale = [0.9578, 0.9575]
 source = "adobe-dng"
+
+# DNG: canonical names RAWmakase has always given these bodies.
+
+[[canonical]]
+make = "Hasselblad"
+model = "L1D-20c"
+canonical = ["Hasselblad", "L1D-20c-FFF"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Hasselblad"
+model = "L2D-20c"
+canonical = ["Hasselblad", "L2D-20c-FFF"]
+source = "compat-observed"

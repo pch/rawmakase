@@ -138,11 +138,23 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     let ifd0 = &t.ifds[0];
     info.make = t.text(ifd0, 271).unwrap_or_default();
     info.model = t.text(ifd0, 272).unwrap_or_default();
+    let unique = t.text(ifd0, 50708).filter(|u| !u.trim().is_empty());
     // Apple's DNGs name the camera module (UniqueCameraModel), not the phone.
     if info.make.trim() == "Apple"
-        && let Some(unique) = t.text(ifd0, 50708).filter(|u| !u.trim().is_empty())
+        && let Some(unique) = &unique
     {
-        info.model = unique;
+        info.model = unique.clone();
+    }
+    // Without Make and Model (Blackmagic's and Parrot's DNGs), the camera is
+    // UniqueCameraModel's: the maker's name, then the model.
+    if info.make.trim().is_empty()
+        && info.model.trim().is_empty()
+        && let Some(unique) = &unique
+    {
+        let unique = unique.trim();
+        let (make, model) = unique.split_once(' ').unwrap_or(("", unique));
+        info.make = make.to_string();
+        info.model = model.trim().to_string();
     }
     info.flip = crate::geometry::flip(t.int(ifd0, 274).unwrap_or(1));
     if let Some(neutral) = t.reals(ifd0, 50728).filter(|n| n.len() == 3) {
@@ -850,6 +862,19 @@ mod tests {
         // A list that does not parse is not applied.
         let f = dng(2, 1, &[(51008, 7, 6, list1[..6].to_vec())]);
         assert_eq!(decode(&with_samples(f, &[0, 1])).data, [0, 1]);
+    }
+
+    /// A DNG without Make and Model is named by its UniqueCameraModel.
+    #[test]
+    fn names_come_from_unique_camera_model_without_make_and_model() {
+        let unique = b"Blackmagic Pocket Cinema Camera 4K\0".to_vec();
+        let f = dng(2, 1, &[(50708, 2, unique.len() as u32, unique)]);
+        let info = crate::open(&f).unwrap();
+        assert_eq!(
+            [info.make.as_str(), info.model.as_str()],
+            ["Blackmagic", "Pocket Cinema Camera 4K"]
+        );
+        assert_eq!(info.normalized_make, "");
     }
 
     /// Whole levels stay the file's.

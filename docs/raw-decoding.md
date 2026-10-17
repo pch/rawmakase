@@ -119,6 +119,11 @@ column's and row's deltas) is subtracted, the result scaled by 1 / (white −
 the largest black) and clipped to 0–65535, with black 0 and white 65535.
 LibRaw truncated fractional blacks and ignored the deltas.
 
+DNG names: a DNG without Make and Model (Blackmagic's, Parrot's) is named by
+its UniqueCameraModel, the first word the maker. Ricoh Imaging's Pentax
+bodies are Pentax's (`names`). Canonical makes are empty for makers outside
+the camera tables (`names::KNOWN`), as RAWmakase has always had them.
+
 DNG opcodes (`container/dng/opcodes.rs`, the specification's "Opcode List
 Processing"): OpcodeList1's apply to the stored image before the
 LinearizationTable, OpcodeList2's to the active area's linear values (so a

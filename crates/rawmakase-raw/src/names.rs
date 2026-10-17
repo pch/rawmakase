@@ -114,12 +114,58 @@ pub(crate) fn apply(info: &mut RawInfo) {
     if let Some(body) = crate::facts::name(&info.make, &info.model) {
         info.model = body.to_string();
     }
-    let [m, n] = crate::facts::canonical(&info.make, &info.model)
+    let [mut m, n] = crate::facts::canonical(&info.make, &info.model)
         .cloned()
         .unwrap_or_else(|| [info.make.clone(), info.model.clone()]);
+    if !KNOWN.contains(&m.as_str()) {
+        m.clear();
+    }
     info.normalized_make = m;
     info.normalized_model = n;
 }
+
+/// Makers the canonical names keep; any other's canonical make is empty, as
+/// the earlier decoder (LibRaw) left it for makers it did not know, so names
+/// RAWmakase saved stay as they were (compat-observed, 2026-10-17).
+const KNOWN: &[&str] = &[
+    "Apple",
+    "Broadcom",
+    "Canon",
+    "DJI",
+    "Epson",
+    "Fujifilm",
+    "GITUP",
+    "GoPro",
+    "Google",
+    "HTC",
+    "Hasselblad",
+    "Huawei",
+    "Kodak",
+    "LG",
+    "Leaf",
+    "Leica",
+    "Mamiya",
+    "Minolta",
+    "Motorola",
+    "Nikon",
+    "Nokia",
+    "OM Digital",
+    "Olympus",
+    "OnePlus",
+    "Panasonic",
+    "Parrot",
+    "Pentax",
+    "Phase One",
+    "RaspberryPi",
+    "Ricoh",
+    "Samsung",
+    "Sigma",
+    "Sinar",
+    "Sony",
+    "Xiaomi",
+    "YI",
+    "Yuneec",
+];
 
 #[cfg(test)]
 mod tests {
@@ -169,5 +215,42 @@ mod tests {
         assert_eq!((info.make.as_str(), info.model.as_str()), ("Pentax", "K-3"));
         // Only a whole word: "Canonet" is not "Canon" "et".
         assert_eq!(super::model("Canon", "Canon", "Canonet"), "Canonet");
+    }
+
+    fn named(make: &str, model: &str) -> [String; 4] {
+        let mut info = crate::info::base(crate::Variant::DngUncompressed);
+        info.make = make.into();
+        info.model = model.into();
+        super::apply(&mut info);
+        [
+            info.make,
+            info.model,
+            info.normalized_make,
+            info.normalized_model,
+        ]
+    }
+
+    #[test]
+    fn pentax_bodies_of_ricoh_imaging_are_pentax() {
+        assert_eq!(
+            named("RICOH IMAGING COMPANY, LTD.  ", "PENTAX K-3 Mark III  "),
+            ["Pentax", "K-3 Mark III", "Pentax", "K-3 Mark III"]
+        );
+        assert_eq!(
+            named("RICOH IMAGING COMPANY, LTD.", "RICOH GR III"),
+            ["Ricoh", "GR III", "Ricoh", "GR III"]
+        );
+    }
+
+    #[test]
+    fn makers_without_canonical_names_have_an_empty_canonical_make() {
+        assert_eq!(
+            named("asus", "ASUS_I01WD"),
+            ["asus", "ASUS_I01WD", "", "ASUS_I01WD"]
+        );
+        assert_eq!(
+            named("Parrot", "Anafi"),
+            ["Parrot", "Anafi", "Parrot", "Anafi"]
+        );
     }
 }

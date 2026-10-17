@@ -27474,3 +27474,59 @@ before = 1023
 after = 65535
 evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 1.76) x2, GainMap (gains 1.00 to 1.81) x2, applied (OpcodeList2 to the linear values (black 0, white 65535))"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# DNG: names as Adobe DNG Converter keeps them from the file.
+
+[[delta]]
+# Autel/Model 323/MAX_0005.DNG
+sha256 = "fec086e0a3fdf4cab8d1a0fea9beb07703989e7e1a4d1ccbfe3619c9f83efaf7"
+field = "header.facts.normalized"
+before = ["", "Model 111"]
+after = ["", "Model 323"]
+evidence = "Adobe DNG Converter 18.7 keeps the file's Model 'Model 323' (UniqueCameraModel autelModel 323)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Autel/Model 323/MAX_0005.DNG
+sha256 = "fec086e0a3fdf4cab8d1a0fea9beb07703989e7e1a4d1ccbfe3619c9f83efaf7"
+field = "header.metadata.model"
+before = "Model 111"
+after = "Model 323"
+evidence = "Adobe DNG Converter 18.7 keeps the file's Model 'Model 323' (UniqueCameraModel autelModel 323)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica/M (Typ 240)/ADG_RPUsubmit_compressed_L1006373.DNG
+sha256 = "bf35a4da121f853cb644253b69515b441748f95fcbd6fdea2de025a76e6c24cd"
+field = "header.metadata.lens_model"
+before = "not selecte"
+after = "not selected"
+evidence = "Exif LensModel 'not selected'; Adobe DNG Converter 18.7 writes aux:Lens and LensModel 'not selected' (LibRaw cut it to 11 characters)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica/M (Typ 240)/ADG_RPUsubmit_uncompressed_L1006374.DNG
+sha256 = "300dd5983924eb4a91866bec7f766512b0aad1385bd257dcb2e318ea196087b4"
+field = "header.metadata.lens_model"
+before = "not selecte"
+after = "not selected"
+evidence = "Exif LensModel 'not selected'; Adobe DNG Converter 18.7 writes aux:Lens and LensModel 'not selected' (LibRaw cut it to 11 characters)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# RICOH/GXR/R0017428.DNG
+sha256 = "219a062f3d1eb8d66c9dd6088eecf495be082cf5c81f88622eb0dd28cc893cec"
+field = "header.facts.normalized"
+before = ["Ricoh", "GXR S10"]
+after = ["Ricoh", "GXR"]
+evidence = "Adobe DNG Converter 18.7 keeps the file's Make RICOH and Model GXR; the lens module is UniqueCameraModel's (RICOH S10 24-72mm F2.5-4.4 VC)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# RICOH/GXR/R0017428.DNG
+sha256 = "219a062f3d1eb8d66c9dd6088eecf495be082cf5c81f88622eb0dd28cc893cec"
+field = "header.metadata.model"
+before = "GXR S10"
+after = "GXR"
+evidence = "Adobe DNG Converter 18.7 keeps the file's Make RICOH and Model GXR; the lens module is UniqueCameraModel's (RICOH S10 24-72mm F2.5-4.4 VC)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
