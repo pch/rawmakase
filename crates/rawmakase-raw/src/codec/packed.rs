@@ -94,6 +94,38 @@ pub(crate) fn rows(
     Ok(())
 }
 
+/// Rows of `width` samples stored as two fields, `stride` bytes a row: the
+/// even rows, then from the next 2 KiB boundary the odd ones (Olympus's and
+/// Minolta's compacts; our measurements).
+pub(crate) fn fields(
+    src: &[u8],
+    p: Packing,
+    width: usize,
+    stride: usize,
+    out: &mut [u16],
+    cancel: &AtomicBool,
+) -> Result<()> {
+    let height = out.len() / width.max(1);
+    let even = height.div_ceil(2);
+    let second = (even * stride).next_multiple_of(2048);
+    let mut field = crate::io::zeroed(width * even)?;
+    for (start, first) in [(0, 0), (second, 1)] {
+        field.fill(0);
+        let part = src.get(start..).unwrap_or(&[]);
+        rows(part, p, width, stride, &mut field, cancel)?;
+        for (i, row) in field.chunks_exact(width).enumerate() {
+            if i % 256 == 0 && cancel.load(Ordering::Relaxed) {
+                return Err(Error::Cancelled);
+            }
+            let y = 2 * i + first;
+            if y < height {
+                out[y * width..(y + 1) * width].copy_from_slice(row);
+            }
+        }
+    }
+    Ok(())
+}
+
 /// 16-bit words, one sample each, shifted right by `shift`.
 pub(crate) fn words(
     src: &[u8],

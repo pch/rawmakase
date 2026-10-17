@@ -158,6 +158,10 @@ pub(crate) struct Headerless {
     pub word: Option<usize>,
     #[serde(default)]
     pub row_bytes: Option<u32>,
+    /// The rows stored as two fields: the even ones, then from the next
+    /// 2 KiB boundary the odd ones.
+    #[serde(default)]
+    pub fields: Option<bool>,
     /// The bits each sample is shifted down by after unpacking.
     #[serde(default)]
     pub shift: Option<u32>,
@@ -543,10 +547,18 @@ mod tests {
             let [w, ht] = h.raw_size;
             // The size names the file: every row, no more and no less, and a
             // row holds its samples.
-            assert_eq!(u64::from(ht) * h.stride(), h.file_size, "{h:?}");
+            // Two fields, each starting on a 2 KiB boundary.
+            let size = if h.fields == Some(true) {
+                ((u64::from(ht).div_ceil(2) * h.stride()).next_multiple_of(2048)
+                    + u64::from(ht) / 2 * h.stride())
+                .next_multiple_of(2048)
+            } else {
+                u64::from(ht) * h.stride()
+            };
+            assert_eq!(size, h.file_size, "{h:?}");
             assert!(u64::from(w) * u64::from(h.bits) <= h.stride() * 8, "{h:?}");
             assert!((1..=16).contains(&h.bits), "{h:?}");
-            assert!(matches!(h.word, None | Some(1 | 2)), "{h:?}");
+            assert!(matches!(h.word, None | Some(1 | 2 | 4)), "{h:?}");
             assert!(h.shift.unwrap_or(0) < h.bits, "{h:?}");
             assert!(
                 w <= crate::io::MAX_SIDE && ht <= crate::io::MAX_SIDE,

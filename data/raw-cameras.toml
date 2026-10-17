@@ -8282,3 +8282,107 @@ black = 0
 white = 3968
 cfa = "RGGB"
 source = "compat-observed"
+
+# Minolta MRW: the canonical names of the bodies sold under several names,
+# and Adobe DNG Converter's white level for the DiMAGE bodies.
+
+[[canonical]]
+make = "Minolta"
+model = "DYNAX 7D"
+canonical = ["Minolta", "DG-7D"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Minolta"
+model = "MAXXUM 7D"
+canonical = ["Minolta", "DG-7D"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Minolta"
+model = "ALPHA-7 DIGITAL"
+canonical = ["Minolta", "DG-7D"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Minolta"
+model = "DYNAX 5D"
+canonical = ["Minolta", "DG-5D"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Minolta"
+model = "MAXXUM 5D"
+canonical = ["Minolta", "DG-5D"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Minolta"
+model = "ALPHA SWEET DIGITAL"
+canonical = ["Minolta", "DG-5D"]
+source = "compat-observed"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE 5"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE 7"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE 7i"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE 7Hi"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE A1"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE A2"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE A200"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+# The DiMAGE Z2's MRW has no header: 12-bit samples in little-endian 32-bit
+# words, two fields of rows.
+
+[[headerless]]
+file_size = 5869568
+make = "Minolta"
+model = "DiMAGE Z2"
+raw_size = [2288, 1710]
+bits = 12
+word = 4
+fields = true
+visible = [0, 0, 2288, 1710]
+black = 0
+cfa = "BGGR"
+source = "compat-observed"

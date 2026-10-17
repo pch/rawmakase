@@ -20,12 +20,14 @@ pub(crate) fn largest(candidates: &[Candidate], bytes: &[u8]) -> Option<(u64, u6
 }
 
 /// Whether a JPEG starts at `at`: its start of image marker, or Epson's
-/// (whose first byte is 0xEE, read as 0xFF; our measurements).
+/// (whose first byte is 0xEE) or Minolta's (whose first byte is another,
+/// before the second marker's 0xFF), the first byte read as 0xFF (our
+/// measurements).
 pub(crate) fn is_jpeg(bytes: &[u8], at: u64) -> bool {
     usize::try_from(at)
         .ok()
-        .and_then(|at| bytes.get(at..at.checked_add(2)?))
-        .is_some_and(|b| b == [0xff, 0xd8] || b == [0xee, 0xd8])
+        .and_then(|at| bytes.get(at..at.checked_add(3)?))
+        .is_some_and(|b| b[..2] == [0xff, 0xd8] || b[..2] == [0xee, 0xd8] || b[1..] == [0xd8, 0xff])
 }
 
 /// Why a file has no preview thumbnails can use.
@@ -55,4 +57,18 @@ pub(crate) fn find(info: &RawInfo, bytes: &[u8]) -> Result<(u64, u64), NoPreview
     } else {
         NoPreview::Missing
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_jpeg_may_start_with_another_first_byte() {
+        let bytes = [0xff, 0xd8, 0xff, 0x02, 0xd8, 0xff, 0x02, 0xd8, 0x00];
+        assert!(super::is_jpeg(&bytes, 0));
+        assert!(super::is_jpeg(&bytes, 3));
+        // Without the second marker's 0xFF, not a JPEG; nor past the end.
+        assert!(!super::is_jpeg(&bytes, 6));
+        assert!(!super::is_jpeg(&bytes, 8));
+        assert!(!super::is_jpeg(&bytes, u64::MAX));
+    }
 }

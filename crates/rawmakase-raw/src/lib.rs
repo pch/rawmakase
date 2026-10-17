@@ -59,7 +59,7 @@ pub fn preview<'a>(
         .and_then(|(start, end)| bytes.get(start..end))
         .ok_or(NoPreview::Missing)?;
     Ok(match jpeg {
-        [0xee, rest @ ..] => {
+        [first, rest @ ..] if *first != 0xff => {
             let mut mended = vec![0xff];
             mended.extend_from_slice(rest);
             std::borrow::Cow::Owned(mended)

@@ -17,7 +17,7 @@ use crate::io::{Bytes, Order};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
 use crate::vendor::olympus;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 /// How an ORF's sensor data is coded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -281,25 +281,8 @@ pub(crate) fn decode(
             packed::rows(src, p, width, p.row_bytes(width), &mut data, cancel)?;
         }
         Coding::Fields(p) => {
-            let stride = p.row_bytes(width);
-            let even = height.div_ceil(2);
             // The odd rows start at the next 2 KiB after the even rows.
-            let second = (even * stride).next_multiple_of(2048);
-            let mut field = crate::io::zeroed(width * even)?;
-            for (start, first) in [(0, 0), (second, 1)] {
-                field.fill(0);
-                let part = src.get(start..).unwrap_or(&[]);
-                packed::rows(part, p, width, stride, &mut field, cancel)?;
-                for (i, row) in field.chunks_exact(width).enumerate() {
-                    if i % 256 == 0 && cancel.load(Ordering::Relaxed) {
-                        return Err(Error::Cancelled);
-                    }
-                    let y = 2 * i + first;
-                    if y < height {
-                        data[y * width..(y + 1) * width].copy_from_slice(row);
-                    }
-                }
-            }
+            packed::fields(src, p, width, p.row_bytes(width), &mut data, cancel)?;
         }
         Coding::Words(order) => {
             packed::words(src, order, 16 - plan.bits, &mut data, cancel)?;

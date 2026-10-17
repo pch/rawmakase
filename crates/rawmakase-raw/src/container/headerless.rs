@@ -3,8 +3,8 @@
 //! so the camera table lists each size with its camera, image size, bit
 //! depth, visible area and colour filter. The samples are packed, most
 //! significant bit first, in 16-bit little-endian words or (where the row
-//! says) bytes, rows padded where it gives their size, shifted down where it
-//! says; black is measured on the masked columns unless the row gives it.
+//! says) bytes or 32-bit words, rows padded where it gives their size, in
+//! two fields or shifted down where it says; black is measured on the masked columns unless the row gives it.
 //!
 //! Sources: our own measurements on the test dataset's files.
 use crate::codec::packed;
@@ -81,7 +81,11 @@ pub(crate) fn decode(
             "headerless rows of part of a word".into(),
         ));
     }
-    packed::rows(bytes, packing, width as usize, stride, &mut data, cancel)?;
+    if row.fields == Some(true) {
+        packed::fields(bytes, packing, width as usize, stride, &mut data, cancel)?;
+    } else {
+        packed::rows(bytes, packing, width as usize, stride, &mut data, cancel)?;
+    }
     if let Some(shift) = row.shift.filter(|&s| s > 0) {
         for (i, v) in data.iter_mut().enumerate() {
             if i % (1 << 20) == 0 && cancel.load(Ordering::Relaxed) {

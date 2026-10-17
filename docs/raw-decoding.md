@@ -41,7 +41,7 @@ Modules, each with a small `pub(crate)` surface:
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
 | `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings, Canon's CRW blocks, Phase One's IIQ rows, Hasselblad's pairs |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`, `mos`, `sti`, `brcm`) |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`, `mos`, `sti`, `brcm`, `mrw`) |
 | `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`, `phase_one`, `hasselblad`, `leaf`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
@@ -98,6 +98,8 @@ A file of a recognised container in a variant this crate does not decode is
 | `MosUncompressed` | Leaf MOS, 16-bit words | TIFF 6, ExifTool's Leaf tag names, our own measurements |
 | `StiUncompressed` | Sinar STI, one tile of 16-bit words | TIFF 6, TIFF/EP, our own measurements |
 | `BrcmPacked` | Raspberry Pi: a JPEG, then Broadcom's raw block of 10-bit samples packed four in five bytes | Our own measurements |
+| `MrwPacked` | Minolta MRW, 12-bit samples packed most significant bit first | ExifTool's MinoltaRaw tag names, our own measurements |
+| `MrwUnpacked` | Minolta MRW, 16-bit big-endian words | ExifTool's MinoltaRaw tag names, our own measurements |
 | `FffCompressed` | Hasselblad 3FR and FFF (compression 7): lossless JPEG headers, then pairs of coded differences in little-endian 32-bit words | ITU T.81, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
 | `OrfCompressed` | Olympus and OM Digital ORF/ORI, Olympus's compressed coding of 12 or 14-bit samples | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfPacked` | Olympus ORF, packed 12-bit samples: 16-byte blocks of ten, 32-bit words, or two interlaced fields of rows | TIFF 6, ExifTool's Olympus tag names, our own measurements |
@@ -537,6 +539,24 @@ are zero or whose rows are not all in the file is none, and a JPEG without
 the block is not RAW, whatever its size (as are PNG, GIF, RIFF, PDF and ZIP
 files: none falls through to the headerless sizes). Adobe DNG Converter
 reads only the JPEG.
+
+Minolta MRW (`container::mrw`): "\0MRM" and the size of its big-endian
+blocks: PRD (sensor and image size, RawDepth, BitDepth, StorageMethod 0x59
+for 12-bit samples packed most significant bit first or 0x52 for 16-bit
+words, BayerPattern 1 for RGGB or 4 for GBRG), WBG (the as-shot levels in
+the filter's order), RIF (the daylight red and blue levels, 12 bytes in,
+over a green of 256) and TTW (a TIFF of the EXIF, whose maker note's
+PreviewImageStart and Length give the preview, its first byte written
+as another than 0xFF and read as 0xFF, as Epson's); the sensor data follows
+the blocks. Exposure times and apertures the EXIF gives only as APEX values
+are read from those. Black is 0; white is Adobe DNG Converter's (`adobe-dng`
+rows: 3965 for the DiMAGE bodies), else the samples' 12-bit range, Adobe's
+for the Dynax and Alpha bodies (approved deltas; Adobe's levels and white
+balance match RAWmakase's samples exactly on every body measured). The
+bodies sold under several names have `[[canonical]]` rows (DG-7D, DG-5D).
+The DiMAGE Z2's MRW has no header: a `[[headerless]]` row, its samples in
+little-endian 32-bit words stored as two fields as Olympus's compacts store
+them (`packed::fields`).
 
 Canon files whose values differ from LibRaw's on purpose are approved in
 `tests/corpus/decode-deltas.toml`, with Adobe DNG Converter's value as the

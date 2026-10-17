@@ -29814,3 +29814,87 @@ after = 100.0
 evidence = "RAWmakase's is the file's ISOSpeedRatings (IFD0 tag 0x8827), which LibRaw does not read; Adobe DNG Converter does not read STI files"
 approval = "pending"
 
+
+# Minolta MRW: white is Adobe DNG Converter's.
+
+[[delta]]
+# Minolta/DiMAGE A1/RAW_MINOLTA_A1.MRW
+sha256 = "bde1e2cd788e49c9bef20dfdd41be948fb02c2ee198c6b0959a67a3f79fd41c9"
+field = "sensor.white"
+before = 3979
+after = 3965
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3965; RAWmakase's is the camera table's adobe-dng row (DiMAGE) or the samples' 12-bit range; Adobe's white fitted to RAWmakase's samples is the same on the four bodies measured (A1, A200, DiMAGE 7, Dynax 7D)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Minolta/DiMAGE A200/RAW_MINOLTA_DIMAGE_A200.MRW
+sha256 = "2a95f6af2168e536dfb6d02b47e3b6119b35b497eebf179d7c20a6e496c26641"
+field = "sensor.white"
+before = 4095
+after = 3965
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3965; RAWmakase's is the camera table's adobe-dng row (DiMAGE) or the samples' 12-bit range; Adobe's white fitted to RAWmakase's samples is the same on the four bodies measured (A1, A200, DiMAGE 7, Dynax 7D)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Minolta/Dynax 7D/PICT3410.MRW
+sha256 = "713819e33e5302ec864d576d57223cfc8dcf46e8d45e0ae744d1fec40290a89f"
+field = "sensor.white"
+before = 4091
+after = 4095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095; RAWmakase's is the camera table's adobe-dng row (DiMAGE) or the samples' 12-bit range; Adobe's white fitted to RAWmakase's samples is the same on the four bodies measured (A1, A200, DiMAGE 7, Dynax 7D)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Minolta/Maxxum 7D/PICT0041.MRW
+sha256 = "ff57d7c632507e908e2f556fb1632d10c008f9d237d4001e583a2aedbacb585f"
+field = "sensor.white"
+before = 4091
+after = 4095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095; RAWmakase's is the camera table's adobe-dng row (DiMAGE) or the samples' 12-bit range; Adobe's white fitted to RAWmakase's samples is the same on the four bodies measured (A1, A200, DiMAGE 7, Dynax 7D)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Minolta/ALPHA-7 DIGITAL/PICT6107.MRW
+sha256 = "f655f60d24e492cd2b8c46ac8bfd24f83d7696b49cdf2301ffd4f34857216248"
+field = "sensor.white"
+before = 4091
+after = 4095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095; RAWmakase's is the camera table's adobe-dng row (DiMAGE) or the samples' 12-bit range; Adobe's white fitted to RAWmakase's samples is the same on the four bodies measured (A1, A200, DiMAGE 7, Dynax 7D)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# MINOLTA/DYNAX 5D/Minolta_Dynax_5D.MRW
+sha256 = "45eee786da72e284054ae81892b7226e8a08cf405b320edaaf767bbf1b2a77c8"
+field = "sensor.white"
+before = 4091
+after = 4095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095; RAWmakase's is the camera table's adobe-dng row (DiMAGE) or the samples' 12-bit range; Adobe's white fitted to RAWmakase's samples is the same on the four bodies measured (A1, A200, DiMAGE 7, Dynax 7D)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Minolta/DiMAGE A2/PICT0881.MRW
+sha256 = "8655e3428461377dd7c6b28ae98a0b23d659314997ed16333985278f99c9a4b4"
+field = "sensor.white"
+before = 3983
+after = 3965
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3965; RAWmakase's is the camera table's adobe-dng row (DiMAGE) or the samples' 12-bit range; Adobe's white fitted to RAWmakase's samples is the same on the four bodies measured (A1, A200, DiMAGE 7, Dynax 7D)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# KONICA MINOLTA/ALPHA-7 DIGITAL/PICT0108.MRW
+sha256 = "5c71920de7fa103da6bd3eb56bbe94edcf9802f4c1f56d0cdc75666966440d85"
+field = "sensor.white"
+before = 4091
+after = 4095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095 (another file of the body); RAWmakase's is the camera table's adobe-dng row (DiMAGE) or the samples' 12-bit range; Adobe's white fitted to RAWmakase's samples is the same on the four bodies measured (A1, A200, DiMAGE 7, Dynax 7D)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# KONICA MINOLTA/ALPHA SWEET DIGITAL/PICT1038.MRW
+sha256 = "cad52fa1585f374ad7710d353295a7b8e3d9e148ad441d67d492010ef32dc5a5"
+field = "sensor.white"
+before = 4091
+after = 4095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095; RAWmakase's is the camera table's adobe-dng row (DiMAGE) or the samples' 12-bit range; Adobe's white fitted to RAWmakase's samples is the same on the four bodies measured (A1, A200, DiMAGE 7, Dynax 7D)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+

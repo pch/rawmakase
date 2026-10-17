@@ -136,6 +136,10 @@ pub enum Variant {
     /// Raspberry Pi: a JPEG followed by Broadcom's raw block of 10-bit
     /// samples packed four in five bytes.
     BrcmPacked,
+    /// Minolta MRW, packed 12-bit samples.
+    MrwPacked,
+    /// Minolta MRW, 16-bit big-endian words.
+    MrwUnpacked,
 }
 
 impl Variant {
@@ -198,6 +202,8 @@ impl Variant {
             Variant::MosUncompressed => "mos-uncompressed",
             Variant::StiUncompressed => "sti-uncompressed",
             Variant::BrcmPacked => "brcm-packed",
+            Variant::MrwPacked => "mrw-packed",
+            Variant::MrwUnpacked => "mrw-unpacked",
         }
     }
 }
@@ -224,6 +230,7 @@ pub(crate) enum Plan {
     Mos(crate::container::mos::MosPlan),
     Sti(crate::container::sti::StiPlan),
     Brcm(crate::container::brcm::BrcmPlan),
+    Mrw(crate::container::mrw::MrwPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -242,6 +249,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
     }
     if crate::container::cr3::is_cr3(bytes) {
         return crate::container::cr3::open(bytes);
+    }
+    if crate::container::mrw::is_mrw(bytes) {
+        return crate::container::mrw::open(bytes);
     }
     if crate::container::ciff::is_ciff(bytes) {
         return crate::container::ciff::open(bytes);
@@ -414,6 +424,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         }
         (Plan::Brcm(plan), Variant::BrcmPacked) => {
             crate::container::brcm::decode(info, plan, bytes, cancel)
+        }
+        (Plan::Mrw(plan), Variant::MrwPacked | Variant::MrwUnpacked) => {
+            crate::container::mrw::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
