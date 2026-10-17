@@ -4088,45 +4088,859 @@ raw_size = [4992, 3292]
 visible = [2, 0, 4940, 3292]
 source = "compat-observed"
 
-[[camera]]
-make = "Nikon"
-model = "D5100"
-bits = 14
-white = 15846
-source = "compat-observed"
+# Nikon: Adobe DNG Converter 18.7's WhiteLevel where it is not the full
+# scale of the data's bits (2026-10-17). Lossy data's is on its curve's
+# scale. The COOLPIX P330's is Adobe's 65000 over 16: RAWmakase keeps its
+# words at 12 bits. The Nikon 1 J1, J2, J3 and AW1's 3300 is for the ISO speeds
+# Adobe reads with it (the J1 at ISO 200: 4095, the file's).
 
 [[camera]]
 make = "Nikon"
-model = "D600"
+model = "1 AW1"
+dng = false
+iso = 160
+white = 3300
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "1 J1"
+dng = false
+iso = 100
+white = 3300
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "1 J2"
+dng = false
+iso = 100
+white = 3300
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "1 J3"
+dng = false
+iso = 160
+white = 3300
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "1 J4"
+dng = false
+bits = 12
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "1 J5"
+dng = false
+bits = 12
+white = 3800
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "1 V3"
+dng = false
+bits = 12
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX A"
+dng = false
 bits = 14
-white = 15879
-source = "compat-observed"
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX B700"
+dng = false
+bits = 12
+white = 4000
+source = "adobe-dng"
 
 [[camera]]
 make = "Nikon"
 model = "COOLPIX P330"
-black = 200
-source = "compat-observed"
+dng = false
+bits = 12
+white = 4062
+source = "adobe-dng"
 
 [[camera]]
 make = "Nikon"
 model = "COOLPIX P340"
-black = 200
-source = "compat-observed"
+dng = false
+bits = 12
+white = 3800
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX P7100"
+dng = false
+bits = 12
+white = 3800
+source = "adobe-dng"
 
 [[camera]]
 make = "Nikon"
 model = "COOLPIX P7700"
-black = 3200
-white = 65504
-source = "compat-observed"
+dng = false
+bits = 12
+white = 65000
+source = "adobe-dng"
 
 [[camera]]
 make = "Nikon"
 model = "COOLPIX P7800"
-black = 3200
-white = 65504
-source = "compat-observed"
+dng = false
+bits = 12
+white = 65000
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D200"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D2H"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D2Hs"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D2X"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D2Xs"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D300"
+dng = false
+bits = 12
+white = 3808
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D300"
+dng = false
+bits = 14
+white = 15236
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3000"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D300S"
+dng = false
+bits = 12
+white = 3808
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D300S"
+dng = false
+bits = 14
+white = 15236
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3100"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3200"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3300"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3400"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3500"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3S"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3S"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3X"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D4"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D4"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D40"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D40X"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D4S"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D4S"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D500"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D500"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5000"
+dng = false
+bits = 12
+white = 3767
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5100"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5200"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5300"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5300"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5500"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5500"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5600"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5600"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D6"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D6"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D60"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D600"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D600"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D610"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D610"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D700"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D700"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7000"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7000"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7100"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7100"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7200"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7200"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D750"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D750"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7500"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7500"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D780"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D780"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D80"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D800"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D800"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D800E"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D810"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D810"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D850"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D850"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D90"
+dng = false
+bits = 12
+white = 3767
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Df"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Df"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 30"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 30"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 5"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 5"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 50"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 50"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 6"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 6"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 6_2"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 6_2"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 7"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 7"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 7_2"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 7_2"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 8"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 9"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z f"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z fc"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z fc"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z50_2"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z5_2"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z6_3"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
 
 [[canonical]]
 make = "Nikon"

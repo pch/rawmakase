@@ -10,9 +10,10 @@
 //! Sources: Laurent Clévy's public NEF notes (the linearization table's
 //! layout: version, predictions, curve size and points, split row); ITU T.81
 //! (canonical Huffman codes, difference categories and their additional
-//! bits); our own measurements: the six Huffman tables, the curve's
-//! interpolation and the difference coding, recovered from LibRaw's output
-//! on the test dataset's files.
+//! bits); our own measurements: the six Huffman tables and the difference
+//! coding, recovered from LibRaw's output on the test dataset's files, and
+//! the curve's interpolation, from Adobe DNG Converter's linearization tables
+//! of the same files.
 use super::bits::Msb;
 use super::huffman::Huffman;
 use crate::error::{Error, Result};
@@ -31,6 +32,9 @@ pub(crate) struct Coding<'a> {
     pub points: &'a [u16],
     pub split: u16,
     pub bits: u32,
+    /// A whole curve that replaces the points' (`table[v]`, its last value
+    /// beyond it): the camera's, where the file's is not the one to read.
+    pub table: Option<&'a [u16]>,
 }
 
 /// Decodes `width × height` samples of `bits` bits from `data`.
@@ -109,40 +113,48 @@ fn difference(bits: &mut Msb, symbol: u32) -> i32 {
 }
 
 /// The curve from decoded values (clamped to 14 bits) to raw values: the
-/// values themselves, except where the table's points say otherwise. Lossy data of
-/// the second kind stores points every `step` values, linearly interpolated,
-/// over all values (version 0x20) or the first quarter (0x40); of the first
-/// kind, the whole curve's start.
+/// values themselves, except where the table's points say otherwise. Lossy
+/// data of the second kind places point `i` at `i·m / 255` (version 0x20:
+/// the first 256 points span every value) or `i·m / 1024` (0x40: they span
+/// a quarter), `m` the largest value of the data's bits, linearly
+/// interpolated and rounded half up; of the first kind, point `i` at `i`.
+/// Past the last point, its value. This is Adobe DNG Converter's
+/// linearization table of our dataset's lossy files (but for the D3, D300
+/// and D700's of 12 bits, which it reads with the first kind's curve).
 fn curve(coding: &Coding) -> Vec<u16> {
-    // Room for the last point of a curve over all 14-bit values.
-    let mut curve: Vec<u16> = (0..=u16::MAX).collect();
+    let mut curve: Vec<u16> = (0..=0x3fff).collect();
     let size = usize::from(coding.size);
-    let point = |i: usize| coding.points.get(i).copied().unwrap_or(0);
+    let point = |i: usize| i64::from(coding.points.get(i).copied().unwrap_or(0));
+    if let Some(table) = coding.table.filter(|t| !t.is_empty()) {
+        for (i, v) in curve.iter_mut().enumerate() {
+            *v = table[i.min(table.len() - 1)];
+        }
+        return curve;
+    }
     match coding.version {
         [LOSSLESS, _] => {}
         [0x44, v @ (0x20 | 0x40)] if size > 1 => {
-            let span = (1usize << coding.bits) >> if v == 0x40 { 2 } else { 0 };
-            let step = span / (size - 1);
-            if step == 0 {
-                return curve;
-            }
-            for (i, v) in curve.iter_mut().step_by(step).take(size).enumerate() {
-                *v = point(i);
-            }
-            for x in 0..span.min(curve.len()) {
-                let f = x % step;
-                if f > 0 && x - f + step < curve.len() {
-                    let (lo, hi) = (u64::from(curve[x - f]), u64::from(curve[x - f + step]));
-                    let (f, step) = (f as u64, step as u64);
-                    curve[x] = ((lo * (step - f) + hi * f) / step) as u16;
-                }
+            let m = (1i64 << coding.bits) - 1;
+            let per = if v == 0x40 { 1024 } else { 255 };
+            for (x, out) in curve.iter_mut().enumerate() {
+                let t = x as i64 * per;
+                let (i, f) = ((t / m) as usize, t % m);
+                let y = if i + 1 < size {
+                    let (lo, hi) = (point(i), point(i + 1));
+                    // lo + (hi − lo)·f/m, rounded half up.
+                    (2 * (lo * m + (hi - lo) * f) + m).div_euclid(2 * m)
+                } else {
+                    point(size - 1)
+                };
+                *out = y.clamp(0, 0xffff) as u16;
             }
         }
-        _ => {
-            for (i, v) in curve.iter_mut().take(size).enumerate() {
-                *v = point(i);
+        _ if size > 0 => {
+            for (i, v) in curve.iter_mut().enumerate() {
+                *v = point(i.min(size - 1)) as u16;
             }
         }
+        _ => {}
     }
     curve
 }
@@ -203,6 +215,7 @@ mod tests {
             points,
             split,
             bits,
+            table: None,
         }
     }
 
@@ -250,33 +263,54 @@ mod tests {
         .concat();
         let c = coding([0x44, 0x20], 12, &points, 1);
         let out = run(&stream(&bits), 4, 2, &c);
-        assert_eq!(out[..4], [2048; 4]);
-        assert_eq!(out[4..6], [2048 - 508, 2048 - 508]);
+        let curve = curve(&c);
+        assert_eq!(out[..4], [curve[2048]; 4]);
+        assert_eq!(out[4..6], [curve[2048 - 508]; 2]);
         // Without a split, or in data of the first kind, the first table
         // codes every row: 00 is category 5 there.
+        let points: Vec<u16> = (0..4096).collect();
         for c in [
-            coding([0x44, 0x20], 12, &points, 0),
+            coding([0x44, 0x20], 12, &points[..257], 0),
             coding([0x44, 0x10], 12, &points, 1),
         ] {
             let out = run(&stream(&bits), 4, 2, &c);
-            assert_eq!(out[4], 2048 - 31, "{:?}", c.version);
+            assert_eq!(out[4], super::curve(&c)[2048 - 31], "{:?}", c.version);
         }
     }
 
     #[test]
     fn curves_interpolate_their_points_and_clamp_at_14_bits() {
-        // Version 0x20 spreads three points over all 12-bit values; 0x40 over
-        // the first quarter; the rest of the curve is the values themselves.
+        // Version 0x20 places point i at i·4095/255 in 12-bit data: 1000 at
+        // 16.06, 4000 at 32.12, and 4000 beyond; between them, rounded half
+        // up: 8 is 1000·2040/4095 = 498.2, 16 is 996.3, 17 is 1000 +
+        // 3000·240/4095 = 1175.8.
         let c = coding([0x44, 0x20], 12, &[0, 1000, 4000], 0);
         let curve = curve(&c);
-        assert_eq!((curve[1024], curve[2048], curve[3072]), (500, 1000, 2500));
-        assert_eq!((curve[4096], curve[5000]), (4000, 5000));
+        assert_eq!(
+            [curve[8], curve[16], curve[17], curve[33], curve[5000]],
+            [498, 996, 1176, 4000, 4000]
+        );
+        // A 14-bit curve of 257 points every 64: 16383 is 255·64 = 16320,
+        // and 2056 is 2048 + 64·(2056·255 − 32·16383)/16383 = 2048.1.
+        let points: Vec<u16> = (0..257).map(|i| i * 64).collect();
+        let c = coding([0x44, 0x20], 14, &points, 0);
+        let curve = super::curve(&c);
+        assert_eq!([curve[16383], curve[2056]], [16320, 2048]);
+        // 0x40 places it at i·4095/1024: 2 is 1000·2048/4095 = 500.1, 4 is
+        // 1000 + 3000·1/4095.
         let c = coding([0x44, 0x40], 12, &[0, 1000, 4000], 0);
         let curve = super::curve(&c);
         assert_eq!(
-            (curve[256], curve[512], curve[1024], curve[1025]),
-            (500, 1000, 4000, 1025)
+            [curve[2], curve[4], curve[8], curve[1025]],
+            [500, 1001, 4000, 4000]
         );
+        // The first kind's points are the curve's start, its last beyond.
+        let c = coding([0x44, 0x10], 12, &[0, 7, 9], 0);
+        assert_eq!(super::curve(&c)[..5], [0, 7, 9, 9, 9]);
+        // A camera's table replaces the points, its last value beyond it.
+        let mut c = coding([0x44, 0x20], 12, &[0, 1000, 4000], 0);
+        c.table = Some(&[0, 3, 5]);
+        assert_eq!(super::curve(&c)[..5], [0, 3, 5, 5, 5]);
         // Lossless 14-bit: 16000 + 8192 is beyond 14 bits and clamps
         // (LibRaw reported 16383); category 14 is 11111111.
         let mut c = coding([0x46, 0x30], 14, &[], 0);

@@ -166,6 +166,28 @@ pub(crate) struct Matrix {
     pub source: Source,
 }
 
+/// A linearization curve the file does not carry: for its cameras' files of
+/// `bits`-bit data whose own table is of `version`, the curve from decoded
+/// values (`values[v]`, the last value beyond them).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Curve {
+    pub make: String,
+    pub models: Vec<String>,
+    pub bits: u32,
+    pub version: [u8; 2],
+    pub values: Vec<u16>,
+    #[allow(dead_code)]
+    pub source: Source,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Curves {
+    #[serde(default)]
+    curve: Vec<Curve>,
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Cameras {
@@ -188,6 +210,7 @@ struct Matrices {
 
 const CAMERAS: &str = include_str!("../../../data/raw-cameras.toml");
 const MATRICES: &str = include_str!("../../../data/raw-matrices.toml");
+const CURVES: &str = include_str!("../../../data/raw-curves.toml");
 
 fn cameras() -> &'static Cameras {
     static TABLE: OnceLock<Cameras> = OnceLock::new();
@@ -203,6 +226,32 @@ fn matrices() -> &'static Matrices {
 /// The headerless RAW file of `size` bytes, when the table knows one.
 pub(crate) fn headerless(size: u64) -> Option<&'static Headerless> {
     cameras().headerless.iter().find(|h| h.file_size == size)
+}
+
+fn curves() -> &'static Curves {
+    static TABLE: OnceLock<Curves> = OnceLock::new();
+    TABLE.get_or_init(|| toml::from_str(CURVES).unwrap_or_default())
+}
+
+/// The linearization curve a camera's files of `bits`-bit data whose own
+/// table is of `version` are read with instead of theirs.
+pub(crate) fn curve(
+    make: &str,
+    model: &str,
+    bits: u32,
+    version: [u8; 2],
+) -> Option<&'static [u16]> {
+    curves()
+        .curve
+        .iter()
+        .find(|c| {
+            c.make == make
+                && c.bits == bits
+                && c.version == version
+                && c.models.iter().any(|m| m == model)
+        })
+        .map(|c| c.values.as_slice())
+        .filter(|v| !v.is_empty())
 }
 
 /// The body a `make` file names `model` is.
@@ -483,6 +532,12 @@ mod tests {
                 "{h:?}"
             );
             assert_ne!(h.source, Source::AdobeDng, "{h:?}");
+        }
+        let curves: Curves = toml::from_str(CURVES).unwrap();
+        for c in &curves.curve {
+            // Adobe's, and a curve: never decreasing.
+            assert_eq!(c.source, Source::AdobeDng, "{c:?}");
+            assert!(!c.values.is_empty() && c.values.is_sorted(), "{c:?}");
         }
         for m in &matrices.matrix {
             assert!(seen.insert(("matrix", &m.make, &m.model)), "{m:?}");

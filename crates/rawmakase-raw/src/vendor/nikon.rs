@@ -8,7 +8,9 @@
 //! on synthetic NEF files (the decryption keystream and its two 256-entry key
 //! tables, which serial numbers and shutter counts select, and when lens data
 //! is read) and on the test dataset's files (where each ColorBalance version
-//! keeps the as-shot multipliers, which slots become presets).
+//! keeps the as-shot multipliers, which slots become presets), and Adobe DNG
+//! Converter's output on them (where ColorBalance 0500 and 0502 keep the
+//! black level).
 //!
 //! The maker note is a TIFF directory of its own: after "Nikon\0" and two
 //! version bytes, a TIFF header whose offsets the note's tags use. The
@@ -29,6 +31,9 @@ pub(crate) struct Notes {
     pub black: Option<[u32; 4]>,
     /// The black level a Coolpix's ColorBalanceC gives, at the data's bits.
     pub nrw_black: Option<u32>,
+    /// The black levels (red, green, blue) a Coolpix's ColorBalance (0x0097)
+    /// of version 0500 or 0502 gives, at 16 bits.
+    pub cb_black: Option<[u32; 3]>,
     /// LensIDNumber; 0 when unknown.
     pub lens_id: u32,
     /// CropArea (0x0045): left, top, width, height.
@@ -108,6 +113,7 @@ pub(crate) fn read(t: &TiffFile, model: &str) -> Notes {
         if notes.cam_mul.is_none() {
             notes.cam_mul = color_balance(&cb, |b, at| u16_at(b, at));
         }
+        notes.cb_black = color_balance_black(&cb, |b, at| u16_at(b, at));
     }
     if let Some(data) = note.raw(ifd, 0x0014) {
         coolpix_color(&data, &mut notes);
@@ -213,6 +219,23 @@ fn color_balance(cb: &[u8], u16_at: impl Fn(&[u8], usize) -> Option<u16>) -> Opt
         mul[c] = f32::from(u16_at(cb, at + 2 * i)?);
     }
     (mul[0] > 0. && mul[1] > 0. && mul[2] > 0.).then_some(mul)
+}
+
+/// The black levels (red, green, blue) at 16 bits of a Coolpix's
+/// ColorBalance of version 0500 (at byte 54) or 0502 (at 56): Adobe DNG
+/// Converter's BlackLevel of the dataset's COOLPIX P7700, P7800 (0500),
+/// P330 and P340 (0502), at their data's scale (our own measurements).
+fn color_balance_black(
+    cb: &[u8],
+    u16_at: impl Fn(&[u8], usize) -> Option<u16>,
+) -> Option<[u32; 3]> {
+    let at = match cb.get(..4)? {
+        b"0500" => 54,
+        b"0502" => 56,
+        _ => return None,
+    };
+    let level = |i: usize| u16_at(cb, at + 2 * i).map(u32::from);
+    Some([level(0)?, level(1)?, level(2)?])
 }
 
 /// A Coolpix's colour data (0x0014): ColorBalanceA, big-endian 16-bit red
@@ -445,6 +468,22 @@ mod tests {
         assert_eq!(color_balance(&cb, be), Some([555., 256., 388., 256.]));
         assert_eq!(color_balance(&cb[..22], be), None);
         assert_eq!(color_balance(b"0999", be), None);
+    }
+
+    #[test]
+    fn coolpix_colour_balance_gives_its_black_levels() {
+        // Version 0500 keeps red, green, blue at byte 54; 0502 at 56.
+        let le = |b: &[u8], at: usize| b.get(at..at + 2).map(|v| u16::from_le_bytes([v[0], v[1]]));
+        for (version, at) in [(b"0500", 54), (b"0502", 56)] {
+            let mut cb = version.to_vec();
+            cb.resize(at + 6, 0);
+            for (i, v) in [3208u16, 3209, 3210].iter().enumerate() {
+                cb[at + 2 * i..at + 2 * i + 2].copy_from_slice(&v.to_le_bytes());
+            }
+            assert_eq!(color_balance_black(&cb, le), Some([3208, 3209, 3210]));
+            assert_eq!(color_balance_black(&cb[..at + 5], le), None);
+        }
+        assert_eq!(color_balance_black(b"0103", le), None);
     }
 
     #[test]

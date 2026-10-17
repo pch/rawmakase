@@ -7,7 +7,8 @@
 //! Sources: TIFF 6 and TIFF/EP (directories, strips, CFA tags); ExifTool's
 //! Nikon tag documentation (the maker note's tags); our own measurements of
 //! LibRaw's output on the test dataset's files (how each layout's data is
-//! stored, which data sizes are not Huffman-coded, the preview it picks).
+//! stored, which data sizes are not Huffman-coded, the preview it picks) and
+//! of Adobe DNG Converter's (the levels).
 use super::tiff::{Ifd, TiffFile};
 use crate::codec::{bits::Msb, nikon, nikon_he, nikon_sraw};
 use crate::error::{Error, Result, corrupt};
@@ -212,7 +213,12 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         // RGB from the tone curve, whose scale is 14 bits.
         ([0; 4], 16383)
     } else {
-        levels(&info, &notes, bits)
+        let scale = if layout == (Layout::HighWords { shift: false }) {
+            16
+        } else {
+            bits
+        };
+        levels(&info, &notes, bits, scale)
     };
     info.plan = Plan::Nef(NefPlan {
         width: raw_width,
@@ -312,17 +318,23 @@ fn table_levels(info: &RawInfo, bits: u32) -> (Option<u32>, Option<u32>) {
         crate::facts::camera(&make, &model, false, size)
             .filter(|c| c.bits.is_none_or(|b| b == bits))
     };
-    (rows().find_map(|c| c.black), rows().find_map(|c| c.white))
+    // A white for the file's ISO speed before the camera's.
+    let white = crate::facts::iso_white(&make, &model, false, size, info.iso)
+        .or_else(|| rows().find_map(|c| c.white));
+    (rows().find_map(|c| c.black), white)
 }
 
 /// The black (per channel) and white levels: the maker note's black level
-/// at the data's bits, a Coolpix's own, or the camera table's.
-fn levels(info: &RawInfo, notes: &Notes, bits: u32) -> ([u32; 4], u32) {
+/// at the data's bits, a Coolpix's own, or the camera table's. `scale` is
+/// the bits the data is kept at (16 for words kept whole).
+fn levels(info: &RawInfo, notes: &Notes, bits: u32, scale: u32) -> ([u32; 4], u32) {
     let (table_black, table_white) = table_levels(info, bits);
     let white = table_white.unwrap_or((1 << bits.min(16)) - 1);
     let mut black = [0; 4];
     if let Some(b) = notes.black {
         black = b.map(|v| v >> 14u32.saturating_sub(bits));
+    } else if let Some([r, g, b]) = notes.cb_black {
+        black = [r, g, b, g].map(|v| v >> 16u32.saturating_sub(scale));
     } else if let Some(b) = notes.nrw_black.or(table_black) {
         black = [b; 4];
     }
@@ -361,6 +373,13 @@ pub(crate) fn decode(
                     points: &curve.points,
                     split: curve.split,
                     bits: plan.bits,
+                    // The curve Adobe DNG Converter reads the camera's files
+                    // with, where it is not theirs.
+                    table: {
+                        let make = crate::names::make(&info.make);
+                        let model = crate::names::model(&make, &info.make, &info.model);
+                        crate::facts::curve(&make, &model, plan.bits, curve.version)
+                    },
                 },
                 // Without a table: no curve, predictions of zero.
                 None => nikon::Coding {
@@ -370,6 +389,7 @@ pub(crate) fn decode(
                     points: &[],
                     split: 0,
                     bits: plan.bits,
+                    table: None,
                 },
             };
             (1, nikon::decode(&data, width, height, &coding, cancel)?)
@@ -676,8 +696,9 @@ pub(crate) mod tests {
         assert_eq!(info.frame, [2, 0, 2, 2]);
         let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
         assert_eq!(s.data, [2017, 2079, 2017, 3102, 2048, 2048, 2018, 2048]);
-        // BlackLevel is at 14 bits; the data at 12.
-        assert_eq!((s.black, s.white), ([150; 4], 4095));
+        // BlackLevel is at 14 bits; the data at 12. White is Adobe's for
+        // the Z 7's 12-bit files.
+        assert_eq!((s.black, s.white), ([150; 4], 3880));
     }
 
     #[test]
@@ -762,7 +783,8 @@ pub(crate) mod tests {
             let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
             let value = crate::codec::nikon_he::tests::blank_value();
             assert!(s.data.iter().all(|&v| v == value), "{model}");
-            assert_eq!((s.black, s.white), ([1008; 4], 16383));
+            // Adobe's white for both bodies' 14-bit files.
+            assert_eq!((s.black, s.white), ([1008; 4], 15892));
         }
     }
 

@@ -169,10 +169,17 @@ and on synthetic NEFs that probe one code word, key or tag at a time):
   switches tables for linearization tables of version 0x44 0x20 and 0x44
   0x40, and the bit stream runs on without alignment. Predictions are
   clamped to 14 bits before the curve.
-- The curve: 0x44 0x20 stores points every 2^bits / (n − 1) values, 0x44 0x40
-  over a quarter of that span, linearly interpolated; 0x44 0x10 stores the
-  curve's start; values past the points are themselves. The D1X keeps its
-  table (version 0x44 0x58) in tag 0x008c, its predictions 2110 bytes on.
+- The curve is read as Adobe DNG Converter reads it (its LinearizationTable,
+  equal on every entry for all our lossy files but three): 0x44 0x20 places
+  point i at i·m / 255 (m = 2^bits − 1, so the first 256 points span every
+  value), 0x44 0x40 at i·m / 1024, linearly interpolated and rounded half up;
+  0x44 0x10 stores the curve's start; past the last point, its value. LibRaw
+  spaced the points 2^bits / 256 apart (0.4% higher values). The D3, D300
+  and D700's 12-bit lossy files Adobe reads with the standard curve of the
+  first kind's files (683 points) instead of their own, which they do not
+  hold: `data/raw-curves.toml` keeps it (`adobe-dng`, written by
+  `scripts/cameras/raw-curves.py` from Adobe's DNGs). The D1X keeps its table (version 0x44 0x58) in tag
+  0x008c, its predictions 2110 bytes on.
 - The maker note's encrypted blocks (ColorBalance 02xx, LensData 02xx and
   08xx) are XORed after their version with a running sum: a step from the
   serial number's low byte, a start from the XOR of the shutter count's
@@ -181,7 +188,13 @@ and on synthetic NEFs that probe one code word, key or tag at a time):
   keys as 96; the D50's as 34. Lens data is read only alongside a shutter
   count.
 - Levels: BlackLevel (0x003d) is at 14 bits and shifted to the data's bits;
-  white is the data's full scale except where `raw-cameras.toml` says.
+  a Coolpix's ColorBalance (0x0097) of version 0500 or 0502 gives black at 16
+  bits (at byte 54 or 56; Adobe's BlackLevel for the COOLPIX P7700, P7800,
+  P330 and P340). White is Adobe DNG Converter's WhiteLevel per camera and bit
+  depth (`adobe-dng` rows of `raw-cameras.toml`; on lossy data, on its
+  curve's scale), else the data's full scale. The Nikon 1 J1, J2, J3 and
+  AW1's 3300 is Adobe's at the ISO speeds it was seen to read them with (100,
+  and 160 for the J3 and AW1; rows of `iso`): the J1 at ISO 200 reads 4095.
   CropArea's odd left or top edge moves in by one, keeping the far edges.
 - ISO comes from EXIF, else the note's ISO (0x0002), else ISOInfo's byte v as
   100 × 2^(v / 12 − 5) in single precision.
