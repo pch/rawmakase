@@ -77,12 +77,34 @@ pub(crate) struct Curve {
 
 /// The maker note of `t`'s EXIF directory, read.
 pub(crate) fn read(t: &TiffFile, model: &str) -> Notes {
+    match maker_note(t) {
+        Some(note) => read_note(&note, note.base == t.base, model),
+        None => Notes::default(),
+    }
+}
+
+/// The maker note a DNG keeps in its DNGPrivateData at `at` in `file`:
+/// Adobe's "MakN" record ("Adobe\0MakN", its length, the original byte
+/// order and offset, then the note), read; `None` for another record or
+/// maker. (DNG Specification 1.7, DNGPrivateData; Adobe's record layout
+/// from our own reading of the dataset's DNGs.)
+pub(crate) fn read_dng(file: &[u8], at: u64, model: &str) -> Option<Notes> {
+    let head = file.get(usize::try_from(at).ok()?..)?;
+    if !head.starts_with(b"Adobe\0MakN") {
+        return None;
+    }
+    let note_at = at.checked_add(20)?;
+    if !head.get(20..)?.starts_with(b"Nikon\0") {
+        return None;
+    }
+    let note = TiffFile::parse(file, note_at.checked_add(10)?)?;
+    Some(read_note(&note, false, model))
+}
+
+/// A maker note's facts; `headerless` for the D1 family's bare directory.
+fn read_note(note: &TiffFile, headerless: bool, model: &str) -> Notes {
     let mut notes = Notes::default();
-    let Some(note) = maker_note(t) else {
-        return notes;
-    };
     let ifd = &note.ifds[0];
-    let headerless = note.base == t.base;
     let little = note.little();
     let u16_at = |b: &[u8], at: usize| -> Option<u16> {
         let v = b.get(at..at + 2)?;
@@ -104,7 +126,7 @@ pub(crate) fn read(t: &TiffFile, model: &str) -> Notes {
     {
         notes.cam_mul = Some([levels[0] as f32, 1., levels[1] as f32, 1.]);
     }
-    let keys = Keys::of(&note, ifd, model);
+    let keys = Keys::of(note, ifd, model);
     if let Some(cb) = note.raw(ifd, 0x0097) {
         let cb = match (cb.get(..2), keys) {
             (Some(b"02"), Some(k)) => k.decrypt(&cb),
@@ -429,6 +451,28 @@ const COUNT_KEYS: [u8; 256] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Adobe's MakN record of a Nikon note (its own TIFF, ISO 200 in
+    /// 0x0002) is read; other records, and the record cut anywhere, are
+    /// none or read without panicking.
+    #[test]
+    fn reads_the_note_a_dng_keeps() {
+        let mut note = b"Nikon\0\x02\x10\0\0MM\0\x2a\0\0\0\x08".to_vec();
+        note.extend(1u16.to_be_bytes());
+        note.extend([0, 2, 0, 3, 0, 0, 0, 2, 0, 0, 0, 200]);
+        note.extend(0u32.to_be_bytes());
+        let mut file = b"junk".to_vec();
+        file.extend(b"Adobe\0MakN");
+        file.extend((note.len() as u32 + 6).to_be_bytes());
+        file.extend(b"MM\0\0\x01\0");
+        file.extend(&note);
+        let notes = read_dng(&file, 4, "D80").unwrap();
+        assert_eq!((notes.iso, notes.lens_id), (Some(200.), 0));
+        assert!(read_dng(&file, 0, "D80").is_none());
+        for n in 0..file.len() {
+            let _ = read_dng(&file[..n], 4, "D80");
+        }
+    }
 
     /// The keys of serial number 1234 and shutter count 5678.
     fn keys() -> Keys {

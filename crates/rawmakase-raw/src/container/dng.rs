@@ -181,6 +181,14 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         if let Some(iso) = notes.iso {
             info.iso = iso;
         }
+    } else if let Some(entry) = ifd0.entries.get(&50740)
+        && let Some(at) = t.offset_of(entry)
+    {
+        // Nikon's maker note, in Adobe's record of DNGPrivateData.
+        let model = crate::names::model("Nikon", &info.make, &info.model);
+        if let Some(notes) = crate::vendor::nikon::read_dng(bytes, at, &model) {
+            info.lens_id = notes.lens_id;
+        }
     }
     info.previews = t.previews();
     info.uncompressed_preview = t.has_uncompressed_thumbnail();
@@ -218,7 +226,6 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         curve,
         opcodes: [list(&t, ifd, 51008), list(&t, ifd, 51009)],
     });
-    let _ = bytes;
     Ok(info)
 }
 

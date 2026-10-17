@@ -127,6 +127,11 @@ the D65 one, else by inverse colour temperature between the two (Yuneec's A
 and D75), else the nearer (D50 of A and D50). LibRaw interpolates the same way
 (its Yuneec CGO3+ matrix is ours to 1e-7).
 
+DNG lens IDs come from the maker note DNGPrivateData keeps: Pentax's and
+Samsung's Pentax bodies' own ("PENTAX \0", `vendor::pentax`: LensType's
+series × 256 + number, as Adobe's aux:LensID "4 28" is 1052), or Nikon's in
+Adobe's "MakN" record (`vendor::nikon`, read as a NEF's note).
+
 DNG names: a DNG without Make and Model (Blackmagic's, Parrot's) is named by
 its UniqueCameraModel, the first word the maker. Ricoh Imaging's Pentax
 bodies are Pentax's (`names`). Canonical makes are empty for makers outside
