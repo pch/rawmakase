@@ -136,6 +136,38 @@ pub(crate) fn from_cam_xyz(cam_xyz: &[[f32; 3]; 3]) -> Option<([[f32; 3]; 3], [f
     Some((rgb_cam, pre_mul))
 }
 
+/// The XYZ (D65) to camera matrix of a camera's own matrix: `rgb_cam`, from
+/// white balanced camera values to linear sRGB (each row scaled to sum to
+/// one, so balanced white stays white), and `daylight`, the multipliers that
+/// balance D65 (red, green, blue). The inverse of [`from_cam_xyz`]: it gives
+/// back `rgb_cam` and `daylight` (green one). `None` when a row sums to zero,
+/// the matrix is singular or a multiplier is not positive.
+pub(crate) fn cam_xyz_of(rgb_cam: &[[f64; 3]; 3], daylight: [f64; 3]) -> Option<[[f32; 3]; 3]> {
+    if !daylight.iter().all(|d| d.is_finite() && *d > 0.) {
+        return None;
+    }
+    let mut balanced = *rgb_cam;
+    for row in &mut balanced {
+        let num: f64 = row.iter().sum();
+        if num == 0. || !num.is_finite() {
+            return None;
+        }
+        row.iter_mut().for_each(|v| *v /= num);
+    }
+    // camera = diag(1 / daylight) × rgb_cam⁻¹ × XYZ-to-sRGB.
+    let cam_rgb = pseudoinverse(&balanced)?;
+    let rgb_xyz = pseudoinverse(&XYZ_RGB)?;
+    let m: [[f64; 3]; 3] = std::array::from_fn(|i| {
+        std::array::from_fn(|j| {
+            (0..3).map(|k| cam_rgb[k][i] * rgb_xyz[j][k]).sum::<f64>() / daylight[i]
+        })
+    });
+    m.iter()
+        .flatten()
+        .all(|v| v.is_finite())
+        .then(|| std::array::from_fn(|i| std::array::from_fn(|j| m[i][j] as f32)))
+}
+
 /// The pseudoinverse of a 3 × 3 matrix by its normal equations, (AᵀA)⁻¹Aᵀ,
 /// transposed: `out[i][j]` for row `i` of A.
 fn pseudoinverse(a: &[[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
@@ -232,5 +264,32 @@ mod tests {
             }
         }
         assert!(super::from_cam_xyz(&[[0.; 3]; 3]).is_none());
+    }
+
+    #[test]
+    fn a_camera_s_own_srgb_matrix_becomes_its_xyz_matrix() {
+        // A camera that sees sRGB once balanced by 2, 1, 1.5 (its rows
+        // summing to 256 here): sRGB's inverse with each row over its
+        // multiplier.
+        let identity = [[256., 0., 0.], [0., 256., 0.], [0., 0., 256.]];
+        let m = super::cam_xyz_of(&identity, [2., 1., 1.5]).unwrap();
+        let srgb = [
+            [3.240479f32, -1.53715, -0.498535],
+            [-0.969256, 1.875992, 0.041556],
+            [0.055648, -0.204043, 1.057311],
+        ];
+        for (i, d) in [2f32, 1., 1.5].into_iter().enumerate() {
+            for j in 0..3 {
+                assert!((m[i][j] - srgb[i][j] / d).abs() < 1e-3, "{m:?}");
+            }
+        }
+        let (rgb_cam, pre_mul) = super::from_cam_xyz(&m).unwrap();
+        assert!((pre_mul[0] - 2.).abs() < 1e-5 && (pre_mul[2] - 1.5).abs() < 1e-5);
+        assert!((rgb_cam[1][1] - 1.).abs() < 1e-5 && rgb_cam[0][1].abs() < 1e-5);
+        // Singular, a row of zero sum, or no multiplier: none.
+        assert!(super::cam_xyz_of(&[[1., 1., 1.]; 3], [1.; 3]).is_none());
+        assert!(super::cam_xyz_of(&[[1., -1., 0.], [0., 1., 0.], [0., 0., 1.]], [1.; 3]).is_none());
+        assert!(super::cam_xyz_of(&identity, [1., 0., 1.]).is_none());
+        assert!(super::cam_xyz_of(&identity, [1., f64::NAN, 1.]).is_none());
     }
 }

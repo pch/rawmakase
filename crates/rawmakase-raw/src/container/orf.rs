@@ -186,9 +186,18 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     let white = rows().find_map(|c| c.white).unwrap_or((1 << bits) - 1);
     // Where the camera's white balance levels are on another scale than
     // Adobe DNG Converter reads them (four compacts).
-    if let Some([red, blue]) = rows().find_map(|c| c.wb_scale) {
-        info.cam_mul[0] *= red as f32;
-        info.cam_mul[2] *= blue as f32;
+    let [red, blue] = rows().find_map(|c| c.wb_scale).unwrap_or([1., 1.]);
+    info.cam_mul[0] *= red as f32;
+    info.cam_mul[2] *= blue as f32;
+    // A camera Adobe gives no matrix for: its own, of white balanced data,
+    // balanced at D65 by its D65 levels (on the as-shot levels' scale).
+    if crate::facts::matrix(&info.make, &info.model).is_none()
+        && let Some(m) = &notes.color_matrix
+        && let Some([r, g, b]) = notes.daylight.map(|d| d.map(f64::from))
+        && g > 0.
+    {
+        let daylight = [r / g * red, 1., b / g * blue];
+        info.file_matrix = crate::color::cam_xyz_of(m, daylight);
     }
     info.plan = Plan::Orf(OrfPlan {
         offset: t.base + u64::from(offset),
@@ -403,6 +412,45 @@ mod tests {
         assert_eq!(s.area, [0, 0, 4, 4]);
         // (The later rows decode what follows the data, the note.)
         assert_eq!(s.data[..4], [21, 65527, 97, 65525]);
+    }
+
+    #[test]
+    fn a_camera_without_a_matrix_row_takes_the_note_s_own() {
+        // Camera to sRGB of white balanced data in 1/256 (rows of 256, signed
+        // values), and the D65 levels 512 and 384 over 256: daylight 2, 1, 1.5.
+        let m: [i16; 9] = [300, -44, 0, -20, 286, -10, 0, -56, 312];
+        let processing = vec![
+            short(LE, 0x010c, &[512, 384, 256, 256]),
+            short(LE, 0x0200, &m.map(|v| v as u16)),
+        ];
+        let strip = crate::codec::olympus::tests::row_of_four();
+        let (info, _) = decode(&orf([4, 4], 16, &strip, vec![], Some(note(processing)))).unwrap();
+        // The matrix and the multipliers come back from the XYZ matrix.
+        for i in 0..3 {
+            for j in 0..3 {
+                let want = f32::from(m[i * 3 + j]) / 256.;
+                assert!(
+                    (info.rgb_cam[i][j] - want).abs() < 1e-5,
+                    "{:?}",
+                    info.rgb_cam
+                );
+            }
+        }
+        for (got, want) in info.pre_mul.iter().zip([2., 1., 1.5, 1.]) {
+            assert!((got - want).abs() < 1e-5, "{:?}", info.pre_mul);
+        }
+        // D65's white (sRGB's white point) reaches the camera as the
+        // reciprocals of its multipliers.
+        let white = [0.95047, 1., 1.08883];
+        for (row, want) in info.cam_xyz.iter().zip([0.5, 1., 1. / 1.5]) {
+            let got: f32 = row.iter().zip(white).map(|(a, b)| a * b).sum();
+            assert!((got - want).abs() < 1e-4, "{:?}", info.cam_xyz);
+        }
+        // No D65 levels: no matrix.
+        let processing = vec![short(LE, 0x0200, &m.map(|v| v as u16))];
+        let (info, _) = decode(&orf([4, 4], 16, &strip, vec![], Some(note(processing)))).unwrap();
+        assert_eq!(info.cam_xyz, [[0.; 3]; 3]);
+        assert_eq!(info.pre_mul, [1.; 4]);
     }
 
     #[test]

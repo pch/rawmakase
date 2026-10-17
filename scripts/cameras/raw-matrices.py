@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Write data/raw-matrices.toml, the XYZ (D65) to camera matrices of RAWmakase's
-own RAW decoders, from Adobe's: Adobe DNG Converter's output, else Camera Raw's
-Adobe Standard profiles, else (Adobe has nothing for the camera) what LibRaw
-reported.
+own RAW decoders, from Adobe's: Adobe DNG Converter's output, else (Adobe has
+nothing for the camera) what LibRaw reported. Nothing is read from Adobe's
+camera profiles.
 
 Sources, per camera, in order:
 
@@ -12,13 +12,9 @@ Sources, per camera, in order:
    the camera carries, or where Adobe replaces the file's matrix with its own;
    elsewhere (phones whose DNGs carry their own matrices, which the converter
    keeps, only rescaled) the decoder reads each file's.
-2. adobe-dcp: for a camera whose RAWs the converter does not convert, or
-   converts with no usable matrix, the D65 ColorMatrix of Camera Raw's Adobe
-   Standard profile for it (the "v2" one where there are two), found by the
-   converter's UniqueCameraModel for the camera or by its make and model. Only
-   the nine numbers are read; no profile is copied.
-3. compat-observed: where Adobe has neither, the cam_xyz LibRaw reported for
-   every native RAW of the camera (one non-zero matrix).
+2. compat-observed: where the converter has none, the cam_xyz LibRaw reported
+   for every native RAW of the camera (one non-zero matrix), except for the
+   cameras of NO_ROW.
 
 A matrix is unusable when it is diagonal (Adobe keeps such a camera's colour in
 its forward matrix), has an entry beyond ±10 (a camera's own values passed
@@ -28,8 +24,7 @@ linear sRGB).
 Inputs: --sweep, JSON lines of one converted sample per camera and raw mode,
 each {"sha": ..., "path": dataset path, "adobe": {exiftool -n of the converted
 DNG}} (Adobe's tags only; nothing of the RAW is kept), several files allowed;
---profiles, Camera Raw's CameraProfiles/Adobe Standard directory, read with
-exiftool; --dataset, the dataset root, to read a camera DNG's own matrix; the
+--dataset, the dataset root, to read a camera DNG's own matrix; the
 camera's name is the one RAWmakase gives it, from the decode fingerprints
 recorded for the same files (tests/corpus/dataset/pixls-decode.json and the
 local baselines). A sample comes from
@@ -45,7 +40,6 @@ tags exiftool reports without the group.)
 and the table from
 
   python3 scripts/cameras/raw-matrices.py --sweep sweep.jsonl more.jsonl \\
-      --profiles "<Camera Raw>/CameraProfiles/Adobe Standard" \\
       --dataset $RAWMAKASE_DATASET \\
       --fingerprints $RAWMAKASE_DATASET/baselines/decode/*.json --write
 """
@@ -63,15 +57,19 @@ HEADER = """# XYZ (D65) to camera matrices, in ten-thousandths, for RAWmakase's 
 # decoders (crates/rawmakase-raw/src/facts.rs), from Adobe (2026-10-17):
 # adobe-dng is the ColorMatrix Adobe DNG Converter 18.7 writes for the camera
 # (for illuminant D65, else its only one), from a native RAW when there is one,
-# else from a DNG the camera wrote; adobe-dcp the D65 ColorMatrix of Camera Raw
-# 18.7's Adobe Standard profile for a camera the converter gives no usable
-# matrix for; compat-observed, only for a camera Adobe has no matrix for, the
-# cam_xyz LibRaw reported on our files. Written by scripts/cameras/raw-matrices.py.
+# else from a DNG the camera wrote; compat-observed, only for a camera Adobe
+# DNG Converter has no matrix for, the cam_xyz LibRaw reported on our files.
+# Never from Adobe's camera profiles. Written by scripts/cameras/raw-matrices.py.
 """
 # D50 XYZ to linear sRGB: what Adobe writes for a camera it does not know.
 PLACEHOLDER = [31339, -16169, -4906, -9788, 19161, 335, 719, -2290, 14052]
-PROFILE_TAGS = ['-UniqueCameraModel', '-ProfileName', '-CalibrationIlluminant1',
-                '-CalibrationIlluminant2', '-ColorMatrix1', '-ColorMatrix2']
+MATRIX_TAGS = ['-CalibrationIlluminant1', '-CalibrationIlluminant2', '-ColorMatrix1', '-ColorMatrix2']
+# Cameras the converter gives no usable matrix for whose LibRaw matrix is not
+# kept either, as it is the one of Adobe's camera profiles, which RAWmakase does
+# not use (Piotr, 2026-10-17): the Olympus compacts' decoder reads the matrix
+# each ORF carries; the Leaf Aptus 75 has none.
+NO_ROW = {('Leaf', 'Aptus 75'), ('Olympus', 'SP350'), ('Olympus', 'SP500UZ'),
+          ('Olympus', 'SP510UZ'), ('Olympus', 'SP550UZ'), ('Olympus', 'SP570UZ')}
 
 
 def adobe_matrix(tags):
@@ -95,22 +93,9 @@ def adobe_matrix(tags):
     return matrix
 
 
-def profiles(directory):
-    """Adobe Standard matrices by UniqueCameraModel, the v2 profile's first."""
-    if directory is None:
-        return {}
-    out = subprocess.run(['exiftool', '-n', '-j', '-ext', 'dcp', *PROFILE_TAGS, str(directory)],
-                         capture_output=True, text=True, check=True).stdout
-    found = {}
-    for p in sorted(json.loads(out), key=lambda p: p.get('ProfileName') != 'Adobe Standard v2'):
-        if p.get('ProfileName', '').startswith('Adobe Standard'):
-            found.setdefault(p.get('UniqueCameraModel'), adobe_matrix(p))
-    return found
-
-
 def own_matrix(dataset, path):
     """The matrix a camera DNG carries itself, as the decoder reads it."""
-    out = subprocess.run(['exiftool', '-n', '-j', *PROFILE_TAGS[2:], str(dataset / path)],
+    out = subprocess.run(['exiftool', '-n', '-j', *MATRIX_TAGS, str(dataset / path)],
                          capture_output=True, text=True).stdout
     tags = json.loads(out or '[{}]')[0]
     which = 2 if tags.get('CalibrationIlluminant2') == 21 else 1
@@ -129,7 +114,6 @@ def rescaled(matrix, own):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--sweep', type=Path, nargs='+', required=True)
-    p.add_argument('--profiles', type=Path)
     p.add_argument('--dataset', type=Path)
     p.add_argument('--fingerprints', type=Path, nargs='*', default=[])
     p.add_argument('--write', action='store_true')
@@ -155,7 +139,6 @@ def main():
                 m = f['header']['metadata']
                 native = f['header']['facts']['dng_version'] == 0
                 samples[(m['make'], m['model'])].append((native, s['adobe'], s.get('path')))
-    dcp = profiles(args.profiles)
     rows = []
     for camera in sorted(recorded):
         make, model = camera
@@ -175,13 +158,9 @@ def main():
                 row = (matrix, 'adobe-dng')
             if row:
                 break
-        if row is None and native_files:
-            names = [t.get('UniqueCameraModel') for _, t, _ in found] + [f'{make} {model}']
-            profile = [dcp[n] for n in names if dcp.get(n)]
+        if row is None and native_files and camera not in NO_ROW:
             observed = {json.dumps(x) for x in native_files}
-            if profile:
-                row = (profile[0], 'adobe-dcp')
-            elif len(observed) == 1 and any(native_files[0]):
+            if len(observed) == 1 and any(native_files[0]):
                 row = (native_files[0], 'compat-observed')
         if row:
             rows.append((camera, *row))

@@ -16,9 +16,6 @@ pub(crate) enum Source {
     File,
     /// Adobe DNG Converter's output for the camera.
     AdobeDng,
-    /// Camera Raw's Adobe Standard profile for the camera (its D65 matrix),
-    /// for a camera the converter gives no usable matrix for.
-    AdobeDcp,
     /// RAWmakase's earlier decoder's output on our own files, kept so saved
     /// edits keep their geometry and scale; a colour matrix only for a camera
     /// Adobe has none for.
@@ -466,10 +463,7 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for n in &cameras.name {
             assert!(seen.insert(("name", &n.make, &n.model)), "{n:?}");
-            assert!(
-                !matches!(n.source, Source::AdobeDng | Source::AdobeDcp),
-                "{n:?}"
-            );
+            assert_ne!(n.source, Source::AdobeDng, "{n:?}");
         }
         for c in &cameras.canonical {
             assert!(seen.insert(("canonical", &c.make, &c.model)), "{c:?}");
@@ -548,7 +542,6 @@ mod tests {
             if c.source == Source::AdobeDng {
                 assert!(adobe_facts_only(c), "{c:?}");
             }
-            assert_ne!(c.source, Source::AdobeDcp, "{c:?}");
         }
         let mut sizes = std::collections::HashSet::new();
         for h in &cameras.headerless {
@@ -600,10 +593,21 @@ mod tests {
         }
         for m in &matrices.matrix {
             assert!(seen.insert(("matrix", &m.make, &m.model)), "{m:?}");
-            // Colour comes from Adobe; an earlier decoder's output only where
-            // Adobe has nothing, and never a matrix without colour.
+            // Colour comes from Adobe DNG Converter; an earlier decoder's
+            // output only where Adobe has nothing, and never a matrix without
+            // colour.
             assert_ne!(m.source, Source::File, "{m:?}");
             assert!(m.xyz.iter().any(|v| *v != 0), "{m:?}");
         }
+    }
+
+    #[test]
+    fn no_matrix_comes_from_adobes_camera_profiles() {
+        // Adobe's camera profiles are not a source: such a row does not parse.
+        let row = "[[matrix]]\nmake = \"A\"\nmodel = \"B\"\n\
+                   xyz = [1, 0, 0, 0, 1, 0, 0, 0, 1]\nsource = \"adobe-dcp\"\n";
+        assert!(toml::from_str::<Matrices>(row).is_err());
+        let row = row.replace("adobe-dcp", "adobe-dng");
+        assert!(toml::from_str::<Matrices>(&row).is_ok());
     }
 }

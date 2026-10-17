@@ -12367,33 +12367,6 @@ evidence = "Daylight multipliers, derived from Adobe DNG Converter 18.7 ColorMat
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
-# OLYMPUS IMAGING CORP./SP550UZ/PA030017.ORF
-sha256 = "05f49918e1b1894c3abd2b5451b356f7a00adb1c8568abc5babff33fcade1bb2"
-field = "header.metadata.cam_xyz"
-before = [[1.1597000360488892, -0.40059998631477356, -0.10490000247955322], [-0.5432000160217285, 1.2798999547958374, 0.2957000136375427], [-0.10289999842643738, 0.17499999701976776, 0.6516000032424927]]
-after = [[1.159600019454956, -0.40070000290870667, -0.10480000078678131], [-0.5432000160217285, 1.2798000574111938, 0.2957000136375427], [-0.10289999842643738, 0.17499999701976776, 0.6516000032424927]]
-evidence = "Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP550UZ: 1.1596 -0.4007 -0.1048 -0.5432 1.2798 0.2957 -0.1029 0.175 0.6516"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# OLYMPUS IMAGING CORP./SP550UZ/PA030017.ORF
-sha256 = "05f49918e1b1894c3abd2b5451b356f7a00adb1c8568abc5babff33fcade1bb2"
-field = "header.metadata.matrix"
-before = [[1.5331058502197266, -0.39000463485717773, -0.14310121536254883], [-0.1136915534734726, 1.621165156364441, -0.5074735879898071], [0.012343913316726685, -0.43417906761169434, 1.42183518409729]]
-after = [[1.5330840349197388, -0.38958531618118286, -0.14349865913391113], [-0.11365394294261932, 1.621140718460083, -0.5074867010116577], [0.012333993799984455, -0.4341774880886078, 1.4218435287475586]]
-evidence = "Camera to sRGB, derived from Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP550UZ: 1.1596 -0.4007 -0.1048 -0.5432 1.2798 0.2957 -0.1029 0.175 0.6516"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# OLYMPUS IMAGING CORP./SP550UZ/PA030017.ORF
-sha256 = "05f49918e1b1894c3abd2b5451b356f7a00adb1c8568abc5babff33fcade1bb2"
-field = "header.metadata.daylight_wb"
-before = [1.847964882850647, 1.0, 1.3799437284469604]
-after = [1.8480660915374756, 1.0, 1.3798167705535889]
-evidence = "Daylight multipliers, derived from Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP550UZ: 1.1596 -0.4007 -0.1048 -0.5432 1.2798 0.2957 -0.1029 0.175 0.6516"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
 # OM Digital Solutions/OM-3/P5048182.ORF
 sha256 = "1cee7deb661e45101ab3ca6c4240d24ed949b167ed423703fca15c09dd8ec176"
 field = "header.metadata.cam_xyz"
@@ -13282,114 +13255,6 @@ field = "header.metadata.daylight_wb"
 before = [2.366581678390503, 1.0, 1.2462306022644043]
 after = [2.367081880569458, 1.0, 1.2462306022644043]
 evidence = "Daylight multipliers, derived from Adobe DNG Converter 18.7 ColorMatrix (D65) for Olympus E-520: 0.8343 -0.2322 -0.102 -0.7596 1.5635 0.2048 -0.1748 0.2269 0.7287"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# Olympus/SP350/RAW_OLYMPUS_SP350.ORF
-sha256 = "37dca153cbb42e52a13fecdb3929ae2f7b4d73d7c1ab083b0b06e85887d5ebd1"
-field = "header.metadata.cam_xyz"
-before = [[1.207800030708313, -0.483599990606308, -0.10689999908208847], [-0.6671000123023987, 1.4306000471115112, 0.25780001282691956], [-0.07859999686479568, 0.09390000253915787, 0.7418000102043152]]
-after = [[1.207800030708313, -0.483599990606308, -0.10689999908208847], [-0.6671000123023987, 1.4305000305175781, 0.25780001282691956], [-0.07859999686479568, 0.09390000253915787, 0.7418000102043152]]
-evidence = "Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP350: 1.2078 -0.4836 -0.1069 -0.6671 1.4305 0.2578 -0.0786 0.0939 0.7418"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# Olympus/SP350/RAW_OLYMPUS_SP350.ORF
-sha256 = "37dca153cbb42e52a13fecdb3929ae2f7b4d73d7c1ab083b0b06e85887d5ebd1"
-field = "header.metadata.matrix"
-before = [[1.403275728225708, -0.20827068388462067, -0.19500508904457092], [-0.06070251762866974, 1.4014334678649902, -0.3407309949398041], [0.007284642197191715, -0.25552722811698914, 1.2482426166534424]]
-after = [[1.4032708406448364, -0.20826952159404755, -0.19500131905078888], [-0.06066926196217537, 1.4014256000518799, -0.3407563865184784], [0.007278578821569681, -0.2555257976055145, 1.2482472658157349]]
-evidence = "Camera to sRGB, derived from Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP350: 1.2078 -0.4836 -0.1069 -0.6671 1.4305 0.2578 -0.0786 0.0939 0.7418"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# Olympus/SP350/RAW_OLYMPUS_SP350.ORF
-sha256 = "37dca153cbb42e52a13fecdb3929ae2f7b4d73d7c1ab083b0b06e85887d5ebd1"
-field = "header.metadata.daylight_wb"
-before = [1.9658355712890625, 1.0, 1.3027678728103638]
-after = [1.9656530618667603, 1.0, 1.3026469945907593]
-evidence = "Daylight multipliers, derived from Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP350: 1.2078 -0.4836 -0.1069 -0.6671 1.4305 0.2578 -0.0786 0.0939 0.7418"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# Olympus/SP500UZ/RAW_OLYMPUS_SP500UZ.ORF
-sha256 = "076d1a979bba1cfb48c3e90410305de60e8ae4f988eabd246d684117f80a9f96"
-field = "header.metadata.cam_xyz"
-before = [[0.9492999911308289, -0.34150001406669617, -0.066600002348423], [-0.5210999846458435, 1.2333999872207642, 0.32600000500679016], [-0.15479999780654907, 0.22619999945163727, 0.6481999754905701]]
-after = [[0.949400007724762, -0.34150001406669617, -0.06650000065565109], [-0.5210000276565552, 1.2333999872207642, 0.32600000500679016], [-0.15489999949932098, 0.22619999945163727, 0.6481999754905701]]
-evidence = "Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP500UZ: 0.9494 -0.3415 -0.0665 -0.521 1.2334 0.326 -0.1549 0.2262 0.6482"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# Olympus/SP500UZ/RAW_OLYMPUS_SP500UZ.ORF
-sha256 = "076d1a979bba1cfb48c3e90410305de60e8ae4f988eabd246d684117f80a9f96"
-field = "header.metadata.matrix"
-before = [[1.5612733364105225, -0.337306946516037, -0.22396636009216309], [-0.13449376821517944, 1.7317520380020142, -0.5972583293914795], [0.049164142459630966, -0.528080403804779, 1.4789162874221802]]
-after = [[1.5617139339447021, -0.3373619019985199, -0.22435197234153748], [-0.13467343151569366, 1.7318146228790283, -0.5971412658691406], [0.049321163445711136, -0.5280360579490662, 1.4787148237228394]]
-evidence = "Camera to sRGB, derived from Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP500UZ: 0.9494 -0.3415 -0.0665 -0.521 1.2334 0.326 -0.1549 0.2262 0.6482"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# Olympus/SP500UZ/RAW_OLYMPUS_SP500UZ.ORF
-sha256 = "076d1a979bba1cfb48c3e90410305de60e8ae4f988eabd246d684117f80a9f96"
-field = "header.metadata.daylight_wb"
-before = [2.2386794090270996, 1.0, 1.3927160501480103]
-after = [2.2379391193389893, 1.0, 1.3930058479309082]
-evidence = "Daylight multipliers, derived from Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP500UZ: 0.9494 -0.3415 -0.0665 -0.521 1.2334 0.326 -0.1549 0.2262 0.6482"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# Olympus/SP510UZ/PA210583.ORF
-sha256 = "f0737d78bb2e588963a3d5038fab493cdff1c9c48475704de96d797bbb81e62a"
-field = "header.metadata.cam_xyz"
-before = [[1.0592999458312988, -0.36070001125335693, -0.10100000351667404], [-0.588100016117096, 1.3127000331878662, 0.3084000051021576], [-0.11999999731779099, 0.18050000071525574, 0.6721000075340271]]
-after = [[1.059399962425232, -0.36070001125335693, -0.10100000351667404], [-0.588100016117096, 1.3127000331878662, 0.3082999885082245], [-0.11999999731779099, 0.18039999902248383, 0.671999990940094]]
-evidence = "Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP510UZ: 1.0594 -0.3607 -0.101 -0.5881 1.3127 0.3083 -0.12 0.1804 0.672"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# Olympus/SP510UZ/PA210583.ORF
-sha256 = "f0737d78bb2e588963a3d5038fab493cdff1c9c48475704de96d797bbb81e62a"
-field = "header.metadata.matrix"
-before = [[1.520698070526123, -0.4049738645553589, -0.11572425067424774], [-0.09184671193361282, 1.601414442062378, -0.5095676779747009], [0.019685203209519386, -0.421421080827713, 1.4017359018325806]]
-after = [[1.5207923650741577, -0.4050305187702179, -0.1157618910074234], [-0.09186620265245438, 1.6011762619018555, -0.5093100666999817], [0.019737103953957558, -0.4212293028831482, 1.4014922380447388]]
-evidence = "Camera to sRGB, derived from Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP510UZ: 1.0594 -0.3607 -0.101 -0.5881 1.3127 0.3083 -0.12 0.1804 0.672"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# Olympus/SP510UZ/PA210583.ORF
-sha256 = "f0737d78bb2e588963a3d5038fab493cdff1c9c48475704de96d797bbb81e62a"
-field = "header.metadata.daylight_wb"
-before = [2.032083749771118, 1.0, 1.3648970127105713]
-after = [2.0315206050872803, 1.0, 1.3651177883148193]
-evidence = "Daylight multipliers, derived from Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP510UZ: 1.0594 -0.3607 -0.101 -0.5881 1.3127 0.3083 -0.12 0.1804 0.672"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# Olympus/SP570UZ/P5110102.ORF
-sha256 = "baab92391834076b427e406e98da79aaba48fb87243d6ccae60e08e299cfccf7"
-field = "header.metadata.cam_xyz"
-before = [[1.1521999835968018, -0.4043999910354614, -0.11460000276565552], [-0.47360000014305115, 1.2172000408172607, 0.2903999984264374], [-0.09880000352859497, 0.18289999663829803, 0.6039000153541565]]
-after = [[1.1521999835968018, -0.4043999910354614, -0.1145000010728836], [-0.47369998693466187, 1.2172000408172607, 0.29030001163482666], [-0.09870000183582306, 0.18289999663829803, 0.6039000153541565]]
-evidence = "Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP570UZ: 1.1522 -0.4044 -0.1145 -0.4737 1.2172 0.2903 -0.0987 0.1829 0.6039"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# Olympus/SP570UZ/P5110102.ORF
-sha256 = "baab92391834076b427e406e98da79aaba48fb87243d6ccae60e08e299cfccf7"
-field = "header.metadata.matrix"
-before = [[1.500841498374939, -0.38924238085746765, -0.11159912496805191], [-0.14767587184906006, 1.6949915885925293, -0.547315776348114], [0.017542177811264992, -0.4918782413005829, 1.47433602809906]]
-after = [[1.5011098384857178, -0.38909441232681274, -0.11201547831296921], [-0.14756831526756287, 1.6947047710418701, -0.5471364259719849], [0.017405863851308823, -0.4918590784072876, 1.4744532108306885]]
-evidence = "Camera to sRGB, derived from Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP570UZ: 1.1522 -0.4044 -0.1145 -0.4737 1.2172 0.2903 -0.0987 0.1829 0.6039"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-# Olympus/SP570UZ/P5110102.ORF
-sha256 = "baab92391834076b427e406e98da79aaba48fb87243d6ccae60e08e299cfccf7"
-field = "header.metadata.daylight_wb"
-before = [1.9140398502349854, 1.0, 1.4510363340377808]
-after = [1.913311243057251, 1.0, 1.4505784511566162]
-evidence = "Daylight multipliers, derived from Camera Raw 18.7 Adobe Standard profile's D65 ColorMatrix for Olympus SP570UZ: 1.1522 -0.4044 -0.1145 -0.4737 1.2172 0.2903 -0.0987 0.1829 0.6039"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -15542,6 +15407,171 @@ before = [2.357206344604492, 1.0, 1.199236512184143]
 after = [2.3567161560058594, 1.0, 1.19937002658844]
 evidence = "Daylight multipliers, derived from Adobe DNG Converter 18.7 ColorMatrix (D65) for Canon EOS-1D Mark II N: 0.6241 -0.0466 -0.0822 -0.818 1.5825 0.25 -0.1801 0.1937 0.8042"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Colour matrices: none from Adobe's camera profiles. Olympus's SP compacts
+# take the camera's own matrix in the ORF; the Leaf Aptus 75 has none.
+
+[[delta]]
+# Olympus/SP350/RAW_OLYMPUS_SP350.ORF
+sha256 = "37dca153cbb42e52a13fecdb3929ae2f7b4d73d7c1ab083b0b06e85887d5ebd1"
+field = "header.metadata.cam_xyz"
+before = [[1.207800030708313, -0.483599990606308, -0.10689999908208847], [-0.6671000123023987, 1.4306000471115112, 0.25780001282691956], [-0.07859999686479568, 0.09390000253915787, 0.7418000102043152]]
+after = [[1.1400707960128784, -0.374325156211853, -0.1693042516708374], [-0.5587720274925232, 1.4886348247528076, 0.03899703919887543], [-0.31940409541130066, 0.3093990087509155, 0.6565815806388855]]
+evidence = "the camera's own matrix in the file: the Olympus maker note's ColorMatrix (camera to sRGB of white balanced data, in 1/256) through its D65 white balance levels"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Olympus/SP350/RAW_OLYMPUS_SP350.ORF
+sha256 = "37dca153cbb42e52a13fecdb3929ae2f7b4d73d7c1ab083b0b06e85887d5ebd1"
+field = "header.metadata.matrix"
+before = [[1.403275728225708, -0.20827068388462067, -0.19500508904457092], [-0.06070251762866974, 1.4014334678649902, -0.3407309949398041], [0.007284642197191715, -0.25552722811698914, 1.2482426166534424]]
+after = [[1.392996072769165, -0.3540855944156647, -0.03891049325466156], [-0.14785994589328766, 1.2062257528305054, -0.05836576595902443], [0.17254900932312012, -0.4117647111415863, 1.2392157316207886]]
+evidence = "Camera to sRGB from the camera's own matrix in the file (the Olympus maker note's ColorMatrix, rows scaled to sum to one)"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Olympus/SP350/RAW_OLYMPUS_SP350.ORF
+sha256 = "37dca153cbb42e52a13fecdb3929ae2f7b4d73d7c1ab083b0b06e85887d5ebd1"
+field = "header.metadata.daylight_wb"
+before = [1.9658355712890625, 1.0, 1.3027678728103638]
+after = [1.9050002098083496, 1.0, 1.3875000476837158]
+evidence = "the camera's own D65 white balance levels in the file (Olympus maker note), with which its ColorMatrix is the XYZ matrix"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Olympus/SP500UZ/RAW_OLYMPUS_SP500UZ.ORF
+sha256 = "076d1a979bba1cfb48c3e90410305de60e8ae4f988eabd246d684117f80a9f96"
+field = "header.metadata.cam_xyz"
+before = [[0.9492999911308289, -0.34150001406669617, -0.066600002348423], [-0.5210999846458435, 1.2333999872207642, 0.32600000500679016], [-0.15479999780654907, 0.22619999945163727, 0.6481999754905701]]
+after = [[0.9493838548660278, -0.33182334899902344, -0.10533972084522247], [-0.4989611804485321, 1.318617820739746, 0.1429329663515091], [-0.3854817748069763, 0.4653185307979584, 0.5519528388977051]]
+evidence = "the camera's own matrix in the file: the Olympus maker note's ColorMatrix (camera to sRGB of white balanced data, in 1/256) through its D65 white balance levels"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Olympus/SP500UZ/RAW_OLYMPUS_SP500UZ.ORF
+sha256 = "076d1a979bba1cfb48c3e90410305de60e8ae4f988eabd246d684117f80a9f96"
+field = "header.metadata.matrix"
+before = [[1.5612733364105225, -0.337306946516037, -0.22396636009216309], [-0.13449376821517944, 1.7317520380020142, -0.5972583293914795], [0.049164142459630966, -0.528080403804779, 1.4789162874221802]]
+after = [[1.4453125, -0.2890625298023224, -0.1562499701976776], [-0.1875, 1.453125, -0.265625], [0.24609375, -0.8046875, 1.55859375]]
+evidence = "Camera to sRGB from the camera's own matrix in the file (the Olympus maker note's ColorMatrix, rows scaled to sum to one)"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Olympus/SP500UZ/RAW_OLYMPUS_SP500UZ.ORF
+sha256 = "076d1a979bba1cfb48c3e90410305de60e8ae4f988eabd246d684117f80a9f96"
+field = "header.metadata.daylight_wb"
+before = [2.2386794090270996, 1.0, 1.3927160501480103]
+after = [2.1937501430511475, 1.0, 1.428749918937683]
+evidence = "the camera's own D65 white balance levels in the file (Olympus maker note), with which its ColorMatrix is the XYZ matrix"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Olympus/SP510UZ/PA210583.ORF
+sha256 = "f0737d78bb2e588963a3d5038fab493cdff1c9c48475704de96d797bbb81e62a"
+field = "header.metadata.cam_xyz"
+before = [[1.0592999458312988, -0.36070001125335693, -0.10100000351667404], [-0.588100016117096, 1.3127000331878662, 0.3084000051021576], [-0.11999999731779099, 0.18050000071525574, 0.6721000075340271]]
+after = [[1.239671230316162, -0.46468567848205566, -0.15335308015346527], [-0.34040409326553345, 1.2329139709472656, 0.08323594182729721], [-0.3234849274158478, 0.35452207922935486, 0.5815709233283997]]
+evidence = "the camera's own matrix in the file: the Olympus maker note's ColorMatrix (camera to sRGB of white balanced data, in 1/256) through its D65 white balance levels"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Olympus/SP510UZ/PA210583.ORF
+sha256 = "f0737d78bb2e588963a3d5038fab493cdff1c9c48475704de96d797bbb81e62a"
+field = "header.metadata.matrix"
+before = [[1.520698070526123, -0.4049738645553589, -0.11572425067424774], [-0.09184671193361282, 1.601414442062378, -0.5095676779747009], [0.019685203209519386, -0.421421080827713, 1.4017359018325806]]
+after = [[1.3671876192092896, -0.2578125298023224, -0.10937503725290298], [-0.2500000298023224, 1.421875, -0.171875], [0.22265625, -0.58984375, 1.3671875]]
+evidence = "Camera to sRGB from the camera's own matrix in the file (the Olympus maker note's ColorMatrix, rows scaled to sum to one)"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Olympus/SP510UZ/PA210583.ORF
+sha256 = "f0737d78bb2e588963a3d5038fab493cdff1c9c48475704de96d797bbb81e62a"
+field = "header.metadata.daylight_wb"
+before = [2.032083749771118, 1.0, 1.3648970127105713]
+after = [1.8294607400894165, 1.0, 1.4699586629867554]
+evidence = "the camera's own D65 white balance levels in the file (Olympus maker note), with which its ColorMatrix is the XYZ matrix"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# OLYMPUS IMAGING CORP./SP550UZ/PA030017.ORF
+sha256 = "05f49918e1b1894c3abd2b5451b356f7a00adb1c8568abc5babff33fcade1bb2"
+field = "header.metadata.cam_xyz"
+before = [[1.1597000360488892, -0.40059998631477356, -0.10490000247955322], [-0.5432000160217285, 1.2798999547958374, 0.2957000136375427], [-0.10289999842643738, 0.17499999701976776, 0.6516000032424927]]
+after = [[1.257615089416504, -0.47141188383102417, -0.1555728316307068], [-0.34040409326553345, 1.2329139709472656, 0.08323594182729721], [-0.35413259267807007, 0.38811028003692627, 0.6366702318191528]]
+evidence = "the camera's own matrix in the file: the Olympus maker note's ColorMatrix (camera to sRGB of white balanced data, in 1/256) through its D65 white balance levels"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# OLYMPUS IMAGING CORP./SP550UZ/PA030017.ORF
+sha256 = "05f49918e1b1894c3abd2b5451b356f7a00adb1c8568abc5babff33fcade1bb2"
+field = "header.metadata.matrix"
+before = [[1.5331058502197266, -0.39000463485717773, -0.14310121536254883], [-0.1136915534734726, 1.621165156364441, -0.5074735879898071], [0.012343913316726685, -0.43417906761169434, 1.42183518409729]]
+after = [[1.3671875, -0.2578125, -0.109375], [-0.25, 1.421875, -0.171875], [0.2226562350988388, -0.58984375, 1.3671875]]
+evidence = "Camera to sRGB from the camera's own matrix in the file (the Olympus maker note's ColorMatrix, rows scaled to sum to one)"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# OLYMPUS IMAGING CORP./SP550UZ/PA030017.ORF
+sha256 = "05f49918e1b1894c3abd2b5451b356f7a00adb1c8568abc5babff33fcade1bb2"
+field = "header.metadata.daylight_wb"
+before = [1.847964882850647, 1.0, 1.3799437284469604]
+after = [1.8033578395843506, 1.0, 1.3427441120147705]
+evidence = "the camera's own D65 white balance levels in the file (Olympus maker note), with which its ColorMatrix is the XYZ matrix"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Olympus/SP570UZ/P5110102.ORF
+sha256 = "baab92391834076b427e406e98da79aaba48fb87243d6ccae60e08e299cfccf7"
+field = "header.metadata.cam_xyz"
+before = [[1.1521999835968018, -0.4043999910354614, -0.11460000276565552], [-0.47360000014305115, 1.2172000408172607, 0.2903999984264374], [-0.09880000352859497, 0.18289999663829803, 0.6039000153541565]]
+after = [[1.1949268579483032, -0.45994246006011963, -0.14375971257686615], [-0.2544154226779938, 1.1257668733596802, 0.10657981038093567], [-0.2537657916545868, 0.31518319249153137, 0.5475332140922546]]
+evidence = "the camera's own matrix in the file: the Olympus maker note's ColorMatrix (camera to sRGB of white balanced data, in 1/256) through its D65 white balance levels"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Olympus/SP570UZ/P5110102.ORF
+sha256 = "baab92391834076b427e406e98da79aaba48fb87243d6ccae60e08e299cfccf7"
+field = "header.metadata.matrix"
+before = [[1.500841498374939, -0.38924238085746765, -0.11159912496805191], [-0.14767587184906006, 1.6949915885925293, -0.547315776348114], [0.017542177811264992, -0.4918782413005829, 1.47433602809906]]
+after = [[1.3618676662445068, -0.24513617157936096, -0.11673148721456528], [-0.29182878136634827, 1.5408560037612915, -0.24902723729610443], [0.19140625, -0.6328125, 1.44140625]]
+evidence = "Camera to sRGB from the camera's own matrix in the file (the Olympus maker note's ColorMatrix, rows scaled to sum to one)"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Olympus/SP570UZ/P5110102.ORF
+sha256 = "baab92391834076b427e406e98da79aaba48fb87243d6ccae60e08e299cfccf7"
+field = "header.metadata.daylight_wb"
+before = [1.9140398502349854, 1.0, 1.4510363340377808]
+after = [1.925781488418579, 1.0, 1.4921876192092896]
+evidence = "the camera's own D65 white balance levels in the file (Olympus maker note), with which its ColorMatrix is the XYZ matrix"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Leaf/Aptus 75/RAW_APTUS_75.MOS
+sha256 = "d6bee434c5f85f8494a95a50671f56d4268001947a4b1913147162306d7ffb82"
+field = "header.metadata.cam_xyz"
+before = [[0.7914000153541565, 0.14139999449253082, -0.11900000274181366], [-0.8776000142097473, 1.6582000255584717, 0.2280000001192093], [-0.28110000491142273, 0.46050000190734863, 0.5562000274658203]]
+after = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+evidence = "no matrix: Adobe DNG Converter does not read the camera's files and Adobe's camera profiles are not used; the MOS ColorMatrix is to Leaf's own working space"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Leaf/Aptus 75/RAW_APTUS_75.MOS
+sha256 = "d6bee434c5f85f8494a95a50671f56d4268001947a4b1913147162306d7ffb82"
+field = "header.metadata.matrix"
+before = [[2.1473989486694336, -1.3126226663589478, 0.16522358357906342], [0.006426755338907242, 1.3424441814422607, -0.3488709330558777], [0.026760445907711983, -0.7937873601913452, 1.7670269012451172]]
+after = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+evidence = "no matrix: the identity camera-to-sRGB matrix, as for every camera without one"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
+
+[[delta]]
+# Leaf/Aptus 75/RAW_APTUS_75.MOS
+sha256 = "d6bee434c5f85f8494a95a50671f56d4268001947a4b1913147162306d7ffb82"
+field = "header.metadata.daylight_wb"
+before = [1.4035041332244873, 1.0, 1.342195987701416]
+after = [1.0, 1.0, 1.0]
+evidence = "no matrix: neutral daylight multipliers"
+approval = "Piotr 2026-10-17: no data from Adobe's camera profiles"
 
 # Nikon NEF and NRW: white levels, Coolpix black levels and the lossy data's curve follow Adobe DNG Converter, not LibRaw.
 

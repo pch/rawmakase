@@ -2,10 +2,9 @@
 # decoders (crates/rawmakase-raw/src/facts.rs), from Adobe (2026-10-17):
 # adobe-dng is the ColorMatrix Adobe DNG Converter 18.7 writes for the camera
 # (for illuminant D65, else its only one), from a native RAW when there is one,
-# else from a DNG the camera wrote; adobe-dcp the D65 ColorMatrix of Camera Raw
-# 18.7's Adobe Standard profile for a camera the converter gives no usable
-# matrix for; compat-observed, only for a camera Adobe has no matrix for, the
-# cam_xyz LibRaw reported on our files. Written by scripts/cameras/raw-matrices.py.
+# else from a DNG the camera wrote; compat-observed, only for a camera Adobe
+# DNG Converter has no matrix for, the cam_xyz LibRaw reported on our files.
+# Never from Adobe's camera profiles. Written by scripts/cameras/raw-matrices.py.
 
 [[matrix]]
 make = "Apple"
@@ -1707,12 +1706,6 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Leaf"
-model = "Aptus 75"
-xyz = [7914, 1414, -1190, -8776, 16582, 2280, -2811, 4605, 5562]
-source = "adobe-dcp"
-
-[[matrix]]
-make = "Leaf"
 model = "Credo 40"
 xyz = [8035, 435, -962, -6001, 13872, 2320, -1159, 3065, 5434]
 source = "adobe-dng"
@@ -2871,39 +2864,9 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Olympus"
-model = "SP350"
-xyz = [12078, -4836, -1069, -6671, 14305, 2578, -786, 939, 7418]
-source = "adobe-dcp"
-
-[[matrix]]
-make = "Olympus"
-model = "SP500UZ"
-xyz = [9494, -3415, -665, -5210, 12334, 3260, -1549, 2262, 6482]
-source = "adobe-dcp"
-
-[[matrix]]
-make = "Olympus"
-model = "SP510UZ"
-xyz = [10594, -3607, -1010, -5881, 13127, 3083, -1200, 1804, 6720]
-source = "adobe-dcp"
-
-[[matrix]]
-make = "Olympus"
-model = "SP550UZ"
-xyz = [11596, -4007, -1048, -5432, 12798, 2957, -1029, 1750, 6516]
-source = "adobe-dcp"
-
-[[matrix]]
-make = "Olympus"
 model = "SP565UZ"
 xyz = [11856, -4469, -1159, -4814, 12368, 2756, -993, 1779, 5589]
 source = "adobe-dng"
-
-[[matrix]]
-make = "Olympus"
-model = "SP570UZ"
-xyz = [11522, -4044, -1145, -4737, 12172, 2903, -987, 1829, 6039]
-source = "adobe-dcp"
 
 [[matrix]]
 make = "Olympus"

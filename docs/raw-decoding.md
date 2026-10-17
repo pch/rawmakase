@@ -362,7 +362,8 @@ LibRaw's (0.761 and 0.857, rounded down to whole levels).
 
 Olympus and OM Digital (`vendor::olympus`): white balance (red and blue
 over the mean of the two greens' levels, as Adobe DNG Converter reads it),
-presets, black, bit depth, crop and aspect ratio come from the maker note's
+presets, black, bit depth, crop, aspect ratio and (for a camera with no
+matrix row, see *Colour matrices*) the colour matrix come from the maker note's
 ImageProcessing directory (RawInfo on older compacts; the main directory's red and blue
 balance first where it has them). The default crop and the aspect-ratio crop
 (centred in it, at the ratio the note names) start on even rows and columns.
@@ -738,13 +739,30 @@ stays the file's or `compat-observed`; the facts test enforces this.
 A camera's XYZ (D65) to camera matrix is Adobe's, from `data/raw-matrices.toml`
 (written by `scripts/cameras/raw-matrices.py`, whose docstring has the
 commands): the ColorMatrix Adobe DNG Converter writes for the camera
-(`adobe-dng`), else the one of Camera Raw's Adobe Standard profile for it
-(`adobe-dcp`, the nine numbers only). Only a camera Adobe has no matrix for
-keeps the one LibRaw reported (`compat-observed`). A camera known only from
-its own DNGs mostly has no row: the converter keeps each file's matrix
-(rescaled), and so does the decoder. Where Adobe's matrix is not LibRaw's,
-`cam_xyz`, `matrix` and `daylight_wb` differ from the recorded fingerprints
-on purpose.
+(`adobe-dng`). Only a camera the converter has no matrix for keeps the one
+LibRaw reported (`compat-observed`). No matrix comes from Adobe's camera
+profiles. A camera known only from its own DNGs mostly has no row: the
+converter keeps each file's matrix (rescaled), and so does the decoder.
+Where Adobe's matrix is not LibRaw's, `cam_xyz`, `matrix` and `daylight_wb`
+differ from the recorded fingerprints on purpose.
+
+A camera with no row uses the matrix its file carries, where it has one.
+Olympus's SP-350, SP-500UZ, SP-510UZ, SP-550UZ and SP-570UZ, which the
+converter gives only their own values (unscaled, so no usable matrix), use
+the maker note's ColorMatrix (ImageProcessing's or RawInfo's 0x0200, else
+the main directory's 0x1011; ExifTool's Olympus tag names): camera to sRGB
+(our assumption: the compacts' only output space) of white balanced data,
+in 1/256. Its rows are scaled to sum to one, and the matrix is turned into
+an XYZ (D65) to camera one through the camera's own D65 white balance
+levels (RawInfo's daylight fluorescent, 6500 K, levels 0x0130;
+ImageProcessing's 6600 K levels 0x010C), on the as-shot balance's scale,
+which become the daylight multipliers.
+
+The Leaf Aptus 75, which the converter does not read, has no matrix: its
+MOS ColorMatrix is to Leaf's own working space, before an input profile,
+not a colour space RAWmakase can name. A camera without a matrix has
+neutral daylight multipliers and the identity camera-to-sRGB matrix, as
+LibRaw gives it: the camera's colours pass through unconverted.
 
 Known: a DNG without a D65 matrix is read with its ColorMatrix1, which for
 GoPro's GPRs (illuminants Standard A and D50) and Leica's Q and SL DNGs is
