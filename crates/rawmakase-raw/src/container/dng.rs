@@ -2,7 +2,7 @@
 //! strips and their compression, the CFA layout, levels and linearization, the
 //! active area and default crop, and the colour tags.
 use super::tiff::{Ifd, TiffFile};
-use crate::codec::{bits::Msb, ljpeg};
+use crate::codec::{bits::Msb, dct, ljpeg};
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo, UNSET};
 use crate::io::{Bytes, Order};
@@ -22,6 +22,11 @@ pub(crate) struct DngPlan {
     pub height: u32,
     pub bps: u32,
     pub compression: u32,
+    /// SampleFormat: 1 unsigned integers, 3 floating point.
+    pub sample_format: u32,
+    /// Predictor: 1 none, 2 horizontal differences, 34894–34896 Adobe's
+    /// floating-point predictor (bytes of 1, 2 or 4 samples at a time).
+    pub predictor: u32,
     /// Tile (or strip) size; strips are tiles as wide as the image.
     pub tile: [u32; 2],
     /// Each tile's (offset, length).
@@ -61,6 +66,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     let bps = t.int(ifd, 258).unwrap_or(1);
     let compression = t.int(ifd, 259).unwrap_or(1);
     let sample_format = t.int(ifd, 339).unwrap_or(1);
+    let predictor = t.int(ifd, 317).unwrap_or(1);
     let (tile, tiles) = layout(&t, ifd, width, height)?;
     let variant = match (compression, sample_format) {
         (1, 1) => Variant::DngUncompressed,
@@ -164,6 +170,8 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         height,
         bps,
         compression,
+        sample_format,
+        predictor,
         tile,
         tiles,
         little: t.little(),
@@ -282,9 +290,47 @@ pub(crate) fn decode(
         let (tx, ty) = ((i % across) * tw, (i / across) * th);
         let tile = file.slice(offset, len)?;
         // The tile's samples in raster order, `tw` per row.
+        let float = plan.sample_format == 3;
         let samples: &[u16] = match plan.compression {
+            1 if float => {
+                floats(tile, plan.bps, tw * th, plan.little, &mut decoded)?;
+                &decoded
+            }
             1 => {
                 unpack(tile, plan.bps, tw, th, plan.little, &mut decoded)?;
+                &decoded
+            }
+            8 => {
+                let bytes_per = (plan.bps as usize).div_ceil(8);
+                let limit = tw * th * bytes_per;
+                let mut bytes =
+                    miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(tile, limit)
+                        .map_err(|_| corrupt("DNG Deflate tile"))?;
+                bytes.resize(limit, 0);
+                if float && plan.predictor != 1 {
+                    // The predictor leaves big-endian samples.
+                    unpredict_float(&mut bytes, tw, bytes_per, plan.predictor)?;
+                    floats(&bytes, plan.bps, tw * th, false, &mut decoded)?;
+                } else if float {
+                    floats(&bytes, plan.bps, tw * th, plan.little, &mut decoded)?;
+                } else {
+                    unpack(&bytes, plan.bps, tw, th, plan.little, &mut decoded)?;
+                    if plan.predictor == 2 {
+                        // Differences wrap at the samples' precision.
+                        let mask = ((1u32 << plan.bps.clamp(1, 16)) - 1) as u16;
+                        for row in decoded.chunks_mut(tw) {
+                            for i in 1..row.len() {
+                                row[i] = row[i].wrapping_add(row[i - 1]) & mask;
+                            }
+                        }
+                    }
+                }
+                &decoded
+            }
+            // Lossless JPEG; some writers (Blackmagic) store DCT JPEG under
+            // the same code.
+            7 if dct::is_dct(tile) => {
+                dct::decode_into(tile, cancel, &mut decoded)?;
                 &decoded
             }
             7 => {
@@ -325,6 +371,110 @@ pub(crate) fn decode(
         white,
         linear_white: [0; 4],
     })
+}
+
+/// `n` floating-point samples of `bps` bits (IEEE half and single
+/// precision; DNG's 24-bit format: sign, 7-bit exponent biased by 63, 16-bit
+/// mantissa), in the given byte order, as whole numbers: the levels of
+/// floating-point DNGs are on the integer scale.
+fn floats(data: &[u8], bps: u32, n: usize, little: bool, out: &mut Vec<u16>) -> Result<()> {
+    let size = match bps {
+        16 | 24 | 32 => bps as usize / 8,
+        _ => return Err(Error::Unsupported(format!("DNG with {bps}-bit floats"))),
+    };
+    out.clear();
+    out.reserve(n);
+    for c in data.chunks_exact(size).take(n) {
+        let mut b = [0u8; 4];
+        for (i, v) in c.iter().enumerate() {
+            // Most significant byte first.
+            b[i] = if little { c[size - 1 - i] } else { *v };
+        }
+        let v = match size {
+            2 => half(u16::from_be_bytes([b[0], b[1]])),
+            3 => fp24([b[0], b[1], b[2]]),
+            _ => f32::from_be_bytes(b),
+        };
+        out.push(to_level(v));
+    }
+    out.resize(n, 0);
+    Ok(())
+}
+
+/// A float as a whole-number level: its integer part, as LibRaw's reading of
+/// floating-point DNGs has it (our measurement).
+fn to_level(v: f32) -> u16 {
+    if v.is_nan() {
+        0
+    } else {
+        v.clamp(0., 65535.) as u16
+    }
+}
+
+/// IEEE 754 half precision.
+fn half(h: u16) -> f32 {
+    let sign = if h >> 15 == 1 { -1. } else { 1. };
+    let exp = i32::from(h >> 10 & 0x1f);
+    let mant = f32::from(h & 0x3ff);
+    sign * match exp {
+        0 => mant * (2f32).powi(-24),
+        31 => {
+            if mant == 0. {
+                f32::INFINITY
+            } else {
+                f32::NAN
+            }
+        }
+        _ => (1. + mant / 1024.) * (2f32).powi(exp - 15),
+    }
+}
+
+/// DNG's 24-bit float: sign, a 7-bit exponent biased by 63, a 16-bit mantissa.
+fn fp24(b: [u8; 3]) -> f32 {
+    let sign = if b[0] >> 7 == 1 { -1. } else { 1. };
+    let exp = i32::from(b[0] & 0x7f);
+    let mant = f32::from(u16::from_be_bytes([b[1], b[2]]));
+    sign * match exp {
+        0 => mant * (2f32).powi(-62 - 16),
+        127 => {
+            if mant == 0. {
+                f32::INFINITY
+            } else {
+                f32::NAN
+            }
+        }
+        _ => (1. + mant / 65536.) * (2f32).powi(exp - 63),
+    }
+}
+
+/// Undoes Adobe's floating-point predictor (TIFF Technical Note 3) on rows
+/// of `width` samples of `size` bytes: each row's bytes are differences of
+/// the byte `factor` positions before, and hold the samples' bytes as planes,
+/// most significant first; the result is big-endian samples. DNG names
+/// predictors 34894–34896 for factors 1, 2 and 4; the mosaics of the only
+/// writer of 34894 in our files (HDRMerge) decode, as LibRaw decodes them,
+/// with differences two bytes apart, the same colour's in a Bayer row.
+fn unpredict_float(bytes: &mut [u8], width: usize, size: usize, predictor: u32) -> Result<()> {
+    let factor = match predictor {
+        34894 | 34895 => 2,
+        34896 => 4,
+        1 => return Ok(()),
+        p => return Err(Error::Unsupported(format!("DNG predictor {p}"))),
+    };
+    let row = width * size;
+    let mut plane = vec![0u8; row];
+    for r in bytes.chunks_exact_mut(row) {
+        for i in factor..row {
+            r[i] = r[i].wrapping_add(r[i - factor]);
+        }
+        plane.copy_from_slice(r);
+        for x in 0..width {
+            for k in 0..size {
+                r[x * size + k] = plane[k * width + x];
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Uncompressed samples of `bps` bits, packed most significant bit first with
@@ -419,6 +569,94 @@ mod tests {
         f.resize((image_at + width * height * 2) as usize, 0);
         f.extend(values);
         f
+    }
+
+    #[test]
+    fn decodes_floats() {
+        assert_eq!(super::half(0x3c00), 1.);
+        assert_eq!(super::half(0xc000), -2.);
+        assert_eq!(super::half(0x0001), 2f32.powi(-24));
+        // 24-bit: 1.5 is exponent 63, mantissa 0x8000.
+        assert_eq!(super::fp24([63, 0x80, 0]), 1.5);
+        assert_eq!(super::fp24([0x80 | 64, 0, 0]), -2.);
+        assert_eq!(super::to_level(2358.53), 2358);
+        assert_eq!(super::to_level(-1.), 0);
+        assert_eq!(super::to_level(f32::NAN), 0);
+        assert_eq!(super::to_level(1e9), 65535);
+    }
+
+    #[test]
+    fn undoes_the_floating_point_predictor() {
+        // Two big-endian 16-bit samples per row, written as byte planes
+        // (high bytes, then low) and differenced two bytes apart.
+        let samples = [[0x1234u16, 0x5678], [0x9abc, 0xdef0]];
+        let mut bytes = Vec::new();
+        for row in samples {
+            let mut plane: Vec<u8> = row.iter().map(|v| (v >> 8) as u8).collect();
+            plane.extend(row.iter().map(|v| *v as u8));
+            let mut coded = plane.clone();
+            for i in 2..plane.len() {
+                coded[i] = plane[i].wrapping_sub(plane[i - 2]);
+            }
+            bytes.extend(coded);
+        }
+        super::unpredict_float(&mut bytes, 2, 2, 34894).unwrap();
+        let back: Vec<u16> = bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| u16::from_be_bytes(*b))
+            .collect();
+        assert_eq!(back, [0x1234, 0x5678, 0x9abc, 0xdef0]);
+    }
+
+    #[test]
+    fn deflate_tiles_keep_byte_order_and_precision() {
+        use miniz_oxide::deflate::compress_to_vec_zlib;
+        let le16 = |v: u16| v.to_le_bytes().to_vec();
+        let le32 = |v: u32| v.to_le_bytes().to_vec();
+        // A 4 × 1 image in one 4 × 1 tile; `data` is the tile before Deflate.
+        let file = |bps: u16, format: u16, predictor: u16, data: &[u8]| {
+            let tile = compress_to_vec_zlib(data, 6);
+            let mut f = dng(
+                4,
+                1,
+                &[
+                    (258, 3, 1, le16(bps)),
+                    (259, 3, 1, le16(8)),
+                    (317, 3, 1, le16(predictor)),
+                    (339, 3, 1, le16(format)),
+                    (322, 4, 1, le32(4)),
+                    (323, 4, 1, le32(1)),
+                    (324, 4, 1, le32(0)),
+                    (325, 4, 1, le32(tile.len() as u32)),
+                ],
+            );
+            // The tile goes last; its offset entry (inline) is set to it.
+            let at = f.len() as u32;
+            let count = usize::from(u16::from_le_bytes([f[8], f[9]]));
+            let entry = (0..count)
+                .map(|i| 10 + 12 * i)
+                .find(|&e| u16::from_le_bytes([f[e], f[e + 1]]) == 324)
+                .unwrap();
+            f[entry + 8..entry + 12].copy_from_slice(&at.to_le_bytes());
+            f.extend(&tile);
+            f
+        };
+        let decode = |f: Vec<u8>| {
+            let info = crate::open(&f).unwrap();
+            crate::decode(&info, &f, &AtomicBool::new(false))
+                .unwrap()
+                .data
+        };
+        // Little-endian floats with no predictor keep the file's byte order.
+        let floats: Vec<u8> = [1f32, 2., 100., 2358.53]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        assert_eq!(decode(file(32, 3, 1, &floats)), [1, 2, 100, 2358]);
+        // 8-bit horizontal differences wrap at 8 bits: 250, then +10 is 4.
+        assert_eq!(decode(file(8, 1, 2, &[250, 10, 0, 1])), [250, 4, 4, 5]);
     }
 
     #[test]

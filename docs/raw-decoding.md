@@ -50,12 +50,19 @@ A file of a recognised container in a variant this crate does not decode is
 | Variant | Container and encoding | Sources |
 | --- | --- | --- |
 | `DngUncompressed` | DNG, uncompressed 8 to 16-bit samples | DNG 1.7, TIFF 6 |
-| `DngLosslessJpeg` | DNG, lossless JPEG tiles or strips | DNG 1.7, ITU T.81 |
+| `DngLosslessJpeg` | DNG, lossless JPEG tiles or strips; DCT JPEG ones some writers store under the same code | DNG 1.7, ITU T.81 |
+| `DngDeflate` | DNG, Deflate tiles, integer (horizontal differences) or floating point (byte planes) | DNG 1.7, Adobe TIFF Technical Note 3 |
+| `DngUncompressedFloat` | DNG, uncompressed 16, 24 or 32-bit floating point | DNG 1.7, IEEE 754 |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
 hold the difference. A stream that fails to decode as T.81 says is decoded
-again reading them.
+again reading them, and that reading is kept only when it consumes the stream
+exactly. Floating-point DNGs hold their levels on the integer scale; RAWmakase
+keeps a sample's integer part. HDRMerge's floating-point mosaics (predictor
+34894) difference bytes two apart, the same colour's in a Bayer row. Blackmagic's
+DCT-coded tiles decode with an exact inverse DCT; they differ from LibRaw's
+(libjpeg-turbo's) by one 12-bit level in under 0.03% of samples.
 
 ## Checking against LibRaw
 
