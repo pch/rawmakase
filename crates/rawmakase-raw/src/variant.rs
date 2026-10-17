@@ -142,6 +142,8 @@ pub enum Variant {
     MrwUnpacked,
     /// Kodak DCS TIFF, one lossless JPEG strip of codes on a curve.
     DcsLosslessJpeg,
+    /// Kodak KDC (EasyShare and P-series), packed 12-bit samples.
+    KdcPacked,
 }
 
 impl Variant {
@@ -207,6 +209,7 @@ impl Variant {
             Variant::MrwPacked => "mrw-packed",
             Variant::MrwUnpacked => "mrw-unpacked",
             Variant::DcsLosslessJpeg => "dcs-ljpeg",
+            Variant::KdcPacked => "kdc-packed",
         }
     }
 }
@@ -235,6 +238,7 @@ pub(crate) enum Plan {
     Brcm(crate::container::brcm::BrcmPlan),
     Mrw(crate::container::mrw::MrwPlan),
     Dcs(crate::container::dcs::DcsPlan),
+    Kdc(crate::container::kdc::KdcPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -299,6 +303,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         }
         if crate::container::dcs::is_dcs(&t) {
             return crate::container::dcs::open(t);
+        }
+        if crate::container::kdc::is_kdc(&t) {
+            return crate::container::kdc::open(t);
         }
         if crate::container::erf::is_erf(&t) {
             return crate::container::erf::open(t);
@@ -437,6 +444,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         }
         (Plan::Dcs(plan), Variant::DcsLosslessJpeg) => {
             crate::container::dcs::decode(info, plan, bytes, cancel)
+        }
+        (Plan::Kdc(plan), Variant::KdcPacked) => {
+            crate::container::kdc::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(

@@ -29956,3 +29956,42 @@ after = [0.9587035775184631, 1.0, 1.9913138151168823]
 evidence = "RAWmakase's is the KodakIFD's levels of the WhiteBalance setting (WB_RGBLevelsDaylight + WhiteBalance), green over each, Adobe DNG Converter's AsShotNeutral to its six digits; LibRaw's differs by under 0.2%"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
+
+# Kodak KDC: white is Adobe DNG Converter's.
+
+[[delta]]
+# Kodak/Z1015 IS/RAW_KODAK_EASYSHARE_Z1015-IS.KDC
+sha256 = "e169de008dd708e9c1cc57cf9bde907dee5043caca658f41bdaa127a212f9df3"
+field = "sensor.white"
+before = 3825
+after = 4095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095; Adobe's white fitted to RAWmakase's samples is the same, exact fit; RAWmakase's is the camera table's adobe-dng row or the samples' 12-bit range"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Kodak/P880/100_3710.KDC
+sha256 = "8138d068d14e9ce90c6877b175759fc92358024303b8cd5e9b9eb5ae11e8c4b1"
+field = "sensor.white"
+before = 3963
+after = 4095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095; Adobe's white fitted to RAWmakase's samples is the same, exact fit; RAWmakase's is the camera table's adobe-dng row or the samples' 12-bit range"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Kodak/KODAK P712 ZOOM DIGITAL CAMERA/100_4343.KDC
+sha256 = "b1c3870c8c794f0271053a80a15296e3a9b575ab736796cdb53929d50c86a084"
+field = "sensor.white"
+before = 3963
+after = 4030
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4030; Adobe's white fitted to RAWmakase's samples is the same, exact fit; RAWmakase's is the camera table's adobe-dng row or the samples' 12-bit range"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Kodak/EasyShare Z990/100_0891.KDC
+sha256 = "378607dffc5e40f95d36fe7e0a5ce015c91b441c685843767b571d6f79ba2518"
+field = "sensor.white"
+before = 4077
+after = 4000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4000; Adobe's white fitted to RAWmakase's samples is the same, exact fit; RAWmakase's is the camera table's adobe-dng row or the samples' 12-bit range"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+

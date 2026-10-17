@@ -41,7 +41,7 @@ Modules, each with a small `pub(crate)` surface:
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
 | `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings, Canon's CRW blocks, Phase One's IIQ rows, Hasselblad's pairs |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`, `mos`, `sti`, `brcm`, `mrw`, `dcs`) |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`, `mos`, `sti`, `brcm`, `mrw`, `dcs`, `kdc`) |
 | `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`, `phase_one`, `hasselblad`, `leaf`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
@@ -101,6 +101,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `MrwPacked` | Minolta MRW, 12-bit samples packed most significant bit first | ExifTool's MinoltaRaw tag names, our own measurements |
 | `MrwUnpacked` | Minolta MRW, 16-bit big-endian words | ExifTool's MinoltaRaw tag names, our own measurements |
 | `DcsLosslessJpeg` | Kodak DCS TIFF (DCS520C, DCS560C, Canon EOS D2000C): one lossless JPEG strip of 12-bit codes on the KodakIFD's curve | TIFF 6, TIFF/EP, ITU T.81, ExifTool's Kodak tag names, our own measurements |
+| `KdcPacked` | Kodak KDC of the EasyShare and P-series compacts: packed 12-bit samples | TIFF 6, ExifTool's Kodak tag names, our own measurements |
 | `FffCompressed` | Hasselblad 3FR and FFF (compression 7): lossless JPEG headers, then pairs of coded differences in little-endian 32-bit words | ITU T.81, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
 | `OrfCompressed` | Olympus and OM Digital ORF/ORI, Olympus's compressed coding of 12 or 14-bit samples | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfPacked` | Olympus ORF, packed 12-bit samples: 16-byte blocks of ten, 32-bit words, or two interlaced fields of rows | TIFF 6, ExifTool's Olympus tag names, our own measurements |
@@ -573,6 +574,20 @@ the WhiteBalance setting (WB_RGBLevelsDaylight, 0x0848, plus the setting
 levels' green squared over each. SensorLeftBorder to SensorImageHeight
 (0x03EB to 0x03EE) are the default crop, ExposureIndex the ISO speed where
 EXIF gives none.
+
+Kodak KDC of the EasyShare and P-series compacts (`container::kdc`): the
+KDC IFD (IFD0 tag 0xFE00) gives the raw size (0xFA13, 0xFA14; an odd height
+is read a row taller, as RAWmakase always has), the filter as text (0xFA15;
+`compat-observed` rows for the Z990 and Z981, whose text is not their filter
+and whose filter Adobe DNG Converter's CFAPattern agrees with), the camera's
+image (0xFA3E, 0xFA3F, 0xFA31, 0xFA32, starting on even rows and columns,
+the default crop) and the white balance levels in 65536ths: the WhiteBalance
+setting's (0xFA0D: 0 Auto, 0xFA25; 3 Daylight, 0xFA29; 6 Shade, 0xFA2A), else
+the as-shot ones (0xFA12), as Adobe's AsShotNeutral; Daylight and Shade are
+the presets. The data, 12-bit samples packed most significant bit first,
+starts 64 bytes after the first of the 16-row strips a SubIFD's tag 0xFD04
+lists from its seventeenth value on (our measurements). White is Adobe's
+(`adobe-dng` rows for the P712 and Z990), else 4095; black 0.
 
 Canon files whose values differ from LibRaw's on purpose are approved in
 `tests/corpus/decode-deltas.toml`, with Adobe DNG Converter's value as the

@@ -8401,3 +8401,66 @@ model = "DCS560C"
 dng = false
 white = 3277
 source = "adobe-dng"
+
+# Kodak KDC: the canonical names of the EasyShare and P-series bodies.
+
+[[canonical]]
+make = "Kodak"
+model = "EASYSHARE Z1015 IS"
+canonical = ["Kodak", "Z1015 IS"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "P880 ZOOM"
+canonical = ["Kodak", "P880"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "P712 ZOOM"
+canonical = ["Kodak", "P712"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "EasyShare Z990"
+canonical = ["Kodak", "Z990"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "EasyShare Z981"
+canonical = ["Kodak", "Z981"]
+source = "compat-observed"
+
+[[camera]]
+make = "Kodak"
+model = "P712 ZOOM"
+dng = false
+white = 4030
+source = "adobe-dng"
+
+[[camera]]
+make = "Kodak"
+model = "EasyShare Z990"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+# Kodak KDC: the filter of the bodies whose file names another (Adobe DNG
+# Converter's CFAPattern agrees).
+
+[[camera]]
+make = "Kodak"
+model = "EasyShare Z990"
+dng = false
+cfa = [2, 1, 1, 0]
+source = "compat-observed"
+
+[[camera]]
+make = "Kodak"
+model = "EasyShare Z981"
+dng = false
+cfa = [1, 0, 2, 1]
+source = "compat-observed"

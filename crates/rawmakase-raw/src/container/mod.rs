@@ -11,6 +11,7 @@ pub(crate) mod erf;
 pub(crate) mod fff;
 pub(crate) mod headerless;
 pub(crate) mod iiq;
+pub(crate) mod kdc;
 pub(crate) mod mos;
 pub(crate) mod mrw;
 pub(crate) mod nef;
