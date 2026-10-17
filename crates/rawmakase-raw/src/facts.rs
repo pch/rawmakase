@@ -206,7 +206,14 @@ mod tests {
                     || c.wb_scale.is_some(),
                 "{c:?}"
             );
-            assert_ne!(c.source, Source::AdobeDng, "{c:?}");
+            // Adobe DNG Converter's levels where the file does not tell
+            // them; never its geometry.
+            if c.source == Source::AdobeDng {
+                assert!(
+                    c.visible.is_none() && c.frame.is_none() && c.flip.is_none(),
+                    "{c:?}"
+                );
+            }
         }
         for m in &matrices.matrix {
             assert!(seen.insert(("matrix", &m.make, &m.model)), "{m:?}");

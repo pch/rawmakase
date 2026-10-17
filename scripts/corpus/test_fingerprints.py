@@ -37,7 +37,13 @@ class Compare(unittest.TestCase):
                 fingerprints.load_deltas(path)
             path.write_text(path.read_text() + 'evidence = "e"\napproval = "a"\n')
             self.assertEqual(fingerprints.load_deltas(path), {('h', 'sensor.white'): (1, 2)})
-        self.assertEqual(fingerprints.load_deltas(), {})
+            path.write_text(path.read_text().replace('approval = "a"', 'approval = "pending"'))
+            self.assertEqual(fingerprints.load_deltas(path), {})
+        # The repository's own deltas load: every entry complete, one per field.
+        import tomllib
+        entries = tomllib.loads(fingerprints.DELTAS.read_text()).get('delta', [])
+        approved = [d for d in entries if d['approval'] != 'pending']
+        self.assertEqual(len(fingerprints.load_deltas()), len(approved))
 
 
 spec = importlib.util.spec_from_file_location('develop', Path(__file__).with_name('dataset-develop.py'))

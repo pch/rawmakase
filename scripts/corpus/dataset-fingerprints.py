@@ -227,7 +227,8 @@ def flatten(fingerprint, prefix=''):
 
 
 def load_deltas(path=DELTAS):
-    """Approved decode differences, by (file SHA-256, field): (before, after)."""
+    """Approved decode differences, by (file SHA-256, field): (before, after).
+    A difference whose approval is "pending" is listed but not approved."""
     import tomllib
     if not path.is_file():
         return {}
@@ -236,6 +237,8 @@ def load_deltas(path=DELTAS):
         for key in ('sha256', 'field', 'before', 'after', 'evidence', 'approval'):
             if key not in d:
                 raise Setup(f'{path.name}: a delta without {key}')
+        if d['approval'] == 'pending':
+            continue
         deltas[(d['sha256'], d['field'])] = (d['before'], d['after'])
     return deltas
 

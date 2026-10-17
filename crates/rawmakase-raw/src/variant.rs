@@ -76,6 +76,8 @@ pub enum Variant {
     RafPackedWords,
     /// Fujifilm RAF, compressed stripes (lossless or lossy).
     RafCompressed,
+    /// Canon CR3, lossless CRX: median-predicted, Rice-coded Bayer planes.
+    Cr3Lossless,
 }
 
 impl Variant {
@@ -110,6 +112,7 @@ impl Variant {
             Variant::RafPacked => "raf-packed",
             Variant::RafPackedWords => "raf-packed-words",
             Variant::RafCompressed => "raf-compressed",
+            Variant::Cr3Lossless => "cr3-lossless",
         }
     }
 }
@@ -123,6 +126,7 @@ pub(crate) enum Plan {
     Arw(crate::container::arw::ArwPlan),
     Nef(crate::container::nef::NefPlan),
     Raf(crate::container::raf::RafPlan),
+    Cr3(crate::container::cr3::Cr3Plan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -138,6 +142,9 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
 fn probe(bytes: &[u8]) -> Result<RawInfo> {
     if crate::container::raf::is_raf(bytes) {
         return crate::container::raf::open(bytes);
+    }
+    if crate::container::cr3::is_cr3(bytes) {
+        return crate::container::cr3::open(bytes);
     }
     if crate::container::rw2::is_rw2(bytes) {
         let t = crate::container::tiff::TiffFile::parse(bytes, 0)
@@ -206,6 +213,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::RafPackedWords
             | Variant::RafCompressed,
         ) => crate::container::raf::decode(info, plan, bytes, cancel),
+        (Plan::Cr3(plan), Variant::Cr3Lossless) => {
+            crate::container::cr3::decode(info, plan, bytes, cancel)
+        }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
             "{} with another container's plan",

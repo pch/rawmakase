@@ -2953,3 +2953,301 @@ raw_size = [4096, 3012]
 visible = [0, 0, 4032, 3012]
 source = "compat-observed"
 
+# Canon CR3: regional and short model names.
+
+[[name]]
+make = "Canon"
+model = "EOS KISS M"
+is = "EOS M50"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Rebel SL3"
+is = "EOS 250D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS 200D II"
+is = "EOS 250D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS M50m2"
+is = "EOS M50 Mark II"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS R6m2"
+is = "EOS R6 Mark II"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS R5m2"
+is = "EOS R5 Mark II"
+source = "compat-observed"
+
+# Canon CR3: Adobe DNG Converter 18.7's white level where it is not
+# ColorData's SpecularWhiteLevel (2026-10-17).
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D X Mark III"
+dng = false
+white = 16050
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R5"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R5 Mark II"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R7"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R8"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R10"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R50"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R50 V"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+# Canon CR3: the visible area where it is not the image areas' active area.
+
+[[camera]]
+make = "Canon"
+model = "EOS R"
+dng = false
+raw_size = [4352, 2850]
+visible = [144, 46, 4208, 2804]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R"
+dng = false
+raw_size = [6888, 4546]
+visible = [146, 48, 6742, 4498]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R10"
+dng = false
+raw_size = [6192, 4060]
+visible = [168, 52, 6000, 4000]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R3"
+dng = false
+raw_size = [6192, 4152]
+visible = [160, 120, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R5"
+dng = false
+raw_size = [5248, 3510]
+visible = [144, 108, 5087, 3391]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R5"
+dng = false
+raw_size = [8352, 5586]
+visible = [144, 112, 8191, 5463]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R5 Mark II"
+dng = false
+raw_size = [5376, 3574]
+visible = [258, 162, 5118, 3412]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R5 Mark II"
+dng = false
+raw_size = [8480, 5650]
+visible = [258, 162, 8222, 5488]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R50"
+dng = false
+raw_size = [6192, 4060]
+visible = [168, 52, 6000, 4000]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R50 V"
+dng = false
+raw_size = [6192, 4060]
+visible = [168, 52, 6000, 4000]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6"
+dng = false
+raw_size = [3584, 2386]
+visible = [156, 108, 3407, 2271]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6"
+dng = false
+raw_size = [5568, 3708]
+visible = [72, 38, 5496, 3670]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6 Mark II"
+dng = false
+raw_size = [3936, 2612]
+visible = [180, 108, 3743, 2495]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6 Mark II"
+dng = false
+raw_size = [6188, 4120]
+visible = [154, 96, 6022, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6 Mark III"
+dng = false
+raw_size = [4512, 2994]
+visible = [180, 108, 4319, 2879]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6 Mark III"
+dng = false
+raw_size = [7144, 4760]
+visible = [172, 108, 6959, 4639]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R7"
+dng = false
+raw_size = [7128, 4732]
+visible = [144, 72, 6984, 4660]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R8"
+dng = false
+raw_size = [6188, 4120]
+visible = [154, 96, 6022, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS RP"
+dng = false
+raw_size = [4032, 2656]
+visible = [112, 44, 3910, 2612]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D X Mark III"
+dng = false
+raw_size = [5568, 3708]
+visible = [72, 38, 5496, 3670]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G5 X Mark II"
+dng = false
+raw_size = [5632, 3710]
+visible = [96, 18, 5536, 3692]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G7 X Mark III"
+dng = false
+raw_size = [5632, 3710]
+visible = [96, 18, 5536, 3692]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot SX70 HS"
+dng = false
+raw_size = [5344, 3950]
+visible = [98, 18, 5246, 3932]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot V1"
+dng = false
+raw_size = [5928, 3944]
+visible = [156, 92, 5759, 3839]
+source = "compat-observed"
+

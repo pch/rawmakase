@@ -35,9 +35,9 @@ Modules, each with a small `pub(crate)` surface:
 | Module | Owns |
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
-| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`) |
-| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`) |
+| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`) |
+| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
 | `color` | The camera-to-sRGB matrix and daylight multipliers from a camera's XYZ matrix |
@@ -79,6 +79,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `RafPacked` | Fujifilm RAF, 12-bit samples packed least significant bit first | ExifTool's FujiFilm tag names, TIFF 6, our own measurements |
 | `RafPackedWords` | Fujifilm RAF, 12 or 14-bit samples packed most significant bit first in little-endian 32-bit words (raw image directory tag 0xF006 = 1) | ExifTool's FujiFilm tag names, TIFF 6, our own measurements |
 | `RafCompressed` | Fujifilm RAF, compressed stripes, lossless or lossy, Bayer or X-Trans | The public description of Fujifilm's lossless compression on capnfabs.net, ExifTool's FujiFilm tag names, our own measurements |
+| `Cr3Lossless` | Canon CR3, lossless CRX: Bayer planes predicted as JPEG-LS predicts, Golomb-Rice coded | ISO/IEC 14496-12, Laurent Clévy's CR3 description, ITU T.87, ExifTool's Canon tag names, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -224,6 +225,28 @@ with red and blue scaled down by factors the file does not give; the
 factors are observed compatibility data (`wb_scale` rows, about 0.901 and
 0.885, 0.761 and 0.857 for the back), so these files keep the white balance
 RAWmakase has always read.
+
+Canon CR3 (`container::cr3`, `codec::crx`, `vendor::canon_cr3`): the raw image
+is the first of the largest raw tracks (a Dual Pixel file's second image is as
+large). The visible area is the image areas' (`IAD1`) active area, the default
+crop their crop, and the aspect crop the maker notes' AspectInfo inside it.
+White balance and the daylight and shade presets are the timed metadata's
+ColorData. White is ColorData's SpecularWhiteLevel, which Adobe DNG
+Converter's WhiteLevel follows, but for the cameras whose data Adobe reads
+unclipped at that level (EOS R5, R5 Mark II, R6, R7, R8, R10, R50, R50 V and
+1D X Mark III): their `adobe-dng` rows give Adobe's level. LibRaw read every
+CR3 with the bit depth's range (16383), so CR3 files develop on a different
+normalized scale than before (approved decode deltas, Adobe's values as
+evidence). Black is ColorData's per-channel
+levels (PerChannelBlackLevel), which Adobe DNG Converter's BlackLevel follows
+on our files; where LibRaw measured the black in the masked border instead,
+the difference is an approved decode delta (three EOS M50 files, where
+Adobe measures a fractional black, are pending). Without
+those levels, black is each channel's mean, rounded down, in the masked
+columns from the third to 26 short of the visible (or active, if earlier) area
+over the visible rows. Cameras whose visible area RAWmakase has always read
+otherwise have `compat-observed` rows (`visible`). Files with HEVC previews
+(HDR shots) have no JPEG preview.
 
 ## Checking against LibRaw
 

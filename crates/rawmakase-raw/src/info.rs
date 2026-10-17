@@ -74,7 +74,8 @@ pub struct RawInfo {
     pub(crate) plan: crate::variant::Plan,
     /// The embedded JPEGs the file lists.
     pub(crate) previews: Vec<crate::preview::Candidate>,
-    /// Whether the file has an uncompressed thumbnail.
+    /// Whether the file has a preview that is not JPEG (an uncompressed
+    /// thumbnail, an HEVC image).
     pub(crate) uncompressed_preview: bool,
     /// The XYZ (D65) to camera matrix the file itself holds (a DNG's).
     pub(crate) file_matrix: Option<[[f32; 3]; 3]>,
