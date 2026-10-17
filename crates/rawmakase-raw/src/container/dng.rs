@@ -679,7 +679,7 @@ fn unpack(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::sync::atomic::AtomicBool;
 
     /// An IFD entry: tag, type, count and value bytes.

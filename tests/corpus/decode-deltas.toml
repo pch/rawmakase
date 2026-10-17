@@ -27530,3 +27530,437 @@ before = "GXR S10"
 after = "GXR"
 evidence = "Adobe DNG Converter 18.7 keeps the file's Make RICOH and Model GXR; the lens module is UniqueCameraModel's (RICOH S10 24-72mm F2.5-4.4 VC)"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# DNG: exposure facts as the file gives them and Adobe DNG Converter reads them.
+
+[[delta]]
+# Arashi Vision/Insta360 One X/IMG_20201122_142733_00_015.dng
+sha256 = "54919f75c1981e23c83731da54a381ca0c7b4ef4b1e14d124a81289959fa8108"
+field = "header.metadata.iso"
+before = 0.0
+after = 108.0
+evidence = "The file's ISOSpeedRatings 108 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 2 XL/IMG_20180109_080629.dng
+sha256 = "5541093a369f0487fef92bcd1f5fef1be6e4e3cec2aa4d52ad38d2211f3309d7"
+field = "header.metadata.iso"
+before = 0.0
+after = 51.0
+evidence = "The file's ISOSpeedRatings 51 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HMD Global/Nokia 7 plus/IMG_20190612_120131.dng
+sha256 = "82e060c5197fda5eff12d658285256a2ba2c5eaf8ae4997507bda2242a766216"
+field = "header.metadata.iso"
+before = 0.0
+after = 234.0
+evidence = "The file's ISOSpeedRatings 234 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HTC/HTC 10/IMAG1305.dng
+sha256 = "3aac646ae2bb9cceda41559afaf6354c66ef371b6ade02bcbe1ba1be093696bd"
+field = "header.metadata.iso"
+before = 0.0
+after = 99.0
+evidence = "The file's ISOSpeedRatings 99 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/ANE-LX1/IMG_20200920_112515.dng
+sha256 = "0efb67add448d20a82912e465f98e2be9ddb7cae87485e4905ef1cd2a9aa3ce6"
+field = "header.metadata.iso"
+before = 0.0
+after = 50.0
+evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/AUM-L29/IMG_20181222_154757.dng
+sha256 = "cdb7ac8f515f2f8bfd0fe308d3247e217a417f1ff0577c4b2d7f672775b3ce85"
+field = "header.metadata.iso"
+before = 0.0
+after = 660.0
+evidence = "The file's ISOSpeedRatings 660 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/BLA-L29/IMG_20180119_175851.dng
+sha256 = "eaf1db7d47dd7966c8042964a0f9fa2d3ac19acc1e5458bb7c803f2d70909924"
+field = "header.metadata.iso"
+before = 0.0
+after = 50.0
+evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/CLT-L09/IMG_20191010_085409.dng
+sha256 = "c5bef544d53e435987b158c0fb91aa6e6948d4b2000ef398a08ff0a2d9e2b0b4"
+field = "header.metadata.iso"
+before = 0.0
+after = 50.0
+evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/DLI-L22/IMG_20171028_150510.dng
+sha256 = "85b790b0eb3f0ccb87da8b0d3d0c69acdbd959592306ec0698817da14c9233eb"
+field = "header.metadata.iso"
+before = 0.0
+after = 100.0
+evidence = "The file's ISOSpeedRatings 100 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/EML-L09/IMG_20190316_130857_(2).dng
+sha256 = "1ea6509c86729d4656a1eaf874022d714cc6aa5dee0436d4dcc1d1ba680db19c"
+field = "header.metadata.iso"
+before = 0.0
+after = 50.0
+evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/EML-L29/IMG_20190507_233457.dng
+sha256 = "77385bde838ab7e0a5b067d7f6e6b8cb3019a3c22353fae6b8689a43adda439a"
+field = "header.metadata.iso"
+before = 0.0
+after = 681.0
+evidence = "The file's ISOSpeedRatings 681 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/EVA-AL00/IMG_20171015_200142.dng
+sha256 = "032c8b7321e1cdfb4714835e15158e21fc1cd17c634d5d814ab2b11688e67262"
+field = "header.metadata.iso"
+before = 0.0
+after = 1239.0
+evidence = "The file's ISOSpeedRatings 1239 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/EVA-L09/Huawai_P9_Leica.dng
+sha256 = "1f90c784209650cbceace0f7b114baf2bffb48a9c0d63026889b104c1fada7d3"
+field = "header.metadata.iso"
+before = 0.0
+after = 900.0
+evidence = "The file's ISOSpeedRatings 900 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/FRD-L09/IMG_20180520_132951.dng
+sha256 = "905960bbe459ed68347e3cbdb55c8f6b463146da5b79a9ca2f8a5543e3763432"
+field = "header.metadata.iso"
+before = 0.0
+after = 50.0
+evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/HRY-LX1/IMG_20190427_200711.dng
+sha256 = "a21850edf21ac42bd5af366a8bd421c379a53c0f8be89adec9027dafc6e9c01b"
+field = "header.metadata.iso"
+before = 0.0
+after = 50.0
+evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/HUAWEI NXT-L29/IMG_20190508_113343.dng
+sha256 = "32df1e3085b63533ebc8adb5d45662c59bf3fd742bfa9cc0afe3fcf6ea2ab2da"
+field = "header.metadata.iso"
+before = 0.0
+after = 50.0
+evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/PRA-LX1/IMG_20180330_171432.dng
+sha256 = "2fca99ebc7e9ae7a79e86d4706ae2c6b6aab8063693c44aa6a89cb447feab429"
+field = "header.metadata.iso"
+before = 0.0
+after = 100.0
+evidence = "The file's ISOSpeedRatings 100 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/SNE-LX1/IMG_20191221_095657.dng
+sha256 = "1b2aa5455d494d48fb6d09b9df1005269443d7fcf0f8c5a2b59638072a7d9f5f"
+field = "header.metadata.iso"
+before = 0.0
+after = 73.0
+evidence = "The file's ISOSpeedRatings 73 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/VKY-L09/IMG_20180429_160450.dng
+sha256 = "243037548709cdcefeda3ca593abffaadc7ab463111bc1ba2fc6c2081897b632"
+field = "header.metadata.iso"
+before = 0.0
+after = 50.0
+evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/VOG-L29/IMG_20190330_123314.dng
+sha256 = "6dea2735a31f06e39b1a203826bcdfe4ff0fcdec444772bdab455c49f91b1846"
+field = "header.metadata.iso"
+before = 0.0
+after = 137.0
+evidence = "The file's ISOSpeedRatings 137 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/VTR-L09/IMG_20180307_120152.dng
+sha256 = "95f7b90f51d6b5ffed6c97ccc41019e767d861dad3505de1001192484dfe760b"
+field = "header.metadata.iso"
+before = 0.0
+after = 125.0
+evidence = "The file's ISOSpeedRatings 125 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/WAS-LX1A/IMG_20180416_193350.dng
+sha256 = "f77f2cb548bcccefdb08d1de4feac1a37c8f0f7936de693d3418267cd8d43028"
+field = "header.metadata.iso"
+before = 0.0
+after = 100.0
+evidence = "The file's ISOSpeedRatings 100 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/LG-H850/LGG5_Camera_Front.dng
+sha256 = "be58e948626b193538217e96bc6d9ff5fdeb91a3a8a8af65624dab41ae39895f"
+field = "header.metadata.iso"
+before = 0.0
+after = 118.0
+evidence = "The file's ISOSpeedRatings 118 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/LG-H910/opn_20190921_065338_0.dng
+sha256 = "60dc3c582cb964ab12fef030fa4ecf98421dbe69dd8d036383610e100556147b"
+field = "header.metadata.iso"
+before = 0.0
+after = 578.0
+evidence = "The file's ISOSpeedRatings 578 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/Nexus 5X/IMG_20170214_170637_637.dng
+sha256 = "006bb472cf71157b1c2562263d9306714acb284a7adaab9e9fda6b231c0077c9"
+field = "header.metadata.iso"
+before = 0.0
+after = 100.0
+evidence = "The file's ISOSpeedRatings 100 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/US996/IMG_20170821_025047.dng
+sha256 = "19ef8a8849babe6bd247e1d74f1438e811f66f42fda3e96651f526fc086544b2"
+field = "header.metadata.iso"
+before = 0.0
+after = 290.0
+evidence = "The file's ISOSpeedRatings 290 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# MADV/QJXJ01FJ/IMG_20190326_134416.DNG
+sha256 = "4b2db2bed2807e1006fbf3b9d49784a4b789e7c9149917c477eb2760d1cb7ed8"
+field = "header.metadata.iso"
+before = 0.0
+after = 50.0
+evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# OnePlus/ONEPLUS A3003/IMG_20170316_134557.dng
+sha256 = "15c937245f419d7e8dd24d232dd9565b397c57460434fe15b1570b6a07fe9d68"
+field = "header.metadata.iso"
+before = 0.0
+after = 100.0
+evidence = "The file's ISOSpeedRatings 100 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# OnePlus/ONEPLUS A5000/IMG_20171224_201301.dng
+sha256 = "b0fb9050ffd46d9216e37aed139cd5b826d5e62b875ba6d761e300cd855b994c"
+field = "header.metadata.iso"
+before = 0.0
+after = 400.0
+evidence = "The file's ISOSpeedRatings 400 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# OnePlus/ONEPLUS A6003/IMG_20201019_093659.dng
+sha256 = "14dc45528376ee8354ccacd658bf7cc94855e0ca2e4dede947e00b0592fb838d"
+field = "header.metadata.iso"
+before = 0.0
+after = 100.0
+evidence = "The file's ISOSpeedRatings 100 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# RaspberryPi/RP_imx477/pi.dng
+sha256 = "57be25b3d1dc98a84a3e79ffb2486b06d2747d22d16fc6c9baac0262331d34b8"
+field = "header.metadata.aperture"
+before = 0.0
+after = 1.0
+evidence = "No FNumber (or 0): ApertureValue's APEX value (Exif 2.3, F = 2^(AV/2)) gives f/1, as Adobe DNG Converter 18.7 writes FNumber (checked on the Leica M (Typ 240), Sigma fp, Raspberry Pi HQ); The file's ISOSpeedRatings 100 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# RaspberryPi/RP_imx477/pi.dng
+sha256 = "57be25b3d1dc98a84a3e79ffb2486b06d2747d22d16fc6c9baac0262331d34b8"
+field = "header.metadata.iso"
+before = 0.0
+after = 100.0
+evidence = "No FNumber (or 0): ApertureValue's APEX value (Exif 2.3, F = 2^(AV/2)) gives f/1, as Adobe DNG Converter 18.7 writes FNumber (checked on the Leica M (Typ 240), Sigma fp, Raspberry Pi HQ); The file's ISOSpeedRatings 100 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Realme/RMX1851/IMG_OCT_20191005_163311.dng
+sha256 = "ddb5698dd9944eb68ba5a18d51958068e9b2b98ecb814ec5741e94fa537d3f0a"
+field = "header.metadata.iso"
+before = 0.0
+after = 100.0
+evidence = "The file's ISOSpeedRatings 100 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/M2010J19CG/IMG_20201224_141323.dng
+sha256 = "e1cb49299faa6609547bbb9b2c5a6167031694a99a1d252e1e048ce18ddf214f"
+field = "header.metadata.iso"
+before = 0.0
+after = 100.0
+evidence = "The file's ISOSpeedRatings 100 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/MI MAX/IMG_2019_10_27_14_47_40.dng
+sha256 = "f19827776d09b81aa4c562e8c2f8af2ff5a6d5344b2554a3b328cdde10724adb"
+field = "header.metadata.iso"
+before = 0.0
+after = 100.0
+evidence = "The file's ISOSpeedRatings 100 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/Mi 9 Lite/IMG_20200324_073611.dng
+sha256 = "5d443fe71ec4372804587079e3fa8f46a6612f709008e7fc4ebe34be00206c4b"
+field = "header.metadata.iso"
+before = 0.0
+after = 112.0
+evidence = "The file's ISOSpeedRatings 112 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/Redmi Note 7/IMG_20190615_155524.dng
+sha256 = "0fb715f9427037cb72f13f27f51e2f0bfe825a9ed06a4ef743800d095781ff04"
+field = "header.metadata.iso"
+before = 0.0
+after = 368.0
+evidence = "The file's ISOSpeedRatings 368 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/Redmi Note 8T/IMG_20200715_094601.dng
+sha256 = "b9284b49a1f583d4a11319c4a55090df7d946c19caa97d735a3f207a9c67bea3"
+field = "header.metadata.iso"
+before = 0.0
+after = 100.0
+evidence = "The file's ISOSpeedRatings 100 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# asus/ASUS_I01WD/P_20190922_161212.dng
+sha256 = "4ecfa74046da397396d481c964550e69e6abc178e83b10a057cac3e97ec4c260"
+field = "header.metadata.iso"
+before = 0.0
+after = 25.0
+evidence = "The file's ISOSpeedRatings 25 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# bq/Aquaris U Plus/IMG_20180217_111328_894.dng
+sha256 = "3ee9fe258a9b3128fdb93f47d47200fc3c1c291f61c6d6706be090a89c7e8f55"
+field = "header.metadata.iso"
+before = 0.0
+after = 696.0
+evidence = "The file's ISOSpeedRatings 696 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# motorola/Moto G (5S) Plus/IMG_20180328_152254.dng
+sha256 = "dc54074b5b71d727cd62aca2d99ffe322ccb0ee6d8572f392edde62cf41c30fe"
+field = "header.metadata.iso"
+before = 0.0
+after = 100.0
+evidence = "The file's ISOSpeedRatings 100 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# motorola/Nexus 6/DSC_0017.DNG
+sha256 = "c92496d31742e61918ca9f30148c630a61581db0cff512995d54ae5b473f1d4f"
+field = "header.metadata.iso"
+before = 0.0
+after = 40.0
+evidence = "The file's ISOSpeedRatings 40 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# motorola/moto g(7) play/IMG_20191114_091702382.dng
+sha256 = "d46953b116ee7a88b99fb28edc7b2f1b631ed09d66f73391c4ccc2e2ec959575"
+field = "header.metadata.iso"
+before = 0.0
+after = 50.0
+evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Alex Thomas Yunnan Photo.dng
+sha256 = "cde784358d6b5c8b8537273e917f7fc3ae3354f1d4a92cfff50c0b9c08f84f93"
+field = "header.metadata.iso"
+before = 0.0
+after = 50.0
+evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Free Raw Files - Tag @signatureeditsco - IMG_20220608_030235.dng
+sha256 = "dc1cddc4e20b485c2f3af95fd1b764f3122101b4cc64591f1dba79d577242f29"
+field = "header.metadata.iso"
+before = 0.0
+after = 1000.0
+evidence = "The file's ISOSpeedRatings 1000 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# IMG_20201121_104443.dng
+sha256 = "f753def64ff2b4ec62a8a593c5c55e2f804edf0ca8af5914ddf9b23192a49d25"
+field = "header.metadata.iso"
+before = 0.0
+after = 125.0
+evidence = "The file's ISOSpeedRatings 125 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# IMG_20201121_140644.dng
+sha256 = "aef2e9371feb28c30e814b0aafc7735bdfd9150adf911327cc83c5aa00d37b81"
+field = "header.metadata.iso"
+before = 0.0
+after = 50.0
+evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# IMG_20201121_143443.dng
+sha256 = "86f68c976b994aa2d618a6a8f44e388ec1c44a83407524e0b961a8606fdf09e8"
+field = "header.metadata.iso"
+before = 0.0
+after = 50.0
+evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
