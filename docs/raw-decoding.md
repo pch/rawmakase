@@ -41,7 +41,7 @@ Modules, each with a small `pub(crate)` surface:
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
 | `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings, Canon's CRW blocks, Phase One's IIQ rows, Hasselblad's pairs |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`, `mos`, `sti`, `brcm`, `mrw`) |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`, `mos`, `sti`, `brcm`, `mrw`, `dcs`) |
 | `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`, `phase_one`, `hasselblad`, `leaf`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
@@ -100,6 +100,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `BrcmPacked` | Raspberry Pi: a JPEG, then Broadcom's raw block of 10-bit samples packed four in five bytes | Our own measurements |
 | `MrwPacked` | Minolta MRW, 12-bit samples packed most significant bit first | ExifTool's MinoltaRaw tag names, our own measurements |
 | `MrwUnpacked` | Minolta MRW, 16-bit big-endian words | ExifTool's MinoltaRaw tag names, our own measurements |
+| `DcsLosslessJpeg` | Kodak DCS TIFF (DCS520C, DCS560C, Canon EOS D2000C): one lossless JPEG strip of 12-bit codes on the KodakIFD's curve | TIFF 6, TIFF/EP, ITU T.81, ExifTool's Kodak tag names, our own measurements |
 | `FffCompressed` | Hasselblad 3FR and FFF (compression 7): lossless JPEG headers, then pairs of coded differences in little-endian 32-bit words | ITU T.81, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
 | `OrfCompressed` | Olympus and OM Digital ORF/ORI, Olympus's compressed coding of 12 or 14-bit samples | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfPacked` | Olympus ORF, packed 12-bit samples: 16-byte blocks of ten, 32-bit words, or two interlaced fields of rows | TIFF 6, ExifTool's Olympus tag names, our own measurements |
@@ -557,6 +558,21 @@ bodies sold under several names have `[[canonical]]` rows (DG-7D, DG-5D).
 The DiMAGE Z2's MRW has no header: a `[[headerless]]` row, its samples in
 little-endian 32-bit words stored as two fields as Olympus's compacts store
 them (`packed::fields`).
+
+Kodak DCS TIFFs (`container::dcs`: the DCS520C and DCS560C, Canon's EOS
+D2000C): IFD0 a thumbnail, its SubIFD one lossless JPEG strip whose MCU rows
+are the image's rows, and the KodakIFD (tag 0x8290). The 12-bit codes are
+taken through the KodakIFD's ImageExpansionTable (0x090D; else the strip's
+GrayResponseCurve), as LibRaw takes them, which on the DCS560C is not the
+GrayResponseCurve Adobe DNG Converter linearizes with. Black is the mean of
+BlackLevelTop and BlackLevelBottom (0x03EF, 0x03F0) rounding up, and white
+4095 or the camera table's (`adobe-dng`: 3277 for the DCS560C), both Adobe's
+fitted to RAWmakase's samples; the as-shot white balance is the levels of
+the WhiteBalance setting (WB_RGBLevelsDaylight, 0x0848, plus the setting
+0x03FC), green over each, as Adobe's AsShotNeutral; the Daylight preset those
+levels' green squared over each. SensorLeftBorder to SensorImageHeight
+(0x03EB to 0x03EE) are the default crop, ExposureIndex the ISO speed where
+EXIF gives none.
 
 Canon files whose values differ from LibRaw's on purpose are approved in
 `tests/corpus/decode-deltas.toml`, with Adobe DNG Converter's value as the

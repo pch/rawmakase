@@ -8386,3 +8386,18 @@ visible = [0, 0, 2288, 1710]
 black = 0
 cfa = "BGGR"
 source = "compat-observed"
+
+# Kodak DCS: Canon's EOS D2000C is the Kodak DCS520C.
+
+[[canonical]]
+make = "Canon"
+model = "EOS D2000C"
+canonical = ["Kodak", "DCS520C"]
+source = "compat-observed"
+
+[[camera]]
+make = "Kodak"
+model = "DCS560C"
+dng = false
+white = 3277
+source = "adobe-dng"

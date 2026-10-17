@@ -140,6 +140,8 @@ pub enum Variant {
     MrwPacked,
     /// Minolta MRW, 16-bit big-endian words.
     MrwUnpacked,
+    /// Kodak DCS TIFF, one lossless JPEG strip of codes on a curve.
+    DcsLosslessJpeg,
 }
 
 impl Variant {
@@ -204,6 +206,7 @@ impl Variant {
             Variant::BrcmPacked => "brcm-packed",
             Variant::MrwPacked => "mrw-packed",
             Variant::MrwUnpacked => "mrw-unpacked",
+            Variant::DcsLosslessJpeg => "dcs-ljpeg",
         }
     }
 }
@@ -231,6 +234,7 @@ pub(crate) enum Plan {
     Sti(crate::container::sti::StiPlan),
     Brcm(crate::container::brcm::BrcmPlan),
     Mrw(crate::container::mrw::MrwPlan),
+    Dcs(crate::container::dcs::DcsPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -292,6 +296,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         }
         if crate::container::sti::is_sti(&t) {
             return crate::container::sti::open(t);
+        }
+        if crate::container::dcs::is_dcs(&t) {
+            return crate::container::dcs::open(t);
         }
         if crate::container::erf::is_erf(&t) {
             return crate::container::erf::open(t);
@@ -427,6 +434,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         }
         (Plan::Mrw(plan), Variant::MrwPacked | Variant::MrwUnpacked) => {
             crate::container::mrw::decode(info, plan, bytes, cancel)
+        }
+        (Plan::Dcs(plan), Variant::DcsLosslessJpeg) => {
+            crate::container::dcs::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(

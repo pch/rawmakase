@@ -5,6 +5,7 @@ pub(crate) mod brcm;
 pub(crate) mod ciff;
 pub(crate) mod cr2;
 pub(crate) mod cr3;
+pub(crate) mod dcs;
 pub(crate) mod dng;
 pub(crate) mod erf;
 pub(crate) mod fff;

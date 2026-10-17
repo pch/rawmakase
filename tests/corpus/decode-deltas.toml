@@ -29898,3 +29898,61 @@ after = 4095
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095; RAWmakase's is the camera table's adobe-dng row (DiMAGE) or the samples' 12-bit range; Adobe's white fitted to RAWmakase's samples is the same on the four bodies measured (A1, A200, DiMAGE 7, Dynax 7D)"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
+
+# Kodak DCS TIFFs: black and white as Adobe DNG Converter takes them, the
+# white balance its AsShotNeutral.
+
+[[delta]]
+# Kodak/DCS560C/RAW_KODAK_DCS560C.TIF
+sha256 = "a302c4354faaa9eaac7054dad8a05b7e4e37ff4c4474184b38bb111a2ddae14a"
+field = "sensor.black"
+before = [177, 177, 177, 177]
+after = [167, 167, 167, 167]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; Adobe linearizes the data (BlackLevel 0); its black fitted to RAWmakase's samples is 167.0 (DCS560C) and 177.0 (DCS520C), the mean of the file's BlackLevelTop and BlackLevelBottom rounding up, RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Kodak/DCS560C/RAW_KODAK_DCS560C.TIF
+sha256 = "a302c4354faaa9eaac7054dad8a05b7e4e37ff4c4474184b38bb111a2ddae14a"
+field = "sensor.white"
+before = 4095
+after = 3277
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095; Adobe linearizes the data with the strip's GrayResponseCurve, steeper than the KodakIFD's ImageExpansionTable the samples are on; its white fitted to RAWmakase's samples is 3277 (exact fit), the camera table's adobe-dng row"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Kodak/DCS560C/RAW_KODAK_DCS560C.TIF
+sha256 = "a302c4354faaa9eaac7054dad8a05b7e4e37ff4c4474184b38bb111a2ddae14a"
+field = "header.metadata.wb"
+before = [1.128260850906372, 1.0, 1.8608695268630981]
+after = [1.1302211284637451, 1.0, 1.862348198890686]
+evidence = "RAWmakase's is the KodakIFD's levels of the WhiteBalance setting (WB_RGBLevelsDaylight + WhiteBalance), green over each, Adobe DNG Converter's AsShotNeutral to its six digits; LibRaw's differs by under 0.2%"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS D2000C/RAW_CANON_D2000.TIF
+sha256 = "9466360833f6f7eb71e5d7c47c7984961d52da43e631f12ca36b91d484938053"
+field = "header.metadata.wb"
+before = [1.0037930011749268, 1.0, 2.46870756149292]
+after = [1.0038074254989624, 1.0, 2.4688963890075684]
+evidence = "RAWmakase's is the KodakIFD's levels of the WhiteBalance setting (WB_RGBLevelsDaylight + WhiteBalance), green over each, Adobe DNG Converter's AsShotNeutral to its six digits; LibRaw's differs by under 0.2%"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Kodak/DCS520C/23HK3627.TIF
+sha256 = "d95e983bea9cf13f356e49b0f59629306bc7a51882ff20766c74ccff5f007d69"
+field = "sensor.black"
+before = [178, 178, 178, 178]
+after = [177, 177, 177, 177]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; Adobe linearizes the data (BlackLevel 0); its black fitted to RAWmakase's samples is 167.0 (DCS560C) and 177.0 (DCS520C), the mean of the file's BlackLevelTop and BlackLevelBottom rounding up, RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Kodak/DCS520C/23HK3627.TIF
+sha256 = "d95e983bea9cf13f356e49b0f59629306bc7a51882ff20766c74ccff5f007d69"
+field = "header.metadata.wb"
+before = [0.9585605263710022, 1.0, 1.9912759065628052]
+after = [0.9587035775184631, 1.0, 1.9913138151168823]
+evidence = "RAWmakase's is the KodakIFD's levels of the WhiteBalance setting (WB_RGBLevelsDaylight + WhiteBalance), green over each, Adobe DNG Converter's AsShotNeutral to its six digits; LibRaw's differs by under 0.2%"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
