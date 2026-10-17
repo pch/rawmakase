@@ -19,12 +19,13 @@ pub(crate) fn largest(candidates: &[Candidate], bytes: &[u8]) -> Option<(u64, u6
         .map(|c| (c.offset, c.len))
 }
 
-/// Whether a JPEG starts at `at`.
+/// Whether a JPEG starts at `at`: its start of image marker, or Epson's
+/// (whose first byte is 0xEE, read as 0xFF; our measurements).
 pub(crate) fn is_jpeg(bytes: &[u8], at: u64) -> bool {
     usize::try_from(at)
         .ok()
-        .and_then(|at| bytes.get(at..at + 2))
-        .is_some_and(|b| b == [0xff, 0xd8])
+        .and_then(|at| bytes.get(at..at.checked_add(2)?))
+        .is_some_and(|b| b == [0xff, 0xd8] || b == [0xee, 0xd8])
 }
 
 /// Why a file has no preview thumbnails can use.

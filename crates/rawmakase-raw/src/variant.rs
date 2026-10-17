@@ -102,6 +102,10 @@ pub enum Variant {
     SrwHuffman,
     /// Samsung SRW (compression 32773), tiles of 16.
     SrwTiles,
+    /// Epson ERF, packed 12-bit samples in 16-byte blocks of ten.
+    ErfPacked,
+    /// Mamiya MEF, packed 12-bit samples.
+    MefPacked,
 }
 
 impl Variant {
@@ -149,6 +153,8 @@ impl Variant {
             Variant::SrwBlocks => "srw-blocks",
             Variant::SrwHuffman => "srw-huffman",
             Variant::SrwTiles => "srw-tiles",
+            Variant::ErfPacked => "erf-packed",
+            Variant::MefPacked => "mef-packed",
         }
     }
 }
@@ -166,6 +172,7 @@ pub(crate) enum Plan {
     Orf(crate::container::orf::OrfPlan),
     Pef(crate::container::pef::PefPlan),
     Srw(crate::container::srw::SrwPlan),
+    Erf(crate::container::erf::ErfPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -209,6 +216,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         }
         if crate::container::srw::is_srw(&t) {
             return crate::container::srw::open(t);
+        }
+        if crate::container::erf::is_erf(&t) {
+            return crate::container::erf::open(t);
         }
     }
     Err(Error::NotRaw)
@@ -278,6 +288,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::SrwHuffman
             | Variant::SrwTiles,
         ) => crate::container::srw::decode(info, plan, bytes, cancel),
+        (Plan::Erf(plan), Variant::ErfPacked | Variant::MefPacked) => {
+            crate::container::erf::decode(info, plan, bytes, cancel)
+        }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
             "{} with another container's plan",

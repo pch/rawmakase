@@ -45,15 +45,27 @@ pub fn open(bytes: &[u8]) -> Result<RawInfo> {
     variant::open(bytes)
 }
 
-/// The embedded JPEG preview of the file `info` was read from.
-pub fn preview<'a>(info: &RawInfo, bytes: &'a [u8]) -> std::result::Result<&'a [u8], NoPreview> {
+/// The embedded JPEG preview of the file `info` was read from (a copy when
+/// its start of image marker needs mending).
+pub fn preview<'a>(
+    info: &RawInfo,
+    bytes: &'a [u8],
+) -> std::result::Result<std::borrow::Cow<'a, [u8]>, NoPreview> {
     let (at, len) = preview::find(info, bytes)?;
     let range = usize::try_from(at)
         .ok()
         .zip(usize::try_from(at.saturating_add(len)).ok());
-    range
+    let jpeg = range
         .and_then(|(start, end)| bytes.get(start..end))
-        .ok_or(NoPreview::Missing)
+        .ok_or(NoPreview::Missing)?;
+    Ok(match jpeg {
+        [0xee, rest @ ..] => {
+            let mut mended = vec![0xff];
+            mended.extend_from_slice(rest);
+            std::borrow::Cow::Owned(mended)
+        }
+        _ => std::borrow::Cow::Borrowed(jpeg),
+    })
 }
 
 /// The sensor data of the file `info` was read from; stops with

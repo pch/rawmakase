@@ -36,8 +36,8 @@ Modules, each with a small `pub(crate)` surface:
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
 | `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`) |
-| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`) |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`) |
+| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
 | `color` | The camera-to-sRGB matrix and daylight multipliers from a camera's XYZ matrix |
@@ -92,6 +92,8 @@ A file of a recognised container in a variant this crate does not decode is
 | `SrwBlocks` | Samsung SRW (compression 32770, smaller data), rows of blocks of 16 differences | ExifTool's Samsung tag names, our own measurements |
 | `SrwHuffman` | Samsung SRW (compression 32772), Huffman-coded differences with a fixed table | ITU T.81 (differences), our own measurements |
 | `SrwTiles` | Samsung SRW (compression 32773), tiles of 16 scaled differences | our own measurements |
+| `ErfPacked` | Epson ERF, packed 12-bit samples in 16-byte blocks of ten and a pad byte | TIFF 6, ExifTool's Epson tag names, our own measurements |
+| `MefPacked` | Mamiya MEF, packed 12-bit samples | TIFF 6, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -307,6 +309,12 @@ little-endian 3-byte words, earlier bodies plainly. Visible areas, the
 EX1's and EX2F's white levels and, for bodies whose CFAPattern is not the
 filter (the NX300 and NX3000 generations, the NX mini; Adobe DNG Converter
 agrees), the colour filter are `compat-observed` rows.
+
+Epson (`vendor::epson`): black, the camera's image size (centred: the
+default crop), the embedded JPEG (whose first byte, 0xEE, is mended to
+0xFF) and white balance as shot, the red and blue levels in tag 0x0E80
+scaled as Adobe DNG Converter's AsShotNeutral. Mamiya's MEF has no white
+balance RAWmakase reads.
 
 Values observed from LibRaw other than geometry and names are checked
 against the file and Adobe DNG Converter: where both disagree with LibRaw,

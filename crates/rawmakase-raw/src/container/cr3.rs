@@ -737,7 +737,7 @@ mod tests {
         // RGGB, the green beside blue the second.
         assert_eq!(info.cfa.as_ref().unwrap().colors, vec![0, 1, 3, 2]);
         assert_eq!(
-            crate::preview(&info, &file).unwrap(),
+            crate::preview(&info, &file).unwrap()[..],
             [0xff, 0xd8, 0xff, 0xd9]
         );
         let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();

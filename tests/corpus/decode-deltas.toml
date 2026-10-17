@@ -1541,3 +1541,1187 @@ before = "NX 16-50mm F3.5-5.6 Power Zoo"
 after = "NX 16-50mm F3.5-5.6 Power Zoom"
 evidence = "the file's EXIF LensModel (LibRaw cut it at 29 characters)"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Epson: the file's white balance as Adobe DNG Converter reads it.
+# Epson/R-D1/_EPS0672.ERF
+[[delta]]
+sha256 = "09d8e533d93116294a9f3e161ed868e929454c7b946e083b644bd6bb75bcb5e4"
+field = "header.metadata.wb"
+before = [1.7563018798828125, 1.0, 2.1242218017578125]
+after = [1.7563331127166748, 1.0, 2.1238675117492676]
+evidence = "the note's 0x0E80 red and blue levels at Adobe's scale; Adobe DNG Converter 18.7 AsShotNeutral 0.569368 1 0.470839"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Epson/R-D1s/EPSN3575.ERF
+[[delta]]
+sha256 = "45bb0081baf1c813c7cd9e05b3e6ae734b90aba408dd1195118dc94dc6abbbb9"
+field = "header.metadata.wb"
+before = [2.612823486328125, 1.0, 1.3744964599609375]
+after = [2.61286997795105, 1.0, 1.3742672204971313]
+evidence = "the note's 0x0E80 red and blue levels at Adobe's scale; Adobe DNG Converter 18.7 AsShotNeutral 0.382721 1 0.727661"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Epson/R-D1x/_EPS1919.ERF
+[[delta]]
+sha256 = "fa1bff3e0b9b9a14f83b8db9fae022c2aca8d455896bf4f25f2c1a0034e295e6"
+field = "header.metadata.wb"
+before = [2.232147216796875, 1.0, 1.7164764404296875]
+after = [2.232187032699585, 1.0, 1.7161900997161865]
+evidence = "the note's 0x0E80 red and blue levels at Adobe's scale; Adobe DNG Converter 18.7 AsShotNeutral 0.447991 1 0.582686"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Cameras without a colour matrix in the tables yet: RAWmakase's neutral daylight
+# multipliers (1, 1, 1) where LibRaw derived them from its own matrix. Pending:
+# our fallback, not Adobe's value; these files are in the affected rendering set.
+
+# r-vi/4316906362.arw
+[[delta]]
+sha256 = "7f336d1bd25cb39d3a2d70da17911109c89e4e337367474659a0164d714470ca"
+field = "header.metadata.daylight_wb"
+before = [2.7760426998138428, 1.0, 1.2787368297576904]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# r-vi/6041774112.arw
+[[delta]]
+sha256 = "1d840ec31e8b21b9c70c38f07254607b500f916a319ac719ea8b03ddc072fd16"
+field = "header.metadata.daylight_wb"
+before = [2.7760426998138428, 1.0, 1.2787368297576904]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# r-vi/6489169691.arw
+[[delta]]
+sha256 = "e954b921f38e7247f76524576dda154c631d82c719e8e6b2c7c27937ecc08f73"
+field = "header.metadata.daylight_wb"
+before = [2.7760426998138428, 1.0, 1.2787368297576904]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# r-vi/7207102940.arw
+[[delta]]
+sha256 = "3c2e7bc207e96d2c1787bc07b478a3d06578eea3ed76bdf435d9bc69092ea35f"
+field = "header.metadata.daylight_wb"
+before = [2.7760426998138428, 1.0, 1.2787368297576904]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Canon/Canon EOS R6 Mark III/IMG_4241.CR3
+[[delta]]
+sha256 = "e491e4bb960961b5fa299361bf698310a80cbe7b15d30d8dad3bb21bc5457dab"
+field = "header.metadata.daylight_wb"
+before = [2.167757987976074, 1.0, 1.3555026054382324]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Canon/Canon EOS R6 Mark III/IMG_4242.CR3
+[[delta]]
+sha256 = "1395adbae77aaf0ea344fbe2eb2eb7ff825ccae815177cc499fb65e55eaaa495"
+field = "header.metadata.daylight_wb"
+before = [2.167757987976074, 1.0, 1.3555026054382324]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Canon/Canon EOS R6 Mark III/IMG_4243.CR3
+[[delta]]
+sha256 = "1f533686b2230817dac98266a6cc8ffd960413c109965768b7efc05cc1ca96eb"
+field = "header.metadata.daylight_wb"
+before = [2.167757987976074, 1.0, 1.3555026054382324]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Canon/Canon EOS R6 Mark III/IMG_4244.CR3
+[[delta]]
+sha256 = "7e1a5d84297a52853b0bbe5a5c03a5d4f5b93e00b7020271523240f9cabfe50e"
+field = "header.metadata.daylight_wb"
+before = [2.167757987976074, 1.0, 1.3555026054382324]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# FUJIFILM/X-T30 III/DSCF0131.RAF
+[[delta]]
+sha256 = "49f77d6162abfa5c94d2d8b90e4e926b7386c42bcf7e84a152c9ffe1ebd584da"
+field = "header.metadata.daylight_wb"
+before = [2.0763607025146484, 1.0, 1.4710071086883545]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# FUJIFILM/X-T30 III/DSCF0132.RAF
+[[delta]]
+sha256 = "0c62b3534abe6e491358ea78eda0a4d775ab50679464c0dadb18e70cbc703c24"
+field = "header.metadata.daylight_wb"
+before = [2.0763607025146484, 1.0, 1.4710071086883545]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# FUJIFILM/X-T30 III/DSCF0133.RAF
+[[delta]]
+sha256 = "1910b95422240f97781fa3296d67a56cc8f62de63144ac11cbf4267a11278042"
+field = "header.metadata.daylight_wb"
+before = [2.0763607025146484, 1.0, 1.4710071086883545]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/DBP for GX680/DSCF0010.RAF
+[[delta]]
+sha256 = "36e5e144e8d69a98455851578408f6682c881475e39bded4ec72b772b4cff696"
+field = "header.metadata.daylight_wb"
+before = [1.8714983463287354, 1.0, 1.163590669631958]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix E900/RAW_FUJI_E900.RAF
+[[delta]]
+sha256 = "07adee4a49ae922c89786c96c2f86ce3c130fa128e18b25d0e498fa881d51b94"
+field = "header.metadata.daylight_wb"
+before = [2.144256353378296, 1.0, 1.0864160060882568]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix F700/RAW_FUJI_F700.RAF
+[[delta]]
+sha256 = "c3686a66f9159043bd27afb0d749d566c2912a0374319e38f68fa6255ea565b4"
+field = "header.metadata.daylight_wb"
+before = [2.1385090351104736, 1.0, 1.155812382698059]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix S100FS/DSCF8410.RAF
+[[delta]]
+sha256 = "efa518d70b8122dcfe65f98c7c080f15a512d841a2a86bfe226032a327e1d25e"
+field = "header.metadata.daylight_wb"
+before = [2.004462480545044, 1.0, 1.5190857648849487]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix S3Pro/DSCF3694.RAF
+[[delta]]
+sha256 = "038e5a13a22513f53d143e328a66e2de8071809565db696ecac84b4364fcb75b"
+field = "header.metadata.daylight_wb"
+before = [2.0471510887145996, 1.0, 1.1275601387023926]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix S5000/2007_0912Image0022.RAF
+[[delta]]
+sha256 = "dabd5e74521a6980156be9fd4b88d0c37b0fe4d0e0e6f5c12db8cffff1b76297"
+field = "header.metadata.daylight_wb"
+before = [2.388979911804199, 1.0, 1.2862869501113892]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix S5200/DSCF1523.RAF
+[[delta]]
+sha256 = "93eada72efdf8261d9bfde5022a28a656e4c1c6d0ddac7b0c82686fdcb8ded99"
+field = "header.metadata.daylight_wb"
+before = [2.0431249141693115, 1.0, 1.080275297164917]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix S5500/DSCF6206.RAF
+[[delta]]
+sha256 = "92a947758829686f0a0c662d160a7b8319099cc405a0e4bf90e1fd61c47b2b69"
+field = "header.metadata.daylight_wb"
+before = [1.9392319917678833, 1.0, 1.2967619895935059]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix S5600/RAW_FUJI_S5600S5200.RAF
+[[delta]]
+sha256 = "8d24ac05af61c8af0a2e7e97166e0db142b5cfb126655462704bf3de03d30d23"
+field = "header.metadata.daylight_wb"
+before = [2.0431249141693115, 1.0, 1.080275297164917]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix S5Pro/2018_06150003.RAF
+[[delta]]
+sha256 = "aca2b2ebcf90d248b4f822ed78bfeb73e79f1b64164a87dc2051a96726cdfa0c"
+field = "header.metadata.daylight_wb"
+before = [2.0641658306121826, 1.0, 1.1312623023986816]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix S6000fd/DSCF1973.RAF
+[[delta]]
+sha256 = "2c602e5a31b81683d8fb97f36c5cb3580836420e12b9ed5ae16241c68ff6201d"
+field = "header.metadata.daylight_wb"
+before = [1.898202657699585, 1.0, 1.2611615657806396]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix S6500fd/DSCF1333.RAF
+[[delta]]
+sha256 = "ee2a7afc2afc9e3a85ca9e5e237c68b612dc360fb45c6fb4495ef857abbab48e"
+field = "header.metadata.daylight_wb"
+before = [1.898202657699585, 1.0, 1.2611615657806396]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix S7000/dscf3648.raf
+[[delta]]
+sha256 = "098aa2c64dc6a026f3f48f1494476a55751e08af2d37789b7f557fd11a14cf49"
+field = "header.metadata.daylight_wb"
+before = [2.2499823570251465, 1.0, 1.2333265542984009]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix S9500/20170430_0041.RAF
+[[delta]]
+sha256 = "b7a7bb3b8a69232866c75774ca6ba9296f3d4435d1e1bac327b4cdc6bea39144"
+field = "header.metadata.daylight_wb"
+before = [2.0316672325134277, 1.0, 1.0750041007995605]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Fujifilm/FinePix S9600/2007-11-10--16-32-45-original.raf
+[[delta]]
+sha256 = "d4888ec28d89ce7f9cc6d1b852d2ea03da965bf5e8ce5874d1e3fa439f92dbc0"
+field = "header.metadata.daylight_wb"
+before = [1.846184253692627, 1.0, 1.045114517211914]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Leica/Digilux 3/L1050624.RAW
+[[delta]]
+sha256 = "d2a4c556fe3660b70df34846dbb19c900a4e1fda0416e5651b1f8b6be7bfdd38"
+field = "header.metadata.daylight_wb"
+before = [2.288926124572754, 1.0, 1.160098671913147]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Leica/Leica D-LUX 3/RAW_LEICA_DLUX3.RAW
+[[delta]]
+sha256 = "5d622b0480037c322fb593500b8ef28cc79ca4ad41cd810a7a2214b643a534e1"
+field = "header.metadata.daylight_wb"
+before = [2.6318225860595703, 1.0, 1.3346295356750488]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Leica/Leica Digilux 2/RAW_LEICA_DIGILUX2_SRGB.RAW
+[[delta]]
+sha256 = "73d792eaf9df9c6fe82b780c0af1e076f08546b95f2485ea5b64c7ebed00de74"
+field = "header.metadata.daylight_wb"
+before = [2.0203933715820312, 1.0, 1.1971421241760254]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Leica/V-LUX 1/RAW_LEICA_VLUX1.RAW
+[[delta]]
+sha256 = "6ec19030c8d86584f69d8fe0cfc27d5fc8d57be9e943c7ce5eeb0735f4329813"
+field = "header.metadata.daylight_wb"
+before = [2.62937593460083, 1.0, 1.3803110122680664]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# NIKON CORPORATION/NIKON D200/20071013-10273016-NIKON_D200.nef
+[[delta]]
+sha256 = "b0800a1166b952430b255600373573e1d528adf8de98857781e06a98472b3c35"
+field = "header.metadata.daylight_wb"
+before = [2.2077066898345947, 1.0, 1.213483214378357]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/Coolpix E8800/DSCN6207.NEF
+[[delta]]
+sha256 = "4a9bc7214e5eee808f46bc64cfa7d50d830e094f92253b52bb30a6abee684a78"
+field = "header.metadata.daylight_wb"
+before = [2.5493004322052, 1.0, 1.28987717628479]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D100/DSC_2376.NEF
+[[delta]]
+sha256 = "1889abfd1ed64048c90b0c3384e1e0be9bbb021692249427e90848d5d1e9c8f0"
+field = "header.metadata.daylight_wb"
+before = [2.8087449073791504, 1.0, 1.5004299879074097]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D1X/D1x_20040730_ub20_035.NEF
+[[delta]]
+sha256 = "ff80b83537a909e6adabeb091a12e4d5c83993e011672705366e7de39601695b"
+field = "header.metadata.daylight_wb"
+before = [2.6460413932800293, 1.0, 1.08525550365448]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D1X/DSC_0494.NEF
+[[delta]]
+sha256 = "9fabb93479b17c6de96ec5e5247de3b0a0a6e90101a8c8fc03356937af5d7014"
+field = "header.metadata.daylight_wb"
+before = [2.6460413932800293, 1.0, 1.08525550365448]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D200/pbs_7117.nef
+[[delta]]
+sha256 = "d468895b0b30a60d05a7f6468d69f2f15830dd49b2d82698b34245072a22e747"
+field = "header.metadata.daylight_wb"
+before = [2.2077066898345947, 1.0, 1.213483214378357]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D3/JD1_8203.NEF
+[[delta]]
+sha256 = "880c60c5f611adf6b70de3d099f8433492de3a3d96866d570122f17f0a651fc8"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D3/JD1_8204.NEF
+[[delta]]
+sha256 = "bd1efee38aab8daf79c199e076785125ece01eb8f5ef6741121b0f313ee4ac04"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D3/JD1_8205.NEF
+[[delta]]
+sha256 = "6c4ca5ac7525c01c972f517503c47389f2f244c1fab2ad4ea9d10c63d36c42e6"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D3/JD1_8206.NEF
+[[delta]]
+sha256 = "0626c09a58ca12ee4c12f919772abd4fd053c7d88c2f2b25e8d9be7c26cc7fd5"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D3/JD1_8207.NEF
+[[delta]]
+sha256 = "12c75d4ee829261d15031e02d17a8461f05e72575be76b3e19d1fbdba549de54"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D3/JD1_8208.NEF
+[[delta]]
+sha256 = "c280a2afc31fb15f8c0bc8d8cf6fb13b1972f7d913fa673c5db9d1c1f50beddd"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D300/MMC_2821.NEF
+[[delta]]
+sha256 = "8b989f53c96995f7014ddd16124530cf6d8f3341ea9570d6312d9da1eb0a117a"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D300/MMC_2822.NEF
+[[delta]]
+sha256 = "0d47cd75b79e172124d0a3c51fb36fdcc21a33157b30bac38028e55465bf9b6d"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D300/MMC_2823.NEF
+[[delta]]
+sha256 = "0261523d0ab4694df0219404eb08af5db04697a05e85718e7f7bd42d283205f4"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D300/MMC_2824.NEF
+[[delta]]
+sha256 = "7e6d38ddebe82784dc8c84cdf02dce7bcfe74b71b0dec91b28551936102c39b9"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D300/MMC_2825.NEF
+[[delta]]
+sha256 = "f1162624678ae9b0e0e835fcbe77d97584fc88ceefd996e38ee126942b54bc8c"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D300/MMC_2826.NEF
+[[delta]]
+sha256 = "1e0ff56bba6561182c80cff3cca5b912746990523ea777123b4860c42a7f080a"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D300S/_DSC4612.NEF
+[[delta]]
+sha256 = "de950a2263c87f085ee611a21e69fc4e0ecb6e417fff61ff6a23ea3121e21a81"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D300S/_DSC4613.NEF
+[[delta]]
+sha256 = "34749388e846408eb1633991ca774b341e5d7d9752df8c5538eab281cecf4c83"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D300S/_DSC4614.NEF
+[[delta]]
+sha256 = "a7dea59999273727cb73d3a7854aa01162c30f06d7fbb5c826dd61a54ba07934"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D300S/_DSC4615.NEF
+[[delta]]
+sha256 = "c6723c94d8f3054013b2e927de7b82ae60df16518e737a9f10f73596285b37af"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D300S/_DSC4616.NEF
+[[delta]]
+sha256 = "bb9834d03bc158731aefebc5bef11ab1607c9c8cc12f8ae964e6c1b031696d05"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D300S/_DSC4617.NEF
+[[delta]]
+sha256 = "039afbf0a020ace5e654c42d3a0a9e2faf7244cb45f5fd168403028318294662"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D40/DSC_1842.NEF
+[[delta]]
+sha256 = "44e88bc77b7a531b22647bcd07b9393c4568062e8f0906d3bbdecb42fbe29e03"
+field = "header.metadata.daylight_wb"
+before = [2.629692316055298, 1.0, 1.2511310577392578]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D50/DSC_5155.NEF
+[[delta]]
+sha256 = "9f94c27672a63f946c92d43910ef0c266dffaa14dae0007ae00ac72d2c684935"
+field = "header.metadata.daylight_wb"
+before = [2.6484925746917725, 1.0, 1.3556082248687744]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D70/20170902_0047.NEF
+[[delta]]
+sha256 = "dd6405aeb33b0cd5bf66c98ba98ccbb478a765450cfd130810e470dab8d1f4b4"
+field = "header.metadata.daylight_wb"
+before = [2.6484925746917725, 1.0, 1.3556082248687744]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D700/_GDN0443.NEF
+[[delta]]
+sha256 = "00c3314f2ccf92aff17644943e6149e8793b517c24bb2c38a15ec41f3af109cb"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D700/_GDN0444.NEF
+[[delta]]
+sha256 = "0f279ad4a3e92859109ce78440e562a8d25b91b8704a79e1245c8e98d9b27cf1"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D700/_GDN0445.NEF
+[[delta]]
+sha256 = "44a45eb60cde6904894b0191590256f90692474ee90de451822c29d46a927667"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D700/_GDN0446.NEF
+[[delta]]
+sha256 = "6735ee78c8e6718f6333127f6bbd73bbd8ef745b360e3e2033defee4a8d7c2a0"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D700/_GDN0447.NEF
+[[delta]]
+sha256 = "bfd5e164c3fa10ffdc38237000ccb63f52a53bcd080ceb48de1443534dd17036"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D700/_GDN0448.NEF
+[[delta]]
+sha256 = "0831d8103a2f2275e479095a75a1217b49e1d415ced439f43c331eb3927f2675"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D70s/RAW_NIKON_D70S.NEF
+[[delta]]
+sha256 = "6c46f9854033e7623ebbb5de8c951df6762ca44f05d45035ccc5cb7e9f4e5692"
+field = "header.metadata.daylight_wb"
+before = [2.6484925746917725, 1.0, 1.3556082248687744]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D80/DSC_1114.NEF
+[[delta]]
+sha256 = "745cb067eea6dbb92d3088ee66e8a28bf4912848b43adb6ee30bec3ca0b1d066"
+field = "header.metadata.daylight_wb"
+before = [2.214694023132324, 1.0, 1.159775972366333]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/D90/00001.NEF
+[[delta]]
+sha256 = "9eb3daa4e3d1c1614bccc4c6d136c4166960f936f17c437cc4d11a5786b2df06"
+field = "header.metadata.daylight_wb"
+before = [2.1708950996398926, 1.0, 1.1631087064743042]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Nikon/E8400/DSCN1565.NEF
+[[delta]]
+sha256 = "84ca3fd7f6e684f1469bd02f1d715b4ccb0716ce0bd42200aeda32ef5b9c8562"
+field = "header.metadata.daylight_wb"
+before = [2.6638283729553223, 1.0, 1.2658635377883911]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-FZ45/P1000336.RW2
+[[delta]]
+sha256 = "30c02f392d1d0dfba93cff429172b768225f11da2ce6a6b40a195611d8486954"
+field = "header.metadata.daylight_wb"
+before = [1.796756625175476, 1.0, 1.7999135255813599]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-FZ80/P1010306.RW2
+[[delta]]
+sha256 = "34b1777a25c31053234006e172b72c142477994dc560f95bf945c742f0ca1ff9"
+field = "header.metadata.daylight_wb"
+before = [2.4502594470977783, 1.0, 1.666690468788147]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-FZ80/P1010309.RW2
+[[delta]]
+sha256 = "10a9b38dfbbdc0abe38509f4d2692daa92be6810b6c665ca412073088efa8055"
+field = "header.metadata.daylight_wb"
+before = [2.4502594470977783, 1.0, 1.666690468788147]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-FZ80/P1010312.RW2
+[[delta]]
+sha256 = "57f2728d54269c89253f2283fed143e9983e1651a4007ef9b03643b43a5e7852"
+field = "header.metadata.daylight_wb"
+before = [2.4502594470977783, 1.0, 1.666690468788147]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-FZ80/P1010315.RW2
+[[delta]]
+sha256 = "e223321735643e4393f3c4482a1d7eef3ed2dfb8df66d0d1cc787edb0929b75a"
+field = "header.metadata.daylight_wb"
+before = [2.4502594470977783, 1.0, 1.666690468788147]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-FZ82/P1000052.RW2
+[[delta]]
+sha256 = "affa754f5d56f471f1c53c698798b99d1cf171bacca259d1adb6e41d81dbe9d4"
+field = "header.metadata.daylight_wb"
+before = [2.4502594470977783, 1.0, 1.666690468788147]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-FZ82/P1000053.RW2
+[[delta]]
+sha256 = "986ece20f7126a95fec179f229d91031642073c0c2082c2d7bc701fd7ea893c8"
+field = "header.metadata.daylight_wb"
+before = [2.4502594470977783, 1.0, 1.666690468788147]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-FZ82/P1000054.RW2
+[[delta]]
+sha256 = "30afbdfbf2b1d07bb6ca7dffc4f75e0111cc33e45e5913b08724972fc60f5602"
+field = "header.metadata.daylight_wb"
+before = [2.4502594470977783, 1.0, 1.666690468788147]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-FZ82/P1000055.RW2
+[[delta]]
+sha256 = "956b177d182dc6acea67ebe1c63c1ab11e568d1dcff109f62f82d536ba52c931"
+field = "header.metadata.daylight_wb"
+before = [2.4502594470977783, 1.0, 1.666690468788147]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-G95D/P1000318.RW2
+[[delta]]
+sha256 = "773fb77c1e71b03f44d351adfaa565c1aed5697aa9f103b2f0f19a2f0eb2c855"
+field = "header.metadata.daylight_wb"
+before = [2.511037588119507, 1.0, 1.6631717681884766]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-G97/_JOS3760.RW2
+[[delta]]
+sha256 = "f3a04fb066aeeef461a1b83da4cac5925a9a1b87996439c5ce3a4f513e69407e"
+field = "header.metadata.daylight_wb"
+before = [2.511037588119507, 1.0, 1.6631717681884766]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-S1M2/Panasonic_DC-S1M2_-_32.RW2
+[[delta]]
+sha256 = "e50ae28ab990a7997b1f2142e976619d072969186ed4f0095bef0724d2c70563"
+field = "header.metadata.daylight_wb"
+before = [2.3692684173583984, 1.0, 1.480167031288147]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-S1M2/Panasonic_DC-S1M2_-_32_LG.RW2
+[[delta]]
+sha256 = "14ff4e44c41d2335d3a22918c7cfcb4c320c57e12808255d93df9d96950f381a"
+field = "header.metadata.daylight_wb"
+before = [2.3692684173583984, 1.0, 1.480167031288147]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-S1M2ES/3_2_P1022959.RW2
+[[delta]]
+sha256 = "4a10d20cf5d17087d75b7acd3d1fbdab66605505e9b7af62390f1948be4b09a5"
+field = "header.metadata.daylight_wb"
+before = [2.3692684173583984, 1.0, 1.480167031288147]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-S1RM2/P1000236.RW2
+[[delta]]
+sha256 = "0175ac937261744fe13b5d234eb4ede83695562d100d2c7b4bb2e7fc3bd69e67"
+field = "header.metadata.daylight_wb"
+before = [2.2577390670776367, 1.0, 1.2318953275680542]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-S1RM2/P1000454.RW2
+[[delta]]
+sha256 = "0fde3176fd98214f64d5d472162d47f7146267c29f39eb8f3dd2351bc60158d0"
+field = "header.metadata.daylight_wb"
+before = [2.2577390670776367, 1.0, 1.2318953275680542]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-S1RM2/S1Rii_16x9.RW2
+[[delta]]
+sha256 = "d0732d521a4c8fe4dd16e95b1bf1173915326f6717fd2309f8cfb9fac1be3a25"
+field = "header.metadata.daylight_wb"
+before = [2.2577390670776367, 1.0, 1.2318953275680542]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-S1RM2/S1Rii_1x1.RW2
+[[delta]]
+sha256 = "46e8f950fa11405cdd3e00f442f9dd1ceafc5e17a91f2b44d74c9b7115ac2590"
+field = "header.metadata.daylight_wb"
+before = [2.2577390670776367, 1.0, 1.2318953275680542]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-S1RM2/S1Rii_2x1.RW2
+[[delta]]
+sha256 = "88a0feee2c8454b3e1dccf28d9b7f9330a25ed35ab60c28ffe6e33de01b0c490"
+field = "header.metadata.daylight_wb"
+before = [2.2577390670776367, 1.0, 1.2318953275680542]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-S1RM2/S1Rii_4x3.RW2
+[[delta]]
+sha256 = "0fbb7bcb33886c8d23b2fa0c28132a6f1dea9c1f0e1d5f57d902802cb5ac164a"
+field = "header.metadata.daylight_wb"
+before = [2.2577390670776367, 1.0, 1.2318953275680542]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-S1RM2/S1Rii_65x24.RW2
+[[delta]]
+sha256 = "77147d5d1df26613b8914faad8271e69037d0da7dfbc1e4018fc5168382bf3f7"
+field = "header.metadata.daylight_wb"
+before = [2.2577390670776367, 1.0, 1.2318953275680542]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-S1RM2/S1Rii_electronic_shtr.RW2
+[[delta]]
+sha256 = "42b74f5375f58bcf69d8dda5adb0607b4c104e4f72e07f807f8ca7f5e1f26e97"
+field = "header.metadata.daylight_wb"
+before = [2.2577390670776367, 1.0, 1.2318953275680542]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DC-S1RM2/S1Rii_multiexposure.RW2
+[[delta]]
+sha256 = "91661af2f72502b9a0ce1f2d4ed2ddfe60ac83a64d3742fa5608498661615bdf"
+field = "header.metadata.daylight_wb"
+before = [2.2577390670776367, 1.0, 1.2318953275680542]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DMC-FZ18/RAW_PANASONIC_LUMIX_FZ18.RAW
+[[delta]]
+sha256 = "46309063503689a9e0e21fd3866b193b5853a4caf42f774189658ac3f05d31ef"
+field = "header.metadata.daylight_wb"
+before = [2.0155251026153564, 1.0, 1.5392818450927734]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DMC-FZ30/RAW_PANASONIC_FZ30_SRGB.RAW
+[[delta]]
+sha256 = "b4efb9ee0398b968ccd8e818afe755a2ddc57776bdb0e8862381fefa086f5621"
+field = "header.metadata.daylight_wb"
+before = [2.0918681621551514, 1.0, 1.1409746408462524]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DMC-FZ50/P1250835.RAW
+[[delta]]
+sha256 = "a776a941758214bf4d1342e2b89ed756bfcad5877e038cf9df3bdda502c432ea"
+field = "header.metadata.daylight_wb"
+before = [2.62937593460083, 1.0, 1.3803110122680664]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DMC-FZ50/P1250847.RAW
+[[delta]]
+sha256 = "30cac8cf14686387f2d5b8823c6d2ce3af19e62fc910e6abd77e6038e99412a7"
+field = "header.metadata.daylight_wb"
+before = [2.62937593460083, 1.0, 1.3803110122680664]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DMC-FZ50/P1250848.RAW
+[[delta]]
+sha256 = "7c7181fd7f4320efebb33ee5e6f599d522527831e6bd94cc10b1f113bdcc2287"
+field = "header.metadata.daylight_wb"
+before = [2.62937593460083, 1.0, 1.3803110122680664]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DMC-FZ8/P1240856.RAW
+[[delta]]
+sha256 = "a11f1534f3092a4d5f2b57d182f6b06f8d26cf766eb463c3e02b26a338b63b8b"
+field = "header.metadata.daylight_wb"
+before = [2.2184219360351562, 1.0, 1.417815923690796]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DMC-L1/RAW_PANASONIC_LUMIX_L1.RAW
+[[delta]]
+sha256 = "ef7cabf0e23e4adbe3b8f3655a1047531c55d1af49c2eb7d61634f15b4a8da2b"
+field = "header.metadata.daylight_wb"
+before = [2.288926124572754, 1.0, 1.160098671913147]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DMC-L10/RAW_PANASONIC_DMCL10.RAW
+[[delta]]
+sha256 = "c7c4ed9dd5d2d9d549a764f35b6d2cf81dc2cee514a29692b17155669e447252"
+field = "header.metadata.daylight_wb"
+before = [2.34747576713562, 1.0, 1.2792950868606567]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DMC-LX1/P1080763.RAW
+[[delta]]
+sha256 = "8ff982526d215d337706640cc6aa0822cccbe65a86ebe01daef0fd43cb45a4ca"
+field = "header.metadata.daylight_wb"
+before = [2.317976713180542, 1.0, 1.100342035293579]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Panasonic/DMC-LX2/RAW_PANASONIC_LX2.RAW
+[[delta]]
+sha256 = "12ea3b97c87375f2ac352b22d2b857caf8c34e3dff21c53775ba749caafdfdf8"
+field = "header.metadata.daylight_wb"
+before = [2.6318225860595703, 1.0, 1.3346295356750488]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# SONY/DSC-RX1RM3/DSC00253.ARW
+[[delta]]
+sha256 = "6ef9956b343051748a6a16ba9ba7bd0d314a4ae0b4f8d8e2f1c13b4a1e50cfb8"
+field = "header.metadata.daylight_wb"
+before = [2.7521657943725586, 1.0, 1.2711684703826904]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# SONY/DSC-RX1RM3/DSC00254.ARW
+[[delta]]
+sha256 = "988fbc289c36a189f788a187732847509a2e819d8a9eaf0b841efc1c1360859b"
+field = "header.metadata.daylight_wb"
+before = [2.7521657943725586, 1.0, 1.2711684703826904]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# SONY/DSC-RX1RM3/DSC00255.ARW
+[[delta]]
+sha256 = "c06c5cf9caeabc225881355520649a0d834644c4d5047c39b9a6f203a409c9d4"
+field = "header.metadata.daylight_wb"
+before = [2.7521657943725586, 1.0, 1.2711684703826904]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# SONY/DSC-RX1RM3/DSC00256.ARW
+[[delta]]
+sha256 = "0fbbc32e4e24faa3626027987bc1591faf5aec76b47c8f857464ee97be9c224a"
+field = "header.metadata.daylight_wb"
+before = [2.7521657943725586, 1.0, 1.2711684703826904]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# SONY/DSC-RX1RM3/DSC00257.ARW
+[[delta]]
+sha256 = "62708b41b6e223f5a6dbf93e17cb99bf5a936a42d4cedcd7cf963257b59d3a28"
+field = "header.metadata.daylight_wb"
+before = [2.7521657943725586, 1.0, 1.2711684703826904]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Sony/DSC-R1/_DSC1477.SR2
+[[delta]]
+sha256 = "921c5f2513dd1671a9089e73fc778fc3573bc4cb70a3a555d0414661d0e62274"
+field = "header.metadata.daylight_wb"
+before = [2.2959682941436768, 1.0, 1.2740260362625122]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Sony/DSLR-A100/_DSC0258.ARW
+[[delta]]
+sha256 = "4df7981ac4baec9648b4f106751ea4b09a6e27bc70a15f8ef09bec051fec362d"
+field = "header.metadata.daylight_wb"
+before = [2.0165655612945557, 1.0, 1.3849672079086304]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Sony/DSLR-A200/DSC00108.ARW
+[[delta]]
+sha256 = "04eacd403d92e0c90da9d91b87615af8eda1afc963350d3ab774557c36763eef"
+field = "header.metadata.daylight_wb"
+before = [2.0356082916259766, 1.0, 1.3991878032684326]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Sony/DSLR-A230/DSC08026.ARW
+[[delta]]
+sha256 = "09b1e3d96a286f2e36cc0ae7cbeae1ac19457d147fad2f43e4112c15754749f0"
+field = "header.metadata.daylight_wb"
+before = [2.0356082916259766, 1.0, 1.3991878032684326]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Sony/DSLR-A300/RAW_SONY_A300.ARW
+[[delta]]
+sha256 = "daaa25127006b1178c298bce14de41c80ef0fd95101f0b3513e5126dfb8cced2"
+field = "header.metadata.daylight_wb"
+before = [2.0356082916259766, 1.0, 1.3991878032684326]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Sony/DSLR-A700/DSC07249.ARW
+[[delta]]
+sha256 = "3159e28892bf0771d01525cd4b6190f9c15bbb19fa2fab6d2515ced0594e8f40"
+field = "header.metadata.daylight_wb"
+before = [2.5038154125213623, 1.0, 1.2816087007522583]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# Sony/DSLR-A900/_DSC7969.ARW
+[[delta]]
+sha256 = "ac7c1532df77c321e8010aa1be60c1b9f245b1ac0db6f38fe617a73aae81af50"
+field = "header.metadata.daylight_wb"
+before = [3.159916639328003, 1.0, 1.124228835105896]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/ emrahkaracayir02.NEF
+[[delta]]
+sha256 = "8e09612ae0f3193e5e5d300e77a8591361cc3459b7ca14f0f2dab08e11b2d59e"
+field = "header.metadata.daylight_wb"
+before = [2.1708950996398926, 1.0, 1.1631087064743042]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/@pekhenko_work (3).NEF
+[[delta]]
+sha256 = "1dc0931ef3691f5186b31a7ace6df60ed03853ded2d4a35c0e3b21a3a5701165"
+field = "header.metadata.daylight_wb"
+before = [2.214694023132324, 1.0, 1.159775972366333]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/Copy of IMG_1121_33 - from signatureedits.com.nef
+[[delta]]
+sha256 = "acc2a2c928a908984caa5269996f2468d00cd93579ae22bfe60bc342126d6941"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/DSC_8639.nef
+[[delta]]
+sha256 = "e0f96104e0a7441b9dabc508042c3470c4e17e97c959aa5998532aa052acfb9d"
+field = "header.metadata.daylight_wb"
+before = [2.1708950996398926, 1.0, 1.1631087064743042]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/Signature Edits Free Raw Photos - DSC_0904.NEF
+[[delta]]
+sha256 = "8f66a2fbf5d846cd65856354fa86e9ef3a8afc5c8a4ff6036baf3d75a20c17af"
+field = "header.metadata.daylight_wb"
+before = [2.214694023132324, 1.0, 1.159775972366333]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/Signature Edits Free Raw Photos - UPI_7357.NEF
+[[delta]]
+sha256 = "53413de5a735ba4b9546c54e4058e839811790ca28ac75497e68de07e16b2404"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/Signature Edits Free Raws - DSC_2146.nef
+[[delta]]
+sha256 = "3aff8259979dae33292571a44df56c3c3f50c248a21c314f4ad89d01676c3431"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/_DSC0486.NEF
+[[delta]]
+sha256 = "5b48c09f204542f9d699f14c3f0a3816545f856c04df485b90808ab7daaa9c28"
+field = "header.metadata.daylight_wb"
+before = [2.214694023132324, 1.0, 1.159775972366333]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/_DSC6411.NEF
+[[delta]]
+sha256 = "39edc415c4000ca7daee5f1a33d4fb59cd65ce5473956e2c579cedc2d28777ea"
+field = "header.metadata.daylight_wb"
+before = [2.1708950996398926, 1.0, 1.1631087064743042]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/alex.pekhenko.NEF
+[[delta]]
+sha256 = "0219ecf6c45d0e1193f81cf33e893e8e94c96346e0f600bdd21e1029a1eb8b13"
+field = "header.metadata.daylight_wb"
+before = [2.214694023132324, 1.0, 1.159775972366333]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/free raw files - credit signatureedits.com - UPI_7233.NEF
+[[delta]]
+sha256 = "92bf37450bc9f07c4f070274375c2ab13debdd87a3a02a7a453d00dc9528cd43"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/signature edit free raws -  PekhenkoAlex.NEF
+[[delta]]
+sha256 = "42a979447f576f6e9d6093bb58c66e81653a400eba4c3a1bf271475c71f38110"
+field = "header.metadata.daylight_wb"
+before = [2.214694023132324, 1.0, 1.159775972366333]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/signatureditsfreerawsANA_2900.NEF
+[[delta]]
+sha256 = "9e4dff2afce998b8100a7e257558ef8a7563479b5ffcaf758d79c4ef7b1cacad"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/signatureeditsco raws.NEF
+[[delta]]
+sha256 = "63387f7db5baae369d21ecc27a803495ece6dce6e0433fec57d356ed94f04afe"
+field = "header.metadata.daylight_wb"
+before = [2.214773178100586, 1.0, 1.193082332611084]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/tag @juditesouzafotografias - free raws from @signatureeditsco .NEF
+[[delta]]
+sha256 = "2934f76a90d7df6036edcf5ca44370e26fe4d0e6d36dbea09f6a4a71d7c1bf72"
+field = "header.metadata.daylight_wb"
+before = [2.1708950996398926, 1.0, 1.1631087064743042]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"
+
+# ure-edits/tag @signatureeditsco - free raws from signatureedits.com DSC_9514.NEF
+[[delta]]
+sha256 = "9e44d4481e3c39dafe1aa2850981deabbef622814162098440f6807b50f95b0c"
+field = "header.metadata.daylight_wb"
+before = [1.842938780784607, 1.0, 1.133866310119629]
+after = [1.0, 1.0, 1.0]
+evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
+approval = "pending"

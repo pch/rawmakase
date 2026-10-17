@@ -15,14 +15,19 @@ const XYZ_RGB: [[f64; 3]; 3] = [
 /// The camera's colour in `info`: its XYZ matrix from the table of Adobe's,
 /// else (a DNG's) the file's; the camera-to-sRGB matrix and the daylight
 /// multipliers from the file's matrix when it has one, else the table's.
+/// Without a matrix the daylight multipliers are neutral (1), so a file
+/// without white balance as shot is never balanced by zeros.
 pub(crate) fn apply(info: &mut RawInfo) {
     let table = crate::facts::matrix(&info.make, &info.model);
     if let Some(m) = table.or(info.file_matrix) {
         info.cam_xyz = m;
     }
-    if let Some((rgb_cam, pre_mul)) = info.file_matrix.or(table).and_then(|m| from_cam_xyz(&m)) {
-        info.rgb_cam = rgb_cam;
-        info.pre_mul = [pre_mul[0], pre_mul[1], pre_mul[2], pre_mul[1]];
+    match info.file_matrix.or(table).and_then(|m| from_cam_xyz(&m)) {
+        Some((rgb_cam, pre_mul)) => {
+            info.rgb_cam = rgb_cam;
+            info.pre_mul = [pre_mul[0], pre_mul[1], pre_mul[2], pre_mul[1]];
+        }
+        None => info.pre_mul = [1.; 4],
     }
 }
 
@@ -89,6 +94,25 @@ fn pseudoinverse(a: &[[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn daylight_comes_from_the_matrix_else_is_neutral() {
+        // No matrix: neutral daylight, never zeros.
+        let mut info = crate::info::base(crate::Variant::MefPacked);
+        info.make = "NoSuchMaker".into();
+        super::apply(&mut info);
+        assert_eq!(info.pre_mul, [1.; 4]);
+        // A file's matrix: daylight from it.
+        let m = [[0.5f32, 0., 0.], [0., 1., 0.], [0., 0., 0.25]];
+        info.file_matrix = Some(m);
+        super::apply(&mut info);
+        let (_, daylight) = super::from_cam_xyz(&m).unwrap();
+        assert_eq!(
+            info.pre_mul,
+            [daylight[0], daylight[1], daylight[2], daylight[1]]
+        );
+        assert!(info.pre_mul.iter().all(|&v| v > 0.));
+    }
+
     #[test]
     fn srgb_camera_is_the_identity() {
         // A camera whose XYZ matrix is sRGB's own inverse sees sRGB.

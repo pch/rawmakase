@@ -3,6 +3,7 @@
 pub(crate) mod arw;
 pub(crate) mod cr3;
 pub(crate) mod dng;
+pub(crate) mod erf;
 pub(crate) mod nef;
 pub(crate) mod orf;
 pub(crate) mod pef;
