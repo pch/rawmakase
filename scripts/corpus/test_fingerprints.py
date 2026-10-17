@@ -39,6 +39,17 @@ class Compare(unittest.TestCase):
             self.assertEqual(fingerprints.load_deltas(path), {('h', 'sensor.white'): (1, 2)})
             path.write_text(path.read_text().replace('approval = "a"', 'approval = "pending"'))
             self.assertEqual(fingerprints.load_deltas(path), {})
+            # An absent field (null in the fingerprint) is { absent = true }.
+            path.write_text('[[delta]]\nsha256 = "h"\nfield = "sensor.black_pattern.rows"\n'
+                            'before = { absent = true }\nafter = 1\nevidence = "e"\napproval = "a"\n')
+            deltas = fingerprints.load_deltas(path)
+            self.assertEqual(deltas, {('h', 'sensor.black_pattern.rows'): (None, 1)})
+            old = {'sensor': {'black_pattern': None}}
+            new = {'sensor': {'black_pattern': {'rows': 1}}}
+            self.assertEqual(fingerprints.compare(old, new, 'h', deltas), [])
+            path.write_text(path.read_text().replace('{ absent = true }', '{ missing = 1 }'))
+            with self.assertRaises(fingerprints.Setup):
+                fingerprints.load_deltas(path)
         # The repository's own deltas load: every entry complete, one per field.
         import tomllib
         entries = tomllib.loads(fingerprints.DELTAS.read_text()).get('delta', [])

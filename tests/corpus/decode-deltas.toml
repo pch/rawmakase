@@ -28752,3 +28752,77 @@ before = "f9447cfbf5b50c13228efdf88e2002cd90f9a413a47d0b62ec28ea127146e013"
 after = "8ecb917e7fb6f76b721f40a3e362d8847137fa5ea5b0946a7f0becd4189f87df"
 evidence = "Adobe DNG Converter 18.7's samples equal ours on every pixel of the visible area (aligned comparison: slope 1, offset 0, rms 1e-13 per channel)"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# DNG: values LibRaw left absent.
+
+[[delta]]
+# Canon/Canon PowerShot S3IS/CRW_8531.DNG
+sha256 = "d6feb57d64d59f91dfaae9cd1e8999664977cd82d78cfa0465cf236822afd596"
+field = "sensor.black_pattern.cols"
+before = { absent = true }
+after = 1
+evidence = "BlackLevelRepeatDim 1 1 (DNG 1.7): a one-pixel black pattern of 0 on top of black, which LibRaw reported as none; the levels are the same"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot S3IS/CRW_8531.DNG
+sha256 = "d6feb57d64d59f91dfaae9cd1e8999664977cd82d78cfa0465cf236822afd596"
+field = "sensor.black_pattern.rows"
+before = { absent = true }
+after = 1
+evidence = "BlackLevelRepeatDim 1 1 (DNG 1.7): a one-pixel black pattern of 0 on top of black, which LibRaw reported as none; the levels are the same"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot S3IS/CRW_8531.DNG
+sha256 = "d6feb57d64d59f91dfaae9cd1e8999664977cd82d78cfa0465cf236822afd596"
+field = "sensor.black_pattern.values"
+before = { absent = true }
+after = [0]
+evidence = "BlackLevelRepeatDim 1 1 (DNG 1.7): a one-pixel black pattern of 0 on top of black, which LibRaw reported as none; the levels are the same"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# RICOH/GXR/R0017428.DNG
+sha256 = "219a062f3d1eb8d66c9dd6088eecf495be082cf5c81f88622eb0dd28cc893cec"
+field = "header.metadata.lens_model"
+before = "S10 24-72mm F2.5-4.4 VC"
+after = { absent = true }
+evidence = "The file has no LensModel; LibRaw took UniqueCameraModel's lens module, Adobe DNG Converter 18.7 writes '5.1-15.3 mm' from LensInfo"
+approval = "pending"
+
+[[delta]]
+# credit @signatureeditsco - signatureedits.com - 01020304-3.dng
+sha256 = "e2537b006746e7ab539307a117a40398a6b97cb11f0792d8fe01911311e22ddc"
+field = "header.metadata.lens_model"
+before = { absent = true }
+after = "----"
+evidence = "Exif LensModel '----', which Adobe DNG Converter 18.7 keeps as aux:Lens '----'; LibRaw read none"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# credit @signatureeditsco - signatureedits.com - 01020304.dng
+sha256 = "96e82feb5d790e4ae3706e8fed75c5bc73d1a7b514d640a739a2715587fc7a32"
+field = "sensor.black_pattern.cols"
+before = { absent = true }
+after = 1
+evidence = "BlackLevelRepeatDim 1 1 (DNG 1.7): a one-pixel black pattern of 0 on top of black, which LibRaw reported as none; the levels are the same"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# credit @signatureeditsco - signatureedits.com - 01020304.dng
+sha256 = "96e82feb5d790e4ae3706e8fed75c5bc73d1a7b514d640a739a2715587fc7a32"
+field = "sensor.black_pattern.rows"
+before = { absent = true }
+after = 1
+evidence = "BlackLevelRepeatDim 1 1 (DNG 1.7): a one-pixel black pattern of 0 on top of black, which LibRaw reported as none; the levels are the same"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# credit @signatureeditsco - signatureedits.com - 01020304.dng
+sha256 = "96e82feb5d790e4ae3706e8fed75c5bc73d1a7b514d640a739a2715587fc7a32"
+field = "sensor.black_pattern.values"
+before = { absent = true }
+after = [0]
+evidence = "BlackLevelRepeatDim 1 1 (DNG 1.7): a one-pixel black pattern of 0 on top of black, which LibRaw reported as none; the levels are the same"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"

@@ -226,9 +226,14 @@ def flatten(fingerprint, prefix=''):
     return out
 
 
+ABSENT = {'absent': True}
+
+
 def load_deltas(path=DELTAS):
     """Approved decode differences, by (file SHA-256, field): (before, after).
-    A difference whose approval is "pending" is listed but not approved."""
+    A difference whose approval is "pending" is listed but not approved. A
+    field the fingerprint does not have (null in its JSON) is written
+    `{ absent = true }`, as TOML has no null."""
     import tomllib
     if not path.is_file():
         return {}
@@ -237,9 +242,15 @@ def load_deltas(path=DELTAS):
         for key in ('sha256', 'field', 'before', 'after', 'evidence', 'approval'):
             if key not in d:
                 raise Setup(f'{path.name}: a delta without {key}')
+        values = []
+        for key in ('before', 'after'):
+            v = d[key]
+            if isinstance(v, dict) and v != ABSENT:
+                raise Setup(f'{path.name}: {key} of {d["field"]} is a table other than {{ absent = true }}')
+            values.append(None if v == ABSENT else v)
         if d['approval'] == 'pending':
             continue
-        deltas[(d['sha256'], d['field'])] = (d['before'], d['after'])
+        deltas[(d['sha256'], d['field'])] = tuple(values)
     return deltas
 
 
