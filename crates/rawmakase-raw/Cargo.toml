@@ -1,0 +1,22 @@
+[package]
+name = "rawmakase-raw"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+description = "RAWmakase's own RAW decoders in pure Rust: containers, maker notes, sensor codecs, camera facts and embedded previews"
+license = "MIT"
+publish = false
+
+[features]
+# Synthetic codestreams, for other crates' tests.
+test-support = []
+
+[dependencies]
+rawmakase-tiff = { path = "../rawmakase-tiff", version = "0.1.0" }
+# Deflate-compressed DNG tiles.
+miniz_oxide = "0.9"
+rayon = "1.12"
+# The camera fact tables (data/raw-cameras.toml, raw-matrices.toml,
+# raw-curves.toml), parsed once.
+serde = { version = "1", features = ["derive"] }
+toml = { version = "1", default-features = false, features = ["parse", "serde", "std"] }

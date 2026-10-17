@@ -12,7 +12,6 @@ pub use crate::storage::Replace;
 use crate::{
     camera_data::Metadata,
     export_settings::{ExportOptions, Format},
-    raw,
     rendered::Rendered,
     storage::is_raw,
 };
@@ -144,7 +143,7 @@ pub fn stage(
     let parent = crate::storage::parent_dir(path);
     let mut temp = NamedTempFile::new_in(parent)?;
     let unfinished = WRITING.track(temp.path());
-    let profile = raw::srgb_profile()?;
+    let profile = crate::color_management::srgb_profile().to_vec();
     let directories = metadata::directories(m, embed, image.width, image.height);
     match Format::from_path(path) {
         Some(Format::Jpeg) => encode::jpeg(

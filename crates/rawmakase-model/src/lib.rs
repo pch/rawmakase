@@ -14,6 +14,6 @@ pub mod model;
 pub mod optics;
 pub mod rendered;
 pub mod storage;
-pub mod tiff;
+pub use rawmakase_tiff as tiff;
 pub mod time;
 pub mod xml;

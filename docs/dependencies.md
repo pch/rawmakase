@@ -11,7 +11,7 @@ Subject, Sky and Background selection runs two ONNX models through ONNX Runtime 
 
 IS-Net, U²-Net and BiRefNet were evaluated and not used: IS-Net's weights have no published license (the author's README licenses only "code and evaluation metric", and the DIS5K training data is non-commercial; the request for a commercial license, xuebinqin/DIS issue 150, is unanswered), and the BiRefNet weights are MIT but were trained on DIS5K as well. Before adding or replacing a model, record its weights license (not its code's) and its training data's terms here.
 
-Rust dependencies are resolved in Cargo.lock. The UI uses eframe, pinned to the exact version in `Cargo.toml` (0.36.2 at the time of writing) because egui releases change behavior between patch versions; wgpu provides the GPU compute path. Build.rs verifies LibRaw >=0.22 and Little CMS through pkg-config. The tested native versions are LibRaw 0.22.2, the master commit above, and Little CMS 2.19.
+Rust dependencies are resolved in Cargo.lock. The UI uses eframe, pinned to the exact version in `Cargo.toml` (0.36.2 at the time of writing) because egui releases change behavior between patch versions; wgpu provides the GPU compute path. Build.rs verifies LibRaw >=0.22 through pkg-config (LibRaw brings Little CMS with it). RAWmakase's own colour management (exports' sRGB profile, monitor profiles) is pure Rust, with moxcms reading the profiles. The tested native versions are LibRaw 0.22.2, the master commit above, and Little CMS 2.19.
 
 On macOS, Apple Clang uses LLVM `libomp` and libc++; Linux keeps GCC OpenMP (`gomp`). The build corrects LibRaw pkg-config entries that still name the obsolete macOS `stdc++` library. Apple Silicon was verified with LibRaw 0.22.0 and Little CMS 2.17.
 

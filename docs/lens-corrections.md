@@ -110,7 +110,7 @@ The Fringe Color Selector (the eyedropper at the Defringe heading) reads the sho
 
 ## DNG files
 
-A DNG records the corrections Lightroom applies to its raw image. `src/dng.rs` reads FixVignetteRadial from OpcodeList2 and WarpRectilinear from OpcodeList3 (radial terms, per plane, when centred) into the same correction model, enabled by default. It also reads the embedded camera profile (offered as the file's own profile, as in Lightroom), BaselineExposure and DefaultCrop. The Lightroom-made DNG of DSCF7853 renders at 0.020 MAE against Lightroom's export with no imported files, against 0.030 before. GainMap opcodes (used by phone DNGs for lens shading) are not applied yet.
+A DNG records the corrections Lightroom applies to its raw image. `src/dng.rs` reads FixVignetteRadial from OpcodeList2 and WarpRectilinear from OpcodeList3 (radial terms, per plane, when centred) into the same correction model, enabled by default. It also reads the embedded camera profile (offered as the file's own profile, as in Lightroom), BaselineExposure and DefaultCrop. The Lightroom-made DNG of DSCF7853 renders at 0.020 MAE against Lightroom's export with no imported files, against 0.030 before. GainMap opcodes (used by phone DNGs for lens shading) in OpcodeList1 and 2 are applied by `rawmakase-raw` (not yet the app's decoder, [RAW decoding](raw-decoding.md)); OpcodeList3's are not.
 
 ## Adobe LCP profiles
 

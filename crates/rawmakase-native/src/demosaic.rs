@@ -57,6 +57,54 @@ impl Cfa<'_> {
     }
 }
 
+/// A half-size image of ⌈W/2⌉ × ⌈H/2⌉ pixels, for drafts: pixel (i, j) is
+/// the 2 × 2 block of the mosaic at (2i, 2j), reaching one pixel back where
+/// an odd side leaves a single row or column. A Bayer block gives its red,
+/// its blue and the mean of its greens; another pattern is demosaiced in full
+/// and the block's pixels averaged.
+pub(crate) fn half(cfa: &Cfa) -> (usize, usize, Vec<[f32; 3]>) {
+    let (w, h) = (cfa.width.div_ceil(2), cfa.height.div_ceil(2));
+    // The block's corner, inside the image.
+    let start = |i: usize, n: usize| (2 * i).min(n.saturating_sub(2));
+    let one = |n: usize| n < 2;
+    let pixels = if cfa.is_bayer() && !one(cfa.width) && !one(cfa.height) {
+        (0..w * h)
+            .into_par_iter()
+            .map(|k| {
+                let (x0, y0) = (start(k % w, cfa.width), start(k / w, cfa.height));
+                let mut sum = [0f32; 3];
+                for y in y0..y0 + 2 {
+                    for x in x0..x0 + 2 {
+                        sum[usize::from(cfa.color(x, y))] += cfa.data[y * cfa.width + x];
+                    }
+                }
+                [sum[0], sum[1] / 2., sum[2]]
+            })
+            .collect()
+    } else {
+        let full = demosaic(cfa);
+        let span = |n: usize| if n < 2 { 1 } else { 2 };
+        let (sx, sy) = (span(cfa.width), span(cfa.height));
+        (0..w * h)
+            .into_par_iter()
+            .map(|k| {
+                let (x0, y0) = (start(k % w, cfa.width), start(k / w, cfa.height));
+                let mut sum = [0f32; 3];
+                for y in y0..y0 + sy {
+                    for x in x0..x0 + sx {
+                        let p = full[y * cfa.width + x];
+                        for c in 0..3 {
+                            sum[c] += p[c];
+                        }
+                    }
+                }
+                sum.map(|v| v / (sx * sy) as f32)
+            })
+            .collect()
+    };
+    (w, h, pixels)
+}
+
 pub(crate) fn demosaic(cfa: &Cfa) -> Vec<[f32; 3]> {
     if cfa.is_bayer() {
         colour_difference(cfa, &green_bayer(cfa))
@@ -294,5 +342,50 @@ mod tests {
             }
             .is_bayer()
         );
+    }
+    #[test]
+    fn half_size_keeps_colour_and_rounds_odd_sides_up() {
+        // X-Trans demosaics exactly away from tiny images' borders only.
+        for (pattern, sizes) in [
+            (bayer_pattern(), vec![(24, 18), (25, 19), (3, 2)]),
+            (xtrans_pattern(), vec![(24, 18), (25, 19)]),
+        ] {
+            for (w, h) in sizes {
+                let data = mosaic(&pattern, w, h, |_, _| [0.4, 0.3, 0.2]);
+                let cfa = Cfa {
+                    data: &data,
+                    width: w,
+                    height: h,
+                    pattern: &pattern,
+                };
+                let (hw, hh, pixels) = half(&cfa);
+                assert_eq!(
+                    (hw, hh, pixels.len()),
+                    (w.div_ceil(2), h.div_ceil(2), hw * hh)
+                );
+                for p in pixels {
+                    for (got, want) in p.iter().zip([0.4, 0.3, 0.2]) {
+                        assert!((got - want).abs() < 1e-5, "{w}x{h}: {p:?}");
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn half_size_bayer_is_the_block_it_covers() {
+        // A ramp: each block's red is its top-left sample, its blue the
+        // bottom-right, its green the mean of the other two.
+        let pattern = bayer_pattern();
+        let (w, h) = (6, 4);
+        let data: Vec<f32> = (0..w * h).map(|i| i as f32).collect();
+        let cfa = Cfa {
+            data: &data,
+            width: w,
+            height: h,
+            pattern: &pattern,
+        };
+        let (_, _, pixels) = half(&cfa);
+        assert_eq!(pixels[0], [0., (1. + 6.) / 2., 7.]);
+        assert_eq!(pixels[4], [14., (15. + 20.) / 2., 21.]);
     }
 }

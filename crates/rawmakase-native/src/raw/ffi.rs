@@ -1,6 +1,6 @@
 //! The C ABI of `native/raw.cpp`: its declarations, the metadata struct both sides
 //! share by layout, and one safe wrapper per entry point that states what the call
-//! relies on. Nothing else in the crate calls LibRaw or Little CMS directly.
+//! relies on. Nothing else in the crate calls LibRaw directly.
 //!
 //! Contracts the native side keeps, which the `SAFETY` comments below rely on:
 //!
@@ -17,7 +17,8 @@
 //! - `ora_thumbnail` and `ora_sensor` point into the handle's own buffers, valid
 //!   until the next call on that handle; `ora_sensor`'s data holds `height` rows
 //!   of `pitch` values and its black levels `black_size` values.
-use anyhow::{Result, bail, ensure};
+use super::{Cfa, Header, Sensor};
+use anyhow::{Result, ensure};
 use std::{
     ffi::{CStr, CString, c_char, c_int, c_void},
     path::Path,
@@ -138,17 +139,67 @@ unsafe extern "C" {
     fn ora_sensor(h: *mut c_void, s: *mut NativeSensor, err: *mut c_char) -> c_int;
     fn ora_thumbnail(h: *mut c_void, data: *mut *mut u8, size: *mut u32, err: *mut c_char)
     -> c_int;
-    fn ora_srgb_profile(data: *mut u8, size: u32) -> u32;
-    fn ora_display(path: *const c_char, data: *mut u8, count: u32) -> c_int;
 }
 
+/// The header facts in LibRaw's metadata, with the Panasonic sensor borders
+/// and RAF crop read from the file beside it.
+pub(super) fn header(
+    m: &NativeMetadata,
+    sensor_borders: Option<[u32; 4]>,
+    recommended_crop: Option<[u32; 4]>,
+) -> Header {
+    let text = |bytes: &[c_char]| {
+        let bytes: Vec<u8> = bytes.iter().map(|&c| c as u8).collect();
+        let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+        String::from_utf8_lossy(&bytes[..end]).into_owned()
+    };
+    let matrix = |m: &[f32; 9]| std::array::from_fn(|r| std::array::from_fn(|c| m[r * 3 + c]));
+    Header {
+        make: text(&m.make),
+        model: text(&m.model),
+        normalized: [text(&m.normalized_make), text(&m.normalized_model)],
+        width: m.width,
+        height: m.height,
+        raw_width: m.raw_width,
+        raw_height: m.raw_height,
+        margins: [m.left_margin, m.top_margin],
+        frame: [m.crop_left, m.crop_top, m.crop_width, m.crop_height],
+        aspect: [m.aspect_left, m.aspect_top, m.aspect_width, m.aspect_height],
+        sensor_borders,
+        recommended_crop,
+        flip: m.flip,
+        xtrans: m.xtrans != 0,
+        fuji_dynamic_range: m.fuji_dynamic_range,
+        highlight_tone_priority: m.highlight_tone_priority,
+        sraw: m.sraw != 0,
+        fuji_exposure_shift: m.fuji_exposure_shift,
+        iso: m.iso,
+        shutter: m.shutter,
+        aperture: m.aperture,
+        focal: m.focal,
+        focal_35mm: m.focal_35mm,
+        wb: m.wb,
+        daylight_wb: m.daylight_wb,
+        presets: [
+            m.preset_daylight,
+            m.preset_shade,
+            m.preset_d65,
+            m.preset_fine_weather,
+        ],
+        matrix: matrix(&m.matrix),
+        cam_xyz: matrix(&m.cam_xyz),
+        lens: text(&m.lens),
+        lens_id: m.lens_id,
+        dng_version: m.dng_version,
+    }
+}
 /// LibRaw's version string.
 pub fn version() -> String {
     // SAFETY: `ora_version` returns LibRaw's static, NUL-terminated version string.
     unsafe { CStr::from_ptr(ora_version()).to_string_lossy().into_owned() }
 }
-/// Runs the calling thread at low priority from now on, with LibRaw decodes on
-/// two OpenMP threads; see `ora_background_thread`.
+/// Runs the calling thread's LibRaw decodes on two OpenMP threads from now
+/// on; see `ora_background_thread`.
 pub(super) fn background_thread() {
     // SAFETY: takes nothing and changes only the calling thread's own settings.
     unsafe { ora_background_thread() }
@@ -201,7 +252,14 @@ extern "C" fn high_efficiency(
                 std::slice::from_raw_parts_mut(out, pitch as usize * height as usize),
             )
         };
-        super::nikon_he::decode(data, out, width as usize, height as usize, pitch as usize)
+        rawmakase_raw::decode_nikon_high_efficiency(
+            data,
+            out,
+            width as usize,
+            height as usize,
+            pitch as usize,
+        )
+        .map_err(anyhow::Error::from)
     });
     let message = match result {
         Ok(Ok(())) => return 0,
@@ -244,36 +302,6 @@ impl Drop for Handle {
         // SAFETY: the pointer came from `ora_open` and is closed exactly once, here.
         unsafe { ora_close(self.0) }
     }
-}
-/// Unpacked sensor data for RAWmakase's own demosaic.
-pub(super) struct Cfa {
-    pub width: u32,
-    pub height: u32,
-    /// The colour pattern as a `PATTERN × PATTERN` tile: 0 red, 1 green, 2 blue.
-    pub pattern: [u8; crate::demosaic::PATTERN * crate::demosaic::PATTERN],
-    /// `width × height` values, (raw − black) / (white − black), not white balanced.
-    pub data: Vec<f32>,
-}
-/// The unpacked sensor data with the levels development reads, for decode
-/// fingerprints. Channels are LibRaw's: 0 red, 1 green, 2 blue, 3 second green.
-pub(crate) struct Sensor {
-    /// 1 for a mosaic, 3 or 4 for small RAW files.
-    pub channels: u32,
-    /// Where the visible area starts in the raw buffer: left, top.
-    pub origin: [u32; 2],
-    /// SHA-256 of the values development reads (the visible area; the stored
-    /// rotated area of a Super CCD), `channels` per pixel, row by row,
-    /// little-endian. Not the borders: LibRaw leaves rows and columns past some
-    /// decoders' data unwritten, so they hold whatever the memory held.
-    pub data_sha256: [u8; 32],
-    pub black: [u32; 4],
-    /// The black pattern added to `black`: rows, columns and every value.
-    pub black_pattern: (u32, u32, Vec<u32>),
-    pub white: u32,
-    pub linear_white: [u32; 4],
-    /// The colour of each visible pixel over one period of the mosaic; empty
-    /// without one.
-    pub pattern: Vec<Vec<u8>>,
 }
 /// LibRaw's own development: demosaiced camera-space pixels.
 pub(super) struct Developed {
@@ -358,8 +386,9 @@ impl Handle {
             data,
         }))
     }
-    /// Unpacks the sensor data as development does and describes it.
-    pub(super) fn sensor(&self) -> Result<Sensor> {
+    /// Unpacks the sensor data as development does and describes it, with the
+    /// hashed samples when `keep` is set.
+    pub(super) fn sensor(&self, keep: bool) -> Result<Sensor> {
         use sha2::Digest;
         ensure!(
             native_sensor_size() == std::mem::size_of::<NativeSensor>(),
@@ -396,6 +425,7 @@ impl Handle {
         let mut hash = sha2::Sha256::new();
         let width = s.area_width as usize * channels;
         let mut bytes = Vec::with_capacity(width * 2);
+        let mut samples = keep.then(Vec::new);
         for y in s.top as usize..(s.top + s.area_height) as usize {
             let start = y * s.pitch as usize + s.left as usize * channels;
             // SAFETY: `data` points at the handle's raw buffer of `height` rows
@@ -406,12 +436,17 @@ impl Handle {
             bytes.clear();
             bytes.extend(row.iter().flat_map(|v| v.to_le_bytes()));
             hash.update(&bytes);
+            if let Some(samples) = &mut samples {
+                samples.extend_from_slice(&bytes);
+            }
         }
         let cols = s.pattern_cols as usize;
         Ok(Sensor {
             channels: s.channels,
             origin: [s.left, s.top],
+            area: [s.area_width, s.area_height],
             data_sha256: hash.finalize().into(),
+            samples,
             black: std::array::from_fn(|c| s.base_black + black[c]),
             black_pattern: (black[4], black[5], black[6..].to_vec()),
             white: s.white,
@@ -466,39 +501,6 @@ impl Handle {
     }
 }
 
-/// Little CMS's sRGB profile, serialized.
-pub fn srgb_profile() -> Result<Vec<u8>> {
-    // SAFETY: with a null buffer and zero capacity the native side only reports
-    // the size.
-    let size = unsafe { ora_srgb_profile(std::ptr::null_mut(), 0) };
-    ensure!(size > 0, "Cannot create sRGB profile");
-    let mut data = vec![0; size as usize];
-    // SAFETY: `data` has the `size` bytes the native side was told it may write.
-    let written = unsafe { ora_srgb_profile(data.as_mut_ptr(), size) };
-    ensure!(written == size, "Cannot serialize sRGB profile");
-    // Little CMS dates the profile as it saves it. A fixed date keeps the
-    // profile, and every export that embeds it, the same whenever it is made.
-    // The profile carries no ID (an MD5 of the header) for this to break.
-    ensure!(data.len() >= 128, "sRGB profile too short");
-    for (at, value) in [2024u16, 1, 1, 0, 0, 0].into_iter().enumerate() {
-        data[24 + 2 * at..26 + 2 * at].copy_from_slice(&value.to_be_bytes());
-    }
-    Ok(data)
-}
-/// Converts 8-bit sRGB pixels in place to the monitor profile at `path`.
-pub fn display_transform(path: &Path, data: &mut [u8]) -> Result<()> {
-    ensure!(data.len().is_multiple_of(3), "Invalid RGB buffer");
-    let p = path_string(path)?;
-    let count: u32 = (data.len() / 3).try_into()?;
-    // SAFETY: `p` is NUL-terminated and `data` holds `count` RGB triples, which the
-    // native side transforms in place.
-    let rc = unsafe { ora_display(p.as_ptr(), data.as_mut_ptr(), count) };
-    if rc != 0 {
-        bail!("Cannot use monitor ICC profile {}", path.display());
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     unsafe extern "C" {
@@ -515,20 +517,6 @@ mod tests {
         (0..20_000u32)
             .map(|i| level - 6 + (i * 7919 % 13) as u16)
             .collect()
-    }
-    #[test]
-    fn the_srgb_profile_is_the_same_whenever_it_is_made() {
-        // Little CMS dates a profile when saving it: exports would differ
-        // second to second, and a profile compared with a later one too.
-        let profile = super::srgb_profile().unwrap();
-        let date: Vec<u16> = profile[24..36]
-            .chunks(2)
-            .map(|b| u16::from_be_bytes([b[0], b[1]]))
-            .collect();
-        assert_eq!(date, [2024, 1, 1, 0, 0, 0]);
-        // No profile ID, which the date would have to be hashed into.
-        assert!(profile[84..100].iter().all(|b| *b == 0));
-        assert_eq!(super::srgb_profile().unwrap(), profile);
     }
     #[test]
     fn black_level_far_below_the_masked_border_is_corrected() {

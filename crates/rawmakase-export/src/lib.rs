@@ -10,7 +10,7 @@ use rawmakase_interop::{exif, export_settings, jpeg, raw_defaults, xmp};
 use rawmakase_model::{
     camera_data, camera_profiles, metadata, model, rendered, storage, tiff, time, xml,
 };
-use rawmakase_native::{decode, photo, raw};
+use rawmakase_native::{color_management, decode, photo, raw};
 
 pub mod build_info;
 pub mod export;

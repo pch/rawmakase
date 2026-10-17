@@ -3401,6 +3401,7 @@ dependencies = [
  "anyhow",
  "flate2",
  "rawmakase-protocol",
+ "rawmakase-tiff",
  "rayon",
  "roxmltree 0.21.1",
  "serde",
@@ -3419,16 +3420,19 @@ dependencies = [
  "bytemuck",
  "cc",
  "image",
+ "libc",
  "moxcms",
  "pkg-config",
  "rawmakase-engine",
  "rawmakase-interop",
  "rawmakase-model",
+ "rawmakase-raw",
  "rayon",
  "serde",
  "serde_json",
  "sha2",
  "tempfile",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3437,6 +3441,17 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rawmakase-raw"
+version = "0.1.0"
+dependencies = [
+ "miniz_oxide 0.9.1",
+ "rawmakase-tiff",
+ "rayon",
+ "serde",
+ "toml",
 ]
 
 [[package]]
@@ -3449,6 +3464,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "rawmakase-tiff"
+version = "0.1.0"
 
 [[package]]
 name = "rawpointer"

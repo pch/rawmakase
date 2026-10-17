@@ -1,0 +1,8613 @@
+# The camera facts RAWmakase's own RAW decoders need beyond the file
+# (crates/rawmakase-raw/src/facts.rs; docs/raw-decoding.md).
+#
+# [[name]]       a model as files write it (make as RAWmakase names it), and the
+#                body it is (`is`)
+# [[canonical]]  the canonical make and model of a body sold under several names,
+#                which camera profiles may use
+# [[camera]]     decode facts, for the camera's files matching `dng` and
+#                `raw_size` when given: the visible area (`visible`, left, top,
+#                width, height in sensor coordinates), levels (`white`,
+#                and `black` for every channel), of its files of `bits`-bit
+#                samples when given, the orientation (`flip`, RAWmakase's
+#                flip code) and the default crop (`frame`, left, top, width,
+#                height in sensor coordinates; 65535, 65535, 0, 0 for none),
+#                and `wb_scale` (red, blue): factors the white balance levels
+#                are scaled by where the maker's rules say they are
+#                (Fujifilm's record 0x8200) and the file does not say by how
+#                much (Adobe DNG Converter's as-shot neutral where it reads the
+#                files, else LibRaw's output), not colour matrices;
+#                and the 2 × 2 colour filter at the sensor's corner (`cfa`, 0
+#                red, 1 green, 2 blue); `aspect_crop = false` where the
+#                camera's aspect crop is not shown. Adobe DNG Converter's
+#                white level rows may also give `white_max` (a cap on the
+#                white the file records), `normal_white = true` (the file's
+#                white for normal exposures, not for specular highlights) or
+#                `iso` (the speed or range of speeds whose `white` the row
+#                gives over the file's)
+# [[headerless]] a RAW file with no header, known by its `file_size`: the
+#                camera, `raw_size`, `bits` per packed sample, the `visible`
+#                area and the `cfa` at the sensor's corner, and the masked
+#                columns (`black_columns`, start and end) black is measured
+#                on where they are not beside the visible area; and where
+#                they are not CHDK's, the packing word's bytes (`word`, 2
+#                when not given), padded rows' size (`row_bytes`), a `shift`
+#                down, and the levels (`black`, `white`)
+#
+# source says where the values come from:
+#   file             a rule from the file's own tags, for files that lack them
+#   adobe-dng        Adobe DNG Converter 18.7's output for the camera: on [[camera]]
+#                    rows decode facts only (`white`, `black`, `wb_scale`,
+#                    `iso`, `white_max`, `normal_white`), never geometry
+#                    (`visible`, `frame`, `flip`, `cfa`, `aspect_crop`)
+#   compat-observed  the earlier decoder's (LibRaw at 4f014403) output on the test
+#                    dataset's files, kept so saved edits keep their geometry and
+#                    scale (2026-10-17); never a colour matrix
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark II"
+dng = true
+raw_size = [5792, 3804]
+visible = [158, 52, 5634, 3752]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D"
+dng = true
+raw_size = [5360, 3516]
+visible = [158, 52, 5202, 3464]
+source = "compat-observed"
+
+[[camera]]
+make = "Leica"
+model = "SL2"
+dng = true
+raw_size = [8424, 5632]
+visible = [0, 0, 8392, 5613]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "645D"
+dng = true
+raw_size = [7424, 5552]
+visible = [48, 30, 7328, 5501]
+frame = [128, 88, 7264, 5440]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-5"
+dng = true
+raw_size = [4992, 3284]
+visible = [10, 0, 4950, 3284]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-5 II"
+dng = true
+raw_size = [4992, 3284]
+visible = [10, 0, 4950, 3284]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-5 II s"
+dng = true
+raw_size = [4992, 3284]
+visible = [10, 0, 4950, 3284]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-7"
+dng = true
+raw_size = [4736, 3136]
+visible = [0, 2, 4684, 3122]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-r"
+dng = true
+raw_size = [4352, 2868]
+visible = [0, 0, 4309, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-x"
+dng = true
+raw_size = [4352, 2868]
+visible = [0, 0, 4309, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K10D"
+dng = true
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K200D"
+dng = true
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K20D"
+dng = true
+raw_size = [4864, 3136]
+visible = [0, 0, 4688, 3124]
+source = "compat-observed"
+
+[[camera]]
+make = "Ricoh"
+model = "GX200"
+dng = true
+raw_size = [4096, 3014]
+visible = [0, 0, 4014, 3014]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "GX10"
+dng = true
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "GX20"
+dng = true
+raw_size = [4864, 3136]
+visible = [0, 0, 4688, 3124]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-G9"
+dng = false
+raw_size = [10480, 7794]
+visible = [0, 0, 10402, 7794]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FX150"
+dng = false
+raw_size = [4508, 2962]
+visible = [0, 0, 4429, 2958]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FX150"
+dng = false
+raw_size = [4508, 3330]
+visible = [0, 0, 4429, 3324]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ28"
+dng = false
+raw_size = [3724, 2450]
+visible = [0, 0, 3664, 2448]
+source = "compat-observed"
+
+# Panasonic and Leica: Adobe DNG Converter 18.7's WhiteLevel where the RW2
+# rules do not give it (2026-10-17), on RAWmakase's scale (the DMC-L10's
+# data Adobe keeps 15 lower). The DC-GH5S's and DMC-FZ2000's are for the ISO
+# speed of every file of theirs Adobe was seen to read (800 and 80).
+
+[[camera]]
+make = "Panasonic"
+model = "DC-GH5S"
+dng = false
+iso = 800
+white = 8000
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ2000"
+dng = false
+iso = 80
+white = 2095
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-G10"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-G2"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-GH2"
+dng = false
+white = 3800
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-L10"
+dng = false
+white = 4001
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S1"
+dng = false
+white = 16380
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S1H"
+dng = false
+white = 16380
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S1R"
+dng = false
+white = 16380
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S1M2"
+dng = false
+white = 16380
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S1RM2"
+dng = false
+bits = 14
+white = 16380
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S5"
+dng = false
+white = 16380
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-GH5M2"
+dng = false
+white = 4088
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ35"
+dng = false
+raw_size = [4060, 3018]
+visible = [0, 0, 4016, 3016]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ38"
+dng = false
+raw_size = [4060, 3018]
+visible = [0, 0, 4016, 3016]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-L10"
+dng = false
+raw_size = [3710, 2751]
+visible = [0, 0, 3677, 2751]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "C (Typ 112)"
+canonical = ["Panasonic", "DMC-LF1"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "C-Lux"
+canonical = ["Panasonic", "DC-ZS200"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "D-LUX (Typ 109)"
+canonical = ["Panasonic", "DMC-LX100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "D-LUX 3"
+canonical = ["Panasonic", "DMC-LX2"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "D-LUX 4"
+canonical = ["Panasonic", "DMC-LX3"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "D-LUX 5"
+canonical = ["Panasonic", "DMC-LX5"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "D-LUX 6"
+canonical = ["Panasonic", "DMC-LX7"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "D-Lux 7"
+canonical = ["Panasonic", "DC-LX100M2"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "DIGILUX 2"
+canonical = ["Panasonic", "DMC-LC1"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "DIGILUX 3"
+canonical = ["Panasonic", "DMC-L1"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "V-LUX (Typ 114)"
+canonical = ["Panasonic", "DMC-FZ1000"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "V-LUX 1"
+canonical = ["Panasonic", "DMC-FZ50"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "V-LUX 4"
+canonical = ["Panasonic", "DMC-FZ200"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "V-Lux 5"
+canonical = ["Panasonic", "DC-FZ1000M2"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-FZ10002"
+canonical = ["Panasonic", "DC-FZ1000M2"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-FZ45"
+canonical = ["Panasonic", "DMC-FZ40"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-FZ82"
+canonical = ["Panasonic", "DC-FZ80"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-G110"
+canonical = ["Panasonic", "DC-G100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-G90"
+canonical = ["Panasonic", "DC-G99"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-G91"
+canonical = ["Panasonic", "DC-G99"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-G95"
+canonical = ["Panasonic", "DC-G99"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-GX7MK3"
+canonical = ["Panasonic", "DC-GX9"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-GX800"
+canonical = ["Panasonic", "DC-GF9"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-GX850"
+canonical = ["Panasonic", "DC-GF9"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-GX880"
+canonical = ["Panasonic", "DC-GF10"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-TZ200D"
+canonical = ["Panasonic", "DC-ZS200"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-TZ202"
+canonical = ["Panasonic", "DC-ZS200"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-TZ90"
+canonical = ["Panasonic", "DC-ZS70"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-TZ91"
+canonical = ["Panasonic", "DC-ZS70"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-TZ95"
+canonical = ["Panasonic", "DC-ZS80"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-TZ96"
+canonical = ["Panasonic", "DC-ZS80"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-ZS200D"
+canonical = ["Panasonic", "DC-ZS200"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-FZ2000"
+canonical = ["Panasonic", "DMC-FZ2500"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-FZ330"
+canonical = ["Panasonic", "DMC-FZ300"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-FZ38"
+canonical = ["Panasonic", "DMC-FZ35"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-FZ45"
+canonical = ["Panasonic", "DMC-FZ40"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-FZ72"
+canonical = ["Panasonic", "DMC-FZ70"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-G70"
+canonical = ["Panasonic", "DMC-G7"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-G80"
+canonical = ["Panasonic", "DMC-G8"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-G81"
+canonical = ["Panasonic", "DMC-G8"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-G85"
+canonical = ["Panasonic", "DMC-G8"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-GM1S"
+canonical = ["Panasonic", "DMC-GM1"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-GX7MK2"
+canonical = ["Panasonic", "DMC-GX85"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-GX80"
+canonical = ["Panasonic", "DMC-GX85"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-LX10"
+canonical = ["Panasonic", "DMC-LX9"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-LX15"
+canonical = ["Panasonic", "DMC-LX9"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TX1"
+canonical = ["Panasonic", "DMC-ZS100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ100"
+canonical = ["Panasonic", "DMC-ZS100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ101"
+canonical = ["Panasonic", "DMC-ZS100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ110"
+canonical = ["Panasonic", "DMC-ZS100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ60"
+canonical = ["Panasonic", "DMC-ZS40"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ61"
+canonical = ["Panasonic", "DMC-ZS40"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ70"
+canonical = ["Panasonic", "DMC-ZS50"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ71"
+canonical = ["Panasonic", "DMC-ZS50"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ80"
+canonical = ["Panasonic", "DMC-ZS60"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ81"
+canonical = ["Panasonic", "DMC-ZS60"]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S1R"
+dng = false
+raw_size = [8448, 5632]
+visible = [0, 0, 8392, 5620]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-G9M2"
+dng = false
+raw_size = [11560, 8680]
+visible = [8, 8, 11544, 8664]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-GH6"
+dng = false
+raw_size = [11560, 8680]
+visible = [8, 8, 11544, 8664]
+source = "compat-observed"
+
+[[camera]]
+make = "Leica"
+model = "D-LUX 3"
+dng = false
+raw_size = [4330, 2439]
+visible = [18, 16, 4247, 2399]
+source = "compat-observed"
+
+[[camera]]
+make = "Leica"
+model = "DIGILUX 3"
+dng = false
+raw_size = [3177, 2367]
+visible = [0, 0, 3167, 2367]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ18"
+dng = false
+raw_size = [3330, 2463]
+visible = [10, 0, 3290, 2463]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ30"
+dng = false
+raw_size = [3304, 2458]
+visible = [0, 0, 3287, 2458]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ50"
+dng = false
+raw_size = [3690, 2751]
+visible = [4, 0, 3671, 2748]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ8"
+dng = false
+raw_size = [3130, 2319]
+visible = [4, 0, 3096, 2319]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-L1"
+dng = false
+raw_size = [3177, 2367]
+visible = [0, 0, 3167, 2367]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-LX1"
+dng = false
+raw_size = [3880, 2170]
+visible = [6, 0, 3858, 2170]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-LX2"
+dng = false
+raw_size = [4290, 2391]
+visible = [4, 0, 4247, 2390]
+source = "compat-observed"
+
+# Canon CR2: LibRaw's visible area and white level where they are not
+# SensorInfo's borders (a small RAW's whole image) and the data's bit depth,
+# the masked columns its black level is measured on where they are not the
+# borders beside the image, and the small RAWs whose aspect crop is not shown.
+
+[[camera]]
+make = "Canon"
+model = "EOS 1000D"
+dng = false
+raw_size = [3948, 2622]
+visible = [42, 18, 3906, 2602]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 100D"
+dng = false
+raw_size = [5280, 3528]
+visible = [72, 52, 5208, 3476]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 1100D"
+dng = false
+raw_size = [4352, 2874]
+visible = [62, 18, 4290, 2856]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 1200D"
+dng = false
+raw_size = [5344, 3516]
+visible = [142, 52, 5202, 3464]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 1300D"
+dng = false
+raw_size = [5344, 3516]
+visible = [142, 52, 5202, 3464]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 1500D"
+dng = false
+raw_size = [6096, 4051]
+visible = [76, 36, 6020, 4015]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 200D"
+dng = false
+raw_size = [6288, 4056]
+visible = [264, 36, 6024, 4020]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 20D"
+dng = false
+raw_size = [3596, 2360]
+visible = [74, 12, 3522, 2348]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 3000D"
+dng = false
+raw_size = [5344, 3516]
+visible = [142, 52, 5202, 3464]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 30D"
+dng = false
+raw_size = [3596, 2360]
+visible = [74, 12, 3522, 2348]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 350D"
+dng = false
+raw_size = [3516, 2328]
+visible = [42, 14, 3474, 2314]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 400D"
+dng = false
+raw_size = [3948, 2622]
+visible = [42, 18, 3906, 2602]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 40D"
+dng = false
+raw_size = [3944, 2622]
+visible = [30, 18, 3908, 2602]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 450D"
+dng = false
+raw_size = [4312, 2876]
+visible = [22, 18, 4290, 2856]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 500D"
+dng = false
+raw_size = [4832, 3204]
+visible = [62, 26, 4770, 3178]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 50D"
+dng = false
+raw_size = [3344, 2178]
+visible = [0, 0, 3272, 2178]
+aspect_crop = false
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 50D"
+dng = false
+raw_size = [4832, 3228]
+visible = [62, 52, 4770, 3176]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 550D"
+dng = false
+raw_size = [5344, 3516]
+visible = [142, 52, 5202, 3464]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D"
+dng = false
+raw_size = [4476, 2954]
+visible = [90, 34, 4386, 2920]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark II"
+dng = false
+raw_size = [3872, 2574]
+visible = [0, 0, 3866, 2574]
+aspect_crop = false
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark II"
+dng = false
+raw_size = [5792, 3804]
+visible = [158, 52, 5634, 3752]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+raw_size = [5920, 3950]
+visible = [122, 80, 5796, 3870]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark IV"
+dng = false
+raw_size = [5040, 3360]
+aspect_crop = false
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark IV"
+dng = false
+raw_size = [6880, 4544]
+visible = [136, 42, 6744, 4502]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5DS"
+dng = false
+raw_size = [8896, 5920]
+visible = [160, 64, 8736, 5856]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5DS R"
+dng = false
+raw_size = [8896, 5920]
+visible = [160, 64, 8736, 5856]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 600D"
+dng = false
+raw_size = [5344, 3516]
+visible = [142, 52, 5202, 3464]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 60D"
+dng = false
+raw_size = [5344, 3516]
+visible = [142, 52, 5202, 3464]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 650D"
+dng = false
+raw_size = [5280, 3528]
+visible = [72, 52, 5208, 3476]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D"
+dng = false
+raw_size = [5568, 3708]
+visible = [72, 38, 5496, 3670]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D Mark II"
+dng = false
+raw_size = [4680, 3132]
+visible = [0, 12, 4680, 3120]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D Mark II"
+dng = false
+raw_size = [6384, 4224]
+visible = [120, 44, 6264, 4180]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 700D"
+dng = false
+raw_size = [5280, 3528]
+visible = [72, 52, 5208, 3476]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 70D"
+dng = false
+raw_size = [5568, 3708]
+visible = [72, 38, 5496, 3670]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 750D"
+dng = false
+raw_size = [6096, 4056]
+visible = [72, 34, 6024, 4022]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 760D"
+dng = false
+raw_size = [6096, 4056]
+visible = [72, 34, 6024, 4022]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 77D"
+dng = false
+raw_size = [6288, 4056]
+visible = [264, 36, 6024, 4020]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D"
+dng = false
+raw_size = [5360, 3516]
+visible = [158, 52, 5202, 3464]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D Mark II"
+dng = false
+raw_size = [5568, 3708]
+visible = [72, 38, 5496, 3670]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 800D"
+dng = false
+raw_size = [6288, 4056]
+visible = [264, 36, 6024, 4020]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 80D"
+dng = false
+raw_size = [4536, 3024]
+visible = [36, 18, 4500, 3000]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 80D"
+dng = false
+raw_size = [6288, 4056]
+visible = [264, 36, 6024, 4020]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS M"
+dng = false
+raw_size = [5280, 3528]
+visible = [72, 52, 5208, 3476]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS M10"
+dng = false
+raw_size = [5280, 3528]
+visible = [72, 52, 5208, 3476]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS M100"
+dng = false
+raw_size = [6288, 4056]
+visible = [264, 36, 6024, 4020]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS M2"
+dng = false
+raw_size = [5280, 3528]
+visible = [72, 52, 5208, 3476]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS M3"
+dng = false
+raw_size = [6096, 4056]
+visible = [72, 34, 6024, 4022]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS M5"
+dng = false
+raw_size = [6288, 4056]
+visible = [264, 36, 6024, 4020]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS M6"
+dng = false
+raw_size = [6288, 4056]
+visible = [264, 36, 6024, 4020]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D Mark II"
+dng = false
+raw_size = [3596, 2360]
+visible = [74, 12, 3522, 2348]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D Mark II N"
+dng = false
+raw_size = [3596, 2360]
+visible = [74, 12, 3522, 2348]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D Mark III"
+dng = false
+raw_size = [3984, 2622]
+visible = [76, 20, 3908, 2600]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D Mark IV"
+dng = false
+raw_size = [5120, 3318]
+visible = [142, 46, 4916, 3272]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D X"
+dng = false
+raw_size = [5344, 3584]
+visible = [126, 100, 5218, 3482]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D X Mark II"
+dng = false
+raw_size = [5568, 3708]
+visible = [72, 38, 5496, 3670]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1Ds Mark II"
+dng = false
+raw_size = [5108, 3349]
+visible = [98, 14, 5010, 3335]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1Ds Mark III"
+dng = false
+raw_size = [5712, 3774]
+visible = [62, 20, 5640, 3752]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G1 X"
+dng = false
+raw_size = [4496, 3366]
+visible = [80, 50, 4404, 3316]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G1 X Mark II"
+dng = false
+raw_size = [4480, 3366]
+visible = [80, 50, 4400, 3316]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G1 X Mark III"
+dng = false
+raw_size = [6288, 4056]
+visible = [264, 36, 6024, 4020]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G10"
+dng = false
+raw_size = [4480, 3348]
+visible = [12, 10, 4432, 3326]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G11"
+dng = false
+raw_size = [3744, 2784]
+visible = [8, 16, 3684, 2760]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G12"
+dng = false
+raw_size = [3744, 2784]
+visible = [52, 12, 3684, 2760]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G15"
+dng = false
+raw_size = [4160, 3124]
+visible = [104, 12, 4048, 3047]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G16"
+dng = false
+raw_size = [4192, 3062]
+visible = [120, 30, 4024, 3018]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G3 X"
+dng = false
+raw_size = [5632, 3710]
+visible = [96, 18, 5536, 3692]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G5 X"
+dng = false
+raw_size = [5632, 3710]
+visible = [96, 18, 5536, 3692]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G7 X"
+dng = false
+raw_size = [5632, 3710]
+visible = [96, 18, 5536, 3692]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G7 X Mark II"
+dng = false
+raw_size = [5632, 3710]
+visible = [96, 18, 5536, 3692]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G9"
+dng = false
+raw_size = [4104, 3048]
+visible = [48, 12, 4032, 3024]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G9 X"
+dng = false
+raw_size = [5632, 3710]
+visible = [96, 18, 5536, 3692]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G9 X Mark II"
+dng = false
+raw_size = [5632, 3710]
+visible = [96, 18, 5536, 3692]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S100"
+dng = false
+raw_size = [4160, 3124]
+visible = [104, 12, 4048, 3047]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S100V"
+dng = false
+raw_size = [4160, 3124]
+visible = [104, 12, 4048, 3047]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S110"
+dng = false
+raw_size = [4160, 3124]
+visible = [104, 12, 4048, 3047]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S120"
+dng = false
+raw_size = [4192, 3062]
+visible = [120, 32, 4022, 3015]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S90"
+dng = false
+raw_size = [3744, 2784]
+visible = [8, 16, 3684, 2760]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S95"
+dng = false
+raw_size = [3744, 2784]
+visible = [52, 12, 3684, 2760]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot SX1 IS"
+dng = false
+raw_size = [4152, 2772]
+visible = [192, 12, 3960, 2760]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot SX50 HS"
+dng = false
+raw_size = [4176, 3062]
+visible = [96, 18, 4072, 3044]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot SX60 HS"
+dng = false
+raw_size = [4768, 3516]
+visible = [96, 16, 4672, 3500]
+source = "compat-observed"
+
+# Canon CRW: LibRaw's visible area where it is not SensorInfo's borders.
+
+[[camera]]
+make = "Canon"
+model = "EOS 10D"
+dng = false
+raw_size = [3152, 2068]
+visible = [64, 12, 3088, 2056]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 300D"
+dng = false
+raw_size = [3152, 2068]
+visible = [64, 12, 3088, 2056]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS D30"
+dng = false
+raw_size = [2224, 1456]
+visible = [48, 6, 2176, 1448]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS D60"
+dng = false
+raw_size = [3152, 2068]
+visible = [64, 12, 3088, 2056]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G2"
+dng = false
+raw_size = [2376, 1728]
+visible = [12, 6, 2312, 1720]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G3"
+dng = false
+raw_size = [2376, 1728]
+visible = [12, 6, 2312, 1720]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G5"
+dng = false
+raw_size = [2672, 1968]
+visible = [12, 6, 2616, 1960]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G6"
+dng = false
+raw_size = [3160, 2344]
+visible = [44, 12, 3112, 2328]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot Pro1"
+dng = false
+raw_size = [3344, 2484]
+visible = [4, 6, 3288, 2472]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S30"
+dng = false
+raw_size = [2144, 1560]
+visible = [4, 8, 2088, 1550]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S40"
+dng = false
+raw_size = [2376, 1728]
+visible = [12, 6, 2312, 1720]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S45"
+dng = false
+raw_size = [2376, 1728]
+visible = [12, 6, 2312, 1720]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S50"
+dng = false
+raw_size = [2672, 1968]
+visible = [12, 6, 2616, 1960]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S60"
+dng = false
+raw_size = [2672, 1968]
+visible = [12, 6, 2616, 1960]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S70"
+dng = false
+raw_size = [3160, 2344]
+visible = [44, 12, 3112, 2328]
+source = "compat-observed"
+
+# Adobe DNG Converter's white levels for Canon bodies, over or beside what the
+# files record: small RAWs by raw size (first: a body's row without a size
+# matches every size); then by body a white for files that record none (or
+# their samples' maximum), `white_max` and `normal_white` for how Adobe takes
+# the white a file records, and `iso` rows (one speed, or a range; [1, 409600]
+# for every speed) where Adobe's white is its own. The value of most of the
+# body's test dataset files (the lowest ISO's on a tie).
+
+[[camera]]
+make = "Canon"
+model = "EOS 40D"
+dng = false
+raw_size = [1944, 1296]
+white = 13600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 50D"
+dng = false
+raw_size = [2376, 1584]
+white = 13200
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 50D"
+dng = false
+raw_size = [3344, 2178]
+white = 13200
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark II"
+dng = false
+raw_size = [2808, 1872]
+white = 15600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark II"
+dng = false
+raw_size = [3872, 2574]
+white = 15600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+raw_size = [2880, 1920]
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+raw_size = [3960, 2640]
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark IV"
+dng = false
+raw_size = [3360, 2240]
+white = 14008
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark IV"
+dng = false
+raw_size = [5040, 3360]
+white = 14008
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5DS R"
+dng = false
+raw_size = [4320, 2880]
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5DS R"
+dng = false
+raw_size = [6480, 4320]
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5DS"
+dng = false
+raw_size = [4320, 2880]
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5DS"
+dng = false
+raw_size = [6480, 4320]
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 60D"
+dng = false
+raw_size = [2592, 1728]
+white = 12000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 60D"
+dng = false
+raw_size = [3888, 2592]
+white = 12000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D Mark II"
+dng = false
+raw_size = [3120, 2082]
+white = 10000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D Mark II"
+dng = false
+raw_size = [4680, 3132]
+white = 10000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D"
+dng = false
+raw_size = [2736, 1824]
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D"
+dng = false
+raw_size = [4104, 2736]
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 70D"
+dng = false
+raw_size = [2736, 1824]
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 70D"
+dng = false
+raw_size = [4104, 2736]
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D Mark II"
+dng = false
+raw_size = [2736, 1824]
+white = 11700
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D Mark II"
+dng = false
+raw_size = [4104, 2736]
+white = 11700
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D"
+dng = false
+raw_size = [2592, 1728]
+white = 9000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D"
+dng = false
+raw_size = [3888, 2592]
+white = 9000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 80D"
+dng = false
+raw_size = [3000, 2000]
+white = 11892
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 80D"
+dng = false
+raw_size = [4536, 3024]
+white = 11892
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D Mark IV"
+dng = false
+raw_size = [2448, 1632]
+white = 12000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D Mark IV"
+dng = false
+raw_size = [3672, 2448]
+white = 12000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D X Mark II"
+dng = false
+raw_size = [2736, 1824]
+white = 14888
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D X Mark II"
+dng = false
+raw_size = [4104, 2736]
+white = 14888
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 1000D"
+dng = false
+iso = 100
+white = 3600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 1000D"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 100D"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 1100D"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 1200D"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 1300D"
+dng = false
+white_max = 15000
+white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 10D"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 300D"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 30D"
+dng = false
+white = 3398
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 400D"
+dng = false
+white = 3650
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 40D"
+dng = false
+white = 13600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 450D"
+dng = false
+iso = [1, 409600]
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 500D"
+dng = false
+iso = [1, 409600]
+white = 15600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 500D"
+dng = false
+iso = 100
+white = 13200
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 50D"
+dng = false
+iso = [1, 409600]
+white = 13200
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 550D"
+dng = false
+white_max = 15000
+white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D"
+dng = false
+iso = 400
+white = 3698
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D"
+dng = false
+iso = 100
+white = 3709
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D"
+dng = false
+white = 3692
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark II"
+dng = false
+iso = [1, 409600]
+white = 15600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark II"
+dng = false
+iso = 320
+white = 12700
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark II"
+dng = false
+iso = 160
+white = 12700
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+iso = [1, 409600]
+white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+iso = 160
+white = 13100
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+iso = 320
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+iso = 640
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+iso = 2500
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+iso = 1250
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 600D"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 60D"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 650D"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D"
+dng = false
+iso = [1, 409600]
+white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D"
+dng = false
+iso = 1250
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D"
+dng = false
+iso = 320
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D"
+dng = false
+iso = 160
+white = 13100
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D"
+dng = false
+iso = 640
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 700D"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 70D"
+dng = false
+white_max = 15000
+white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 750D"
+dng = false
+normal_white = true
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 760D"
+dng = false
+normal_white = true
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D"
+dng = false
+iso = [1, 409600]
+white = 12600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D"
+dng = false
+iso = 100
+white = 13600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D Mark II"
+dng = false
+iso = [1, 409600]
+white = 13400
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS M"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS D60"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS M10"
+dng = false
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS M100"
+dng = false
+white = 13200
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS M2"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS M3"
+dng = false
+iso = 100
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS M3"
+dng = false
+white = 13200
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS M5"
+dng = false
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS M6"
+dng = false
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D Mark II N"
+dng = false
+white = 3711
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D Mark II"
+dng = false
+white = 3700
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D Mark III"
+dng = false
+white = 15100
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D Mark IV"
+dng = false
+iso = [1, 409600]
+white = 15100
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D X"
+dng = false
+iso = [1, 409600]
+white = 15100
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1Ds Mark II"
+dng = false
+white = 4060
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1Ds Mark III"
+dng = false
+white = 15100
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G1 X Mark II"
+dng = false
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G1 X Mark III"
+dng = false
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G1 X"
+dng = false
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G12"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G15"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G16"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G3 X"
+dng = false
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G5 X"
+dng = false
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G7 X Mark II"
+dng = false
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G7 X"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G9 X Mark II"
+dng = false
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G9 X"
+dng = false
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S100"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S100V"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S110"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S120"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S95"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot SX50 HS"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot SX60 HS"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+# Canon's regional names of the bodies above.
+
+[[name]]
+make = "Canon"
+model = "EOS DIGITAL REBEL"
+is = "EOS 300D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS 2000D"
+is = "EOS 1500D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS 350D DIGITAL"
+is = "EOS 350D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS 4000D"
+is = "EOS 3000D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS 400D DIGITAL"
+is = "EOS 400D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS DIGITAL REBEL XS"
+is = "EOS 1000D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS DIGITAL REBEL XSi"
+is = "EOS 450D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS DIGITAL REBEL XT"
+is = "EOS 350D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS DIGITAL REBEL XTi"
+is = "EOS 400D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Kiss Digital N"
+is = "EOS 350D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Kiss F"
+is = "EOS 1000D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Kiss X3"
+is = "EOS 500D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Kiss X4"
+is = "EOS 550D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Kiss X80"
+is = "EOS 1300D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Kiss X9"
+is = "EOS 200D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS REBEL SL1"
+is = "EOS 100D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS REBEL T1i"
+is = "EOS 500D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS REBEL T2i"
+is = "EOS 550D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS REBEL T3"
+is = "EOS 1100D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS REBEL T3i"
+is = "EOS 600D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS REBEL T4i"
+is = "EOS 650D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS REBEL T5"
+is = "EOS 1200D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS REBEL T5i"
+is = "EOS 700D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS REBEL T7i"
+is = "EOS 800D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Rebel SL2"
+is = "EOS 200D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Rebel T100"
+is = "EOS 3000D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Rebel T6"
+is = "EOS 1300D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Rebel T6i"
+is = "EOS 750D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Rebel T6s"
+is = "EOS 760D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Rebel T7"
+is = "EOS 1500D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Rebel T7i"
+is = "EOS 800D"
+source = "compat-observed"
+
+# CHDK's headerless RAW files (Canon PowerShots), known by their size.
+
+[[headerless]]
+file_size = 6573120
+make = "Canon"
+model = "PowerShot S2 IS"
+raw_size = [2672, 1968]
+bits = 10
+visible = [12, 8, 2616, 1960]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 7710960
+make = "Canon"
+model = "PowerShot S3 IS"
+raw_size = [2888, 2136]
+bits = 10
+visible = [44, 8, 2840, 2128]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 9219600
+make = "Canon"
+model = "PowerShot A620"
+raw_size = [3152, 2340]
+bits = 10
+visible = [36, 12, 3112, 2328]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 10341600
+make = "Canon"
+model = "PowerShot A720 IS"
+raw_size = [3336, 2480]
+bits = 10
+visible = [6, 6, 3298, 2471]
+cfa = "GBRG"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 10383120
+make = "Canon"
+model = "PowerShot A630"
+raw_size = [3344, 2484]
+bits = 10
+visible = [12, 6, 3288, 2472]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 12945240
+make = "Canon"
+model = "PowerShot A640"
+raw_size = [3736, 2772]
+bits = 10
+visible = [12, 6, 3672, 2760]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 15467760
+make = "Canon"
+model = "PowerShot SX110 IS"
+raw_size = [3720, 2772]
+bits = 12
+visible = [6, 12, 3684, 2760]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 15636240
+make = "Canon"
+model = "PowerShot A650 IS"
+raw_size = [4104, 3048]
+bits = 10
+visible = [48, 12, 4032, 3024]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 18653760
+make = "Canon"
+model = "PowerShot SX20 IS"
+raw_size = [4080, 3048]
+bits = 12
+visible = [24, 12, 4032, 3024]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 18763488
+make = "Canon"
+model = "PowerShot D10"
+raw_size = [4104, 3048]
+bits = 12
+visible = [10, 22, 4012, 3004]
+cfa = "GBRG"
+black_columns = [4076, 4104]
+source = "compat-observed"
+
+[[headerless]]
+file_size = 19131120
+make = "Canon"
+model = "PowerShot SX220 HS"
+raw_size = [4168, 3060]
+bits = 12
+visible = [92, 16, 4072, 3043]
+cfa = "RGGB"
+black_columns = [0, 90]
+source = "compat-observed"
+
+[[headerless]]
+file_size = 19167840
+make = "Canon"
+model = "PowerShot SX40 HS"
+raw_size = [4176, 3060]
+bits = 12
+visible = [96, 16, 4072, 3044]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 19493760
+make = "Canon"
+model = "PowerShot S100"
+raw_size = [4160, 3124]
+bits = 12
+visible = [104, 12, 4048, 3046]
+cfa = "GBRG"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 21936096
+make = "Canon"
+model = "PowerShot SX30 IS"
+raw_size = [4464, 3276]
+bits = 12
+visible = [26, 10, 4365, 3254]
+cfa = "GBRG"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 24724224
+make = "Canon"
+model = "PowerShot A3300 IS"
+raw_size = [4704, 3504]
+bits = 12
+visible = [8, 16, 4640, 3480]
+cfa = "GBRG"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 30858240
+make = "Canon"
+model = "IXUS 160"
+raw_size = [5248, 3920]
+bits = 12
+visible = [8, 16, 5184, 3888]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 31663200
+make = "Canon"
+model = "PowerShot SX710 HS"
+raw_size = [5344, 3950]
+bits = 12
+visible = [96, 18, 5248, 3932]
+cfa = "RGGB"
+source = "compat-observed"
+
+# Sony, and the Sony body Hasselblad sold as its own.
+
+[[name]]
+make = "Sony"
+model = "ILCE-3500"
+is = "ILCE-3000"
+source = "compat-observed"
+
+[[name]]
+make = "Sony"
+model = "ILCE-6001"
+is = "ILCE-6000"
+source = "compat-observed"
+
+[[name]]
+make = "Sony"
+model = "SLT-A55V"
+is = "SLT-A55"
+source = "compat-observed"
+
+[[name]]
+make = "Sony"
+model = "SLT-A65V"
+is = "SLT-A65"
+source = "compat-observed"
+
+[[name]]
+make = "Sony"
+model = "SLT-A77V"
+is = "SLT-A77"
+source = "compat-observed"
+
+[[name]]
+make = "Sony"
+model = "SLT-A99V"
+is = "SLT-A99"
+source = "compat-observed"
+
+[[name]]
+make = "Sony"
+model = "UMC-R10C"
+is = "ILCE-QX1"
+source = "compat-observed"
+
+[[name]]
+make = "Sony"
+model = "DSLR-A390"
+is = "DSLR-A380"
+source = "compat-observed"
+
+[[canonical]]
+make = "Hasselblad"
+model = "Lunar"
+canonical = ["Sony", "NEX-7"]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "Lunar"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-R1"
+dng = false
+raw_size = [3984, 2608]
+visible = [0, 0, 3925, 2608]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6018, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M2"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M3"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M4"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M5"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M5A"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M6"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M7"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M7A"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10M2"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10M3"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10M4"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1R"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6018, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1RM2"
+dng = false
+raw_size = [8000, 5320]
+visible = [0, 0, 7968, 5320]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1RM3"
+dng = false
+raw_size = [9600, 6376]
+visible = [0, 0, 9568, 6376]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A100"
+dng = false
+raw_size = [3881, 2608]
+visible = [0, 0, 3881, 2607]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A350"
+dng = false
+raw_size = [4600, 3072]
+visible = [0, 0, 4600, 3068]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A500"
+dng = false
+raw_size = [4288, 2858]
+visible = [0, 0, 4256, 2858]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A700"
+dng = false
+raw_size = [4288, 2856]
+visible = [0, 0, 4256, 2856]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCA-68"
+dng = false
+raw_size = [6048, 4016]
+visible = [0, 0, 6024, 4016]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCA-77M2"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCA-99M2"
+dng = false
+raw_size = [8000, 5320]
+visible = [0, 0, 7968, 5320]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-1"
+dng = false
+raw_size = [8672, 5784]
+visible = [0, 0, 8660, 5784]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-1"
+dng = false
+raw_size = [8704, 6144]
+visible = [0, 0, 8660, 5784]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-1M2"
+dng = false
+raw_size = [4608, 3072]
+visible = [0, 0, 4332, 2892]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-1M2"
+dng = false
+raw_size = [5632, 4096]
+visible = [0, 0, 5628, 3756]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-1M2"
+dng = false
+raw_size = [5664, 3768]
+visible = [0, 0, 5636, 3768]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-1M2"
+dng = false
+raw_size = [6144, 4096]
+visible = [0, 0, 5636, 3768]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-1M2"
+dng = false
+raw_size = [8672, 5784]
+visible = [0, 0, 8660, 5784]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-1M2"
+dng = false
+raw_size = [8704, 6144]
+visible = [0, 0, 8660, 5784]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-3000"
+dng = false
+raw_size = [5504, 3656]
+visible = [0, 0, 5472, 3656]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-5000"
+dng = false
+raw_size = [5504, 3656]
+visible = [0, 0, 5472, 3656]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-5100"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6000"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6100"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6300"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6400"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6400A"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6500"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6600"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6700"
+dng = false
+raw_size = [6272, 4168]
+visible = [0, 0, 6240, 4168]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6700"
+dng = false
+raw_size = [6656, 4608]
+visible = [0, 0, 6240, 4168]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7C"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7CM2"
+dng = false
+raw_size = [4736, 3132]
+visible = [0, 0, 4692, 3132]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7CM2"
+dng = false
+raw_size = [7040, 4688]
+visible = [0, 0, 7028, 4688]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7CM2"
+dng = false
+raw_size = [7168, 5120]
+visible = [0, 0, 7028, 4688]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7CR"
+dng = false
+raw_size = [5120, 3584]
+visible = [0, 0, 4776, 3180]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7CR"
+dng = false
+raw_size = [6656, 4608]
+visible = [0, 0, 6272, 4180]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7CR"
+dng = false
+raw_size = [9600, 6376]
+visible = [0, 0, 9564, 6376]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7CR"
+dng = false
+raw_size = [9728, 6656]
+visible = [0, 0, 9566, 6374]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M2"
+dng = false
+raw_size = [3968, 2648]
+visible = [0, 0, 3936, 2648]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M2"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M3"
+dng = false
+raw_size = [3968, 2648]
+visible = [0, 0, 3936, 2648]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M3"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M4"
+dng = false
+raw_size = [3584, 2560]
+visible = [0, 0, 3516, 2344]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M4"
+dng = false
+raw_size = [4736, 3132]
+visible = [0, 0, 4692, 3132]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M4"
+dng = false
+raw_size = [5120, 3584]
+visible = [0, 0, 4624, 3080]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M4"
+dng = false
+raw_size = [7040, 4688]
+visible = [0, 0, 7028, 4688]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M4"
+dng = false
+raw_size = [7168, 5120]
+visible = [0, 0, 7028, 4688]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M5"
+dng = false
+raw_size = [5120, 3584]
+visible = [0, 0, 4624, 3080]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M5"
+dng = false
+raw_size = [7040, 4688]
+visible = [0, 0, 7028, 4688]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M5"
+dng = false
+raw_size = [7168, 5120]
+visible = [0, 0, 7028, 4688]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7R"
+dng = false
+raw_size = [4832, 3224]
+visible = [0, 0, 4800, 3224]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7R"
+dng = false
+raw_size = [7392, 4920]
+visible = [0, 0, 7362, 4920]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM2"
+dng = false
+raw_size = [8000, 5320]
+visible = [0, 0, 7968, 5320]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM3"
+dng = false
+raw_size = [8000, 5320]
+visible = [0, 0, 7968, 5320]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM3A"
+dng = false
+raw_size = [8000, 5320]
+visible = [0, 0, 7968, 5320]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM4"
+dng = false
+raw_size = [9600, 6376]
+visible = [0, 0, 9568, 6376]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM4A"
+dng = false
+raw_size = [9600, 6376]
+visible = [0, 0, 9568, 6376]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM5"
+dng = false
+raw_size = [5120, 3584]
+visible = [0, 0, 4776, 3180]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM5"
+dng = false
+raw_size = [6304, 4180]
+visible = [0, 0, 6272, 4180]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM5"
+dng = false
+raw_size = [6656, 4608]
+visible = [0, 0, 6272, 4180]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM5"
+dng = false
+raw_size = [9600, 6376]
+visible = [0, 0, 9564, 6376]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM5"
+dng = false
+raw_size = [9728, 6656]
+visible = [0, 0, 9566, 6374]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7S"
+dng = false
+raw_size = [2816, 1872]
+visible = [0, 0, 2784, 1872]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7S"
+dng = false
+raw_size = [4288, 2848]
+visible = [0, 0, 4256, 2848]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7SM2"
+dng = false
+raw_size = [4288, 2848]
+visible = [0, 0, 4256, 2848]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7SM3"
+dng = false
+raw_size = [4288, 2848]
+visible = [0, 0, 4256, 2848]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-9"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-9M2"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-9M3"
+dng = false
+raw_size = [3072, 2048]
+visible = [0, 0, 3016, 2008]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-9M3"
+dng = false
+raw_size = [3968, 2648]
+visible = [0, 0, 3948, 2648]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-9M3"
+dng = false
+raw_size = [4096, 3072]
+visible = [0, 0, 3944, 2644]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-9M3"
+dng = false
+raw_size = [6048, 4020]
+visible = [0, 0, 6012, 4020]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-9M3"
+dng = false
+raw_size = [6144, 4096]
+visible = [0, 0, 6012, 4020]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-QX1"
+dng = false
+raw_size = [5504, 3656]
+visible = [0, 0, 5472, 3656]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILME-FX2"
+dng = false
+raw_size = [3584, 2560]
+visible = [0, 0, 3516, 2344]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILME-FX2"
+dng = false
+raw_size = [5120, 3584]
+visible = [0, 0, 4624, 3080]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILME-FX2"
+dng = false
+raw_size = [7040, 4688]
+visible = [0, 0, 7028, 4688]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILME-FX2"
+dng = false
+raw_size = [7168, 5120]
+visible = [0, 0, 7028, 4688]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILME-FX3"
+dng = false
+raw_size = [4288, 2848]
+visible = [0, 0, 4256, 2848]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILME-FX30"
+dng = false
+raw_size = [6272, 4168]
+visible = [0, 0, 6240, 4168]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-3N"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5N"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5R"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5T"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-6"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-7"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-F3"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A37"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A57"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A58"
+dng = false
+raw_size = [5504, 3656]
+visible = [0, 0, 5472, 3656]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A65"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A77"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A99"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6018, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ZV-1"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ZV-1M2"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ZV-E1"
+dng = false
+raw_size = [4608, 3072]
+visible = [0, 0, 4256, 2846]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ZV-E10"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ZV-E10M2"
+dng = false
+raw_size = [6272, 4168]
+visible = [0, 0, 6240, 4168]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ZV-E10M2"
+dng = false
+raw_size = [6656, 4608]
+visible = [0, 0, 6240, 4168]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 AW1"
+dng = false
+raw_size = [4620, 3084]
+visible = [0, 0, 4620, 3082]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 J1"
+dng = false
+raw_size = [3904, 2606]
+visible = [0, 0, 3904, 2604]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 J2"
+dng = false
+raw_size = [3904, 2606]
+visible = [0, 0, 3904, 2604]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 J3"
+dng = false
+raw_size = [4620, 3084]
+visible = [0, 0, 4620, 3082]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 J4"
+dng = false
+raw_size = [5248, 3504]
+visible = [0, 0, 5248, 3502]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 J5"
+dng = false
+raw_size = [5584, 3726]
+visible = [0, 0, 5584, 3724]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 S1"
+dng = false
+raw_size = [3948, 2604]
+visible = [0, 0, 3948, 2602]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 S2"
+dng = false
+raw_size = [4608, 3080]
+visible = [0, 0, 4608, 3078]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 V1"
+dng = false
+raw_size = [3904, 2606]
+visible = [0, 0, 3904, 2604]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 V2"
+dng = false
+raw_size = [4620, 3084]
+visible = [0, 0, 4620, 3082]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 V3"
+dng = false
+raw_size = [5248, 3504]
+visible = [0, 0, 5248, 3502]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX A"
+dng = false
+raw_size = [4992, 3280]
+visible = [0, 0, 4948, 3280]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D100"
+dng = false
+raw_size = [3040, 2024]
+visible = [0, 0, 3037, 2024]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D1X"
+dng = false
+raw_size = [4028, 1324]
+visible = [0, 0, 4024, 1324]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D200"
+dng = false
+raw_size = [3904, 2616]
+visible = [2, 0, 3899, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D2H"
+dng = false
+raw_size = [2496, 1648]
+visible = [6, 0, 2482, 1648]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D2Hs"
+dng = false
+raw_size = [2496, 1648]
+visible = [6, 0, 2482, 1648]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D2X"
+dng = false
+raw_size = [4320, 2868]
+visible = [0, 0, 4312, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D2Xs"
+dng = false
+raw_size = [4320, 2868]
+visible = [0, 0, 4312, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D3"
+dng = false
+raw_size = [4288, 2844]
+visible = [2, 0, 4284, 2844]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D300"
+dng = false
+raw_size = [4352, 2868]
+visible = [0, 0, 4320, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D3000"
+dng = false
+raw_size = [3904, 2616]
+visible = [0, 0, 3900, 2613]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D300S"
+dng = false
+raw_size = [4352, 2868]
+visible = [0, 0, 4320, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D3100"
+dng = false
+raw_size = [4672, 3084]
+visible = [6, 0, 4644, 3084]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D3200"
+dng = false
+raw_size = [6080, 4012]
+visible = [0, 0, 6034, 4012]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D3S"
+dng = false
+raw_size = [4288, 2844]
+visible = [2, 0, 4284, 2844]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D4"
+dng = false
+raw_size = [4992, 3292]
+visible = [2, 0, 4940, 3292]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D40"
+dng = false
+raw_size = [3040, 2014]
+visible = [0, 0, 3039, 2014]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D40X"
+dng = false
+raw_size = [3904, 2616]
+visible = [0, 0, 3900, 2613]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D50"
+dng = false
+raw_size = [3040, 2014]
+visible = [0, 0, 3039, 2014]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D5000"
+dng = false
+raw_size = [4352, 2868]
+visible = [0, 0, 4310, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D5100"
+dng = false
+raw_size = [4992, 3280]
+visible = [0, 0, 4948, 3280]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D60"
+dng = false
+raw_size = [3904, 2616]
+visible = [0, 0, 3900, 2613]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D600"
+dng = false
+raw_size = [6080, 4028]
+visible = [0, 0, 6034, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D610"
+dng = false
+raw_size = [3968, 2636]
+visible = [0, 0, 3922, 2636]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D610"
+dng = false
+raw_size = [6080, 4028]
+visible = [0, 0, 6034, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D70"
+dng = false
+raw_size = [3040, 2014]
+visible = [0, 0, 3039, 2014]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D700"
+dng = false
+raw_size = [4288, 2844]
+visible = [2, 0, 4284, 2844]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D7000"
+dng = false
+raw_size = [4992, 3280]
+visible = [0, 0, 4948, 3280]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D70s"
+dng = false
+raw_size = [3040, 2014]
+visible = [0, 0, 3039, 2014]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D80"
+dng = false
+raw_size = [3904, 2616]
+visible = [0, 0, 3900, 2613]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D800"
+dng = false
+raw_size = [7424, 4924]
+visible = [0, 0, 7378, 4924]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D800E"
+dng = false
+raw_size = [7424, 4924]
+visible = [0, 0, 7378, 4924]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D90"
+dng = false
+raw_size = [4352, 2868]
+visible = [0, 0, 4310, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "Df"
+dng = false
+raw_size = [4992, 3292]
+visible = [2, 0, 4940, 3292]
+source = "compat-observed"
+
+# Nikon: Adobe DNG Converter 18.7's WhiteLevel where it is not the full
+# scale of the data's bits (2026-10-17). Lossy data's is on its curve's
+# scale. The COOLPIX P330's is Adobe's 65000 over 16: RAWmakase keeps its
+# words at 12 bits. The Nikon 1 J1, J2, J3 and AW1's 3300 is for the ISO speeds
+# Adobe reads with it (the J1 at ISO 200: 4095, the file's).
+
+[[camera]]
+make = "Nikon"
+model = "1 AW1"
+dng = false
+iso = 160
+white = 3300
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "1 J1"
+dng = false
+iso = 100
+white = 3300
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "1 J2"
+dng = false
+iso = 100
+white = 3300
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "1 J3"
+dng = false
+iso = 160
+white = 3300
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "1 J4"
+dng = false
+bits = 12
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "1 J5"
+dng = false
+bits = 12
+white = 3800
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "1 V3"
+dng = false
+bits = 12
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX A"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX B700"
+dng = false
+bits = 12
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX P330"
+dng = false
+bits = 12
+white = 4062
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX P340"
+dng = false
+bits = 12
+white = 3800
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX P7100"
+dng = false
+bits = 12
+white = 3800
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX P7700"
+dng = false
+bits = 12
+white = 65000
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX P7800"
+dng = false
+bits = 12
+white = 65000
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D200"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D2H"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D2Hs"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D2X"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D2Xs"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D300"
+dng = false
+bits = 12
+white = 3808
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D300"
+dng = false
+bits = 14
+white = 15236
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3000"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D300S"
+dng = false
+bits = 12
+white = 3808
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D300S"
+dng = false
+bits = 14
+white = 15236
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3100"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3200"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3300"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3400"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3500"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3S"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3S"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D3X"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D4"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D4"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D40"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D40X"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D4S"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D4S"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D500"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D500"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5000"
+dng = false
+bits = 12
+white = 3767
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5100"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5200"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5300"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5300"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5500"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5500"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5600"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D5600"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D6"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D6"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D60"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D600"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D600"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D610"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D610"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D700"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D700"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7000"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7000"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7100"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7100"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7200"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7200"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D750"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D750"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7500"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D7500"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D780"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D780"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D80"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D800"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D800"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D800E"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D810"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D810"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D850"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D850"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "D90"
+dng = false
+bits = 12
+white = 3767
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Df"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Df"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 30"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 30"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 5"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 5"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 50"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 50"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 6"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 6"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 6_2"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 6_2"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 7"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 7"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 7_2"
+dng = false
+bits = 12
+white = 3880
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 7_2"
+dng = false
+bits = 14
+white = 15520
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 8"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z 9"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z f"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z fc"
+dng = false
+bits = 12
+white = 3972
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z fc"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z50_2"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z5_2"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[camera]]
+make = "Nikon"
+model = "Z6_3"
+dng = false
+bits = 14
+white = 15892
+source = "adobe-dng"
+
+[[canonical]]
+make = "Nikon"
+model = "E5400"
+canonical = ["Nikon", "COOLPIX 5400"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Nikon"
+model = "E8400"
+canonical = ["Nikon", "COOLPIX 8400"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Nikon"
+model = "E8800"
+canonical = ["Nikon", "COOLPIX 8800"]
+source = "compat-observed"
+
+# Sony: Adobe DNG Converter 18.7's WhiteLevel where the file's is not
+# Adobe's (2026-10-17); for compressed RAW 2, whose values are on twice the
+# 14-bit scale, `bits = 15`. The ILCE-7RM4 and 7RM4A's 15000 is Adobe's at ISO
+# 160 (at ISO 50 to 1250 otherwise it reads the file's).
+
+[[camera]]
+make = "Hasselblad"
+model = "Lunar"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-HX95"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-HX99"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX0"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX0M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M3"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M4"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M5"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M5A"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M6"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M7"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M7A"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10M3"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1R"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1RM2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A450"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A500"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A550"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A560"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A580"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCA-68"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCA-77M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCA-99M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-3000"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-5000"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-5100"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6000"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6300"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+#CONFLICT ILCE-6400 {16380.0, 16383.0} {16380, 16383}
+[[camera]]
+make = "Sony"
+model = "ILCE-6500"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+#CONFLICT ILCE-7C {16380.0, 16383.0} {16380, 16383}
+[[camera]]
+make = "Sony"
+model = "ILCE-7M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M3"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+#CONFLICT ILCE-7M4 {16380.0, 16383.0} {16380, 16383}
+[[camera]]
+make = "Sony"
+model = "ILCE-7R"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+#CONFLICT ILCE-7RM3 {16380.0, 16383.0} {16380, 16383}
+#SKIP ILCE-7RM4 {15000.0, 16380.0, 16383.0} {16380, 16383}
+#SKIP ILCE-7RM4A {15000.0, 16380.0, 16383.0} {16380, 16383}
+[[camera]]
+make = "Sony"
+model = "ILCE-7S"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7SM2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+#CONFLICT ILCE-9M2 {16380.0, 16383.0} {16380, 16383}
+[[camera]]
+make = "Sony"
+model = "ILCE-QX1"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+#CONFLICT ILME-FX2 {16380.0, 16383.0} {16380, 16383}
+[[camera]]
+make = "Sony"
+model = "NEX-3"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-3N"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5N"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5R"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5T"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-6"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-7"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-C3"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-F3"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A33"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A35"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A37"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A55"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A57"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A58"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A65"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A77"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A99"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ZV-1"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ZV-1M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM4"
+dng = false
+iso = 160
+white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM4A"
+dng = false
+iso = 160
+white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M5"
+dng = false
+bits = 15
+white = 32800
+source = "adobe-dng"
+
+# Fujifilm (RAF): the visible areas, levels and crops RAWmakase has always read
+# where the RAF rules (crates/rawmakase-raw/src/container/raf.rs) do not give
+# them.
+
+[[canonical]]
+make = "Fujifilm"
+model = "GFX100 II"
+canonical = ["Fujifilm", "GFX 100 II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "GFX100S"
+canonical = ["Fujifilm", "GFX 100S"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "GFX100S II"
+canonical = ["Fujifilm", "GFX 100S II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "GFX50S II"
+canonical = ["Fujifilm", "GFX 50S II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "HS10 HS11"
+canonical = ["Fujifilm", "HS10"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "HS33EXR"
+canonical = ["Fujifilm", "HS30EXR"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "S5500"
+canonical = ["Fujifilm", "S5100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "S5600"
+canonical = ["Fujifilm", "S5200"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "S6500fd"
+canonical = ["Fujifilm", "S6000fd"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "S9500"
+canonical = ["Fujifilm", "S9000"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "S9600"
+canonical = ["Fujifilm", "S9100"]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "DBP for GX680"
+dng = false
+raw_size = [5504, 3856]
+visible = [32, 8, 5440, 3840]
+white = 4095
+flip = 6
+wb_scale = [0.761, 0.857]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "F550EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [34, 0, 3262, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "F600EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [34, 0, 3262, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "F770EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [34, 0, 3262, 2464]
+white = 4073
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "F900EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [0, 0, 3264, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX 100"
+dng = false
+raw_size = [11808, 8754]
+visible = [0, 2, 11662, 8746]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX 50R"
+dng = false
+raw_size = [9216, 6210]
+visible = [0, 0, 8280, 6208]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX 50S"
+dng = false
+raw_size = [9216, 6210]
+visible = [0, 0, 8280, 6208]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX100 II"
+dng = false
+raw_size = [11808, 8754]
+visible = [0, 2, 11662, 8746]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX100RF"
+dng = false
+raw_size = [11808, 8754]
+visible = [0, 2, 11662, 8746]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX100S"
+dng = false
+raw_size = [11808, 8754]
+visible = [0, 2, 11662, 8746]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX100S II"
+dng = false
+raw_size = [11808, 8754]
+visible = [0, 2, 11662, 8746]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX50S II"
+dng = false
+raw_size = [8472, 6210]
+visible = [0, 0, 8280, 6208]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "HS20EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [34, 0, 3262, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "HS30EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [34, 0, 3262, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "HS33EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [34, 0, 3262, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "HS50EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [0, 0, 3264, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S100FS"
+dng = false
+raw_size = [5600, 2060]
+visible = [80, 10, 5440, 2040]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S200EXR"
+dng = false
+raw_size = [2880, 2128]
+visible = [36, 10, 2808, 2108]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S2Pro"
+dng = false
+raw_size = [2944, 2192]
+visible = [32, 24, 2880, 2144]
+white = 4095
+flip = 6
+frame = [65535, 65535, 0, 0]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S3Pro"
+dng = false
+raw_size = [4352, 1444]
+visible = [48, 10, 4256, 1424]
+frame = [65535, 65535, 0, 0]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5500"
+dng = false
+raw_size = [2304, 1740]
+visible = [0, 6, 2304, 1734]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5Pro"
+dng = false
+raw_size = [4352, 1444]
+visible = [48, 10, 4256, 1424]
+frame = [65535, 65535, 0, 0]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S6000fd"
+dng = false
+raw_size = [4224, 1544]
+visible = [64, 0, 4096, 1544]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S6500fd"
+dng = false
+raw_size = [4224, 1544]
+visible = [64, 0, 4096, 1544]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-A1"
+dng = false
+raw_size = [5120, 3288]
+visible = [0, 0, 4952, 3288]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-A2"
+dng = false
+raw_size = [5120, 3288]
+visible = [0, 0, 4952, 3288]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E1"
+dng = false
+raw_size = [5120, 3288]
+visible = [0, 0, 4952, 3288]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E2"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E2S"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E3"
+dng = false
+raw_size = [6048, 4038]
+visible = [0, 6, 6032, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E3"
+dng = false
+raw_size = [6160, 4032]
+visible = [0, 0, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E4"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E5"
+dng = false
+raw_size = [7872, 5196]
+visible = [0, 6, 7752, 5178]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-H1"
+dng = false
+raw_size = [6048, 4038]
+visible = [0, 6, 6032, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-H1"
+dng = false
+raw_size = [6160, 4032]
+visible = [0, 0, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-H2"
+dng = false
+raw_size = [7872, 5196]
+visible = [0, 6, 7752, 5178]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-H2S"
+dng = false
+raw_size = [6336, 4188]
+visible = [0, 6, 6264, 4176]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-M1"
+dng = false
+raw_size = [5120, 3288]
+visible = [0, 0, 4952, 3288]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-M5"
+dng = false
+raw_size = [6336, 3348]
+visible = [630, 0, 5004, 3348]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-M5"
+dng = false
+raw_size = [6336, 4182]
+visible = [0, 6, 6264, 4176]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-Pro1"
+dng = false
+raw_size = [5120, 3288]
+visible = [0, 0, 4952, 3288]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-Pro2"
+dng = false
+raw_size = [6048, 4038]
+visible = [0, 6, 6032, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-Pro2"
+dng = false
+raw_size = [6160, 4032]
+visible = [0, 0, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-Pro3"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-S1"
+dng = false
+raw_size = [2944, 2144]
+visible = [48, 0, 2848, 2144]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-S10"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-S20"
+dng = false
+raw_size = [6336, 4182]
+visible = [0, 6, 6252, 4176]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T1"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T10"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T2"
+dng = false
+raw_size = [6048, 4038]
+visible = [0, 6, 6032, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T2"
+dng = false
+raw_size = [6160, 4032]
+visible = [0, 0, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T20"
+dng = false
+raw_size = [6048, 4038]
+visible = [0, 6, 6032, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T20"
+dng = false
+raw_size = [6160, 4032]
+visible = [0, 0, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T3"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T30"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T30 II"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T30 III"
+dng = false
+raw_size = [6336, 4182]
+visible = [0, 6, 6264, 4176]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T4"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T5"
+dng = false
+raw_size = [7872, 4044]
+visible = [876, 24, 6000, 3997]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T5"
+dng = false
+raw_size = [7872, 5196]
+visible = [0, 6, 7752, 5178]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T50"
+dng = false
+raw_size = [7872, 5196]
+visible = [0, 6, 7752, 5178]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X10"
+dng = false
+raw_size = [2944, 2144]
+visible = [48, 0, 2848, 2144]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100"
+dng = false
+raw_size = [4448, 2870]
+visible = [68, 0, 4310, 2870]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100F"
+dng = false
+raw_size = [6048, 4038]
+visible = [0, 6, 6032, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100F"
+dng = false
+raw_size = [6160, 4032]
+visible = [0, 0, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100S"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100T"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100V"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100VI"
+dng = false
+raw_size = [7872, 5196]
+visible = [0, 6, 7752, 5178]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X20"
+dng = false
+raw_size = [4096, 3012]
+visible = [0, 0, 4032, 3012]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X30"
+dng = false
+raw_size = [4096, 3012]
+visible = [0, 0, 4032, 3012]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X70"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "XF1"
+dng = false
+raw_size = [2944, 2144]
+visible = [48, 0, 2848, 2144]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "XQ1"
+dng = false
+raw_size = [4096, 3012]
+visible = [0, 0, 4032, 3012]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "XQ2"
+dng = false
+raw_size = [4096, 3012]
+visible = [0, 0, 4032, 3012]
+source = "compat-observed"
+
+# Fujifilm: Adobe DNG Converter 18.7's levels where the RAF rules do not
+# give them (2026-10-17): the older FinePix bodies' white, the first X-Trans
+# and X-A bodies' and the X20, X30, XQ1 and XQ2's 12-bit levels (black one
+# above the file's), the 14-bit X-Trans II bodies' black, and the factors of
+# the bodies whose record 0x8200 scales their white balance levels: 1/1.11
+# and 1/1.13, which give Adobe's AsShotNeutral on every such file it reads.
+
+[[camera]]
+make = "Fujifilm"
+model = "E550"
+dng = false
+white = 15875
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "E900"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "HS10 HS11"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S200EXR"
+dng = false
+white = 16250
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5000"
+dng = false
+white = 15867
+wb_scale = [0.900900901, 0.884955752]
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5200"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5500"
+dng = false
+white = 15880
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5600"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S6000fd"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S6500fd"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S7000"
+dng = false
+white = 15869
+wb_scale = [0.900900901, 0.884955752]
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S9500"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S9600"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-A1"
+dng = false
+white = 4094
+black = 256
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-A10"
+dng = false
+white = 4094
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-A2"
+dng = false
+white = 4094
+black = 256
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E1"
+dng = false
+white = 4094
+black = 256
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E2"
+dng = false
+black = 1024
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E2S"
+dng = false
+black = 1024
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-M1"
+dng = false
+white = 4094
+black = 256
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-Pro1"
+dng = false
+white = 4094
+black = 256
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T1"
+dng = false
+black = 1024
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T10"
+dng = false
+black = 1024
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100T"
+dng = false
+black = 1024
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X20"
+dng = false
+white = 4094
+black = 257
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X30"
+dng = false
+white = 4094
+black = 257
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X70"
+dng = false
+black = 1024
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "XQ1"
+dng = false
+white = 4094
+black = 257
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "XQ2"
+dng = false
+white = 4094
+black = 257
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "F700"
+dng = false
+wb_scale = [0.900900901, 0.884955752]
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S2Pro"
+dng = false
+wb_scale = [0.900900901, 0.884955752]
+source = "adobe-dng"
+
+# Canon CR3: regional and short model names.
+
+[[name]]
+make = "Canon"
+model = "EOS KISS M"
+is = "EOS M50"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS Rebel SL3"
+is = "EOS 250D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS 200D II"
+is = "EOS 250D"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS M50m2"
+is = "EOS M50 Mark II"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS R6m2"
+is = "EOS R6 Mark II"
+source = "compat-observed"
+
+[[name]]
+make = "Canon"
+model = "EOS R5m2"
+is = "EOS R5 Mark II"
+source = "compat-observed"
+
+# Canon CR3: Adobe DNG Converter 18.7's white level where it is not
+# ColorData's SpecularWhiteLevel (2026-10-17).
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D X Mark III"
+dng = false
+white = 16050
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R5"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R5 Mark II"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R7"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R8"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R10"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R50"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS R50 V"
+dng = false
+white = 16384
+source = "adobe-dng"
+
+# Canon CR3: the visible area where it is not the image areas' active area.
+
+[[camera]]
+make = "Canon"
+model = "EOS R"
+dng = false
+raw_size = [4352, 2850]
+visible = [144, 46, 4208, 2804]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R"
+dng = false
+raw_size = [6888, 4546]
+visible = [146, 48, 6742, 4498]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R10"
+dng = false
+raw_size = [6192, 4060]
+visible = [168, 52, 6000, 4000]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R3"
+dng = false
+raw_size = [6192, 4152]
+visible = [160, 120, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R5"
+dng = false
+raw_size = [5248, 3510]
+visible = [144, 108, 5087, 3391]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R5"
+dng = false
+raw_size = [8352, 5586]
+visible = [144, 112, 8191, 5463]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R5 Mark II"
+dng = false
+raw_size = [5376, 3574]
+visible = [258, 162, 5118, 3412]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R5 Mark II"
+dng = false
+raw_size = [8480, 5650]
+visible = [258, 162, 8222, 5488]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R50"
+dng = false
+raw_size = [6192, 4060]
+visible = [168, 52, 6000, 4000]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R50 V"
+dng = false
+raw_size = [6192, 4060]
+visible = [168, 52, 6000, 4000]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6"
+dng = false
+raw_size = [3584, 2386]
+visible = [156, 108, 3407, 2271]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6"
+dng = false
+raw_size = [5568, 3708]
+visible = [72, 38, 5496, 3670]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6 Mark II"
+dng = false
+raw_size = [3936, 2612]
+visible = [180, 108, 3743, 2495]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6 Mark II"
+dng = false
+raw_size = [6188, 4120]
+visible = [154, 96, 6022, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6 Mark III"
+dng = false
+raw_size = [4512, 2994]
+visible = [180, 108, 4319, 2879]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R6 Mark III"
+dng = false
+raw_size = [7144, 4760]
+visible = [172, 108, 6959, 4639]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R7"
+dng = false
+raw_size = [7128, 4732]
+visible = [144, 72, 6984, 4660]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS R8"
+dng = false
+raw_size = [6188, 4120]
+visible = [154, 96, 6022, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS RP"
+dng = false
+raw_size = [4032, 2656]
+visible = [112, 44, 3910, 2612]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D X Mark III"
+dng = false
+raw_size = [5568, 3708]
+visible = [72, 38, 5496, 3670]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G5 X Mark II"
+dng = false
+raw_size = [5632, 3710]
+visible = [96, 18, 5536, 3692]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G7 X Mark III"
+dng = false
+raw_size = [5632, 3710]
+visible = [96, 18, 5536, 3692]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot SX70 HS"
+dng = false
+raw_size = [5344, 3950]
+visible = [98, 18, 5246, 3932]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot V1"
+dng = false
+raw_size = [5928, 3944]
+visible = [156, 92, 5759, 3839]
+source = "compat-observed"
+
+# Olympus and OM Digital Solutions
+
+[[canonical]]
+make = "OM Digital"
+model = "OM-1"
+canonical = ["Olympus", "OM-1"]
+source = "compat-observed"
+
+[[canonical]]
+make = "OM Digital"
+model = "OM-1MarkII"
+canonical = ["Olympus", "OM-1 Mark II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "OM Digital"
+model = "OM-3"
+canonical = ["Olympus", "OM-3"]
+source = "compat-observed"
+
+[[canonical]]
+make = "OM Digital"
+model = "OM-5"
+canonical = ["Olympus", "OM-5"]
+source = "compat-observed"
+
+[[canonical]]
+make = "OM Digital"
+model = "OM-5MarkII"
+canonical = ["Olympus", "OM-5MarkII"]
+source = "compat-observed"
+
+[[canonical]]
+make = "OM Digital"
+model = "TG-7"
+canonical = ["Olympus", "TG-7"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "C5050Z"
+canonical = ["Olympus", "C-5050Z"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "C5060WZ"
+canonical = ["Olympus", "C-5060WZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "C7070WZ"
+canonical = ["Olympus", "C-7070WZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "C8080WZ"
+canonical = ["Olympus", "C-8080WZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-20,E-20N,E-20P"
+canonical = ["Olympus", "E-20"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-M10MarkII"
+canonical = ["Olympus", "E-M10 Mark II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-M10MarkIV"
+canonical = ["Olympus", "E-M10 Mark IV"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-M1MarkII"
+canonical = ["Olympus", "E-M1 Mark II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-M1MarkIII"
+canonical = ["Olympus", "E-M1 Mark III"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-M5MarkII"
+canonical = ["Olympus", "E-M5 Mark II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-M5MarkIII"
+canonical = ["Olympus", "E-M5 Mark III"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "SP350"
+canonical = ["Olympus", "SP-350"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "SP500UZ"
+canonical = ["Olympus", "SP-500UZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "SP510UZ"
+canonical = ["Olympus", "SP-510UZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "SP550UZ"
+canonical = ["Olympus", "SP-550UZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "SP565UZ"
+canonical = ["Olympus", "SP-565UZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "SP570UZ"
+canonical = ["Olympus", "SP-570UZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "STYLUS1"
+canonical = ["Olympus", "Stylus 1"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "STYLUS1,1s"
+canonical = ["Olympus", "Stylus 1"]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-300"
+dng = false
+raw_size = [3360, 2504]
+visible = [0, 0, 3340, 2504]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-330"
+dng = false
+raw_size = [3280, 2450]
+visible = [0, 0, 3250, 2450]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-500"
+dng = false
+raw_size = [3360, 2504]
+visible = [0, 0, 3340, 2504]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-M5MarkII"
+dng = false
+raw_size = [9280, 6932]
+visible = [0, 0, 9274, 6926]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "STYLUS1"
+dng = false
+raw_size = [4000, 2992]
+visible = [0, 0, 3984, 2992]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "STYLUS1,1s"
+dng = false
+raw_size = [4000, 2992]
+visible = [0, 0, 3984, 2992]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "TG-4"
+dng = false
+raw_size = [4640, 3472]
+visible = [0, 0, 4624, 3472]
+source = "compat-observed"
+
+# Pentax, and Samsung's GX bodies
+
+[[canonical]]
+make = "Pentax"
+model = "*ist D"
+canonical = ["Pentax", "*istD"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Pentax"
+model = "*ist DL"
+canonical = ["Pentax", "*istDL"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Pentax"
+model = "*ist DL2"
+canonical = ["Pentax", "*istDL2"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Pentax"
+model = "*ist DS"
+canonical = ["Pentax", "*istDS"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Pentax"
+model = "K2000"
+canonical = ["Pentax", "K-m"]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "*ist DS"
+dng = false
+raw_size = [3040, 2024]
+visible = [0, 0, 3040, 2022]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "645D"
+dng = false
+raw_size = [7424, 5552]
+visible = [48, 30, 7328, 5501]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-1"
+dng = false
+raw_size = [7392, 4950]
+visible = [6, 18, 7376, 4932]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-1 Mark II"
+dng = false
+raw_size = [4832, 3238]
+visible = [0, 18, 4832, 3220]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-1 Mark II"
+dng = false
+raw_size = [7392, 4950]
+visible = [6, 18, 7376, 4932]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-3"
+dng = false
+raw_size = [6080, 4032]
+visible = [4, 0, 6040, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-3 II"
+dng = false
+raw_size = [6080, 4032]
+visible = [4, 0, 6040, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-3 Mark III"
+dng = false
+raw_size = [6304, 4224]
+visible = [26, 34, 6224, 4160]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-5"
+dng = false
+raw_size = [4992, 3284]
+visible = [10, 0, 4950, 3284]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-5 II"
+dng = false
+raw_size = [4992, 3284]
+visible = [10, 0, 4950, 3284]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-5 II s"
+dng = false
+raw_size = [4992, 3284]
+visible = [10, 0, 4950, 3284]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-7"
+dng = false
+raw_size = [4736, 3136]
+visible = [0, 2, 4684, 3122]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-70"
+dng = false
+raw_size = [6080, 4064]
+visible = [60, 32, 6020, 4016]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-m"
+dng = false
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-r"
+dng = false
+raw_size = [4352, 2868]
+visible = [0, 0, 4309, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-x"
+dng = false
+raw_size = [4352, 2868]
+visible = [0, 0, 4309, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K10D"
+dng = false
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K2000"
+dng = false
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K200D"
+dng = false
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K20D"
+dng = false
+raw_size = [4864, 3136]
+visible = [0, 0, 4688, 3124]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "KF"
+dng = false
+raw_size = [6080, 4064]
+visible = [56, 28, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "KP"
+dng = false
+raw_size = [6112, 4060]
+visible = [54, 28, 6028, 4032]
+source = "compat-observed"
+
+[[canonical]]
+make = "Samsung"
+model = "GX10"
+canonical = ["Pentax", "K10D"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Samsung"
+model = "GX20"
+canonical = ["Pentax", "K20D"]
+source = "compat-observed"
+
+# Samsung
+
+[[canonical]]
+make = "Samsung"
+model = "EK-GN120"
+canonical = ["Samsung", "NX U"]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "EK-GN120"
+dng = false
+raw_size = [5546, 3714]
+visible = [0, 0, 5536, 3696]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "EX1"
+dng = false
+raw_size = [3688, 2780]
+visible = [0, 2, 3682, 2760]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "EX2F"
+dng = false
+raw_size = [4176, 3058]
+visible = [24, 16, 4040, 3029]
+white = 2047
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX mini"
+dng = false
+raw_size = [5664, 3710]
+visible = [96, 18, 5544, 3692]
+cfa = [0, 1, 1, 2]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX10"
+dng = false
+raw_size = [4704, 3124]
+visible = [8, 8, 4688, 3116]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX100"
+dng = false
+raw_size = [4704, 3124]
+visible = [8, 8, 4688, 3116]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX1000"
+dng = false
+raw_size = [5632, 3720]
+visible = [44, 2, 5530, 3694]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX11"
+dng = false
+raw_size = [4704, 3124]
+visible = [8, 8, 4688, 3116]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX1100"
+dng = false
+raw_size = [5632, 3720]
+visible = [44, 2, 5530, 3694]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX20"
+dng = false
+raw_size = [5632, 3720]
+visible = [44, 2, 5530, 3694]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX200"
+dng = false
+raw_size = [5632, 3720]
+visible = [44, 2, 5530, 3694]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX2000"
+dng = false
+raw_size = [5536, 3714]
+visible = [0, 0, 5536, 3696]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX210"
+dng = false
+raw_size = [5632, 3720]
+visible = [44, 2, 5530, 3694]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX30"
+dng = false
+raw_size = [5546, 3714]
+visible = [0, 0, 5536, 3696]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX300"
+dng = false
+raw_size = [5546, 3714]
+visible = [0, 0, 5536, 3696]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX3000"
+dng = false
+raw_size = [5600, 3714]
+visible = [92, 38, 5456, 3634]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX300M"
+dng = false
+raw_size = [5546, 3714]
+visible = [0, 0, 5536, 3696]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX3300"
+dng = false
+raw_size = [5600, 3714]
+visible = [64, 18, 5536, 3696]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX5"
+dng = false
+raw_size = [4704, 3124]
+visible = [8, 8, 4688, 3116]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "WB2000"
+dng = false
+raw_size = [3728, 2781]
+visible = [0, 2, 3718, 2778]
+source = "compat-observed"
+
+# Olympus, Pentax, Samsung and Mamiya: Adobe DNG Converter 18.7's white levels
+# (in the files' sample units) where they are not the samples' range, and the
+# white balance scale of four Olympus compacts (red and blue as Adobe's
+# AsShotNeutral), 2026-10-17.
+
+[[camera]]
+make = "Mamiya"
+model = "ZD"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "OM Digital"
+model = "OM-1"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "OM Digital"
+model = "OM-5"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "OM Digital"
+model = "TG-7"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-10"
+dng = false
+white = 1023
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-20,E-20N,E-20P"
+dng = false
+white = 1023
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-3"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-30"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-410"
+dng = false
+white = 3500
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-420"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-450"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-5"
+dng = false
+white = 3604
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-500"
+dng = false
+white = 3967
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-510"
+dng = false
+white = 3500
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-520"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-600"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-620"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M1"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M10"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M10 Mark III"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M10MarkII"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M10MarkIIIS"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M10MarkIV"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M1MarkII"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M1MarkIII"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M1X"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M5"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M5MarkII"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M5MarkIII"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-P3"
+dng = false
+white = 3843
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-P5"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-P7"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL1"
+dng = false
+white = 3604
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL10"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL2"
+dng = false
+white = 3604
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL3"
+dng = false
+white = 3962
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL5"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL6"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL7"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL8"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL9"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PM1"
+dng = false
+white = 3933
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PM2"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "PEN-F"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "SH-2"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "SP565UZ"
+dng = false
+white = 3212
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "STYLUS1"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "STYLUS1,1s"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "TG-4"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "TG-5"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "TG-6"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "XZ-1"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "XZ-10"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "XZ-2"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "*ist DL"
+dng = false
+white = 3950
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "*ist DL2"
+dng = false
+white = 3950
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "*ist DS"
+dng = false
+white = 3950
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "645D"
+dng = false
+white = 15767
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "645Z"
+dng = false
+white = 16316
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-1"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-1 Mark II"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-3"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-3 II"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-3 Mark III"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-5"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-5 II"
+dng = false
+white = 16124
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-5 II s"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-70"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-S1"
+dng = false
+white = 4078
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-S2"
+dng = false
+white = 3839
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-r"
+dng = false
+white = 4030
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K100D"
+dng = false
+white = 3950
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K100D Super"
+dng = false
+white = 3950
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "KF"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "KP"
+dng = false
+white = 16254
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "EX1"
+dng = false
+white = 15600
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX mini"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX1"
+dng = false
+bits = 14
+white = 16100
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX10"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX100"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX1000"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX11"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX1100"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX20"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX200"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX210"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX5"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX500"
+dng = false
+bits = 12
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX500"
+dng = false
+bits = 14
+white = 16100
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "WB2000"
+dng = false
+white = 3700
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "SP350"
+dng = false
+wb_scale = [0.9600, 0.9600]
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "SP500UZ"
+dng = false
+wb_scale = [0.9600, 0.9600]
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "SP510UZ"
+dng = false
+wb_scale = [0.9558, 0.9551]
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "SP550UZ"
+dng = false
+wb_scale = [0.9578, 0.9575]
+source = "adobe-dng"
+
+# DNG: canonical names RAWmakase has always given these bodies.
+
+[[canonical]]
+make = "Hasselblad"
+model = "L1D-20c"
+canonical = ["Hasselblad", "L1D-20c-FFF"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Hasselblad"
+model = "L2D-20c"
+canonical = ["Hasselblad", "L2D-20c-FFF"]
+source = "compat-observed"
+
+# Phase One: the older backs' colour filter at the sensor's corner, which
+# their IIQ block does not give (Adobe DNG Converter's CFAPattern agrees),
+# and the H 25's canonical name.
+
+[[camera]]
+make = "Phase One"
+model = "P30"
+dng = false
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Phase One"
+model = "P45"
+dng = false
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Phase One"
+model = "P45+"
+dng = false
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Phase One"
+model = "P20+"
+dng = false
+cfa = [1, 2, 0, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Phase One"
+model = "P25"
+dng = false
+cfa = [1, 2, 0, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Phase One"
+model = "P25+"
+dng = false
+cfa = [1, 2, 0, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Phase One"
+model = "H 25"
+dng = false
+cfa = [1, 2, 0, 1]
+source = "compat-observed"
+
+[[canonical]]
+make = "Phase One"
+model = "H 25"
+canonical = ["Phase One", "H25"]
+source = "compat-observed"
+
+# Hasselblad 3FR and FFF: the names RAWmakase has always given bodies whose
+# files name another (a model with its sensor's megapixels appended where
+# the model names none), and the visible areas.
+
+[[name]]
+make = "Hasselblad"
+model = "500 mech.-16"
+is = "CFV-16"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "Flash Sync-22"
+is = "CF-22"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "H3D-60"
+is = "H4D-60"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "H3D-39"
+is = "H3DII-39"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "X1D"
+is = "X1D-50c"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "X1DM2-50c"
+is = "X1D-50c"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "X2D 100C"
+is = "X2D 100C-100c"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "CFV 100C"
+is = "CFV-100c"
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "CF-22"
+dng = false
+raw_size = [4096, 5456]
+visible = [0, 0, 4096, 5456]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "CFV-100c"
+dng = false
+raw_size = [11904, 8842]
+visible = [124, 92, 11664, 8750]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "CFV-16"
+dng = false
+raw_size = [4096, 4096]
+visible = [0, 0, 4096, 4096]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "CFV-50"
+dng = false
+raw_size = [8282, 6240]
+visible = [42, 4, 8199, 6156]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "CFV-50c"
+dng = false
+raw_size = [8374, 6304]
+visible = [52, 100, 8272, 6200]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H3DII-39"
+dng = false
+raw_size = [7262, 5456]
+visible = [8, 4, 7247, 5444]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H4D-40"
+dng = false
+raw_size = [7410, 5586]
+visible = [42, 4, 7327, 5502]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H4D-50"
+dng = false
+raw_size = [8282, 6240]
+visible = [42, 4, 8199, 6156]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H4D-60"
+dng = false
+raw_size = [9044, 6732]
+visible = [40, 8, 8964, 6716]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H5D-40"
+dng = false
+raw_size = [7410, 5586]
+visible = [42, 4, 7327, 5502]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H5D-50c"
+dng = false
+raw_size = [8374, 6304]
+visible = [52, 100, 8272, 6200]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H6D-100cMS"
+dng = false
+raw_size = [12000, 8816]
+visible = [64, 108, 11608, 8708]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "X1D II 50C"
+dng = false
+raw_size = [8384, 6304]
+visible = [48, 96, 8278, 6208]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "X1D-50c"
+dng = false
+raw_size = [8384, 6304]
+visible = [48, 96, 8278, 6208]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "X2D 100C-100c"
+dng = false
+raw_size = [11904, 8842]
+visible = [124, 92, 11664, 8750]
+source = "compat-observed"
+
+# Raspberry Pi: the filter and levels RAWmakase has always read for a
+# sensor's raw block (the file names the sensor only).
+
+[[camera]]
+make = "Broadcom"
+model = "RPi IMX219"
+dng = false
+cfa = [2, 1, 1, 0]
+black = 66
+white = 1023
+source = "compat-observed"
+
+# Leaf MOS: the backs RAWmakase has always named by their back type.
+
+[[name]]
+make = "Leaf"
+model = "back type 12"
+is = "Aptus 22"
+source = "compat-observed"
+
+[[name]]
+make = "Leaf"
+model = "back type 13"
+is = "Aptus 75"
+source = "compat-observed"
+
+[[name]]
+make = "Leaf"
+model = "back type 38"
+is = "AFi-II 12"
+source = "compat-observed"
+
+[[camera]]
+make = "Leaf"
+model = "Aptus 22"
+dng = false
+white = 15000
+source = "adobe-dng"
+
+# Other headerless files RAWmakase has always read by their size: action
+# cameras' 16-bit little-endian words (the GITUP sizes, whose files other
+# makers' cameras write too, and one size it reads as a Samsung WB550,
+# 10-bit samples in the words' top bits), and the Pentax Optio S4's 12-bit
+# samples packed in padded rows.
+
+[[headerless]]
+file_size = 31850496
+make = "GITUP"
+model = "GIT2 4:3"
+raw_size = [4608, 3456]
+bits = 16
+visible = [0, 0, 4608, 3456]
+black = 3200
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 23887872
+make = "GITUP"
+model = "GIT2 16:9"
+raw_size = [4608, 2592]
+bits = 16
+visible = [0, 0, 4608, 2592]
+black = 3200
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 32257024
+make = "GITUP"
+model = "GIT2P 4:3"
+raw_size = [4624, 3488]
+bits = 16
+visible = [8, 2, 4600, 3484]
+black = 4160
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 24192768
+make = "GITUP"
+model = "GIT2P 16:9"
+raw_size = [4624, 2616]
+bits = 16
+visible = [8, 2, 4600, 2612]
+black = 4160
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 24000000
+make = "Samsung"
+model = "WB550"
+raw_size = [4000, 3000]
+bits = 16
+shift = 6
+visible = [0, 0, 4000, 3000]
+white = 992
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 6114240
+make = "Pentax"
+model = "Optio S4"
+raw_size = [2346, 1737]
+bits = 12
+word = 1
+row_bytes = 3520
+visible = [0, 0, 2324, 1737]
+black = 0
+white = 3968
+cfa = "RGGB"
+source = "compat-observed"
+
+# Kodak C603 and C643 (Kodak's "CCDI" and "CFAI" raw files): 8-bit codes.
+# The CFAI file's 3160-byte header keeps their curve at byte 168; the CCDI
+# file has no header, its curve measured from LibRaw's output (every code,
+# the same on each of the dataset's files): no public source gives it.
+
+[[headerless]]
+file_size = 6163328
+make = "Kodak"
+model = "C603"
+raw_size = [2864, 2152]
+bits = 8
+word = 1
+visible = [0, 0, 2864, 2152]
+black = 0
+curve = [
+    0, 66, 132, 198, 265, 331, 397, 464, 530, 596, 663, 729, 795, 862, 928, 994,
+    1061, 1127, 1193, 1260, 1326, 1392, 1459, 1525, 1591, 1658, 1724, 1790, 1857, 1923, 1989, 2056,
+    2122, 2188, 2255, 2321, 2387, 2453, 2520, 2586, 2652, 2719, 2785, 2851, 2918, 2984, 3050, 3117,
+    3183, 3249, 3316, 3382, 3448, 3515, 3581, 3647, 3714, 3780, 3846, 3913, 3979, 4045, 4112, 4178,
+    4244, 4311, 4377, 4443, 4510, 4576, 4642, 4709, 4777, 4846, 4916, 4987, 5058, 5131, 5205, 5280,
+    5356, 5434, 5512, 5591, 5672, 5754, 5837, 5921, 6006, 6093, 6181, 6270, 6360, 6452, 6545, 6639,
+    6735, 6832, 6930, 7030, 7131, 7234, 7338, 7444, 7552, 7660, 7771, 7883, 7996, 8112, 8229, 8347,
+    8468, 8590, 8713, 8839, 8966, 9096, 9227, 9360, 9495, 9631, 9770, 9911, 10054, 10199, 10346, 10495,
+    10646, 10800, 10955, 11113, 11273, 11436, 11601, 11768, 11938, 12110, 12284, 12461, 12641, 12823, 13008, 13195,
+    13386, 13578, 13774, 13973, 14174, 14378, 14586, 14796, 15009, 15225, 15445, 15667, 15893, 16122, 16355, 16590,
+    16830, 17072, 17318, 17568, 17821, 18078, 18338, 18603, 18871, 19143, 19419, 19699, 19983, 20271, 20563, 20859,
+    21160, 21465, 21774, 22088, 22406, 22729, 23057, 23389, 23726, 24068, 24415, 24767, 25124, 25486, 25853, 26226,
+    26604, 26987, 27376, 27771, 28171, 28577, 28989, 29407, 29831, 30261, 30697, 31139, 31588, 32043, 32505, 32974,
+    33449, 33931, 34420, 34916, 35420, 35930, 36448, 36973, 37506, 38047, 38595, 39151, 39716, 40288, 40869, 41458,
+    42055, 42661, 43276, 43900, 44533, 45175, 45826, 46486, 47156, 47836, 48525, 49225, 49934, 50654, 51384, 52124,
+    52876, 53638, 54411, 55195, 55991, 56798, 57616, 58447, 59289, 60143, 61010, 61890, 62782, 63686, 64604, 65535,
+]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 6166488
+make = "Kodak"
+model = "C603"
+raw_size = [2864, 2152]
+bits = 8
+word = 1
+visible = [0, 0, 2864, 2152]
+black = 0
+offset = 3160
+curve_at = 168
+cfa = "RGGB"
+source = "compat-observed"
+
+# Minolta MRW: the canonical names of the bodies sold under several names,
+# and Adobe DNG Converter's white level for the DiMAGE bodies.
+
+[[canonical]]
+make = "Minolta"
+model = "DYNAX 7D"
+canonical = ["Minolta", "DG-7D"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Minolta"
+model = "MAXXUM 7D"
+canonical = ["Minolta", "DG-7D"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Minolta"
+model = "ALPHA-7 DIGITAL"
+canonical = ["Minolta", "DG-7D"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Minolta"
+model = "DYNAX 5D"
+canonical = ["Minolta", "DG-5D"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Minolta"
+model = "MAXXUM 5D"
+canonical = ["Minolta", "DG-5D"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Minolta"
+model = "ALPHA SWEET DIGITAL"
+canonical = ["Minolta", "DG-5D"]
+source = "compat-observed"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE 5"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE 7"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE 7i"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE 7Hi"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE A1"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE A2"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+[[camera]]
+make = "Minolta"
+model = "DiMAGE A200"
+dng = false
+white = 3965
+source = "adobe-dng"
+
+# The DiMAGE Z2's MRW has no header: 12-bit samples in little-endian 32-bit
+# words, two fields of rows.
+
+[[headerless]]
+file_size = 5869568
+make = "Minolta"
+model = "DiMAGE Z2"
+raw_size = [2288, 1710]
+bits = 12
+word = 4
+fields = true
+visible = [0, 0, 2288, 1710]
+black = 0
+cfa = "BGGR"
+source = "compat-observed"
+
+# Canon EOS-1D and 1Ds TIF: the 1Ds's model text is upper case.
+
+[[name]]
+make = "Canon"
+model = "EOS-1DS"
+is = "EOS-1Ds"
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D"
+dng = false
+white = 3500
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1Ds"
+dng = false
+white = 3514
+source = "adobe-dng"
+
+# Kodak DCS: Canon's EOS D2000C is the Kodak DCS520C.
+
+[[canonical]]
+make = "Canon"
+model = "EOS D2000C"
+canonical = ["Kodak", "DCS520C"]
+source = "compat-observed"
+
+[[camera]]
+make = "Kodak"
+model = "DCS560C"
+dng = false
+white = 3277
+source = "adobe-dng"
+
+[[camera]]
+make = "Kodak"
+model = "DCS760C"
+dng = false
+white = 3500
+source = "adobe-dng"
+
+[[camera]]
+make = "Kodak"
+model = "DCS Pro 14N"
+dng = false
+white = 3700
+source = "adobe-dng"
+
+[[camera]]
+make = "Kodak"
+model = "DCS Pro 14nx"
+dng = false
+white = 3700
+source = "adobe-dng"
+
+[[camera]]
+make = "Kodak"
+model = "DCS Pro SLR/c"
+dng = false
+white = 3700
+source = "adobe-dng"
+
+# Kodak KDC: the canonical names of the EasyShare and P-series bodies.
+
+[[canonical]]
+make = "Kodak"
+model = "EASYSHARE Z1015 IS"
+canonical = ["Kodak", "Z1015 IS"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "P880 ZOOM"
+canonical = ["Kodak", "P880"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "P712 ZOOM"
+canonical = ["Kodak", "P712"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "EasyShare Z990"
+canonical = ["Kodak", "Z990"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "EasyShare Z981"
+canonical = ["Kodak", "Z981"]
+source = "compat-observed"
+
+[[camera]]
+make = "Kodak"
+model = "P712 ZOOM"
+dng = false
+white = 4030
+source = "adobe-dng"
+
+[[camera]]
+make = "Kodak"
+model = "EasyShare Z990"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+# Kodak KDC: the filter of the bodies whose file names another (Adobe DNG
+# Converter's CFAPattern agrees).
+
+[[camera]]
+make = "Kodak"
+model = "EasyShare Z990"
+dng = false
+cfa = [2, 1, 1, 0]
+source = "compat-observed"
+
+[[camera]]
+make = "Kodak"
+model = "EasyShare Z981"
+dng = false
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+# Kodak DCS TIFFs of 8-bit codes: the visible area and filter RAWmakase has
+# always read, and the canonical names.
+
+[[camera]]
+make = "Kodak"
+model = "DCS460D"
+dng = false
+raw_size = [3072, 2048]
+visible = [2, 0, 3068, 2048]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "DCS460D"
+canonical = ["Kodak", "DCS460"]
+source = "compat-observed"
+
+[[camera]]
+make = "Kodak"
+model = "EOSDCS1B"
+dng = false
+raw_size = [3072, 2048]
+visible = [2, 0, 3068, 2048]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "EOSDCS1B"
+canonical = ["Kodak", "EOSDCS1"]
+source = "compat-observed"
+
+[[camera]]
+make = "Kodak"
+model = "EOSDCS3C"
+dng = false
+raw_size = [1280, 1024]
+visible = [2, 0, 1276, 1024]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "EOSDCS3C"
+canonical = ["Kodak", "EOSDCS3"]
+source = "compat-observed"

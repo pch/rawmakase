@@ -78,7 +78,7 @@ fn reader(tx: Sender<Event>, ctx: egui::Context, cache_path: PathBuf) -> Latest<
         let mut rgb = image.into_raw();
         // As the renderer does: a failed transform shows the sRGB pixels.
         if let Some(monitor) = &job.wanted.monitor {
-            let _ = crate::raw::display_transform(monitor, &mut rgb);
+            let _ = crate::color_management::display_transform(monitor, &mut rgb);
         }
         let image = egui::ColorImage::from_rgb(size, &rgb);
         let _ = tx.send(Event::StandIn(Box::new(StandIn {

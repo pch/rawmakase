@@ -39,6 +39,14 @@ changes what one waits on, updates its row here.
 Each worker the exit hook waits for keeps its `JoinHandle`, and hands it over as a
 `task::Stopping` when asked to stop.
 
+Workers that read or decode photos behind the user's back start from
+`raw::spawn_background` or `raw::background_pool` (`crates/rawmakase-native`):
+their threads run at a lower scheduling priority (Linux and Windows), and parallel
+work they start runs on a pool of two background threads, never the shared pool.
+That pool belongs to the worker: dropping it, when the worker's work returns, lets
+its threads end on their own; nothing joins them, so a pool never blocks the thread
+that drops it.
+
 | Worker | Where | Blocks on | Stop | Join |
 | --- | --- | --- | --- | --- |
 | Develop loader, with its full-size loader and prefetcher | `app/worker/loader.rs` | A job; file I/O, LibRaw decodes and JPEG, PNG or TIFF decodes (cancellable between rows); decode cache reads and writes | All three `Latest`s stopped, between jobs; the load `Task`'s cancel within one; `prefetch_cancel` for a prefetch | Yes, all three, after cancelling the load and the prefetch |

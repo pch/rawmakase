@@ -13,6 +13,7 @@ test-support = []
 
 [dependencies]
 rawmakase-protocol = { path = "../rawmakase-protocol", version = "0.1.0" }
+rawmakase-tiff = { path = "../rawmakase-tiff", version = "0.1.0" }
 anyhow = "1"
 flate2 = "1"
 sha2 = "0.11"

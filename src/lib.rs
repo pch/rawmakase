@@ -21,8 +21,8 @@ pub use rawmakase_engine::develop;
 pub use rawmakase_export::{export, watermark};
 // LibRaw and Little CMS, demosaicing, opening and decoding a photo
 // (crates/rawmakase-native).
+pub use rawmakase_native::{color_management, decode_cache, decode_dump, fingerprint, photo, raw};
 pub(crate) use rawmakase_native::{decode, raster};
-pub use rawmakase_native::{decode_cache, fingerprint, photo, raw};
 // File formats and presets over the model (crates/rawmakase-interop).
 pub use rawmakase_interop::{exif, export_settings, jpeg, lr_develop, presets, raw_defaults, xmp};
 pub(crate) use rawmakase_model::time;

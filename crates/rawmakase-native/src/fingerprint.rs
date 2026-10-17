@@ -3,45 +3,89 @@
 //! field (`rawmakase fingerprint`, `scripts/corpus/dataset-fingerprints.py`).
 //! The file is opened by [`crate::photo::open`] and unpacked as development
 //! unpacks it; nothing is demosaiced, so every value is exact on any machine.
+use crate::raw::Decoder;
 use serde::Serialize;
 use std::path::Path;
+
+/// The fingerprint format; 2 has the header, preview and sensor sections.
+pub const VERSION: u32 = 2;
 
 #[derive(Debug, Serialize)]
 pub struct Fingerprint {
     pub path: std::path::PathBuf,
-    /// The LibRaw that decoded it.
-    pub libraw: String,
+    pub version: u32,
+    /// The decoder that read it, with its version.
+    pub decoder: String,
     /// SHA-256 of the file's bytes; `None` when it cannot be read.
     pub sha256: Option<String>,
-    /// The step that failed: `read`, `open` (LibRaw, or a sensor RAWmakase does
-    /// not develop) or `unpack`.
+    /// The step that failed: `read`, `open` (the decoder, or a sensor RAWmakase
+    /// does not develop) or `unpack`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failed: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    pub opened: Option<Opened>,
-    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    /// What opening the file says, before the sensor data is read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header: Option<Header>,
+    /// The embedded preview chosen for thumbnails.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<Preview>,
+    /// What unpacking the sensor data yields.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sensor: Option<SensorData>,
 }
 
-/// What opening the file says, after `photo::open`'s DNG and RAF additions.
+/// What opening the file says: the decoder's own facts, and the photo's
+/// metadata after `photo::open`'s DNG, RAF and lens additions, every field as
+/// it is saved and what saving leaves out.
 #[derive(Debug, Serialize)]
-pub struct Opened {
-    pub make: String,
-    pub model: String,
-    /// The visible area.
-    pub size: [u32; 2],
-    pub raw_size: [u32; 2],
-    /// Left, top, width, height.
-    pub crop: [u32; 4],
-    /// LibRaw's orientation (`flip`).
-    pub orientation: i32,
-    /// As shot, relative to green.
-    pub wb: [f32; 3],
-    pub daylight_wb: [f32; 3],
-    /// XYZ(D65) to camera.
-    pub camera_matrix: [[f32; 3]; 3],
+pub struct Header {
+    pub facts: crate::raw::Facts,
+    pub metadata: serde_json::Value,
+    pub unsaved: Unsaved,
+}
+
+/// The metadata the renderer reads that is not saved with it.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct Unsaved {
+    /// SHA-256 of the DNG's embedded camera profile, when it is used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedded_dcp: Option<String>,
+    /// The imported lens profiles that fit, and a SHA-256 of their identities
+    /// and ranks in order.
+    pub lens_profiles: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lens_profiles_sha256: Option<String>,
+}
+
+impl Unsaved {
+    pub fn of(m: &crate::camera_data::Metadata) -> Self {
+        use sha2::Digest;
+        let profiles = m.lens_profiles.all();
+        let mut hash = sha2::Sha256::new();
+        for c in profiles {
+            hash.update(format!("{:?} {:?}\n", c.profile, c.lens_rank));
+        }
+        Self {
+            embedded_dcp: m
+                .embedded_dcp
+                .as_deref()
+                .map(|d| hex(&sha2::Sha256::digest(d))),
+            lens_profiles: profiles.len(),
+            lens_profiles_sha256: (!profiles.is_empty()).then(|| hex(&hash.finalize())),
+        }
+    }
+}
+
+/// The embedded JPEG preview, or why there is none.
+#[derive(Debug, Serialize)]
+pub struct Preview {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// The unpacked sensor data and its levels. Per-channel values are in LibRaw's
@@ -50,8 +94,9 @@ pub struct Opened {
 pub struct SensorData {
     /// 1 for a mosaic, 3 or 4 for small RAW files.
     pub channels: u32,
-    /// Where the visible area starts in the raw buffer: left, top.
+    /// Where the hashed area starts in the raw buffer (left, top), and its size.
     pub origin: [u32; 2],
+    pub area: [u32; 2],
     pub black: [u32; 4],
     #[serde(skip_serializing_if = "Option::is_none")]
     pub black_pattern: Option<BlackPattern>,
@@ -60,7 +105,7 @@ pub struct SensorData {
     /// The visible colour pattern's rows, e.g. `RG/gB` (`g` is the second green),
     /// `GGRGGB/…` for X-Trans; empty without a mosaic.
     pub cfa: String,
-    /// SHA-256 of the unpacked raw data in the visible area.
+    /// SHA-256 of the unpacked raw data in the hashed area.
     pub data_sha256: String,
 }
 
@@ -74,25 +119,50 @@ pub struct BlackPattern {
 
 /// The fingerprint of the file at `path`. A file that cannot be read, opened or
 /// unpacked gives a fingerprint with its error, not an `Err`.
-pub fn fingerprint(path: &Path) -> Fingerprint {
+pub fn fingerprint(path: &Path, decoder: Decoder) -> Fingerprint {
+    fingerprint_with(path, decoder, None)
+}
+
+/// [`fingerprint`], also writing the hashed sensor values to `samples` as
+/// `<sha256>.sensor` (little-endian 16-bit values, `channels` per pixel, the
+/// hashed area row by row), for measurements that align them with another
+/// decoder's output (`scripts/cameras/adobe-frames.py`). A file that changed
+/// while it was read leaves none.
+pub fn fingerprint_with(path: &Path, decoder: Decoder, samples: Option<&Path>) -> Fingerprint {
     let mut f = Fingerprint {
         path: path.to_path_buf(),
-        libraw: crate::raw::version(),
+        version: VERSION,
+        decoder: crate::raw::version_of(decoder),
         sha256: None,
         failed: None,
         error: None,
-        opened: None,
+        header: None,
+        preview: None,
         sensor: None,
     };
     let before = identity(path);
-    if let Err((step, e)) = describe(path, &mut f) {
+    let mut kept = None;
+    if let Err((step, e)) = describe(
+        path,
+        decoder,
+        &mut f,
+        samples.is_some().then_some(&mut kept),
+    ) {
         f.failed = Some(step);
         f.error = Some(format!("{e:#}"));
     }
     // The file is read twice (hashed, then decoded): a file replaced in between
     // would pair one file's hash with another's fingerprint.
-    if before.is_some() && identity(path) != before {
-        f.opened = None;
+    let changed = before.is_some() && identity(path) != before;
+    if let (false, Some(dir), Some(sha256), Some(values)) = (changed, samples, &f.sha256, kept)
+        && let Err(e) = std::fs::write(dir.join(format!("{sha256}.sensor")), values)
+    {
+        f.error
+            .get_or_insert_with(|| format!("Writing the sensor values: {e}"));
+    }
+    if changed {
+        f.header = None;
+        f.preview = None;
         f.sensor = None;
         f.failed = Some("read");
         f.error = Some("The file changed while it was read".into());
@@ -102,7 +172,7 @@ pub fn fingerprint(path: &Path) -> Fingerprint {
 
 /// What tells one file at `path` from another: size, modification time and,
 /// on Unix, device and inode.
-fn identity(path: &Path) -> Option<(u64, std::time::SystemTime, u64, u64)> {
+pub(crate) fn identity(path: &Path) -> Option<(u64, std::time::SystemTime, u64, u64)> {
     let m = std::fs::metadata(path).ok()?;
     #[cfg(unix)]
     let (dev, ino) = {
@@ -114,37 +184,47 @@ fn identity(path: &Path) -> Option<(u64, std::time::SystemTime, u64, u64)> {
     Some((m.len(), m.modified().ok()?, dev, ino))
 }
 
-fn describe(path: &Path, f: &mut Fingerprint) -> Result<(), (&'static str, anyhow::Error)> {
+fn describe(
+    path: &Path,
+    decoder: Decoder,
+    f: &mut Fingerprint,
+    samples: Option<&mut Option<Vec<u8>>>,
+) -> Result<(), (&'static str, anyhow::Error)> {
     use sha2::Digest;
-    use std::io::Read;
     let read = |e: std::io::Error| ("read", e.into());
-    let mut hash = sha2::Sha256::new();
-    let (mut file, mut buf) = (std::fs::File::open(path).map_err(read)?, vec![0; 1 << 20]);
-    loop {
-        match file.read(&mut buf).map_err(read)? {
-            0 => break,
-            n => hash.update(&buf[..n]),
-        }
-    }
-    f.sha256 = Some(hex(&hash.finalize()));
-    let raw = crate::photo::open(path).map_err(|e| ("open", e))?;
-    let m = &raw.metadata;
-    f.opened = Some(Opened {
-        make: m.make.clone(),
-        model: m.model.clone(),
-        size: [m.width, m.height],
-        raw_size: [m.raw_width, m.raw_height],
-        crop: [m.crop_left, m.crop_top, m.crop_width, m.crop_height],
-        orientation: m.flip,
-        wb: m.wb,
-        daylight_wb: m.daylight_wb,
-        camera_matrix: m.cam_xyz,
+    f.sha256 = Some(hex(&sha2::Sha256::digest(
+        std::fs::read(path).map_err(read)?,
+    )));
+    let mut raw = crate::photo::open_with(path, decoder).map_err(|e| ("open", e))?;
+    f.header = Some(Header {
+        facts: raw.facts.clone(),
+        metadata: serde_json::to_value(&raw.metadata).map_err(|e| ("open", e.into()))?,
+        unsaved: Unsaved::of(&raw.metadata),
     });
-    let s = raw.sensor().map_err(|e| ("unpack", e))?;
+    let sensor = raw.sensor_with(samples.is_some());
+    // After unpacking: LibRaw reads a few files' levels differently once it has
+    // read the preview (a Sinarback's white).
+    f.preview = Some(match raw.thumbnail() {
+        Ok(jpeg) => Preview {
+            size: Some(jpeg.len()),
+            sha256: Some(hex(&sha2::Sha256::digest(&jpeg))),
+            error: None,
+        },
+        Err(e) => Preview {
+            size: None,
+            sha256: None,
+            error: Some(format!("{e:#}")),
+        },
+    });
+    let mut s = sensor.map_err(|e| ("unpack", e))?;
+    if let Some(samples) = samples {
+        *samples = s.samples.take();
+    }
     let (rows, cols, values) = s.black_pattern;
     f.sensor = Some(SensorData {
         channels: s.channels,
         origin: s.origin,
+        area: s.area,
         black: s.black,
         black_pattern: (rows > 0 && cols > 0).then_some(BlackPattern { rows, cols, values }),
         white: s.white,
@@ -196,61 +276,110 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../../tests/corpus/charts/synthetic-d65.dng"
         );
-        let mut json = serde_json::to_value(super::fingerprint(chart.as_ref())).unwrap();
-        // LibRaw computes white balance in floating point, which may round
-        // differently with another compiler; the rest is exact everywhere.
+        let mut json =
+            serde_json::to_value(super::fingerprint(chart.as_ref(), super::Decoder::Libraw))
+                .unwrap();
         let fields = json.as_object_mut().unwrap();
         assert_eq!(fields.remove("path").unwrap(), chart);
-        assert_eq!(fields.remove("libraw").unwrap(), crate::raw::version());
-        let wb = fields.remove("wb").unwrap();
-        let daylight = fields.remove("daylight_wb").unwrap();
-        for (got, want) in [
-            (wb, [1.8181818, 1., 1.3888888]),
-            (daylight, [1.817948, 1., 1.3889403]),
+        assert_eq!(fields.remove("decoder").unwrap(), crate::raw::version());
+        // White balance and the camera matrix are computed in floating point,
+        // which may round differently with another compiler; the rest is exact
+        // everywhere.
+        let header = fields.get_mut("header").unwrap().as_object_mut().unwrap();
+        let metadata = header.get_mut("metadata").unwrap().as_object_mut().unwrap();
+        metadata.remove("matrix").unwrap();
+        for (field, want) in [
+            ("wb", [1.8181818, 1., 1.3888888]),
+            ("daylight_wb", [1.817948, 1., 1.3889403]),
         ] {
-            let got: [f32; 3] = serde_json::from_value(got).unwrap();
+            let got: [f32; 3] = serde_json::from_value(metadata.remove(field).unwrap()).unwrap();
             assert!(
                 got.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-5),
-                "{got:?}"
+                "{field}: {got:?}"
             );
         }
         // As the generator (tests/color/dng.rs) writes it: RGGB, black 0, white
-        // 65535, no DefaultCrop (LibRaw's 65535 marks none) and a camera LibRaw
-        // has no matrix for, whose colour is in the embedded profile.
+        // 65535, no DefaultCrop (65535 marks none), no preview and a camera with
+        // no built-in matrix, whose colour is in the embedded profile.
         let want = serde_json::json!({
+            "version": 2,
             "sha256": "3b23ed9df6b4e9ce0f504f8e01ad9b3c3d105d11bf177dac95f40a99f70a0407",
-            "make": "RAWmakase",
-            "model": "Synthetic Chart",
-            "size": [970, 742],
-            "raw_size": [970, 742],
-            "crop": [65535, 65535, 0, 0],
-            "orientation": 0,
-            "camera_matrix": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
-            "channels": 1,
-            "origin": [0, 0],
-            "black": [0, 0, 0, 0],
-            "black_pattern": {"rows": 1, "cols": 1, "values": [0]},
-            "white": 65535,
-            "linear_white": [0, 0, 0, 0],
-            "cfa": "RG/gB",
-            "data_sha256": "d7f816bb902c0e23d349d53c86a0925200019bd37cf18bca732dfca370ca89e5",
+            "header": {
+                "facts": {
+                    "margins": [0, 0],
+                    "frame": [65535, 65535, 0, 0],
+                    "aspect": [65535, 65535, 0, 0],
+                    "normalized": ["", "Synthetic Chart"],
+                    "dng_version": 17039360,
+                },
+                "metadata": {
+                    "aperture": 0.0,
+                    "baseline_exposure": 0.0,
+                    "cam_xyz": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+                    "crop_height": 0,
+                    "crop_left": 65535,
+                    "crop_top": 65535,
+                    "crop_width": 0,
+                    "flip": 0,
+                    "focal": 0.0,
+                    "focal_35mm": 0.0,
+                    "fuji_dynamic_range": 65535,
+                    "height": 742,
+                    "highlight_tone_priority": "Off",
+                    "iso": 0.0,
+                    "make": "RAWmakase",
+                    "model": "Synthetic Chart",
+                    "raw_height": 742,
+                    "raw_width": 970,
+                    "shutter": 0.0,
+                    "width": 970,
+                    "xtrans": false,
+                },
+                "unsaved": {
+                    "embedded_dcp": "46fe3ae96e2c878860cd0ce061bad5ec18403c35732c479b3a6f02006e4ca0c9",
+                    "lens_profiles": 0,
+                },
+            },
+            "preview": {"error": "No thumbnail in file"},
+            "sensor": {
+                "channels": 1,
+                "origin": [0, 0],
+                "area": [970, 742],
+                "black": [0, 0, 0, 0],
+                "black_pattern": {"rows": 1, "cols": 1, "values": [0]},
+                "white": 65535,
+                "linear_white": [0, 0, 0, 0],
+                "cfa": "RG/gB",
+                "data_sha256": "d7f816bb902c0e23d349d53c86a0925200019bd37cf18bca732dfca370ca89e5",
+            },
         });
         assert_eq!(json, want);
     }
 
     #[test]
+    fn renderer_inputs_that_are_not_saved_change_the_fingerprint() {
+        let mut m = crate::camera_data::Metadata::default();
+        let none = super::Unsaved::of(&m);
+        m.embedded_dcp = Some(std::sync::Arc::from(&b"profile"[..]));
+        let one = super::Unsaved::of(&m);
+        m.embedded_dcp = Some(std::sync::Arc::from(&b"another"[..]));
+        let other = super::Unsaved::of(&m);
+        assert!(none != one && one != other, "{none:?} {one:?} {other:?}");
+    }
+
+    #[test]
     fn unreadable_and_non_raw_files_are_errors_not_failures() {
         let dir = tempfile::tempdir().unwrap();
-        let missing = super::fingerprint(&dir.path().join("missing.dng"));
+        let missing = super::fingerprint(&dir.path().join("missing.dng"), super::Decoder::Libraw);
         assert!(missing.sha256.is_none() && missing.failed == Some("read"));
         let text = dir.path().join("text.dng");
         std::fs::write(&text, b"not a raw file").unwrap();
-        let f = super::fingerprint(&text);
+        let f = super::fingerprint(&text, super::Decoder::Libraw);
         assert_eq!(
             f.sha256.as_deref(),
             Some("75d3499f372b9001c41b9ca9d7c9c5398477905e49e949746947ea7942b2f859")
         );
-        assert!(f.failed == Some("open") && f.opened.is_none() && f.sensor.is_none());
+        assert!(f.failed == Some("open") && f.header.is_none() && f.sensor.is_none());
     }
 
     #[test]

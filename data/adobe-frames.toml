@@ -1,0 +1,7863 @@
+# Adobe's default frame for each camera and raw size: the default crop Camera
+# Raw shows a photo in, and the frame Lightroom's crops and local adjustments are
+# relative to (crates/rawmakase-raw/src/facts.rs, docs/raw-decoding.md). Read only
+# once RAWmakase's own decoders develop photos in Adobe's frame; until then the
+# frame is the one RAWmakase has always used.
+#
+# [[frame]] for the camera's non-DNG files of `raw_size` (sensor coordinates:
+# the stored raw data, before orientation): `active`, the area Adobe develops
+# (DNG ActiveArea), and `default_crop`, the frame inside it (DefaultCropOrigin
+# and DefaultCropSize), both left, top, width, height in sensor coordinates.
+# A DNG's own tags give its frame; it has no row.
+#
+# source is adobe-dng: Adobe DNG Converter 18.7's output for one file of the
+# camera and raw size, placed in sensor coordinates by its size or by aligning
+# its samples with the decoder's. Written by scripts/cameras/adobe-frames.py.
+
+[[frame]]
+make = "Broadcom"
+model = "RPi IMX219"
+raw_size = [3280, 2464]
+active = [0, 0, 3280, 2464]
+default_crop = [0, 0, 3280, 2464]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 1000D"
+raw_size = [3948, 2622]
+active = [42, 18, 3906, 2602]
+default_crop = [52, 23, 3888, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 100D"
+raw_size = [5280, 3528]
+active = [72, 52, 5208, 3476]
+default_crop = [84, 64, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 10D"
+raw_size = [3152, 2068]
+active = [64, 12, 3088, 2056]
+default_crop = [72, 16, 3072, 2048]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 1100D"
+raw_size = [4352, 2874]
+active = [62, 18, 4290, 2856]
+default_crop = [72, 23, 4272, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 1200D"
+raw_size = [5344, 3516]
+active = [142, 51, 5202, 3465]
+default_crop = [152, 56, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 1300D"
+raw_size = [5344, 3516]
+active = [142, 51, 5202, 3465]
+default_crop = [152, 56, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 1500D"
+raw_size = [6096, 4051]
+active = [88, 47, 6008, 4004]
+default_crop = [88, 47, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 200D"
+raw_size = [6288, 4056]
+active = [264, 36, 6024, 4020]
+default_crop = [276, 48, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 20D"
+raw_size = [3596, 2360]
+active = [74, 12, 3522, 2348]
+default_crop = [84, 19, 3504, 2336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 250D"
+raw_size = [6288, 4056]
+active = [276, 48, 6012, 4008]
+default_crop = [276, 48, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 3000D"
+raw_size = [5344, 3516]
+active = [142, 51, 5202, 3465]
+default_crop = [152, 56, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 300D"
+raw_size = [3152, 2068]
+active = [64, 12, 3088, 2055]
+default_crop = [72, 16, 3072, 2048]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 30D"
+raw_size = [3596, 2360]
+active = [74, 12, 3522, 2348]
+default_crop = [84, 19, 3504, 2336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 350D"
+raw_size = [3516, 2328]
+active = [42, 14, 3474, 2314]
+default_crop = [52, 19, 3456, 2304]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 400D"
+raw_size = [3948, 2622]
+active = [42, 18, 3906, 2602]
+default_crop = [52, 23, 3888, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 40D"
+raw_size = [1944, 1296]
+active = [0, 0, 1944, 1296]
+default_crop = [0, 0, 1944, 1296]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 40D"
+raw_size = [3944, 2622]
+active = [30, 18, 3908, 2602]
+default_crop = [40, 23, 3888, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 450D"
+raw_size = [4312, 2876]
+active = [22, 18, 4290, 2856]
+default_crop = [32, 23, 4272, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 500D"
+raw_size = [4832, 3204]
+active = [62, 26, 4770, 3178]
+default_crop = [72, 31, 4752, 3168]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 50D"
+raw_size = [2376, 1584]
+active = [0, 0, 2376, 1584]
+default_crop = [0, 0, 2376, 1584]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 50D"
+raw_size = [3344, 2178]
+active = [0, 0, 3271, 2178]
+default_crop = [0, 0, 3267, 2178]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 50D"
+raw_size = [4832, 3228]
+active = [62, 51, 4770, 3177]
+default_crop = [72, 56, 4752, 3168]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 550D"
+raw_size = [5344, 3516]
+active = [142, 51, 5202, 3465]
+default_crop = [152, 56, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5D"
+raw_size = [4476, 2954]
+active = [90, 34, 4386, 2920]
+default_crop = [100, 39, 4368, 2912]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5D Mark II"
+raw_size = [2808, 1872]
+active = [0, 0, 2808, 1872]
+default_crop = [12, 8, 2784, 1856]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5D Mark II"
+raw_size = [3872, 2574]
+active = [0, 0, 3865, 2574]
+default_crop = [0, 0, 3861, 2574]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5D Mark II"
+raw_size = [5792, 3804]
+active = [158, 51, 5634, 3753]
+default_crop = [168, 56, 5616, 3744]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5D Mark III"
+raw_size = [2880, 1920]
+active = [0, 0, 2880, 1920]
+default_crop = [0, 0, 2880, 1920]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5D Mark III"
+raw_size = [3960, 2640]
+active = [0, 0, 3960, 2640]
+default_crop = [0, 0, 3960, 2640]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5D Mark III"
+raw_size = [5920, 3950]
+active = [122, 80, 5796, 3870]
+default_crop = [140, 96, 5760, 3840]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5D Mark IV"
+raw_size = [3360, 2240]
+active = [0, 0, 3360, 2240]
+default_crop = [0, 0, 3360, 2240]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5D Mark IV"
+raw_size = [5040, 3360]
+active = [0, 0, 5040, 3360]
+default_crop = [0, 0, 5040, 3360]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5D Mark IV"
+raw_size = [6880, 4544]
+active = [148, 54, 6720, 4490]
+default_crop = [148, 54, 6720, 4480]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5DS"
+raw_size = [4320, 2880]
+active = [0, 0, 4320, 2880]
+default_crop = [0, 0, 4320, 2880]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5DS"
+raw_size = [6480, 4320]
+active = [0, 0, 6480, 4320]
+default_crop = [0, 0, 6480, 4320]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5DS"
+raw_size = [8896, 5920]
+active = [196, 100, 8688, 5820]
+default_crop = [196, 100, 8688, 5792]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5DS R"
+raw_size = [4320, 2880]
+active = [0, 0, 4320, 2880]
+default_crop = [0, 0, 4320, 2880]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5DS R"
+raw_size = [6480, 4320]
+active = [0, 0, 6480, 4320]
+default_crop = [0, 0, 6480, 4320]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 5DS R"
+raw_size = [8896, 5920]
+active = [196, 100, 8688, 5820]
+default_crop = [196, 100, 8688, 5792]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 600D"
+raw_size = [5344, 3516]
+active = [142, 51, 5202, 3465]
+default_crop = [152, 56, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 60D"
+raw_size = [2592, 1728]
+active = [0, 0, 2592, 1728]
+default_crop = [0, 0, 2592, 1728]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 60D"
+raw_size = [3888, 2592]
+active = [0, 0, 3888, 2592]
+default_crop = [0, 0, 3888, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 60D"
+raw_size = [5344, 3516]
+active = [142, 51, 5202, 3465]
+default_crop = [152, 56, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 650D"
+raw_size = [5280, 3528]
+active = [72, 52, 5208, 3476]
+default_crop = [84, 64, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 6D"
+raw_size = [2736, 1824]
+active = [0, 0, 2736, 1824]
+default_crop = [0, 0, 2736, 1824]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 6D"
+raw_size = [4104, 2736]
+active = [0, 0, 4104, 2736]
+default_crop = [0, 0, 4104, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 6D"
+raw_size = [5568, 3708]
+active = [72, 38, 5496, 3670]
+default_crop = [84, 50, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 6D Mark II"
+raw_size = [3120, 2082]
+active = [0, 0, 3120, 2082]
+default_crop = [0, 2, 3120, 2080]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 6D Mark II"
+raw_size = [4680, 3132]
+active = [0, 0, 4680, 3132]
+default_crop = [0, 12, 4680, 3120]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 6D Mark II"
+raw_size = [6384, 4224]
+active = [120, 44, 6264, 4180]
+default_crop = [132, 56, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 700D"
+raw_size = [5280, 3528]
+active = [72, 52, 5208, 3476]
+default_crop = [84, 64, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 70D"
+raw_size = [2736, 1824]
+active = [0, 0, 2736, 1824]
+default_crop = [0, 0, 2736, 1824]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 70D"
+raw_size = [4104, 2736]
+active = [0, 0, 4104, 2736]
+default_crop = [0, 0, 4104, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 70D"
+raw_size = [5568, 3708]
+active = [72, 38, 5496, 3670]
+default_crop = [84, 50, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 750D"
+raw_size = [6096, 4056]
+active = [72, 34, 6024, 4022]
+default_crop = [84, 46, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 760D"
+raw_size = [6096, 4056]
+active = [72, 34, 6024, 4022]
+default_crop = [84, 46, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 77D"
+raw_size = [6288, 4056]
+active = [264, 34, 6024, 4022]
+default_crop = [276, 48, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 7D"
+raw_size = [2592, 1728]
+active = [0, 0, 2592, 1728]
+default_crop = [0, 0, 2592, 1728]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 7D"
+raw_size = [3888, 2592]
+active = [0, 0, 3888, 2592]
+default_crop = [0, 0, 3888, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 7D"
+raw_size = [5360, 3516]
+active = [158, 51, 5202, 3465]
+default_crop = [168, 56, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 7D Mark II"
+raw_size = [2736, 1824]
+active = [0, 0, 2736, 1824]
+default_crop = [0, 0, 2736, 1824]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 7D Mark II"
+raw_size = [4104, 2736]
+active = [0, 0, 4104, 2736]
+default_crop = [0, 0, 4104, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 7D Mark II"
+raw_size = [5568, 3708]
+active = [72, 38, 5496, 3670]
+default_crop = [84, 50, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 800D"
+raw_size = [6288, 4056]
+active = [264, 34, 6024, 4022]
+default_crop = [276, 48, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 80D"
+raw_size = [3000, 2000]
+active = [0, 0, 3000, 2000]
+default_crop = [0, 0, 3000, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 80D"
+raw_size = [4536, 3024]
+active = [28, 10, 4508, 3014]
+default_crop = [36, 18, 4500, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 80D"
+raw_size = [6288, 4056]
+active = [264, 34, 6024, 4022]
+default_crop = [276, 46, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 850D"
+raw_size = [6288, 4056]
+active = [264, 36, 6024, 4020]
+default_crop = [276, 48, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS 90D"
+raw_size = [7128, 4732]
+active = [144, 72, 6984, 4660]
+default_crop = [156, 84, 6960, 4640]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS D2000C"
+raw_size = [1736, 1160]
+active = [0, 0, 1736, 1160]
+default_crop = [4, 4, 1728, 1152]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS D30"
+raw_size = [2224, 1456]
+active = [48, 6, 2176, 1448]
+default_crop = [56, 12, 2160, 1440]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS D60"
+raw_size = [3152, 2068]
+active = [64, 12, 3088, 2056]
+default_crop = [72, 16, 3072, 2048]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS M"
+raw_size = [5280, 3528]
+active = [72, 52, 5208, 3476]
+default_crop = [84, 64, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS M10"
+raw_size = [5280, 3528]
+active = [72, 52, 5208, 3476]
+default_crop = [84, 62, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS M100"
+raw_size = [6288, 4056]
+active = [264, 34, 6024, 4022]
+default_crop = [276, 48, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS M2"
+raw_size = [5280, 3528]
+active = [72, 52, 5208, 3476]
+default_crop = [84, 64, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS M200"
+raw_size = [6288, 4056]
+active = [264, 36, 6024, 4020]
+default_crop = [276, 48, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS M3"
+raw_size = [6096, 4056]
+active = [72, 34, 6024, 4022]
+default_crop = [84, 46, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS M5"
+raw_size = [6288, 4056]
+active = [264, 34, 6024, 4022]
+default_crop = [276, 48, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS M50"
+raw_size = [6288, 4056]
+active = [276, 48, 6012, 4008]
+default_crop = [276, 48, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS M50 Mark II"
+raw_size = [6288, 4056]
+active = [264, 36, 6024, 4020]
+default_crop = [276, 48, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS M6"
+raw_size = [6288, 4056]
+active = [264, 34, 6024, 4022]
+default_crop = [276, 48, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS M6 Mark II"
+raw_size = [7128, 4732]
+active = [144, 72, 6984, 4660]
+default_crop = [156, 84, 6960, 4640]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R"
+raw_size = [4352, 2850]
+active = [156, 58, 4196, 2792]
+default_crop = [164, 58, 4176, 2784]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R"
+raw_size = [6888, 4546]
+active = [156, 58, 6732, 4488]
+default_crop = [156, 58, 6720, 4480]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R10"
+raw_size = [6192, 4060]
+active = [144, 40, 6048, 4020]
+default_crop = [168, 52, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R100"
+raw_size = [6288, 4056]
+active = [264, 36, 6024, 4020]
+default_crop = [276, 48, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R3"
+raw_size = [6192, 4152]
+active = [180, 136, 6012, 4016]
+default_crop = [180, 136, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R5"
+raw_size = [5248, 3510]
+active = [128, 96, 5120, 3414]
+default_crop = [144, 108, 5088, 3392]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R5"
+raw_size = [8352, 5586]
+active = [128, 96, 8224, 5490]
+default_crop = [144, 112, 8192, 5464]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R5 Mark II"
+raw_size = [5376, 3574]
+active = [258, 162, 5118, 3412]
+default_crop = [272, 172, 5088, 3392]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R5 Mark II"
+raw_size = [8480, 5650]
+active = [258, 162, 8222, 5488]
+default_crop = [272, 176, 8192, 5464]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R50"
+raw_size = [6192, 4060]
+active = [144, 40, 6048, 4020]
+default_crop = [168, 52, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R50 V"
+raw_size = [6192, 4060]
+active = [144, 40, 6048, 4020]
+default_crop = [168, 52, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R6"
+raw_size = [3584, 2386]
+active = [72, 38, 3512, 2348]
+default_crop = [156, 108, 3408, 2272]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R6"
+raw_size = [5568, 3708]
+active = [72, 38, 5496, 3670]
+default_crop = [84, 50, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R6 Mark II"
+raw_size = [3936, 2612]
+active = [156, 96, 3780, 2516]
+default_crop = [180, 108, 3744, 2496]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R6 Mark II"
+raw_size = [6188, 4120]
+active = [156, 96, 6020, 4024]
+default_crop = [168, 108, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R6 Mark III"
+raw_size = [4512, 2994]
+active = [162, 98, 4350, 2896]
+default_crop = [180, 108, 4320, 2880]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R6 Mark III"
+raw_size = [7144, 4760]
+active = [162, 98, 6982, 4662]
+default_crop = [172, 108, 6960, 4640]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R7"
+raw_size = [7128, 4732]
+active = [144, 72, 6984, 4660]
+default_crop = [156, 84, 6960, 4640]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS R8"
+raw_size = [6188, 4120]
+active = [156, 96, 6020, 4024]
+default_crop = [168, 108, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS RP"
+raw_size = [4032, 2656]
+active = [124, 56, 3908, 2600]
+default_crop = [124, 56, 3888, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS RP"
+raw_size = [6384, 4224]
+active = [132, 56, 6252, 4168]
+default_crop = [132, 56, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1D"
+raw_size = [2496, 1662]
+active = [0, 0, 2496, 1662]
+default_crop = [16, 7, 2464, 1648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1D Mark II"
+raw_size = [3596, 2360]
+active = [74, 12, 3522, 2348]
+default_crop = [84, 19, 3504, 2336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1D Mark II N"
+raw_size = [3596, 2360]
+active = [74, 12, 3522, 2348]
+default_crop = [84, 19, 3504, 2336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1D Mark III"
+raw_size = [3984, 2622]
+active = [78, 20, 3906, 2600]
+default_crop = [88, 25, 3888, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1D Mark IV"
+raw_size = [2448, 1632]
+active = [0, 0, 2448, 1632]
+default_crop = [0, 0, 2448, 1632]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1D Mark IV"
+raw_size = [3672, 2448]
+active = [0, 0, 3672, 2448]
+default_crop = [0, 0, 3672, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1D Mark IV"
+raw_size = [5120, 3318]
+active = [142, 45, 4916, 3273]
+default_crop = [152, 50, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1D X"
+raw_size = [5344, 3584]
+active = [126, 100, 5218, 3482]
+default_crop = [144, 114, 5184, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1D X Mark II"
+raw_size = [2736, 1824]
+active = [0, 0, 2736, 1824]
+default_crop = [0, 0, 2736, 1824]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1D X Mark II"
+raw_size = [4104, 2736]
+active = [0, 0, 4104, 2736]
+default_crop = [0, 0, 4104, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1D X Mark II"
+raw_size = [5568, 3708]
+active = [72, 38, 5496, 3670]
+default_crop = [84, 50, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1D X Mark III"
+raw_size = [5568, 3708]
+active = [72, 38, 5496, 3670]
+default_crop = [84, 50, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1Ds"
+raw_size = [4082, 2718]
+active = [0, 0, 4082, 2718]
+default_crop = [9, 7, 4064, 2704]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1Ds Mark II"
+raw_size = [5108, 3349]
+active = [98, 13, 5010, 3336]
+default_crop = [108, 16, 4992, 3328]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "EOS-1Ds Mark III"
+raw_size = [5712, 3774]
+active = [62, 20, 5640, 3752]
+default_crop = [72, 25, 5616, 3744]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G1 X"
+raw_size = [4496, 3366]
+active = [80, 52, 4404, 3310]
+default_crop = [108, 76, 4352, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G1 X Mark II"
+raw_size = [4480, 3366]
+active = [80, 50, 4400, 3316]
+default_crop = [108, 256, 4352, 2904]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G1 X Mark III"
+raw_size = [6288, 4056]
+active = [264, 36, 6024, 4020]
+default_crop = [276, 48, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G10"
+raw_size = [4480, 3348]
+active = [12, 13, 4432, 3323]
+default_crop = [20, 17, 4416, 3312]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G11"
+raw_size = [3744, 2784]
+active = [8, 16, 3684, 2760]
+default_crop = [24, 28, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G15"
+raw_size = [4160, 3124]
+active = [104, 11, 4048, 3048]
+default_crop = [128, 35, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G16"
+raw_size = [4192, 3062]
+active = [120, 18, 4024, 3031]
+default_crop = [132, 40, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G2"
+raw_size = [2376, 1728]
+active = [12, 6, 2312, 1720]
+default_crop = [32, 14, 2272, 1704]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G3"
+raw_size = [2376, 1728]
+active = [12, 6, 2312, 1720]
+default_crop = [32, 14, 2272, 1704]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G3 X"
+raw_size = [5632, 3710]
+active = [96, 18, 5536, 3692]
+default_crop = [132, 40, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G5"
+raw_size = [2672, 1968]
+active = [12, 6, 2616, 1960]
+default_crop = [24, 14, 2592, 1944]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G5 X"
+raw_size = [5632, 3710]
+active = [132, 40, 5500, 3670]
+default_crop = [132, 40, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G5 X Mark II"
+raw_size = [5632, 3710]
+active = [132, 40, 5500, 3670]
+default_crop = [132, 40, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G6"
+raw_size = [3160, 2344]
+active = [44, 12, 3112, 2328]
+default_crop = [64, 24, 3072, 2304]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G7 X"
+raw_size = [5632, 3710]
+active = [132, 40, 5500, 3670]
+default_crop = [132, 40, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G7 X Mark II"
+raw_size = [5632, 3710]
+active = [132, 40, 5500, 3670]
+default_crop = [132, 40, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G7 X Mark III"
+raw_size = [5632, 3710]
+active = [132, 40, 5500, 3670]
+default_crop = [132, 40, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G9"
+raw_size = [4104, 3048]
+active = [48, 12, 4032, 3024]
+default_crop = [64, 24, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G9 X"
+raw_size = [5632, 3710]
+active = [132, 40, 5500, 3670]
+default_crop = [132, 40, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot G9 X Mark II"
+raw_size = [5632, 3710]
+active = [132, 40, 5500, 3670]
+default_crop = [132, 40, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot Pro1"
+raw_size = [3344, 2484]
+active = [4, 6, 3288, 2472]
+default_crop = [16, 18, 3264, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot S100"
+raw_size = [4160, 3124]
+active = [104, 11, 4048, 3048]
+default_crop = [128, 35, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot S100V"
+raw_size = [4160, 3124]
+active = [104, 11, 4048, 3048]
+default_crop = [128, 35, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot S110"
+raw_size = [4160, 3124]
+active = [104, 11, 4048, 3048]
+default_crop = [128, 35, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot S120"
+raw_size = [4192, 3062]
+active = [120, 18, 4024, 3031]
+default_crop = [132, 40, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot S30"
+raw_size = [2144, 1560]
+active = [4, 8, 2088, 1550]
+default_crop = [24, 14, 2048, 1536]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot S40"
+raw_size = [2376, 1728]
+active = [12, 6, 2312, 1720]
+default_crop = [32, 14, 2272, 1704]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot S45"
+raw_size = [2376, 1728]
+active = [12, 6, 2312, 1720]
+default_crop = [32, 14, 2272, 1704]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot S50"
+raw_size = [2672, 1968]
+active = [12, 6, 2616, 1960]
+default_crop = [24, 14, 2592, 1944]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot S60"
+raw_size = [2672, 1968]
+active = [12, 6, 2616, 1960]
+default_crop = [24, 14, 2592, 1944]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot S70"
+raw_size = [3160, 2344]
+active = [44, 12, 3112, 2328]
+default_crop = [64, 24, 3072, 2304]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot S90"
+raw_size = [3744, 2784]
+active = [8, 16, 3684, 2760]
+default_crop = [24, 28, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot S95"
+raw_size = [3744, 2784]
+active = [52, 12, 3684, 2760]
+default_crop = [72, 24, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot SX1 IS"
+raw_size = [4152, 2772]
+active = [192, 12, 3960, 2760]
+default_crop = [344, 24, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot SX50 HS"
+raw_size = [4176, 3062]
+active = [96, 18, 4072, 3044]
+default_crop = [132, 40, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot SX60 HS"
+raw_size = [4768, 3516]
+active = [96, 16, 4671, 3500]
+default_crop = [124, 38, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot SX70 HS"
+raw_size = [5344, 3950]
+active = [132, 40, 5212, 3910]
+default_crop = [132, 40, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Canon"
+model = "PowerShot V1"
+raw_size = [5928, 3944]
+active = [144, 80, 5784, 3864]
+default_crop = [156, 92, 5760, 3840]
+source = "adobe-dng"
+
+[[frame]]
+make = "Epson"
+model = "R-D1"
+raw_size = [3040, 2024]
+active = [0, 0, 3040, 2024]
+default_crop = [16, 12, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Epson"
+model = "R-D1s"
+raw_size = [3040, 2024]
+active = [0, 0, 3040, 2024]
+default_crop = [16, 12, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Epson"
+model = "R-D1x"
+raw_size = [3040, 2024]
+active = [0, 0, 3040, 2024]
+default_crop = [23, 15, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "F550EXR"
+raw_size = [3328, 2464]
+active = [34, 0, 3262, 2464]
+default_crop = [41, 14, 3248, 2436]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "F600EXR"
+raw_size = [3328, 2464]
+active = [34, 0, 3262, 2464]
+default_crop = [41, 14, 3248, 2436]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "F770EXR"
+raw_size = [3328, 2464]
+active = [34, 0, 3262, 2464]
+default_crop = [41, 14, 3248, 2436]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "F900EXR"
+raw_size = [3328, 2464]
+active = [0, 0, 3264, 2464]
+default_crop = [8, 14, 3248, 2436]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "GFX 100"
+raw_size = [11808, 8754]
+active = [8, 7, 11648, 8736]
+default_crop = [8, 7, 11648, 8736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "GFX 50R"
+raw_size = [9216, 6210]
+active = [12, 8, 8256, 6192]
+default_crop = [12, 8, 8256, 6192]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "GFX 50S"
+raw_size = [9216, 6210]
+active = [12, 8, 8256, 6192]
+default_crop = [12, 8, 8256, 6192]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "GFX100 II"
+raw_size = [11808, 8754]
+active = [8, 7, 11648, 8736]
+default_crop = [8, 7, 11648, 8736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "GFX100RF"
+raw_size = [11808, 8754]
+active = [8, 7, 11648, 8736]
+default_crop = [8, 7, 11648, 8736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "GFX100S"
+raw_size = [11808, 8754]
+active = [8, 7, 11648, 8736]
+default_crop = [8, 7, 11648, 8736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "GFX100S II"
+raw_size = [11808, 8754]
+active = [8, 7, 11648, 8736]
+default_crop = [8, 7, 11648, 8736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "GFX50S II"
+raw_size = [8472, 6210]
+active = [12, 8, 8256, 6192]
+default_crop = [12, 8, 8256, 6192]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "HS10 HS11"
+raw_size = [3664, 2742]
+active = [0, 0, 3664, 2742]
+default_crop = [0, 0, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "HS20EXR"
+raw_size = [3328, 2464]
+active = [34, 0, 3262, 2464]
+default_crop = [41, 14, 3248, 2436]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "HS30EXR"
+raw_size = [3328, 2464]
+active = [34, 0, 3262, 2464]
+default_crop = [41, 14, 3248, 2436]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "HS33EXR"
+raw_size = [3328, 2464]
+active = [34, 0, 3262, 2464]
+default_crop = [41, 14, 3248, 2436]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "HS50EXR"
+raw_size = [3328, 2464]
+active = [0, 0, 3264, 2464]
+default_crop = [8, 14, 3248, 2436]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "S1"
+raw_size = [4624, 3470]
+active = [8, 0, 4608, 3470]
+default_crop = [8, 7, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "S200EXR"
+raw_size = [2880, 2128]
+active = [28, 0, 2824, 2128]
+default_crop = [36, 10, 2808, 2108]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "S5500"
+raw_size = [2304, 1740]
+active = [0, 6, 2304, 1734]
+default_crop = [16, 18, 2272, 1704]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "SL1000"
+raw_size = [4624, 3470]
+active = [0, 0, 4624, 3470]
+default_crop = [8, 7, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-A1"
+raw_size = [5120, 3288]
+active = [0, 0, 4952, 3288]
+default_crop = [28, 12, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-A10"
+raw_size = [4912, 3278]
+active = [0, 0, 4912, 3278]
+default_crop = [8, 7, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-A2"
+raw_size = [5120, 3288]
+active = [0, 0, 4952, 3288]
+default_crop = [28, 12, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-A3"
+raw_size = [6016, 4014]
+active = [0, 0, 6016, 4014]
+default_crop = [8, 7, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-A5"
+raw_size = [6016, 4014]
+active = [0, 0, 6016, 4014]
+default_crop = [8, 7, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-A7"
+raw_size = [6016, 4014]
+active = [0, 0, 6016, 4014]
+default_crop = [8, 7, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-E1"
+raw_size = [5120, 3288]
+active = [0, 0, 4952, 3288]
+default_crop = [28, 12, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-E2"
+raw_size = [4992, 3296]
+active = [4, 0, 4936, 3296]
+default_crop = [24, 16, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-E2S"
+raw_size = [4992, 3296]
+active = [4, 0, 4936, 3296]
+default_crop = [24, 16, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-E3"
+raw_size = [6048, 4038]
+active = [0, 5, 6032, 4032]
+default_crop = [16, 21, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-E3"
+raw_size = [6160, 4032]
+active = [0, 0, 6032, 4032]
+default_crop = [16, 16, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-E4"
+raw_size = [6384, 4182]
+active = [6, 13, 6240, 4160]
+default_crop = [6, 13, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-E5"
+raw_size = [7872, 5196]
+active = [12, 21, 7728, 5152]
+default_crop = [12, 21, 7728, 5152]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-H1"
+raw_size = [6048, 4038]
+active = [0, 5, 6032, 4032]
+default_crop = [16, 21, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-H1"
+raw_size = [6160, 4032]
+active = [0, 0, 6032, 4032]
+default_crop = [16, 16, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-H2"
+raw_size = [7872, 5196]
+active = [12, 21, 7728, 5152]
+default_crop = [12, 21, 7728, 5152]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-H2S"
+raw_size = [6336, 4188]
+active = [12, 13, 6240, 4160]
+default_crop = [12, 13, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-M1"
+raw_size = [5120, 3288]
+active = [0, 0, 4952, 3288]
+default_crop = [28, 12, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-M5"
+raw_size = [6336, 4182]
+active = [6, 13, 6240, 4160]
+default_crop = [6, 13, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-Pro1"
+raw_size = [5120, 3288]
+active = [0, 0, 4952, 3288]
+default_crop = [28, 12, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-Pro2"
+raw_size = [6048, 4038]
+active = [0, 5, 6032, 4032]
+default_crop = [16, 21, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-Pro2"
+raw_size = [6160, 4032]
+active = [0, 0, 6032, 4032]
+default_crop = [16, 16, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-Pro3"
+raw_size = [6384, 4182]
+active = [6, 13, 6240, 4160]
+default_crop = [6, 13, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-S1"
+raw_size = [2944, 2144]
+active = [48, 0, 2848, 2144]
+default_crop = [64, 14, 2816, 2116]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-S10"
+raw_size = [6384, 4182]
+active = [6, 13, 6240, 4160]
+default_crop = [6, 13, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-S20"
+raw_size = [6336, 4182]
+active = [6, 13, 6240, 4160]
+default_crop = [6, 13, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T1"
+raw_size = [4992, 3296]
+active = [4, 0, 4936, 3296]
+default_crop = [24, 16, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T10"
+raw_size = [4992, 3296]
+active = [4, 0, 4936, 3296]
+default_crop = [24, 16, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T100"
+raw_size = [6016, 4014]
+active = [0, 0, 6016, 4014]
+default_crop = [8, 7, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T2"
+raw_size = [6048, 4038]
+active = [0, 5, 6032, 4032]
+default_crop = [16, 21, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T2"
+raw_size = [6160, 4032]
+active = [0, 0, 6032, 4032]
+default_crop = [16, 16, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T20"
+raw_size = [6048, 4038]
+active = [0, 5, 6032, 4032]
+default_crop = [16, 21, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T20"
+raw_size = [6160, 4032]
+active = [0, 0, 6032, 4032]
+default_crop = [16, 16, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T200"
+raw_size = [6016, 4014]
+active = [0, 0, 6016, 4014]
+default_crop = [8, 7, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T3"
+raw_size = [6384, 4182]
+active = [6, 13, 6240, 4160]
+default_crop = [6, 13, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T30"
+raw_size = [6384, 4182]
+active = [6, 13, 6240, 4160]
+default_crop = [6, 13, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T30 II"
+raw_size = [6384, 4182]
+active = [6, 13, 6240, 4160]
+default_crop = [6, 13, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T30 III"
+raw_size = [6336, 4182]
+active = [6, 13, 6240, 4160]
+default_crop = [6, 13, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T4"
+raw_size = [6384, 4182]
+active = [6, 13, 6240, 4160]
+default_crop = [6, 13, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T5"
+raw_size = [7872, 5196]
+active = [12, 21, 7728, 5152]
+default_crop = [12, 21, 7728, 5152]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X-T50"
+raw_size = [7872, 5196]
+active = [12, 21, 7728, 5152]
+default_crop = [12, 21, 7728, 5152]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X10"
+raw_size = [2944, 2144]
+active = [48, 0, 2848, 2144]
+default_crop = [64, 14, 2816, 2116]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X100"
+raw_size = [4448, 2870]
+active = [68, 0, 4310, 2870]
+default_crop = [78, 11, 4288, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X100F"
+raw_size = [6048, 4038]
+active = [0, 5, 6032, 4032]
+default_crop = [16, 21, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X100F"
+raw_size = [6160, 4032]
+active = [0, 0, 6032, 4032]
+default_crop = [16, 16, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X100S"
+raw_size = [4992, 3296]
+active = [4, 0, 4936, 3296]
+default_crop = [24, 16, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X100T"
+raw_size = [4992, 3296]
+active = [4, 0, 4936, 3296]
+default_crop = [24, 16, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X100V"
+raw_size = [6384, 4182]
+active = [6, 13, 6240, 4160]
+default_crop = [6, 13, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X100VI"
+raw_size = [7872, 5196]
+active = [12, 21, 7728, 5152]
+default_crop = [12, 21, 7728, 5152]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X20"
+raw_size = [4096, 3012]
+active = [0, 0, 4032, 3012]
+default_crop = [16, 6, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X30"
+raw_size = [4096, 3012]
+active = [0, 0, 4032, 3012]
+default_crop = [16, 6, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "X70"
+raw_size = [4992, 3296]
+active = [4, 0, 4936, 3296]
+default_crop = [24, 16, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "XF1"
+raw_size = [2944, 2144]
+active = [48, 0, 2848, 2144]
+default_crop = [64, 14, 2816, 2116]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "XF10"
+raw_size = [6016, 4014]
+active = [0, 0, 6016, 4014]
+default_crop = [8, 7, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "XQ1"
+raw_size = [4096, 3012]
+active = [0, 0, 4032, 3012]
+default_crop = [16, 6, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Fujifilm"
+model = "XQ2"
+raw_size = [4096, 3012]
+active = [0, 0, 4032, 3012]
+default_crop = [16, 6, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "CF-22"
+raw_size = [4096, 5456]
+active = [4, 4, 4088, 5448]
+default_crop = [8, 8, 4080, 5440]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "CFV-100c"
+raw_size = [11904, 8842]
+active = [124, 92, 11664, 8750]
+default_crop = [128, 96, 11656, 8742]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "CFV-16"
+raw_size = [4096, 4096]
+active = [4, 4, 4088, 4088]
+default_crop = [8, 8, 4080, 4080]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "CFV-50"
+raw_size = [8282, 6240]
+active = [50, 12, 8184, 6140]
+default_crop = [54, 16, 8176, 6132]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "CFV-50c"
+raw_size = [8374, 6304]
+active = [48, 96, 8280, 6208]
+default_crop = [52, 100, 8272, 6200]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "H3DII-39"
+raw_size = [7262, 5456]
+active = [20, 16, 7224, 5420]
+default_crop = [24, 20, 7216, 5412]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "H4D-40"
+raw_size = [7410, 5586]
+active = [50, 12, 7312, 5486]
+default_crop = [54, 16, 7304, 5478]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "H4D-50"
+raw_size = [8282, 6240]
+active = [50, 12, 8184, 6140]
+default_crop = [54, 16, 8176, 6132]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "H4D-60"
+raw_size = [9044, 6732]
+active = [40, 8, 8964, 6716]
+default_crop = [44, 12, 8956, 6708]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "H5D-40"
+raw_size = [7410, 5586]
+active = [50, 12, 7312, 5486]
+default_crop = [54, 16, 7304, 5478]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "H5D-50c"
+raw_size = [8374, 6304]
+active = [48, 96, 8280, 6208]
+default_crop = [52, 100, 8272, 6200]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "H6D-100cMS"
+raw_size = [12000, 8816]
+active = [64, 108, 11608, 8708]
+default_crop = [68, 112, 11600, 8700]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "Lunar"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "X1D II 50C"
+raw_size = [8384, 6304]
+active = [46, 96, 8280, 6208]
+default_crop = [50, 100, 8272, 6200]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "X1D-50c"
+raw_size = [8384, 6304]
+active = [46, 96, 8280, 6208]
+default_crop = [50, 100, 8272, 6200]
+source = "adobe-dng"
+
+[[frame]]
+make = "Hasselblad"
+model = "X2D 100C-100c"
+raw_size = [11904, 8842]
+active = [124, 92, 11664, 8750]
+default_crop = [128, 96, 11656, 8742]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "DCS Pro 14N"
+raw_size = [4516, 3012]
+active = [0, 0, 4516, 3012]
+default_crop = [8, 6, 4500, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "DCS Pro 14nx"
+raw_size = [4516, 3012]
+active = [0, 0, 4516, 3012]
+default_crop = [8, 6, 4500, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "DCS Pro SLR/c"
+raw_size = [4516, 3012]
+active = [0, 0, 4516, 3012]
+default_crop = [8, 6, 4500, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "DCS Pro SLR/n"
+raw_size = [4516, 3012]
+active = [0, 0, 4516, 3012]
+default_crop = [8, 6, 4500, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "DCS460D"
+raw_size = [3072, 2048]
+active = [2, 0, 3068, 2048]
+default_crop = [6, 4, 3060, 2040]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "DCS520C"
+raw_size = [1736, 1160]
+active = [0, 0, 1736, 1160]
+default_crop = [4, 4, 1728, 1152]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "DCS560C"
+raw_size = [3048, 2016]
+active = [0, 0, 3048, 2016]
+default_crop = [4, 4, 3040, 2008]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "DCS760C"
+raw_size = [3040, 2016]
+active = [0, 0, 3040, 2016]
+default_crop = [4, 4, 3032, 2008]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "EASYSHARE Z1015 IS"
+raw_size = [3664, 2742]
+active = [0, 0, 3664, 2741]
+default_crop = [8, 2, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "EOSDCS1B"
+raw_size = [3072, 2048]
+active = [2, 0, 3068, 2048]
+default_crop = [6, 4, 3060, 2040]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "EOSDCS3C"
+raw_size = [1280, 1024]
+active = [2, 0, 1276, 1024]
+default_crop = [6, 4, 1268, 1016]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "EasyShare Z981"
+raw_size = [4304, 3222]
+active = [0, 0, 4304, 3221]
+default_crop = [8, 2, 4288, 3216]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "EasyShare Z990"
+raw_size = [4016, 3008]
+active = [0, 0, 4016, 3007]
+default_crop = [8, 3, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "P712 ZOOM"
+raw_size = [3088, 2310]
+active = [0, 0, 3088, 2310]
+default_crop = [8, 3, 3072, 2304]
+source = "adobe-dng"
+
+[[frame]]
+make = "Kodak"
+model = "P880 ZOOM"
+raw_size = [3280, 2454]
+active = [0, 0, 3280, 2454]
+default_crop = [8, 3, 3264, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leaf"
+model = "Credo 40"
+raw_size = [7372, 5536]
+active = [36, 6, 7320, 5484]
+default_crop = [36, 6, 7320, 5484]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "C (Typ 112)"
+raw_size = [4144, 2688]
+active = [0, 0, 4016, 2688]
+default_crop = [8, 8, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "C (Typ 112)"
+raw_size = [4144, 3016]
+active = [0, 0, 4016, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "C-Lux"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "D-LUX (Typ 109)"
+raw_size = [3248, 3104]
+active = [0, 0, 3248, 3104]
+default_crop = [8, 8, 3088, 3088]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "D-LUX (Typ 109)"
+raw_size = [4144, 3104]
+active = [0, 0, 4144, 3104]
+default_crop = [8, 8, 4112, 3088]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "D-LUX (Typ 109)"
+raw_size = [4368, 2872]
+active = [0, 0, 4368, 2872]
+default_crop = [8, 8, 4272, 2856]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "D-LUX (Typ 109)"
+raw_size = [4592, 2536]
+active = [0, 0, 4592, 2536]
+default_crop = [8, 8, 4480, 2520]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "D-LUX 3"
+raw_size = [4330, 2439]
+active = [17, 15, 4248, 2400]
+default_crop = [34, 31, 4224, 2376]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "D-LUX 4"
+raw_size = [3836, 2538]
+active = [0, 0, 3808, 2538]
+default_crop = [7, 3, 3776, 2520]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "D-LUX 5"
+raw_size = [2968, 2754]
+active = [0, 0, 2752, 2754]
+default_crop = [7, 3, 2736, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "D-LUX 5"
+raw_size = [3864, 2538]
+active = [0, 0, 3792, 2538]
+default_crop = [7, 3, 3776, 2520]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "D-LUX 5"
+raw_size = [3864, 2754]
+active = [0, 0, 3664, 2751]
+default_crop = [7, 3, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "D-LUX 5"
+raw_size = [4088, 2250]
+active = [0, 0, 3984, 2250]
+default_crop = [7, 3, 3968, 2232]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "D-LUX 6"
+raw_size = [4144, 2248]
+active = [0, 0, 3984, 2248]
+default_crop = [8, 8, 3968, 2232]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "D-Lux 7"
+raw_size = [4816, 3568]
+active = [0, 0, 4752, 3568]
+default_crop = [8, 8, 4736, 3552]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "DIGILUX 2"
+raw_size = [2568, 1928]
+active = [0, 0, 2568, 1928]
+default_crop = [8, 4, 2552, 1920]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "DIGILUX 3"
+raw_size = [3177, 2367]
+active = [0, 0, 3166, 2367]
+default_crop = [16, 7, 3136, 2352]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "V-LUX (Typ 114)"
+raw_size = [3696, 3664]
+active = [0, 0, 3656, 3664]
+default_crop = [8, 8, 3648, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "V-LUX (Typ 114)"
+raw_size = [5040, 3664]
+active = [0, 0, 4872, 3664]
+default_crop = [8, 8, 4864, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "V-LUX (Typ 114)"
+raw_size = [5488, 3096]
+active = [0, 0, 5480, 3096]
+default_crop = [8, 8, 5472, 3080]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "V-LUX (Typ 114)"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "V-LUX 1"
+raw_size = [3690, 2439]
+active = [9, 0, 3671, 2439]
+default_crop = [16, 7, 3648, 2424]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "V-LUX 4"
+raw_size = [4144, 3016]
+active = [0, 0, 4016, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Leica"
+model = "V-Lux 5"
+raw_size = [5488, 3664]
+active = [0, 0, 5488, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Mamiya"
+model = "ZD"
+raw_size = [4016, 5344]
+active = [0, 0, 4016, 5344]
+default_crop = [4, 4, 4008, 5336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Minolta"
+model = "ALPHA SWEET DIGITAL"
+raw_size = [3016, 2008]
+active = [0, 0, 3016, 2008]
+default_crop = [4, 4, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Minolta"
+model = "ALPHA-7 DIGITAL"
+raw_size = [3016, 2008]
+active = [0, 0, 3016, 2008]
+default_crop = [4, 4, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Minolta"
+model = "DYNAX 5D"
+raw_size = [3016, 2008]
+active = [0, 0, 3016, 2008]
+default_crop = [4, 4, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Minolta"
+model = "DYNAX 7D"
+raw_size = [3016, 2008]
+active = [0, 0, 3016, 2008]
+default_crop = [4, 4, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Minolta"
+model = "DiMAGE 5"
+raw_size = [2056, 1544]
+active = [0, 0, 2056, 1544]
+default_crop = [4, 0, 2048, 1544]
+source = "adobe-dng"
+
+[[frame]]
+make = "Minolta"
+model = "DiMAGE 7"
+raw_size = [2568, 1928]
+active = [0, 0, 2568, 1928]
+default_crop = [4, 4, 2560, 1920]
+source = "adobe-dng"
+
+[[frame]]
+make = "Minolta"
+model = "DiMAGE 7Hi"
+raw_size = [2568, 1928]
+active = [0, 0, 2568, 1928]
+default_crop = [4, 4, 2560, 1920]
+source = "adobe-dng"
+
+[[frame]]
+make = "Minolta"
+model = "DiMAGE 7i"
+raw_size = [2568, 1928]
+active = [0, 0, 2568, 1928]
+default_crop = [4, 4, 2560, 1920]
+source = "adobe-dng"
+
+[[frame]]
+make = "Minolta"
+model = "DiMAGE A1"
+raw_size = [2568, 1928]
+active = [0, 0, 2568, 1928]
+default_crop = [4, 4, 2560, 1920]
+source = "adobe-dng"
+
+[[frame]]
+make = "Minolta"
+model = "DiMAGE A2"
+raw_size = [3272, 2456]
+active = [0, 0, 3272, 2456]
+default_crop = [4, 4, 3264, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Minolta"
+model = "DiMAGE A200"
+raw_size = [3280, 2454]
+active = [0, 0, 3280, 2454]
+default_crop = [8, 2, 3264, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Minolta"
+model = "MAXXUM 7D"
+raw_size = [3016, 2008]
+active = [0, 0, 3016, 2008]
+default_crop = [4, 4, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "1 AW1"
+raw_size = [4620, 3084]
+active = [0, 0, 4620, 3084]
+default_crop = [6, 6, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "1 J1"
+raw_size = [3904, 2606]
+active = [0, 0, 3904, 2604]
+default_crop = [12, 6, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "1 J2"
+raw_size = [3904, 2606]
+active = [0, 0, 3904, 2604]
+default_crop = [12, 6, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "1 J3"
+raw_size = [4620, 3084]
+active = [0, 0, 4620, 3084]
+default_crop = [6, 6, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "1 J4"
+raw_size = [5248, 3504]
+active = [0, 0, 5248, 3504]
+default_crop = [8, 8, 5232, 3488]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "1 J5"
+raw_size = [5584, 3726]
+active = [0, 0, 5584, 3726]
+default_crop = [8, 7, 5568, 3712]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "1 S1"
+raw_size = [3948, 2604]
+active = [0, 0, 3948, 2604]
+default_crop = [12, 6, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "1 S2"
+raw_size = [4608, 3080]
+active = [0, 0, 4608, 3080]
+default_crop = [8, 4, 4592, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "1 V1"
+raw_size = [3904, 2606]
+active = [0, 0, 3904, 2604]
+default_crop = [12, 6, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "1 V2"
+raw_size = [4620, 3084]
+active = [0, 0, 4620, 3084]
+default_crop = [6, 6, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "1 V3"
+raw_size = [5248, 3504]
+active = [0, 0, 5248, 3504]
+default_crop = [8, 8, 5232, 3488]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "COOLPIX A"
+raw_size = [4992, 3280]
+active = [0, 0, 4948, 3280]
+default_crop = [8, 8, 4928, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "COOLPIX A1000"
+raw_size = [4608, 3456]
+active = [0, 0, 4608, 3456]
+default_crop = [0, 0, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "COOLPIX B700"
+raw_size = [5200, 3902]
+active = [0, 0, 5200, 3902]
+default_crop = [8, 7, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "COOLPIX P1000"
+raw_size = [4624, 3470]
+active = [0, 0, 4624, 3470]
+default_crop = [8, 7, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "COOLPIX P1100"
+raw_size = [4624, 3470]
+active = [0, 0, 4624, 3470]
+default_crop = [8, 7, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "COOLPIX P330"
+raw_size = [4032, 3024]
+active = [0, 0, 4032, 3024]
+default_crop = [16, 12, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "COOLPIX P340"
+raw_size = [4032, 3024]
+active = [0, 0, 4032, 3024]
+default_crop = [16, 12, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "COOLPIX P6000"
+raw_size = [4240, 3174]
+active = [0, 0, 4240, 3174]
+default_crop = [9, 2, 4224, 3168]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "COOLPIX P7000"
+raw_size = [3664, 2742]
+active = [0, 0, 3664, 2742]
+default_crop = [7, 2, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "COOLPIX P7100"
+raw_size = [3664, 2744]
+active = [0, 0, 3664, 2744]
+default_crop = [7, 4, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "COOLPIX P7700"
+raw_size = [4032, 3024]
+active = [0, 0, 4032, 3024]
+default_crop = [16, 12, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "COOLPIX P7800"
+raw_size = [4032, 3024]
+active = [0, 0, 4032, 3024]
+default_crop = [16, 12, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "COOLPIX P950"
+raw_size = [4624, 3470]
+active = [0, 0, 4624, 3470]
+default_crop = [8, 7, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D1"
+raw_size = [2012, 1324]
+active = [0, 0, 2012, 1324]
+default_crop = [6, 6, 2000, 1312]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D100"
+raw_size = [3040, 2024]
+active = [2, 0, 3032, 2024]
+default_crop = [13, 12, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D1H"
+raw_size = [2012, 1324]
+active = [0, 0, 2012, 1324]
+default_crop = [6, 6, 2000, 1312]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D200"
+raw_size = [3904, 2616]
+active = [1, 0, 3900, 2616]
+default_crop = [16, 12, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D2Hs"
+raw_size = [2496, 1648]
+active = [6, 0, 2482, 1648]
+default_crop = [16, 9, 2464, 1632]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D2X"
+raw_size = [4320, 2868]
+active = [0, 0, 4312, 2868]
+default_crop = [16, 10, 4288, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D2Xs"
+raw_size = [4320, 2868]
+active = [0, 0, 4312, 2868]
+default_crop = [16, 10, 4288, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D3"
+raw_size = [4288, 2844]
+active = [2, 0, 4284, 2844]
+default_crop = [15, 6, 4256, 2832]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D300"
+raw_size = [4352, 2868]
+active = [0, 0, 4320, 2868]
+default_crop = [15, 10, 4288, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D3000"
+raw_size = [3904, 2616]
+active = [0, 0, 3900, 2613]
+default_crop = [14, 9, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D300S"
+raw_size = [4352, 2868]
+active = [0, 0, 4320, 2868]
+default_crop = [15, 10, 4288, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D3100"
+raw_size = [4672, 3084]
+active = [6, 0, 4644, 3084]
+default_crop = [24, 6, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D3200"
+raw_size = [6080, 4012]
+active = [0, 0, 6034, 4012]
+default_crop = [8, 6, 6016, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D3300"
+raw_size = [6016, 4016]
+active = [0, 0, 6016, 4016]
+default_crop = [8, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D3400"
+raw_size = [6016, 4016]
+active = [0, 0, 6016, 4016]
+default_crop = [8, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D3500"
+raw_size = [6016, 4016]
+active = [0, 0, 6016, 4016]
+default_crop = [8, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D3S"
+raw_size = [4288, 2844]
+active = [2, 0, 4284, 2844]
+default_crop = [15, 6, 4256, 2832]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D3X"
+raw_size = [6080, 4044]
+active = [0, 0, 6080, 4044]
+default_crop = [15, 6, 6048, 4032]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D4"
+raw_size = [4992, 3292]
+active = [2, 0, 4940, 3292]
+default_crop = [8, 6, 4928, 3280]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D40"
+raw_size = [3040, 2014]
+active = [0, 0, 3040, 2014]
+default_crop = [15, 7, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D40X"
+raw_size = [3904, 2616]
+active = [0, 0, 3900, 2613]
+default_crop = [14, 9, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D4S"
+raw_size = [2464, 1640]
+active = [0, 0, 2464, 1640]
+default_crop = [0, 0, 2464, 1640]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D4S"
+raw_size = [4936, 3288]
+active = [0, 0, 4936, 3288]
+default_crop = [4, 4, 4928, 3280]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D5"
+raw_size = [5584, 3728]
+active = [0, 0, 5584, 3728]
+default_crop = [8, 8, 5568, 3712]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D50"
+raw_size = [3040, 2014]
+active = [0, 0, 3040, 2014]
+default_crop = [15, 7, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D500"
+raw_size = [4200, 2792]
+active = [0, 0, 4200, 2792]
+default_crop = [12, 4, 4176, 2784]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D500"
+raw_size = [4304, 2864]
+active = [0, 0, 4304, 2864]
+default_crop = [16, 8, 4272, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D500"
+raw_size = [4800, 3192]
+active = [0, 0, 4800, 3192]
+default_crop = [15, 6, 4770, 3180]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D500"
+raw_size = [5600, 3728]
+active = [0, 0, 5600, 3728]
+default_crop = [16, 8, 5568, 3712]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D5000"
+raw_size = [4352, 2868]
+active = [0, 0, 4310, 2868]
+default_crop = [11, 10, 4288, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D5100"
+raw_size = [4992, 3280]
+active = [0, 0, 4948, 3280]
+default_crop = [8, 8, 4928, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D5200"
+raw_size = [6036, 4020]
+active = [0, 0, 6036, 4020]
+default_crop = [18, 10, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D5300"
+raw_size = [6016, 4016]
+active = [0, 0, 6016, 4016]
+default_crop = [8, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D5500"
+raw_size = [6016, 4016]
+active = [0, 0, 6016, 4016]
+default_crop = [8, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D5600"
+raw_size = [6016, 4016]
+active = [0, 0, 6016, 4016]
+default_crop = [8, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D6"
+raw_size = [4188, 2796]
+active = [0, 0, 4188, 2796]
+default_crop = [6, 6, 4176, 2784]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D6"
+raw_size = [4786, 3194]
+active = [0, 0, 4786, 3194]
+default_crop = [8, 7, 4770, 3180]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D6"
+raw_size = [5584, 3728]
+active = [0, 0, 5584, 3728]
+default_crop = [8, 8, 5568, 3712]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D60"
+raw_size = [3904, 2616]
+active = [0, 0, 3900, 2613]
+default_crop = [14, 9, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D600"
+raw_size = [6080, 4028]
+active = [0, 0, 6034, 4028]
+default_crop = [8, 6, 6016, 4016]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D610"
+raw_size = [3968, 2636]
+active = [0, 0, 3968, 2636]
+default_crop = [8, 6, 3936, 2624]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D610"
+raw_size = [6080, 4028]
+active = [0, 0, 6034, 4028]
+default_crop = [8, 6, 6016, 4016]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D70"
+raw_size = [3040, 2014]
+active = [0, 0, 3040, 2014]
+default_crop = [15, 7, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D700"
+raw_size = [4288, 2844]
+active = [2, 0, 4284, 2844]
+default_crop = [15, 6, 4256, 2832]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D7000"
+raw_size = [4992, 3280]
+active = [0, 0, 4948, 3280]
+default_crop = [8, 8, 4928, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D70s"
+raw_size = [3040, 2014]
+active = [0, 0, 3040, 2014]
+default_crop = [15, 7, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D7100"
+raw_size = [4812, 3212]
+active = [0, 0, 4812, 3212]
+default_crop = [6, 6, 4800, 3200]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D7100"
+raw_size = [6036, 4020]
+active = [0, 0, 6036, 4020]
+default_crop = [18, 10, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D7200"
+raw_size = [6016, 4016]
+active = [0, 0, 6016, 4016]
+default_crop = [8, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D750"
+raw_size = [6032, 4032]
+active = [0, 0, 6032, 4032]
+default_crop = [8, 8, 6016, 4016]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D7500"
+raw_size = [4304, 2864]
+active = [0, 0, 4304, 2864]
+default_crop = [16, 8, 4272, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D7500"
+raw_size = [5600, 3728]
+active = [0, 0, 5600, 3728]
+default_crop = [16, 8, 5568, 3712]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D780"
+raw_size = [6064, 4040]
+active = [0, 0, 6064, 4040]
+default_crop = [8, 8, 6048, 4024]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D80"
+raw_size = [3904, 2616]
+active = [0, 0, 3900, 2611]
+default_crop = [14, 9, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D800"
+raw_size = [7424, 4924]
+active = [0, 0, 7378, 4924]
+default_crop = [8, 6, 7360, 4912]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D800E"
+raw_size = [7424, 4924]
+active = [0, 0, 7378, 4924]
+default_crop = [8, 6, 7360, 4912]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D810"
+raw_size = [3680, 2456]
+active = [0, 0, 3680, 2456]
+default_crop = [0, 0, 3680, 2456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D810"
+raw_size = [7380, 4928]
+active = [0, 0, 7372, 4920]
+default_crop = [12, 8, 7360, 4912]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D850"
+raw_size = [6216, 4136]
+active = [0, 0, 6216, 4136]
+default_crop = [12, 4, 6192, 4128]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D850"
+raw_size = [7104, 4728]
+active = [0, 0, 7104, 4728]
+default_crop = [15, 5, 7074, 4716]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D850"
+raw_size = [8288, 5520]
+active = [0, 0, 8288, 5520]
+default_crop = [16, 8, 8256, 5504]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "D90"
+raw_size = [4352, 2868]
+active = [0, 0, 4310, 2868]
+default_crop = [11, 10, 4288, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Df"
+raw_size = [4992, 3292]
+active = [2, 0, 4940, 3292]
+default_crop = [8, 6, 4928, 3280]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "E5400"
+raw_size = [2608, 1950]
+active = [0, 0, 2608, 1950]
+default_crop = [8, 2, 2592, 1944]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "E8400"
+raw_size = [3280, 2454]
+active = [0, 0, 3280, 2454]
+default_crop = [5, 1, 3264, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "E8800"
+raw_size = [3280, 2454]
+active = [0, 0, 3280, 2454]
+default_crop = [5, 1, 3264, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z 30"
+raw_size = [5600, 3728]
+active = [0, 0, 5600, 3728]
+default_crop = [16, 8, 5568, 3712]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z 5"
+raw_size = [6040, 4032]
+active = [0, 0, 6040, 4032]
+default_crop = [12, 8, 6016, 4016]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z 50"
+raw_size = [5600, 3728]
+active = [0, 0, 5600, 3728]
+default_crop = [16, 8, 5568, 3712]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z 6"
+raw_size = [4548, 3030]
+active = [0, 0, 4548, 3030]
+default_crop = [10, 6, 4528, 3018]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z 6"
+raw_size = [5196, 3462]
+active = [0, 0, 5196, 3462]
+default_crop = [10, 7, 5176, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z 6"
+raw_size = [6064, 4040]
+active = [0, 0, 6064, 4040]
+default_crop = [8, 8, 6048, 4024]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z 6_2"
+raw_size = [6064, 4040]
+active = [0, 0, 6064, 4040]
+default_crop = [8, 8, 6048, 4024]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z 7"
+raw_size = [6216, 4140]
+active = [0, 0, 6216, 4140]
+default_crop = [12, 6, 6192, 4128]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z 7"
+raw_size = [7104, 4730]
+active = [0, 0, 7104, 4730]
+default_crop = [15, 7, 7074, 4716]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z 7"
+raw_size = [8288, 5520]
+active = [0, 0, 8288, 5520]
+default_crop = [16, 8, 8256, 5504]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z 7_2"
+raw_size = [8288, 5520]
+active = [0, 0, 8288, 5520]
+default_crop = [16, 8, 8256, 5504]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z 8"
+raw_size = [8280, 5520]
+active = [0, 0, 8280, 5520]
+default_crop = [12, 8, 8256, 5504]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z 9"
+raw_size = [8280, 5520]
+active = [0, 0, 8280, 5520]
+default_crop = [12, 8, 8256, 5504]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z f"
+raw_size = [6064, 4040]
+active = [0, 0, 6064, 4040]
+default_crop = [8, 4, 6048, 4032]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z fc"
+raw_size = [5600, 3728]
+active = [0, 0, 5600, 3728]
+default_crop = [16, 8, 5568, 3712]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z50_2"
+raw_size = [3728, 3728]
+active = [0, 0, 3728, 3728]
+default_crop = [8, 8, 3712, 3712]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z50_2"
+raw_size = [5600, 3144]
+active = [0, 0, 5600, 3144]
+default_crop = [16, 8, 5568, 3128]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z50_2"
+raw_size = [5600, 3728]
+active = [0, 0, 5600, 3728]
+default_crop = [16, 8, 5568, 3712]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z5_2"
+raw_size = [4000, 2672]
+active = [0, 0, 4000, 2672]
+default_crop = [8, 8, 3984, 2656]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z5_2"
+raw_size = [4048, 4040]
+active = [0, 0, 4048, 4040]
+default_crop = [8, 4, 4032, 4032]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z5_2"
+raw_size = [6064, 3416]
+active = [0, 0, 6064, 3416]
+default_crop = [8, 8, 6048, 3400]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z5_2"
+raw_size = [6064, 4040]
+active = [0, 0, 6064, 4040]
+default_crop = [8, 4, 6048, 4032]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z6_3"
+raw_size = [4000, 2672]
+active = [0, 0, 4000, 2672]
+default_crop = [8, 8, 3984, 2656]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z6_3"
+raw_size = [4048, 4040]
+active = [0, 0, 4048, 4040]
+default_crop = [8, 4, 4032, 4032]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z6_3"
+raw_size = [6064, 3416]
+active = [0, 0, 6064, 3416]
+default_crop = [8, 8, 6048, 3400]
+source = "adobe-dng"
+
+[[frame]]
+make = "Nikon"
+model = "Z6_3"
+raw_size = [6064, 4040]
+active = [0, 0, 6064, 4040]
+default_crop = [8, 4, 6048, 4032]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-1"
+raw_size = [5220, 3912]
+active = [0, 0, 5220, 3912]
+default_crop = [12, 12, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-1"
+raw_size = [8180, 6132]
+active = [0, 0, 8168, 6126]
+default_crop = [6, 6, 8160, 6120]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-1"
+raw_size = [10400, 7792]
+active = [0, 0, 10388, 7786]
+default_crop = [8, 8, 10368, 7776]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-1MarkII"
+raw_size = [5220, 3912]
+active = [0, 0, 5220, 3912]
+default_crop = [12, 12, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-1MarkII"
+raw_size = [8172, 6132]
+active = [0, 0, 8160, 6126]
+default_crop = [0, 6, 8160, 6120]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-1MarkII"
+raw_size = [8180, 6132]
+active = [0, 0, 8168, 6126]
+default_crop = [6, 6, 8160, 6120]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-1MarkII"
+raw_size = [10386, 7792]
+active = [0, 0, 10374, 7786]
+default_crop = [3, 8, 10368, 7776]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-1MarkII"
+raw_size = [10400, 7792]
+active = [0, 0, 10388, 7786]
+default_crop = [8, 8, 10368, 7776]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-3"
+raw_size = [5220, 3912]
+active = [0, 0, 5220, 3912]
+default_crop = [12, 12, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-3"
+raw_size = [8172, 6132]
+active = [0, 0, 8160, 6126]
+default_crop = [0, 6, 8160, 6120]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-3"
+raw_size = [8180, 6132]
+active = [0, 0, 8168, 6126]
+default_crop = [6, 6, 8160, 6120]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-3"
+raw_size = [10386, 7792]
+active = [0, 0, 10374, 7786]
+default_crop = [3, 8, 10368, 7776]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-3"
+raw_size = [10400, 7792]
+active = [0, 0, 10388, 7786]
+default_crop = [8, 8, 10368, 7776]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-5"
+raw_size = [5240, 3912]
+active = [0, 0, 5240, 3912]
+default_crop = [12, 12, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-5"
+raw_size = [8200, 6132]
+active = [0, 0, 8188, 6126]
+default_crop = [6, 6, 8160, 6120]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-5"
+raw_size = [10400, 7792]
+active = [0, 0, 10388, 7786]
+default_crop = [8, 8, 10368, 7776]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-5MarkII"
+raw_size = [5240, 3912]
+active = [0, 0, 5240, 3912]
+default_crop = [12, 12, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-5MarkII"
+raw_size = [8200, 6132]
+active = [0, 0, 8166, 6132]
+default_crop = [6, 6, 8160, 6120]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "OM-5MarkII"
+raw_size = [10400, 7792]
+active = [0, 0, 10386, 7792]
+default_crop = [8, 8, 10368, 7776]
+source = "adobe-dng"
+
+[[frame]]
+make = "OM Digital"
+model = "TG-7"
+raw_size = [4040, 3016]
+active = [0, 0, 4034, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "C5050Z"
+raw_size = [2576, 1926]
+active = [0, 0, 2576, 1925]
+default_crop = [8, 2, 2560, 1920]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "C5060WZ"
+raw_size = [2608, 1950]
+active = [0, 0, 2608, 1949]
+default_crop = [8, 2, 2592, 1944]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "C7070WZ"
+raw_size = [3088, 2310]
+active = [0, 0, 3088, 2309]
+default_crop = [11, 2, 3072, 2304]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "C8080WZ"
+raw_size = [3280, 2454]
+active = [0, 0, 3280, 2453]
+default_crop = [8, 2, 3264, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-1"
+raw_size = [2624, 1966]
+active = [0, 0, 2624, 1966]
+default_crop = [32, 23, 2560, 1920]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-10"
+raw_size = [2256, 1684]
+active = [0, 0, 2256, 1684]
+default_crop = [8, 2, 2240, 1680]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-20,E-20N,E-20P"
+raw_size = [2576, 1924]
+active = [0, 0, 2576, 1924]
+default_crop = [2, 2, 2572, 1920]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-3"
+raw_size = [3720, 2800]
+active = [0, 0, 3720, 2800]
+default_crop = [54, 22, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-30"
+raw_size = [4100, 3084]
+active = [0, 0, 4096, 3084]
+default_crop = [30, 26, 4032, 3024]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-300"
+raw_size = [3360, 2504]
+active = [0, 0, 3340, 2504]
+default_crop = [12, 28, 3264, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-330"
+raw_size = [3280, 2450]
+active = [0, 0, 3250, 2450]
+default_crop = [52, 60, 3136, 2352]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-400"
+raw_size = [3768, 2840]
+active = [0, 0, 3768, 2840]
+default_crop = [44, 50, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-410"
+raw_size = [3720, 2800]
+active = [0, 0, 3720, 2800]
+default_crop = [34, 38, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-420"
+raw_size = [3720, 2800]
+active = [0, 0, 3720, 2800]
+default_crop = [40, 14, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-450"
+raw_size = [3720, 2800]
+active = [0, 0, 3720, 2800]
+default_crop = [42, 28, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-5"
+raw_size = [4100, 3084]
+active = [0, 0, 4096, 3084]
+default_crop = [42, 24, 4032, 3024]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-500"
+raw_size = [3360, 2504]
+active = [0, 0, 3340, 2504]
+default_crop = [18, 44, 3264, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-510"
+raw_size = [3720, 2800]
+active = [0, 0, 3720, 2800]
+default_crop = [34, 38, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-520"
+raw_size = [3720, 2800]
+active = [0, 0, 3720, 2800]
+default_crop = [12, 46, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-600"
+raw_size = [4100, 3084]
+active = [0, 0, 4096, 3084]
+default_crop = [30, 30, 4032, 3024]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-620"
+raw_size = [4100, 3084]
+active = [0, 0, 4096, 3084]
+default_crop = [30, 28, 4032, 3024]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M1"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M10"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M10 Mark III"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M10MarkII"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M10MarkIIIS"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M10MarkIV"
+raw_size = [5200, 3904]
+active = [0, 0, 5200, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M1MarkII"
+raw_size = [5240, 3912]
+active = [0, 0, 5240, 3912]
+default_crop = [12, 12, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M1MarkII"
+raw_size = [10400, 7792]
+active = [0, 0, 10388, 7786]
+default_crop = [8, 8, 10368, 7776]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M1MarkIII"
+raw_size = [5240, 3912]
+active = [0, 0, 5240, 3912]
+default_crop = [12, 12, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M1MarkIII"
+raw_size = [8200, 6132]
+active = [0, 0, 8188, 6126]
+default_crop = [6, 6, 8160, 6120]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M1MarkIII"
+raw_size = [10400, 7792]
+active = [0, 0, 10388, 7786]
+default_crop = [8, 8, 10368, 7776]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M1X"
+raw_size = [5240, 3912]
+active = [0, 0, 5240, 3912]
+default_crop = [12, 12, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M5"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M5MarkII"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M5MarkII"
+raw_size = [9280, 6932]
+active = [0, 0, 9268, 6926]
+default_crop = [10, 10, 9216, 6912]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M5MarkIII"
+raw_size = [5240, 3912]
+active = [0, 0, 5240, 3912]
+default_crop = [12, 12, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-M5MarkIII"
+raw_size = [10400, 7792]
+active = [0, 0, 10388, 7786]
+default_crop = [8, 8, 10368, 7776]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-P1"
+raw_size = [4100, 3084]
+active = [0, 0, 4096, 3084]
+default_crop = [30, 30, 4032, 3024]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-P3"
+raw_size = [4080, 3040]
+active = [0, 0, 4056, 3040]
+default_crop = [8, 8, 4032, 3024]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-P5"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-P7"
+raw_size = [5200, 3904]
+active = [0, 0, 5200, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-PL1"
+raw_size = [4100, 3084]
+active = [0, 0, 4096, 3084]
+default_crop = [30, 30, 4032, 3024]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-PL10"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-PL2"
+raw_size = [4100, 3084]
+active = [0, 0, 4096, 3084]
+default_crop = [30, 30, 4032, 3024]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-PL3"
+raw_size = [4080, 3040]
+active = [0, 0, 4056, 3040]
+default_crop = [8, 8, 4032, 3024]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-PL5"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-PL6"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-PL7"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-PL8"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-PL9"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-PM1"
+raw_size = [4080, 3040]
+active = [0, 0, 4056, 3040]
+default_crop = [8, 8, 4032, 3024]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "E-PM2"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "PEN-F"
+raw_size = [5200, 3904]
+active = [0, 0, 5200, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "PEN-F"
+raw_size = [10400, 7796]
+active = [0, 0, 10388, 7790]
+default_crop = [10, 10, 10368, 7776]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "SH-2"
+raw_size = [4624, 3470]
+active = [0, 0, 4624, 3470]
+default_crop = [7, 6, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "SP350"
+raw_size = [3280, 2454]
+active = [0, 0, 3280, 2453]
+default_crop = [8, 2, 3264, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "SP500UZ"
+raw_size = [2832, 2118]
+active = [0, 0, 2832, 2117]
+default_crop = [8, 2, 2816, 2112]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "SP510UZ"
+raw_size = [3088, 2310]
+active = [0, 0, 3088, 2309]
+default_crop = [8, 2, 3072, 2304]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "SP550UZ"
+raw_size = [3088, 2310]
+active = [0, 0, 3088, 2309]
+default_crop = [8, 2, 3072, 2304]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "SP565UZ"
+raw_size = [3664, 2742]
+active = [0, 0, 3664, 2741]
+default_crop = [10, 3, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "SP570UZ"
+raw_size = [3664, 2742]
+active = [0, 0, 3664, 2741]
+default_crop = [10, 3, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "STYLUS1"
+raw_size = [4000, 2992]
+active = [0, 0, 4000, 2992]
+default_crop = [8, 8, 3968, 2976]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "STYLUS1,1s"
+raw_size = [4000, 2992]
+active = [0, 0, 4000, 2992]
+default_crop = [8, 8, 3968, 2976]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "TG-4"
+raw_size = [4640, 3472]
+active = [0, 0, 4640, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "TG-5"
+raw_size = [4040, 3016]
+active = [0, 0, 4034, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "TG-6"
+raw_size = [4040, 3016]
+active = [0, 0, 4034, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "XZ-1"
+raw_size = [3680, 2760]
+active = [0, 0, 3680, 2759]
+default_crop = [8, 8, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "XZ-10"
+raw_size = [3984, 2990]
+active = [0, 0, 3984, 2990]
+default_crop = [8, 7, 3968, 2976]
+source = "adobe-dng"
+
+[[frame]]
+make = "Olympus"
+model = "XZ-2"
+raw_size = [3984, 2986]
+active = [0, 0, 3984, 2986]
+default_crop = [8, 10, 3968, 2976]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-FZ10002"
+raw_size = [5488, 3664]
+active = [0, 0, 5488, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-FZ80"
+raw_size = [5040, 3688]
+active = [0, 0, 4928, 3688]
+default_crop = [8, 8, 4896, 3672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-FZ82"
+raw_size = [5040, 3688]
+active = [0, 0, 4928, 3688]
+default_crop = [8, 8, 4896, 3672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G100"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G100D"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G110"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G9"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [12, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G9"
+raw_size = [5264, 3912]
+active = [0, 0, 5208, 3912]
+default_crop = [18, 12, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G9"
+raw_size = [5280, 3904]
+active = [0, 0, 5280, 3904]
+default_crop = [12, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G9"
+raw_size = [10480, 7794]
+active = [0, 0, 10480, 7794]
+default_crop = [18, 10, 10368, 7776]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G90"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G91"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G95"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G95D"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G97"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G9M2"
+raw_size = [5784, 4344]
+active = [0, 0, 5784, 4344]
+default_crop = [4, 4, 5776, 4336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-G9M2"
+raw_size = [11560, 8680]
+active = [4, 4, 11552, 8672]
+default_crop = [4, 4, 11552, 8672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GF10"
+raw_size = [4816, 3464]
+active = [0, 0, 4704, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GH5"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [12, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GH5M2"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [12, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GH5S"
+raw_size = [2808, 2768]
+active = [0, 0, 2808, 2768]
+default_crop = [12, 8, 2752, 2752]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GH5S"
+raw_size = [3744, 2776]
+active = [0, 0, 3744, 2776]
+default_crop = [12, 8, 3680, 2760]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GH5S"
+raw_size = [3888, 2576]
+active = [0, 0, 3852, 2576]
+default_crop = [12, 8, 3840, 2560]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GH5S"
+raw_size = [4104, 2272]
+active = [0, 0, 4104, 2272]
+default_crop = [12, 8, 4016, 2256]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GH6"
+raw_size = [5792, 4352]
+active = [0, 0, 5792, 4352]
+default_crop = [8, 8, 5776, 4336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GH6"
+raw_size = [11560, 8680]
+active = [0, 0, 11560, 8680]
+default_crop = [4, 4, 11552, 8672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GH7"
+raw_size = [5792, 4352]
+active = [0, 0, 5792, 4352]
+default_crop = [8, 8, 5776, 4336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GX7MK3"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GX800"
+raw_size = [4816, 3464]
+active = [0, 0, 4704, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GX850"
+raw_size = [4816, 3464]
+active = [0, 0, 4704, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GX880"
+raw_size = [4816, 3464]
+active = [0, 0, 4704, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-GX9"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-LX100M2"
+raw_size = [3696, 3568]
+active = [0, 0, 3567, 3568]
+default_crop = [8, 8, 3552, 3552]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-LX100M2"
+raw_size = [4816, 3568]
+active = [0, 0, 4752, 3568]
+default_crop = [8, 8, 4736, 3552]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-LX100M2"
+raw_size = [5040, 3304]
+active = [0, 0, 4944, 3304]
+default_crop = [8, 8, 4928, 3288]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-LX100M2"
+raw_size = [5264, 2920]
+active = [0, 0, 5168, 2920]
+default_crop = [8, 8, 5152, 2904]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S1"
+raw_size = [6072, 4016]
+active = [0, 0, 6028, 4016]
+default_crop = [12, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S1H"
+raw_size = [6072, 4016]
+active = [0, 0, 6028, 4016]
+default_crop = [12, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S1M2"
+raw_size = [6008, 4008]
+active = [0, 2, 6008, 4006]
+default_crop = [4, 4, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S1M2"
+raw_size = [12008, 8008]
+active = [4, 4, 12000, 8000]
+default_crop = [4, 4, 12000, 8000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S1M2ES"
+raw_size = [6016, 4016]
+active = [0, 0, 6016, 4016]
+default_crop = [8, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S1R"
+raw_size = [8448, 5632]
+active = [0, 0, 8393, 5632]
+default_crop = [12, 24, 8368, 5584]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S1RM2"
+raw_size = [8152, 5432]
+active = [0, 4, 8152, 5428]
+default_crop = [4, 4, 8144, 5424]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S5"
+raw_size = [6048, 4016]
+active = [0, 0, 6030, 4016]
+default_crop = [12, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S5"
+raw_size = [6072, 4016]
+active = [0, 0, 6028, 4016]
+default_crop = [12, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S5"
+raw_size = [12096, 8018]
+active = [0, 0, 12034, 8018]
+default_crop = [16, 8, 12000, 8000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S5M2"
+raw_size = [6008, 4008]
+active = [0, 0, 6008, 4008]
+default_crop = [4, 4, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S5M2"
+raw_size = [12008, 8008]
+active = [0, 0, 12008, 8008]
+default_crop = [4, 4, 12000, 8000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S5M2X"
+raw_size = [6008, 4008]
+active = [0, 0, 6008, 4008]
+default_crop = [4, 4, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S5M2X"
+raw_size = [12008, 8008]
+active = [0, 0, 12008, 8008]
+default_crop = [4, 4, 12000, 8000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S9"
+raw_size = [6016, 4016]
+active = [0, 0, 6016, 4016]
+default_crop = [8, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-S9"
+raw_size = [12008, 8008]
+active = [4, 4, 12000, 8000]
+default_crop = [4, 4, 12000, 8000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-TZ200D"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-TZ202"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-TZ90"
+raw_size = [5264, 3904]
+active = [0, 0, 5200, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-TZ91"
+raw_size = [5264, 3904]
+active = [0, 0, 5200, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-TZ95"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-TZ95D"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-TZ96"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DC-ZS200D"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-CM1"
+raw_size = [3696, 3664]
+active = [0, 0, 3656, 3664]
+default_crop = [8, 8, 3648, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-CM1"
+raw_size = [5040, 3664]
+active = [0, 0, 4872, 3664]
+default_crop = [8, 8, 4864, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-CM1"
+raw_size = [5488, 3096]
+active = [0, 0, 5480, 3096]
+default_crop = [8, 8, 5472, 3080]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-CM1"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FX150"
+raw_size = [4508, 2498]
+active = [0, 0, 4429, 2498]
+default_crop = [8, 6, 4416, 2480]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FX150"
+raw_size = [4508, 2962]
+active = [0, 0, 4429, 2962]
+default_crop = [8, 6, 4416, 2944]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FX150"
+raw_size = [4508, 3330]
+active = [0, 0, 4429, 3324]
+default_crop = [8, 6, 4416, 3312]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ100"
+raw_size = [3416, 3248]
+active = [0, 0, 3248, 3248]
+default_crop = [8, 4, 3232, 3232]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ100"
+raw_size = [4536, 2448]
+active = [0, 0, 4336, 2448]
+default_crop = [8, 4, 4320, 2432]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ100"
+raw_size = [4536, 2896]
+active = [0, 0, 4336, 2896]
+default_crop = [8, 4, 4320, 2880]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ100"
+raw_size = [4536, 3256]
+active = [0, 0, 4336, 3256]
+default_crop = [8, 4, 4320, 3240]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ1000"
+raw_size = [3696, 3664]
+active = [0, 0, 3656, 3664]
+default_crop = [8, 8, 3648, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ1000"
+raw_size = [5040, 3664]
+active = [0, 0, 4872, 3664]
+default_crop = [8, 8, 4864, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ1000"
+raw_size = [5488, 3096]
+active = [0, 0, 5480, 3096]
+default_crop = [8, 8, 5472, 3080]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ1000"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ150"
+raw_size = [3024, 3008]
+active = [0, 0, 3008, 3008]
+default_crop = [8, 8, 2992, 2992]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ150"
+raw_size = [4144, 2264]
+active = [0, 0, 4016, 2264]
+default_crop = [8, 8, 4000, 2248]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ150"
+raw_size = [4144, 2688]
+active = [0, 0, 4016, 2688]
+default_crop = [8, 8, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ150"
+raw_size = [4144, 3016]
+active = [0, 0, 4016, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ18"
+raw_size = [3330, 2463]
+active = [11, 0, 3288, 2463]
+default_crop = [16, 7, 3264, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ200"
+raw_size = [3024, 3008]
+active = [0, 0, 3008, 3008]
+default_crop = [8, 8, 2992, 2992]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ200"
+raw_size = [4144, 2264]
+active = [0, 0, 4016, 2264]
+default_crop = [8, 8, 4000, 2248]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ200"
+raw_size = [4144, 2688]
+active = [0, 0, 4016, 2688]
+default_crop = [8, 8, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ200"
+raw_size = [4144, 3016]
+active = [0, 0, 4016, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ2000"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ2500"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ28"
+raw_size = [3724, 2074]
+active = [0, 0, 3668, 2074]
+default_crop = [8, 6, 3648, 2056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ28"
+raw_size = [3724, 2450]
+active = [0, 0, 3668, 2450]
+default_crop = [8, 6, 3648, 2432]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ28"
+raw_size = [3724, 2754]
+active = [0, 0, 3668, 2754]
+default_crop = [8, 6, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ30"
+raw_size = [3304, 2458]
+active = [0, 0, 3288, 2458]
+default_crop = [12, 4, 3264, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ300"
+raw_size = [4144, 3016]
+active = [0, 0, 4016, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ330"
+raw_size = [4144, 3016]
+active = [0, 0, 4016, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ35"
+raw_size = [4060, 2266]
+active = [0, 0, 4032, 2266]
+default_crop = [7, 3, 4000, 2248]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ35"
+raw_size = [4060, 2690]
+active = [0, 0, 4032, 2690]
+default_crop = [7, 3, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ35"
+raw_size = [4060, 3018]
+active = [0, 0, 4032, 3018]
+default_crop = [7, 3, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ38"
+raw_size = [4060, 2266]
+active = [0, 0, 4032, 2266]
+default_crop = [7, 3, 4000, 2248]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ38"
+raw_size = [4060, 2690]
+active = [0, 0, 4032, 2690]
+default_crop = [7, 3, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ38"
+raw_size = [4060, 3018]
+active = [0, 0, 4032, 3018]
+default_crop = [7, 3, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ45"
+raw_size = [3276, 3252]
+active = [0, 0, 3248, 3252]
+default_crop = [8, 3, 3232, 3232]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ45"
+raw_size = [4396, 2454]
+active = [0, 0, 4334, 2454]
+default_crop = [8, 4, 4320, 2432]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ45"
+raw_size = [4396, 2898]
+active = [0, 0, 4334, 2898]
+default_crop = [8, 4, 4320, 2880]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ45"
+raw_size = [4396, 3258]
+active = [0, 0, 4334, 3253]
+default_crop = [8, 4, 4320, 3240]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ50"
+raw_size = [3690, 2067]
+active = [9, 0, 3671, 2067]
+default_crop = [16, 7, 3648, 2052]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ50"
+raw_size = [3690, 2439]
+active = [9, 0, 3671, 2439]
+default_crop = [16, 7, 3648, 2424]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ50"
+raw_size = [3690, 2751]
+active = [9, 0, 3671, 2748]
+default_crop = [16, 7, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ70"
+raw_size = [4816, 3472]
+active = [0, 0, 4634, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ72"
+raw_size = [3472, 3472]
+active = [0, 0, 3472, 3472]
+default_crop = [8, 8, 3456, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ72"
+raw_size = [4816, 2608]
+active = [0, 0, 4634, 2608]
+default_crop = [8, 8, 4608, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ72"
+raw_size = [4816, 3088]
+active = [0, 0, 4634, 3088]
+default_crop = [8, 8, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ72"
+raw_size = [4816, 3472]
+active = [0, 0, 4634, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-FZ8"
+raw_size = [3130, 2319]
+active = [4, 0, 3096, 2319]
+default_crop = [15, 7, 3072, 2304]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G1"
+raw_size = [4060, 3016]
+active = [0, 0, 4008, 3004]
+default_crop = [8, 4, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G10"
+raw_size = [3052, 3008]
+active = [0, 0, 3010, 3008]
+default_crop = [8, 4, 2992, 2992]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G10"
+raw_size = [4060, 2264]
+active = [0, 0, 4008, 2264]
+default_crop = [8, 4, 4000, 2248]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G10"
+raw_size = [4060, 2688]
+active = [0, 0, 4008, 2688]
+default_crop = [8, 4, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G10"
+raw_size = [4060, 3016]
+active = [0, 0, 4008, 3004]
+default_crop = [8, 4, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G2"
+raw_size = [3052, 3008]
+active = [0, 0, 3010, 3008]
+default_crop = [8, 4, 2992, 2992]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G2"
+raw_size = [4060, 2264]
+active = [0, 0, 4008, 2264]
+default_crop = [8, 4, 4000, 2248]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G2"
+raw_size = [4060, 2688]
+active = [0, 0, 4008, 2688]
+default_crop = [8, 4, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G2"
+raw_size = [4060, 3016]
+active = [0, 0, 4008, 3004]
+default_crop = [8, 4, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G3"
+raw_size = [3640, 3440]
+active = [0, 0, 3440, 3440]
+default_crop = [8, 4, 3424, 3424]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G3"
+raw_size = [4760, 2592]
+active = [0, 0, 4608, 2592]
+default_crop = [8, 4, 4576, 2576]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G3"
+raw_size = [4760, 3072]
+active = [0, 0, 4608, 3072]
+default_crop = [8, 4, 4576, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G3"
+raw_size = [4760, 3464]
+active = [0, 0, 4608, 3464]
+default_crop = [8, 4, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G5"
+raw_size = [4816, 3472]
+active = [0, 0, 4624, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G6"
+raw_size = [3472, 3472]
+active = [0, 0, 3472, 3472]
+default_crop = [8, 8, 3456, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G6"
+raw_size = [4816, 2608]
+active = [0, 0, 4624, 2608]
+default_crop = [8, 8, 4608, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G6"
+raw_size = [4816, 3088]
+active = [0, 0, 4624, 3088]
+default_crop = [8, 8, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G6"
+raw_size = [4816, 3472]
+active = [0, 0, 4624, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G7"
+raw_size = [3472, 3440]
+active = [0, 0, 3440, 3440]
+default_crop = [8, 8, 3424, 3424]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G7"
+raw_size = [4816, 2600]
+active = [0, 0, 4608, 2600]
+default_crop = [8, 8, 4592, 2584]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G7"
+raw_size = [4816, 3080]
+active = [0, 0, 4608, 3080]
+default_crop = [8, 8, 4592, 3064]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G7"
+raw_size = [4816, 3464]
+active = [0, 0, 4608, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G70"
+raw_size = [3472, 3440]
+active = [0, 0, 3440, 3440]
+default_crop = [8, 8, 3424, 3424]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G70"
+raw_size = [4816, 2600]
+active = [0, 0, 4608, 2600]
+default_crop = [8, 8, 4592, 2584]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G70"
+raw_size = [4816, 3080]
+active = [0, 0, 4608, 3080]
+default_crop = [8, 8, 4592, 3064]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G70"
+raw_size = [4816, 3464]
+active = [0, 0, 4608, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G80"
+raw_size = [4816, 3464]
+active = [0, 0, 4608, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G81"
+raw_size = [4816, 3464]
+active = [0, 0, 4608, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-G85"
+raw_size = [4816, 3464]
+active = [0, 0, 4608, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF1"
+raw_size = [3052, 3008]
+active = [0, 0, 3010, 3008]
+default_crop = [8, 4, 2992, 2992]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF1"
+raw_size = [4060, 2264]
+active = [0, 0, 4018, 2264]
+default_crop = [8, 4, 4000, 2248]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF1"
+raw_size = [4060, 2688]
+active = [0, 0, 4018, 2688]
+default_crop = [8, 4, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF1"
+raw_size = [4060, 3016]
+active = [0, 0, 4018, 3016]
+default_crop = [8, 4, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF2"
+raw_size = [3192, 3008]
+active = [0, 0, 3192, 3008]
+default_crop = [8, 4, 2992, 2992]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF2"
+raw_size = [4088, 2264]
+active = [0, 0, 4018, 2264]
+default_crop = [8, 4, 4000, 2248]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF2"
+raw_size = [4088, 2688]
+active = [0, 0, 4018, 2688]
+default_crop = [8, 4, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF2"
+raw_size = [4088, 3016]
+active = [0, 0, 4018, 3016]
+default_crop = [8, 4, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF3"
+raw_size = [3192, 3008]
+active = [0, 0, 3008, 3008]
+default_crop = [8, 8, 2992, 2992]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF3"
+raw_size = [4088, 2264]
+active = [0, 0, 4018, 2264]
+default_crop = [8, 8, 4000, 2248]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF3"
+raw_size = [4088, 2688]
+active = [0, 0, 4018, 2688]
+default_crop = [8, 8, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF3"
+raw_size = [4088, 3016]
+active = [0, 0, 4018, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF5"
+raw_size = [3024, 3008]
+active = [0, 0, 3008, 3008]
+default_crop = [8, 8, 2992, 2992]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF5"
+raw_size = [4144, 2264]
+active = [0, 0, 4016, 2264]
+default_crop = [8, 8, 4000, 2248]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF5"
+raw_size = [4144, 2688]
+active = [0, 0, 4016, 2688]
+default_crop = [8, 8, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF5"
+raw_size = [4144, 3016]
+active = [0, 0, 4016, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF6"
+raw_size = [3472, 3440]
+active = [0, 0, 3440, 3440]
+default_crop = [8, 8, 3424, 3424]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF6"
+raw_size = [4816, 2600]
+active = [0, 0, 4608, 2600]
+default_crop = [8, 8, 4592, 2584]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF6"
+raw_size = [4816, 3080]
+active = [0, 0, 4608, 3080]
+default_crop = [8, 8, 4592, 3064]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF6"
+raw_size = [4816, 3464]
+active = [0, 0, 4608, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF7"
+raw_size = [3472, 3440]
+active = [0, 0, 3440, 3440]
+default_crop = [8, 8, 3424, 3424]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF7"
+raw_size = [4816, 2600]
+active = [0, 0, 4608, 2600]
+default_crop = [8, 8, 4592, 2584]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF7"
+raw_size = [4816, 3080]
+active = [0, 0, 4608, 3080]
+default_crop = [8, 8, 4592, 3064]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF7"
+raw_size = [4816, 3464]
+active = [0, 0, 4608, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF8"
+raw_size = [3472, 3440]
+active = [0, 0, 3440, 3440]
+default_crop = [8, 8, 3424, 3424]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF8"
+raw_size = [4816, 2600]
+active = [0, 0, 4608, 2600]
+default_crop = [8, 8, 4592, 2584]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF8"
+raw_size = [4816, 3080]
+active = [0, 0, 4608, 3080]
+default_crop = [8, 8, 4592, 3064]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GF8"
+raw_size = [4816, 3464]
+active = [0, 0, 4608, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GH1"
+raw_size = [3052, 3008]
+active = [0, 0, 3010, 3008]
+default_crop = [8, 4, 2992, 2992]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GH1"
+raw_size = [4060, 3016]
+active = [0, 0, 4008, 3004]
+default_crop = [8, 4, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GH1"
+raw_size = [4172, 2768]
+active = [0, 0, 4144, 2768]
+default_crop = [8, 4, 4128, 2752]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GH1"
+raw_size = [4396, 2464]
+active = [0, 0, 4368, 2464]
+default_crop = [8, 4, 4352, 2448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GH2"
+raw_size = [4760, 3472]
+active = [0, 0, 4624, 3472]
+default_crop = [8, 4, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GH3"
+raw_size = [3472, 3472]
+active = [0, 0, 3472, 3472]
+default_crop = [8, 8, 3456, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GH3"
+raw_size = [4816, 2608]
+active = [0, 0, 4624, 2608]
+default_crop = [8, 8, 4608, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GH3"
+raw_size = [4816, 3088]
+active = [0, 0, 4624, 3088]
+default_crop = [8, 8, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GH3"
+raw_size = [4816, 3472]
+active = [0, 0, 4624, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GH4"
+raw_size = [3472, 3472]
+active = [0, 0, 3472, 3472]
+default_crop = [8, 8, 3456, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GH4"
+raw_size = [4816, 2608]
+active = [0, 0, 4624, 2608]
+default_crop = [8, 8, 4608, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GH4"
+raw_size = [4816, 3088]
+active = [0, 0, 4624, 3088]
+default_crop = [8, 8, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GH4"
+raw_size = [4816, 3472]
+active = [0, 0, 4624, 3472]
+default_crop = [8, 8, 4608, 3456]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GM1"
+raw_size = [3472, 3440]
+active = [0, 0, 3440, 3440]
+default_crop = [8, 8, 3424, 3424]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GM1"
+raw_size = [4816, 2600]
+active = [0, 0, 4608, 2600]
+default_crop = [8, 8, 4592, 2584]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GM1"
+raw_size = [4816, 3080]
+active = [0, 0, 4608, 3080]
+default_crop = [8, 8, 4592, 3064]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GM1"
+raw_size = [4816, 3464]
+active = [0, 0, 4608, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GM1S"
+raw_size = [3472, 3440]
+active = [0, 0, 3440, 3440]
+default_crop = [8, 8, 3424, 3424]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GM1S"
+raw_size = [4816, 2600]
+active = [0, 0, 4608, 2600]
+default_crop = [8, 8, 4592, 2584]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GM1S"
+raw_size = [4816, 3080]
+active = [0, 0, 4608, 3080]
+default_crop = [8, 8, 4592, 3064]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GM1S"
+raw_size = [4816, 3464]
+active = [0, 0, 4608, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GM5"
+raw_size = [3472, 3440]
+active = [0, 0, 3440, 3440]
+default_crop = [8, 8, 3424, 3424]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GM5"
+raw_size = [4816, 2600]
+active = [0, 0, 4608, 2600]
+default_crop = [8, 8, 4592, 2584]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GM5"
+raw_size = [4816, 3080]
+active = [0, 0, 4608, 3080]
+default_crop = [8, 8, 4592, 3064]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GM5"
+raw_size = [4816, 3464]
+active = [0, 0, 4608, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GX1"
+raw_size = [4760, 3072]
+active = [0, 0, 4608, 3072]
+default_crop = [8, 8, 4576, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GX7"
+raw_size = [3472, 3440]
+active = [0, 0, 3440, 3440]
+default_crop = [8, 8, 3424, 3424]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GX7"
+raw_size = [4816, 2600]
+active = [0, 0, 4608, 2600]
+default_crop = [8, 8, 4592, 2584]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GX7"
+raw_size = [4816, 3080]
+active = [0, 0, 4608, 3080]
+default_crop = [8, 8, 4592, 3064]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GX7"
+raw_size = [4816, 3464]
+active = [0, 0, 4608, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GX7MK2"
+raw_size = [4816, 3464]
+active = [0, 0, 4620, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GX8"
+raw_size = [5264, 3904]
+active = [0, 0, 5208, 3904]
+default_crop = [8, 8, 5184, 3888]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GX80"
+raw_size = [4816, 3464]
+active = [0, 0, 4620, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-GX85"
+raw_size = [4816, 3464]
+active = [0, 0, 4620, 3464]
+default_crop = [8, 8, 4592, 3448]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-L1"
+raw_size = [3177, 2367]
+active = [0, 0, 3166, 2367]
+default_crop = [16, 7, 3136, 2352]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-L10"
+raw_size = [3710, 2751]
+active = [0, 0, 3679, 2751]
+default_crop = [16, 7, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LF1"
+raw_size = [4144, 2688]
+active = [0, 0, 4016, 2688]
+default_crop = [8, 8, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LF1"
+raw_size = [4144, 3016]
+active = [0, 0, 4016, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX1"
+raw_size = [3880, 2170]
+active = [6, 0, 3857, 2170]
+default_crop = [12, 4, 3840, 2160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX10"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX100"
+raw_size = [3248, 3104]
+active = [0, 0, 3248, 3104]
+default_crop = [8, 8, 3088, 3088]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX100"
+raw_size = [4144, 3104]
+active = [0, 0, 4144, 3104]
+default_crop = [8, 8, 4112, 3088]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX100"
+raw_size = [4368, 2872]
+active = [0, 0, 4368, 2872]
+default_crop = [8, 8, 4272, 2856]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX100"
+raw_size = [4592, 2536]
+active = [0, 0, 4592, 2536]
+default_crop = [8, 8, 4480, 2520]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX15"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX2"
+raw_size = [4290, 2391]
+active = [3, 0, 4248, 2388]
+default_crop = [16, 7, 4224, 2376]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX3"
+raw_size = [2828, 2754]
+active = [0, 0, 2772, 2754]
+default_crop = [7, 3, 2736, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX3"
+raw_size = [3724, 2754]
+active = [0, 0, 3668, 2754]
+default_crop = [7, 3, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX3"
+raw_size = [3836, 2538]
+active = [0, 0, 3808, 2538]
+default_crop = [7, 3, 3776, 2520]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX3"
+raw_size = [4060, 2250]
+active = [0, 0, 4004, 2250]
+default_crop = [7, 3, 3968, 2232]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX5"
+raw_size = [2968, 2754]
+active = [0, 0, 2752, 2754]
+default_crop = [7, 3, 2736, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX5"
+raw_size = [3864, 2538]
+active = [0, 0, 3792, 2538]
+default_crop = [7, 3, 3776, 2520]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX5"
+raw_size = [3864, 2754]
+active = [0, 0, 3664, 2751]
+default_crop = [7, 3, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX5"
+raw_size = [4088, 2250]
+active = [0, 0, 3984, 2250]
+default_crop = [7, 3, 3968, 2232]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX7"
+raw_size = [1456, 1384]
+active = [0, 0, 1456, 1384]
+default_crop = [8, 8, 1368, 1368]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX7"
+raw_size = [1904, 1276]
+active = [0, 0, 1904, 1276]
+default_crop = [8, 8, 1888, 1260]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX7"
+raw_size = [1904, 1384]
+active = [0, 0, 1904, 1384]
+default_crop = [8, 8, 1824, 1368]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX7"
+raw_size = [2128, 1132]
+active = [0, 0, 2128, 1132]
+default_crop = [8, 8, 1984, 1116]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX7"
+raw_size = [2800, 2752]
+active = [0, 0, 2758, 2752]
+default_crop = [8, 8, 2736, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX7"
+raw_size = [3696, 2752]
+active = [0, 0, 3664, 2752]
+default_crop = [8, 8, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX7"
+raw_size = [3920, 2476]
+active = [0, 0, 3920, 2476]
+default_crop = [8, 8, 3688, 2460]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX7"
+raw_size = [3920, 2536]
+active = [0, 0, 3792, 2536]
+default_crop = [8, 8, 3776, 2520]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-LX7"
+raw_size = [4144, 2248]
+active = [0, 0, 3984, 2248]
+default_crop = [8, 8, 3968, 2232]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TX1"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ100"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ101"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ110"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ60"
+raw_size = [5040, 3280]
+active = [0, 0, 4912, 3280]
+default_crop = [8, 8, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ60"
+raw_size = [5040, 3688]
+active = [0, 0, 4912, 3688]
+default_crop = [8, 8, 4896, 3672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ61"
+raw_size = [3696, 3688]
+active = [0, 0, 3696, 3688]
+default_crop = [8, 8, 3672, 3672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ61"
+raw_size = [5040, 2770]
+active = [0, 0, 4912, 2770]
+default_crop = [8, 8, 4896, 2754]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ61"
+raw_size = [5040, 3280]
+active = [0, 0, 4912, 3280]
+default_crop = [8, 8, 4896, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ61"
+raw_size = [5040, 3688]
+active = [0, 0, 4912, 3688]
+default_crop = [8, 8, 4896, 3672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ70"
+raw_size = [3024, 3008]
+active = [0, 0, 3008, 3008]
+default_crop = [8, 8, 2992, 2992]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ70"
+raw_size = [4144, 2264]
+active = [0, 0, 4016, 2264]
+default_crop = [8, 8, 4000, 2248]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ70"
+raw_size = [4144, 2688]
+active = [0, 0, 4016, 2688]
+default_crop = [8, 8, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ70"
+raw_size = [4144, 3016]
+active = [0, 0, 4016, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ71"
+raw_size = [3024, 3008]
+active = [0, 0, 3008, 3008]
+default_crop = [8, 8, 2992, 2992]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ71"
+raw_size = [4144, 2264]
+active = [0, 0, 4016, 2264]
+default_crop = [8, 8, 4000, 2248]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ71"
+raw_size = [4144, 2688]
+active = [0, 0, 4016, 2688]
+default_crop = [8, 8, 4000, 2672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ71"
+raw_size = [4144, 3016]
+active = [0, 0, 4016, 3016]
+default_crop = [8, 8, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ80"
+raw_size = [5040, 3688]
+active = [0, 0, 4912, 3688]
+default_crop = [8, 8, 4896, 3672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-TZ81"
+raw_size = [5040, 3688]
+active = [0, 0, 4912, 3688]
+default_crop = [8, 8, 4896, 3672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-ZS100"
+raw_size = [5488, 3664]
+active = [0, 0, 5480, 3664]
+default_crop = [8, 8, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-ZS40"
+raw_size = [5040, 3688]
+active = [0, 0, 4912, 3688]
+default_crop = [8, 8, 4896, 3672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Panasonic"
+model = "DMC-ZS60"
+raw_size = [5040, 3688]
+active = [0, 0, 4912, 3688]
+default_crop = [8, 8, 4896, 3672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "*ist D"
+raw_size = [3040, 2024]
+active = [0, 0, 3040, 2024]
+default_crop = [19, 11, 3008, 2008]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "*ist DL"
+raw_size = [3040, 2024]
+active = [0, 0, 3040, 2024]
+default_crop = [16, 8, 3008, 2008]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "*ist DL2"
+raw_size = [3040, 2024]
+active = [0, 0, 3040, 2024]
+default_crop = [16, 8, 3008, 2008]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "*ist DS"
+raw_size = [3040, 2024]
+active = [0, 0, 3040, 2022]
+default_crop = [16, 8, 3008, 2008]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "645D"
+raw_size = [7424, 5552]
+active = [48, 29, 7328, 5502]
+default_crop = [80, 59, 7264, 5440]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "645Z"
+raw_size = [8384, 6208]
+active = [58, 8, 8256, 6192]
+default_crop = [58, 8, 8256, 6192]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-1"
+raw_size = [7392, 4950]
+active = [6, 18, 7376, 4932]
+default_crop = [14, 28, 7360, 4912]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-1 Mark II"
+raw_size = [4832, 3238]
+active = [14, 28, 4800, 3200]
+default_crop = [14, 28, 4800, 3200]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-1 Mark II"
+raw_size = [7392, 4950]
+active = [6, 18, 7376, 4932]
+default_crop = [14, 28, 7360, 4912]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-3"
+raw_size = [6080, 4032]
+active = [10, 4, 6028, 4024]
+default_crop = [16, 16, 6016, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-3 II"
+raw_size = [6080, 4032]
+active = [10, 4, 6028, 4024]
+default_crop = [16, 16, 6016, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-3 Mark III"
+raw_size = [6304, 4224]
+active = [26, 34, 6224, 4160]
+default_crop = [54, 58, 6192, 4128]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-5"
+raw_size = [4992, 3284]
+active = [0, 0, 4960, 3284]
+default_crop = [22, 10, 4928, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-5 II"
+raw_size = [4992, 3284]
+active = [10, 0, 4950, 3284]
+default_crop = [22, 10, 4928, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-5 II s"
+raw_size = [4992, 3284]
+active = [10, 0, 4950, 3284]
+default_crop = [22, 10, 4928, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-7"
+raw_size = [4736, 3136]
+active = [0, 2, 4684, 3122]
+default_crop = [10, 10, 4672, 3104]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-70"
+raw_size = [6080, 4064]
+active = [58, 28, 6022, 4024]
+default_crop = [66, 32, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-S1"
+raw_size = [5504, 3664]
+active = [0, 0, 5491, 3664]
+default_crop = [10, 4, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-S2"
+raw_size = [5504, 3664]
+active = [0, 0, 5491, 3664]
+default_crop = [10, 4, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-m"
+raw_size = [3936, 2624]
+active = [0, 0, 3896, 2616]
+default_crop = [8, 8, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-r"
+raw_size = [4352, 2868]
+active = [0, 0, 4309, 2868]
+default_crop = [10, 10, 4288, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K-x"
+raw_size = [4352, 2868]
+active = [0, 0, 4309, 2868]
+default_crop = [10, 10, 4288, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K100D"
+raw_size = [3040, 2024]
+active = [0, 0, 3040, 2024]
+default_crop = [16, 8, 3008, 2008]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K100D Super"
+raw_size = [3040, 2024]
+active = [0, 0, 3040, 2024]
+default_crop = [16, 8, 3008, 2008]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K10D"
+raw_size = [3936, 2624]
+active = [0, 0, 3888, 2608]
+default_crop = [8, 8, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K110D"
+raw_size = [3040, 2024]
+active = [0, 0, 3040, 2024]
+default_crop = [16, 8, 3008, 2008]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K2000"
+raw_size = [3936, 2624]
+active = [0, 0, 3896, 2616]
+default_crop = [8, 8, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K200D"
+raw_size = [3936, 2624]
+active = [0, 0, 3896, 2616]
+default_crop = [8, 8, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "K20D"
+raw_size = [4864, 3136]
+active = [0, 0, 4688, 3124]
+default_crop = [8, 8, 4672, 3104]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "KF"
+raw_size = [6080, 4064]
+active = [58, 28, 6022, 4024]
+default_crop = [66, 32, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Pentax"
+model = "KP"
+raw_size = [6112, 4060]
+active = [54, 28, 6028, 4032]
+default_crop = [60, 44, 6016, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "H 25"
+raw_size = [4134, 5488]
+active = [26, 20, 4098, 5458]
+default_crop = [30, 24, 4090, 5450]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "IQ140"
+raw_size = [3712, 2792]
+active = [36, 6, 3659, 2740]
+default_crop = [36, 6, 3659, 2740]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "IQ140"
+raw_size = [7372, 5536]
+active = [36, 6, 7320, 5484]
+default_crop = [36, 6, 7320, 5484]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "IQ150"
+raw_size = [8372, 6316]
+active = [92, 108, 8280, 6208]
+default_crop = [92, 108, 8280, 6208]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "IQ180"
+raw_size = [5216, 3932]
+active = [36, 6, 5164, 3880]
+default_crop = [36, 6, 5162, 3878]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "IQ180"
+raw_size = [10380, 7816]
+active = [36, 8, 10328, 7760]
+default_crop = [36, 8, 10328, 7760]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "IQ3 100MP"
+raw_size = [11976, 8852]
+active = [148, 120, 11608, 8708]
+default_crop = [148, 120, 11608, 8708]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "IQ3 100MP Trichr"
+raw_size = [11976, 8852]
+active = [148, 120, 11608, 8708]
+default_crop = [148, 120, 11608, 8708]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "IQ4 150MP"
+raw_size = [14308, 10760]
+active = [102, 106, 14204, 10652]
+default_crop = [102, 106, 14204, 10652]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "P20+"
+raw_size = [4134, 4128]
+active = [26, 21, 4096, 4094]
+default_crop = [30, 25, 4088, 4086]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "P25"
+raw_size = [4134, 5488]
+active = [26, 20, 4098, 5458]
+default_crop = [30, 24, 4090, 5450]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "P25+"
+raw_size = [4134, 5488]
+active = [26, 20, 4098, 5458]
+default_crop = [30, 24, 4090, 5450]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "P30"
+raw_size = [6588, 4954]
+active = [40, 22, 6528, 4873]
+default_crop = [44, 26, 6520, 4865]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "P40+"
+raw_size = [3712, 2792]
+active = [36, 6, 3659, 2740]
+default_crop = [36, 6, 3659, 2740]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "P40+"
+raw_size = [7372, 5536]
+active = [36, 6, 7320, 5484]
+default_crop = [36, 6, 7320, 5484]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "P45"
+raw_size = [7308, 5494]
+active = [40, 22, 7248, 5441]
+default_crop = [44, 26, 7240, 5433]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "P45+"
+raw_size = [7308, 5494]
+active = [40, 22, 7248, 5441]
+default_crop = [44, 26, 7240, 5433]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "P65+"
+raw_size = [4544, 3416]
+active = [36, 6, 4490, 3364]
+default_crop = [36, 6, 4490, 3364]
+source = "adobe-dng"
+
+[[frame]]
+make = "Phase One"
+model = "P65+"
+raw_size = [9036, 6784]
+active = [36, 6, 8984, 6732]
+default_crop = [36, 6, 8984, 6732]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "EK-GN120"
+raw_size = [5546, 3714]
+active = [0, 0, 5546, 3696]
+default_crop = [52, 28, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "EX1"
+raw_size = [3688, 2780]
+active = [0, 2, 3682, 2760]
+default_crop = [16, 18, 3648, 2736]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "EX2F"
+raw_size = [4176, 3058]
+active = [0, 0, 4070, 3046]
+default_crop = [44, 34, 4000, 3000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "GX-1L"
+raw_size = [3040, 2024]
+active = [0, 0, 3040, 2024]
+default_crop = [16, 8, 3008, 2008]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX mini"
+raw_size = [5664, 3710]
+active = [120, 28, 5496, 3672]
+default_crop = [132, 40, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX1"
+raw_size = [6496, 4336]
+active = [0, 0, 6480, 4320]
+default_crop = [0, 0, 6480, 4320]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX10"
+raw_size = [4704, 3124]
+active = [8, 2, 4686, 3122]
+default_crop = [20, 12, 4592, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX100"
+raw_size = [4704, 3124]
+active = [8, 4, 4688, 3120]
+default_crop = [22, 14, 4592, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX1000"
+raw_size = [5632, 3720]
+active = [46, 2, 5528, 3670]
+default_crop = [81, 17, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX11"
+raw_size = [4704, 3124]
+active = [8, 2, 4686, 3122]
+default_crop = [20, 12, 4592, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX1100"
+raw_size = [5632, 3720]
+active = [46, 2, 5528, 3670]
+default_crop = [81, 17, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX20"
+raw_size = [5632, 3720]
+active = [46, 2, 5528, 3670]
+default_crop = [81, 17, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX200"
+raw_size = [5632, 3720]
+active = [46, 2, 5528, 3670]
+default_crop = [81, 17, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX2000"
+raw_size = [5536, 3714]
+active = [0, 0, 5536, 3696]
+default_crop = [52, 28, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX210"
+raw_size = [5632, 3720]
+active = [46, 2, 5528, 3670]
+default_crop = [81, 17, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX30"
+raw_size = [5546, 3714]
+active = [0, 0, 5546, 3696]
+default_crop = [52, 28, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX300"
+raw_size = [5546, 3714]
+active = [0, 0, 5546, 3696]
+default_crop = [52, 28, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX3000"
+raw_size = [5600, 3714]
+active = [64, 18, 5504, 3672]
+default_crop = [96, 42, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX300M"
+raw_size = [5546, 3714]
+active = [0, 0, 5546, 3696]
+default_crop = [52, 28, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX3300"
+raw_size = [5600, 3714]
+active = [64, 18, 5504, 3672]
+default_crop = [96, 42, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX5"
+raw_size = [4704, 3124]
+active = [8, 2, 4686, 3122]
+default_crop = [20, 12, 4592, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Samsung"
+model = "NX500"
+raw_size = [6496, 4336]
+active = [0, 0, 6480, 4320]
+default_crop = [0, 0, 6480, 4320]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-HX95"
+raw_size = [4928, 3708]
+active = [0, 0, 4928, 3708]
+default_crop = [12, 18, 4896, 3672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-HX99"
+raw_size = [4928, 3708]
+active = [0, 0, 4928, 3708]
+default_crop = [12, 18, 4896, 3672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-R1"
+raw_size = [3984, 2608]
+active = [0, 0, 3925, 2608]
+default_crop = [16, 8, 3888, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX0"
+raw_size = [4832, 3224]
+active = [0, 0, 4832, 3224]
+default_crop = [12, 12, 4800, 3200]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX0M2"
+raw_size = [4832, 3224]
+active = [0, 0, 4832, 3224]
+default_crop = [12, 12, 4800, 3200]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX1"
+raw_size = [6048, 4024]
+active = [0, 0, 6032, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX10"
+raw_size = [5504, 3672]
+active = [0, 0, 5504, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX100"
+raw_size = [5504, 3672]
+active = [0, 0, 5504, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX100M2"
+raw_size = [5504, 3672]
+active = [0, 0, 5504, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX100M3"
+raw_size = [5504, 3672]
+active = [0, 0, 5504, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX100M4"
+raw_size = [5504, 3672]
+active = [0, 0, 5504, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX100M5"
+raw_size = [5504, 3672]
+active = [0, 0, 5504, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX100M5A"
+raw_size = [5504, 3672]
+active = [0, 0, 5504, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX100M6"
+raw_size = [5504, 3672]
+active = [0, 0, 5504, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX100M7"
+raw_size = [5504, 3672]
+active = [0, 0, 5496, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX100M7A"
+raw_size = [5504, 3672]
+active = [0, 0, 5496, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX10M2"
+raw_size = [5504, 3672]
+active = [0, 0, 5504, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX10M3"
+raw_size = [5504, 3672]
+active = [0, 0, 5504, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX10M4"
+raw_size = [5504, 3672]
+active = [0, 0, 5504, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX1R"
+raw_size = [6048, 4024]
+active = [0, 0, 6032, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX1RM2"
+raw_size = [8000, 5320]
+active = [0, 0, 8000, 5320]
+default_crop = [8, 8, 7952, 5304]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX1RM3"
+raw_size = [5120, 3584]
+active = [0, 0, 4782, 3188]
+default_crop = [16, 10, 4752, 3168]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX1RM3"
+raw_size = [7168, 4608]
+active = [0, 0, 6680, 4456]
+default_crop = [22, 14, 6640, 4432]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX1RM3"
+raw_size = [9600, 6376]
+active = [0, 0, 9566, 6376]
+default_crop = [32, 20, 9504, 6336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSC-RX1RM3"
+raw_size = [9728, 6656]
+active = [0, 0, 9570, 6376]
+default_crop = [32, 20, 9504, 6336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A100"
+raw_size = [3881, 2608]
+active = [0, 0, 3880, 2600]
+default_crop = [4, 4, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A200"
+raw_size = [3880, 2608]
+active = [1, 0, 3878, 2600]
+default_crop = [4, 4, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A230"
+raw_size = [3880, 2608]
+active = [1, 0, 3878, 2600]
+default_crop = [4, 4, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A290"
+raw_size = [4600, 3072]
+active = [0, 0, 4599, 3064]
+default_crop = [4, 4, 4592, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A300"
+raw_size = [3880, 2608]
+active = [1, 0, 3878, 2600]
+default_crop = [4, 4, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A330"
+raw_size = [3880, 2608]
+active = [1, 0, 3878, 2600]
+default_crop = [4, 4, 3872, 2592]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A350"
+raw_size = [4600, 3072]
+active = [0, 0, 4599, 3064]
+default_crop = [4, 4, 4592, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A380"
+raw_size = [4600, 3072]
+active = [0, 0, 4599, 3064]
+default_crop = [4, 4, 4592, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A450"
+raw_size = [4608, 3072]
+active = [0, 0, 4608, 3072]
+default_crop = [8, 8, 4592, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A500"
+raw_size = [4288, 2858]
+active = [0, 0, 4288, 2858]
+default_crop = [8, 7, 4272, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A550"
+raw_size = [4608, 3072]
+active = [0, 0, 4608, 3072]
+default_crop = [8, 8, 4592, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A560"
+raw_size = [4608, 3072]
+active = [0, 0, 4608, 3072]
+default_crop = [8, 8, 4592, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A700"
+raw_size = [4288, 2856]
+active = [0, 0, 4288, 2856]
+default_crop = [4, 4, 4272, 2848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A850"
+raw_size = [6080, 4048]
+active = [0, 0, 6080, 4048]
+default_crop = [12, 8, 6048, 4032]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "DSLR-A900"
+raw_size = [6080, 4048]
+active = [0, 0, 6080, 4048]
+default_crop = [12, 8, 6048, 4032]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCA-68"
+raw_size = [6048, 4016]
+active = [0, 0, 6048, 4016]
+default_crop = [8, 8, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCA-77M2"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCA-99M2"
+raw_size = [8000, 5320]
+active = [0, 0, 8000, 5320]
+default_crop = [8, 8, 7952, 5304]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-1"
+raw_size = [8672, 5784]
+active = [0, 0, 8672, 5784]
+default_crop = [12, 12, 8640, 5760]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-1"
+raw_size = [8704, 6144]
+active = [0, 0, 8672, 5784]
+default_crop = [12, 12, 8640, 5760]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-1M2"
+raw_size = [4608, 3072]
+active = [0, 0, 4330, 2892]
+default_crop = [6, 6, 4320, 2880]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-1M2"
+raw_size = [5632, 4096]
+active = [0, 0, 5626, 3754]
+default_crop = [6, 6, 5616, 3744]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-1M2"
+raw_size = [5664, 3768]
+active = [0, 0, 5664, 3768]
+default_crop = [12, 12, 5616, 3744]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-1M2"
+raw_size = [6144, 4096]
+active = [0, 0, 5638, 3768]
+default_crop = [12, 12, 5616, 3744]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-1M2"
+raw_size = [8672, 5784]
+active = [0, 0, 8662, 5782]
+default_crop = [12, 12, 8640, 5760]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-1M2"
+raw_size = [8704, 6144]
+active = [0, 0, 8662, 5782]
+default_crop = [12, 12, 8640, 5760]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-3000"
+raw_size = [5504, 3656]
+active = [0, 0, 5504, 3656]
+default_crop = [8, 12, 5456, 3632]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-5000"
+raw_size = [5504, 3656]
+active = [0, 0, 5504, 3656]
+default_crop = [8, 12, 5456, 3632]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-5100"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-6000"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-6100"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-6300"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-6400"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-6400A"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-6500"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-6600"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-6700"
+raw_size = [6272, 4168]
+active = [0, 0, 6240, 4168]
+default_crop = [26, 20, 6192, 4128]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-6700"
+raw_size = [6656, 4608]
+active = [0, 0, 6272, 4168]
+default_crop = [26, 20, 6192, 4128]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7C"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7CM2"
+raw_size = [4736, 3132]
+active = [0, 0, 4736, 3132]
+default_crop = [44, 30, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7CM2"
+raw_size = [7040, 4688]
+active = [0, 0, 7040, 4688]
+default_crop = [12, 8, 7008, 4672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7CM2"
+raw_size = [7168, 5120]
+active = [0, 0, 7038, 4686]
+default_crop = [12, 8, 7008, 4672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7CR"
+raw_size = [5120, 3584]
+active = [0, 0, 4782, 3188]
+default_crop = [16, 10, 4752, 3168]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7CR"
+raw_size = [6304, 4180]
+active = [0, 0, 6270, 4180]
+default_crop = [16, 10, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7CR"
+raw_size = [6656, 4608]
+active = [0, 0, 6278, 4182]
+default_crop = [20, 12, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7CR"
+raw_size = [9600, 6376]
+active = [0, 0, 9566, 6376]
+default_crop = [32, 20, 9504, 6336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7CR"
+raw_size = [9728, 6656]
+active = [0, 0, 9570, 6376]
+default_crop = [32, 20, 9504, 6336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7M2"
+raw_size = [3968, 2648]
+active = [0, 0, 3968, 2648]
+default_crop = [12, 12, 3936, 2624]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7M2"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7M3"
+raw_size = [3968, 2648]
+active = [0, 0, 3968, 2648]
+default_crop = [12, 12, 3936, 2624]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7M3"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7M4"
+raw_size = [3584, 2560]
+active = [0, 0, 3514, 2344]
+default_crop = [6, 4, 3504, 2336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7M4"
+raw_size = [4736, 3132]
+active = [0, 0, 4736, 3132]
+default_crop = [44, 30, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7M4"
+raw_size = [5120, 3584]
+active = [0, 0, 4622, 3078]
+default_crop = [8, 4, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7M4"
+raw_size = [7040, 4688]
+active = [0, 0, 7040, 4688]
+default_crop = [12, 8, 7008, 4672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7M4"
+raw_size = [7168, 5120]
+active = [0, 0, 7038, 4686]
+default_crop = [12, 8, 7008, 4672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7M5"
+raw_size = [4640, 3088]
+active = [0, 0, 4632, 3088]
+default_crop = [12, 8, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7M5"
+raw_size = [5120, 3584]
+active = [0, 0, 4628, 3084]
+default_crop = [12, 8, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7M5"
+raw_size = [7040, 4688]
+active = [0, 0, 7030, 4688]
+default_crop = [12, 8, 7008, 4672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7M5"
+raw_size = [7168, 5120]
+active = [0, 0, 7030, 4684]
+default_crop = [12, 8, 7008, 4672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7R"
+raw_size = [4832, 3224]
+active = [0, 0, 4822, 3224]
+default_crop = [12, 12, 4800, 3200]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7R"
+raw_size = [7392, 4920]
+active = [0, 0, 7368, 4920]
+default_crop = [4, 4, 7360, 4912]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7RM2"
+raw_size = [8000, 5320]
+active = [0, 0, 8000, 5320]
+default_crop = [8, 8, 7952, 5304]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7RM3"
+raw_size = [8000, 5320]
+active = [0, 0, 8000, 5320]
+default_crop = [8, 8, 7952, 5304]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7RM3A"
+raw_size = [8000, 5320]
+active = [0, 0, 8000, 5320]
+default_crop = [8, 8, 7952, 5304]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7RM4"
+raw_size = [9600, 6376]
+active = [0, 0, 9600, 6376]
+default_crop = [32, 20, 9504, 6336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7RM4A"
+raw_size = [9600, 6376]
+active = [0, 0, 9600, 6376]
+default_crop = [32, 20, 9504, 6336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7RM5"
+raw_size = [5120, 3584]
+active = [0, 0, 4782, 3188]
+default_crop = [16, 10, 4752, 3168]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7RM5"
+raw_size = [6304, 4180]
+active = [0, 0, 6270, 4180]
+default_crop = [16, 10, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7RM5"
+raw_size = [6656, 4608]
+active = [0, 0, 6278, 4182]
+default_crop = [20, 12, 6240, 4160]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7RM5"
+raw_size = [9600, 6376]
+active = [0, 0, 9566, 6376]
+default_crop = [32, 20, 9504, 6336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7RM5"
+raw_size = [9728, 6656]
+active = [0, 0, 9570, 6376]
+default_crop = [32, 20, 9504, 6336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7RM6"
+raw_size = [10240, 7168]
+active = [0, 0, 10008, 6672]
+default_crop = [12, 8, 9984, 6656]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7S"
+raw_size = [2816, 1872]
+active = [0, 0, 2816, 1872]
+default_crop = [12, 12, 2768, 1848]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7S"
+raw_size = [4288, 2848]
+active = [0, 0, 4288, 2848]
+default_crop = [8, 8, 4240, 2832]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7SM2"
+raw_size = [4288, 2848]
+active = [0, 0, 4288, 2848]
+default_crop = [8, 8, 4240, 2832]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-7SM3"
+raw_size = [4288, 2848]
+active = [0, 0, 4288, 2848]
+default_crop = [12, 8, 4240, 2832]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-9"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-9M2"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-9M3"
+raw_size = [3072, 2048]
+active = [0, 0, 3014, 2008]
+default_crop = [4, 4, 3008, 2000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-9M3"
+raw_size = [3968, 2648]
+active = [0, 0, 3950, 2648]
+default_crop = [8, 8, 3936, 2632]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-9M3"
+raw_size = [4096, 3072]
+active = [0, 0, 3942, 2642]
+default_crop = [4, 6, 3936, 2632]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-9M3"
+raw_size = [6048, 4020]
+active = [0, 0, 6014, 4020]
+default_crop = [8, 10, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-9M3"
+raw_size = [6144, 4096]
+active = [0, 0, 6014, 4016]
+default_crop = [8, 10, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILCE-QX1"
+raw_size = [5504, 3656]
+active = [0, 0, 5504, 3656]
+default_crop = [8, 12, 5456, 3632]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILME-FX2"
+raw_size = [3584, 2560]
+active = [0, 0, 3514, 2344]
+default_crop = [6, 4, 3504, 2336]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILME-FX2"
+raw_size = [5120, 3584]
+active = [0, 0, 4622, 3078]
+default_crop = [8, 4, 4608, 3072]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILME-FX2"
+raw_size = [7040, 4688]
+active = [0, 0, 7040, 4688]
+default_crop = [12, 8, 7008, 4672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILME-FX2"
+raw_size = [7168, 5120]
+active = [0, 0, 7038, 4686]
+default_crop = [12, 8, 7008, 4672]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILME-FX3"
+raw_size = [4288, 2848]
+active = [0, 0, 4288, 2848]
+default_crop = [12, 8, 4240, 2832]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ILME-FX30"
+raw_size = [6272, 4168]
+active = [0, 0, 6240, 4168]
+default_crop = [26, 20, 6192, 4128]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "NEX-3"
+raw_size = [4608, 3072]
+active = [0, 0, 4608, 3072]
+default_crop = [8, 8, 4592, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "NEX-3N"
+raw_size = [4928, 3276]
+active = [0, 0, 4928, 3276]
+default_crop = [4, 6, 4912, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "NEX-5"
+raw_size = [4608, 3072]
+active = [0, 0, 4608, 3072]
+default_crop = [8, 8, 4592, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "NEX-5N"
+raw_size = [4928, 3276]
+active = [0, 0, 4928, 3276]
+default_crop = [4, 6, 4912, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "NEX-5R"
+raw_size = [4928, 3276]
+active = [0, 0, 4928, 3276]
+default_crop = [4, 6, 4912, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "NEX-5T"
+raw_size = [4928, 3276]
+active = [0, 0, 4928, 3276]
+default_crop = [4, 6, 4912, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "NEX-6"
+raw_size = [4928, 3276]
+active = [0, 0, 4928, 3276]
+default_crop = [4, 6, 4912, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "NEX-7"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "NEX-C3"
+raw_size = [4928, 3280]
+active = [0, 0, 4928, 3280]
+default_crop = [8, 8, 4912, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "NEX-F3"
+raw_size = [4928, 3276]
+active = [0, 0, 4928, 3276]
+default_crop = [4, 6, 4912, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "SLT-A33"
+raw_size = [4608, 3072]
+active = [0, 0, 4608, 3072]
+default_crop = [8, 8, 4592, 3056]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "SLT-A35"
+raw_size = [4928, 3280]
+active = [0, 0, 4928, 3280]
+default_crop = [8, 8, 4912, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "SLT-A37"
+raw_size = [4928, 3276]
+active = [0, 0, 4928, 3276]
+default_crop = [4, 6, 4912, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "SLT-A55"
+raw_size = [4928, 3280]
+active = [0, 0, 4928, 3280]
+default_crop = [8, 8, 4912, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "SLT-A57"
+raw_size = [4928, 3276]
+active = [0, 0, 4928, 3276]
+default_crop = [4, 6, 4912, 3264]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "SLT-A58"
+raw_size = [5504, 3656]
+active = [0, 0, 5504, 3656]
+default_crop = [6, 12, 5456, 3632]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "SLT-A65"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "SLT-A77"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "SLT-A99"
+raw_size = [6048, 4024]
+active = [0, 0, 6032, 4024]
+default_crop = [14, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ZV-1"
+raw_size = [5504, 3672]
+active = [0, 0, 5496, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ZV-1M2"
+raw_size = [5504, 3672]
+active = [0, 0, 5496, 3672]
+default_crop = [12, 12, 5472, 3648]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ZV-E1"
+raw_size = [4608, 3072]
+active = [0, 0, 4262, 2848]
+default_crop = [12, 8, 4240, 2832]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ZV-E10"
+raw_size = [6048, 4024]
+active = [0, 0, 6048, 4024]
+default_crop = [12, 12, 6000, 4000]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ZV-E10M2"
+raw_size = [6272, 4168]
+active = [0, 0, 6240, 4168]
+default_crop = [26, 20, 6192, 4128]
+source = "adobe-dng"
+
+[[frame]]
+make = "Sony"
+model = "ZV-E10M2"
+raw_size = [6656, 4608]
+active = [0, 0, 6272, 4168]
+default_crop = [26, 20, 6192, 4128]
+source = "adobe-dng"

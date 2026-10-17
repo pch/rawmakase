@@ -44,7 +44,13 @@ pub fn open_source(path: &Path, cancel: &AtomicBool) -> Result<Opened> {
 
 /// The photo at `path`, opened for developing.
 pub fn open(path: &Path) -> Result<Raw> {
-    let mut raw = Raw::open_file(path)?;
+    open_with(path, crate::raw::Decoder::Libraw)
+}
+
+/// The photo at `path` read by `decoder`, for the commands that compare
+/// decoders; see [`crate::raw::Decoder`].
+pub fn open_with(path: &Path, decoder: crate::raw::Decoder) -> Result<Raw> {
+    let mut raw = Raw::open_with(path, decoder)?;
     let metadata = &mut raw.metadata;
     metadata.lens = crate::lens::embedded::read(path);
     if let Some(dng) = crate::dng::read(path) {
@@ -86,14 +92,15 @@ pub fn open(path: &Path) -> Result<Raw> {
         if dng.lens.is_some() {
             metadata.lens = dng.lens;
         }
-        if let Some(crop) = dng.crop {
-            metadata.apply_default_crop(crop);
-        }
         // Exact where LibRaw rounds it to whole, even pixels.
         if dng.user_crop.is_some() {
             metadata.camera_crop = dng.user_crop.filter(|c| *c != [0., 0., 1., 1.]);
         }
+        if let Some(crop) = dng.crop {
+            raw.apply_dng_default_crop(crop);
+        }
     }
+    let metadata = &mut raw.metadata;
     metadata.lens_profiles = LENS_PROFILES.current().for_photo(metadata);
     // Pentax bodies record no lens name, only the lens ID: name the lens as the
     // profile matched by that ID does. Matched first, as the ID only counts for a

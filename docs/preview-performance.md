@@ -272,12 +272,12 @@ by the full-resolution local-tone blurs on the CPU (see the next section).
 
 The render worker used to read every GPU result back with a blocking wait, sharpen
 and apply grain and vignettes on the CPU, convert to 8 bits, apply the monitor
-profile with a new lcms transform, draw the clipping overlay and compute the
+profile with a new colour transform, draw the clipping overlay and compute the
 histogram; the UI thread then built an egui image, reduced it for the Navigator and
 uploaded it again. The GPU stage now runs on eframe's own wgpu device, and
 `gpu/present.wgsl` finishes the developed pixels on the device into a texture the
 viewport draws: sharpening, vignettes and grain, the clipping overlay, the monitor
-profile (a lattice sampled from lcms once per profile) and 8-bit encoding, with the
+profile (a lattice sampled once per profile) and 8-bit encoding, with the
 histogram counted in the same pass and the Navigator copy reduced on the GPU. Only
 the histogram (3 KB) and, for catalog photos, the library thumbnail come back.
 When the GPU does not render a recipe, the worker prepares the display bytes,
