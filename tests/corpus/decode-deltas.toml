@@ -28826,3 +28826,23 @@ before = { absent = true }
 after = [0]
 evidence = "BlackLevelRepeatDim 1 1 (DNG 1.7): a one-pixel black pattern of 0 on top of black, which LibRaw reported as none; the levels are the same"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# DNG: white balance given as AsShotWhiteXY, mapped as the DNG specification maps it.
+
+[[delta]]
+# Canon/Canon PowerShot S3IS/CRW_8531.DNG
+sha256 = "d6feb57d64d59f91dfaae9cd1e8999664977cd82d78cfa0465cf236822afd596"
+field = "header.metadata.wb"
+before = [1.5169763565063477, 1.0, 1.6470997333526611]
+after = [1.4063167572021484, 1.0, 1.8531087636947632]
+evidence = "AsShotWhiteXY 0.332405, 0.340848 (5500 K) through the file's calibration as the DNG Specification maps it: neutral R/G 1/1.40632, B/G 1/1.85311; Adobe DNG Converter 18.7's matrices give 1/1.40634, 1/1.85316"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 8 Pro/PXL_20240415_103400204.RAW-02.ORIGINAL.dng
+sha256 = "45420c595401547cca950ae58d552bc82b32d31ce1d58c082df33004016197f5"
+field = "header.metadata.wb"
+before = [2.1183817386627197, 1.0, 1.3918249607086182]
+after = [1.9439462423324585, 1.0, 1.4268854856491089]
+evidence = "AsShotWhiteXY 0.322046, 0.326646 (6019 K) through Adobe's D65 matrix for the Pixel 8 Pro (data/raw-matrices.toml): 1.9439, 1.4269; Adobe interpolates its A and D65 matrices at 6019 K: 1.9253, 1.4175 (1% off; our table keeps only D65)"
+approval = "pending"

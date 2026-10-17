@@ -81,6 +81,8 @@ pub struct RawInfo {
     /// Whether the file has a preview that is not JPEG (an uncompressed
     /// thumbnail, an HEVC image).
     pub(crate) uncompressed_preview: bool,
+    /// A DNG's AsShotWhiteXY, when it gives the white balance so.
+    pub(crate) as_shot_xy: Option<[f64; 2]>,
     /// The XYZ (D65) to camera matrix the file itself holds (a DNG's).
     pub(crate) file_matrix: Option<[[f32; 3]; 3]>,
 }
@@ -183,6 +185,7 @@ pub(crate) fn base(variant: Variant) -> RawInfo {
         plan: crate::variant::Plan::None,
         previews: Vec::new(),
         uncompressed_preview: false,
+        as_shot_xy: None,
         file_matrix: None,
     }
 }

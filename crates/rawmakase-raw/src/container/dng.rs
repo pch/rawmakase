@@ -201,6 +201,28 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         t.reals(ifd0, tag)
             .filter(|m| m.len() == 9 && m.iter().all(|v| v.is_finite()))
     };
+    // Or AsShotWhiteXY: the white's camera neutral through the calibrations
+    // at its colour temperature (`as_shot_neutral`).
+    if !t.ifds[0].has(50728)
+        && let Some(xy) = t
+            .reals(ifd0, 50729)
+            .filter(|v| v.len() == 2 && v.iter().all(|v| v.is_finite() && *v > 0.))
+    {
+        let xy = [xy[0], xy[1]];
+        info.as_shot_xy = Some(xy);
+        let calibration = Calibration {
+            matrices: [matrix(50721), matrix(50722)],
+            cameras: [matrix(50723), matrix(50724)],
+            analog: t.reals(ifd0, 50727).filter(|a| a.len() == 3),
+            illuminants: [t.int(ifd0, 50778), t.int(ifd0, 50779)],
+        };
+        if let Some(neutral) = calibration.as_shot_neutral(xy) {
+            for (mul, n) in info.cam_mul.iter_mut().zip(neutral) {
+                *mul = 1. / (n as f32);
+            }
+            info.cam_mul[3] = info.cam_mul[1];
+        }
+    }
     info.file_matrix = d65_matrix(
         [matrix(50721), matrix(50722)],
         [t.int(ifd0, 50778), t.int(ifd0, 50779)],
@@ -327,40 +349,73 @@ fn illuminant_temperature(code: u32) -> Option<f64> {
     })
 }
 
+/// The weight of the first of two calibrations of `illuminants` at a white of
+/// `temperature`, as the DNG Specification's "Mapping Camera Color Space to
+/// CIE XYZ Space" interpolates them: by inverse colour temperature between
+/// them, the nearer one's beyond them; the first with an illuminant of
+/// unknown temperature.
+fn calibration_weight(illuminants: [Option<u32>; 2], temperature: f64) -> f64 {
+    let temps = illuminants.map(|i| i.and_then(illuminant_temperature));
+    let (Some(t1), Some(t2)) = (temps[0], temps[1]) else {
+        return 1.;
+    };
+    if t1 == t2 {
+        return 1.;
+    }
+    ((1. / temperature - 1. / t2) / (1. / t1 - 1. / t2)).clamp(0., 1.)
+}
+
+/// Two calibrations' values mixed with `g` of the first; one alone is itself.
+fn mix(values: &[Option<Vec<f64>>; 2], g: f64) -> Option<Vec<f64>> {
+    match values {
+        [Some(a), Some(b)] => Some(a.iter().zip(b).map(|(a, b)| g * a + (1. - g) * b).collect()),
+        [a, b] => a.clone().or_else(|| b.clone()),
+    }
+}
+
 /// The XYZ-to-camera matrix at D65 from ColorMatrix1 and 2 (rows of three)
-/// and their CalibrationIlluminants, as the DNG Specification's "Mapping
-/// Camera Color Space to CIE XYZ Space" interpolates two calibrations: by
-/// inverse colour temperature between them, the nearer one's beyond them.
-/// D65 when a calibration is D65 (most files); one matrix alone is the
-/// camera's; with an illuminant of unknown temperature, the first.
+/// and their CalibrationIlluminants (`calibration_weight`): the D65
+/// calibration's when there is one (most files).
 fn d65_matrix(
     matrices: [Option<Vec<f64>>; 2],
     illuminants: [Option<u32>; 2],
 ) -> Option<[[f32; 3]; 3]> {
-    let to_f32 = |m: &[f64]| std::array::from_fn(|r| std::array::from_fn(|c| m[r * 3 + c] as f32));
-    const D65: f64 = 6504.;
-    let [m1, m2] = matrices;
-    let (Some(m1), Some(m2)) = (&m1, &m2) else {
-        return m1.or(m2).map(|m| to_f32(&m));
-    };
-    let temps = illuminants.map(|i| i.and_then(illuminant_temperature));
-    let (Some(t1), Some(t2)) = (temps[0], temps[1]) else {
-        return Some(to_f32(m1));
-    };
-    if t1 == D65 || t1 == t2 {
-        return Some(to_f32(m1));
+    let m = mix(&matrices, calibration_weight(illuminants, 6504.))?;
+    Some(std::array::from_fn(|r| {
+        std::array::from_fn(|c| m[r * 3 + c] as f32)
+    }))
+}
+
+/// A DNG's colour calibration: ColorMatrix1 and 2, CameraCalibration1 and 2,
+/// AnalogBalance and the CalibrationIlluminants.
+struct Calibration {
+    matrices: [Option<Vec<f64>>; 2],
+    cameras: [Option<Vec<f64>>; 2],
+    analog: Option<Vec<f64>>,
+    illuminants: [Option<u32>; 2],
+}
+
+impl Calibration {
+    /// The camera neutral of the white of chromaticity `xy` (DNG
+    /// Specification, "Mapping Camera Color Space to CIE XYZ Space"):
+    /// AnalogBalance × CameraCalibration × ColorMatrix, both interpolated at
+    /// the white's correlated colour temperature, times its XYZ.
+    fn as_shot_neutral(&self, [x, y]: [f64; 2]) -> Option<[f64; 3]> {
+        let g = calibration_weight(self.illuminants, crate::color::temperature([x, y])?);
+        let cm = mix(&self.matrices, g)?;
+        let identity = vec![1., 0., 0., 0., 1., 0., 0., 0., 1.];
+        let cc = mix(&self.cameras, g).unwrap_or(identity);
+        let ab = self.analog.clone().unwrap_or(vec![1.; 3]);
+        let xyz = [x / y, 1., (1. - x - y) / y];
+        let camera: [f64; 3] =
+            std::array::from_fn(|r| (0..3).map(|k| cm[r * 3 + k] * xyz[k]).sum());
+        let neutral: [f64; 3] =
+            std::array::from_fn(|r| ab[r] * (0..3).map(|k| cc[r * 3 + k] * camera[k]).sum::<f64>());
+        neutral
+            .iter()
+            .all(|n| n.is_finite() && *n > 0.)
+            .then_some(neutral)
     }
-    if t2 == D65 {
-        return Some(to_f32(m2));
-    }
-    // The weight of the first calibration, in inverse temperature.
-    let g = ((1. / D65 - 1. / t2) / (1. / t1 - 1. / t2)).clamp(0., 1.);
-    let m: Vec<f64> = m1
-        .iter()
-        .zip(m2)
-        .map(|(a, b)| g * a + (1. - g) * b)
-        .collect();
-    Some(to_f32(&m))
 }
 
 /// The opcodes of OpcodeList1 (`tag` 51008) or 2 (51009) applied to the
@@ -1101,6 +1156,30 @@ pub(crate) mod tests {
         );
         for n in 0..private.len() {
             let _ = super::adobe_record(&private[..n], *b"RAF ");
+        }
+    }
+
+    /// AsShotWhiteXY's neutral: the calibration (here an identity
+    /// ColorMatrix scaled by AnalogBalance 1, 2, 1) times the white's XYZ;
+    /// D65's (0.31271, 0.32902) is X 0.95043, Z 1.08890.
+    #[test]
+    fn as_shot_white_xy_gives_the_neutral() {
+        let identity = rationals(&[1, 0, 0, 0, 1, 0, 0, 0, 1], 1);
+        let f = dng(
+            2,
+            1,
+            &[
+                (50721, 10, 9, identity),
+                (50727, 5, 3, rationals(&[1, 2, 1], 1)),
+                (50729, 5, 2, rationals(&[31271, 32902], 100_000)),
+                (50778, 3, 1, 21u16.to_le_bytes().to_vec()),
+            ],
+        );
+        let info = crate::open(&f).unwrap();
+        let (x, y) = (0.31271, 0.32902);
+        let want = [y / x, 0.5, y / (1. - x - y)];
+        for (got, want) in info.cam_mul.iter().zip(want) {
+            assert!((f64::from(*got) - want).abs() < 1e-6, "{:?}", info.cam_mul);
         }
     }
 

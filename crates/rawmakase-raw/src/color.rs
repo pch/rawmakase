@@ -19,6 +19,19 @@ const XYZ_RGB: [[f64; 3]; 3] = [
 /// without white balance as shot is never balanced by zeros.
 pub(crate) fn apply(info: &mut RawInfo) {
     let table = crate::facts::matrix(&info.make, &info.model);
+    // A DNG whose white balance is a chromaticity, of a camera Adobe gives
+    // its own matrix: the neutral through that matrix.
+    if let (Some(m), Some([x, y])) = (table, info.as_shot_xy) {
+        let xyz = [x / y, 1., (1. - x - y) / y];
+        let neutral: [f64; 3] =
+            std::array::from_fn(|r| (0..3).map(|k| f64::from(m[r][k]) * xyz[k]).sum());
+        if neutral.iter().all(|n| n.is_finite() && *n > 0.) {
+            for (mul, n) in info.cam_mul.iter_mut().zip(neutral) {
+                *mul = 1. / (n as f32);
+            }
+            info.cam_mul[3] = info.cam_mul[1];
+        }
+    }
     if let Some(m) = table.or(info.file_matrix) {
         info.cam_xyz = m;
     }
@@ -29,6 +42,66 @@ pub(crate) fn apply(info: &mut RawInfo) {
         }
         None => info.pre_mul = [1.; 4],
     }
+}
+
+/// Isotemperature lines of the CIE 1960 (u, v) diagram: reciprocal
+/// megakelvin, u, v and the line's slope (Robertson's method; the table of
+/// Wyszecki and Stiles, Color Science).
+const ISOTEMPERATURE: [[f64; 4]; 31] = [
+    [0., 0.18006, 0.26352, -0.24341],
+    [10., 0.18066, 0.26589, -0.25479],
+    [20., 0.18133, 0.26846, -0.26876],
+    [30., 0.18208, 0.27119, -0.28539],
+    [40., 0.18293, 0.27407, -0.30470],
+    [50., 0.18388, 0.27709, -0.32675],
+    [60., 0.18494, 0.28021, -0.35156],
+    [70., 0.18611, 0.28342, -0.37915],
+    [80., 0.18740, 0.28668, -0.40955],
+    [90., 0.18880, 0.28997, -0.44278],
+    [100., 0.19032, 0.29326, -0.47888],
+    [125., 0.19462, 0.30141, -0.58204],
+    [150., 0.19962, 0.30921, -0.70471],
+    [175., 0.20525, 0.31647, -0.84901],
+    [200., 0.21142, 0.32312, -1.0182],
+    [225., 0.21807, 0.32909, -1.2168],
+    [250., 0.22511, 0.33439, -1.4512],
+    [275., 0.23247, 0.33904, -1.7298],
+    [300., 0.24010, 0.34308, -2.0637],
+    [325., 0.24792, 0.34655, -2.4681],
+    [350., 0.25591, 0.34951, -2.9641],
+    [375., 0.26400, 0.35200, -3.5814],
+    [400., 0.27218, 0.35407, -4.3633],
+    [425., 0.28039, 0.35577, -5.3762],
+    [450., 0.28863, 0.35714, -6.7262],
+    [475., 0.29685, 0.35823, -8.5955],
+    [500., 0.30505, 0.35907, -11.324],
+    [525., 0.31320, 0.35968, -15.628],
+    [550., 0.32129, 0.36011, -23.325],
+    [575., 0.32931, 0.36038, -40.770],
+    [600., 0.33724, 0.36051, -116.45],
+];
+
+/// The correlated colour temperature of chromaticity `xy` (CIE 1931), by
+/// Robertson's method; `None` outside the table's 1667 K to infinity.
+pub(crate) fn temperature([x, y]: [f64; 2]) -> Option<f64> {
+    let d = -2. * x + 12. * y + 3.;
+    if d == 0. || !d.is_finite() {
+        return None;
+    }
+    let (u, v) = (4. * x / d, 6. * y / d);
+    let mut previous: Option<(f64, f64)> = None;
+    for [r, ui, vi, ti] in ISOTEMPERATURE {
+        // Signed distance from the isotemperature line.
+        let di = ((v - vi) - ti * (u - ui)) / (1. + ti * ti).sqrt();
+        if let Some((r0, d0)) = previous
+            && (di <= 0.) != (d0 <= 0.)
+        {
+            let f = d0 / (d0 - di);
+            return Some(1e6 / (r0 + f * (r - r0)));
+        }
+        previous = Some((r, di));
+    }
+    None
 }
 
 /// From `cam_xyz` (XYZ to camera, rows red, green, blue), the camera to sRGB
@@ -94,6 +167,28 @@ fn pseudoinverse(a: &[[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
 
 #[cfg(test)]
 mod tests {
+    /// Robertson's method gives the standard illuminants' temperatures.
+    #[test]
+    fn correlated_colour_temperatures() {
+        let t = |x, y| super::temperature([x, y]).unwrap();
+        assert!(
+            (t(0.31271, 0.32902) - 6504.).abs() < 10.,
+            "{}",
+            t(0.31271, 0.32902)
+        );
+        assert!(
+            (t(0.44757, 0.40745) - 2856.).abs() < 5.,
+            "{}",
+            t(0.44757, 0.40745)
+        );
+        assert!(
+            (t(0.34567, 0.35850) - 5003.).abs() < 10.,
+            "{}",
+            t(0.34567, 0.35850)
+        );
+        assert_eq!(super::temperature([0.7, 0.1]), None);
+    }
+
     #[test]
     fn daylight_comes_from_the_matrix_else_is_neutral() {
         // No matrix: neutral daylight, never zeros.

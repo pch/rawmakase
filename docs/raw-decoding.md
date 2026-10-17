@@ -138,6 +138,12 @@ Samsung's Pentax bodies' own ("PENTAX \0", `vendor::pentax`: LensType's
 series × 256 + number, as Adobe's aux:LensID "4 28" is 1052), or Nikon's in
 Adobe's "MakN" record (`vendor::nikon`, read as a NEF's note).
 
+A DNG whose white balance is AsShotWhiteXY (no AsShotNeutral) has the
+white's camera neutral: AnalogBalance × CameraCalibration × ColorMatrix,
+interpolated at the white's correlated colour temperature (Robertson's
+method), times its XYZ; for a camera with an Adobe matrix row, through that
+D65 matrix.
+
 DNG names: a DNG without Make and Model (Blackmagic's, Parrot's) is named by
 its UniqueCameraModel, the first word the maker. Ricoh Imaging's Pentax
 bodies are Pentax's (`names`). Canonical makes are empty for makers outside
