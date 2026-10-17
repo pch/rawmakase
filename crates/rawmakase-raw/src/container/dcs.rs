@@ -174,6 +174,92 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     Ok(info)
 }
 
+/// The older DCS TIFFs' raw image (the DCS460, the EOS DCS 1 and 3): the
+/// largest directory of 8-bit single samples, uncompressed, the codes on
+/// IFD0's 256-entry GrayResponseCurve.
+fn eight_bit_ifd<'a>(t: &'a TiffFile) -> Option<&'a Ifd> {
+    t.ifds
+        .iter()
+        .filter(|ifd| {
+            t.int(ifd, 258) == Some(8)
+                && t.int(ifd, 277).unwrap_or(1) == 1
+                && t.int(ifd, 259).unwrap_or(1) == 1
+        })
+        .max_by_key(|ifd| {
+            u64::from(t.int(ifd, 256).unwrap_or(0)) * u64::from(t.int(ifd, 257).unwrap_or(0))
+        })
+}
+
+/// Whether the TIFF `t` is an older Kodak DCS TIFF of 8-bit codes on a
+/// curve: Kodak's make, IFD0's curve and an 8-bit image of a sensor's size.
+pub(crate) fn is_dcs_eight_bit(t: &TiffFile) -> bool {
+    let ifd0 = &t.ifds[0];
+    t.text_upto(ifd0, 271, 16)
+        .is_some_and(|m| m.trim().eq_ignore_ascii_case("KODAK"))
+        && t.shape(ifd0, GRAY_RESPONSE_CURVE)
+            .is_some_and(|(_, n)| n == 256)
+        && eight_bit_ifd(t).is_some_and(|ifd| t.int(ifd, 256).unwrap_or(0) >= 1024)
+}
+
+/// Reads the header facts of an older DCS TIFF. `t` is the parsed TIFF.
+pub(crate) fn open_eight_bit(t: TiffFile) -> Result<RawInfo> {
+    let ifd0 = &t.ifds[0];
+    let raw = eight_bit_ifd(&t).ok_or_else(|| corrupt("DCS raw image"))?;
+    let width = t.int(raw, 256).ok_or_else(|| corrupt("DCS width"))?;
+    let height = t.int(raw, 257).ok_or_else(|| corrupt("DCS height"))?;
+    crate::io::samples(width, height, 1)?;
+    let offsets = t.ints_upto(raw, 273, 2).unwrap_or_default();
+    let ([offset], Some(size)) = (
+        &offsets[..],
+        u64::from(width).checked_mul(u64::from(height)),
+    ) else {
+        return Err(Error::Unsupported("DCS of several strips".into()));
+    };
+    let curve: Vec<u16> = t
+        .ints(ifd0, GRAY_RESPONSE_CURVE, 256)
+        .filter(|c| c.len() == 256 && c.iter().all(|&v| v < 1 << 16))
+        .ok_or_else(|| corrupt("DCS curve"))?
+        .into_iter()
+        .map(|v| v as u16)
+        .collect();
+    let mut info = crate::info::base(Variant::DcsEightBit);
+    info.make = t.text_upto(ifd0, 271, 64).unwrap_or_default();
+    // The model's first word: "DCS460D         FILE VERSION 3".
+    info.model = t
+        .text_upto(ifd0, 272, 64)
+        .unwrap_or_default()
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_string();
+    crate::names::apply(&mut info);
+    info.raw_width = width;
+    info.raw_height = height;
+    info.width = width;
+    info.height = height;
+    let colors = crate::facts::camera(&info.make, &info.model, false, [width, height])
+        .find_map(|c| c.cfa)
+        .map_or(vec![0, 1, 1, 2], |c| c.to_vec());
+    info.cfa = Some(crate::info::second_green(Cfa {
+        rows: 2,
+        cols: 2,
+        colors,
+    }));
+    info.previews = t.previews();
+    // Its thumbnails (grey and RGB) are uncompressed.
+    info.uncompressed_preview = true;
+    info.plan = Plan::Dcs(DcsPlan {
+        strip: (t.base + u64::from(*offset), size),
+        width,
+        height,
+        // The curve's top is the white.
+        white: u32::from(curve.iter().copied().max().unwrap_or(255)),
+        curve: Some(curve),
+        black: 0,
+    });
+    Ok(info)
+}
+
 /// Decodes the sensor data.
 pub(crate) fn decode(
     info: &RawInfo,
@@ -186,26 +272,45 @@ pub(crate) fn decode(
     // Truncated files keep what they have.
     let size = size.min((bytes.len() as u64).saturating_sub(at));
     let src = Bytes::new(bytes, Order::Big).slice(at, size)?;
-    let h = crate::codec::ljpeg::header(src)?;
-    let (mcus, rows) = h.mcus();
-    if mcus.checked_mul(h.samples_per_mcu()) != Some(plan.width as usize)
-        || rows != plan.height as usize
-    {
-        return Err(Error::Unsupported(
-            "DCS lossless JPEG of another size than the image".into(),
-        ));
-    }
-    let mut data = Vec::new();
-    data.try_reserve_exact(count)
-        .map_err(|_| Error::TooLarge("image allocation"))?;
-    crate::codec::ljpeg::decode_into(&h, src, cancel, &mut data)?;
-    data.resize(count, 0);
+    let data = match info.variant {
+        Variant::DcsLosslessJpeg => {
+            let h = crate::codec::ljpeg::header(src)?;
+            let (mcus, rows) = h.mcus();
+            if mcus.checked_mul(h.samples_per_mcu()) != Some(plan.width as usize)
+                || rows != plan.height as usize
+            {
+                return Err(Error::Unsupported(
+                    "DCS lossless JPEG of another size than the image".into(),
+                ));
+            }
+            let mut data = Vec::new();
+            data.try_reserve_exact(count)
+                .map_err(|_| Error::TooLarge("image allocation"))?;
+            crate::codec::ljpeg::decode_into(&h, src, cancel, &mut data)?;
+            data.resize(count, 0);
+            data
+        }
+        Variant::DcsEightBit => {
+            let mut data = crate::io::zeroed(count)?;
+            let p = crate::codec::packed::Packing::msb(8);
+            let width = plan.width as usize;
+            crate::codec::packed::rows(src, p, width, width, &mut data, cancel)?;
+            data
+        }
+        v => {
+            return Err(Error::Unsupported(format!(
+                "{} is not a DCS variant",
+                v.name()
+            )));
+        }
+    };
+    let mut data = data;
     if let Some(curve) = &plan.curve {
         for (i, v) in data.iter_mut().enumerate() {
             if i % (1 << 20) == 0 && cancel.load(Ordering::Relaxed) {
                 return Err(Error::Cancelled);
             }
-            *v = curve[usize::from(*v).min(CURVE_LEN - 1)];
+            *v = curve[usize::from(*v).min(curve.len().saturating_sub(1))];
         }
     }
     Ok(Sensor {
@@ -213,7 +318,7 @@ pub(crate) fn decode(
         height: plan.height,
         channels: 1,
         data,
-        area: [0, 0, info.width, info.height],
+        area: [info.margins[0], info.margins[1], info.width, info.height],
         black: [plan.black; 4],
         black_pattern: (0, 0, Vec::new()),
         white: plan.white,
@@ -294,6 +399,52 @@ mod tests {
             crate::decode(&info, &file, &AtomicBool::new(true)).unwrap_err(),
             Error::Cancelled
         );
+    }
+
+    /// An older big-endian DCS TIFF: IFD0's curve (code times 3) and a
+    /// SubIFD of 1024 × 2 8-bit codes `codes`.
+    fn eight_bit(codes: &[u8]) -> Vec<u8> {
+        let curve: Vec<u16> = (0..256u16).map(|v| v * 3).collect();
+        let raw_at = offsets(&[codes, &[]])[1];
+        let raw = dir(
+            &[
+                long(BE, 256, &[1024]),
+                long(BE, 257, &[2]),
+                short(BE, 258, &[8]),
+                short(BE, 262, &[1]),
+                long(BE, 273, &[8]),
+                long(BE, 279, &[codes.len() as u32]),
+            ],
+            raw_at,
+            BE,
+        );
+        let ifd0 = vec![
+            ascii(271, "KODAK           "),
+            ascii(272, "DCS460D         FILE VERSION 3  "),
+            E(GRAY_RESPONSE_CURVE, 3, shorts(BE, &curve)),
+            long(BE, 330, &[raw_at]),
+        ];
+        tiff(b"MM\0*", BE, ifd0, vec![], &[codes, &raw])
+    }
+
+    #[test]
+    fn older_dcs_tiffs_are_8_bit_codes_on_a_curve() {
+        let codes: Vec<u8> = (0..2048).map(|i| (i % 256) as u8).collect();
+        let file = eight_bit(&codes);
+        let info = crate::open(&file).unwrap();
+        assert_eq!(info.variant, Variant::DcsEightBit);
+        assert_eq!(
+            (info.make.as_str(), info.model.as_str()),
+            ("Kodak", "DCS460D")
+        );
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        assert_eq!(s.data[..4], [0, 3, 6, 9]);
+        assert_eq!(s.white, 765);
+        for end in 0..file.len() {
+            if let Ok(info) = crate::open(&file[..end]) {
+                let _ = crate::decode(&info, &file[..end], &AtomicBool::new(false));
+            }
+        }
     }
 
     #[test]

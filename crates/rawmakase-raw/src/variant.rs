@@ -142,6 +142,8 @@ pub enum Variant {
     MrwUnpacked,
     /// Kodak DCS TIFF, one lossless JPEG strip of codes on a curve.
     DcsLosslessJpeg,
+    /// Kodak's older DCS TIFF, 8-bit codes on a curve.
+    DcsEightBit,
     /// Kodak KDC (EasyShare and P-series), packed 12-bit samples.
     KdcPacked,
 }
@@ -209,6 +211,7 @@ impl Variant {
             Variant::MrwPacked => "mrw-packed",
             Variant::MrwUnpacked => "mrw-unpacked",
             Variant::DcsLosslessJpeg => "dcs-ljpeg",
+            Variant::DcsEightBit => "dcs-eight-bit",
             Variant::KdcPacked => "kdc-packed",
         }
     }
@@ -303,6 +306,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         }
         if crate::container::dcs::is_dcs(&t) {
             return crate::container::dcs::open(t);
+        }
+        if crate::container::dcs::is_dcs_eight_bit(&t) {
+            return crate::container::dcs::open_eight_bit(t);
         }
         if crate::container::kdc::is_kdc(&t) {
             return crate::container::kdc::open(t);
@@ -442,7 +448,7 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         (Plan::Mrw(plan), Variant::MrwPacked | Variant::MrwUnpacked) => {
             crate::container::mrw::decode(info, plan, bytes, cancel)
         }
-        (Plan::Dcs(plan), Variant::DcsLosslessJpeg) => {
+        (Plan::Dcs(plan), Variant::DcsLosslessJpeg | Variant::DcsEightBit) => {
             crate::container::dcs::decode(info, plan, bytes, cancel)
         }
         (Plan::Kdc(plan), Variant::KdcPacked) => {

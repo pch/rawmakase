@@ -8464,3 +8464,51 @@ model = "EasyShare Z981"
 dng = false
 cfa = [1, 0, 2, 1]
 source = "compat-observed"
+
+# Kodak DCS TIFFs of 8-bit codes: the visible area and filter RAWmakase has
+# always read, and the canonical names.
+
+[[camera]]
+make = "Kodak"
+model = "DCS460D"
+dng = false
+raw_size = [3072, 2048]
+visible = [2, 0, 3068, 2048]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "DCS460D"
+canonical = ["Kodak", "DCS460"]
+source = "compat-observed"
+
+[[camera]]
+make = "Kodak"
+model = "EOSDCS1B"
+dng = false
+raw_size = [3072, 2048]
+visible = [2, 0, 3068, 2048]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "EOSDCS1B"
+canonical = ["Kodak", "EOSDCS1"]
+source = "compat-observed"
+
+[[camera]]
+make = "Kodak"
+model = "EOSDCS3C"
+dng = false
+raw_size = [1280, 1024]
+visible = [2, 0, 1276, 1024]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[canonical]]
+make = "Kodak"
+model = "EOSDCS3C"
+canonical = ["Kodak", "EOSDCS3"]
+source = "compat-observed"
