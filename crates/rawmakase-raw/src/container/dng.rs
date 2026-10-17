@@ -159,8 +159,10 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     info.flip = crate::geometry::flip(t.int(ifd0, 274).unwrap_or(1));
     if let Some(neutral) = t.reals(ifd0, 50728).filter(|n| n.len() == 3) {
         for (mul, n) in info.cam_mul.iter_mut().zip(&neutral) {
+            // In single precision, the neutral first: RAWmakase's white
+            // balance to the last bit (our measurement on 130 DNGs).
             if *n > 0. {
-                *mul = (1. / n) as f32;
+                *mul = 1. / (*n as f32);
             }
         }
         info.cam_mul[3] = info.cam_mul[1];
