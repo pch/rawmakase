@@ -34,9 +34,8 @@ pub(crate) struct Cr2Plan {
     pub sraw: Option<([u32; 2], SmallRaw)>,
     /// Samples at the start of the image that are not part of it.
     pub skip: usize,
-    /// The black of each channel (red, green, green, blue) and the white
-    /// level the maker notes record, when they do.
-    pub levels: (Option<[u32; 4]>, Option<u32>),
+    /// The levels the maker notes record.
+    pub levels: crate::vendor::canon::Levels,
 }
 
 /// The most slices a CR2 strip is cut into (files have up to four).
@@ -354,6 +353,7 @@ pub(crate) fn decode(
     cancel: &AtomicBool,
 ) -> Result<Sensor> {
     let (data, precision) = grid(plan, bytes, cancel)?;
+    let size = [plan.width, plan.height];
     if let Some(([h, v], conversion)) = plan.sraw {
         let data = small_raw(
             plan,
@@ -373,14 +373,16 @@ pub(crate) fn decode(
             black_pattern: (0, 0, Vec::new()),
             // Adobe DNG Converter's white for the body's small RAWs (the
             // camera table), else the 14 bits the conversion fills.
-            white: crate::facts::camera(&info.make, &info.model, false, [plan.width, plan.height])
+            // (Adobe's small RAW white is the body's whatever the ISO: the
+            // rows by ISO are its mosaics'.)
+            white: crate::facts::camera(&info.make, &info.model, false, size)
                 .find_map(|c| c.white)
                 .unwrap_or(16383),
             linear_white: [0; 4],
         });
     }
     let width = plan.width as usize;
-    let camera = || crate::facts::camera(&info.make, &info.model, false, [plan.width, plan.height]);
+    let camera = || crate::facts::camera(&info.make, &info.model, false, size);
     let area = [info.margins[0], info.margins[1], info.width, info.height];
     let cfa = info
         .cfa
@@ -388,10 +390,10 @@ pub(crate) fn decode(
         .ok_or_else(|| corrupt("CR2 without a colour filter"))?;
     let measured = crate::levels::masked_black(&data, width, area, cfa, None, 2);
     let bits = (1u32 << precision) - 1;
-    let (recorded_black, recorded_white) = plan.levels;
+    let recorded = plan.levels;
     // The black the maker notes record, as Adobe DNG Converter takes it,
     // unless the masked border reads far below it; else the border's.
-    let black = match (recorded_black, measured) {
+    let black = match (recorded.black, measured) {
         (Some([r, g, g2, b]), m)
             if m.is_none_or(|m| {
                 [r, g, b, g2]
@@ -417,12 +419,24 @@ pub(crate) fn decode(
             }
         }
     };
-    // The specular white level the maker notes record (Adobe DNG Converter's
-    // white for most bodies; one at or above the samples' maximum says
-    // nothing), else the camera table's, else the samples' bit depth.
+    // Adobe DNG Converter's white: the camera table's for the file's ISO
+    // speed where Adobe has its own; else the white level the maker notes
+    // record (the specular one, or the normal one where Adobe takes that;
+    // one at or above the samples' maximum says nothing), at most the
+    // table's cap; else the table's; else the samples' bit depth.
     let darkest = black.iter().copied().max().unwrap_or(0);
-    let white = recorded_white
-        .filter(|&w| w < bits && w > darkest)
+    let normal = camera().any(|c| c.normal_white == Some(true));
+    let cap = camera().find_map(|c| c.white_max).unwrap_or(u32::MAX);
+    let white = crate::facts::iso_white(&info.make, &info.model, false, size, info.iso)
+        .or_else(|| {
+            if normal {
+                recorded.normal
+            } else {
+                recorded.specular
+            }
+            .filter(|&w| w < bits && w > darkest)
+            .map(|w| w.min(cap))
+        })
         .or_else(|| camera().find_map(|c| c.white))
         .unwrap_or(bits);
     Ok(Sensor {

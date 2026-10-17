@@ -90,11 +90,44 @@ pub(crate) struct Camera {
     /// notes give another image size's).
     #[serde(default)]
     pub aspect_crop: Option<bool>,
+    /// The ISO speeds of the files whose `white` the row gives over the
+    /// file's own (Adobe DNG Converter's per-ISO white levels); such rows
+    /// give levels only and are found by [`iso_white`], not [`camera`].
+    #[serde(default)]
+    pub iso: Option<Iso>,
+    /// The most the white level the file records is taken as (Adobe DNG
+    /// Converter's cap).
+    #[serde(default)]
+    pub white_max: Option<u32>,
+    /// Whether the white level is the one the maker notes record for
+    /// normal exposures, not for specular highlights (Canon's
+    /// NormalWhiteLevel, as Adobe DNG Converter takes it).
+    #[serde(default)]
+    pub normal_white: Option<bool>,
     #[allow(dead_code)]
     pub source: Source,
     #[allow(dead_code)]
     #[serde(default)]
     pub note: Option<String>,
+}
+
+/// The ISO speeds a row is for: one, or a range (inclusive).
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub(crate) enum Iso {
+    One(f32),
+    Range([f32; 2]),
+}
+
+impl Iso {
+    /// Whether a file of ISO speed `iso` is one of the row's (to the
+    /// nearest whole speed, as files record them).
+    pub(crate) fn contains(self, iso: f32) -> bool {
+        match self {
+            Iso::One(v) => (iso - v).abs() < 0.5,
+            Iso::Range([lo, hi]) => iso > lo - 0.5 && iso < hi + 0.5,
+        }
+    }
 }
 
 /// A RAW file with no header (CHDK's), known by its size: the camera, the
@@ -194,12 +227,41 @@ pub(crate) fn camera(
     dng: bool,
     raw_size: [u32; 2],
 ) -> impl Iterator<Item = &'static Camera> {
+    rows(make, model, dng, raw_size).filter(|c| c.iso.is_none())
+}
+
+fn rows(
+    make: &str,
+    model: &str,
+    dng: bool,
+    raw_size: [u32; 2],
+) -> impl Iterator<Item = &'static Camera> {
     cameras().camera.iter().filter(move |c| {
         c.make == make
             && c.model == model
             && c.dng.is_none_or(|d| d == dng)
             && c.raw_size.is_none_or(|s| s == raw_size)
     })
+}
+
+/// The white level a row gives a camera's files of ISO speed `iso` over the
+/// file's own: a row for that one speed before one for a range.
+pub(crate) fn iso_white(
+    make: &str,
+    model: &str,
+    dng: bool,
+    raw_size: [u32; 2],
+    iso: f32,
+) -> Option<u32> {
+    let matching = || {
+        rows(make, model, dng, raw_size)
+            .filter(move |c| c.iso.is_some_and(|i| i.contains(iso)))
+            .filter_map(|c| Some((c.iso?, c.white?)))
+    };
+    matching()
+        .find(|(i, _)| matches!(i, Iso::One(_)))
+        .or_else(|| matching().next())
+        .map(|(_, w)| w)
 }
 
 /// The camera's XYZ (D65) to camera matrix.
@@ -217,9 +279,11 @@ pub(crate) fn matrix(make: &str, model: &str) -> Option<[[f32; 3]; 3]> {
 mod tests {
     use super::*;
 
-    /// The facts an `adobe-dng` row may give: levels (`white`, `black`) and
-    /// the as-shot white balance scale (`wb_scale`); never geometry (visible
-    /// area, default crop, orientation, colour filter).
+    /// The facts an `adobe-dng` row may give: levels (`white`, `black`, and
+    /// how a file's recorded white is taken: `iso`, `white_max`,
+    /// `normal_white`) and the as-shot white balance scale (`wb_scale`);
+    /// never geometry (visible area, default crop, orientation, colour
+    /// filter, aspect crop).
     fn adobe_facts_only(c: &Camera) -> bool {
         let Camera {
             make: _,
@@ -230,6 +294,9 @@ mod tests {
             white: _,
             black: _,
             wb_scale: _,
+            iso: _,
+            white_max: _,
+            normal_white: _,
             source: _,
             note: _,
             visible,
@@ -253,7 +320,14 @@ mod tests {
             ))
             .unwrap()
         };
-        for allowed in ["white = 4000", "black = 64", "wb_scale = [0.96, 0.96]"] {
+        for allowed in [
+            "white = 4000",
+            "black = 64",
+            "wb_scale = [0.96, 0.96]",
+            "iso = 160\nwhite = 13100",
+            "white_max = 15000",
+            "normal_white = true",
+        ] {
             assert!(adobe_facts_only(&row(allowed)), "{allowed}");
         }
         for geometry in [
@@ -265,6 +339,34 @@ mod tests {
             assert!(!adobe_facts_only(&row(geometry)), "{geometry}");
         }
     }
+
+    /// Whether two inclusive ISO ranges share a speed.
+    fn overlap(a: [f32; 2], b: [f32; 2]) -> bool {
+        a[0] <= b[1] && b[0] <= a[1]
+    }
+
+    #[test]
+    fn iso_ranges_overlap_when_they_share_a_speed() {
+        assert!(overlap([100., 400.], [400., 800.]));
+        assert!(overlap([1., 409600.], [160., 160.]));
+        assert!(!overlap([100., 400.], [500., 800.]));
+    }
+
+    #[test]
+    fn iso_rows_give_their_speeds_white_one_speed_first() {
+        assert!(Iso::One(160.).contains(160.));
+        assert!(!Iso::One(160.).contains(200.));
+        assert!(Iso::Range([100., 400.]).contains(400.));
+        assert!(!Iso::Range([100., 400.]).contains(500.));
+        let white = |iso| iso_white("Canon", "EOS 6D", false, [5568, 3708], iso);
+        // A speed of its own, else the row for every speed.
+        assert_eq!(white(160.), Some(13100));
+        assert_eq!(white(100.), Some(15000));
+        assert_eq!(iso_white("Canon", "EOS 6D", true, [5568, 3708], 160.), None);
+        // Rows by ISO are not the camera's other rows.
+        assert!(camera("Canon", "EOS 6D", false, [5568, 3708]).all(|c| c.iso.is_none()));
+    }
+
     #[test]
     fn tables_parse_and_have_no_duplicate_rows() {
         let cameras: Cameras = toml::from_str(CAMERAS).unwrap();
@@ -282,16 +384,52 @@ mod tests {
         // rows' levels.
         let mut cams = std::collections::HashSet::new();
         let mut levels = std::collections::HashSet::new();
+        type Key<'a> = (
+            &'a String,
+            &'a String,
+            Option<bool>,
+            Option<[u32; 2]>,
+            Option<u32>,
+        );
+        let mut ranges: Vec<(Key, [f32; 2])> = Vec::new();
         for c in &cameras.camera {
             assert!(
-                cams.insert((&c.make, &c.model, c.dng, c.raw_size, c.bits, c.source)),
+                cams.insert((
+                    &c.make,
+                    &c.model,
+                    c.dng,
+                    c.raw_size,
+                    c.bits,
+                    c.source,
+                    format!("{:?}", c.iso)
+                )),
                 "{c:?}"
             );
             if c.white.is_some() || c.black.is_some() {
                 assert!(
-                    levels.insert((&c.make, &c.model, c.dng, c.raw_size, c.bits)),
+                    levels.insert((
+                        &c.make,
+                        &c.model,
+                        c.dng,
+                        c.raw_size,
+                        c.bits,
+                        format!("{:?}", c.iso)
+                    )),
                     "{c:?}"
                 );
+            }
+            // Rows by ISO give a white level, and nothing else; a camera's
+            // ranges never overlap (one speed of its own may sit in one).
+            if let Some(iso) = c.iso {
+                assert!(c.white.is_some() && c.black.is_none(), "{c:?}");
+                if let Iso::Range([lo, hi]) = iso {
+                    assert!(lo <= hi, "{c:?}");
+                    let key = (&c.make, &c.model, c.dng, c.raw_size, c.bits);
+                    for &(k, [l, h]) in &ranges {
+                        assert!(k != key || !overlap([l, h], [lo, hi]), "{c:?}");
+                    }
+                    ranges.push((key, [lo, hi]));
+                }
             }
             assert!(
                 c.visible.is_some()
@@ -301,11 +439,17 @@ mod tests {
                     || c.frame.is_some()
                     || c.wb_scale.is_some()
                     || c.cfa.is_some()
-                    || c.aspect_crop.is_some(),
+                    || c.aspect_crop.is_some()
+                    || c.white_max.is_some()
+                    || c.normal_white.is_some(),
                 "{c:?}"
             );
             // Adobe DNG Converter's decode facts where the file does not
-            // tell them; never its geometry.
+            // tell them; never its geometry. The fields of how a file's white
+            // is taken are Adobe's only.
+            if c.iso.is_some() || c.white_max.is_some() || c.normal_white.is_some() {
+                assert_eq!(c.source, Source::AdobeDng, "{c:?}");
+            }
             if c.source == Source::AdobeDng {
                 assert!(adobe_facts_only(c), "{c:?}");
             }

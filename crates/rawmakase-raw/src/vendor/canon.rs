@@ -168,16 +168,17 @@ impl Notes {
     }
 
     /// The levels ColorData records for the sensor data: the black of each
-    /// channel (red, green, green, blue: PerChannelBlackLevel) and the
-    /// specular white level (SpecularWhiteLevel), by ColorData version and
-    /// length. The offsets are the ExifTool documentation's, with the one of
-    /// each version and length found in every test dataset file of it; the
-    /// PowerShots' (versions -3 and -4) record a white that is not their
-    /// data's, so it is not read.
-    pub(crate) fn levels(&self) -> (Option<[u32; 4]>, Option<u32>) {
+    /// channel (red, green, green, blue: PerChannelBlackLevel) and the white
+    /// levels for specular highlights and for normal exposures
+    /// (SpecularWhiteLevel, the word before it NormalWhiteLevel), by ColorData
+    /// version and length. The offsets are the ExifTool documentation's, with
+    /// the one of each version and length found in every test dataset file of
+    /// it; the PowerShots' (versions -3 and -4) record whites that are not
+    /// their data's, so they are not read.
+    pub(crate) fn levels(&self) -> Levels {
         let cd = &self.color_data;
         let Some(&first) = cd.first() else {
-            return (None, None);
+            return Levels::default();
         };
         let (black, white) = match (first as i16, cd.len()) {
             (1, 796) => (196, None),
@@ -192,13 +193,16 @@ impl Notes {
             (14, _) => (556, Some(561)),
             (-3, _) => (264, None),
             (-4, _) => (333, None),
-            _ => return (None, None),
+            _ => return Levels::default(),
         };
-        let black = cd
-            .get(black..black + 4)
-            .map(|b| [b[0], b[1], b[2], b[3]].map(u32::from));
-        let white = white.and_then(|w| cd.get(w)).map(|&w| u32::from(w));
-        (black, white)
+        let word = |at: usize| cd.get(at).map(|&w| u32::from(w));
+        Levels {
+            black: cd
+                .get(black..black + 4)
+                .map(|b| [b[0], b[1], b[2], b[3]].map(u32::from)),
+            specular: white.and_then(word),
+            normal: white.and_then(|w| word(w - 1)),
+        }
     }
 
     /// The camera's aspect-ratio crop in sensor coordinates: AspectInfo's
@@ -426,6 +430,15 @@ pub(crate) fn crw_white_balance(info: &mut RawInfo, balance: &[u16], info2: &[u1
             info.presets.daylight = [r, g, b];
         }
     }
+}
+
+/// The levels a maker note records: see [`Notes::levels`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Levels {
+    /// Red, green, green, blue.
+    pub black: Option<[u32; 4]>,
+    pub specular: Option<u32>,
+    pub normal: Option<u32>,
 }
 
 /// White balance levels, red, green, second green and blue.

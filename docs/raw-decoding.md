@@ -273,10 +273,18 @@ reads more than 16 below it (the EOS 1000D records it on another scale); else
 the border's, measured on the masked columns beside the image over the
 visible rows, each channel's mean to the nearest: on the left without the two
 outermost columns and the two next to the image, on the right every column
-when there are three or more. White is ColorData's SpecularWhiteLevel (the
-ColorData versions that record one for the data; one at the samples' maximum
-says nothing), else the body's `adobe-dng` row (Adobe's value where the file
-records none), else the bit depth's range. The maker notes give the as-shot
+when there are three or more. White is Adobe's: the body's `adobe-dng` row
+for the file's ISO speed where Adobe has a white of its own (a speed, or a
+range; [1, 409600] for every speed); else ColorData's SpecularWhiteLevel
+(NormalWhiteLevel for the bodies whose row says `normal_white`, the EOS
+750D and 760D), at most the row's `white_max` (15000 for the bodies Adobe
+caps), where the ColorData version records one for the data and it is below
+the samples' maximum; else the body's row without an ISO (Adobe's white for
+files that record none); else the bit depth's range. Two dataset files
+remain off Adobe: an EOS 30D at ISO 100 (Adobe 4014 where another 30D file
+at ISO 100 has 3398) and an EOS 5D Mark III at ISO 320 (13100 where two
+others have 13000); Adobe's choice there depends on something the file does
+not show. The maker notes give the as-shot
 white balance and the Daylight and Shade presets (ColorData, by its version;
 the PowerShot G9's WBInfo), Highlight Tone Priority (LightingOpt, else
 CustomFunctions2), the lens (LensModel, with a space after the mount, when
@@ -298,7 +306,20 @@ above black. That RGB is white balanced by ColorData's small RAW levels
 taken back to the mosaic's camera RGB, times their level over green's, so
 the as-shot white balance and the matrices apply as to the mosaic. A fourth
 channel is 0; black is 0 and white the body's `adobe-dng` row for its small
-RAW size, else 16383.
+RAW size (Adobe's is the body's at every ISO), else 16383. An mRAW's chroma
+interpolation stays RAWmakase's own: Adobe's, measured on the dataset's
+mRAWs, is not one of the simple ones (each MCU's chroma at its top-left or
+its centre, linear or nearest), and matches it on under a third of the
+pixels whatever the siting.
+
+Before RAWmakase's own decoders replace LibRaw for Canon small RAWs, two
+things outside this crate have to follow: `rawmakase-model`'s
+`sraw_baseline_exposure` corrects LibRaw's scale (green times 1.303, white
+16383), which the samples here no longer have, so it becomes Adobe's small
+RAW BaselineExposure alone; and Adobe clips each channel of a small RAW at
+its white before taking AnalogBalance out, so red and blue clip at the white
+times their level over green's, which one `white` cannot say (`linear_white`
+could carry it; the develop pipeline does not read it yet).
 
 Canon CRW (`container::ciff`, `codec::crw`): a CIFF heap of directory blocks;
 SensorInfo (0x1031) gives the sensor and the default crop, DecoderTable
@@ -325,7 +346,11 @@ Canon files whose values differ from LibRaw's on purpose are approved in
 evidence: the levels above; the sRAW and mRAW samples (Adobe's conversion);
 three CRW files (PowerShot G5, S50, S60) whose samples LibRaw raises by 2
 below 512, where Adobe's equal RAWmakase's; and multiple exposures, whose
-as-shot white balance LibRaw sets to 1.
+as-shot white balance LibRaw sets to 1. Still open: the as-shot white balance of nine
+PowerShot and EOS D30 CRW files and the Daylight preset of five, which LibRaw
+reads from records whose layout is not known here; Adobe writes no levels
+for them, only a chromaticity for three (AsShotWhiteXY, matching the
+camera's white balance setting, not a record of the file).
 
 Canon CR3 (`container::cr3`, `codec::crx`, `vendor::canon_cr3`): the raw image
 is the first of the largest raw tracks (a Dual Pixel file's second image is as

@@ -18,7 +18,12 @@
 #                much; observed from LibRaw's output, not colour matrices;
 #                and the 2 × 2 colour filter at the sensor's corner (`cfa`, 0
 #                red, 1 green, 2 blue); `aspect_crop = false` where the
-#                camera's aspect crop is not shown
+#                camera's aspect crop is not shown. Adobe DNG Converter's
+#                white level rows may also give `white_max` (a cap on the
+#                white the file records), `normal_white = true` (the file's
+#                white for normal exposures, not for specular highlights) or
+#                `iso` (the speed or range of speeds whose `white` the row
+#                gives over the file's)
 # [[headerless]] a RAW file with no header, known by its `file_size`: the
 #                camera, `raw_size`, `bits` per packed sample, the `visible`
 #                area and the `cfa` at the sensor's corner, and the masked
@@ -28,8 +33,9 @@
 # source says where the values come from:
 #   file             a rule from the file's own tags, for files that lack them
 #   adobe-dng        Adobe DNG Converter 18.7's output for the camera: on [[camera]]
-#                    rows decode facts only (`white`, `black`, `wb_scale`),
-#                    never geometry (`visible`, `frame`, `flip`, `cfa`)
+#                    rows decode facts only (`white`, `black`, `wb_scale`,
+#                    `iso`, `white_max`, `normal_white`), never geometry
+#                    (`visible`, `frame`, `flip`, `cfa`, `aspect_crop`)
 #   compat-observed  the earlier decoder's (LibRaw at 4f014403) output on the test
 #                    dataset's files, kept so saved edits keep their geometry and
 #                    scale (2026-10-17); never a colour matrix
@@ -1518,11 +1524,13 @@ raw_size = [3160, 2344]
 visible = [44, 12, 3112, 2328]
 source = "compat-observed"
 
-# Adobe DNG Converter's white level for the Canon bodies whose files record
-# none RAWmakase reads (or record their samples' maximum), and for their
-# small RAWs by raw size (first: a body's row without a size matches every
-# size): the value of most of the body's test dataset files (the lowest
-# ISO's on a tie).
+# Adobe DNG Converter's white levels for Canon bodies, over or beside what the
+# files record: small RAWs by raw size (first: a body's row without a size
+# matches every size); then by body a white for files that record none (or
+# their samples' maximum), `white_max` and `normal_white` for how Adobe takes
+# the white a file records, and `iso` rows (one speed, or a range; [1, 409600]
+# for every speed) where Adobe's white is its own. The value of most of the
+# body's test dataset files (the lowest ISO's on a tie).
 
 [[camera]]
 make = "Canon"
@@ -1776,7 +1784,44 @@ source = "adobe-dng"
 make = "Canon"
 model = "EOS 1000D"
 dng = false
+iso = 100
+white = 3600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 1000D"
+dng = false
 white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 100D"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 1100D"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 1200D"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 1300D"
+dng = false
+white_max = 15000
+white = 15000
 source = "adobe-dng"
 
 [[camera]]
@@ -1784,13 +1829,6 @@ make = "Canon"
 model = "EOS 10D"
 dng = false
 white = 4000
-source = "adobe-dng"
-
-[[camera]]
-make = "Canon"
-model = "EOS 1300D"
-dng = false
-white = 15000
 source = "adobe-dng"
 
 [[camera]]
@@ -1823,16 +1861,58 @@ source = "adobe-dng"
 
 [[camera]]
 make = "Canon"
+model = "EOS 450D"
+dng = false
+iso = [1, 409600]
+white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 500D"
+dng = false
+iso = [1, 409600]
+white = 15600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 500D"
+dng = false
+iso = 100
+white = 13200
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 50D"
+dng = false
+iso = [1, 409600]
+white = 13200
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
 model = "EOS 550D"
 dng = false
+white_max = 15000
 white = 15000
 source = "adobe-dng"
 
 [[camera]]
 make = "Canon"
-model = "EOS 5D Mark III"
+model = "EOS 5D"
 dng = false
-white = 15000
+iso = 400
+white = 3698
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D"
+dng = false
+iso = 100
+white = 3709
 source = "adobe-dng"
 
 [[camera]]
@@ -1844,16 +1924,195 @@ source = "adobe-dng"
 
 [[camera]]
 make = "Canon"
+model = "EOS 5D Mark II"
+dng = false
+iso = [1, 409600]
+white = 15600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark II"
+dng = false
+iso = 320
+white = 12700
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark II"
+dng = false
+iso = 160
+white = 12700
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+iso = [1, 409600]
+white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+iso = 160
+white = 13100
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+iso = 320
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+iso = 640
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+iso = 2500
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark III"
+dng = false
+iso = 1250
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 600D"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 60D"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 650D"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
 model = "EOS 6D"
 dng = false
+iso = [1, 409600]
 white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D"
+dng = false
+iso = 1250
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D"
+dng = false
+iso = 320
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D"
+dng = false
+iso = 160
+white = 13100
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D"
+dng = false
+iso = 640
+white = 13000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 700D"
+dng = false
+white_max = 15000
 source = "adobe-dng"
 
 [[camera]]
 make = "Canon"
 model = "EOS 70D"
 dng = false
+white_max = 15000
 white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 750D"
+dng = false
+normal_white = true
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 760D"
+dng = false
+normal_white = true
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D"
+dng = false
+iso = [1, 409600]
+white = 12600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D"
+dng = false
+iso = 100
+white = 13600
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 7D Mark II"
+dng = false
+iso = [1, 409600]
+white = 13400
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS M"
+dng = false
+white_max = 15000
 source = "adobe-dng"
 
 [[camera]]
@@ -1879,9 +2138,24 @@ source = "adobe-dng"
 
 [[camera]]
 make = "Canon"
+model = "EOS M2"
+dng = false
+white_max = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
 model = "EOS M3"
 dng = false
+iso = 100
 white = 16000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS M3"
+dng = false
+white = 13200
 source = "adobe-dng"
 
 [[camera]]
@@ -1916,6 +2190,22 @@ source = "adobe-dng"
 make = "Canon"
 model = "EOS-1D Mark III"
 dng = false
+white = 15100
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D Mark IV"
+dng = false
+iso = [1, 409600]
+white = 15100
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D X"
+dng = false
+iso = [1, 409600]
 white = 15100
 source = "adobe-dng"
 

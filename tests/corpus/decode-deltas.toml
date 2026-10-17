@@ -20,14 +20,6 @@
 
 [[delta]]
 sha256 = "b5e47c5fcf7332ac03e0134926f17a338a42e68c1fd7f83e16f45f4b767544e8"
-field = "sensor.white"
-before = 13584
-after = 11222
-evidence = "Canon EOS 7D RAW_CANON_EOS_7D-raw.CR2: Adobe DNG Converter 18.7 WhiteLevel 12600; RAWmakase's 11222 is its ColorData SpecularWhiteLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "b5e47c5fcf7332ac03e0134926f17a338a42e68c1fd7f83e16f45f4b767544e8"
 field = "sensor.black"
 before = [2048, 2047, 2047, 2048]
 after = [2046, 2046, 2049, 2049]
@@ -62,8 +54,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "0feb8741ae98e85d2e2fbb3f9017b24881f5f46a69f6d78adb703720451e654d"
 field = "sensor.white"
 before = 3651
-after = 4000
-evidence = "Canon EOS 1000D RAW_CANON_1000D.CR2: Adobe DNG Converter 18.7 WhiteLevel 3600; RAWmakase's 4000 is the camera table's adobe-dng row"
+after = 3600
+evidence = "Canon EOS 1000D RAW_CANON_1000D.CR2: Adobe DNG Converter 18.7 WhiteLevel 3600; RAWmakase's 3600 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -110,8 +102,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "a9bc228ad9a00832c173fdc3fcf4a4679cb019d451288f6fcee3002471c73636"
 field = "sensor.white"
 before = 15438
-after = 15094
-evidence = "Canon EOS-1D X RAW_CANON_EOS_1DX.CR2: Adobe DNG Converter 18.7 WhiteLevel 15100; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15100
+evidence = "Canon EOS-1D X RAW_CANON_EOS_1DX.CR2: Adobe DNG Converter 18.7 WhiteLevel 15100; RAWmakase's 15100 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -134,8 +126,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "ec069b178b9383d80c72f8cdc1b79bd54ca451e7c20793b109d8ad73bef6bdf6"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III 5G4A9394.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 5G4A9394.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -166,8 +158,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "360842779d08fe4805b4a2fe4979f06fdc6da982c85c3acb181f25bcf4c9f536"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D EOS_6D_RAW.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D EOS_6D_RAW.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -222,8 +214,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "0b57eb8b0dece6f63d4ea61660279488121c9a0aa250113852fa84c051c6da3e"
 field = "sensor.white"
 before = 13433
-after = 14512
-evidence = "Canon EOS 500D IMG_0002.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 14512 is its ColorData SpecularWhiteLevel"
+after = 15600
+evidence = "Canon EOS 500D IMG_0002.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15600 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -318,8 +310,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "6f12a02a21f64b284328ee6d3b2d1bab4439720cad2e881adf3da72592128b11"
 field = "sensor.white"
 before = 16383
-after = 16000
-evidence = "Canon EOS M3 IMG_4635.CR2: Adobe DNG Converter 18.7 WhiteLevel 13200; RAWmakase's 16000 is the camera table's adobe-dng row"
+after = 13200
+evidence = "Canon EOS M3 IMG_4635.CR2: Adobe DNG Converter 18.7 WhiteLevel 13200; RAWmakase's 13200 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -366,8 +358,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "b9f71c56adb6e2861e6653efb312fb5cc88ba4aa17fa809c6a18b8db044360c3"
 field = "sensor.white"
 before = 13584
-after = 12277
-evidence = "Canon EOS 7D Mark II capture000106.cr2: Adobe DNG Converter 18.7 WhiteLevel 13400; RAWmakase's 12277 is its ColorData SpecularWhiteLevel"
+after = 13400
+evidence = "Canon EOS 7D Mark II capture000106.cr2: Adobe DNG Converter 18.7 WhiteLevel 13400; RAWmakase's 13400 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -388,14 +380,6 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "81c5ee6da45c4e22584c5344807ac32e2c9ba82ad274486ba64745ef8dd4f69c"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II IMG_0051.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "81c5ee6da45c4e22584c5344807ac32e2c9ba82ad274486ba64745ef8dd4f69c"
 field = "sensor.black"
 before = [1024, 1023, 1024, 1024]
 after = [1023, 1023, 1023, 1023]
@@ -406,8 +390,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "b303a596a7d8888b56a265d3b9ec78ae4f3fa3dd68c20c8276a50250393fdb39"
 field = "sensor.white"
 before = 13584
-after = 12279
-evidence = "Canon EOS 7D _MG_0001.CR2: Adobe DNG Converter 18.7 WhiteLevel 13600; RAWmakase's 12279 is its ColorData SpecularWhiteLevel"
+after = 13600
+evidence = "Canon EOS 7D _MG_0001.CR2: Adobe DNG Converter 18.7 WhiteLevel 13600; RAWmakase's 13600 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -422,8 +406,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "56faa7db3947c32c5e6e31bc0db027ebf95163533e043bd8c4f18166a129692c"
 field = "sensor.white"
 before = 13583
-after = 15092
-evidence = "Canon EOS 100D IMG_0308.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15092 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 100D IMG_0308.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -438,8 +422,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "f30828b387767250e4197bc273c32fc16f1abc993af9d644e9a35a95e5e030ee"
 field = "sensor.white"
 before = 14605
-after = 15319
-evidence = "Canon EOS 450D _MG_1125.CR2: Adobe DNG Converter 18.7 WhiteLevel 16000; RAWmakase's 15319 is its ColorData SpecularWhiteLevel"
+after = 16000
+evidence = "Canon EOS 450D _MG_1125.CR2: Adobe DNG Converter 18.7 WhiteLevel 16000; RAWmakase's 16000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -486,8 +470,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "19690738ec7f3d0a80dbc50c6a5ee49eae38978cd42cb8f410551b0a3ae134a3"
 field = "sensor.white"
 before = 13433
-after = 14512
-evidence = "Canon EOS 500D IMG_0493.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 14512 is its ColorData SpecularWhiteLevel"
+after = 15600
+evidence = "Canon EOS 500D IMG_0493.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15600 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -502,8 +486,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "27d151efe86f04bea8fcf6ec9f3a722ae3ee24a3f56a6ebbd27ee89b215cf569"
 field = "sensor.white"
 before = 16383
-after = 15092
-evidence = "Canon EOS M IMG_4624.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15092 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS M IMG_4624.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -518,8 +502,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "1abc70b30a7e36939badc068c5b226b99af7b6802da7f9196929031753cdb4e3"
 field = "sensor.white"
 before = 15831
-after = 15094
-evidence = "Canon EOS 550D IMG_9301.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 550D IMG_9301.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -542,8 +526,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "bf089ee834e39316d803488b404ca39846e4ba65a6d65603ffc57052cfdebd3e"
 field = "sensor.white"
 before = 13433
-after = 14512
-evidence = "Canon EOS 500D IMG_2856-2.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 14512 is its ColorData SpecularWhiteLevel"
+after = 15600
+evidence = "Canon EOS 500D IMG_2856-2.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15600 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -620,6 +604,14 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "b30089172973388d03e192a14a63f750e22914dfc01db5713b6b3bce3c9baeee"
+field = "sensor.white"
+before = 3692
+after = 3698
+evidence = "Canon EOS 5D IMG_1428.CR2: Adobe DNG Converter 18.7 WhiteLevel 3698; RAWmakase's 3698 is the camera table's adobe-dng row"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "b30089172973388d03e192a14a63f750e22914dfc01db5713b6b3bce3c9baeee"
 field = "sensor.black"
 before = [127, 127, 127, 127]
 after = [128, 128, 128, 128]
@@ -630,8 +622,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "e975f71429b939701dd618a7bac4709c1409f4bb6aa1c3607ceeaa86031c1c4a"
 field = "sensor.white"
 before = 14605
-after = 15319
-evidence = "Canon EOS 450D _MG_7191.CR2: Adobe DNG Converter 18.7 WhiteLevel 16000; RAWmakase's 15319 is its ColorData SpecularWhiteLevel"
+after = 16000
+evidence = "Canon EOS 450D _MG_7191.CR2: Adobe DNG Converter 18.7 WhiteLevel 16000; RAWmakase's 16000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -678,8 +670,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "4f71c1416037d2212cc4847e978bffe874afc0f653260386e96dff704ca8bf51"
 field = "sensor.white"
 before = 14274
-after = 15094
-evidence = "Canon EOS 1200D IMG_0764.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 1200D IMG_0764.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -694,8 +686,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "08c7e7f32af01c4501a5f32ccecb7f35b8692e72566d60607e391e9f1053f4a5"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D IMG_0001.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D IMG_0001.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -782,8 +774,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "1b0892df5ba5fa418e945f0519d490aeecaaf7e74860a08b5dc47e3e9976a288"
 field = "sensor.white"
 before = 13584
-after = 15094
-evidence = "Canon EOS 600D _MG_2587.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 600D _MG_2587.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -808,14 +800,6 @@ field = "sensor.black"
 before = [513, 513, 513, 513]
 after = [512, 512, 512, 512]
 evidence = "Canon PowerShot G1 X IMG_0004.CR2: Adobe DNG Converter 18.7 BlackLevel [512.469] (mean 512.47); RAWmakase's is its ColorData PerChannelBlackLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "12b3ad6aed9fbcd19ba3bfffcd0769aa5a041d610205eee840bf4b2c420dffae"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II 08.canon.raw.cr2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -990,8 +974,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "ce460cf2b6762c8c22ebeb00e9e1edccd728edcb7c4e82c78f3bce61d21fa88d"
 field = "sensor.white"
 before = 15763
-after = 14512
-evidence = "Canon EOS 50D IMG_9516.CR2: Adobe DNG Converter 18.7 WhiteLevel 13200; RAWmakase's 14512 is its ColorData SpecularWhiteLevel"
+after = 13200
+evidence = "Canon EOS 50D IMG_9516.CR2: Adobe DNG Converter 18.7 WhiteLevel 13200; RAWmakase's 13200 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1006,8 +990,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "38cdb173fe1ea083f4d475285d3080db49d7f3c7cdcb49bf1968fceeed66c85c"
 field = "sensor.white"
 before = 15360
-after = 12277
-evidence = "Canon EOS 750D IMG_5474.CR2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 12277 is its ColorData SpecularWhiteLevel"
+after = 11765
+evidence = "Canon EOS 750D IMG_5474.CR2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 11765 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1062,8 +1046,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "f98108c5efd57eef483009cdb490ada2071d1c1b58a82df3de997b4d86d849c2"
 field = "sensor.white"
 before = 15360
-after = 12277
-evidence = "Canon EOS 760D 2015-07-10_18-54-26.cr2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 12277 is its ColorData SpecularWhiteLevel"
+after = 11765
+evidence = "Canon EOS 760D 2015-07-10_18-54-26.cr2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 11765 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1086,8 +1070,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "fa1c9e0a200006a4749f763523ea8a6c6c3518fb8a781ab85e03142ce04d33f2"
 field = "sensor.white"
 before = 15360
-after = 15092
-evidence = "Canon EOS 760D IMG_3661.CR2: Adobe DNG Converter 18.7 WhiteLevel 14580; RAWmakase's 15092 is its ColorData SpecularWhiteLevel"
+after = 14580
+evidence = "Canon EOS 760D IMG_3661.CR2: Adobe DNG Converter 18.7 WhiteLevel 14580; RAWmakase's 14580 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1126,8 +1110,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "4aae68a2e772dcf063ee0711229fca3cd9fdf5a4341d94f9a8f5df32c2d4e2ee"
 field = "sensor.white"
 before = 15360
-after = 12277
-evidence = "Canon EOS 750D IMG_6217.CR2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 12277 is its ColorData SpecularWhiteLevel"
+after = 11765
+evidence = "Canon EOS 750D IMG_6217.CR2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 11765 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1182,8 +1166,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "7c3c9c3b8ec487d56040c21620aafe51e13e2c2fc1e1351929970720e10dda69"
 field = "sensor.white"
 before = 15360
-after = 15966
-evidence = "Canon EOS 700D IMG_5139.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15966 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 700D IMG_5139.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1318,8 +1302,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "8106f288e22ca0510b2ebe36e58833afbf847db92e9e1ec6f651605bac0beb24"
 field = "sensor.white"
 before = 13584
-after = 15094
-evidence = "Canon EOS 1100D IMG_0294.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 1100D IMG_0294.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1366,8 +1350,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "597bb01f2400b04bfe7ee024016992e8e897b7dffaa5e368b8375daf3b32b3ed"
 field = "sensor.white"
 before = 15280
-after = 15032
-evidence = "Canon EOS-1D Mark IV IMG_5391.CR2: Adobe DNG Converter 18.7 WhiteLevel 15100; RAWmakase's 15032 is its ColorData SpecularWhiteLevel"
+after = 15100
+evidence = "Canon EOS-1D Mark IV IMG_5391.CR2: Adobe DNG Converter 18.7 WhiteLevel 15100; RAWmakase's 15100 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1430,8 +1414,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "6d26eeb1e8a5978c7cb9d8beb6e6e34f3c27847055b76bc7f186503ca44508d0"
 field = "sensor.white"
 before = 16383
-after = 15092
-evidence = "Canon EOS M2 m2_test_02.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15092 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS M2 m2_test_02.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1486,8 +1470,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "60c0d41410067534a82be3a8868f6804390c0e6f62bbd5aec88770c73c64c419"
 field = "sensor.white"
 before = 15360
-after = 15675
-evidence = "Canon EOS 700D Copy of signature edits free raws - IMG_7059.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15675 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 700D Copy of signature edits free raws - IMG_7059.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1502,16 +1486,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "86e303a8116a4867a0b503c560bc1f433cd153a7b31465d59a431dc9cae7efe4"
 field = "sensor.white"
 before = 15490
-after = 11692
-evidence = "Canon EOS 6D signature edit free raws - IMG_3653.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 11692 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 6D signature edit free raws - IMG_3653.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "0fe2aa8ce3db9196aab1bbbda5f996eb9833e32ba048d7f31487f4dacef25305"
 field = "sensor.white"
 before = 15360
-after = 12277
-evidence = "Canon EOS 750D IMG_4525.cr2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 12277 is its ColorData SpecularWhiteLevel"
+after = 11765
+evidence = "Canon EOS 750D IMG_4525.cr2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 11765 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1534,8 +1518,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "76584c59e47b99301513790ede76833bbc9b912442464c41871e6713aaac5c32"
 field = "sensor.white"
 before = 15488
-after = 11999
-evidence = "Canon EOS 5D Mark III 122A1666 (2020-06-25T17_45_13.819).CR2: Adobe DNG Converter 18.7 WhiteLevel 13100; RAWmakase's 11999 is its ColorData SpecularWhiteLevel"
+after = 13100
+evidence = "Canon EOS 5D Mark III 122A1666 (2020-06-25T17_45_13.819).CR2: Adobe DNG Converter 18.7 WhiteLevel 13100; RAWmakase's 13100 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1574,8 +1558,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "6c3014c7b52daa44336be372240c74e1c6071dbfe21b31ed3566e5acec9cfc7e"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III tag @signatureeditsco AE8A0060.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III tag @signatureeditsco AE8A0060.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1584,14 +1568,6 @@ field = "sensor.black"
 before = [2047, 2047, 2047, 2047]
 after = [2047, 2048, 2048, 2048]
 evidence = "Canon EOS 5D Mark III tag @signatureeditsco AE8A0060.cr2: Adobe DNG Converter 18.7 BlackLevel [2047.0, 2048.0, 2048.0, 2048.0] (mean 2047.75); RAWmakase's is its ColorData PerChannelBlackLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "4fb5ba6eb95a36c04b94e5d3e8624a31f686e1b43be77ea7efd8e5360154b3b1"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II tag @signatureeditsco 12.cr2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1606,8 +1582,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "188d4c474331d0bfe157aa0a8952d54d9063b91a32dcf31aadd4e2e1ceb8d57f"
 field = "sensor.white"
 before = 15360
-after = 15092
-evidence = "Canon EOS 750D free raw files from signatureedits.com _MG_5222.CR2: Adobe DNG Converter 18.7 WhiteLevel 14580; RAWmakase's 15092 is its ColorData SpecularWhiteLevel"
+after = 14580
+evidence = "Canon EOS 750D free raw files from signatureedits.com _MG_5222.CR2: Adobe DNG Converter 18.7 WhiteLevel 14580; RAWmakase's 14580 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1638,8 +1614,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "1e719499f7cf5af642cde256abbd1b136e5b537b7676ec66ee976fff181c61b8"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III 2G3A2723.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 2G3A2723.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1670,8 +1646,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "9c252f5fe808c21bde07fc7d5115c81d5902af7acef61f04381f4bef96a35ded"
 field = "sensor.white"
 before = 13584
-after = 15094
-evidence = "Canon EOS 1100D Copy of free raws from signatureedits.com - tag @signatureeditsco - .CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 1100D Copy of free raws from signatureedits.com - tag @signatureeditsco - .CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1686,8 +1662,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "9b7aa05582f278fa2cb01564aa05a3b6ffabc62b3afced8e5cc3f011c9a86992"
 field = "sensor.white"
 before = 15488
-after = 15917
-evidence = "Canon EOS 5D Mark III 4N6A5828.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15917 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 4N6A5828.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1702,16 +1678,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "213e13030e5882cb874de84261fa26073addcdb0f43b1a2753bf6c5a53a622fa"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D Betto De\u0301vora..CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D Betto De\u0301vora..CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "6688e19d10c5389bd82d291f4dcf9b395baea213acb823727dd55ce5a3856994"
 field = "sensor.white"
 before = 15490
-after = 11692
-evidence = "Canon EOS 6D signature edit free raws - IMG_4927.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 11692 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 6D signature edit free raws - IMG_4927.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1726,8 +1702,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "ae2e24b335426a2c96396ab0ecdcbf49a9c06d736476f1a790ddb49926f7b87a"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III Copy of Signature Edits Free Raw Photos - By Tawny Horton - 5E0C9424.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III Copy of Signature Edits Free Raw Photos - By Tawny Horton - 5E0C9424.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1736,14 +1712,6 @@ field = "sensor.black"
 before = [2047, 2047, 2046, 2046]
 after = [2047, 2047, 2048, 2048]
 evidence = "Canon EOS 5D Mark III Copy of Signature Edits Free Raw Photos - By Tawny Horton - 5E0C9424.CR2: Adobe DNG Converter 18.7 BlackLevel [2047.0, 2047.0, 2048.0, 2048.0] (mean 2047.50); RAWmakase's is its ColorData PerChannelBlackLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "d6b3b61190820c5cfd80cfdfb7da0181c40f2eefd2fc023c62ff48dae48b43b5"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II tag @signatureeditsco - IMG_7499_2.cr2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1758,8 +1726,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "b0335099253b89ffa1d5270b23746bf2185fc866816e2598a90245f094fad635"
 field = "sensor.white"
 before = 15490
-after = 15888
-evidence = "Canon EOS 6D tag @signatureeditsco IMG_4626.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15888 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D tag @signatureeditsco IMG_4626.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1782,8 +1750,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "1181bb2ba945c187a1df97ffcbd9667c72fd6b76bc01048d138ba47c16f2af9c"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III Signature Edits Free Raws - GN9A4683.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III Signature Edits Free Raws - GN9A4683.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1828,14 +1796,6 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "aa66c6a2be4eaf76b84f6391a4570b088f8030a64921a2e08d03d5457b3cf9e4"
-field = "sensor.white"
-before = 15600
-after = 15489
-evidence = "Canon EOS 5D Mark II IMG_7827.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15489 is its ColorData SpecularWhiteLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "aa66c6a2be4eaf76b84f6391a4570b088f8030a64921a2e08d03d5457b3cf9e4"
 field = "sensor.black"
 before = [1024, 1024, 1025, 1024]
 after = [1024, 1023, 1023, 1024]
@@ -1846,16 +1806,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "5b39b14cd88dfa688c6fb641a3d333aa64c65208b0cd0062a6189a3b3339672e"
 field = "sensor.white"
 before = 15490
-after = 11647
-evidence = "Canon EOS 6D signature edit free raws - IMG_2579.CR2: Adobe DNG Converter 18.7 WhiteLevel 13100; RAWmakase's 11647 is its ColorData SpecularWhiteLevel"
+after = 13100
+evidence = "Canon EOS 6D signature edit free raws - IMG_2579.CR2: Adobe DNG Converter 18.7 WhiteLevel 13100; RAWmakase's 13100 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "3c70fb03adce2d3a288f4f8f10fbe6d16fd5f8db2c68d454ae7942b956286183"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III 2G3A0048.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 2G3A0048.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1864,14 +1824,6 @@ field = "sensor.black"
 before = [2047, 2047, 2047, 2047]
 after = [2047, 2047, 2048, 2048]
 evidence = "Canon EOS 5D Mark III 2G3A0048.CR2: Adobe DNG Converter 18.7 BlackLevel [2047.0, 2047.0, 2048.0, 2048.0] (mean 2047.50); RAWmakase's is its ColorData PerChannelBlackLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "8d55cab6e02fa49ab3e69d6ba87636bec816259cf0236c6da1275c7268d71c24"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II IMG_2334.cr2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1902,8 +1854,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "7c1fb141a7048d725ea30494d0dbf5eb0dd9c94d784571768e44e52e493ff6ad"
 field = "sensor.white"
 before = 15488
-after = 15163
-evidence = "Canon EOS 5D Mark III Copy of photo cred @ryanbreitkreutz - signature edits free raws - 122A3668.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15163 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III Copy of photo cred @ryanbreitkreutz - signature edits free raws - 122A3668.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -1912,14 +1864,6 @@ field = "sensor.black"
 before = [2047, 2047, 2047, 2047]
 after = [2047, 2047, 2048, 2048]
 evidence = "Canon EOS 5D Mark III Copy of photo cred @ryanbreitkreutz - signature edits free raws - 122A3668.CR2: Adobe DNG Converter 18.7 BlackLevel [2047.0, 2047.0, 2048.0, 2048.0] (mean 2047.50); RAWmakase's is its ColorData PerChannelBlackLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "322e54028f790d88a430278b5c2ec0d294d3fdf9c3d8b1470ed976a8148160de"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II free raw files - credit signatureedits.com - IMG_3555.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2014,16 +1958,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "7d5e8707b1cd4569b820155a779c3d98f13e17249303398c3b5041c65c062bd2"
 field = "sensor.white"
 before = 15360
-after = 14041
-evidence = "Canon EOS 750D IMG_4261.cr2: Adobe DNG Converter 18.7 WhiteLevel 13529; RAWmakase's 14041 is its ColorData SpecularWhiteLevel"
+after = 13529
+evidence = "Canon EOS 750D IMG_4261.cr2: Adobe DNG Converter 18.7 WhiteLevel 13529; RAWmakase's 13529 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "c563f7a3434007c68189d1089e3bdc03fa14f093484db2392615f6e7cfb193ec"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III tag @signatureeditsco - free raws from signatureedits.com - 2C8A1257.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III tag @signatureeditsco - free raws from signatureedits.com - 2C8A1257.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2038,8 +1982,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "0270771723f7505226325f85f537bf5072c6da9344b761fba698c9218cb8974c"
 field = "sensor.white"
 before = 15488
-after = 15917
-evidence = "Canon EOS 5D Mark III 5M3_8791.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15917 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 5M3_8791.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2054,8 +1998,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "32a495121c7638db9249dea0b9429b61311f03bd3a1b301c9019cc8fb70b2f5f"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III GN9A4866.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III GN9A4866.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2070,8 +2014,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "7fa7231284ab8e1e9c1a16e46e0dba5b6c3f20b0166ed9a8181c31e0c60d1565"
 field = "sensor.white"
 before = 13433
-after = 14932
-evidence = "Canon EOS 500D Copy of Signature Edits Free Raw Photos - IMG_7172.cr2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 14932 is its ColorData SpecularWhiteLevel"
+after = 15600
+evidence = "Canon EOS 500D Copy of Signature Edits Free Raw Photos - IMG_7172.cr2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15600 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2086,16 +2030,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "6ea9e6497d71b304a38f126fe92651efd519d25f911c17da13e4508a7d3733f6"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_2494.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_2494.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "a29ae0921c7a23b3722a51fe3d9ebf97ff5a2d1adbdd7f2774690f72dba3c368"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_4723.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_4723.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2118,8 +2062,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "de863c1c1a508dc2b837ca86f6179cce9009676fd63067acb38ff8669c84ffef"
 field = "sensor.white"
 before = 15488
-after = 11900
-evidence = "Canon EOS 5D Mark III 2G3A2899.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 11900 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 5D Mark III 2G3A2899.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2134,8 +2078,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "aa51e64a9be1b9ff30a6fb2607178d5aa888d1b7b86ad8b2fea4dedb36f19425"
 field = "sensor.white"
 before = 15490
-after = 11647
-evidence = "Canon EOS 6D tag @signatureeditsco - free raw files from signatureedits.com _MG_0747.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 11647 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 6D tag @signatureeditsco - free raw files from signatureedits.com _MG_0747.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2158,8 +2102,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "e4fdd792c9eb1ee7a70c12a43bf68f9df2c61b0e40085b85e9682ba6554e0cb5"
 field = "sensor.white"
 before = 15488
-after = 16251
-evidence = "Canon EOS 5D Mark III credit @signatureeditsco - signatureedits.com - FB2A2273.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 16251 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III credit @signatureeditsco - signatureedits.com - FB2A2273.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2174,8 +2118,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "efd83f0bacf563c77663146375bd4079e5f61f64674aa3fb1c9abf1ccb12cc12"
 field = "sensor.white"
 before = 14274
-after = 15094
-evidence = "Canon EOS 1200D Copy of signature edits free raw files - tag @signatureeditsco - IMG_4311.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 1200D Copy of signature edits free raw files - tag @signatureeditsco - IMG_4311.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2190,8 +2134,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "abea272297f7ee9c8cb6db0189a0ff2604859248b269a978eba758b10ce7b1d0"
 field = "sensor.white"
 before = 15360
-after = 12277
-evidence = "Canon EOS 750D IMG_4566.cr2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 12277 is its ColorData SpecularWhiteLevel"
+after = 11765
+evidence = "Canon EOS 750D IMG_4566.cr2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 11765 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2230,16 +2174,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "e99024834b9ed45aa52320972a7c651272be92ce91f66a43de4e4cd3a91a8a11"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D  HassanWasimz  4800.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D  HassanWasimz  4800.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "5d490e3a321eec767316bb754018e7dd63a6e2ae16814802623e05b95f83b54a"
 field = "sensor.white"
 before = 15488
-after = 15163
-evidence = "Canon EOS 5D Mark III credit free raws from signatureedits.com - B5A8047.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15163 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III credit free raws from signatureedits.com - B5A8047.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2254,8 +2198,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "709d07c905f92d4e1195e4da090ee16486714e7207f7a921ca69c463339ef281"
 field = "sensor.white"
 before = 15490
-after = 11692
-evidence = "Canon EOS 6D signature edit free raws - IMG_4917.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 11692 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 6D signature edit free raws - IMG_4917.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2270,8 +2214,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "0bc83450d4babf34cfdaeebfcb79fc6368031691b6d23e8ca3c4c42f0f7bc104"
 field = "sensor.white"
 before = 15488
-after = 16017
-evidence = "Canon EOS 5D Mark III _MGL4794.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 16017 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III _MGL4794.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2286,8 +2230,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "84f96a48f4493ef0cb51d074400b24d5776fd1acbf91edb6bd73e0b25ab0496b"
 field = "sensor.white"
 before = 15490
-after = 13749
-evidence = "Canon EOS 6D Free Raw Files - Tag @signatureeditsco IMG_9034.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 13749 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D Free Raw Files - Tag @signatureeditsco IMG_9034.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2302,8 +2246,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "85824bf62491ef3c5338b1564de4bd8986798cd1cf40469f79503287e6dacdc6"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III signature edits free raw files tag @signatureeditsco MADISON_03461.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III signature edits free raw files tag @signatureeditsco MADISON_03461.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2318,8 +2262,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "c3d9cae152184371a067a3ed40d0b7c877efe6d18428a0fec8903512cf63ab0c"
 field = "sensor.white"
 before = 15488
-after = 12620
-evidence = "Canon EOS 5D Mark III 619A0205.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 12620 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 5D Mark III 619A0205.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2334,8 +2278,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "47e71320cbc2768e6cd79653ec0794a942935ff8b2cdc00c56e657d883f20961"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III Copy of Signature Edits Free Raw Photos - By Tawny Horton - 5E0C9728.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III Copy of Signature Edits Free Raw Photos - By Tawny Horton - 5E0C9728.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2350,8 +2294,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "6d0ee2c03efc1696a09c2cf2d4122106ef37a3dd894b44f4af3fccb81b41fcd1"
 field = "sensor.white"
 before = 14605
-after = 15319
-evidence = "Canon EOS 450D Tag @signatureeditsco IMG_2766.CR2: Adobe DNG Converter 18.7 WhiteLevel 16000; RAWmakase's 15319 is its ColorData SpecularWhiteLevel"
+after = 16000
+evidence = "Canon EOS 450D Tag @signatureeditsco IMG_2766.CR2: Adobe DNG Converter 18.7 WhiteLevel 16000; RAWmakase's 16000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2366,8 +2310,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "d0c915b33e2529d4eca9f07555affebdc78086e129af5ed07d711dba4d8301ee"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_2014.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_2014.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2398,8 +2342,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "9f0e51d01dedae3a0bd284257a124b31a94d39506a959ecd928ef7f0a5c35da9"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III Copy of free raws from signatureedits.com - tag @signatureeditsco - 122A0419.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III Copy of free raws from signatureedits.com - tag @signatureeditsco - 122A0419.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2430,8 +2374,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "fc53fc4e7423b7659d7dbecccf0a9573aea7bd8c1015ac992f07b2bd30a30819"
 field = "sensor.white"
 before = 15490
-after = 15797
-evidence = "Canon EOS 6D IMG_3013.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15797 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D IMG_3013.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2440,6 +2384,14 @@ field = "sensor.white"
 before = 16383
 after = 11892
 evidence = "Canon EOS 80D IMG_2328.CR2: Adobe DNG Converter 18.7 WhiteLevel 11892; RAWmakase's 11892 is its ColorData SpecularWhiteLevel"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "26cd888078a62b01376cd23b94d9ca6cb50982cba3c561ad4032080a9a84158f"
+field = "sensor.white"
+before = 3692
+after = 3709
+evidence = "Canon EOS 5D dragomir_photography.CR2: Adobe DNG Converter 18.7 WhiteLevel 3709; RAWmakase's 3709 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2454,16 +2406,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "b9b9467c7efdef8de377287d3d36d4d050ed6cf48c76dbd9f56b88331f2f21a9"
 field = "sensor.white"
 before = 15490
-after = 15266
-evidence = "Canon EOS 6D signature edit free raws - IMG_9305.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15266 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_9305.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "e0a225d2494e7dfcca9abd9b9b4b855d1b7d9b61319e46534a4c7b9561c204a6"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D tag THE JEREMIAH XO - free raw files from signatureedits.com .CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D tag THE JEREMIAH XO - free raw files from signatureedits.com .CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2502,8 +2454,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "e5375b5077c42f1c0b3251fd3b2824f5dfd98f6470734faffb3c8d0acf4c5e61"
 field = "sensor.white"
 before = 15488
-after = 15750
-evidence = "Canon EOS 5D Mark III tag @signatureeditsco RAW4 .cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15750 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III tag @signatureeditsco RAW4 .cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2518,8 +2470,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "d3916f418045d46f84075be0c30936935e192aed87cb14a06279437612861a2c"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III 2C8A1462.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 2C8A1462.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2566,8 +2518,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "64f640307603f1e0a716bdb2372a3c6120382c30d28b6fb70102d2ff8bdd8954"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III 2G3A2473.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 2G3A2473.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2582,8 +2534,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "2510d6a438fc9fd6df1f6a5042f059e23c2797dd5697dd369c0195282ff0eeb5"
 field = "sensor.white"
 before = 13584
-after = 15677
-evidence = "Canon EOS 600D Free Raw Files - Tag @signatureeditsco - IMG_0098.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15677 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 600D Free Raw Files - Tag @signatureeditsco - IMG_0098.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2614,16 +2566,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "e90b907786b27eee0945cd868a20841a3da8975ff2dd3228692de6306cfeab6f"
 field = "sensor.white"
 before = 15490
-after = 15107
-evidence = "Canon EOS 6D free raws from www.signatureedits.com - tag @signatureeditsco IMG_160s0.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15107 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D free raws from www.signatureedits.com - tag @signatureeditsco IMG_160s0.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "c70010563e845a92050745ec6902fd5d5f3434285705a0a047d828356f7a5282"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III signatureedits raws.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III signatureedits raws.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2654,8 +2606,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "ce5ce87937750c958eddf4b5bc702bd85363f9bb8d7c2ee026b4112be67cd30b"
 field = "sensor.white"
 before = 15490
-after = 15797
-evidence = "Canon EOS 6D Signature Edits Free Raws IMG_0027.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15797 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D Signature Edits Free Raws IMG_0027.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2670,8 +2622,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "3a15348dc7570103d2489fc078ca2eeea9c08d73ffd257c641b411378cbe33ef"
 field = "sensor.white"
 before = 13584
-after = 15094
-evidence = "Canon EOS 1100D dragomir_photography2.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 1100D dragomir_photography2.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2694,8 +2646,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "bedee324fd798a2d01107a3cf2226bee3f3f9a2158981b4948d209fd01be96ef"
 field = "sensor.white"
 before = 15303
-after = 15237
-evidence = "Canon EOS 70D  free raw files from @signatureeditsco_MG_9980.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15237 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 70D  free raw files from @signatureeditsco_MG_9980.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2718,8 +2670,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "c8f8aa79086d1c6134f335461dca7825b1ae37a52d1a1880c028024e33311948"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III 0J9A8916.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 0J9A8916.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2750,8 +2702,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "34e2aea0dc7d40465eb722f99439bf61a936e8e99d08589d1c403eb2e77a886d"
 field = "sensor.white"
 before = 15488
-after = 12077
-evidence = "Canon EOS 5D Mark III 2G3A9942.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 12077 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 5D Mark III 2G3A9942.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2766,16 +2718,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "5e17add748acd96a4e2f6a5f630f16e4263e80a97caa4fbbb2c441a8012ac9cd"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D Free Raw Files - Tag @signatureeditsco - _MG_2862.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D Free Raw Files - Tag @signatureeditsco - _MG_2862.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "50461de49480a6d98133de58538fa70d32aa4deefb6dec4ff0436352c897c9a6"
 field = "sensor.white"
 before = 15490
-after = 12272
-evidence = "Canon EOS 6D Signature Edits free raw files tag @signatureeditsco IMG_4563.cr2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 12272 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 6D Signature Edits free raw files tag @signatureeditsco IMG_4563.cr2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2790,8 +2742,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "a0e3b0c3f368d8c11e7d39b2f4d364de1f4cfa9110b43b2a527a56e99326e670"
 field = "sensor.white"
 before = 15490
-after = 11797
-evidence = "Canon EOS 6D IMG_0605.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 11797 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 6D IMG_0605.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2822,8 +2774,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "b326a742e4f41585ac7a38a2dd38243699aac8ca3175a3d7b22ab113db2d8fdc"
 field = "sensor.white"
 before = 15490
-after = 15129
-evidence = "Canon EOS 6D signature edit free raws - IMG_9732.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15129 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_9732.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2862,8 +2814,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "663b06555fc4a9b2f79e0a1212fc81144ea679fc111887327acd9bd87caa15ac"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III Copy of IMGL9909.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III Copy of IMGL9909.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2902,8 +2854,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "f0dd61145fe0cc585c75e7ebf3ca8d6b501a21f60dc072974d5b6ab905de3446"
 field = "sensor.white"
 before = 15488
-after = 15163
-evidence = "Canon EOS 5D Mark III 1O6A3619.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15163 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 1O6A3619.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2918,8 +2870,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "93225a48afec49c0d9da3a78b2aa6dea23b9eb8858616ad1f8303259d3022499"
 field = "sensor.white"
 before = 15488
-after = 15220
-evidence = "Canon EOS 5D Mark III free raw files - please credit signatureedits.com IMG_0764.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15220 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III free raw files - please credit signatureedits.com IMG_0764.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2950,8 +2902,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "24b01c4ebac3377ad7002625a812a0fba5b8a184810cdf87b40dc6fab13bda5e"
 field = "sensor.white"
 before = 15488
-after = 16251
-evidence = "Canon EOS 5D Mark III Copy of  photo cred @ryanbreitkreutz - signature edits free raws - IMG_1654.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 16251 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III Copy of  photo cred @ryanbreitkreutz - signature edits free raws - IMG_1654.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2982,8 +2934,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "b922c1279d3bc26526395efd7b5b8ff5ffd4efe5819a28ec7602c7a33cf8a165"
 field = "sensor.white"
 before = 15490
-after = 15470
-evidence = "Canon EOS 6D IMG.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15470 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D IMG.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -2998,16 +2950,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "9a66eac019aba9a698f7f7da0aedeb715a5051974540d89a310f4ee4f420db98"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_4838.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_4838.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "56ab58ce4bcecb90a7172f9508e7ca6148efaca9997ae0c1ee9f70bf00855764"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III IMG_9940.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III IMG_9940.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3022,8 +2974,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "983b6ae518537599d27a40098d88af02d840f02b2d08c87da80ddccda65f7493"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III 2C8A1244.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 2C8A1244.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3032,14 +2984,6 @@ field = "sensor.black"
 before = [2047, 2047, 2047, 2047]
 after = [2047, 2047, 2048, 2048]
 evidence = "Canon EOS 5D Mark III 2C8A1244.CR2: Adobe DNG Converter 18.7 BlackLevel [2047.0, 2047.0, 2048.0, 2048.0] (mean 2047.50); RAWmakase's is its ColorData PerChannelBlackLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "a205f9d2e555daa0683fe7d8772bd52505591453a24e9bcb3e024089de642c0c"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II signature edits free raw files tag @signatureeditsco IMG_5673 (2)(1).CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3054,16 +2998,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "0fb620f8a2c36ce7e3cee32ae7fce467e9cffb4c6f1b5016c0f8dbd2879bc17b"
 field = "sensor.white"
 before = 15490
-after = 15377
-evidence = "Canon EOS 6D Signature Edits Free Raw Photos - IMG_4649.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15377 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D Signature Edits Free Raw Photos - IMG_4649.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "8a3b964afd6c0fdafcf496f2a3783ce8c0b59f4b8cb4e05e5c4fa5312151081f"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III 122A4177.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 122A4177.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3072,14 +3016,6 @@ field = "sensor.black"
 before = [2047, 2047, 2046, 2047]
 after = [2047, 2047, 2048, 2048]
 evidence = "Canon EOS 5D Mark III 122A4177.CR2: Adobe DNG Converter 18.7 BlackLevel [2047.0, 2047.0, 2048.0, 2048.0] (mean 2047.50); RAWmakase's is its ColorData PerChannelBlackLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "3b77d362a6fc3a4b27b8d7e2eaa3950e16025cd6b25d9af5f4ba57779fa666bb"
-field = "sensor.white"
-before = 15600
-after = 16025
-evidence = "Canon EOS 5D Mark II credit @signatureeditsco - signatureedits.com IMG_4430.cr2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 16025 is its ColorData SpecularWhiteLevel"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3118,8 +3054,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "41e9bf7c902bced0acce083d4ca5b2fb692e0eea3a7941d24e4a51e692bf2564"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III 2C8A9768.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 2C8A9768.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3134,16 +3070,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "dc1521c88e7bc3c77630f5fe701d84ab6395514a29a75c54c36744bcdf29751f"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_9801.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "19ed10a9f223d5deaf9309cfb807b84105053fc107bc523baec5cdf352d5e36f"
-field = "sensor.white"
-before = 15600
-after = 15821
-evidence = "Canon EOS 5D Mark II IMG_5342.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15821 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_9801.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3174,8 +3102,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "060609c6084d9040689c8550c7c1f31f3ac3469675c6bcf2b950fb798ee58f7f"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III _MGL3114.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III _MGL3114.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3190,8 +3118,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "9e5847b86e62e50cce997e604d492ae77c1febada2ca333ecb44fad2f6a8b58c"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III 122A7338.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 122A7338.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3206,8 +3134,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "21e064b60f7d5020b4895510516b6c0ac7582ee7c138663c3a47627c0f48c516"
 field = "sensor.white"
 before = 15490
-after = 15266
-evidence = "Canon EOS 6D signature edit free raws - IMG_9688.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15266 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_9688.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3222,8 +3150,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "e0b047eace635de3acb0a520dfe17403ac6a634c386fa4745ad4f68ab2bdf4bb"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III - credit_signatureedits.com - _E2A6308.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III - credit_signatureedits.com - _E2A6308.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3254,8 +3182,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "985a206bf6ef6cb36189caadeffae9101ee399af40b7d7fbc5baf949f6e6a0d5"
 field = "sensor.white"
 before = 13433
-after = 15044
-evidence = "Canon EOS 500D credit free raws from signatureedits.com - MG_0941.cr2: Adobe DNG Converter 18.7 WhiteLevel 13200; RAWmakase's 15044 is its ColorData SpecularWhiteLevel"
+after = 13200
+evidence = "Canon EOS 500D credit free raws from signatureedits.com - MG_0941.cr2: Adobe DNG Converter 18.7 WhiteLevel 13200; RAWmakase's 13200 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3278,8 +3206,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "9e692ff7aba69b94ac0b58ba132a131a92d41f8d15f77ecf0fb0133ce62a7205"
 field = "sensor.white"
 before = 15360
-after = 15092
-evidence = "Canon EOS 700D signature edit free raws - IMG_2599.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15092 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 700D signature edit free raws - IMG_2599.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3326,8 +3254,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "baa9953ab973c11fd7880cc391ee09f9dc4dd28ea518bf4dd76e7af0f7fa89fd"
 field = "sensor.white"
 before = 15490
-after = 15266
-evidence = "Canon EOS 6D tag @signatureeditsco - free raws from signatureedits.com -IMG_0650.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15266 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D tag @signatureeditsco - free raws from signatureedits.com -IMG_0650.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3350,16 +3278,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "0980eb3ab6dea41b335d3b44af305ae2020dc716a0a48f1ed22c69213ce31cfd"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D tag @signatureeditsco - free raws from signatureedits.com -IMG_0316.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D tag @signatureeditsco - free raws from signatureedits.com -IMG_0316.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "0201e5a2ce31e3d61af5db8fbaf97cc2e09a83e26942e4cf2c907cbf907c03db"
 field = "sensor.white"
 before = 13584
-after = 12721
-evidence = "Canon EOS 7D _MGL0192.CR2: Adobe DNG Converter 18.7 WhiteLevel 12600; RAWmakase's 12721 is its ColorData SpecularWhiteLevel"
+after = 12600
+evidence = "Canon EOS 7D _MGL0192.CR2: Adobe DNG Converter 18.7 WhiteLevel 12600; RAWmakase's 12600 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3374,8 +3302,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "fbebe1826c849095b42df90c04674658fde168680d3b1192f357129f583ac534"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III 2C8A9753.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 2C8A9753.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3438,8 +3366,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "1078475c0c5cbff4482693bf73cf76609dd345bf54ce95bebcedc86ea1221644"
 field = "sensor.white"
 before = 13584
-after = 15094
-evidence = "Canon EOS 1100D tag @signatureeditsco IMG_8892.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 1100D tag @signatureeditsco IMG_8892.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3454,8 +3382,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "06d079ce7ac9d38f9898818234a8704bd2f68e429c5253f709b8f087c4b4047b"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III  Signature Edits Free Raw Photos - By Tawny Horton - 5E0C9673.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III  Signature Edits Free Raw Photos - By Tawny Horton - 5E0C9673.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3470,8 +3398,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "ad0b0834c8004b64054d78a6afd31a9a94afccc67fe8100fae4bf26060399b4c"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III 2G3A8152.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 2G3A8152.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3486,8 +3414,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "778c8e902130a11eeb6611fda1f5512add09e75eb5cfb12a21aa7738a6b2dc73"
 field = "sensor.white"
 before = 15488
-after = 15917
-evidence = "Canon EOS 5D Mark III SE Free Raws - Credit_ Olga Brianskaia I53B7878.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15917 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III SE Free Raws - Credit_ Olga Brianskaia I53B7878.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3502,16 +3430,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "dcbb2c8f142ae53f05cb61a602f41b28c3dc706fd5f20a3b626265e3eef655fa"
 field = "sensor.white"
 before = 15490
-after = 15797
-evidence = "Canon EOS 6D signature edits free raws r9uh3r.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15797 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edits free raws r9uh3r.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "69215285a0bc3d9196667cb6101bcc5e4f34baf47f0b91dc46dac7078d6650bd"
 field = "sensor.white"
 before = 15831
-after = 15094
-evidence = "Canon EOS 550D Copy of signature edits free raws - signatureedits.com IMG_4997.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 550D Copy of signature edits free raws - signatureedits.com IMG_4997.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3542,8 +3470,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "3b3761d26e42173d78cdf500ce103848c539c2901b84c14de58e00ca6885fa48"
 field = "sensor.white"
 before = 15490
-after = 15266
-evidence = "Canon EOS 6D Signature Edits Free Raw Files - Tag @signatureeditsco IMG_9517_CR2.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15266 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D Signature Edits Free Raw Files - Tag @signatureeditsco IMG_9517_CR2.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3566,16 +3494,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "97b39519103897f7bfb8fc9965492bd9f72de1bfce381b3aaa86d54bcc18cbd6"
 field = "sensor.white"
 before = 15360
-after = 12277
-evidence = "Canon EOS 750D IMG_4442.cr2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 12277 is its ColorData SpecularWhiteLevel"
+after = 11765
+evidence = "Canon EOS 750D IMG_4442.cr2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 11765 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "ece448b6540f3a4612dfae0578fd80f875c66b447b134261ab6c1a71374dcc4b"
 field = "sensor.white"
 before = 15360
-after = 15092
-evidence = "Canon EOS 700D ag @signatureeditsco - free raw photos from signatureedits.com _MG_9942.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15092 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 700D ag @signatureeditsco - free raw photos from signatureedits.com _MG_9942.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3590,8 +3518,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "bd0fe4ebf8066143aabefcdff3ef02d1bea57b0e2beac2bfe90f9577249b8a13"
 field = "sensor.white"
 before = 15488
-after = 11900
-evidence = "Canon EOS 5D Mark III 122A0310.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 11900 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 5D Mark III 122A0310.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3606,8 +3534,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "6eb01398d8690509d0b515bd7d125cbf51f0e7f71ce04d0e095cbb7db34c6c0d"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_2019.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_2019.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3652,14 +3580,6 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "f7bd6c09b8d335cdb174b7bd384d9c5364af8dd6a50154c853ec9e21565da917"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II credit free raws from signatureedits.com - MG_7535_2.cr2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "f7bd6c09b8d335cdb174b7bd384d9c5364af8dd6a50154c853ec9e21565da917"
 field = "sensor.black"
 before = [1023, 1023, 1023, 1023]
 after = [1023, 1023, 1023, 1024]
@@ -3686,8 +3606,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "864e1a80deb4a79d266269d450d38d86d7a4b06e4487cd61fd1eb48f885ecf5a"
 field = "sensor.white"
 before = 15490
-after = 11797
-evidence = "Canon EOS 6D IMG_0613.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 11797 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 6D IMG_0613.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3710,8 +3630,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "dc5cda0075f152f5864cdc89bfe64dbcfbc20332ce58097c6fd1491c7c1dfc29"
 field = "sensor.white"
 before = 15488
-after = 12077
-evidence = "Canon EOS 5D Mark III 2G3A9939.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 12077 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 5D Mark III 2G3A9939.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3726,8 +3646,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "02717156f67fdc7007758286e66d5ebd8f5af75ad2a748ab2365d61f1320fb02"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D IMG_7837-1kok_KMB.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D IMG_7837-1kok_KMB.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3790,16 +3710,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "be2a3c23698ef89ae811e6432b2d6e25365a9737ae4e274f7d444049cf059b4c"
 field = "sensor.white"
 before = 15490
-after = 15266
-evidence = "Canon EOS 6D signature edit free raws - IMG_2191.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15266 is its ColorData SpecularWhiteLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "81e4336a7744cc0f725a8f174109fdab5dd8fb471808d98a416beb77748cc881"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II Signature Edits Free Raw Photos - IMG_3159.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_2191.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3814,8 +3726,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "9bf3ad4bc6b5ade06efb3a4adc4c5a59bc98399b016a144809fb82c0354dd8c8"
 field = "sensor.white"
 before = 13645
-after = 15092
-evidence = "Canon EOS 650D  IMG_3546.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15092 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 650D  IMG_3546.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3830,8 +3742,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "0aafbf611c9af42c1a31c482d36f42bc16d40fe996bba3146bab9ee9e80d53da"
 field = "sensor.white"
 before = 15490
-after = 15646
-evidence = "Canon EOS 6D file000551.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15646 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D file000551.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3854,8 +3766,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "a5f3ef8b58b87d13127178f846c639b62bf3800808337615a07d1ec710464f07"
 field = "sensor.white"
 before = 12279
-after = 15094
-evidence = "Canon EOS 60D _MG_7267.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 60D _MG_7267.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3886,8 +3798,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "370f486d682c42f26e15ab6ae4636d6954a877d801c35e341f9498efb7255119"
 field = "sensor.white"
 before = 13584
-after = 15094
-evidence = "Canon EOS 1100D Copy of IMG_1177.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 1100D Copy of IMG_1177.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3902,8 +3814,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "e79eff4c3aa08f9fa965e9394df9df33b2eb5ce3dd93905f9586351d6921e48b"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III tag @signatureeditsco - free raw files from signatureedits.com IMGL9951.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III tag @signatureeditsco - free raw files from signatureedits.com IMGL9951.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3918,8 +3830,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "38e85371662116c6c3bd443cd1218ea32bba78eb309e5d2d638b38708c7d5b3b"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III IMG_0063.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III IMG_0063.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3934,8 +3846,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "9dde6f30cca77a6ba291bbab4dc2d331e5112d2cc3343306832392905c3db209"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III 2G3A2474.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 2G3A2474.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3958,8 +3870,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "2eade757c76fa41d3b01bccfe9e1d765859a69877c1501eb9ff1eee56a14769d"
 field = "sensor.white"
 before = 15490
-after = 11797
-evidence = "Canon EOS 6D IMG_9982.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 11797 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 6D IMG_9982.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3974,8 +3886,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "877aedcf7516add4d6f1c0582534b540ffe80e54bf51d90f69914a23f802445e"
 field = "sensor.white"
 before = 13584
-after = 12749
-evidence = "Canon EOS 7D tag @signatureeditsco IMG_3795.CR2: Adobe DNG Converter 18.7 WhiteLevel 13600; RAWmakase's 12749 is its ColorData SpecularWhiteLevel"
+after = 13600
+evidence = "Canon EOS 7D tag @signatureeditsco IMG_3795.CR2: Adobe DNG Converter 18.7 WhiteLevel 13600; RAWmakase's 13600 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -3990,8 +3902,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "51d5dfe1619085b526608a80085c1173b5e3fd90d20587dd66c018ad50b98344"
 field = "sensor.white"
 before = 15490
-after = 11647
-evidence = "Canon EOS 6D tag @signatureeditsco free raws from signatureedits.com - _MG_0750.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 11647 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 6D tag @signatureeditsco free raws from signatureedits.com - _MG_0750.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4022,8 +3934,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "630bfd147a3a69a8c01bb9046dcadc15b458e1aa751c644dfd34ad9fddb4f3c8"
 field = "sensor.white"
 before = 12279
-after = 15968
-evidence = "Canon EOS 60D IMG_4375.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15968 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 60D IMG_4375.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4054,8 +3966,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "7826d0ae5c007ff6ed894e9a813145ac891bd9985136933280f17af0755a603c"
 field = "sensor.white"
 before = 13583
-after = 15092
-evidence = "Canon EOS 100D signature edits free raw.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15092 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 100D signature edits free raw.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4086,16 +3998,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "ae2d9979ede77138dc88dde88b2e9def6682f60588a4880e5945a1d0ab3d08e3"
 field = "sensor.white"
 before = 15490
-after = 13925
-evidence = "Canon EOS 6D credit @signatureeditsco - signatureedits.com - IMG_6208.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 13925 is its ColorData SpecularWhiteLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "ae7b6d31aafb0ab6f08838b19a441210de6bbf106f7d2ca0e88667dd4e4e49c5"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II Signature Edits Free Raw Photos - IMG_3635.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D credit @signatureeditsco - signatureedits.com - IMG_6208.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4118,8 +4022,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "0a008a2700cdade305ee7103526f4f2c7fcb4cba90c5c89a4a4ed39cf5b15e3c"
 field = "sensor.white"
 before = 15600
-after = 15670
-evidence = "Canon EOS 5D Mark II IMG_8016.CR2: Adobe DNG Converter 18.7 WhiteLevel 12700; RAWmakase's 15670 is its ColorData SpecularWhiteLevel"
+after = 12700
+evidence = "Canon EOS 5D Mark II IMG_8016.CR2: Adobe DNG Converter 18.7 WhiteLevel 12700; RAWmakase's 12700 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4134,8 +4038,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "236e6ae91afae7587a964f2713d15b7ab4f462836008a9ecff99dff75ec5ce8c"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_4949.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_4949.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4144,14 +4048,6 @@ field = "sensor.black"
 before = [2047, 2047, 2047, 2046]
 after = [2047, 2047, 2047, 2048]
 evidence = "Canon EOS 6D signature edit free raws - IMG_4949.CR2: Adobe DNG Converter 18.7 BlackLevel [2047.0, 2047.0, 2048.0, 2047.0] (mean 2047.25); RAWmakase's is its ColorData PerChannelBlackLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "31a6b28f34d963c600bed02516e395e213f4f637295d48c502382e04e143b24e"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II  IMG_2280.cr2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4182,16 +4078,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "77873e9d9c7086257d4e858d6331f1541abb11674e054e13107f54b76b3f2a61"
 field = "sensor.white"
 before = 15490
-after = 15129
-evidence = "Canon EOS 6D signature edit free raws - IMG_9759.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15129 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_9759.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "62b6b7f4ae975f3346c91feaec8a33ca554bdeb1fb1ac6ef7c88ccf54e811bf4"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III credit @signatureeditsco - signatureedits.com 2C8A1446.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III credit @signatureeditsco - signatureedits.com 2C8A1446.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4222,24 +4118,24 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "37bcfa0515912aec382e051f3e456929e89cfddb586fe404b7dee8365c4f438e"
 field = "sensor.white"
 before = 15360
-after = 12277
-evidence = "Canon EOS 750D IMG_4302.cr2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 12277 is its ColorData SpecularWhiteLevel"
+after = 11765
+evidence = "Canon EOS 750D IMG_4302.cr2: Adobe DNG Converter 18.7 WhiteLevel 11765; RAWmakase's 11765 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "f671b7419b96999d537c5abb3f62d421fe977f57c32456fec681a2ae855d2fd3"
 field = "sensor.white"
 before = 13584
-after = 15094
-evidence = "Canon EOS 1100D credit @signatureeditsco IMG_8828.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 1100D credit @signatureeditsco IMG_8828.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "dc150da73b123c79cd88eee4f580933d3d024b429177e423fb87146c1c9dcda6"
 field = "sensor.white"
 before = 15488
-after = 11900
-evidence = "Canon EOS 5D Mark III free raw files from signatureedits.com CX4A4491.CR2: Adobe DNG Converter 18.7 WhiteLevel 13100; RAWmakase's 11900 is its ColorData SpecularWhiteLevel"
+after = 13100
+evidence = "Canon EOS 5D Mark III free raw files from signatureedits.com CX4A4491.CR2: Adobe DNG Converter 18.7 WhiteLevel 13100; RAWmakase's 13100 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4286,8 +4182,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "b517e89563d1b4a368e6d4e04771dc85b1e2bbaf51cf412191a332767418df15"
 field = "sensor.white"
 before = 14274
-after = 15094
-evidence = "Canon EOS 1300D IMG_5687.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 1300D IMG_5687.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4302,8 +4198,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "92396f93aa77e06496ee0c5b6305d513d3323d93cdb844f43e9e59ebf134cf50"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III 2C8A1166.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 2C8A1166.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4332,14 +4228,6 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "5b3dbdf3af19df4b232e92e4ff967bd79ca35bc142a3e6d2636a15d0aa299c9b"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II credit @signatureeditsco - signatureedits.com IMG_8773.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "5b3dbdf3af19df4b232e92e4ff967bd79ca35bc142a3e6d2636a15d0aa299c9b"
 field = "sensor.black"
 before = [1024, 1024, 1024, 1024]
 after = [1024, 1024, 1024, 1023]
@@ -4350,8 +4238,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "96bc8535d074f9711ab38424ea30eb27aa92f6442140d28366492826396dcaf8"
 field = "sensor.white"
 before = 13584
-after = 12721
-evidence = "Canon EOS 7D _MGL0190.CR2: Adobe DNG Converter 18.7 WhiteLevel 12600; RAWmakase's 12721 is its ColorData SpecularWhiteLevel"
+after = 12600
+evidence = "Canon EOS 7D _MGL0190.CR2: Adobe DNG Converter 18.7 WhiteLevel 12600; RAWmakase's 12600 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4374,8 +4262,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "3486de5c33be709678944a9ce968d4130181a9657ce257a7c10a09c4109a95cf"
 field = "sensor.white"
 before = 15490
-after = 15266
-evidence = "Canon EOS 6D signature edit free raws - IMG_9463.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15266 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_9463.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4390,16 +4278,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "f93d8e564d37e1087c599d318a934481b790094cd1e5e9dccbf336f0b4f9c86f"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_1952.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_1952.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "2cbb0a908d830992b5d5c4ac4137a6c4be6a7cb382f6b0ef3d3c15df51464417"
 field = "sensor.white"
 before = 15488
-after = 16017
-evidence = "Canon EOS 5D Mark III _MGL4739.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 16017 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III _MGL4739.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4414,8 +4302,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "b370d82a57405f750bf51ce7782ae3a057e8ddf485896e5b56d2fae4d348a8e3"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_9737.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_9737.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4430,8 +4318,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "dd5c6924a0c613091ead29ca88e7ce5553edaca3182deb261439ef0982005a4d"
 field = "sensor.white"
 before = 15488
-after = 15750
-evidence = "Canon EOS 5D Mark III IMG_2400.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15750 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III IMG_2400.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4460,14 +4348,6 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "0969eae2606941a39f1b55fa7e83d1dd08c715046f5c054ad2016f5377033726"
-field = "sensor.white"
-before = 15600
-after = 15489
-evidence = "Canon EOS 5D Mark II IMG_7837-1m7m8iz-.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15489 is its ColorData SpecularWhiteLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "0969eae2606941a39f1b55fa7e83d1dd08c715046f5c054ad2016f5377033726"
 field = "sensor.black"
 before = [1023, 1024, 1024, 1024]
 after = [1024, 1023, 1023, 1024]
@@ -4478,8 +4358,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "a99e0019218435bdb6a5c551401c4e46d7b27a705b13093ae7f352811ecf6110"
 field = "sensor.white"
 before = 15490
-after = 15129
-evidence = "Canon EOS 6D tag @signatureeditsco IMG_7552.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15129 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D tag @signatureeditsco IMG_7552.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4502,8 +4382,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "ac38ace6a16a2041fcf7abd1831f72268e86ac622d19a8e336537cdaefd41188"
 field = "sensor.white"
 before = 15488
-after = 15321
-evidence = "Canon EOS 5D Mark III tag @signatureeditsco - free raw files from signatureedits.com IMG_0749.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15321 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III tag @signatureeditsco - free raw files from signatureedits.com IMG_0749.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4518,16 +4398,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "f4cf08e8930f978877a08ec08048d06824379fa881dfb9474a268dd8d0f9146e"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_9908.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_9908.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "60aa991c546514837d4b7aa66c34c2a463a8af04d3ba8d9b322319700b2edb6b"
 field = "sensor.white"
 before = 15360
-after = 14041
-evidence = "Canon EOS 750D IMG_4370.cr2: Adobe DNG Converter 18.7 WhiteLevel 13529; RAWmakase's 14041 is its ColorData SpecularWhiteLevel"
+after = 13529
+evidence = "Canon EOS 750D IMG_4370.cr2: Adobe DNG Converter 18.7 WhiteLevel 13529; RAWmakase's 13529 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4542,8 +4422,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "d23af8b6a69b9ac6d76b3615151f438ff65684f772b7b0342e1ce4e9f8001246"
 field = "sensor.white"
 before = 15488
-after = 11900
-evidence = "Canon EOS 5D Mark III Signature Edits Free Raw Photos - By Tawny Horton - 5E0C9510.CR2: Adobe DNG Converter 18.7 WhiteLevel 13100; RAWmakase's 11900 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 5D Mark III Signature Edits Free Raw Photos - By Tawny Horton - 5E0C9510.CR2: Adobe DNG Converter 18.7 WhiteLevel 13100; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4566,8 +4446,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "bef7d17f0cff6281fbeb791dadf006f19a17fcefe4b995c300b819b519c59c10"
 field = "sensor.white"
 before = 15490
-after = 15266
-evidence = "Canon EOS 6D signature edit free raws - IMG_4077.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15266 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_4077.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4582,8 +4462,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "4746b0cef348ed91011da60ffc4553a91542f73736c2888276f11cba7ab7ce65"
 field = "sensor.white"
 before = 15488
-after = 15220
-evidence = "Canon EOS 5D Mark III credit @arielsan_m1 - signature edits free raw files.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15220 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III credit @arielsan_m1 - signature edits free raw files.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4598,8 +4478,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "971b96b3284087cb3e07a99af3af1e6e664a29249436ca139277cd8fbdc2e1b2"
 field = "sensor.white"
 before = 15600
-after = 15949
-evidence = "Canon EOS 5D Mark II Signature Edits Free RawsIMG_5824.CR2: Adobe DNG Converter 18.7 WhiteLevel 12700; RAWmakase's 15949 is its ColorData SpecularWhiteLevel"
+after = 12700
+evidence = "Canon EOS 5D Mark II Signature Edits Free RawsIMG_5824.CR2: Adobe DNG Converter 18.7 WhiteLevel 12700; RAWmakase's 12700 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4614,8 +4494,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "741b5b15e2c091d28590b389e5ddc6ffa020b822aed68d1546593502260b2b22"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III tag @signatureeditsco - free raws from signatureedits.com - 2C8A1408.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III tag @signatureeditsco - free raws from signatureedits.com - 2C8A1408.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4630,8 +4510,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "a8c6d5537858bc549a6393f4ca88aa3b007146025403ad7be0e7179b5af80c1e"
 field = "sensor.white"
 before = 15488
-after = 15750
-evidence = "Canon EOS 5D Mark III Copy of free raws from signatureedits.com - tag @signatureeditsco - IMG_2428.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15750 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III Copy of free raws from signatureedits.com - tag @signatureeditsco - IMG_2428.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4662,24 +4542,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "660485046224b0cad01d3645eb783c8e0ec5c7cc4228358055a293fa02f8489a"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_2031.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_2031.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "c7cc85f1ceb3d8a581b1c13208501bc81ac37490041e3d434c68aed45d317d0e"
 field = "sensor.white"
 before = 15490
-after = 11647
-evidence = "Canon EOS 6D 26.CR2: Adobe DNG Converter 18.7 WhiteLevel 13100; RAWmakase's 11647 is its ColorData SpecularWhiteLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "fded7b1f0515163b853a13a79705f5ba3b4ec10923b73bf9f643220e94190d56"
-field = "sensor.white"
-before = 15600
-after = 15821
-evidence = "Canon EOS 5D Mark II IMG_7822.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15821 is its ColorData SpecularWhiteLevel"
+after = 13100
+evidence = "Canon EOS 6D 26.CR2: Adobe DNG Converter 18.7 WhiteLevel 13100; RAWmakase's 13100 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4694,24 +4566,24 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "06b4c6cc40925e024faaf4c5e5cf70b6e00eaf58d3dd9fec8cde9149de97a0aa"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D IMG_2884.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D IMG_2884.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "d50b15f247f97600c23d2f7092d4731a477dfdcf7d29b870e86a50e1bf720106"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D Signature Edits free raw files tag @signatureeditsco IMG_1566.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D Signature Edits free raw files tag @signatureeditsco IMG_1566.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "260a6ff1d0d2a30196686bdf1edbecfba2bc3ccf1ffa957bc19715fd16ebd597"
 field = "sensor.white"
 before = 15488
-after = 16251
-evidence = "Canon EOS 5D Mark III credit @signatureeditsco - signatureedits.com - FB2A0416.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 16251 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III credit @signatureeditsco - signatureedits.com - FB2A0416.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4724,26 +4596,10 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "f34c17de534b800b472c82bbd8d3810811782a81e91d7afd503ef7cfb05c962e"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II tag @signatureeditsco  IMG_2350.cr2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "f34c17de534b800b472c82bbd8d3810811782a81e91d7afd503ef7cfb05c962e"
 field = "sensor.black"
 before = [1024, 1024, 1023, 1024]
 after = [1023, 1023, 1024, 1023]
 evidence = "Canon EOS 5D Mark II tag @signatureeditsco  IMG_2350.cr2: Adobe DNG Converter 18.7 BlackLevel [1023.0, 1023.0, 1023.0, 1023.0] (mean 1023.00); RAWmakase's is its ColorData PerChannelBlackLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "3e42014286ab7e02d6de430273b490e10518fdfc536e3143f410010f80ee5710"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II tag @signatureeditsco  IMG_1473.cr2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4760,14 +4616,6 @@ field = "sensor.black"
 before = [512, 512, 512, 512]
 after = [513, 513, 513, 513]
 evidence = "Canon EOS 6D Mark II Free Raw Files - Tag @signatureeditsco - IMG_0196.cr2: Adobe DNG Converter 18.7 BlackLevel [513.0, 513.0, 513.0, 513.0] (mean 513.00); RAWmakase's is its ColorData PerChannelBlackLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "18dfe5f7c8b26fad1488913cf46f640a95601cac9e753ca1bdcc375e6011b93b"
-field = "sensor.white"
-before = 15600
-after = 15489
-evidence = "Canon EOS 5D Mark II tag @signatureeditsco -IMG_0627.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15489 is its ColorData SpecularWhiteLevel"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4806,8 +4654,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "93ca299e6ca1f9811a027553ece05506b86ca5f239f59e10046495752944af25"
 field = "sensor.white"
 before = 15488
-after = 15449
-evidence = "Canon EOS 5D Mark III 122A8716.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15449 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 122A8716.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4822,16 +4670,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "75e6612c9e9ac8290551136cbdd81f791e9ad593e3e018234e9a7f3a83071a6e"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_4750.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "e9b3280a23e7ece1a7dbd5711bf5b8ca64522b8a13e96f5e5fc27b605b5818ae"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II Soobatan-6.CR2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_4750.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4870,8 +4710,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "61b00647c0338aaba404ca05046d9bfe2dd05fcfce849874a6ca08d4d8a6eda0"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III 122A4182.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III 122A4182.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4926,8 +4766,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "6c130349a2d5a77d1cfdb8182983de2e709cfcefa95c70f0f60e7c5daae10e0f"
 field = "sensor.white"
 before = 13645
-after = 15529
-evidence = "Canon EOS 650D Free Raw Files - Tag @signatureeditsco IMG_0170.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15529 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 650D Free Raw Files - Tag @signatureeditsco IMG_0170.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4942,8 +4782,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "1021ab7d46a2e643260f44ca3f6e90d2064e249f2f3dfa56de65293333db7502"
 field = "sensor.white"
 before = 15360
-after = 15966
-evidence = "Canon EOS 700D tag and folow @hisfotografia on insta1.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15966 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 700D tag and folow @hisfotografia on insta1.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -4990,24 +4830,24 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "7ccea1dac8584cfbb1d6ab2ba536e637011c860927ef3cc3afd94783a269f994"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D free raws from @signatureeditsco - signatureedits.com - IMG_1714.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D free raws from @signatureeditsco - signatureedits.com - IMG_1714.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "60b2582588dda83098c821ccf97969011555c040db233b83f31f08cde365a517"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D tag @signatureeditsco  IMG_4457.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D tag @signatureeditsco  IMG_4457.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "d4594a80ee49680e0c78efd2b3dbcd1c4f0fc9260ea40a06fdbe37e46f5f9a49"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III Copy of Signature Edits Free Raw Photos - By Tawny Horton - 5E0C0175.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III Copy of Signature Edits Free Raw Photos - By Tawny Horton - 5E0C0175.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -5022,16 +4862,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "1d6ba5563bb32d0765b621e7747d15c827c70defb7acb5c8cd92caaa1d6d9148"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_9624.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_9624.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "9579025e19014685d82fca95758c460f6841c1845a181d4153802de65c1c0850"
 field = "sensor.white"
 before = 15490
-after = 11647
-evidence = "Canon EOS 6D free raw photo from sig edits.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 11647 is its ColorData SpecularWhiteLevel"
+after = 13000
+evidence = "Canon EOS 6D free raw photo from sig edits.CR2: Adobe DNG Converter 18.7 WhiteLevel 13000; RAWmakase's 13000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -5054,8 +4894,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "909ae9e4886b28b70ba07da34caa55d5edcfdfc9084c3aa8f4a3ddb26aa8e77d"
 field = "sensor.white"
 before = 13584
-after = 15094
-evidence = "Canon EOS 1100D Copy of free raws from signatureedits.com - tag @signatureeditsco - IMG_5058.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 1100D Copy of free raws from signatureedits.com - tag @signatureeditsco - IMG_5058.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -5070,8 +4910,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "28f6718f6b09d18291323b9aca373251caf3104eca666d1a5ae12284a27636ac"
 field = "sensor.white"
 before = 13584
-after = 15094
-evidence = "Canon EOS 1100D IMG_3278.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 1100D IMG_3278.cr2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -5086,8 +4926,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "aa48561f960219536d19e6dc1e447b6428c0cf17342df6ace828e40a152b4617"
 field = "sensor.white"
 before = 15490
-after = 15888
-evidence = "Canon EOS 6D IMG_0958.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15888 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D IMG_0958.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -5102,8 +4942,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "5daffb31ab0aca5e2b7394dc58f52afa2b4839c364c71af8b8c5f2e7f6cdc0ef"
 field = "sensor.white"
 before = 15488
-after = 12507
-evidence = "Canon EOS 5D Mark III IMG_0069.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 12507 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III IMG_0069.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -5126,16 +4966,16 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "9fb69d5dbc5524108a26ee799e8cec1dc0a621831fc015e3daeb0dd3c8ba3e93"
 field = "sensor.white"
 before = 15490
-after = 12087
-evidence = "Canon EOS 6D tag @signatureeditsco IMG_0102.cr2: Adobe DNG Converter 18.7 WhiteLevel 13100; RAWmakase's 12087 is its ColorData SpecularWhiteLevel"
+after = 13100
+evidence = "Canon EOS 6D tag @signatureeditsco IMG_0102.cr2: Adobe DNG Converter 18.7 WhiteLevel 13100; RAWmakase's 13100 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "5ef91ddac017d432faabf713f43fed4341eca18963a06b51484d25b0870313ae"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D signature edit free raws - IMG_3530.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D signature edit free raws - IMG_3530.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -5174,8 +5014,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "ea179f124ec0d2605d2e454bbb1bb4b8e7ffcd6475c5d8c4c1f6c87a2bc767d6"
 field = "sensor.white"
 before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II DAVE_DESIGN_PHOTOGRAPHER33.CR2: Adobe DNG Converter 18.7 WhiteLevel 12700; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
+after = 12700
+evidence = "Canon EOS 5D Mark II DAVE_DESIGN_PHOTOGRAPHER33.CR2: Adobe DNG Converter 18.7 WhiteLevel 12700; RAWmakase's 12700 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -5190,8 +5030,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "b7990e26cf25e8de1e370aa4fa62f0a0f1f3f7c53ace71f572089c24ee81f1d7"
 field = "sensor.white"
 before = 15600
-after = 15949
-evidence = "Canon EOS 5D Mark II IMG_5823.CR2: Adobe DNG Converter 18.7 WhiteLevel 12700; RAWmakase's 15949 is its ColorData SpecularWhiteLevel"
+after = 12700
+evidence = "Canon EOS 5D Mark II IMG_5823.CR2: Adobe DNG Converter 18.7 WhiteLevel 12700; RAWmakase's 12700 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -5206,8 +5046,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "e8fd75b601204fa1be5b6e4a76360d0576053ced08137ff4d2fb1f2e315a33f3"
 field = "sensor.white"
 before = 15488
-after = 15094
-evidence = "Canon EOS 5D Mark III Copy of Signature Edits Free Raw Photos - By Tawny Horton - 5E0C0068.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15094 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 5D Mark III Copy of Signature Edits Free Raw Photos - By Tawny Horton - 5E0C0068.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -5222,24 +5062,24 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "e818472b34fa4f9b710780ee2ffec732d3613b795aabce0d085144ec0aa90514"
 field = "sensor.white"
 before = 15490
-after = 15797
-evidence = "Canon EOS 6D Signature Edits Free Raw Files - Tag @signatureeditsco IMG_0913.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15797 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D Signature Edits Free Raw Files - Tag @signatureeditsco IMG_0913.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "5bbf31d2f2db762cb8c4ca935b6fef410b10b8cead04e0aea8d703445677151b"
 field = "sensor.white"
 before = 15490
-after = 15070
-evidence = "Canon EOS 6D IMG_1969.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15070 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D IMG_1969.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
 sha256 = "0b4e66f1c648268544ae2506f2e0b9cdee085093666e47b16ce74ad97e61a744"
 field = "sensor.white"
 before = 15490
-after = 15266
-evidence = "Canon EOS 6D Canon-6D-Shotkit-11.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15266 is its ColorData SpecularWhiteLevel"
+after = 15000
+evidence = "Canon EOS 6D Canon-6D-Shotkit-11.CR2: Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's 15000 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -5248,14 +5088,6 @@ field = "sensor.black"
 before = [2047, 2047, 2047, 2047]
 after = [2047, 2047, 2047, 2048]
 evidence = "Canon EOS 6D Canon-6D-Shotkit-11.CR2: Adobe DNG Converter 18.7 BlackLevel [2047.0, 2047.0, 2048.0, 2047.0] (mean 2047.25); RAWmakase's is its ColorData PerChannelBlackLevel"
-approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
-
-[[delta]]
-sha256 = "d67f4dab4ace8a6f5733b0858a43984a659bbf50e36f407c0918438c630687fe"
-field = "sensor.white"
-before = 15600
-after = 15312
-evidence = "Canon EOS 5D Mark II IMG_2331.cr2: Adobe DNG Converter 18.7 WhiteLevel 15600; RAWmakase's 15312 is its ColorData SpecularWhiteLevel"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -7597,6 +7429,14 @@ field = "sensor.white"
 before = 16383
 after = 12500
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 12500"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "b5e47c5fcf7332ac03e0134926f17a338a42e68c1fd7f83e16f45f4b767544e8"
+field = "sensor.white"
+before = 13584
+after = 12600
+evidence = "Canon EOS 7D RAW_CANON_EOS_7D-raw.CR2: Adobe DNG Converter 18.7 WhiteLevel 12600; RAWmakase's 12600 is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 # Olympus, Pentax and Samsung: where the file and Adobe DNG Converter agree
