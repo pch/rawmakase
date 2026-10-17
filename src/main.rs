@@ -118,6 +118,10 @@ enum Command {
         /// The decoder to read them with.
         #[arg(long, value_enum, default_value_t = DecoderArg::Libraw)]
         decoder: DecoderArg,
+        /// Also write each file's hashed sensor values here, as
+        /// `<sha256>.sensor` (16-bit little-endian, row by row).
+        #[arg(long)]
+        sensor: Option<PathBuf>,
     },
     /// Print each file's develop fingerprint as a line of JSON: the image each
     /// decode mode (full, half) makes, hashed, for decoder regression checks.
@@ -486,13 +490,18 @@ fn main() -> Result<()> {
                 im.scale_clipped
             );
         }
-        Some(Command::Fingerprint { files, decoder }) => {
+        Some(Command::Fingerprint {
+            files,
+            decoder,
+            sensor,
+        }) => {
             // One file at a time: LibRaw opening files side by side can give one
             // of them different white balance multipliers (issue #420).
             for path in &files {
-                let line = serde_json::to_string(&rawmakase::fingerprint::fingerprint(
+                let line = serde_json::to_string(&rawmakase::fingerprint::fingerprint_with(
                     path,
                     decoder.into(),
+                    sensor.as_deref(),
                 ))?;
                 println!("{line}");
             }

@@ -120,6 +120,15 @@ pub struct BlackPattern {
 /// The fingerprint of the file at `path`. A file that cannot be read, opened or
 /// unpacked gives a fingerprint with its error, not an `Err`.
 pub fn fingerprint(path: &Path, decoder: Decoder) -> Fingerprint {
+    fingerprint_with(path, decoder, None)
+}
+
+/// [`fingerprint`], also writing the hashed sensor values to `samples` as
+/// `<sha256>.sensor` (little-endian 16-bit values, `channels` per pixel, the
+/// hashed area row by row), for measurements that align them with another
+/// decoder's output (`scripts/cameras/adobe-frames.py`). A file that changed
+/// while it was read leaves none.
+pub fn fingerprint_with(path: &Path, decoder: Decoder, samples: Option<&Path>) -> Fingerprint {
     let mut f = Fingerprint {
         path: path.to_path_buf(),
         version: VERSION,
@@ -132,13 +141,26 @@ pub fn fingerprint(path: &Path, decoder: Decoder) -> Fingerprint {
         sensor: None,
     };
     let before = identity(path);
-    if let Err((step, e)) = describe(path, decoder, &mut f) {
+    let mut kept = None;
+    if let Err((step, e)) = describe(
+        path,
+        decoder,
+        &mut f,
+        samples.is_some().then_some(&mut kept),
+    ) {
         f.failed = Some(step);
         f.error = Some(format!("{e:#}"));
     }
     // The file is read twice (hashed, then decoded): a file replaced in between
     // would pair one file's hash with another's fingerprint.
-    if before.is_some() && identity(path) != before {
+    let changed = before.is_some() && identity(path) != before;
+    if let (false, Some(dir), Some(sha256), Some(values)) = (changed, samples, &f.sha256, kept)
+        && let Err(e) = std::fs::write(dir.join(format!("{sha256}.sensor")), values)
+    {
+        f.error
+            .get_or_insert_with(|| format!("Writing the sensor values: {e}"));
+    }
+    if changed {
         f.header = None;
         f.preview = None;
         f.sensor = None;
@@ -166,6 +188,7 @@ fn describe(
     path: &Path,
     decoder: Decoder,
     f: &mut Fingerprint,
+    samples: Option<&mut Option<Vec<u8>>>,
 ) -> Result<(), (&'static str, anyhow::Error)> {
     use sha2::Digest;
     let read = |e: std::io::Error| ("read", e.into());
@@ -178,7 +201,7 @@ fn describe(
         metadata: serde_json::to_value(&raw.metadata).map_err(|e| ("open", e.into()))?,
         unsaved: Unsaved::of(&raw.metadata),
     });
-    let sensor = raw.sensor();
+    let sensor = raw.sensor_with(samples.is_some());
     // After unpacking: LibRaw reads a few files' levels differently once it has
     // read the preview (a Sinarback's white).
     f.preview = Some(match raw.thumbnail() {
@@ -193,7 +216,10 @@ fn describe(
             error: Some(format!("{e:#}")),
         },
     });
-    let s = sensor.map_err(|e| ("unpack", e))?;
+    let mut s = sensor.map_err(|e| ("unpack", e))?;
+    if let Some(samples) = samples {
+        *samples = s.samples.take();
+    }
     let (rows, cols, values) = s.black_pattern;
     f.sensor = Some(SensorData {
         channels: s.channels,

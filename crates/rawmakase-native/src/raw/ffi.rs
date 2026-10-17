@@ -386,8 +386,9 @@ impl Handle {
             data,
         }))
     }
-    /// Unpacks the sensor data as development does and describes it.
-    pub(super) fn sensor(&self) -> Result<Sensor> {
+    /// Unpacks the sensor data as development does and describes it, with the
+    /// hashed samples when `keep` is set.
+    pub(super) fn sensor(&self, keep: bool) -> Result<Sensor> {
         use sha2::Digest;
         ensure!(
             native_sensor_size() == std::mem::size_of::<NativeSensor>(),
@@ -424,6 +425,7 @@ impl Handle {
         let mut hash = sha2::Sha256::new();
         let width = s.area_width as usize * channels;
         let mut bytes = Vec::with_capacity(width * 2);
+        let mut samples = keep.then(Vec::new);
         for y in s.top as usize..(s.top + s.area_height) as usize {
             let start = y * s.pitch as usize + s.left as usize * channels;
             // SAFETY: `data` points at the handle's raw buffer of `height` rows
@@ -434,6 +436,9 @@ impl Handle {
             bytes.clear();
             bytes.extend(row.iter().flat_map(|v| v.to_le_bytes()));
             hash.update(&bytes);
+            if let Some(samples) = &mut samples {
+                samples.extend_from_slice(&bytes);
+            }
         }
         let cols = s.pattern_cols as usize;
         Ok(Sensor {
@@ -441,6 +446,7 @@ impl Handle {
             origin: [s.left, s.top],
             area: [s.area_width, s.area_height],
             data_sha256: hash.finalize().into(),
+            samples,
             black: std::array::from_fn(|c| s.base_black + black[c]),
             black_pattern: (black[4], black[5], black[6..].to_vec()),
             white: s.white,

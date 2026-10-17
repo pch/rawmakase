@@ -116,6 +116,8 @@ pub(crate) struct Sensor {
     /// little-endian. Not the borders: LibRaw leaves rows and columns past some
     /// decoders' data unwritten, so they hold whatever the memory held.
     pub data_sha256: [u8; 32],
+    /// The hashed values, as hashed, when they were asked for.
+    pub samples: Option<Vec<u8>>,
     pub black: [u32; 4],
     /// The black pattern added to `black`: rows, columns and every value.
     pub black_pattern: (u32, u32, Vec<u32>),
@@ -270,9 +272,13 @@ impl Raw {
     }
     /// The unpacked sensor data as development reads it, without developing.
     pub(crate) fn sensor(&self) -> Result<Sensor> {
+        self.sensor_with(false)
+    }
+    /// [`Self::sensor`], with the hashed samples when `keep` is set.
+    pub(crate) fn sensor_with(&self, keep: bool) -> Result<Sensor> {
         match &self.backend {
-            Backend::Libraw(handle) => handle.sensor(),
-            Backend::Own(own) => own.sensor(),
+            Backend::Libraw(handle) => handle.sensor(keep),
+            Backend::Own(own) => own.sensor(keep),
         }
     }
     pub fn develop(self, decode: Decode, cancel: &AtomicBool) -> Result<CameraImage> {

@@ -42,8 +42,9 @@ impl Own {
         );
         Ok(s)
     }
-    /// The sensor data as fingerprints describe it.
-    pub(super) fn sensor(&self) -> Result<Sensor> {
+    /// The sensor data as fingerprints describe it, with the hashed samples
+    /// when `keep` is set.
+    pub(super) fn sensor(&self, keep: bool) -> Result<Sensor> {
         use sha2::Digest;
         let s = self.decode(&AtomicBool::new(false))?;
         let channels = s.channels as usize;
@@ -51,11 +52,15 @@ impl Own {
         let pitch = s.width as usize * channels;
         let mut hash = sha2::Sha256::new();
         let mut bytes = Vec::with_capacity(w * channels * 2);
+        let mut samples = keep.then(Vec::new);
         for y in top..top + h {
             let row = &s.data[y * pitch + left * channels..y * pitch + (left + w) * channels];
             bytes.clear();
             bytes.extend(row.iter().flat_map(|v| v.to_le_bytes()));
             hash.update(&bytes);
+            if let Some(samples) = &mut samples {
+                samples.extend_from_slice(&bytes);
+            }
         }
         let pattern = match &self.info.cfa {
             Some(cfa) => (0..cfa.rows)
@@ -68,6 +73,7 @@ impl Own {
             origin: [s.area[0], s.area[1]],
             area: [s.area[2], s.area[3]],
             data_sha256: hash.finalize().into(),
+            samples,
             black: s.black,
             black_pattern: s.black_pattern,
             white: s.white,
