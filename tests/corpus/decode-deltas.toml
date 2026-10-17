@@ -26135,3 +26135,331 @@ before = 4095
 after = 4094
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 4094"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# DNG: levels the sensor data cannot hold as levels (fractional BlackLevel,
+# BlackLevelDeltaH/V) are applied to the samples, as the DNG specification maps
+# raw values to linear reference values.
+
+[[delta]]
+# Google/Pixel 2 XL/IMG_20180109_080629.dng
+sha256 = "5541093a369f0487fef92bcd1f5fef1be6e4e3cec2aa4d52ad38d2211f3309d7"
+field = "sensor.black_pattern.values"
+before = [63, 63, 63, 63]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 63.93 63.81 63.75 63.87 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.13 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 2 XL/IMG_20180109_080629.dng
+sha256 = "5541093a369f0487fef92bcd1f5fef1be6e4e3cec2aa4d52ad38d2211f3309d7"
+field = "sensor.data_sha256"
+before = "d784db9650990f6641b49767439a830942701cf0b0b9cc6f26c09558eefa622d"
+after = "2617a85d9c8f99b0c3cddf130b489067b7c0657f8cf9172ae7aba75b9373b5c4"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 63.93 63.81 63.75 63.87 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.13 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 2 XL/IMG_20180109_080629.dng
+sha256 = "5541093a369f0487fef92bcd1f5fef1be6e4e3cec2aa4d52ad38d2211f3309d7"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 63.93 63.81 63.75 63.87 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.13 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 6 Pro/PXL_20220910_093206982.dng
+sha256 = "3a859e917a91698a3e15ce3b3721a48a1fb1296873e0697d3bf7c2793297200d"
+field = "sensor.black_pattern.values"
+before = [1023, 1023, 1023, 1023]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1023.31 1023.29 1023.01 1023.03 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.01 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 6 Pro/PXL_20220910_093206982.dng
+sha256 = "3a859e917a91698a3e15ce3b3721a48a1fb1296873e0697d3bf7c2793297200d"
+field = "sensor.data_sha256"
+before = "19eb22b33793fa3aceed80d1eef531380d7e90a061308766591be852a06e3309"
+after = "d1d0ef2e58989ac553e4ca6e6340427a32d0f744e8f81a540c841e639281c9d0"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1023.31 1023.29 1023.01 1023.03 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.01 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 6 Pro/PXL_20220910_093206982.dng
+sha256 = "3a859e917a91698a3e15ce3b3721a48a1fb1296873e0697d3bf7c2793297200d"
+field = "sensor.white"
+before = 16368
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1023.31 1023.29 1023.01 1023.03 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.01 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 7 Pro/PXL_20221204_063131635.dng
+sha256 = "6b921558944db5fdb4f1c63dc64919b6666ef700857a187e18500099c6e7c6c6"
+field = "sensor.black_pattern.values"
+before = [1024, 1024, 1024, 1024]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1024.11 1024.31 1024.31 1024.13 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.00 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 7 Pro/PXL_20221204_063131635.dng
+sha256 = "6b921558944db5fdb4f1c63dc64919b6666ef700857a187e18500099c6e7c6c6"
+field = "sensor.data_sha256"
+before = "eb6d1a0159c5fe1a72669d5b200de83d196b38a65962cb491abeec5a7f8907e7"
+after = "f90aad746556c726815c84fcde23b361905b039751b60d7b4e48798bf1b13bc4"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1024.11 1024.31 1024.31 1024.13 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.00 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 7 Pro/PXL_20221204_063131635.dng
+sha256 = "6b921558944db5fdb4f1c63dc64919b6666ef700857a187e18500099c6e7c6c6"
+field = "sensor.white"
+before = 16368
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1024.11 1024.31 1024.31 1024.13 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.00 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 8 Pro/PXL_20240415_103400204.RAW-02.ORIGINAL.dng
+sha256 = "45420c595401547cca950ae58d552bc82b32d31ce1d58c082df33004016197f5"
+field = "sensor.black_pattern.values"
+before = [1024, 1024, 1024, 1024]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1024.12 1024.14 1024.17 1024.12 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.00 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 8 Pro/PXL_20240415_103400204.RAW-02.ORIGINAL.dng
+sha256 = "45420c595401547cca950ae58d552bc82b32d31ce1d58c082df33004016197f5"
+field = "sensor.data_sha256"
+before = "7dfed0fc9eda58ffe30b4d52aaa78f8cae3dbdb33fef169ed7763ad32c9e507d"
+after = "4d6aa2ada613ead5f834fd20aa96f39d0170a2042c674389f0812aa8f9cd342f"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1024.12 1024.14 1024.17 1024.12 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.00 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 8 Pro/PXL_20240415_103400204.RAW-02.ORIGINAL.dng
+sha256 = "45420c595401547cca950ae58d552bc82b32d31ce1d58c082df33004016197f5"
+field = "sensor.white"
+before = 16368
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1024.12 1024.14 1024.17 1024.12 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.00 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/Nexus 5X/IMG_20170214_170637_637.dng
+sha256 = "006bb472cf71157b1c2562263d9306714acb284a7adaab9e9fda6b231c0077c9"
+field = "sensor.black_pattern.values"
+before = [52, 52, 51, 52]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 52.16 52.11 51.84 52.28 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.06 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/Nexus 5X/IMG_20170214_170637_637.dng
+sha256 = "006bb472cf71157b1c2562263d9306714acb284a7adaab9e9fda6b231c0077c9"
+field = "sensor.data_sha256"
+before = "846d06c1c4f3f1ebb6a2331d306421b6795e92b8bf270dd4cdf4debc3e1c779c"
+after = "684021111e55fc53a53863579ab4901a74aa6d486d88bc0515225d39c6d0b14a"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 52.16 52.11 51.84 52.28 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.06 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/Nexus 5X/IMG_20170214_170637_637.dng
+sha256 = "006bb472cf71157b1c2562263d9306714acb284a7adaab9e9fda6b231c0077c9"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 52.16 52.11 51.84 52.28 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.06 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_647_20240229_000001_4k_12bit.DNG
+sha256 = "2f28f7037bf123012174285a566555c833acc7bd9f0b43dee99bb603824956d3"
+field = "sensor.black_pattern.values"
+before = [255, 255, 255, 255]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 255.866 255.866 255.866 255.866 subtracted per pixel and scaled by 1 / (WhiteLevel 4095 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.04 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_647_20240229_000001_4k_12bit.DNG
+sha256 = "2f28f7037bf123012174285a566555c833acc7bd9f0b43dee99bb603824956d3"
+field = "sensor.data_sha256"
+before = "464b12ecfa03bc4b05280759035319003f8779790c5d089ae1d0642483ef3617"
+after = "63f76cbc77d22d2cdfbf797c89c0509bbb67021165ed10a0a2388c79e4485f1e"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 255.866 255.866 255.866 255.866 subtracted per pixel and scaled by 1 / (WhiteLevel 4095 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.04 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_647_20240229_000001_4k_12bit.DNG
+sha256 = "2f28f7037bf123012174285a566555c833acc7bd9f0b43dee99bb603824956d3"
+field = "sensor.white"
+before = 4095
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 255.866 255.866 255.866 255.866 subtracted per pixel and scaled by 1 / (WhiteLevel 4095 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.04 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_648_20240229_000001_4k_10bit.DNG
+sha256 = "4785a8ab38e5a28db9382cc0749f9b6c0bcbe3ba04da4280cadf965f34fed8d2"
+field = "sensor.black_pattern.values"
+before = [63, 63, 63, 63]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 63.9912 63.9912 63.9912 63.9912 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.11 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_648_20240229_000001_4k_10bit.DNG
+sha256 = "4785a8ab38e5a28db9382cc0749f9b6c0bcbe3ba04da4280cadf965f34fed8d2"
+field = "sensor.data_sha256"
+before = "15b22d2f499e6f7aa98bf36bf25316cc0826ab43044d2914cd6bd0ef706d2f73"
+after = "93ab940135b18c0ac0df6f6863741c7b0053337f37d71825a89b54bc5d41b9be"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 63.9912 63.9912 63.9912 63.9912 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.11 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_648_20240229_000001_4k_10bit.DNG
+sha256 = "4785a8ab38e5a28db9382cc0749f9b6c0bcbe3ba04da4280cadf965f34fed8d2"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 63.9912 63.9912 63.9912 63.9912 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.11 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_650_20240229_000001_4k_8bit.DNG
+sha256 = "b7e44ca41c5c5a01324967b2bd86175c7534f3df98cc3724d02edd29adb1942b"
+field = "sensor.black_pattern.values"
+before = [256, 256, 256, 256]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 256.003 256.003 256.003 256.003 subtracted per pixel and scaled by 1 / (WhiteLevel 4095 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.09 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_650_20240229_000001_4k_8bit.DNG
+sha256 = "b7e44ca41c5c5a01324967b2bd86175c7534f3df98cc3724d02edd29adb1942b"
+field = "sensor.data_sha256"
+before = "1940436022324bf3e800a10cd9f6eef185b1cdba874cbad80f99822cfc6476b1"
+after = "57cbc17d795c364edf3c4e29bb957d9bdba8ccd2ac1004e99705dc94ccbc95c2"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 256.003 256.003 256.003 256.003 subtracted per pixel and scaled by 1 / (WhiteLevel 4095 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.09 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_650_20240229_000001_4k_8bit.DNG
+sha256 = "b7e44ca41c5c5a01324967b2bd86175c7534f3df98cc3724d02edd29adb1942b"
+field = "sensor.white"
+before = 4095
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 256.003 256.003 256.003 256.003 subtracted per pixel and scaled by 1 / (WhiteLevel 4095 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.09 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_651_20240229_000001_2k_12bit.DNG
+sha256 = "99bcffd118630af5cf5712eeac6832045420311fe258094e3489b94c8d51236a"
+field = "sensor.black_pattern.values"
+before = [255, 255, 255, 255]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 255.861 255.861 255.861 255.861 subtracted per pixel and scaled by 1 / (WhiteLevel 4095 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.03 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_651_20240229_000001_2k_12bit.DNG
+sha256 = "99bcffd118630af5cf5712eeac6832045420311fe258094e3489b94c8d51236a"
+field = "sensor.data_sha256"
+before = "96bb57c8bfd098d5c1aa6832a51db11eaa3242cfa65e7113b231d5b827fbe620"
+after = "caa5e0e77ae902c81876816bf06f5b91b38be32442ff2b9bd65ee3e095aaa5a9"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 255.861 255.861 255.861 255.861 subtracted per pixel and scaled by 1 / (WhiteLevel 4095 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.03 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_651_20240229_000001_2k_12bit.DNG
+sha256 = "99bcffd118630af5cf5712eeac6832045420311fe258094e3489b94c8d51236a"
+field = "sensor.white"
+before = 4095
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 255.861 255.861 255.861 255.861 subtracted per pixel and scaled by 1 / (WhiteLevel 4095 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.03 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_652_20240229_000001_2k_10bit.DNG
+sha256 = "77d6e690f1b59312d80026dab605ac336f5a8d1619c9e653a23fb1271f39ebe4"
+field = "sensor.black_pattern.values"
+before = [63, 63, 63, 63]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 63.9805 63.9805 63.9805 63.9805 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.06 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_652_20240229_000001_2k_10bit.DNG
+sha256 = "77d6e690f1b59312d80026dab605ac336f5a8d1619c9e653a23fb1271f39ebe4"
+field = "sensor.data_sha256"
+before = "ac9cfc8379a98317cae31bb3136c02e36e07677160ba725b5965b740755264d2"
+after = "02d9fa1ae43685c50da49c29a17b8c13d42fb0b4aa41c7158a920db090b6081a"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 63.9805 63.9805 63.9805 63.9805 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.06 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_652_20240229_000001_2k_10bit.DNG
+sha256 = "77d6e690f1b59312d80026dab605ac336f5a8d1619c9e653a23fb1271f39ebe4"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 63.9805 63.9805 63.9805 63.9805 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.06 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_653_20240229_000001_2k_8bit.DNG
+sha256 = "80ae0b8fdce3f58286fc194513c6ec0080ab07caca753408b00ca72c90e5ad0c"
+field = "sensor.black_pattern.values"
+before = [256, 256, 256, 256]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 256.039 256.039 256.039 256.039 subtracted per pixel and scaled by 1 / (WhiteLevel 4095 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.06 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_653_20240229_000001_2k_8bit.DNG
+sha256 = "80ae0b8fdce3f58286fc194513c6ec0080ab07caca753408b00ca72c90e5ad0c"
+field = "sensor.data_sha256"
+before = "5ca9d479751d784f4b5c6a81e16311647046d673b076062b16759cbd9cc0bafb"
+after = "d0dc43e0ef42f6e158440bb45a4ba9b4aa55d5e699555ea58434e486bdcfa381"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 256.039 256.039 256.039 256.039 subtracted per pixel and scaled by 1 / (WhiteLevel 4095 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.06 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sigma/fp/A002_653_20240229_000001_2k_8bit.DNG
+sha256 = "80ae0b8fdce3f58286fc194513c6ec0080ab07caca753408b00ca72c90e5ad0c"
+field = "sensor.white"
+before = 4095
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 256.039 256.039 256.039 256.039 subtracted per pixel and scaled by 1 / (WhiteLevel 4095 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.06 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# credit @signatureeditsco - signatureedits.com - 01020304.dng
+sha256 = "96e82feb5d790e4ae3706e8fed75c5bc73d1a7b514d640a739a2715587fc7a32"
+field = "sensor.black"
+before = [1023, 1024, 1025, 1024]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 0 with BlackLevelDeltaV per row (1022.49 to 1026.84) subtracted per pixel and scaled by 1 / (WhiteLevel 15100 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.03 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# credit @signatureeditsco - signatureedits.com - 01020304.dng
+sha256 = "96e82feb5d790e4ae3706e8fed75c5bc73d1a7b514d640a739a2715587fc7a32"
+field = "sensor.data_sha256"
+before = "18d9cf4c9b4a177dcbfd372cb2adc48433c82863bbeafc5830ef76a8d878b181"
+after = "a5876989b18ea2a07b3bd4300c1f64a643dc1d8a440ead95c51c3b847e92db4b"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 0 with BlackLevelDeltaV per row (1022.49 to 1026.84) subtracted per pixel and scaled by 1 / (WhiteLevel 15100 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.03 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# credit @signatureeditsco - signatureedits.com - 01020304.dng
+sha256 = "96e82feb5d790e4ae3706e8fed75c5bc73d1a7b514d640a739a2715587fc7a32"
+field = "sensor.white"
+before = 15100
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 0 with BlackLevelDeltaV per row (1022.49 to 1026.84) subtracted per pixel and scaled by 1 / (WhiteLevel 15100 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.03 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"

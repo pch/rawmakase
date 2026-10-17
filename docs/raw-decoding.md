@@ -109,6 +109,16 @@ keeps a sample's integer part. HDRMerge's floating-point mosaics (predictor
 DCT-coded tiles decode with an exact inverse DCT; they differ from LibRaw's
 (libjpeg-turbo's) by one 12-bit level in under 0.03% of samples.
 
+DNG levels follow the DNG processing model ("Mapping Raw Values to Linear
+Reference Values"). Whole BlackLevel values without BlackLevelDeltaH or
+DeltaV stay the sensor's levels, exactly as stored. Other levels (fractional
+blacks from Google's phones and the Sigma fp, the EOS-1Ds Mark III's per-row
+deltas) cannot be sensor levels, so the samples themselves become linear
+reference values on a 16-bit scale: each pixel's black (the pattern plus its
+column's and row's deltas) is subtracted, the result scaled by 1 / (white −
+the largest black) and clipped to 0–65535, with black 0 and white 65535.
+LibRaw truncated fractional blacks and ignored the deltas.
+
 Panasonic and Leica (`vendor::panasonic`): the visible area is the full
 height and the columns up to the right sensor border plus the left border's
 width; the default crop is the camera's crop tags (else the sensor borders)

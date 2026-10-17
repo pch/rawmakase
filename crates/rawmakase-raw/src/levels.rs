@@ -1,11 +1,12 @@
 //! The one policy for black and white levels: from the file, from the
 //! camera fact tables, or measured from a masked border.
 
-/// A DNG's BlackLevel over its repeat pattern of `dim` (rows, columns; `None`
-/// when the file has no BlackLevelRepeatDim) as per-channel black and the
-/// pattern on top of it. A single value is the black of every channel (with
-/// an empty one-pixel pattern when the dimension is given); a larger pattern
-/// is kept as one, whole values.
+/// A DNG's BlackLevel of whole values over its repeat pattern of `dim`
+/// (rows, columns; `None` when the file has no BlackLevelRepeatDim) as
+/// per-channel black and the pattern on top of it. A single value is the
+/// black of every channel (with an empty one-pixel pattern when the
+/// dimension is given); a larger pattern is kept as one. (Other levels are
+/// applied to the samples by the DNG reader.)
 pub(crate) fn dng_black(dim: Option<[u32; 2]>, black: &[f64]) -> ([u32; 4], (u32, u32, Vec<u32>)) {
     let value = |i: usize| black.get(i).copied().unwrap_or(0.).max(0.) as u32;
     match dim {

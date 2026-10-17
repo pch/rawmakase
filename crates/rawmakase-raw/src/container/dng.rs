@@ -13,10 +13,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// Where a DNG's raw image is and how it is coded.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct DngPlan {
-    /// The levels: BlackLevelRepeatDim (rows, columns), BlackLevel, and
-    /// WhiteLevel.
+    /// The levels: BlackLevelRepeatDim (rows, columns), BlackLevel,
+    /// BlackLevelDeltaH and DeltaV (per column and row of the active area),
+    /// and WhiteLevel.
     pub black_dim: Option<[u32; 2]>,
     pub black: Vec<f64>,
+    pub black_delta_h: Vec<f64>,
+    pub black_delta_v: Vec<f64>,
     pub white: Option<u32>,
     pub width: u32,
     pub height: u32,
@@ -166,11 +169,23 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         .ints(ifd, 50713)
         .filter(|d| d.len() == 2 && (1..=16).contains(&d[0]) && (1..=16).contains(&d[1]))
         .map(|d| [d[0], d[1]]);
-    let black = t.reals(ifd, 50714).unwrap_or_default();
+    // Levels that are not numbers are none.
+    let reals = |tag| -> Vec<f64> {
+        t.reals(ifd, tag)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|v| if v.is_finite() { v } else { 0. })
+            .collect()
+    };
+    let black = reals(50714);
+    let black_delta_h = reals(50715);
+    let black_delta_v = reals(50716);
     let white = t.int(ifd, 50717);
     info.plan = Plan::Dng(DngPlan {
         black_dim,
         black,
+        black_delta_h,
+        black_delta_v,
         white,
         width,
         height,
@@ -362,21 +377,116 @@ pub(crate) fn decode(
         }
     }
     let [left, top] = info.margins;
-    let (black, pattern) = crate::levels::dng_black(plan.black_dim, &plan.black);
+    let area = [left, top, info.width, info.height];
     let white = plan
         .white
         .unwrap_or_else(|| ((1u64 << plan.bps.min(16)) - 1) as u32);
+    if !whole_levels(plan) {
+        linearize(&mut data, plan, area, white, cancel)?;
+        // The black pattern, applied, is zeros.
+        let pattern = match plan.black_dim {
+            Some([rows, cols]) => (rows, cols, vec![0; (rows * cols) as usize]),
+            None => (0, 0, Vec::new()),
+        };
+        return Ok(Sensor {
+            width: plan.width,
+            height: plan.height,
+            channels: 1,
+            data,
+            area,
+            black: [0; 4],
+            black_pattern: pattern,
+            white: LINEAR_WHITE,
+            linear_white: [0; 4],
+        });
+    }
+    let (black, pattern) = crate::levels::dng_black(plan.black_dim, &plan.black);
     Ok(Sensor {
         width: plan.width,
         height: plan.height,
         channels: 1,
         data,
-        area: [left, top, info.width, info.height],
+        area,
         black,
         black_pattern: pattern,
         white,
         linear_white: [0; 4],
     })
+}
+
+/// The white level of linear reference values: 1.0 as 16-bit samples.
+const LINEAR_WHITE: u32 = 65535;
+
+/// Whether the levels are whole numbers the sensor data can keep: a
+/// BlackLevel of whole values and no BlackLevelDeltaH or DeltaV. Other
+/// levels (Google's and Sigma's fractional blacks, Canon EOS-1Ds Mark III's
+/// per-row deltas) are applied to the samples instead.
+fn whole_levels(plan: &DngPlan) -> bool {
+    plan.black.iter().all(|v| v.fract() == 0.)
+        && plan
+            .black_delta_h
+            .iter()
+            .chain(&plan.black_delta_v)
+            .all(|&d| d == 0.)
+}
+
+/// Maps the samples (after the LinearizationTable) to linear reference
+/// values as DNG's processing model has it (DNG Specification 1.7.1.0,
+/// "Mapping Raw Values to Linear Reference Values"): each pixel's black,
+/// BlackLevel's pattern (from the active area's top-left corner) plus its
+/// column's BlackLevelDeltaH and its row's BlackLevelDeltaV, is subtracted,
+/// and the result scaled by 1 / (WhiteLevel − the largest black), clipped to
+/// 0–1 and stored as 0–65535. `area` is the active area (left, top, width,
+/// height); the deltas are zero outside it.
+fn linearize(
+    data: &mut [u16],
+    plan: &DngPlan,
+    area: [u32; 4],
+    white: u32,
+    cancel: &AtomicBool,
+) -> Result<()> {
+    let [rows, cols] = plan.black_dim.unwrap_or([1, 1]).map(|v| v as usize);
+    let pattern: Vec<f64> = (0..rows * cols)
+        .map(|i| plan.black.get(i).copied().unwrap_or(0.).max(0.))
+        .collect();
+    let max = |v: &[f64]| {
+        v.iter()
+            .copied()
+            .fold(None, |m: Option<f64>, x| Some(m.map_or(x, |m| m.max(x))))
+    };
+    let largest = max(&pattern).unwrap_or(0.)
+        + max(&plan.black_delta_h).unwrap_or(0.)
+        + max(&plan.black_delta_v).unwrap_or(0.);
+    let range = f64::from(white) - largest;
+    if range.is_nan() || range <= 0. {
+        return Err(corrupt("DNG white level below its black level"));
+    }
+    let scale = f64::from(LINEAR_WHITE) / range;
+    let [left, top, w, h] = area.map(|v| v as usize);
+    let width = plan.width as usize;
+    for (y, row) in data.chunks_mut(width).enumerate() {
+        if y % 64 == 0 && cancel.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        let inside = |i: usize, start: usize, len: usize| i >= start && i < start + len;
+        let dv = if inside(y, top, h) {
+            plan.black_delta_v.get(y - top).copied().unwrap_or(0.)
+        } else {
+            0.
+        };
+        let pattern_row = &pattern[(y + rows - top % rows) % rows * cols..][..cols];
+        for (x, v) in row.iter_mut().enumerate() {
+            let dh = if inside(x, left, w) {
+                plan.black_delta_h.get(x - left).copied().unwrap_or(0.)
+            } else {
+                0.
+            };
+            let black = pattern_row[(x + cols - left % cols) % cols] + dh + dv;
+            let linear = (f64::from(*v) - black) * scale;
+            *v = linear.round().clamp(0., f64::from(LINEAR_WHITE)) as u16;
+        }
+    }
+    Ok(())
 }
 
 /// `n` floating-point samples of `bps` bits (IEEE half and single
@@ -575,6 +685,100 @@ mod tests {
         f.resize((image_at + width * height * 2) as usize, 0);
         f.extend(values);
         f
+    }
+
+    /// `f` (from [`dng`]) with its strip's samples set to `samples`.
+    pub(crate) fn with_samples(mut f: Vec<u8>, samples: &[u16]) -> Vec<u8> {
+        let count = usize::from(u16::from_le_bytes([f[8], f[9]]));
+        let entry = (0..count)
+            .map(|i| 10 + 12 * i)
+            .find(|&e| u16::from_le_bytes([f[e], f[e + 1]]) == 273)
+            .unwrap();
+        let at = u32::from_le_bytes(f[entry + 8..entry + 12].try_into().unwrap()) as usize;
+        for (i, v) in samples.iter().enumerate() {
+            f[at + 2 * i..at + 2 * i + 2].copy_from_slice(&v.to_le_bytes());
+        }
+        f
+    }
+
+    /// Rationals (type 5) or signed rationals (type 10) of `values` / `den`.
+    fn rationals(values: &[i32], den: i32) -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|v| [v.to_le_bytes(), den.to_le_bytes()].concat())
+            .collect()
+    }
+
+    fn decode(f: &[u8]) -> crate::Sensor {
+        let info = crate::open(f).unwrap();
+        crate::decode(&info, f, &AtomicBool::new(false)).unwrap()
+    }
+
+    /// A fractional BlackLevel (Google's phones, Sigma fp) is not truncated:
+    /// the samples become linear reference values, (v − 63.75) / (1023 −
+    /// 63.75) on a 16-bit scale, clipped to it.
+    #[test]
+    fn a_fractional_black_level_maps_samples_to_linear_values() {
+        let f = dng(
+            5,
+            1,
+            &[
+                (50714, 5, 1, rationals(&[255], 4)),
+                (50717, 3, 1, 1023u16.to_le_bytes().to_vec()),
+            ],
+        );
+        let s = decode(&with_samples(f, &[63, 64, 543, 1023, 1100]));
+        assert_eq!(s.data, [0, 17, 32742, 65535, 65535]);
+        assert_eq!((s.black, s.white), ([0; 4], 65535));
+        assert_eq!(s.black_pattern, (0, 0, vec![]));
+    }
+
+    /// BlackLevelDeltaH and DeltaV (Canon EOS-1Ds Mark III's per-row black)
+    /// add to BlackLevel's pattern, all from the active area's top-left
+    /// corner; the scale is 1 / (white − the largest black).
+    #[test]
+    fn black_level_deltas_are_subtracted_per_row_and_column() {
+        let le16 = |v: u16| v.to_le_bytes().to_vec();
+        let le32s = |v: &[u32]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+        let f = dng(
+            4,
+            2,
+            &[
+                // Active area: columns 1–3 of both rows.
+                (50829, 4, 4, le32s(&[0, 1, 2, 4])),
+                (50713, 3, 2, [le16(1), le16(2)].concat()),
+                (50714, 3, 2, [le16(10), le16(20)].concat()),
+                (50715, 10, 3, rationals(&[1, 2, 3], 1)),
+                (50716, 10, 2, rationals(&[0, 10], 2)),
+                (50717, 3, 1, le16(1028)),
+            ],
+        );
+        let s = decode(&with_samples(f, &[528; 8]));
+        // Blacks: row 0 20 (masked, the pattern's second column), 11, 22,
+        // 13; row 1 each 5 more; the largest is 20 + 3 + 5 = 28, so
+        // (528 − black) × 65535 / 1000.
+        assert_eq!(
+            s.data,
+            [33292, 33882, 33161, 33751, 32964, 33554, 32833, 33423]
+        );
+        assert_eq!((s.black, s.white), ([0; 4], 65535));
+        assert_eq!(s.black_pattern, (1, 2, vec![0, 0]));
+    }
+
+    /// Whole levels stay the file's.
+    #[test]
+    fn whole_levels_stay_levels() {
+        let f = dng(
+            2,
+            1,
+            &[
+                (50714, 5, 1, rationals(&[64], 1)),
+                (50717, 3, 1, 1023u16.to_le_bytes().to_vec()),
+            ],
+        );
+        let s = decode(&with_samples(f, &[63, 700]));
+        assert_eq!(s.data, [63, 700]);
+        assert_eq!((s.black, s.white), ([64; 4], 1023));
     }
 
     #[test]
