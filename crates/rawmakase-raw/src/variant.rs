@@ -74,6 +74,8 @@ pub enum Variant {
     /// Fujifilm RAF, samples packed most significant bit first in 32-bit
     /// words.
     RafPackedWords,
+    /// Fujifilm RAF, compressed stripes (lossless or lossy).
+    RafCompressed,
 }
 
 impl Variant {
@@ -107,6 +109,7 @@ impl Variant {
             Variant::RafTiled => "raf-tiled",
             Variant::RafPacked => "raf-packed",
             Variant::RafPackedWords => "raf-packed-words",
+            Variant::RafCompressed => "raf-compressed",
         }
     }
 }
@@ -200,7 +203,8 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::RafSuperCcdSr
             | Variant::RafTiled
             | Variant::RafPacked
-            | Variant::RafPackedWords,
+            | Variant::RafPackedWords
+            | Variant::RafCompressed,
         ) => crate::container::raf::decode(info, plan, bytes, cancel),
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(

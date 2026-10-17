@@ -34,6 +34,8 @@ pub(crate) enum Coding {
     /// Samples of `bits` packed most significant bit first in little-endian
     /// 32-bit words, rows `stride` bytes apart.
     PackedWords { bits: u32, stride: u32 },
+    /// Fujifilm's compressed stripes (lossless or lossy).
+    Compressed { bits: u32 },
 }
 
 /// Where a RAF's sensor data is and how it is coded, and its levels.
@@ -277,10 +279,10 @@ fn tiff_plan(
         let stride = u64::from(int(fuji::RAW_STRIDE).unwrap_or(0)) * 4;
         u32::try_from(stride.max(packed)).map_err(|_| Error::TooLarge("RAF row"))
     };
-    if matches!(header.u32(108), Ok(2 | 3)) {
-        return Err(Error::Unsupported("Fujifilm compressed RAF".into()));
-    }
-    let (variant, coding) = if int(fuji::RAW_PACKING) == Some(1) {
+    let compression = header.u32(108).unwrap_or(0);
+    let (variant, coding) = if matches!(compression, 2 | 3) {
+        (Variant::RafCompressed, Coding::Compressed { bits })
+    } else if int(fuji::RAW_PACKING) == Some(1) {
         let stride = row_bytes(bits)?;
         (
             Variant::RafPackedWords,
@@ -422,7 +424,11 @@ pub(crate) fn decode(
     if (src.len() as u64) < needed(plan.coding, plan.width, plan.height) {
         return Err(corrupt("RAF data ends early"));
     }
-    let mut data = crate::io::zeroed(n)?;
+    // The codec checks its header and stripes before allocating its own.
+    let mut data = match plan.coding {
+        Coding::Compressed { .. } => Vec::new(),
+        _ => crate::io::zeroed(n)?,
+    };
     match plan.coding {
         Coding::Words { big, stride } => {
             let stride = stride as usize * 2;
@@ -502,6 +508,17 @@ pub(crate) fn decode(
                 }
             }
         }
+        Coding::Compressed { bits } => {
+            let xtrans = info.cfa.as_ref().is_some_and(|c| c.is_xtrans());
+            data = crate::codec::fuji_compressed::decode(
+                src,
+                plan.width,
+                plan.height,
+                bits,
+                xtrans,
+                cancel,
+            )?;
+        }
     }
     let [left, top] = info.margins;
     // The black pattern from the visible area's corner.
@@ -545,6 +562,8 @@ fn needed(coding: Coding, width: u32, height: u32) -> u64 {
         Coding::PackedWords { bits, stride } => {
             rows(u64::from(stride), (w * u64::from(bits)).div_ceil(32) * 4)
         }
+        // The codec checks its stripes before allocating.
+        Coding::Compressed { .. } => 16,
     }
 }
 
@@ -845,6 +864,38 @@ mod tests {
                 Err(crate::Error::Corrupt(_))
             ));
         }
+    }
+
+    #[test]
+    fn reads_compressed_x_trans_data() {
+        use crate::codec::fuji_compressed::tests::{stream, zeros};
+        let data = stream(14, true, 780, 1, &zeros(14, true, 1), None);
+        let file = raf(
+            "X-T9",
+            &records(true),
+            &block(&entries(780, 6, 14), &data),
+            2,
+        );
+        let (info, s) = decode(&file);
+        assert_eq!(info.variant, crate::Variant::RafCompressed);
+        assert!(info.cfa.as_ref().unwrap().is_xtrans());
+        // X-Trans: crops start on whole periods of 6.
+        assert_eq!(info.frame, [6, 6, 2, 1]);
+        assert_eq!(s.data, vec![0; 780 * 6]);
+        assert_eq!(s.black_pattern.0, 6);
+        // 40000 × 40000 compressed samples in 16 bytes: refused before the
+        // image is allocated.
+        let file = raf(
+            "X-T9",
+            &records(true),
+            &block(&entries(40000, 40000, 14), &data[..16]),
+            2,
+        );
+        let info = crate::open(&file).unwrap();
+        assert!(matches!(
+            crate::decode(&info, &file, &AtomicBool::new(false)),
+            Err(crate::Error::Corrupt(_))
+        ));
     }
 
     #[test]
