@@ -6,4 +6,5 @@ pub(crate) mod nikon;
 pub(crate) mod olympus;
 pub(crate) mod panasonic;
 pub(crate) mod pentax;
+pub(crate) mod samsung;
 pub(crate) mod sony;

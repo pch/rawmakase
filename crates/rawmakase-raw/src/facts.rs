@@ -81,6 +81,11 @@ pub(crate) struct Camera {
     /// levels are scaled).
     #[serde(default)]
     pub wb_scale: Option<[f64; 2]>,
+    /// The 2 × 2 colour filter at the sensor's corner (0 red, 1 green, 2
+    /// blue, row by row), where the file's is not the one RAWmakase has
+    /// always read it with.
+    #[serde(default)]
+    pub cfa: Option<[u8; 4]>,
     #[allow(dead_code)]
     pub source: Source,
     #[allow(dead_code)]
@@ -203,7 +208,8 @@ mod tests {
                     || c.black.is_some()
                     || c.flip.is_some()
                     || c.frame.is_some()
-                    || c.wb_scale.is_some(),
+                    || c.wb_scale.is_some()
+                    || c.cfa.is_some(),
                 "{c:?}"
             );
             // Adobe DNG Converter's levels where the file does not tell

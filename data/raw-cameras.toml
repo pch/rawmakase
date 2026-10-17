@@ -15,7 +15,9 @@
 #                and `wb_scale` (red, blue): factors the white balance levels
 #                are scaled by where the maker's rules say they are
 #                (Fujifilm's record 0x8200) and the file does not say by how
-#                much; observed from LibRaw's output, not colour matrices
+#                much; observed from LibRaw's output, not colour matrices;
+#                and the 2 × 2 colour filter at the sensor's corner (`cfa`, 0
+#                red, 1 green, 2 blue)
 #
 # source says where the values come from:
 #   file             a rule from the file's own tags, for files that lack them
@@ -3798,4 +3800,182 @@ source = "compat-observed"
 make = "Samsung"
 model = "GX20"
 canonical = ["Pentax", "K20D"]
+source = "compat-observed"
+
+# Samsung
+
+[[canonical]]
+make = "Samsung"
+model = "EK-GN120"
+canonical = ["Samsung", "NX U"]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "EK-GN120"
+dng = false
+raw_size = [5546, 3714]
+visible = [0, 0, 5536, 3696]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "EX1"
+dng = false
+raw_size = [3688, 2780]
+visible = [0, 2, 3682, 2760]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "EX2F"
+dng = false
+raw_size = [4176, 3058]
+visible = [24, 16, 4040, 3029]
+white = 2047
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX mini"
+dng = false
+raw_size = [5664, 3710]
+visible = [96, 18, 5544, 3692]
+cfa = [0, 1, 1, 2]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX10"
+dng = false
+raw_size = [4704, 3124]
+visible = [8, 8, 4688, 3116]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX100"
+dng = false
+raw_size = [4704, 3124]
+visible = [8, 8, 4688, 3116]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX1000"
+dng = false
+raw_size = [5632, 3720]
+visible = [44, 2, 5530, 3694]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX11"
+dng = false
+raw_size = [4704, 3124]
+visible = [8, 8, 4688, 3116]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX1100"
+dng = false
+raw_size = [5632, 3720]
+visible = [44, 2, 5530, 3694]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX20"
+dng = false
+raw_size = [5632, 3720]
+visible = [44, 2, 5530, 3694]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX200"
+dng = false
+raw_size = [5632, 3720]
+visible = [44, 2, 5530, 3694]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX2000"
+dng = false
+raw_size = [5536, 3714]
+visible = [0, 0, 5536, 3696]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX210"
+dng = false
+raw_size = [5632, 3720]
+visible = [44, 2, 5530, 3694]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX30"
+dng = false
+raw_size = [5546, 3714]
+visible = [0, 0, 5536, 3696]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX300"
+dng = false
+raw_size = [5546, 3714]
+visible = [0, 0, 5536, 3696]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX3000"
+dng = false
+raw_size = [5600, 3714]
+visible = [92, 38, 5456, 3634]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX300M"
+dng = false
+raw_size = [5546, 3714]
+visible = [0, 0, 5536, 3696]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX3300"
+dng = false
+raw_size = [5600, 3714]
+visible = [64, 18, 5536, 3696]
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "NX5"
+dng = false
+raw_size = [4704, 3124]
+visible = [8, 8, 4688, 3116]
+source = "compat-observed"
+
+[[camera]]
+make = "Samsung"
+model = "WB2000"
+dng = false
+raw_size = [3728, 2781]
+visible = [0, 2, 3718, 2778]
 source = "compat-observed"

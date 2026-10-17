@@ -92,6 +92,16 @@ pub enum Variant {
     PefPacked,
     /// Pentax PEF, 16-bit words.
     PefUnpacked,
+    /// Samsung SRW, 16-bit words.
+    SrwUnpacked,
+    /// Samsung SRW, packed 12-bit rows.
+    SrwPacked,
+    /// Samsung SRW (compression 32770), rows of blocks of 16.
+    SrwBlocks,
+    /// Samsung SRW (compression 32772), Huffman-coded differences.
+    SrwHuffman,
+    /// Samsung SRW (compression 32773), tiles of 16.
+    SrwTiles,
 }
 
 impl Variant {
@@ -134,6 +144,11 @@ impl Variant {
             Variant::PefHuffman => "pef-huffman",
             Variant::PefPacked => "pef-packed",
             Variant::PefUnpacked => "pef-unpacked",
+            Variant::SrwUnpacked => "srw-unpacked",
+            Variant::SrwPacked => "srw-packed",
+            Variant::SrwBlocks => "srw-blocks",
+            Variant::SrwHuffman => "srw-huffman",
+            Variant::SrwTiles => "srw-tiles",
         }
     }
 }
@@ -150,6 +165,7 @@ pub(crate) enum Plan {
     Cr3(crate::container::cr3::Cr3Plan),
     Orf(crate::container::orf::OrfPlan),
     Pef(crate::container::pef::PefPlan),
+    Srw(crate::container::srw::SrwPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -190,6 +206,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         }
         if crate::container::pef::is_pef(&t) {
             return crate::container::pef::open(t);
+        }
+        if crate::container::srw::is_srw(&t) {
+            return crate::container::srw::open(t);
         }
     }
     Err(Error::NotRaw)
@@ -251,6 +270,14 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         (Plan::Pef(plan), Variant::PefHuffman | Variant::PefPacked | Variant::PefUnpacked) => {
             crate::container::pef::decode(info, plan, bytes, cancel)
         }
+        (
+            Plan::Srw(plan),
+            Variant::SrwUnpacked
+            | Variant::SrwPacked
+            | Variant::SrwBlocks
+            | Variant::SrwHuffman
+            | Variant::SrwTiles,
+        ) => crate::container::srw::decode(info, plan, bytes, cancel),
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
             "{} with another container's plan",

@@ -44,6 +44,50 @@ impl Codes {
         }
         Ok(Self { table })
     }
+    /// From (length, symbol) pairs, each taking the next code of its
+    /// length in list order.
+    fn in_order(list: &[(u8, u8)]) -> Result<Self> {
+        let mut table = vec![(0u8, 0u8); 4096];
+        let mut at = 0usize;
+        for &(len, symbol) in list {
+            if !(1..=12).contains(&len) {
+                return Err(corrupt("Huffman code length"));
+            }
+            let span = 4096 >> len;
+            table
+                .get_mut(at..at + span)
+                .ok_or_else(|| corrupt("Huffman table overfull"))?
+                .fill((len, symbol));
+            at += span;
+        }
+        Ok(Self { table })
+    }
+    /// Samsung's fixed table (SRW compression 32772): (length, difference
+    /// length) in code order, written from prior general knowledge of the
+    /// format (no decoder source consulted) and verified by an exact match
+    /// with LibRaw's output on our files.
+    pub fn samsung() -> Self {
+        const LIST: [(u8, u8); 14] = [
+            (3, 4),
+            (3, 7),
+            (2, 6),
+            (2, 5),
+            (4, 3),
+            (6, 0),
+            (7, 9),
+            (8, 10),
+            (9, 11),
+            (10, 12),
+            (10, 13),
+            (5, 1),
+            (4, 8),
+            (4, 2),
+        ];
+        // The list fills the 12-bit table exactly.
+        Self::in_order(&LIST).unwrap_or(Self {
+            table: vec![(0, 0); 4096],
+        })
+    }
     /// The table in a Pentax maker note's HuffmanTable value, in the note's
     /// byte order.
     pub fn from_note(b: &[u8], order: Order) -> Result<Self> {
@@ -109,6 +153,16 @@ pub(crate) fn decode(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn samsung_s_table_is_complete_and_prefix_free() {
+        let codes = Codes::samsung();
+        assert!(codes.table.iter().all(|&(len, _)| len > 0));
+        // "000" → 4 bits, "1111" → 2 bits, "110100" → none.
+        assert_eq!(codes.table[0], (3, 4));
+        assert_eq!(codes.table[0xf00], (4, 2));
+        assert_eq!(codes.table[0xd00], (6, 0));
+    }
 
     #[test]
     fn note_tables_give_codes_and_lengths() {

@@ -35,9 +35,9 @@ Modules, each with a small `pub(crate)` surface:
 | Module | Owns |
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
-| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`) |
-| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`) |
+| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`) |
+| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
 | `color` | The camera-to-sRGB matrix and daylight multipliers from a camera's XYZ matrix |
@@ -87,6 +87,11 @@ A file of a recognised container in a variant this crate does not decode is
 | `PefHuffman` | Pentax PEF (Ricoh's too), Huffman-coded differences with the maker note's table | TIFF 6, ITU T.81 (differences), ExifTool's Pentax tag names, our own measurements |
 | `PefPacked` | Pentax and Samsung GX PEF, packed 12-bit rows (compression 32773 or 1) | TIFF 6, our own measurements |
 | `PefUnpacked` | Pentax PEF, 16-bit words | TIFF 6, our own measurements |
+| `SrwUnpacked` | Samsung SRW (compression 32769), 16-bit words | TIFF 6, our own measurements |
+| `SrwPacked` | Samsung SRW (compression 32770), packed 12-bit rows | TIFF 6, our own measurements |
+| `SrwBlocks` | Samsung SRW (compression 32770, smaller data), rows of blocks of 16 differences | ExifTool's Samsung tag names, our own measurements |
+| `SrwHuffman` | Samsung SRW (compression 32772), Huffman-coded differences with a fixed table | ITU T.81 (differences), our own measurements |
+| `SrwTiles` | Samsung SRW (compression 32773), tiles of 16 scaled differences | our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -288,6 +293,25 @@ GX PEFs read the note too, but not its crop. Ricoh Imaging's bodies are
 named Pentax. The visible areas, the 645D's white level and the canonical
 names (`*ist DL` is `*istDL`) are `compat-observed` rows. A PEF of linear
 (monochrome) data is `Unsupported`.
+
+Samsung (`vendor::samsung`): white balance, the D65 preset, black and white
+come from the maker note's vectors, less (or plus) its EncryptionKey.
+The three compressed codings and the fixed Huffman table of compression
+32772 were written from prior general knowledge of the formats (no decoder
+source consulted), then verified and corrected by measurement against
+LibRaw's output on our files; the measurement found that tiles' samples are
+kept within the bit depth, and the packing rules below.
+12-bit words (compression 32769) hold 11-bit samples. The NX20 generation
+(whose raw directory says three samples a pixel) packs pairs into
+little-endian 3-byte words, earlier bodies plainly. Visible areas, the
+EX1's and EX2F's white levels and, for bodies whose CFAPattern is not the
+filter (the NX300 and NX3000 generations, the NX mini; Adobe DNG Converter
+agrees), the colour filter are `compat-observed` rows.
+
+Values observed from LibRaw other than geometry and names are checked
+against the file and Adobe DNG Converter: where both disagree with LibRaw,
+the file's value is read and the change recorded in
+`tests/corpus/decode-deltas.toml`.
 
 ## Checking against LibRaw
 

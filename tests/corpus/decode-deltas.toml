@@ -1431,9 +1431,45 @@ after = 12500
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 12500"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
-# Olympus and Pentax: where the file and Adobe DNG Converter agree against
-# LibRaw. (A Samsung GX-1L PEF also gains its maker note's white balance
-# presets and lens ID, 1270, which LibRaw left absent.)
+# Olympus, Pentax and Samsung: where the file and Adobe DNG Converter agree
+# against LibRaw. (A Samsung GX-1L PEF also gains its maker note's white
+# balance presets and lens ID, 1270, which LibRaw left absent.)
+# Samsung/NX5/SAM_3213.SRW
+[[delta]]
+sha256 = "908fc61d5bbc1f0d0a5cea4f4e39e7753060c1af8673f7a4a9199284b70930f7"
+field = "sensor.black"
+before = [6, 7, 6, 7]
+after = [2, 2, 2, 2]
+evidence = "the file's WB_RGGBLevelsBlack less its key (2, 2, 2, 2); Adobe DNG Converter 18.7 BlackLevel 2 2 2 2"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Samsung/NX10/SAM_3630.SRW
+[[delta]]
+sha256 = "dead7b4ad83b739ff7b8a1218882589f66cb14efc09f79eeba7a1dcbf7abd29f"
+field = "sensor.black"
+before = [3, 4, 4, 4]
+after = [3, 3, 3, 3]
+evidence = "the file's WB_RGGBLevelsBlack less its key (3, 3, 3, 3); Adobe DNG Converter 18.7 BlackLevel 3 3 3 3"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Samsung/NX100/RAW_SAMSUNG_NX100.SRW
+[[delta]]
+sha256 = "3149a901d154cc37175166c7ebce559b100e8ba872023c6b159028dcbae5d03b"
+field = "sensor.black"
+before = [3, 4, 4, 4]
+after = [3, 3, 3, 3]
+evidence = "the file's WB_RGGBLevelsBlack less its key (3, 3, 3, 3); Adobe DNG Converter 18.7 BlackLevel 3 3 3 3"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Samsung/NX11/SAM_5935.SRW
+[[delta]]
+sha256 = "bdce6179b4180478057f4971b512e0303da71528db454cb3f399ab10e05b68fe"
+field = "sensor.black"
+before = [7, 6, 7, 7]
+after = [3, 2, 3, 2]
+evidence = "the file's WB_RGGBLevelsBlack less its key (red 3, greens 2, blue 3); Adobe DNG Converter 18.7 BlackLevel 3 2 2 3"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
 # Olympus/E-P1/P1080385.ORF
 [[delta]]
 sha256 = "862b9d409279af0528810aa02eb5b4140d7854f9d637d4188b82ebaf4bf0d4cf"
@@ -1468,4 +1504,40 @@ field = "header.metadata.wb"
 before = [1.0, 1.0, 1.0]
 after = [1.42578125, 1.0, 1.1953125]
 evidence = "the Pentax maker note's WhitePoint (red 1.4258, blue 1.1953 of green); Adobe DNG Converter 18.7 AsShotNeutral 0.70137 1 0.836601 (1/1.4258, 1/1.1953)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Samsung/NX500/SAM_2927.SRW
+[[delta]]
+sha256 = "156e43118811bcecb6fcc600b5f41ee1773c4f00b6a5b2dd72e177e35f6596ab"
+field = "header.metadata.lens_model"
+before = "NX 16-50mm F3.5-5.6 Power Zoo"
+after = "NX 16-50mm F3.5-5.6 Power Zoom"
+evidence = "the file's EXIF LensModel; Adobe DNG Converter 18.7 LensModel \"NX 16-50mm F3.5-5.6 Power Zoom\" (LibRaw cut it at 29 characters)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Samsung/NX500/SAM_2935.SRW
+[[delta]]
+sha256 = "77ed2a18ca6923a0c1f3a9ad41ade3676136a3272dfe6bf0d8f53d03b0c8db3d"
+field = "header.metadata.lens_model"
+before = "NX 16-50mm F3.5-5.6 Power Zoo"
+after = "NX 16-50mm F3.5-5.6 Power Zoom"
+evidence = "the file's EXIF LensModel (LibRaw cut it at 29 characters)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Samsung/NX500/SAM_2922.SRW
+[[delta]]
+sha256 = "3a1aeeb631b15dfa5be1bebe0e9c96f660ec96021eb6c45c073e33e982ab61b7"
+field = "header.metadata.lens_model"
+before = "NX 16-50mm F3.5-5.6 Power Zoo"
+after = "NX 16-50mm F3.5-5.6 Power Zoom"
+evidence = "the file's EXIF LensModel; Adobe DNG Converter 18.7 LensModel \"NX 16-50mm F3.5-5.6 Power Zoom\" (LibRaw cut it at 29 characters)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Samsung/NX500/SAM_2929.SRW
+[[delta]]
+sha256 = "8a3fac531057ab416fc92d4e09560840c7700388a4b566b685df178cd5be8213"
+field = "header.metadata.lens_model"
+before = "NX 16-50mm F3.5-5.6 Power Zoo"
+after = "NX 16-50mm F3.5-5.6 Power Zoom"
+evidence = "the file's EXIF LensModel (LibRaw cut it at 29 characters)"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"

@@ -5,16 +5,19 @@ use crate::info::RawInfo;
 
 pub(crate) fn read(t: &TiffFile, info: &mut RawInfo) {
     for ifd in [Some(&t.ifds[0]), t.exif.as_ref()].into_iter().flatten() {
-        if let Some(v) = t.real(ifd, 33434) {
+        // A rational of 0/0 is not a value.
+        if let Some(v) = t.real(ifd, 33434).filter(|v| v.is_finite()) {
             info.shutter = v as f32;
         }
-        if let Some(v) = t.real(ifd, 33437) {
+        // A rational of 0/0 is not a value.
+        if let Some(v) = t.real(ifd, 33437).filter(|v| v.is_finite()) {
             info.aperture = v as f32;
         }
         if let Some(v) = t.int(ifd, 34855) {
             info.iso = v as f32;
         }
-        if let Some(v) = t.real(ifd, 37386) {
+        // A rational of 0/0 is not a value.
+        if let Some(v) = t.real(ifd, 37386).filter(|v| v.is_finite()) {
             info.focal = v as f32;
         }
         if let Some(v) = t.int(ifd, 41989) {
