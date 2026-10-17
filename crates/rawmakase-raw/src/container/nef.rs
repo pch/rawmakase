@@ -1,15 +1,15 @@
 //! Nikon NEF and NRW: TIFF files whose raw image is the full-size directory
 //! with a CFA photometric interpretation, its data Huffman-coded (TIFF
-//! compression 34713), High Efficiency (JPEG XS), or uncompressed, packed or
-//! not; the maker note says how it is coded, and gives the white balance,
-//! levels, lens and crop.
+//! compression 34713), High Efficiency (JPEG XS), uncompressed, packed or
+//! not, or Nikon's small RAW (luma and chroma); the maker note says how it is
+//! coded, and gives the white balance, levels, lens and crop.
 //!
 //! Sources: TIFF 6 and TIFF/EP (directories, strips, CFA tags); ExifTool's
 //! Nikon tag documentation (the maker note's tags); our own measurements of
 //! LibRaw's output on the test dataset's files (how each layout's data is
 //! stored, which data sizes are not Huffman-coded, the preview it picks).
 use super::tiff::{Ifd, TiffFile};
-use crate::codec::{bits::Msb, nikon, nikon_he};
+use crate::codec::{bits::Msb, nikon, nikon_he, nikon_sraw};
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo, UNSET};
 use crate::io::{Bytes, Order};
@@ -110,7 +110,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         // JPEG XS's SOC and CAP: High Efficiency, whatever the body.
         (Variant::NefHighEfficiency, Layout::Coded, 0)
     } else if compression == 34713 && size == pixels * 3 {
-        return Err(Error::Unsupported("Nikon small RAW".into()));
+        (Variant::NefSmallRaw, Layout::Coded, 0)
     } else if size == pixels * 2 {
         let layout = if compression == 34713 && notes.compression == Some(7) {
             Layout::HighWords { shift: true }
@@ -158,8 +158,12 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     info.width = raw_width;
     info.height = height;
     info.flip = crate::geometry::flip(t.int(ifd0, 274).unwrap_or(1));
-    let cfa = cfa(&t, ifd)?;
-    info.cfa = Some(crate::vendor::nikon::cfa(&model).unwrap_or(cfa));
+    if variant == Variant::NefSmallRaw {
+        info.sraw = true;
+    } else {
+        let cfa = cfa(&t, ifd)?;
+        info.cfa = Some(crate::vendor::nikon::cfa(&model).unwrap_or(cfa));
+    }
     if let Some(mul) = notes.cam_mul {
         info.cam_mul = mul;
     }
@@ -203,7 +207,12 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         // own.
         *shift = table_levels(&info, bits).1.is_none_or(|w| w < 1 << 12);
     }
-    let (black, white) = levels(&info, &notes, bits);
+    let (black, white) = if variant == Variant::NefSmallRaw {
+        // RGB from the tone curve, whose scale is 14 bits.
+        ([0; 4], 16383)
+    } else {
+        levels(&info, &notes, bits)
+    };
     info.plan = Plan::Nef(NefPlan {
         width: raw_width,
         height,
@@ -372,6 +381,7 @@ pub(crate) fn decode(
         Variant::NefUnpacked | Variant::NefPacked | Variant::NefPacked14 => {
             (1, uncompressed(&data, width, height, plan, cancel)?)
         }
+        Variant::NefSmallRaw => (4, nikon_sraw::decode(&data, width, height, cancel)?),
         v => return Err(Error::Unsupported(format!("{} in a NEF", v.name()))),
     };
     let [left, top] = info.margins;
@@ -811,6 +821,25 @@ pub(crate) mod tests {
         p.height = 1;
         let out = uncompressed(&groups, 11, 1, &p, &AtomicBool::new(false)).unwrap();
         assert_eq!(out[10], 0x123);
+    }
+
+    #[test]
+    fn small_raws_are_recognised_by_their_size() {
+        // Three bytes a pixel: luma and chroma, converted to four channels.
+        let mut data = Vec::new();
+        for _ in 0..8 {
+            let x = 1000u64 | 1000 << 12 | 2048 << 24 | 2048 << 36;
+            data.extend(&x.to_le_bytes()[..6]);
+        }
+        let file = nef("NIKON D810", 4, 4, 12, 34713, &[], &data);
+        let info = crate::open(&file).unwrap();
+        assert_eq!(
+            (info.variant, info.sraw, info.cfa.is_none()),
+            (Variant::NefSmallRaw, true, true)
+        );
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        assert_eq!((s.channels, s.white, s.black), (4, 16383, [0; 4]));
+        assert_eq!(s.data[..4], [3214, 3214, 3214, 0]);
     }
 
     #[test]

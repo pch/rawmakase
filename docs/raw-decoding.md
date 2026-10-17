@@ -35,7 +35,7 @@ Modules, each with a small `pub(crate)` surface:
 | Module | Owns |
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
-| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings |
+| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings |
 | `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`) |
 | `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
@@ -71,6 +71,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `NefUnpacked` | Nikon NEF and NRW, 16-bit words: the file's byte order, or big-endian with 12-bit samples in their top bits (Coolpix NRW) | TIFF 6, our own measurements |
 | `NefPacked` | Nikon NEF and NRW, 12-bit samples packed: most or least significant bit first, rows padded to 16 bytes or not, in little-endian 32-bit words (Coolpix NRW), in groups of ten (D100), in two fields (Coolpix E-series) | TIFF 6, our own measurements |
 | `NefPacked14` | Nikon NEF, 14-bit samples packed least significant bit first, rows padded to 16 bytes | TIFF 6, our own measurements |
+| `NefSmallRaw` | Nikon NEF small RAW: luma and chroma (three bytes a pixel), converted to RGB through a measured tone curve | ITU-R BT.601, our own measurements |
 | `NefHuffman` | Nikon NEF, Huffman-coded (TIFF compression 34713): lossless, lossy, lossy with a split | TIFF 6, ITU T.81, Laurent Clévy's NEF notes, ExifTool's Nikon tag documentation, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
@@ -173,6 +174,16 @@ and on synthetic NEFs that probe one code word, key or tag at a time):
   white level is the words' own; the Coolpix E-series (ColorBalanceA) store
   the even rows, then the odd ones. Coolpix NRWs' ColorBalanceC black level
   and presets (daylight, shade, and fluorescent N as D65) are their own.
+- Small RAWs (three bytes a pixel): BT.601 over luma ÷ 2549 and chroma ÷ 1536,
+  times 3072, index a tone curve of 3072 steps topping at 16287, measured step
+  by step on synthetic files and shipped as a compat-observed fact (LibRaw's
+  output; the file does not carry it); from luma 2047 chroma is ignored; the second
+  pixel of a pair takes the mean chroma of its pair and the next. LibRaw's
+  floating-point evaluation order is not known: on the dataset's two files
+  0.008% and 0.001% of the values are one or a few curve steps off (at most 4
+  of 16383), so their data hashes differ: D810 `DSC_1888.NEF` (0cb5b819…,
+  3013 of 36152320 values) and D4S `FU9_3802.NEF` (c8256566…, 161 of
+  16163840). This is to be an approved delta at the switch.
 
 ## Checking against LibRaw
 

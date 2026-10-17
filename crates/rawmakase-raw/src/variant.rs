@@ -61,6 +61,8 @@ pub enum Variant {
     NefPacked,
     /// Nikon NEF, 14-bit samples packed, rows padded.
     NefPacked14,
+    /// Nikon NEF small RAW: luma and chroma, converted to RGB.
+    NefSmallRaw,
 }
 
 impl Variant {
@@ -88,6 +90,7 @@ impl Variant {
             Variant::NefUnpacked => "nef-unpacked",
             Variant::NefPacked => "nef-packed",
             Variant::NefPacked14 => "nef-packed-14",
+            Variant::NefSmallRaw => "nef-small-raw",
         }
     }
 }
@@ -168,7 +171,8 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::NefHighEfficiency
             | Variant::NefUnpacked
             | Variant::NefPacked
-            | Variant::NefPacked14,
+            | Variant::NefPacked14
+            | Variant::NefSmallRaw,
         ) => crate::container::nef::decode(info, plan, bytes, cancel),
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
