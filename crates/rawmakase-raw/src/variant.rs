@@ -54,6 +54,13 @@ pub enum Variant {
     NefHuffman,
     /// Nikon NEF, High Efficiency (JPEG XS).
     NefHighEfficiency,
+    /// Nikon NEF or NRW, 16-bit words.
+    NefUnpacked,
+    /// Nikon NEF or NRW, 12-bit samples packed, in one of the layouts the
+    /// bodies use.
+    NefPacked,
+    /// Nikon NEF, 14-bit samples packed, rows padded.
+    NefPacked14,
 }
 
 impl Variant {
@@ -78,6 +85,9 @@ impl Variant {
             Variant::ArwV6 => "arw-v6",
             Variant::NefHuffman => "nef-huffman",
             Variant::NefHighEfficiency => "nef-high-efficiency",
+            Variant::NefUnpacked => "nef-unpacked",
+            Variant::NefPacked => "nef-packed",
+            Variant::NefPacked14 => "nef-packed-14",
         }
     }
 }
@@ -152,9 +162,14 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::ArwV1
             | Variant::ArwV6,
         ) => crate::container::arw::decode(info, plan, bytes, cancel),
-        (Plan::Nef(plan), Variant::NefHuffman | Variant::NefHighEfficiency) => {
-            crate::container::nef::decode(info, plan, bytes, cancel)
-        }
+        (
+            Plan::Nef(plan),
+            Variant::NefHuffman
+            | Variant::NefHighEfficiency
+            | Variant::NefUnpacked
+            | Variant::NefPacked
+            | Variant::NefPacked14,
+        ) => crate::container::nef::decode(info, plan, bytes, cancel),
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
             "{} with another container's plan",

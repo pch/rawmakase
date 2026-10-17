@@ -2109,3 +2109,47 @@ model = "D600"
 bits = 14
 white = 15879
 source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX P330"
+black = 200
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX P340"
+black = 200
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX P7700"
+black = 3200
+white = 65504
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX P7800"
+black = 3200
+white = 65504
+source = "compat-observed"
+
+[[canonical]]
+make = "Nikon"
+model = "E5400"
+canonical = ["Nikon", "COOLPIX 5400"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Nikon"
+model = "E8400"
+canonical = ["Nikon", "COOLPIX 8400"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Nikon"
+model = "E8800"
+canonical = ["Nikon", "COOLPIX 8800"]
+source = "compat-observed"

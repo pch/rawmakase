@@ -1,20 +1,21 @@
-//! Nikon NEF: TIFF files whose raw image is the full-size directory with a
-//! CFA photometric interpretation, its data Huffman-coded (TIFF compression
-//! 34713) or High Efficiency (JPEG XS); the maker note says how it is coded,
-//! and gives the white balance, levels, lens and crop.
+//! Nikon NEF and NRW: TIFF files whose raw image is the full-size directory
+//! with a CFA photometric interpretation, its data Huffman-coded (TIFF
+//! compression 34713), High Efficiency (JPEG XS), or uncompressed, packed or
+//! not; the maker note says how it is coded, and gives the white balance,
+//! levels, lens and crop.
 //!
 //! Sources: TIFF 6 and TIFF/EP (directories, strips, CFA tags); ExifTool's
 //! Nikon tag documentation (the maker note's tags); our own measurements of
-//! LibRaw's output on the test dataset's files (which data sizes are not
-//! Huffman-coded, the preview it picks).
+//! LibRaw's output on the test dataset's files (how each layout's data is
+//! stored, which data sizes are not Huffman-coded, the preview it picks).
 use super::tiff::{Ifd, TiffFile};
-use crate::codec::{nikon, nikon_he};
+use crate::codec::{bits::Msb, nikon, nikon_he};
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo, UNSET};
 use crate::io::{Bytes, Order};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
-use crate::vendor::nikon::{Curve, Notes};
+use crate::vendor::nikon::{Coolpix, Curve, Notes};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Where a NEF's raw image is and how it is coded.
@@ -28,9 +29,38 @@ pub(crate) struct NefPlan {
     pub strips: Vec<(u64, u64)>,
     /// The file's byte order.
     pub little: bool,
+    /// How uncompressed samples are stored, and bytes per stored row.
+    pub layout: Layout,
+    pub stride: usize,
     pub curve: Option<Curve>,
     pub black: [u32; 4],
     pub white: u32,
+}
+
+/// How uncompressed samples are stored (our own measurements of each
+/// family's files).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Layout {
+    /// Not uncompressed: Huffman, High Efficiency or small RAW.
+    Coded,
+    /// 16-bit words in the file's byte order.
+    Words,
+    /// Big-endian 16-bit words holding 12-bit samples in their top bits
+    /// (Coolpix NRW), shifted down to 12 bits or not.
+    HighWords { shift: bool },
+    /// Samples packed most significant bit first.
+    Msb,
+    /// Samples packed least significant bit first (little-endian bodies).
+    Lsb,
+    /// Most significant bit first in little-endian 32-bit words (Coolpix
+    /// NRW).
+    Words32,
+    /// Most significant bit first, ten samples in 15 bytes and a byte of
+    /// padding (D100).
+    Groups,
+    /// Most significant bit first, rows stored as two fields: the even rows,
+    /// then the odd ones (Coolpix E-series).
+    Fields,
 }
 
 /// Whether `t` is a Nikon camera's own TIFF.
@@ -66,20 +96,55 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     let rows = u64::from(height);
     let row = |b: u64| (u64::from(width) * b).div_ceil(8);
     let little = t.little();
-    // Data the size of uncompressed samples, packed or not, is not
-    // Huffman-coded, whatever the compression tag says.
-    let uncompressed = size == pixels * 2
-        || [12, 14]
-            .into_iter()
-            .any(|b| size == row(b) * rows || size == row(b).next_multiple_of(16) * rows)
-        || size == u64::from(width.div_ceil(10)) * 16 * rows;
-    let variant = if first == Some(&[0xff, 0x10, 0xff, 0x50][..]) {
+    let mut raw_width = width;
+    let packed12 = if notes.coolpix == Coolpix::Nrw && little {
+        Layout::Words32
+    } else if notes.coolpix == Coolpix::ColorBalanceA {
+        Layout::Fields
+    } else if little && notes.compression != Some(9) {
+        Layout::Lsb
+    } else {
+        Layout::Msb
+    };
+    let (variant, mut layout, stride) = if first == Some(&[0xff, 0x10, 0xff, 0x50][..]) {
         // JPEG XS's SOC and CAP: High Efficiency, whatever the body.
-        Variant::NefHighEfficiency
+        (Variant::NefHighEfficiency, Layout::Coded, 0)
     } else if compression == 34713 && size == pixels * 3 {
         return Err(Error::Unsupported("Nikon small RAW".into()));
-    } else if compression == 34713 && !uncompressed {
-        Variant::NefHuffman
+    } else if size == pixels * 2 {
+        let layout = if compression == 34713 && notes.compression == Some(7) {
+            Layout::HighWords { shift: true }
+        } else {
+            Layout::Words
+        };
+        (Variant::NefUnpacked, layout, (width * 2) as usize)
+    } else if bits == 12 && packed12 == Layout::Words32 && size >= row(12) * rows {
+        // Some NRWs' data runs on past the image.
+        (Variant::NefPacked, packed12, row(12) as usize)
+    } else if bits == 12 && size == row(12) * rows {
+        (Variant::NefPacked, packed12, row(12) as usize)
+    } else if bits == 12 && size == row(12).next_multiple_of(16) * rows {
+        (
+            Variant::NefPacked,
+            packed12,
+            row(12).next_multiple_of(16) as usize,
+        )
+    } else if bits == 12 && size == u64::from(width.div_ceil(10)) * 16 * rows {
+        raw_width = width.div_ceil(10) * 10;
+        (
+            Variant::NefPacked,
+            Layout::Groups,
+            (raw_width / 10 * 16) as usize,
+        )
+    } else if bits == 14 && size == row(14).next_multiple_of(16) * rows {
+        let layout = if little { Layout::Lsb } else { Layout::Msb };
+        (
+            Variant::NefPacked14,
+            layout,
+            row(14).next_multiple_of(16) as usize,
+        )
+    } else if compression == 34713 {
+        (Variant::NefHuffman, Layout::Coded, 0)
     } else {
         return Err(Error::Unsupported(format!(
             "NEF of {bits}-bit samples in {size} bytes"
@@ -88,9 +153,9 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     let mut info = crate::info::base(variant);
     info.make = make;
     info.model = file_model;
-    info.raw_width = width;
+    info.raw_width = raw_width;
     info.raw_height = height;
-    info.width = width;
+    info.width = raw_width;
     info.height = height;
     info.flip = crate::geometry::flip(t.int(ifd0, 274).unwrap_or(1));
     let cfa = cfa(&t, ifd)?;
@@ -133,13 +198,20 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         }
     }
     info.uncompressed_preview = t.has_uncompressed_thumbnail();
+    if let Layout::HighWords { shift } = &mut layout {
+        // Shifted to 12 bits unless the camera's white level is the words'
+        // own.
+        *shift = table_levels(&info, bits).1.is_none_or(|w| w < 1 << 12);
+    }
     let (black, white) = levels(&info, &notes, bits);
     info.plan = Plan::Nef(NefPlan {
-        width,
+        width: raw_width,
         height,
         bits,
         strips,
         little,
+        layout,
+        stride,
         curve: notes.curve.clone(),
         black,
         white,
@@ -265,7 +337,9 @@ pub(crate) fn decode(
     );
     // No coding takes more than four bytes a sample (a 16-bit code word and
     // a 14-bit difference); strips beyond that are not this image's.
-    let budget = (width as u64 * height as u64).saturating_mul(4) + 65_536;
+    // Uncompressed layouts may pad their rows beyond that.
+    let budget = ((width as u64 * height as u64).saturating_mul(4) + 65_536)
+        .max((plan.stride as u64).saturating_mul(height as u64));
     let data = strip_data(&file, &plan.strips, budget, cancel)?;
     let (channels, samples) = match info.variant {
         Variant::NefHuffman => {
@@ -294,6 +368,9 @@ pub(crate) fn decode(
             let mut out = vec![0u16; crate::io::samples(plan.width, plan.height, 1)?];
             nikon_he::decode_cancellable(&data, &mut out, width, height, width, cancel)?;
             (1, out)
+        }
+        Variant::NefUnpacked | Variant::NefPacked | Variant::NefPacked14 => {
+            (1, uncompressed(&data, width, height, plan, cancel)?)
         }
         v => return Err(Error::Unsupported(format!("{} in a NEF", v.name()))),
     };
@@ -342,6 +419,88 @@ fn strip_data<'a>(
         out.extend_from_slice(file.slice(at, len)?);
     }
     Ok(std::borrow::Cow::Owned(out))
+}
+
+/// Uncompressed samples in `plan`'s layout.
+fn uncompressed(
+    data: &[u8],
+    width: usize,
+    height: usize,
+    plan: &NefPlan,
+    cancel: &AtomicBool,
+) -> Result<Vec<u16>> {
+    let mut out = vec![0u16; crate::io::samples(width as u32, height as u32, 1)?];
+    let bits = plan.bits;
+    let mut words32 = Vec::new();
+    for (y, row) in out.chunks_exact_mut(width).enumerate() {
+        if y % 64 == 0 && cancel.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        // The stored row this row is.
+        let stored = match plan.layout {
+            Layout::Fields if y % 2 == 1 => height / 2 + y / 2,
+            Layout::Fields => y / 2,
+            _ => y,
+        };
+        let src = data
+            .get(stored.saturating_mul(plan.stride)..)
+            .unwrap_or(&[]);
+        let src = &src[..src.len().min(plan.stride)];
+        match plan.layout {
+            Layout::Words | Layout::HighWords { .. } => {
+                let big = matches!(plan.layout, Layout::HighWords { .. }) || !plan.little;
+                let shift = if plan.layout == (Layout::HighWords { shift: true }) {
+                    4
+                } else {
+                    0
+                };
+                for (v, b) in row.iter_mut().zip(src.as_chunks::<2>().0) {
+                    let w = if big {
+                        u16::from_be_bytes(*b)
+                    } else {
+                        u16::from_le_bytes(*b)
+                    };
+                    *v = w >> shift;
+                }
+            }
+            Layout::Msb | Layout::Fields => {
+                let mut pump = Msb::new(src);
+                row.iter_mut().for_each(|v| *v = pump.get(bits) as u16);
+            }
+            Layout::Words32 => {
+                words32.clear();
+                for w in src.as_chunks::<4>().0 {
+                    words32.extend([w[3], w[2], w[1], w[0]]);
+                }
+                let mut pump = Msb::new(&words32);
+                row.iter_mut().for_each(|v| *v = pump.get(bits) as u16);
+            }
+            Layout::Groups => {
+                let mut pump = Msb::new(src);
+                for (i, v) in row.iter_mut().enumerate() {
+                    if i > 0 && i % 10 == 0 {
+                        pump.get(8);
+                    }
+                    *v = pump.get(bits) as u16;
+                }
+            }
+            Layout::Lsb => {
+                let (mut acc, mut have, mut at) = (0u64, 0u32, 0usize);
+                for v in row.iter_mut() {
+                    while have < bits {
+                        acc |= u64::from(src.get(at).copied().unwrap_or(0)) << have;
+                        at += 1;
+                        have += 8;
+                    }
+                    *v = (acc & ((1 << bits) - 1)) as u16;
+                    acc >>= bits;
+                    have -= bits;
+                }
+            }
+            Layout::Coded => return Err(Error::Unsupported("coded NEF data".into())),
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -395,6 +554,22 @@ pub(crate) mod tests {
         note: &[(u16, u16, Vec<u8>)],
         data: &[u8],
     ) -> Vec<u8> {
+        nef_in_strips(model, width, height, bits, compression, note, data, 1)
+    }
+
+    /// [`nef`] with its data in `count` strips of equal length.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn nef_in_strips(
+        model: &str,
+        width: u32,
+        height: u32,
+        bits: u16,
+        compression: u16,
+        note: &[(u16, u16, Vec<u8>)],
+        data: &[u8],
+        count: usize,
+    ) -> Vec<u8> {
+        let strip = data.len() / count;
         let text = |s: &str| [s.as_bytes(), &[0]].concat();
         let note = [
             &b"Nikon\0\x02\x10\0\0II*\0\x08\0\0\0"[..],
@@ -424,8 +599,16 @@ pub(crate) mod tests {
                     (258, 3, short(&[bits])),
                     (259, 3, short(&[compression])),
                     (262, 3, short(&[32803])),
-                    (273, 4, long(&[data_at as u32])),
-                    (279, 4, long(&[data.len() as u32])),
+                    (
+                        273,
+                        4,
+                        long(
+                            &(0..count)
+                                .map(|i| (data_at + i * strip) as u32)
+                                .collect::<Vec<_>>(),
+                        ),
+                    ),
+                    (279, 4, long(&vec![strip as u32; count])),
                     (33422, 1, vec![0, 1, 1, 2]),
                 ],
                 raw_at,
@@ -511,6 +694,25 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn padded_rows_in_several_strips_are_read() {
+        // A 2 × 10,000 image of 12 or 14-bit samples whose 3 or 4-byte rows
+        // are padded to 16: 160,000 bytes, more than four bytes a sample, read
+        // the same from one strip or two.
+        let data: Vec<u8> = (0..160_000u32).map(|i| (i * 7 % 251) as u8).collect();
+        for (bits, variant) in [(12, Variant::NefPacked), (14, Variant::NefPacked14)] {
+            let decode = |strips| {
+                let file = nef_in_strips("NIKON Z 7", 2, 10_000, bits, 34713, &[], &data, strips);
+                let info = crate::open(&file).unwrap();
+                assert_eq!(info.variant, variant);
+                crate::decode(&info, &file, &AtomicBool::new(false))
+                    .unwrap()
+                    .data
+            };
+            assert_eq!(decode(1), decode(2), "{bits} bits");
+        }
+    }
+
+    #[test]
     fn crops_beyond_the_image_are_none() {
         for crop in [
             [u32::MAX, 0, 2, 2],
@@ -551,6 +753,64 @@ pub(crate) mod tests {
             assert!(s.data.iter().all(|&v| v == value), "{model}");
             assert_eq!((s.black, s.white), ([1008; 4], 16383));
         }
+    }
+
+    #[test]
+    fn uncompressed_layouts_unpack_as_measured() {
+        let plan = |layout, bits, stride, little| NefPlan {
+            width: 2,
+            height: 2,
+            bits,
+            strips: Vec::new(),
+            little,
+            layout,
+            stride,
+            curve: None,
+            black: [0; 4],
+            white: 0,
+        };
+        let run = |data: &[u8], p: &NefPlan, width| {
+            uncompressed(data, width, 2, p, &AtomicBool::new(false)).unwrap()
+        };
+        let data = [0x34, 0x12, 0xab, 0x56, 0x78, 0x9a];
+        assert_eq!(
+            run(&data, &plan(Layout::Msb, 12, 3, false), 2),
+            [0x341, 0x2ab, 0x567, 0x89a]
+        );
+        assert_eq!(
+            run(&data, &plan(Layout::Lsb, 12, 3, true), 2),
+            [0x234, 0xab1, 0x856, 0x9a7]
+        );
+        // The even rows, then the odd ones.
+        assert_eq!(
+            run(&data, &plan(Layout::Fields, 12, 3, true), 2),
+            [0x341, 0x2ab, 0x567, 0x89a]
+        );
+        let data = [0x34, 0x12, 0xab, 0x56, 0x78, 0x9a, 0xbc, 0xde];
+        // Two 32-bit little-endian words, read most significant bit first.
+        assert_eq!(
+            run(&data, &plan(Layout::Words32, 12, 4, true), 2),
+            [0x56a, 0xb12, 0xdeb, 0xc9a]
+        );
+        assert_eq!(
+            run(&data, &plan(Layout::Words, 16, 4, true), 2),
+            [0x1234, 0x56ab, 0x9a78, 0xdebc]
+        );
+        assert_eq!(
+            run(
+                &data,
+                &plan(Layout::HighWords { shift: true }, 12, 4, true),
+                2
+            ),
+            [0x341, 0xab5, 0x789, 0xbcd]
+        );
+        // Ten samples in fifteen bytes, a byte of padding, then the eleventh.
+        let mut groups = vec![0u8; 15];
+        groups.extend([0xff, 0x12, 0x30]);
+        let mut p = plan(Layout::Groups, 12, 18, false);
+        p.height = 1;
+        let out = uncompressed(&groups, 11, 1, &p, &AtomicBool::new(false)).unwrap();
+        assert_eq!(out[10], 0x123);
     }
 
     #[test]

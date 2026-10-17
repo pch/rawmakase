@@ -68,6 +68,9 @@ A file of a recognised container in a variant this crate does not decode is
 | `ArwV6` | Sony ARW "compressed RAW 2": LLVC tiles of wavelet planes, a curve to linear values | SMPTE RDD 34, Adobe DNG Converter, our measurements |
 | `ArwV1` | Sony's first ARW: Huffman-coded columns (DSLR-A100 to A390) | ITU T.81 (difference coding), ExifTool's Minolta tags, our measurements |
 | `NefHighEfficiency` | Nikon NEF, High Efficiency and High Efficiency★ (JPEG XS), recognised by the codestream's SOC and CAP markers on any body | ISO/IEC 21122, our own measurements against Adobe DNG Converter |
+| `NefUnpacked` | Nikon NEF and NRW, 16-bit words: the file's byte order, or big-endian with 12-bit samples in their top bits (Coolpix NRW) | TIFF 6, our own measurements |
+| `NefPacked` | Nikon NEF and NRW, 12-bit samples packed: most or least significant bit first, rows padded to 16 bytes or not, in little-endian 32-bit words (Coolpix NRW), in groups of ten (D100), in two fields (Coolpix E-series) | TIFF 6, our own measurements |
+| `NefPacked14` | Nikon NEF, 14-bit samples packed least significant bit first, rows padded to 16 bytes | TIFF 6, our own measurements |
 | `NefHuffman` | Nikon NEF, Huffman-coded (TIFF compression 34713): lossless, lossy, lossy with a split | TIFF 6, ITU T.81, Laurent Clévy's NEF notes, ExifTool's Nikon tag documentation, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
@@ -162,6 +165,14 @@ and on synthetic NEFs that probe one code word, key or tag at a time):
   CFA is read red first; the D50's encrypted blocks are keyed as serial 34.
   Rules the camera table can express are its rows instead (white and black
   levels).
+- Uncompressed data is told apart by its size, whatever the compression tag
+  says. Little-endian bodies pack least significant bit first, except a
+  NEFCompression of 9 (Packed 12 bits); Coolpix NRWs (colour data "NRW ")
+  pack into little-endian 32-bit words and store unpacked samples in the top
+  bits of big-endian words, which are shifted to 12 bits unless the camera's
+  white level is the words' own; the Coolpix E-series (ColorBalanceA) store
+  the even rows, then the odd ones. Coolpix NRWs' ColorBalanceC black level
+  and presets (daylight, shade, and fluorescent N as D65) are their own.
 
 ## Checking against LibRaw
 
