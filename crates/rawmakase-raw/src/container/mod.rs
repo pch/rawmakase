@@ -5,6 +5,7 @@ pub(crate) mod cr3;
 pub(crate) mod dng;
 pub(crate) mod nef;
 pub(crate) mod orf;
+pub(crate) mod pef;
 pub(crate) mod raf;
 pub(crate) mod rw2;
 #[cfg(test)]

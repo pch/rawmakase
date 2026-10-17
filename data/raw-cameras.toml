@@ -3578,3 +3578,224 @@ dng = false
 raw_size = [3088, 2310]
 white = 4094
 source = "compat-observed"
+
+# Pentax, and Samsung's GX bodies
+
+[[canonical]]
+make = "Pentax"
+model = "*ist D"
+canonical = ["Pentax", "*istD"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Pentax"
+model = "*ist DL"
+canonical = ["Pentax", "*istDL"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Pentax"
+model = "*ist DL2"
+canonical = ["Pentax", "*istDL2"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Pentax"
+model = "*ist DS"
+canonical = ["Pentax", "*istDS"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Pentax"
+model = "K2000"
+canonical = ["Pentax", "K-m"]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "*ist DS"
+dng = false
+raw_size = [3040, 2024]
+visible = [0, 0, 3040, 2022]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "645D"
+dng = false
+raw_size = [7424, 5552]
+visible = [48, 30, 7328, 5501]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-1"
+dng = false
+raw_size = [7392, 4950]
+visible = [6, 18, 7376, 4932]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-1 Mark II"
+dng = false
+raw_size = [4832, 3238]
+visible = [0, 18, 4832, 3220]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-1 Mark II"
+dng = false
+raw_size = [7392, 4950]
+visible = [6, 18, 7376, 4932]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-3"
+dng = false
+raw_size = [6080, 4032]
+visible = [4, 0, 6040, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-3 II"
+dng = false
+raw_size = [6080, 4032]
+visible = [4, 0, 6040, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-3 Mark III"
+dng = false
+raw_size = [6304, 4224]
+visible = [26, 34, 6224, 4160]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-5"
+dng = false
+raw_size = [4992, 3284]
+visible = [10, 0, 4950, 3284]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-5 II"
+dng = false
+raw_size = [4992, 3284]
+visible = [10, 0, 4950, 3284]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-5 II s"
+dng = false
+raw_size = [4992, 3284]
+visible = [10, 0, 4950, 3284]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-7"
+dng = false
+raw_size = [4736, 3136]
+visible = [0, 2, 4684, 3122]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-70"
+dng = false
+raw_size = [6080, 4064]
+visible = [60, 32, 6020, 4016]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-m"
+dng = false
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-r"
+dng = false
+raw_size = [4352, 2868]
+visible = [0, 0, 4309, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-x"
+dng = false
+raw_size = [4352, 2868]
+visible = [0, 0, 4309, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K10D"
+dng = false
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K2000"
+dng = false
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K200D"
+dng = false
+raw_size = [3936, 2624]
+visible = [0, 0, 3896, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K20D"
+dng = false
+raw_size = [4864, 3136]
+visible = [0, 0, 4688, 3124]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "KF"
+dng = false
+raw_size = [6080, 4064]
+visible = [56, 28, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "KP"
+dng = false
+raw_size = [6112, 4060]
+visible = [54, 28, 6028, 4032]
+source = "compat-observed"
+
+[[canonical]]
+make = "Samsung"
+model = "GX10"
+canonical = ["Pentax", "K10D"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Samsung"
+model = "GX20"
+canonical = ["Pentax", "K20D"]
+source = "compat-observed"

@@ -150,9 +150,9 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         });
     }
     if let Some(crop) = notes.crop {
-        info.frame = even(crop);
+        info.frame = crate::geometry::even(crop);
         if let Some(aspect) = notes.aspect.and_then(|ratio| aspect(crop, ratio)) {
-            info.aspect = even(aspect);
+            info.aspect = crate::geometry::even(aspect);
         }
     }
     if let Coding::Fields(p) = coding
@@ -188,18 +188,6 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         white,
     });
     Ok(info)
-}
-
-/// A crop `[left, top, width, height]` starting on even rows and columns:
-/// an odd start moves on by one, keeping the end.
-fn even([left, top, width, height]: [u32; 4]) -> [u32; 4] {
-    let (l, t) = (left & 1, top & 1);
-    [
-        left.saturating_add(l),
-        top.saturating_add(t),
-        width.saturating_sub(l),
-        height.saturating_sub(t),
-    ]
 }
 
 /// The camera's aspect-ratio crop, centred in the default crop `[left,
@@ -247,21 +235,14 @@ fn trailing_jpeg(
     crate::preview::is_jpeg(tiff, at).then_some((at, len))
 }
 
-/// The colour filter from EXIF's CFAPattern (its dimensions, then the
-/// colours), red first when the file has none.
+/// The colour filter from EXIF's CFAPattern at the sensor's corner,
+/// red first when the file has none.
 fn cfa(t: &TiffFile) -> Cfa {
-    let pattern = t
-        .exif
-        .as_ref()
-        .and_then(|e| t.raw(e, 41730))
-        .filter(|p| p.len() == 8 && t.u16(&p[..2]) == 2 && t.u16(&p[2..4]) == 2)
-        .map(|p| p[4..].to_vec())
-        .filter(|p| p.iter().all(|&c| c <= 2))
-        .unwrap_or(vec![0, 1, 1, 2]);
+    let colors = super::tiff_exif::cfa_pattern(t).unwrap_or(vec![0, 1, 1, 2]);
     crate::info::second_green(Cfa {
         rows: 2,
         cols: 2,
-        colors: pattern,
+        colors,
     })
 }
 
@@ -333,14 +314,8 @@ mod tests {
 
     const LE: Order = Order::Little;
 
-    /// Points the maker note entry (UNDEFINED, `len` bytes) of `file` at
-    /// `at`.
     fn point_note(file: &mut [u8], order: Order, len: usize, at: u32) {
-        let mut entry = shorts(order, &[0x927c, 7]);
-        entry.extend(crate::container::test_tiff::longs(order, &[len as u32]));
-        let pos = file.windows(8).rposition(|w| w == entry).unwrap();
-        let at = crate::container::test_tiff::longs(order, &[at]);
-        file[pos + 8..pos + 12].copy_from_slice(&at);
+        crate::container::test_tiff::point(file, order, 0x927c, len, at);
     }
 
     /// A little-endian ORF (`IIRO`) of `width × height` and `bps` bits, its

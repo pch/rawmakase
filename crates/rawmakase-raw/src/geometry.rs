@@ -16,6 +16,19 @@ pub(crate) fn flip(orientation: u32) -> i32 {
     }
 }
 
+/// A crop `[left, top, width, height]` starting on even rows and columns,
+/// as RAWmakase has always placed a maker note's crop: an odd start moves on
+/// by one, keeping the end.
+pub(crate) fn even([left, top, width, height]: [u32; 4]) -> [u32; 4] {
+    let (l, t) = (left & 1, top & 1);
+    [
+        left.saturating_add(l),
+        top.saturating_add(t),
+        width.saturating_sub(l),
+        height.saturating_sub(t),
+    ]
+}
+
 /// The visible area the camera table gives for this file, where the file's
 /// own differs from the area RAWmakase has always shown.
 pub(crate) fn apply(info: &mut crate::info::RawInfo) {

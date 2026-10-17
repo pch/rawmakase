@@ -5,4 +5,5 @@ pub(crate) mod fujifilm;
 pub(crate) mod nikon;
 pub(crate) mod olympus;
 pub(crate) mod panasonic;
+pub(crate) mod pentax;
 pub(crate) mod sony;

@@ -1431,7 +1431,9 @@ after = 12500
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 12500"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
-# Olympus: where the file and Adobe DNG Converter agree against LibRaw.
+# Olympus and Pentax: where the file and Adobe DNG Converter agree against
+# LibRaw. (A Samsung GX-1L PEF also gains its maker note's white balance
+# presets and lens ID, 1270, which LibRaw left absent.)
 # Olympus/E-P1/P1080385.ORF
 [[delta]]
 sha256 = "862b9d409279af0528810aa02eb5b4140d7854f9d637d4188b82ebaf4bf0d4cf"
@@ -1448,4 +1450,22 @@ field = "sensor.white"
 before = 4093
 after = 4095
 evidence = "12-bit samples (the note's ValidBits 12); Adobe DNG Converter 18.7 WhiteLevel 4095"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# SAMSUNG TECHWIN/GX-1L/SG1L5458.PEF
+[[delta]]
+sha256 = "57546693faa1cd18a5f6f2688fe2a411d3f336a5460c0cf07e4c09407dc11bc9"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [127, 128, 127, 128]
+evidence = "the Pentax maker note's BlackPoint 127 128 128 127; Adobe DNG Converter 18.7 BlackLevel 127 128 128 127"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# SAMSUNG TECHWIN/GX-1L/SG1L5458.PEF
+[[delta]]
+sha256 = "57546693faa1cd18a5f6f2688fe2a411d3f336a5460c0cf07e4c09407dc11bc9"
+field = "header.metadata.wb"
+before = [1.0, 1.0, 1.0]
+after = [1.42578125, 1.0, 1.1953125]
+evidence = "the Pentax maker note's WhitePoint (red 1.4258, blue 1.1953 of green); Adobe DNG Converter 18.7 AsShotNeutral 0.70137 1 0.836601 (1/1.4258, 1/1.1953)"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"

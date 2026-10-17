@@ -25,3 +25,16 @@ pub(crate) fn read(t: &TiffFile, info: &mut RawInfo) {
         }
     }
 }
+
+/// EXIF's CFAPattern of a 2 × 2 filter: its colours (0 red, 1 green, 2
+/// blue). Its dimensions are read in either byte order, as some files write
+/// them in the other.
+pub(crate) fn cfa_pattern(t: &TiffFile) -> Option<Vec<u8>> {
+    let two = |d: &[u8]| d == [0, 2] || d == [2, 0];
+    t.exif
+        .as_ref()
+        .and_then(|e| t.raw(e, 41730))
+        .filter(|p| p.len() == 8 && two(&p[..2]) && two(&p[2..4]))
+        .map(|p| p[4..].to_vec())
+        .filter(|p| p.iter().all(|&c| c <= 2))
+}

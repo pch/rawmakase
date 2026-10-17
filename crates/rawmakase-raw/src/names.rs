@@ -101,6 +101,15 @@ fn strip_suffix(model: &str, canon: bool) -> &str {
 pub(crate) fn apply(info: &mut RawInfo) {
     let file_make = std::mem::take(&mut info.make);
     info.make = make(&file_make);
+    // Ricoh Imaging's Pentax bodies are Pentax's.
+    if info.make == "Ricoh"
+        && info
+            .model
+            .get(..7)
+            .is_some_and(|p| p.eq_ignore_ascii_case("PENTAX "))
+    {
+        info.make = "Pentax".into();
+    }
     info.model = model(&info.make, &file_make, &info.model);
     if let Some(body) = crate::facts::name(&info.make, &info.model) {
         info.model = body.to_string();
@@ -152,6 +161,12 @@ mod tests {
             super::model("Fujifilm", "FUJIFILM", "FinePixS2Pro"),
             "S2Pro"
         );
+        // Ricoh Imaging's Pentax bodies.
+        let mut info = crate::info::base(crate::Variant::PefHuffman);
+        info.make = "RICOH IMAGING COMPANY, LTD.  ".into();
+        info.model = "PENTAX K-3".into();
+        super::apply(&mut info);
+        assert_eq!((info.make.as_str(), info.model.as_str()), ("Pentax", "K-3"));
         // Only a whole word: "Canonet" is not "Canon" "et".
         assert_eq!(super::model("Canon", "Canon", "Canonet"), "Canonet");
     }

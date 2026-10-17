@@ -86,6 +86,12 @@ pub enum Variant {
     OrfPacked,
     /// Olympus ORF, 16-bit words.
     OrfUnpacked,
+    /// Pentax PEF, Pentax's Huffman-coded differences.
+    PefHuffman,
+    /// Pentax PEF, packed 12-bit samples.
+    PefPacked,
+    /// Pentax PEF, 16-bit words.
+    PefUnpacked,
 }
 
 impl Variant {
@@ -125,6 +131,9 @@ impl Variant {
             Variant::OrfCompressed => "orf-compressed",
             Variant::OrfPacked => "orf-packed",
             Variant::OrfUnpacked => "orf-unpacked",
+            Variant::PefHuffman => "pef-huffman",
+            Variant::PefPacked => "pef-packed",
+            Variant::PefUnpacked => "pef-unpacked",
         }
     }
 }
@@ -140,6 +149,7 @@ pub(crate) enum Plan {
     Raf(crate::container::raf::RafPlan),
     Cr3(crate::container::cr3::Cr3Plan),
     Orf(crate::container::orf::OrfPlan),
+    Pef(crate::container::pef::PefPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -177,6 +187,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         }
         if crate::container::orf::is_orf(bytes, &t) {
             return crate::container::orf::open(t);
+        }
+        if crate::container::pef::is_pef(&t) {
+            return crate::container::pef::open(t);
         }
     }
     Err(Error::NotRaw)
@@ -234,6 +247,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         }
         (Plan::Orf(plan), Variant::OrfCompressed | Variant::OrfPacked | Variant::OrfUnpacked) => {
             crate::container::orf::decode(info, plan, bytes, cancel)
+        }
+        (Plan::Pef(plan), Variant::PefHuffman | Variant::PefPacked | Variant::PefUnpacked) => {
+            crate::container::pef::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(

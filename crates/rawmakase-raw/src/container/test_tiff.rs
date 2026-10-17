@@ -118,3 +118,12 @@ pub(crate) fn tiff(
     }
     out
 }
+
+/// Points the entry `tag` (UNDEFINED, `len` bytes, its value out of line)
+/// of the last directory in `file` holding it at `at`: a maker note blob.
+pub(crate) fn point(file: &mut [u8], order: Order, tag: u16, len: usize, at: u32) {
+    let mut entry = shorts(order, &[tag, 7]);
+    entry.extend(longs(order, &[len as u32]));
+    let pos = file.windows(8).rposition(|w| w == entry).unwrap();
+    file[pos + 8..pos + 12].copy_from_slice(&longs(order, &[at]));
+}

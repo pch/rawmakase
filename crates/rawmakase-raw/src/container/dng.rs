@@ -154,6 +154,12 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         .map(|m| std::array::from_fn(|r| std::array::from_fn(|c| m[r * 3 + c] as f32)));
     info.file_matrix = matrix;
     super::tiff_exif::read(&t, &mut info);
+    if let Some(notes) = crate::vendor::pentax::dng_notes(&t) {
+        info.lens_id = notes.lens_id;
+        if let Some(iso) = notes.iso {
+            info.iso = iso;
+        }
+    }
     info.previews = t.previews();
     info.uncompressed_preview = t.has_uncompressed_thumbnail();
     let black_dim = t

@@ -35,9 +35,9 @@ Modules, each with a small `pub(crate)` surface:
 | Module | Owns |
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
-| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`) |
-| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`) |
+| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`) |
+| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
 | `color` | The camera-to-sRGB matrix and daylight multipliers from a camera's XYZ matrix |
@@ -84,6 +84,9 @@ A file of a recognised container in a variant this crate does not decode is
 | `OrfCompressed` | Olympus and OM Digital ORF/ORI, Olympus's compressed coding of 12 or 14-bit samples | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfPacked` | Olympus ORF, packed 12-bit samples: 16-byte blocks of ten, 32-bit words, or two interlaced fields of rows | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfUnpacked` | Olympus ORF, 16-bit words holding samples of the note's bit depth | TIFF 6, ExifTool's Olympus tag names, our own measurements |
+| `PefHuffman` | Pentax PEF (Ricoh's too), Huffman-coded differences with the maker note's table | TIFF 6, ITU T.81 (differences), ExifTool's Pentax tag names, our own measurements |
+| `PefPacked` | Pentax and Samsung GX PEF, packed 12-bit rows (compression 32773 or 1) | TIFF 6, our own measurements |
+| `PefUnpacked` | Pentax PEF, 16-bit words | TIFF 6, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -272,6 +275,19 @@ each level: the line is extended to an odd length, and below the coarsest
 level its low-pass band is coded at an odd length too, its last sample unused
 (our measurement). Tiles between two neighbours, and tiles stacked
 vertically, are `Unsupported` (no file of the test dataset has them).
+
+Pentax (`vendor::pentax`): white balance, presets (WBLevels' records where
+the note has them), black, the ISO code, the lens ID (LensType's two bytes as
+one number) and the default crop (ImageAreaOffset and RawImageSize, starting
+on even rows and columns, in sensor coordinates) come from the maker note
+(its Huffman coding written from prior general knowledge of the format, no
+decoder source consulted, and verified by an exact match with LibRaw's output
+on every PEF of our dataset);
+Pentax DNGs' lens ID and ISO from the same note in DNGPrivateData. Samsung's
+GX PEFs read the note too, but not its crop. Ricoh Imaging's bodies are
+named Pentax. The visible areas, the 645D's white level and the canonical
+names (`*ist DL` is `*istDL`) are `compat-observed` rows. A PEF of linear
+(monochrome) data is `Unsupported`.
 
 ## Checking against LibRaw
 
