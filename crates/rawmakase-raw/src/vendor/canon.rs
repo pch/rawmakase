@@ -30,9 +30,6 @@ pub(crate) struct Notes {
     pub lens: Option<String>,
     /// Highlight Tone Priority as LightingOpt (0x4018) records it.
     pub htp: Option<u32>,
-    /// Whether MultiExp (0x4021) says the image is a multiple exposure,
-    /// which the camera has white balanced already.
-    pub multiple_exposure: bool,
     /// WBInfo (0x0029): the PowerShot G9's preset levels (green, red, blue,
     /// green per preset), for bodies without ColorData.
     pub wb_info: Vec<i32>,
@@ -102,9 +99,8 @@ pub(crate) fn read(t: &TiffFile, note: &Ifd) -> Notes {
             })
             .unwrap_or_default()
     };
-    // LightingOpt and MultiExp: 32-bit values after their size.
+    // LightingOpt: 32-bit values after their size.
     n.htp = longs(0x4018, 4).get(3).copied();
-    n.multiple_exposure = longs(0x4021, 2).get(1) == Some(&1);
     n.wb_info = longs(0x0029, MAX_WB_INFO)
         .into_iter()
         .map(|v| v as i32)
@@ -149,10 +145,6 @@ impl Notes {
             info.cam_mul = as_shot.map(|v| v as f32);
             info.presets.daylight = [daylight[0], daylight[1], daylight[2]].map(|v| v as f32);
         }
-        // A multiple exposure is white balanced in the camera.
-        if self.multiple_exposure {
-            info.cam_mul = [1.; 4];
-        }
         if info.lens.is_empty()
             && let Some(lens) = &self.lens
         {
@@ -173,6 +165,40 @@ impl Notes {
     /// image RAWmakase has always read starts after them).
     pub(crate) fn skipped_samples(&self) -> usize {
         if self.model_id == 0x8000_0169 { 2 } else { 0 }
+    }
+
+    /// The levels ColorData records for the sensor data: the black of each
+    /// channel (red, green, green, blue: PerChannelBlackLevel) and the
+    /// specular white level (SpecularWhiteLevel), by ColorData version and
+    /// length. The offsets are the ExifTool documentation's, with the one of
+    /// each version and length found in every test dataset file of it; the
+    /// PowerShots' (versions -3 and -4) record a white that is not their
+    /// data's, so it is not read.
+    pub(crate) fn levels(&self) -> (Option<[u32; 4]>, Option<u32>) {
+        let cd = &self.color_data;
+        let Some(&first) = cd.first() else {
+            return (None, None);
+        };
+        let (black, white) = match (first as i16, cd.len()) {
+            (1, 796) => (196, None),
+            (4 | 5, _) => (692, Some(697)),
+            (6 | 7, _) => (715, Some(720)),
+            (9, _) => (719, Some(724)),
+            // ColorData6 (600D, 1200D) is shorter than ColorData7.
+            (10, n) if n < 1300 => (479, Some(484)),
+            (10, _) => (504, Some(509)),
+            (11, _) => (728, Some(733)),
+            (12 | 13 | 15, _) => (778, Some(783)),
+            (14, _) => (556, Some(561)),
+            (-3, _) => (264, None),
+            (-4, _) => (333, None),
+            _ => return (None, None),
+        };
+        let black = cd
+            .get(black..black + 4)
+            .map(|b| [b[0], b[1], b[2], b[3]].map(u32::from));
+        let white = white.and_then(|w| cd.get(w)).map(|&w| u32::from(w));
+        (black, white)
     }
 
     /// The camera's aspect-ratio crop in sensor coordinates: AspectInfo's
@@ -248,76 +274,85 @@ impl Notes {
     }
 }
 
-/// How a small RAW's luma and chroma become the RGB RAWmakase has always read
-/// (our measurements on every sRAW and mRAW file of the test dataset): per
-/// channel `((Y + y_offset + d) * scale[c]) >> 10`, `d` a fixed-point mix of
-/// the chroma around `zero / 2`, `scale` the white balance ColorData keeps for
-/// small RAWs times its green.
+/// How a small RAW's luma and chroma become the camera's RGB. As Adobe DNG
+/// Converter converts them (our measurements: its output for every sRAW of
+/// the test dataset, exactly, at each chroma sample's own pixel): the luma
+/// plus a fixed-point mix of twice the chroma around its zero, in 8192ths,
+/// the older bodies (ColorData versions 6, 7 and 9) with a mix and zero of
+/// their own. That RGB is white balanced by the levels ColorData keeps for
+/// small RAWs, which Adobe records as its AnalogBalance (green over each
+/// channel's level); RAWmakase takes it back to the mosaic's camera RGB, red
+/// and blue times their level over green's, so the as-shot white balance and
+/// the colour matrices apply as to the body's mosaic RAWs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SmallRaw {
-    /// Red, green and blue.
-    pub scale: [u32; 3],
-    /// The chroma mix per channel (Cb, Cr), in 4096ths.
-    pub mix: [[i32; 2]; 3],
-    /// Twice the chroma's zero.
-    pub zero: i32,
+    pub older: bool,
+    /// Added to the luma.
     pub y_offset: i32,
+    /// The small RAW white balance levels: red, green, blue.
+    pub levels: [u32; 3],
 }
 
-/// The two chroma mixes: the older bodies' (ColorData versions 6, 7 and 9)
-/// and the newer bodies'.
-const OLDER_MIX: [[i32; 2]; 3] = [[50, 22929], [-5640, -11751], [29040, -101]];
-const NEWER_MIX: [[i32; 2]; 3] = [[0, 4096], [-778, -2048], [4096, 0]];
-
 impl Notes {
-    /// The conversion of this body's small RAWs whose luma is sampled `hv`
-    /// times per chroma pair (2 for sRAW, 4 for mRAW); `None` without the
+    /// The conversion of this body's small RAWs; `None` without the
     /// ColorData that says it.
-    pub(crate) fn small_raw(&self, hv: i32) -> Option<SmallRaw> {
+    pub(crate) fn small_raw(&self) -> Option<SmallRaw> {
         let cd = &self.color_data;
         let version = *cd.first()? as i16;
-        // The small RAW white balance: ColorCoefs' fourth set of levels.
+        // ColorCoefs' fourth set of levels.
         let at = match version {
             ..=9 => 78,
             10 | 11 => 123,
             _ => 128,
         };
-        let q: [u16; 4] = cd.get(at..at + 4)?.try_into().ok()?;
-        let green = u32::from(q[1]);
-        let scale = [q[0], q[1], q[3]].map(|v| (u32::from(v) * green) >> 10);
-        let older = matches!(version, 6 | 7 | 9);
-        // The older bodies' chroma zero: the 7D's and 50D's, and the others'.
-        let zero = if !older {
-            32768
-        } else if matches!(self.model_id, 0x8000_0250 | 0x8000_0261) {
-            32768 - 2 * hv
+        let q = cd.get(at..at + 4)?;
+        let levels = if q[1] == 0 {
+            [1; 3]
         } else {
-            32768 - (hv - 1)
-        };
-        // The 40D's luma is 512 above its black.
-        let y_offset = if self.model_id == 0x8000_0190 {
-            -512
-        } else {
-            0
+            [q[0], q[1], q[3]].map(u32::from)
         };
         Some(SmallRaw {
-            scale,
-            mix: if older { OLDER_MIX } else { NEWER_MIX },
-            zero,
-            y_offset,
+            older: matches!(version, 6 | 7 | 9),
+            // The 40D's luma is 512 above its black.
+            y_offset: if self.model_id == 0x8000_0190 {
+                -512
+            } else {
+                0
+            },
+            levels,
         })
     }
 }
 
 impl SmallRaw {
-    /// The RGB of a pixel from its luma and (interpolated) chroma.
+    /// The camera RGB of a pixel from its luma and (interpolated) chroma;
+    /// darker than black is 0.
     #[inline]
     pub(crate) fn rgb(&self, y: i32, cb: i32, cr: i32) -> [u16; 3] {
-        let (cb, cr) = (i64::from(2 * cb - self.zero), i64::from(2 * cr - self.zero));
+        let y = i64::from(y) + i64::from(self.y_offset);
+        let rgb = if self.older {
+            let (cb, cr) = (i64::from(2 * cb - 32766), i64::from(2 * cr - 32766));
+            [
+                y + ((200 * cb + 22929 * cr) >> 13),
+                y - ((5460 * cb + 11751 * cr) >> 13),
+                y + ((29040 * cb - 101 * cr) >> 13),
+            ]
+        } else {
+            let (cb, cr) = (i64::from(2 * cb - 32768), i64::from(2 * cr - 32768));
+            [
+                y + (cr >> 1),
+                y - ((778 * cb) >> 13) - (cr >> 2),
+                y + (cb >> 1),
+            ]
+        };
+        let green = i64::from(self.levels[1]);
         std::array::from_fn(|c| {
-            let [a, b] = self.mix[c].map(i64::from);
-            let d = (a * cb + b * cr) >> 13;
-            let v = ((i64::from(y + self.y_offset) + d).max(0) * i64::from(self.scale[c])) >> 10;
+            let v = rgb[c].max(0);
+            let v = if c == 1 {
+                v
+            } else {
+                (v * i64::from(self.levels[c]) + green / 2) / green
+            };
             v.min(65535) as u16
         })
     }
@@ -531,8 +566,10 @@ mod tests {
     }
 
     #[test]
-    fn small_raws_convert_as_measured() {
-        // An EOS 7D sRAW (ColorData 7): its small RAW levels at word 78.
+    fn small_raws_convert_as_adobe_does() {
+        // An EOS 7D sRAW (ColorData 7, its small RAW levels at word 78): its
+        // first pixel is 87, 72, 68 in Adobe DNG Converter's DNG, whose
+        // AnalogBalance is 1170 / 844 and 1170 / 488 (measured).
         let mut cd = vec![0u16; 1337];
         cd[0] = 7;
         cd[78..82].copy_from_slice(&[844, 1170, 1170, 488]);
@@ -541,12 +578,12 @@ mod tests {
             color_data: cd,
             ..Notes::default()
         };
-        let sraw = notes.small_raw(2).unwrap();
-        assert_eq!(sraw.scale, [964, 1336, 557]);
-        assert_eq!(sraw.zero, 32764);
-        // Its first pixel, as RAWmakase has always read it (measured).
-        assert_eq!(sraw.rgb(76, 16382, 16385), [86, 87, 40]);
-        // The newer bodies' mix is luma plus chroma; darker than black is 0.
+        let sraw = notes.small_raw().unwrap();
+        assert!(sraw.older);
+        assert_eq!(sraw.rgb(76, 16382, 16385), [63, 72, 28]);
+        // The newer bodies' mix: half of twice the chroma for red and blue;
+        // green less a fraction of each, each rounded down. Darker than
+        // black is 0.
         let mut cd = vec![0u16; 1312];
         cd[0] = 10;
         cd[123..127].copy_from_slice(&[1024, 1024, 1024, 1024]);
@@ -554,12 +591,11 @@ mod tests {
             color_data: cd,
             ..Notes::default()
         }
-        .small_raw(4)
+        .small_raw()
         .unwrap();
-        assert_eq!(newer.zero, 32768);
-        assert_eq!(newer.rgb(1000, 16384 + 24, 16384 - 10), [990, 1000, 1024]);
+        assert_eq!(newer.rgb(1000, 16384 + 24, 16384 - 10), [990, 1001, 1024]);
         assert_eq!(newer.rgb(5, 16384, 16384 - 100), [0, 55, 5]);
-        assert!(Notes::default().small_raw(2).is_none());
+        assert!(Notes::default().small_raw().is_none());
     }
 
     #[test]

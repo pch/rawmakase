@@ -34,10 +34,20 @@ pub(crate) struct Cr2Plan {
     pub sraw: Option<([u32; 2], SmallRaw)>,
     /// Samples at the start of the image that are not part of it.
     pub skip: usize,
+    /// The black of each channel (red, green, green, blue) and the white
+    /// level the maker notes record, when they do.
+    pub levels: (Option<[u32; 4]>, Option<u32>),
 }
 
 /// The most slices a CR2 strip is cut into (files have up to four).
 const MAX_SLICES: u32 = 64;
+
+/// How far a channel's masked border may read below its recorded black for
+/// the recorded one to be taken. A border reads at the black or, where light
+/// reaches it, above; a recorded black far above the whole border is on
+/// another scale than the data (the EOS 1000D's, four times its data's).
+/// Our measurements: within 5 below on every other test dataset file.
+const MAX_BORDER_SHORTFALL: u32 = 16;
 
 /// Whether `bytes` is a CR2: a TIFF with "CR" 2 after its header.
 pub(crate) fn is_cr2(bytes: &[u8]) -> bool {
@@ -194,9 +204,8 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     let sraw = match sraw {
         None => None,
         Some(sampling) => {
-            let hv = (sampling[0] * sampling[1]) as i32;
             let conversion = notes
-                .small_raw(hv)
+                .small_raw()
                 .ok_or_else(|| Error::Unsupported("CR2 small RAW without ColorData".into()))?;
             Some((sampling, conversion))
         }
@@ -209,6 +218,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         height,
         sraw,
         skip: notes.skipped_samples(),
+        levels: notes.levels(),
     });
     Ok(info)
 }
@@ -361,28 +371,60 @@ pub(crate) fn decode(
             area: [info.margins[0], info.margins[1], info.width, info.height],
             black: [0; 4],
             black_pattern: (0, 0, Vec::new()),
-            white: 16383,
+            // Adobe DNG Converter's white for the body's small RAWs (the
+            // camera table), else the 14 bits the conversion fills.
+            white: crate::facts::camera(&info.make, &info.model, false, [plan.width, plan.height])
+                .find_map(|c| c.white)
+                .unwrap_or(16383),
             linear_white: [0; 4],
         });
     }
     let width = plan.width as usize;
     let camera = || crate::facts::camera(&info.make, &info.model, false, [plan.width, plan.height]);
-    let white = camera()
-        .find_map(|c| c.white)
-        .unwrap_or((1u32 << precision) - 1);
     let area = [info.margins[0], info.margins[1], info.width, info.height];
     let cfa = info
         .cfa
         .as_ref()
         .ok_or_else(|| corrupt("CR2 without a colour filter"))?;
-    let columns = camera().find_map(|c| c.black_columns);
-    let mut black =
-        crate::levels::masked_black(&data, width, area, cfa, columns, 2).unwrap_or([0; 4]);
-    if let Some(b) =
-        crate::levels::masked_border_black(&data, width, area, black.iter().sum::<u32>() / 4, white)
-    {
-        black = [b; 4];
-    }
+    let measured = crate::levels::masked_black(&data, width, area, cfa, None, 2);
+    let bits = (1u32 << precision) - 1;
+    let (recorded_black, recorded_white) = plan.levels;
+    // The black the maker notes record, as Adobe DNG Converter takes it,
+    // unless the masked border reads far below it; else the border's.
+    let black = match (recorded_black, measured) {
+        (Some([r, g, g2, b]), m)
+            if m.is_none_or(|m| {
+                [r, g, b, g2]
+                    .iter()
+                    .zip(m)
+                    .all(|(&recorded, border)| border + MAX_BORDER_SHORTFALL >= recorded)
+            }) =>
+        {
+            [r, g, b, g2]
+        }
+        (_, m) => {
+            let m = m.unwrap_or([0; 4]);
+            let white = camera().find_map(|c| c.white).unwrap_or(bits);
+            match crate::levels::masked_border_black(
+                &data,
+                width,
+                area,
+                m.iter().sum::<u32>() / 4,
+                white,
+            ) {
+                Some(b) => [b; 4],
+                None => m,
+            }
+        }
+    };
+    // The specular white level the maker notes record (Adobe DNG Converter's
+    // white for most bodies; one at or above the samples' maximum says
+    // nothing), else the camera table's, else the samples' bit depth.
+    let darkest = black.iter().copied().max().unwrap_or(0);
+    let white = recorded_white
+        .filter(|&w| w < bits && w > darkest)
+        .or_else(|| camera().find_map(|c| c.white))
+        .unwrap_or(bits);
     Ok(Sensor {
         width: plan.width,
         height: plan.height,
@@ -585,6 +627,38 @@ pub(crate) mod tests {
         let sensor = crate::decode(&info, &bytes, &AtomicBool::new(false)).unwrap();
         assert_eq!(sensor.data, image);
         assert_eq!(sensor.white, 4095);
+    }
+
+    #[test]
+    fn levels_are_color_datas_unless_the_border_reads_far_below() {
+        // A 12 × 4 sensor, the image from column 6; its left border reads
+        // 100 (columns 2 and 3 are measured), the image 1000.
+        let image: Vec<u16> = (0..48)
+            .map(|i| if i % 12 < 6 { 100 } else { 1000 })
+            .collect();
+        let jpeg = crate::codec::ljpeg::tests::encode(&image, 12, 12, 1);
+        let decode = |black: u16, white: u16| {
+            // ColorData 13: PerChannelBlackLevel at word 778, then
+            // SpecularWhiteLevel at 783.
+            let mut cd = vec![0u16; 1592];
+            cd[0] = 13;
+            cd[778..782].copy_from_slice(&[black, black, black + 1, black + 2]);
+            cd[783] = white;
+            let note = [
+                (0x00e0, 3, 9, shorts(&[18, 12, 4, 0, 0, 6, 0, 11, 3])),
+                (0x4001, 3, cd.len() as u32, shorts(&cd)),
+            ];
+            let bytes = cr2(&jpeg, &[], &note);
+            let info = crate::open(&bytes).unwrap();
+            let sensor = crate::decode(&info, &bytes, &AtomicBool::new(false)).unwrap();
+            (sensor.black, sensor.white)
+        };
+        // Red, green, blue, second green from red, green, green, blue.
+        assert_eq!(decode(110, 3000), ([110, 110, 112, 111], 3000));
+        // A recorded black far above the border is on another scale.
+        assert_eq!(decode(1023, 3000), ([100; 4], 3000));
+        // A white at the samples' maximum says nothing: the bit depth's.
+        assert_eq!(decode(110, 4095), ([110, 110, 112, 111], 4095));
     }
 
     #[test]

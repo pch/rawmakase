@@ -23,7 +23,7 @@ pub(crate) fn dng_black(dim: Option<[u32; 2]>, black: &[f64]) -> ([u32; 4], (u32
 /// the left leaving out `trim` columns at either end (the outermost, and
 /// those next to the image, which can be lit), and on the right every column
 /// when there are at least three; or the `columns` (start, end) the camera
-/// table gives. The mean of each channel's samples, rounded down; `None`
+/// table gives. The mean of each channel's samples, to the nearest; `None`
 /// without masked columns.
 pub(crate) fn masked_black(
     data: &[u16],
@@ -65,7 +65,7 @@ pub(crate) fn masked_black(
         }
     }
     Some(std::array::from_fn(|c| {
-        sum[c].checked_div(count[c]).unwrap_or(0) as u32
+        (sum[c] + count[c] / 2).checked_div(count[c]).unwrap_or(0) as u32
     }))
 }
 
@@ -157,6 +157,24 @@ mod tests {
         assert_eq!(
             super::masked_black(&data, 12, [6, 0, 7, 4], &cfa, None, 2),
             None
+        );
+    }
+
+    #[test]
+    fn masked_black_rounds_to_the_nearest() {
+        let cfa = crate::info::Cfa {
+            rows: 2,
+            cols: 2,
+            colors: vec![0, 1, 3, 2],
+        };
+        // Columns 2 and 3 of a 6-column border: each channel reads 100 and
+        // 101 on alternate row pairs.
+        let data: Vec<u16> = (0..12 * 4)
+            .map(|i| if (i / 12) / 2 == 0 { 100 } else { 101 })
+            .collect();
+        assert_eq!(
+            super::masked_black(&data, 12, [6, 0, 6, 4], &cfa, None, 2),
+            Some([101; 4])
         );
     }
 

@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::sync::OnceLock;
 
 /// Where a row's values come from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum Source {
     /// A rule from the file's own tags, written down for files that lack them.
@@ -86,10 +86,6 @@ pub(crate) struct Camera {
     /// always read it with.
     #[serde(default)]
     pub cfa: Option<[u8; 4]>,
-    /// The masked columns (start, end) the black level is measured on, where
-    /// they are not the borders beside the visible area.
-    #[serde(default)]
-    pub black_columns: Option<[u32; 2]>,
     /// False where the camera's aspect-ratio crop is not shown (its maker
     /// notes give another image size's).
     #[serde(default)]
@@ -234,7 +230,6 @@ mod tests {
             white: _,
             black: _,
             wb_scale: _,
-            black_columns: _,
             source: _,
             note: _,
             visible,
@@ -282,12 +277,22 @@ mod tests {
         for c in &cameras.canonical {
             assert!(seen.insert(("canonical", &c.make, &c.model)), "{c:?}");
         }
+        // One row per camera, files and source: an Adobe row's levels and an
+        // earlier decoder's geometry may sit beside each other, never two
+        // rows' levels.
         let mut cams = std::collections::HashSet::new();
+        let mut levels = std::collections::HashSet::new();
         for c in &cameras.camera {
             assert!(
-                cams.insert((&c.make, &c.model, c.dng, c.raw_size, c.bits)),
+                cams.insert((&c.make, &c.model, c.dng, c.raw_size, c.bits, c.source)),
                 "{c:?}"
             );
+            if c.white.is_some() || c.black.is_some() {
+                assert!(
+                    levels.insert((&c.make, &c.model, c.dng, c.raw_size, c.bits)),
+                    "{c:?}"
+                );
+            }
             assert!(
                 c.visible.is_some()
                     || c.white.is_some()
@@ -296,7 +301,6 @@ mod tests {
                     || c.frame.is_some()
                     || c.wb_scale.is_some()
                     || c.cfa.is_some()
-                    || c.black_columns.is_some()
                     || c.aspect_crop.is_some(),
                 "{c:?}"
             );

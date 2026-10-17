@@ -266,40 +266,48 @@ right, and CR2CFAPattern names the filter at the sensor's corner. The default
 crop is SensorInfo's borders; the aspect crop is AspectInfo's where it is
 smaller, else the default crop, starting on even rows and columns for a
 mosaic. The visible area RAWmakase has always read is a `compat-observed` row
-per body and image size. Black is measured on the masked columns beside the
-image over the visible rows, each channel's mean rounded down: on the left
-without the two outermost columns and the two next to the image, on the right
-every column when there are three or more (rows with `black_columns` name
-other columns, where lit columns sit in the border); the white level is the
-bit depth's range unless a row gives it. The maker notes give the as-shot
+per body and image size. Levels follow Adobe DNG Converter's: black is
+ColorData's PerChannelBlackLevel, as Adobe takes it, unless the masked border
+reads more than 16 below it (the EOS 1000D records it on another scale); else
+the border's, measured on the masked columns beside the image over the
+visible rows, each channel's mean to the nearest: on the left without the two
+outermost columns and the two next to the image, on the right every column
+when there are three or more. White is ColorData's SpecularWhiteLevel (the
+ColorData versions that record one for the data; one at the samples' maximum
+says nothing), else the body's `adobe-dng` row (Adobe's value where the file
+records none), else the bit depth's range. The maker notes give the as-shot
 white balance and the Daylight and Shade presets (ColorData, by its version;
-the PowerShot G9's WBInfo), 1 in every channel for a multiple exposure
-(MultiExp), Highlight Tone Priority (LightingOpt, else CustomFunctions2), the
-lens (LensModel, with a space after the mount, when EXIF has none), and the
-orientation in CameraInfo when IFD0's is normal. Regional names map to the
-body (`[[name]]` rows). The EOS-1D Mark III's image starts two samples into
-its strip.
+the PowerShot G9's WBInfo), Highlight Tone Priority (LightingOpt, else
+CustomFunctions2), the lens (LensModel, with a space after the mount, when
+EXIF has none), and the orientation in CameraInfo when IFD0's is normal.
+Regional names map to the body (`[[name]]` rows). The EOS-1D Mark III's image
+starts two samples into its strip.
 
 Canon sRAW and mRAW: a component's samples of an MCU are predicted as one run
 on a line of the component's own (not T.81's two-dimensional sampling). A
 pixel takes its MCU's chroma, averaged (rounding up) with the MCU to the right
 for the right column, with the MCU below for the bottom row, and both for the
-bottom right; MCUs past the visible width repeat their own. RGB is
-`((Y + d) * scale) >> 10`, `d` a fixed-point chroma mix in 4096ths
-(ColorData 6, 7 and 9: R 50 Cb + 22929 Cr, G −5640 Cb − 11751 Cr, B 29040 Cb
-− 101 Cr; newer: R Cr, G −778 Cb − 2048 Cr, B Cb) around a chroma zero of
-16384 (the older bodies: 16384 − (hv − 1)/2, the 7D's and 50D's 16384 − hv,
-for hv luma samples per chroma pair), and `scale` ColorData's small RAW levels
-times their green (words 78, 123 or 128 by version). The 40D's luma is 512
-above black. A fourth channel is 0; white is 16383.
+bottom right; MCUs past the visible width repeat their own. RGB is Adobe DNG
+Converter's: `Y + d`, `d` a fixed-point mix of twice the chroma less its zero,
+in 8192ths, each product rounded down (ColorData 6, 7 and 9, zero 32766:
+R 200 Cb + 22929 Cr, G −(5460 Cb + 11751 Cr), B 29040 Cb − 101 Cr; newer,
+zero 32768: R 4096 Cr, G −778 Cb − 2048 Cr, B 4096 Cb); the 40D's luma is 512
+above black. That RGB is white balanced by ColorData's small RAW levels
+(words 78, 123 or 128 by version), Adobe's AnalogBalance; red and blue are
+taken back to the mosaic's camera RGB, times their level over green's, so
+the as-shot white balance and the matrices apply as to the mosaic. A fourth
+channel is 0; black is 0 and white the body's `adobe-dng` row for its small
+RAW size, else 16383.
 
 CHDK's headerless files (`container::headerless`) are `[[headerless]]` rows
 by file size: the camera, the image size and bits, the visible area and the
 filter. Samples are packed most significant bit first in 16-bit little-endian
 words; black is measured as for CR2 but on every left border column.
 
-Canon files that remain open questions: the PowerShot G16 and S100V CR2 whose
-LibRaw black matches no masked area (one file each), and CRW.
+Canon files whose values differ from LibRaw's on purpose are approved in
+`tests/corpus/decode-deltas.toml`, with Adobe DNG Converter's value as the
+evidence: the levels above; the sRAW and mRAW samples (Adobe's conversion);
+and multiple exposures, whose as-shot white balance LibRaw sets to 1.
 
 Canon CR3 (`container::cr3`, `codec::crx`, `vendor::canon_cr3`): the raw image
 is the first of the largest raw tracks (a Dual Pixel file's second image is as
