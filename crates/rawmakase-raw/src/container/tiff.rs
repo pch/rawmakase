@@ -89,17 +89,23 @@ impl<'a> TiffFile<'a> {
         let len = u64::from(e.count).checked_mul(e.type_size()? as u64)?;
         (len > 4).then(|| u64::from(self.u32(&e.value)))
     }
-    fn u32(&self, b: &[u8]) -> u32 {
+    pub fn u32(&self, b: &[u8]) -> u32 {
         match self.bytes.order {
             Order::Little => u32::from_le_bytes([b[0], b[1], b[2], b[3]]),
             Order::Big => u32::from_be_bytes([b[0], b[1], b[2], b[3]]),
         }
     }
-    fn u16(&self, b: &[u8]) -> u16 {
+    pub fn u16(&self, b: &[u8]) -> u16 {
         match self.bytes.order {
             Order::Little => u16::from_le_bytes([b[0], b[1]]),
             Order::Big => u16::from_be_bytes([b[0], b[1]]),
         }
+    }
+    /// The directory at `offset` (from the TIFF header), outside the chain:
+    /// a maker note's or a private one.
+    pub fn ifd_at(&self, offset: u64) -> Option<Ifd> {
+        let mut t = Tiff::open(Cursor::new(self.bytes.data), 0)?;
+        t.ifd(offset).map(|entries| Ifd { entries })
     }
     /// A tag's bytes, wherever they are.
     pub fn raw(&self, ifd: &Ifd, tag: u16) -> Option<Vec<u8>> {

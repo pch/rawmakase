@@ -35,9 +35,9 @@ Modules, each with a small `pub(crate)` surface:
 | Module | Owns |
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
-| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Panasonic's blocks and strips |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `rw2`) |
-| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) (`panasonic`) |
+| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Panasonic's blocks and strips, Sony's codings |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `rw2`, `arw`) |
+| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`panasonic`, `sony`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
 | `color` | The camera-to-sRGB matrix and daylight multipliers from a camera's XYZ matrix |
@@ -60,6 +60,9 @@ A file of a recognised container in a variant this crate does not decode is
 | `Rw2Packed` | Panasonic RW2 raw format 7 and older RAW raw format 2: packed 14 or 12-bit samples in 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
 | `Rw2Huffman` | Panasonic RW2 raw format 8: prefix-coded strips of 12 to 16-bit samples | TIFF 6, ITU T.81 (differences), ExifTool's PanasonicRaw tag names, our own measurements |
 | `Rw2Unpacked` | Panasonic and Leica RAW of the RW2 structure without a raw format: 12-bit samples in 16-bit words | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
+| `ArwCurve` | Sony ARW2: 16-sample blocks of 11-bit codes on the SonyToneCurve | Dietz (IS&T EI 2016), ExifTool's Sony tags, our measurements |
+| `ArwUncompressed` | Sony ARW and SR2, uncompressed 16-bit words | TIFF 6, ExifTool's Sony tags |
+| `ArwPacked` | Sony ARW, packed 12-bit samples (DSLR-A850, A900) | Our measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -83,6 +86,20 @@ high-resolution DC-S1RM2 mode) are `Unsupported`. Older bodies
 whose files RAWmakase has always read with other areas or levels have
 `compat-observed` rows in `data/raw-cameras.toml` (`visible`, `white`,
 `black`).
+
+Sony (from our own measurements unless said otherwise):
+
+- An ARW2 code `c` is the point `2c` on Sony's 12-bit tone curve, whose slope
+  starts at 1 and doubles at each SonyToneCurve threshold (in quarters).
+- The SR2SubIFD (white balance as shot and its presets, levels) is encrypted.
+  Its keystream generator is written from prior general knowledge of the
+  format (ExifTool's documentation names the key but describes no algorithm;
+  no permitted public description was found). Validation: decrypted, it is a
+  well-formed directory on every ARW of our dataset, and its
+  values equal the plain copies newer bodies also write in the raw directory.
+- The DSC-R1's SR2 stores its words big-endian in a little-endian file.
+- Visible areas, some white levels and some model names RAWmakase has always
+  read are rows of `data/raw-cameras.toml` (`compat-observed`).
 
 ## Checking against LibRaw
 

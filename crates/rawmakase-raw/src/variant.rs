@@ -36,6 +36,12 @@ pub enum Variant {
     /// Panasonic and Leica RAW of the RW2 structure, without a raw format:
     /// 12-bit samples in 16-bit words.
     Rw2Unpacked,
+    /// Sony ARW2: 16-sample blocks of 11-bit codes on a tone curve.
+    ArwCurve,
+    /// Sony ARW and SR2, uncompressed 16-bit words.
+    ArwUncompressed,
+    /// Sony ARW, packed 12-bit samples.
+    ArwPacked,
 }
 
 impl Variant {
@@ -51,6 +57,9 @@ impl Variant {
             Variant::Rw2Packed => "rw2-packed",
             Variant::Rw2Huffman => "rw2-huffman",
             Variant::Rw2Unpacked => "rw2-unpacked",
+            Variant::ArwCurve => "arw-curve",
+            Variant::ArwUncompressed => "arw-uncompressed",
+            Variant::ArwPacked => "arw-packed",
         }
     }
 }
@@ -61,6 +70,7 @@ pub(crate) enum Plan {
     None,
     Dng(crate::container::dng::DngPlan),
     Rw2(crate::container::rw2::Rw2Plan),
+    Arw(crate::container::arw::ArwPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -83,6 +93,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         let ifd0 = &t.ifds[0];
         if ifd0.has(50706) {
             return crate::container::dng::open(bytes, t);
+        }
+        if crate::container::arw::is_sony(&t) {
+            return crate::container::arw::open(t);
         }
     }
     Err(Error::NotRaw)
@@ -107,6 +120,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::Rw2Huffman
             | Variant::Rw2Unpacked,
         ) => crate::container::rw2::decode(info, plan, bytes, cancel),
+        (Plan::Arw(plan), Variant::ArwCurve | Variant::ArwUncompressed | Variant::ArwPacked) => {
+            crate::container::arw::decode(info, plan, bytes, cancel)
+        }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
             "{} with another container's plan",

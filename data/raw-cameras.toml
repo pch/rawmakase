@@ -724,3 +724,774 @@ dng = false
 raw_size = [4290, 2391]
 visible = [4, 0, 4247, 2390]
 source = "compat-observed"
+
+# Sony, and the Sony body Hasselblad sold as its own.
+
+[[name]]
+make = "Sony"
+model = "ILCE-3500"
+is = "ILCE-3000"
+source = "compat-observed"
+
+[[name]]
+make = "Sony"
+model = "ILCE-6001"
+is = "ILCE-6000"
+source = "compat-observed"
+
+[[name]]
+make = "Sony"
+model = "SLT-A55V"
+is = "SLT-A55"
+source = "compat-observed"
+
+[[name]]
+make = "Sony"
+model = "SLT-A65V"
+is = "SLT-A65"
+source = "compat-observed"
+
+[[name]]
+make = "Sony"
+model = "SLT-A77V"
+is = "SLT-A77"
+source = "compat-observed"
+
+[[name]]
+make = "Sony"
+model = "SLT-A99V"
+is = "SLT-A99"
+source = "compat-observed"
+
+[[name]]
+make = "Sony"
+model = "UMC-R10C"
+is = "ILCE-QX1"
+source = "compat-observed"
+
+[[canonical]]
+make = "Hasselblad"
+model = "Lunar"
+canonical = ["Sony", "NEX-7"]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "Lunar"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-R1"
+dng = false
+raw_size = [3984, 2608]
+visible = [0, 0, 3925, 2608]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6018, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M2"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M3"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M4"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M5"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M5A"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M6"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M7"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M7A"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10M2"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10M3"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10M4"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1R"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6018, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1RM2"
+dng = false
+raw_size = [8000, 5320]
+visible = [0, 0, 7968, 5320]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1RM3"
+dng = false
+raw_size = [9600, 6376]
+visible = [0, 0, 9568, 6376]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A500"
+dng = false
+raw_size = [4288, 2858]
+visible = [0, 0, 4256, 2858]
+white = 16596
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A550"
+dng = false
+raw_size = [4608, 3072]
+white = 16596
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A560"
+dng = false
+raw_size = [4608, 3072]
+white = 16596
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A580"
+dng = false
+raw_size = [4928, 3280]
+white = 16596
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A700"
+dng = false
+raw_size = [4288, 2856]
+visible = [0, 0, 4256, 2856]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCA-68"
+dng = false
+raw_size = [6048, 4016]
+visible = [0, 0, 6024, 4016]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCA-77M2"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCA-99M2"
+dng = false
+raw_size = [8000, 5320]
+visible = [0, 0, 7968, 5320]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-1"
+dng = false
+raw_size = [8672, 5784]
+visible = [0, 0, 8660, 5784]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-1M2"
+dng = false
+raw_size = [5664, 3768]
+visible = [0, 0, 5636, 3768]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-1M2"
+dng = false
+raw_size = [8672, 5784]
+visible = [0, 0, 8660, 5784]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-3000"
+dng = false
+raw_size = [5504, 3656]
+visible = [0, 0, 5472, 3656]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-5000"
+dng = false
+raw_size = [5504, 3656]
+visible = [0, 0, 5472, 3656]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-5100"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6000"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6100"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6300"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6400"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6400A"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6500"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6600"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6700"
+dng = false
+raw_size = [6272, 4168]
+visible = [0, 0, 6240, 4168]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7C"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7CM2"
+dng = false
+raw_size = [4736, 3132]
+visible = [0, 0, 4692, 3132]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7CM2"
+dng = false
+raw_size = [7040, 4688]
+visible = [0, 0, 7028, 4688]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7CR"
+dng = false
+raw_size = [9600, 6376]
+visible = [0, 0, 9564, 6376]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M2"
+dng = false
+raw_size = [3968, 2648]
+visible = [0, 0, 3936, 2648]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M2"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M3"
+dng = false
+raw_size = [3968, 2648]
+visible = [0, 0, 3936, 2648]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M3"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M4"
+dng = false
+raw_size = [4736, 3132]
+visible = [0, 0, 4692, 3132]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M4"
+dng = false
+raw_size = [7040, 4688]
+visible = [0, 0, 7028, 4688]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7R"
+dng = false
+raw_size = [4832, 3224]
+visible = [0, 0, 4800, 3224]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7R"
+dng = false
+raw_size = [7392, 4920]
+visible = [0, 0, 7362, 4920]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM2"
+dng = false
+raw_size = [8000, 5320]
+visible = [0, 0, 7968, 5320]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM3"
+dng = false
+raw_size = [8000, 5320]
+visible = [0, 0, 7968, 5320]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM3A"
+dng = false
+raw_size = [8000, 5320]
+visible = [0, 0, 7968, 5320]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM4"
+dng = false
+raw_size = [9600, 6376]
+visible = [0, 0, 9568, 6376]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM4A"
+dng = false
+raw_size = [9600, 6376]
+visible = [0, 0, 9568, 6376]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM5"
+dng = false
+raw_size = [6304, 4180]
+visible = [0, 0, 6272, 4180]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM5"
+dng = false
+raw_size = [9600, 6376]
+visible = [0, 0, 9564, 6376]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7S"
+dng = false
+raw_size = [2816, 1872]
+visible = [0, 0, 2784, 1872]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7S"
+dng = false
+raw_size = [4288, 2848]
+visible = [0, 0, 4256, 2848]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7SM2"
+dng = false
+raw_size = [4288, 2848]
+visible = [0, 0, 4256, 2848]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7SM3"
+dng = false
+raw_size = [4288, 2848]
+visible = [0, 0, 4256, 2848]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-9"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-9M2"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-9M3"
+dng = false
+raw_size = [3968, 2648]
+visible = [0, 0, 3948, 2648]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-9M3"
+dng = false
+raw_size = [6048, 4020]
+visible = [0, 0, 6012, 4020]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-QX1"
+dng = false
+raw_size = [5504, 3656]
+visible = [0, 0, 5472, 3656]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILME-FX2"
+dng = false
+raw_size = [7040, 4688]
+visible = [0, 0, 7028, 4688]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILME-FX3"
+dng = false
+raw_size = [4288, 2848]
+visible = [0, 0, 4256, 2848]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILME-FX30"
+dng = false
+raw_size = [6272, 4168]
+visible = [0, 0, 6240, 4168]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-3N"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5N"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5R"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5T"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-6"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-7"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "NEX-F3"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A37"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A57"
+dng = false
+raw_size = [4928, 3276]
+visible = [0, 0, 4920, 3276]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A58"
+dng = false
+raw_size = [5504, 3656]
+visible = [0, 0, 5472, 3656]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A65"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A77"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A99"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6018, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ZV-1"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ZV-1M2"
+dng = false
+raw_size = [5504, 3672]
+visible = [0, 0, 5496, 3672]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ZV-E10"
+dng = false
+raw_size = [6048, 4024]
+visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ZV-E10M2"
+dng = false
+raw_size = [6272, 4168]
+visible = [0, 0, 6240, 4168]
+source = "compat-observed"
