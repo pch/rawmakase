@@ -1,4 +1,5 @@
-//! The native boundary: LibRaw and Little CMS through `native/raw.cpp` ([`raw`]),
+//! The native boundary: LibRaw through `native/raw.cpp` ([`raw`]), colour
+//! management of what is shown and exported ([`color_management`]),
 //! RAWmakase's own demosaicing ([`demosaic`]), opening a photo ([`photo`]) and its
 //! full-size decode through the decode cache ([`decode`], [`decode_cache`]), its
 //! decode and develop fingerprints for regression checks ([`fingerprint`],
@@ -10,6 +11,7 @@
 use rawmakase_engine::develop;
 use rawmakase_model::{camera_data, camera_profiles, dng, lens, storage};
 
+pub mod color_management;
 pub mod decode;
 pub mod decode_cache;
 pub mod decode_dump;

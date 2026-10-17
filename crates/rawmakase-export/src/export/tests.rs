@@ -391,7 +391,7 @@ fn png_carries_icc_camera_exif_xmp_and_resolution() -> Result<()> {
     );
     assert_eq!(
         info.icc_profile.as_deref(),
-        Some(raw::srgb_profile()?.as_slice())
+        Some(crate::color_management::srgb_profile())
     );
     let exif = info.exif_metadata.as_deref().unwrap();
     // eXIf holds the TIFF stream itself, without JPEG's "Exif" header.

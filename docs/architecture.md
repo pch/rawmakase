@@ -35,7 +35,8 @@ files should preserve.
 | Module | Owns | Main extension points |
 | --- | --- | --- |
 | `camera_data` | A RAW's metadata, the demosaic and decode choices and the decoded camera-space image, as values with no native code | `camera_data.rs` |
-| `raw` | LibRaw/Little CMS boundary: reading metadata, decoding into `camera_data` images, oriented embedded thumbnails; the adapter of RAWmakase's own decoders (`crates/rawmakase-raw`, see [RAW decoding](raw-decoding.md)), which only the decoder-comparison commands reach until they replace LibRaw | RAW decoding and native color management |
+| `raw` | LibRaw boundary: reading metadata, decoding into `camera_data` images, oriented embedded thumbnails; the adapter of RAWmakase's own decoders (`crates/rawmakase-raw`, see [RAW decoding](raw-decoding.md)), which only the decoder-comparison commands reach until they replace LibRaw | RAW decoding |
+| `color_management` | The sRGB profile exports embed and the transform of 8-bit sRGB to a monitor profile, in pure Rust (moxcms reads the profiles) | `color_management.rs` |
 | `photo` | Opening a photo: `open_source` is the one entry point, sending a RAW to LibRaw and a JPEG, PNG or TIFF to `raster`; a RAW's LibRaw facts from `raw`, then the camera's lens tables, a DNG's profile and hints, and the imported lens profiles that fit | `photo.rs` |
 | `raster` | Opening a JPEG, PNG or TIFF: decoded upright and converted from its embedded ICC profile to 8-bit sRGB for previews, or to linear ProPhoto f32 for Develop (pure Rust, `moxcms`) | `raster.rs` |
 | `demosaic` | RAWmakase's own Bayer and X-Trans demosaicing of the unpacked sensor data | `demosaic.rs` |
@@ -267,7 +268,7 @@ same settings asks for it and read after its pass is submitted.
 When the GPU renders a preview, the developed pixels stay on the device and
 `gpu/present.wgsl` finishes them into a texture that egui draws directly (registered
 as a native texture by the render worker): sharpening, vignettes and grain, the
-clipping overlay, the monitor profile (a 52³ lattice sampled from lcms once per
+clipping overlay, the monitor profile (a 52³ lattice sampled from `color_management` once per
 profile, interpolated trilinearly) and 8-bit encoding, in the CPU reference's order.
 The histogram is counted in the same pass and the Navigator copy is reduced on the
 GPU; only the histogram (3 KB) and, for catalog photos, a 640-pixel library

@@ -1,8 +1,8 @@
 fn main() {
     let macos = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos");
-    // Windows builds use MSVC with static LibRaw and Little CMS from vcpkg
-    // (packaging/windows/deps.ps1), found through the pkg-config files vcpkg
-    // writes; static linking needs their private dependencies too. With the
+    // Windows builds use MSVC with static LibRaw from vcpkg (packaging/windows/
+    // deps.ps1), found through the pkg-config files vcpkg writes; static linking
+    // needs its private dependencies (Little CMS among them) too. With the
     // static C runtime (.cargo/config.toml) and no OpenMP, the executable needs
     // only Windows' own DLLs: the updater runs a lone copy of it as its helper.
     let msvc = std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc");
@@ -16,12 +16,6 @@ fn main() {
         .statik(msvc)
         .probe("libraw_r")
         .expect("Install libraw development headers (>= 0.22)");
-    let cms = pkg_config::Config::new()
-        .cargo_metadata(false)
-        .env_metadata(true)
-        .statik(msvc)
-        .probe("lcms2")
-        .expect("Install lcms2 development headers");
     let mut b = cc::Build::new();
     b.cpp(true).std("c++17").file("native/raw.cpp");
     if macos {
@@ -46,28 +40,25 @@ fn main() {
             prefix.join("lib").display()
         );
     } else if msvc {
-        b.define("NOMINMAX", None)
-            .define("CMS_NO_REGISTER_KEYWORD", None);
+        b.define("NOMINMAX", None);
     } else {
         b.flag("-fopenmp");
     }
-    for p in raw.include_paths.iter().chain(cms.include_paths.iter()) {
+    for p in &raw.include_paths {
         b.include(p);
     }
     b.compile("rawmakase_native");
-    for lib in [&raw, &cms] {
-        for path in &lib.link_paths {
-            println!("cargo:rustc-link-search=native={}", path.display());
-        }
-        for name in &lib.libs {
-            // Homebrew LibRaw 0.22 advertises the removed GNU C++ runtime.
-            let name = if macos && name == "stdc++" {
-                "c++"
-            } else {
-                name
-            };
-            println!("cargo:rustc-link-lib={name}");
-        }
+    for path in &raw.link_paths {
+        println!("cargo:rustc-link-search=native={}", path.display());
+    }
+    for name in &raw.libs {
+        // Homebrew LibRaw 0.22 advertises the removed GNU C++ runtime.
+        let name = if macos && name == "stdc++" {
+            "c++"
+        } else {
+            name
+        };
+        println!("cargo:rustc-link-lib={name}");
     }
     if !msvc {
         println!(

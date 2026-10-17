@@ -1,6 +1,6 @@
 //! The C ABI of `native/raw.cpp`: its declarations, the metadata struct both sides
 //! share by layout, and one safe wrapper per entry point that states what the call
-//! relies on. Nothing else in the crate calls LibRaw or Little CMS directly.
+//! relies on. Nothing else in the crate calls LibRaw directly.
 //!
 //! Contracts the native side keeps, which the `SAFETY` comments below rely on:
 //!
@@ -18,7 +18,7 @@
 //!   until the next call on that handle; `ora_sensor`'s data holds `height` rows
 //!   of `pitch` values and its black levels `black_size` values.
 use super::{Cfa, Header, Sensor};
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, ensure};
 use std::{
     ffi::{CStr, CString, c_char, c_int, c_void},
     path::Path,
@@ -139,8 +139,6 @@ unsafe extern "C" {
     fn ora_sensor(h: *mut c_void, s: *mut NativeSensor, err: *mut c_char) -> c_int;
     fn ora_thumbnail(h: *mut c_void, data: *mut *mut u8, size: *mut u32, err: *mut c_char)
     -> c_int;
-    fn ora_srgb_profile(data: *mut u8, size: u32) -> u32;
-    fn ora_display(path: *const c_char, data: *mut u8, count: u32) -> c_int;
 }
 
 /// The header facts in LibRaw's metadata, with the Panasonic sensor borders
@@ -490,39 +488,6 @@ impl Handle {
     }
 }
 
-/// Little CMS's sRGB profile, serialized.
-pub fn srgb_profile() -> Result<Vec<u8>> {
-    // SAFETY: with a null buffer and zero capacity the native side only reports
-    // the size.
-    let size = unsafe { ora_srgb_profile(std::ptr::null_mut(), 0) };
-    ensure!(size > 0, "Cannot create sRGB profile");
-    let mut data = vec![0; size as usize];
-    // SAFETY: `data` has the `size` bytes the native side was told it may write.
-    let written = unsafe { ora_srgb_profile(data.as_mut_ptr(), size) };
-    ensure!(written == size, "Cannot serialize sRGB profile");
-    // Little CMS dates the profile as it saves it. A fixed date keeps the
-    // profile, and every export that embeds it, the same whenever it is made.
-    // The profile carries no ID (an MD5 of the header) for this to break.
-    ensure!(data.len() >= 128, "sRGB profile too short");
-    for (at, value) in [2024u16, 1, 1, 0, 0, 0].into_iter().enumerate() {
-        data[24 + 2 * at..26 + 2 * at].copy_from_slice(&value.to_be_bytes());
-    }
-    Ok(data)
-}
-/// Converts 8-bit sRGB pixels in place to the monitor profile at `path`.
-pub fn display_transform(path: &Path, data: &mut [u8]) -> Result<()> {
-    ensure!(data.len().is_multiple_of(3), "Invalid RGB buffer");
-    let p = path_string(path)?;
-    let count: u32 = (data.len() / 3).try_into()?;
-    // SAFETY: `p` is NUL-terminated and `data` holds `count` RGB triples, which the
-    // native side transforms in place.
-    let rc = unsafe { ora_display(p.as_ptr(), data.as_mut_ptr(), count) };
-    if rc != 0 {
-        bail!("Cannot use monitor ICC profile {}", path.display());
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     unsafe extern "C" {
@@ -539,20 +504,6 @@ mod tests {
         (0..20_000u32)
             .map(|i| level - 6 + (i * 7919 % 13) as u16)
             .collect()
-    }
-    #[test]
-    fn the_srgb_profile_is_the_same_whenever_it_is_made() {
-        // Little CMS dates a profile when saving it: exports would differ
-        // second to second, and a profile compared with a later one too.
-        let profile = super::srgb_profile().unwrap();
-        let date: Vec<u16> = profile[24..36]
-            .chunks(2)
-            .map(|b| u16::from_be_bytes([b[0], b[1]]))
-            .collect();
-        assert_eq!(date, [2024, 1, 1, 0, 0, 0]);
-        // No profile ID, which the date would have to be hashed into.
-        assert!(profile[84..100].iter().all(|b| *b == 0));
-        assert_eq!(super::srgb_profile().unwrap(), profile);
     }
     #[test]
     fn black_level_far_below_the_masked_border_is_corrected() {

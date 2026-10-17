@@ -3,8 +3,8 @@ use super::{
 };
 use crate::model::recipe::Recipe;
 use crate::{
+    color_management,
     develop::{self, gpu, quality::Output},
-    raw,
 };
 use eframe::{egui, egui_wgpu};
 use std::{
@@ -305,9 +305,11 @@ fn render(
         let monitor = match (&job.monitor, textures.is_some()) {
             (Some(path), true) => {
                 if lut.as_ref().is_none_or(|(p, _)| p != path) {
-                    let built = gpu::MonitorLut::sample(|rgb| raw::display_transform(path, rgb))
-                        .map(Arc::new)
-                        .map_err(|e| e.to_string());
+                    let built = gpu::MonitorLut::sample(|rgb| {
+                        color_management::display_transform(path, rgb)
+                    })
+                    .map(Arc::new)
+                    .map_err(|e| e.to_string());
                     *lut = Some((path.clone(), built));
                 }
                 match &lut.as_ref().unwrap().1 {
@@ -374,7 +376,7 @@ fn render(
                 .flatten();
             let mut warning = String::new();
             if let Some(p) = &job.monitor
-                && let Err(e) = raw::display_transform(p, &mut rgb)
+                && let Err(e) = color_management::display_transform(p, &mut rgb)
             {
                 warning = format!(" • ICC failed: {e}");
             }

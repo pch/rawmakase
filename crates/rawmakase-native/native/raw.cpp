@@ -9,7 +9,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #endif
-#include <lcms2.h>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -556,19 +555,6 @@ int ora_thumbnail(void* ptr, unsigned char** data, unsigned* size, char* err) {
         *size=r.imgdata.thumbnail.tlength;
         return 0;
     } catch(...) { message(err,"Embedded preview failed"); return -1; }
-}
-unsigned ora_srgb_profile(unsigned char* data, unsigned capacity) {
-    auto p=cmsCreate_sRGBProfile(); if(!p) return 0;
-    cmsUInt32Number size=capacity;
-    bool ok=cmsSaveProfileToMem(p,data,&size); cmsCloseProfile(p);
-    return ok?size:0;
-}
-int ora_display(const char* path, unsigned char* rgb, unsigned count) {
-    auto src=cmsCreate_sRGBProfile(); auto dst=cmsOpenProfileFromFile(path,"r");
-    if(!src || !dst) { if(src) cmsCloseProfile(src); if(dst) cmsCloseProfile(dst); return -1; }
-    auto t=cmsCreateTransform(src,TYPE_RGB_8,dst,TYPE_RGB_8,INTENT_RELATIVE_COLORIMETRIC,cmsFLAGS_BLACKPOINTCOMPENSATION);
-    if(t) { cmsDoTransform(t,rgb,rgb,count); cmsDeleteTransform(t); }
-    cmsCloseProfile(src); cmsCloseProfile(dst); return t?0:-1;
 }
 }
 extern "C" int ora_scale_probe(float wb, float* error) {

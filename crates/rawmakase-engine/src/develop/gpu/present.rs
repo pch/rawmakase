@@ -78,7 +78,7 @@ pub struct Frame {
 }
 /// The sRGB-to-monitor transform sampled on a lattice of 8-bit values, so the shader
 /// applies it without lcms. Built once per profile, from the transform the caller
-/// supplies (`raw::display_transform`), so the engine links no colour management.
+/// supplies (`color_management::display_transform`), so the engine links no colour management.
 pub struct MonitorLut {
     size: u32,
     values: Vec<f32>,

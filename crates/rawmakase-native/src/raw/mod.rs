@@ -1,6 +1,6 @@
 //! RAW files: opening them through LibRaw, reading their metadata (with the
 //! DNG, RAF and lens details read on top), development into linear camera-space
-//! pixels, the embedded preview, and the monitor colour transform. The values
+//! pixels and the embedded preview. The values
 //! they produce are [`crate::camera_data`]'s.
 //! The native boundary itself is in [`ffi`].
 use anyhow::{Result, ensure};
@@ -15,7 +15,7 @@ mod own;
 use crate::camera_data::{
     CameraImage, Decode, Demosaic, HighlightTonePriority, Metadata, Source, WhiteBalancePresets,
 };
-pub use ffi::{display_transform, srgb_profile, version};
+pub use ffi::version;
 /// The version of `decoder`, for fingerprints.
 pub fn version_of(decoder: Decoder) -> String {
     match decoder {
@@ -1092,18 +1092,5 @@ mod tests {
         let (_dir, path) = nef("NIKON Z5_2", &[0; 4]);
         let raw = super::Raw::open_file(&path).unwrap();
         assert!(raw.develop(Decode::Half, &AtomicBool::new(false)).is_ok());
-    }
-    #[test]
-    fn monitor_srgb_roundtrip() -> anyhow::Result<()> {
-        let d = tempfile::tempdir()?;
-        let p = d.path().join("srgb.icc");
-        std::fs::write(&p, super::srgb_profile()?)?;
-        let mut rgb = vec![12, 128, 240, 255, 0, 100];
-        let before = rgb.clone();
-        super::display_transform(&p, &mut rgb)?;
-        for (a, b) in rgb.iter().zip(before) {
-            assert!((i16::from(*a) - i16::from(b)).abs() <= 1);
-        }
-        Ok(())
     }
 }
