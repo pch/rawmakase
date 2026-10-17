@@ -16,6 +16,7 @@ pub(crate) mod pef;
 pub(crate) mod raf;
 pub(crate) mod rw2;
 pub(crate) mod srw;
+pub(crate) mod sti;
 #[cfg(test)]
 pub(crate) mod test_tiff;
 pub(crate) mod tiff;

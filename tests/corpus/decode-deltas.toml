@@ -29802,3 +29802,15 @@ after = 15000
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's is the camera table's adobe-dng row; Adobe's white fitted to RAWmakase's samples is 15000.0 on every channel (L_003173.mos)"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
+
+# Sinar STI.
+
+[[delta]]
+# Sinarback/Sinarback eVolution 75, Sinar p3  f3/Tomatio_03.sti
+sha256 = "b249f3f2362a79808029b2f69170afec60d0485521f4ea296cecd596cee7fae0"
+field = "header.metadata.iso"
+before = 0.0
+after = 100.0
+evidence = "RAWmakase's is the file's ISOSpeedRatings (IFD0 tag 0x8827), which LibRaw does not read; Adobe DNG Converter does not read STI files"
+approval = "pending"
+

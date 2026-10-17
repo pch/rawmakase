@@ -41,7 +41,7 @@ Modules, each with a small `pub(crate)` surface:
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
 | `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings, Canon's CRW blocks, Phase One's IIQ rows, Hasselblad's pairs |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`, `mos`) |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`, `mos`, `sti`) |
 | `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`, `phase_one`, `hasselblad`, `leaf`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
@@ -96,6 +96,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `FffUncompressed` | Hasselblad 3FR and FFF, 16-bit words | TIFF 6, DNG 1.7 (level tags), our own measurements |
 | `MosLosslessJpeg` | Leaf MOS, one lossless JPEG tile whose MCU rows are the image's rows | TIFF 6, ITU T.81, ExifTool's Leaf tag names, our own measurements |
 | `MosUncompressed` | Leaf MOS, 16-bit words | TIFF 6, ExifTool's Leaf tag names, our own measurements |
+| `StiUncompressed` | Sinar STI, one tile of 16-bit words | TIFF 6, TIFF/EP, our own measurements |
 | `FffCompressed` | Hasselblad 3FR and FFF (compression 7): lossless JPEG headers, then pairs of coded differences in little-endian 32-bit words | ITU T.81, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
 | `OrfCompressed` | Olympus and OM Digital ORF/ORI, Olympus's compressed coding of 12 or 14-bit samples | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfPacked` | Olympus ORF, packed 12-bit samples: 16-byte blocks of ten, 32-bit words, or two interlaced fields of rows | TIFF 6, ExifTool's Olympus tag names, our own measurements |
@@ -502,6 +503,14 @@ naming none of the frame's components takes them in order. Black is 0;
 white is the camera table's (`adobe-dng`: 15000 for the Aptus 22, Adobe
 DNG Converter's), else 16383, what RAWmakase has always read. Files of
 several planes are `Unsupported`.
+
+Sinar STI (`container::sti`): CaptureShop's TIFF of a Sinarback, IFD0 a
+thumbnail with Sinar's settings as text tags, the next directory one tile
+of 16-bit words with its CFAPattern and orientation. The as-shot white
+balance is the Neutral line of the last settings tag (0xC517, else 0xC516),
+as RAWmakase has always read it; black 0 and white 16383 are what it has
+always read (Adobe DNG Converter does not read the format). The ISO speed
+is IFD0's ISOSpeedRatings, which LibRaw does not read (a pending delta).
 
 Canon files whose values differ from LibRaw's on purpose are approved in
 `tests/corpus/decode-deltas.toml`, with Adobe DNG Converter's value as the

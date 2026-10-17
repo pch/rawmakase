@@ -130,6 +130,8 @@ pub enum Variant {
     MosLosslessJpeg,
     /// Leaf MOS, 16-bit words.
     MosUncompressed,
+    /// Sinar STI, 16-bit words.
+    StiUncompressed,
 }
 
 impl Variant {
@@ -190,6 +192,7 @@ impl Variant {
             Variant::FffCompressed => "3fr-compressed",
             Variant::MosLosslessJpeg => "mos-ljpeg",
             Variant::MosUncompressed => "mos-uncompressed",
+            Variant::StiUncompressed => "sti-uncompressed",
         }
     }
 }
@@ -214,6 +217,7 @@ pub(crate) enum Plan {
     Iiq(crate::container::iiq::IiqPlan),
     Fff(crate::container::fff::FffPlan),
     Mos(crate::container::mos::MosPlan),
+    Sti(crate::container::sti::StiPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -269,6 +273,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         }
         if crate::container::mos::is_mos(&t) {
             return crate::container::mos::open(t);
+        }
+        if crate::container::sti::is_sti(&t) {
+            return crate::container::sti::open(t);
         }
         if crate::container::erf::is_erf(&t) {
             return crate::container::erf::open(t);
@@ -377,6 +384,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         }
         (Plan::Mos(plan), Variant::MosLosslessJpeg | Variant::MosUncompressed) => {
             crate::container::mos::decode(info, plan, bytes, cancel)
+        }
+        (Plan::Sti(plan), Variant::StiUncompressed) => {
+            crate::container::sti::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
