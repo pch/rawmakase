@@ -155,6 +155,64 @@ pub(crate) fn iso(t: &TiffFile, ifd: &Ifd) -> Option<f32> {
     }
 }
 
+/// Raw format 8's strips and prefix codes.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Strips {
+    /// Per strip: where its bytes are, its left column and top row, its
+    /// length in bits, width and height.
+    pub offsets: Vec<u32>,
+    pub lefts: Vec<u32>,
+    pub tops: Vec<u32>,
+    pub bits: Vec<u32>,
+    pub widths: Vec<u32>,
+    pub heights: Vec<u32>,
+    /// (length, code) of the prefix code of each difference category.
+    pub codes: Vec<(u32, u32)>,
+}
+
+/// A tag of 16-bit little-endian words: a count, then the values, of two
+/// words each (low, high) when `wide`.
+fn list(t: &TiffFile, ifd: &Ifd, tag: u16, wide: bool) -> Option<Vec<u32>> {
+    let raw = t.raw(ifd, tag)?;
+    let words: Vec<u32> = raw
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|w| u32::from(u16::from_le_bytes(*w)))
+        .collect();
+    let (&count, rest) = words.split_first()?;
+    let count = count as usize;
+    if wide {
+        let (pairs, _) = rest.as_chunks::<2>();
+        (pairs.len() >= count).then(|| {
+            pairs[..count]
+                .iter()
+                .map(|&[lo, hi]| lo | hi << 16)
+                .collect()
+        })
+    } else {
+        rest.get(..count).map(<[u32]>::to_vec)
+    }
+}
+
+/// The strips of raw format 8 (tags 0x44 offsets, 0x45 left columns with
+/// the top row in the high word, 0x46 lengths in bits, 0x47 widths and 0x48
+/// heights, each a count then the values) and its prefix codes (tag 0x40:
+/// the count, then length and code per category).
+pub(crate) fn strips(t: &TiffFile, ifd: &Ifd) -> Option<Strips> {
+    let places = list(t, ifd, 0x45, true)?;
+    let codes = list(t, ifd, 0x40, true)?;
+    Some(Strips {
+        offsets: list(t, ifd, 0x44, true)?,
+        lefts: places.iter().map(|p| p & 0xffff).collect(),
+        tops: places.iter().map(|p| p >> 16).collect(),
+        bits: list(t, ifd, 0x46, true)?,
+        widths: list(t, ifd, 0x47, false)?,
+        heights: list(t, ifd, 0x48, false)?,
+        codes: codes.iter().map(|c| (c & 0xffff, c >> 16)).collect(),
+    })
+}
+
 /// The levels: black per channel (red, green, blue, second green), white,
 /// and the linearity limits as the file records them.
 ///

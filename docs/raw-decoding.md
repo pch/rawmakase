@@ -35,7 +35,7 @@ Modules, each with a small `pub(crate)` surface:
 | Module | Owns |
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
-| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Panasonic's blocks |
+| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Panasonic's blocks and strips |
 | `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `rw2`) |
 | `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) (`panasonic`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
@@ -58,6 +58,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `Rw2PackedRotated` | Panasonic RW2 raw format 5: packed 12 or 14-bit samples in 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
 | `Rw2Seeded` | Panasonic RW2 raw format 6: seeded delta-coded 16-byte blocks of 12 or 14-bit samples | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
 | `Rw2Packed` | Panasonic RW2 raw format 7: packed 14-bit samples in 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
+| `Rw2Huffman` | Panasonic RW2 raw format 8: prefix-coded strips of 12 to 16-bit samples | TIFF 6, ITU T.81 (differences), ExifTool's PanasonicRaw tag names, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -76,7 +77,8 @@ starting on even rows and columns; black is the black level tags, 15 above
 them for raw formats 3 and 4; white is the bit depth's range, less 1/256 of
 it for raw formats 6 to 8 below 16 bits. Raw format 6 is read 15 below its
 coded levels, and raw format 7 in whole groups of four rows (the rows past
-them are 0). Older bodies
+them are 0). Raw format 8 strips stacked in more than one row (a
+high-resolution DC-S1RM2 mode) are `Unsupported`. Older bodies
 whose files RAWmakase has always read with other areas or levels have
 `compat-observed` rows in `data/raw-cameras.toml` (`visible`, `white`,
 `black`).

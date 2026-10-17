@@ -601,3 +601,19 @@ dng = false
 raw_size = [8448, 5632]
 visible = [0, 0, 8392, 5620]
 source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-G9M2"
+dng = false
+raw_size = [11560, 8680]
+visible = [8, 8, 11544, 8664]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-GH6"
+dng = false
+raw_size = [11560, 8680]
+visible = [8, 8, 11544, 8664]
+source = "compat-observed"

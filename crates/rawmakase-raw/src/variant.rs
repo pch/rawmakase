@@ -29,6 +29,9 @@ pub enum Variant {
     Rw2Seeded,
     /// Panasonic RW2 (raw format 7): packed 14-bit samples in 16-byte blocks.
     Rw2Packed,
+    /// Panasonic RW2 (raw format 8): prefix-coded strips of 12 to 16-bit
+    /// samples.
+    Rw2Huffman,
 }
 
 impl Variant {
@@ -42,6 +45,7 @@ impl Variant {
             Variant::Rw2PackedRotated => "rw2-packed-rotated",
             Variant::Rw2Seeded => "rw2-seeded",
             Variant::Rw2Packed => "rw2-packed",
+            Variant::Rw2Huffman => "rw2-huffman",
         }
     }
 }
@@ -91,7 +95,11 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         ) => crate::container::dng::decode(info, plan, bytes, cancel),
         (
             Plan::Rw2(plan),
-            Variant::Rw2Delta | Variant::Rw2PackedRotated | Variant::Rw2Seeded | Variant::Rw2Packed,
+            Variant::Rw2Delta
+            | Variant::Rw2PackedRotated
+            | Variant::Rw2Seeded
+            | Variant::Rw2Packed
+            | Variant::Rw2Huffman,
         ) => crate::container::rw2::decode(info, plan, bytes, cancel),
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(

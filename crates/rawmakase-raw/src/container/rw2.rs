@@ -9,6 +9,7 @@
 //! and our own measurements.
 use super::tiff::TiffFile;
 use crate::codec::panasonic::{self, Block};
+use crate::codec::panasonic_strips as strips;
 use crate::error::{Error, Result, corrupt};
 use crate::info::RawInfo;
 use crate::io::Bytes;
@@ -22,6 +23,8 @@ use std::sync::atomic::AtomicBool;
 pub(crate) enum Coding {
     /// 16-byte blocks, whole 0x4000-byte chunks rotated when `rotated`.
     Blocks { block: Block, rotated: bool },
+    /// Prefix-coded strips (raw format 8).
+    Strips(Box<tags::Strips>),
 }
 
 /// Where an RW2's sensor data is and how it is coded, and its levels.
@@ -83,6 +86,12 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
                 block: Block::Packed { bits },
                 rotated: false,
             },
+        ),
+        (Some(8), 12 | 14 | 16) => (
+            Variant::Rw2Huffman,
+            Coding::Strips(Box::new(
+                tags::strips(&t, ifd0).ok_or_else(|| corrupt("RW2 strips"))?,
+            )),
         ),
         (Some(f), _) => {
             return Err(Error::Unsupported(format!(
@@ -190,6 +199,32 @@ pub(crate) fn decode(
             let read = plan.rows as usize * plan.width as usize;
             data.iter_mut().skip(read).for_each(|v| *v = 0);
             data
+        }
+        Coding::Strips(s) => {
+            let n = s.offsets.len();
+            if [&s.lefts, &s.tops, &s.bits, &s.widths, &s.heights]
+                .iter()
+                .any(|v| v.len() != n)
+                || n == 0
+            {
+                return Err(corrupt("RW2 strip lists"));
+            }
+            // Strips stacked in more than one row are not decoded.
+            if s.tops.iter().any(|&t| t != 0) || s.heights.iter().any(|&h| h != plan.height) {
+                return Err(Error::Unsupported("RW2 strips in several rows".into()));
+            }
+            let strips = (0..n)
+                .map(|i| {
+                    Ok(strips::Strip {
+                        data: file
+                            .slice(u64::from(s.offsets[i]), u64::from(s.bits[i]).div_ceil(8))?,
+                        left: s.lefts[i] as usize,
+                        width: s.widths[i] as usize,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let codes = strips::Codes::new(&s.codes)?;
+            strips::decode(&strips, &codes, plan.width, plan.height, cancel)?
         }
     };
     let [left, top] = info.margins;
@@ -404,6 +439,83 @@ pub(crate) mod tests {
         assert_eq!(s.data[36..], [0; 9]);
     }
 
+    /// A tag of 16-bit words: the count, then the values (low and high
+    /// words when `wide`).
+    fn words(tag: u16, values: &[u32], wide: bool) -> (u16, u16, Vec<u8>) {
+        let mut w = vec![values.len() as u16];
+        for &v in values {
+            w.push(v as u16);
+            if wide {
+                w.push((v >> 16) as u16);
+            }
+        }
+        (tag, 7, w.iter().flat_map(|v| v.to_le_bytes()).collect())
+    }
+
+    /// A raw format 8 file of `width` × 2 samples in strips of `widths`,
+    /// every strip's stream `stream` (bytes, bits from the lowest up).
+    fn format8(width: u16, widths: &[u32], tops: &[u32], stream: &[u8]) -> Vec<u8> {
+        let lefts: Vec<u32> = widths
+            .iter()
+            .scan(0, |x, w| {
+                *x += w;
+                Some(*x - w)
+            })
+            .zip(tops)
+            .map(|(l, t)| l | t << 16)
+            .collect();
+        // Category 0 "0", 1 "10", 2 "110"; the others none.
+        let mut codes = vec![1, 0b0, 2, 0b10, 3, 0b110];
+        codes.resize(34, 0);
+        let codes: Vec<u32> = codes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[l, c]| l | c << 16)
+            .collect();
+        let build = |at: u32| {
+            let mut e = header(8, 16, [width, 2]);
+            let n = widths.len();
+            e.extend([
+                words(0x40, &codes, true),
+                words(0x44, &vec![at; n], true),
+                words(0x45, &lefts, true),
+                words(0x46, &vec![stream.len() as u32 * 8; n], true),
+                words(0x47, widths, false),
+                words(0x48, &vec![2; n], false),
+            ]);
+            rw2(&e, stream)
+        };
+        let at = build(0).len() - stream.len();
+        build(at as u32)
+    }
+
+    #[test]
+    fn decodes_prefix_coded_strips() {
+        // Each strip 2 × 2: one cell, differences +1, +2, 0, −1 written most
+        // significant bit first (10 1, 110 10, 0, 10 0), stored reversed.
+        let bits = [1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0];
+        let mut stream = vec![0u8; 2];
+        for (i, b) in bits.iter().enumerate() {
+            stream[i / 8] |= b << (i % 8);
+        }
+        let file = format8(4, &[2, 2], &[0, 0], &stream);
+        let info = crate::open(&file).unwrap();
+        assert_eq!(info.variant, crate::Variant::Rw2Huffman);
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        // Top left 1, bottom left 2, top right 0, bottom right −1 (0).
+        assert_eq!(s.data, [1, 0, 1, 0, 2, 0, 2, 0]);
+        assert_eq!(s.white, 65535);
+        // Strips stacked in two rows are not decoded.
+        let file = format8(2, &[2, 2], &[0, 1], &stream);
+        let info = crate::open(&file).unwrap();
+        let cancel = AtomicBool::new(false);
+        assert!(matches!(
+            crate::decode(&info, &file, &cancel),
+            Err(crate::Error::Unsupported(_))
+        ));
+    }
+
     #[test]
     fn truncated_and_garbage_files_are_errors_not_panics() {
         let file = rw2(&header(4, 12, [28, 2]), &[0x5a; 0x4000]);
@@ -423,6 +535,18 @@ pub(crate) mod tests {
             bad[at] ^= 0xff;
             if let Ok(info) = crate::open(&bad) {
                 let _ = crate::decode(&info, &bad, &cancel);
+            }
+        }
+        // The same for raw format 8's strip tags and streams.
+        let file = format8(4, &[2, 2], &[0, 0], &[0xa5, 0x5a]);
+        for at in 4..file.len() {
+            let mut bad = file.clone();
+            bad[at] ^= 0xff;
+            if let Ok(info) = crate::open(&bad) {
+                let _ = crate::decode(&info, &bad, &cancel);
+            }
+            if let Ok(info) = crate::open(&file[..at]) {
+                let _ = crate::decode(&info, &file[..at], &cancel);
             }
         }
         // An unknown raw format is unsupported.
