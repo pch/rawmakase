@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
+      - uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
         with:
           ruby-version: '3.3'
       - name: Validate workflows and package configuration
@@ -82,7 +82,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
+      - uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
         with:
           ruby-version: '3.3'
       - name: Check the macOS packaging tools
@@ -143,7 +143,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           cargo build --release --locked
           packaging/windows/stage.ps1 target\release\rawmakase.exe "$env:RUNNER_TEMP\deps" dist\windows
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
+      - uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
         with:
           ruby-version: ${{ matrix.ruby }}
       - name: Installer
@@ -173,7 +173,7 @@ jobs:
   packages:
     permissions:
       contents: write
-    uses: crmne/native-packages/.github/workflows/package.yml@999768410cf53cdc68c8679c09cb14de1a6bca7b # v0.8.1
+    uses: crmne/native-packages/.github/workflows/package.yml@83bd46c245488c2b8f1b9d74569e16cf6a449e8f # v0.9.0
     with:
       targets: ${{ inputs.version != '' && 'linux-amd64,linux-arm64' || 'linux-amd64' }}
       version: ${{ inputs.version || 'v0.1.8' }}
