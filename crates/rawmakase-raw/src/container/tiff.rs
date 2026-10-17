@@ -307,10 +307,13 @@ impl TiffFile<'_> {
         out
     }
     /// Whether a directory other than the raw image holds an uncompressed
-    /// RGB or YCbCr image (a thumbnail).
+    /// RGB or YCbCr image whose first samples are 8-bit (a thumbnail; others,
+    /// as a phone's 12-bit one or one whose bits are garbage, are none).
     pub fn has_uncompressed_thumbnail(&self) -> bool {
         self.ifds.iter().any(|ifd| {
-            self.int(ifd, 259).unwrap_or(1) == 1 && matches!(self.int(ifd, 262), Some(2 | 6))
+            self.int(ifd, 259).unwrap_or(1) == 1
+                && matches!(self.int(ifd, 262), Some(2 | 6))
+                && self.ints(ifd, 258).and_then(|b| b.first().copied()) == Some(8)
         })
     }
 }

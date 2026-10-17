@@ -237,7 +237,15 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         }
     }
     info.previews = t.previews();
-    info.uncompressed_preview = t.has_uncompressed_thumbnail();
+    // A preview that is not baseline JPEG: uncompressed, or a lossless
+    // JPEG thumbnail with data (Yuneec's; Kandao's have none).
+    info.uncompressed_preview = t.has_uncompressed_thumbnail()
+        || t.ifds.iter().any(|d| {
+            t.int(d, 254).unwrap_or(0) & 1 == 1
+                && t.int(d, 259) == Some(7)
+                && matches!(t.int(d, 262), Some(2 | 6))
+                && t.ints(d, 279).is_some_and(|c| c.iter().any(|&n| n > 0))
+        });
     let black_dim = t
         .ints(ifd, 50713)
         .filter(|d| d.len() == 2 && (1..=16).contains(&d[0]) && (1..=16).contains(&d[1]))
