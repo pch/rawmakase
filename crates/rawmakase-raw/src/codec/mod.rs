@@ -7,6 +7,7 @@ pub(crate) mod dct;
 pub(crate) mod fuji_compressed;
 pub(crate) mod hasselblad;
 pub(crate) mod huffman;
+pub(crate) mod kodak;
 pub(crate) mod ljpeg;
 pub(crate) mod llvc;
 pub(crate) mod nikon;

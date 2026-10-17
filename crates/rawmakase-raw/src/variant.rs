@@ -144,6 +144,8 @@ pub enum Variant {
     DcsLosslessJpeg,
     /// Kodak's older DCS TIFF, 8-bit codes on a curve.
     DcsEightBit,
+    /// Kodak DCR (compression 65000): blocks of coded differences.
+    DcsKodak,
     /// Kodak KDC (EasyShare and P-series), packed 12-bit samples.
     KdcPacked,
 }
@@ -212,6 +214,7 @@ impl Variant {
             Variant::MrwUnpacked => "mrw-unpacked",
             Variant::DcsLosslessJpeg => "dcs-ljpeg",
             Variant::DcsEightBit => "dcs-eight-bit",
+            Variant::DcsKodak => "dcs-kodak",
             Variant::KdcPacked => "kdc-packed",
         }
     }
@@ -448,7 +451,7 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         (Plan::Mrw(plan), Variant::MrwPacked | Variant::MrwUnpacked) => {
             crate::container::mrw::decode(info, plan, bytes, cancel)
         }
-        (Plan::Dcs(plan), Variant::DcsLosslessJpeg | Variant::DcsEightBit) => {
+        (Plan::Dcs(plan), Variant::DcsLosslessJpeg | Variant::DcsEightBit | Variant::DcsKodak) => {
             crate::container::dcs::decode(info, plan, bytes, cancel)
         }
         (Plan::Kdc(plan), Variant::KdcPacked) => {

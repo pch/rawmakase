@@ -101,6 +101,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `MrwPacked` | Minolta MRW, 12-bit samples packed most significant bit first | ExifTool's MinoltaRaw tag names, our own measurements |
 | `MrwUnpacked` | Minolta MRW, 16-bit big-endian words | ExifTool's MinoltaRaw tag names, our own measurements |
 | `DcsLosslessJpeg` | Kodak DCS TIFF (DCS520C, DCS560C, Canon EOS D2000C): one lossless JPEG strip of 12-bit codes on the KodakIFD's curve | TIFF 6, TIFF/EP, ITU T.81, ExifTool's Kodak tag names, our own measurements |
+| `DcsKodak` | Kodak DCR (DCS760C, DCS Pro 14N, 14nx, SLR/c, SLR/n): the DCS TIFF, its strip in Kodak's coding (compression 65000) | TIFF 6, ExifTool's Kodak tag names, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
 | `DcsEightBit` | Kodak's older DCS TIFF (DCS460, EOS DCS 1 and 3): 8-bit codes on IFD0's GrayResponseCurve | TIFF 6, our own measurements |
 | `KdcPacked` | Kodak KDC of the EasyShare and P-series compacts: packed 12-bit samples | TIFF 6, ExifTool's Kodak tag names, our own measurements |
 | `FffCompressed` | Hasselblad 3FR and FFF (compression 7): lossless JPEG headers, then pairs of coded differences in little-endian 32-bit words | ITU T.81, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
@@ -574,7 +575,15 @@ the WhiteBalance setting (WB_RGBLevelsDaylight, 0x0848, plus the setting
 0x03FC), green over each, as Adobe's AsShotNeutral; the Daylight preset those
 levels' green squared over each. SensorLeftBorder to SensorImageHeight
 (0x03EB to 0x03EE) are the default crop, ExposureIndex the ISO speed where
-EXIF gives none. Kodak's older DCS TIFFs (the DCS460 and the EOS DCS 1 and 3)
+EXIF gives none. Kodak's DCR files (the DCS760C and the DCS Pro bodies) are
+the same TIFFs, their strip in Kodak's coding (`codec::kodak`, compression
+65000: each row in blocks of up to 256 samples, a 4-bit length per sample
+then its difference in that many bits, summed per colour; a block of a
+length over 12 stored as plain 12-bit samples) and their ImageExpansionTable
+up to 4096 entries (1024 of 10-bit codes on the 14N, 14nx and SLR/c). White
+is the camera table's (`adobe-dng`: 3500 for the DCS760C, 3700 for the 14N,
+14nx and SLR/c), else 4095; the previews, in Kodak's coding, are not JPEG.
+Kodak's older DCS TIFFs (the DCS460 and the EOS DCS 1 and 3)
 keep 8-bit codes in their largest uncompressed 8-bit directory, each taken
 through IFD0's 256-entry GrayResponseCurve, whose top is the white; black is
 0, the model the model text's first word, and the visible area (two columns

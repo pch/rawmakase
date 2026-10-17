@@ -29995,3 +29995,66 @@ after = 4000
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 4000; Adobe's white fitted to RAWmakase's samples is the same, exact fit; RAWmakase's is the camera table's adobe-dng row or the samples' 12-bit range"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
+
+[[delta]]
+# Kodak/DCS760C/86L57188.DCR
+sha256 = "d0e6bd0a3339daff884e73a08fed8e75b20fe05bba438fc185e3f0bd019d0da8"
+field = "sensor.white"
+before = 4095
+after = 3500
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3500; Adobe's white fitted to RAWmakase's samples is the same, exact fit; RAWmakase's is the camera table's adobe-dng row"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Kodak/DCS760C/86L57188.DCR
+sha256 = "d0e6bd0a3339daff884e73a08fed8e75b20fe05bba438fc185e3f0bd019d0da8"
+field = "header.metadata.wb"
+before = [1.134984016418457, 1.0, 1.8642172813415527]
+after = [1.135086178779602, 1.0, 1.8644825220108032]
+evidence = "RAWmakase's is the KodakIFD's levels of the WhiteBalance setting (WB_RGBLevelsDaylight + WhiteBalance), green over each, Adobe DNG Converter's AsShotNeutral to its six digits; LibRaw's differs by under 0.4%"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Kodak/DCS Pro 14nx/D7465857.DCR
+sha256 = "0850ca7337169b609cef369f0de1e71952646d922b50cf1752b7ed6a2ef81ed5"
+field = "header.metadata.wb"
+before = [1.24609375, 1.0, 1.38790762424469]
+after = [1.2461376190185547, 1.0, 1.3880245685577393]
+evidence = "RAWmakase's is the KodakIFD's levels of the WhiteBalance setting (WB_RGBLevelsDaylight + WhiteBalance), green over each, Adobe DNG Converter's AsShotNeutral to its six digits; LibRaw's differs by under 0.4%"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Kodak/DCS Pro SLRn/G3X25544.DCR
+sha256 = "c32e54a18969751a5502c16c5d69b152fc841831151121c1d2ae18e6656fae86"
+field = "header.metadata.wb"
+before = [1.2548638582229614, 1.0, 1.5747082233428955]
+after = [1.2548828125, 1.0, 1.5747549533843994]
+evidence = "RAWmakase's is the KodakIFD's levels of the WhiteBalance setting (WB_RGBLevelsDaylight + WhiteBalance), green over each, as on the other DCS bodies; Adobe DNG Converter writes no AsShotNeutral for this file; LibRaw's differs by under 0.01%"
+approval = "pending"
+
+[[delta]]
+# Kodak/DCS Pro 14N/D4C50031.DCR
+sha256 = "a2fa7abe9dc1a4978ec7bda31dd6b5e4b37ce1ddf9067e0eeb9123d38ea13f69"
+field = "header.metadata.wb"
+before = [0.9381136298179626, 1.0, 1.3644810914993286]
+after = [0.9381579160690308, 1.0, 1.364593267440796]
+evidence = "RAWmakase's is the KodakIFD's levels of the WhiteBalance setting (WB_RGBLevelsDaylight + WhiteBalance), green over each, Adobe DNG Converter's AsShotNeutral to its six digits; LibRaw's differs by under 0.4%"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Kodak/DCS Pro 14N/D4C50031.DCR
+sha256 = "a2fa7abe9dc1a4978ec7bda31dd6b5e4b37ce1ddf9067e0eeb9123d38ea13f69"
+field = "header.metadata.iso"
+before = 160.0
+after = 200.0
+evidence = "RAWmakase's is the file's ExposureIndex (200), Adobe DNG Converter's ISO 200; LibRaw's 160 is the KodakIFD's ISO tag (the body's base ISO)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Kodak/DCS Pro SLRc/F3G93631.DCR
+sha256 = "dca493a81bd4f87428d1584fa4ee6a4e98c97d6540b16a7a42d25916b0fd6107"
+field = "header.metadata.wb"
+before = [1.318359375, 1.0, 1.3846153020858765]
+after = [1.322224736213684, 1.0, 1.3803479671478271]
+evidence = "RAWmakase's is the KodakIFD's levels of the WhiteBalance setting (WB_RGBLevelsDaylight + WhiteBalance), green over each, Adobe DNG Converter's AsShotNeutral to its six digits; LibRaw's differs by under 0.4%"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"

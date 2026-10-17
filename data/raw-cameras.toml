@@ -8402,6 +8402,34 @@ dng = false
 white = 3277
 source = "adobe-dng"
 
+[[camera]]
+make = "Kodak"
+model = "DCS760C"
+dng = false
+white = 3500
+source = "adobe-dng"
+
+[[camera]]
+make = "Kodak"
+model = "DCS Pro 14N"
+dng = false
+white = 3700
+source = "adobe-dng"
+
+[[camera]]
+make = "Kodak"
+model = "DCS Pro 14nx"
+dng = false
+white = 3700
+source = "adobe-dng"
+
+[[camera]]
+make = "Kodak"
+model = "DCS Pro SLR/c"
+dng = false
+white = 3700
+source = "adobe-dng"
+
 # Kodak KDC: the canonical names of the EasyShare and P-series bodies.
 
 [[canonical]]

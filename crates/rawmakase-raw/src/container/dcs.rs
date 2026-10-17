@@ -4,7 +4,10 @@
 //! rows, 12-bit codes on the strip's GrayResponseCurve (0x0123); and the
 //! KodakIFD (IFD0 tag 0x8290, offsets from the TIFF header) with the black
 //! level (BlackLevelBottom, 0x03F0) and the neutral levels as shot
-//! (0x0848, red, green, blue).
+//! (0x0848, red, green, blue). Kodak's DCR files (the DCS760C and DCS Pro
+//! bodies) are the same TIFFs, the strip in Kodak's own coding (compression
+//! 65000, `codec::kodak`) and the KodakIFD's curve up to 4096 entries (1024,
+//! of 10-bit codes, on the DCS Pro 14N, 14nx and SLR/c).
 //!
 //! Sources: TIFF 6 (GrayResponseCurve, SubIFDs), TIFF/EP (CFAPattern), ITU
 //! T.81, ExifTool's Kodak tag documentation (KodakIFD, BlackLevelBottom), and
@@ -47,7 +50,9 @@ pub(crate) struct DcsPlan {
 /// The raw image's directory: a 12-bit lossless JPEG CFA image.
 fn raw_ifd<'a>(t: &'a TiffFile) -> Option<&'a Ifd> {
     t.ifds.iter().find(|ifd| {
-        t.int(ifd, 262) == Some(32803) && t.int(ifd, 259) == Some(7) && t.int(ifd, 258) == Some(12)
+        t.int(ifd, 262) == Some(32803)
+            && matches!(t.int(ifd, 259), Some(7 | 65000))
+            && t.int(ifd, 258) == Some(12)
     })
 }
 
@@ -72,11 +77,12 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     let kodak = t
         .int(ifd0, KODAK_IFD)
         .and_then(|at| t.ifd_at(u64::from(at)));
-    // The curve: 4096 non-decreasing values, its shape checked before it is
-    // read; the KodakIFD's, else the strip's GrayResponseCurve.
+    // The curve: up to 4096 non-decreasing values (the DCS Pro 14N's has
+    // 1024, its codes 10-bit), its shape checked before it is read; the
+    // KodakIFD's, else the strip's GrayResponseCurve.
     let table = |ifd: &Ifd, tag: u16| -> Option<Vec<u16>> {
         t.shape(ifd, tag)
-            .filter(|&(_, n)| n as usize == CURVE_LEN)
+            .filter(|&(_, n)| (2..=CURVE_LEN).contains(&(n as usize)))
             .and_then(|_| t.ints(ifd, tag, CURVE_LEN))
             .filter(|c| c.windows(2).all(|p| p[0] <= p[1]) && c.iter().all(|&v| v < 1 << 16))
             .map(|c| c.into_iter().map(|v| v as u16).collect())
@@ -98,7 +104,11 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     if black >= 4095 {
         return Err(corrupt("DCS black level"));
     }
-    let mut info = crate::info::base(Variant::DcsLosslessJpeg);
+    let variant = match t.int(raw, 259) {
+        Some(65000) => Variant::DcsKodak,
+        _ => Variant::DcsLosslessJpeg,
+    };
+    let mut info = crate::info::base(variant);
     info.make = t.text_upto(ifd0, 271, 64).unwrap_or_default();
     info.model = t.text_upto(ifd0, 272, 64).unwrap_or_default();
     // The camera table is keyed by RAWmakase's names.
@@ -158,7 +168,11 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         }
     }
     info.previews = t.previews();
-    info.uncompressed_preview = t.has_uncompressed_thumbnail();
+    // DCR files' previews are RGB or YCbCr in Kodak's coding: not JPEG.
+    info.uncompressed_preview = t.has_uncompressed_thumbnail()
+        || t.ifds
+            .iter()
+            .any(|ifd| t.int(ifd, 259) == Some(65000) && matches!(t.int(ifd, 262), Some(2 | 6)));
     info.plan = Plan::Dcs(DcsPlan {
         strip: (t.base + u64::from(offset), u64::from(count)),
         width,
@@ -290,6 +304,16 @@ pub(crate) fn decode(
             data.resize(count, 0);
             data
         }
+        Variant::DcsKodak => {
+            let mut data = crate::io::zeroed(count)?;
+            let order = if bytes.starts_with(b"II") {
+                Order::Little
+            } else {
+                Order::Big
+            };
+            crate::codec::kodak::decode(src, order, plan.width as usize, &mut data, cancel)?;
+            data
+        }
         Variant::DcsEightBit => {
             let mut data = crate::io::zeroed(count)?;
             let p = crate::codec::packed::Packing::msb(8);
@@ -343,7 +367,13 @@ mod tests {
     /// doubling codes, and a KodakIFD with black levels 10 and 13, the
     /// Daylight levels and WhiteBalance 0.
     fn dcs(jpeg: &[u8]) -> Vec<u8> {
-        let curve: Vec<u16> = (0..4096u32).map(|v| (2 * v).min(4095) as u16).collect();
+        dcs_coded(jpeg, 7, 4096)
+    }
+
+    /// `dcs`, the strip of `compression` and the curve of `curve_len`
+    /// entries.
+    fn dcs_coded(jpeg: &[u8], compression: u16, curve_len: u32) -> Vec<u8> {
+        let curve: Vec<u16> = (0..curve_len).map(|v| (2 * v).min(4095) as u16).collect();
         let curve = shorts(BE, &curve);
         let kodak_at = offsets(&[jpeg, &[]])[1];
         let kodak = dir(
@@ -363,7 +393,7 @@ mod tests {
                 long(BE, 256, &[4]),
                 long(BE, 257, &[2]),
                 short(BE, 258, &[12]),
-                short(BE, 259, &[7]),
+                short(BE, 259, &[compression]),
                 short(BE, 262, &[32803]),
                 long(BE, 273, &[8]),
                 long(BE, 279, &[jpeg.len() as u32]),
@@ -399,6 +429,29 @@ mod tests {
             crate::decode(&info, &file, &AtomicBool::new(true)).unwrap_err(),
             Error::Cancelled
         );
+    }
+
+    #[test]
+    fn dcr_files_are_kodak_coded_on_a_short_curve() {
+        // Each row one block: lengths 4, 4, 4, 4, then 16 bits (prefetched,
+        // big-endian): 10, 12, 8, 9 least significant first, each with its
+        // top bit set (positive). Even columns 10, 18; odd 12, 21.
+        let row = [0x44, 0x44, 0x98, 0xca];
+        let file = dcs_coded(&[row, row].concat(), 65000, 1024);
+        let info = crate::open(&file).unwrap();
+        assert_eq!(info.variant, Variant::DcsKodak);
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        // The codes through the 1024-entry curve (doubling).
+        assert_eq!(s.data, [20, 24, 36, 42, 20, 24, 36, 42]);
+        assert_eq!(
+            crate::decode(&info, &file, &AtomicBool::new(true)).unwrap_err(),
+            Error::Cancelled
+        );
+        for end in 0..file.len() {
+            if let Ok(info) = crate::open(&file[..end]) {
+                let _ = crate::decode(&info, &file[..end], &AtomicBool::new(false));
+            }
+        }
     }
 
     /// An older big-endian DCS TIFF: IFD0's curve (code times 3) and a
