@@ -50,6 +50,8 @@ pub enum Variant {
     ArwV1,
     /// Sony ARW's "compressed RAW 2": LLVC (SMPTE RDD 34) tiles.
     ArwV6,
+    /// Nikon NEF, Huffman-coded (lossless or lossy, with or without a split).
+    NefHuffman,
 }
 
 impl Variant {
@@ -72,6 +74,7 @@ impl Variant {
             Variant::ArwYcbcr => "arw-ycbcr",
             Variant::ArwV1 => "arw-v1",
             Variant::ArwV6 => "arw-v6",
+            Variant::NefHuffman => "nef-huffman",
         }
     }
 }
@@ -83,6 +86,7 @@ pub(crate) enum Plan {
     Dng(crate::container::dng::DngPlan),
     Rw2(crate::container::rw2::Rw2Plan),
     Arw(crate::container::arw::ArwPlan),
+    Nef(crate::container::nef::NefPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -108,6 +112,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         }
         if crate::container::arw::is_sony(&t) {
             return crate::container::arw::open(t);
+        }
+        if crate::container::nef::is_nef(&t) {
+            return crate::container::nef::open(bytes, t);
         }
     }
     Err(Error::NotRaw)
@@ -142,6 +149,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::ArwV1
             | Variant::ArwV6,
         ) => crate::container::arw::decode(info, plan, bytes, cancel),
+        (Plan::Nef(plan), Variant::NefHuffman) => {
+            crate::container::nef::decode(info, plan, bytes, cancel)
+        }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
             "{} with another container's plan",

@@ -8,7 +8,8 @@
 # [[camera]]     decode facts, for the camera's files matching `dng` and
 #                `raw_size` when given: the visible area (`visible`, left, top,
 #                width, height in sensor coordinates) and levels (`white`,
-#                and `black` for every channel)
+#                and `black` for every channel), of its files of `bits`-bit
+#                samples when given
 #
 # source says where the values come from:
 #   file             a rule from the file's own tags, for files that lack them
@@ -1733,4 +1734,378 @@ model = "ZV-E10M2"
 dng = false
 raw_size = [6656, 4608]
 visible = [0, 0, 6240, 4168]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 AW1"
+dng = false
+raw_size = [4620, 3084]
+visible = [0, 0, 4620, 3082]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 J1"
+dng = false
+raw_size = [3904, 2606]
+visible = [0, 0, 3904, 2604]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 J2"
+dng = false
+raw_size = [3904, 2606]
+visible = [0, 0, 3904, 2604]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 J3"
+dng = false
+raw_size = [4620, 3084]
+visible = [0, 0, 4620, 3082]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 J4"
+dng = false
+raw_size = [5248, 3504]
+visible = [0, 0, 5248, 3502]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 J5"
+dng = false
+raw_size = [5584, 3726]
+visible = [0, 0, 5584, 3724]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 S1"
+dng = false
+raw_size = [3948, 2604]
+visible = [0, 0, 3948, 2602]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 S2"
+dng = false
+raw_size = [4608, 3080]
+visible = [0, 0, 4608, 3078]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 V1"
+dng = false
+raw_size = [3904, 2606]
+visible = [0, 0, 3904, 2604]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 V2"
+dng = false
+raw_size = [4620, 3084]
+visible = [0, 0, 4620, 3082]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "1 V3"
+dng = false
+raw_size = [5248, 3504]
+visible = [0, 0, 5248, 3502]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "COOLPIX A"
+dng = false
+raw_size = [4992, 3280]
+visible = [0, 0, 4948, 3280]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D100"
+dng = false
+raw_size = [3040, 2024]
+visible = [0, 0, 3037, 2024]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D1X"
+dng = false
+raw_size = [4028, 1324]
+visible = [0, 0, 4024, 1324]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D200"
+dng = false
+raw_size = [3904, 2616]
+visible = [2, 0, 3899, 2616]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D2H"
+dng = false
+raw_size = [2496, 1648]
+visible = [6, 0, 2482, 1648]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D2Hs"
+dng = false
+raw_size = [2496, 1648]
+visible = [6, 0, 2482, 1648]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D2X"
+dng = false
+raw_size = [4320, 2868]
+visible = [0, 0, 4312, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D2Xs"
+dng = false
+raw_size = [4320, 2868]
+visible = [0, 0, 4312, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D3"
+dng = false
+raw_size = [4288, 2844]
+visible = [2, 0, 4284, 2844]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D300"
+dng = false
+raw_size = [4352, 2868]
+visible = [0, 0, 4320, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D3000"
+dng = false
+raw_size = [3904, 2616]
+visible = [0, 0, 3900, 2613]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D300S"
+dng = false
+raw_size = [4352, 2868]
+visible = [0, 0, 4320, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D3100"
+dng = false
+raw_size = [4672, 3084]
+visible = [6, 0, 4644, 3084]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D3200"
+dng = false
+raw_size = [6080, 4012]
+visible = [0, 0, 6034, 4012]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D3S"
+dng = false
+raw_size = [4288, 2844]
+visible = [2, 0, 4284, 2844]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D4"
+dng = false
+raw_size = [4992, 3292]
+visible = [2, 0, 4940, 3292]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D40"
+dng = false
+raw_size = [3040, 2014]
+visible = [0, 0, 3039, 2014]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D40X"
+dng = false
+raw_size = [3904, 2616]
+visible = [0, 0, 3900, 2613]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D50"
+dng = false
+raw_size = [3040, 2014]
+visible = [0, 0, 3039, 2014]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D5000"
+dng = false
+raw_size = [4352, 2868]
+visible = [0, 0, 4310, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D5100"
+dng = false
+raw_size = [4992, 3280]
+visible = [0, 0, 4948, 3280]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D60"
+dng = false
+raw_size = [3904, 2616]
+visible = [0, 0, 3900, 2613]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D600"
+dng = false
+raw_size = [6080, 4028]
+visible = [0, 0, 6034, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D610"
+dng = false
+raw_size = [3968, 2636]
+visible = [0, 0, 3922, 2636]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D610"
+dng = false
+raw_size = [6080, 4028]
+visible = [0, 0, 6034, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D70"
+dng = false
+raw_size = [3040, 2014]
+visible = [0, 0, 3039, 2014]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D700"
+dng = false
+raw_size = [4288, 2844]
+visible = [2, 0, 4284, 2844]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D7000"
+dng = false
+raw_size = [4992, 3280]
+visible = [0, 0, 4948, 3280]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D70s"
+dng = false
+raw_size = [3040, 2014]
+visible = [0, 0, 3039, 2014]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D80"
+dng = false
+raw_size = [3904, 2616]
+visible = [0, 0, 3900, 2613]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D800"
+dng = false
+raw_size = [7424, 4924]
+visible = [0, 0, 7378, 4924]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D800E"
+dng = false
+raw_size = [7424, 4924]
+visible = [0, 0, 7378, 4924]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D90"
+dng = false
+raw_size = [4352, 2868]
+visible = [0, 0, 4310, 2868]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "Df"
+dng = false
+raw_size = [4992, 3292]
+visible = [2, 0, 4940, 3292]
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D5100"
+bits = 14
+white = 15846
+source = "compat-observed"
+
+[[camera]]
+make = "Nikon"
+model = "D600"
+bits = 14
+white = 15879
 source = "compat-observed"

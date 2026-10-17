@@ -35,9 +35,9 @@ Modules, each with a small `pub(crate)` surface:
 | Module | Owns |
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
-| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `rw2`, `arw`) |
-| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`panasonic`, `sony`) |
+| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`) |
+| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
 | `color` | The camera-to-sRGB matrix and daylight multipliers from a camera's XYZ matrix |
@@ -67,6 +67,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `ArwYcbcr` | Sony ARW small RAWs: lossless JPEG luma and chroma tiles | ITU T.81, T.871, TIFF 6, our measurements |
 | `ArwV6` | Sony ARW "compressed RAW 2": LLVC tiles of wavelet planes, a curve to linear values | SMPTE RDD 34, Adobe DNG Converter, our measurements |
 | `ArwV1` | Sony's first ARW: Huffman-coded columns (DSLR-A100 to A390) | ITU T.81 (difference coding), ExifTool's Minolta tags, our measurements |
+| `NefHuffman` | Nikon NEF, Huffman-coded (TIFF compression 34713): lossless, lossy, lossy with a split | TIFF 6, ITU T.81, Laurent Clévy's NEF notes, ExifTool's Nikon tag documentation, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -127,6 +128,39 @@ Sony (from our own measurements unless said otherwise):
 - The DSC-R1's SR2 stores its words big-endian in a little-endian file.
 - Visible areas, some white levels and some model names RAWmakase has always
   read are rows of `data/raw-cameras.toml` (`compat-observed`).
+
+Nikon, from our own measurements of LibRaw's output (on the dataset's files,
+and on synthetic NEFs that probe one code word, key or tag at a time):
+
+- Nikon writes no Huffman tables. The six (lossy, lossy after the split row,
+  lossless; at 12 and 14 bits) were recovered from the decoded values and
+  checked code word by code word on synthetic streams. The second lossy table
+  drops low bits of large differences (a symbol's high nibble); the split row
+  switches tables for linearization tables of version 0x44 0x20 and 0x44
+  0x40, and the bit stream runs on without alignment. Predictions are
+  clamped to 14 bits before the curve.
+- The curve: 0x44 0x20 stores points every 2^bits / (n − 1) values, 0x44 0x40
+  over a quarter of that span, linearly interpolated; 0x44 0x10 stores the
+  curve's start; values past the points are themselves. The D1X keeps its
+  table (version 0x44 0x58) in tag 0x008c, its predictions 2110 bytes on.
+- The maker note's encrypted blocks (ColorBalance 02xx, LensData 02xx and
+  08xx) are XORed after their version with a running sum: a step from the
+  serial number's low byte, a start from the XOR of the shutter count's
+  bytes, both through tables measured over all 256 values; the sum grows by
+  the step times a counter from 0x60. A serial number that is not all digits
+  keys as 96; the D50's as 34. Lens data is read only alongside a shutter
+  count.
+- Levels: BlackLevel (0x003d) is at 14 bits and shifted to the data's bits;
+  white is the data's full scale except where `raw-cameras.toml` says.
+  CropArea's odd left or top edge moves in by one, keeping the far edges.
+- ISO comes from EXIF, else the note's ISO (0x0002), else ISOInfo's byte v as
+  100 × 2^(v / 12 − 5) in single precision.
+- Observed compatibility keyed on the model, where the file carries nothing
+  that tells (each LibRaw's reading of the dataset's files, kept so saved
+  edits keep it): the D1's as-shot multipliers are unity; the COOLPIX P6000's
+  CFA is read red first; the D50's encrypted blocks are keyed as serial 34.
+  Rules the camera table can express are its rows instead (white and black
+  levels).
 
 ## Checking against LibRaw
 

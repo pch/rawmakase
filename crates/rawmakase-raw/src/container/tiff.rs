@@ -74,6 +74,16 @@ impl<'a> TiffFile<'a> {
     pub fn little(&self) -> bool {
         self.bytes.order == Order::Little
     }
+    /// The directory at `offset` (from the TIFF header) alone, read with this
+    /// TIFF's byte order and offsets: a maker note's or a preview's.
+    pub fn directory_at(&self, offset: u64) -> Option<TiffFile<'a>> {
+        Some(Self {
+            bytes: self.bytes,
+            base: self.base,
+            ifds: vec![self.ifd_at(offset)?],
+            exif: None,
+        })
+    }
     /// An entry's value bytes.
     pub fn value(&self, e: &Entry) -> Option<&'a [u8]> {
         let len = u64::from(e.count).checked_mul(e.type_size()? as u64)?;

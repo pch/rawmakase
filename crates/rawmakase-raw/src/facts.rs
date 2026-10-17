@@ -55,6 +55,9 @@ pub(crate) struct Camera {
     pub dng: Option<bool>,
     #[serde(default)]
     pub raw_size: Option<[u32; 2]>,
+    /// The sample bits of the files the row is for, when it is for some.
+    #[serde(default)]
+    pub bits: Option<u32>,
     /// The visible area: left, top, width, height in sensor coordinates.
     #[serde(default)]
     pub visible: Option<[u32; 4]>,
@@ -176,7 +179,10 @@ mod tests {
         }
         let mut cams = std::collections::HashSet::new();
         for c in &cameras.camera {
-            assert!(cams.insert((&c.make, &c.model, c.dng, c.raw_size)), "{c:?}");
+            assert!(
+                cams.insert((&c.make, &c.model, c.dng, c.raw_size, c.bits)),
+                "{c:?}"
+            );
             assert!(
                 c.visible.is_some() || c.white.is_some() || c.black.is_some(),
                 "{c:?}"

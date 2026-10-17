@@ -2,6 +2,7 @@
 //! previews and the maker notes are.
 pub(crate) mod arw;
 pub(crate) mod dng;
+pub(crate) mod nef;
 pub(crate) mod rw2;
 pub(crate) mod tiff;
 pub(crate) mod tiff_exif;
