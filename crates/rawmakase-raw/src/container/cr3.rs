@@ -342,11 +342,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
     let header = crx::Header::parse(bytes.get(start..end).unwrap_or_default())?;
     let variant = match header.levels {
         0 => Variant::Cr3Lossless,
-        n => {
-            return Err(Error::Unsupported(format!(
-                "CR3 C-RAW ({n} wavelet levels)"
-            )));
-        }
+        _ => Variant::Cr3Craw,
     };
     let (offset, len) = raw.sample.ok_or_else(|| corrupt("CR3 raw image sample"))?;
     let mut info = crate::info::base(variant);
@@ -619,13 +615,19 @@ mod tests {
     /// maker notes in `CMT3` and the timed metadata (ColorData version 33),
     /// and a JPEG or HEVC preview.
     fn cr3(jpeg: bool) -> Vec<u8> {
-        cr3_built(jpeg, None, 1)
+        cr3_of(jpeg, false)
     }
 
-    /// As `cr3`, the timed metadata's sample `timed` when given, named by
+    /// As `cr3`, or (`craw`) a 16 × 16 C-RAW image (`crx::tests::craw`, every
+    /// sample 8198).
+    fn cr3_of(jpeg: bool, craw_image: bool) -> Vec<u8> {
+        cr3_built(jpeg, craw_image, None, 1)
+    }
+
+    /// As `cr3_of`, the timed metadata's sample `timed` when given, named by
     /// `tracks` tracks.
-    fn cr3_built(jpeg: bool, timed: Option<Vec<u8>>, tracks: usize) -> Vec<u8> {
-        let n: u16 = 4;
+    fn cr3_built(jpeg: bool, craw_image: bool, timed: Option<Vec<u8>>, tracks: usize) -> Vec<u8> {
+        let n: u16 = if craw_image { 16 } else { 4 };
         let cmt1 = tiff(&[
             text(271, "Canon"),
             text(272, "Canon EOS R6m2"),
@@ -661,7 +663,8 @@ mod tests {
         }
         cmp1[24] = 14;
         cmp1[25] = 0x40;
-        let head: u32 = 108;
+        cmp1[26] = if craw_image { 3 } else { 0 };
+        let head: u32 = if craw_image { 540 } else { 108 };
         cmp1[28..32].copy_from_slice(&head.to_be_bytes());
         // Image areas: crop, masked left and top, active (inclusive).
         let m = n - 1;
@@ -672,7 +675,11 @@ mod tests {
         .flat_map(|v| v.to_be_bytes())
         .collect();
         let cdi1 = bx(b"CDI1", &[vec![0; 4], bx(b"IAD1", &iad)].concat());
-        let sample = crate::codec::crx::tests::flat();
+        let sample = if craw_image {
+            crate::codec::crx::tests::craw(0x02, 10)
+        } else {
+            crate::codec::crx::tests::flat()
+        };
         let preview = [0xff, 0xd8, 0xff, 0xd9];
         let base = if tracks > 1 { 1u64 << 20 } else { 4096 };
         let canon = bx(
@@ -748,6 +755,21 @@ mod tests {
     }
 
     #[test]
+    fn reads_c_raw() {
+        let file = cr3_of(true, true);
+        let info = crate::open(&file).unwrap();
+        assert_eq!(info.variant, crate::Variant::Cr3Craw);
+        assert_eq!([info.width, info.height], [16, 16]);
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        assert_eq!(s.data, vec![8198; 256]);
+        for n in (4096..file.len()).step_by(5) {
+            if let Ok(info) = crate::open(&file[..n]) {
+                let _ = crate::decode(&info, &file[..n], &AtomicBool::new(false));
+            }
+        }
+    }
+
+    #[test]
     fn many_timed_metadata_tracks_of_one_huge_record_open_quickly() {
         // One record of 2^20 eight-byte maker-note items (no TIFF in them),
         // named by 400 tracks.
@@ -759,7 +781,7 @@ mod tests {
             record.extend(8u32.to_le_bytes());
             record.extend(0x927cu32.to_le_bytes());
         }
-        let file = cr3_built(true, Some(record), 400);
+        let file = cr3_built(true, false, Some(record), 400);
         let start = std::time::Instant::now();
         let info = crate::open(&file).unwrap();
         assert!(start.elapsed() < std::time::Duration::from_secs(2));

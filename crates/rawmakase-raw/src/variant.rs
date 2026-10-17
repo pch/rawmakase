@@ -78,6 +78,8 @@ pub enum Variant {
     RafCompressed,
     /// Canon CR3, lossless CRX: median-predicted, Rice-coded Bayer planes.
     Cr3Lossless,
+    /// Canon CR3, C-RAW: CRX planes in three wavelet levels, quantized.
+    Cr3Craw,
 }
 
 impl Variant {
@@ -113,6 +115,7 @@ impl Variant {
             Variant::RafPackedWords => "raf-packed-words",
             Variant::RafCompressed => "raf-compressed",
             Variant::Cr3Lossless => "cr3-lossless",
+            Variant::Cr3Craw => "cr3-craw",
         }
     }
 }
@@ -213,7 +216,7 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::RafPackedWords
             | Variant::RafCompressed,
         ) => crate::container::raf::decode(info, plan, bytes, cancel),
-        (Plan::Cr3(plan), Variant::Cr3Lossless) => {
+        (Plan::Cr3(plan), Variant::Cr3Lossless | Variant::Cr3Craw) => {
             crate::container::cr3::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),

@@ -854,3 +854,579 @@ before = 16383
 after = 12500
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 12500"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon EOS M200/_MG_2233.CR3
+sha256 = "0585a468143c6606936d0ffbff1788c6c02e3610d8ecb50614e21492fbacd052"
+field = "sensor.black"
+before = [511, 511, 510, 511]
+after = [511, 511, 511, 511]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 511 511 511 511 (BlackLevelRepeatDim 2 2); ColorData's per-channel levels"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon EOS M200/_MG_2233.CR3
+sha256 = "0585a468143c6606936d0ffbff1788c6c02e3610d8ecb50614e21492fbacd052"
+field = "sensor.white"
+before = 16383
+after = 11606
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 11606"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon EOS R100/_MG_2195[1].CR3
+sha256 = "0b66842b2fe00329ebc05fe8ab9357ddbbe1a0a2d2e69a2893102de7fdf5c942"
+field = "sensor.black"
+before = [2047, 2048, 2048, 2047]
+after = [2048, 2048, 2048, 2048]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 2048 2048 2048 2048 (BlackLevelRepeatDim 2 2); ColorData's per-channel levels"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon EOS R100/_MG_2195[1].CR3
+sha256 = "0b66842b2fe00329ebc05fe8ab9357ddbbe1a0a2d2e69a2893102de7fdf5c942"
+field = "sensor.white"
+before = 16383
+after = 10439
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 10439"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon EOS R5m2/APS-C_CRAW.CR3
+sha256 = "6a597497776a6abbfab8fcf12d0086ac7a3f8afea2879d61accf6bbf48d357d7"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon EOS R5m2/CRAW.CR3
+sha256 = "b3c08a5c7a97299dfd58896a12b939e7b43ec78682761812524825e6e5d087be"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon EOS R6 Mark III/IMG_4242.CR3
+sha256 = "1395adbae77aaf0ea344fbe2eb2eb7ff825ccae815177cc499fb65e55eaaa495"
+field = "sensor.white"
+before = 16383
+after = 13995
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 13995"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon EOS R6 Mark III/IMG_4244.CR3
+sha256 = "7e1a5d84297a52853b0bbe5a5c03a5d4f5b93e00b7020271523240f9cabfe50e"
+field = "sensor.white"
+before = 16383
+after = 13995
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 13995"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot V1/IMG_1225.CR3
+sha256 = "0a0abfd81b3a34fa513ac8ed24c809275160d65b07e892c2eb4353b77c535a31"
+field = "sensor.white"
+before = 16383
+after = 13036
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 13036"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS 250D/Canon250D_cRAW-16:9.CR3
+sha256 = "e81963db1ee6df76bb10fd536b3646cede277f2ca8b26895b1b34debafa03fc4"
+field = "sensor.white"
+before = 16383
+after = 11606
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 11606"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS 250D/Canon250D_cRAW-1:1.CR3
+sha256 = "7ece52df8b7ed868e6c6096e6a28f807694768cc045383c541e9707f1a669a5d"
+field = "sensor.white"
+before = 16383
+after = 11606
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 11606"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS 250D/Canon250D_cRAW-3:2.CR3
+sha256 = "69bdd267defb3d676f41f62a5e5ea65651669a04191cf4e89740917c59cedbcc"
+field = "sensor.white"
+before = 16383
+after = 11606
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 11606"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS 250D/Canon250D_cRAW-4:3.CR3
+sha256 = "b55eb1a78810ebbfbed5c9a2639a739fee10e93e03f67d239a4708062603de2a"
+field = "sensor.white"
+before = 16383
+after = 11606
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 11606"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS 90D/Canon-90D-cRAW-ISO-100.CR3
+sha256 = "c8c918b2d1a53e64d7d5009ebac89a920dbba5f766c2f396bb4ec95312b21034"
+field = "sensor.white"
+before = 16383
+after = 13036
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 13036"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS M50/Canon-EOS_M50_-CRAW_(1:1).CR3
+sha256 = "15384b775867ec4c42b11882837f1e368cedc0561832ffab271221e6bb80be4c"
+field = "sensor.black"
+before = [2048, 2047, 2047, 2048]
+after = [2048, 2048, 2048, 2048]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 2048.050781 (BlackLevelRepeatDim 1 1); ColorData's per-channel levels"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS M50/Canon-EOS_M50_-CRAW_(1:1).CR3
+sha256 = "15384b775867ec4c42b11882837f1e368cedc0561832ffab271221e6bb80be4c"
+field = "sensor.white"
+before = 16383
+after = 14338
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14338"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS M50/Canon_EOS_M50_CRAW_ISO_100_nocrop_nodual.CR3
+sha256 = "27a88fdae82516ba136e12c2cc9b934f25dbaaac24d64ab4e5517f8524463594"
+field = "sensor.black"
+before = [510, 510, 511, 511]
+after = [510, 511, 511, 511]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 510.9492188 (BlackLevelRepeatDim 1 1); ColorData's per-channel levels; Adobe measures a fractional black, ours is the file's levels"
+approval = "pending"
+
+[[delta]]
+# Canon/EOS M50/Canon_EOS_M50_CRAW_ISO_100_nocrop_nodual.CR3
+sha256 = "27a88fdae82516ba136e12c2cc9b934f25dbaaac24d64ab4e5517f8524463594"
+field = "sensor.white"
+before = 16383
+after = 11892
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 11892"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS M6 Mark II/IMG_CRAW_16_9.CR3
+sha256 = "2f766ce3b220a16430be3bcca96da58e3567cc7a04d7c46a18770f56b5a70dd1"
+field = "sensor.white"
+before = 16383
+after = 13660
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 13660"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS M6 Mark II/IMG_CRAW_1_1.CR3
+sha256 = "0ccbb6c447d0fab996291be9a5c2728cd7367bcc2f640e2a30eae112e13e6c0e"
+field = "sensor.white"
+before = 16383
+after = 10852
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 10852"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS M6 Mark II/IMG_CRAW_3_2.CR3
+sha256 = "94635c6f91e7d743cee6881cc2519992ae9f9031fd86b49e5d0f16edf5961b55"
+field = "sensor.white"
+before = 16383
+after = 10852
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 10852"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS M6 Mark II/IMG_CRAW_4_3.CR3
+sha256 = "9bb482b003a0749af615a9b3e52616b01a2ad2794a2d9fe47fafcf6bdcb9a35a"
+field = "sensor.white"
+before = 16383
+after = 10852
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 10852"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R/Canon_EOS_R_CRAW_ISO_100.CR3
+sha256 = "1b3efe0664a28a0decb53e225cbfecdbc0dd27d85abdc4683fc2a4add5129b4d"
+field = "sensor.white"
+before = 16383
+after = 14008
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14008"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R/Canon_EOS_R_CRAW_ISO_100_crop_dual.CR3
+sha256 = "c1f07fa57aa76290df640a15f2a1a74deb21519b0c99051941c47b36c685246d"
+field = "sensor.white"
+before = 16383
+after = 14008
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14008 14008"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R/Canon_EOS_R_CRAW_ISO_100_crop_nodual.CR3
+sha256 = "90bbf397b592f9ce9799477df4affbdf0025578c07eac26f928696b0d40d5121"
+field = "sensor.white"
+before = 16383
+after = 14008
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14008"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R/Canon_EOS_R_CRAW_ISO_100_dual_pixel_on.CR3
+sha256 = "cfd118af4477ef37538eb953421572a7a5c80694e59764049223107cc0c9ae83"
+field = "sensor.white"
+before = 16383
+after = 14008
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14008 14008"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_crop_dual.CR3
+sha256 = "88497fe7f71018ce35810e6b033fb696c7792b57e8c73e842d8326095287526a"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_crop_nodual.CR3
+sha256 = "a5f4935e0331cc16003c0b1ab6c657272739e82175557aaae576e78a8262511b"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_nocrop_dual.CR3
+sha256 = "00b80633af35c0f85b0299a1d2ea87c6788a9007a1df8a3c5c05ea487b2549e1"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_nocrop_nodual.CR3
+sha256 = "2deae46b816e56ba91ae7a3892ca121290e12d5b22afb11f5b05a3d8f09f759f"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R50/Canon_R50_ISO100_cRAW_electronicShutter.CR3
+sha256 = "38fc458f2f74d0cfa04afd0ce513b40797080079f0786bedbfc55c39cc28d7d8"
+field = "sensor.black"
+before = [2046, 2047, 2045, 2047]
+after = [2047, 2048, 2046, 2049]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 2047 2048 2049 2046 (BlackLevelRepeatDim 2 2); ColorData's per-channel levels"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R50/Canon_R50_ISO100_cRAW_electronicShutter.CR3
+sha256 = "38fc458f2f74d0cfa04afd0ce513b40797080079f0786bedbfc55c39cc28d7d8"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R50/Canon_R50_ISO100_cRAW_mechanicShutter.CR3
+sha256 = "b79af9ffa184dd740e8af7a9f451f7150053d7e456b3435ca2e43bbbf5f65026"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R6 Mark II/canon-r6m2-img_0355-craw-dual-full.cr3
+sha256 = "18a3ce780ed5433dc9b078f94bb8bd87927b0877331cce9597078f0dd4313c9f"
+field = "sensor.white"
+before = 16383
+after = 14008
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14008 14008"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R6 Mark II/canon-r6m2-img_0356-craw-dual-crop.cr3
+sha256 = "deed19ea7b5178c70f64710c97bcdc9d21f6610c19b42a2310223e51034d4fc8"
+field = "sensor.white"
+before = 16383
+after = 14008
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14008 14008"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R6 Mark II/canon-r6m2-img_0359-craw-normal-crop.cr3
+sha256 = "51ae1e673d2801d8a54f33dd8669c43034c506e2d355e75b26c0648e2f14a431"
+field = "sensor.white"
+before = 16383
+after = 14008
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14008"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R6 Mark II/canon-r6m2-img_0361-craw-normal-full.cr3
+sha256 = "409eb724212abde94e18fbd3170abf3264951fab13384c36cbf6fb4f22ea4201"
+field = "sensor.white"
+before = 16383
+after = 14008
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14008"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R6/Canon_EOS_R6_CRAW_ISO_100_crop_nodual.CR3
+sha256 = "74abb0a113d075ad9887a058082f40dd2a938c4813a08474d82356f11a027778"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R6/Canon_EOS_R6_CRAW_ISO_100_nocrop_nodual.CR3
+sha256 = "4775df76433b1e5844bc7a42b95d93efc8438c0a4cd9681e120e23fe3e3007e8"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R7/443A0159.CR3
+sha256 = "10a18e3f01ca9cd93408496d3853388ef140830548bfeed4237e40f967eb9d5c"
+field = "sensor.black"
+before = [512, 512, 512, 512]
+after = [512, 511, 512, 511]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 512 511 511 512 (BlackLevelRepeatDim 2 2); ColorData's per-channel levels"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R7/443A0159.CR3
+sha256 = "10a18e3f01ca9cd93408496d3853388ef140830548bfeed4237e40f967eb9d5c"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R7/443A0161.CR3
+sha256 = "c01cee1b598120668370892c16a73da915f2aaec8169c5c60a96efd98d9aa220"
+field = "sensor.black"
+before = [512, 512, 512, 512]
+after = [512, 511, 512, 511]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 512 512 511 511 511 511 512 512 (BlackLevelRepeatDim 2 2); ColorData's per-channel levels"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R7/443A0161.CR3
+sha256 = "c01cee1b598120668370892c16a73da915f2aaec8169c5c60a96efd98d9aa220"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R8/CRAW_FULL_FRAME.CR3
+sha256 = "df33cf394573645ce03dea1b2e9f0b5cc2b7734e9e3391ee7114151414cf2812"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS R8/CRAW_FULL_FRAME_DUAL_PIXEL.CR3
+sha256 = "f2caa26172e94ddb893c6e1a594c23b95b8d3197a5e7243f84ed4b0ab2f682cd"
+field = "sensor.white"
+before = 16383
+after = 16384
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16384 16384"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS RP/Canon_EOS_RP_CRAW_ISO_100_crop_nodual.CR3
+sha256 = "4a859ab137f792aedaf3416b0aad1497ebaab02052a49453902e226699154aa7"
+field = "sensor.black"
+before = [512, 512, 513, 513]
+after = [513, 513, 513, 513]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 513 513 513 513 (BlackLevelRepeatDim 2 2); ColorData's per-channel levels"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS RP/Canon_EOS_RP_CRAW_ISO_100_crop_nodual.CR3
+sha256 = "4a859ab137f792aedaf3416b0aad1497ebaab02052a49453902e226699154aa7"
+field = "sensor.white"
+before = 16383
+after = 14558
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14558"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS RP/Canon_EOS_RP_CRAW_ISO_100_nocrop_nodual.CR3
+sha256 = "bd3270610593d37ff8a399908bb9406a4e32f9151d55bf19ac1cf8f10d787b46"
+field = "sensor.black"
+before = [512, 512, 512, 512]
+after = [513, 513, 513, 513]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 513 513 513 513 (BlackLevelRepeatDim 2 2); ColorData's per-channel levels"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS RP/Canon_EOS_RP_CRAW_ISO_100_nocrop_nodual.CR3
+sha256 = "bd3270610593d37ff8a399908bb9406a4e32f9151d55bf19ac1cf8f10d787b46"
+field = "sensor.white"
+before = 16383
+after = 14558
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14558"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS Rebel SL3/Sedona2020_SL3__MG_1061.CR3
+sha256 = "6f26a2e4ea5a3e3b859662c9b01da6b24731413835aa601065bff1d7f30c6092"
+field = "sensor.white"
+before = 16383
+after = 11606
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 11606"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS-1D X Mark III/Canon_EOS-1D_X_Mark_III_CRAW_ISO_100_nocrop_nodual.CR3
+sha256 = "e5755d1414a2dd51fb0120b272058f00b0199861646070c00304d927eb119560"
+field = "sensor.white"
+before = 16383
+after = 16050
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16050"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot G5 X Mark II/Canon_-_PowerShot_G5_X_Mark_II_-_CRAW_(16:9).CR3
+sha256 = "71b2f703c09be153e48ff0075772f19ea0a2c2e81acc08d11e0a979ba79f07ce"
+field = "sensor.white"
+before = 16383
+after = 14335
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14335"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot G5 X Mark II/Canon_-_PowerShot_G5_X_Mark_II_-_CRAW_(1:1).CR3
+sha256 = "7d1160f4c7159dd30daae7a99a575d0c37dc11493aa6c796e1ff9e504c2bdd8f"
+field = "sensor.white"
+before = 16383
+after = 14335
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14335"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot G5 X Mark II/Canon_-_PowerShot_G5_X_Mark_II_-_CRAW_(3:2).CR3
+sha256 = "16d7b944344004c866bf2f84c5673969e76adfe16e5fb4388da48c72bdd58058"
+field = "sensor.white"
+before = 16383
+after = 14335
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14335"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot G5 X Mark II/Canon_-_PowerShot_G5_X_Mark_II_-_CRAW_(4:3).CR3
+sha256 = "53eec9eecf1a7270b06750efe73f90712d5649ab50e41a7310d37c3097689e54"
+field = "sensor.white"
+before = 16383
+after = 14335
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14335"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot G7 X Mark III/IMG_0254.CR3
+sha256 = "29fa26718f2791f8dc3a69d8517d0575f8cf165492253671e7b1a5151a512f02"
+field = "sensor.white"
+before = 16383
+after = 14335
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 14335"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX70 HS/IMG_1004.CR3
+sha256 = "ab5a2da7ee80c2ef2ae05bda30b0e70c1fad81e81f6d1994aeb520b83ef662c1"
+field = "sensor.black"
+before = [511, 511, 510, 511]
+after = [512, 512, 512, 512]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 512 512 512 512 (BlackLevelRepeatDim 2 2); ColorData's per-channel levels"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX70 HS/IMG_1004.CR3
+sha256 = "ab5a2da7ee80c2ef2ae05bda30b0e70c1fad81e81f6d1994aeb520b83ef662c1"
+field = "sensor.white"
+before = 16383
+after = 12500
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 12500"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX70 HS/IMG_1005.CR3
+sha256 = "5c37f0d865c79e22156f684281773dc4bf550f8ae1bfce2acc23cacb07a7893c"
+field = "sensor.black"
+before = [511, 511, 510, 511]
+after = [512, 512, 512, 512]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 512 512 512 512 (BlackLevelRepeatDim 2 2); ColorData's per-channel levels"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX70 HS/IMG_1005.CR3
+sha256 = "5c37f0d865c79e22156f684281773dc4bf550f8ae1bfce2acc23cacb07a7893c"
+field = "sensor.white"
+before = 16383
+after = 12500
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 12500"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX70 HS/IMG_1006.CR3
+sha256 = "fad9653d691d002bc2de4f1e98366e6031351412fd45523d2cd753fbc4645e62"
+field = "sensor.black"
+before = [511, 511, 510, 511]
+after = [512, 512, 512, 512]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 512 512 512 512 (BlackLevelRepeatDim 2 2); ColorData's per-channel levels"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX70 HS/IMG_1006.CR3
+sha256 = "fad9653d691d002bc2de4f1e98366e6031351412fd45523d2cd753fbc4645e62"
+field = "sensor.white"
+before = 16383
+after = 12500
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 12500"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX70 HS/IMG_1007.CR3
+sha256 = "fef71beb2df8bd94ccf2bd9783e8d696a59f71cce494f94aca4c122fed911e1a"
+field = "sensor.black"
+before = [511, 511, 510, 511]
+after = [512, 512, 512, 512]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 512 512 512 512 (BlackLevelRepeatDim 2 2); ColorData's per-channel levels"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX70 HS/IMG_1007.CR3
+sha256 = "fef71beb2df8bd94ccf2bd9783e8d696a59f71cce494f94aca4c122fed911e1a"
+field = "sensor.white"
+before = 16383
+after = 12500
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 12500"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"

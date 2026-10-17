@@ -80,6 +80,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `RafPackedWords` | Fujifilm RAF, 12 or 14-bit samples packed most significant bit first in little-endian 32-bit words (raw image directory tag 0xF006 = 1) | ExifTool's FujiFilm tag names, TIFF 6, our own measurements |
 | `RafCompressed` | Fujifilm RAF, compressed stripes, lossless or lossy, Bayer or X-Trans | The public description of Fujifilm's lossless compression on capnfabs.net, ExifTool's FujiFilm tag names, our own measurements |
 | `Cr3Lossless` | Canon CR3, lossless CRX: Bayer planes predicted as JPEG-LS predicts, Golomb-Rice coded | ISO/IEC 14496-12, Laurent Clévy's CR3 description, ITU T.87, ExifTool's Canon tag names, our own measurements |
+| `Cr3Craw` | Canon CR3 C-RAW: CRX planes in three quantized integer 5/3 wavelet levels (version 2 of the coding with quantization maps) | as `Cr3Lossless`, ITU T.800 Annex F, ITU-T H.265 (quantization steps) |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -247,6 +248,11 @@ columns from the third to 26 short of the visible (or active, if earlier) area
 over the visible rows. Cameras whose visible area RAWmakase has always read
 otherwise have `compat-observed` rows (`visible`). Files with HEVC previews
 (HDR shots) have no JPEG preview.
+C-RAW tiles next to a tile on their right are coded one column wider at
+each level: the line is extended to an odd length, and below the coarsest
+level its low-pass band is coded at an odd length too, its last sample unused
+(our measurement). Tiles between two neighbours, and tiles stacked
+vertically, are `Unsupported` (no file of the test dataset has them).
 
 ## Checking against LibRaw
 
