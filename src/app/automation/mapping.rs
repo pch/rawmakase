@@ -158,7 +158,7 @@ pub(super) fn shortcut_action(key: Key, m: Modifiers) -> Option<commands::Action
                 Key::Backslash => A::Compare,
                 Key::J => A::Clipping,
                 Key::Z => A::Zoom,
-                Key::F => A::Fit,
+                Key::F => A::Chrome,
                 Key::R | Key::C => A::Crop,
                 Key::Q => A::Remove,
                 Key::W => A::WhiteBalance,

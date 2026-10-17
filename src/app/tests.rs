@@ -258,7 +258,9 @@ fn catalog_metadata_keys_work_in_both_modules_without_zoom_or_dialog_edits() -> 
 fn keyboard_fit_and_physical_pixel_region() {
     let ctx = egui::Context::default();
     let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
-    for (key, expected) in [(egui::Key::Z, true), (egui::Key::F, false)] {
+    // Z turns the zoom on; F belongs to the chrome now (see `chrome`), so it
+    // leaves the photo's zoom as it was.
+    for (key, expected) in [(egui::Key::Z, true), (egui::Key::F, true)] {
         let input = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1200., 800.))),
             events: vec![egui::Event::Key {
@@ -5911,6 +5913,31 @@ enum FocusedButton {
     Yes,
     No,
 }
+/// A frame of the workspace, and the commands it sent the window.
+fn panel_frame_commands(e: &mut Editor, events: Vec<egui::Event>) -> Vec<egui::ViewportCommand> {
+    let ctx = e.context.clone();
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1200., 800.))),
+            events,
+            ..Default::default()
+        },
+        |ui| e.draw(ui),
+    );
+    output.textures_delta.clear();
+    output.viewport_output[&egui::ViewportId::ROOT]
+        .commands
+        .clone()
+}
+fn key_up(key: egui::Key) -> Vec<egui::Event> {
+    vec![egui::Event::Key {
+        key,
+        physical_key: Some(key),
+        pressed: false,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    }]
+}
 fn key_down(key: egui::Key, modifiers: egui::Modifiers) -> Vec<egui::Event> {
     vec![egui::Event::Key {
         key,
@@ -5992,6 +6019,213 @@ fn tab_hides_develops_side_panels_and_the_photo_takes_their_room() {
     );
     assert!(e.panel_shown(WorkspacePanel::Left));
     assert!(!e.panel_shown(WorkspacePanel::Right));
+}
+#[test]
+fn f_gives_the_photo_the_window_without_touching_the_window() -> anyhow::Result<()> {
+    use super::panels::WorkspacePanel;
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    e.module = Module::Develop;
+    e.onboarding.visible = false;
+    // Panels take their width in the first frames.
+    for _ in 0..3 {
+        panel_frame(&mut e, vec![], FocusedButton::No);
+    }
+    let with_chrome = e.view.viewport;
+    let layout = e.panels;
+    let commands = panel_frame_commands(&mut e, key_down(egui::Key::F, egui::Modifiers::NONE));
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    // The mode is the app's own: no display is filled and the window keeps its
+    // size, as the window's own full screen would change it.
+    assert!(
+        !commands.iter().any(|command| matches!(
+            command,
+            egui::ViewportCommand::Fullscreen(_)
+                | egui::ViewportCommand::Maximized(_)
+                | egui::ViewportCommand::Minimized(_)
+                | egui::ViewportCommand::WindowLevel(_)
+        )),
+        "{commands:?}"
+    );
+    for panel in [
+        WorkspacePanel::Left,
+        WorkspacePanel::Right,
+        WorkspacePanel::Filmstrip,
+        WorkspacePanel::Presets,
+    ] {
+        assert!(!e.panel_shown(panel), "{panel:?} still shows");
+    }
+    // The bar, the panels, the filmstrip and Develop's toolbar are the photo's
+    // room now, less the margin it is drawn with.
+    let margin = crate::app::workspace::PHOTO_MARGIN;
+    assert_eq!(
+        e.view.viewport,
+        Vec2::new(1200., 800.) - Vec2::splat(2. * margin)
+    );
+    // Only what is drawn changed: the panels keep the layout saved for them.
+    assert_eq!(e.panels, layout);
+    // F again brings the window back, as it was.
+    panel_frame(&mut e, key_up(egui::Key::F), FocusedButton::No);
+    panel_frame(
+        &mut e,
+        key_down(egui::Key::F, egui::Modifiers::NONE),
+        FocusedButton::No,
+    );
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    assert!(e.panel_shown(WorkspacePanel::Left));
+    assert_eq!(e.view.viewport, with_chrome);
+    Ok(())
+}
+#[test]
+fn f_hides_the_chrome_of_the_module_it_was_turned_on_in() {
+    use super::panels::WorkspacePanel;
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    e.module = Module::Library;
+    e.onboarding.visible = false;
+    panel_frame(
+        &mut e,
+        key_down(egui::Key::F, egui::Modifiers::NONE),
+        FocusedButton::No,
+    );
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    assert!(!e.panel_shown(WorkspacePanel::Left));
+    // Develop draws its chrome, and the Library's is back when it returns: the
+    // mode belongs to the module it was turned on in.
+    e.module = Module::Develop;
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    assert!(e.panel_shown(WorkspacePanel::Left));
+    e.module = Module::Library;
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    assert!(e.panel_shown(WorkspacePanel::Left));
+    assert!(e.panel_shown(WorkspacePanel::Right));
+}
+#[test]
+fn escape_leaves_the_whole_window_mode() {
+    use super::panels::WorkspacePanel;
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    e.module = Module::Develop;
+    e.onboarding.visible = false;
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    // With the chrome up, Escape is left to Develop's tools: it neither hides
+    // the chrome nor is lost to it.
+    panel_frame(
+        &mut e,
+        key_down(egui::Key::Escape, egui::Modifiers::NONE),
+        FocusedButton::No,
+    );
+    panel_frame(&mut e, key_up(egui::Key::Escape), FocusedButton::No);
+    assert!(e.panel_shown(WorkspacePanel::Left));
+    panel_frame(
+        &mut e,
+        key_down(egui::Key::F, egui::Modifiers::NONE),
+        FocusedButton::No,
+    );
+    panel_frame(&mut e, key_up(egui::Key::F), FocusedButton::No);
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    assert!(!e.panel_shown(WorkspacePanel::Left));
+    // Escape brings the window back, as it does in Lightroom.
+    panel_frame(
+        &mut e,
+        key_down(egui::Key::Escape, egui::Modifiers::NONE),
+        FocusedButton::No,
+    );
+    panel_frame(&mut e, key_up(egui::Key::Escape), FocusedButton::No);
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    assert!(e.panel_shown(WorkspacePanel::Left));
+    assert!(e.panel_shown(WorkspacePanel::Right));
+}
+#[test]
+fn in_the_library_f_gives_the_window_to_the_grid_then_the_photo() -> anyhow::Result<()> {
+    use super::panels::WorkspacePanel;
+    let (_d, mut e, _ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    e.onboarding.visible = false;
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    assert!(e.panel_shown(WorkspacePanel::Left));
+    assert!(!e.library.as_ref().unwrap().loupe_open());
+    // The first F gives the window to the grid; the photo is not opened for it.
+    panel_frame(
+        &mut e,
+        key_down(egui::Key::F, egui::Modifiers::NONE),
+        FocusedButton::No,
+    );
+    panel_frame(&mut e, key_up(egui::Key::F), FocusedButton::No);
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    assert!(!e.panel_shown(WorkspacePanel::Left));
+    assert!(!e.library.as_ref().unwrap().loupe_open());
+    // The next F gives it to the photo, in the Loupe, with the chrome still
+    // hidden.
+    panel_frame(
+        &mut e,
+        key_down(egui::Key::F, egui::Modifiers::NONE),
+        FocusedButton::No,
+    );
+    panel_frame(&mut e, key_up(egui::Key::F), FocusedButton::No);
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    assert!(!e.panel_shown(WorkspacePanel::Left));
+    assert!(e.library.as_ref().unwrap().loupe_open());
+    // The third brings the chrome back, and the grid with it: the mode opened
+    // the Loupe, so leaving the mode closes it again.
+    panel_frame(
+        &mut e,
+        key_down(egui::Key::F, egui::Modifiers::NONE),
+        FocusedButton::No,
+    );
+    panel_frame(&mut e, key_up(egui::Key::F), FocusedButton::No);
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    assert!(e.panel_shown(WorkspacePanel::Left));
+    assert!(!e.library.as_ref().unwrap().loupe_open());
+    Ok(())
+}
+#[test]
+fn the_mode_keeps_a_loupe_it_did_not_open() -> anyhow::Result<()> {
+    use super::panels::WorkspacePanel;
+    let (_d, mut e, _ids) = editor_with_catalog(&["a.RAF"])?;
+    e.onboarding.visible = false;
+    // A photo already open is what the mode gives the window to, instead of the
+    // grid, and leaving the mode leaves it open.
+    e.library.as_mut().unwrap().open_loupe();
+    panel_frame(
+        &mut e,
+        key_down(egui::Key::F, egui::Modifiers::NONE),
+        FocusedButton::No,
+    );
+    panel_frame(&mut e, key_up(egui::Key::F), FocusedButton::No);
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    assert!(!e.panel_shown(WorkspacePanel::Left));
+    assert!(e.library.as_ref().unwrap().loupe_open());
+    panel_frame(
+        &mut e,
+        key_down(egui::Key::Escape, egui::Modifiers::NONE),
+        FocusedButton::No,
+    );
+    panel_frame(&mut e, key_up(egui::Key::Escape), FocusedButton::No);
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    assert!(e.panel_shown(WorkspacePanel::Left));
+    assert!(e.library.as_ref().unwrap().loupe_open());
+    Ok(())
+}
+#[test]
+fn entering_another_module_closes_a_loupe_the_mode_opened() -> anyhow::Result<()> {
+    let (_d, mut e, _ids) = editor_with_catalog(&["a.RAF"])?;
+    e.onboarding.visible = false;
+    for _ in 0..2 {
+        panel_frame(
+            &mut e,
+            key_down(egui::Key::F, egui::Modifiers::NONE),
+            FocusedButton::No,
+        );
+        panel_frame(&mut e, key_up(egui::Key::F), FocusedButton::No);
+        panel_frame(&mut e, vec![], FocusedButton::No);
+    }
+    assert!(e.library.as_ref().unwrap().loupe_open());
+    // D draws Develop's chrome, and the Library is back at its grid: the mode
+    // belongs to the module it was turned on in.
+    e.module = Module::Develop;
+    panel_frame(&mut e, vec![], FocusedButton::No);
+    assert!(!e.library.as_ref().unwrap().loupe_open());
+    Ok(())
 }
 #[test]
 fn tab_moves_the_focus_on_while_a_control_has_it() {

@@ -224,9 +224,10 @@ impl WorkspacePanels {
 }
 
 impl Editor {
-    /// Whether the module open shows `panel`.
+    /// Whether the module open shows `panel`. The whole-window mode (see
+    /// `chrome`) hides every panel without changing the layout kept for it.
     pub(super) fn panel_shown(&self, panel: WorkspacePanel) -> bool {
-        self.panels.of(self.module).shown(panel)
+        self.chrome.shown(self.module) && self.panels.of(self.module).shown(panel)
     }
     /// Changes the open module's panels. A panel being hidden first lets go of
     /// what it was doing: the Library's info panel saves a field still being

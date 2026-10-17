@@ -75,7 +75,7 @@ pub(super) struct Loupe {
     texture: Option<egui::TextureHandle>,
     /// The size of the image shown, and of the view in pixels, for its Fit.
     full: Option<(u32, u32)>,
-    view: Vec2,
+    pub(super) view: Vec2,
     /// The zoom before the last click toggled it, and when, for a
     /// double-click to undo.
     before_click: Option<(bool, f64, Option<PhotoId>)>,
@@ -402,7 +402,7 @@ impl Library {
         }
     }
     /// The Loupe in place of the grid, with its toolbar below.
-    pub(super) fn loupe(&mut self, ui: &mut egui::Ui, zoom: &mut Zoom) -> Action {
+    pub(super) fn loupe(&mut self, ui: &mut egui::Ui, zoom: &mut Zoom, chrome: bool) -> Action {
         let palette = theme::palette(ui.ctx());
         self.loupe.poll(ui.ctx());
         let Some(id) = self.selection.active else {
@@ -410,14 +410,16 @@ impl Library {
             return Action::None;
         };
         // On the photo's backdrop, as the view above it.
-        egui::Panel::bottom("library-loupe-toolbar")
-            .frame(
-                egui::Frame::new()
-                    .fill(palette.photo_backdrop())
-                    .inner_margin(egui::Margin::symmetric(10, 4)),
-            )
-            .show_separator_line(false)
-            .show(ui, |ui| ui.horizontal(|ui| self.view_buttons(ui)));
+        if chrome {
+            egui::Panel::bottom("library-loupe-toolbar")
+                .frame(
+                    egui::Frame::new()
+                        .fill(palette.photo_backdrop())
+                        .inner_margin(egui::Margin::symmetric(10, 4)),
+                )
+                .show_separator_line(false)
+                .show(ui, |ui| ui.horizontal(|ui| self.view_buttons(ui)));
+        }
         let Some(photo) = self.photo(id).cloned() else {
             return Action::None;
         };

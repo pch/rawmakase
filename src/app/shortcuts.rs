@@ -69,11 +69,13 @@ const QUICK: [Shortcut; 3] = [
     ("Cmd+B", "Show it"),
     ("Cmd+Shift+B", "Clear it"),
 ];
-const GENERAL: [Shortcut; 9] = [
+const GENERAL: [Shortcut; 11] = [
     ("G", "Library"),
     ("D", "Develop"),
     ("Tab", "Hide / show the side panels"),
     ("Shift+Tab", "Hide / show the side panels and filmstrip"),
+    ("F", "Hide all but the photo; grid first in the Library"),
+    ("Esc", "Leave the whole-window mode"),
     ("F7 / F8 / F6", "Left panel / right panel / filmstrip"),
     ("Shift+F8", "Fold / open Presets and History"),
     ("Cmd+'", "Create virtual copy"),
@@ -119,7 +121,7 @@ const DEVELOP: [Shortcut; 49] = [
     ("Shift+R", "Reference View"),
     ("I", "Photo info overlay: Info 1, Info 2, off"),
     ("J", "Show shadow and highlight clipping"),
-    ("Z / F", "Toggle zoom / fit"),
+    ("Z", "Toggle zoom / fit"),
     ("Left / Right", "Previous / next photo"),
     ("Cmd+A", "Select all in the filmstrip, for Sync"),
     ("Cmd+D", "Select none in the filmstrip"),

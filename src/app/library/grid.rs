@@ -66,27 +66,32 @@ impl Library {
         }
     }
     /// The grid, or the Loupe in its place at the shared `zoom`.
+    /// The grid, or the Loupe in its place at the shared `zoom`. `chrome` is
+    /// whether the toolbars are drawn: hidden, the view fills the window.
     pub(in crate::app) fn grid(
         &mut self,
         ui: &mut egui::Ui,
         zoom: &mut crate::app::navigator::Zoom,
+        chrome: bool,
     ) -> Action {
         if self.compare.open {
-            return self.compare(ui);
+            return self.compare(ui, chrome);
         }
         if self.survey.open {
-            return self.survey(ui);
+            return self.survey(ui, chrome);
         }
         if self.loupe.open {
-            return self.loupe(ui, zoom);
+            return self.loupe(ui, zoom, chrome);
         }
         let mut action = Action::None;
-        self.filter_bar(ui);
-        // On the photo's backdrop, as the grid above it.
-        egui::Panel::bottom("library-grid-toolbar")
-            .frame(egui::Frame::new().fill(theme::palette(ui.ctx()).photo_backdrop()))
-            .show_separator_line(false)
-            .show(ui, |ui| self.grid_toolbar(ui));
+        if chrome {
+            self.filter_bar(ui);
+            // On the photo's backdrop, as the grid above it.
+            egui::Panel::bottom("library-grid-toolbar")
+                .frame(egui::Frame::new().fill(theme::palette(ui.ctx()).photo_backdrop()))
+                .show_separator_line(false)
+                .show(ui, |ui| self.grid_toolbar(ui));
+        }
         // Inset on the photo's backdrop, as the Loupe's photo is.
         let margin = crate::app::workspace::PHOTO_MARGIN;
         let inner = ui.available_width() - 2. * margin;

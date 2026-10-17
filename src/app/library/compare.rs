@@ -331,7 +331,7 @@ impl Library {
         }
     }
     /// Compare in place of the grid: the two photos, with a toolbar.
-    pub(super) fn compare(&mut self, ui: &mut egui::Ui) -> Action {
+    pub(super) fn compare(&mut self, ui: &mut egui::Ui, chrome: bool) -> Action {
         let palette = theme::palette(ui.ctx());
         if self.keep_compared_shown().is_none() {
             self.close_compare();
@@ -339,14 +339,16 @@ impl Library {
         }
         self.sync_compare_selection();
         // On the photo's backdrop, as the view above it.
-        egui::Panel::bottom("library-compare-toolbar")
-            .frame(
-                egui::Frame::new()
-                    .fill(palette.photo_backdrop())
-                    .inner_margin(egui::Margin::symmetric(10, 4)),
-            )
-            .show_separator_line(false)
-            .show(ui, |ui| self.compare_toolbar(ui));
+        if chrome {
+            egui::Panel::bottom("library-compare-toolbar")
+                .frame(
+                    egui::Frame::new()
+                        .fill(palette.photo_backdrop())
+                        .inner_margin(egui::Margin::symmetric(10, 4)),
+                )
+                .show_separator_line(false)
+                .show(ui, |ui| self.compare_toolbar(ui));
+        }
         let area = ui.available_rect_before_wrap();
         ui.allocate_rect(area, egui::Sense::hover());
         ui.painter().rect_filled(area, 0., palette.photo_backdrop());

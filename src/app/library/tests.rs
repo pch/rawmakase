@@ -1572,7 +1572,7 @@ fn loupe_shows_a_jpeg_at_the_size_of_the_view() -> Result<()> {
         ..Default::default()
     };
     let mut output = ctx.run_ui(input(), |ui| {
-        library.grid(ui, &mut Default::default());
+        library.grid(ui, &mut Default::default(), true);
     });
     output.textures_delta.clear();
     library.loupe.wait(&ctx);
@@ -1582,7 +1582,7 @@ fn loupe_shows_a_jpeg_at_the_size_of_the_view() -> Result<()> {
     // The next photo replaces it; a damaged file says why.
     library.step(selection::Step::By(1), false);
     let mut output = ctx.run_ui(input(), |ui| {
-        library.grid(ui, &mut Default::default());
+        library.grid(ui, &mut Default::default(), true);
     });
     output.textures_delta.clear();
     library.loupe.wait(&ctx);
@@ -1646,7 +1646,7 @@ fn loupe_zooms_at_the_navigator_levels_and_prepares_the_next_photo() -> Result<(
                 // The filmstrip below, as the workspace draws it.
                 let active = library.selected();
                 library.filmstrip_panel(ui, active, Module::Library);
-                library.grid(ui, zoom);
+                library.grid(ui, zoom, true);
             },
         );
         output.textures_delta.clear();
@@ -1683,6 +1683,50 @@ fn loupe_zooms_at_the_navigator_levels_and_prepares_the_next_photo() -> Result<(
     zoom.set(0.);
     frame(&mut library, &mut zoom);
     assert!(library.loupe.regions.region.is_none());
+    Ok(())
+}
+#[test]
+fn the_chrome_hidden_gives_the_loupe_its_toolbar_row() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    image::RgbImage::from_fn(300, 200, |x, y| {
+        image::Rgb([(x % 256) as u8, (y % 256) as u8, 90])
+    })
+    .save(folder.join("a.jpg"))?;
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&folder)?;
+    let ctx = egui::Context::default();
+    let mut library = Library::load(&path, ctx.clone())?;
+    library.wait_for_availability();
+    library.select(Some(library.session.photos[0].id));
+    library.open_loupe();
+    let mut zoom = crate::app::navigator::Zoom::default();
+    let frame = |library: &mut Library, zoom: &mut crate::app::navigator::Zoom, chrome: bool| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1200., 800.),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                library.grid(ui, zoom, chrome);
+            },
+        );
+        output.textures_delta.clear();
+    };
+    frame(&mut library, &mut zoom, true);
+    let with_toolbar = library.loupe.view;
+    frame(&mut library, &mut zoom, false);
+    // The view is taller by the toolbar's row, and no wider for it.
+    assert!(
+        library.loupe.view.y > with_toolbar.y + 20.,
+        "{:?} against {with_toolbar:?}",
+        library.loupe.view
+    );
+    assert_eq!(library.loupe.view.x, with_toolbar.x);
     Ok(())
 }
 #[test]

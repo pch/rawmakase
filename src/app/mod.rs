@@ -29,6 +29,9 @@ pub(crate) struct Editor {
     library: Option<Box<crate::app::library::Library>>,
     /// The module shown: the Library grid, or Develop.
     module: Module,
+    /// Whether the module's chrome is hidden, leaving the photo alone (see
+    /// `chrome`); not saved, so every launch opens in the normal window.
+    chrome: chrome::Chrome,
     tx: Sender<Event>,
     rx: Receiver<Event>,
     loader: worker::Loader,
@@ -276,6 +279,7 @@ impl Editor {
             session_file,
             library: None,
             module: Module::Develop,
+            chrome: Default::default(),
             tx,
             rx,
             loader,
@@ -792,6 +796,7 @@ mod before_after;
 mod brush_scroll;
 mod bulk_import;
 mod catalog;
+mod chrome;
 mod clipping;
 mod color_grading;
 mod commands;
