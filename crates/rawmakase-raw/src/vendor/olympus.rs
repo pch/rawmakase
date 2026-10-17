@@ -11,7 +11,8 @@
 //! inline as UNDEFINED values).
 //!
 //! Sources: ExifTool's Olympus tag documentation (the note's headers, the
-//! ImageProcessing directory's WB_RBLevels 0x0100 and their colour
+//! ImageProcessing directory's WB_RBLevels 0x0100 (red, blue and the two
+//! greens' levels) and their colour
 //! temperature presets 0x0102–0x010D, BlackLevel2 0x0600, ValidBits 0x0611,
 //! CropLeft/Top/Width/Height 0x0612–0x0615, AspectRatio 0x1112; Equipment's
 //! LensModel 0x0203; CameraSettings' PreviewImageStart and Length; RawInfo
@@ -163,9 +164,16 @@ pub(crate) fn read(t: &TiffFile) -> Option<Notes> {
     out.bits = v.int(&n.main, OLD_VALID_BITS);
     if let Some((ip, raw_info)) = &n.processing {
         if out.cam_mul == [0.; 4]
-            && let Some([r, g, b]) = pair(ip, WB_LEVELS)
+            && let Some(l) = v.ints(ip, WB_LEVELS).filter(|l| l.len() >= 2)
         {
-            out.cam_mul = [r, g, b, g];
+            // Red and blue over the mean of the two greens' levels where
+            // the tag has them (Adobe DNG Converter's AsShotNeutral), else
+            // over 256.
+            let green = match l[..] {
+                [_, _, g1, g2, ..] => ((f64::from(g1) + f64::from(g2)) / 2.) as f32,
+                _ => 256.,
+            };
+            out.cam_mul = [l[0] as f32, green, l[1] as f32, green];
         }
         let [fine, d65, shade] = if *raw_info {
             RAW_INFO_PRESETS

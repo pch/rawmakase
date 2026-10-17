@@ -240,9 +240,10 @@ factors are observed compatibility data (`wb_scale` rows, about 0.901 and
 0.885, 0.761 and 0.857 for the back), so these files keep the white balance
 RAWmakase has always read.
 
-Olympus and OM Digital (`vendor::olympus`): white balance, presets, black,
-bit depth, crop and aspect ratio come from the maker note's ImageProcessing
-directory (RawInfo on older compacts; the main directory's red and blue
+Olympus and OM Digital (`vendor::olympus`): white balance (red and blue
+over the mean of the two greens' levels, as Adobe DNG Converter reads it),
+presets, black, bit depth, crop and aspect ratio come from the maker note's
+ImageProcessing directory (RawInfo on older compacts; the main directory's red and blue
 balance first where it has them). The default crop and the aspect-ratio crop
 (centred in it, at the ratio the note names) start on even rows and columns.
 Black is on the 12-bit scale and scaled to 14-bit samples; white is the bit

@@ -371,7 +371,7 @@ mod tests {
         // 14-bit samples' codes start a byte later.
         let strip = [&[0][..], &crate::codec::olympus::tests::row_of_four()].concat();
         let processing = vec![
-            short(LE, 0x0100, &[512, 384, 256, 256]),
+            short(LE, 0x0100, &[512, 384, 256, 260]),
             short(LE, 0x010a, &[452, 528, 256, 256]),
             short(LE, 0x010c, &[508, 500, 256, 256]),
             short(LE, 0x010d, &[530, 414, 256, 256]),
@@ -392,7 +392,8 @@ mod tests {
         );
         // An odd number of rows is read as one more.
         assert_eq!([info.raw_width, info.raw_height], [4, 4]);
-        assert_eq!(info.cam_mul, [512., 256., 384., 256.]);
+        // Red and blue over the mean of the two greens' levels.
+        assert_eq!(info.cam_mul, [512., 258., 384., 258.]);
         assert_eq!(info.presets.fine_weather, [452., 256., 528.]);
         assert_eq!(info.presets.d65, [508., 256., 500.]);
         assert_eq!(info.presets.shade, [530., 256., 414.]);
@@ -416,6 +417,16 @@ mod tests {
         assert_eq!(info.variant, Variant::OrfCompressed);
         assert_eq!(&s.data[..4], &[21, 65527, 97, 65525]);
         assert_eq!((s.black, s.white), ([0; 4], 4095));
+    }
+
+    #[test]
+    fn extreme_green_levels_neither_wrap_nor_panic() {
+        let strip = crate::codec::olympus::tests::row_of_four();
+        let levels = vec![long(LE, 0x0100, &[512, 768, u32::MAX, u32::MAX])];
+        let file = orf([4, 3], 16, &strip, vec![], Some(note(levels)));
+        let info = crate::open(&file).unwrap();
+        assert_eq!(info.cam_mul[1], u32::MAX as f32);
+        assert_eq!([info.cam_mul[0], info.cam_mul[2]], [512., 768.]);
     }
 
     #[test]

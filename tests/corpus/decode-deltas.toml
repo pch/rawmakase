@@ -2725,3 +2725,50 @@ before = [1.842938780784607, 1.0, 1.133866310119629]
 after = [1.0, 1.0, 1.0]
 evidence = "no colour matrix for the camera in raw-matrices.toml yet: neutral daylight multipliers (color::apply), where LibRaw derived them from its own matrix"
 approval = "pending"
+
+# Olympus: as-shot white balance over both greens' levels, as Adobe DNG
+# Converter reads it.
+# Olympus/E-P3/RAW_OLYMPUS_EP3.ORF
+[[delta]]
+sha256 = "540edabdd9d4e6ef8602f56443730cc3133d714dc4d3d2c607e2f0aa6be5cbcd"
+field = "header.metadata.wb"
+before = [2.1796875, 1.0, 1.4609375]
+after = [2.1627907752990723, 1.0, 1.4496123790740967]
+evidence = "the note's WB_RBLevels over the mean of its two greens' levels (256, 260); Adobe DNG Converter 18.7 AsShotNeutral"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Olympus/E-PL3/RAW_OLYMPUS_EPL2.ORF
+[[delta]]
+sha256 = "ce90f016fc6ddb14e407071c5a035b68039c5aec5a801e4152a88d2c2388f0d4"
+field = "header.metadata.wb"
+before = [2.1328125, 1.0, 1.578125]
+after = [2.124513626098633, 1.0, 1.5719844102859497]
+evidence = "the note's WB_RBLevels over the mean of its two greens' levels; Adobe DNG Converter 18.7 AsShotNeutral"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Olympus/XZ-2/p7166537.orf
+[[delta]]
+sha256 = "675fefe7c9e99281783b987889d723b5f46692f5c20e19fed5e422c7c6d2636b"
+field = "header.metadata.wb"
+before = [2.0234375, 1.0, 1.765625]
+after = [2.011650562286377, 1.0, 1.7553398609161377]
+evidence = "the note's WB_RBLevels over the mean of its two greens' levels (256, 259); Adobe DNG Converter 18.7 AsShotNeutral"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Olympus/E-PL2/P9031909.ORF
+[[delta]]
+sha256 = "85055c7c661f96ba1c930fdd522d0598c9bc44ea6363725e9cd48646d8782f4e"
+field = "header.metadata.wb"
+before = [1.421875, 1.0, 1.421875]
+after = [1.4163423776626587, 1.0, 1.4163423776626587]
+evidence = "the note's WB_RBLevels over the mean of its two greens' levels (256, 258); Adobe DNG Converter 18.7 AsShotNeutral"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Olympus/XZ-10/P1240016.ORF
+[[delta]]
+sha256 = "a25383acad9b5bb0bb404715e0957f2eb80aa1aaad6c448a71025c03cfa631be"
+field = "header.metadata.wb"
+before = [1.98046875, 1.0, 1.7109375]
+after = [1.976608157157898, 1.0, 1.7076023817062378]
+evidence = "the note's WB_RBLevels over the mean of its two greens' levels; Adobe DNG Converter 18.7 AsShotNeutral"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
