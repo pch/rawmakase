@@ -18,7 +18,7 @@ use crate::vendor::panasonic as tags;
 use std::sync::atomic::AtomicBool;
 
 /// How the sensor data is coded.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Coding {
     /// 16-byte blocks, whole 0x4000-byte chunks rotated when `rotated`.
     Blocks { block: Block, rotated: bool },
@@ -34,6 +34,8 @@ pub(crate) struct Rw2Plan {
     pub black: [u32; 4],
     pub white: u32,
     pub linear_white: [u32; 4],
+    /// The rows read from the data; the rest are 0.
+    pub rows: u32,
 }
 
 /// Whether `bytes` is an RW2-structured file.
@@ -66,6 +68,20 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
             Coding::Blocks {
                 block: Block::Packed { bits },
                 rotated: true,
+            },
+        ),
+        (Some(6), 12 | 14) => (
+            Variant::Rw2Seeded,
+            Coding::Blocks {
+                block: Block::Seeded { bits },
+                rotated: false,
+            },
+        ),
+        (Some(7), 14) => (
+            Variant::Rw2Packed,
+            Coding::Blocks {
+                block: Block::Packed { bits },
+                rotated: false,
             },
         ),
         (Some(f), _) => {
@@ -140,6 +156,13 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         black,
         white,
         linear_white,
+        // Raw format 7 is read in whole groups of four rows (our own
+        // measurement: a 12096 × 8018 file's last two rows are 0).
+        rows: if format == Some(7) {
+            height & !3
+        } else {
+            height
+        },
     });
     Ok(info)
 }
@@ -152,12 +175,21 @@ pub(crate) fn decode(
     cancel: &AtomicBool,
 ) -> Result<Sensor> {
     let file = Bytes::new(bytes, crate::io::Order::Little);
-    let data = match plan.coding {
-        Coding::Blocks { block, rotated } => {
+    let data = match &plan.coding {
+        &Coding::Blocks { block, rotated } => {
             // To the end of the file: the last chunk is rotated whole.
             let available = (bytes.len() as u64).saturating_sub(plan.offset);
             let src = file.slice(plan.offset, available)?;
-            panasonic::decode(src, block, rotated, plan.width, plan.height, cancel)?
+            let mut data = panasonic::decode(src, block, rotated, plan.width, plan.height, cancel)?;
+            if let Block::Seeded { .. } = block {
+                // Raw format 6 is read 15 below its coded levels, where its
+                // black level tags are (formats 3 and 4 keep the coded levels
+                // and put black 15 above the tags).
+                data.iter_mut().for_each(|v| *v = v.saturating_sub(15));
+            }
+            let read = plan.rows as usize * plan.width as usize;
+            data.iter_mut().skip(read).for_each(|v| *v = 0);
+            data
         }
     };
     let [left, top] = info.margins;
@@ -341,6 +373,35 @@ pub(crate) mod tests {
         assert_eq!(s.data[..10], want);
         // Raw format 5 records black as it is.
         assert_eq!(s.black, [100, 101, 102, 101]);
+    }
+
+    #[test]
+    fn decodes_seeded_and_unrotated_packed_blocks() {
+        // Raw format 6, 14 bits: seeds 1000 and 2000, every code 0 (keep);
+        // read 15 below the coded levels.
+        let word = (1000u128 << 114) | (2000u128 << 100);
+        let file = rw2(&header(6, 14, [11, 1]), &word.to_le_bytes());
+        let info = crate::open(&file).unwrap();
+        assert_eq!(info.variant, crate::Variant::Rw2Seeded);
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        assert_eq!(s.data, [985, 1985].repeat(6)[..11]);
+        // Black as the tags say; white 1/256 of the range below it.
+        assert_eq!(s.black, [100, 101, 102, 101]);
+        assert_eq!(s.white, 16383 - 64);
+        // Raw format 7: packed 14-bit samples, nine a block, not rotated.
+        let mut word = 0u128;
+        for i in 0..9u128 {
+            word |= (0x2000 + i) << (14 * i);
+        }
+        let data = word.to_le_bytes().repeat(5);
+        let file = rw2(&header(7, 14, [9, 5]), &data);
+        let info = crate::open(&file).unwrap();
+        assert_eq!(info.variant, crate::Variant::Rw2Packed);
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let row: [u16; 9] = std::array::from_fn(|i| 0x2000 + i as u16);
+        assert_eq!(s.data[..36], row.repeat(4));
+        // Read in whole groups of four rows: the fifth is 0.
+        assert_eq!(s.data[36..], [0; 9]);
     }
 
     #[test]

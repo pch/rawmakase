@@ -13,6 +13,13 @@
 //!   later pixel is an 8-bit code `j` against the colour's last value `p`:
 //!   `j = 0` keeps `p`; else `p + (j − 128)·m` when `s < 3` and `p ≥ 128·m`,
 //!   else `j·m + p mod m`.
+//! - Seeded delta blocks (raw format 6) are read from the highest bit down
+//!   too: two seeds of `bits` bits (one per colour), then groups of a 2-bit
+//!   scale and three codes, as in delta blocks with the codes' midpoint `h`
+//!   for 128: 12-bit samples have four groups of 8-bit codes (14 samples),
+//!   14-bit samples three groups of 10-bit codes (11 samples, the last 4 bits
+//!   unused). A code `j` is `p + (j − h)·m` when `s < 3` and `p ≥ h·m`, else
+//!   `j·m` (without the low bits of `p`); `j = 0` keeps `p`.
 //!
 //! Some files (RW2 raw formats 4 and 5) store every whole 0x4000-byte chunk
 //! rotated: its content is the chunk's bytes from 0x1FF8 on, then its first
@@ -34,6 +41,9 @@ pub(crate) enum Block {
     Packed { bits: u32 },
     /// 14 samples coded as differences (raw format 4).
     Delta,
+    /// Two seeds of `bits` (12 or 14) bits and codes against them (raw
+    /// format 6).
+    Seeded { bits: u32 },
 }
 
 impl Block {
@@ -42,12 +52,15 @@ impl Block {
         match self {
             Block::Packed { bits } => (128 / bits.clamp(1, 16)) as usize,
             Block::Delta => 14,
+            Block::Seeded { bits: 14 } => 11,
+            Block::Seeded { .. } => 14,
         }
     }
     fn decode(self, block: &[u8; 16], out: &mut [u16]) {
         match self {
             Block::Packed { bits } => packed(block, bits, out),
             Block::Delta => delta(block, out),
+            Block::Seeded { bits } => seeded(block, bits, out),
         }
     }
 }
@@ -150,16 +163,7 @@ fn delta(block: &[u8; 16], out: &mut [u16]) {
         }
         let c = i & 1;
         if seeded[c] {
-            let j = bits.get(8);
-            if j != 0 {
-                let m = [1, 2, 4, 16][scale as usize];
-                let p = last[c];
-                last[c] = if scale < 3 && p >= 128 * m {
-                    p + (j - 128) * m
-                } else {
-                    j * m + p % m
-                };
-            }
+            last[c] = step(last[c], bits.get(8), scale, 128, true);
         } else {
             let high = bits.get(8);
             if high != 0 || i >= 12 {
@@ -168,6 +172,42 @@ fn delta(block: &[u8; 16], out: &mut [u16]) {
             }
         }
         *o = last[c].clamp(0, 0xffff) as u16;
+    }
+}
+
+/// `p` moved by code `j` at scale `scale` with the codes' midpoint `half`;
+/// an absolute level keeps the low bits of `p` when `low`.
+#[inline]
+fn step(p: i32, j: i32, scale: i32, half: i32, low: bool) -> i32 {
+    let m = [1, 2, 4, 16][(scale & 3) as usize];
+    if j == 0 {
+        p
+    } else if scale < 3 && p >= half * m {
+        p + (j - half) * m
+    } else if low {
+        j * m + p % m
+    } else {
+        j * m
+    }
+}
+
+fn seeded(block: &[u8; 16], bits: u32, out: &mut [u16]) {
+    let (code, groups) = if bits == 14 { (10, 3) } else { (8, 4) };
+    let half = 1 << (code - 1);
+    let mut b = Down::new(block);
+    let mut last = [b.get(bits.min(16)), b.get(bits.min(16))];
+    let mut values = [0i32; 14];
+    values[..2].copy_from_slice(&last);
+    for g in 0..groups {
+        let scale = b.get(2);
+        for k in 0..3 {
+            let i = 2 + 3 * g + k;
+            last[i & 1] = step(last[i & 1], b.get(code), scale, half, false);
+            values[i] = last[i & 1];
+        }
+    }
+    for (o, v) in out.iter_mut().zip(values) {
+        *o = v.clamp(0, 0xffff) as u16;
     }
 }
 
@@ -225,6 +265,31 @@ mod tests {
         let mut out = [0u16; 14];
         delta(&block_down(&f), &mut out);
         assert_eq!(&out[..3], &[0, 0x456, 0x123]);
+    }
+
+    #[test]
+    fn seeded_blocks_have_wider_seeds_and_codes() {
+        // 14 bits: seeds 5000 and 9000, then scale 1 (step 2) codes 513,
+        // 0, 510 against the midpoint 512; scale 3 (step 16) code 100 reads
+        // an absolute level; scale 0 code 512 is +0.
+        let mut f = vec![(5000, 14), (9000, 14)];
+        f.extend([(1, 2), (513, 10), (0, 10), (510, 10)]);
+        f.extend([(3, 2), (100, 10), (300, 10), (200, 10)]);
+        f.extend([(0, 2), (512, 10), (513, 10), (511, 10)]);
+        let mut out = [0u16; 11];
+        seeded(&block_down(&f), 14, &mut out);
+        let want = [
+            5000, 9000, 5002, 9000, 4998, 1600, 4800, 3200, 4800, 3201, 4799,
+        ];
+        assert_eq!(out, want.map(|v| v as u16));
+        // 12 bits: 14 samples, codes of 8 bits.
+        let mut f = vec![(1000, 12), (2000, 12)];
+        for _ in 0..4 {
+            f.extend([(0, 2), (129, 8), (127, 8), (128, 8)]);
+        }
+        let mut out = [0u16; 14];
+        seeded(&block_down(&f), 12, &mut out);
+        assert_eq!(&out[..6], &[1000, 2000, 1001, 1999, 1001, 2000]);
     }
 
     #[test]

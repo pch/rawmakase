@@ -593,3 +593,11 @@ make = "Panasonic"
 model = "DMC-TZ81"
 canonical = ["Panasonic", "DMC-ZS60"]
 source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S1R"
+dng = false
+raw_size = [8448, 5632]
+visible = [0, 0, 8392, 5620]
+source = "compat-observed"

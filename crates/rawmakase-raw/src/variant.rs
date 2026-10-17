@@ -24,6 +24,11 @@ pub enum Variant {
     /// Panasonic RW2 (raw format 5): packed 12 or 14-bit samples in 16-byte
     /// blocks, chunks rotated.
     Rw2PackedRotated,
+    /// Panasonic RW2 (raw format 6): seeded delta-coded 16-byte blocks of 12
+    /// or 14-bit samples.
+    Rw2Seeded,
+    /// Panasonic RW2 (raw format 7): packed 14-bit samples in 16-byte blocks.
+    Rw2Packed,
 }
 
 impl Variant {
@@ -35,6 +40,8 @@ impl Variant {
             Variant::DngUncompressedFloat => "dng-float",
             Variant::Rw2Delta => "rw2-delta",
             Variant::Rw2PackedRotated => "rw2-packed-rotated",
+            Variant::Rw2Seeded => "rw2-seeded",
+            Variant::Rw2Packed => "rw2-packed",
         }
     }
 }
@@ -82,9 +89,10 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::DngDeflate
             | Variant::DngUncompressedFloat,
         ) => crate::container::dng::decode(info, plan, bytes, cancel),
-        (Plan::Rw2(plan), Variant::Rw2Delta | Variant::Rw2PackedRotated) => {
-            crate::container::rw2::decode(info, plan, bytes, cancel)
-        }
+        (
+            Plan::Rw2(plan),
+            Variant::Rw2Delta | Variant::Rw2PackedRotated | Variant::Rw2Seeded | Variant::Rw2Packed,
+        ) => crate::container::rw2::decode(info, plan, bytes, cancel),
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
             "{} with another container's plan",

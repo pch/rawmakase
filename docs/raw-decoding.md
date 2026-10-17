@@ -56,6 +56,8 @@ A file of a recognised container in a variant this crate does not decode is
 | `DngUncompressedFloat` | DNG, uncompressed 16, 24 or 32-bit floating point | DNG 1.7, IEEE 754 |
 | `Rw2Delta` | Panasonic RW2/RWL raw formats 3 and 4: delta-coded 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
 | `Rw2PackedRotated` | Panasonic RW2 raw format 5: packed 12 or 14-bit samples in 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
+| `Rw2Seeded` | Panasonic RW2 raw format 6: seeded delta-coded 16-byte blocks of 12 or 14-bit samples | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
+| `Rw2Packed` | Panasonic RW2 raw format 7: packed 14-bit samples in 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -71,7 +73,10 @@ Panasonic and Leica (`vendor::panasonic`): the visible area is the full
 height and the columns up to the right sensor border plus the left border's
 width; the default crop is the camera's crop tags (else the sensor borders)
 starting on even rows and columns; black is the black level tags, 15 above
-them for raw formats 3 and 4; white is the bit depth's range. Older bodies
+them for raw formats 3 and 4; white is the bit depth's range, less 1/256 of
+it for raw formats 6 to 8 below 16 bits. Raw format 6 is read 15 below its
+coded levels, and raw format 7 in whole groups of four rows (the rows past
+them are 0). Older bodies
 whose files RAWmakase has always read with other areas or levels have
 `compat-observed` rows in `data/raw-cameras.toml` (`visible`, `white`,
 `black`).
