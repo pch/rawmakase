@@ -138,8 +138,33 @@ impl<'a> TiffFile<'a> {
             self.value(e).map(<[u8]>::to_vec)
         }
     }
+    /// A tag's type and count of values, when the directory has it: whether
+    /// it is there, apart from whether its value reads.
+    pub fn shape(&self, ifd: &Ifd, tag: u16) -> Option<(u16, u32)> {
+        ifd.entries.get(&tag).map(|e| (e.kind, e.count))
+    }
+    /// A tag's first `max` bytes at most, wherever they are: a value is as
+    /// long as the file says, so a reader that needs a record's leading
+    /// fields copies only those.
+    pub fn raw_upto(&self, ifd: &Ifd, tag: u16, max: usize) -> Option<Vec<u8>> {
+        let e = ifd.entries.get(&tag)?;
+        let len = usize::try_from(e.count).ok()?.checked_mul(e.type_size()?)?;
+        let take = len.min(max);
+        if len <= 4 {
+            Some(e.value[..take].to_vec())
+        } else {
+            self.bytes
+                .slice(u64::from(self.u32(&e.value)), take as u64)
+                .ok()
+                .map(<[u8]>::to_vec)
+        }
+    }
     /// The values of an unsigned integer tag (BYTE, SHORT, LONG, IFD).
     pub fn ints(&self, ifd: &Ifd, tag: u16) -> Option<Vec<u32>> {
+        self.ints_upto(ifd, tag, usize::MAX)
+    }
+    /// The first `n` values at most of an unsigned integer tag.
+    pub fn ints_upto(&self, ifd: &Ifd, tag: u16, n: usize) -> Option<Vec<u32>> {
         let e = ifd.entries.get(&tag)?;
         if !matches!(
             e.kind,
@@ -154,7 +179,11 @@ impl<'a> TiffFile<'a> {
             return None;
         }
         let size = e.type_size()?;
-        let raw = self.raw(ifd, tag)?;
+        let raw = if n == usize::MAX {
+            self.raw(ifd, tag)?
+        } else {
+            self.raw_upto(ifd, tag, n.saturating_mul(size))?
+        };
         Some(
             raw.chunks_exact(size)
                 .map(|c| match size {
@@ -166,7 +195,7 @@ impl<'a> TiffFile<'a> {
         )
     }
     pub fn int(&self, ifd: &Ifd, tag: u16) -> Option<u32> {
-        self.ints(ifd, tag)?.first().copied()
+        self.ints_upto(ifd, tag, 1)?.first().copied()
     }
     /// The values of any numeric tag in double precision: rationals as their
     /// quotient, floats widened.
@@ -208,11 +237,19 @@ impl<'a> TiffFile<'a> {
     }
     /// An ASCII tag up to its first NUL.
     pub fn text(&self, ifd: &Ifd, tag: u16) -> Option<String> {
+        self.text_upto(ifd, tag, usize::MAX)
+    }
+    /// A text tag's first `max` bytes at most, up to its first NUL.
+    pub fn text_upto(&self, ifd: &Ifd, tag: u16, max: usize) -> Option<String> {
         let e = ifd.entries.get(&tag)?;
         if !matches!(e.kind, kind::ASCII | kind::BYTE | kind::UNDEFINED) {
             return None;
         }
-        let raw = self.raw(ifd, tag)?;
+        let raw = if max == usize::MAX {
+            self.raw(ifd, tag)?
+        } else {
+            self.raw_upto(ifd, tag, max)?
+        };
         let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
         Some(String::from_utf8_lossy(&raw[..end]).into_owned())
     }

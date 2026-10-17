@@ -54,8 +54,15 @@ pub(crate) fn apply(info: &mut crate::info::RawInfo) {
             );
             info.cfa = Some(cfa.shifted(dy, dx));
         }
-        // Crops are placed from the visible area's corner.
-        for rect in [&mut info.frame, &mut info.aspect] {
+        // Crops are placed from the visible area's corner, except Canon's,
+        // which the maker notes place on the sensor.
+        let sensor_crops = info.variant == crate::variant::Variant::Cr2LosslessJpeg;
+        let crops = if !sensor_crops {
+            [&mut info.frame, &mut info.aspect].into_iter().collect()
+        } else {
+            Vec::new()
+        };
+        for rect in crops {
             for (v, (new, old)) in rect
                 .iter_mut()
                 .zip([left, top].into_iter().zip(info.margins))

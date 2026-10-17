@@ -86,6 +86,10 @@ pub(crate) struct Camera {
     /// always read it with.
     #[serde(default)]
     pub cfa: Option<[u8; 4]>,
+    /// The masked columns (start, end) the black level is measured on, where
+    /// they are not the borders beside the visible area.
+    #[serde(default)]
+    pub black_columns: Option<[u32; 2]>,
     #[allow(dead_code)]
     pub source: Source,
     #[allow(dead_code)]
@@ -198,6 +202,7 @@ mod tests {
             white: _,
             black: _,
             wb_scale: _,
+            black_columns: _,
             source: _,
             note: _,
             visible,
@@ -253,7 +258,8 @@ mod tests {
                     || c.flip.is_some()
                     || c.frame.is_some()
                     || c.wb_scale.is_some()
-                    || c.cfa.is_some(),
+                    || c.cfa.is_some()
+                    || c.black_columns.is_some(),
                 "{c:?}"
             );
             // Adobe DNG Converter's decode facts where the file does not

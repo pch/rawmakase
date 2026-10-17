@@ -36,8 +36,8 @@ Modules, each with a small `pub(crate)` surface:
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
 | `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`) |
-| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`) |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`) |
+| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
 | `color` | The camera-to-sRGB matrix and daylight multipliers from a camera's XYZ matrix |
@@ -81,6 +81,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `RafCompressed` | Fujifilm RAF, compressed stripes, lossless or lossy, Bayer or X-Trans | The public description of Fujifilm's lossless compression on capnfabs.net, ExifTool's FujiFilm tag names, our own measurements |
 | `Cr3Lossless` | Canon CR3, lossless CRX: Bayer planes predicted as JPEG-LS predicts, Golomb-Rice coded | ISO/IEC 14496-12, Laurent Clévy's CR3 description, ITU T.87, ExifTool's Canon tag names, our own measurements |
 | `Cr3Craw` | Canon CR3 C-RAW: CRX planes in three quantized integer 5/3 wavelet levels (version 2 of the coding with quantization maps) | as `Cr3Lossless`, ITU T.800 Annex F, ITU-T H.265 (quantization steps) |
+| `Cr2LosslessJpeg` | Canon CR2: a mosaic in one lossless JPEG strip cut into vertical slices | TIFF 6, ITU T.81, Laurent Clévy's CR2 write-up, ExifTool's Canon tag names, our own measurements |
 | `OrfCompressed` | Olympus and OM Digital ORF/ORI, Olympus's compressed coding of 12 or 14-bit samples | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfPacked` | Olympus ORF, packed 12-bit samples: 16-byte blocks of ten, 32-bit words, or two interlaced fields of rows | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfUnpacked` | Olympus ORF, 16-bit words holding samples of the note's bit depth | TIFF 6, ExifTool's Olympus tag names, our own measurements |
@@ -256,6 +257,30 @@ stored width (our measurements, every body of a sensor alike) or
 `compat-observed` rows; so are the
 canonical names (`E-M1MarkIII` is `E-M1 Mark III`, OM Digital's bodies are
 Olympus's). 14-bit compressed data starts a byte later than 12-bit.
+
+Canon CR2 (`container::cr2`, `vendor::canon`): the sensor's size is
+SensorInfo's, the strip's samples fill the slices top to bottom, left to
+right, and CR2CFAPattern names the filter at the sensor's corner. The default
+crop is SensorInfo's borders; the aspect crop is AspectInfo's where it is
+smaller, else the default crop, starting on even rows and columns for a
+mosaic. The visible area RAWmakase has always read is a `compat-observed` row
+per body and image size. Black is measured on the masked columns beside the
+image over the visible rows, each channel's mean rounded down: on the left
+without the two outermost columns and the two next to the image, on the right
+every column when there are three or more (rows with `black_columns` name
+other columns, where lit columns sit in the border); the white level is the
+bit depth's range unless a row gives it. The maker notes give the as-shot
+white balance and the Daylight and Shade presets (ColorData, by its version;
+the PowerShot G9's WBInfo), 1 in every channel for a multiple exposure
+(MultiExp), Highlight Tone Priority (LightingOpt, else CustomFunctions2), the
+lens (LensModel, with a space after the mount, when EXIF has none), and the
+orientation in CameraInfo when IFD0's is normal. Regional names map to the
+body (`[[name]]` rows). The EOS-1D Mark III's image starts two samples into
+its strip.
+
+Canon files that remain open questions: the PowerShot G16 and S100V CR2 whose
+LibRaw black matches no masked area (one file each), the small RAWs,
+CHDK's headerless files, and CRW.
 
 Canon CR3 (`container::cr3`, `codec::crx`, `vendor::canon_cr3`): the raw image
 is the first of the largest raw tracks (a Dual Pixel file's second image is as

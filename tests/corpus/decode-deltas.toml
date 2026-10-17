@@ -19,6 +19,22 @@
 # Canon CR3: black and white levels follow Adobe DNG Converter, not LibRaw.
 
 [[delta]]
+sha256 = "2307e3cf643ab2f94d03f899467d8797ce1ef41bbffd6ad50af81bdd0ba34098"
+field = "sensor.black"
+before = [126, 126, 126, 126]
+after = [127, 127, 126, 127]
+evidence = "PowerShot G16 IMG_0963.CR2: its border is lit from column 80, so RAWmakase's own CR2 reader measures columns 2 to 77 (as on the S120, the same sensor); LibRaw's 126 matches no masked area over the visible rows (only rows above the image give it), so it is not reproduced for one file"
+approval = "coordinator, 2026-10-17"
+
+[[delta]]
+sha256 = "4775f347686f785104ee7f566df158247cdecef4de76fdbfa150e18b6b104c0a"
+field = "sensor.black"
+before = [127, 127, 127, 127]
+after = [126, 126, 126, 126]
+evidence = "PowerShot S100V Canon_PS-S100V_FW1.0.2.0.CR2: its left masked border is a constant 128 and its right one about 119; LibRaw's 127 matches no masked area, so it is not reproduced for one file"
+approval = "coordinator, 2026-10-17"
+
+[[delta]]
 # Canon/Canon EOS M200/_MG_2231.CR3
 sha256 = "9b900c04ae37ba827b7894e66907657a0b174a74855c40039a8ca0c95583f141"
 field = "sensor.black"

@@ -106,6 +106,8 @@ pub enum Variant {
     ErfPacked,
     /// Mamiya MEF, packed 12-bit samples.
     MefPacked,
+    /// Canon CR2, a mosaic in one sliced lossless JPEG strip.
+    Cr2LosslessJpeg,
 }
 
 impl Variant {
@@ -155,6 +157,7 @@ impl Variant {
             Variant::SrwTiles => "srw-tiles",
             Variant::ErfPacked => "erf-packed",
             Variant::MefPacked => "mef-packed",
+            Variant::Cr2LosslessJpeg => "cr2-ljpeg",
         }
     }
 }
@@ -173,6 +176,7 @@ pub(crate) enum Plan {
     Pef(crate::container::pef::PefPlan),
     Srw(crate::container::srw::SrwPlan),
     Erf(crate::container::erf::ErfPlan),
+    Cr2(crate::container::cr2::Cr2Plan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -219,6 +223,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         }
         if crate::container::erf::is_erf(&t) {
             return crate::container::erf::open(t);
+        }
+        if crate::container::cr2::is_cr2(bytes) {
+            return crate::container::cr2::open(bytes, t);
         }
     }
     Err(Error::NotRaw)
@@ -290,6 +297,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         ) => crate::container::srw::decode(info, plan, bytes, cancel),
         (Plan::Erf(plan), Variant::ErfPacked | Variant::MefPacked) => {
             crate::container::erf::decode(info, plan, bytes, cancel)
+        }
+        (Plan::Cr2(plan), Variant::Cr2LosslessJpeg) => {
+            crate::container::cr2::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
