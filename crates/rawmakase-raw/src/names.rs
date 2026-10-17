@@ -54,7 +54,14 @@ pub(crate) fn make(make: &str) -> String {
 /// the file spells it) or "Digital Camera" behind (Canon's "Digital" too),
 /// trimmed.
 pub(crate) fn model(make: &str, file_make: &str, model: &str) -> String {
-    let model = strip_suffix(model.trim(), make == "Canon");
+    let mut model = strip_suffix(model.trim(), make == "Canon");
+    // Fujifilm's series name: "FinePix S5600", "FinePixS2Pro".
+    if make == "Fujifilm"
+        && let Some(rest) = model.strip_prefix("FinePix")
+        && !rest.trim().is_empty()
+    {
+        model = rest.trim();
+    }
     let first = file_make.split_whitespace().next().unwrap_or("");
     for prefix in [make, first] {
         if prefix.is_empty() {
@@ -136,6 +143,14 @@ mod tests {
         assert_eq!(
             super::model("Minolta", "Minolta Co., Ltd.", "ALPHA-7 DIGITAL"),
             "ALPHA-7 DIGITAL"
+        );
+        assert_eq!(
+            super::model("Fujifilm", "FUJIFILM", "FinePix S5600  "),
+            "S5600"
+        );
+        assert_eq!(
+            super::model("Fujifilm", "FUJIFILM", "FinePixS2Pro"),
+            "S2Pro"
         );
         // Only a whole word: "Canonet" is not "Canon" "et".
         assert_eq!(super::model("Canon", "Canon", "Canonet"), "Canonet");

@@ -23,6 +23,10 @@ pub struct RawInfo {
     pub width: u32,
     pub height: u32,
     pub margins: [u32; 2],
+    /// The size a Fujifilm Super CCD's data develops to, its stored rows
+    /// turned by 45° (the visible area is the stored one); `None` for other
+    /// sensors.
+    pub rotated: Option<[u32; 2]>,
     /// The default crop and the camera's aspect-ratio crop, `[left, top,
     /// width, height]` in sensor coordinates ([`UNSET`] positions when only a
     /// size is known; all [`UNSET`] and zero sizes when there is none).
@@ -111,6 +115,7 @@ pub(crate) fn base(variant: Variant) -> RawInfo {
         width: 0,
         height: 0,
         margins: [0, 0],
+        rotated: None,
         frame: [UNSET, UNSET, 0, 0],
         aspect: [UNSET, UNSET, 0, 0],
         sensor_borders: None,

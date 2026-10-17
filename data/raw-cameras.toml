@@ -7,9 +7,15 @@
 #                which camera profiles may use
 # [[camera]]     decode facts, for the camera's files matching `dng` and
 #                `raw_size` when given: the visible area (`visible`, left, top,
-#                width, height in sensor coordinates) and levels (`white`,
+#                width, height in sensor coordinates), levels (`white`,
 #                and `black` for every channel), of its files of `bits`-bit
-#                samples when given
+#                samples when given, the orientation (`flip`, RAWmakase's
+#                flip code) and the default crop (`frame`, left, top, width,
+#                height in sensor coordinates; 65535, 65535, 0, 0 for none),
+#                and `wb_scale` (red, blue): factors the white balance levels
+#                are scaled by where the maker's rules say they are
+#                (Fujifilm's record 0x8200) and the file does not say by how
+#                much; observed from LibRaw's output, not colour matrices
 #
 # source says where the values come from:
 #   file             a rule from the file's own tags, for files that lack them
@@ -2153,3 +2159,797 @@ make = "Nikon"
 model = "E8800"
 canonical = ["Nikon", "COOLPIX 8800"]
 source = "compat-observed"
+
+# Fujifilm (RAF): the visible areas, levels and crops RAWmakase has always read
+# where the RAF rules (crates/rawmakase-raw/src/container/raf.rs) do not give
+# them.
+
+[[canonical]]
+make = "Fujifilm"
+model = "GFX100 II"
+canonical = ["Fujifilm", "GFX 100 II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "GFX100S"
+canonical = ["Fujifilm", "GFX 100S"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "GFX100S II"
+canonical = ["Fujifilm", "GFX 100S II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "GFX50S II"
+canonical = ["Fujifilm", "GFX 50S II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "HS10 HS11"
+canonical = ["Fujifilm", "HS10"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "HS33EXR"
+canonical = ["Fujifilm", "HS30EXR"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "S5500"
+canonical = ["Fujifilm", "S5100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "S5600"
+canonical = ["Fujifilm", "S5200"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "S6500fd"
+canonical = ["Fujifilm", "S6000fd"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "S9500"
+canonical = ["Fujifilm", "S9000"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Fujifilm"
+model = "S9600"
+canonical = ["Fujifilm", "S9100"]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "DBP for GX680"
+dng = false
+raw_size = [5504, 3856]
+visible = [32, 8, 5440, 3840]
+white = 4095
+flip = 6
+wb_scale = [0.761, 0.857]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "E550"
+dng = false
+raw_size = [2048, 3080]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "E900"
+dng = false
+raw_size = [2512, 3688]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "F550EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [34, 0, 3262, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "F600EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [34, 0, 3262, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "F700"
+dng = false
+raw_size = [1472, 2168]
+white = 15872
+wb_scale = [0.901, 0.885]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "F770EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [34, 0, 3262, 2464]
+white = 4073
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "F900EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [0, 0, 3264, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX 100"
+dng = false
+raw_size = [11808, 8754]
+visible = [0, 2, 11662, 8746]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX 50R"
+dng = false
+raw_size = [9216, 6210]
+visible = [0, 0, 8280, 6208]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX 50S"
+dng = false
+raw_size = [9216, 6210]
+visible = [0, 0, 8280, 6208]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX100 II"
+dng = false
+raw_size = [11808, 8754]
+visible = [0, 2, 11662, 8746]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX100RF"
+dng = false
+raw_size = [11808, 8754]
+visible = [0, 2, 11662, 8746]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX100S"
+dng = false
+raw_size = [11808, 8754]
+visible = [0, 2, 11662, 8746]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX100S II"
+dng = false
+raw_size = [11808, 8754]
+visible = [0, 2, 11662, 8746]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "GFX50S II"
+dng = false
+raw_size = [8472, 6210]
+visible = [0, 0, 8280, 6208]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "HS10 HS11"
+dng = false
+raw_size = [3664, 2742]
+white = 3944
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "HS20EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [34, 0, 3262, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "HS30EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [34, 0, 3262, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "HS33EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [34, 0, 3262, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "HS50EXR"
+dng = false
+raw_size = [3328, 2464]
+visible = [0, 0, 3264, 2464]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S100FS"
+dng = false
+raw_size = [5600, 2060]
+visible = [80, 10, 5440, 2040]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S200EXR"
+dng = false
+raw_size = [2880, 2128]
+visible = [36, 10, 2808, 2108]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S2Pro"
+dng = false
+raw_size = [2944, 2192]
+visible = [32, 24, 2880, 2144]
+white = 4095
+flip = 6
+frame = [65535, 65535, 0, 0]
+wb_scale = [0.901, 0.885]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S3Pro"
+dng = false
+raw_size = [4352, 1444]
+visible = [48, 10, 4256, 1424]
+white = 15872
+frame = [65535, 65535, 0, 0]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5000"
+dng = false
+raw_size = [1472, 2160]
+white = 15872
+wb_scale = [0.901, 0.885]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5200"
+dng = false
+raw_size = [1904, 2776]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5500"
+dng = false
+raw_size = [2304, 1740]
+visible = [0, 6, 2304, 1734]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5600"
+dng = false
+raw_size = [1904, 2776]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5Pro"
+dng = false
+raw_size = [4352, 1444]
+visible = [48, 10, 4256, 1424]
+white = 15872
+frame = [65535, 65535, 0, 0]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S6000fd"
+dng = false
+raw_size = [4224, 1544]
+visible = [64, 0, 4096, 1544]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S6500fd"
+dng = false
+raw_size = [4224, 1544]
+visible = [64, 0, 4096, 1544]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S7000"
+dng = false
+raw_size = [2048, 3080]
+white = 15872
+wb_scale = [0.901, 0.885]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S9500"
+dng = false
+raw_size = [2512, 3688]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "S9600"
+dng = false
+raw_size = [2512, 3688]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-A1"
+dng = false
+raw_size = [5120, 3288]
+visible = [0, 0, 4952, 3288]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-A2"
+dng = false
+raw_size = [5120, 3288]
+visible = [0, 0, 4952, 3288]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E1"
+dng = false
+raw_size = [5120, 3288]
+visible = [0, 0, 4952, 3288]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E2"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E2S"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E3"
+dng = false
+raw_size = [6048, 4038]
+visible = [0, 6, 6032, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E3"
+dng = false
+raw_size = [6160, 4032]
+visible = [0, 0, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E4"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E5"
+dng = false
+raw_size = [7872, 5196]
+visible = [0, 6, 7752, 5178]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-H1"
+dng = false
+raw_size = [6048, 4038]
+visible = [0, 6, 6032, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-H1"
+dng = false
+raw_size = [6160, 4032]
+visible = [0, 0, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-H2"
+dng = false
+raw_size = [7872, 5196]
+visible = [0, 6, 7752, 5178]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-H2S"
+dng = false
+raw_size = [6336, 4188]
+visible = [0, 6, 6264, 4176]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-M1"
+dng = false
+raw_size = [5120, 3288]
+visible = [0, 0, 4952, 3288]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-M5"
+dng = false
+raw_size = [6336, 3348]
+visible = [630, 0, 5004, 3348]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-M5"
+dng = false
+raw_size = [6336, 4182]
+visible = [0, 6, 6264, 4176]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-Pro1"
+dng = false
+raw_size = [5120, 3288]
+visible = [0, 0, 4952, 3288]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-Pro2"
+dng = false
+raw_size = [6048, 4038]
+visible = [0, 6, 6032, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-Pro2"
+dng = false
+raw_size = [6160, 4032]
+visible = [0, 0, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-Pro3"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-S1"
+dng = false
+raw_size = [2944, 2144]
+visible = [48, 0, 2848, 2144]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-S10"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-S20"
+dng = false
+raw_size = [6336, 4182]
+visible = [0, 6, 6252, 4176]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T1"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T10"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T2"
+dng = false
+raw_size = [6048, 4038]
+visible = [0, 6, 6032, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T2"
+dng = false
+raw_size = [6160, 4032]
+visible = [0, 0, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T20"
+dng = false
+raw_size = [6048, 4038]
+visible = [0, 6, 6032, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T20"
+dng = false
+raw_size = [6160, 4032]
+visible = [0, 0, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T3"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T30"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T30 II"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T30 III"
+dng = false
+raw_size = [6336, 4182]
+visible = [0, 6, 6264, 4176]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T4"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T5"
+dng = false
+raw_size = [7872, 4044]
+visible = [876, 24, 6000, 3997]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T5"
+dng = false
+raw_size = [7872, 5196]
+visible = [0, 6, 7752, 5178]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T50"
+dng = false
+raw_size = [7872, 5196]
+visible = [0, 6, 7752, 5178]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X10"
+dng = false
+raw_size = [2944, 2144]
+visible = [48, 0, 2848, 2144]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100"
+dng = false
+raw_size = [4448, 2870]
+visible = [68, 0, 4310, 2870]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100F"
+dng = false
+raw_size = [6048, 4038]
+visible = [0, 6, 6032, 4028]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100F"
+dng = false
+raw_size = [6160, 4032]
+visible = [0, 0, 6032, 4032]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100S"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100T"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100V"
+dng = false
+raw_size = [6384, 4182]
+visible = [0, 6, 6246, 4170]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100VI"
+dng = false
+raw_size = [7872, 5196]
+visible = [0, 6, 7752, 5178]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X20"
+dng = false
+raw_size = [4096, 3012]
+visible = [0, 0, 4032, 3012]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X30"
+dng = false
+raw_size = [4096, 3012]
+visible = [0, 0, 4032, 3012]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "X70"
+dng = false
+raw_size = [4992, 3296]
+visible = [6, 0, 4934, 3296]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "XF1"
+dng = false
+raw_size = [2944, 2144]
+visible = [48, 0, 2848, 2144]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "XF10"
+dng = false
+raw_size = [6016, 4014]
+white = 15872
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "XQ1"
+dng = false
+raw_size = [4096, 3012]
+visible = [0, 0, 4032, 3012]
+source = "compat-observed"
+
+[[camera]]
+make = "Fujifilm"
+model = "XQ2"
+dng = false
+raw_size = [4096, 3012]
+visible = [0, 0, 4032, 3012]
+source = "compat-observed"
+

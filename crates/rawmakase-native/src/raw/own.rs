@@ -103,6 +103,12 @@ impl Own {
         let Some(cfa) = self.info.cfa.clone() else {
             return Ok(None);
         };
+        // A Super CCD's stored rows are its image turned by 45°: not a
+        // mosaic of the image's rows and columns.
+        anyhow::ensure!(
+            self.info.rotated.is_none(),
+            "RAWmakase's decoders do not develop Super CCD files yet"
+        );
         let s = self.decode(cancel)?;
         if s.channels != 1 || s.white <= s.black.iter().copied().min().unwrap_or(0) {
             return Ok(None);
@@ -178,8 +184,9 @@ fn header(i: &RawInfo) -> Header {
         make: i.make.clone(),
         model: i.model.clone(),
         normalized: [i.normalized_make.clone(), i.normalized_model.clone()],
-        width: i.width,
-        height: i.height,
+        // A Super CCD's image is its stored rows turned by 45°.
+        width: i.rotated.map_or(i.width, |r| r[0]),
+        height: i.rotated.map_or(i.height, |r| r[1]),
         raw_width: i.raw_width,
         raw_height: i.raw_height,
         margins: i.margins,

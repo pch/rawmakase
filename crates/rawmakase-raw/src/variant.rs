@@ -63,6 +63,12 @@ pub enum Variant {
     NefPacked14,
     /// Nikon NEF small RAW: luma and chroma, converted to RGB.
     NefSmallRaw,
+    /// Fujifilm RAF, 16-bit words row by row.
+    RafUnpacked,
+    /// Fujifilm RAF of a Super CCD SR: rows of S pixels, then R pixels.
+    RafSuperCcdSr,
+    /// Fujifilm RAF of a digital back: 16-bit words in vertical tiles.
+    RafTiled,
 }
 
 impl Variant {
@@ -91,6 +97,9 @@ impl Variant {
             Variant::NefPacked => "nef-packed",
             Variant::NefPacked14 => "nef-packed-14",
             Variant::NefSmallRaw => "nef-small-raw",
+            Variant::RafUnpacked => "raf-unpacked",
+            Variant::RafSuperCcdSr => "raf-super-ccd-sr",
+            Variant::RafTiled => "raf-tiled",
         }
     }
 }
@@ -103,6 +112,7 @@ pub(crate) enum Plan {
     Rw2(crate::container::rw2::Rw2Plan),
     Arw(crate::container::arw::ArwPlan),
     Nef(crate::container::nef::NefPlan),
+    Raf(crate::container::raf::RafPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -116,6 +126,9 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
 
 /// The container's own reading of the file, names as the file writes them.
 fn probe(bytes: &[u8]) -> Result<RawInfo> {
+    if crate::container::raf::is_raf(bytes) {
+        return crate::container::raf::open(bytes);
+    }
     if crate::container::rw2::is_rw2(bytes) {
         let t = crate::container::tiff::TiffFile::parse(bytes, 0)
             .ok_or_else(|| crate::error::corrupt("RW2 directory"))?;
@@ -174,6 +187,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::NefPacked14
             | Variant::NefSmallRaw,
         ) => crate::container::nef::decode(info, plan, bytes, cancel),
+        (Plan::Raf(plan), Variant::RafUnpacked | Variant::RafSuperCcdSr | Variant::RafTiled) => {
+            crate::container::raf::decode(info, plan, bytes, cancel)
+        }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
             "{} with another container's plan",

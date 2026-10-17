@@ -23,6 +23,15 @@ pub(crate) fn samples(width: u32, height: u32, channels: u32) -> Result<usize> {
     usize::try_from(n).map_err(|_| Error::TooLarge("image samples"))
 }
 
+/// `n` zero samples, allocated fallibly.
+pub(crate) fn zeroed(n: usize) -> Result<Vec<u16>> {
+    let mut v = Vec::new();
+    v.try_reserve_exact(n)
+        .map_err(|_| Error::TooLarge("image allocation"))?;
+    v.resize(n, 0);
+    Ok(v)
+}
+
 /// Byte order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Order {
@@ -49,5 +58,23 @@ impl<'a> Bytes<'a> {
             .checked_add(len)
             .and_then(|end| self.data.get(start..end))
             .ok_or_else(|| corrupt(format!("{len} bytes at {at} past the end of the file")))
+    }
+    /// The 16-bit value at `at`.
+    pub fn u16(&self, at: u64) -> Result<u16> {
+        let b = self.slice(at, 2)?;
+        let b = [b[0], b[1]];
+        Ok(match self.order {
+            Order::Little => u16::from_le_bytes(b),
+            Order::Big => u16::from_be_bytes(b),
+        })
+    }
+    /// The 32-bit value at `at`.
+    pub fn u32(&self, at: u64) -> Result<u32> {
+        let b = self.slice(at, 4)?;
+        let b = [b[0], b[1], b[2], b[3]];
+        Ok(match self.order {
+            Order::Little => u32::from_le_bytes(b),
+            Order::Big => u32::from_be_bytes(b),
+        })
     }
 }

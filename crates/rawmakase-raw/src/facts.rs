@@ -67,6 +67,20 @@ pub(crate) struct Camera {
     pub white: Option<u32>,
     #[serde(default)]
     pub black: Option<u32>,
+    /// The orientation (RAWmakase's flip code) and the default crop (`[left,
+    /// top, width, height]` in sensor coordinates, `[65535, 65535, 0, 0]` for
+    /// none) where the file does not give the ones RAWmakase has always read
+    /// it with.
+    #[serde(default)]
+    pub flip: Option<i32>,
+    #[serde(default)]
+    pub frame: Option<[u32; 4]>,
+    /// Factors (red, blue) the white balance levels are scaled by where
+    /// RAWmakase has always read them scaled and the file does not say by
+    /// how much (observed; applied only where the maker's rules say the
+    /// levels are scaled).
+    #[serde(default)]
+    pub wb_scale: Option<[f64; 2]>,
     #[allow(dead_code)]
     pub source: Source,
     #[allow(dead_code)]
@@ -184,7 +198,12 @@ mod tests {
                 "{c:?}"
             );
             assert!(
-                c.visible.is_some() || c.white.is_some() || c.black.is_some(),
+                c.visible.is_some()
+                    || c.white.is_some()
+                    || c.black.is_some()
+                    || c.flip.is_some()
+                    || c.frame.is_some()
+                    || c.wb_scale.is_some(),
                 "{c:?}"
             );
             assert_ne!(c.source, Source::AdobeDng, "{c:?}");

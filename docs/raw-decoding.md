@@ -36,8 +36,8 @@ Modules, each with a small `pub(crate)` surface:
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
 | `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`) |
-| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`) |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`) |
+| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
 | `color` | The camera-to-sRGB matrix and daylight multipliers from a camera's XYZ matrix |
@@ -73,6 +73,9 @@ A file of a recognised container in a variant this crate does not decode is
 | `NefPacked14` | Nikon NEF, 14-bit samples packed least significant bit first, rows padded to 16 bytes | TIFF 6, our own measurements |
 | `NefSmallRaw` | Nikon NEF small RAW: luma and chroma (three bytes a pixel), converted to RGB through a measured tone curve | ITU-R BT.601, our own measurements |
 | `NefHuffman` | Nikon NEF, Huffman-coded (TIFF compression 34713): lossless, lossy, lossy with a split | TIFF 6, ITU T.81, Laurent Clévy's NEF notes, ExifTool's Nikon tag documentation, our own measurements |
+| `RafUnpacked` | Fujifilm RAF, 16-bit words row by row (the raw image directory's, or the older bodies' samples after the header) | ExifTool's FujiFilm tag names, TIFF 6, our own measurements |
+| `RafSuperCcdSr` | Fujifilm RAF of a Super CCD SR (FinePix F700): each row's S pixels, then its R pixels; the S pixels are read | ExifTool's FujiFilm tag names, our own measurements |
+| `RafTiled` | Fujifilm RAF of the GX680 digital back: big-endian 16-bit words in vertical tiles | ExifTool's FujiFilm tag names, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -184,6 +187,35 @@ and on synthetic NEFs that probe one code word, key or tag at a time):
   of 16383), so their data hashes differ: D810 `DSC_1888.NEF` (0cb5b819…,
   3013 of 36152320 values) and D4S `FU9_3802.NEF` (c8256566…, 161 of
   16163840). This is to be an approved delta at the switch.
+
+Fujifilm (`container::raf`, `vendor::fujifilm`): the camera name is the RAF
+header's, without its "FinePix" series name. The colour filter is X-Trans's
+from the XTransLayout record (last colour first), a Super CCD's fixed
+diagonal pattern (FujiLayout below 4, or 0x80 to 0x83), else RGGB moved by the
+raw image directory's phase (0xF009). The default crop is the header's
+recommended crop (records 0x110 and 0x111) starting on the filter's period (a
+Super CCD's as it is); a camera aspect ratio (0x115) wider than it by more
+than 1% cuts its height, centred. A Super CCD's visible area is its stored
+rows (for the tall layouts, half the image record 0x121's columns from half
+its 0x120 offset), developing to a square of the shorter side plus half the
+longer one (`RawInfo::rotated`). Black is the raw image directory's per
+filter position (0xF00A), or the older bodies' record 0x4000 (green, red,
+second green, blue); white is the bit depth's range. As-shot white balance is
+the raw image directory's (0xF00E) or record 0x2FF0; D65 the illuminant list's
+(0xF00C, light source 21) or record 0x2301, and fine weather and shade the
+RAFData table's (the first run of six presets of the as-shot green, after an
+as-shot entry in the first X bodies'), the X-A bodies' RAFData list (light
+sources 1, 8 and 83, red and blue doubled) or records 0x2100 and 0x2200.
+DevelopmentDynamicRange and RawExposureBias come from the maker notes and
+record 0x9650. Visible areas, white levels, orientations and crops RAWmakase
+has always read differently have `compat-observed` rows in
+`data/raw-cameras.toml`.
+The older bodies whose record 0x8200 is set (FinePix F700, S5000, S7000,
+S2Pro and the GX680 back) have their as-shot white balance and presets read
+with red and blue scaled down by factors the file does not give; the
+factors are observed compatibility data (`wb_scale` rows, about 0.901 and
+0.885, 0.761 and 0.857 for the back), so these files keep the white balance
+RAWmakase has always read.
 
 ## Checking against LibRaw
 
