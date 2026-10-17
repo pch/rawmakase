@@ -67,7 +67,9 @@ pub(crate) fn apply(info: &mut crate::info::RawInfo) {
         // which the maker notes place on the sensor.
         let sensor_crops = matches!(
             info.variant,
-            crate::variant::Variant::Cr2LosslessJpeg | crate::variant::Variant::Cr2Sraw
+            crate::variant::Variant::Cr2LosslessJpeg
+                | crate::variant::Variant::Cr2Sraw
+                | crate::variant::Variant::CrwCompressed
         );
         let crops = if !sensor_crops {
             [&mut info.frame, &mut info.aspect].into_iter().collect()

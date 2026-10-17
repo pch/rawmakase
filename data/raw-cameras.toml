@@ -1396,6 +1396,142 @@ raw_size = [4768, 3516]
 visible = [96, 16, 4672, 3500]
 source = "compat-observed"
 
+# Canon CRW: LibRaw's visible area where it is not SensorInfo's borders.
+
+[[camera]]
+make = "Canon"
+model = "EOS 10D"
+dng = false
+raw_size = [3152, 2068]
+visible = [64, 12, 3088, 2056]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 300D"
+dng = false
+raw_size = [3152, 2068]
+visible = [64, 12, 3088, 2056]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS D30"
+dng = false
+raw_size = [2224, 1456]
+visible = [48, 6, 2176, 1448]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS D60"
+dng = false
+raw_size = [3152, 2068]
+visible = [64, 12, 3088, 2056]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G2"
+dng = false
+raw_size = [2376, 1728]
+visible = [12, 6, 2312, 1720]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G3"
+dng = false
+raw_size = [2376, 1728]
+visible = [12, 6, 2312, 1720]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G5"
+dng = false
+raw_size = [2672, 1968]
+visible = [12, 6, 2616, 1960]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot G6"
+dng = false
+raw_size = [3160, 2344]
+visible = [44, 12, 3112, 2328]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot Pro1"
+dng = false
+raw_size = [3344, 2484]
+visible = [4, 6, 3288, 2472]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S30"
+dng = false
+raw_size = [2144, 1560]
+visible = [4, 8, 2088, 1550]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S40"
+dng = false
+raw_size = [2376, 1728]
+visible = [12, 6, 2312, 1720]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S45"
+dng = false
+raw_size = [2376, 1728]
+visible = [12, 6, 2312, 1720]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S50"
+dng = false
+raw_size = [2672, 1968]
+visible = [12, 6, 2616, 1960]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S60"
+dng = false
+raw_size = [2672, 1968]
+visible = [12, 6, 2616, 1960]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "PowerShot S70"
+dng = false
+raw_size = [3160, 2344]
+visible = [44, 12, 3112, 2328]
+source = "compat-observed"
+
+# Adobe DNG Converter's white level for the Canon bodies whose files record
+# none RAWmakase reads (or record their samples' maximum), and for their
+# small RAWs by raw size (first: a body's row without a size matches every
+# size): the value of most of the body's test dataset files (the lowest
+# ISO's on a tie).
+
+[[camera]]
+make = "Canon"
+model = "EOS 40D"
+dng = false
+raw_size = [1944, 1296]
+white = 13600
+source = "adobe-dng"
+
 [[camera]]
 make = "Canon"
 model = "EOS 50D"
@@ -1645,9 +1781,23 @@ source = "adobe-dng"
 
 [[camera]]
 make = "Canon"
+model = "EOS 10D"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
 model = "EOS 1300D"
 dng = false
 white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS 300D"
+dng = false
+white = 4000
 source = "adobe-dng"
 
 [[camera]]
@@ -1704,6 +1854,13 @@ make = "Canon"
 model = "EOS 70D"
 dng = false
 white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS D60"
+dng = false
+white = 4000
 source = "adobe-dng"
 
 [[camera]]
@@ -1910,6 +2067,12 @@ white = 4000
 source = "adobe-dng"
 
 # Canon's regional names of the bodies above.
+
+[[name]]
+make = "Canon"
+model = "EOS DIGITAL REBEL"
+is = "EOS 300D"
+source = "compat-observed"
 
 [[name]]
 make = "Canon"

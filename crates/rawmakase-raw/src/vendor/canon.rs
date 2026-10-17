@@ -358,6 +358,76 @@ impl SmallRaw {
     }
 }
 
+/// The maker-note facts a CRW (CIFF) file keeps in records: SensorInfo's
+/// words (the CR2 maker note's layout) and the CanonModelID.
+pub(crate) fn crw_notes(sensor: &[u16], model_id: Option<u32>) -> Notes {
+    let w = |i: usize| sensor.get(i).map(|&v| u32::from(v));
+    let sensor = (|| Some([w(1)?, w(2)?, w(5)?, w(6)?, w(7)?, w(8)?]))();
+    Notes {
+        sensor,
+        model_id: model_id.unwrap_or(0),
+        ..Notes::default()
+    }
+}
+
+/// A CRW's exposure: ShotInfo's (0x102a) base ISO, aperture and exposure time
+/// in Canon's APEX-like units (32 per stop, the aperture 64), and the focal
+/// length (0x1029) in CameraSettings' (0x102d) focal units.
+pub(crate) fn crw_exposure(info: &mut RawInfo, shot: &[u16], focal: &[u16], settings: &[u16]) {
+    let signed = |i: usize| shot.get(i).map(|&v| f64::from(v as i16));
+    if let Some(v) = signed(2) {
+        info.iso = (50. * 2f64.powf(v / 32. - 4.)) as f32;
+    }
+    if let Some(v) = signed(4) {
+        info.aperture = 2f64.powf(v / 64.) as f32;
+    }
+    if let Some(v) = signed(5) {
+        info.shutter = 2f64.powf(-v / 32.) as f32;
+    }
+    if let Some(&mm) = focal.get(1) {
+        let units = settings.get(25).copied().filter(|&u| u > 0).unwrap_or(1);
+        info.focal = (f64::from(mm) / f64::from(units)) as f32;
+    }
+}
+
+/// A CRW's white balance: the EOS bodies' ColorBalance (0x10a9: as shot,
+/// Daylight and Shade levels, red, green, green, blue, from word 1); the older
+/// PowerShots' as-shot levels in ColorInfo2 (0x102c, word 50, green, red,
+/// blue, green) and Daylight in ColorInfo1 (0x0032, word 41 beside ColorInfo2,
+/// else word 48), `info1` empty unless ColorInfo1 is the 2048 bytes of plain
+/// levels (our measurements).
+pub(crate) fn crw_white_balance(info: &mut RawInfo, balance: &[u16], info2: &[u16], info1: &[u16]) {
+    let rggb = |w: &[u16], at: usize| -> Option<[f32; 4]> {
+        let q: [u16; 4] = w.get(at..at + 4)?.try_into().ok()?;
+        Some(q.map(f32::from))
+    };
+    let grbg = |w: &[u16], at: usize| rggb(w, at).map(|[g, r, b, g2]| [r, g, g2, b]);
+    if let Some([r, g, g2, b]) = rggb(balance, 1) {
+        info.cam_mul = [r, g, b, g2];
+        if let Some([r, g, _, b]) = rggb(balance, 5) {
+            info.presets.daylight = [r, g, b];
+        }
+        if let Some([r, g, _, b]) = rggb(balance, 9) {
+            info.presets.shade = [r, g, b];
+        }
+        return;
+    }
+    // The PowerShots whose ColorInfo records are plain levels.
+    if !info1.is_empty() {
+        if let Some([r, g, g2, b]) = grbg(info2, 50) {
+            info.cam_mul = [r, g, b, g2];
+        }
+        let at = if info2.is_empty() { 48 } else { 41 };
+        // Some bodies' ColorInfo1 is not plain levels: then the two greens
+        // differ.
+        if let Some([r, g, g2, b]) = grbg(info1, at)
+            && g == g2
+        {
+            info.presets.daylight = [r, g, b];
+        }
+    }
+}
+
 /// White balance levels, red, green, second green and blue.
 pub(crate) struct WhiteBalance {
     pub as_shot: [u16; 4],

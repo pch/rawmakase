@@ -113,6 +113,8 @@ pub enum Variant {
     Cr2Sraw,
     /// A RAW file with no header (CHDK), known by its size: packed samples.
     HeaderlessPacked,
+    /// Canon CRW: Canon's compressed sensor data in a CIFF file.
+    CrwCompressed,
 }
 
 impl Variant {
@@ -165,6 +167,7 @@ impl Variant {
             Variant::Cr2LosslessJpeg => "cr2-ljpeg",
             Variant::Cr2Sraw => "cr2-sraw",
             Variant::HeaderlessPacked => "headerless-packed",
+            Variant::CrwCompressed => "crw",
         }
     }
 }
@@ -185,6 +188,7 @@ pub(crate) enum Plan {
     Erf(crate::container::erf::ErfPlan),
     Cr2(crate::container::cr2::Cr2Plan),
     Headerless(crate::container::headerless::HeaderlessPlan),
+    Crw(crate::container::ciff::CrwPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -203,6 +207,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
     }
     if crate::container::cr3::is_cr3(bytes) {
         return crate::container::cr3::open(bytes);
+    }
+    if crate::container::ciff::is_ciff(bytes) {
+        return crate::container::ciff::open(bytes);
     }
     if crate::container::rw2::is_rw2(bytes) {
         let t = crate::container::tiff::TiffFile::parse(bytes, 0)
@@ -324,6 +331,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         }
         (Plan::Headerless(plan), Variant::HeaderlessPacked) => {
             crate::container::headerless::decode(info, plan, bytes, cancel)
+        }
+        (Plan::Crw(plan), Variant::CrwCompressed) => {
+            crate::container::ciff::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(

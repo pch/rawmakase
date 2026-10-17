@@ -5859,6 +5859,134 @@ evidence = "Canon EOS 5DS R Free Raw Files - Tag @signatureeditsco 0J5A9961.cr2:
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
+sha256 = "d4a11e5b861f93f10c40d16d3faf5a87682b0cd1793290df8cf188d656b71030"
+field = "sensor.black"
+before = [129, 129, 129, 129]
+after = [130, 129, 129, 130]
+evidence = "Canon PowerShot Pro1 RAW_CANON_PRO1_ARGB.CRW: Adobe DNG Converter 18.7 BlackLevel [129.969, 129.672, 129.965, 129.676] (mean 129.82); RAWmakase's is its masked border's mean per channel, to the nearest"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "f168bb5642e67d09866a87396725adbdc3f4aa549c626404ec4b596425d22c5c"
+field = "sensor.black"
+before = [130, 130, 130, 130]
+after = [129, 129, 129, 129]
+evidence = "Canon PowerShot S60 RAW_CANON_S60_SRGB.CRW: Adobe DNG Converter 18.7 BlackLevel [0.0] plus BlackLevelDeltaV 129.55 (mean 129.55); RAWmakase's is its masked border's mean per channel, to the nearest"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "f168bb5642e67d09866a87396725adbdc3f4aa549c626404ec4b596425d22c5c"
+field = "sensor.data_sha256"
+before = "aa6bc0b088c1cf2c3ef02168a1cfa6994a91c6f39ef54d8b8d6f301929e667b9"
+after = "b698bee7470208ad9512791dd665702962b71e700d2293a65aa3b24aed7deeb9"
+evidence = "Canon PowerShot S60 RAW_CANON_S60_SRGB.CRW: Adobe DNG Converter 18.7's raw data equals RAWmakase's sample for sample; LibRaw adds 2 to every sample below 512"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "db4d0e077f88949adb3435a4edb14cdd30f7a70ee6729035e83cc6bac363a090"
+field = "sensor.black"
+before = [128, 129, 129, 129]
+after = [127, 127, 127, 127]
+evidence = "Canon PowerShot S50 RAW_CANON_S50.CRW: Adobe DNG Converter 18.7 BlackLevel [0.0] plus BlackLevelDeltaV 126.98 (mean 126.98); RAWmakase's is its masked border's mean per channel, to the nearest"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "db4d0e077f88949adb3435a4edb14cdd30f7a70ee6729035e83cc6bac363a090"
+field = "sensor.data_sha256"
+before = "839c340716321d0d3e1eeb5e8f5d4eb36bb01a6e2fc48fd3f7a7c7c74532f9dd"
+after = "c6b96b6798b11abcc5f8111d6ba9b9d7ed1e4855fd9bfe3de661848a1de03b57"
+evidence = "Canon PowerShot S50 RAW_CANON_S50.CRW: Adobe DNG Converter 18.7's raw data equals RAWmakase's sample for sample; LibRaw adds 2 to every sample below 512"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "585e9317b0804743371b53e6d6a785c68310d29a66aa331016d4a946376347d0"
+field = "sensor.black"
+before = [31, 32, 31, 31]
+after = [32, 32, 32, 32]
+evidence = "Canon PowerShot S30 RAW_CANON_S30.CRW: Adobe DNG Converter 18.7 BlackLevel [31.879] (mean 31.88); RAWmakase's is its masked border's mean per channel, to the nearest"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "2c6a006cb7948877e9b2ebb85428a6246c7c2755709af61ae5fd7cc8f4d30eb7"
+field = "sensor.black"
+before = [128, 128, 128, 128]
+after = [129, 129, 129, 129]
+evidence = "Canon PowerShot G3 RAW_CANON_G3.CRW: Adobe DNG Converter 18.7 BlackLevel [0.0] plus BlackLevelDeltaV 128.76 (mean 128.76); RAWmakase's is its masked border's mean per channel, to the nearest"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "4ee482f2b6f9f1a8d370703ea04e9f2abaa49356973a7f56b229af93a78e8a2e"
+field = "sensor.black"
+before = [128, 128, 128, 128]
+after = [128, 128, 129, 128]
+evidence = "Canon EOS D30 CRW_2444.CRW: Adobe DNG Converter 18.7 BlackLevel [128.168, 128.047, 128.496, 128.613] (mean 128.33); RAWmakase's is its masked border's mean per channel, to the nearest"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "d6a3131bfac390fde01b96882ec378211f04570c3252708b58f0d05b33a9fdfc"
+field = "sensor.black"
+before = [261, 260, 260, 261]
+after = [262, 260, 260, 262]
+evidence = "Canon EOS 300D CRW_2390.CRW: Adobe DNG Converter 18.7 BlackLevel [260.539, 260.02, 260.129, 260.152] (mean 260.21); RAWmakase's is its masked border's mean per channel, to the nearest"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "bb084223d714871b99de4f549eaf00513e30a7080feeead700252c2008060196"
+field = "sensor.black"
+before = [129, 129, 129, 129]
+after = [127, 128, 128, 127]
+evidence = "Canon PowerShot G5 105_0506.CRW: Adobe DNG Converter 18.7 BlackLevel [0.0] plus BlackLevelDeltaV 127.49 (mean 127.49); RAWmakase's is its masked border's mean per channel, to the nearest"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "bb084223d714871b99de4f549eaf00513e30a7080feeead700252c2008060196"
+field = "sensor.data_sha256"
+before = "9a9763efbc721bc979d21efe3ba45c8bdaddb2c9ced03998bd439ffbda25b970"
+after = "3f260df9bf4587ea986758f049031478b1ad8de4d8741e6b02b8411e7eb7ee49"
+evidence = "Canon PowerShot G5 105_0506.CRW: Adobe DNG Converter 18.7's raw data equals RAWmakase's sample for sample; LibRaw adds 2 to every sample below 512"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "2b98659ecff170af1dfe44f89b493139e75e995b2979686f6ff0847cfb56b97f"
+field = "sensor.black"
+before = [127, 127, 126, 127]
+after = [127, 127, 127, 127]
+evidence = "Canon EOS D60 CRW_0099.CRW: Adobe DNG Converter 18.7 BlackLevel [127.484, 127.047, 127.414, 126.949] (mean 127.22); RAWmakase's is its masked border's mean per channel, to the nearest"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "b0730eb3a67cc2281a32e0b2ee104199246928d954a68b7e5b72366514c73d02"
+field = "sensor.black"
+before = [127, 126, 126, 127]
+after = [128, 126, 126, 128]
+evidence = "Canon EOS 10D CRW_7673.CRW: Adobe DNG Converter 18.7 BlackLevel [127.914, 126.574, 127.965, 126.586] (mean 127.26); RAWmakase's is its masked border's mean per channel, to the nearest"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "9e7f62239fe728046af28d0d4a8a722d35d40146a79794a5bda1775306af4383"
+field = "sensor.black"
+before = [124, 124, 124, 125]
+after = [125, 124, 124, 125]
+evidence = "Canon EOS 300D CRW_8395.CRW: Adobe DNG Converter 18.7 BlackLevel [798.82, 795.539, 801.168, 796.676] (mean 798.05); RAWmakase's is its masked border's mean per channel, to the nearest"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "e879c94afdc64dabc88b01ce2d02628aa225259303ec71dd61f7fb0322bfea2d"
+field = "sensor.black"
+before = [124, 125, 125, 124]
+after = [125, 126, 126, 125]
+evidence = "Canon EOS 10D crw_2127.crw: Adobe DNG Converter 18.7 BlackLevel [798.555, 806.168, 798.699, 806.359] (mean 802.45); RAWmakase's is its masked border's mean per channel, to the nearest"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+sha256 = "58144118854657df5cd2185df40fecf6b665fc6754fef0416c2f222b68b025c6"
+field = "sensor.black"
+before = [127, 128, 128, 127]
+after = [128, 128, 128, 128]
+evidence = "Canon EOS 10D crw_2455.crw: Adobe DNG Converter 18.7 BlackLevel [127.895, 128.43, 127.969, 128.492] (mean 128.20); RAWmakase's is its masked border's mean per channel, to the nearest"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
 sha256 = "4946a2dcc321865f833b34c204a2a50de2832d609a56819823c582ca32b2f60a"
 field = "sensor.black"
 before = [31, 31, 31, 31]
