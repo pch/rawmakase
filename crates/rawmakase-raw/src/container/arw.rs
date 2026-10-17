@@ -81,6 +81,7 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         (32767, _) if stored == pixels => Variant::ArwCurve,
         (32767, _) if bps == 12 && width % 2 == 0 && stored == pixels * 3 / 2 => Variant::ArwPacked,
         (32767, _) => Variant::ArwV1,
+        (32766, _) => Variant::ArwV6,
         _ => {
             return Err(Error::Unsupported(format!("ARW compression {compression}")));
         }
@@ -124,6 +125,12 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         // what RAWmakase has always read them with (our measurements).
         black = black.map(|b| b + 512);
         white = 17536;
+    }
+    if variant == Variant::ArwV6 {
+        // Compressed RAW 2's values are on twice the 14-bit scale; its white
+        // is the curve's top.
+        black = black.map(|b| 2 * b);
+        white = u32::from(crate::codec::arw6::curve()[4095]);
     }
     info.plan = Plan::Arw(ArwPlan {
         width,
@@ -326,6 +333,13 @@ pub(crate) fn decode(
             }
         }
         Variant::ArwLosslessJpeg => ljpeg_tiles(plan, &strip, &mut data, cancel)?,
+        Variant::ArwV6 => {
+            crate::codec::arw6::decode(strip(0)?, width, height, &mut data, cancel)?;
+            let curve = crate::codec::arw6::curve();
+            for v in &mut data {
+                *v = curve[usize::from(*v).min(4095)];
+            }
+        }
         Variant::ArwV1 => crate::codec::sony::arw1(strip(0)?, width, height, &mut data, cancel)?,
         Variant::ArwYcbcr => ycbcr_tiles(plan, &strip, &mut data, cancel)?,
         v => {
@@ -674,6 +688,19 @@ pub(crate) mod tests {
             .position(|w| w == [6, 1, 3, 0, 1, 0, 0, 0])
             .unwrap();
         file[at + 8..at + 10].copy_from_slice(&6u16.to_le_bytes());
+        assert!(matches!(crate::open(&file), Err(Error::Corrupt(_))));
+    }
+
+    #[test]
+    fn compressed_raw_2_levels_beyond_16_bits_are_corrupt() {
+        // Compressed RAW 2 doubles its black.
+        let file = arw(
+            "ILCE-7M5",
+            [32, 16],
+            [14, 32766],
+            vec![(0x7310, Value::Long(vec![u32::MAX; 4]))],
+            vec![0; 64],
+        );
         assert!(matches!(crate::open(&file), Err(Error::Corrupt(_))));
     }
 

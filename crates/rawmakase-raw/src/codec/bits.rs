@@ -68,6 +68,11 @@ impl<'a> Msb<'a> {
     pub fn overrun(&self) -> bool {
         self.overran || self.past as u64 * 8 > u64::from(self.bits)
     }
+    /// The bits consumed so far, those past the end included (a pump not
+    /// reading JPEG).
+    pub fn consumed(&self) -> u64 {
+        (self.pos + self.past) as u64 * 8 - u64::from(self.bits)
+    }
     #[inline]
     fn next_byte(&mut self) -> u8 {
         if self.marker || self.pos >= self.data.len() {

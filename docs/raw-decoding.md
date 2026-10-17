@@ -65,6 +65,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `ArwPacked` | Sony ARW, packed 12-bit samples (DSLR-A850, A900) | Our measurements |
 | `ArwLosslessJpeg` | Sony ARW, lossless JPEG tiles of 2 × 2 colour cells | ITU T.81, our measurements |
 | `ArwYcbcr` | Sony ARW small RAWs: lossless JPEG luma and chroma tiles | ITU T.81, T.871, TIFF 6, our measurements |
+| `ArwV6` | Sony ARW "compressed RAW 2": LLVC tiles of wavelet planes, a curve to linear values | SMPTE RDD 34, Adobe DNG Converter, our measurements |
 | `ArwV1` | Sony's first ARW: Huffman-coded columns (DSLR-A100 to A390) | ITU T.81 (difference coding), ExifTool's Minolta tags, our measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
@@ -113,6 +114,16 @@ Sony (from our own measurements unless said otherwise):
   2 × 2; luma sampled 2 × 2 predicts a block's first row from the first row of
   the block above, not the row just above as T.81 does. Their RGB is JFIF's
   conversion in single precision with fused multiply-adds, rounded down.
+- Compressed RAW 2 (ARW6) is a strip of tiles, each an SMPTE RDD 34 (LLVC)
+  picture of the green mean, two chroma differences and the greens'
+  residual. Sony's streams differ from RDD 34: a zero code at depth 0 is a zero
+  set starting a run, a run ends when its count reaches one, and
+  dequantisation reconstructs to the middle of the step. The transmission
+  units' rows are shifted by what the first residual half holds beyond two
+  lines. The 12-bit codes go through a curve that is the identity to 1408 and
+  then interpolates a value every eighth code; its values are Adobe DNG
+  Converter's for a synthetic file holding every code, and LibRaw's agree on
+  every code our files hold.
 - The DSC-R1's SR2 stores its words big-endian in a little-endian file.
 - Visible areas, some white levels and some model names RAWmakase has always
   read are rows of `data/raw-cameras.toml` (`compat-observed`).

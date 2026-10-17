@@ -1331,6 +1331,14 @@ source = "compat-observed"
 make = "Sony"
 model = "ILCE-7M5"
 dng = false
+raw_size = [7040, 4688]
+visible = [0, 0, 7028, 4688]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M5"
+dng = false
 raw_size = [7168, 5120]
 visible = [0, 0, 7028, 4688]
 source = "compat-observed"
