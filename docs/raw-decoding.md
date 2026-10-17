@@ -41,7 +41,7 @@ Modules, each with a small `pub(crate)` surface:
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
 | `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings, Canon's CRW blocks, Phase One's IIQ rows, Hasselblad's pairs |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`, `mos`, `sti`) |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`, `mos`, `sti`, `brcm`) |
 | `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`, `phase_one`, `hasselblad`, `leaf`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
@@ -97,6 +97,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `MosLosslessJpeg` | Leaf MOS, one lossless JPEG tile whose MCU rows are the image's rows | TIFF 6, ITU T.81, ExifTool's Leaf tag names, our own measurements |
 | `MosUncompressed` | Leaf MOS, 16-bit words | TIFF 6, ExifTool's Leaf tag names, our own measurements |
 | `StiUncompressed` | Sinar STI, one tile of 16-bit words | TIFF 6, TIFF/EP, our own measurements |
+| `BrcmPacked` | Raspberry Pi: a JPEG, then Broadcom's raw block of 10-bit samples packed four in five bytes | Our own measurements |
 | `FffCompressed` | Hasselblad 3FR and FFF (compression 7): lossless JPEG headers, then pairs of coded differences in little-endian 32-bit words | ITU T.81, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
 | `OrfCompressed` | Olympus and OM Digital ORF/ORI, Olympus's compressed coding of 12 or 14-bit samples | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfPacked` | Olympus ORF, packed 12-bit samples: 16-byte blocks of ten, 32-bit words, or two interlaced fields of rows | TIFF 6, ExifTool's Olympus tag names, our own measurements |
@@ -519,6 +520,23 @@ balance is the Neutral line of the last settings tag (0xC517, else 0xC516),
 as RAWmakase has always read it; black 0 and white 16383 are what it has
 always read (Adobe DNG Converter does not read the format). The ISO speed
 is IFD0's ISOSpeedRatings, which LibRaw does not read (a pending delta).
+
+Raspberry Pi (`container::brcm`): raspistill's and picamera's raw files are
+a JPEG (the preview, its EXIF the exposure, its maker note the ISP's
+settings as text, gain_r and gain_b the as-shot white balance) followed by
+"BRCM" (found after the JPEG's end of image, its segments walked; up to 16
+bytes after it, one in the dataset's files) and a 32768-byte header (at 0x10 the sensor's name, at 0xA0 the row
+size, at 0xD0 the width and height, at 0xF6 the bits), then padded rows of
+10-bit samples packed four in five bytes: the four samples' high eight
+bits, then a byte of their low two bits, the first sample's least
+significant (our measurements). The camera is named "RPi" and the sensor
+("Broadcom" its maker, as RAWmakase has always named it); the filter and
+levels are a `compat-observed` row per sensor (the IMX219's), and a sensor
+without one is `Unsupported`, as are other bit depths. A block whose sizes
+are zero or whose rows are not all in the file is none, and a JPEG without
+the block is not RAW, whatever its size (as are PNG, GIF, RIFF, PDF and ZIP
+files: none falls through to the headerless sizes). Adobe DNG Converter
+reads only the JPEG.
 
 Canon files whose values differ from LibRaw's on purpose are approved in
 `tests/corpus/decode-deltas.toml`, with Adobe DNG Converter's value as the

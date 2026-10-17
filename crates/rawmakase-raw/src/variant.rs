@@ -133,6 +133,9 @@ pub enum Variant {
     MosUncompressed,
     /// Sinar STI, 16-bit words.
     StiUncompressed,
+    /// Raspberry Pi: a JPEG followed by Broadcom's raw block of 10-bit
+    /// samples packed four in five bytes.
+    BrcmPacked,
 }
 
 impl Variant {
@@ -194,6 +197,7 @@ impl Variant {
             Variant::MosLosslessJpeg => "mos-ljpeg",
             Variant::MosUncompressed => "mos-uncompressed",
             Variant::StiUncompressed => "sti-uncompressed",
+            Variant::BrcmPacked => "brcm-packed",
         }
     }
 }
@@ -219,6 +223,7 @@ pub(crate) enum Plan {
     Fff(crate::container::fff::FffPlan),
     Mos(crate::container::mos::MosPlan),
     Sti(crate::container::sti::StiPlan),
+    Brcm(crate::container::brcm::BrcmPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -296,6 +301,24 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         return Err(Error::Unsupported(
             "ISO base media file of no known RAW".into(),
         ));
+    }
+    // A JPEG followed by Broadcom's raw block (Raspberry Pi).
+    if crate::container::brcm::is_brcm(bytes) {
+        return crate::container::brcm::open(bytes);
+    }
+    // Files of a known non-RAW kind are not RAW whatever their size: JPEG
+    // (without Broadcom's block), PNG, GIF, RIFF, PDF and ZIP.
+    const NOT_RAW: [&[u8]; 7] = [
+        &[0xff, 0xd8, 0xff],
+        b"\x89PNG\r\n\x1a\n",
+        b"GIF87a",
+        b"GIF89a",
+        b"RIFF",
+        b"%PDF-",
+        b"PK\x03\x04",
+    ];
+    if NOT_RAW.iter().any(|m| bytes.starts_with(m)) {
+        return Err(Error::NotRaw);
     }
     // Last: a file of no container may be one the table knows by size.
     crate::container::headerless::open(bytes).ok_or(Error::NotRaw)
@@ -388,6 +411,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         }
         (Plan::Sti(plan), Variant::StiUncompressed) => {
             crate::container::sti::decode(info, plan, bytes, cancel)
+        }
+        (Plan::Brcm(plan), Variant::BrcmPacked) => {
+            crate::container::brcm::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(

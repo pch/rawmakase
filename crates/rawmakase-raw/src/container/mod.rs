@@ -1,6 +1,7 @@
 //! Probing and structure per container family: where the sensor data, the
 //! previews and the maker notes are.
 pub(crate) mod arw;
+pub(crate) mod brcm;
 pub(crate) mod ciff;
 pub(crate) mod cr2;
 pub(crate) mod cr3;

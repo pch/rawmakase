@@ -8168,6 +8168,18 @@ raw_size = [11904, 8842]
 visible = [124, 92, 11664, 8750]
 source = "compat-observed"
 
+# Raspberry Pi: the filter and levels RAWmakase has always read for a
+# sensor's raw block (the file names the sensor only).
+
+[[camera]]
+make = "Broadcom"
+model = "RPi IMX219"
+dng = false
+cfa = [2, 1, 1, 0]
+black = 66
+white = 1023
+source = "compat-observed"
+
 # Leaf MOS: the backs RAWmakase has always named by their back type.
 
 [[name]]
