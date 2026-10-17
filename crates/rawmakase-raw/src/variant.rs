@@ -111,6 +111,9 @@ pub enum Variant {
     /// Canon CR2 sRAW and mRAW: luma and chroma in one sliced lossless JPEG
     /// strip, converted to RGB.
     Cr2Sraw,
+    /// Canon EOS-1D and 1Ds TIF: a mosaic in one unsliced lossless JPEG
+    /// stream the maker note points to.
+    CanonTif,
     /// A RAW file with no header (CHDK's, action cameras'), known by its
     /// size: packed samples.
     HeaderlessPacked,
@@ -199,6 +202,7 @@ impl Variant {
             Variant::MefPacked => "mef-packed",
             Variant::Cr2LosslessJpeg => "cr2-ljpeg",
             Variant::Cr2Sraw => "cr2-sraw",
+            Variant::CanonTif => "canon-tif",
             Variant::HeaderlessPacked => "headerless-packed",
             Variant::CrwCompressed => "crw",
             Variant::IiqL => "iiq-l",
@@ -322,6 +326,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         if crate::container::cr2::is_cr2(bytes) {
             return crate::container::cr2::open(bytes, t);
         }
+        if crate::container::cr2::is_canon_tif(&t) {
+            return crate::container::cr2::open_tif(bytes, t);
+        }
         // A TIFF of no RAW container this crate reads.
         return Err(Error::Unsupported("TIFF of no known RAW container".into()));
     }
@@ -424,7 +431,7 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         (Plan::Erf(plan), Variant::ErfPacked | Variant::MefPacked) => {
             crate::container::erf::decode(info, plan, bytes, cancel)
         }
-        (Plan::Cr2(plan), Variant::Cr2LosslessJpeg | Variant::Cr2Sraw) => {
+        (Plan::Cr2(plan), Variant::Cr2LosslessJpeg | Variant::Cr2Sraw | Variant::CanonTif) => {
             crate::container::cr2::decode(info, plan, bytes, cancel)
         }
         (Plan::Headerless(plan), Variant::HeaderlessPacked) => {

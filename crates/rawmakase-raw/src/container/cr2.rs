@@ -2,7 +2,8 @@
 //! lossless JPEG strip, cut into vertical slices (tag 0xC640), and whose maker
 //! notes say the sensor's borders, crops, white balance and levels. The strip
 //! codes a mosaic (one sample per component), or for the small RAWs (sRAW,
-//! mRAW) luma and chroma.
+//! mRAW) luma and chroma. The EOS-1D's and 1Ds's TIF, CR2's predecessor,
+//! keeps one unsliced stream where its maker note's RawDataOffset says.
 //!
 //! Sources: TIFF 6, ITU T.81, Laurent Clévy's CR2 write-up (the directories,
 //! the slice layout, the sRAW type tag 0xC6C5 and its YCbCr sampling), the
@@ -222,6 +223,92 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     Ok(info)
 }
 
+/// Canon maker-note RawDataOffset: where the EOS-1D's and 1Ds's TIF keeps
+/// its lossless JPEG stream.
+const RAW_DATA_OFFSET: u16 = 0x0081;
+/// WhiteBalanceTable: its first three words the as-shot levels (red, green,
+/// blue).
+const WHITE_BALANCE_TABLE: u16 = 0x00a4;
+
+/// The Canon maker note of a TIFF, when it has one.
+fn maker_note(t: &TiffFile) -> Option<Ifd> {
+    t.exif
+        .as_ref()
+        .and_then(|e| e.entries.get(&37500))
+        .and_then(|e| t.ifd_at(t.offset_of(e)?))
+}
+
+/// Whether the TIFF `t` is the EOS-1D's or 1Ds's TIF: Canon's make and a
+/// maker note that says where its raw data is.
+pub(crate) fn is_canon_tif(t: &TiffFile) -> bool {
+    t.text_upto(&t.ifds[0], 271, NAME_MAX)
+        .is_some_and(|m| m.starts_with("Canon"))
+        && maker_note(t).is_some_and(|note| note.has(RAW_DATA_OFFSET))
+}
+
+/// Reads the header facts of an EOS-1D or 1Ds TIF: a thumbnail TIFF whose
+/// maker note's RawDataOffset is a lossless JPEG stream of the whole sensor
+/// to the end of the file, unsliced, each of its lines `components` rows of
+/// the image (two, one per component).
+pub(crate) fn open_tif(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
+    let note = maker_note(&t).ok_or_else(|| corrupt("Canon TIF maker note"))?;
+    let at = t
+        .int(&note, RAW_DATA_OFFSET)
+        .map(|at| t.base + u64::from(at))
+        .filter(|&at| at < bytes.len() as u64)
+        .ok_or_else(|| corrupt("Canon TIF raw data offset"))?;
+    let strip = (at, bytes.len() as u64 - at);
+    let file = crate::io::Bytes::new(bytes, crate::io::Order::Little);
+    let jpeg = ljpeg::header(file.slice(strip.0, strip.1)?)?;
+    let per_mcu = jpeg.samples_per_mcu();
+    if per_mcu != jpeg.components.len() {
+        return Err(Error::Unsupported("Canon TIF sampling".into()));
+    }
+    let (across, rows) = jpeg.mcus();
+    let width = u32::try_from(across).map_err(|_| corrupt("Canon TIF width"))?;
+    let height = u32::try_from(rows * per_mcu).map_err(|_| corrupt("Canon TIF height"))?;
+    crate::io::samples(width, height, 1)?;
+    let mut info = crate::info::base(Variant::CanonTif);
+    info.raw_width = width;
+    info.raw_height = height;
+    info.width = width;
+    info.height = height;
+    // Green and red on the first row (our measurement, as LibRaw's and
+    // Adobe DNG Converter's CFAPattern).
+    info.cfa = Some(crate::info::second_green(Cfa {
+        rows: 2,
+        cols: 2,
+        colors: vec![1, 0, 2, 1],
+    }));
+    let ifd0 = &t.ifds[0];
+    info.make = t.text_upto(ifd0, 271, NAME_MAX).unwrap_or_default();
+    info.model = t.text_upto(ifd0, 272, NAME_MAX).unwrap_or_default();
+    super::tiff_exif::read(&t, &mut info);
+    crate::vendor::canon::read(&t, &note).apply(&mut info, t.int(ifd0, 274).unwrap_or(1));
+    // WhiteBalanceTable's first levels: the as-shot white balance, as Adobe
+    // DNG Converter's AsShotNeutral (our measurement).
+    if let Some([r, g, b]) = t
+        .ints_upto(&note, WHITE_BALANCE_TABLE, 3)
+        .and_then(|v| <[u32; 3]>::try_from(v).ok())
+        .filter(|l| l.iter().all(|&v| v > 0))
+    {
+        info.cam_mul = [r as f32, g as f32, b as f32, g as f32];
+    }
+    info.previews = t.previews();
+    info.uncompressed_preview = t.has_uncompressed_thumbnail();
+    info.plan = Plan::Cr2(Cr2Plan {
+        strip,
+        slices: vec![width],
+        grid: [width, height],
+        width,
+        height,
+        sraw: None,
+        skip: 0,
+        levels: crate::vendor::canon::Levels::default(),
+    });
+    Ok(info)
+}
+
 /// Decodes the strip into the sample grid, laying its samples out slice by
 /// slice: each slice filled top to bottom, row by row, then the next to its
 /// right.
@@ -384,12 +471,27 @@ pub(crate) fn decode(
     let width = plan.width as usize;
     let camera = || crate::facts::camera(&info.make, &info.model, false, size);
     let area = [info.margins[0], info.margins[1], info.width, info.height];
+    let bits = (1u32 << precision) - 1;
+    if info.variant == Variant::CanonTif {
+        // No masked border, its black 0 (Adobe DNG Converter's); white the
+        // camera table's (Adobe's), else the samples' bit depth.
+        return Ok(Sensor {
+            width: plan.width,
+            height: plan.height,
+            channels: 1,
+            data,
+            area,
+            black: [0; 4],
+            black_pattern: (0, 0, Vec::new()),
+            white: camera().find_map(|c| c.white).unwrap_or(bits),
+            linear_white: [0; 4],
+        });
+    }
     let cfa = info
         .cfa
         .as_ref()
         .ok_or_else(|| corrupt("CR2 without a colour filter"))?;
     let measured = crate::levels::masked_black(&data, width, area, cfa, None, 2);
-    let bits = (1u32 << precision) - 1;
     let recorded = plan.levels;
     // The black the maker notes record, as Adobe DNG Converter takes it,
     // unless the masked border reads far below it; else the border's.
@@ -741,5 +843,73 @@ pub(crate) mod tests {
         if let Ok(info) = crate::open(&garbage) {
             let _ = crate::decode(&info, &garbage, &AtomicBool::new(false));
         }
+    }
+
+    /// An EOS-1D TIF: the stream of two components, 4 MCUs × 2 lines, then
+    /// IFD0 (make, model, EXIF) whose maker note has RawDataOffset and
+    /// WhiteBalanceTable.
+    fn canon_tif() -> (Vec<u8>, Vec<u16>) {
+        let planes: Vec<Vec<u16>> = (0..2u16)
+            .map(|c| (0..8).map(|i| 100 * (c + 1) + i).collect())
+            .collect();
+        let (jpeg, order) =
+            crate::codec::ljpeg::tests::encode_sampled(&planes, &[(1, 1), (1, 1)], 4, 2, false);
+        let mut f = b"II*\0\0\0\0\0".to_vec();
+        f.extend(&jpeg);
+        let note_at = put_ifd(
+            &mut f,
+            &[
+                (0x0081, 4, 1, 8u32.to_le_bytes().to_vec()),
+                (0x00a4, 3, 3, shorts(&[829, 512, 700])),
+            ],
+            0,
+        );
+        let note_len = f.len() as u32 - note_at;
+        let exif = f.len() as u32;
+        f.extend(1u16.to_le_bytes());
+        f.extend(37500u16.to_le_bytes());
+        f.extend(7u16.to_le_bytes());
+        f.extend(note_len.to_le_bytes());
+        f.extend(note_at.to_le_bytes());
+        f.extend(0u32.to_le_bytes());
+        let ifd0 = put_ifd(
+            &mut f,
+            &[
+                (271, 2, 6, b"Canon\0".to_vec()),
+                (272, 2, 13, b"Canon EOS-1D\0".to_vec()),
+                (34665, 4, 1, exif.to_le_bytes().to_vec()),
+            ],
+            0,
+        );
+        f[4..8].copy_from_slice(&ifd0.to_le_bytes());
+        (f, order)
+    }
+
+    #[test]
+    fn canon_tifs_lines_are_two_rows_each() {
+        let (f, order) = canon_tif();
+        let info = crate::open(&f).unwrap();
+        assert_eq!(info.variant, crate::Variant::CanonTif);
+        assert_eq!((info.raw_width, info.raw_height), (4, 4));
+        assert_eq!(info.model, "EOS-1D");
+        assert_eq!(info.cam_mul, [829., 512., 700., 512.]);
+        let s = crate::decode(&info, &f, &AtomicBool::new(false)).unwrap();
+        // Each line's samples, in order, are two rows of four.
+        assert_eq!(s.data, order);
+        assert_eq!((s.black, s.white), ([0; 4], 3500));
+        assert_eq!(
+            crate::decode(&info, &f, &AtomicBool::new(true)).unwrap_err(),
+            crate::error::Error::Cancelled
+        );
+        for end in 0..f.len() {
+            if let Ok(info) = crate::open(&f[..end]) {
+                let _ = crate::decode(&info, &f[..end], &AtomicBool::new(false));
+            }
+        }
+        // RawDataOffset past the file's end is an error.
+        let mut far = f.clone();
+        let at = far.windows(4).position(|w| w == [0x81, 0, 4, 0]).unwrap();
+        far[at + 8..at + 12].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(crate::open(&far).is_err());
     }
 }

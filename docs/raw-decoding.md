@@ -87,6 +87,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `Cr3Lossless` | Canon CR3, lossless CRX: Bayer planes predicted as JPEG-LS predicts, Golomb-Rice coded | ISO/IEC 14496-12, Laurent Clévy's CR3 description, ITU T.87, ExifTool's Canon tag names, our own measurements |
 | `Cr3Craw` | Canon CR3 C-RAW: CRX planes in three quantized integer 5/3 wavelet levels (version 2 of the coding with quantization maps) | as `Cr3Lossless`, ITU T.800 Annex F, ITU-T H.265 (quantization steps) |
 | `Cr2LosslessJpeg` | Canon CR2: a mosaic in one lossless JPEG strip cut into vertical slices | TIFF 6, ITU T.81, Laurent Clévy's CR2 write-up, ExifTool's Canon tag names, our own measurements |
+| `CanonTif` | Canon EOS-1D and 1Ds TIF: a thumbnail TIFF whose maker note's RawDataOffset is one unsliced lossless JPEG stream of the mosaic | TIFF 6, ITU T.81, ExifTool's Canon tag names, our own measurements |
 | `Cr2Sraw` | Canon CR2 sRAW and mRAW: luma sampled 2 × 1 or 2 × 2 and chroma in one sliced lossless JPEG strip, converted to RGB | TIFF 6, ITU T.81, Laurent Clévy's CR2 write-up, ExifTool's Canon tag names, our own measurements |
 | `HeaderlessPacked` | Headerless RAW files known by their size (CHDK's from Canon PowerShots, action cameras', the Pentax Optio S4's): packed 10, 12 or 16-bit samples | Our own measurements |
 | `CrwCompressed` | Canon CRW: a CIFF file of Canon's coded blocks of differences | ExifTool's CanonRaw tag names and CRW format notes, black-box measurements of the oracle on synthetic files, our own measurements |
@@ -405,6 +406,17 @@ CustomFunctions2), the lens (LensModel, with a space after the mount, when
 EXIF has none), and the orientation in CameraInfo when IFD0's is normal.
 Regional names map to the body (`[[name]]` rows). The EOS-1D Mark III's image
 starts two samples into its strip.
+
+Canon EOS-1D and 1Ds TIF (`container::cr2`, `Variant::CanonTif`): a TIFF
+of thumbnails whose Canon maker note's RawDataOffset (0x0081) starts a
+lossless JPEG stream that runs to the end of the file, of two components,
+each of its lines two rows of the image (the frame's width the image's, its
+lines half its rows; our measurement). The filter is green and red on the
+first row; the as-shot white balance the first three words of
+WhiteBalanceTable (0x00A4: red, green, blue), Adobe DNG Converter's
+AsShotNeutral; black 0 and white the body's `adobe-dng` row (3500 for the
+1D, 3514 for the 1Ds), both Adobe's. The 1Ds's model text, "EOS-1DS", is
+the EOS-1Ds (a `[[name]]` row).
 
 Canon sRAW and mRAW: a component's samples of an MCU are predicted as one run
 on a line of the component's own (not T.81's two-dimensional sampling). A

@@ -30058,3 +30058,21 @@ before = [1.318359375, 1.0, 1.3846153020858765]
 after = [1.322224736213684, 1.0, 1.3803479671478271]
 evidence = "RAWmakase's is the KodakIFD's levels of the WhiteBalance setting (WB_RGBLevelsDaylight + WhiteBalance), green over each, Adobe DNG Converter's AsShotNeutral to its six digits; LibRaw's differs by under 0.4%"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS-1D/B53A0011-20171118-ss200-ap2.8-fl50-iso200.TIF
+sha256 = "e9856cb62ca32d6cbe83dbb35f16fe10b5d7d0ef92e84bdcb40be70aabe87e6a"
+field = "sensor.white"
+before = 3616
+after = 3500
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3500; Adobe's white fitted to RAWmakase's samples is the same, exact fit; RAWmakase's is the camera table's adobe-dng row"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/EOS-1Ds/IMG-27780.TIF
+sha256 = "cf8ddb565c45a0a23d5410e5fad589ecfbd9a7d6befa3fd1bbc960bc531fa6db"
+field = "sensor.white"
+before = 3616
+after = 3514
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3514; Adobe's white fitted to RAWmakase's samples is the same, exact fit; RAWmakase's is the camera table's adobe-dng row"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"

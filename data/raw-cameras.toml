@@ -8387,6 +8387,28 @@ black = 0
 cfa = "BGGR"
 source = "compat-observed"
 
+# Canon EOS-1D and 1Ds TIF: the 1Ds's model text is upper case.
+
+[[name]]
+make = "Canon"
+model = "EOS-1DS"
+is = "EOS-1Ds"
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1D"
+dng = false
+white = 3500
+source = "adobe-dng"
+
+[[camera]]
+make = "Canon"
+model = "EOS-1Ds"
+dng = false
+white = 3514
+source = "adobe-dng"
+
 # Kodak DCS: Canon's EOS D2000C is the Kodak DCS520C.
 
 [[canonical]]
