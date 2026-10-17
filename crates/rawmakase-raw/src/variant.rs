@@ -52,6 +52,8 @@ pub enum Variant {
     ArwV6,
     /// Nikon NEF, Huffman-coded (lossless or lossy, with or without a split).
     NefHuffman,
+    /// Nikon NEF, High Efficiency (JPEG XS).
+    NefHighEfficiency,
 }
 
 impl Variant {
@@ -75,6 +77,7 @@ impl Variant {
             Variant::ArwV1 => "arw-v1",
             Variant::ArwV6 => "arw-v6",
             Variant::NefHuffman => "nef-huffman",
+            Variant::NefHighEfficiency => "nef-high-efficiency",
         }
     }
 }
@@ -149,7 +152,7 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::ArwV1
             | Variant::ArwV6,
         ) => crate::container::arw::decode(info, plan, bytes, cancel),
-        (Plan::Nef(plan), Variant::NefHuffman) => {
+        (Plan::Nef(plan), Variant::NefHuffman | Variant::NefHighEfficiency) => {
             crate::container::nef::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),

@@ -67,6 +67,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `ArwYcbcr` | Sony ARW small RAWs: lossless JPEG luma and chroma tiles | ITU T.81, T.871, TIFF 6, our measurements |
 | `ArwV6` | Sony ARW "compressed RAW 2": LLVC tiles of wavelet planes, a curve to linear values | SMPTE RDD 34, Adobe DNG Converter, our measurements |
 | `ArwV1` | Sony's first ARW: Huffman-coded columns (DSLR-A100 to A390) | ITU T.81 (difference coding), ExifTool's Minolta tags, our measurements |
+| `NefHighEfficiency` | Nikon NEF, High Efficiency and High Efficiency★ (JPEG XS), recognised by the codestream's SOC and CAP markers on any body | ISO/IEC 21122, our own measurements against Adobe DNG Converter |
 | `NefHuffman` | Nikon NEF, Huffman-coded (TIFF compression 34713): lossless, lossy, lossy with a split | TIFF 6, ITU T.81, Laurent Clévy's NEF notes, ExifTool's Nikon tag documentation, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after

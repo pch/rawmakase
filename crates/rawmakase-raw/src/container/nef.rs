@@ -1,14 +1,14 @@
 //! Nikon NEF: TIFF files whose raw image is the full-size directory with a
 //! CFA photometric interpretation, its data Huffman-coded (TIFF compression
-//! 34713); the maker note says how it is coded, and gives the white balance,
-//! levels, lens and crop.
+//! 34713) or High Efficiency (JPEG XS); the maker note says how it is coded,
+//! and gives the white balance, levels, lens and crop.
 //!
 //! Sources: TIFF 6 and TIFF/EP (directories, strips, CFA tags); ExifTool's
 //! Nikon tag documentation (the maker note's tags); our own measurements of
 //! LibRaw's output on the test dataset's files (which data sizes are not
 //! Huffman-coded, the preview it picks).
 use super::tiff::{Ifd, TiffFile};
-use crate::codec::nikon;
+use crate::codec::{nikon, nikon_he};
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo, UNSET};
 use crate::io::{Bytes, Order};
@@ -75,7 +75,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         || size == u64::from(width.div_ceil(10)) * 16 * rows;
     let variant = if first == Some(&[0xff, 0x10, 0xff, 0x50][..]) {
         // JPEG XS's SOC and CAP: High Efficiency, whatever the body.
-        return Err(Error::Unsupported("Nikon High Efficiency NEF".into()));
+        Variant::NefHighEfficiency
     } else if compression == 34713 && size == pixels * 3 {
         return Err(Error::Unsupported("Nikon small RAW".into()));
     } else if compression == 34713 && !uncompressed {
@@ -289,6 +289,14 @@ pub(crate) fn decode(
                 },
             };
             (1, nikon::decode(&data, width, height, &coding, cancel)?)
+        }
+        Variant::NefHighEfficiency => {
+            let mut out = vec![0u16; crate::io::samples(plan.width, plan.height, 1)?];
+            if cancel.load(Ordering::Relaxed) {
+                return Err(Error::Cancelled);
+            }
+            nikon_he::decode(&data, &mut out, width, height, width)?;
+            (1, out)
         }
         v => return Err(Error::Unsupported(format!("{} in a NEF", v.name()))),
     };
@@ -528,6 +536,23 @@ pub(crate) mod tests {
             let file = nef("NIKON Z 7", 4, 2, 12, 34713, &note, &lossless_stream());
             let info = crate::open(&file).unwrap();
             assert_eq!(info.frame, [UNSET, UNSET, 0, 0], "{crop:?}");
+        }
+    }
+
+    #[test]
+    fn high_efficiency_data_is_recognised_by_its_codestream() {
+        // A Z 9's, or a body LibRaw reads as Huffman-coded: the codestream's
+        // start says what it is.
+        for model in ["NIKON Z 9", "NIKON Z5_2"] {
+            let stream = crate::codec::nikon_he::tests::blank_codestream(64, 64);
+            let note = [(0x003d, 3, short(&[1008; 4]))];
+            let file = nef(model, 64, 64, 14, 34713, &note, &stream);
+            let info = crate::open(&file).unwrap();
+            assert_eq!(info.variant, Variant::NefHighEfficiency, "{model}");
+            let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+            let value = crate::codec::nikon_he::tests::blank_value();
+            assert!(s.data.iter().all(|&v| v == value), "{model}");
+            assert_eq!((s.black, s.white), ([1008; 4], 16383));
         }
     }
 
