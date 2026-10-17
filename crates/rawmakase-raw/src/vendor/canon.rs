@@ -129,8 +129,9 @@ impl Notes {
         {
             let frame = [left, top, right - left + 1, bottom - top + 1];
             info.frame = frame;
-            // It starts on even rows and columns, keeping the filter.
-            info.aspect = even(self.aspect_crop(frame));
+            // A mosaic's starts on even rows and columns, keeping the filter.
+            let aspect = self.aspect_crop(frame);
+            info.aspect = if info.sraw { aspect } else { even(aspect) };
         }
         info.flip = crate::geometry::flip(orientation);
         if orientation == 1
@@ -244,6 +245,81 @@ impl Notes {
             Some([r, g, b, g2])
         };
         Some((levels(row)?, levels(10)?))
+    }
+}
+
+/// How a small RAW's luma and chroma become the RGB RAWmakase has always read
+/// (our measurements on every sRAW and mRAW file of the test dataset): per
+/// channel `((Y + y_offset + d) * scale[c]) >> 10`, `d` a fixed-point mix of
+/// the chroma around `zero / 2`, `scale` the white balance ColorData keeps for
+/// small RAWs times its green.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SmallRaw {
+    /// Red, green and blue.
+    pub scale: [u32; 3],
+    /// The chroma mix per channel (Cb, Cr), in 4096ths.
+    pub mix: [[i32; 2]; 3],
+    /// Twice the chroma's zero.
+    pub zero: i32,
+    pub y_offset: i32,
+}
+
+/// The two chroma mixes: the older bodies' (ColorData versions 6, 7 and 9)
+/// and the newer bodies'.
+const OLDER_MIX: [[i32; 2]; 3] = [[50, 22929], [-5640, -11751], [29040, -101]];
+const NEWER_MIX: [[i32; 2]; 3] = [[0, 4096], [-778, -2048], [4096, 0]];
+
+impl Notes {
+    /// The conversion of this body's small RAWs whose luma is sampled `hv`
+    /// times per chroma pair (2 for sRAW, 4 for mRAW); `None` without the
+    /// ColorData that says it.
+    pub(crate) fn small_raw(&self, hv: i32) -> Option<SmallRaw> {
+        let cd = &self.color_data;
+        let version = *cd.first()? as i16;
+        // The small RAW white balance: ColorCoefs' fourth set of levels.
+        let at = match version {
+            ..=9 => 78,
+            10 | 11 => 123,
+            _ => 128,
+        };
+        let q: [u16; 4] = cd.get(at..at + 4)?.try_into().ok()?;
+        let green = u32::from(q[1]);
+        let scale = [q[0], q[1], q[3]].map(|v| (u32::from(v) * green) >> 10);
+        let older = matches!(version, 6 | 7 | 9);
+        // The older bodies' chroma zero: the 7D's and 50D's, and the others'.
+        let zero = if !older {
+            32768
+        } else if matches!(self.model_id, 0x8000_0250 | 0x8000_0261) {
+            32768 - 2 * hv
+        } else {
+            32768 - (hv - 1)
+        };
+        // The 40D's luma is 512 above its black.
+        let y_offset = if self.model_id == 0x8000_0190 {
+            -512
+        } else {
+            0
+        };
+        Some(SmallRaw {
+            scale,
+            mix: if older { OLDER_MIX } else { NEWER_MIX },
+            zero,
+            y_offset,
+        })
+    }
+}
+
+impl SmallRaw {
+    /// The RGB of a pixel from its luma and (interpolated) chroma.
+    #[inline]
+    pub(crate) fn rgb(&self, y: i32, cb: i32, cr: i32) -> [u16; 3] {
+        let (cb, cr) = (i64::from(2 * cb - self.zero), i64::from(2 * cr - self.zero));
+        std::array::from_fn(|c| {
+            let [a, b] = self.mix[c].map(i64::from);
+            let d = (a * cb + b * cr) >> 13;
+            let v = ((i64::from(y + self.y_offset) + d).max(0) * i64::from(self.scale[c])) >> 10;
+            v.min(65535) as u16
+        })
     }
 }
 
@@ -452,6 +528,38 @@ mod tests {
             ..Notes::default()
         };
         assert!(unknown.white_balance().is_none());
+    }
+
+    #[test]
+    fn small_raws_convert_as_measured() {
+        // An EOS 7D sRAW (ColorData 7): its small RAW levels at word 78.
+        let mut cd = vec![0u16; 1337];
+        cd[0] = 7;
+        cd[78..82].copy_from_slice(&[844, 1170, 1170, 488]);
+        let notes = Notes {
+            model_id: 0x8000_0250,
+            color_data: cd,
+            ..Notes::default()
+        };
+        let sraw = notes.small_raw(2).unwrap();
+        assert_eq!(sraw.scale, [964, 1336, 557]);
+        assert_eq!(sraw.zero, 32764);
+        // Its first pixel, as RAWmakase has always read it (measured).
+        assert_eq!(sraw.rgb(76, 16382, 16385), [86, 87, 40]);
+        // The newer bodies' mix is luma plus chroma; darker than black is 0.
+        let mut cd = vec![0u16; 1312];
+        cd[0] = 10;
+        cd[123..127].copy_from_slice(&[1024, 1024, 1024, 1024]);
+        let newer = Notes {
+            color_data: cd,
+            ..Notes::default()
+        }
+        .small_raw(4)
+        .unwrap();
+        assert_eq!(newer.zero, 32768);
+        assert_eq!(newer.rgb(1000, 16384 + 24, 16384 - 10), [990, 1000, 1024]);
+        assert_eq!(newer.rgb(5, 16384, 16384 - 100), [0, 55, 5]);
+        assert!(Notes::default().small_raw(2).is_none());
     }
 
     #[test]

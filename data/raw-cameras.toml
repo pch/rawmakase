@@ -18,7 +18,8 @@
 #                (Fujifilm's record 0x8200) and the file does not say by how
 #                much; observed from LibRaw's output, not colour matrices;
 #                and the 2 × 2 colour filter at the sensor's corner (`cfa`, 0
-#                red, 1 green, 2 blue)
+#                red, 1 green, 2 blue); `aspect_crop = false` where the
+#                camera's aspect crop is not shown
 #
 # source says where the values come from:
 #   file             a rule from the file's own tags, for files that lack them
@@ -737,8 +738,9 @@ visible = [4, 0, 4247, 2390]
 source = "compat-observed"
 
 # Canon CR2: LibRaw's visible area and white level where they are not
-# SensorInfo's borders and the data's bit depth, and the masked columns its
-# black level is measured on where they are not the borders beside the image.
+# SensorInfo's borders (a small RAW's whole image) and the data's bit depth,
+# the masked columns its black level is measured on where they are not the
+# borders beside the image, and the small RAWs whose aspect crop is not shown.
 
 [[camera]]
 make = "Canon"
@@ -873,6 +875,15 @@ source = "compat-observed"
 make = "Canon"
 model = "EOS 50D"
 dng = false
+raw_size = [3344, 2178]
+visible = [0, 0, 3272, 2178]
+aspect_crop = false
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 50D"
+dng = false
 raw_size = [4832, 3228]
 visible = [62, 52, 4770, 3176]
 white = 15763
@@ -900,6 +911,15 @@ source = "compat-observed"
 make = "Canon"
 model = "EOS 5D Mark II"
 dng = false
+raw_size = [3872, 2574]
+visible = [0, 0, 3866, 2574]
+aspect_crop = false
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark II"
+dng = false
 raw_size = [5792, 3804]
 visible = [158, 52, 5634, 3752]
 white = 15600
@@ -912,6 +932,14 @@ dng = false
 raw_size = [5920, 3950]
 visible = [122, 80, 5796, 3870]
 white = 15488
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 5D Mark IV"
+dng = false
+raw_size = [5040, 3360]
+aspect_crop = false
 source = "compat-observed"
 
 [[camera]]
@@ -974,6 +1002,14 @@ dng = false
 raw_size = [5568, 3708]
 visible = [72, 38, 5496, 3670]
 white = 15490
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 6D Mark II"
+dng = false
+raw_size = [4680, 3132]
+visible = [0, 12, 4680, 3120]
 source = "compat-observed"
 
 [[camera]]
@@ -1053,6 +1089,14 @@ model = "EOS 800D"
 dng = false
 raw_size = [6288, 4056]
 visible = [264, 36, 6024, 4020]
+source = "compat-observed"
+
+[[camera]]
+make = "Canon"
+model = "EOS 80D"
+dng = false
+raw_size = [4536, 3024]
+visible = [36, 18, 4500, 3000]
 source = "compat-observed"
 
 [[camera]]

@@ -34,6 +34,11 @@ pub(crate) fn even([left, top, width, height]: [u32; 4]) -> [u32; 4] {
 pub(crate) fn apply(info: &mut crate::info::RawInfo) {
     let dng = info.dng_version > 0;
     let size = [info.raw_width, info.raw_height];
+    if crate::facts::camera(&info.make, &info.model, dng, size)
+        .any(|c| c.aspect_crop == Some(false))
+    {
+        info.aspect = [crate::info::UNSET, crate::info::UNSET, 0, 0];
+    }
     let Some([left, top, width, height]) =
         crate::facts::camera(&info.make, &info.model, dng, size).find_map(|c| c.visible)
     else {
@@ -56,7 +61,10 @@ pub(crate) fn apply(info: &mut crate::info::RawInfo) {
         }
         // Crops are placed from the visible area's corner, except Canon's,
         // which the maker notes place on the sensor.
-        let sensor_crops = info.variant == crate::variant::Variant::Cr2LosslessJpeg;
+        let sensor_crops = matches!(
+            info.variant,
+            crate::variant::Variant::Cr2LosslessJpeg | crate::variant::Variant::Cr2Sraw
+        );
         let crops = if !sensor_crops {
             [&mut info.frame, &mut info.aspect].into_iter().collect()
         } else {

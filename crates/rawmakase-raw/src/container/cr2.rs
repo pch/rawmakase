@@ -1,10 +1,11 @@
 //! Canon CR2: a TIFF whose fourth directory holds the sensor data as one
 //! lossless JPEG strip, cut into vertical slices (tag 0xC640), and whose maker
-//! notes say the sensor's borders, crops, white balance and levels. The small
-//! RAWs (sRAW, mRAW), coded as luma and chroma, are not decoded here.
+//! notes say the sensor's borders, crops, white balance and levels. The strip
+//! codes a mosaic (one sample per component), or for the small RAWs (sRAW,
+//! mRAW) luma and chroma.
 //!
 //! Sources: TIFF 6, ITU T.81, Laurent Clévy's CR2 write-up (the directories,
-//! the slice layout), the
+//! the slice layout, the sRAW type tag 0xC6C5 and its YCbCr sampling), the
 //! ExifTool Canon and EXIF tag-name documentation, and our own measurements
 //! on the test dataset's files.
 use super::tiff::{Ifd, TiffFile};
@@ -13,6 +14,7 @@ use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
+use crate::vendor::canon::SmallRaw;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Where a CR2's sensor data is and how it is laid out.
@@ -27,6 +29,9 @@ pub(crate) struct Cr2Plan {
     /// The image in pixels.
     pub width: u32,
     pub height: u32,
+    /// A small RAW's luma sampling (2 × 1 or 2 × 2 per chroma pair) and its
+    /// conversion to RGB; `None` for a mosaic.
+    pub sraw: Option<([u32; 2], SmallRaw)>,
     /// Samples at the start of the image that are not part of it.
     pub skip: usize,
 }
@@ -64,10 +69,18 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         .map(|note| crate::vendor::canon::read(&t, &note))
         .unwrap_or_default();
     let per_mcu = jpeg.samples_per_mcu();
-    // A mosaic codes one sample per component.
-    if per_mcu != jpeg.components.len() {
-        return Err(Error::Unsupported("CR2 small RAW".into()));
-    }
+    // A mosaic codes one sample per component; a small RAW codes YCbCr with
+    // the luma sampled 2 × 1 or 2 × 2.
+    let sraw = match jpeg.components.as_slice() {
+        c if per_mcu == c.len() => None,
+        [y, cb, cr]
+            if matches!((y.h, y.v), (2, 1) | (2, 2))
+                && [cb.h, cb.v, cr.h, cr.v] == [1, 1, 1, 1] =>
+        {
+            Some([u32::from(y.h), u32::from(y.v)])
+        }
+        _ => return Err(Error::Unsupported("CR2 sampling".into())),
+    };
     let (across, rows) = jpeg.mcus();
     let total = (across * rows * per_mcu) as u64;
     // Canon's slices (0xC640): three SHORTs or LONGs, how many slices of what
@@ -93,10 +106,17 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     // The sensor's width: SensorInfo's, else the slices', else the stream's.
     let width = match (notes.sensor, slice_sum) {
         (Some(s), _) => s[0],
-        (None, Some(sum)) => u32::try_from(sum).map_err(|_| corrupt("CR2 slices"))?,
-        _ => (across * per_mcu) as u32,
+        (None, Some(sum)) if sraw.is_none() => {
+            u32::try_from(sum).map_err(|_| corrupt("CR2 slices"))?
+        }
+        _ => (across * per_mcu) as u32 / sraw.map_or(1, |_| per_mcu as u32 / 2),
     };
-    let grid_width = u64::from(width);
+    // A row of the sample grid: a row of pixels' samples, or for a small RAW
+    // a row of MCUs (one or two rows of pixels).
+    let grid_width = match sraw {
+        None => u64::from(width),
+        Some([h, _]) => u64::from(width / h) * per_mcu as u64,
+    };
     if grid_width == 0 || !total.is_multiple_of(grid_width) {
         return Err(corrupt("CR2 slices do not divide the image"));
     }
@@ -104,8 +124,10 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         u32::try_from(grid_width).map_err(|_| corrupt("CR2 width"))?,
         u32::try_from(total / grid_width).map_err(|_| corrupt("CR2 height"))?,
     ];
-    let height = grid[1];
-    crate::io::samples(width, height, 1)?;
+    let height = grid[1]
+        .checked_mul(sraw.map_or(1, |[_, v]| v))
+        .ok_or_else(|| corrupt("CR2 height"))?;
+    crate::io::samples(width, height, 4)?;
     // The slices lay out the strip's rows exactly, or the file is wrong.
     let slices = match &slice_tag {
         Some(_) if slice_sum != Some(grid_width) => {
@@ -118,32 +140,39 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         }
         None => vec![grid[0]],
     };
-    let mut info = crate::info::base(Variant::Cr2LosslessJpeg);
+    let mut info = crate::info::base(if sraw.is_some() {
+        Variant::Cr2Sraw
+    } else {
+        Variant::Cr2LosslessJpeg
+    });
     info.raw_width = width;
     info.raw_height = height;
-    // The visible area: SensorInfo's borders, unless the camera table says
-    // otherwise.
+    info.sraw = sraw.is_some();
+    // The visible area: a mosaic's SensorInfo borders, a small RAW's whole
+    // image, unless the camera table says otherwise.
     let [left, top, right, bottom] = notes
         .sensor
         .map(|s| [s[2], s[3], s[4], s[5]])
-        .filter(|b| b[2] > b[0] && b[3] > b[1] && b[2] < width && b[3] < height)
+        .filter(|b| sraw.is_none() && b[2] > b[0] && b[3] > b[1] && b[2] < width && b[3] < height)
         .unwrap_or([0, 0, width - 1, height - 1]);
     info.margins = [left, top];
     info.width = right - left + 1;
     info.height = bottom - top + 1;
-    // CR2CFAPattern (0xC5E0) names the filter at the sensor's corner.
-    let colors = match t.int(ifd, 0xc5e0) {
-        Some(2) => [2, 1, 1, 0],
-        Some(3) => [1, 2, 0, 1],
-        Some(4) => [1, 0, 2, 1],
-        _ => [0, 1, 1, 2],
-    };
-    let cfa = crate::info::second_green(Cfa {
-        rows: 2,
-        cols: 2,
-        colors: colors.to_vec(),
-    });
-    info.cfa = Some(cfa.shifted(top as usize, left as usize));
+    if sraw.is_none() {
+        // CR2CFAPattern (0xC5E0) names the filter at the sensor's corner.
+        let colors = match t.int(ifd, 0xc5e0) {
+            Some(2) => [2, 1, 1, 0],
+            Some(3) => [1, 2, 0, 1],
+            Some(4) => [1, 0, 2, 1],
+            _ => [0, 1, 1, 2],
+        };
+        let cfa = crate::info::second_green(Cfa {
+            rows: 2,
+            cols: 2,
+            colors: colors.to_vec(),
+        });
+        info.cfa = Some(cfa.shifted(top as usize, left as usize));
+    }
     let ifd0 = &t.ifds[0];
     // Make and model: their first 64 bytes (a name is as long as the file
     // says).
@@ -162,12 +191,23 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         });
     }
     info.uncompressed_preview = t.has_uncompressed_thumbnail();
+    let sraw = match sraw {
+        None => None,
+        Some(sampling) => {
+            let hv = (sampling[0] * sampling[1]) as i32;
+            let conversion = notes
+                .small_raw(hv)
+                .ok_or_else(|| Error::Unsupported("CR2 small RAW without ColorData".into()))?;
+            Some((sampling, conversion))
+        }
+    };
     info.plan = Plan::Cr2(Cr2Plan {
         strip,
         slices,
         grid,
         width,
         height,
+        sraw,
         skip: notes.skipped_samples(),
     });
     Ok(info)
@@ -179,7 +219,9 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
 fn grid(plan: &Cr2Plan, bytes: &[u8], cancel: &AtomicBool) -> Result<(Vec<u16>, u8)> {
     let file = crate::io::Bytes::new(bytes, crate::io::Order::Little);
     let strip = file.slice(plan.strip.0, plan.strip.1)?;
-    let header = ljpeg::header(strip)?;
+    let mut header = ljpeg::header(strip)?;
+    // A small RAW codes each component's samples of an MCU as one line.
+    header.lines = plan.sraw.is_some();
     let (width, height) = (plan.grid[0] as usize, plan.grid[1] as usize);
     let count = crate::io::samples(plan.grid[0], plan.grid[1], 1)?;
     // Every coded sample takes a bit at least: a strip far too short for the
@@ -222,6 +264,77 @@ fn grid(plan: &Cr2Plan, bytes: &[u8], cancel: &AtomicBool) -> Result<(Vec<u16>, 
     Ok((data, header.precision))
 }
 
+/// A small RAW's pixels from its grid of MCUs (`h × v` luma samples, then Cb
+/// and Cr), four channels each (red, green, blue, and an empty fourth, as
+/// RAWmakase has always stored them). A pixel takes the chroma of its MCU,
+/// averaged (rounding up) with the MCU to the right for the right column and
+/// with the MCU below for the bottom row, both for the bottom right pixel; the
+/// last MCUs of a row (up to the visible area's right edge, `visible`) or of the image
+/// repeat their own (our measurements).
+fn small_raw(
+    plan: &Cr2Plan,
+    grid: &[u16],
+    [h, v]: [usize; 2],
+    visible: usize,
+    conversion: &SmallRaw,
+    cancel: &AtomicBool,
+) -> Result<Vec<u16>> {
+    let (width, height) = (plan.width as usize, plan.height as usize);
+    let per_mcu = h * v + 2;
+    let across = plan.grid[0] as usize / per_mcu;
+    let rows = plan.grid[1] as usize;
+    if across == 0 || rows == 0 || across * h < width || rows * v != height {
+        return Err(corrupt("CR2 small RAW size"));
+    }
+    let last = visible.div_ceil(h).clamp(1, across) - 1;
+    let mut out = crate::io::zeroed(width * height * 4)?;
+    let mcu = |x: usize, y: usize| -> &[u16] {
+        let at = (y.min(rows - 1) * across + x.min(last)) * per_mcu;
+        &grid[at..at + per_mcu]
+    };
+    let chroma = |x: usize, y: usize| -> [i32; 2] {
+        let m = mcu(x, y);
+        [i32::from(m[h * v]), i32::from(m[h * v + 1])]
+    };
+    let mean = |a: [i32; 2], b: [i32; 2]| [(a[0] + b[0] + 1) >> 1, (a[1] + b[1] + 1) >> 1];
+    for my in 0..rows {
+        if my % 64 == 0 && cancel.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        for mx in 0..across {
+            let here = chroma(mx, my);
+            let right = mean(here, chroma(mx + 1, my));
+            let (below, below_right) = if v == 2 {
+                let down = mean(here, chroma(mx, my + 1));
+                let down_right = mean(chroma(mx + 1, my), chroma(mx + 1, my + 1));
+                (down, mean(down, down_right))
+            } else {
+                (here, right)
+            };
+            let luma = mcu(mx, my);
+            for i in 0..v {
+                let y = my * v + i;
+                for j in 0..h {
+                    let x = mx * h + j;
+                    if x >= width {
+                        continue;
+                    }
+                    let [cb, cr] = match (i, j) {
+                        (0, 0) => here,
+                        (0, _) => right,
+                        (_, 0) => below,
+                        _ => below_right,
+                    };
+                    let rgb = conversion.rgb(i32::from(luma[i * h + j]), cb, cr);
+                    let at = (y * width + x) * 4;
+                    out[at..at + 3].copy_from_slice(&rgb);
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Decodes a mosaic CR2, with the black level measured on its masked
 /// borders.
 pub(crate) fn decode(
@@ -231,6 +344,27 @@ pub(crate) fn decode(
     cancel: &AtomicBool,
 ) -> Result<Sensor> {
     let (data, precision) = grid(plan, bytes, cancel)?;
+    if let Some(([h, v], conversion)) = plan.sraw {
+        let data = small_raw(
+            plan,
+            &data,
+            [h as usize, v as usize],
+            (info.margins[0] + info.width) as usize,
+            &conversion,
+            cancel,
+        )?;
+        return Ok(Sensor {
+            width: plan.width,
+            height: plan.height,
+            channels: 4,
+            data,
+            area: [info.margins[0], info.margins[1], info.width, info.height],
+            black: [0; 4],
+            black_pattern: (0, 0, Vec::new()),
+            white: 16383,
+            linear_white: [0; 4],
+        });
+    }
     let width = plan.width as usize;
     let camera = || crate::facts::camera(&info.make, &info.model, false, [plan.width, plan.height]);
     let white = camera()

@@ -90,6 +90,10 @@ pub(crate) struct Camera {
     /// they are not the borders beside the visible area.
     #[serde(default)]
     pub black_columns: Option<[u32; 2]>,
+    /// False where the camera's aspect-ratio crop is not shown (its maker
+    /// notes give another image size's).
+    #[serde(default)]
+    pub aspect_crop: Option<bool>,
     #[allow(dead_code)]
     pub source: Source,
     #[allow(dead_code)]
@@ -209,8 +213,13 @@ mod tests {
             frame,
             flip,
             cfa,
+            aspect_crop,
         } = c;
-        visible.is_none() && frame.is_none() && flip.is_none() && cfa.is_none()
+        visible.is_none()
+            && frame.is_none()
+            && flip.is_none()
+            && cfa.is_none()
+            && aspect_crop.is_none()
     }
 
     #[test]
@@ -259,7 +268,8 @@ mod tests {
                     || c.frame.is_some()
                     || c.wb_scale.is_some()
                     || c.cfa.is_some()
-                    || c.black_columns.is_some(),
+                    || c.black_columns.is_some()
+                    || c.aspect_crop.is_some(),
                 "{c:?}"
             );
             // Adobe DNG Converter's decode facts where the file does not

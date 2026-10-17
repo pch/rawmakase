@@ -38,6 +38,11 @@ pub(crate) struct Header {
     /// row of the block above it, not from the row just above (Sony's small
     /// RAWs sampled 2 × 2; our measurements). T.81's is the row just above.
     pub block_rows: bool,
+    /// Whether a component's `h × v` samples of an MCU are one line of
+    /// `h·v` samples, predicted along it from the left and from the line of
+    /// the MCU row above (Canon's small RAWs; our measurements: T.81's
+    /// two-dimensional prediction of their second row decodes noise).
+    pub lines: bool,
 }
 
 impl std::fmt::Debug for Huffman {
@@ -178,6 +183,7 @@ pub(crate) fn header(data: &[u8]) -> Result<Header> {
                     huffman,
                     restart,
                     block_rows: false,
+                    lines: false,
                 });
             }
             0xd9 => return Err(corrupt("EOI before a scan")),
@@ -279,7 +285,11 @@ fn decode_with(
         let table = h.huffman[t]
             .as_ref()
             .ok_or_else(|| corrupt("Huffman table"))?;
-        let (bw, bh) = (usize::from(c.h), usize::from(c.v));
+        let (bw, bh) = if h.lines {
+            (usize::from(c.h) * usize::from(c.v), 1)
+        } else {
+            (usize::from(c.h), usize::from(c.v))
+        };
         for i in 0..bh {
             for j in 0..bw {
                 slots.push(Slot {
@@ -487,6 +497,109 @@ pub(crate) mod tests {
         f.extend(entropy);
         f.extend([0xff, 0xd9]);
         f
+    }
+
+    /// A lossless JPEG of three components, the first sampled `h × v`, with
+    /// predictor 1 and the 5-bit table of [`encode`], coded as Canon's small
+    /// RAWs are ([`Header::lines`]): `lines[c][y]` is component `c`'s line
+    /// `y`, `n_c` samples per MCU, each sample predicted from its left
+    /// neighbour on that line (the first from the line above, the very first
+    /// from half the range).
+    pub(crate) fn encode_lines(lines: &[Vec<Vec<u16>>; 3], h: u8, v: u8, precision: u8) -> Vec<u8> {
+        let n = [usize::from(h) * usize::from(v), 1, 1];
+        let rows = lines[0].len();
+        let across = lines[0][0].len() / n[0];
+        let mut bits: Vec<bool> = Vec::new();
+        for y in 0..rows {
+            for mx in 0..across {
+                for c in 0..3 {
+                    for j in 0..n[c] {
+                        let x = mx * n[c] + j;
+                        let at = |x: usize, y: usize| i32::from(lines[c][y][x]);
+                        let p = match (y, x) {
+                            (0, 0) => 1 << (precision - 1),
+                            (_, 0) => at(0, y - 1),
+                            _ => at(x - 1, y),
+                        };
+                        let d = at(x, y) - p;
+                        let len = if d == 0 {
+                            0
+                        } else {
+                            32 - d.unsigned_abs().leading_zeros()
+                        };
+                        for i in (0..5).rev() {
+                            bits.push(len >> i & 1 == 1);
+                        }
+                        let code = if d < 0 { d + (1 << len) - 1 } else { d } as u32;
+                        for i in (0..len).rev() {
+                            bits.push(code >> i & 1 == 1);
+                        }
+                    }
+                }
+            }
+        }
+        while !bits.len().is_multiple_of(8) {
+            bits.push(true);
+        }
+        let mut f = vec![0xff, 0xd8];
+        let seg = |f: &mut Vec<u8>, m: u8, body: &[u8]| {
+            f.extend([0xff, m]);
+            f.extend(((body.len() + 2) as u16).to_be_bytes());
+            f.extend(body);
+        };
+        let mut dht = vec![0x00];
+        let mut counts = [0u8; 16];
+        counts[4] = 17;
+        dht.extend(counts);
+        dht.extend(0..=16u8);
+        seg(&mut f, 0xc4, &dht);
+        let mut sof = vec![precision];
+        sof.extend(((rows * usize::from(v)) as u16).to_be_bytes());
+        sof.extend(((across * usize::from(h)) as u16).to_be_bytes());
+        sof.extend([3, 1, h << 4 | v, 0, 2, 0x11, 0, 3, 0x11, 0]);
+        seg(&mut f, 0xc3, &sof);
+        seg(&mut f, 0xda, &[3, 1, 0x00, 2, 0x00, 3, 0x00, 1, 0, 0]);
+        for byte in bits.chunks(8) {
+            let b = byte.iter().fold(0u8, |a, &x| a << 1 | u8::from(x));
+            f.push(b);
+            if b == 0xff {
+                f.push(0);
+            }
+        }
+        f.extend([0xff, 0xd9]);
+        f
+    }
+
+    #[test]
+    fn decodes_subsampled_components_line_by_line() {
+        // Two lines of three MCUs of 2 × 2 luma, Cb and Cr.
+        let luma = vec![
+            vec![100, 104, 98, 97, 120, 121, 119, 118, 140, 139, 150, 151],
+            vec![90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101],
+        ];
+        let cb = vec![vec![16380, 16390, 16384], vec![16300, 16400, 16384]];
+        let cr = vec![vec![16384, 16000, 16500], vec![16384, 16384, 16385]];
+        let data = encode_lines(&[luma.clone(), cb.clone(), cr.clone()], 2, 2, 15);
+        let mut header = super::header(&data).unwrap();
+        header.lines = true;
+        let mut out = Vec::new();
+        decode_into(&header, &data, &AtomicBool::new(false), &mut out).unwrap();
+        assert_eq!(header.mcus(), (3, 2));
+        let mut want = Vec::new();
+        for y in 0..2 {
+            for mx in 0..3 {
+                want.extend(&luma[y][mx * 4..mx * 4 + 4]);
+                want.push(cb[y][mx]);
+                want.push(cr[y][mx]);
+            }
+        }
+        assert_eq!(out, want);
+        for end in 0..data.len() {
+            if let Ok(mut header) = super::header(&data[..end]) {
+                header.lines = true;
+                let _ = decode_into(&header, &data[..end], &AtomicBool::new(false), &mut out);
+            }
+        }
     }
 
     #[test]

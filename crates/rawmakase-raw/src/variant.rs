@@ -108,6 +108,9 @@ pub enum Variant {
     MefPacked,
     /// Canon CR2, a mosaic in one sliced lossless JPEG strip.
     Cr2LosslessJpeg,
+    /// Canon CR2 sRAW and mRAW: luma and chroma in one sliced lossless JPEG
+    /// strip, converted to RGB.
+    Cr2Sraw,
 }
 
 impl Variant {
@@ -158,6 +161,7 @@ impl Variant {
             Variant::ErfPacked => "erf-packed",
             Variant::MefPacked => "mef-packed",
             Variant::Cr2LosslessJpeg => "cr2-ljpeg",
+            Variant::Cr2Sraw => "cr2-sraw",
         }
     }
 }
@@ -298,7 +302,7 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         (Plan::Erf(plan), Variant::ErfPacked | Variant::MefPacked) => {
             crate::container::erf::decode(info, plan, bytes, cancel)
         }
-        (Plan::Cr2(plan), Variant::Cr2LosslessJpeg) => {
+        (Plan::Cr2(plan), Variant::Cr2LosslessJpeg | Variant::Cr2Sraw) => {
             crate::container::cr2::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
