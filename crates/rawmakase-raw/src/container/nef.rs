@@ -292,10 +292,7 @@ pub(crate) fn decode(
         }
         Variant::NefHighEfficiency => {
             let mut out = vec![0u16; crate::io::samples(plan.width, plan.height, 1)?];
-            if cancel.load(Ordering::Relaxed) {
-                return Err(Error::Cancelled);
-            }
-            nikon_he::decode(&data, &mut out, width, height, width)?;
+            nikon_he::decode_cancellable(&data, &mut out, width, height, width, cancel)?;
             (1, out)
         }
         v => return Err(Error::Unsupported(format!("{} in a NEF", v.name()))),

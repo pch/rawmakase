@@ -19,8 +19,9 @@
 //! The decorrelation's lifting steps and the transfer curve, rounding included, are
 //! the ones Adobe DNG Converter reproduces bit for bit; the tests compare against its
 //! output.
-use crate::error::{Result, corrupt};
+use crate::error::{Error, Result, corrupt};
 use rayon::prelude::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Fails with a `Corrupt` error saying `format!(…)` unless `cond` holds.
 macro_rules! ensure {
@@ -64,6 +65,27 @@ pub fn decode(
     height: usize,
     pitch: usize,
 ) -> Result<()> {
+    decode_cancellable(data, out, width, height, pitch, &AtomicBool::new(false))
+}
+
+/// [`decode`], stopping with `Error::Cancelled` soon after `cancel` is set:
+/// it is checked before each precinct and between the stages.
+pub(crate) fn decode_cancellable(
+    data: &[u8],
+    out: &mut [u16],
+    width: usize,
+    height: usize,
+    pitch: usize,
+    cancel: &AtomicBool,
+) -> Result<()> {
+    let cancelled = || {
+        if cancel.load(Ordering::Relaxed) {
+            Err(Error::Cancelled)
+        } else {
+            Ok(())
+        }
+    };
+    cancelled()?;
     let header = Header::parse(data)?;
     ensure!(
         (header.width, header.height) == (width, height),
@@ -80,9 +102,19 @@ pub fn decode(
     let layout = Layout::new(&header)?;
     let precincts = header.precincts(data)?;
     let mut coefficients = Coefficients::new(&layout);
-    decode_slices(data, &header, &layout, &precincts, &mut coefficients)?;
+    decode_slices(
+        data,
+        &header,
+        &layout,
+        &precincts,
+        &mut coefficients,
+        cancel,
+    )?;
+    cancelled()?;
     let mut planes = coefficients.inverse_wavelet(&layout);
+    cancelled()?;
     inverse_star_tetrix(&mut planes, layout.width, layout.height);
+    cancelled()?;
     let transfer = header.transfer_curve();
     let [g1, red, g2, blue] = &planes;
     let w = layout.width;
@@ -698,6 +730,7 @@ fn decode_slices(
     layout: &Layout,
     precincts: &[usize],
     coefficients: &mut Coefficients,
+    cancel: &AtomicBool,
 ) -> Result<()> {
     let precinct_len = coefficients.precinct_len();
     let (w, n) = (coefficients.width, coefficients.components);
@@ -708,6 +741,9 @@ fn decode_slices(
         .try_for_each(|(rows, offsets)| {
             let mut state = SliceState::new(layout);
             for (precinct, &offset) in rows.chunks_mut(precinct_len).zip(offsets) {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(Error::Cancelled);
+                }
                 decode_precinct(data, offset, header, layout, &mut state, precinct, w, n)?;
             }
             Ok(())
@@ -1074,6 +1110,22 @@ pub mod tests {
             let error = super::decode(&gcli(x), &mut out, width, height, width).unwrap_err();
             assert!(error.to_string().contains("GCLI"), "{x}: {error}");
         }
+    }
+
+    #[test]
+    fn decoding_stops_when_cancelled() {
+        let (width, height) = (64, 32);
+        let stream = blank(width as u16, height as u16, VENDOR);
+        let mut out = vec![0u16; width * height];
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let cancel = AtomicBool::new(true);
+        assert_eq!(
+            super::decode_cancellable(&stream, &mut out, width, height, width, &cancel),
+            Err(crate::error::Error::Cancelled)
+        );
+        cancel.store(false, Ordering::Relaxed);
+        super::decode_cancellable(&stream, &mut out, width, height, width, &cancel).unwrap();
+        assert!(out.iter().all(|&v| v == blank_value()));
     }
 
     #[test]
