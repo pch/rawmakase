@@ -5,8 +5,11 @@
 //! significant bit first, in 16-bit little-endian words or (where the row
 //! says) bytes or 32-bit words, rows padded where it gives their size, in
 //! two fields or shifted down where it says; black is measured on the masked columns unless the row gives it.
+//! A row may skip a header of the camera's and take the codes through a
+//! curve, its own or one the header keeps (the Kodak C603's).
 //!
-//! Sources: our own measurements on the test dataset's files.
+//! Sources: our own measurements on the test dataset's files; the C603
+//! "CCDI" curve measured from LibRaw's output, no public source giving it.
 use crate::codec::packed;
 use crate::error::Result;
 use crate::facts::Headerless;
@@ -81,10 +84,39 @@ pub(crate) fn decode(
             "headerless rows of part of a word".into(),
         ));
     }
+    let offset =
+        usize::try_from(row.offset.unwrap_or(0)).map_err(|_| crate::error::corrupt("offset"))?;
+    let samples = bytes.get(offset..).unwrap_or(&[]);
     if row.fields == Some(true) {
-        packed::fields(bytes, packing, width as usize, stride, &mut data, cancel)?;
+        packed::fields(samples, packing, width as usize, stride, &mut data, cancel)?;
     } else {
-        packed::rows(bytes, packing, width as usize, stride, &mut data, cancel)?;
+        packed::rows(samples, packing, width as usize, stride, &mut data, cancel)?;
+    }
+    // The codes' values: the row's curve, or the one the file keeps.
+    let kept;
+    let curve = match (&row.curve, row.curve_at) {
+        (Some(c), _) => Some(c.as_slice()),
+        (None, Some(at)) => {
+            let n = 1usize << row.bits.min(16);
+            let b = crate::io::Bytes::new(bytes, crate::io::Order::Little);
+            let raw = b.slice(at, 2 * n as u64)?;
+            kept = raw
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| u16::from_le_bytes(*c))
+                .collect::<Vec<_>>();
+            Some(kept.as_slice())
+        }
+        (None, None) => None,
+    };
+    if let Some(curve) = curve.filter(|c| !c.is_empty()) {
+        for (i, v) in data.iter_mut().enumerate() {
+            if i % (1 << 20) == 0 && cancel.load(Ordering::Relaxed) {
+                return Err(crate::error::Error::Cancelled);
+            }
+            *v = curve[usize::from(*v).min(curve.len() - 1)];
+        }
     }
     if let Some(shift) = row.shift.filter(|&s| s > 0) {
         for (i, v) in data.iter_mut().enumerate() {
@@ -113,7 +145,11 @@ pub(crate) fn decode(
         area,
         black,
         black_pattern: (0, 0, Vec::new()),
-        white: row.white.unwrap_or((1 << bits) - 1),
+        // The row's white, else the curve's top, else the samples' range.
+        white: row
+            .white
+            .or(curve.and_then(|c| c.iter().max()).map(|&m| u32::from(m)))
+            .unwrap_or((1 << bits) - 1),
         linear_white: [0; 4],
     })
 }
@@ -170,6 +206,34 @@ mod tests {
         let s = crate::decode(&info, &bytes, &AtomicBool::new(false)).unwrap();
         assert!(s.data.iter().all(|&v| v == 1023));
         assert_eq!(s.white, 992);
+        assert_eq!(
+            crate::decode(&info, &bytes, &AtomicBool::new(true)).unwrap_err(),
+            crate::Error::Cancelled
+        );
+    }
+
+    #[test]
+    fn eight_bit_codes_are_taken_through_a_curve() {
+        // A Kodak C603 "CCDI" file: no header, its curve the row's (code 3
+        // is 198, the top 65535).
+        let bytes = vec![3u8; 6_163_328];
+        let info = crate::open(&bytes).unwrap();
+        assert_eq!((info.make.as_str(), info.model.as_str()), ("Kodak", "C603"));
+        let s = crate::decode(&info, &bytes, &AtomicBool::new(false)).unwrap();
+        assert!(s.data.iter().all(|&v| v == 198));
+        assert_eq!((s.black, s.white), ([0; 4], 65535));
+        // A "CFAI" file: a 3160-byte header whose curve at byte 168 is the
+        // code times 4, top 1020.
+        let mut bytes = vec![0u8; 3160];
+        for c in 0..256u16 {
+            let at = 168 + 2 * usize::from(c);
+            bytes[at..at + 2].copy_from_slice(&(c * 4).to_le_bytes());
+        }
+        bytes.extend((0..2864 * 2152).map(|i| (i % 256) as u8));
+        let info = crate::open(&bytes).unwrap();
+        let s = crate::decode(&info, &bytes, &AtomicBool::new(false)).unwrap();
+        assert_eq!(&s.data[..3], &[0, 4, 8]);
+        assert_eq!(s.white, 1020);
         assert_eq!(
             crate::decode(&info, &bytes, &AtomicBool::new(true)).unwrap_err(),
             crate::Error::Cancelled

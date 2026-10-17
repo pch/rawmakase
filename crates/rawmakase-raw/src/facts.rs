@@ -171,6 +171,15 @@ pub(crate) struct Headerless {
     pub black: Option<u32>,
     #[serde(default)]
     pub white: Option<u32>,
+    /// The bytes before the samples (a header of the camera's).
+    #[serde(default)]
+    pub offset: Option<u64>,
+    /// The value of each code: a curve of the row's, or one the file keeps
+    /// as 2^bits little-endian 16-bit words at `curve_at`.
+    #[serde(default)]
+    pub curve: Option<Vec<u16>>,
+    #[serde(default)]
+    pub curve_at: Option<u64>,
     #[allow(dead_code)]
     pub source: Source,
 }
@@ -555,7 +564,18 @@ mod tests {
             } else {
                 u64::from(ht) * h.stride()
             };
-            assert_eq!(size, h.file_size, "{h:?}");
+            assert_eq!(size + h.offset.unwrap_or(0), h.file_size, "{h:?}");
+            // A curve: a value per code, the file's within its header.
+            let codes = 1u64 << h.bits;
+            if let Some(c) = &h.curve {
+                assert_eq!(c.len() as u64, codes, "{h:?}");
+            }
+            if let Some(at) = h.curve_at {
+                assert!(
+                    h.curve.is_none() && at + 2 * codes <= h.offset.unwrap_or(0),
+                    "{h:?}"
+                );
+            }
             assert!(u64::from(w) * u64::from(h.bits) <= h.stride() * 8, "{h:?}");
             assert!((1..=16).contains(&h.bits), "{h:?}");
             assert!(matches!(h.word, None | Some(1 | 2 | 4)), "{h:?}");

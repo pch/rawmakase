@@ -89,7 +89,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `Cr2LosslessJpeg` | Canon CR2: a mosaic in one lossless JPEG strip cut into vertical slices | TIFF 6, ITU T.81, Laurent Clévy's CR2 write-up, ExifTool's Canon tag names, our own measurements |
 | `CanonTif` | Canon EOS-1D and 1Ds TIF: a thumbnail TIFF whose maker note's RawDataOffset is one unsliced lossless JPEG stream of the mosaic | TIFF 6, ITU T.81, ExifTool's Canon tag names, our own measurements |
 | `Cr2Sraw` | Canon CR2 sRAW and mRAW: luma sampled 2 × 1 or 2 × 2 and chroma in one sliced lossless JPEG strip, converted to RGB | TIFF 6, ITU T.81, Laurent Clévy's CR2 write-up, ExifTool's Canon tag names, our own measurements |
-| `HeaderlessPacked` | Headerless RAW files known by their size (CHDK's from Canon PowerShots, action cameras', the Pentax Optio S4's): packed 10, 12 or 16-bit samples | Our own measurements |
+| `HeaderlessPacked` | Headerless RAW files known by their size (CHDK's from Canon PowerShots, action cameras', the Pentax Optio S4's, the Kodak C603's): packed 8, 10, 12 or 16-bit samples, an 8-bit code's value its curve's | Our own measurements; the C603 CCDI curve measured from LibRaw's output |
 | `CrwCompressed` | Canon CRW: a CIFF file of Canon's coded blocks of differences | ExifTool's CanonRaw tag names and CRW format notes, black-box measurements of the oracle on synthetic files, our own measurements |
 | `IiqL` | Phase One IIQ L and L16 (Leaf Credo too): rows of differences in runs of even and odd columns, lengths chosen every eight columns | ExifTool's PhaseOne tag names, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
 | `IiqS` | Phase One's first IIQ S: IIQ L's rows, values below 256 on a square-law curve | as `IiqL` |
@@ -570,6 +570,16 @@ rows: 3965 for the DiMAGE bodies), else the samples' 12-bit range, Adobe's
 for the Dynax and Alpha bodies (approved deltas; Adobe's levels and white
 balance match RAWmakase's samples exactly on every body measured). The
 bodies sold under several names have `[[canonical]]` rows (DG-7D, DG-5D).
+The Kodak C603's (and C643's) raw files are `[[headerless]]` rows of 8-bit
+codes, each taken through a curve whose top is the white. The "CFAI" file
+has a 3160-byte header ("KodakCommonInfo") keeping that curve, 256
+little-endian 16-bit words at byte 168 (`offset`, `curve_at`; our
+measurement: the values LibRaw gives every code). The "CCDI" file is the
+codes alone; its curve, in the row (`curve`), was measured from LibRaw's
+output, every code on each of the dataset's three files, as no public
+source gives it (`compat-observed`). The "YRGB" files hold no mosaic and
+are not read; Adobe DNG Converter reads none of them.
+
 The DiMAGE Z2's MRW has no header: a `[[headerless]]` row, its samples in
 little-endian 32-bit words stored as two fields as Olympus's compacts store
 them (`packed::fields`).
