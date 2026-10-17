@@ -244,6 +244,53 @@ struct Matrices {
     matrix: Vec<Matrix>,
 }
 
+/// Adobe's frame for a camera's non-DNG files of a raw size (sensor
+/// coordinates, `[left, top, width, height]`), from
+/// `data/adobe-frames.toml`, which `scripts/cameras/adobe-frames.py` writes.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Frame {
+    pub make: String,
+    pub model: String,
+    pub raw_size: [u32; 2],
+    /// The area Adobe develops (DNG ActiveArea).
+    pub active: [u32; 4],
+    /// The frame inside it (DefaultCropOrigin and DefaultCropSize).
+    pub default_crop: [u32; 4],
+    #[allow(dead_code)]
+    pub source: Source,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Frames {
+    #[serde(default)]
+    frame: Vec<Frame>,
+}
+
+const FRAMES: &str = include_str!("../../../data/adobe-frames.toml");
+
+fn frames() -> &'static Frames {
+    static TABLE: OnceLock<Frames> = OnceLock::new();
+    TABLE.get_or_init(|| toml::from_str(FRAMES).unwrap_or_default())
+}
+
+/// Adobe's frame for a camera's non-DNG files of this stored size.
+pub(crate) fn adobe_frame(
+    make: &str,
+    model: &str,
+    raw_size: [u32; 2],
+) -> Option<crate::info::AdobeFrame> {
+    frames()
+        .frame
+        .iter()
+        .find(|f| f.make == make && f.model == model && f.raw_size == raw_size)
+        .map(|f| crate::info::AdobeFrame {
+            active: f.active,
+            default_crop: f.default_crop,
+        })
+}
+
 const CAMERAS: &str = include_str!("../../../data/raw-cameras.toml");
 const MATRICES: &str = include_str!("../../../data/raw-matrices.toml");
 const CURVES: &str = include_str!("../../../data/raw-curves.toml");
@@ -432,6 +479,28 @@ mod tests {
     /// Whether two inclusive ISO ranges share a speed.
     fn overlap(a: [f32; 2], b: [f32; 2]) -> bool {
         a[0] <= b[1] && b[0] <= a[1]
+    }
+
+    /// Adobe's frames are Adobe DNG Converter's, one per camera and raw size,
+    /// each a crop inside its active area inside the sensor data.
+    #[test]
+    fn adobe_frames_parse_and_fit_their_sensor_data() {
+        let frames: Frames = toml::from_str(FRAMES).unwrap();
+        let mut seen = std::collections::HashSet::new();
+        for f in &frames.frame {
+            assert!(seen.insert((&f.make, &f.model, f.raw_size)), "{f:?}");
+            assert_eq!(f.source, Source::AdobeDng, "{f:?}");
+            let [w, h] = f.raw_size;
+            assert!(crate::geometry::inside(f.active, [0, 0, w, h]), "{f:?}");
+            assert!(crate::geometry::inside(f.default_crop, f.active), "{f:?}");
+        }
+        let row: Frames = toml::from_str(
+            "[[frame]]\nmake = \"X\"\nmodel = \"Y\"\nraw_size = [100, 80]\n\
+             active = [0, 0, 96, 80]\ndefault_crop = [4, 2, 88, 76]\nsource = \"adobe-dng\"\n",
+        )
+        .unwrap();
+        assert_eq!(row.frame[0].default_crop, [4, 2, 88, 76]);
+        assert!(toml::from_str::<Frames>("[[frame]]\nmake = \"X\"\nvisible = 1\n").is_err());
     }
 
     #[test]

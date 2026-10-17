@@ -1,0 +1,15 @@
+# Adobe's default frame for each camera and raw size: the default crop Camera
+# Raw shows a photo in, and the frame Lightroom's crops and local adjustments are
+# relative to (crates/rawmakase-raw/src/facts.rs, docs/raw-decoding.md). Read only
+# once RAWmakase's own decoders develop photos in Adobe's frame; until then the
+# frame is the one RAWmakase has always used.
+#
+# [[frame]] for the camera's non-DNG files of `raw_size` (sensor coordinates:
+# the stored raw data, before orientation): `active`, the area Adobe develops
+# (DNG ActiveArea), and `default_crop`, the frame inside it (DefaultCropOrigin
+# and DefaultCropSize), both left, top, width, height in sensor coordinates.
+# A DNG's own tags give its frame; it has no row.
+#
+# source is adobe-dng: Adobe DNG Converter 18.7's output for one file of the
+# camera and raw size, placed in sensor coordinates by its size or by aligning
+# its samples with the decoder's. Written by scripts/cameras/adobe-frames.py.

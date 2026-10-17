@@ -38,6 +38,10 @@ pub struct RawInfo {
     /// The crop a Fujifilm RAF header recommends, `[left, top, width,
     /// height]` in sensor coordinates.
     pub recommended_crop: Option<[u32; 4]>,
+    /// Adobe's frame for the file, when it is known: a DNG's own, else the
+    /// camera table's (`data/adobe-frames.toml`). Read only by
+    /// [`crate::in_adobe_frame`].
+    pub adobe_frame: Option<AdobeFrame>,
     /// EXIF orientation as a quarter-turn code: 0 none, 3 half turn, 5 a
     /// quarter turn counter-clockwise, 6 clockwise.
     pub flip: i32,
@@ -126,6 +130,15 @@ impl SuperCcd {
     }
 }
 
+/// Adobe's frame: the area Adobe develops (DNG ActiveArea) and the default
+/// crop inside it (DefaultCropOrigin and DefaultCropSize), `[left, top, width,
+/// height]` in sensor coordinates, as Adobe DNG Converter writes them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AdobeFrame {
+    pub active: [u32; 4],
+    pub default_crop: [u32; 4],
+}
+
 /// White balance presets the camera stored (red, green, blue), zero when
 /// absent.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -165,6 +178,7 @@ pub(crate) fn base(variant: Variant) -> RawInfo {
         aspect: [UNSET, UNSET, 0, 0],
         sensor_borders: None,
         recommended_crop: None,
+        adobe_frame: None,
         flip: 0,
         cfa: None,
         dng_version: 0,

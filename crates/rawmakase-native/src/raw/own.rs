@@ -18,11 +18,20 @@ pub(super) struct Own {
 }
 
 impl Own {
-    pub(super) fn open(path: &Path) -> Result<(Self, Header)> {
+    /// The file at `path`, in Adobe's frame when `adobe` is set and the file's
+    /// frame is known, and whether it is.
+    pub(super) fn open(path: &Path, adobe: bool) -> Result<(Self, Header, bool)> {
         let bytes: Arc<[u8]> = std::fs::read(path)?.into();
         let info = rawmakase_raw::open(&bytes)?;
+        let (info, framed) = match adobe
+            .then(|| rawmakase_raw::in_adobe_frame(&info))
+            .flatten()
+        {
+            Some(framed) => (framed, true),
+            None => (info, false),
+        };
         let header = header(&info);
-        Ok((Self { bytes, info }, header))
+        Ok((Self { bytes, info }, header, framed))
     }
     pub(super) fn thumbnail(&self) -> Result<Vec<u8>> {
         Ok(rawmakase_raw::preview(&self.info, &self.bytes)?.to_vec())

@@ -24,7 +24,7 @@ mod variant;
 mod vendor;
 
 pub use error::{Error, Result};
-pub use info::{Cfa, Presets, RawInfo, SuperCcd, UNSET};
+pub use info::{AdobeFrame, Cfa, Presets, RawInfo, SuperCcd, UNSET};
 pub use preview::NoPreview;
 pub use sensor::Sensor;
 use std::sync::atomic::AtomicBool;
@@ -43,6 +43,16 @@ pub const VERSION: &str = concat!("RAWmakase ", env!("CARGO_PKG_VERSION"));
 /// The header facts of the RAW file in `bytes`.
 pub fn open(bytes: &[u8]) -> Result<RawInfo> {
     variant::open(bytes)
+}
+
+/// `info` read in Adobe's frame ([`RawInfo::adobe_frame`]): its default crop
+/// Adobe's, and its visible area Adobe's active area where the default crop
+/// does not lie in the visible area RAWmakase has always read. `None` when
+/// Adobe's frame is not known or does not fit the sensor data (a Super CCD's
+/// turned image has none), or the file is framed in the camera (an
+/// aspect-ratio crop of another shape), which keeps its frame.
+pub fn in_adobe_frame(info: &RawInfo) -> Option<RawInfo> {
+    geometry::adobe(info)
 }
 
 /// The embedded JPEG preview of the file `info` was read from (a copy when

@@ -63,6 +63,30 @@ pub struct Raw {
     backend: Backend,
     pub metadata: Metadata,
     pub facts: Facts,
+    /// Whether the file is read in Adobe's frame ([`Frame::Adobe`]), whose
+    /// default crop a DNG's own already is.
+    adobe_frame: bool,
+}
+/// Which frame a decoded photo is in: the one RAWmakase has always decoded
+/// (LibRaw's visible area and default crop, with RAWmakase's rules on them), or
+/// Adobe's default crop, which Lightroom's crops and local adjustments are
+/// relative to. The frame travels with the decoder ([`Decoder::frame`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Frame {
+    Legacy,
+    Adobe,
+}
+/// The frame RAWmakase's own decoders develop photos in: the legacy one until
+/// they replace LibRaw, Adobe's from that switch (docs/raw-decoding.md#frames).
+const OWN_DECODER_FRAME: Frame = Frame::Legacy;
+impl Decoder {
+    /// The frame this decoder's photos are in.
+    pub fn frame(self) -> Frame {
+        match self {
+            Decoder::Libraw => Frame::Legacy,
+            Decoder::Own => OWN_DECODER_FRAME,
+        }
+    }
 }
 /// The decoder behind a [`Raw`]. The app's photos open with LibRaw; RAWmakase's
 /// own decoders are reached only through [`Raw::open_with`], by the commands that
@@ -173,17 +197,23 @@ impl Raw {
     pub fn open_file(path: &Path) -> Result<Self> {
         Self::open_with(path, Decoder::Libraw)
     }
-    /// The file at `path` read by `decoder`; see [`Decoder`].
+    /// The file at `path` read by `decoder`, in the decoder's frame; see
+    /// [`Decoder`].
     pub fn open_with(path: &Path, decoder: Decoder) -> Result<Self> {
-        let (backend, h) = match decoder {
+        Self::open_in(path, decoder, decoder.frame())
+    }
+    /// The file at `path` read by `decoder` in `frame`. LibRaw's decodes are
+    /// in the legacy frame whatever `frame` says.
+    pub(crate) fn open_in(path: &Path, decoder: Decoder, frame: Frame) -> Result<Self> {
+        let (backend, h, adobe_frame) = match decoder {
             Decoder::Libraw => {
                 let (handle, m) = ffi::Handle::open(path)?;
                 let h = ffi::header(&m, panasonic_sensor(path), fuji_crop(path));
-                (Backend::Libraw(handle), h)
+                (Backend::Libraw(handle), h, false)
             }
             Decoder::Own => {
-                let (own, h) = own::Own::open(path)?;
-                (Backend::Own(Box::new(own)), h)
+                let (own, h, adobe_frame) = own::Own::open(path, frame == Frame::Adobe)?;
+                (Backend::Own(Box::new(own)), h, adobe_frame)
             }
         };
         let adobe_names = rawmakase_model::cameras::adobe_names(
@@ -199,15 +229,16 @@ impl Raw {
             normalized: h.normalized.clone(),
             dng_version: h.dng_version,
         };
-        let (frame, aspect) = sensor_frame(
-            h.dng_version == 0 && h.make.eq_ignore_ascii_case("sony"),
-            h.sensor_borders,
-            h.frame,
-            h.aspect,
-            [h.width, h.height],
-            margin,
-        );
-        let [crop_left, crop_top, crop_width, crop_height] = visible(frame, margin);
+        // In Adobe's frame the header's frame is Adobe's crop already, which no
+        // rule widens.
+        let ([crop_left, crop_top, crop_width, crop_height], camera_crop) = if adobe_frame {
+            (
+                visible(h.frame, margin),
+                camera_crop(h.frame, h.aspect, [h.width, h.height], margin),
+            )
+        } else {
+            crops(&h)
+        };
         let mut metadata = Metadata {
             width: h.width,
             height: h.height,
@@ -217,7 +248,7 @@ impl Raw {
             crop_height,
             crop_left,
             crop_top,
-            camera_crop: camera_crop(frame, aspect, [h.width, h.height], margin),
+            camera_crop,
             flip: h.flip,
             xtrans: h.xtrans,
             fuji_dynamic_range: h.fuji_dynamic_range,
@@ -261,7 +292,15 @@ impl Raw {
             backend,
             metadata,
             facts,
+            adobe_frame,
         })
+    }
+    /// Applies a DNG's default crop, unless the photo is in Adobe's frame,
+    /// whose crop the DNG's own already is.
+    pub(crate) fn apply_dng_default_crop(&mut self, crop: [u32; 4]) {
+        if !self.adobe_frame {
+            self.metadata.apply_default_crop(crop);
+        }
     }
     /// The embedded JPEG preview, as stored.
     pub fn thumbnail(&mut self) -> Result<Vec<u8>> {
@@ -423,6 +462,23 @@ pub(crate) fn develop_rgb(
             })
         })
         .collect()
+}
+/// The legacy frame of a header: its default crop in the decoded image
+/// (`[left, top, width, height]`, as [`Metadata`]'s `crop_*`, before a RAF
+/// header's recommended crop) and the camera's aspect-ratio crop in it.
+fn crops(h: &Header) -> ([u32; 4], Option<[f32; 4]>) {
+    let (frame, aspect) = sensor_frame(
+        h.dng_version == 0 && h.make.eq_ignore_ascii_case("sony"),
+        h.sensor_borders,
+        h.frame,
+        h.aspect,
+        [h.width, h.height],
+        h.margins,
+    );
+    (
+        visible(frame, h.margins),
+        camera_crop(frame, aspect, [h.width, h.height], h.margins),
+    )
 }
 /// LibRaw's crop `[left, top, width, height]` in raw coordinates, in the decoded
 /// image's, which start `margin` into the raw data. A crop without a position
@@ -630,6 +686,47 @@ pub fn thumbnail(raw: &mut Raw) -> anyhow::Result<image::RgbImage> {
 
 #[cfg(test)]
 mod tests {
+    fn chart() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/corpus/charts/synthetic-d65.dng")
+    }
+    /// Until RAWmakase's own decoders replace LibRaw, every photo is in the frame
+    /// RAWmakase has always used: the switch is one constant.
+    #[test]
+    fn photos_are_in_the_legacy_frame_until_the_switch() {
+        use super::{Decoder, Frame};
+        assert_eq!(Decoder::Libraw.frame(), Frame::Legacy);
+        assert_eq!(Decoder::Own.frame(), Frame::Legacy);
+        let raw = super::Raw::open_with(&chart(), Decoder::Own).unwrap();
+        assert!(!raw.adobe_frame);
+    }
+    /// In Adobe's frame a DNG's frame is its own ActiveArea and DefaultCrop,
+    /// which a DNG's default crop read again does not move.
+    #[test]
+    fn in_adobe_frame_a_dng_keeps_its_own_crop() {
+        use super::{Decoder, Frame, Raw};
+        let mut legacy = Raw::open_in(&chart(), Decoder::Own, Frame::Legacy).unwrap();
+        let mut adobe = Raw::open_in(&chart(), Decoder::Own, Frame::Adobe).unwrap();
+        assert!(adobe.adobe_frame);
+        let m = &adobe.metadata;
+        let (w, h) = (m.width, m.height);
+        assert_eq!(
+            [m.crop_left, m.crop_top, m.crop_width, m.crop_height],
+            [0, 0, w, h]
+        );
+        adobe.apply_dng_default_crop([4, 2, w - 12, h - 6]);
+        let m = &adobe.metadata;
+        assert_eq!(
+            [m.crop_left, m.crop_top, m.crop_width, m.crop_height],
+            [0, 0, w, h]
+        );
+        legacy.apply_dng_default_crop([4, 2, w - 12, h - 6]);
+        let m = &legacy.metadata;
+        assert_eq!(
+            [m.crop_left, m.crop_top, m.crop_width, m.crop_height],
+            [4, 2, w - 12, h - 6]
+        );
+    }
     #[cfg(target_os = "linux")]
     #[test]
     fn background_threads_are_ten_steps_nicer_than_their_parent() {

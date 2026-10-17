@@ -118,6 +118,32 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
             inside(s[1], height)?,
         ])
     });
+    // Adobe's frame is the file's own, exactly: whole pixels inside the active
+    // area.
+    let whole =
+        |v: f64| (v >= 0. && v.fract() == 0. && v <= f64::from(u32::MAX)).then_some(v as u32);
+    let active_area = [left, top, info.width, info.height];
+    let (origin, size) = (t.reals(ifd, 50719, 2), t.reals(ifd, 50720, 2));
+    info.adobe_frame = match (origin.as_deref(), size.as_deref()) {
+        (Some(&[ox, oy]), Some(&[w, h])) => {
+            let crop = [
+                whole(ox).and_then(|x| left.checked_add(x)),
+                whole(oy).and_then(|y| top.checked_add(y)),
+                whole(w),
+                whole(h),
+            ];
+            match crop {
+                [Some(x), Some(y), Some(w), Some(h)] => Some([x, y, w, h]),
+                _ => None,
+            }
+        }
+        _ => Some(active_area),
+    }
+    .filter(|&c| crate::geometry::inside(c, active_area))
+    .map(|default_crop| crate::info::AdobeFrame {
+        active: active_area,
+        default_crop,
+    });
     info.frame = match crop {
         Some([mut x, mut y, mut w, mut h]) => {
             if x % 2 == 1 {
@@ -1314,6 +1340,62 @@ pub(crate) mod tests {
         assert_eq!((info.width, info.height), (4, 2));
         let s = crate::decode(&info, &f, &AtomicBool::new(false)).unwrap();
         assert_eq!(s.data, vec![0; 8]);
+    }
+
+    /// A DNG's Adobe frame is its own ActiveArea and DefaultCrop, exactly; the
+    /// frame RAWmakase has always read starts its crop on even rows and columns.
+    #[test]
+    fn a_dngs_adobe_frame_is_its_own_exactly() {
+        let le32 = |v: u32| v.to_le_bytes().to_vec();
+        let rational = |n: u32| [n.to_le_bytes(), 1u32.to_le_bytes()].concat();
+        // Active area rows 1 to 99, columns 2 to 122 (top, left, bottom,
+        // right); the default crop 3 columns and 1 row into it, 100 by 90.
+        let f = dng(
+            124,
+            100,
+            &[
+                (
+                    50829,
+                    4,
+                    4,
+                    [le32(1), le32(2), le32(99), le32(122)].concat(),
+                ),
+                (50719, 5, 2, [rational(3), rational(1)].concat()),
+                (50720, 5, 2, [rational(100), rational(90)].concat()),
+            ],
+        );
+        let info = crate::open(&f).unwrap();
+        assert_eq!(
+            info.adobe_frame,
+            Some(crate::info::AdobeFrame {
+                active: [2, 1, 120, 98],
+                default_crop: [5, 2, 100, 90],
+            })
+        );
+        assert_eq!(info.frame, [6, 2, 99, 90]);
+        let adobe = crate::in_adobe_frame(&info).unwrap();
+        assert_eq!(adobe.frame, [5, 2, 100, 90]);
+        // Inside the visible area already: the sensor data read is the same.
+        assert_eq!(
+            (adobe.margins, adobe.width, adobe.height),
+            ([2, 1], 120, 98)
+        );
+        // Without a default crop, the frame is the active area.
+        let whole = crate::open(&dng(4, 2, &[])).unwrap();
+        assert_eq!(
+            whole.adobe_frame.map(|a| a.default_crop),
+            Some([0, 0, 4, 2])
+        );
+        // A crop beyond the active area is no frame.
+        let beyond = dng(
+            4,
+            2,
+            &[
+                (50719, 5, 2, [rational(2), rational(0)].concat()),
+                (50720, 5, 2, [rational(4), rational(2)].concat()),
+            ],
+        );
+        assert_eq!(crate::open(&beyond).unwrap().adobe_frame, None);
     }
 
     #[test]

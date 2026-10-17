@@ -260,6 +260,10 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
     let mut info = probe(bytes)?;
     crate::names::apply(&mut info);
     crate::geometry::apply(&mut info);
+    if info.dng_version == 0 {
+        info.adobe_frame =
+            crate::facts::adobe_frame(&info.make, &info.model, [info.raw_width, info.raw_height]);
+    }
     crate::color::apply(&mut info);
     Ok(info)
 }

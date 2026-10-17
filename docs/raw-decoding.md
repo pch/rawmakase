@@ -732,7 +732,85 @@ SP-510UZ and SP-550UZ, whose red and blue levels are over a green Adobe
 reads about 4% higher. An `adobe-dng` row may give
 decode facts only (black and white levels, the as-shot white balance scale),
 never geometry (visible area, default crop, orientation, colour filter), which
-stays the file's or `compat-observed`; the facts test enforces this.
+stays the file's or `compat-observed`; the facts test enforces this. Adobe's
+geometry is a table of its own, read only in Adobe's frame (see
+[Frames](#frames)).
+
+## Frames
+
+A photo's frame is the default crop of its decoded image: what Develop shows
+uncropped, and what an edit's positions (crop, spots, red eye, masks, Upright's
+guides) are normalised to (`model::image_frame`). RAWmakase has always decoded
+in LibRaw's frame (its visible area and default crop, with RAWmakase's rules on
+them); Lightroom's crops and local adjustments are relative to Adobe's, the
+DNG DefaultCrop that Adobe DNG Converter writes for the camera, which differs
+by a few pixels on many cameras (some, as Nikon's, have no default crop in
+LibRaw's frame at all).
+
+`rawmakase-raw` knows Adobe's frame for a file (`RawInfo::adobe_frame`): a
+DNG's own ActiveArea and DefaultCrop, exactly, or for other files the row of
+`data/adobe-frames.toml` for the camera and raw size (`active` and
+`default_crop`, sensor coordinates, `source = "adobe-dng"`). The table is
+written by `scripts/cameras/adobe-frames.py`, which converts a file per camera
+and raw size with Adobe DNG Converter and places the DNG's areas in the RAW's
+sensor coordinates, by size or by aligning its samples with the decoder's
+(`rawmakase fingerprint --sensor`). `in_adobe_frame` reads the file in that
+frame: Adobe's crop as the default crop, and Adobe's active area as the
+visible area only where the crop does not lie in the one RAWmakase has always
+read.
+
+Adobe's frame is the camera's, not the shot's. On some cameras Adobe DNG
+Converter makes the aspect ratio chosen in the camera the DefaultCrop (a
+PowerShot G12 or E-P2 shot at 3:2 of a 4:3 sensor, an A580 or WB2000 shot at
+16:9), which would give every file of that camera and raw size the shot's
+frame. So the table has no row whose crop differs in shape by more than 3%
+from both Adobe's active area and RAWmakase's frame (where the raw size gives
+the ratio, as on Panasonic's multi-aspect sensors, RAWmakase's frame has it
+too), and `in_adobe_frame` keeps the frame RAWmakase has always read for a
+file that records an in-camera aspect-ratio crop of another shape than its
+frame, or whose frame is itself one (Adobe's crop is of another shape, as the
+whole sensor around a DC-GH6 high-resolution square shot is). Such files
+open as they always have: the camera's aspect ratio as the frame or as the
+starting crop.
+
+Which frame a photo is decoded in travels with the decoder
+(`raw::Decoder::frame`): LibRaw's photos are in the legacy frame, and so are
+RAWmakase's own decoders' until they replace LibRaw (`OWN_DECODER_FRAME`).
+
+The switch to Adobe's frame comes with the switch to RAWmakase's decoders:
+
+- `OWN_DECODER_FRAME` becomes `Frame::Adobe`, and the frame and visible area
+  changes are approved decode deltas (Adobe DNG Converter's DefaultCrop as the
+  evidence);
+- saved edits keep their numbers. Their positions are relative to the frame,
+  so on a camera whose frame moves, an edit's crop, spots, red eye, masks and
+  Upright guides land on pixels shifted by the frame's difference: by the
+  left or top difference at that side, the right or bottom one at the other,
+  in between across the photo (the per-make sizes are below). This is a
+  one-time shift, said in the release notes; no catalog format change goes
+  with it;
+- previews made before the switch are made again, so no thumbnail shows the
+  legacy frame;
+- the cameras whose visible area moves (Adobe's crop reaches past the legacy
+  visible area) are checked for levels measured in the masked borders beside
+  it, and lens corrections centred on the decoded image.
+
+Measured with Adobe DNG Converter 18.7 on one file per camera and raw size of
+the test dataset (2026-10-17): of 1,245 files Adobe converts (34 more it does
+not, CHDK's among them), 1,235 are placed in sensor coordinates. Of the
+non-DNG files whose camera and raw size have a row (981 rows; a DNG gives its
+own frame), Adobe's frame is RAWmakase's on 701 and differs on 279. The
+median difference a side, where the frame differs, is 1 pixel for Canon,
+Fujifilm, Kodak and Leica, 2 for Olympus and Panasonic, 3 for Sony and Phase
+One, 4 for Minolta and Mamiya, 5 for OM Digital, 7 for Epson, 8 for Nikon and
+Hasselblad, 10 for Pentax and 20 for Samsung; the largest is 84 pixels (a
+Samsung NX10 side). 22 of Adobe's crops reach past the visible area. With no
+row, and so the legacy frame: the 9 Super CCDs (whose image is turned), a
+Nikon D2H file (no offset clearly the best), 7 files whose pixels are not
+square (Fujifilm's S-series and the Nikon D1X), 2 whose areas fall outside
+the raw data (Fujifilm X-T5 and X-M5) and the 4 whose crop is the shot's
+aspect ratio (PowerShot G12, E-P2, A580, WB2000); the DC-GH6 high-resolution
+square shot keeps its frame by the rule above.
 
 ## Colour matrices
 
