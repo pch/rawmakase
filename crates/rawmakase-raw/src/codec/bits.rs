@@ -167,9 +167,86 @@ impl<'a> Msb<'a> {
     }
 }
 
+/// Most significant bit first from 32-bit words of a byte order (Phase One's
+/// and Hasselblad's codings); zeros past the end.
+pub(crate) struct Words<'a> {
+    data: &'a [u8],
+    order: crate::io::Order,
+    pos: usize,
+    /// Bits not yet consumed, left aligned.
+    cache: u64,
+    bits: u32,
+}
+
+impl<'a> Words<'a> {
+    pub fn new(data: &'a [u8], order: crate::io::Order) -> Self {
+        Self {
+            data,
+            order,
+            pos: 0,
+            cache: 0,
+            bits: 0,
+        }
+    }
+    /// The next `n` bits (at most 32) without consuming them.
+    #[inline]
+    pub fn peek(&mut self, n: u32) -> u32 {
+        debug_assert!(n <= 32);
+        if n == 0 {
+            return 0;
+        }
+        if self.bits < n {
+            let word = self
+                .data
+                .get(self.pos..)
+                .and_then(|d| d.get(..4))
+                .map_or(0, |w| {
+                    let w = [w[0], w[1], w[2], w[3]];
+                    match self.order {
+                        crate::io::Order::Little => u32::from_le_bytes(w),
+                        crate::io::Order::Big => u32::from_be_bytes(w),
+                    }
+                });
+            self.pos = self.pos.saturating_add(4);
+            self.cache |= u64::from(word) << (32 - self.bits);
+            self.bits += 32;
+        }
+        (self.cache >> (64 - n)) as u32
+    }
+    #[inline]
+    pub fn skip(&mut self, n: u32) {
+        if n == 0 {
+            return;
+        }
+        self.peek(n);
+        self.cache <<= n;
+        self.bits -= n;
+    }
+    /// The next `n` bits (at most 32).
+    #[inline]
+    pub fn get(&mut self, n: u32) -> u32 {
+        let v = self.peek(n);
+        self.skip(n);
+        v
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn words_read_each_word_most_significant_bit_first() {
+        let data = [0x78, 0x56, 0x34, 0x12, 0xff, 0, 0, 0x80];
+        let mut w = Words::new(&data, crate::io::Order::Little);
+        assert_eq!(w.get(0), 0);
+        assert_eq!(w.get(4), 0x1);
+        assert_eq!(w.peek(8), 0x23);
+        assert_eq!(w.get(28), 0x234_5678);
+        assert_eq!(w.get(32), 0x8000_00ff);
+        assert_eq!(w.get(16), 0);
+        let mut b = Words::new(&data, crate::io::Order::Big);
+        assert_eq!(b.get(12), 0x785);
+    }
     #[test]
     fn msb_reads_across_bytes() {
         let mut p = Msb::new(&[0b1010_1100, 0b0101_0011, 0xff]);

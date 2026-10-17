@@ -122,6 +122,10 @@ pub enum Variant {
     IiqS,
     /// Phase One IIQ, uncompressed 16-bit words.
     IiqUncompressed,
+    /// Hasselblad 3FR and FFF, 16-bit words.
+    FffUncompressed,
+    /// Hasselblad 3FR and FFF, Hasselblad's coded pairs of differences.
+    FffCompressed,
 }
 
 impl Variant {
@@ -178,6 +182,8 @@ impl Variant {
             Variant::IiqL => "iiq-l",
             Variant::IiqS => "iiq-s",
             Variant::IiqUncompressed => "iiq-uncompressed",
+            Variant::FffUncompressed => "3fr-uncompressed",
+            Variant::FffCompressed => "3fr-compressed",
         }
     }
 }
@@ -200,6 +206,7 @@ pub(crate) enum Plan {
     Headerless(crate::container::headerless::HeaderlessPlan),
     Crw(crate::container::ciff::CrwPlan),
     Iiq(crate::container::iiq::IiqPlan),
+    Fff(crate::container::fff::FffPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -249,6 +256,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         }
         if crate::container::srw::is_srw(&t) {
             return crate::container::srw::open(t);
+        }
+        if crate::container::fff::is_fff(&t) {
+            return crate::container::fff::open(t);
         }
         if crate::container::erf::is_erf(&t) {
             return crate::container::erf::open(t);
@@ -351,6 +361,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         }
         (Plan::Iiq(plan), Variant::IiqL | Variant::IiqS | Variant::IiqUncompressed) => {
             crate::container::iiq::decode(info, plan, bytes, cancel)
+        }
+        (Plan::Fff(plan), Variant::FffUncompressed | Variant::FffCompressed) => {
+            crate::container::fff::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(

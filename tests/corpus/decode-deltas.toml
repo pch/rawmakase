@@ -29507,3 +29507,277 @@ after = 65535
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
+
+# Hasselblad 3FR and FFF: black is the file's BlackLevel and white 96% of its
+# WhiteLevel, as Adobe DNG Converter takes them.
+
+[[delta]]
+# Hasselblad/CFV/RAW_HASSELBLAD_CFV.3FR
+sha256 = "f7c0f941bd542ec638073bfa9febdc4efa01f4a4855d73c5d9218b975d1de91a"
+field = "sensor.white"
+before = 32767
+after = 31456
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 31456; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/CF132/RAW_HASSELBLAD_IXPRESS_CF132.3FR
+sha256 = "f859bc7f68692a9326e053156ba6374d3677331396d840184822c8667462a799"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 62914; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/Hasselblad H4D-40/Job_3583.fff
+sha256 = "1bfe64fa6fc07453ae74ed50c2f817d77a12a310b34a7f9893d32dd03f8c2ad0"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 62914; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/CFV-50/20170401_CCSG_on_Hasselblad_CFV-50-0002297.fff
+sha256 = "3b68a04f14d4a95e8c4a29007ece53e993aefa0a7f50b3571970a51ac64acaa4"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/H5D-50c/20151114_CCSG_on_Hasselblad_H5D50c-0017.fff
+sha256 = "1aad9319fcbab81b851a74c3eeaa2a07fc5013bf2c4e272fd31d6419b6b9adb0"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 62914; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/H5D-40/20151114_CCSG_on_Hasselblad_H5D40-0726.fff
+sha256 = "209d464e13702de5f4fdb830ac26ac140c98a8d0dc3e81c5ba61d93677330832"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 62914; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/X1D/B9999910.3FR
+sha256 = "395acb2c706dc10270c58ec261e42a5e36f6ac8c39d2a767e86e83648aa318a3"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/Hasselblad H6D-100cMS/h6d400c_1shot_0007.fff
+sha256 = "53ba694a8210b09b6e3d43cc0f5725f868afe5453674363350e8f76a45c6f7bf"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 62914; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/Hasselblad H6D-100cMS/h6d400c_1shot_0007.fff
+sha256 = "53ba694a8210b09b6e3d43cc0f5725f868afe5453674363350e8f76a45c6f7bf"
+field = "header.metadata.focal_35mm"
+before = 79.0
+after = 77.0
+evidence = "RAWmakase's is the file's EXIF FocalLengthIn35mmFormat; LibRaw's source for 79 is not known"
+approval = "pending"
+
+[[delta]]
+# Hasselblad/Hasselblad H4D/A0000902.3FR
+sha256 = "5c0b033e2978035637d07c3e1567bf7748a06c5d5c0ae168027c74d54df7ff80"
+field = "sensor.black"
+before = [256, 256, 256, 256]
+after = [0, 0, 0, 0]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1028; RAWmakase's is the file's BlackLevel 0 on samples LibRaw raises by 256 (see the data delta); Adobe's black fitted to RAWmakase's samples is 0 (within 10)"
+approval = "pending"
+
+[[delta]]
+# Hasselblad/Hasselblad H4D/A0000902.3FR
+sha256 = "5c0b033e2978035637d07c3e1567bf7748a06c5d5c0ae168027c74d54df7ff80"
+field = "sensor.white"
+before = 33025
+after = 31456
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/Hasselblad H4D/A0000902.3FR
+sha256 = "5c0b033e2978035637d07c3e1567bf7748a06c5d5c0ae168027c74d54df7ff80"
+field = "sensor.data_sha256"
+before = "5a62d1ba743afd99fc58eb7cd650797e43e76fff228ea167ea1322316a12d74c"
+after = "a0ccaed2e50b64a2d203e66a0fa8311e1c0e6355f16835b3b2e40019afd07078"
+evidence = "LibRaw adds 256 to every sample of this file (and measures a black of 256); RAWmakase's samples are the coded values, on which Adobe's fitted black is 0 (within 10)"
+approval = "pending"
+
+[[delta]]
+# Hasselblad/H3D/A9391120.3FR
+sha256 = "34fdb93cb215e4f419ae0f7252c57b881fa381003124b4f9c143d27741f211b3"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 62914; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/X1D II 50C/x1d-II-sample-02.fff
+sha256 = "8c2451b3478fb529b4e9bd51ed3267999ce26eb1fcb5c3b93c3ae7bc56267794"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 62914; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/X1D II 50C/MKW_20200429_0004569.3FR
+sha256 = "809d498263d6f07cbaa4b9a5be97933057b4ab21e7243bb7afbe3862f3b48b47"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/H4D-50/2-9-2017_street_0012.fff
+sha256 = "44433062a0916fc41302d3bce0f18d5682e7cc2badcdf45a6441b11b7b412b92"
+field = "sensor.white"
+before = 32767
+after = 31456
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/cfv 50C II/B9979382.3FR
+sha256 = "b216aa39e9281ca603b1e41ff97ed914372c409df6135b743d9c7d217498f467"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/X2D 100C/B0000079.3FR
+sha256 = "dcc5a4abe3498e6f25e89bb491995fd12c3b669d9277c71b45b49210d3e56280"
+field = "sensor.black"
+before = [4093, 4093, 4094, 4093]
+after = [4096, 4096, 4096, 4096]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 4267; Adobe DNG Converter rescales this 3FR; its black fitted to RAWmakase's samples is 4096.0, the file's BlackLevel"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/X2D 100C/B0000079.3FR
+sha256 = "dcc5a4abe3498e6f25e89bb491995fd12c3b669d9277c71b45b49210d3e56280"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/X2D 100C/Job_0079.fff
+sha256 = "44c38665694e07baf47f1fc34fb9ea0f1bf70eb71b7390183d3c0ef23d164e0f"
+field = "sensor.black"
+before = [4093, 4093, 4093, 4093]
+after = [4096, 4096, 4096, 4096]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 4096; RAWmakase's is the file's BlackLevel; Adobe's black fitted to RAWmakase's samples is the same (to 0.3) on every body measured"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/X2D 100C/Job_0079.fff
+sha256 = "44c38665694e07baf47f1fc34fb9ea0f1bf70eb71b7390183d3c0ef23d164e0f"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 62914; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/X2D 100C/B0000080.3FR
+sha256 = "e19d90bab052b75e2bd04f77d9b9f758a9958ae942ee3e2a8991329a981a0e23"
+field = "sensor.black"
+before = [4092, 4093, 4093, 4093]
+after = [4096, 4096, 4096, 4096]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 4267 (another file of the body); Adobe DNG Converter rescales this 3FR; its black fitted to RAWmakase's samples is 4096.0 on the body's other 3FR, the file's BlackLevel"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/X2D 100C/B0000080.3FR
+sha256 = "e19d90bab052b75e2bd04f77d9b9f758a9958ae942ee3e2a8991329a981a0e23"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/X2D 100C/Job_0080.fff
+sha256 = "44977fdaa3063eacbb2ac416dfb531bb4e3b96f3745d073dc49fb1ebcd78bedc"
+field = "sensor.black"
+before = [4092, 4093, 4092, 4093]
+after = [4096, 4096, 4096, 4096]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 4267 (another file of the body); Adobe DNG Converter writes BlackLevel 4096 for the body's other FFF (Job_0079.fff), the file's BlackLevel"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/X2D 100C/Job_0080.fff
+sha256 = "44977fdaa3063eacbb2ac416dfb531bb4e3b96f3745d073dc49fb1ebcd78bedc"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/CFV-50c/B0002648.fff
+sha256 = "e8fccbf0f746561f6445b54cbe9c40e4962b8019a9436627c326b73c3a30c1b2"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 62914; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/CFV-50c/20200215_BERLIN_OldNew_WestHafen_B0000420.3FR
+sha256 = "e27ff177519298fe7bae64506b975190789dc0e6ad70bea58be7c78fd094eae0"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 62914 (another file of the body); Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/CFV-50c/20200215_BERLIN_OldNew_WestHafen_B0000420.fff
+sha256 = "c8d78912ae725a59acff42a4b4731350bbddd4a600423f319579261bd41da932"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 62914 (another file of the body); Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Hasselblad/CFV 100CElectronic Shutter/B0003499.3FR
+sha256 = "e3375d7d19a231dd590aaaf07976ffef6e654c4c27d419fa74528bd72271ff4b"
+field = "sensor.black"
+before = [4093, 4093, 4094, 4093]
+after = [4096, 4096, 4096, 4096]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 4267; RAWmakase's is the file's BlackLevel; Adobe's black fitted to RAWmakase's samples is the same (to 0.3) on every body measured"
+approval = "pending"
+
+[[delta]]
+# Hasselblad/CFV 100CElectronic Shutter/B0003499.3FR
+sha256 = "e3375d7d19a231dd590aaaf07976ffef6e654c4c27d419fa74528bd72271ff4b"
+field = "sensor.white"
+before = 65535
+after = 62914
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+

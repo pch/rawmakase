@@ -6,6 +6,7 @@ pub(crate) mod cr2;
 pub(crate) mod cr3;
 pub(crate) mod dng;
 pub(crate) mod erf;
+pub(crate) mod fff;
 pub(crate) mod headerless;
 pub(crate) mod iiq;
 pub(crate) mod nef;

@@ -12,6 +12,7 @@
 //! source consulted; no public description found), then verified by an
 //! exact match with LibRaw's output on every IIQ L and IIQ S file of the
 //! test dataset.
+use super::bits::Words;
 use crate::error::{Error, Result, corrupt};
 use crate::io::Order;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,46 +31,6 @@ pub(crate) enum Output {
     Plain,
     /// IIQ S: values below 256 through the curve, then times 4.
     Curve,
-}
-
-/// A bit pump over 32-bit words of `order`, most significant bit first.
-struct Words<'a> {
-    data: &'a [u8],
-    order: Order,
-    pos: usize,
-    cache: u64,
-    bits: u32,
-}
-
-impl<'a> Words<'a> {
-    fn new(data: &'a [u8], order: Order) -> Self {
-        Self {
-            data,
-            order,
-            pos: 0,
-            cache: 0,
-            bits: 0,
-        }
-    }
-    /// The next `n` bits (at most 16); zeros past the end.
-    fn get(&mut self, n: u32) -> u32 {
-        if self.bits < n {
-            let word = self.data.get(self.pos..self.pos + 4).map_or(0, |w| {
-                let w = [w[0], w[1], w[2], w[3]];
-                match self.order {
-                    Order::Little => u32::from_le_bytes(w),
-                    Order::Big => u32::from_be_bytes(w),
-                }
-            });
-            self.pos += 4;
-            self.cache |= u64::from(word) << (32 - self.bits);
-            self.bits += 32;
-        }
-        let v = (self.cache >> (64 - n)) as u32;
-        self.cache <<= n;
-        self.bits -= n;
-        v
-    }
 }
 
 /// IIQ S's curve over values below 256: the square of the value over

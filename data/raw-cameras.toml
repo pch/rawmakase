@@ -7992,3 +7992,175 @@ make = "Phase One"
 model = "H 25"
 canonical = ["Phase One", "H25"]
 source = "compat-observed"
+
+# Hasselblad 3FR and FFF: the names RAWmakase has always given bodies whose
+# files name another (a model with its sensor's megapixels appended where
+# the model names none), and the visible areas.
+
+[[name]]
+make = "Hasselblad"
+model = "500 mech.-16"
+is = "CFV-16"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "Flash Sync-22"
+is = "CF-22"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "H3D-60"
+is = "H4D-60"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "H3D-39"
+is = "H3DII-39"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "X1D"
+is = "X1D-50c"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "X1DM2-50c"
+is = "X1D-50c"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "X2D 100C"
+is = "X2D 100C-100c"
+source = "compat-observed"
+
+[[name]]
+make = "Hasselblad"
+model = "CFV 100C"
+is = "CFV-100c"
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "CF-22"
+dng = false
+raw_size = [4096, 5456]
+visible = [0, 0, 4096, 5456]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "CFV-100c"
+dng = false
+raw_size = [11904, 8842]
+visible = [124, 92, 11664, 8750]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "CFV-16"
+dng = false
+raw_size = [4096, 4096]
+visible = [0, 0, 4096, 4096]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "CFV-50"
+dng = false
+raw_size = [8282, 6240]
+visible = [42, 4, 8199, 6156]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "CFV-50c"
+dng = false
+raw_size = [8374, 6304]
+visible = [52, 100, 8272, 6200]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H3DII-39"
+dng = false
+raw_size = [7262, 5456]
+visible = [8, 4, 7247, 5444]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H4D-40"
+dng = false
+raw_size = [7410, 5586]
+visible = [42, 4, 7327, 5502]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H4D-50"
+dng = false
+raw_size = [8282, 6240]
+visible = [42, 4, 8199, 6156]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H4D-60"
+dng = false
+raw_size = [9044, 6732]
+visible = [40, 8, 8964, 6716]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H5D-40"
+dng = false
+raw_size = [7410, 5586]
+visible = [42, 4, 7327, 5502]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H5D-50c"
+dng = false
+raw_size = [8374, 6304]
+visible = [52, 100, 8272, 6200]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "H6D-100cMS"
+dng = false
+raw_size = [12000, 8816]
+visible = [64, 108, 11608, 8708]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "X1D II 50C"
+dng = false
+raw_size = [8384, 6304]
+visible = [48, 96, 8278, 6208]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "X1D-50c"
+dng = false
+raw_size = [8384, 6304]
+visible = [48, 96, 8278, 6208]
+source = "compat-observed"
+
+[[camera]]
+make = "Hasselblad"
+model = "X2D 100C-100c"
+dng = false
+raw_size = [11904, 8842]
+visible = [124, 92, 11664, 8750]
+source = "compat-observed"

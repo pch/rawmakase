@@ -85,6 +85,9 @@ pub struct RawInfo {
     pub(crate) as_shot_xy: Option<[f64; 2]>,
     /// The XYZ (D65) to camera matrix the file itself holds (a DNG's).
     pub(crate) file_matrix: Option<[[f32; 3]; 3]>,
+    /// The canonical name the file itself gives (Hasselblad's sensor
+    /// names), where the camera table has none.
+    pub(crate) canonical: Option<[String; 2]>,
 }
 
 /// How a Fujifilm Super CCD's stored rows develop: each a diagonal of the
@@ -187,6 +190,7 @@ pub(crate) fn base(variant: Variant) -> RawInfo {
         uncompressed_preview: false,
         as_shot_xy: None,
         file_matrix: None,
+        canonical: None,
     }
 }
 

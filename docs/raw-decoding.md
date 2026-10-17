@@ -40,9 +40,9 @@ Modules, each with a small `pub(crate)` surface:
 | Module | Owns |
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
-| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings, Canon's CRW blocks, Phase One's IIQ rows |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`) |
-| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`, `phase_one`) |
+| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings, Canon's CRW blocks, Phase One's IIQ rows, Hasselblad's pairs |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`) |
+| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`, `phase_one`, `hasselblad`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
 | `color` | The camera-to-sRGB matrix and daylight multipliers from a camera's XYZ matrix |
@@ -93,6 +93,8 @@ A file of a recognised container in a variant this crate does not decode is
 | `IiqL` | Phase One IIQ L and L16 (Leaf Credo too): rows of differences in runs of even and odd columns, lengths chosen every eight columns | ExifTool's PhaseOne tag names, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
 | `IiqS` | Phase One's first IIQ S: IIQ L's rows, values below 256 on a square-law curve | as `IiqL` |
 | `IiqUncompressed` | Phase One IIQ and TIFF, 16-bit words | ExifTool's PhaseOne tag names, our own measurements |
+| `FffUncompressed` | Hasselblad 3FR and FFF, 16-bit words | TIFF 6, DNG 1.7 (level tags), our own measurements |
+| `FffCompressed` | Hasselblad 3FR and FFF (compression 7): lossless JPEG headers, then pairs of coded differences in little-endian 32-bit words | ITU T.81, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
 | `OrfCompressed` | Olympus and OM Digital ORF/ORI, Olympus's compressed coding of 12 or 14-bit samples | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfPacked` | Olympus ORF, packed 12-bit samples: 16-byte blocks of ten, 32-bit words, or two interlaced fields of rows | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfUnpacked` | Olympus ORF, 16-bit words holding samples of the note's bit depth | TIFF 6, ExifTool's Olympus tag names, our own measurements |
@@ -463,6 +465,26 @@ carry (BlackLevelData, up to a few hundred levels on some backs), which
 defects), which Adobe applies. The older backs' colour filter is a
 `compat-observed` row (Adobe's CFAPattern agrees). IIQ Sv2 (RawFormat 6) and
 the scrambled RAW 1 and RAW 2 formats are `Unsupported`.
+
+Hasselblad (`container::fff`, `vendor::hasselblad`, `codec::hasselblad`):
+3FR (the camera's) and FFF (Phocus's, with its private tag 0xC519) are TIFFs
+whose SubIFD holds 16-bit words or Hasselblad's coding (compression 7):
+lossless JPEG headers for the Huffman table and predictor (8, or 11, which
+adds half the change two rows up), then per pair of columns two difference
+lengths and the two differences read from little-endian 32-bit words, each
+sample its colour's neighbour two columns left plus its difference (0x8000
+for the first). The coding was written from prior general knowledge of the
+format (no decoder source consulted) and verified by an exact match with
+LibRaw's output on every compressed file of the dataset but one, an H4D-60
+3FR whose every sample LibRaw raises by 256 (taking 256 as its black;
+Adobe's black on RAWmakase's samples is 0: a pending delta). Black is the
+file's BlackLevel and white 96% of its WhiteLevel, as Adobe DNG Converter
+takes them (fitted to RAWmakase's samples on every body measured). The
+camera is the model without what follows a "/", looked up with the sensor's
+megapixels appended for the older bodies' names (`[[name]]` rows); its
+colour is named from the maker note's sensor code (0x0011) and coating
+(0x0016), as RAWmakase has always named it ("50-15-Coated5-3FR"). Visible
+areas are `compat-observed` rows. Multi-shot files are `Unsupported`.
 
 Canon files whose values differ from LibRaw's on purpose are approved in
 `tests/corpus/decode-deltas.toml`, with Adobe DNG Converter's value as the

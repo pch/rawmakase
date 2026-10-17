@@ -116,6 +116,7 @@ pub(crate) fn apply(info: &mut RawInfo) {
     }
     let [mut m, n] = crate::facts::canonical(&info.make, &info.model)
         .cloned()
+        .or_else(|| info.canonical.clone())
         .unwrap_or_else(|| [info.make.clone(), info.model.clone()]);
     if !KNOWN.contains(&m.as_str()) {
         m.clear();

@@ -36,6 +36,15 @@ impl Huffman {
         }
         Ok(Self { table })
     }
+    /// The code the next 16 bits start with: its length and symbol, for
+    /// pumps other than [`Msb`].
+    #[inline]
+    pub fn lookup(&self, next16: u32) -> Result<(u32, u8)> {
+        match self.table.get(next16 as usize) {
+            Some(&(len, symbol)) if len > 0 => Ok((u32::from(len), symbol)),
+            _ => Err(corrupt("invalid Huffman code")),
+        }
+    }
     /// The next symbol.
     #[inline]
     pub fn symbol(&self, bits: &mut Msb) -> Result<u8> {
