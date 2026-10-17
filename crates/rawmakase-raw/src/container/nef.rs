@@ -9,7 +9,7 @@
 //! LibRaw's output on the test dataset's files (how each layout's data is
 //! stored, which data sizes are not Huffman-coded, the preview it picks) and
 //! of Adobe DNG Converter's (the levels).
-use super::tiff::{Ifd, TiffFile};
+use super::tiff::{Ifd, NAME_MAX, TiffFile};
 use crate::codec::{bits::Msb, nikon, nikon_he, nikon_sraw};
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo, UNSET};
@@ -66,7 +66,7 @@ pub(crate) enum Layout {
 
 /// Whether `t` is a Nikon camera's own TIFF.
 pub(crate) fn is_nef(t: &TiffFile) -> bool {
-    t.text(&t.ifds[0], 271)
+    t.text_upto(&t.ifds[0], 271, NAME_MAX)
         .is_some_and(|m| m.trim().to_ascii_uppercase().starts_with("NIKON"))
 }
 
@@ -76,8 +76,8 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         raw_directory(&t).ok_or_else(|| Error::Unsupported("NEF without a raw image".into()))?;
     let ifd = &t.ifds[raw];
     let ifd0 = &t.ifds[0];
-    let make = t.text(ifd0, 271).unwrap_or_default();
-    let file_model = t.text(ifd0, 272).unwrap_or_default();
+    let make = t.text_upto(ifd0, 271, NAME_MAX).unwrap_or_default();
+    let file_model = t.text_upto(ifd0, 272, NAME_MAX).unwrap_or_default();
     let model = crate::names::model(&crate::names::make(&make), &make, &file_model);
     let width = t.int(ifd, 256).ok_or_else(|| corrupt("NEF width"))?;
     let height = t.int(ifd, 257).ok_or_else(|| corrupt("NEF height"))?;
@@ -278,10 +278,10 @@ fn jpeg_pixels(bytes: &[u8], at: u64, len: u64) -> u64 {
 /// The strips' offsets and lengths.
 fn strips(t: &TiffFile, ifd: &Ifd) -> Result<Vec<(u64, u64)>> {
     let offsets = t
-        .ints(ifd, 273)
+        .pieces(ifd, 273)
         .ok_or_else(|| corrupt("NEF strip offsets"))?;
     let counts = t
-        .ints(ifd, 279)
+        .pieces(ifd, 279)
         .ok_or_else(|| corrupt("NEF strip counts"))?;
     if offsets.is_empty() || offsets.len() != counts.len() {
         return Err(corrupt("NEF strips"));
@@ -296,7 +296,7 @@ fn strips(t: &TiffFile, ifd: &Ifd) -> Result<Vec<(u64, u64)>> {
 /// The 2 × 2 colour filter from CFAPattern (red, green and blue as 0, 1, 2);
 /// the usual red-first Bayer pattern when the file has none.
 fn cfa(t: &TiffFile, ifd: &Ifd) -> Result<Cfa> {
-    let pattern = match t.raw(ifd, 33422) {
+    let pattern = match t.bytes_of(ifd, 33422) {
         Some(p) if p.len() >= 4 && p[..4].iter().all(|&c| c < 3) => p[..4].to_vec(),
         Some(_) => return Err(Error::Unsupported("NEF with a four-colour CFA".into())),
         None => vec![0, 1, 1, 2],

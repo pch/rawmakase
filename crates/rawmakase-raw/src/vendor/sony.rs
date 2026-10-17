@@ -84,18 +84,18 @@ impl Sr2 {
     /// The file's SR2SubIFD, decrypted; `None` when it has none or it is not
     /// inside the file.
     pub fn read(t: &TiffFile) -> Option<Self> {
-        let private = t.raw(&t.ifds[0], DNG_PRIVATE_DATA)?;
+        let private = t.bytes_of(&t.ifds[0], DNG_PRIVATE_DATA)?;
         let at = u64::from(t.u32(private.get(..4)?));
         let ifd = t.ifd_at(at)?;
         let start = t.int(&ifd, SR2_OFFSET)?;
         let len = t.int(&ifd, SR2_LENGTH)?.min(SR2_MAX);
-        let key = t.raw(&ifd, SR2_KEY).filter(|k| k.len() == 4)?;
+        let key = t.bytes_of(&ifd, SR2_KEY).filter(|k| k.len() == 4)?;
         let mut plain = t
             .bytes
             .slice(u64::from(start), u64::from(len))
             .ok()?
             .to_vec();
-        decrypt(&mut plain, t.u32(&key));
+        decrypt(&mut plain, t.u32(key));
         Some(Self {
             start: u64::from(start),
             plain,
@@ -188,7 +188,9 @@ const FULL_IMAGE_SIZE: u16 = 0xb02b;
 /// balance and presets, the default crop; returns the levels.
 pub(crate) fn read(t: &TiffFile, raw: &Ifd, info: &mut RawInfo) -> Levels {
     let sr2 = Sr2::read(t);
-    let raw_shorts = |tag| t.ints(raw, tag);
+    // One value more than any record read, so that a longer one still
+    // fails its length check.
+    let raw_shorts = |tag| t.ints_upto(raw, tag, 5);
     let sr2_shorts = |tag| {
         sr2.as_ref()
             .and_then(|s| s.shorts(tag))
@@ -237,7 +239,7 @@ pub(crate) fn read(t: &TiffFile, raw: &Ifd, info: &mut RawInfo) -> Levels {
         (Some(at), Some(size)) if at.len() == 2 && size.len() == 2 => {
             [at[0], at[1], size[0], size[1]]
         }
-        _ => match maker_note(t).and_then(|mn| t.ints(&mn, FULL_IMAGE_SIZE)) {
+        _ => match maker_note(t).and_then(|mn| t.ints(&mn, FULL_IMAGE_SIZE, 2)) {
             Some(s) if s.len() == 2 && s[0] > 0 && s[1] > 0 => [UNSET, UNSET, s[1], s[0]],
             _ => [UNSET, UNSET, 0, 0],
         },
@@ -280,7 +282,7 @@ pub(crate) struct Mrw {
 
 impl Mrw {
     pub fn read(t: &TiffFile) -> Option<Self> {
-        let private = t.raw(&t.ifds[0], DNG_PRIVATE_DATA)?;
+        let private = t.bytes_of(&t.ifds[0], DNG_PRIVATE_DATA)?;
         let at = u64::from(t.u32(private.get(..4)?));
         let head = t.bytes.slice(at, 8).ok()?;
         // "\0MRM" in Motorola's byte order, "\0MRI" in Intel's.

@@ -6,7 +6,7 @@
 //! Sources: TIFF 6, Exif 2.32 (CFAPattern), ExifTool's Pentax tag
 //! documentation, and our own measurements of the codings against LibRaw's
 //! output on our files.
-use super::tiff::TiffFile;
+use super::tiff::{NAME_MAX, TiffFile};
 use crate::codec::packed::{self, Packing};
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo};
@@ -34,7 +34,7 @@ pub(crate) struct PefPlan {
 /// Whether the TIFF `t` is a PEF: Pentax's make, or a Samsung or Ricoh
 /// body with a Pentax maker note.
 pub(crate) fn is_pef(t: &TiffFile) -> bool {
-    let make = t.text(&t.ifds[0], 271).unwrap_or_default();
+    let make = t.text_upto(&t.ifds[0], 271, NAME_MAX).unwrap_or_default();
     let make = make.trim().to_ascii_uppercase();
     make.starts_with("PENTAX")
         || ((make.starts_with("SAMSUNG") || make.starts_with("RICOH")) && pentax::read(t).is_some())
@@ -55,18 +55,18 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         return Err(Error::Unsupported("PEF of linear (monochrome) data".into()));
     }
     let offset = *t
-        .ints(ifd0, 273)
+        .ints_upto(ifd0, 273, 1)
         .unwrap_or_default()
         .first()
         .ok_or_else(|| corrupt("PEF data offset"))?;
     let bytes = t
-        .ints(ifd0, 279)
+        .pieces(ifd0, 279)
         .unwrap_or_default()
         .iter()
         .fold(0u64, |sum, &c| sum.saturating_add(u64::from(c)));
     let pixels = u64::from(width) * u64::from(height);
-    let make = t.text(ifd0, 271).unwrap_or_default();
-    let model = t.text(ifd0, 272).unwrap_or_default();
+    let make = t.text_upto(ifd0, 271, NAME_MAX).unwrap_or_default();
+    let model = t.text_upto(ifd0, 272, NAME_MAX).unwrap_or_default();
     // Ricoh Imaging's Pentax bodies are Pentax's.
     let pentax = make.trim().to_ascii_uppercase().starts_with("PENTAX")
         || model.to_ascii_uppercase().starts_with("PENTAX ");

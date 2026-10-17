@@ -7,7 +7,7 @@
 //! documentation (the raw directory's Sony tags); our own
 //! measurements of how each coding's samples are laid out and of the levels
 //! RAWmakase has always read, against LibRaw's output on our files.
-use super::tiff::{Ifd, TiffFile};
+use super::tiff::{Ifd, NAME_MAX, TiffFile};
 use crate::codec::ljpeg;
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo};
@@ -55,7 +55,7 @@ fn raw_ifd<'a>(t: &'a TiffFile) -> Option<&'a Ifd> {
 /// another name with Sony's private directory.
 pub(crate) fn is_sony(t: &TiffFile) -> bool {
     let ifd0 = &t.ifds[0];
-    let make = t.text(ifd0, 271).unwrap_or_default();
+    let make = t.text_upto(ifd0, 271, NAME_MAX).unwrap_or_default();
     let make = make.trim().to_ascii_uppercase();
     make.starts_with("SONY") || (make.starts_with("HASSELBLAD") && sony::has_private(t))
 }
@@ -100,7 +100,7 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         info.balanced = true;
     }
     let curve = t
-        .ints(raw, 0x7010)
+        .ints(raw, 0x7010, 4)
         .filter(|c| c.len() == 4)
         .map(|c| std::array::from_fn(|i| c[i].min(0xffff) as u16))
         .unwrap_or([8000, 10400, 12900, 14100]);
@@ -160,8 +160,8 @@ fn header(
 ) -> RawInfo {
     let mut info = crate::info::base(variant);
     let ifd0 = &t.ifds[0];
-    info.make = t.text(ifd0, 271).unwrap_or_default();
-    info.model = t.text(ifd0, 272).unwrap_or_default();
+    info.make = t.text_upto(ifd0, 271, NAME_MAX).unwrap_or_default();
+    info.model = t.text_upto(ifd0, 272, NAME_MAX).unwrap_or_default();
     info.flip = crate::geometry::flip(t.int(ifd0, 274).unwrap_or(1));
     info.raw_width = width;
     info.raw_height = height;
@@ -181,7 +181,7 @@ fn header(
 /// white balance. Its colour filter starts with green, then red.
 fn a100(t: &TiffFile) -> Result<RawInfo> {
     let ifd0 = &t.ifds[0];
-    let model = t.text(ifd0, 272).unwrap_or_default();
+    let model = t.text_upto(ifd0, 272, NAME_MAX).unwrap_or_default();
     // Without a mosaic: the SRF's four-colour sensor, ARQ's pixel-shift
     // composites of four colours per pixel.
     let unsupported = || {
@@ -233,9 +233,9 @@ fn chunks(t: &TiffFile, ifd: &Ifd, width: u32, height: u32) -> Result<([u32; 2],
             if tw == 0 || th == 0 {
                 return Err(corrupt("ARW tiles"));
             }
-            (t.ints(ifd, 324), t.ints(ifd, 325), [tw, th])
+            (t.pieces(ifd, 324), t.pieces(ifd, 325), [tw, th])
         }
-        _ => (t.ints(ifd, 273), t.ints(ifd, 279), [width, height]),
+        _ => (t.pieces(ifd, 273), t.pieces(ifd, 279), [width, height]),
     };
     let (Some(offsets), Some(counts)) = (offsets, counts) else {
         return Err(corrupt("ARW without data offsets"));
@@ -255,9 +255,9 @@ fn chunks(t: &TiffFile, ifd: &Ifd, width: u32, height: u32) -> Result<([u32; 2],
 /// file has none; the green sharing a row with blue is the second green.
 fn cfa(t: &TiffFile, ifd: &Ifd) -> Cfa {
     let pattern = t
-        .raw(ifd, 33422)
+        .bytes_of(ifd, 33422)
         .filter(|p| p.len() == 4 && p.iter().all(|&c| c <= 2))
-        .unwrap_or(vec![0, 1, 1, 2]);
+        .map_or(vec![0, 1, 1, 2], <[u8]>::to_vec);
     crate::info::second_green(Cfa {
         rows: 2,
         cols: 2,

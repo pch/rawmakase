@@ -7,7 +7,7 @@
 //!
 //! Sources: TIFF 6, Exif 2.32, ExifTool's PanasonicRaw tag documentation,
 //! and our own measurements.
-use super::tiff::TiffFile;
+use super::tiff::{NAME_MAX, TiffFile};
 use crate::codec::panasonic::{self, Block};
 use crate::codec::panasonic_strips as strips;
 use crate::error::{Error, Result, corrupt};
@@ -122,8 +122,8 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         .or_else(|| t.int(ifd0, 273))
         .ok_or_else(|| corrupt("RW2 data offset"))?;
     let mut info = crate::info::base(variant);
-    info.make = t.text(ifd0, 271).unwrap_or_default();
-    info.model = t.text(ifd0, 272).unwrap_or_default();
+    info.make = t.text_upto(ifd0, 271, NAME_MAX).unwrap_or_default();
+    info.model = t.text_upto(ifd0, 272, NAME_MAX).unwrap_or_default();
     // The camera table is keyed by RAWmakase's names.
     crate::names::apply(&mut info);
     info.raw_width = width;

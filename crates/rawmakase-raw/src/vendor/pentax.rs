@@ -96,7 +96,7 @@ pub(crate) fn read(t: &TiffFile) -> Option<Notes> {
 }
 
 fn notes(v: &TiffFile, ifd: &Ifd) -> Notes {
-    let rggb = |tag| v.ints(ifd, tag).filter(|l| l.len() >= 4);
+    let rggb = |tag| v.ints_upto(ifd, tag, 4).filter(|l| l.len() >= 4);
     let mut out = Notes::default();
     if let Some(l) = rggb(WHITE_BALANCE) {
         out.cam_mul = [l[0], l[1], l[3], l[2]].map(|x| x as f32);
@@ -113,7 +113,7 @@ fn notes(v: &TiffFile, ifd: &Ifd) -> Notes {
         d65: preset(d65),
         ..Presets::default()
     };
-    if let Some(levels) = v.raw(ifd, WB_LEVELS) {
+    if let Some(levels) = v.bytes_of(ifd, WB_LEVELS) {
         let record = |id: u8| {
             levels
                 .get(1..)?
@@ -132,16 +132,19 @@ fn notes(v: &TiffFile, ifd: &Ifd) -> Notes {
         };
     }
     out.black = rggb(BLACK).map(|l| [l[0], l[1], l[3], l[2]]);
-    if let Some(l) = v.ints(ifd, LENS_TYPE).filter(|l| l.len() >= 2) {
+    if let Some(l) = v.ints_upto(ifd, LENS_TYPE, 2).filter(|l| l.len() >= 2) {
         out.lens_id = (l[0] & 0xff) << 8 | (l[1] & 0xff);
     }
     out.iso = v
         .int(ifd, ISO)
         .and_then(|c| ISO_SPEEDS.get((c as usize).checked_sub(3)?))
         .map(|&s| s as f32);
-    if let [Some(origin), Some(size)] = AREA.map(|tag| v.ints(ifd, tag).filter(|l| l.len() >= 2)) {
+    if let [Some(origin), Some(size)] =
+        AREA.map(|tag| v.ints_upto(ifd, tag, 2).filter(|l| l.len() >= 2))
+    {
         out.crop = Some([origin[0], origin[1], size[0], size[1]]);
     }
-    out.huffman = v.raw(ifd, HUFFMAN).map(|b| (b, v.bytes.order));
+    // The table's count and up to 15 codes and lengths: 59 bytes at most.
+    out.huffman = v.raw_upto(ifd, HUFFMAN, 64).map(|b| (b, v.bytes.order));
     out
 }

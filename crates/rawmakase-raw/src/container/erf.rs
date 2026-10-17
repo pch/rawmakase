@@ -6,7 +6,7 @@
 //!
 //! Sources: TIFF 6 and TIFF/EP (SubIFDs, CFAPattern), and our own
 //! measurements of the packing against LibRaw's output on our files.
-use super::tiff::{Ifd, TiffFile};
+use super::tiff::{Ifd, NAME_MAX, TiffFile};
 use crate::codec::packed::{self, Packing};
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo};
@@ -36,7 +36,7 @@ fn raw_ifd<'a>(t: &'a TiffFile) -> Option<&'a Ifd> {
 
 /// Whether the TIFF `t` is an Epson ERF or a Mamiya MEF.
 pub(crate) fn is_erf(t: &TiffFile) -> bool {
-    let make = t.text(&t.ifds[0], 271).unwrap_or_default();
+    let make = t.text_upto(&t.ifds[0], 271, NAME_MAX).unwrap_or_default();
     let make = make.trim().to_ascii_uppercase();
     (make.starts_with("SEIKO EPSON") || make.starts_with("MAMIYA")) && raw_ifd(t).is_some()
 }
@@ -66,13 +66,13 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         }
     };
     let offset = *t
-        .ints(raw, 273)
+        .ints_upto(raw, 273, 1)
         .unwrap_or_default()
         .first()
         .ok_or_else(|| corrupt("ERF data offset"))?;
     let mut info = crate::info::base(variant);
-    info.make = t.text(ifd0, 271).unwrap_or_default();
-    info.model = t.text(ifd0, 272).unwrap_or_default();
+    info.make = t.text_upto(ifd0, 271, NAME_MAX).unwrap_or_default();
+    info.model = t.text_upto(ifd0, 272, NAME_MAX).unwrap_or_default();
     // The camera table is keyed by RAWmakase's names.
     crate::names::apply(&mut info);
     info.raw_width = width;
@@ -81,9 +81,9 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     info.height = height;
     info.flip = crate::geometry::flip(t.int(ifd0, 274).unwrap_or(1));
     let colors = t
-        .raw(raw, 33422)
+        .bytes_of(raw, 33422)
         .filter(|p| p.len() == 4 && p.iter().all(|&c| c <= 2))
-        .unwrap_or(vec![0, 1, 1, 2]);
+        .map_or(vec![0, 1, 1, 2], <[u8]>::to_vec);
     info.cfa = Some(crate::info::second_green(Cfa {
         rows: 2,
         cols: 2,

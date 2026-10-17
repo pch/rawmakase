@@ -1,6 +1,6 @@
 //! The exposure and lens facts every TIFF-based RAW keeps in its EXIF
 //! directory (and, for some, IFD0).
-use super::tiff::TiffFile;
+use super::tiff::{TEXT_MAX, TiffFile};
 use crate::info::RawInfo;
 
 pub(crate) fn read(t: &TiffFile, info: &mut RawInfo) {
@@ -23,7 +23,10 @@ pub(crate) fn read(t: &TiffFile, info: &mut RawInfo) {
         if let Some(v) = t.int(ifd, 41989) {
             info.focal_35mm = v as f32;
         }
-        if let Some(v) = t.text(ifd, 42036).filter(|v| !v.trim().is_empty()) {
+        if let Some(v) = t
+            .text_upto(ifd, 42036, TEXT_MAX)
+            .filter(|v| !v.trim().is_empty())
+        {
             info.lens = v;
         }
     }
@@ -56,7 +59,7 @@ pub(crate) fn cfa_pattern(t: &TiffFile) -> Option<Vec<u8>> {
     let two = |d: &[u8]| d == [0, 2] || d == [2, 0];
     t.exif
         .as_ref()
-        .and_then(|e| t.raw(e, 41730))
+        .and_then(|e| t.bytes_of(e, 41730))
         .filter(|p| p.len() == 8 && two(&p[..2]) && two(&p[2..4]))
         .map(|p| p[4..].to_vec())
         .filter(|p| p.iter().all(|&c| c <= 2))

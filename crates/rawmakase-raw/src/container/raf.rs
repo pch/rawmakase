@@ -116,8 +116,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
         if let Some(dr) = t
             .exif
             .as_ref()
-            .and_then(|e| t.raw(e, 0x927c))
-            .and_then(|notes| fuji::dynamic_range(&notes))
+            .and_then(|e| t.bytes_of(e, 0x927c))
+            .and_then(fuji::dynamic_range)
         {
             info.fuji_dynamic_range = dr;
         }
@@ -312,8 +312,9 @@ fn tiff_plan(
     info.variant = variant;
     let phase = int(fuji::RAW_CFA_PHASE).filter(|&p| p < 4).unwrap_or(0);
     let cfa = fuji::cfa(records, phase);
-    // Black per filter position, from the stored data's corner.
-    let black = t.ints(&ifd, fuji::RAW_BLACK).unwrap_or_default();
+    // Black per filter position, from the stored data's corner: of a 6 × 6
+    // filter at most.
+    let black = t.ints(&ifd, fuji::RAW_BLACK, 36).unwrap_or_default();
     if black.iter().any(|&b| b > 0xffff) {
         return Err(corrupt("RAF black level"));
     }
@@ -326,11 +327,14 @@ fn tiff_plan(
     };
     info.cfa = Some(crate::info::second_green(cfa));
     let as_shot = t
-        .ints(&ifd, fuji::RAW_WB_AS_SHOT)
+        .ints_upto(&ifd, fuji::RAW_WB_AS_SHOT, 3)
         .filter(|v| v.len() >= 3)
         .map(|v| [v[0], v[1], v[2]]);
     info.cam_mul = fuji::white_balance(as_shot, records);
-    let illuminants = t.ints(&ifd, fuji::RAW_WB_ILLUMINANTS).unwrap_or_default();
+    // Four values per illuminant, of a few dozen at most.
+    let illuminants = t
+        .ints(&ifd, fuji::RAW_WB_ILLUMINANTS, 4 * 64)
+        .unwrap_or_default();
     info.presets = fuji::presets(
         records,
         &illuminants,

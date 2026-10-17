@@ -48,7 +48,7 @@ pub(crate) fn read(t: &TiffFile) -> Option<Notes> {
     };
     let mut out = Notes {
         black: t
-            .ints(&ifd, BLACK)
+            .ints_upto(&ifd, BLACK, 4)
             .filter(|l| l.len() >= 4)
             .map(|l| [l[0], l[1], l[3], l[2]]),
         size,
@@ -62,7 +62,7 @@ pub(crate) fn read(t: &TiffFile) -> Option<Notes> {
         .entries
         .get(&WB_BLOCK)
         .filter(|e| e.kind == kind::UNDEFINED)
-        .and_then(|_| t.raw(&ifd, WB_BLOCK))
+        .and_then(|_| t.bytes_of(&ifd, WB_BLOCK))
         && let Some(levels) = block.get(48..52)
     {
         let red = f64::from(t.u16(&levels[..2])) * RED_SCALE;

@@ -12,7 +12,7 @@
 //!
 //! Sources: ISO/IEC 14496-12, Laurent Clévy's public description of the CR3
 //! format, TIFF 6, Exif 2.32, and our own measurements.
-use super::tiff::TiffFile;
+use super::tiff::{NAME_MAX, TiffFile};
 use crate::codec::crx;
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo};
@@ -348,8 +348,12 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
     let mut info = crate::info::base(variant);
     let tiff = |i: usize| c.cmt[i].and_then(|b| TiffFile::parse(b, 0));
     let ifd0 = tiff(0).ok_or_else(|| corrupt("CR3 IFD0"))?;
-    info.make = ifd0.text(&ifd0.ifds[0], 271).unwrap_or_default();
-    info.model = ifd0.text(&ifd0.ifds[0], 272).unwrap_or_default();
+    info.make = ifd0
+        .text_upto(&ifd0.ifds[0], 271, NAME_MAX)
+        .unwrap_or_default();
+    info.model = ifd0
+        .text_upto(&ifd0.ifds[0], 272, NAME_MAX)
+        .unwrap_or_default();
     info.flip = crate::geometry::flip(ifd0.int(&ifd0.ifds[0], 274).unwrap_or(1));
     super::tiff_exif::read(&ifd0, &mut info);
     if let Some(exif) = tiff(1) {

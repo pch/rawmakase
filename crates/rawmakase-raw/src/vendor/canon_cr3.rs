@@ -14,6 +14,10 @@ const LIGHTING_OPT: u16 = 0x4018;
 
 /// Where a ColorData version keeps the as-shot, daylight and shade levels
 /// (red, green, green, blue each), in 16-bit words.
+/// The ColorData values read: up to version 32's SpecularWhiteLevel, the
+/// furthest (811).
+const COLOR_DATA_USED: usize = 812;
+
 fn color_data_layout(version: u32) -> Option<(usize, usize, usize)> {
     match version {
         16..=19 => Some((71, 136, 141)),
@@ -30,7 +34,7 @@ fn color_data_layout(version: u32) -> Option<(usize, usize, usize)> {
 /// White balance as shot (red, green, blue, second green) and the presets,
 /// from a maker note's ColorData.
 pub(crate) fn white_balance(t: &TiffFile, ifd: &Ifd) -> Option<([f32; 4], Presets)> {
-    let cd = t.ints(ifd, COLOR_DATA)?;
+    let cd = t.ints_upto(ifd, COLOR_DATA, COLOR_DATA_USED)?;
     let (shot, daylight, shade) = color_data_layout(*cd.first()?)?;
     let rggb = |at: usize| -> Option<[f32; 4]> {
         let v = cd.get(at..at + 4)?;
@@ -49,7 +53,7 @@ pub(crate) fn white_balance(t: &TiffFile, ifd: &Ifd) -> Option<([f32; 4], Preset
 /// ColorData's per-channel black levels (PerChannelBlackLevel), as red,
 /// green, blue and second green.
 pub(crate) fn black(t: &TiffFile, ifd: &Ifd) -> Option<[u32; 4]> {
-    let cd = t.ints(ifd, COLOR_DATA)?;
+    let cd = t.ints_upto(ifd, COLOR_DATA, COLOR_DATA_USED)?;
     let at = match *cd.first()? {
         16..=19 => 329,
         32 | 33 => 343,
@@ -65,7 +69,7 @@ pub(crate) fn black(t: &TiffFile, ifd: &Ifd) -> Option<[u32; 4]> {
 /// ColorData's SpecularWhiteLevel: the level highlights clip at, which
 /// Adobe DNG Converter's WhiteLevel follows for most cameras.
 pub(crate) fn white(t: &TiffFile, ifd: &Ifd) -> Option<u32> {
-    let cd = t.ints(ifd, COLOR_DATA)?;
+    let cd = t.ints_upto(ifd, COLOR_DATA, COLOR_DATA_USED)?;
     let at = match *cd.first()? {
         16..=19 => 797,
         32 | 33 => 811,
@@ -79,13 +83,13 @@ pub(crate) fn white(t: &TiffFile, ifd: &Ifd) -> Option<u32> {
 /// The camera's aspect-ratio crop, `[left, top, width, height]` from the
 /// image's crop corner.
 pub(crate) fn aspect(t: &TiffFile, ifd: &Ifd) -> Option<[u32; 4]> {
-    let a = t.ints(ifd, ASPECT_INFO)?;
+    let a = t.ints_upto(ifd, ASPECT_INFO, 5)?;
     Some([*a.get(3)?, *a.get(4)?, *a.get(1)?, *a.get(2)?])
 }
 
 /// Highlight Tone Priority: 0 off, 1 on, 2 enhanced.
 pub(crate) fn highlight_tone_priority(t: &TiffFile, ifd: &Ifd) -> i32 {
-    t.ints(ifd, LIGHTING_OPT)
+    t.ints_upto(ifd, LIGHTING_OPT, 4)
         .and_then(|v| v.get(3).copied())
         .map_or(0, |v| v as i32)
 }

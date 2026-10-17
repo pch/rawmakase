@@ -19,7 +19,7 @@
 //! 0x3000 and its white balance levels; the main directory's
 //! BlackLevel 0x1012, RedBalance 0x1017, BlueBalance 0x1018, ValidBits
 //! 0x102C); our own measurements of which values RAWmakase has always read.
-use crate::container::tiff::{Ifd, TiffFile};
+use crate::container::tiff::{Ifd, TEXT_MAX, TiffFile};
 use crate::info::Presets;
 use crate::io::Order;
 use rawmakase_tiff::kind;
@@ -95,7 +95,7 @@ fn sub(view: &TiffFile, main: &Ifd, tag: u16) -> Option<Ifd> {
     let e = main.entries.get(&tag)?;
     let at = match e.kind {
         kind::UNDEFINED => view.offset_of(e)?,
-        _ => u64::from(*view.ints(main, tag)?.first()?),
+        _ => u64::from(*view.ints_upto(main, tag, 1)?.first()?),
     };
     view.ifd_at(at)
 }
@@ -149,13 +149,13 @@ pub(crate) fn read(t: &TiffFile) -> Option<Notes> {
     let v = &n.view;
     let mut out = Notes::default();
     let pair = |ifd: &Ifd, tag| {
-        v.ints(ifd, tag)
+        v.ints_upto(ifd, tag, 2)
             .filter(|l| l.len() >= 2)
             .map(|l| [l[0] as f32, 256., l[1] as f32])
     };
     let quad = |ifd: &Ifd, tag| {
         // Red, green, green, blue.
-        v.ints(ifd, tag)
+        v.ints_upto(ifd, tag, 4)
             .filter(|b| b.len() >= 4)
             .map(|b| [b[0], b[1], b[3], b[2]])
     };
@@ -169,7 +169,7 @@ pub(crate) fn read(t: &TiffFile) -> Option<Notes> {
     out.bits = v.int(&n.main, OLD_VALID_BITS);
     if let Some((ip, raw_info)) = &n.processing {
         if out.cam_mul == [0.; 4]
-            && let Some(l) = v.ints(ip, WB_LEVELS).filter(|l| l.len() >= 2)
+            && let Some(l) = v.ints_upto(ip, WB_LEVELS, 4).filter(|l| l.len() >= 2)
         {
             // Red and blue over the mean of the two greens' levels where
             // the tag has them (Adobe DNG Converter's AsShotNeutral), else
@@ -220,7 +220,7 @@ pub(crate) fn read(t: &TiffFile) -> Option<Notes> {
     out.lens = n
         .equipment
         .as_ref()
-        .and_then(|e| v.text(e, LENS_MODEL))
+        .and_then(|e| v.text_upto(e, LENS_MODEL, TEXT_MAX))
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty());
     let base = v.base;

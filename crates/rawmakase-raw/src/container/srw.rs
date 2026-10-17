@@ -6,7 +6,7 @@
 //! Sources: TIFF 6 and TIFF/EP (SubIFDs, CFAPattern), ExifTool's Samsung
 //! tag documentation, and our own measurements of the codings against
 //! LibRaw's output on our files.
-use super::tiff::{Ifd, TiffFile};
+use super::tiff::{Ifd, NAME_MAX, TiffFile};
 use crate::codec::packed::{self, Packing};
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo};
@@ -41,7 +41,7 @@ fn raw_ifd<'a>(t: &'a TiffFile) -> Option<&'a Ifd> {
 
 /// Whether the TIFF `t` is a Samsung SRW.
 pub(crate) fn is_srw(t: &TiffFile) -> bool {
-    let make = t.text(&t.ifds[0], 271).unwrap_or_default();
+    let make = t.text_upto(&t.ifds[0], 271, NAME_MAX).unwrap_or_default();
     make.trim().to_ascii_uppercase().starts_with("SAMSUNG") && raw_ifd(t).is_some()
 }
 
@@ -60,12 +60,12 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     }
     let compression = t.int(raw, 259).unwrap_or(0);
     let offset = *t
-        .ints(raw, 273)
+        .ints_upto(raw, 273, 1)
         .unwrap_or_default()
         .first()
         .ok_or_else(|| corrupt("SRW data offset"))?;
     let bytes = t
-        .ints(raw, 279)
+        .pieces(raw, 279)
         .unwrap_or_default()
         .iter()
         .fold(0u64, |sum, &c| sum.saturating_add(u64::from(c)));
@@ -97,8 +97,8 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     };
     let ifd0 = &t.ifds[0];
     let mut info = crate::info::base(variant);
-    info.make = t.text(ifd0, 271).unwrap_or_default();
-    info.model = t.text(ifd0, 272).unwrap_or_default();
+    info.make = t.text_upto(ifd0, 271, NAME_MAX).unwrap_or_default();
+    info.model = t.text_upto(ifd0, 272, NAME_MAX).unwrap_or_default();
     // The camera table is keyed by RAWmakase's names.
     crate::names::apply(&mut info);
     info.raw_width = width;
@@ -162,9 +162,9 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
 /// corner; red first when it has none.
 fn cfa(t: &TiffFile, raw: &Ifd) -> Cfa {
     let colors = t
-        .raw(raw, 33422)
+        .bytes_of(raw, 33422)
         .filter(|p| p.len() == 4 && p.iter().all(|&c| c <= 2))
-        .unwrap_or(vec![0, 1, 1, 2]);
+        .map_or(vec![0, 1, 1, 2], <[u8]>::to_vec);
     crate::info::second_green(Cfa {
         rows: 2,
         cols: 2,

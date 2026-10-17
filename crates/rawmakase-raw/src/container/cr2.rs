@@ -8,7 +8,7 @@
 //! the slice layout, the sRAW type tag 0xC6C5 and its YCbCr sampling), the
 //! ExifTool Canon and EXIF tag-name documentation, and our own measurements
 //! on the test dataset's files.
-use super::tiff::{Ifd, TiffFile};
+use super::tiff::{Ifd, NAME_MAX, TiffFile};
 use crate::codec::ljpeg;
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo};
@@ -185,8 +185,8 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     let ifd0 = &t.ifds[0];
     // Make and model: their first 64 bytes (a name is as long as the file
     // says).
-    info.make = t.text_upto(ifd0, 271, 64).unwrap_or_default();
-    info.model = t.text_upto(ifd0, 272, 64).unwrap_or_default();
+    info.make = t.text_upto(ifd0, 271, NAME_MAX).unwrap_or_default();
+    info.model = t.text_upto(ifd0, 272, NAME_MAX).unwrap_or_default();
     super::tiff_exif::read(&t, &mut info);
     notes.apply(&mut info, t.int(ifd0, 274).unwrap_or(1));
     info.previews = t.previews();

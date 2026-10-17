@@ -16,7 +16,7 @@
 //! version bytes, a TIFF header whose offsets the note's tags use. The
 //! earliest bodies (the D1 family) write a bare directory with the file's
 //! offsets instead.
-use crate::container::tiff::{Ifd, TiffFile};
+use crate::container::tiff::{Ifd, TEXT_MAX, TiffFile};
 use crate::info::{Cfa, Presets};
 use crate::preview::Candidate;
 
@@ -120,14 +120,16 @@ fn read_note(note: &TiffFile, headerless: bool, model: &str) -> Notes {
     // model's.
     if headerless && model == "D1" {
         notes.cam_mul = Some([1.; 4]);
-    } else if let Some(levels) = note.reals(ifd, 0x000c).filter(|l| l.len() >= 2)
+    } else if let Some(levels) = note.reals_upto(ifd, 0x000c, 2).filter(|l| l.len() >= 2)
         && levels[0] > 0.
         && levels[1] > 0.
     {
         notes.cam_mul = Some([levels[0] as f32, 1., levels[1] as f32, 1.]);
     }
     let keys = Keys::of(note, ifd, model);
-    if let Some(cb) = note.raw(ifd, 0x0097) {
+    // The balance and its black are in the first 80 bytes (version 0100's
+    // levels end there); the cipher's stream does not depend on the length.
+    if let Some(cb) = note.raw_upto(ifd, 0x0097, 80) {
         let cb = match (cb.get(..2), keys) {
             (Some(b"02"), Some(k)) => k.decrypt(&cb),
             _ => cb,
@@ -137,44 +139,44 @@ fn read_note(note: &TiffFile, headerless: bool, model: &str) -> Notes {
         }
         notes.cb_black = color_balance_black(&cb, |b, at| u16_at(b, at));
     }
-    if let Some(data) = note.raw(ifd, 0x0014) {
-        coolpix_color(&data, &mut notes);
+    if let Some(data) = note.bytes_of(ifd, 0x0014) {
+        coolpix_color(data, &mut notes);
     }
     notes.black = note
-        .ints(ifd, 0x003d)
+        .ints_upto(ifd, 0x003d, 4)
         .filter(|b| b.len() >= 4)
         .map(|b| [b[0], b[1], b[3], b[2]]);
     // Lens data is read only alongside a shutter count (our own
     // measurements).
     if ifd.has(0x00a7)
-        && let Some(lens) = note.raw(ifd, 0x0098)
+        && let Some(lens) = note.raw_upto(ifd, 0x0098, LENS_DATA_USED)
     {
         notes.lens_id = lens_id(&lens, keys);
     }
     notes.crop = note
-        .ints(ifd, 0x0045)
+        .ints(ifd, 0x0045, 4)
         .filter(|c| c.len() == 4)
         .map(|c| [c[0], c[1], c[2], c[3]]);
     notes.compression = note.int(ifd, 0x0093);
     // ISOInfo's ISO byte is 100 × 2^(v / 12 − 5).
     let iso_info = note
-        .raw(ifd, 0x0025)
+        .raw_upto(ifd, 0x0025, 1)
         .and_then(|b| b.first().copied())
         .filter(|&v| v > 0)
         .map(|v| 100. * 2f32.powf(f32::from(v) / 12. - 5.));
     notes.iso = note
-        .ints(ifd, 0x0002)
+        .ints_upto(ifd, 0x0002, 2)
         .and_then(|v| v.get(1).copied())
         .filter(|&v| v > 0)
         .map(|v| v as f32)
         .or(iso_info);
     // The D1X writes its table in 0x008c, after 2110 bytes of other data.
     notes.curve = note
-        .raw(ifd, 0x0096)
-        .and_then(|c| curve(&c, little))
+        .bytes_of(ifd, 0x0096)
+        .and_then(|c| curve(c, little))
         .or_else(|| {
-            note.raw(ifd, 0x008c)
-                .and_then(|c| curve(&c, little))
+            note.bytes_of(ifd, 0x008c)
+                .and_then(|c| curve(c, little))
                 .filter(|c| c.version[0] == 0x49 || c.version[1] == 0x58)
         });
     if let Some(at) = note.int(ifd, 0x0011)
@@ -305,6 +307,10 @@ fn coolpix_color(data: &[u8], notes: &mut Notes) {
     }
 }
 
+/// The bytes of a LensData block [`lens_id`] reads: its version and the
+/// LensIDNumber, at byte 13 at most.
+const LENS_DATA_USED: usize = 14;
+
 /// The LensIDNumber of a LensData block, by its version: unencrypted
 /// versions 0100 and 0101, encrypted 02xx and 08xx (whose first four bytes,
 /// the version, are not); 0 for others.
@@ -347,8 +353,10 @@ fn curve(raw: &[u8], little: bool) -> Option<Curve> {
         [u16_at(at + 6)?, u16_at(at + 8)?],
     ];
     let size = u16_at(at + 10).unwrap_or(0);
+    // Points are indexed by a 16-bit size: those past 65536 are never read.
     let points = (at + 12..raw.len().saturating_sub(1))
         .step_by(2)
+        .take(1 << 16)
         .filter_map(u16_at)
         .collect();
     let split = u16_at(562).unwrap_or(0);
@@ -373,7 +381,7 @@ struct Keys {
 impl Keys {
     fn of(note: &TiffFile, ifd: &Ifd, model: &str) -> Option<Keys> {
         let count = note.int(ifd, 0x00a7)?;
-        let serial = match note.text(ifd, 0x001d) {
+        let serial = match note.text_upto(ifd, 0x001d, TEXT_MAX) {
             // The D50 writes its model name, not a serial number; LibRaw
             // keys it as 34 (observed compatibility, measured on synthetic
             // files; the file carries no other key).

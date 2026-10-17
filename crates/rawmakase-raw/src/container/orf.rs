@@ -9,7 +9,7 @@
 //! Sources: TIFF 6, Exif 2.32 (CFAPattern), ExifTool's Olympus tag
 //! documentation, and our own measurements of the codings, the fields'
 //! layout and the visible areas against LibRaw's output on our files.
-use super::tiff::TiffFile;
+use super::tiff::{NAME_MAX, TiffFile};
 use crate::codec::packed::{self, Packing};
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo};
@@ -50,7 +50,7 @@ pub(crate) fn is_orf(bytes: &[u8], t: &TiffFile) -> bool {
     if matches!(bytes.get(..4), Some(b"IIRO" | b"IIRS" | b"MMOR")) {
         return true;
     }
-    let make = t.text(&t.ifds[0], 271).unwrap_or_default();
+    let make = t.text_upto(&t.ifds[0], 271, NAME_MAX).unwrap_or_default();
     let make = make.trim().to_ascii_uppercase();
     make.starts_with("OLYMPUS") || make.starts_with("OM DIGITAL")
 }
@@ -82,8 +82,8 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     if compression != 1 {
         return Err(Error::Unsupported(format!("ORF compression {compression}")));
     }
-    let offsets = t.ints(ifd0, 273).unwrap_or_default();
-    let counts = t.ints(ifd0, 279).unwrap_or_default();
+    let offsets = t.ints_upto(ifd0, 273, 1).unwrap_or_default();
+    let counts = t.pieces(ifd0, 279).unwrap_or_default();
     let offset = *offsets.first().ok_or_else(|| corrupt("ORF data offset"))?;
     let bytes = counts
         .iter()
@@ -118,8 +118,8 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         return Err(Error::Unsupported(format!("ORF of {bps} bits")));
     };
     let mut info = crate::info::base(variant);
-    info.make = t.text(ifd0, 271).unwrap_or_default();
-    info.model = t.text(ifd0, 272).unwrap_or_default();
+    info.make = t.text_upto(ifd0, 271, NAME_MAX).unwrap_or_default();
+    info.model = t.text_upto(ifd0, 272, NAME_MAX).unwrap_or_default();
     // The camera table is keyed by RAWmakase's names.
     crate::names::apply(&mut info);
     info.raw_width = width;

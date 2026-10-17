@@ -129,14 +129,20 @@ pub(crate) fn white_balance(t: &TiffFile, ifd: &Ifd) -> [f32; 4] {
 /// and blue levels against a green of 256.
 pub(crate) fn presets(t: &TiffFile, ifd: &Ifd) -> Presets {
     let mut presets = Presets::default();
-    let (raw, green_given) = match t.raw(ifd, WB_PRESETS) {
+    let (raw, green_given) = match t.bytes_of(ifd, WB_PRESETS) {
         Some(raw) => (raw, true),
-        None => match t.raw(ifd, WB_PRESETS_OLD) {
+        None => match t.bytes_of(ifd, WB_PRESETS_OLD) {
             Some(raw) => (raw, false),
             None => return presets,
         },
     };
-    let words: Vec<u16> = raw
+    // The count's presets of four words (three in older files) are read;
+    // the words past them are not.
+    let listed = raw
+        .first_chunk()
+        .map_or(0, |&n| usize::from(u16::from_le_bytes(n)));
+    let used = 2 + 2 * listed * if green_given { 4 } else { 3 };
+    let words: Vec<u16> = raw[..raw.len().min(used)]
         .as_chunks::<2>()
         .0
         .iter()
@@ -200,8 +206,11 @@ pub(crate) struct Strips {
 /// A tag of 16-bit little-endian words: a count, then the values, of two
 /// words each (low, high) when `wide`.
 fn list(t: &TiffFile, ifd: &Ifd, tag: u16, wide: bool) -> Option<Vec<u32>> {
-    let raw = t.raw(ifd, tag)?;
-    let words: Vec<u32> = raw
+    let raw = t.bytes_of(ifd, tag)?;
+    // The count's values are read; the words past them are not.
+    let listed = usize::from(u16::from_le_bytes(*raw.first_chunk()?));
+    let used = 2 + 2 * listed * if wide { 2 } else { 1 };
+    let words: Vec<u32> = raw[..raw.len().min(used)]
         .as_chunks::<2>()
         .0
         .iter()

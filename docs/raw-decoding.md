@@ -14,7 +14,12 @@ checked against LibRaw, and how to add a camera or a variant.
 - `crates/rawmakase-raw` depends only on `rawmakase-tiff` and small pure-Rust
   crates. It has no unsafe code (`#![forbid(unsafe_code)]`), no build script,
   and never panics on malformed input; every allocation is checked against
-  header limits (`io::samples`). Nothing above `rawmakase-native` depends on it
+  header limits (`io::samples`). Metadata records are read in place or up to
+  what their reader uses (the `container::tiff` accessors take each tag's
+  limit), so records of any declared length cost `open` no more; the test
+  that counts its allocations (`tests/hostile_records.rs`, a counting global
+  allocator, the only unsafe code and outside the library) keeps it so.
+  Nothing above `rawmakase-native` depends on it
   directly, and no `rawmakase_raw::` path appears outside native's `raw`
   adapter (`scripts/crate-closures.sh`).
 - `rawmakase-native`'s `raw` maps its results to `camera_data` (`Metadata`,

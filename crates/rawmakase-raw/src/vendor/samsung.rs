@@ -40,13 +40,14 @@ pub(crate) fn read(t: &TiffFile) -> Option<Notes> {
 
 fn notes(v: &TiffFile, ifd: &Ifd) -> Notes {
     let key = v
-        .ints(ifd, KEY)
+        .ints(ifd, KEY, 11)
         .filter(|k| k.len() == 11)
         .unwrap_or(vec![0; 11]);
     // A vector's elements less (`sign` −1) or plus (+1) the key, starting
-    // at key element `from`; 32-bit wrapping, as the file stores them.
-    let keyed = |tag, sign: i64, from: usize| {
-        v.ints(ifd, tag).map(|l| {
+    // at key element `from`; 32-bit wrapping, as the file stores them. Only
+    // the first `n` are read.
+    let keyed = |tag, sign: i64, from: usize, n: usize| {
+        v.ints_upto(ifd, tag, n).map(|l| {
             l.iter()
                 .enumerate()
                 .map(|(i, &x)| {
@@ -57,18 +58,18 @@ fn notes(v: &TiffFile, ifd: &Ifd) -> Notes {
     };
     let mut out = Notes::default();
     // Red, green, green, blue.
-    if let Some(l) = keyed(WB_AS_SHOT, -1, 0).filter(|l| l.len() >= 4) {
+    if let Some(l) = keyed(WB_AS_SHOT, -1, 0, 4).filter(|l| l.len() >= 4) {
         out.cam_mul = [l[0], l[1], l[3], l[2]].map(|x| x as f32);
     }
-    if let Some(l) = keyed(WB_D65, -1, 1).filter(|l| l.len() >= 4) {
+    if let Some(l) = keyed(WB_D65, -1, 1, 4).filter(|l| l.len() >= 4) {
         // Levels on a scale of 4096, or of 256 where red and blue are below
         // a quarter of green (our measurements).
         let green = if l[0].max(l[3]) < l[1] / 4 { 256 } else { l[1] };
         out.presets.d65 = [l[0] as f32, green as f32, l[3] as f32];
     }
-    out.black = keyed(BLACK, -1, 0)
+    out.black = keyed(BLACK, -1, 0, 4)
         .filter(|l| l.len() >= 4)
         .map(|l| [l[0], l[1], l[3], l[2]]);
-    out.white = keyed(RAW_DATA, 1, 0).and_then(|l| l.get(4).copied());
+    out.white = keyed(RAW_DATA, 1, 0, 5).and_then(|l| l.get(4).copied());
     out
 }

@@ -2,7 +2,7 @@
 //! strips and their compression, the CFA layout, levels and linearization, the
 //! active area and default crop, the colour tags, and the data opcodes of
 //! OpcodeList1 and 2 (`opcodes`).
-use super::tiff::{Ifd, TiffFile};
+use super::tiff::{Ifd, NAME_MAX, TEXT_MAX, TiffFile};
 use crate::codec::{bits::Msb, dct, ljpeg};
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo, UNSET};
@@ -49,7 +49,7 @@ pub(crate) struct DngPlan {
 pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     let ifd0 = &t.ifds[0];
     let version = t
-        .raw(ifd0, 50706)
+        .bytes_of(ifd0, 50706)
         .filter(|v| v.len() >= 4)
         .map(|v| u32::from_be_bytes([v[0], v[1], v[2], v[3]]))
         .ok_or(Error::NotRaw)?;
@@ -85,13 +85,14 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         _ => return Err(Error::Unsupported(format!("DNG compression {compression}"))),
     };
     let cfa = cfa(&t, ifd)?;
+    // A table maps 16-bit stored values: 65536 entries at most.
     let curve = t
-        .ints(ifd, 50712)
+        .ints(ifd, 50712, 1 << 16)
         .map(|c| c.into_iter().map(|v| v.min(65535) as u16).collect())
         .unwrap_or_default();
     // Active area: top, left, bottom, right.
     let active = t
-        .ints(ifd, 50829)
+        .ints(ifd, 50829, 4)
         .filter(|a| a.len() == 4 && a[2] > a[0] && a[3] > a[1] && a[2] <= height && a[3] <= width)
         .unwrap_or_else(|| vec![0, 0, height, width]);
     let (top, left) = (active[0], active[1]);
@@ -103,8 +104,8 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     info.width = active[3] - left;
     info.height = active[2] - top;
     info.cfa = Some(cfa.shifted(top as usize, left as usize));
-    let origin = t.reals(ifd, 50719).filter(|v| v.len() == 2);
-    let size = t.reals(ifd, 50720).filter(|v| v.len() == 2);
+    let origin = t.reals(ifd, 50719, 2).filter(|v| v.len() == 2);
+    let size = t.reals(ifd, 50720, 2).filter(|v| v.len() == 2);
     // The default crop in sensor coordinates, starting on even rows and
     // columns (keeping its far edges); a crop of the whole image, from the
     // sensor's corner, or outside the sensor data, is none.
@@ -143,7 +144,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     } else {
         info.frame
     };
-    if let Some(c) = t.reals(ifd, 51125).filter(|c| {
+    if let Some(c) = t.reals(ifd, 51125, 4).filter(|c| {
         c.len() == 4
             && c.iter().all(|v| (0. ..=1.).contains(v))
             && c[2] > c[0]
@@ -166,9 +167,11 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         }
     }
     let ifd0 = &t.ifds[0];
-    info.make = t.text(ifd0, 271).unwrap_or_default();
-    info.model = t.text(ifd0, 272).unwrap_or_default();
-    let unique = t.text(ifd0, 50708).filter(|u| !u.trim().is_empty());
+    info.make = t.text_upto(ifd0, 271, NAME_MAX).unwrap_or_default();
+    info.model = t.text_upto(ifd0, 272, NAME_MAX).unwrap_or_default();
+    let unique = t
+        .text_upto(ifd0, 50708, TEXT_MAX)
+        .filter(|u| !u.trim().is_empty());
     // Apple's DNGs name the camera module (UniqueCameraModel), not the phone.
     if info.make.trim() == "Apple"
         && let Some(unique) = &unique
@@ -187,7 +190,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         info.model = model.trim().to_string();
     }
     info.flip = crate::geometry::flip(t.int(ifd0, 274).unwrap_or(1));
-    if let Some(neutral) = t.reals(ifd0, 50728).filter(|n| n.len() == 3) {
+    if let Some(neutral) = t.reals(ifd0, 50728, 3).filter(|n| n.len() == 3) {
         for (mul, n) in info.cam_mul.iter_mut().zip(&neutral) {
             // In single precision, the neutral first: RAWmakase's white
             // balance to the last bit (our measurement on 130 DNGs).
@@ -198,14 +201,14 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         info.cam_mul[3] = info.cam_mul[1];
     }
     let matrix = |tag| {
-        t.reals(ifd0, tag)
+        t.reals(ifd0, tag, 9)
             .filter(|m| m.len() == 9 && m.iter().all(|v| v.is_finite()))
     };
     // Or AsShotWhiteXY: the white's camera neutral through the calibrations
     // at its colour temperature (`as_shot_neutral`).
     if !t.ifds[0].has(50728)
         && let Some(xy) = t
-            .reals(ifd0, 50729)
+            .reals(ifd0, 50729, 2)
             .filter(|v| v.len() == 2 && v.iter().all(|v| v.is_finite() && *v > 0.))
     {
         let xy = [xy[0], xy[1]];
@@ -213,7 +216,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         let calibration = Calibration {
             matrices: [matrix(50721), matrix(50722)],
             cameras: [matrix(50723), matrix(50724)],
-            analog: t.reals(ifd0, 50727).filter(|a| a.len() == 3),
+            analog: t.reals(ifd0, 50727, 3).filter(|a| a.len() == 3),
             illuminants: [t.int(ifd0, 50778), t.int(ifd0, 50779)],
         };
         if let Some(neutral) = calibration.as_shot_neutral(xy) {
@@ -237,7 +240,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         && let Some(at) = t.offset_of(entry)
     {
         // Nikon's maker note, in Adobe's record of DNGPrivateData.
-        let private = t.raw(ifd0, 50740).unwrap_or_default();
+        let private = t.bytes_of(ifd0, 50740).unwrap_or_default();
         let model = crate::names::model("Nikon", &info.make, &info.model);
         if let Some(notes) = crate::vendor::nikon::read_dng(bytes, at, &model) {
             info.lens_id = notes.lens_id;
@@ -245,13 +248,13 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         // Fujifilm's: the maker note's dynamic range, and the RAF header's
         // exposure bias Adobe DNG Converter keeps.
         use crate::vendor::fujifilm as fuji;
-        if let Some(dr) = adobe_record(&private, *b"MakN")
+        if let Some(dr) = adobe_record(private, *b"MakN")
             .and_then(|n| n.get(6..))
             .and_then(fuji::dynamic_range)
         {
             info.fuji_dynamic_range = dr;
         }
-        if let Some(shift) = adobe_record(&private, *b"RAF ")
+        if let Some(shift) = adobe_record(private, *b"RAF ")
             .and_then(fuji::dng_directory)
             .and_then(|dir| fuji::exposure_shift(&fuji::Records::parse(dir)))
         {
@@ -266,23 +269,25 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
             t.int(d, 254).unwrap_or(0) & 1 == 1
                 && t.int(d, 259) == Some(7)
                 && matches!(t.int(d, 262), Some(2 | 6))
-                && t.ints(d, 279).is_some_and(|c| c.iter().any(|&n| n > 0))
+                && t.pieces(d, 279).is_some_and(|c| c.iter().any(|&n| n > 0))
         });
     let black_dim = t
-        .ints(ifd, 50713)
+        .ints(ifd, 50713, 2)
         .filter(|d| d.len() == 2 && (1..=16).contains(&d[0]) && (1..=16).contains(&d[1]))
         .map(|d| [d[0], d[1]]);
-    // Levels that are not numbers are none.
-    let reals = |tag| -> Vec<f64> {
-        t.reals(ifd, tag)
+    // Levels that are not numbers are none. BlackLevel has a value per
+    // sample of its repeat pattern (16 × 16 at most here, up to four
+    // samples), the deltas one per column and per row.
+    let reals = |tag, max| -> Vec<f64> {
+        t.reals(ifd, tag, max)
             .unwrap_or_default()
             .into_iter()
             .map(|v| if v.is_finite() { v } else { 0. })
             .collect()
     };
-    let black = reals(50714);
-    let black_delta_h = reals(50715);
-    let black_delta_v = reals(50716);
+    let black = reals(50714, 16 * 16 * 4);
+    let black_delta_h = reals(50715, width as usize);
+    let black_delta_v = reals(50716, height as usize);
     let white = t.int(ifd, 50717);
     info.plan = Plan::Dng(DngPlan {
         black_dim,
@@ -424,8 +429,8 @@ impl Calibration {
 /// OpcodeList3's warps.
 fn list(t: &TiffFile, ifd: &Ifd, tag: u16) -> Vec<Opcode> {
     let ops = t
-        .raw(ifd, tag)
-        .and_then(|l| opcodes::parse(&l))
+        .bytes_of(ifd, tag)
+        .and_then(opcodes::parse)
         .unwrap_or_default();
     ops.into_iter()
         .filter(|op| tag != 51009 || !matches!(op, Opcode::FixVignetteRadial { .. }))
@@ -440,9 +445,11 @@ fn layout(t: &TiffFile, ifd: &Ifd, width: u32, height: u32) -> Result<([u32; 2],
     let base = t.base;
     if let (Some(tw), Some(th)) = (t.int(ifd, 322), t.int(ifd, 323)) {
         let offsets = t
-            .ints(ifd, 324)
+            .pieces(ifd, 324)
             .ok_or_else(|| corrupt("DNG tile offsets"))?;
-        let counts = t.ints(ifd, 325).ok_or_else(|| corrupt("DNG tile counts"))?;
+        let counts = t
+            .pieces(ifd, 325)
+            .ok_or_else(|| corrupt("DNG tile counts"))?;
         // A tile is at most the image's size limit (and is decoded whole).
         crate::io::samples(tw, th, 1)?;
         if offsets.len() != counts.len() {
@@ -461,10 +468,10 @@ fn layout(t: &TiffFile, ifd: &Ifd, width: u32, height: u32) -> Result<([u32; 2],
         return Ok(([tw, th], tiles));
     }
     let offsets = t
-        .ints(ifd, 273)
+        .pieces(ifd, 273)
         .ok_or_else(|| corrupt("DNG strip offsets"))?;
     let counts = t
-        .ints(ifd, 279)
+        .pieces(ifd, 279)
         .ok_or_else(|| corrupt("DNG strip counts"))?;
     let rows = t.int(ifd, 278).unwrap_or(height).clamp(1, height);
     if offsets.len() != counts.len() || offsets.len() < height.div_ceil(rows) as usize {
@@ -484,17 +491,17 @@ fn layout(t: &TiffFile, ifd: &Ifd, width: u32, height: u32) -> Result<([u32; 2],
 /// second green (3).
 fn cfa(t: &TiffFile, ifd: &Ifd) -> Result<Cfa> {
     let dim = t
-        .ints(ifd, 33421)
+        .ints(ifd, 33421, 2)
         .filter(|d| d.len() == 2)
         .unwrap_or(vec![2, 2]);
     let (rows, cols) = (dim[0] as usize, dim[1] as usize);
     let pattern = t
-        .raw(ifd, 33422)
+        .bytes_of(ifd, 33422)
         .ok_or_else(|| corrupt("DNG CFA pattern"))?;
     if rows == 0 || cols == 0 || rows > 16 || cols > 16 || pattern.len() < rows * cols {
         return Err(corrupt("DNG CFA pattern"));
     }
-    let planes = t.raw(ifd, 50710).unwrap_or(vec![0, 1, 2]);
+    let planes = t.bytes_of(ifd, 50710).unwrap_or(&[0, 1, 2]);
     let mut colors = Vec::with_capacity(rows * cols);
     for &p in &pattern[..rows * cols] {
         let c = *planes
