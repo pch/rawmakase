@@ -71,6 +71,7 @@ model = "645D"
 dng = true
 raw_size = [7424, 5552]
 visible = [48, 30, 7328, 5501]
+frame = [128, 88, 7264, 5440]
 source = "compat-observed"
 
 [[camera]]

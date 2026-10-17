@@ -30,12 +30,25 @@ pub(crate) fn even([left, top, width, height]: [u32; 4]) -> [u32; 4] {
 }
 
 /// The visible area the camera table gives for this file, where the file's
-/// own differs from the area RAWmakase has always shown.
+/// own differs from the area RAWmakase has always shown, and for a DNG the
+/// default crop it gives (in sensor coordinates, after the visible area).
 pub(crate) fn apply(info: &mut crate::info::RawInfo) {
     // A headerless file's own table row gives its geometry already.
     if info.variant == crate::variant::Variant::HeaderlessPacked {
         return;
     }
+    visible(info);
+    let dng = info.dng_version > 0;
+    let size = [info.raw_width, info.raw_height];
+    if dng
+        && let Some(frame) =
+            crate::facts::camera(&info.make, &info.model, dng, size).find_map(|c| c.frame)
+    {
+        info.frame = frame;
+    }
+}
+
+fn visible(info: &mut crate::info::RawInfo) {
     let dng = info.dng_version > 0;
     let size = [info.raw_width, info.raw_height];
     if crate::facts::camera(&info.make, &info.model, dng, size)
