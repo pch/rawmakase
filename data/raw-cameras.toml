@@ -2932,7 +2932,6 @@ model = "DSLR-A100"
 dng = false
 raw_size = [3881, 2608]
 visible = [0, 0, 3881, 2607]
-white = 4075
 source = "compat-observed"
 
 [[camera]]
@@ -2949,31 +2948,6 @@ model = "DSLR-A500"
 dng = false
 raw_size = [4288, 2858]
 visible = [0, 0, 4256, 2858]
-white = 16596
-source = "compat-observed"
-
-[[camera]]
-make = "Sony"
-model = "DSLR-A550"
-dng = false
-raw_size = [4608, 3072]
-white = 16596
-source = "compat-observed"
-
-[[camera]]
-make = "Sony"
-model = "DSLR-A560"
-dng = false
-raw_size = [4608, 3072]
-white = 16596
-source = "compat-observed"
-
-[[camera]]
-make = "Sony"
-model = "DSLR-A580"
-dng = false
-raw_size = [4928, 3280]
-white = 16596
 source = "compat-observed"
 
 [[camera]]
@@ -4959,6 +4933,484 @@ make = "Nikon"
 model = "E8800"
 canonical = ["Nikon", "COOLPIX 8800"]
 source = "compat-observed"
+
+# Sony: Adobe DNG Converter 18.7's WhiteLevel where the file's is not
+# Adobe's (2026-10-17); for compressed RAW 2, whose values are on twice the
+# 14-bit scale, `bits = 15`. The ILCE-7RM4 and 7RM4A's 15000 is Adobe's at ISO
+# 160 (at ISO 50 to 1250 otherwise it reads the file's).
+
+[[camera]]
+make = "Hasselblad"
+model = "Lunar"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-HX95"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-HX99"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX0"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX0M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M3"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M4"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M5"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M5A"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M6"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M7"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX100M7A"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX10M3"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1R"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSC-RX1RM2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A450"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A500"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A550"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A560"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A580"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCA-68"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCA-77M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCA-99M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-3000"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-5000"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-5100"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6000"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-6300"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+#CONFLICT ILCE-6400 {16380.0, 16383.0} {16380, 16383}
+[[camera]]
+make = "Sony"
+model = "ILCE-6500"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+#CONFLICT ILCE-7C {16380.0, 16383.0} {16380, 16383}
+[[camera]]
+make = "Sony"
+model = "ILCE-7M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M3"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+#CONFLICT ILCE-7M4 {16380.0, 16383.0} {16380, 16383}
+[[camera]]
+make = "Sony"
+model = "ILCE-7R"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+#CONFLICT ILCE-7RM3 {16380.0, 16383.0} {16380, 16383}
+#SKIP ILCE-7RM4 {15000.0, 16380.0, 16383.0} {16380, 16383}
+#SKIP ILCE-7RM4A {15000.0, 16380.0, 16383.0} {16380, 16383}
+[[camera]]
+make = "Sony"
+model = "ILCE-7S"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7SM2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+#CONFLICT ILCE-9M2 {16380.0, 16383.0} {16380, 16383}
+[[camera]]
+make = "Sony"
+model = "ILCE-QX1"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+#CONFLICT ILME-FX2 {16380.0, 16383.0} {16380, 16383}
+[[camera]]
+make = "Sony"
+model = "NEX-3"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-3N"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5N"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5R"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-5T"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-6"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-7"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-C3"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "NEX-F3"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A33"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A35"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A37"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A55"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A57"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A58"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A65"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A77"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "SLT-A99"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ZV-1"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ZV-1M2"
+dng = false
+white = 16300
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM4"
+dng = false
+iso = 160
+white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM4A"
+dng = false
+iso = 160
+white = 15000
+source = "adobe-dng"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M5"
+dng = false
+bits = 15
+white = 32800
+source = "adobe-dng"
 
 # Fujifilm (RAF): the visible areas, levels and crops RAWmakase has always read
 # where the RAF rules (crates/rawmakase-raw/src/container/raf.rs) do not give

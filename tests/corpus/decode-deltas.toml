@@ -20729,3 +20729,2903 @@ before = 4095
 after = 3300
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 3300"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Sony ARW and SR2: white levels and the DSC-R1's black levels follow Adobe DNG Converter, not LibRaw.
+
+[[delta]]
+# HASSELBLAD/Lunar/DSC00343.ARW
+sha256 = "029b1283a3d1226e08fc1eb3b81874347f5c128e437f78f853436fd6ba15873b"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# SONY/DSC-RX100M7A/RX700064.ARW
+sha256 = "80adbc5b1cb3342058d5998cf2eda1e6b408565169462d6d26dfe02f0c140b30"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# SONY/DSC-RX1RM3/DSC00255.ARW
+sha256 = "c06c5cf9caeabc225881355520649a0d834644c4d5047c39b9a6f203a409c9d4"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# SONY/DSC-RX1RM3/DSC00256.ARW
+sha256 = "0fbbc32e4e24faa3626027987bc1591faf5aec76b47c8f857464ee97be9c224a"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# SONY/ILCE-1M2/A1_07628_lossless_compressed_medium_full_frame.ARW
+sha256 = "dfc66d4a6175378074bddf7deeb15f591083be1cb9fea1ccb7bac3c888db6e49"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# SONY/ILCE-1M2/A1_07629_lossless_compressed_small_full_frame.ARW
+sha256 = "84a94ab4198077d19f697585c4425868fc05f00ff7ae3d661f25d0f94a0aea7c"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# SONY/ILCE-1M2/A1_07633_lossless_compressed_small_apsc.ARW
+sha256 = "006b477808b3edaaa41e58ce082653a36e544c4ddc0bfe1bc8a6ef39d93d8369"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# SONY/ILCE-7M5/apcs_compressed_hq.ARW
+sha256 = "c16cae99d26a2f8ad183d31a23823310a994aa058d55cfe56e4f82ba56865f57"
+field = "sensor.white"
+before = 39002
+after = 32800
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 32800"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# SONY/ILCE-7M5/apsc_compressed.ARW
+sha256 = "8315af2a9889709f4c836dbaadc23d226847e5a0630fda212a9f896d5fe0569f"
+field = "sensor.white"
+before = 39002
+after = 32800
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 32800"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# SONY/ILCE-7M5/full_compressed.ARW
+sha256 = "46d73475dfd8f96fd7e2f4d4a721a36cbbaba3d6ea95a4851809cd9d252b2a80"
+field = "sensor.white"
+before = 39002
+after = 32800
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 32800"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# SONY/ILCE-7M5/full_compressed_HQ.ARW
+sha256 = "4e3a99cbcf2a348decaf3ca68c5de22b7a05eaa590f4e9184735c1f9c45213a7"
+field = "sensor.white"
+before = 39002
+after = 32800
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 32800"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# SONY/ILME-FX2/Image_4_-_Lossless_Compression_(M)_-_Shade.ARW
+sha256 = "96980e62b6819e104759c371d839c4c6fd0df7104c10e769292475a46e02e3e9"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# SONY/ILME-FX2/Image_5_-_Lossless_Compression_(S)_-_Shade.ARW
+sha256 = "582735361d972ff4e29d3dd998de992f51ca0a57657598e10c4b88f0bafc9b86"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# SONY/ZV-1M2/_DSC5498.ARW
+sha256 = "2a45845a93ab5e428868366d6575a264818b184541b1c114ab4de980872a7184"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSC-RX100 (signature-edits)
+sha256 = "5923fa498838e623e3a488dc1df4a84340306ad7650143fa524649bdc94f0489"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSC-RX100M2 (signature-edits)
+sha256 = "1549c62eba08bb41ffe8572a805ce5e95792e46b2869ea831b18182b4f298afd"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSC-RX100M2 (signature-edits)
+sha256 = "17ab1d7d209d9dee3f5a83366384e65678ad0bdae09a783c2da0c105e365d0ef"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSC-RX100M2 (signature-edits)
+sha256 = "24022ede1e74090dfef0176558ff91454af7f27f01713f6a308e3687362c1a59"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSC-RX100M2 (signature-edits)
+sha256 = "3171106a5479e22fe7b3a0792c9f5c8d5063ad8dbc54c5296a1a112414d22c5c"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSC-RX100M2 (signature-edits)
+sha256 = "3c0d6458624a3d924a40742c491d19dada5e60a3992a078bf464e27264a52c16"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSC-RX100M2 (signature-edits)
+sha256 = "42909465d934d55545f224f6490a27d63f6ef65a7c2ded38434abe096b1556cb"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSC-RX100M2 (signature-edits)
+sha256 = "c38d39e55750d888cfb325a192a2899df4870eb385ddb3270cea4c60dd5d827e"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSC-RX100M2 (signature-edits)
+sha256 = "c7feeb95ccd4da03e55eac88503b5fe073f94a85abcddaf1444f57396fd41e51"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSC-RX100M2 (signature-edits)
+sha256 = "cc7f57cf541a60a13ad6d3fe89e6213c7fc62a716f62b2e279a010bb5efefbf8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSC-RX100M2 (signature-edits)
+sha256 = "def4e07f8a20c4cdb604b2227b1f23d0f0b0a9218d36d854e6905859a1ce30b6"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSC-RX100M2 (signature-edits)
+sha256 = "f974d978ad9c07df64b119c02e7baae57dd896004371738f67b1e85a051836aa"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSC-RX10M2 (pixls)
+sha256 = "a82f287e78d8573981b812776739c02de924634ab111101dd8fda8e18a597bda"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSLR-A550 (pixls)
+sha256 = "5f1f9b5b7899d983042ca038e7718b4ef6bb9d0f54ce05c15b66bf86316c02dd"
+field = "sensor.white"
+before = 16596
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony DSLR-A580 (pixls)
+sha256 = "5b0924d39151239dce19e92e08318f4f62a5a8ac276bd7180ec8463d2cfee709"
+field = "sensor.white"
+before = 16596
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-3000 (signature-edits)
+sha256 = "2d4958c32c3a45e205b68ed15e081bfaba120d25f3c3ddd7eab1489b0d1fadf4"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-5000 (signature-edits)
+sha256 = "f0e515a342d8021a190d41d0a2d53dc50ec1192bef65e5b412c1322383e1fbce"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6000 (signature-edits)
+sha256 = "3e2c8ecdd82a6325c0d2ad696b09a55d7ad3819aea13db2988e78bb18467e49c"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6000 (signature-edits)
+sha256 = "3f0d3e07b19975e1f7730e69e368e7ac35beb6b6910cc2c7a59042af0489eb87"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6000 (signature-edits)
+sha256 = "6e866616ca2fe55447be229dbd142647d8e85e7411e032130ee74dbce1806627"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6000 (signature-edits)
+sha256 = "962d5c701ed26b8c9f0a50c9525bcb12ca55f6ee84056e870d6c8f7d2d81fd5c"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6000 (signature-edits)
+sha256 = "a4481966e0b8f6ad93edbe7515e5cc558c0b391f360bc0b55002ce2bd342c76b"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6000 (signature-edits)
+sha256 = "a5083763e16b9b2b0b6c518b3cdc28d6221cafd6200bb11797b180d43127848a"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6000 (signature-edits)
+sha256 = "afc4c0f6a6d1c5b366a6bef51ff170e6bc5ae77dcb89e9731673f66b15c34cca"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6000 (signature-edits)
+sha256 = "b25e3a5df610c73aacf50cd11b150dff0c9b7698c55f80bd956cc6ced7c2d2ac"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6000 (signature-edits)
+sha256 = "d3bb79cda7fb9d6255a92cc2214d1dd05d7ddc42da59932fe4cf9747e9bd435f"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6300 (signature-edits)
+sha256 = "0d8075966a38ef4798eea7d52916e7d6c1bf0dd151de1607784d8fdf0bf32fec"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6300 (signature-edits)
+sha256 = "3701336af8a8a028d432bb831945fc98d9165aa6854e7af1e718eecd43ee6c26"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6300 (signature-edits)
+sha256 = "aaeb4c918b8ea98dc9c0e95491ccb2a9f1579fa5d2b2c194f3c526da55e9fe01"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6500 (signature-edits)
+sha256 = "29a2d5513406fcf166f6fdef632b90a831aa7557a710517f04cbcfd5a0e742cd"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6500 (signature-edits)
+sha256 = "31a518e839c5376cb281433ff96cdb3e84b3549b85a1714b306c053dd2f81328"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-6500 (signature-edits)
+sha256 = "7872e796f73d39cb6e7803cc7f19b3b1603aa00fa333bce0057038cbb0a03760"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7 (signature-edits)
+sha256 = "6dc2e47848e8e4df957dcad0872b969fe5675bc23302fc51e23a97ed0078ee8a"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7 (signature-edits)
+sha256 = "d3b4a744ca4c7cbb4e9ddbe9b5e04aa21f59802230226cf2e261af160338ae01"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7 (signature-edits)
+sha256 = "da160088a1d4b2bf905510871e24d57f0ef2a1130c4bd3d90f910d53682c547d"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "0055af4d4de5ee10f644e4d1865a3c7c4f00ced0fbda21ba2ba4205a0320e350"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "0c346179d6771202050f9261670b91a0e1b1d6fcd6418ce13b3f95f09624d16e"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "16489298adcbeeadfcf3746a032bab84f894454ba9d40a7839fccc50bccc29bb"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "179af7b8d7d23e47241663cf4d04324b7d170ddb6eba678c1d52dc2c692380ea"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "1b852f7e13083d0378292719fc113b15682ba07a716758b6f5ccb72ae94c1598"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "22e6efdd96f8ec92c4ce65205e11d2d24ac0bdb9bed78714c2e4212e3256bac1"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "23e6b039611ec0cb96189823b4b8a3c6613736a3bbaa0932358cb4c6b756e3bf"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "2636b0e05420c206bae8dfda07a862edcbb4e12ebe638b9aa11704e9ed1eda8d"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "2956c33663781c4a7e14933798763103207ffa410d6ddbdbbc066aa21643cf15"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "3aa2e53acf301f91db293020e1e5a5cdefe718b831f367dbde9989367ae2165c"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "418ef7d3b47c6d19d54ee6ae7e398f5226d8d67d0c285aac29b22a4136de4ed8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "463041a55d70c9170b500b65f4375bfc3ed4f8e84ba752b3c3f3934f32d464a9"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "47be4736d16ab17eb7cc013974e80e74813f9cfeaf80c14fc5e0046f9bf23dfd"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "4adc5386a24d82a6ac68c70f14708c46a1981583cbf2a5d8171cfaa7647b2394"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "4b32da9be779f1fabd921f08ce9df8542eef75267543519ea0cc108a3f32d6b4"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "4eeca533cd9fe48a3ff8836b1ee09f7ec7a1e79a86916b88c3dae7307e10fb46"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "56dcf4541785d397d5475ec05b641a493f2832e09d984d684b459214dab213dd"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "5771d7e53ded4c1a11bdf541d68abf57af45926664ef9150d69b32ef1647a2ec"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "5b3aff33f417f1777ad6891e8c05d11cff21b3739edd20cd6907aa55b10ec442"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "604791fee19775c2fa8b30fe03ad83e60b20ac6a8648ec97b3cf934b313f58c8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "636f928d8c57ea8c354a0521263bf3b0fadd18d8b6925b91501f0db472b15e0e"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "702250c11bacb2689d7b3787849167ad677ec5c1ad49eccc1f6f6edad016faa6"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "8068514e74c0b8fb882120e1dd886797c770e72e8fe426e9970eab2cd88af47d"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "85f50a0e0b8f22a3d1547f898a0a471fdfc2f167712f6c6e24704a878b4480e2"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "8686f456ead93476d5f16a438a541a359605e43c4cb723cc0e27939685ad72d6"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "871212975811c7159a4c83f3dedefad359bf7310beb205a442dfd641f2c53671"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "87f9c9ef59c26e0b22bf41e4c9ef8218467cf1d2fe8139c74683edc45d30a0c8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "8a19a6e3b810e578d588bdbde998fcd185afb1b1cf84ea03614195d2a7dc6f11"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "8c8776c8b3e7e72dcd9de444113c81109e616786fc9c55e5f4392dd68ae5cf31"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "90f561fb81a03637a48ea0df6a3ad71b918f36cda8af6e3a1f6990d070cdffd1"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "92067526ebaaba72ba4019b3eccdd74d365272c2fb3d3ecffb1cf0660acd1382"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "959069f2bf670fb6044bb43d501f6667c64e4033dc623e41be76bf5471b55194"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "981407a844245a12e7cdf08c9bd24d1ae77c3630e34c351ef358cd2413f07f39"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "9df3d4b679e3d4815c0909a1a2b6f01400532fecd7f373eead4a6eefd47cd625"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "9fffa5295368fce6bd752ac1d50b6085d0f17ed9f4f427bfb8d71d01e42b769d"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "a133fce7997043c1e040873c86d487df4e62c3bfe3c3372bc0b2155fb105110e"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "a29024547bc1af4dc0d9822927d462f87ed06d85c89ba8dba779ce7721cc0a16"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "a51de2140cc7956f3363251d864ef15bace411fd49e9d50aadc061949b0a69d9"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "a729ae9382ae0ad6dad86c7b5a80d3ef4cb6a94cecf59727ace398eb2ef1d9ca"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "aa637a5b657e3e258668fc161db264b91580a55f5440a13e288cee7f28b3669d"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "ac422e3892a8bc1ba8a17816c288fa4bcf7b1b4cbf23952cb675a3c7f7f992a6"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "ad5d231b7d6044e0ec2fe8e8fbea57e1c516480f135a757867944b40b672febd"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "b3ecc1911ace61532c33fd6f89fc290aaccff1127807f382c86355f4e61cce36"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "b4b514905967145721b5f8fb117e3789ffcafb98a3cdc5eeb8d517b6c2c1d191"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "c5710d5f8c8909277198226859a017243c4e79e9b9e85f2c6f6c46da936ab2b9"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "c68f7434dc0eda9001f416437813e35d92d49fd5de950f2627424ec6b55ace4d"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "c884bfa8a0066c2ef1c474c13610cd7a6a529a1e59f8938e2c84fa13343e272e"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "cefbbbc44763a81d2688f1475dc94b98f71563ba9a711f31cc7c364453a6fa74"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "cfff662eb5d9a4668a43c60101bce5f6ab8a0313e94619c78e20ece754f11f4a"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "d0b81b721effea70ae4a23faf39f1cdcc33272ad55eafdd21b6b387a8a18a10a"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "d2b2fc08c7e18287e2c7e04db01e39eaa78e4e83de2ec182a79d17f29c132517"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "d3c491228413e95bd7520b17648ffea0200b5ee7889cd689e5d26b838a9b1cf0"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "d48b9621128ebfbf22bca8e8bc2fc48c0ce5bfeaf298001b8050dfd71810055f"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "d5e7dede8f8af6d99b33594e0a5b09a788dadc3fb3f21333b3f33d532b27cd55"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "db747448e8b71771a3b62b08d0fe86df5b3e47aa39f70980a7f54e0f25f6cb08"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "e59fff26770f93fd1dc712d1767e230bfdb5d0b86dd6e86c7b2660a878342c49"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "e6734f048205ba787c84215f706a487141a3067e220c8ce6fd75aafe4c1ea09a"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "e84f27bc0bea8a1a4d5a7416461a93eb5426bf8c1a677ca1e9a91d7286264ee6"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "eb0a9f34b786d33d8b6f34a20e6d0b23d85de3d00eeb8d68311e09199c2b5808"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "f065a24ba570cbc8c9d147006d0203505223abf46b1566ac07ca06fe427b0516"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "f2e1500a3354ee29cc1223314279c140404c295ef6ba1584f8ec44cdcea5bfa8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "f9efd4f54a3c1968e96e0302a21549bc1ff9a214fdaee5269b47f195e201c16b"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "fd0bd86052cd753e365ba656bffbe8eaca162096d26886af5d07f8b72942276f"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "fde2bc0cb9100aab0dcb4d7986d1a721600ffbdf13b1e8eaeca89b7bf0a3bdb6"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (own)
+sha256 = "feecb8614d61fc242d38014e7eb3c3b976848982e77718b122a8838a40298569"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "039b4219fef7d4bba392b896ee77144cd3cd3c18c46a0cefe4195af1133bb829"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "09250d6c8153bb0233073d778d013106b8b241f33ebb36ebf892f5c25147c3a5"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "10c512e16507c94f5f28faec34c399ac26d1be64f79ceaa9e22ca83020b9131e"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "300d5af58c91e6a43513559ee97d29bf161cfcb54e12bac0d8a96a1e83bf7a7d"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "315fd95b437399f9e706c93282e70c11bcc8cb0ac65248982f3ae6b31a81e0b0"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "3bb61254da9a33abc40c39c543209703c5095ea177ddab695c50d15a45c73b3d"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "3d71c99f9f28db7c074b480ae37a0c54c8d5aaa7f804f4c903ec7ada5b7607a7"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "3eb8eadc5246736fa368dfac4551dd29f28a1f9574cdf7d562c9993924e0f950"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "43a878f07bfb06cac3252e05242b749b93e6e913f2c5b0e47441b8aa3d0fc8de"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "691e79e87373cc521e03a32f514c3df688c67e5f6e8805d4e97cff7a36e55e11"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "6f5a351d88c577f65b408524446e988dda3fc32afce5068641393e28c3226acc"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "70aa6490d913cb2fbe97c5f90bc38e861693174e4607be93c64a2424f72b3cba"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "76267f8083bbcdddce609660125060c157309e210f66128e15ffcc8236fe34ba"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "80367d293602248afd5339cfe5221dd30e9947652a02b40186f4f5c4fbb63b60"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "80b5cce709b0f762ae680150cda3eecbe1d043911630ea32243fe2d2b27c910c"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "874e41b73390269895f08f67dcf96a2a1648813180009f3048215354f7f76c01"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "88d997622e95b54f82ce0b1df7b125ded662e9c06d6fe64c48f6ba7968c88844"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "a3dab4493d56db2d13fcc7f475e3009ecd8c052ce093877727ee6d032bd50023"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "b045ab30990dc2ceca03466caf4c0a0a91b81437575d678536a4d7fd3c3410e7"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "c319b109c8f6bd821bfe18d14821c40c029291c5ed0300a8b23e37657140f6b8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "c4de78c2c82cdb43b0285b23f5aa4e9bf36f25c75832b2c0a74e921e0b50f489"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "d0738a6c6fe416d5507e7f073fd8a191c7b4bc38a21cfc26452b0db989a322c2"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "dd9d820e8f5bf8b4be6b56abf11248b72926f2c3cff7d0d767c8636d88301907"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "ddc3ee546fda857477528a1e9e3e2f72f8aaad29c6e1fad10c42214b1c70b0fe"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "e9d6e5ea18c047fab612ef7f691aadbb013d34cac70ba252cd26c4c9b3f0a152"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "ee5233838992d286f8c410c26ef2ab4e2196a86479f8781c91ae51fa468882df"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M2 (signature-edits)
+sha256 = "fe771c860d0badf3785d4179258b5abc0944fc75d8840c76fca7dd5c18007d8f"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "046f4b47d8152a73e9f791c46e9e9481128a2317e427122e24ab9ca2f4a8b9b7"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "05a0e4a1dabf2d98dde04f8d4703dd6f0575bf78d9bde788caf3db59db87f788"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "089fdc0e5389e94c5c443713f4850be4f2afdb70ea40d39cb2743d22774e0baf"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "0c4cc1aff1bca9674fb665dfebe4120e00afda8b9a52bd8092559cb42084e2fd"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "170cbac8eb9a24ae57ef2c4da536220201f536cd795a98bae0e805e1f31bdbf1"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "18c509459808b235d5e3894d3116d3094e124945875a37276760d87fc49aceda"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "19ceac7d0bdb927ec7e8fb65a5a090e4924ea79bdeefc3a91e0e9c5cfd5ad2d9"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "1b584346e5f4e2fe283d18a55fb08fb5092365da46162fb5e7ff146efeaecd03"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "22546be18c891e18a934a9ed0773c4a56e7763989a713ad54d73e4eb324648c5"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "3071ed84c58376015fdd0bb32e70b77dabbabea0d42783e5629b858b236ef278"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "3cd08e678979c4976f5bf7ee14ad2391cccd0df2bd7b833fe569ee34a694733c"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "3f52927df85168150a387f64a2c09c5870ce6325a025be500099f8185a808bdd"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "441cd2803189c7e6f412028fac52072ff87e45ce2523a8ccec5fc98b477e77d8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "44d9c685ed3c0d96e690aabe5d29bcf6983d166323dff095d46511d6f211f8bc"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "4b1f071c0bd1bd04cb79ae930132dc711d1d444b3712adf41a27896b605f2ab8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "554e14520d37bb4ddc697251955fb8f0d086a0f099db115343bfc4c323e3101e"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "5a366437de1a002b73d178096ef6fcbd2efeb2d1201a12e122afc68a8eae31ae"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "5dee4eb2351133d6947bcd1a7c66d349172fd40c0baaf07f2212ee15627cb350"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "721eae3559ab5cd2cf89c37ddaa05c744282378e572fc6538a0478c93b5dd6a4"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "74a07d12909d69a4039ecb0a3e00795a6ac1eec2eefedea650f82b5646559e02"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "75c4ffc8b50a6cedb8457287d1dbb3656908b9ce1d156aca6c6954236d49460e"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "767d0587f8eb34907bfaca3a7293633a966c84bed6bedb4c0a078c51e79a66a7"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "76c3c81371ce771a002de7d4a5b31ad7422b01413859720c1ea5707be25ca777"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "76fa4083647dfae6f2e9b361c40712f51655855a5622bb543fd54894f6db5404"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "7703804c1cb7b2a68efc2d78080392ec9f2a80f403ec6b5ef0927832061ac270"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "78cffe376508621bbfee78fa54de3e1eef182c2d026932319ada6cec70b99cdb"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "7d32422c1f92fe85f0e29333091c18820094989791e11058d01f96ae774f3df2"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "7f86ccf66fe1a56b78d46b24162ab9354005926122a1d88f1a619f2addd34173"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "89ada84ecafcd8cb5dcac0c3529c32d7fe982787bece93146368bd6089b5dfc2"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "91f67cb9ffed5be171f73c234cdc14e7d515dcfbc0a0cb0431a1f3be8a82828e"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "946cb067e5e1c6b6601539eb2620a98e42781b881f9df8e07bdb56fc5d75f287"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "96f9ee3a7357553610719c7c62d094775514a302f41eb43bf5ce8e7f4c3fd16f"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "979411e8a81dace2566f8a89d0deb328b1709f33d6c06ac42b9cac8bf59dbcd3"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "995f854539826296c323088bfd036d7a003f5059f22378be57d5c485f772b897"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "9bdc5176f96792573d6101923752adc6902e7098dacfb1d482ded969d8410c6b"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "a018b1040b21f9edbbccd2dc598926b34e6a21954a81ff2b605358740f5dfdec"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "a070a3063dfda1ab65d4f876807f40548b1e96f00139893eaa9534a91fc002b6"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "a61b936ec9924dd9d35c43b0a6523de11d5b86447ab68565b0c74167f23d65d3"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "acd5a8ccaa292548af64c05e31628c442aa84e8692ad2bd4ef58c64b129e1f36"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "b4a52c696dc90066cf996f889420ae5c0ecf7165e9d08f4c5cd4b94df7a9bd08"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "bd9f083221556313ca05bfcaf1b237def483591e64f03dd96ef440f1c268cbf4"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "c4880f4cd3467198d2bdbbb28996dca56362e8e4a0659dc30a2d213e82d12843"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "c60e1f88075bee4a0bd59754f586eabc7f78af1d3734b98dc1bad7991d308970"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "c6c6b1109624481e8bb7cacc0cedd4e47a1cfc3588dd37cd1d4fc2a10ab41860"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "c767cfde575818feafb80f754688edaf0200f3c15e2e52d34470b235a2c8462b"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "c7adadd893cf192217d4a786ce38160393bf8f322b953fffa52b21cbab3ca3b8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "d667aa7d2eff9a920b9fb1e75fac2c9c9e1ab54f0e0257ba7094b86133c727dd"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "dbdee32b4f9bec09aeea8ee72923cb0bdc5e2ac64b5c7550dc70c076ae061c1f"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "dc82419f2e9ccac5ec2d92a24723c3cac304d9b21c9fd6a29c18a6a7d44909d0"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "dd7de37e504927bbcfe09c251d9389a31c061aa576719a519be2bd76b4fd8863"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "dfad3f15fbf2c93add0f2f36ad0481e558281a05cd40c8b1cf2cc580360761e9"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "e54c37b5ebe8c4585879386ce4cd6fd141625ea44d0d0413fabff4b63f90b88c"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "e96a018b06d8d9ff65d13b40d58e24467e49c186de001a672b51a2b7c8f4ee39"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "ebd8cefa8fac0efbd8cc73ba580e81010ebb7767c482bbaa448f8cfcd118504d"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "ec55c9526fd556e4f69e1624a2ac51a3bc2574a06be80eeae1365466132affce"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "edb01121d79ff7dc3be80b02f7e4bcd2bc63a85ff5bac543bac74a164593d86d"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "ee1924746ba740bd1fce772c5c3b861acb1314fa2b6fec79fd71982d5198f30f"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "f1a2f83a9955111c806348f9e4ecf5d278403e43bbfa49e1e419a4e4964e66d2"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "f50220c601f03a46a8dc6068728d5280755b400fc985badf273f39cca42fd07a"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "f840055ea643d7cfd9ed956a2dc08e445e68c58e4cc27c783d3a81ea815fafeb"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "f95b1105081cf8d33f2d6a654f5d3598f66421912724ca71caef836d13a79883"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "fb232ecc20e88a9309d4044326fb6ba5407579e46c2807d159d4f09df45601a5"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7M3 (signature-edits)
+sha256 = "ff08f456d026f01481f313d5c514a35487b741cf5acf862edf1974cedcd86cdc"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7R (signature-edits)
+sha256 = "2a03643040dbba7e97f48a0d3a0512e10b8c63097761a5e63387a2121f4a2063"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7R (signature-edits)
+sha256 = "415fc9bfbc8a1d77f9ea1ac1213f60da80d175a1bc9f734d3460c1b45725ef19"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "0ba043c8f565c0e9ca446c62583b4dbc83cfb303d97f6efdf446d850a40bab2a"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "196c168ab39369c031638ecf1705d85a55af43bfe370e6a8006719c6344db936"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "20b0f6a36700f360e1decaa446bb4b4cbbc2d497f5ef540d1f5387d5e6f9a980"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "4b51e672f57cef33144306379480d975cb23824138bf42f1031c2490e764f584"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "5257405bfb9cb2e8ac21b34854a7fec13904034e697189d42390150d1a3417b0"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "7311b5c3ccdae154d2b7587194be04933782d9a2e05a5925595942dcc462f386"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "8a7c1a7170a4b163a2cb1333779b676da6f6b336cd5a418c82a458e37910d2c8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "afe4c3e80d96c55e966eefae9381c44d781ba1c943acb7be4842d069e5bd83ac"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "b28942870073c8113f2b315de72e83320520c38635d77db43ea16154d09752f5"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "ba506412f2970e1bcc85b360cd6d60c132e84ef3dc276f7d154a20d964b2f24d"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "c8626fc4f848922c11069d6ebd40e9e425ee1aaddad4fbbd7e4ce06fa0ba347b"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "c9ab28c209e3f959f4c5936af2236b4d5e7a2afc19109f89d457d5cde0ab5c6c"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "d647f15f3993715724c22e84358ea16ed8750923862d1094268bca309f0f19de"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "df470b4d7d3ff57c79efeaffab2892771236bbf119fb460b3348a64f731395ff"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "fae00d586a14e7fb534cf6ffb3d90d2729d0269628ed750cc7473611dab0af29"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM2 (signature-edits)
+sha256 = "fcbe5e0b54eb36b6b25279e62fab9b7f77d352d489f6c201fca674e3af0b96a5"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7S (signature-edits)
+sha256 = "0a673d1908b1d03986ddeeb4a764a9656be927a3659a89879b5c8bccca131fb6"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7S (signature-edits)
+sha256 = "f94e408a28d652ac52d73c16f4908e4ddba27b5297e8e55423059ecea17c950b"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7SM2 (signature-edits)
+sha256 = "1bd42c268660ac0c8f1fa334c15fc9caa923d3d0ed16c680109eef83e763a9b4"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony NEX-3 (pixls)
+sha256 = "eeaaa6f8c246021c90c0ee29f6624e05ee6175601c85f4699e642f63a66df57d"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony NEX-5R (pixls)
+sha256 = "2cafaca4c03567a852dea648c87f30c9851fdbce1e44cce909299f5ffec93102"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony NEX-7 (pixls)
+sha256 = "520543bb362a03b9fa79870537e82c1492fa3f036e4a17f233d5b56e97caf647"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony SLT-A33 (signature-edits)
+sha256 = "dd933604b6313e2d045402fd114b7fccb1232bcc63409c6d0ec7ea3780dff5af"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony SLT-A37 (signature-edits)
+sha256 = "8f066880b30afcb4ffe288e90af9a35f4de9d2ebfbd7eb7cae63e2b4393dda6c"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony SLT-A37 (signature-edits)
+sha256 = "dc3253ce9b059977fcf0f20505d78f53471a446263acc29d14169881ccd75847"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony SLT-A77V (signature-edits)
+sha256 = "012aa6db443231a8b976a3489691298c7451514a5d17be5ace2ddbb55b825efc"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-HX95/DSC00018.ARW
+sha256 = "bdb8a6438456855fad2ff9b406da707019da88a38c8d1e0202d66ad9f9f21c80"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-HX99/DSC00001.ARW
+sha256 = "0223d56b8c3af16e6f588b5340275c9bb30bed2cb5a5cafb0f3ffc7ef4da84e4"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-R1/_DSC1477.SR2
+sha256 = "921c5f2513dd1671a9089e73fc778fc3573bc4cb70a3a555d0414661d0e62274"
+field = "sensor.black"
+before = [514, 511, 512, 513]
+after = [511, 514, 512, 513]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 514 511 512 513 (BlackLevelRepeatDim 2 2)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX0/DSC00009.ARW
+sha256 = "f602f8ddeeb9b062f60bfdd3ba0d560c8e54f1f64dbc20e18df5222e2f37a428"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX0M2/RX000224.ARW
+sha256 = "cff09af33cf0866fcd70741181079b749576bb5ea8b298ea1e5cfb9d5236e98f"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX1/_DSC0812.ARW
+sha256 = "e17c13bdff09558e52ee60d5f126c7147a7e273b21fa0b2a03bda49a29411e0f"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX10/DSC01951.ARW
+sha256 = "1f6c41a1dc6796f880f8b4f9174cd7aecc311e973feb99edf766f9ec570abb03"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX100/DSC00838.ARW
+sha256 = "579a485b5126a25cbd55cbd5dadfa7d09cf021c99cc7d4869f9e56e3f759390b"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX100M2/Sony_RX100M2.ARW
+sha256 = "c2991b1feb41e8005793e5753829c3e28cd03ecea8354754792dcf3b362f3d1c"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX100M3/DSC00734.ARW
+sha256 = "cb81392e3a8810231ce341fb45de3e4d1b9e2f87bc47f3c314d084041ccfd138"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX100M4/DSC00591.ARW
+sha256 = "14973b1c663a5857e16f63cc56ebc6a0ebe7e1c1d4457b9b7790d2910044be99"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX100M5/RAW_SONY_RX100M5.ARW
+sha256 = "82a4c49ca797eb67732021be9fb2ed19b4dc1f6d90286167b1fc80f688f21bce"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX100M5A/20181014_0082.ARW
+sha256 = "2d0e47c9003590f2d817f9054f3988b32457a93a645156e288127d5c5988f3d5"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX100M6/sony_rx100m6_arw-compressed_16:9.arw
+sha256 = "fe9e4df604fefbcc0ed78fb4a1d9a58dbaa1f4011e3d119b3ee32fc583d43907"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX100M6/sony_rx100m6_arw-compressed_1:1.arw
+sha256 = "53c5abad853f17d2c46d9f96f8ff4e0af0ea095193fecf61222a8bf9d8beb00b"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX100M6/sony_rx100m6_arw-compressed_3:2.arw
+sha256 = "3015022b00ce219bf2713d9de21608e631566d111c4468402748b794e312d94c"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX100M6/sony_rx100m6_arw-compressed_4:3.arw
+sha256 = "ea6794ceb881a369ac490b4690342c6f9e9c0a60fb35bbb835bb374c5f951329"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX100M7/DSC00601.ARW
+sha256 = "815532f017b94e31990e8111791131647c95f6953aa28c571783c5e17eb36523"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX10M3/RAW_SONY_RX10M3.ARW
+sha256 = "26ccd896f09df29036552ab46f6ef504dce2730e116eb5cfd7c20402f9ff088a"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX1R/DSC04636.ARW
+sha256 = "1778498069d68feec90d824bfacbe7bc1cc69f1e74d1b187b96c40b22457e95f"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX1RM2/DSC03238.ARW
+sha256 = "986419a28c9e1e4f4f8045d7b32aff87bc677f19a6c80ccc844d77a101d154f7"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSC-RX1RM2/DSC03239.ARW
+sha256 = "69c984e09f040c15de0b76599c86dab92a8f545a101280bf2fd3eedb236900c7"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSLR-A100/_DSC0258.ARW
+sha256 = "4df7981ac4baec9648b4f106751ea4b09a6e27bc70a15f8ef09bec051fec362d"
+field = "sensor.white"
+before = 4075
+after = 4095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSLR-A450/20170423_113243_A450_07665.ARW
+sha256 = "7c2205a14fbfb05aa22e2e290750ea8894229a52a106a67516b4e797759e37ad"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSLR-A500/DSC02421.ARW
+sha256 = "1407fb596a391df67c15b90026a1a76702a2e7386dbdff2f0815b903ea49cead"
+field = "sensor.white"
+before = 16596
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/DSLR-A560/DSC09008.ARW
+sha256 = "78a48d7d0cd5738319dd97814890a83026d4f7e9c1ea2e0582556743c210e630"
+field = "sensor.white"
+before = 16596
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCA-68/DSC00018.ARW
+sha256 = "8f4210419126cbabea13561e89dc49191ea1edbefdd428243e00663075493acd"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCA-77M2/_DSC0244.ARW
+sha256 = "f41ceff680b675460cc1fe258a24d8c8c01c52a300933f3ab6401d9a20b60dcc"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCA-99M2/BR_00086.ARW
+sha256 = "be898847ac6da485874d95469bf274df1f8f77f8b8542460464f0f393981b2d2"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-3000/_DSC3941.ARW
+sha256 = "616960e00f81c9c695617d0a28b437ac4ac526de058b62fa3b8de28d56aa89bf"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-3500/DSC06923.ARW
+sha256 = "04c4fe04425c3e6fff7c8af0f811923c35e750300373357bd54342150c5505d8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-5000/_DSC0793.ARW
+sha256 = "a919c8535eed68577f1745fb9674ccf333962628ccdec6d48a6f635208467f6c"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-5100/DSC04601.ARW
+sha256 = "69cb156c8bab4b1952ae4cb0a3cad038c4ddfea0db3176afd05bae741e685c73"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-6000/DSC01542.ARW
+sha256 = "ce8b4957281a817d52a07a691e2468567b6c78223bd0b514ffc1c65b002b8d89"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-6001/sony_tweak_a6001.ARW
+sha256 = "65b2efeb296de498db87e4b8cc4ce7e686e5b9a7ff384394753d8408675897de"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-6300/AST05226.ARW
+sha256 = "d96dc154ed8811d52548dab52d32f9e25a654b574ce702325fae47c86e2a624a"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-6300/DDL06913.ARW
+sha256 = "cb4d97c2691762545e6c9f7cbe3f7ecd8fffb7cebe9e8a5add5dd58ab2c86f6a"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-6500/_DSC6914.ARW
+sha256 = "d8cbfd1d14f4f4df20046cbed6ebbd92dff583fe0201f16ece21d95153d6b9e7"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-6500/_DSC6916.ARW
+sha256 = "b064d4b12be940db32ca780ee75db433aa7c1e4f6b61a67cc13ca57dd5d9296c"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7/Sony_-_ILCE-7_-_14bit_uncompressed_(32).arw
+sha256 = "c242df04d4a0e246130600e102371d4aea2e7eeac35c1e65c4757191dcb7cd33"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7CR/DSC00796.ARW
+sha256 = "5bcba4acc52a5b902074581b4a2f5fb3c79ec56bd0fdc1746b9e2c0f9d3e9c88"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7CR/DSC00797.ARW
+sha256 = "21f61c98fd7671cd6057520a5afab3b4a12d139c7833ead5f782736dee2d6b9e"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7CR/DSC00800.ARW
+sha256 = "25f243fd2dbf88f5be8c4cd21e4168ed6a750aa5d2898d346647251fd367e4cb"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7M2/SONY ILCE-7M2 daylight.arw
+sha256 = "891b098c6cad16f01af4cbbe229d89652008b0108ad343079a4fc688b320fa14"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7M2/SONY ILCE-7M2 tungsten.arw
+sha256 = "c9a827adf0cd6fd14e47b1d6400c87ecc3e558642831e1ba34e310426ce01fd8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7M2/_DSC1066.ARW
+sha256 = "a37752f65c1fabb48178bfbe2a81f1e7dc705a3363652e984792527b43700ada"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7M3/UNCOMPRESSED_14bit.ARW
+sha256 = "ece80551abf64949dbe826985a80f1d9b265401ee4ea6b989e1829549616fdcd"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7M3/_DSC0009.ARW
+sha256 = "250784580ea527442c09004417bb0eead484f2bf3ee8f9121a776ac65bb50d0f"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7M3/_DSC0010.ARW
+sha256 = "3ae2ff75cfa7240d0b4458f662afd28665c5fd1e83d230ac73f5ad69d3df8592"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7M4/ILCE-7M4_DSC06675_FullFrame-LossLess-Compressed-Medium.ARW
+sha256 = "d453005714327addd75bcb99c1c6223173dc92f2a59542d82e6761ef0e0e7571"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7M4/ILCE-7M4_DSC06676_FullFrame-LossLess-Compressed-Small.ARW
+sha256 = "cbbd0930c7d8706dff84c68a2004454266e6fd0d8354f5f76a106b5d776e0223"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7M4/ILCE-7M4_DSC06680_APS-C-LossLess-Small.ARW
+sha256 = "ac8a9ea9ac55eae5fd858addcd481df027903c8e8bb8a4eca180872f4a0a8d65"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7R/DSC06741.ARW
+sha256 = "12240fdb6d03ef3fbfeae7898f374976ae2221418942fc28f0b2aa933ba058ba"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7RM2/12-bit-compressed.ARW
+sha256 = "a606ebf1dcc6704f03f2966326c60a87dd6bdb3704464b3897c10349a10d3a19"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7RM2/12-bit-uncompressed.ARW
+sha256 = "71e0888396ef52c7e6a990b4e72ebb4d8413a1fc1c35bada449870539cef6e39"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7RM2/14-bit-compressed.ARW
+sha256 = "f067629e2b36706e8173e37f3e6e903b4501d97f51ce7ceb43e9d71da929aa54"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7RM2/14-bit-uncompressed.ARW
+sha256 = "fdf3e8deea4ca31c6ee905fe5226efab398ce630ec96e9013850b488ce0e6289"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7RM2/distortion-correction-off.ARW
+sha256 = "3ad4261017939b930944e041a883bdaf3f2f46bed8f373aa3ffd8d5e8bb5dc68"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7RM2/vignetting-and-CA-correction-off.ARW
+sha256 = "9fe9a60f1a001eadbb9770b4906ac770fb9900008f7d36246ee16adddc973c87"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7RM2/vignetting-and-CA-correction-on.ARW
+sha256 = "0fa6bb58daee482b1da224d2a330240d9f850cc0b263af17809ad1211cd8add9"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7RM5/7RM5-LosslessCompressedMedium.ARW
+sha256 = "6c30cd7121f790402f98099f3a4c90eeb7b9279c72dd1d20a2fcc64a6f8ac2f2"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW
+sha256 = "036eb3875b4ab8823c22e0d01c3a2b13224584e98690f771a7f8001c16b6dff4"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7RM5/7RM5-S35-LosslessCompressedSmall.ARW
+sha256 = "5efa026e947825e0d246c9f56b4cac662bf203fdfce0e5e1f0f0f79c5b002ff0"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7S/DSC04125.ARW
+sha256 = "7cc338a0abc8fdad32d61006f1f8f412297b93e040c7efba572eb2bd8f8e8be2"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7S/DSC04126.ARW
+sha256 = "a35ebb2fbec929daa5beb20d1ce5c15a8aac7b1a7a231455387f3df8a7442e07"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7SM2/DSC01005.ARW
+sha256 = "46044fb6a9c805f2b4915cd4970316b4d04b0566bcf5287afaad3ef648d7a3db"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-9M3/DSC00113.ARW
+sha256 = "43495d2190228ee66cf8a83bcd04beb369e72e036a8ca8afa84f4ffa251faf09"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-9M3/DSC00114.ARW
+sha256 = "3d9da593a027bdbf31589eb950b04be7ce3f3dc6105ca339c5b7702ffa7fefdd"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-9M3/DSC00118.ARW
+sha256 = "d94eb7a3014b9c64345125cb502e3ca209ae54b97f49e0b21893699f4395e544"
+field = "sensor.white"
+before = 17536
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-QX1/DSC02361.ARW
+sha256 = "47908fe95f5f48ecd9593f7acff9decf4a03ab9be41d4c44e2241d21f0982957"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/NEX-3N/DSC05854.ARW
+sha256 = "00d55767bffbcd33cd807fe24f88a6faefa33a34392dd095f18936532b05b0d1"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/NEX-5/20150924T092802_Château_Schönbrunn_AT.ARW
+sha256 = "3b085569ac1fec37a1289ed5ea517497692a3ea14cea41953dd6e878abf230a3"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/NEX-5N/DSC02519.ARW
+sha256 = "5074d2a29755fac544cb6cb435153569613f849f1c1dd777cacd6455be046788"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/NEX-5T/DSC01723.ARW
+sha256 = "050f006c53d723dc6ca7c207d60f1425590da5ac005c7986d44667bf51ebf680"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/NEX-6/DSC07133.ARW
+sha256 = "bf4c6d21136aa4fd626212fe72b962b6404e3fca45cdc3b6afbed8e73fee2cf8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/NEX-C3/DSC01977.ARW
+sha256 = "bd9a7e7e18d95a1d2e01349907233021e9c0bdbaa5cac96d2ff33253ad685013"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/NEX-F3/_DSC4017.ARW
+sha256 = "cfdc60d118b5ce2dce10d459dcb98ad63c6db3e609999932ca8964d86daf836b"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/SLT-A33/DSC01867.ARW
+sha256 = "1a59856394f10d4fadb40f5ab9c6d1c89f473f4dbcdefd216fbbbbf1ad8d21f9"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/SLT-A35/DSC01566.ARW
+sha256 = "00f82b82882216a0365de23f5aff382cff88337a5c4d96b1b7b85a324e986f30"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/SLT-A37/DSC06850.ARW
+sha256 = "ba828bf86a8b07fe383bbaff5df526610c115778e072ec2f9f67188d1b715f93"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/SLT-A55/DSC06309.ARW
+sha256 = "f861454a49abe0345ff69887874d00617cdf0b96af96d605051e68deda424a08"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/SLT-A57/a57-06125.arw
+sha256 = "0e9064f369a3947f892c1d7b1971f75d3879f5673134932d5cc7a67bf4263ba4"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/SLT-A58/DSC01523.ARW
+sha256 = "debc7085446d1710eef0abf372b9e651c00249f856d2863f9e08c10b3d4ac426"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/SLT-A65/DSC02776.ARW
+sha256 = "1e849f9621d9fd059739fa61042b80b044c3dedf98a7870bb65fa8e834511fa0"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/SLT-A77/_DSC3619.ARW
+sha256 = "161f574b92b7f06634af45950c8d2c885b2b35ee7ed53ee505ee027485af127c"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/SLT-A99/sans_titre-000162019.ARW
+sha256 = "bc033b8b0df5b1ef603ead4b57f979b8a0a46e7a52d8b46ac6dfa22f86c243f8"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/UMC-R10C/20240501120008.arw
+sha256 = "b67055a69dc7adffbcd2d62fc438300f0a3ec219bd778cbd87994288eb2de7c5"
+field = "sensor.white"
+before = 16383
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ZV-1/DSC00056.ARW
+sha256 = "14c9d2912584a3ccc5cf10f554fbe495fc960c36758a14d7d858b36ac5ca88e2"
+field = "sensor.white"
+before = 16380
+after = 16300
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16300"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony ILCE-7RM4 (signature-edits)
+sha256 = "bf307d9423aee280fa11dae67073c7657d0d9e7efccb8a408d999f17c0b3f858"
+field = "sensor.white"
+before = 16383
+after = 15000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15000"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Sony/ILCE-7RM4A/compressed_12_bit.ARW
+sha256 = "1e491a7070014e31d9525ebb9cd9cbe761c85f0395073f6e72347365de68fb6b"
+field = "sensor.white"
+before = 16380
+after = 15000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15000"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"

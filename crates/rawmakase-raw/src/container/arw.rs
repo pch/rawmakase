@@ -122,10 +122,11 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     let mut black = levels.black.map_or([black; 4], |b| b.map(|v| v >> scale));
     let mut white = levels.white.unwrap_or(white);
     if variant == Variant::ArwYcbcr {
-        // Small RAWs' RGB sits 512 above the sensor's black; its white is
-        // what RAWmakase has always read them with (our measurements).
+        // Small RAWs' RGB sits 512 above the sensor's black (our
+        // measurements); its white is the 14-bit scale's, Adobe DNG
+        // Converter's WhiteLevel for every small RAW of our dataset.
         black = black.map(|b| b + 512);
-        white = 17536;
+        white = 16383;
     }
     if variant == Variant::ArwV6 {
         // Compressed RAW 2's values are on twice the 14-bit scale; its white
@@ -264,6 +265,17 @@ fn cfa(t: &TiffFile, ifd: &Ifd) -> Cfa {
     })
 }
 
+/// The bits of the scale a variant's values are on, which the camera
+/// table's rows of `bits` are for: compressed RAW 2's are on twice the
+/// 14-bit scale.
+fn scale_bits(variant: Variant) -> u32 {
+    match variant {
+        Variant::ArwPacked | Variant::ArwV1 => 12,
+        Variant::ArwV6 => 15,
+        _ => 14,
+    }
+}
+
 /// Decodes the sensor data.
 pub(crate) fn decode(
     info: &RawInfo,
@@ -352,8 +364,13 @@ pub(crate) fn decode(
     }
     let [left, top] = info.margins;
     let size = [info.raw_width, info.raw_height];
-    let white = crate::facts::camera(&info.make, &info.model, false, size)
-        .find_map(|c| c.white)
+    // A white for the file's ISO speed before the camera's.
+    let white = crate::facts::iso_white(&info.make, &info.model, false, size, info.iso)
+        .or_else(|| {
+            crate::facts::camera(&info.make, &info.model, false, size)
+                .filter(|c| c.bits.is_none_or(|b| b == scale_bits(info.variant)))
+                .find_map(|c| c.white)
+        })
         .unwrap_or(plan.white);
     Ok(Sensor {
         width: plan.width,
@@ -741,7 +758,8 @@ pub(crate) mod tests {
         assert_eq!(u32::from(s.data[4]), point(1003));
         assert_eq!(u32::from(s.data[1]), point(1050));
         assert_eq!(u32::from(s.data[3]), point(1001));
-        assert_eq!((s.black, s.white), ([512; 4], 16383));
+        // Adobe's white for the NEX-5N.
+        assert_eq!((s.black, s.white), ([512; 4], 16300));
     }
 
     #[test]
@@ -867,7 +885,7 @@ pub(crate) mod tests {
         let (info, s) = decode(&file).unwrap();
         assert_eq!(info.variant, Variant::ArwYcbcr);
         assert!(info.sraw && info.balanced && info.cfa.is_none());
-        assert_eq!((s.channels, s.black, s.white), (4, [1024; 4], 17536));
+        assert_eq!((s.channels, s.black, s.white), (4, [1024; 4], 16383));
         let pixel = |x: usize, y: usize| &s.data[(y * 4 + x) * 4..][..4];
         let [r, g, b] = crate::codec::sony::ycbcr_rgb(1050, 16393, 16363);
         assert_eq!(pixel(1, 1), [r, g, b, 0]);

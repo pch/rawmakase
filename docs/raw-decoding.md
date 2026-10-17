@@ -156,8 +156,17 @@ Sony (from our own measurements unless said otherwise):
   Converter's for a synthetic file holding every code, and LibRaw's agree on
   every code our files hold.
 - The DSC-R1's SR2 stores its words big-endian in a little-endian file.
-- Visible areas, some white levels and some model names RAWmakase has always
-  read are rows of `data/raw-cameras.toml` (`compat-observed`).
+- Visible areas and some model names RAWmakase has always read are rows of
+  `data/raw-cameras.toml` (`compat-observed`).
+- Levels follow Adobe DNG Converter: black is the raw directory's or the
+  SR2SubIFD's levels, the oldest (0x7300) by filter position, rows first (the
+  DSC-R1's start with green); white is the raw directory's WhiteLevel, but
+  Adobe's 16300 for the older bodies (`adobe-dng` rows, whatever their tag
+  says), the bit depth's range without one, 16383 for small RAWs (whose RGB
+  sits 512 above the black) and Adobe's 32800 for the ILCE-7M5's compressed
+  RAW 2 (its values on twice the 14-bit scale: rows of `bits = 15`). The
+  ILCE-7RM4 and 7RM4A's files Adobe reads with 15000 at ISO 160 (rows of
+  `iso`), with their tag's at 50 to 1250 otherwise.
 
 Nikon, from our own measurements of LibRaw's output (on the dataset's files,
 and on synthetic NEFs that probe one code word, key or tag at a time):

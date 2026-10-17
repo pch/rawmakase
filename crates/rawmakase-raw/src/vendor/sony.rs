@@ -194,15 +194,15 @@ pub(crate) fn read(t: &TiffFile, raw: &Ifd, info: &mut RawInfo) -> Levels {
             .and_then(|s| s.shorts(tag))
             .map(|v| v.into_iter().map(u32::from).collect::<Vec<_>>())
     };
-    // Red, green, green, blue; the oldest red, green, blue, green.
+    // Red, green, green, blue; the oldest by filter position, rows first
+    // (as Adobe DNG Converter's BlackLevel has the DSC-R1's).
     let black = raw_shorts(BLACK_LEVEL)
         .or_else(|| sr2_shorts(BLACK_LEVEL))
         .filter(|b| b.len() == 4)
         .map(|b| [b[0], b[1], b[3], b[2]])
         .or_else(|| {
-            sr2_shorts(BLACK_LEVEL_OLD)
-                .filter(|b| b.len() == 4)
-                .map(|b| [b[0], b[1], b[2], b[3]])
+            let b = sr2_shorts(BLACK_LEVEL_OLD).filter(|b| b.len() == 4)?;
+            Some(by_position(&b, info.cfa.as_ref()))
         });
     let white = t.int(raw, WHITE_LEVEL);
     let linear_white = sr2_shorts(SR2_WHITE)
@@ -246,6 +246,26 @@ pub(crate) fn read(t: &TiffFile, raw: &Ifd, info: &mut RawInfo) -> Levels {
         black,
         white,
         linear_white,
+    }
+}
+
+/// Levels of the 2 × 2 filter positions (rows first) per channel (red,
+/// green, blue, second green); in that order without a 2 × 2 filter of the
+/// four channels.
+fn by_position(levels: &[u32], cfa: Option<&crate::info::Cfa>) -> [u32; 4] {
+    let mut out = [0; 4];
+    let mut seen = [false; 4];
+    if let Some(cfa) = cfa.filter(|c| c.rows == 2 && c.cols == 2) {
+        for (i, &v) in levels.iter().take(4).enumerate() {
+            let c = usize::from(cfa.color(i / 2, i % 2)).min(3);
+            out[c] = v;
+            seen[c] = true;
+        }
+    }
+    if seen.iter().all(|&s| s) {
+        out
+    } else {
+        std::array::from_fn(|i| levels.get(i).copied().unwrap_or(0))
     }
 }
 
@@ -351,6 +371,20 @@ fn maker_note(t: &TiffFile) -> Option<Ifd> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn older_black_levels_are_by_filter_position() {
+        // The DSC-R1's filter starts green, red: its first level is green's.
+        let cfa = crate::info::second_green(crate::info::Cfa {
+            rows: 2,
+            cols: 2,
+            colors: vec![1, 0, 2, 1],
+        });
+        let levels = [514, 511, 512, 513];
+        assert_eq!(by_position(&levels, Some(&cfa)), [511, 514, 512, 513]);
+        // Without a filter: in the order stored.
+        assert_eq!(by_position(&levels, None), levels);
+    }
 
     #[test]
     fn the_keystream_follows_its_recurrence() {
