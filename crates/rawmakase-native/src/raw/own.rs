@@ -9,6 +9,9 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+/// A developed image: width, height and pixels.
+pub(super) type Developed = (u32, u32, Vec<[f32; 3]>);
+
 pub(super) struct Own {
     bytes: Arc<[u8]>,
     info: RawInfo,
@@ -71,6 +74,28 @@ impl Own {
             linear_white: s.linear_white,
             pattern,
         })
+    }
+    /// The visible area of sensor data that is not a mosaic (small RAWs'
+    /// RGB), developed: each channel (raw − black) / (white − black), white
+    /// balanced by `wb`. `None` for a mosaic.
+    pub(super) fn rgb(&self, wb: [f32; 3], cancel: &AtomicBool) -> Result<Option<Developed>> {
+        if self.info.cfa.is_some() {
+            return Ok(None);
+        }
+        let s = self.decode(cancel)?;
+        ensure!(
+            s.channels >= 3,
+            "Sensor data that is neither a mosaic nor RGB"
+        );
+        let [left, top, w, h] = s.area.map(|v| v as usize);
+        let rows: Vec<&[u16]> = (top..top + h)
+            .map(|y| {
+                let start = (y * s.width as usize + left) * s.channels as usize;
+                &s.data[start..start + w * s.channels as usize]
+            })
+            .collect();
+        let pixels = super::develop_rgb(&rows, s.channels as usize, s.black, s.white, wb);
+        Ok(Some((w as u32, h as u32, pixels)))
     }
     /// The visible mosaic as development reads it: (raw − black) / (white −
     /// black), not white balanced; `None` when the file is not a mosaic.

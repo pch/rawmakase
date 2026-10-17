@@ -198,8 +198,8 @@ pub fn version() -> String {
     // SAFETY: `ora_version` returns LibRaw's static, NUL-terminated version string.
     unsafe { CStr::from_ptr(ora_version()).to_string_lossy().into_owned() }
 }
-/// Runs the calling thread at low priority from now on, with LibRaw decodes on
-/// two OpenMP threads; see `ora_background_thread`.
+/// Runs the calling thread's LibRaw decodes on two OpenMP threads from now
+/// on; see `ora_background_thread`.
 pub(super) fn background_thread() {
     // SAFETY: takes nothing and changes only the calling thread's own settings.
     unsafe { ora_background_thread() }

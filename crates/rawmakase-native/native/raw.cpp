@@ -3,11 +3,6 @@
 // After LibRaw, which includes winsock2.h ahead of windows.h as Windows requires.
 #include <windows.h>
 #include <string>
-#elif defined(__linux__)
-#include <cerrno>
-#include <sys/resource.h>
-#include <sys/syscall.h>
-#include <unistd.h>
 #endif
 #ifdef _OPENMP
 #include <omp.h>
@@ -310,27 +305,12 @@ static int open_path(Raw& raw, const char* path) {
 extern "C" {
 const char* ora_version() { return LibRaw::version(); }
 // Caps the calling thread's OpenMP regions, its LibRaw decodes among them, at two
-// threads (one on a single core), and on Linux and Windows lowers its scheduling
-// priority, so it takes only cores the foreground leaves idle.
-//
-// macOS keeps the priority: libomp shares one pool of workers across the process,
-// so a team started by a lower-QoS thread could later run Develop's decodes.
+// threads (one on a single core), so they take only cores the foreground leaves
+// idle; the thread's scheduling priority is set on the Rust side.
 void ora_background_thread() {
 #ifdef _OPENMP
     // The OpenMP setting is the thread's own; other threads keep every core.
     omp_set_num_threads(std::min(2, std::max(1, omp_get_num_procs())));
-#endif
-#ifdef _WIN32
-    // Below the process's class, whatever it is. MSVC builds have no OpenMP.
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
-#elif defined(__linux__)
-    // Ten steps nicer than the thread is now, at most 19: raising a nice value
-    // needs no privilege. Linux applies it to the one thread named by its id, and
-    // libgomp's team for this thread, started from it, inherits it.
-    const auto tid=static_cast<id_t>(syscall(SYS_gettid));
-    errno=0;
-    const int nice=getpriority(PRIO_PROCESS, tid);
-    if(errno==0 && nice<19) setpriority(PRIO_PROCESS, tid, std::min(19, nice+10));
 #endif
 }
 // So the Rust side can check its mirror of Metadata has the same layout.

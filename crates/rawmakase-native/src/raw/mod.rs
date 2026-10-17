@@ -12,6 +12,7 @@ use std::{
 mod ffi;
 mod nikon_he;
 mod own;
+mod priority;
 use crate::camera_data::{
     CameraImage, Decode, Demosaic, HighlightTonePriority, Metadata, Source, WhiteBalancePresets,
 };
@@ -24,13 +25,22 @@ pub fn version_of(decoder: Decoder) -> String {
     }
 }
 /// Runs `work` on a thread of its own at background priority: a lower
-/// scheduling priority, and LibRaw decodes on two OpenMP threads. Every worker
-/// that reads or decodes photos behind the user's back starts here or in
-/// [`background_pool`], so none competes with Develop for the CPU.
+/// scheduling priority, and parallel work (RAWmakase's decoders, LibRaw's on
+/// two OpenMP threads) on two background threads, never the shared pool.
+/// Every worker that reads or decodes photos behind the user's back starts
+/// here or in [`background_pool`], so none competes with Develop for the CPU.
 pub fn spawn_background(work: impl FnOnce() + Send + 'static) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
-        ffi::background_thread();
-        work();
+        // `work` runs on the pool's threads, which lower their own priority
+        // (once: on Linux they would inherit this thread's). The pool's threads
+        // end when it is dropped, after `work`, without being joined.
+        match background_pool(2, "background") {
+            Ok(pool) => pool.install(work),
+            Err(_) => {
+                background_thread();
+                work()
+            }
+        }
     })
 }
 /// A pool of `threads` named `name-0`, `name-1`… at background priority, as
@@ -42,8 +52,13 @@ pub fn background_pool(
     rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
         .thread_name(move |i| format!("{name}-{i}"))
-        .start_handler(|_| ffi::background_thread())
+        .start_handler(|_| background_thread())
         .build()
+}
+/// Runs the calling thread at background priority from now on.
+fn background_thread() {
+    ffi::background_thread();
+    priority::lower();
 }
 pub struct Raw {
     backend: Backend,
@@ -263,15 +278,28 @@ impl Raw {
     }
     pub fn develop(self, decode: Decode, cancel: &AtomicBool) -> Result<CameraImage> {
         if let Backend::Own(own) = &self.backend {
-            return match decode {
-                Decode::Full(_) => {
-                    let cfa = own.cfa(cancel)?;
-                    self.develop_mosaic(cfa, cancel)?.ok_or_else(|| {
-                        anyhow::anyhow!("RAWmakase's decoders do not develop this file yet")
-                    })
-                }
-                Decode::Half => anyhow::bail!("RAWmakase's decoders do not develop half size yet"),
-            };
+            // Small RAWs develop at full size in either mode, as they always have.
+            if let Some((width, height, pixels)) = own.rgb(self.metadata.wb, cancel)? {
+                ensure!(!cancel.load(Ordering::Relaxed), "Development cancelled");
+                return Ok(CameraImage {
+                    recovered: Default::default(),
+                    width,
+                    height,
+                    pixels,
+                    metadata: self.metadata,
+                    fast: decode == Decode::Half,
+                    // Developed in floating point: nothing is scaled down to
+                    // integers, so nothing saturates.
+                    scale_factor: 1.,
+                    scale_clipped: 0,
+                });
+            }
+            let cfa = own.cfa(cancel)?;
+            return self
+                .develop_mosaic(cfa, decode == Decode::Half, cancel)?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("RAWmakase's decoders do not develop this file yet")
+                });
         }
         match decode {
             Decode::Half => self.develop_libraw(true, cancel),
@@ -289,9 +317,16 @@ impl Raw {
         let Backend::Libraw(handle) = &self.backend else {
             return Ok(None);
         };
-        self.develop_mosaic(handle.cfa()?, cancel)
+        self.develop_mosaic(handle.cfa()?, false, cancel)
     }
-    fn develop_mosaic(&self, cfa: Option<Cfa>, cancel: &AtomicBool) -> Result<Option<CameraImage>> {
+    /// The mosaic white balanced and demosaiced, or at half size (`half`,
+    /// `demosaic::half`); `None` without a mosaic.
+    fn develop_mosaic(
+        &self,
+        cfa: Option<Cfa>,
+        half: bool,
+        cancel: &AtomicBool,
+    ) -> Result<Option<CameraImage>> {
         let Some(Cfa {
             width: w,
             height: h,
@@ -317,12 +352,18 @@ impl Raw {
                 clipped
             })
             .sum();
-        let pixels = crate::demosaic::demosaic(&crate::demosaic::Cfa {
+        let cfa = crate::demosaic::Cfa {
             data: &data,
             width,
             height,
             pattern: &pattern,
-        });
+        };
+        let (w, h, pixels) = if half {
+            let (w, h, pixels) = crate::demosaic::half(&cfa);
+            (w as u32, h as u32, pixels)
+        } else {
+            (w, h, crate::demosaic::demosaic(&cfa))
+        };
         ensure!(!cancel.load(Ordering::Relaxed), "Development cancelled");
         Ok(Some(CameraImage {
             recovered: Default::default(),
@@ -330,7 +371,7 @@ impl Raw {
             height: h,
             pixels,
             metadata: self.metadata.clone(),
-            fast: false,
+            fast: half,
             scale_factor: 1.,
             scale_clipped: clipped,
         }))
@@ -357,6 +398,26 @@ impl Raw {
             scale_clipped: clipped,
         })
     }
+}
+/// Sensor data that is not a mosaic developed: `rows` of `channels` samples
+/// per pixel (red, green, blue first), each channel (raw − black) / (white −
+/// black), white balanced by `wb`; what LibRaw's development made of small
+/// RAWs, to within its 16-bit rounding.
+pub(crate) fn develop_rgb(
+    rows: &[&[u16]],
+    channels: usize,
+    black: [u32; 4],
+    white: u32,
+    wb: [f32; 3],
+) -> Vec<[f32; 3]> {
+    let scale: [f32; 3] = std::array::from_fn(|c| wb[c] / (white as f32 - black[c] as f32).max(1.));
+    rows.par_iter()
+        .flat_map_iter(|row| {
+            row.chunks_exact(channels).map(move |p| {
+                std::array::from_fn(|c| ((f32::from(p[c]) - black[c] as f32) * scale[c]).max(0.))
+            })
+        })
+        .collect()
 }
 /// LibRaw's crop `[left, top, width, height]` in raw coordinates, in the decoded
 /// image's, which start `margin` into the raw data. A crop without a position
@@ -578,6 +639,40 @@ mod tests {
         super::spawn_background(move || tx.send(nice()).unwrap());
         assert_eq!(rx.recv().unwrap(), (parent + 10).min(19));
         assert_eq!(nice(), parent);
+    }
+    #[test]
+    fn background_work_runs_its_parallel_work_on_two_background_threads() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        super::spawn_background(move || {
+            use rayon::prelude::*;
+            let names: std::collections::BTreeSet<String> = (0..64)
+                .into_par_iter()
+                .map(|_| std::thread::current().name().unwrap_or("").to_string())
+                .collect();
+            tx.send((rayon::current_num_threads(), names)).unwrap();
+        })
+        .join()
+        .unwrap();
+        let (threads, names) = rx.recv().unwrap();
+        assert_eq!(threads, 2);
+        assert!(
+            names.iter().all(|n| n.starts_with("background-")),
+            "{names:?}"
+        );
+    }
+    #[test]
+    fn small_raws_develop_by_their_levels_and_white_balance() {
+        let row: &[u16] = &[100, 1100, 2100, 0, 16383, 16383, 16383, 0];
+        let pixels = super::develop_rgb(&[row], 4, [100, 100, 100, 100], 16383, [2., 1., 1.5]);
+        let scale = 1. / 16283.;
+        assert_eq!(pixels.len(), 2);
+        for (got, want) in pixels[0]
+            .iter()
+            .zip([0., 1000. * scale, 2000. * scale * 1.5])
+        {
+            assert!((got - want).abs() < 1e-7, "{pixels:?}");
+        }
+        assert!((pixels[1][0] - 2.).abs() < 1e-6 && (pixels[1][1] - 1.).abs() < 1e-6);
     }
     #[test]
     fn reads_highlight_tone_priority_from_libraw() {

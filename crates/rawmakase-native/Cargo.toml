@@ -33,6 +33,13 @@ serde_json = "1"
 sha2 = "0.11"
 tempfile = "3"
 
+# Background threads' scheduling priority (raw::spawn_background).
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Threading"] }
+
 [dev-dependencies]
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }
 
