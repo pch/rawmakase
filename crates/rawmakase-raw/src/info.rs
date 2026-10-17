@@ -48,6 +48,10 @@ pub struct RawInfo {
     pub dng_version: u32,
     /// Canon sRAW and mRAW, Nikon sRAW, Sony YCbCr: stored as luma and chroma.
     pub sraw: bool,
+    /// Small RAWs the camera stored white balanced (Nikon sRAW, Sony YCbCr):
+    /// developed without the as-shot multipliers, which Adobe DNG Converter
+    /// writes as their AnalogBalance, with an AsShotNeutral of 1, 1, 1.
+    pub balanced: bool,
     pub fuji_dynamic_range: u32,
     /// Fujifilm's exposure midpoint shift in EV, -999 when there is none.
     pub fuji_exposure_shift: f32,
@@ -160,6 +164,7 @@ pub(crate) fn base(variant: Variant) -> RawInfo {
         cfa: None,
         dng_version: 0,
         sraw: false,
+        balanced: false,
         fuji_dynamic_range: 0xffff,
         fuji_exposure_shift: -999.,
         iso: 0.,

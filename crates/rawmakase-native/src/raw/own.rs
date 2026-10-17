@@ -77,7 +77,8 @@ impl Own {
     }
     /// The visible area of sensor data that is not a mosaic (small RAWs'
     /// RGB), developed: each channel (raw − black) / (white − black), white
-    /// balanced by `wb`. `None` for a mosaic.
+    /// balanced by `wb` unless the camera stored it balanced. `None` for a
+    /// mosaic.
     pub(super) fn rgb(&self, wb: [f32; 3], cancel: &AtomicBool) -> Result<Option<Developed>> {
         if self.info.cfa.is_some() {
             return Ok(None);
@@ -94,6 +95,7 @@ impl Own {
                 &s.data[start..start + w * s.channels as usize]
             })
             .collect();
+        let wb = if self.info.balanced { [1.; 3] } else { wb };
         let pixels = super::develop_rgb(&rows, s.channels as usize, s.black, s.white, wb);
         Ok(Some((w as u32, h as u32, pixels)))
     }

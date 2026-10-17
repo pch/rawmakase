@@ -97,6 +97,7 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         info.cfa = Some(cfa(&t, raw));
     } else {
         info.sraw = true;
+        info.balanced = true;
     }
     let curve = t
         .ints(raw, 0x7010)
@@ -865,7 +866,7 @@ pub(crate) mod tests {
         file[at + 8..at + 10].copy_from_slice(&6u16.to_le_bytes());
         let (info, s) = decode(&file).unwrap();
         assert_eq!(info.variant, Variant::ArwYcbcr);
-        assert!(info.sraw && info.cfa.is_none());
+        assert!(info.sraw && info.balanced && info.cfa.is_none());
         assert_eq!((s.channels, s.black, s.white), (4, [1024; 4], 17536));
         let pixel = |x: usize, y: usize| &s.data[(y * 4 + x) * 4..][..4];
         let [r, g, b] = crate::codec::sony::ycbcr_rgb(1050, 16393, 16363);

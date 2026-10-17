@@ -160,6 +160,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     info.flip = crate::geometry::flip(t.int(ifd0, 274).unwrap_or(1));
     if variant == Variant::NefSmallRaw {
         info.sraw = true;
+        info.balanced = true;
     } else {
         let cfa = cfa(&t, ifd)?;
         info.cfa = Some(crate::vendor::nikon::cfa(&model).unwrap_or(cfa));
@@ -834,8 +835,8 @@ pub(crate) mod tests {
         let file = nef("NIKON D810", 4, 4, 12, 34713, &[], &data);
         let info = crate::open(&file).unwrap();
         assert_eq!(
-            (info.variant, info.sraw, info.cfa.is_none()),
-            (Variant::NefSmallRaw, true, true)
+            (info.variant, info.sraw, info.balanced, info.cfa.is_none()),
+            (Variant::NefSmallRaw, true, true, true)
         );
         let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
         assert_eq!((s.channels, s.white, s.black), (4, 16383, [0; 4]));
