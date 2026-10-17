@@ -30076,3 +30076,93 @@ before = 3616
 after = 3514
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 3514; Adobe's white fitted to RAWmakase's samples is the same, exact fit; RAWmakase's is the camera table's adobe-dng row"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leaf/Credo 40/0002_20_32.IIQ
+sha256 = "16a347721421d63b8471b941e74b911518bb3d51e053161ca81a69beec03a657"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one), as for the body's other IIQ formats; Adobe DNG Converter 18.7 converts no IIQ Sv2 file of the dataset"
+approval = "pending"
+
+[[delta]]
+# Leaf/Credo 40/0002_20_32.IIQ
+sha256 = "16a347721421d63b8471b941e74b911518bb3d51e053161ca81a69beec03a657"
+field = "sensor.white"
+before = 16383
+after = 65535
+evidence = "no Adobe DNG Converter WhiteLevel for this body; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts; Adobe DNG Converter 18.7 converts no IIQ Sv2 file of the dataset"
+approval = "pending"
+
+[[delta]]
+# Phase One/IQ140/Phase_One_IQ140_sample_files_04_Diciembre_2017_005_IIQ_S.TIF
+sha256 = "4000a298fd41c38bc20e4f09049c15f9d4de1ddfbb636d0af84ab076bbf2c9c7"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one), as for the body's other IIQ formats; Adobe DNG Converter 18.7 converts no IIQ Sv2 file of the dataset"
+approval = "pending"
+
+[[delta]]
+# Phase One/IQ140/Phase_One_IQ140_sample_files_04_Diciembre_2017_011_Sensor+_IIQ_S.TIF
+sha256 = "8e94e85430be694974bf40705378f4fa9573b9c90e25f88d98ae22e73703559d"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one), as for the body's other IIQ formats; Adobe DNG Converter 18.7 converts no IIQ Sv2 file of the dataset"
+approval = "pending"
+
+[[delta]]
+# Phase One/iXU180/cap_22908.IIQ
+sha256 = "bddb10cbea59c0c5324e960db5fb5db1d70b92d089b6f7621ba79eb9df90a6c4"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one), as for the body's other IIQ formats; Adobe DNG Converter 18.7 converts no IIQ Sv2 file of the dataset"
+approval = "pending"
+
+[[delta]]
+# Phase One/iXM-100/_849.IIQ
+sha256 = "ed6db7ba974347331b0086aad633139be093d2aaf2fe5a9ae84f96d5fbf24005"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one), as for the body's other IIQ formats; Adobe DNG Converter 18.7 converts no IIQ Sv2 file of the dataset"
+approval = "pending"
+
+[[delta]]
+# Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_S.IIQ
+sha256 = "2dd56f2a7a57a7fc2123301009c1a7a10be002ed84a18470fc4d37e41760a66d"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one), as for the body's other IIQ formats; Adobe DNG Converter 18.7 converts no IIQ Sv2 file of the dataset"
+approval = "pending"
+
+[[delta]]
+# Phase One/iXM-RS150F/RGB_86_0_4.IIQ
+sha256 = "087daca7c1ea14d7bcc428d6d94963a7800af10ecafe6bce90f6e065e18f9058"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one), as for the body's other IIQ formats; Adobe DNG Converter 18.7 converts no IIQ Sv2 file of the dataset"
+approval = "pending"
+
+[[delta]]
+# Phase One/IQ180/230214_9562.IIQ
+sha256 = "e893aebefc3c3667edd3102a4477c6546ec8ccfc5c58754f5560e2f65929ab73"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one), as for the body's other IIQ formats; Adobe DNG Converter 18.7 converts no IIQ Sv2 file of the dataset"
+approval = "pending"
+
+[[delta]]
+# Phase One/IQ180/230214_9564.IIQ
+sha256 = "ee0222aeb29e38cb4a664f0993cb4b109f31dc592c469df12a7d7a3f522f6165"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one), as for the body's other IIQ formats; Adobe DNG Converter 18.7 converts no IIQ Sv2 file of the dataset"
+approval = "pending"

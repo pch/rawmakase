@@ -93,6 +93,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `CrwCompressed` | Canon CRW: a CIFF file of Canon's coded blocks of differences | ExifTool's CanonRaw tag names and CRW format notes, black-box measurements of the oracle on synthetic files, our own measurements |
 | `IiqL` | Phase One IIQ L and L16 (Leaf Credo too): rows of differences in runs of even and odd columns, lengths chosen every eight columns | ExifTool's PhaseOne tag names, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
 | `IiqS` | Phase One's first IIQ S: IIQ L's rows, values below 256 on a square-law curve | as `IiqL` |
+| `IiqSv2` | Phase One IIQ Sv2: per group of eight columns coded lengths and a width, quantised differences of 14-bit values | Our own black-box measurements of LibRaw's output |
 | `IiqUncompressed` | Phase One IIQ and TIFF, 16-bit words | ExifTool's PhaseOne tag names, our own measurements |
 | `FffUncompressed` | Hasselblad 3FR and FFF, 16-bit words | TIFF 6, DNG 1.7 (level tags), our own measurements |
 | `MosLosslessJpeg` | Leaf MOS, one lossless JPEG tile whose MCU rows are the image's rows | TIFF 6, ITU T.81, ExifTool's Leaf tag names, our own measurements |
@@ -493,8 +494,28 @@ black ones stay pending where Adobe writes calibrated data with a black of
 carry (BlackLevelData, up to a few hundred levels on some backs), which
 `Sensor` cannot express, nor Phase One's sensor calibration (flat fields,
 defects), which Adobe applies. The older backs' colour filter is a
-`compat-observed` row (Adobe's CFAPattern agrees). IIQ Sv2 (RawFormat 6) and
-the scrambled RAW 1 and RAW 2 formats are `Unsupported`.
+`compat-observed` row (Adobe's CFAPattern agrees). The scrambled RAW 1 and
+RAW 2 formats are `Unsupported`.
+
+IIQ Sv2 (RawFormat 6, `IiqSv2`) was worked out black-box: LibRaw's output
+for rows written to test each code and for random rows of the coding, then
+an exact match on all nine IIQ Sv2 files of the dataset. Each row (from its
+offset, rows in any order) is bits read most significant first from 32-bit
+words: a word and a bit not read, then eight 14-bit values; then per whole
+group of eight columns a length code for the even columns, one for the odd
+and a width code, then the eight values. A length code is a run of zeros:
+none then a bit (the run's last length, or one more), one (one less), two
+to five then a bit (6 or 5, 4 or 7, 9 or 8, 3 or 10), six (11), seven (12:
+14-bit values as they are); lengths below 1 or past 16 are corrupt. A width
+code is 1 (3) or 0 and two bits (4 to 7). A value of length `n` and width
+`w` is `w` bits `b`: the value two columns left plus `b << (n − w)` (nothing
+when `w` is the greater), less `2^(n−1)`, plus 1, kept to 0 to 16383 (the
+run goes on from the unkept value) and stored times 4; columns past the
+last whole group are 14-bit values. LibRaw's results for widths more than
+two over the length differ (no camera writes them). Black and white are as
+for the other IIQ formats; Adobe DNG Converter 18.7 converts none of the
+dataset's IIQ Sv2 files, so the black and the Credo's white stay pending
+decode deltas.
 
 Hasselblad (`container::fff`, `vendor::hasselblad`, `codec::hasselblad`):
 3FR (the camera's) and FFF (Phocus's, with its private tag 0xC519) are TIFFs

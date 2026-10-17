@@ -2,7 +2,7 @@
 //! TIFF whose IFD0 is a thumbnail and whose EXIF maker note, eight bytes
 //! into the file, is Phase One's own block (`vendor::phase_one`) with the
 //! sensor data and its description: IIQ L (14 or 16-bit) and IIQ S coded
-//! rows (`codec::phase_one`), or 16-bit words. IIQ Sv2 and the older
+//! rows (`codec::phase_one`), IIQ Sv2 rows, or 16-bit words. The older
 //! scrambled formats are `Unsupported`.
 //!
 //! Sources: TIFF 6, ExifTool's PhaseOne tag documentation, and our own
@@ -57,6 +57,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         3 => (Variant::IiqL, Output::Times4),
         8 => (Variant::IiqL, Output::Plain),
         5 => (Variant::IiqS, Output::Curve),
+        6 => (Variant::IiqSv2, Output::Times4),
         f => {
             return Err(Error::Unsupported(format!("IIQ raw format {f}")));
         }
@@ -151,6 +152,14 @@ pub(crate) fn decode(
             &plan.rows,
             plan.order,
             plan.output,
+            plan.width as usize,
+            &mut data,
+            cancel,
+        )?,
+        Variant::IiqSv2 => phase_one::decode_sv2(
+            src,
+            &plan.rows,
+            plan.order,
             plan.width as usize,
             &mut data,
             cancel,
@@ -262,13 +271,13 @@ mod tests {
     #[test]
     fn unknown_formats_are_unsupported_and_bad_files_do_not_panic() {
         let rows = [[1, 2, 3, 4], [5, 6, 7, 8]];
-        for format in [1, 2, 6, 7] {
+        for format in [1, 2, 7] {
             assert!(matches!(
                 crate::open(&iiq("IQ3 100MP", format, rows)),
                 Err(Error::Unsupported(_))
             ));
         }
-        for format in [0, 3, 5, 8] {
+        for format in [0, 3, 5, 6, 8] {
             let file = iiq("IQ3 100MP", format, rows);
             let info = crate::open(&file).unwrap();
             assert_eq!(

@@ -124,6 +124,9 @@ pub enum Variant {
     IiqL,
     /// Phase One IIQ S (the first): IIQ L's rows, low values on a curve.
     IiqS,
+    /// Phase One IIQ Sv2: rows of quantised differences, lengths and widths
+    /// coded per eight columns.
+    IiqSv2,
     /// Phase One IIQ, uncompressed 16-bit words.
     IiqUncompressed,
     /// Hasselblad 3FR and FFF, 16-bit words.
@@ -207,6 +210,7 @@ impl Variant {
             Variant::CrwCompressed => "crw",
             Variant::IiqL => "iiq-l",
             Variant::IiqS => "iiq-s",
+            Variant::IiqSv2 => "iiq-sv2",
             Variant::IiqUncompressed => "iiq-uncompressed",
             Variant::FffUncompressed => "3fr-uncompressed",
             Variant::FffCompressed => "3fr-compressed",
@@ -440,9 +444,10 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         (Plan::Crw(plan), Variant::CrwCompressed) => {
             crate::container::ciff::decode(info, plan, bytes, cancel)
         }
-        (Plan::Iiq(plan), Variant::IiqL | Variant::IiqS | Variant::IiqUncompressed) => {
-            crate::container::iiq::decode(info, plan, bytes, cancel)
-        }
+        (
+            Plan::Iiq(plan),
+            Variant::IiqL | Variant::IiqS | Variant::IiqSv2 | Variant::IiqUncompressed,
+        ) => crate::container::iiq::decode(info, plan, bytes, cancel),
         (Plan::Fff(plan), Variant::FffUncompressed | Variant::FffCompressed) => {
             crate::container::fff::decode(info, plan, bytes, cancel)
         }
