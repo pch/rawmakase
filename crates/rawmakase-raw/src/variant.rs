@@ -42,6 +42,8 @@ pub enum Variant {
     ArwUncompressed,
     /// Sony ARW, packed 12-bit samples.
     ArwPacked,
+    /// Sony ARW, lossless JPEG tiles of 2 × 2 colour cells.
+    ArwLosslessJpeg,
 }
 
 impl Variant {
@@ -60,6 +62,7 @@ impl Variant {
             Variant::ArwCurve => "arw-curve",
             Variant::ArwUncompressed => "arw-uncompressed",
             Variant::ArwPacked => "arw-packed",
+            Variant::ArwLosslessJpeg => "arw-ljpeg",
         }
     }
 }
@@ -120,9 +123,13 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::Rw2Huffman
             | Variant::Rw2Unpacked,
         ) => crate::container::rw2::decode(info, plan, bytes, cancel),
-        (Plan::Arw(plan), Variant::ArwCurve | Variant::ArwUncompressed | Variant::ArwPacked) => {
-            crate::container::arw::decode(info, plan, bytes, cancel)
-        }
+        (
+            Plan::Arw(plan),
+            Variant::ArwCurve
+            | Variant::ArwUncompressed
+            | Variant::ArwPacked
+            | Variant::ArwLosslessJpeg,
+        ) => crate::container::arw::decode(info, plan, bytes, cancel),
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
             "{} with another container's plan",

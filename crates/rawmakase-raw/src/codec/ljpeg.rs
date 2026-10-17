@@ -538,4 +538,90 @@ pub(crate) mod tests {
         }
         assert!(decode(b"not a jpeg", &AtomicBool::new(false)).is_err());
     }
+
+    /// A lossless JPEG of components sampled `(h, v)`, each a plane of
+    /// `mcus × h` by `rows × v` samples, with predictor 1 and the same code
+    /// table as [`encode`]; predictions as T.81 defines them (or, with
+    /// `block_rows`, a block's first row predicting from the first row of the
+    /// block above). Returns the stream and the samples in MCU order.
+    pub(crate) fn encode_sampled(
+        planes: &[Vec<u16>],
+        sampling: &[(usize, usize)],
+        mcus: usize,
+        rows: usize,
+        block_rows: bool,
+    ) -> (Vec<u8>, Vec<u16>) {
+        let precision = 16;
+        let mut bits: Vec<bool> = Vec::new();
+        let mut order = Vec::new();
+        for my in 0..rows {
+            for mx in 0..mcus {
+                for (plane, &(h, v)) in planes.iter().zip(sampling) {
+                    let at = |x: usize, y: usize| i32::from(plane[y * mcus * h + x]);
+                    for i in 0..v {
+                        for j in 0..h {
+                            let (x, y) = (mx * h + j, my * v + i);
+                            let p = match (x, y) {
+                                (0, 0) => 1 << (precision - 1),
+                                (_, 0) => at(x - 1, y),
+                                (0, _) if block_rows && i == 0 => at(x, y - v),
+                                (0, _) => at(x, y - 1),
+                                _ => at(x - 1, y),
+                            };
+                            let d = (at(x, y) - p).rem_euclid(1 << precision);
+                            let d = if d >= 1 << (precision - 1) {
+                                d - (1 << precision)
+                            } else {
+                                d
+                            };
+                            let len = 32 - d.unsigned_abs().leading_zeros();
+                            (0..5).rev().for_each(|k| bits.push(len >> k & 1 == 1));
+                            let v = if d < 0 { d + (1 << len) - 1 } else { d } as u32;
+                            (0..len).rev().for_each(|k| bits.push(v >> k & 1 == 1));
+                            order.push(at(x, y) as u16);
+                        }
+                    }
+                }
+            }
+        }
+        while !bits.len().is_multiple_of(8) {
+            bits.push(true);
+        }
+        let mut entropy = Vec::new();
+        for byte in bits.chunks(8) {
+            let b = byte.iter().fold(0u8, |a, &x| a << 1 | u8::from(x));
+            entropy.push(b);
+            if b == 0xff {
+                entropy.push(0);
+            }
+        }
+        let seg = |f: &mut Vec<u8>, m: u8, body: &[u8]| {
+            f.extend([0xff, m]);
+            f.extend(((body.len() + 2) as u16).to_be_bytes());
+            f.extend(body);
+        };
+        let mut f = vec![0xff, 0xd8];
+        let mut dht = vec![0x00];
+        let mut counts = [0u8; 16];
+        counts[4] = 17;
+        dht.extend(counts);
+        dht.extend(0..=16u8);
+        seg(&mut f, 0xc4, &dht);
+        let (hmax, vmax) = (sampling[0].0, sampling[0].1);
+        let mut sof = vec![precision as u8];
+        sof.extend(((rows * vmax) as u16).to_be_bytes());
+        sof.extend(((mcus * hmax) as u16).to_be_bytes());
+        sof.push(planes.len() as u8);
+        let mut sos = vec![planes.len() as u8];
+        for (k, &(h, v)) in sampling.iter().enumerate() {
+            sof.extend([k as u8 + 1, (h << 4 | v) as u8, 0]);
+            sos.extend([k as u8 + 1, 0]);
+        }
+        sos.extend([1, 0, 0]);
+        seg(&mut f, 0xc3, &sof);
+        seg(&mut f, 0xda, &sos);
+        f.extend(entropy);
+        f.extend([0xff, 0xd9]);
+        (f, order)
+    }
 }

@@ -2,12 +2,13 @@
 //! raw image directory and how its data is coded, its size, colour filter and
 //! levels; the maker notes are `vendor::sony`'s.
 //!
-//! Sources: TIFF 6 and TIFF/EP (directories, strips, CFAPattern); ExifTool's
-//! Sony tag
+//! Sources: TIFF 6 and TIFF/EP (directories, strips, tiles, CFAPattern);
+//! ITU T.81 (lossless JPEG tiles); ExifTool's Sony tag
 //! documentation (the raw directory's Sony tags); our own
 //! measurements of how each coding's samples are laid out and of the levels
 //! RAWmakase has always read, against LibRaw's output on our files.
 use super::tiff::{Ifd, TiffFile};
+use crate::codec::ljpeg;
 use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo};
 use crate::io::{Bytes, Order};
@@ -23,6 +24,8 @@ pub(crate) struct ArwPlan {
     pub height: u32,
     /// The data's strips or tiles, each (offset, length).
     pub chunks: Vec<(u64, u64)>,
+    /// The tile size (tiled data only).
+    pub tile: [u32; 2],
     /// ARW2's tone curve thresholds (SonyToneCurve).
     pub curve: [u16; 4],
     pub little: bool,
@@ -72,10 +75,11 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     let bps = t.int(raw, 258).unwrap_or(12);
     let compression = t.int(raw, 259).unwrap_or(1);
     let photometric = t.int(raw, 262).unwrap_or(0);
-    let (_, chunks) = chunks(&t, raw, width, height)?;
+    let (tile, chunks) = chunks(&t, raw, width, height)?;
     let stored: u64 = chunks.iter().map(|c| c.1).sum();
     let pixels = u64::from(width) * u64::from(height);
     let variant = match (compression, photometric) {
+        (7, _) => Variant::ArwLosslessJpeg,
         (1, _) => Variant::ArwUncompressed,
         (32767, _) if stored == pixels => Variant::ArwCurve,
         (32767, _) if bps == 12 && width % 2 == 0 && stored == pixels * 3 / 2 => Variant::ArwPacked,
@@ -110,6 +114,7 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         width,
         height,
         chunks,
+        tile,
         curve,
         // The DSC-R1 (SR2) stores its words big-endian in a little-endian
         // file (our measurements).
@@ -244,6 +249,7 @@ pub(crate) fn decode(
                 crate::codec::sony::packed12(row, dst);
             }
         }
+        Variant::ArwLosslessJpeg => ljpeg_tiles(plan, &strip, &mut data, cancel)?,
         v => {
             return Err(Error::Unsupported(format!(
                 "{} is not an ARW variant",
@@ -267,6 +273,56 @@ pub(crate) fn decode(
         white,
         linear_white: plan.linear_white,
     })
+}
+
+/// Lossless JPEG tiles: each a frame half the tile's width and height whose
+/// four components are the tile's 2 × 2 colour cells (top left, top right,
+/// bottom left, bottom right).
+fn ljpeg_tiles<'a>(
+    plan: &ArwPlan,
+    strip: &impl Fn(usize) -> Result<&'a [u8]>,
+    data: &mut [u16],
+    cancel: &AtomicBool,
+) -> Result<()> {
+    let (width, height) = (plan.width as usize, plan.height as usize);
+    let [tw, th] = plan.tile.map(|v| v as usize);
+    let across = width.div_ceil(tw);
+    let tiles = across * height.div_ceil(th);
+    if plan.chunks.len() < tiles {
+        return Err(corrupt("ARW tile count"));
+    }
+    let mut samples = Vec::new();
+    for i in 0..tiles {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        let tile = strip(i)?;
+        let h = ljpeg::header(tile)?;
+        if h.components.len() != 4 || h.samples_per_mcu() != 4 {
+            return Err(Error::Unsupported(
+                "ARW lossless JPEG tile without four components".into(),
+            ));
+        }
+        ljpeg::decode_into(&h, tile, cancel, &mut samples)?;
+        let (fw, fh) = (usize::from(h.width), usize::from(h.height));
+        let (x0, y0) = ((i % across) * tw, (i / across) * th);
+        for fy in 0..fh.min(th / 2) {
+            for k in 0..4 {
+                let y = y0 + 2 * fy + (k >> 1);
+                if y >= height {
+                    continue;
+                }
+                let row = &mut data[y * width..(y + 1) * width];
+                for fx in 0..fw.min(tw / 2) {
+                    let x = x0 + 2 * fx + (k & 1);
+                    if x < width {
+                        row[x] = samples[(fy * fw + fx) * 4 + k];
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -567,6 +623,36 @@ pub(crate) mod tests {
         let (info, s) = decode(&file).unwrap();
         assert_eq!(info.cam_mul, [2320., 1024., 1884., 1024.]);
         assert_eq!(s.black, [800; 4]);
+    }
+
+    #[test]
+    fn lossless_jpeg_tiles_hold_two_by_two_cells() {
+        // One 4 × 4 tile: a 2 × 2 frame of four components, the cells' top
+        // left, top right, bottom left, bottom right.
+        let image: Vec<u16> = (0..16).map(|i| 1000 + i * 111).collect();
+        let cell = |k: usize| -> Vec<u16> {
+            (0..4)
+                .map(|f| image[(2 * (f / 2) + (k >> 1)) * 4 + 2 * (f % 2) + (k & 1)])
+                .collect()
+        };
+        let planes: Vec<Vec<u16>> = (0..4).map(cell).collect();
+        let (tile, _) =
+            crate::codec::ljpeg::tests::encode_sampled(&planes, &[(1, 1); 4], 2, 2, false);
+        let file = arw(
+            "ILCE-7M4",
+            [4, 4],
+            [14, 7],
+            vec![
+                (322, Value::Long(vec![4])),
+                (323, Value::Long(vec![4])),
+                (324, Value::Blob(0)),
+                (325, Value::Long(vec![tile.len() as u32])),
+            ],
+            tile,
+        );
+        let (info, s) = decode(&file).unwrap();
+        assert_eq!(info.variant, Variant::ArwLosslessJpeg);
+        assert_eq!(s.data, image);
     }
 
     #[test]

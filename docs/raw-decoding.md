@@ -63,6 +63,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `ArwCurve` | Sony ARW2: 16-sample blocks of 11-bit codes on the SonyToneCurve | Dietz (IS&T EI 2016), ExifTool's Sony tags, our measurements |
 | `ArwUncompressed` | Sony ARW and SR2, uncompressed 16-bit words | TIFF 6, ExifTool's Sony tags |
 | `ArwPacked` | Sony ARW, packed 12-bit samples (DSLR-A850, A900) | Our measurements |
+| `ArwLosslessJpeg` | Sony ARW, lossless JPEG tiles of 2 × 2 colour cells | ITU T.81, our measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -97,6 +98,8 @@ Sony (from our own measurements unless said otherwise):
   no permitted public description was found). Validation: decrypted, it is a
   well-formed directory on every ARW of our dataset, and its
   values equal the plain copies newer bodies also write in the raw directory.
+- Lossless JPEG ARWs' tiles are frames of half the tile's size whose four
+  components are the tile's 2 × 2 cells.
 - The DSC-R1's SR2 stores its words big-endian in a little-endian file.
 - Visible areas, some white levels and some model names RAWmakase has always
   read are rows of `data/raw-cameras.toml` (`compat-observed`).
