@@ -200,12 +200,104 @@ raw_size = [3724, 2450]
 visible = [0, 0, 3664, 2448]
 source = "compat-observed"
 
+# Panasonic and Leica: Adobe DNG Converter 18.7's WhiteLevel where the RW2
+# rules do not give it (2026-10-17), on RAWmakase's scale (the DMC-L10's
+# data Adobe keeps 15 lower). The DC-GH5S's and DMC-FZ2000's are for the ISO
+# speed of every file of theirs Adobe was seen to read (800 and 80).
+
 [[camera]]
 make = "Panasonic"
-model = "DMC-FZ28"
+model = "DC-GH5S"
 dng = false
-white = 3990
-source = "compat-observed"
+iso = 800
+white = 8000
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ2000"
+dng = false
+iso = 80
+white = 2095
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-G10"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-G2"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-GH2"
+dng = false
+white = 3800
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-L10"
+dng = false
+white = 4001
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S1"
+dng = false
+white = 16380
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S1H"
+dng = false
+white = 16380
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S1R"
+dng = false
+white = 16380
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S1M2"
+dng = false
+white = 16380
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S1RM2"
+dng = false
+bits = 14
+white = 16380
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-S5"
+dng = false
+white = 16380
+source = "adobe-dng"
+
+[[camera]]
+make = "Panasonic"
+model = "DC-GH5M2"
+dng = false
+white = 4088
+source = "adobe-dng"
 
 [[camera]]
 make = "Panasonic"
@@ -225,59 +317,10 @@ source = "compat-observed"
 
 [[camera]]
 make = "Panasonic"
-model = "DMC-G1"
-dng = false
-white = 3988
-source = "compat-observed"
-
-[[camera]]
-make = "Panasonic"
-model = "DMC-G10"
-dng = false
-black = 0
-source = "compat-observed"
-
-[[camera]]
-make = "Panasonic"
-model = "DMC-G2"
-dng = false
-white = 3900
-source = "compat-observed"
-
-[[camera]]
-make = "Panasonic"
-model = "DMC-GF1"
-dng = false
-white = 3986
-source = "compat-observed"
-
-[[camera]]
-make = "Panasonic"
-model = "DMC-GH1"
-dng = false
-white = 3986
-source = "compat-observed"
-
-[[camera]]
-make = "Panasonic"
-model = "DMC-GH2"
-dng = false
-white = 3989
-source = "compat-observed"
-
-[[camera]]
-make = "Panasonic"
 model = "DMC-L10"
 dng = false
 raw_size = [3710, 2751]
 visible = [0, 0, 3677, 2751]
-source = "compat-observed"
-
-[[camera]]
-make = "Panasonic"
-model = "DMC-L10"
-dng = false
-white = 3990
 source = "compat-observed"
 
 [[canonical]]
@@ -657,13 +700,6 @@ visible = [0, 0, 3167, 2367]
 source = "compat-observed"
 
 [[camera]]
-make = "Leica"
-model = "DIGILUX 3"
-dng = false
-white = 3967
-source = "compat-observed"
-
-[[camera]]
 make = "Panasonic"
 model = "DMC-FZ18"
 dng = false
@@ -677,13 +713,6 @@ model = "DMC-FZ30"
 dng = false
 raw_size = [3304, 2458]
 visible = [0, 0, 3287, 2458]
-source = "compat-observed"
-
-[[camera]]
-make = "Panasonic"
-model = "DMC-FZ30"
-dng = false
-white = 3988
 source = "compat-observed"
 
 [[camera]]
@@ -704,13 +733,6 @@ source = "compat-observed"
 
 [[camera]]
 make = "Panasonic"
-model = "DMC-FZ8"
-dng = false
-white = 3967
-source = "compat-observed"
-
-[[camera]]
-make = "Panasonic"
 model = "DMC-L1"
 dng = false
 raw_size = [3177, 2367]
@@ -719,24 +741,10 @@ source = "compat-observed"
 
 [[camera]]
 make = "Panasonic"
-model = "DMC-L1"
-dng = false
-white = 3967
-source = "compat-observed"
-
-[[camera]]
-make = "Panasonic"
 model = "DMC-LX1"
 dng = false
 raw_size = [3880, 2170]
 visible = [6, 0, 3858, 2170]
-source = "compat-observed"
-
-[[camera]]
-make = "Panasonic"
-model = "DMC-LX1"
-dng = false
-white = 3967
 source = "compat-observed"
 
 [[camera]]

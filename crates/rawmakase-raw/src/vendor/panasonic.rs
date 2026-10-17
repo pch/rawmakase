@@ -244,8 +244,12 @@ pub(crate) fn strips(t: &TiffFile, ifd: &Ifd) -> Option<Strips> {
 /// and the linearity limits as the file records them.
 ///
 /// Black is tags 0x1C to 0x1E, 15 above them in raw formats 3 and 4 (the
-/// delta-coded blocks). White is the bit depth's full range; raw formats 6
-/// to 8 of fewer than 16 bits clip 1/256 of the range below it.
+/// delta-coded blocks). White is the bit depth's full range scaled by 256
+/// over the green white balance level (tag 0x25), rounded half up; raw
+/// formats 6 to 8 of fewer than 16 bits clip at the linearity limit
+/// (green's), else 1/256 of the range below it. Both are Adobe DNG
+/// Converter's WhiteLevel (exactly on all our files of 256 over a level
+/// above 256, to within three levels on the linearity limits).
 pub(crate) fn levels(
     t: &TiffFile,
     ifd: &Ifd,
@@ -255,10 +259,16 @@ pub(crate) fn levels(
     let offset = if matches!(format, Some(3 | 4)) { 15 } else { 0 };
     let [r, g, b] = BLACK.map(|tag| t.int(ifd, tag).unwrap_or(0).saturating_add(offset));
     let full = (1u32 << bits.clamp(1, 16)) - 1;
-    let white = match format {
-        Some(6..=8) if bits < 16 => full.saturating_sub(1 << bits.saturating_sub(8)),
-        _ => full,
-    };
     let [lr, lg, lb] = LINEARITY_LIMITS.map(|tag| t.int(ifd, tag).unwrap_or(0));
+    let white = match format {
+        Some(6..=8) if bits < 16 && lg > 0 && lg <= full => lg,
+        Some(6..=8) if bits < 16 => full.saturating_sub(1 << bits.saturating_sub(8)),
+        _ => match t.int(ifd, WB_LEVELS[1]) {
+            Some(g) if g > 256 => {
+                ((u64::from(full) * 512 + u64::from(g)) / (2 * u64::from(g))) as u32
+            }
+            _ => full,
+        },
+    };
     ([r, g, b, g], white, [lr, lg, lb, lg])
 }

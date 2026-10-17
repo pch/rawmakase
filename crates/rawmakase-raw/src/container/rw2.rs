@@ -173,7 +173,14 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     if let Some(b) = rows().find_map(|c| c.black) {
         black = [b; 4];
     }
-    if let Some(w) = rows().find_map(|c| c.white) {
+    // A white for the file's ISO speed before the camera's.
+    if let Some(w) = crate::facts::iso_white(&make, &model, false, [width, height], info.iso)
+        .or_else(|| {
+            rows()
+                .filter(|c| c.bits.is_none_or(|b| b == sample_bits))
+                .find_map(|c| c.white)
+        })
+    {
         white = w;
     }
     info.plan = Plan::Rw2(Rw2Plan {
@@ -418,6 +425,16 @@ pub(crate) mod tests {
         let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
         assert_eq!(s.data[28..30], [0x789, 0x78a]);
         assert_eq!(s.black[0], 115);
+        // White is the range over the green level (0x25) by 256: 4095 ·
+        // 256 / 264 = 3970.9.
+        let entries: Vec<_> = header(3, 12, [28, 2])
+            .into_iter()
+            .map(|e| if e.0 == 0x25 { short(0x25, 264) } else { e })
+            .collect();
+        let file = rw2(&entries, &logical);
+        let info = crate::open(&file).unwrap();
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        assert_eq!(s.white, 3971);
     }
 
     #[test]
@@ -451,6 +468,13 @@ pub(crate) mod tests {
         // Black as the tags say; white 1/256 of the range below it.
         assert_eq!(s.black, [100, 101, 102, 101]);
         assert_eq!(s.white, 16383 - 64);
+        // With a linearity limit (green's, 0x0F), white is that.
+        let mut entries = header(6, 14, [11, 1]);
+        entries.extend([short(0x0e, 16000), short(0x0f, 16380), short(0x10, 16000)]);
+        let file = rw2(&entries, &word.to_le_bytes());
+        let info = crate::open(&file).unwrap();
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        assert_eq!(s.white, 16380);
         // Raw format 7: packed 14-bit samples, nine a block, not rotated.
         let mut word = 0u128;
         for i in 0..9u128 {

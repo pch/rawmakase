@@ -113,14 +113,21 @@ Panasonic and Leica (`vendor::panasonic`): the visible area is the full
 height and the columns up to the right sensor border plus the left border's
 width; the default crop is the camera's crop tags (else the sensor borders)
 starting on even rows and columns; black is the black level tags, 15 above
-them for raw formats 3 and 4; white is the bit depth's range, less 1/256 of
-it for raw formats 6 to 8 below 16 bits. Raw format 6 is read 15 below its
-coded levels, and raw format 7 in whole groups of four rows (the rows past
-them are 0). Raw format 8 strips stacked in more than one row (a
-high-resolution DC-S1RM2 mode) are `Unsupported`. Older bodies
-whose files RAWmakase has always read with other areas or levels have
-`compat-observed` rows in `data/raw-cameras.toml` (`visible`, `white`,
-`black`).
+them for raw formats 3 and 4; white is the bit depth's range over the green
+white balance level (tag 0x25) by 256, for raw formats 6 to 8 below 16 bits
+the linearity limit (green's; else 1/256 below the range): Adobe DNG
+Converter's WhiteLevel, exactly on every file of a green level above 256. Raw format 6 is read 15 below its coded levels, and raw format 7
+in whole groups of four rows (the rows past them are 0). Raw format 8 strips
+stacked in more than one row (a high-resolution DC-S1RM2 mode) are
+`Unsupported`. Where Adobe's WhiteLevel is
+not the file's rule (the DMC-G2's and G10's 3900, the DMC-GH2's 3800, the
+16380 of the DC-S1, S1H, S1R, S1M2, S1RM2 at 14 bits and S5, and the
+DC-GH5M2's 4088), `adobe-dng` rows of `data/raw-cameras.toml` give it, on
+RAWmakase's scale (the DMC-L10's data Adobe keeps 15 lower).
+The DC-GH5S's and DMC-FZ2000's Adobe takes from the ISO speed: rows of `iso`
+give its 8000 at ISO 800 and 2095 at ISO 80, the only speeds of theirs seen. Bodies
+whose files RAWmakase has always read with other areas have
+`compat-observed` rows (`visible`).
 
 Sony (from our own measurements unless said otherwise):
 

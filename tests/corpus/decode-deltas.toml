@@ -23629,3 +23629,1715 @@ before = 16380
 after = 15000
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 15000"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Panasonic and Leica RW2, RWL and RAW: white levels and the DMC-G10's black level follow Adobe DNG Converter, not LibRaw.
+
+[[delta]]
+# Leica Leica D-LUX 3 (pixls)
+sha256 = "5d622b0480037c322fb593500b8ef28cc79ca4ad41cd810a7a2214b643a534e1"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica V-LUX 1 (pixls)
+sha256 = "6ec19030c8d86584f69d8fe0cfc27d5fc8d57be9e943c7ce5eeb0735f4329813"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica/C (Typ 112)/L1000006.RWL
+sha256 = "081a6cf55204297f213e50b3398ff43e902dd684154ea79d1efea6503538176a"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica/C (Typ 112)/Leica_-_C_(Typ_112)-_3:2.RWL
+sha256 = "95ff5be4dab1d8415ddcaae674a40d024d625d0684893fcaaa0139983611a455"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica/D-LUX 4/L1010119.RWL
+sha256 = "71e55de649611a0e4cdedf53793ec177f5c093c5258a2922e1581f021211bc59"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica/D-LUX 5/L1010451.RWL
+sha256 = "ceeb5e5bf2358c04706e807bc023971e085d969b6f36491a57ecff051a05e8d3"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica/D-LUX 5/L1010452.RWL
+sha256 = "a5e936746ee25eeab29e597e8ac8b334adc9b6ed3644d65446efe435d8ecfe91"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica/D-LUX 5/L1010453.RWL
+sha256 = "43603bf943ac6e7772341b37300c4e5d835873907af7d9e3c9157072e7397444"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica/D-LUX 5/L1010454.RWL
+sha256 = "4665b97c0ac978d65d5d48ae506d26b835c91b473996e040f30fa7abb010df79"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica/D-LUX 6/L1010139.RWL
+sha256 = "785127e959ba004b36e61d4153b11debe161dd98c45618aa561899795eea3888"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica/Digilux 3/L1050624.RAW
+sha256 = "d2a4c556fe3660b70df34846dbb19c900a4e1fda0416e5651b1f8b6be7bfdd38"
+field = "sensor.white"
+before = 3967
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica/V-Lux 4/L1040407.RWL
+sha256 = "8cddb95c6a31f0b28a6435a2439910fb780abecbc98e3fd1b582aeabca74a10c"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DC-S5 (signature-edits)
+sha256 = "3d6014b12a2b2f2b63504d859655a517d14092112bd50c988f681f538dd2472a"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DC-S5 (signature-edits)
+sha256 = "5bba493767f175b72a36d09eb79ffade5e15e4da8676bc83b560ce47bcdca36d"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DC-S5 (signature-edits)
+sha256 = "5d2ef0c4dbfb679eaa634f5910630eb5f2c47b7173cb61a16ddd36e602fcc1a8"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DC-S5 (signature-edits)
+sha256 = "749c6dcddb5f8400beb10850a113626edbb94e6a9c7e2a449903da0a0fbf9718"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DC-S5 (signature-edits)
+sha256 = "fdea00c07e41e617cd84810ec22af0b79b1107d4e588100c928dc9bad2d70d17"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-FZ18 (pixls)
+sha256 = "46309063503689a9e0e21fd3866b193b5853a4caf42f774189658ac3f05d31ef"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-FZ200 (pixls)
+sha256 = "468a09fe4463df6adb9b4908b20ac59a8e78671abd421e0421f68062c6cc8f3e"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-FZ200 (pixls)
+sha256 = "db92fb34c11ac5e332519c03c15bb8a73717880b14347ba6efad3590919a253a"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-FZ200 (pixls)
+sha256 = "fa5880ea82c1c7d10326db376b64600c89fb180e93dea6b0fbd31a7ac276f8ba"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-FZ200 (pixls)
+sha256 = "fdafb2c3fa1a629dc4647cef1d544b50661f77514fe64a28f44aec8fe8ac8c9f"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-FZ30 (pixls)
+sha256 = "b4efb9ee0398b968ccd8e818afe755a2ddc57776bdb0e8862381fefa086f5621"
+field = "sensor.white"
+before = 3988
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-FZ72 (pixls)
+sha256 = "5c38a97a584be897cd5cda8c27e6daf40536930a32609967ed4829ccb670ea14"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-FZ72 (pixls)
+sha256 = "78c5cfb3d79651f94b3821913b951f8513c8885228d4e0cbaaa6099e592ab2b2"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-FZ72 (pixls)
+sha256 = "a485cafb03ac56ed0c82050f3d82c2af76eae8b99859d693d251e0c53a28d5ab"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-FZ72 (pixls)
+sha256 = "bf7eff18f5a67eb47c0f8a8d657a91515d4c0847a3cee6e2fb66fc040dc958f7"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-FZ72 (pixls)
+sha256 = "e93926ab7d9cb77d973ce23b5d1dcb94c571cc0658db2bea4487e581f3109b0f"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-G1 (pixls)
+sha256 = "aa3b92d6592744a889d7ea50aaf3ea55e0ec961d04c740d437d3396ca79757be"
+field = "sensor.white"
+before = 3988
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-GF3 (pixls)
+sha256 = "3781f9322d5dcfe9d1fc178b8de4adab563a584cbd20bad2e4f1dfead4a6da06"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-GF3 (pixls)
+sha256 = "3e53e74a63647fadf3dcd0c44399bbe915b836cd90c816f341e27b32963b1cbf"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-GF3 (pixls)
+sha256 = "4635994d77078a931af5ac3505f7a0cdbfb6354c2755fb14f4735e10ffdd9c23"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-GF3 (pixls)
+sha256 = "89ab2a22926cfb8f77e73e72c1bb6f5eed4ffa69ac074e6b5108a58ce4c6dba1"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-GF5 (pixls)
+sha256 = "2f154c4be3dbb4e02c9b0f37cafbbf9e4a4623f57ccd721d7185ebdb083203da"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-GF5 (pixls)
+sha256 = "560a5cbaf3821dd0e65073d9ea439e2541bc436216ef90d8584fb95311c4f458"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-GF5 (pixls)
+sha256 = "b7ba292df653e18b587946fd0104ca92034059a7ae61cca7390b489d44832fed"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-GF5 (pixls)
+sha256 = "d364eeed7ef863db9e41c201d2dca0e6bd4f907af06e759a3f0cf132ddb03992"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-GX7 (pixls)
+sha256 = "2acd8b11e08d18ab12208395f2ea71b80515e8aef0e44e09f7704a6419d99d97"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-GX7 (pixls)
+sha256 = "527f51f26eabcb559fb0f00e862b087e6eb042bb7c142c38b136cc8310fdb34c"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-GX7 (pixls)
+sha256 = "dc1ccf820d0d18345b716331119e85fb8ca33da0aa5e9b2d49659243d8c1b15b"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-GX7 (pixls)
+sha256 = "fa94e7460f8246b872534cba32b0a6e557d38f2001159454258a40b7438ae821"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-L1 (pixls)
+sha256 = "ef7cabf0e23e4adbe3b8f3655a1047531c55d1af49c2eb7d61634f15b4a8da2b"
+field = "sensor.white"
+before = 3967
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-L10 (pixls)
+sha256 = "c7c4ed9dd5d2d9d549a764f35b6d2cf81dc2cee514a29692b17155669e447252"
+field = "sensor.white"
+before = 3990
+after = 4001
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986 over its BlackLevel 0 on data 15 below ours (4001 on ours)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-LF1 (pixls)
+sha256 = "1b6e76addace2ce151ca36cbd9892f9fece3f8bf16135b762ec6c594cd891ecb"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-LX2 (pixls)
+sha256 = "12ea3b97c87375f2ac352b22d2b857caf8c34e3dff21c53775ba749caafdfdf8"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-LX3 (pixls)
+sha256 = "4d1a8e9271fe724afbdfb0785264fe64ff839941e49eb1113b52dfd54a8e0956"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-LX3 (pixls)
+sha256 = "53feae9e055d8387700c53e167259fba3021471444a622f14a3fb575f5d19c65"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-LX3 (pixls)
+sha256 = "62e670f103709491a0b981b3cc22317b3fe4389877c9993659d60153ff9b4ba4"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-LX3 (pixls)
+sha256 = "bc8d4795a5604d605daf8cbffb7dbbadaf5c3f4e6472d88f12fea00bf90f78fa"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-LX5 (pixls)
+sha256 = "825c8d05e23eadf557b65c54ad66b3ba421955a7adf7c674ea5463b7ab28a242"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-LX5 (pixls)
+sha256 = "a855ce035fd1e71acd87a7a681bda5d5a90656d4c4ac73263c09e80afec329a0"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-LX5 (pixls)
+sha256 = "d09be0f41b46c4b093d6405741da78b10b08b31b0c08a6e45c1cf8a28a36cc74"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-LX5 (pixls)
+sha256 = "f2044a00ee971876de4a1a2ba0c1c9b52e1309107cbe114e1c327b4c1d0262f6"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-TZ71 (pixls)
+sha256 = "09ba4958e88be1e5046182e3bcc516a2f6faed4707fb692ac1c1730eb6a7bdc3"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-TZ71 (pixls)
+sha256 = "35b08bae2119f02af07dad03ede40c50a7c251699e475f8911ca9d3925695172"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-TZ71 (pixls)
+sha256 = "37c4612338ce9dbad1a3120e5ad3ac4fc7967f520851243d7c9ae61822d5498d"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic DMC-TZ71 (pixls)
+sha256 = "c040a80538efb6d960befd580f677ff9b53fa8ad0e3e9e5773fee5f59c78a521"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-GH5M2/Panasonic_-_DC-GH5M2_-_16:9.RW2
+sha256 = "8a96ddaccd700b8de1e2361f64383d4096025374bc5c6741cce59955b0655852"
+field = "sensor.white"
+before = 4079
+after = 4088
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4088"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-GH5M2/Panasonic_-_DC-GH5M2_-_1:1.RW2
+sha256 = "86d0e914ac3c892a8d853ee1223c4bdfcb9d29d4aa28956240541c77c3b902f6"
+field = "sensor.white"
+before = 4079
+after = 4088
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4088"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-GH5M2/Panasonic_-_DC-GH5M2_-_3:2.RW2
+sha256 = "06730d4324f9dadfd702800c2fc0960c82cf30034b5c251847102f0f31216e39"
+field = "sensor.white"
+before = 4079
+after = 4088
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4088"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-GH5M2/Panasonic_-_DC-GH5M2_-_4:3.RW2
+sha256 = "0ea0efd2a9442d8c68508e4196e29f1da4577407dc3df5add4cf360f70493c7b"
+field = "sensor.white"
+before = 4079
+after = 4088
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4088"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1/P1033119.RW2
+sha256 = "45309a096d6010281e2fa310e6ec2fe1bcc02947fa37b1a2414cfc7377ce4ac6"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1H/P1000006.RW2
+sha256 = "a366e2cde27977c527ad3c4b42b7ecc13740c8f53a032d802961b14f5bfe2e69"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1M2/Panasonic_DC-S1M2_-_32.RW2
+sha256 = "e50ae28ab990a7997b1f2142e976619d072969186ed4f0095bef0724d2c70563"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1M2/Panasonic_DC-S1M2_-_32_LG.RW2
+sha256 = "14ff4e44c41d2335d3a22918c7cfcb4c320c57e12808255d93df9d96950f381a"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1M2ES/3_2_P1022959.RW2
+sha256 = "4a10d20cf5d17087d75b7acd3d1fbdab66605505e9b7af62390f1948be4b09a5"
+field = "sensor.white"
+before = 16319
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1R/P1000077.RW2
+sha256 = "8b8a969617705d9997ee0461354c99905b964ae08b820cd24c6d4e440461e24c"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1RM2/P1000236.RW2
+sha256 = "0175ac937261744fe13b5d234eb4ede83695562d100d2c7b4bb2e7fc3bd69e67"
+field = "sensor.white"
+before = 4079
+after = 4095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1RM2/P1000454.RW2
+sha256 = "0fde3176fd98214f64d5d472162d47f7146267c29f39eb8f3dd2351bc60158d0"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1RM2/S1Rii_16x9.RW2
+sha256 = "d0732d521a4c8fe4dd16e95b1bf1173915326f6717fd2309f8cfb9fac1be3a25"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1RM2/S1Rii_1x1.RW2
+sha256 = "46e8f950fa11405cdd3e00f442f9dd1ceafc5e17a91f2b44d74c9b7115ac2590"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1RM2/S1Rii_2x1.RW2
+sha256 = "88a0feee2c8454b3e1dccf28d9b7f9330a25ed35ab60c28ffe6e33de01b0c490"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1RM2/S1Rii_4x3.RW2
+sha256 = "0fbb7bcb33886c8d23b2fa0c28132a6f1dea9c1f0e1d5f57d902802cb5ac164a"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1RM2/S1Rii_65x24.RW2
+sha256 = "77147d5d1df26613b8914faad8271e69037d0da7dfbc1e4018fc5168382bf3f7"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1RM2/S1Rii_electronic_shtr.RW2
+sha256 = "42b74f5375f58bcf69d8dda5adb0607b4c104e4f72e07f807f8ca7f5e1f26e97"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S1RM2/S1Rii_multiexposure.RW2
+sha256 = "91661af2f72502b9a0ce1f2d4ed2ddfe60ac83a64d3742fa5608498661615bdf"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S5/P1047510.RW2
+sha256 = "3615c85207097180b231f0c89d018eb3f1a71988780612921eb0a05246bca706"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S5/P1047513.RW2
+sha256 = "2f66bd27c6c677bc6def28dfd955a8d520b04654a2d08087d49f3b2823e97ed2"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S5/dc-s5_6k4k.RW2
+sha256 = "350f4ad0839383b3e7bcb0feb2dda827fc81e97ab59917df2a1d824bb979234d"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S5/dc-s5_hr_96MP.RW2
+sha256 = "3d1c714cab86a9e699e37f6f96719a98a5a2930e5ac77c73c1cba9b18f98c828"
+field = "sensor.white"
+before = 16319
+after = 16380
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16380"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S5M2/P1126458_mechanical.RW2
+sha256 = "53a171521a7f9af6910b4ab61c5a4a42de0cceb24166e15b07eee1e00675028f"
+field = "sensor.white"
+before = 16319
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S5M2/P1126460_burst_electronic.RW2
+sha256 = "7480e44ed8557b71b1618e2d91c0f3eea58b60cb5a9196d2a1a552cfa509a1d2"
+field = "sensor.white"
+before = 16319
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S5M2/P1126473_96MP.RW2
+sha256 = "a5e9b84e3471a69cdb025c4b1fb5d51001fd494b411dc05d74dd518ba1adf4e9"
+field = "sensor.white"
+before = 16319
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S5M2X/P1055415.RW2
+sha256 = "4a52f1706a69d5d37587bfba70f9e6bf554399ac2123f0be9b30a156b513d446"
+field = "sensor.white"
+before = 16319
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S5M2X/P1055419.RW2
+sha256 = "215f393224714414051cfd4e3e3d0bd0fde40fcb1ff32b5f7d98b3f09f406da2"
+field = "sensor.white"
+before = 16319
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S5M2X/P1055421.RW2
+sha256 = "9a29aa5a0092532aa70ee786cb9ed180d600529149f6e9c6428322f324ac55a5"
+field = "sensor.white"
+before = 16319
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S9/Panasonic_DC-S9_ISO200_3_2.RW2
+sha256 = "290ad5b4e396cb241a59459b2613d2b0659a03ff654e5d5368b3376d35812e50"
+field = "sensor.white"
+before = 4079
+after = 4095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S9/Panasonic_DC-S9_ISO200_3_2_LL_48MP.RW2
+sha256 = "da47b85fa4a011be0ebbb5185453224fe2ab05733d46efb65f5bae120fcdf281"
+field = "sensor.white"
+before = 4079
+after = 4095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-S9/Panasonic_DC-S9_ISO200_3_2_XL_96MP.RW2
+sha256 = "906eae8502326cd93ddad352397b92db1c4a7e144e1cb0c5b84659bec18698a8"
+field = "sensor.white"
+before = 4079
+after = 4095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4095"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FX150/1.1-Panasonic-DMC-FX150-1.33-P1040340.RW2
+sha256 = "4394d98984924bbc9591631a757b423feb9702ab0f455df0c00864d1115e44b9"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FX150/1.2-Panasonic-DMC-FX150-1.50-P1040341.RW2
+sha256 = "1d54d0d30f237bc9756c6d075988b6eab6f1c633ca871f9de02cbd80f718fccb"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FX150/1.3-Panasonic-DMC-FX150-1.78-P1040342.RW2
+sha256 = "6d58a5067e681f98293436e05e440e0fe79c54e7107afaeeca51c7dc13f6cc32"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ100/P1080626.RW2
+sha256 = "a7e286e9b877a455d289f709bfad2ebc1fdbdb13e180f3cb0e15117e491708ac"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ100/P1080627.RW2
+sha256 = "3e148652ed0a68c245bdd1e52f531c355126c896a10da6c6c137f13dcd9af8cb"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ100/P1080628.RW2
+sha256 = "ed849a4050fa114373ae1ba41e0c16405c29426e8afff2c8028078c78ca22101"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ100/P1080629.RW2
+sha256 = "8b41d6c9bb69c81b26461df6729400c37615d676ed7403cc18526b771aeca17d"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ150/Panasonic_FZ150_16:9.RW2
+sha256 = "253722e2956d1b09a717696e7eb3640f6f9df7920aa37797735a3b427675bda9"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ150/Panasonic_FZ150_1:1.RW2
+sha256 = "b4fd8697a32101f815cab246bf2ea9b70c25b1f4601ca6afe54586ff68d5e115"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ150/Panasonic_FZ150_3:2.RW2
+sha256 = "2f56b09b7832a287883463614690de622514fffb310d007271795c005fe61f88"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ150/Panasonic_FZ150_4:3.RW2
+sha256 = "a341325b9621e58c1e24367e7d9a1e59b58bce6d174299404c1531e90f6fcef6"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ200/P1040142.RW2
+sha256 = "497e7449e36203802be2d0860dd2b052493e76b43a8dd8e2482c8e2b5ea2a123"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ28/P1120635.RW2
+sha256 = "82a561fbeda3b9825ce2b872b230d9a71960946173af84196fe88a5b19691fc6"
+field = "sensor.white"
+before = 3990
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ28/P1120636.RW2
+sha256 = "db0c5c585269247f4da4a3c57f36f235ff1a4ce3c00ecd94fac0f2505b84daae"
+field = "sensor.white"
+before = 3990
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ28/P1120637.RW2
+sha256 = "b58564eb3cd148e6282aeba0b104506fa021ce905a3040f15b6ef1cbd6142fff"
+field = "sensor.white"
+before = 3990
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ35/Panasonic_-_DMC-FZ35_-_16:9.RW2
+sha256 = "70d552f6c0d7229c7ebb1afbe00dc1de0541cfe4b33acf2fa6ee24e75f4d8463"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ35/Panasonic_-_DMC-FZ35_-_3:2.RW2
+sha256 = "5a4cdc060530a462c87ea35216d501b226252fdaa52df467cbae1f02e0fcb3d6"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ35/Panasonic_-_DMC-FZ35_-_4:3.RW2
+sha256 = "278c40758b163b67d8540c321895b6afb1d5fb30471e403dde80648cbdaece69"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ38/Panasonic_DMC-FZ38_-16_9.RW2
+sha256 = "2f583abdfe156c97581b85dd003ef3270f45e2bc6a3230b8060086a793b3941d"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ38/Panasonic_DMC-FZ38_-3_2.RW2
+sha256 = "e8cd983ce0cec53d92703349830b3e226053943a7eea791cdc5b86e58d1ed89b"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ38/Panasonic_DMC-FZ38_-4_3.RW2
+sha256 = "67b01feff1eac6502435c27f83201d4b411a2765501f38a83f926d47130fd650"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ45/Panasonic_DMC-FZ45_16:9.RW2
+sha256 = "e7e629ca1248f5be1d5ab5e62a4d5268287d356254a12351ad00e3f59d081d15"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ45/Panasonic_DMC-FZ45_1:1.RW2
+sha256 = "93bd4c3fb7debfa8d7025fd8f2a78f2968cde3c3033ae79b594dcf53255766e7"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ45/Panasonic_DMC-FZ45_3:2.RW2
+sha256 = "1aa9e9e0a4b8a10723e5ea14de338620dbdd83a12ad82c2e4219c046864816a4"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ45/Panasonic_DMC-FZ45_4:3.RW2
+sha256 = "d33cdfad1dc86d98e398f38d40580a98e750f12b27db9a731febbe2163eb2571"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ50/P1250835.RAW
+sha256 = "a776a941758214bf4d1342e2b89ed756bfcad5877e038cf9df3bdda502c432ea"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ50/P1250847.RAW
+sha256 = "30cac8cf14686387f2d5b8823c6d2ce3af19e62fc910e6abd77e6038e99412a7"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ50/P1250848.RAW
+sha256 = "7c7181fd7f4320efebb33ee5e6f599d522527831e6bd94cc10b1f113bdcc2287"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ70/P1000836.RW2
+sha256 = "45579993e6914eca5293dd70f2807cd1154a85b873297f0d943c4148e3660174"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ8/P1240856.RAW
+sha256 = "a11f1534f3092a4d5f2b57d182f6b06f8d26cf766eb463c3e02b26a338b63b8b"
+field = "sensor.white"
+before = 3967
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G10/P1030392.RW2
+sha256 = "b3dac238f1c40c6c687d7bdd24c428ea81dd498daeb7fca9f26ce00de4ef2113"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [15, 15, 15, 15]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 15 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G10/P1030392.RW2
+sha256 = "b3dac238f1c40c6c687d7bdd24c428ea81dd498daeb7fca9f26ce00de4ef2113"
+field = "sensor.white"
+before = 4095
+after = 3900
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3900"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G10/P1030393.RW2
+sha256 = "0bc86538b1d270f24651d38e4c4614feb7dd75e311b06576b92925be89966962"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [15, 15, 15, 15]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 15 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G10/P1030393.RW2
+sha256 = "0bc86538b1d270f24651d38e4c4614feb7dd75e311b06576b92925be89966962"
+field = "sensor.white"
+before = 4095
+after = 3900
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3900"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G10/P1030394.RW2
+sha256 = "b1c1345674e15cc0403a24264f5d623e4523d8f1d831b575b5ef4666e2c54948"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [15, 15, 15, 15]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 15 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G10/P1030394.RW2
+sha256 = "b1c1345674e15cc0403a24264f5d623e4523d8f1d831b575b5ef4666e2c54948"
+field = "sensor.white"
+before = 4095
+after = 3900
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3900"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G10/P1030395.RW2
+sha256 = "9e2ed06629dfddb1c2d8745e3099b281e4dadf09c44f952d6a8dbda43403e46d"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [15, 15, 15, 15]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 15 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G10/P1030395.RW2
+sha256 = "9e2ed06629dfddb1c2d8745e3099b281e4dadf09c44f952d6a8dbda43403e46d"
+field = "sensor.white"
+before = 4095
+after = 3900
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3900"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G3/P1350398.RW2
+sha256 = "0b5484b44898df5e21704ea734ced36906095ce31fd130262e89871ca690a4bf"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G3/P1350399.RW2
+sha256 = "301db446ef1c7a4121ba7be69cea9220478cac9d5ace45750215e8be1dd03a77"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G3/P1350400.RW2
+sha256 = "af68a6cc5ceff14a0d30d1a9a04f3da37e9f7270624788305ecd1ad7ba981825"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G3/P1350401.RW2
+sha256 = "998d4657f96d69007eca8ebbd3a44c93d0bd741f2bce0a9df265782921fc26d3"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G5/P1020264.RW2
+sha256 = "5cb711a5839335dabb392252161fd40149f7d7c29a91d247b6f9add003fad90b"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G6/Panasonic_DMC_G6_16x9.RW2
+sha256 = "fefd8a915eb1f3d1485750ff97ef600bb5f3c58aad7bb37dae013ad7cab262b4"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G6/Panasonic_DMC_G6_1x1.RW2
+sha256 = "73a8b2f510ee414084fb02f93dc8d74f50f00c9e2144ad7b9821c16844e0364e"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G6/Panasonic_DMC_G6_3x2.RW2
+sha256 = "977060a7f1478d80ea5e7da8c77e92278586f5d8a0e091d8e3d803399e135340"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-G6/Panasonic_DMC_G6_4x3.RW2
+sha256 = "5b20c3ec272a4c8eca453205519ea92d061126a5b3153b7f60b7143d24f399d9"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GF2/P1090462.rw2
+sha256 = "43b12957491b7ce79d8509cf643c846e8d615fbf78ccba416bc836e994b7c28b"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GF2/P1090463.rw2
+sha256 = "ddd8b32b1270c944939c9a929cdf168815fa578c256abf2406d68a9f823b3c62"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GF2/P1090464.rw2
+sha256 = "1c42ab35def9544c8ed9a872ca207d374c9e156df1b44c21c55991862d5e143f"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GF2/P1090465.rw2
+sha256 = "b0009f1d1ded7f787c76348a52f6b66acb9c5c9e5e107c1bc753901ffb4530f5"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GF6/P1060736_4x3.RW2
+sha256 = "dace6b3818f00a5d4f7cc1cfc29744d15dcf7dd8684c882bea4a81c6ef670ad0"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GF6/P1060737_3x2.RW2
+sha256 = "3d839ffdc55819f9b47eaa966f39f60a09616e2c075979d2a479314ff2c41857"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GF6/P1060738_16x9.RW2
+sha256 = "d62b994d5024d75c7fa4f4d71619fcf1aa423a59f9a9e737c999864ffbb8048d"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GF6/P1060740_1x1.RW2
+sha256 = "42bf7e5cb5083a1f3ead0bc601b9ca3f8ed825b28949964bb0c91c4aef7d2fe3"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GH2/_1040800.RW2
+sha256 = "87516d28f8594dcfd20b0577883ad0d35662efc503674b1e3688aa894d32a2c0"
+field = "sensor.white"
+before = 3989
+after = 3800
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3800"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GH3/P1090819.RW2
+sha256 = "5f19f9408078b752f016fe083f791eea1aca1d391ed2e53845cb264252e00848"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GH3/P1090820.RW2
+sha256 = "44e9d6e781a0d0ac3aa53f3c455033ec2b48926d5bf160b03e44eea1681218ca"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GH3/P1090821.RW2
+sha256 = "8ef652e1a9ff8a190300868ec52a18e890a58810f0fed5ebad641144585ee1cb"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GH3/P1090822.RW2
+sha256 = "9049c8321140cb9c6433ac12e6e25d7f3815302137634aa83640246a580cdf6b"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GM1/P1360674.RW2
+sha256 = "66087c224c969bb6ba86aeb64599e54990880ef914bdd2d6356df2d80c8d4dea"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GM1/P1360675.RW2
+sha256 = "25787e0a53a9ae15006f588b4077fc4268e29562333d1a32fe302652c40bb80e"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GM1/P1360676.RW2
+sha256 = "0f3087a88c2ee8cf5289fad76484b08faff17a5f9945e792c61e15a9a349a957"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GM1/P1360677.RW2
+sha256 = "bdd5a9b505fcf1f94d1e24265f47762665a6a1983acd86764b4ae3ed1166ec26"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-GX1/_1160044.RW2
+sha256 = "c7355ced190268cc14183762f6f8fb983bf90e165c29424d6ce1be6845a392d4"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-LF1/image-20170106_111000-1.rw2
+sha256 = "de85f2204ec35f36bd3488a0e9a4581ef33e004d7a918931a985b409a62b96a6"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-LX1/P1080763.RAW
+sha256 = "8ff982526d215d337706640cc6aa0822cccbe65a86ebe01daef0fd43cb45a4ca"
+field = "sensor.white"
+before = 3967
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-LX3/P1010600.RW2
+sha256 = "f2aeaa1cf9a1922a6b9bbe5d0bf1ba19d4c8988fefa320377a5e7461a31ffc23"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-LX3/P1020593.RW2
+sha256 = "6663d5b6539de15640ded2b0f422c8affb8cf1bec93e27b3548e970226c063a5"
+field = "sensor.white"
+before = 4095
+after = 3986
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3986"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-LX7/1-1.RW2
+sha256 = "abefe8e2cc8b42820764990b4ba94858f8c032fb38a2b9305bcd0af4d74ba099"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-LX7/16-9.RW2
+sha256 = "04d85013dccf7ce42b218580a3307b0e67c107ef8e23544ab6cb253f3f11bf30"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-LX7/2023-03-30_17-06-32_P1000044.RW2
+sha256 = "ad2973970e16c6f5a3ef36ce84ab9a1aef3d1e8ff2d1748351f18ee3dd40a77f"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-LX7/3-2.RW2
+sha256 = "07c96244a3cd36b7301a6b428cbe377ab0362d91973fe56dee006d809c39f573"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-LX7/4-3.RW2
+sha256 = "c2a8ca64c8d8d520ec2040a6e74ca51c8ed0d353a48f99235744f9ecf7424fc8"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-LX7/P1020372.RW2
+sha256 = "d142a23aca836053ed53e9ce3cb3ed2d434541d734d71a94a6eefadcd08bd31b"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-LX7/P1020373.RW2
+sha256 = "1e4ece67069fb8cb8dc63993386567fd42688df63da214ecaa9615d20ec74987"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-LX7/P1020374.RW2
+sha256 = "18dfc3877e944020299635a8c2fad61fca2485b1c9b67645a495ee870a86e599"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-LX7/P1020375.RW2
+sha256 = "c24a103e579089ef845c347e08b7e969f574a1c9efdfde54af51f2e1a4fc0900"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-TZ60/P1010281.RW2
+sha256 = "44373b2f27fe3186c859bc3ee5e16ea38be98e0fa02fd60371dfb70e12eec958"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-TZ60/P1010792.RW2
+sha256 = "609db21f56d818cb6ee2c0659b5a03a463b501eded55b4ccfb8978f22c13f3ea"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-TZ61/P1000165_aspect_ratio_4_3.RW2
+sha256 = "906297d39fbd25c1ca1843f635faec9273a4041f69b9a9fb6019216ce454ab16"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-TZ61/P1000166_aspect_ratio_3_2.RW2
+sha256 = "da895726683e5bbb99df9a83e4766f28401ad3ac8baded50e692702e2d6ea228"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-TZ61/P1000167_aspect_ratio_16_9.RW2
+sha256 = "6df8ed53d41ed44007ab530b33cb3606176d26d265e1412d7a35c2a1b11f40ac"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-TZ61/P1000168_aspect_ratio_1_1.RW2
+sha256 = "a60f2b661b3ec4098b31adb0998c6806b4a2c2dde219cd0335fff4282edc694c"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-TZ70/raw_panasonic_dmc_tz70_aspect_16_9.RW2
+sha256 = "564df985a397edd1f80dd66ddae2bd2277a5c1fa57e0003bc0e1fafd0f1d05a3"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-TZ70/raw_panasonic_dmc_tz70_aspect_1_1.RW2
+sha256 = "654edfc63ed1c97b5073f8d25d3b1051c24f6fa087dd3523263d8895ba92dedf"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-TZ70/raw_panasonic_dmc_tz70_aspect_3_2.RW2
+sha256 = "8188ce8f2c6957229dc7fef8c3063e6d326fd92b1800db0048ee7d70f572a4ff"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-TZ70/raw_panasonic_dmc_tz70_aspect_4_3.RW2
+sha256 = "481f72559a2e7d1aa176ce9509e27bad8ac9a3b08d03e8449f7fbc27c115daea"
+field = "sensor.white"
+before = 4095
+after = 3971
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3971"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-ZS40/P1000048.RW2
+sha256 = "042be79e719191c640125c53090d0b5268d8cd7cb12fb7fe1ed59d392d6619d7"
+field = "sensor.white"
+before = 4095
+after = 3956
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3956"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-GH5S/P1022081.RW2
+sha256 = "b617151876e62b492641cef14b8c98ee3797e5014d24c6af1c780715a501fa53"
+field = "sensor.white"
+before = 16383
+after = 8000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 8000"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-GH5S/P1022082.RW2
+sha256 = "4b40c2d6cb2afa9a982d2463a16fdcda1a97e0170c947f130373ca8134cf4d1c"
+field = "sensor.white"
+before = 16383
+after = 8000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 8000"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-GH5S/P1022083.RW2
+sha256 = "52c5347cfa89ef1ef33e274a3f18f9bf3cbfbb70a2ba47de00c16f0b25ee5366"
+field = "sensor.white"
+before = 16383
+after = 8000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 8000"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-GH5S/P1022084.RW2
+sha256 = "953e602e21974a3eb894e3ec0abd6e6fa31d991e579fe013fd9d2e0f414c47ac"
+field = "sensor.white"
+before = 16383
+after = 8000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 8000"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-GH5S/P1022085.RW2
+sha256 = "c1d55f5f47b97ee2d8064924f3ac3f6e00dbbe47680ca1e85f3550974b24336e"
+field = "sensor.white"
+before = 16383
+after = 8000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 8000"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-GH5S/P1022090.RW2
+sha256 = "7553e219a0dfc8edfcef58bf209ed9e3c37a5de395fb02999e17c979ed6817cd"
+field = "sensor.white"
+before = 16383
+after = 8000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 8000"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-GH5S/P1022091.RW2
+sha256 = "f3da3c36bac3771b52effec2842e4fe03827c026e38ef4a7829eedeb0abbba21"
+field = "sensor.white"
+before = 16383
+after = 8000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 8000"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DC-GH5S/P1022092.RW2
+sha256 = "3fdf6ce5e14382801e8998e66b290b2f65d0c4fe4a199922742eb12c72fc8403"
+field = "sensor.white"
+before = 16383
+after = 8000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 8000"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ2000/_1000029.RW2
+sha256 = "400c78f091b02e61115d7561eb8f942803670083ddc5fc9eacfeb5c5b121796d"
+field = "sensor.white"
+before = 4095
+after = 2095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 2095"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ2000/fz2000-11.RW2
+sha256 = "93f8b6e7eaf5948198621aaf766e77a9ff61e8b1ea68c5cf351cfc0500f55a8a"
+field = "sensor.white"
+before = 4095
+after = 2095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 2095"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ2000/fz2000-32.RW2
+sha256 = "685be3c861cf886e3389e232328d1d929d2f7c301048db7dbad43e03abffbc98"
+field = "sensor.white"
+before = 4095
+after = 2095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 2095"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Panasonic/DMC-FZ2000/fz2000-43.RW2
+sha256 = "71f5bae3c44a029081664016ad88df6f58adc58fc07960ebc1f09e32e77807b8"
+field = "sensor.white"
+before = 4095
+after = 2095
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 2095"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
