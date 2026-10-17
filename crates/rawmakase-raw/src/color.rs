@@ -16,7 +16,9 @@ const XYZ_RGB: [[f64; 3]; 3] = [
 /// else (a DNG's) the file's; the camera-to-sRGB matrix and the daylight
 /// multipliers from the file's matrix when it has one, else the table's.
 /// Without a matrix the daylight multipliers are neutral (1), so a file
-/// without white balance as shot is never balanced by zeros.
+/// without white balance as shot is never balanced by zeros, and the
+/// camera-to-sRGB matrix is the identity (as LibRaw's), so the camera's
+/// colours pass through rather than to black.
 pub(crate) fn apply(info: &mut RawInfo) {
     let table = crate::facts::matrix(&info.make, &info.model);
     // A DNG whose white balance is a chromaticity, of a camera Adobe gives
@@ -40,7 +42,10 @@ pub(crate) fn apply(info: &mut RawInfo) {
             info.rgb_cam = rgb_cam;
             info.pre_mul = [pre_mul[0], pre_mul[1], pre_mul[2], pre_mul[1]];
         }
-        None => info.pre_mul = [1.; 4],
+        None => {
+            info.rgb_cam = std::array::from_fn(|i| std::array::from_fn(|j| f32::from(i == j)));
+            info.pre_mul = [1.; 4];
+        }
     }
 }
 
@@ -191,11 +196,13 @@ mod tests {
 
     #[test]
     fn daylight_comes_from_the_matrix_else_is_neutral() {
-        // No matrix: neutral daylight, never zeros.
+        // No matrix: neutral daylight and the identity, never zeros.
         let mut info = crate::info::base(crate::Variant::MefPacked);
         info.make = "NoSuchMaker".into();
         super::apply(&mut info);
         assert_eq!(info.pre_mul, [1.; 4]);
+        assert_eq!(info.rgb_cam, [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]]);
+        assert_eq!(info.cam_xyz, [[0.; 3]; 3]);
         // A file's matrix: daylight from it.
         let m = [[0.5f32, 0., 0.], [0., 1., 0.], [0., 0., 0.25]];
         info.file_matrix = Some(m);
