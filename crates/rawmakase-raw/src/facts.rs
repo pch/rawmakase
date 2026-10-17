@@ -184,6 +184,50 @@ pub(crate) fn matrix(make: &str, model: &str) -> Option<[[f32; 3]; 3]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The facts an `adobe-dng` row may give: levels (`white`, `black`) and
+    /// the as-shot white balance scale (`wb_scale`); never geometry (visible
+    /// area, default crop, orientation, colour filter).
+    fn adobe_facts_only(c: &Camera) -> bool {
+        let Camera {
+            make: _,
+            model: _,
+            dng: _,
+            raw_size: _,
+            bits: _,
+            white: _,
+            black: _,
+            wb_scale: _,
+            source: _,
+            note: _,
+            visible,
+            frame,
+            flip,
+            cfa,
+        } = c;
+        visible.is_none() && frame.is_none() && flip.is_none() && cfa.is_none()
+    }
+
+    #[test]
+    fn adobe_rows_give_levels_and_white_balance_never_geometry() {
+        let row = |facts: &str| -> Camera {
+            toml::from_str(&format!(
+                "make = \"X\"\nmodel = \"Y\"\nsource = \"adobe-dng\"\n{facts}"
+            ))
+            .unwrap()
+        };
+        for allowed in ["white = 4000", "black = 64", "wb_scale = [0.96, 0.96]"] {
+            assert!(adobe_facts_only(&row(allowed)), "{allowed}");
+        }
+        for geometry in [
+            "visible = [0, 0, 8, 8]",
+            "frame = [0, 0, 8, 8]",
+            "flip = 6",
+            "cfa = [0, 1, 1, 2]",
+        ] {
+            assert!(!adobe_facts_only(&row(geometry)), "{geometry}");
+        }
+    }
     #[test]
     fn tables_parse_and_have_no_duplicate_rows() {
         let cameras: Cameras = toml::from_str(CAMERAS).unwrap();
@@ -212,13 +256,10 @@ mod tests {
                     || c.cfa.is_some(),
                 "{c:?}"
             );
-            // Adobe DNG Converter's levels where the file does not tell
-            // them; never its geometry.
+            // Adobe DNG Converter's decode facts where the file does not
+            // tell them; never its geometry.
             if c.source == Source::AdobeDng {
-                assert!(
-                    c.visible.is_none() && c.frame.is_none() && c.flip.is_none(),
-                    "{c:?}"
-                );
+                assert!(adobe_facts_only(c), "{c:?}");
             }
         }
         for m in &matrices.matrix {

@@ -253,7 +253,7 @@ corrected by measurement against LibRaw's output; that 14-bit data's codes
 start a byte later is what the measurement found. Visible widths shorter
 than the stored rows are a rule by
 stored width (our measurements, every body of a sensor alike) or
-`compat-observed` rows; so are the white levels of older bodies and the
+`compat-observed` rows; so are the
 canonical names (`E-M1MarkIII` is `E-M1 Mark III`, OM Digital's bodies are
 Olympus's). 14-bit compressed data starts a byte later than 12-bit.
 
@@ -293,7 +293,7 @@ decoder source consulted, and verified by an exact match with LibRaw's output
 on every PEF of our dataset);
 Pentax DNGs' lens ID and ISO from the same note in DNGPrivateData. Samsung's
 GX PEFs read the note too, but not its crop. Ricoh Imaging's bodies are
-named Pentax. The visible areas, the 645D's white level and the canonical
+named Pentax. The visible areas and the canonical
 names (`*ist DL` is `*istDL`) are `compat-observed` rows. A PEF of linear
 (monochrome) data is `Unsupported`.
 
@@ -307,7 +307,8 @@ kept within the bit depth, and the packing rules below.
 12-bit words (compression 32769) hold 11-bit samples. The NX20 generation
 (whose raw directory says three samples a pixel) packs pairs into
 little-endian 3-byte words, earlier bodies plainly. Visible areas, the
-EX1's and EX2F's white levels and, for bodies whose CFAPattern is not the
+EX2F's white level (2047 of its 11-bit samples: Adobe's 4095 of 12 bits) and,
+for bodies whose CFAPattern is not the
 filter (the NX300 and NX3000 generations, the NX mini; Adobe DNG Converter
 agrees), the colour filter are `compat-observed` rows.
 
@@ -320,7 +321,15 @@ balance RAWmakase reads.
 Values observed from LibRaw other than geometry and names are checked
 against the file and Adobe DNG Converter: where both disagree with LibRaw,
 the file's value is read and the change recorded in
-`tests/corpus/decode-deltas.toml`.
+`tests/corpus/decode-deltas.toml`. White levels the file does not give
+are Adobe DNG Converter's (`adobe-dng` rows, in the files' sample units, by
+bit depth where a body writes two), as are the 14-bit Olympus bodies' black
+(the note's 0x0606) and the white balance scale of the SP-350, SP-500UZ,
+SP-510UZ and SP-550UZ, whose red and blue levels are over a green Adobe
+reads about 4% higher. An `adobe-dng` row may give
+decode facts only (black and white levels, the as-shot white balance scale),
+never geometry (visible area, default crop, orientation, colour filter), which
+stays the file's or `compat-observed`; the facts test enforces this.
 
 ## Checking against LibRaw
 

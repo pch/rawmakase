@@ -44,6 +44,8 @@ const PROCESSING_PRESETS: [u16; 3] = [0x010a, 0x010c, 0x010d];
 const RAW_INFO_PRESETS: [u16; 3] = [0x0122, 0x0131, 0x0120];
 const BLACK: u16 = 0x0600;
 const VALID_BITS: u16 = 0x0611;
+/// BlackLevel of 14-bit samples (red, green, green, blue on their scale).
+const BLACK_14: u16 = 0x0606;
 const CROP: [u16; 4] = [0x0612, 0x0613, 0x0614, 0x0615];
 const ASPECT_RATIO: u16 = 0x1112;
 /// The main directory's tags of the oldest notes.
@@ -61,6 +63,9 @@ pub(crate) struct Notes {
     /// Black of red, green, blue and the second green, on the scale of
     /// `bits`.
     pub black: Option<[u32; 4]>,
+    /// Black of red, green, blue and the second green of 14-bit samples, on
+    /// their scale.
+    pub black14: Option<[u32; 4]>,
     /// The bit depth of the samples (12 or 14).
     pub bits: Option<u32>,
     /// The default crop: left, top, width, height.
@@ -188,6 +193,8 @@ pub(crate) fn read(t: &TiffFile) -> Option<Notes> {
         };
         out.black = quad(ip, BLACK).or(out.black);
         out.bits = v.int(ip, VALID_BITS).or(out.bits);
+        // 14-bit samples' own black, as Adobe DNG Converter reads it.
+        out.black14 = quad(ip, BLACK_14);
         let crop = CROP.map(|tag| v.int(ip, tag));
         if let [Some(l), Some(t), Some(w), Some(h)] = crop {
             out.crop = Some([l, t, w, h]);

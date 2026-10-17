@@ -73,6 +73,8 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     let mut info = crate::info::base(variant);
     info.make = t.text(ifd0, 271).unwrap_or_default();
     info.model = t.text(ifd0, 272).unwrap_or_default();
+    // The camera table is keyed by RAWmakase's names.
+    crate::names::apply(&mut info);
     info.raw_width = width;
     info.raw_height = height;
     info.width = width;
@@ -113,7 +115,9 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         height,
         packing,
         black,
-        white: (1 << bits) - 1,
+        white: crate::facts::camera(&info.make, &info.model, false, [width, height])
+            .find_map(|c| c.white)
+            .unwrap_or((1 << bits) - 1),
     });
     Ok(info)
 }

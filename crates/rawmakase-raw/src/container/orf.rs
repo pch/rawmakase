@@ -166,18 +166,30 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     }
     let bits = notes.bits.filter(|b| (8..=16).contains(b)).unwrap_or(12);
     // The note's black is on the 12-bit scale, or its own when that is less.
-    let black = notes
-        .black
-        .unwrap_or([0; 4])
-        .map(|b| u64::from(b) << bits.saturating_sub(12));
+    let black = match notes.black14.filter(|_| bits == 14) {
+        Some(b) => b.map(u64::from),
+        None => notes
+            .black
+            .unwrap_or([0; 4])
+            .map(|b| u64::from(b) << bits.saturating_sub(12)),
+    };
     if black.iter().any(|&b| b > 0xffff) {
         return Err(corrupt("ORF black level"));
     }
     let black = black.map(|b| b as u32);
     let size = [width, height];
-    let white = crate::facts::camera(&info.make, &info.model, false, size)
-        .find_map(|c| c.white)
-        .unwrap_or((1 << bits) - 1);
+    // Rows for files of this bit depth, or any.
+    let rows = || {
+        crate::facts::camera(&info.make, &info.model, false, size)
+            .filter(move |c| c.bits.is_none_or(|b| b == bits))
+    };
+    let white = rows().find_map(|c| c.white).unwrap_or((1 << bits) - 1);
+    // Where the camera's white balance levels are on another scale than
+    // Adobe DNG Converter reads them (four compacts).
+    if let Some([red, blue]) = rows().find_map(|c| c.wb_scale) {
+        info.cam_mul[0] *= red as f32;
+        info.cam_mul[2] *= blue as f32;
+    }
     info.plan = Plan::Orf(OrfPlan {
         offset: t.base + u64::from(offset),
         coding,
@@ -408,6 +420,20 @@ mod tests {
         assert_eq!(s.area, [0, 0, 4, 4]);
         // (The later rows decode what follows the data, the note.)
         assert_eq!(s.data[..4], [21, 65527, 97, 65525]);
+    }
+
+    #[test]
+    fn fourteen_bit_samples_take_their_own_black() {
+        let strip = [&[0][..], &crate::codec::olympus::tests::row_of_four()].concat();
+        let processing = vec![
+            short(LE, 0x0600, &[255, 254, 253, 252]),
+            short(LE, 0x0606, &[1019, 1018, 1017, 1016]),
+            short(LE, 0x0611, &[14, 0]),
+        ];
+        let file = orf([4, 3], 16, &strip, vec![], Some(note(processing)));
+        let (_, s) = decode(&file).unwrap();
+        // Red, green, green, blue as red, green, blue, second green.
+        assert_eq!(s.black, [1019, 1018, 1016, 1017]);
     }
 
     #[test]

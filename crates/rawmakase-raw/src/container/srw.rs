@@ -123,7 +123,11 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     info.cam_mul = notes.cam_mul;
     info.presets = notes.presets;
     let size = [width, height];
-    let rows = || crate::facts::camera(&info.make, &info.model, false, size);
+    // Rows for files of this bit depth, or any.
+    let rows = || {
+        crate::facts::camera(&info.make, &info.model, false, size)
+            .filter(move |c| c.bits.is_none_or(|b| b == bits))
+    };
     // Levels that do not fit 16 bits are not levels.
     let level = |v: i64| {
         u32::try_from(v)

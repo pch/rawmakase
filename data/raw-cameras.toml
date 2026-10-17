@@ -21,7 +21,9 @@
 #
 # source says where the values come from:
 #   file             a rule from the file's own tags, for files that lack them
-#   adobe-dng        Adobe DNG Converter 18.7's output for the camera
+#   adobe-dng        Adobe DNG Converter 18.7's output for the camera: on [[camera]]
+#                    rows decode facts only (`white`, `black`, `wb_scale`),
+#                    never geometry (`visible`, `frame`, `flip`, `cfa`)
 #   compat-observed  the earlier decoder's (LibRaw at 4f014403) output on the test
 #                    dataset's files, kept so saved edits keep their geometry and
 #                    scale (2026-10-17); never a colour matrix
@@ -3461,126 +3463,6 @@ raw_size = [4640, 3472]
 visible = [0, 0, 4624, 3472]
 source = "compat-observed"
 
-[[camera]]
-make = "Olympus"
-model = "E-3"
-dng = false
-raw_size = [3720, 2800]
-white = 3993
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "E-30"
-dng = false
-raw_size = [4100, 3084]
-white = 4028
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "E-410"
-dng = false
-raw_size = [3720, 2800]
-white = 3946
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "E-420"
-dng = false
-raw_size = [3720, 2800]
-white = 4055
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "E-450"
-dng = false
-raw_size = [3720, 2800]
-white = 4050
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "E-5"
-dng = false
-raw_size = [4100, 3084]
-white = 3820
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "E-510"
-dng = false
-raw_size = [3720, 2800]
-white = 3946
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "E-520"
-dng = false
-raw_size = [3720, 2800]
-white = 4050
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "E-600"
-dng = false
-raw_size = [4100, 3084]
-white = 4015
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "E-620"
-dng = false
-raw_size = [4100, 3084]
-white = 4015
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "E-M5"
-dng = false
-raw_size = [4640, 3472]
-white = 4065
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "E-PL2"
-dng = false
-raw_size = [4100, 3084]
-white = 3315
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "E-PL5"
-dng = false
-raw_size = [4640, 3472]
-white = 4043
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "SP510UZ"
-dng = false
-raw_size = [3088, 2310]
-white = 4094
-source = "compat-observed"
-
-[[camera]]
-make = "Olympus"
-model = "SP550UZ"
-dng = false
-raw_size = [3088, 2310]
-white = 4094
-source = "compat-observed"
-
 # Pentax, and Samsung's GX bodies
 
 [[canonical]]
@@ -3627,7 +3509,6 @@ model = "645D"
 dng = false
 raw_size = [7424, 5552]
 visible = [48, 30, 7328, 5501]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -3825,7 +3706,6 @@ model = "EX1"
 dng = false
 raw_size = [3688, 2780]
 visible = [0, 2, 3682, 2760]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -3979,3 +3859,669 @@ dng = false
 raw_size = [3728, 2781]
 visible = [0, 2, 3718, 2778]
 source = "compat-observed"
+
+# Olympus, Pentax, Samsung and Mamiya: Adobe DNG Converter 18.7's white levels
+# (in the files' sample units) where they are not the samples' range, and the
+# white balance scale of four Olympus compacts (red and blue as Adobe's
+# AsShotNeutral), 2026-10-17.
+
+[[camera]]
+make = "Mamiya"
+model = "ZD"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "OM Digital"
+model = "OM-1"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "OM Digital"
+model = "OM-5"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "OM Digital"
+model = "TG-7"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-10"
+dng = false
+white = 1023
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-20,E-20N,E-20P"
+dng = false
+white = 1023
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-3"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-30"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-410"
+dng = false
+white = 3500
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-420"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-450"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-5"
+dng = false
+white = 3604
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-500"
+dng = false
+white = 3967
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-510"
+dng = false
+white = 3500
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-520"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-600"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-620"
+dng = false
+white = 4015
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M1"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M10"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M10 Mark III"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M10MarkII"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M10MarkIIIS"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M10MarkIV"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M1MarkII"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M1MarkIII"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M1X"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M5"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M5MarkII"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-M5MarkIII"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-P3"
+dng = false
+white = 3843
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-P5"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-P7"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL1"
+dng = false
+white = 3604
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL10"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL2"
+dng = false
+white = 3604
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL3"
+dng = false
+white = 3962
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL5"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL6"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL7"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL8"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL9"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PM1"
+dng = false
+white = 3933
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "E-PM2"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "PEN-F"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "SH-2"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "SP565UZ"
+dng = false
+white = 3212
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "STYLUS1"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "STYLUS1,1s"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "TG-4"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "TG-5"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "TG-6"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "XZ-1"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "XZ-10"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "XZ-2"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "*ist DL"
+dng = false
+white = 3950
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "*ist DL2"
+dng = false
+white = 3950
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "*ist DS"
+dng = false
+white = 3950
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "645D"
+dng = false
+white = 15767
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "645Z"
+dng = false
+white = 16316
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-1"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-1 Mark II"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-3"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-3 II"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-3 Mark III"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-5"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-5 II"
+dng = false
+white = 16124
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-5 II s"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-70"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-S1"
+dng = false
+white = 4078
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-S2"
+dng = false
+white = 3839
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K-r"
+dng = false
+white = 4030
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K100D"
+dng = false
+white = 3950
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "K100D Super"
+dng = false
+white = 3950
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "KF"
+dng = false
+white = 16315
+source = "adobe-dng"
+
+[[camera]]
+make = "Pentax"
+model = "KP"
+dng = false
+white = 16254
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "EX1"
+dng = false
+white = 15600
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX mini"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX1"
+dng = false
+bits = 14
+white = 16100
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX10"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX100"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX1000"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX11"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX1100"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX20"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX200"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX210"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX5"
+dng = false
+white = 3750
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX500"
+dng = false
+bits = 12
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "NX500"
+dng = false
+bits = 14
+white = 16100
+source = "adobe-dng"
+
+[[camera]]
+make = "Samsung"
+model = "WB2000"
+dng = false
+white = 3700
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "SP350"
+dng = false
+wb_scale = [0.9600, 0.9600]
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "SP500UZ"
+dng = false
+wb_scale = [0.9600, 0.9600]
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "SP510UZ"
+dng = false
+wb_scale = [0.9558, 0.9551]
+source = "adobe-dng"
+
+[[camera]]
+make = "Olympus"
+model = "SP550UZ"
+dng = false
+wb_scale = [0.9578, 0.9575]
+source = "adobe-dng"

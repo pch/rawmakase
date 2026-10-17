@@ -115,7 +115,11 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         info.frame = crate::geometry::even(crop);
     }
     let size = [width, height];
-    let rows = || crate::facts::camera(&info.make, &info.model, false, size);
+    // Rows for files of this bit depth, or any.
+    let rows = || {
+        crate::facts::camera(&info.make, &info.model, false, size)
+            .filter(move |c| c.bits.is_none_or(|b| b == bits))
+    };
     let black = rows()
         .find_map(|c| c.black)
         .map(|b| [b; 4])
