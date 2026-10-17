@@ -36,7 +36,7 @@ Modules, each with a small `pub(crate)` surface:
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
 | `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`) |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`) |
 | `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
@@ -83,6 +83,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `Cr3Craw` | Canon CR3 C-RAW: CRX planes in three quantized integer 5/3 wavelet levels (version 2 of the coding with quantization maps) | as `Cr3Lossless`, ITU T.800 Annex F, ITU-T H.265 (quantization steps) |
 | `Cr2LosslessJpeg` | Canon CR2: a mosaic in one lossless JPEG strip cut into vertical slices | TIFF 6, ITU T.81, Laurent Clévy's CR2 write-up, ExifTool's Canon tag names, our own measurements |
 | `Cr2Sraw` | Canon CR2 sRAW and mRAW: luma sampled 2 × 1 or 2 × 2 and chroma in one sliced lossless JPEG strip, converted to RGB | TIFF 6, ITU T.81, Laurent Clévy's CR2 write-up, ExifTool's Canon tag names, our own measurements |
+| `HeaderlessPacked` | CHDK's headerless RAW files (Canon PowerShots), known by their size: packed 10 or 12-bit samples | Our own measurements |
 | `OrfCompressed` | Olympus and OM Digital ORF/ORI, Olympus's compressed coding of 12 or 14-bit samples | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfPacked` | Olympus ORF, packed 12-bit samples: 16-byte blocks of ten, 32-bit words, or two interlaced fields of rows | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfUnpacked` | Olympus ORF, 16-bit words holding samples of the note's bit depth | TIFF 6, ExifTool's Olympus tag names, our own measurements |
@@ -292,9 +293,13 @@ for hv luma samples per chroma pair), and `scale` ColorData's small RAW levels
 times their green (words 78, 123 or 128 by version). The 40D's luma is 512
 above black. A fourth channel is 0; white is 16383.
 
+CHDK's headerless files (`container::headerless`) are `[[headerless]]` rows
+by file size: the camera, the image size and bits, the visible area and the
+filter. Samples are packed most significant bit first in 16-bit little-endian
+words; black is measured as for CR2 but on every left border column.
+
 Canon files that remain open questions: the PowerShot G16 and S100V CR2 whose
-LibRaw black matches no masked area (one file each), CHDK's headerless
-files, and CRW.
+LibRaw black matches no masked area (one file each), and CRW.
 
 Canon CR3 (`container::cr3`, `codec::crx`, `vendor::canon_cr3`): the raw image
 is the first of the largest raw tracks (a Dual Pixel file's second image is as

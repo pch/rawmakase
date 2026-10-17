@@ -111,6 +111,8 @@ pub enum Variant {
     /// Canon CR2 sRAW and mRAW: luma and chroma in one sliced lossless JPEG
     /// strip, converted to RGB.
     Cr2Sraw,
+    /// A RAW file with no header (CHDK), known by its size: packed samples.
+    HeaderlessPacked,
 }
 
 impl Variant {
@@ -162,6 +164,7 @@ impl Variant {
             Variant::MefPacked => "mef-packed",
             Variant::Cr2LosslessJpeg => "cr2-ljpeg",
             Variant::Cr2Sraw => "cr2-sraw",
+            Variant::HeaderlessPacked => "headerless-packed",
         }
     }
 }
@@ -181,6 +184,7 @@ pub(crate) enum Plan {
     Srw(crate::container::srw::SrwPlan),
     Erf(crate::container::erf::ErfPlan),
     Cr2(crate::container::cr2::Cr2Plan),
+    Headerless(crate::container::headerless::HeaderlessPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -231,8 +235,21 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         if crate::container::cr2::is_cr2(bytes) {
             return crate::container::cr2::open(bytes, t);
         }
+        // A TIFF of no RAW container this crate reads.
+        return Err(Error::Unsupported("TIFF of no known RAW container".into()));
     }
-    Err(Error::NotRaw)
+    // A TIFF whose directories do not read.
+    if bytes.starts_with(b"II*\0") || bytes.starts_with(b"MM\0*") {
+        return Err(crate::error::corrupt("TIFF directory"));
+    }
+    // An ISO base media file (an `ftyp` box first) other than a CR3.
+    if bytes.get(4..8) == Some(b"ftyp") {
+        return Err(Error::Unsupported(
+            "ISO base media file of no known RAW".into(),
+        ));
+    }
+    // Last: a file of no container may be one the table knows by size.
+    crate::container::headerless::open(bytes).ok_or(Error::NotRaw)
 }
 
 /// Decodes the sensor data `info` describes.
@@ -304,6 +321,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         }
         (Plan::Cr2(plan), Variant::Cr2LosslessJpeg | Variant::Cr2Sraw) => {
             crate::container::cr2::decode(info, plan, bytes, cancel)
+        }
+        (Plan::Headerless(plan), Variant::HeaderlessPacked) => {
+            crate::container::headerless::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(

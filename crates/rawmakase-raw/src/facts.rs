@@ -101,6 +101,27 @@ pub(crate) struct Camera {
     pub note: Option<String>,
 }
 
+/// A RAW file with no header (CHDK's), known by its size: the camera, the
+/// stored image and its samples' bits, the visible area and the colour
+/// filter at the sensor's corner (rows of R, G, B).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Headerless {
+    pub file_size: u64,
+    pub make: String,
+    pub model: String,
+    pub raw_size: [u32; 2],
+    pub bits: u32,
+    pub visible: [u32; 4],
+    pub cfa: String,
+    /// The masked columns (start, end) the black level is measured on, where
+    /// they are not the borders beside the visible area.
+    #[serde(default)]
+    pub black_columns: Option<[u32; 2]>,
+    #[allow(dead_code)]
+    pub source: Source,
+}
+
 /// An XYZ (D65) to camera matrix, in ten-thousandths.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -121,6 +142,8 @@ struct Cameras {
     canonical: Vec<Canonical>,
     #[serde(default)]
     camera: Vec<Camera>,
+    #[serde(default)]
+    headerless: Vec<Headerless>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -142,6 +165,11 @@ fn cameras() -> &'static Cameras {
 fn matrices() -> &'static Matrices {
     static TABLE: OnceLock<Matrices> = OnceLock::new();
     TABLE.get_or_init(|| toml::from_str(MATRICES).unwrap_or_default())
+}
+
+/// The headerless RAW file of `size` bytes, when the table knows one.
+pub(crate) fn headerless(size: u64) -> Option<&'static Headerless> {
+    cameras().headerless.iter().find(|h| h.file_size == size)
 }
 
 /// The body a `make` file names `model` is.
@@ -277,6 +305,28 @@ mod tests {
             if c.source == Source::AdobeDng {
                 assert!(adobe_facts_only(c), "{c:?}");
             }
+        }
+        let mut sizes = std::collections::HashSet::new();
+        for h in &cameras.headerless {
+            assert!(sizes.insert(h.file_size), "{h:?}");
+            let [w, ht] = h.raw_size;
+            // The size names the file: every sample, no more and no less.
+            assert_eq!(
+                u64::from(w) * u64::from(ht) * u64::from(h.bits),
+                h.file_size * 8
+            );
+            assert!((1..=16).contains(&h.bits), "{h:?}");
+            assert!(
+                w <= crate::io::MAX_SIDE && ht <= crate::io::MAX_SIDE,
+                "{h:?}"
+            );
+            let [l, t, vw, vh] = h.visible;
+            assert!(l + vw <= w && t + vh <= ht, "{h:?}");
+            assert!(
+                matches!(h.cfa.as_str(), "RGGB" | "BGGR" | "GRBG" | "GBRG"),
+                "{h:?}"
+            );
+            assert_ne!(h.source, Source::AdobeDng, "{h:?}");
         }
         for m in &matrices.matrix {
             assert!(seen.insert(("matrix", &m.make, &m.model)), "{m:?}");

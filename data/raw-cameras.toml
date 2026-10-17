@@ -20,6 +20,9 @@
 #                and the 2 × 2 colour filter at the sensor's corner (`cfa`, 0
 #                red, 1 green, 2 blue); `aspect_crop = false` where the
 #                camera's aspect crop is not shown
+# [[headerless]] a RAW file with no header, known by its `file_size`: the
+#                camera, `raw_size`, `bits` per packed sample, the `visible`
+#                area and the `cfa` at the sensor's corner
 #
 # source says where the values come from:
 #   file             a rule from the file's own tags, for files that lack them
@@ -1618,6 +1621,180 @@ source = "compat-observed"
 make = "Canon"
 model = "EOS Rebel T7i"
 is = "EOS 800D"
+source = "compat-observed"
+
+# CHDK's headerless RAW files (Canon PowerShots), known by their size.
+
+[[headerless]]
+file_size = 6573120
+make = "Canon"
+model = "PowerShot S2 IS"
+raw_size = [2672, 1968]
+bits = 10
+visible = [12, 8, 2616, 1960]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 7710960
+make = "Canon"
+model = "PowerShot S3 IS"
+raw_size = [2888, 2136]
+bits = 10
+visible = [44, 8, 2840, 2128]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 9219600
+make = "Canon"
+model = "PowerShot A620"
+raw_size = [3152, 2340]
+bits = 10
+visible = [36, 12, 3112, 2328]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 10341600
+make = "Canon"
+model = "PowerShot A720 IS"
+raw_size = [3336, 2480]
+bits = 10
+visible = [6, 6, 3298, 2471]
+cfa = "GBRG"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 10383120
+make = "Canon"
+model = "PowerShot A630"
+raw_size = [3344, 2484]
+bits = 10
+visible = [12, 6, 3288, 2472]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 12945240
+make = "Canon"
+model = "PowerShot A640"
+raw_size = [3736, 2772]
+bits = 10
+visible = [12, 6, 3672, 2760]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 15467760
+make = "Canon"
+model = "PowerShot SX110 IS"
+raw_size = [3720, 2772]
+bits = 12
+visible = [6, 12, 3684, 2760]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 15636240
+make = "Canon"
+model = "PowerShot A650 IS"
+raw_size = [4104, 3048]
+bits = 10
+visible = [48, 12, 4032, 3024]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 18653760
+make = "Canon"
+model = "PowerShot SX20 IS"
+raw_size = [4080, 3048]
+bits = 12
+visible = [24, 12, 4032, 3024]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 18763488
+make = "Canon"
+model = "PowerShot D10"
+raw_size = [4104, 3048]
+bits = 12
+visible = [10, 22, 4012, 3004]
+cfa = "GBRG"
+black_columns = [4076, 4104]
+source = "compat-observed"
+
+[[headerless]]
+file_size = 19131120
+make = "Canon"
+model = "PowerShot SX220 HS"
+raw_size = [4168, 3060]
+bits = 12
+visible = [92, 16, 4072, 3043]
+cfa = "RGGB"
+black_columns = [0, 90]
+source = "compat-observed"
+
+[[headerless]]
+file_size = 19167840
+make = "Canon"
+model = "PowerShot SX40 HS"
+raw_size = [4176, 3060]
+bits = 12
+visible = [96, 16, 4072, 3044]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 19493760
+make = "Canon"
+model = "PowerShot S100"
+raw_size = [4160, 3124]
+bits = 12
+visible = [104, 12, 4048, 3046]
+cfa = "GBRG"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 21936096
+make = "Canon"
+model = "PowerShot SX30 IS"
+raw_size = [4464, 3276]
+bits = 12
+visible = [26, 10, 4365, 3254]
+cfa = "GBRG"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 24724224
+make = "Canon"
+model = "PowerShot A3300 IS"
+raw_size = [4704, 3504]
+bits = 12
+visible = [8, 16, 4640, 3480]
+cfa = "GBRG"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 30858240
+make = "Canon"
+model = "IXUS 160"
+raw_size = [5248, 3920]
+bits = 12
+visible = [8, 16, 5184, 3888]
+cfa = "RGGB"
+source = "compat-observed"
+
+[[headerless]]
+file_size = 31663200
+make = "Canon"
+model = "PowerShot SX710 HS"
+raw_size = [5344, 3950]
+bits = 12
+visible = [96, 18, 5248, 3932]
+cfa = "RGGB"
 source = "compat-observed"
 
 # Sony, and the Sony body Hasselblad sold as its own.
