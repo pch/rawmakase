@@ -1,9 +1,11 @@
 //! Lossless JPEG (ITU T.81 process 14, "LJ92"): the frame and scan headers,
-//! Huffman tables and restart intervals, and the seven predictors. The output
-//! is the stream's rows as coded: each row is `width` MCUs of every component's
-//! samples (a component sampled `h × v` contributes `h × v` samples to each
-//! MCU, in that order). Where those samples belong in the image is the
-//! container's business (Canon's slices, DNG tiles, small-RAW YCbCr).
+//! Huffman tables and restart intervals, and the seven predictors, each
+//! component predicted from its own neighbouring samples. The output is the
+//! stream's MCU rows as coded: each row is [`Header::mcus`] MCUs of every
+//! component's samples (a component sampled `h × v` contributes its `h × v`
+//! block, row by row, to each MCU, in frame order). Where those samples
+//! belong in the image is the container's business (Canon's slices, DNG
+//! tiles, small-RAW YCbCr).
 use super::bits::Msb;
 use super::huffman::Huffman;
 use crate::error::{Error, Result, corrupt};
@@ -32,6 +34,10 @@ pub(crate) struct Header {
     tables: Vec<usize>,
     huffman: Vec<Option<Huffman>>,
     restart: u16,
+    /// Whether the first row of a component's block predicts from the first
+    /// row of the block above it, not from the row just above (Sony's small
+    /// RAWs sampled 2 × 2; our measurements). T.81's is the row just above.
+    pub block_rows: bool,
 }
 
 impl std::fmt::Debug for Huffman {
@@ -47,6 +53,16 @@ impl Header {
             .iter()
             .map(|c| usize::from(c.h) * usize::from(c.v))
             .sum()
+    }
+    /// MCUs across and down: the frame's width and height are in samples of
+    /// the most finely sampled component (T.81 A.1.1).
+    pub fn mcus(&self) -> (usize, usize) {
+        let h = self.components.iter().map(|c| c.h).max().unwrap_or(1);
+        let v = self.components.iter().map(|c| c.v).max().unwrap_or(1);
+        (
+            usize::from(self.width).div_ceil(usize::from(h)),
+            usize::from(self.height).div_ceil(usize::from(v)),
+        )
     }
 }
 
@@ -161,6 +177,7 @@ pub(crate) fn header(data: &[u8]) -> Result<Header> {
                     tables,
                     huffman,
                     restart,
+                    block_rows: false,
                 });
             }
             0xd9 => return Err(corrupt("EOI before a scan")),
@@ -170,7 +187,7 @@ pub(crate) fn header(data: &[u8]) -> Result<Header> {
     }
 }
 
-/// Decodes the stream: `height` rows of `width × samples_per_mcu` samples.
+/// Decodes the stream: MCU rows of MCUs × `samples_per_mcu` samples.
 #[cfg(test)]
 pub(crate) fn decode(data: &[u8], cancel: &AtomicBool) -> Result<(Header, Vec<u16>)> {
     let h = header(data)?;
@@ -227,6 +244,17 @@ impl Read {
     }
 }
 
+/// A sample of an MCU: its Huffman table and its place in its component's
+/// block of `bw × bh` samples, which starts `offset` samples into the MCU.
+struct Slot<'a> {
+    table: &'a Huffman,
+    offset: usize,
+    bw: usize,
+    bh: usize,
+    i: usize,
+    j: usize,
+}
+
 /// Decodes the stream.
 fn decode_with(
     h: &Header,
@@ -237,20 +265,34 @@ fn decode_with(
 ) -> Result<Read> {
     let mut sixteens = 0;
     let per_mcu = h.samples_per_mcu();
-    let row = usize::from(h.width) * per_mcu;
-    let rows = usize::from(h.height);
-    crate::io::samples(u32::from(h.width), u32::from(h.height), per_mcu as u32)?;
+    let (across, rows) = h.mcus();
+    let row = across * per_mcu;
+    crate::io::samples(across as u32, rows as u32, per_mcu as u32)?;
     out.clear();
     out.resize(row * rows, 0);
-    // Each sample of an MCU in order, with its Huffman table.
-    let mut tables = Vec::with_capacity(per_mcu);
+    // Each sample of an MCU in order: its Huffman table, and where it is in
+    // its component's block (offset of the component in the MCU, the block's
+    // width and height, the sample's row and column in it).
+    let mut slots = Vec::with_capacity(per_mcu);
+    let mut offset = 0;
     for (c, &t) in h.components.iter().zip(&h.tables) {
         let table = h.huffman[t]
             .as_ref()
             .ok_or_else(|| corrupt("Huffman table"))?;
-        for _ in 0..usize::from(c.h) * usize::from(c.v) {
-            tables.push(table);
+        let (bw, bh) = (usize::from(c.h), usize::from(c.v));
+        for i in 0..bh {
+            for j in 0..bw {
+                slots.push(Slot {
+                    table,
+                    offset,
+                    bw,
+                    bh,
+                    i,
+                    j,
+                });
+            }
         }
+        offset += bw * bh;
     }
     let shift = u32::from(h.point_transform);
     let initial = 1i32 << (u32::from(h.precision) - shift - 1);
@@ -259,18 +301,18 @@ fn decode_with(
     let restart = usize::from(h.restart);
     let mut mcus_left = restart;
     let mut fresh = true;
+    // Where a sample is: MCU row `y`, column `x`, row `i` and column `j` of
+    // its component's block.
+    let at = |s: &Slot, y: usize, x: usize, i: usize, j: usize| {
+        y * row + x * per_mcu + s.offset + i * s.bw + j
+    };
     for y in 0..rows {
         if y % 64 == 0 && cancel.load(Ordering::Relaxed) {
             return Err(Error::Cancelled);
         }
-        let (above, here) = out.split_at_mut(y * row);
-        let here = &mut here[..row];
-        let mut above = if y > 0 {
-            Some(&above[(y - 1) * row..])
-        } else {
-            None
-        };
-        for x in 0..usize::from(h.width) {
+        // Whether the MCU row above is a line to predict from.
+        let mut above = y > 0;
+        for x in 0..across {
             if restart > 0 {
                 if mcus_left == 0 {
                     bits.restart();
@@ -279,43 +321,63 @@ fn decode_with(
                     // A restart interval starting a row starts its first line:
                     // the row predicts from the left only.
                     if x == 0 {
-                        above = None;
+                        above = false;
                     }
                 }
                 mcus_left -= 1;
             }
-            for (k, table) in tables.iter().enumerate() {
-                let i = x * per_mcu + k;
-                let diff = table.difference(&mut bits, sixteen)?;
+            for s in &slots {
+                let diff = s.table.difference(&mut bits, sixteen)?;
                 // Only a difference of length 16 reaches 32768.
                 sixteens += u64::from(diff.abs() >= 32768);
-                let prediction = if fresh {
-                    initial
-                } else if x == 0 {
-                    // The first column predicts from above.
-                    match above {
-                        Some(a) => i32::from(a[i]),
-                        None => i32::from(here[i - per_mcu]),
-                    }
-                } else {
-                    let ra = i32::from(here[i - per_mcu]);
-                    match above {
-                        None => ra,
-                        Some(a) => {
-                            let (rb, rc) = (i32::from(a[i]), i32::from(a[i - per_mcu]));
-                            match h.predictor {
-                                1 => ra,
-                                2 => rb,
-                                3 => rc,
-                                4 => ra + rb - rc,
-                                5 => ra + ((rb - rc) >> 1),
-                                6 => rb + ((ra - rc) >> 1),
-                                _ => (ra + rb) >> 1,
-                            }
-                        }
+                // Each component is predicted within its own samples: the
+                // neighbours left (a), above (b) and above left (c).
+                let left = |i: usize| {
+                    if s.j > 0 {
+                        Some(at(s, y, x, i, s.j - 1))
+                    } else if x > 0 {
+                        Some(at(s, y, x - 1, i, s.bw - 1))
+                    } else {
+                        None
                     }
                 };
-                here[i] = ((prediction + diff) & mask) as u16;
+                let (ra, rb, rc) = if s.i > 0 {
+                    (left(s.i), Some(at(s, y, x, s.i - 1, s.j)), left(s.i - 1))
+                } else if above {
+                    let row = if h.block_rows { 0 } else { s.bh - 1 };
+                    let up = |x: usize, j: usize| at(s, y - 1, x, row, j);
+                    let rc = if s.j > 0 {
+                        Some(up(x, s.j - 1))
+                    } else if x > 0 {
+                        Some(up(x - 1, s.bw - 1))
+                    } else {
+                        None
+                    };
+                    (left(0), Some(up(x, s.j)), rc)
+                } else {
+                    (left(0), None, None)
+                };
+                let v = |i: Option<usize>| i.map(|i| i32::from(out[i]));
+                let prediction = match (v(ra), v(rb), v(rc)) {
+                    // The first sample of the stream or of a restart interval.
+                    _ if fresh && s.i == 0 && s.j == 0 => initial,
+                    (Some(ra), Some(rb), Some(rc)) => match h.predictor {
+                        1 => ra,
+                        2 => rb,
+                        3 => rc,
+                        4 => ra + rb - rc,
+                        5 => ra + ((rb - rc) >> 1),
+                        6 => rb + ((ra - rc) >> 1),
+                        _ => (ra + rb) >> 1,
+                    },
+                    // The first line predicts from the left, the first column
+                    // from above.
+                    (Some(ra), None, _) => ra,
+                    (None, Some(rb), _) => rb,
+                    _ => initial,
+                };
+                let i = at(s, y, x, s.i, s.j);
+                out[i] = ((prediction + diff) & mask) as u16;
             }
             // Only the first MCU of the stream or of a restart interval starts
             // from the initial prediction.
@@ -623,5 +685,32 @@ pub(crate) mod tests {
         f.extend(entropy);
         f.extend([0xff, 0xd9]);
         (f, order)
+    }
+
+    #[test]
+    fn sampled_components_predict_within_their_own_samples() {
+        let plane = |w: usize, h: usize, seed: usize| -> Vec<u16> {
+            (0..w * h)
+                .map(|i| (1000 + (i * 7919 + seed) % 3000) as u16)
+                .collect()
+        };
+        let (mcus, rows) = (5, 4);
+        for (h, v) in [(2, 1), (2, 2)] {
+            let planes = [
+                plane(mcus * h, rows * v, 1),
+                plane(mcus, rows, 2),
+                plane(mcus, rows, 3),
+            ];
+            let sampling = [(h, v), (1, 1), (1, 1)];
+            for block_rows in [false, true] {
+                let (data, want) = encode_sampled(&planes, &sampling, mcus, rows, block_rows);
+                let mut header = super::header(&data).unwrap();
+                assert_eq!(header.mcus(), (mcus, rows));
+                header.block_rows = block_rows;
+                let mut out = Vec::new();
+                decode_into(&header, &data, &AtomicBool::new(false), &mut out).unwrap();
+                assert_eq!(out, want, "{h} × {v}, block rows {block_rows}");
+            }
+        }
     }
 }

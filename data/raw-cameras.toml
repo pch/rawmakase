@@ -1012,6 +1012,22 @@ source = "compat-observed"
 make = "Sony"
 model = "ILCE-1M2"
 dng = false
+raw_size = [4608, 3072]
+visible = [0, 0, 4332, 2892]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-1M2"
+dng = false
+raw_size = [5632, 4096]
+visible = [0, 0, 5628, 3756]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-1M2"
+dng = false
 raw_size = [5664, 3768]
 visible = [0, 0, 5636, 3768]
 source = "compat-observed"
@@ -1180,6 +1196,14 @@ source = "compat-observed"
 make = "Sony"
 model = "ILCE-7CR"
 dng = false
+raw_size = [5120, 3584]
+visible = [0, 0, 4776, 3180]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7CR"
+dng = false
 raw_size = [6656, 4608]
 visible = [0, 0, 6272, 4180]
 source = "compat-observed"
@@ -1230,6 +1254,14 @@ model = "ILCE-7M3"
 dng = false
 raw_size = [6048, 4024]
 visible = [0, 0, 6024, 4024]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7M4"
+dng = false
+raw_size = [3584, 2560]
+visible = [0, 0, 3516, 2344]
 source = "compat-observed"
 
 [[camera]]
@@ -1340,6 +1372,14 @@ source = "compat-observed"
 make = "Sony"
 model = "ILCE-7RM5"
 dng = false
+raw_size = [5120, 3584]
+visible = [0, 0, 4776, 3180]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-7RM5"
+dng = false
 raw_size = [6304, 4180]
 visible = [0, 0, 6272, 4180]
 source = "compat-observed"
@@ -1420,6 +1460,14 @@ source = "compat-observed"
 make = "Sony"
 model = "ILCE-9M3"
 dng = false
+raw_size = [3072, 2048]
+visible = [0, 0, 3016, 2008]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILCE-9M3"
+dng = false
 raw_size = [3968, 2648]
 visible = [0, 0, 3948, 2648]
 source = "compat-observed"
@@ -1454,6 +1502,22 @@ model = "ILCE-QX1"
 dng = false
 raw_size = [5504, 3656]
 visible = [0, 0, 5472, 3656]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILME-FX2"
+dng = false
+raw_size = [3584, 2560]
+visible = [0, 0, 3516, 2344]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "ILME-FX2"
+dng = false
+raw_size = [5120, 3584]
+visible = [0, 0, 4624, 3080]
 source = "compat-observed"
 
 [[camera]]

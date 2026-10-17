@@ -2,8 +2,8 @@
 //! raw image directory and how its data is coded, its size, colour filter and
 //! levels; the maker notes are `vendor::sony`'s.
 //!
-//! Sources: TIFF 6 and TIFF/EP (directories, strips, tiles, CFAPattern);
-//! ITU T.81 (lossless JPEG tiles); ExifTool's Sony tag
+//! Sources: TIFF 6 and TIFF/EP (directories, strips, tiles, CFAPattern,
+//! YCbCr); ITU T.81 (lossless JPEG tiles); ExifTool's Sony tag
 //! documentation (the raw directory's Sony tags); our own
 //! measurements of how each coding's samples are laid out and of the levels
 //! RAWmakase has always read, against LibRaw's output on our files.
@@ -79,6 +79,7 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     let stored: u64 = chunks.iter().map(|c| c.1).sum();
     let pixels = u64::from(width) * u64::from(height);
     let variant = match (compression, photometric) {
+        (7, 6) => Variant::ArwYcbcr,
         (7, _) => Variant::ArwLosslessJpeg,
         (1, _) => Variant::ArwUncompressed,
         (32767, _) if stored == pixels => Variant::ArwCurve,
@@ -87,8 +88,12 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
             return Err(Error::Unsupported(format!("ARW compression {compression}")));
         }
     };
-    let mut info = header(&t, variant, [width, height]);
-    info.cfa = Some(cfa(&t, raw));
+    let mut info = header(&t, variant, [width, height], &chunks);
+    if variant != Variant::ArwYcbcr {
+        info.cfa = Some(cfa(&t, raw));
+    } else {
+        info.sraw = true;
+    }
     let curve = t
         .ints(raw, 0x7010)
         .filter(|c| c.len() == 4)
@@ -108,8 +113,14 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     };
     // Packed 12-bit data's black is recorded on the 14-bit scale.
     let scale = if variant == Variant::ArwPacked { 2 } else { 0 };
-    let black = levels.black.map_or([black; 4], |b| b.map(|v| v >> scale));
-    let white = levels.white.unwrap_or(white);
+    let mut black = levels.black.map_or([black; 4], |b| b.map(|v| v >> scale));
+    let mut white = levels.white.unwrap_or(white);
+    if variant == Variant::ArwYcbcr {
+        // Small RAWs' RGB sits 512 above the sensor's black; its white is
+        // what RAWmakase has always read them with (our measurements).
+        black = black.map(|b| b + 512);
+        white = 17536;
+    }
     info.plan = Plan::Arw(ArwPlan {
         width,
         height,
@@ -127,8 +138,13 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
 }
 
 /// The facts every Sony RAW reads alike: names, orientation, size,
-/// exposure, previews.
-fn header(t: &TiffFile, variant: Variant, [width, height]: [u32; 2]) -> RawInfo {
+/// exposure, previews (not the sensor data in `chunks`).
+fn header(
+    t: &TiffFile,
+    variant: Variant,
+    [width, height]: [u32; 2],
+    chunks: &[(u64, u64)],
+) -> RawInfo {
     let mut info = crate::info::base(variant);
     let ifd0 = &t.ifds[0];
     info.make = t.text(ifd0, 271).unwrap_or_default();
@@ -139,7 +155,10 @@ fn header(t: &TiffFile, variant: Variant, [width, height]: [u32; 2]) -> RawInfo 
     info.width = width;
     info.height = height;
     super::tiff_exif::read(t, &mut info);
+    // The previews, not the small RAWs' JPEG-coded sensor data.
     info.previews = t.previews();
+    info.previews
+        .retain(|p| !chunks.iter().any(|&(at, _)| at == p.offset));
     info.uncompressed_preview = t.has_uncompressed_thumbnail();
     info
 }
@@ -202,7 +221,13 @@ pub(crate) fn decode(
             Order::Big
         },
     );
-    let mut data = vec![0u16; crate::io::samples(plan.width, plan.height, 1)?];
+    // Small RAWs are red, green, blue and an empty fourth channel.
+    let channels = if info.variant == Variant::ArwYcbcr {
+        4
+    } else {
+        1
+    };
+    let mut data = vec![0u16; crate::io::samples(plan.width, plan.height, channels)?];
     let strip = |i: usize| -> Result<&[u8]> {
         let (offset, len) = *plan.chunks.get(i).ok_or_else(|| corrupt("ARW data"))?;
         // Truncated files keep what they have.
@@ -250,6 +275,7 @@ pub(crate) fn decode(
             }
         }
         Variant::ArwLosslessJpeg => ljpeg_tiles(plan, &strip, &mut data, cancel)?,
+        Variant::ArwYcbcr => ycbcr_tiles(plan, &strip, &mut data, cancel)?,
         v => {
             return Err(Error::Unsupported(format!(
                 "{} is not an ARW variant",
@@ -265,7 +291,7 @@ pub(crate) fn decode(
     Ok(Sensor {
         width: plan.width,
         height: plan.height,
-        channels: 1,
+        channels,
         data,
         area: [left, top, info.width, info.height],
         black: plan.black,
@@ -273,6 +299,60 @@ pub(crate) fn decode(
         white,
         linear_white: plan.linear_white,
     })
+}
+
+/// Small RAWs' lossless JPEG tiles of luma (sampled 2 × 1 or 2 × 2) and two
+/// chroma samples per MCU, as red, green, blue and an empty fourth channel.
+fn ycbcr_tiles<'a>(
+    plan: &ArwPlan,
+    strip: &impl Fn(usize) -> Result<&'a [u8]>,
+    rgb: &mut [u16],
+    cancel: &AtomicBool,
+) -> Result<()> {
+    let (width, height) = (plan.width as usize, plan.height as usize);
+    let [tw, th] = plan.tile.map(|v| v as usize);
+    let across = width.div_ceil(tw);
+    let tiles = across * height.div_ceil(th);
+    if plan.chunks.len() < tiles {
+        return Err(corrupt("ARW tile count"));
+    }
+    let mut samples = Vec::new();
+    for i in 0..tiles {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        let tile = strip(i)?;
+        let mut h = ljpeg::header(tile)?;
+        h.block_rows = true;
+        let [luma, cb, cr] = h.components[..] else {
+            return Err(Error::Unsupported("ARW YCbCr tile components".into()));
+        };
+        let (bw, bh) = (usize::from(luma.h), usize::from(luma.v));
+        if [cb.h, cb.v, cr.h, cr.v] != [1; 4] || bw > 2 || bh > 2 {
+            return Err(Error::Unsupported("ARW YCbCr sampling".into()));
+        }
+        ljpeg::decode_into(&h, tile, cancel, &mut samples)?;
+        let (mcus, _) = h.mcus();
+        let per = h.samples_per_mcu();
+        let (x0, y0) = ((i % across) * tw, (i / across) * th);
+        for ty in 0..th.min(usize::from(h.height)) {
+            let y = y0 + ty;
+            if y >= height {
+                break;
+            }
+            for tx in 0..tw.min(usize::from(h.width)) {
+                let x = x0 + tx;
+                if x >= width {
+                    break;
+                }
+                let mcu = &samples[((ty / bh) * mcus + tx / bw) * per..][..per];
+                let luma = mcu[(ty % bh) * bw + tx % bw];
+                let [r, g, b] = crate::codec::sony::ycbcr_rgb(luma, mcu[bw * bh], mcu[bw * bh + 1]);
+                rgb[(y * width + x) * 4..][..3].copy_from_slice(&[r, g, b]);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Lossless JPEG tiles: each a frame half the tile's width and height whose
@@ -528,6 +608,24 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn small_raw_levels_beyond_16_bits_are_corrupt() {
+        // A small RAW (photometric YCbCr) adds 512 to its black.
+        let mut file = arw(
+            "ILCE-7RM5",
+            [32, 16],
+            [15, 7],
+            vec![(0x7310, Value::Long(vec![u32::MAX; 4]))],
+            vec![0; 64],
+        );
+        let at = file
+            .windows(8)
+            .position(|w| w == [6, 1, 3, 0, 1, 0, 0, 0])
+            .unwrap();
+        file[at + 8..at + 10].copy_from_slice(&6u16.to_le_bytes());
+        assert!(matches!(crate::open(&file), Err(Error::Corrupt(_))));
+    }
+
+    #[test]
     fn arw2_rows_go_through_the_tone_curve() {
         // One row of 32 pixels: two blocks of 16, maximum first, minimum
         // second, steps of 3 between.
@@ -653,6 +751,47 @@ pub(crate) mod tests {
         let (info, s) = decode(&file).unwrap();
         assert_eq!(info.variant, Variant::ArwLosslessJpeg);
         assert_eq!(s.data, image);
+    }
+
+    #[test]
+    fn small_raws_are_luma_and_chroma_tiles() {
+        // A 4 × 2 tile of luma sampled 2 × 2, so two MCUs.
+        let luma: Vec<u16> = vec![1000, 1010, 1020, 1030, 1040, 1050, 1060, 1070];
+        let (cb, cr) = (vec![16383 + 10, 16383], vec![16383 - 20, 16383]);
+        let (tile, _) = crate::codec::ljpeg::tests::encode_sampled(
+            &[luma.clone(), cb, cr],
+            &[(2, 2), (1, 1), (1, 1)],
+            2,
+            1,
+            true,
+        );
+        let mut file = arw(
+            "ILCE-7RM5",
+            [4, 2],
+            [15, 7],
+            vec![
+                (322, Value::Long(vec![4])),
+                (323, Value::Long(vec![2])),
+                (324, Value::Blob(0)),
+                (325, Value::Long(vec![tile.len() as u32])),
+                (0x7310, Value::Short(vec![512; 4])),
+            ],
+            tile,
+        );
+        // Photometric YCbCr.
+        let at = file
+            .windows(8)
+            .position(|w| w == [6, 1, 3, 0, 1, 0, 0, 0])
+            .unwrap();
+        file[at + 8..at + 10].copy_from_slice(&6u16.to_le_bytes());
+        let (info, s) = decode(&file).unwrap();
+        assert_eq!(info.variant, Variant::ArwYcbcr);
+        assert!(info.sraw && info.cfa.is_none());
+        assert_eq!((s.channels, s.black, s.white), (4, [1024; 4], 17536));
+        let pixel = |x: usize, y: usize| &s.data[(y * 4 + x) * 4..][..4];
+        let [r, g, b] = crate::codec::sony::ycbcr_rgb(1050, 16393, 16363);
+        assert_eq!(pixel(1, 1), [r, g, b, 0]);
+        assert_eq!(pixel(2, 0), [1020, 1020, 1020, 0]);
     }
 
     #[test]

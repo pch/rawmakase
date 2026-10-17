@@ -1,12 +1,14 @@
 //! Sony's own sensor codings, knowing no container: ARW2's blocks of 16
 //! samples (an 11-bit maximum and minimum with 7-bit steps between them) and
-//! the tone curve its 11-bit codes are points on; packed 12-bit samples.
+//! the tone curve its 11-bit codes are points on; packed 12-bit samples;
+//! small RAWs' luma and chroma.
 //!
 //! Sources: H. Dietz, "Sony ARW2 Compression: Artifacts And Credible Repair"
 //! (IS&T Electronic Imaging 2016) for the block layout; ExifTool's Sony tag
-//! documentation for the tone curve's tag (SonyToneCurve, 0x7010); our own
-//! measurements against LibRaw's output on our files: the curve's segments
-//! and the packed samples' bit order.
+//! documentation for the tone curve's tag (SonyToneCurve, 0x7010); ITU
+//! T.871 (JFIF's YCbCr); our own measurements against LibRaw's output on our
+//! files: the curve's segments, the packed samples' bit order, and the YCbCr
+//! rounding.
 use crate::error::{Error, Result};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -122,6 +124,20 @@ pub(crate) fn packed12(row: &[u8], out: &mut [u16]) {
     }
 }
 
+/// Sony's small RAWs' luma and chroma (chroma about 16383) as red, green and
+/// blue: JFIF's conversion (ITU T.871's coefficients to five places) in
+/// single precision with fused multiply-adds, rounded down, as RAWmakase has
+/// always read them (our measurements: exact on every sample of our files).
+pub(crate) fn ycbcr_rgb(y: u16, cb: u16, cr: u16) -> [u16; 3] {
+    let (y, cb, cr) = (f32::from(y), f32::from(cb) - 16383., f32::from(cr) - 16383.);
+    [
+        1.402f32.mul_add(cr, y),
+        (-0.71414f32).mul_add(cr, (-0.34414f32).mul_add(cb, y)),
+        1.772f32.mul_add(cb, y),
+    ]
+    .map(|v| v.clamp(0., 65535.) as u16)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,5 +204,16 @@ mod tests {
         let mut out = [0u16; 4];
         packed12(&[0x21, 0x43, 0x65, 0xff, 0x0f, 0x00], &mut out);
         assert_eq!(out, [0x321, 0x654, 0xfff, 0x000]);
+    }
+
+    #[test]
+    fn small_raws_convert_with_jfif_coefficients() {
+        // Neutral chroma is luma itself.
+        assert_eq!(ycbcr_rgb(1000, 16383, 16383), [1000; 3]);
+        // Red: Y + 1.402 Cr; green: Y − 0.34414 Cb − 0.71414 Cr; blue:
+        // Y + 1.772 Cb, rounded down.
+        assert_eq!(ycbcr_rgb(1000, 16383 + 10, 16383 - 20), [971, 1010, 1017]);
+        // Out of range clips.
+        assert_eq!(ycbcr_rgb(10, 0, 16383), [10, 5648, 0]);
     }
 }
