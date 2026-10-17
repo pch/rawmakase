@@ -769,6 +769,12 @@ model = "UMC-R10C"
 is = "ILCE-QX1"
 source = "compat-observed"
 
+[[name]]
+make = "Sony"
+model = "DSLR-A390"
+is = "DSLR-A380"
+source = "compat-observed"
+
 [[canonical]]
 make = "Hasselblad"
 model = "Lunar"
@@ -925,6 +931,23 @@ model = "DSC-RX1RM3"
 dng = false
 raw_size = [9600, 6376]
 visible = [0, 0, 9568, 6376]
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A100"
+dng = false
+raw_size = [3881, 2608]
+visible = [0, 0, 3881, 2607]
+white = 4075
+source = "compat-observed"
+
+[[camera]]
+make = "Sony"
+model = "DSLR-A350"
+dng = false
+raw_size = [4600, 3072]
+visible = [0, 0, 4600, 3068]
 source = "compat-observed"
 
 [[camera]]

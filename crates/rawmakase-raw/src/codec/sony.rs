@@ -1,14 +1,20 @@
 //! Sony's own sensor codings, knowing no container: ARW2's blocks of 16
 //! samples (an 11-bit maximum and minimum with 7-bit steps between them) and
-//! the tone curve its 11-bit codes are points on; packed 12-bit samples;
-//! small RAWs' luma and chroma.
+//! the tone curve its 11-bit codes are points on; ARW1's Huffman-coded
+//! columns; packed 12-bit samples; small RAWs' luma and chroma.
 //!
 //! Sources: H. Dietz, "Sony ARW2 Compression: Artifacts And Credible Repair"
 //! (IS&T Electronic Imaging 2016) for the block layout; ExifTool's Sony tag
-//! documentation for the tone curve's tag (SonyToneCurve, 0x7010); ITU
-//! T.871 (JFIF's YCbCr); our own measurements against LibRaw's output on our
-//! files: the curve's segments, the packed samples' bit order, and the YCbCr
-//! rounding.
+//! documentation for the tone curve's tag (SonyToneCurve, 0x7010); ITU T.81
+//! (difference coding) and T.871 (JFIF's YCbCr); our own measurements against
+//! LibRaw's output on our files: the curve's segments, the packed samples'
+//! bit order, and the YCbCr rounding. ARW1's code table and scan order are
+//! written from the implementer's prior general knowledge of the format, no
+//! decoder's source consulted; no permitted public description was found
+//! (ExifTool's documentation only names the format, "ARW 1.0"). They are
+//! validated by our own measurements: decoding matches LibRaw's output
+//! exactly on all 10 ARW1 files of our dataset.
+use super::bits::Msb;
 use crate::error::{Error, Result};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -108,6 +114,73 @@ pub(crate) fn tone_curve(thresholds: [u16; 4]) -> Vec<u16> {
         curve.push(value.min(u32::from(u16::MAX)) as u16);
     }
     curve
+}
+
+/// ARW1's code lengths and the difference bits each code is followed by, in
+/// the order the codes take the code space from all zeros.
+const ARW1_CODES: [(u8, u8); 18] = [
+    (15, 15),
+    (15, 16),
+    (14, 15),
+    (13, 14),
+    (12, 13),
+    (11, 12),
+    (10, 11),
+    (9, 10),
+    (8, 9),
+    (7, 8),
+    (6, 7),
+    (5, 6),
+    (4, 5),
+    (3, 4),
+    (3, 3),
+    (3, 0),
+    (2, 2),
+    (2, 1),
+];
+
+/// Decodes ARW1: one running sum of Huffman-coded differences (each code
+/// followed by its difference's bits, as JPEG codes them), column by column
+/// from the right, each column's even rows then its odd rows. Data past the
+/// end reads as zeros.
+pub(crate) fn arw1(
+    data: &[u8],
+    width: usize,
+    height: usize,
+    out: &mut [u16],
+    cancel: &AtomicBool,
+) -> Result<()> {
+    // The code of every 15-bit prefix: its length and difference bits.
+    let mut table = Vec::with_capacity(1 << 15);
+    for &(len, bits) in &ARW1_CODES {
+        table.extend(std::iter::repeat_n((len, bits), 1 << (15 - len)));
+    }
+    let mut pump = Msb::new(data);
+    let mut sum = 0i32;
+    for (n, col) in (0..width).rev().enumerate() {
+        if n % 64 == 0 && cancel.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        let mut row = 0;
+        while row < height + 1 {
+            if row == height {
+                row = 1;
+            }
+            let (len, bits) = table[pump.peek(15) as usize];
+            pump.skip(u32::from(len));
+            let diff = match bits {
+                0 => 0,
+                16 => -32768,
+                b => super::huffman::extend(pump.get(u32::from(b)), u32::from(b)),
+            };
+            sum = sum.wrapping_add(diff);
+            if row < height {
+                out[row * width + col] = sum as u16;
+            }
+            row += 2;
+        }
+    }
+    Ok(())
 }
 
 /// Unpacks 12-bit samples stored two in three bytes, least significant bits
@@ -215,5 +288,59 @@ mod tests {
         assert_eq!(ycbcr_rgb(1000, 16383 + 10, 16383 - 20), [971, 1010, 1017]);
         // Out of range clips.
         assert_eq!(ycbcr_rgb(10, 0, 16383), [10, 5648, 0]);
+    }
+
+    /// ARW1's stream for `samples` (`width × height`, rows even then odd,
+    /// columns from the right), coded independently of the decoder: each
+    /// code is the next run of the code space in table order.
+    fn arw1_encode(samples: &[u16], width: usize, height: usize) -> Vec<u8> {
+        let mut codes = vec![];
+        let mut start = 0u32;
+        for &(len, bits) in &ARW1_CODES {
+            codes.push((start >> (15 - len), u32::from(len), u32::from(bits)));
+            start += 1 << (15 - len);
+        }
+        let mut bits: Vec<bool> = vec![];
+        let mut put = |v: u32, n: u32| (0..n).rev().for_each(|i| bits.push(v >> i & 1 == 1));
+        let mut sum = 0i32;
+        for col in (0..width).rev() {
+            for row in (0..height).step_by(2).chain((1..height).step_by(2)) {
+                let d = i32::from(samples[row * width + col]) - sum;
+                sum += d;
+                let n = 32 - d.unsigned_abs().leading_zeros();
+                let &(code, len, _) = codes.iter().find(|c| c.2 == n).unwrap();
+                put(code, len);
+                put(
+                    if d < 0 {
+                        (d + (1 << n) - 1) as u32
+                    } else {
+                        d as u32
+                    },
+                    n,
+                );
+            }
+        }
+        bits.chunks(8)
+            .map(|b| b.iter().fold(0u8, |a, &x| a << 1 | u8::from(x)) << (8 - b.len()))
+            .collect()
+    }
+
+    #[test]
+    fn arw1_sums_differences_down_columns_from_the_right() {
+        let (w, h) = (5, 6);
+        let samples: Vec<u16> = (0..w * h).map(|i| (i * 977 % 4096) as u16).collect();
+        let data = arw1_encode(&samples, w, h);
+        let mut out = vec![0; w * h];
+        arw1(&data, w, h, &mut out, &AtomicBool::new(false)).unwrap();
+        assert_eq!(out, samples);
+        // Truncated: zeros, no panic.
+        arw1(
+            &data[..data.len() / 2],
+            w,
+            h,
+            &mut out,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
     }
 }

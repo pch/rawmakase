@@ -65,6 +65,7 @@ A file of a recognised container in a variant this crate does not decode is
 | `ArwPacked` | Sony ARW, packed 12-bit samples (DSLR-A850, A900) | Our measurements |
 | `ArwLosslessJpeg` | Sony ARW, lossless JPEG tiles of 2 × 2 colour cells | ITU T.81, our measurements |
 | `ArwYcbcr` | Sony ARW small RAWs: lossless JPEG luma and chroma tiles | ITU T.81, T.871, TIFF 6, our measurements |
+| `ArwV1` | Sony's first ARW: Huffman-coded columns (DSLR-A100 to A390) | ITU T.81 (difference coding), ExifTool's Minolta tags, our measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -99,6 +100,14 @@ Sony (from our own measurements unless said otherwise):
   no permitted public description was found). Validation: decrypted, it is a
   well-formed directory on every ARW of our dataset, and its
   values equal the plain copies newer bodies also write in the raw directory.
+- ARW1 is one running sum of differences, each a Huffman code (a fixed table)
+  and the difference's bits as JPEG codes them, read down each column from the
+  right, even rows then odd rows. The code table and scan order are written
+  from prior general knowledge of the format (no permitted public description
+  was found) and validated by an exact match with LibRaw's output on all our
+  ARW1 files; that the columns are eight rows taller than the directory says
+  is our measurement. The DSLR-A100 has no raw directory: its data offset is in
+  IFD0's SubIFDs tag and its size and white balance in Minolta's MRW blocks.
 - Lossless JPEG ARWs' tiles are frames of half the tile's size whose four
   components are the tile's 2 × 2 cells. Small RAWs' tiles sample luma 2 × 1 or
   2 × 2; luma sampled 2 × 2 predicts a block's first row from the first row of

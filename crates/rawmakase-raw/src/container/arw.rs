@@ -62,13 +62,9 @@ pub(crate) fn is_sony(t: &TiffFile) -> bool {
 
 /// Reads a Sony RAW's header facts. `t` is the parsed TIFF.
 pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
-    // Without a mosaic: the SRF's four-colour sensor, ARQ's pixel-shift
-    // composites of four colours per pixel.
-    let raw = raw_ifd(&t).ok_or_else(|| {
-        Error::Unsupported(
-            "Sony RAW without a three-colour mosaic: four colours or composites".into(),
-        )
-    })?;
+    let Some(raw) = raw_ifd(&t) else {
+        return a100(&t);
+    };
     let width = t.int(raw, 256).ok_or_else(|| corrupt("ARW width"))?;
     let height = t.int(raw, 257).ok_or_else(|| corrupt("ARW height"))?;
     crate::io::samples(width, height, 1)?;
@@ -84,9 +80,16 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         (1, _) => Variant::ArwUncompressed,
         (32767, _) if stored == pixels => Variant::ArwCurve,
         (32767, _) if bps == 12 && width % 2 == 0 && stored == pixels * 3 / 2 => Variant::ArwPacked,
+        (32767, _) => Variant::ArwV1,
         _ => {
             return Err(Error::Unsupported(format!("ARW compression {compression}")));
         }
+    };
+    // ARW1's columns hold eight rows more than the directory says.
+    let height = if variant == Variant::ArwV1 {
+        height + 8
+    } else {
+        height
     };
     let mut info = header(&t, variant, [width, height], &chunks);
     if variant != Variant::ArwYcbcr {
@@ -109,6 +112,7 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
     // Without levels in the file: 12-bit packed data's, else 14 bits'.
     let (black, white) = match variant {
         Variant::ArwPacked => (128, 4095),
+        Variant::ArwV1 => (0, 4095),
         _ => (512, 16383),
     };
     // Packed 12-bit data's black is recorded on the 14-bit scale.
@@ -161,6 +165,53 @@ fn header(
         .retain(|p| !chunks.iter().any(|&(at, _)| at == p.offset));
     info.uncompressed_preview = t.has_uncompressed_thumbnail();
     info
+}
+
+/// The DSLR-A100: no raw directory, but IFD0's SubIFDs tag holds where its
+/// ARW1 data starts, and Minolta's MRW blocks (in SR2Private) its size and
+/// white balance. Its colour filter starts with green, then red.
+fn a100(t: &TiffFile) -> Result<RawInfo> {
+    let ifd0 = &t.ifds[0];
+    let model = t.text(ifd0, 272).unwrap_or_default();
+    // Without a mosaic: the SRF's four-colour sensor, ARQ's pixel-shift
+    // composites of four colours per pixel.
+    let unsupported = || {
+        Error::Unsupported(format!(
+            "Sony RAW without a three-colour mosaic ({}): four colours or composites",
+            model.trim()
+        ))
+    };
+    if model.trim() != "DSLR-A100" {
+        return Err(unsupported());
+    }
+    let (Some(at), Some(mrw)) = (t.int(ifd0, 330), sony::Mrw::read(t)) else {
+        return Err(unsupported());
+    };
+    // One column more than the sensor's recorded width (our measurements).
+    let [width, height] = [mrw.width + 1, mrw.height];
+    crate::io::samples(width, height, 1)?;
+    let at = t.base + u64::from(at);
+    let chunks = vec![(at, (t.bytes.data.len() as u64).saturating_sub(at))];
+    let mut info = header(t, Variant::ArwV1, [width, height], &chunks);
+    info.cfa = Some(crate::info::second_green(Cfa {
+        rows: 2,
+        cols: 2,
+        colors: vec![1, 0, 2, 1],
+    }));
+    info.cam_mul = mrw.cam_mul;
+    info.presets = mrw.presets;
+    info.plan = Plan::Arw(ArwPlan {
+        width,
+        height,
+        chunks,
+        tile: [width, height],
+        curve: [0; 4],
+        little: t.little(),
+        black: [0; 4],
+        white: 4095,
+        linear_white: [0; 4],
+    });
+    Ok(info)
 }
 
 /// The strips or tiles of the raw image, and the tile size.
@@ -275,6 +326,7 @@ pub(crate) fn decode(
             }
         }
         Variant::ArwLosslessJpeg => ljpeg_tiles(plan, &strip, &mut data, cancel)?,
+        Variant::ArwV1 => crate::codec::sony::arw1(strip(0)?, width, height, &mut data, cancel)?,
         Variant::ArwYcbcr => ycbcr_tiles(plan, &strip, &mut data, cancel)?,
         v => {
             return Err(Error::Unsupported(format!(

@@ -1,17 +1,22 @@
 //! Sony's maker notes and private directories: the encrypted SR2SubIFD
 //! (white balance as shot and its presets, black and white levels), the
-//! raw directory's own Sony tags (levels, white balance, crops), and the
-//! maker note's image size.
+//! raw directory's own Sony tags (levels, white balance, crops), the maker
+//! note's image size, and the DSLR-A100's Minolta MRW blocks.
 //!
-//! Sources: ExifTool's Sony tag documentation (tag names and meanings of
-//! SR2Private, SR2SubIFD, the raw directory's 0x7000–0x74c8 tags, the maker
-//! note's FullImageSize); the SR2SubIFD
-//! encryption as publicly described (a keystream from the 32-bit
-//! SR2SubIFDKey through a linear congruential generator and a lagged XOR
-//! recurrence); our own measurements: on every ARW of our test dataset the
-//! decrypted SR2SubIFD is a well-formed directory whose levels and white
-//! balance equal the plain copies newer bodies also write, and which value
-//! RAWmakase has always read where several exist.
+//! Sources: ExifTool's Sony and Minolta tag documentation (tag names and
+//! meanings of SR2Private, SR2SubIFD, the raw directory's 0x7000–0x74c8 tags,
+//! the maker note's FullImageSize, MRW's PRD and WBG blocks); the SR2SubIFD
+//! encryption's keystream (a linear congruential generator seeded from the
+//! 32-bit SR2SubIFDKey, then a lagged XOR recurrence) is written from the
+//! implementer's prior general knowledge of the format, no decoder's source
+//! consulted: ExifTool's documentation only says the directory is encrypted
+//! and that SR2SubIFDKey is its key, and no permitted public description of
+//! the algorithm was found. Validated by our own measurements: on every ARW
+//! of our test dataset (470 files) the decrypted SR2SubIFD is a well-formed
+//! directory, its levels and white balance equal the plain copies newer
+//! bodies also write (239 files), and the decoded files match LibRaw's
+//! output. Also our own measurements: which value RAWmakase has always read
+//! where several exist.
 use crate::container::tiff::{Ifd, TiffFile};
 use crate::info::{RawInfo, UNSET};
 use rawmakase_tiff::kind;
@@ -241,6 +246,89 @@ pub(crate) fn read(t: &TiffFile, raw: &Ifd, info: &mut RawInfo) -> Levels {
         black,
         white,
         linear_white,
+    }
+}
+
+/// The DSLR-A100's Minolta MRW blocks, which its SR2Private points to: the
+/// sensor's size (PRD), white balance as shot (WBG) and presets (RIF).
+pub(crate) struct Mrw {
+    pub width: u32,
+    pub height: u32,
+    pub cam_mul: [f32; 4],
+    pub presets: crate::info::Presets,
+}
+
+impl Mrw {
+    pub fn read(t: &TiffFile) -> Option<Self> {
+        let private = t.raw(&t.ifds[0], DNG_PRIVATE_DATA)?;
+        let at = u64::from(t.u32(private.get(..4)?));
+        let head = t.bytes.slice(at, 8).ok()?;
+        // "\0MRM" in Motorola's byte order, "\0MRI" in Intel's.
+        let little = match &head[..4] {
+            b"\0MRI" => true,
+            b"\0MRM" => false,
+            _ => return None,
+        };
+        let u32_at = |b: &[u8]| {
+            let b = [b[0], b[1], b[2], b[3]];
+            if little {
+                u32::from_le_bytes(b)
+            } else {
+                u32::from_be_bytes(b)
+            }
+        };
+        let u16_at = |b: &[u8], i: usize| {
+            b.get(i..i + 2).map(|b| {
+                if little {
+                    u16::from_le_bytes([b[0], b[1]])
+                } else {
+                    u16::from_be_bytes([b[0], b[1]])
+                }
+            })
+        };
+        let len = u64::from(u32_at(&head[4..]));
+        let body = t.bytes.slice(at + 8, len.min(4096)).ok()?;
+        let mut mrw = Self {
+            width: 0,
+            height: 0,
+            cam_mul: [0.; 4],
+            presets: Default::default(),
+        };
+        let mut rest = body;
+        while rest.len() >= 8 {
+            let size = usize::try_from(u32_at(&rest[4..])).ok()?;
+            let block = rest.get(8..8usize.checked_add(size)?)?;
+            match &rest[..4] {
+                b"\0PRD" => {
+                    mrw.height = u32::from(u16_at(block, 8)?);
+                    mrw.width = u32::from(u16_at(block, 10)?);
+                }
+                b"\0WBG" => {
+                    // Four scale bytes, then red, green, green, blue.
+                    let l: Vec<f32> = (0..4)
+                        .map(|i| u16_at(block, 4 + 2 * i).map(f32::from))
+                        .collect::<Option<_>>()?;
+                    mrw.cam_mul = [l[0], l[1], l[3], l[2]];
+                }
+                b"\0RIF" => {
+                    // Presets' red and blue over a green of 256, where
+                    // RAWmakase has always read them (our measurements).
+                    let preset = |i: usize| {
+                        Some([
+                            f32::from(u16_at(block, i)?),
+                            256.,
+                            f32::from(u16_at(block, i + 2)?),
+                        ])
+                    };
+                    mrw.presets.daylight = preset(0x0c).unwrap_or_default();
+                    mrw.presets.shade = preset(0x20).unwrap_or_default();
+                    mrw.presets.d65 = preset(0x28).unwrap_or_default();
+                }
+                _ => {}
+            }
+            rest = &rest[8 + size..];
+        }
+        (mrw.width > 0 && mrw.height > 0).then_some(mrw)
     }
 }
 

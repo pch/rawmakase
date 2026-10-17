@@ -46,6 +46,8 @@ pub enum Variant {
     ArwLosslessJpeg,
     /// Sony ARW's small RAWs: lossless JPEG tiles of luma and chroma.
     ArwYcbcr,
+    /// Sony's first ARW coding: Huffman-coded columns.
+    ArwV1,
 }
 
 impl Variant {
@@ -66,6 +68,7 @@ impl Variant {
             Variant::ArwPacked => "arw-packed",
             Variant::ArwLosslessJpeg => "arw-ljpeg",
             Variant::ArwYcbcr => "arw-ycbcr",
+            Variant::ArwV1 => "arw-v1",
         }
     }
 }
@@ -132,7 +135,8 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::ArwUncompressed
             | Variant::ArwPacked
             | Variant::ArwLosslessJpeg
-            | Variant::ArwYcbcr,
+            | Variant::ArwYcbcr
+            | Variant::ArwV1,
         ) => crate::container::arw::decode(info, plan, bytes, cancel),
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
