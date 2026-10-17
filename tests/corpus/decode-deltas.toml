@@ -28846,3 +28846,664 @@ before = [2.1183817386627197, 1.0, 1.3918249607086182]
 after = [1.9439462423324585, 1.0, 1.4268854856491089]
 evidence = "AsShotWhiteXY 0.322046, 0.326646 (6019 K) through Adobe's D65 matrix for the Pixel 8 Pro (data/raw-matrices.toml): 1.9439, 1.4269; Adobe interpolates its A and D65 matrices at 6019 K: 1.9253, 1.4175 (1% off; our table keeps only D65)"
 approval = "pending"
+# Phase One IIQ: black is the IIQ block's BlackLevel and white 65535, Adobe DNG
+# Converter's WhiteLevel; LibRaw subtracts its black on development and reports
+# 0 and 0xFFFC less it.
+
+[[delta]]
+# Phase One/P30/CF098736.TIF
+sha256 = "03b82c75f3857cc9f07aef54c3033d092f04d3fb4f43592c808f998cf451dc77"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P30/CF098736.TIF
+sha256 = "03b82c75f3857cc9f07aef54c3033d092f04d3fb4f43592c808f998cf451dc77"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leaf/Credo 40/CF003914.IIQ
+sha256 = "f2b8bb81f2e3cc918cfa91637683e0ca29a79bd77e1394daa5e8868721954d37"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Leaf/Credo 40/CF003914.IIQ
+sha256 = "f2b8bb81f2e3cc918cfa91637683e0ca29a79bd77e1394daa5e8868721954d37"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leaf/Credo 40/0001_20_32.IIQ
+sha256 = "67b96c3883e4914f01150f6df531808a9d8d1889ebc6656712bca6b58c9cb994"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Leaf/Credo 40/0001_20_32.IIQ
+sha256 = "67b96c3883e4914f01150f6df531808a9d8d1889ebc6656712bca6b58c9cb994"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ140/Phase_One_IQ140_sample_files_04_Diciembre_2017_004_IIQ_L.TIF
+sha256 = "8f518006f06701def0ad887cd65cc7830c1608d853abfde5c234ec9bc67cd48c"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/IQ140/Phase_One_IQ140_sample_files_04_Diciembre_2017_004_IIQ_L.TIF
+sha256 = "8f518006f06701def0ad887cd65cc7830c1608d853abfde5c234ec9bc67cd48c"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ140/Phase_One_IQ140_sample_files_04_Diciembre_2017_010_Sensor+_IIQ_L.TIF
+sha256 = "56dbb1d9d200245fe84928b0c05d84229fccc7fb61a47db8c46605e2c1ff5e06"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/IQ140/Phase_One_IQ140_sample_files_04_Diciembre_2017_010_Sensor+_IIQ_L.TIF
+sha256 = "56dbb1d9d200245fe84928b0c05d84229fccc7fb61a47db8c46605e2c1ff5e06"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leaf/Credo 40/0008_20_23.IIQ
+sha256 = "b3b25ca62bdf9b162c3c001e615ce0af3117a240b3585e556f08767e927890e7"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Leaf/Credo 40/0008_20_23.IIQ
+sha256 = "b3b25ca62bdf9b162c3c001e615ce0af3117a240b3585e556f08767e927890e7"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P65+/CF027310.IIQ
+sha256 = "a724cd059480f801a5d9a9176ed38edd643dfd5bf38ca90c6243164b062826b8"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P65+/CF027310.IIQ
+sha256 = "a724cd059480f801a5d9a9176ed38edd643dfd5bf38ca90c6243164b062826b8"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P65+/CF027311.IIQ
+sha256 = "0e02172b28255174fe886599ea5110251c108d2c363843832143baf9689e3fd9"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P65+/CF027311.IIQ
+sha256 = "0e02172b28255174fe886599ea5110251c108d2c363843832143baf9689e3fd9"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P65+/CF027313.IIQ
+sha256 = "77f9f32304e96b0961a529336532faf3da61cc403fe52c695c646bcf323f94b8"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P65+/CF027313.IIQ
+sha256 = "77f9f32304e96b0961a529336532faf3da61cc403fe52c695c646bcf323f94b8"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P65+/CF027312.IIQ
+sha256 = "69fc81e92360a45920158f7d6238eed0cd6260cd32aa4a0beec2ac79273add80"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P65+/CF027312.IIQ
+sha256 = "69fc81e92360a45920158f7d6238eed0cd6260cd32aa4a0beec2ac79273add80"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P65+/CF028114.iiq
+sha256 = "3887d8ff8379a091bd12426f366d34de47910346446673b8e26f960a402af8dd"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P65+/CF028114.iiq
+sha256 = "3887d8ff8379a091bd12426f366d34de47910346446673b8e26f960a402af8dd"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/iXM-100/_848.IIQ
+sha256 = "5f93c5551f2670d12aa184da340aafa8195ec0a6c38338901979d7587e7016cc"
+field = "sensor.black"
+before = [1028, 1028, 1028, 1028]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/iXM-100/_848.IIQ
+sha256 = "5f93c5551f2670d12aa184da340aafa8195ec0a6c38338901979d7587e7016cc"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "no Adobe DNG Converter WhiteLevel for this body; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "pending"
+
+[[delta]]
+# Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_L_16bit.IIQ
+sha256 = "c106e589bd3ccadcf0caa3de78c064c548ef6fb74cb700a9be1305719a39e5b2"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1024; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_L_16bit.IIQ
+sha256 = "c106e589bd3ccadcf0caa3de78c064c548ef6fb74cb700a9be1305719a39e5b2"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_L.IIQ
+sha256 = "e91928d0d80a61d07a0d0d09b8acf99357272421ddbf75b5dda8b383931f0aec"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1024; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_L.IIQ
+sha256 = "e91928d0d80a61d07a0d0d09b8acf99357272421ddbf75b5dda8b383931f0aec"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ3 100MP Trichr/Trichromatic-2.IIQ
+sha256 = "c7fa60d25295e225ce32f3c68063748e88daf238e69f9abd602b1dcb900ecf08"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1024; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ3 100MP Trichr/Trichromatic-2.IIQ
+sha256 = "c7fa60d25295e225ce32f3c68063748e88daf238e69f9abd602b1dcb900ecf08"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ4 150MP/IQ4_150MPIIQ_L_16bit.iiq
+sha256 = "3739f33347f57970db9c1fd33af2b63db99d57aec1e53aa99b252255853f2a4a"
+field = "sensor.black"
+before = [1025, 1025, 1025, 1025]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1024; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ4 150MP/IQ4_150MPIIQ_L_16bit.iiq
+sha256 = "3739f33347f57970db9c1fd33af2b63db99d57aec1e53aa99b252255853f2a4a"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ4 150MP/IQ4_150MP_L_14.iiq
+sha256 = "c8c94e41b39416ef2535280e1022d040fb9a60bd4fba804cc3db36cc7082b855"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ4 150MP/IQ4_150MP_L_16_Ex.iiq
+sha256 = "6db19640198ed12fd0bc31c6f55c1eac1806b2775acc8364a7621eed86869812"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/H 25/H25_Outdoor_.IIQ
+sha256 = "672a1bf9c2b9b43484f0549ce23a6bf8963efd4338cbc08592a2694c8a463eb6"
+field = "sensor.black"
+before = [968, 968, 968, 968]
+after = [0, 0, 0, 0]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/H 25/H25_Outdoor_.IIQ
+sha256 = "672a1bf9c2b9b43484f0549ce23a6bf8963efd4338cbc08592a2694c8a463eb6"
+field = "sensor.white"
+before = 65532
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/H 25/H25_IT8.7-2_Card.TIF
+sha256 = "0683dbd9203c8b13040bc37eca41089c779c609cca2de76709c010dbee834bee"
+field = "sensor.black"
+before = [996, 996, 996, 996]
+after = [0, 0, 0, 0]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P20+/CF051544.IIQ
+sha256 = "f53ce48536813b96d39cc1dbdf0f9ed9f8f4cf80bc1e5c667c3527057147e090"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P20+/CF051544.IIQ
+sha256 = "f53ce48536813b96d39cc1dbdf0f9ed9f8f4cf80bc1e5c667c3527057147e090"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P20+/CF051545.IIQ
+sha256 = "912401b21d9c0fd5fb1fa4ff824c16ed789b49d6915c08c09ccde6a4e60a41a6"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P20+/CF051545.IIQ
+sha256 = "912401b21d9c0fd5fb1fa4ff824c16ed789b49d6915c08c09ccde6a4e60a41a6"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P20+/CF051552.TIF
+sha256 = "e3208465784cefbc7045e22ffe4179457d6485552aa0d47d16f065566c94df19"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0 (another file of the body); RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P20+/CF051552.TIF
+sha256 = "e3208465784cefbc7045e22ffe4179457d6485552aa0d47d16f065566c94df19"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P20+/CF051553.TIF
+sha256 = "321b19aa4fe4e972dbc40b8476e8aadb71f956adc3721da09465365ddf508071"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0 (another file of the body); RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P20+/CF051553.TIF
+sha256 = "321b19aa4fe4e972dbc40b8476e8aadb71f956adc3721da09465365ddf508071"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ150/CF006803.IIQ
+sha256 = "6422a8d863276fcc756e2f529ac406337f00ad05a19ef83f7893fafc358ff8b5"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1024; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ150/CF006803.IIQ
+sha256 = "6422a8d863276fcc756e2f529ac406337f00ad05a19ef83f7893fafc358ff8b5"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ180/230214_9561.IIQ
+sha256 = "c0c59c596a67abea79405b6b8eb2212a93d95fe4b41e46dad34b02e5eb376ae2"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1028; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/IQ180/230214_9561.IIQ
+sha256 = "c0c59c596a67abea79405b6b8eb2212a93d95fe4b41e46dad34b02e5eb376ae2"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/IQ180/230214_9565.IIQ
+sha256 = "cd852a703d076cf4d6744bff04409392aac273539595728b6e39ce964d0b32dd"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1028 (another file of the body); RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/IQ180/230214_9565.IIQ
+sha256 = "cd852a703d076cf4d6744bff04409392aac273539595728b6e39ce964d0b32dd"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P45/230215_3809.TIF
+sha256 = "1878ff6ce2de62752f31b94549bf5cb9fe91350bc5386b79acc61ec8cd26c2ee"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P45/230215_3809.TIF
+sha256 = "1878ff6ce2de62752f31b94549bf5cb9fe91350bc5386b79acc61ec8cd26c2ee"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P45/230215_3810.TIF
+sha256 = "f8cf1c91485d5f5a9e20a2038368e2f462215b5a0fbf80c81b1786feb1cb9315"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P45/230215_3810.TIF
+sha256 = "f8cf1c91485d5f5a9e20a2038368e2f462215b5a0fbf80c81b1786feb1cb9315"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P25+/CF028663.IIQ
+sha256 = "0be8a86c490be74e50a31445aa7f147dfc65921cf8e3d46b7e0c2831b75908f4"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P25+/CF028663.IIQ
+sha256 = "0be8a86c490be74e50a31445aa7f147dfc65921cf8e3d46b7e0c2831b75908f4"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P25+/CF028662.IIQ
+sha256 = "b0391cb29ebb0773ef53553572df2abffc9093b37d919aeab76d15e72751569d"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P25+/CF028662.IIQ
+sha256 = "b0391cb29ebb0773ef53553572df2abffc9093b37d919aeab76d15e72751569d"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P25/CF082161.TIF
+sha256 = "5a3295a202352b6179809d250772c5317cdc36e941a39ab3b2836380d681542d"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P25/CF082161.TIF
+sha256 = "5a3295a202352b6179809d250772c5317cdc36e941a39ab3b2836380d681542d"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P25/CF082166.TIF
+sha256 = "1d73775444698df6012f2d1ce014fa0c4bab79d976be82d48d36f3f59985b72f"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P25/CF082166.TIF
+sha256 = "1d73775444698df6012f2d1ce014fa0c4bab79d976be82d48d36f3f59985b72f"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P45+/CF125838.IIQ
+sha256 = "5c25ca03da8c458bc5e0e9f453f92bd716a00744ce43bc635f3ada1698f55974"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P45+/CF125838.IIQ
+sha256 = "5c25ca03da8c458bc5e0e9f453f92bd716a00744ce43bc635f3ada1698f55974"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One/P45+/CF125839.IIQ
+sha256 = "cd2e6d90eb58798415958d093fffe53cc0fb382fc772e30eab3bb2642e2d8e6e"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One/P45+/CF125839.IIQ
+sha256 = "cd2e6d90eb58798415958d093fffe53cc0fb382fc772e30eab3bb2642e2d8e6e"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One AS/iXU-RS1000 NIR/RGB_791813.IIQ
+sha256 = "e1b679398e88c03ddc84a641a8b790a3ab513cd8283bb77895be313c495138bb"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One AS/iXU-RS1000 NIR/RGB_791813.IIQ
+sha256 = "e1b679398e88c03ddc84a641a8b790a3ab513cd8283bb77895be313c495138bb"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "no Adobe DNG Converter WhiteLevel for this body; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "pending"
+
+[[delta]]
+# Phase One AS/P40+/CF100602.IIQ
+sha256 = "fae3fb04ba65984812af6fd85986b48e803c7b2fcaee66169a653a24814162a6"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One AS/P40+/CF100602.IIQ
+sha256 = "fae3fb04ba65984812af6fd85986b48e803c7b2fcaee66169a653a24814162a6"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Phase One AS/P40+/CF100585.IIQ
+sha256 = "61aa32c5947d386f0d5ee465c5183185df6c9cd7ff7eb66ffec12e84b487878c"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "no Adobe DNG Converter BlackLevel for this body; RAWmakase's is the IIQ block's BlackLevel (0 without one); where Adobe writes 0 its data is calibrated, and fitted to RAWmakase's samples it sits about 970 to 1040 above 0 (P25, P40+, P45, P65+, IQ180)"
+approval = "pending"
+
+[[delta]]
+# Phase One AS/P40+/CF100585.IIQ
+sha256 = "61aa32c5947d386f0d5ee465c5183185df6c9cd7ff7eb66ffec12e84b487878c"
+field = "sensor.white"
+before = 64508
+after = 65535
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535 (another file of the body); RAWmakase's is 65535, Adobe's WhiteLevel for every IIQ it converts"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+

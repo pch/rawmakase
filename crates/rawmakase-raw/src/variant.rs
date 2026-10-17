@@ -115,6 +115,13 @@ pub enum Variant {
     HeaderlessPacked,
     /// Canon CRW: Canon's compressed sensor data in a CIFF file.
     CrwCompressed,
+    /// Phase One IIQ L (and L16): rows of differences in runs of even and
+    /// odd columns.
+    IiqL,
+    /// Phase One IIQ S (the first): IIQ L's rows, low values on a curve.
+    IiqS,
+    /// Phase One IIQ, uncompressed 16-bit words.
+    IiqUncompressed,
 }
 
 impl Variant {
@@ -168,6 +175,9 @@ impl Variant {
             Variant::Cr2Sraw => "cr2-sraw",
             Variant::HeaderlessPacked => "headerless-packed",
             Variant::CrwCompressed => "crw",
+            Variant::IiqL => "iiq-l",
+            Variant::IiqS => "iiq-s",
+            Variant::IiqUncompressed => "iiq-uncompressed",
         }
     }
 }
@@ -189,6 +199,7 @@ pub(crate) enum Plan {
     Cr2(crate::container::cr2::Cr2Plan),
     Headerless(crate::container::headerless::HeaderlessPlan),
     Crw(crate::container::ciff::CrwPlan),
+    Iiq(crate::container::iiq::IiqPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -220,6 +231,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         let ifd0 = &t.ifds[0];
         if ifd0.has(50706) {
             return crate::container::dng::open(bytes, t);
+        }
+        if crate::container::iiq::is_iiq(bytes) {
+            return crate::container::iiq::open(bytes, t);
         }
         if crate::container::arw::is_sony(&t) {
             return crate::container::arw::open(t);
@@ -334,6 +348,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         }
         (Plan::Crw(plan), Variant::CrwCompressed) => {
             crate::container::ciff::decode(info, plan, bytes, cancel)
+        }
+        (Plan::Iiq(plan), Variant::IiqL | Variant::IiqS | Variant::IiqUncompressed) => {
+            crate::container::iiq::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(

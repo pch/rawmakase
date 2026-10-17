@@ -40,9 +40,9 @@ Modules, each with a small `pub(crate)` surface:
 | Module | Owns |
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
-| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings, Canon's CRW blocks |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`) |
-| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`) |
+| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings, Canon's CRW blocks, Phase One's IIQ rows |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`) |
+| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`, `phase_one`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
 | `color` | The camera-to-sRGB matrix and daylight multipliers from a camera's XYZ matrix |
@@ -90,6 +90,9 @@ A file of a recognised container in a variant this crate does not decode is
 | `Cr2Sraw` | Canon CR2 sRAW and mRAW: luma sampled 2 × 1 or 2 × 2 and chroma in one sliced lossless JPEG strip, converted to RGB | TIFF 6, ITU T.81, Laurent Clévy's CR2 write-up, ExifTool's Canon tag names, our own measurements |
 | `HeaderlessPacked` | CHDK's headerless RAW files (Canon PowerShots), known by their size: packed 10 or 12-bit samples | Our own measurements |
 | `CrwCompressed` | Canon CRW: a CIFF file of Canon's coded blocks of differences | ExifTool's CanonRaw tag names and CRW format notes, black-box measurements of the oracle on synthetic files, our own measurements |
+| `IiqL` | Phase One IIQ L and L16 (Leaf Credo too): rows of differences in runs of even and odd columns, lengths chosen every eight columns | ExifTool's PhaseOne tag names, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
+| `IiqS` | Phase One's first IIQ S: IIQ L's rows, values below 256 on a square-law curve | as `IiqL` |
+| `IiqUncompressed` | Phase One IIQ and TIFF, 16-bit words | ExifTool's PhaseOne tag names, our own measurements |
 | `OrfCompressed` | Olympus and OM Digital ORF/ORI, Olympus's compressed coding of 12 or 14-bit samples | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfPacked` | Olympus ORF, packed 12-bit samples: 16-byte blocks of ten, 32-bit words, or two interlaced fields of rows | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfUnpacked` | Olympus ORF, 16-bit words holding samples of the note's bit depth | TIFF 6, ExifTool's Olympus tag names, our own measurements |
@@ -439,6 +442,27 @@ CHDK's headerless files (`container::headerless`) are `[[headerless]]` rows
 by file size: the camera, the image size and bits, the visible area and the
 filter. Samples are packed most significant bit first in 16-bit little-endian
 words; black is measured as for CR2 but on every left border column.
+
+Phase One (`container::iiq`, `vendor::phase_one`, `codec::phase_one`): IIQ
+files, the Phase One backs' TIFFs and Leaf's Credo IIQs hold Phase One's own
+block in the EXIF maker note, eight bytes into the file: a directory of
+16-byte entries giving the sensor size, the image area (an odd left or top
+edge moved in by one, as RAWmakase has always shown it), RawFormat, the data
+and each row's offset, BlackLevel, the as-shot white balance and the
+orientation. The IIQ L coding was written from prior general knowledge of the
+format (no decoder source consulted, no public description found) and
+verified by an exact match with LibRaw's output on every IIQ L, L16 and
+first IIQ S file of the dataset; IIQ S maps values below 256 through
+v² / 3.969, rounded. Black is BlackLevel (0 without one) and white 65535,
+Adobe DNG Converter's WhiteLevel for every IIQ; LibRaw subtracts its black on
+development and reports 0 and 0xFFFC less it (approved decode deltas; the
+black ones stay pending where Adobe writes calibrated data with a black of
+0). Not applied: the per-row and per-column black offsets the block may
+carry (BlackLevelData, up to a few hundred levels on some backs), which
+`Sensor` cannot express, nor Phase One's sensor calibration (flat fields,
+defects), which Adobe applies. The older backs' colour filter is a
+`compat-observed` row (Adobe's CFAPattern agrees). IIQ Sv2 (RawFormat 6) and
+the scrambled RAW 1 and RAW 2 formats are `Unsupported`.
 
 Canon files whose values differ from LibRaw's on purpose are approved in
 `tests/corpus/decode-deltas.toml`, with Adobe DNG Converter's value as the

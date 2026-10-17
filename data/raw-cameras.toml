@@ -7933,3 +7933,62 @@ make = "Hasselblad"
 model = "L2D-20c"
 canonical = ["Hasselblad", "L2D-20c-FFF"]
 source = "compat-observed"
+
+# Phase One: the older backs' colour filter at the sensor's corner, which
+# their IIQ block does not give (Adobe DNG Converter's CFAPattern agrees),
+# and the H 25's canonical name.
+
+[[camera]]
+make = "Phase One"
+model = "P30"
+dng = false
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Phase One"
+model = "P45"
+dng = false
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Phase One"
+model = "P45+"
+dng = false
+cfa = [1, 0, 2, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Phase One"
+model = "P20+"
+dng = false
+cfa = [1, 2, 0, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Phase One"
+model = "P25"
+dng = false
+cfa = [1, 2, 0, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Phase One"
+model = "P25+"
+dng = false
+cfa = [1, 2, 0, 1]
+source = "compat-observed"
+
+[[camera]]
+make = "Phase One"
+model = "H 25"
+dng = false
+cfa = [1, 2, 0, 1]
+source = "compat-observed"
+
+[[canonical]]
+make = "Phase One"
+model = "H 25"
+canonical = ["Phase One", "H25"]
+source = "compat-observed"

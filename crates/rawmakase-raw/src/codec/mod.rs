@@ -16,5 +16,6 @@ pub(crate) mod packed;
 pub(crate) mod panasonic;
 pub(crate) mod panasonic_strips;
 pub(crate) mod pentax;
+pub(crate) mod phase_one;
 pub(crate) mod samsung;
 pub(crate) mod sony;
