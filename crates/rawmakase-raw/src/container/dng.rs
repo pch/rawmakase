@@ -106,8 +106,8 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     let origin = t.reals(ifd, 50719).filter(|v| v.len() == 2);
     let size = t.reals(ifd, 50720).filter(|v| v.len() == 2);
     // The default crop in sensor coordinates, starting on even rows and
-    // columns (keeping its far edges); a crop of the whole image, or one
-    // outside the sensor data, is none.
+    // columns (keeping its far edges); a crop of the whole image, from the
+    // sensor's corner, or outside the sensor data, is none.
     let inside = |v: f64, max: u32| (v >= 0. && v <= f64::from(max)).then_some(v as u32);
     let crop = origin.zip(size).and_then(|(o, s)| {
         Some([
@@ -127,7 +127,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
                 y += 1;
                 h = h.saturating_sub(1);
             }
-            if [x, y, w, h] == [0, 0, width, height] {
+            if [x, y] == [0, 0] {
                 [UNSET, UNSET, 0, 0]
             } else {
                 [x, y, w, h]
@@ -135,6 +135,36 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         }
         None => [UNSET, UNSET, 0, 0],
     };
+    // The aspect-ratio crop: DefaultUserCrop (top, left, bottom, right in
+    // fractions of the default crop, else of the visible area), its edges on
+    // the even rows and columns inside it.
+    let base = if info.frame[0] == UNSET {
+        [left, top, info.width, info.height]
+    } else {
+        info.frame
+    };
+    if let Some(c) = t.reals(ifd, 51125).filter(|c| {
+        c.len() == 4
+            && c.iter().all(|v| (0. ..=1.).contains(v))
+            && c[2] > c[0]
+            && c[3] > c[1]
+            && c[..] != [0., 0., 1., 1.]
+    }) {
+        let at = |start: u32, size: u32, f: f64| f64::from(start) + f * f64::from(size);
+        let up = |v: f64| (v.ceil() as u32).next_multiple_of(2);
+        let down = |v: f64| v.floor() as u32 & !1;
+        let (x0, x1) = (
+            up(at(base[0], base[2], c[1])),
+            down(at(base[0], base[2], c[3])),
+        );
+        let (y0, y1) = (
+            up(at(base[1], base[3], c[0])),
+            down(at(base[1], base[3], c[2])),
+        );
+        if x1 > x0 && y1 > y0 {
+            info.aspect = [x0, y0, x1 - x0, y1 - y0];
+        }
+    }
     let ifd0 = &t.ifds[0];
     info.make = t.text(ifd0, 271).unwrap_or_default();
     info.model = t.text(ifd0, 272).unwrap_or_default();
@@ -989,6 +1019,47 @@ pub(crate) mod tests {
             super::d65_matrix([None, zeros.clone()], [Some(17), Some(21)]).unwrap()[0][0],
             0.
         );
+    }
+
+    /// The default crop starts on even rows and columns; one from the
+    /// sensor's corner is none. DefaultUserCrop's fractions of it give the
+    /// aspect-ratio crop, its edges on the even rows and columns inside.
+    #[test]
+    fn default_and_user_crops() {
+        let le32s = |v: &[u32]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+        let crop = |o: [i32; 2], s: [i32; 2], user: Option<[i32; 4]>| {
+            let mut extra = vec![
+                (50829, 4, 4, le32s(&[2, 4, 102, 204])),
+                (50719, 5, 2, rationals(&o, 1)),
+                (50720, 5, 2, rationals(&s, 1)),
+            ];
+            if let Some(u) = user {
+                extra.push((51125, 5, 4, rationals(&u, 100)));
+            }
+            let info = crate::open(&dng(210, 104, &extra)).unwrap();
+            (info.frame, info.aspect)
+        };
+        let none = [crate::UNSET, crate::UNSET, 0, 0];
+        // Active area (4, 2) + (3, 5): (7, 7) → (8, 8), the far edges kept.
+        assert_eq!(crop([3, 5], [190, 90], None), ([8, 8, 189, 89], none));
+        // From the sensor's corner: none (an active area at the corner).
+        let info = crate::open(&dng(
+            8,
+            4,
+            &[
+                (50719, 5, 2, rationals(&[0, 0], 1)),
+                (50720, 5, 2, rationals(&[6, 4], 1)),
+            ],
+        ))
+        .unwrap();
+        assert_eq!(info.frame, none);
+        // Columns 10%–90%, rows 25%–75% of the crop (8, 8, 100, 80):
+        // 18 to 98, 28 to 68.
+        let user = Some([25, 10, 75, 90]);
+        assert_eq!(crop([4, 6], [100, 80], user).1, [18, 28, 80, 40]);
+        // Odd edges move inside: 8 + 15.5 → 24, 8 + 34.5 → 42.
+        let user = Some([0, 31, 100, 69]);
+        assert_eq!(crop([4, 6], [50, 80], user).1, [24, 8, 18, 80]);
     }
 
     /// A Fujifilm DNG's dynamic range and exposure bias come from the maker

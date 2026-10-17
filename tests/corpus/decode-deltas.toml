@@ -28631,3 +28631,86 @@ before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
 after = [[1.0456000566482544, -0.46000000834465027, -0.10419999808073044], [-0.45500001311302185, 1.3207000494003296, 0.14319999516010284], [-0.0706000030040741, 0.16680000722408295, 0.46970000863075256]]
 evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# DNG: crops and the CFA phase as the file gives them and Adobe DNG Converter keeps them.
+
+[[delta]]
+# Fujifilm/X100S/fujifilm-x100s-daylight-DSCF9505.dng
+sha256 = "7adec564bbf74858c70b5a01a2b744000f8057303169fc70d91bde7cb435530f"
+field = "header.facts.frame"
+before = [24, 18, 4892, 3262]
+after = [20, 16, 4896, 3264]
+evidence = "DefaultCropOrigin 20, 16 and DefaultCropSize 4896 x 3264 (DNG 1.7), which Adobe DNG Converter 18.7 keeps; LibRaw cut 4 more columns and 2 more rows"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LEICA CAMERA AG/LEICA SL2/L1020010.DNG
+sha256 = "d00f05468793e4509b53230e90dcdc078e823b254eee95f1c68b29e217df99bf"
+field = "header.facts.aspect"
+before = [65535, 65535, 0, 0]
+after = [12, 460, 8368, 4712]
+evidence = "DefaultUserCrop (DNG 1.7: the crop Camera Raw starts from, fractions of the default crop), which Adobe DNG Converter 18.7 keeps; LibRaw read none"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# P1011433.dng
+sha256 = "a12a60073f4394782742daa5b30298b22a931e2995c34087bf392d055fb9d491"
+field = "header.facts.aspect"
+before = [65535, 65535, 0, 0]
+after = [1012, 8, 4000, 4000]
+evidence = "DefaultUserCrop (DNG 1.7: the crop Camera Raw starts from, fractions of the default crop), which Adobe DNG Converter 18.7 keeps; LibRaw read none"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# P1011574.dng
+sha256 = "04d1d01573ea14986601c5fb61c20cb894e28064b5c2194d2752d88cb34dc6a5"
+field = "header.facts.aspect"
+before = [65535, 65535, 0, 0]
+after = [1012, 8, 4000, 4000]
+evidence = "DefaultUserCrop (DNG 1.7: the crop Camera Raw starts from, fractions of the default crop), which Adobe DNG Converter 18.7 keeps; LibRaw read none"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# P1011585.dng
+sha256 = "554faf17c23686094543b8f9b4b5ad5f40e3e427675443ea264929650e0ed6ac"
+field = "header.facts.aspect"
+before = [65535, 65535, 0, 0]
+after = [1012, 8, 4000, 4000]
+evidence = "DefaultUserCrop (DNG 1.7: the crop Camera Raw starts from, fractions of the default crop), which Adobe DNG Converter 18.7 keeps; LibRaw read none"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# credit @signatureeditsco - signatureedits.com L7D_7503.dng
+sha256 = "ceb62c45d9809379ab5e41a243dbeee3087e802da6f875e934dd1f07a5acd82e"
+field = "sensor.cfa"
+before = "gB/RG"
+after = "RG/gB"
+evidence = "CFAPattern 0 1 1 2 from the raw image's corner (DNG 1.7): the visible area's first row (52) is red and green; Adobe DNG Converter 18.7's mosaic agrees with ours on every pixel (aligned comparison, CFA match 1.0)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# free raw from signature edits 2.dng
+sha256 = "07e8cfe35a42ce287e60027633436862845a9c76d5327e2576981bc759daf690"
+field = "header.facts.aspect"
+before = [65535, 65535, 0, 0]
+after = [540, 58, 5952, 4480]
+evidence = "DefaultUserCrop (DNG 1.7: the crop Camera Raw starts from, fractions of the default crop), which Adobe DNG Converter 18.7 keeps; LibRaw read none"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# signature edits free raw files.DNG
+sha256 = "166031ccd9df847bbacd6b453d254260455f00febd3daeb3aad59ee4bf704b13"
+field = "sensor.cfa"
+before = "gB/RG"
+after = "RG/gB"
+evidence = "CFAPattern 0 1 1 2 from the raw image's corner (DNG 1.7): the visible area's first row (52) is red and green; Adobe DNG Converter 18.7's mosaic agrees with ours on every pixel (aligned comparison, CFA match 1.0)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# tag @signatureeditsco L7D_3458.dng
+sha256 = "8d31189cc8ae8deb366bb52545d76c6d85c753f2eaceadfe5703e162fd4e4dab"
+field = "sensor.cfa"
+before = "gB/RG"
+after = "RG/gB"
+evidence = "CFAPattern 0 1 1 2 from the raw image's corner (DNG 1.7): the visible area's first row (52) is red and green; Adobe DNG Converter 18.7's mosaic agrees with ours on every pixel (aligned comparison, CFA match 1.0)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"

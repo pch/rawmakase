@@ -83,6 +83,11 @@ pub(crate) fn apply(info: &mut crate::info::RawInfo) {
             {
                 if *v != crate::info::UNSET {
                     *v = (*v + new).saturating_sub(old);
+                    // A DNG's crops stay on even rows and columns (floored),
+                    // as they are placed in the file's own area.
+                    if dng {
+                        *v &= !1;
+                    }
                 }
             }
         }

@@ -127,6 +127,12 @@ the D65 one, else by inverse colour temperature between the two (Yuneec's A
 and D75), else the nearer (D50 of A and D50). LibRaw interpolates the same way
 (its Yuneec CGO3+ matrix is ours to 1e-7).
 
+DNG crops: the default crop starts on even rows and columns, keeping its far
+edges (one from the sensor's corner is none); where a camera row moves the
+visible area, the crop moves with it, floored to even rows and columns.
+DefaultUserCrop gives the aspect-ratio crop, its fractions of the default crop
+rounded inward to even rows and columns.
+
 DNG lens IDs come from the maker note DNGPrivateData keeps: Pentax's and
 Samsung's Pentax bodies' own ("PENTAX \0", `vendor::pentax`: LensType's
 series × 256 + number, as Adobe's aux:LensID "4 28" is 1052), or Nikon's in
