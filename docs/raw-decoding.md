@@ -254,24 +254,35 @@ where `SuperCcd::position` turns it (rows of the tall layout two to a step
 across the diagonals, columns of the wide one two to a step along them; our
 own measurements of LibRaw's developed images), 0 outside the turned area, and
 demosaics the result as the Bayer mosaic it is; the image keeps LibRaw's size
-and orientation. Black is the raw image directory's per
-filter position (0xF00A), or the older bodies' record 0x4000 (green, red,
-second green, blue); white is the bit depth's range. As-shot white balance is
+and orientation. Levels follow Adobe DNG Converter. Black is the raw image
+directory's per filter position (0xF00A), the pattern starting at the
+camera's crop (Adobe's active area: the GFX 100's rows of 62 and 63 start at
+its crop's odd row), or the older bodies' record 0x4000's first green for
+every channel (record 0x4000 holds green, red, second green, blue; Adobe's
+BlackLevel is the first green's); white is the bit depth's range. Where
+Adobe's levels are not these, `adobe-dng` rows of `data/raw-cameras.toml`
+give them: the older FinePix bodies' white (15564 to 15880, the HS10's 3900,
+the S200EXR's 16250, the X100's 4000), the first X-Trans and X-A bodies' and
+the X20, X30, XQ1 and XQ2's 12-bit 4094 white and black one above the
+file's, and the 14-bit X-Trans II bodies' black of 1024 (a row's black
+replaces the file's pattern). The EXR sensors' data Adobe preprocesses (its
+levels and linearity differ from the file's); they keep the file's rules.
+As-shot white balance is
 the raw image directory's (0xF00E) or record 0x2FF0; D65 the illuminant list's
 (0xF00C, light source 21) or record 0x2301, and fine weather and shade the
 RAFData table's (the first run of six presets of the as-shot green, after an
 as-shot entry in the first X bodies'), the X-A bodies' RAFData list (light
 sources 1, 8 and 83, red and blue doubled) or records 0x2100 and 0x2200.
 DevelopmentDynamicRange and RawExposureBias come from the maker notes and
-record 0x9650. Visible areas, white levels, orientations and crops RAWmakase
-has always read differently have `compat-observed` rows in
-`data/raw-cameras.toml`. Lossy compressed data decodes exactly as LibRaw's.
-The older bodies whose record 0x8200 is set (FinePix F700, S5000, S7000,
-S2Pro and the GX680 back) have their as-shot white balance and presets read
-with red and blue scaled down by factors the file does not give; the
-factors are observed compatibility data (`wb_scale` rows, about 0.901 and
-0.885, 0.761 and 0.857 for the back), so these files keep the white balance
-RAWmakase has always read.
+record 0x9650. Visible areas, orientations and crops RAWmakase has always
+read differently have `compat-observed` rows in `data/raw-cameras.toml`.
+Lossy compressed data decodes exactly as LibRaw's. The older bodies whose
+record 0x8200 is set (FinePix F700, S5000, S7000, S2Pro and the GX680 back)
+have their as-shot white balance and presets read with red and blue scaled
+down by factors the file does not give (`wb_scale` rows): 1/1.11 and
+1/1.13, which give Adobe's AsShotNeutral on all four FinePix bodies'
+files, kept whole; the GX680 back's, which Adobe does not read, are
+LibRaw's (0.761 and 0.857, rounded down to whole levels).
 
 Olympus and OM Digital (`vendor::olympus`): white balance (red and blue
 over the mean of the two greens' levels, as Adobe DNG Converter reads it),

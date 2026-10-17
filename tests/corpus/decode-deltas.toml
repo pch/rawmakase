@@ -25341,3 +25341,797 @@ before = 4095
 after = 2095
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 2095"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Fujifilm RAF: levels, the scaled bodies' white balance and the black pattern's phase follow Adobe DNG Converter, not LibRaw.
+
+[[delta]]
+# FUJIFILM/GFX100RF/DSCF0091.RAF
+sha256 = "abead251c364f6b674444f3833115843050e31ea0e5eafb26d36c29b116314b3"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# FUJIFILM/GFX100RF/DSCF0092.RAF
+sha256 = "00eca3fd065af93935a1e6bb94baeb8fecde2372ec3d2aaea4f633112853fa79"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# FUJIFILM/GFX100RF/DSCF0093.RAF
+sha256 = "d7727531b5c2d9ed2b1297baf5767df08d15ee4ba52749c3f4882bfdf6a8d953"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# FUJIFILM/GFX100S II/_DSF0004.RAF
+sha256 = "c133fccfed39a07495cf04d47c75a756b82791b7504e0ea7d5f9fa6b3397b6cb"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# FUJIFILM/GFX100S II/_DSF0005.RAF
+sha256 = "208e35c31c16eceaf32ebeb4e4a9b19f33dd8f9975085d23b9545bdb9c699468"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# FUJIFILM/GFX100S II/_DSF0006.RAF
+sha256 = "acfbba3f6682d4d7b557dc060fa8e57af9e8260215238cf5b9ec7b7d663fd976"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm FinePix E550 (pixls)
+sha256 = "82d1010a1eb8cdf4b2de7ca30a3a4db4e96f290536f06ed2798a67c1fe81e6ae"
+field = "sensor.white"
+before = 15872
+after = 15875
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15875"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm FinePix E900 (pixls)
+sha256 = "07adee4a49ae922c89786c96c2f86ce3c130fa128e18b25d0e498fa881d51b94"
+field = "sensor.white"
+before = 15872
+after = 15564
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15564"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm FinePix F700 (pixls)
+sha256 = "c3686a66f9159043bd27afb0d749d566c2912a0374319e38f68fa6255ea565b4"
+field = "header.metadata.wb"
+before = [1.6375000476837158, 1.0, 1.212499976158142]
+after = [1.6441441774368286, 1.0, 1.2168141603469849]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral 0.608219 1 0.821818; the record 0x8200 levels scaled by the camera's factors, which make it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm FinePix F700 (pixls)
+sha256 = "c3686a66f9159043bd27afb0d749d566c2912a0374319e38f68fa6255ea565b4"
+field = "header.metadata.wb_presets.d65"
+before = [141.0, 92.0, 130.0]
+after = [141.44143676757812, 92.0, 130.0885009765625]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral gives the camera's record 0x8200 factors, which scale the presets alike"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm FinePix F700 (pixls)
+sha256 = "c3686a66f9159043bd27afb0d749d566c2912a0374319e38f68fa6255ea565b4"
+field = "header.metadata.wb_presets.fine_weather"
+before = [124.0, 80.0, 100.0]
+after = [124.32432556152344, 80.0, 100.88495635986328]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral gives the camera's record 0x8200 factors, which scale the presets alike"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm FinePix F700 (pixls)
+sha256 = "c3686a66f9159043bd27afb0d749d566c2912a0374319e38f68fa6255ea565b4"
+field = "header.metadata.wb_presets.shade"
+before = [140.0, 80.0, 89.0]
+after = [140.54054260253906, 80.0, 89.38053131103516]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral gives the camera's record 0x8200 factors, which scale the presets alike"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm FinePix F700 (pixls)
+sha256 = "c3686a66f9159043bd27afb0d749d566c2912a0374319e38f68fa6255ea565b4"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm FinePix HS10 HS11 (pixls)
+sha256 = "dbdd459e33beadd68d26d298424056402c907bf11d37a904572d3df76c35fbcb"
+field = "sensor.white"
+before = 3944
+after = 3900
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 3900"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm FinePix S5600 (pixls)
+sha256 = "8d24ac05af61c8af0a2e7e97166e0db142b5cfb126655462704bf3de03d30d23"
+field = "sensor.white"
+before = 15872
+after = 15564
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15564"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/DBP for GX680/DSCF0010.RAF
+sha256 = "36e5e144e8d69a98455851578408f6682c881475e39bded4ec72b772b4cff696"
+field = "sensor.black"
+before = [118, 129, 118, 129]
+after = [129, 129, 129, 129]
+evidence = "record 0x4000's first green for every channel, as Adobe DNG Converter 18.7's BlackLevel has it for the S2Pro, S5000, S100FS and S200EXR; it does not convert this file"
+approval = "pending"
+
+[[delta]]
+# Fujifilm/FinePix S100FS/DSCF8410.RAF
+sha256 = "efa518d70b8122dcfe65f98c7c080f15a512d841a2a86bfe226032a327e1d25e"
+field = "sensor.black"
+before = [515, 513, 515, 513]
+after = [513, 513, 513, 513]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 513 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S100FS/DSCF8410.RAF
+sha256 = "efa518d70b8122dcfe65f98c7c080f15a512d841a2a86bfe226032a327e1d25e"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S200EXR/DSCF4754.RAF
+sha256 = "2d4549067f92b33a222d7ded9460adb5ff6ce739ed92af9890c168e37170d4ff"
+field = "sensor.black"
+before = [517, 518, 516, 517]
+after = [518, 518, 518, 518]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 518 518 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S200EXR/DSCF4754.RAF
+sha256 = "2d4549067f92b33a222d7ded9460adb5ff6ce739ed92af9890c168e37170d4ff"
+field = "sensor.white"
+before = 16383
+after = 16250
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16250 16250"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S2Pro/DSCF0002.RAF
+sha256 = "9fe1bf1361f015d9db862228e4a26b23d69e81015ed4a032eaefb8242ae9ad42"
+field = "header.metadata.wb"
+before = [1.2941176891326904, 1.0, 1.3823529481887817]
+after = [1.2983571290969849, 1.0, 1.388165831565857]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral 0.770204 1 0.720375; the record 0x8200 levels scaled by the camera's factors, which make it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S2Pro/DSCF0002.RAF
+sha256 = "9fe1bf1361f015d9db862228e4a26b23d69e81015ed4a032eaefb8242ae9ad42"
+field = "header.metadata.wb_presets.d65"
+before = [173.0, 117.0, 164.0]
+after = [173.87387084960938, 117.0, 164.60177612304688]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral gives the camera's record 0x8200 factors, which scale the presets alike"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S2Pro/DSCF0002.RAF
+sha256 = "9fe1bf1361f015d9db862228e4a26b23d69e81015ed4a032eaefb8242ae9ad42"
+field = "header.metadata.wb_presets.fine_weather"
+before = [136.0, 102.0, 128.0]
+after = [136.03604125976562, 102.0, 128.31858825683594]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral gives the camera's record 0x8200 factors, which scale the presets alike"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S2Pro/DSCF0002.RAF
+sha256 = "9fe1bf1361f015d9db862228e4a26b23d69e81015ed4a032eaefb8242ae9ad42"
+field = "header.metadata.wb_presets.shade"
+before = [150.0, 102.0, 106.0]
+after = [150.45045471191406, 102.0, 106.19468688964844]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral gives the camera's record 0x8200 factors, which scale the presets alike"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S2Pro/DSCF0002.RAF
+sha256 = "9fe1bf1361f015d9db862228e4a26b23d69e81015ed4a032eaefb8242ae9ad42"
+field = "sensor.black"
+before = [119, 125, 118, 125]
+after = [125, 125, 125, 125]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 125 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S3Pro/DSCF3694.RAF
+sha256 = "038e5a13a22513f53d143e328a66e2de8071809565db696ecac84b4364fcb75b"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S5000/2007_0912Image0022.RAF
+sha256 = "dabd5e74521a6980156be9fd4b88d0c37b0fe4d0e0e6f5c12db8cffff1b76297"
+field = "header.metadata.wb"
+before = [1.8250000476837158, 1.0, 1.375]
+after = [1.835585594177246, 1.0, 1.3827433586120605]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral 0.544785 1 0.7232; the record 0x8200 levels scaled by the camera's factors, which make it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S5000/2007_0912Image0022.RAF
+sha256 = "dabd5e74521a6980156be9fd4b88d0c37b0fe4d0e0e6f5c12db8cffff1b76297"
+field = "header.metadata.wb_presets.d65"
+before = [179.0, 92.0, 145.0]
+after = [179.27928161621094, 92.0, 145.1327362060547]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral gives the camera's record 0x8200 factors, which scale the presets alike"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S5000/2007_0912Image0022.RAF
+sha256 = "dabd5e74521a6980156be9fd4b88d0c37b0fe4d0e0e6f5c12db8cffff1b76297"
+field = "header.metadata.wb_presets.fine_weather"
+before = [146.0, 80.0, 110.0]
+after = [146.8468475341797, 80.0, 110.61946868896484]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral gives the camera's record 0x8200 factors, which scale the presets alike"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S5000/2007_0912Image0022.RAF
+sha256 = "dabd5e74521a6980156be9fd4b88d0c37b0fe4d0e0e6f5c12db8cffff1b76297"
+field = "header.metadata.wb_presets.shade"
+before = [165.0, 80.0, 97.0]
+after = [165.76576232910156, 80.0, 97.34513092041016]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral gives the camera's record 0x8200 factors, which scale the presets alike"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S5000/2007_0912Image0022.RAF
+sha256 = "dabd5e74521a6980156be9fd4b88d0c37b0fe4d0e0e6f5c12db8cffff1b76297"
+field = "sensor.black"
+before = [1, 0, 10, 0]
+after = [0, 0, 0, 0]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 0 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S5000/2007_0912Image0022.RAF
+sha256 = "dabd5e74521a6980156be9fd4b88d0c37b0fe4d0e0e6f5c12db8cffff1b76297"
+field = "sensor.white"
+before = 15872
+after = 15867
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15867"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S5200/DSCF1523.RAF
+sha256 = "93eada72efdf8261d9bfde5022a28a656e4c1c6d0ddac7b0c82686fdcb8ded99"
+field = "sensor.white"
+before = 15872
+after = 15564
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15564"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S5500/DSCF6206.RAF
+sha256 = "92a947758829686f0a0c662d160a7b8319099cc405a0e4bf90e1fd61c47b2b69"
+field = "sensor.white"
+before = 15872
+after = 15880
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15880"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S5Pro/2018_06150003.RAF
+sha256 = "aca2b2ebcf90d248b4f822ed78bfeb73e79f1b64164a87dc2051a96726cdfa0c"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S6000fd/DSCF1973.RAF
+sha256 = "2c602e5a31b81683d8fb97f36c5cb3580836420e12b9ed5ae16241c68ff6201d"
+field = "sensor.white"
+before = 15872
+after = 15564
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15564"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S6500fd/DSCF1333.RAF
+sha256 = "ee2a7afc2afc9e3a85ca9e5e237c68b612dc360fb45c6fb4495ef857abbab48e"
+field = "sensor.white"
+before = 15872
+after = 15564
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15564"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S7000/dscf3648.raf
+sha256 = "098aa2c64dc6a026f3f48f1494476a55751e08af2d37789b7f557fd11a14cf49"
+field = "header.metadata.wb"
+before = [1.875, 1.0, 1.3125]
+after = [1.880630612373352, 1.0, 1.3163716793060303]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral 0.531737 1 0.759664; the record 0x8200 levels scaled by the camera's factors, which make it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S7000/dscf3648.raf
+sha256 = "098aa2c64dc6a026f3f48f1494476a55751e08af2d37789b7f557fd11a14cf49"
+field = "header.metadata.wb_presets.d65"
+before = [164.0, 92.0, 134.0]
+after = [164.8648681640625, 92.0, 134.51327514648438]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral gives the camera's record 0x8200 factors, which scale the presets alike"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S7000/dscf3648.raf
+sha256 = "098aa2c64dc6a026f3f48f1494476a55751e08af2d37789b7f557fd11a14cf49"
+field = "header.metadata.wb_presets.fine_weather"
+before = [143.0, 80.0, 107.0]
+after = [143.2432403564453, 80.0, 107.07964324951172]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral gives the camera's record 0x8200 factors, which scale the presets alike"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S7000/dscf3648.raf
+sha256 = "098aa2c64dc6a026f3f48f1494476a55751e08af2d37789b7f557fd11a14cf49"
+field = "header.metadata.wb_presets.shade"
+before = [160.0, 80.0, 92.0]
+after = [160.36036682128906, 80.0, 92.92035675048828]
+evidence = "Adobe DNG Converter 18.7 AsShotNeutral gives the camera's record 0x8200 factors, which scale the presets alike"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S7000/dscf3648.raf
+sha256 = "098aa2c64dc6a026f3f48f1494476a55751e08af2d37789b7f557fd11a14cf49"
+field = "sensor.white"
+before = 15872
+after = 15869
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15869"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S9500/20170430_0041.RAF
+sha256 = "b7a7bb3b8a69232866c75774ca6ba9296f3d4435d1e1bac327b4cdc6bea39144"
+field = "sensor.white"
+before = 15872
+after = 15564
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15564"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix S9600/2007-11-10--16-32-45-original.raf
+sha256 = "d4888ec28d89ce7f9cc6d1b852d2ea03da965bf5e8ce5874d1e3fa439f92dbc0"
+field = "sensor.white"
+before = 15872
+after = 15564
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15564"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/FinePix X100/DSCF1676.RAF
+sha256 = "1f4aea4fa43dd314f8b90954d7823655d4906d3e468a9ea014652b872a68db16"
+field = "sensor.white"
+before = 4095
+after = 4000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4000"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX 100/_DSF3979.RAF
+sha256 = "8afd3433229d564b53d25d9abbe8351da3b4b242cc9f2eaf4b8be4c2ffb09657"
+field = "sensor.black_pattern.values"
+before = [63, 62, 63, 63]
+after = [63, 63, 63, 62]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 63 62 63 63 (BlackLevelRepeatDim 2 2), from its active area (the camera's crop)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX 100/_DSF3979.RAF
+sha256 = "8afd3433229d564b53d25d9abbe8351da3b4b242cc9f2eaf4b8be4c2ffb09657"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX 100/_DSF3980.RAF
+sha256 = "0e7dad9819a748bb3d3be26bbf5770d4968e2d80b9cb41d97036bf7c27f7bfe7"
+field = "sensor.black_pattern.values"
+before = [62, 62, 63, 63]
+after = [63, 63, 62, 62]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 62 62 63 63 (BlackLevelRepeatDim 2 2), from its active area (the camera's crop)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX 100/_DSF3980.RAF
+sha256 = "0e7dad9819a748bb3d3be26bbf5770d4968e2d80b9cb41d97036bf7c27f7bfe7"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX 50R/2019-01-24-14-02-50_DSCF1316_e819634e46ecdb8ea241012ee70ae11e5c220c48.raf
+sha256 = "9d0570010a36fda60823de10837c47b39d7693ad8a87e531c859cfe411e41172"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX 50R/2019-01-24-14-03-03_DSCF1317_c9ab436f1532b532976eec431f0e4db7e9f2b8e2.raf
+sha256 = "35109fc20a849026c43c47674902431ef5a2d54b09b616995263dc75df17912f"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX 50S/20170525_0036TEST.RAF
+sha256 = "bb7c832430549029ddfc61224b97cc40a5149ec363e11c566a57de65d9582ec9"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX 50S/20170525_0037TEST.RAF
+sha256 = "a7124d13910e0241a6b035154bc1fcdb7be4439371d043b1e1950a0251feb51e"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX100 II/_DSF0264.RAF
+sha256 = "b7b329bcbfcc07c5523a2b172a5173f4de4b841c8315078a1b69150ddaa16f30"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX100 II/_DSF0266.RAF
+sha256 = "03cf2a46b6b6b058547bbbbb46f2cd6fd546a7839f082da614a1e295b36368fa"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX100 II/_DSF0268.RAF
+sha256 = "6685f914523a00db587deeb4192f7287dc019718ffe1c3e217d6b01c8cebe1ee"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX100S/Fujifilm-GFX100S-14bits-compress-4_3.RAF
+sha256 = "1be3e443b42a1ed2a5607eb25013bd06bc6da2bb86bac0a1220cbe82338dac50"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX100S/Fujifilm-GFX100S-14bits-losslescompressed-4_3.RAF
+sha256 = "d3f5503ed0955d263e0997dab06e1575f927108827a182f27f656ec87ec20dc9"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX100S/Fujifilm-GFX100S-14bits-uncompress-4_3.RAF
+sha256 = "fef6ac253fd50897bd6c8c5a8d5bb912d2c94c5c1402cdc66584809af757a24a"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX50S II/Fuji_GFX50S_II_-_Compressed.RAF
+sha256 = "59699d3063a9900eb5f226da664473c6081ed2cfe4d4529b7cd45afa2f1cac62"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX50S II/Fuji_GFX50S_II_-_Lossless_Compressed.RAF
+sha256 = "4aada4653d7f876ee5e7b1cff36671d7820600adb98af39e8fb7c41ae0ace96d"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/GFX50S II/Fuji_GFX50S_II_-_Uncompressed.RAF
+sha256 = "cf53a9018d5a77cd854ea0a91afee2a35ac8fab8f814020d79f728f99ba99892"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-A1/DSCF2482.RAF
+sha256 = "b2ddb5fe31a3b976d12961c72a2689de8742739df3d8f757614eca65f8df2a61"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [256, 256, 256, 256]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 256 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-A1/DSCF2482.RAF
+sha256 = "b2ddb5fe31a3b976d12961c72a2689de8742739df3d8f757614eca65f8df2a61"
+field = "sensor.white"
+before = 4095
+after = 4094
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4094"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-A10/DSCF8207.RAF
+sha256 = "05309c5434500cc53d5782072cc0dcdd947d2f0a34f0ddcd4656c82cc7803272"
+field = "sensor.white"
+before = 4095
+after = 4094
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4094"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-A2/DSCF2073.RAF
+sha256 = "58ad687b23138c3c49ebeb6c1f80daf13185349be364b947e2bf27e39a462d2f"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [256, 256, 256, 256]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 256 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-A2/DSCF2073.RAF
+sha256 = "58ad687b23138c3c49ebeb6c1f80daf13185349be364b947e2bf27e39a462d2f"
+field = "sensor.white"
+before = 4095
+after = 4094
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4094"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-E1/DSCF6490.RAF
+sha256 = "0fa01fa1a674bcfa40f659225b4e66c5bedf15d2f78407ca1966dc8f38cd0e9f"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [256, 256, 256, 256]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 256 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-E1/DSCF6490.RAF
+sha256 = "0fa01fa1a674bcfa40f659225b4e66c5bedf15d2f78407ca1966dc8f38cd0e9f"
+field = "sensor.white"
+before = 4095
+after = 4094
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4094"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-E2/DSCF9050.RAF
+sha256 = "7588c70af7fd6be3abcec52546aabcd04e0aafc6541e7f7f50bdc60b60513c57"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1024 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-E2S/_DSF0540.RAF
+sha256 = "330fc84b597e7be6d7477aad5715705efaa99d4663eb05aa47e1250d6f421549"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1024 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-M1/DSCF1442.RAF
+sha256 = "eef4e9ae629d2d81cef5a234fb853c14c88b3c0c12c39d635a1f9fa2a871bec3"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [256, 256, 256, 256]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 256 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-M1/DSCF1442.RAF
+sha256 = "eef4e9ae629d2d81cef5a234fb853c14c88b3c0c12c39d635a1f9fa2a871bec3"
+field = "sensor.white"
+before = 4095
+after = 4094
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4094"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-Pro1/DSCF2131.RAF
+sha256 = "0b1046c299d9eb222a8f003bd047f2a34f507da0d1704ac32cefbc82f799d121"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [256, 256, 256, 256]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 256 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-Pro1/DSCF2131.RAF
+sha256 = "0b1046c299d9eb222a8f003bd047f2a34f507da0d1704ac32cefbc82f799d121"
+field = "sensor.white"
+before = 4095
+after = 4094
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4094"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-T1/20171229_110916.RAF
+sha256 = "e994a1fd6e87e392432fe146a35b0b88584dc2bd50bee2c8c7e886ac2b59fcde"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1024 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X-T10/DSCF8146.RAF
+sha256 = "4c09401975cc6f95b1284693aac39fef85498f70b55e35bf458a133c6e61885d"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1024 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X100T/DSCF0442.RAF
+sha256 = "a12bb7fa3585b636b7fa487d767ba0ba1ae10fe6aaa74db4147dc0ec2b180a0a"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1024 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X20/DSCF7451.RAF
+sha256 = "ccb4fad836f1561b52859c3ee01db0fef7db770980d4a84e95595da1eda72b2a"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [257, 257, 257, 257]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 257 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X20/DSCF7451.RAF
+sha256 = "ccb4fad836f1561b52859c3ee01db0fef7db770980d4a84e95595da1eda72b2a"
+field = "sensor.white"
+before = 4095
+after = 4094
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4094"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X30/20160604_0009.RAF
+sha256 = "1f65f680600c85a6f561d2b0ad7cd1f9d93ee7f733aafe4ecd37667d984dd6c4"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [257, 257, 257, 257]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 257 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X30/20160604_0009.RAF
+sha256 = "1f65f680600c85a6f561d2b0ad7cd1f9d93ee7f733aafe4ecd37667d984dd6c4"
+field = "sensor.white"
+before = 4095
+after = 4094
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4094"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/X70/DSCF8848.RAF
+sha256 = "4f9c33fde578addebda991c37d26551b46fab8f592c74f7192560a05ec08d577"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [1024, 1024, 1024, 1024]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 1024 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/XF10/DSCF6466.RAF
+sha256 = "0486676fdbbdc7f3f4c63cd45aa76581cbc1316f4c9baef8781bced0fbc137db"
+field = "sensor.white"
+before = 15872
+after = 16383
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 16383"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/XQ1/DSCF2004.RAF
+sha256 = "663c0bfcb8819c3931444acd9d1491de4d0c0aa1fd745b99e1faa68cc8de033b"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [257, 257, 257, 257]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 257 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/XQ1/DSCF2004.RAF
+sha256 = "663c0bfcb8819c3931444acd9d1491de4d0c0aa1fd745b99e1faa68cc8de033b"
+field = "sensor.white"
+before = 4095
+after = 4094
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4094"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/XQ2/DSCF4186.RAF
+sha256 = "4bce88593f5ae8fc45aeeec8a6dee9a84c773493cc6db9dabdc28744c8ac4b4d"
+field = "sensor.black"
+before = [0, 0, 0, 0]
+after = [257, 257, 257, 257]
+evidence = "Adobe DNG Converter 18.7 BlackLevel 257 (BlackLevelRepeatDim 1 1)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Fujifilm/XQ2/DSCF4186.RAF
+sha256 = "4bce88593f5ae8fc45aeeec8a6dee9a84c773493cc6db9dabdc28744c8ac4b4d"
+field = "sensor.white"
+before = 4095
+after = 4094
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 4094"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"

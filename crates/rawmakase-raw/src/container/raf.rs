@@ -219,8 +219,10 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
             info.aspect = [left, top + (height - cut) / 2, width, cut];
         }
     }
-    if let Some(scale) = rows().find_map(|c| c.wb_scale)
-        && let Some((wb, presets)) = fuji::scaled_levels(&records, scale)
+    if let Some((scale, observed)) = rows().find_map(|c| {
+        c.wb_scale
+            .map(|s| (s, c.source == crate::facts::Source::CompatObserved))
+    }) && let Some((wb, presets)) = fuji::scaled_levels(&records, scale, observed)
     {
         info.cam_mul = wb;
         info.presets = presets;
@@ -237,8 +239,10 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
     {
         plan.white = w;
     }
+    // A camera's black level replaces the file's, its pattern too.
     if let Some(b) = rows().find_map(|c| c.black) {
         plan.black = [b; 4];
+        plan.black_pattern = (0, 0, Vec::new());
     }
     info.plan = Plan::Raf(plan);
     Ok(info)
@@ -522,14 +526,21 @@ pub(crate) fn decode(
         }
     }
     let [left, top] = info.margins;
-    // The black pattern from the visible area's corner.
+    // The black pattern from the visible area's corner. The raw image
+    // directory's starts at the camera's crop (as Adobe DNG Converter's
+    // BlackLevel does from its active area, the crop: the GFX 100's rows of
+    // 62 and 63 start at its crop's odd row).
     let (rows, cols, values) = &plan.black_pattern;
+    let [ax, ay] = info
+        .recommended_crop
+        .filter(|_| info.super_ccd.is_none())
+        .map_or([0, 0], |[l, t, _, _]| [i64::from(l), i64::from(t)]);
     let black_pattern = if *rows > 0 && *cols > 0 {
         let (r, c) = (*rows as usize, *cols as usize);
         let shifted = (0..r * c)
             .map(|i| {
-                let y = (i / c + top as usize) % r;
-                let x = (i % c + left as usize) % c;
+                let y = ((i / c) as i64 + i64::from(top) - ay).rem_euclid(r as i64) as usize;
+                let x = ((i % c) as i64 + i64::from(left) - ax).rem_euclid(c as i64) as usize;
                 values.get(y * c + x).copied().unwrap_or(0)
             })
             .collect();
@@ -733,14 +744,16 @@ mod tests {
         assert_eq!(info.previews[0].len, 4);
         assert_eq!(s.data, samples);
         assert_eq!(s.white, 16383);
-        assert_eq!(s.black_pattern, (2, 2, vec![64, 64, 65, 65]));
+        // The black pattern (64, 64 over 65, 65) starts at the crop's row 3:
+        // from the visible area's row 0, its second row comes first.
+        assert_eq!(s.black_pattern, (2, 2, vec![65, 65, 64, 64]));
         assert_eq!(s.area, [0, 0, 8, 6]);
     }
 
     #[test]
     fn reads_the_older_layouts() {
         // 4 × 2 little-endian words after the header, black from record
-        // 0x4000 (green, red, second green, blue).
+        // 0x4000 (green, red, second green, blue): its first green's.
         let samples = [1u16, 2, 3, 4, 5, 6, 7, 8];
         let data: Vec<u8> = samples.iter().flat_map(|v| v.to_le_bytes()).collect();
         let r = vec![
@@ -752,7 +765,7 @@ mod tests {
         let (info, s) = decode(&file);
         assert_eq!(info.model, "S1000");
         assert_eq!(s.data, samples);
-        assert_eq!(s.black, [10, 20, 30, 21]);
+        assert_eq!(s.black, [20; 4]);
         assert_eq!(info.cam_mul, [2., 1., 1.5, 1.]);
         // Vertical tiles of 2 columns (the pointer at byte 112: 4 bytes),
         // big-endian, each stored whole.

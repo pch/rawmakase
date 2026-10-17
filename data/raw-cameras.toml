@@ -15,7 +15,8 @@
 #                and `wb_scale` (red, blue): factors the white balance levels
 #                are scaled by where the maker's rules say they are
 #                (Fujifilm's record 0x8200) and the file does not say by how
-#                much; observed from LibRaw's output, not colour matrices;
+#                much (Adobe DNG Converter's as-shot neutral where it reads the
+#                files, else LibRaw's output), not colour matrices;
 #                and the 2 × 2 colour filter at the sensor's corner (`cfa`, 0
 #                red, 1 green, 2 blue); `aspect_crop = false` where the
 #                camera's aspect crop is not shown. Adobe DNG Converter's
@@ -5503,22 +5504,6 @@ source = "compat-observed"
 
 [[camera]]
 make = "Fujifilm"
-model = "E550"
-dng = false
-raw_size = [2048, 3080]
-white = 15872
-source = "compat-observed"
-
-[[camera]]
-make = "Fujifilm"
-model = "E900"
-dng = false
-raw_size = [2512, 3688]
-white = 15872
-source = "compat-observed"
-
-[[camera]]
-make = "Fujifilm"
 model = "F550EXR"
 dng = false
 raw_size = [3328, 2464]
@@ -5531,15 +5516,6 @@ model = "F600EXR"
 dng = false
 raw_size = [3328, 2464]
 visible = [34, 0, 3262, 2464]
-source = "compat-observed"
-
-[[camera]]
-make = "Fujifilm"
-model = "F700"
-dng = false
-raw_size = [1472, 2168]
-white = 15872
-wb_scale = [0.901, 0.885]
 source = "compat-observed"
 
 [[camera]]
@@ -5565,7 +5541,6 @@ model = "GFX 100"
 dng = false
 raw_size = [11808, 8754]
 visible = [0, 2, 11662, 8746]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -5574,7 +5549,6 @@ model = "GFX 50R"
 dng = false
 raw_size = [9216, 6210]
 visible = [0, 0, 8280, 6208]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -5583,7 +5557,6 @@ model = "GFX 50S"
 dng = false
 raw_size = [9216, 6210]
 visible = [0, 0, 8280, 6208]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -5592,7 +5565,6 @@ model = "GFX100 II"
 dng = false
 raw_size = [11808, 8754]
 visible = [0, 2, 11662, 8746]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -5601,7 +5573,6 @@ model = "GFX100RF"
 dng = false
 raw_size = [11808, 8754]
 visible = [0, 2, 11662, 8746]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -5610,7 +5581,6 @@ model = "GFX100S"
 dng = false
 raw_size = [11808, 8754]
 visible = [0, 2, 11662, 8746]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -5619,7 +5589,6 @@ model = "GFX100S II"
 dng = false
 raw_size = [11808, 8754]
 visible = [0, 2, 11662, 8746]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -5628,15 +5597,6 @@ model = "GFX50S II"
 dng = false
 raw_size = [8472, 6210]
 visible = [0, 0, 8280, 6208]
-white = 15872
-source = "compat-observed"
-
-[[camera]]
-make = "Fujifilm"
-model = "HS10 HS11"
-dng = false
-raw_size = [3664, 2742]
-white = 3944
 source = "compat-observed"
 
 [[camera]]
@@ -5677,7 +5637,6 @@ model = "S100FS"
 dng = false
 raw_size = [5600, 2060]
 visible = [80, 10, 5440, 2040]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -5697,7 +5656,6 @@ visible = [32, 24, 2880, 2144]
 white = 4095
 flip = 6
 frame = [65535, 65535, 0, 0]
-wb_scale = [0.901, 0.885]
 source = "compat-observed"
 
 [[camera]]
@@ -5706,25 +5664,7 @@ model = "S3Pro"
 dng = false
 raw_size = [4352, 1444]
 visible = [48, 10, 4256, 1424]
-white = 15872
 frame = [65535, 65535, 0, 0]
-source = "compat-observed"
-
-[[camera]]
-make = "Fujifilm"
-model = "S5000"
-dng = false
-raw_size = [1472, 2160]
-white = 15872
-wb_scale = [0.901, 0.885]
-source = "compat-observed"
-
-[[camera]]
-make = "Fujifilm"
-model = "S5200"
-dng = false
-raw_size = [1904, 2776]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -5733,15 +5673,6 @@ model = "S5500"
 dng = false
 raw_size = [2304, 1740]
 visible = [0, 6, 2304, 1734]
-white = 15872
-source = "compat-observed"
-
-[[camera]]
-make = "Fujifilm"
-model = "S5600"
-dng = false
-raw_size = [1904, 2776]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -5750,7 +5681,6 @@ model = "S5Pro"
 dng = false
 raw_size = [4352, 1444]
 visible = [48, 10, 4256, 1424]
-white = 15872
 frame = [65535, 65535, 0, 0]
 source = "compat-observed"
 
@@ -5760,7 +5690,6 @@ model = "S6000fd"
 dng = false
 raw_size = [4224, 1544]
 visible = [64, 0, 4096, 1544]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -5769,32 +5698,6 @@ model = "S6500fd"
 dng = false
 raw_size = [4224, 1544]
 visible = [64, 0, 4096, 1544]
-white = 15872
-source = "compat-observed"
-
-[[camera]]
-make = "Fujifilm"
-model = "S7000"
-dng = false
-raw_size = [2048, 3080]
-white = 15872
-wb_scale = [0.901, 0.885]
-source = "compat-observed"
-
-[[camera]]
-make = "Fujifilm"
-model = "S9500"
-dng = false
-raw_size = [2512, 3688]
-white = 15872
-source = "compat-observed"
-
-[[camera]]
-make = "Fujifilm"
-model = "S9600"
-dng = false
-raw_size = [2512, 3688]
-white = 15872
 source = "compat-observed"
 
 [[camera]]
@@ -6191,14 +6094,6 @@ source = "compat-observed"
 
 [[camera]]
 make = "Fujifilm"
-model = "XF10"
-dng = false
-raw_size = [6016, 4014]
-white = 15872
-source = "compat-observed"
-
-[[camera]]
-make = "Fujifilm"
 model = "XQ1"
 dng = false
 raw_size = [4096, 3012]
@@ -6212,6 +6107,248 @@ dng = false
 raw_size = [4096, 3012]
 visible = [0, 0, 4032, 3012]
 source = "compat-observed"
+
+# Fujifilm: Adobe DNG Converter 18.7's levels where the RAF rules do not
+# give them (2026-10-17): the older FinePix bodies' white, the first X-Trans
+# and X-A bodies' and the X20, X30, XQ1 and XQ2's 12-bit levels (black one
+# above the file's), the 14-bit X-Trans II bodies' black, and the factors of
+# the bodies whose record 0x8200 scales their white balance levels: 1/1.11
+# and 1/1.13, which give Adobe's AsShotNeutral on every such file it reads.
+
+[[camera]]
+make = "Fujifilm"
+model = "E550"
+dng = false
+white = 15875
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "E900"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "HS10 HS11"
+dng = false
+white = 3900
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S200EXR"
+dng = false
+white = 16250
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5000"
+dng = false
+white = 15867
+wb_scale = [0.900900901, 0.884955752]
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5200"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5500"
+dng = false
+white = 15880
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S5600"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S6000fd"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S6500fd"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S7000"
+dng = false
+white = 15869
+wb_scale = [0.900900901, 0.884955752]
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S9500"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S9600"
+dng = false
+white = 15564
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-A1"
+dng = false
+white = 4094
+black = 256
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-A10"
+dng = false
+white = 4094
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-A2"
+dng = false
+white = 4094
+black = 256
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E1"
+dng = false
+white = 4094
+black = 256
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E2"
+dng = false
+black = 1024
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-E2S"
+dng = false
+black = 1024
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-M1"
+dng = false
+white = 4094
+black = 256
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-Pro1"
+dng = false
+white = 4094
+black = 256
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T1"
+dng = false
+black = 1024
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X-T10"
+dng = false
+black = 1024
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100"
+dng = false
+white = 4000
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X100T"
+dng = false
+black = 1024
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X20"
+dng = false
+white = 4094
+black = 257
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X30"
+dng = false
+white = 4094
+black = 257
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "X70"
+dng = false
+black = 1024
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "XQ1"
+dng = false
+white = 4094
+black = 257
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "XQ2"
+dng = false
+white = 4094
+black = 257
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "F700"
+dng = false
+wb_scale = [0.900900901, 0.884955752]
+source = "adobe-dng"
+
+[[camera]]
+make = "Fujifilm"
+model = "S2Pro"
+dng = false
+wb_scale = [0.900900901, 0.884955752]
+source = "adobe-dng"
 
 # Canon CR3: regional and short model names.
 

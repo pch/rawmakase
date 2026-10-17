@@ -149,12 +149,13 @@ pub(crate) fn cfa(records: &Records, phase: u32) -> Cfa {
     Cfa { rows, cols, colors }
 }
 
-/// The older bodies' black levels per channel (red, green, blue, second
-/// green), from record 0x4000.
+/// The older bodies' black level, every channel's: record 0x4000's first
+/// green, the one Adobe DNG Converter's BlackLevel has for all (our own
+/// measurements of its output on the dataset's S2Pro, S5000, S100FS and
+/// S200EXR, whose other levels differ).
 pub(crate) fn black(records: &Records) -> Option<[u32; 4]> {
     let v = records.get(BLACK).filter(|v| v.len() >= 8)?;
-    let w = |i: usize| u32::from(u16::from_be_bytes([v[2 * i], v[2 * i + 1]]));
-    Some([w(1), w(0), w(3), w(2)])
+    Some([u32::from(u16::from_be_bytes([v[0], v[1]])); 4])
 }
 
 /// RawExposureBias (record 0x9650): a signed numerator and a denominator.
@@ -181,12 +182,15 @@ fn grgb(records: &Records, tag: u16) -> Option<[u32; 3]> {
 }
 
 /// The older bodies' as-shot white balance and presets with red and blue
-/// scaled by `[red, blue]` (rounded down), as RAWmakase has always read
-/// them; `None` unless record 0x8200 is set (FinePix F700, S5000, S7000,
-/// S2Pro, the GX680 back), whose levels are the ones scaled.
+/// scaled by `[red, blue]`, rounded down to whole levels where `floor`
+/// (as RAWmakase has always read the factors observed from LibRaw's output),
+/// else kept whole (Adobe DNG Converter's as-shot neutral); `None` unless
+/// record 0x8200 is set (FinePix F700, S5000, S7000, S2Pro, the GX680 back),
+/// whose levels are the ones scaled.
 pub(crate) fn scaled_levels(
     records: &Records,
     [red, blue]: [f64; 2],
+    floor: bool,
 ) -> Option<([f32; 4], Presets)> {
     if !records
         .get(SCALED)
@@ -194,13 +198,17 @@ pub(crate) fn scaled_levels(
     {
         return None;
     }
+    let round = |v: f64| if floor { v.floor() } else { v };
     let scaled = |tag| {
         grgb(records, tag).map(|[g, r, b]| {
-            let r = (f64::from(r) * red).floor() as u32;
-            [g, r, (f64::from(b) * blue).floor() as u32]
+            [
+                f64::from(g),
+                round(f64::from(r) * red),
+                round(f64::from(b) * blue),
+            ]
         })
     };
-    let rgb = |[g, r, b]: [u32; 3]| [r as f32, g as f32, b as f32];
+    let rgb = |[g, r, b]: [f64; 3]| [r as f32, g as f32, b as f32];
     let mut p = Presets::default();
     if let Some(v) = scaled(WB_DAYLIGHT) {
         p.fine_weather = rgb(v);
@@ -211,7 +219,14 @@ pub(crate) fn scaled_levels(
     if let Some(v) = scaled(WB_DAY_WHITE_FLUORESCENT) {
         p.d65 = rgb(v);
     }
-    Some((scaled(WB_AS_SHOT).map_or([0.; 4], multipliers), p))
+    let wb = scaled(WB_AS_SHOT).map_or([0.; 4], |[g, r, b]| {
+        if g > 0. && r > 0. && b > 0. {
+            [(r / g) as f32, 1., (b / g) as f32, 1.]
+        } else {
+            [0.; 4]
+        }
+    });
+    Some((wb, p))
 }
 
 /// As-shot white balance: the raw image directory's levels (green, red,
@@ -412,15 +427,19 @@ mod tests {
         let r = Records::parse(&d);
         assert_eq!(white_balance(None, &r), [1.7, 1., 1.3125, 1.]);
         assert_eq!(white_balance(Some([256, 512, 384]), &r), [2., 1., 1.5, 1.]);
-        // Scaled only when record 0x8200 is set: 136 · 0.9 = 122.4 → 122.
-        assert!(scaled_levels(&r, [0.9, 0.5]).is_none());
+        // Scaled only when record 0x8200 is set: 136 · 0.9 = 122.4 → 122,
+        // or 122.4 kept whole.
+        assert!(scaled_levels(&r, [0.9, 0.5], true).is_none());
         let d = directory(&[
             (0x2ff0, &[0, 80, 0, 136, 0, 80, 0, 105]),
             (0x2100, &[0, 80, 0, 130, 0, 80, 0, 100]),
             (0x8200, &[0, 0x78, 0, 0x78]),
         ]);
-        let (wb, p) = scaled_levels(&Records::parse(&d), [0.9, 0.5]).unwrap();
+        let (wb, p) = scaled_levels(&Records::parse(&d), [0.9, 0.5], true).unwrap();
         assert_eq!(wb, [122. / 80., 1., 52. / 80., 1.]);
+        assert_eq!(p.fine_weather, [117., 80., 50.]);
+        let (wb, p) = scaled_levels(&Records::parse(&d), [0.9, 0.5], false).unwrap();
+        assert_eq!(wb, [(122.4 / 80.) as f32, 1., (52.5 / 80.) as f32, 1.]);
         assert_eq!(p.fine_weather, [117., 80., 50.]);
         let p = presets(&r, &[256, 300, 700, 17, 256, 500, 400, 21], &[], None);
         assert_eq!(p.fine_weather, [130., 80., 100.]);
