@@ -28714,3 +28714,41 @@ before = "gB/RG"
 after = "RG/gB"
 evidence = "CFAPattern 0 1 1 2 from the raw image's corner (DNG 1.7): the visible area's first row (52) is red and green; Adobe DNG Converter 18.7's mosaic agrees with ours on every pixel (aligned comparison, CFA match 1.0)"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# DNG: sample data that differs from LibRaw's, Adobe's where it reads the file.
+
+[[delta]]
+# Blackmagic/Blackmagic Pocket Cinema Camera 4k/BMPCC_4k_DCI_3-1.dng
+sha256 = "1491a5e5d580a9be151747bddce89faca4d0b9d352503270f516bbf8e8cdf0d9"
+field = "sensor.data_sha256"
+before = "eedd54a6b8f7c33d6b49889dd374906c5aedb8eac4d944ba05fe868dbb9bdee7"
+after = "8b75e1de9bd898de7a97f7d345c8784a6e88f9e365337c4564cc126535c4b3c2"
+evidence = "DCT-coded tiles under compression 7, decoded with an exact inverse DCT (ITU T.81 A.3.3); LibRaw's libjpeg-turbo IDCT differs by one 12-bit level in under 0.03% of samples; Adobe DNG Converter 18.7 does not read these files"
+approval = "pending"
+
+[[delta]]
+# Blackmagic/Blackmagic Pocket Cinema Camera 4k/BMPCC_4k_DCI_4-1.dng
+sha256 = "adb7beb2753978d8e2bb1a868057ce373f103957908a6d36b2c4da714e211e25"
+field = "sensor.data_sha256"
+before = "a5f9ea75c6dee0a67f0a72fc6c0d1dc153a0edad32aa46b5fba8714c22030a99"
+after = "e51ef143d052127aa1cbb43959e41159c39c789a1cfd4ce2af9d502c522cf8cb"
+evidence = "DCT-coded tiles under compression 7, decoded with an exact inverse DCT (ITU T.81 A.3.3); LibRaw's libjpeg-turbo IDCT differs by one 12-bit level in under 0.03% of samples; Adobe DNG Converter 18.7 does not read these files"
+approval = "pending"
+
+[[delta]]
+# Blackmagic/Micro Cinema Camera/CAM1_2000-01-01_1707_C0003_000100.dng
+sha256 = "4c65b8cda205087cfb94d8931811e53e15eb4df538ad67c1b4a3e76c1185b277"
+field = "sensor.data_sha256"
+before = "4790d3ead4dedada737db6f2262a24bfe571cb494c32865d2b72a9bcfcd4d066"
+after = "1f7bc32295c873e28033d7f4a6f3b021be08681eb93bcc6a0e12a06989ace593"
+evidence = "DCT-coded tiles under compression 7, decoded with an exact inverse DCT (ITU T.81 A.3.3); LibRaw's libjpeg-turbo IDCT differs by one 12-bit level in under 0.03% of samples; Adobe DNG Converter 18.7 does not read these files"
+approval = "pending"
+
+[[delta]]
+# Hasselblad/L2D-20c/DJI_0023.DNG
+sha256 = "dbe98cb202f884ff11e0144899613b26d33cf9cddd9f1a62226f4352397f18e4"
+field = "sensor.data_sha256"
+before = "f9447cfbf5b50c13228efdf88e2002cd90f9a413a47d0b62ec28ea127146e013"
+after = "8ecb917e7fb6f76b721f40a3e362d8847137fa5ea5b0946a7f0becd4189f87df"
+evidence = "Adobe DNG Converter 18.7's samples equal ours on every pixel of the visible area (aligned comparison: slope 1, offset 0, rms 1e-13 per channel)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
