@@ -27,11 +27,15 @@ pub enum Variant {
     /// Panasonic RW2 (raw format 6): seeded delta-coded 16-byte blocks of 12
     /// or 14-bit samples.
     Rw2Seeded,
-    /// Panasonic RW2 (raw format 7): packed 14-bit samples in 16-byte blocks.
+    /// Panasonic RW2 (raw format 7) and RAW (raw format 2): packed 14 or
+    /// 12-bit samples in 16-byte blocks.
     Rw2Packed,
     /// Panasonic RW2 (raw format 8): prefix-coded strips of 12 to 16-bit
     /// samples.
     Rw2Huffman,
+    /// Panasonic and Leica RAW of the RW2 structure, without a raw format:
+    /// 12-bit samples in 16-bit words.
+    Rw2Unpacked,
 }
 
 impl Variant {
@@ -46,6 +50,7 @@ impl Variant {
             Variant::Rw2Seeded => "rw2-seeded",
             Variant::Rw2Packed => "rw2-packed",
             Variant::Rw2Huffman => "rw2-huffman",
+            Variant::Rw2Unpacked => "rw2-unpacked",
         }
     }
 }
@@ -99,7 +104,8 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::Rw2PackedRotated
             | Variant::Rw2Seeded
             | Variant::Rw2Packed
-            | Variant::Rw2Huffman,
+            | Variant::Rw2Huffman
+            | Variant::Rw2Unpacked,
         ) => crate::container::rw2::decode(info, plan, bytes, cancel),
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(

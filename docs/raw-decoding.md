@@ -57,8 +57,9 @@ A file of a recognised container in a variant this crate does not decode is
 | `Rw2Delta` | Panasonic RW2/RWL raw formats 3 and 4: delta-coded 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
 | `Rw2PackedRotated` | Panasonic RW2 raw format 5: packed 12 or 14-bit samples in 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
 | `Rw2Seeded` | Panasonic RW2 raw format 6: seeded delta-coded 16-byte blocks of 12 or 14-bit samples | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
-| `Rw2Packed` | Panasonic RW2 raw format 7: packed 14-bit samples in 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
+| `Rw2Packed` | Panasonic RW2 raw format 7 and older RAW raw format 2: packed 14 or 12-bit samples in 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
 | `Rw2Huffman` | Panasonic RW2 raw format 8: prefix-coded strips of 12 to 16-bit samples | TIFF 6, ITU T.81 (differences), ExifTool's PanasonicRaw tag names, our own measurements |
+| `Rw2Unpacked` | Panasonic and Leica RAW of the RW2 structure without a raw format: 12-bit samples in 16-bit words | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits

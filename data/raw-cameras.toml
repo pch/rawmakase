@@ -617,3 +617,110 @@ dng = false
 raw_size = [11560, 8680]
 visible = [8, 8, 11544, 8664]
 source = "compat-observed"
+
+[[camera]]
+make = "Leica"
+model = "D-LUX 3"
+dng = false
+raw_size = [4330, 2439]
+visible = [18, 16, 4247, 2399]
+source = "compat-observed"
+
+[[camera]]
+make = "Leica"
+model = "DIGILUX 3"
+dng = false
+raw_size = [3177, 2367]
+visible = [0, 0, 3167, 2367]
+source = "compat-observed"
+
+[[camera]]
+make = "Leica"
+model = "DIGILUX 3"
+dng = false
+white = 3967
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ18"
+dng = false
+raw_size = [3330, 2463]
+visible = [10, 0, 3290, 2463]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ30"
+dng = false
+raw_size = [3304, 2458]
+visible = [0, 0, 3287, 2458]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ30"
+dng = false
+white = 3988
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ50"
+dng = false
+raw_size = [3690, 2751]
+visible = [4, 0, 3671, 2748]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ8"
+dng = false
+raw_size = [3130, 2319]
+visible = [4, 0, 3096, 2319]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ8"
+dng = false
+white = 3967
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-L1"
+dng = false
+raw_size = [3177, 2367]
+visible = [0, 0, 3167, 2367]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-L1"
+dng = false
+white = 3967
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-LX1"
+dng = false
+raw_size = [3880, 2170]
+visible = [6, 0, 3858, 2170]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-LX1"
+dng = false
+white = 3967
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-LX2"
+dng = false
+raw_size = [4290, 2391]
+visible = [4, 0, 4247, 2390]
+source = "compat-observed"

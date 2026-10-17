@@ -2,10 +2,11 @@
 //! RW2 header directory mean. Tag names follow ExifTool's PanasonicRaw tag
 //! documentation: 0x02–0x07 the sensor's size and borders, 0x09 the colour
 //! filter pattern, 0x0A bits per sample, 0x0B compression, 0x0E–0x10 the
-//! linearity limits, 0x11–0x12 red and blue balance, 0x17 and 0x37 ISO,
-//! 0x1C–0x1E black levels, 0x24–0x26 white balance levels, 0x27 the white
-//! balance presets, 0x2D the raw format, 0x2E the embedded JPEG, 0x2F–0x32 the
-//! camera's crop, 0x118 the raw data offset.
+//! linearity limits, 0x11–0x12 red and blue balance, 0x13 and 0x27 the white
+//! balance presets, 0x17 and 0x37 ISO, 0x1C–0x1E black levels, 0x24–0x26
+//! white balance levels, 0x2D the raw format, 0x2E the embedded JPEG,
+//! 0x2F–0x32 the camera's crop, 0x40–0x48 raw format 8's codes and strips,
+//! 0x118 the raw data offset.
 //!
 //! Where the tags leave a choice (which crop, which levels), the rules below
 //! are our own measurements of how RAWmakase has always read these files,
@@ -26,6 +27,7 @@ const ISO: u16 = 0x17;
 const BLACK: [u16; 3] = [0x1c, 0x1d, 0x1e];
 const WB_LEVELS: [u16; 3] = [0x24, 0x25, 0x26];
 const WB_PRESETS: u16 = 0x27;
+const WB_PRESETS_OLD: u16 = 0x13;
 pub(crate) const RAW_FORMAT: u16 = 0x2d;
 pub(crate) const JPEG: u16 = 0x2e;
 const CROP: [u16; 4] = [0x2f, 0x30, 0x31, 0x32];
@@ -122,11 +124,17 @@ pub(crate) fn white_balance(t: &TiffFile, ifd: &Ifd) -> [f32; 4] {
 }
 
 /// The white balance presets of tag 0x27: a count, then per preset its EXIF
-/// light source and red, green and blue levels (16-bit little-endian).
+/// light source and red, green and blue levels (16-bit little-endian); in
+/// older files, tag 0x13: a count, then per preset its light source and red
+/// and blue levels against a green of 256.
 pub(crate) fn presets(t: &TiffFile, ifd: &Ifd) -> Presets {
     let mut presets = Presets::default();
-    let Some(raw) = t.raw(ifd, WB_PRESETS) else {
-        return presets;
+    let (raw, green_given) = match t.raw(ifd, WB_PRESETS) {
+        Some(raw) => (raw, true),
+        None => match t.raw(ifd, WB_PRESETS_OLD) {
+            Some(raw) => (raw, false),
+            None => return presets,
+        },
     };
     let words: Vec<u16> = raw
         .as_chunks::<2>()
@@ -135,8 +143,14 @@ pub(crate) fn presets(t: &TiffFile, ifd: &Ifd) -> Presets {
         .map(|w| u16::from_le_bytes(*w))
         .collect();
     let count = words.first().map_or(0, |&n| usize::from(n));
-    let (presets_words, _) = words.get(1..).unwrap_or_default().as_chunks::<4>();
-    for &[source, r, g, b] in presets_words.iter().take(count) {
+    let rest = words.get(1..).unwrap_or_default();
+    let entries: Vec<[u16; 4]> = if green_given {
+        rest.as_chunks::<4>().0.to_vec()
+    } else {
+        let (entries, _) = rest.as_chunks::<3>();
+        entries.iter().map(|&[s, r, b]| [s, r, 256, b]).collect()
+    };
+    for &[source, r, g, b] in entries.iter().take(count) {
         let levels = [r, g, b].map(f32::from);
         match source {
             9 => presets.fine_weather = levels,

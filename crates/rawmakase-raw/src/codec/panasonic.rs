@@ -25,6 +25,9 @@
 //! rotated: its content is the chunk's bytes from 0x1FF8 on, then its first
 //! 0x1FF8 bytes. The last chunk is rotated whole when the file holds it.
 //!
+//! The oldest files store 16-bit little-endian words instead, each sample in
+//! the word's high 12 bits.
+//!
 //! Sources: our own measurements, comparing the decoded samples with
 //! LibRaw's recorded output on our test dataset.
 use crate::error::{Error, Result, corrupt};
@@ -115,6 +118,30 @@ pub(crate) fn decode(
             let (blocks, _) = buf.as_chunks::<16>();
             for (b, px) in blocks.iter().zip(out.chunks_mut(per)) {
                 block.decode(b, px);
+            }
+            Ok(())
+        })?;
+    Ok(out)
+}
+
+/// Decodes `width × height` 12-bit samples from the high bits of 16-bit
+/// little-endian words in `src`.
+pub(crate) fn words(src: &[u8], width: u32, height: u32, cancel: &AtomicBool) -> Result<Vec<u16>> {
+    let n = crate::io::samples(width, height, 1)?;
+    let (words, _) = src.as_chunks::<2>();
+    let words = words
+        .get(..n)
+        .ok_or_else(|| corrupt("Panasonic RAW data ends early"))?;
+    let mut out = vec![0u16; n];
+    let row = width as usize;
+    out.par_chunks_mut(row * 64)
+        .zip(words.par_chunks(row * 64))
+        .try_for_each(|(out, words)| {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(Error::Cancelled);
+            }
+            for (o, w) in out.iter_mut().zip(words) {
+                *o = u16::from_le_bytes(*w) >> 4;
             }
             Ok(())
         })?;
@@ -317,6 +344,14 @@ mod tests {
         assert_eq!(out[(CHUNK - ROTATION) / 2], 0);
         let plain = decode(&src, block, false, 64, 128, &AtomicBool::new(false)).unwrap();
         assert_eq!(plain[5], 5);
+    }
+
+    #[test]
+    fn words_hold_samples_in_their_high_bits() {
+        let src = [0x30, 0x12, 0xf0, 0xff, 0x00];
+        let out = words(&src, 2, 1, &AtomicBool::new(false)).unwrap();
+        assert_eq!(out, [0x123, 0xfff]);
+        assert!(words(&src, 3, 1, &AtomicBool::new(false)).is_err());
     }
 
     #[test]

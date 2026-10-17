@@ -23,6 +23,8 @@ use std::sync::atomic::AtomicBool;
 pub(crate) enum Coding {
     /// 16-byte blocks, whole 0x4000-byte chunks rotated when `rotated`.
     Blocks { block: Block, rotated: bool },
+    /// 16-bit words (the oldest files, without a raw format).
+    Words,
     /// Prefix-coded strips (raw format 8).
     Strips(Box<tags::Strips>),
 }
@@ -93,15 +95,27 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
                 tags::strips(&t, ifd0).ok_or_else(|| corrupt("RW2 strips"))?,
             )),
         ),
+        (Some(2), 12) => (
+            Variant::Rw2Packed,
+            Coding::Blocks {
+                block: Block::Packed { bits },
+                rotated: false,
+            },
+        ),
         (Some(f), _) => {
             return Err(Error::Unsupported(format!(
                 "Panasonic raw format {f} of {bits} bits"
             )));
         }
-        (None, _) => {
-            let c = t.int(ifd0, tags::COMPRESSION).unwrap_or(0);
-            return Err(Error::Unsupported(format!("Panasonic compression {c}")));
-        }
+        (None, _) => match t.int(ifd0, tags::COMPRESSION) {
+            Some(34826 | 34828 | 34830) => (Variant::Rw2Unpacked, Coding::Words),
+            c => {
+                return Err(Error::Unsupported(format!(
+                    "Panasonic compression {}",
+                    c.unwrap_or(0)
+                )));
+            }
+        },
     };
     let offset = t
         .int(ifd0, tags::RAW_OFFSET)
@@ -136,7 +150,9 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         });
     }
     super::tiff_exif::read(&t, &mut info);
-    let (mut black, mut white, linear_white) = tags::levels(&t, ifd0, format, bits);
+    // Words hold 12-bit samples whatever the bit depth tag says.
+    let sample_bits = if coding == Coding::Words { 12 } else { bits };
+    let (mut black, mut white, linear_white) = tags::levels(&t, ifd0, format, sample_bits);
     // What the file does not say: the visible area and levels RAWmakase has
     // always read some cameras' files with.
     let (make, model) = (info.make.clone(), info.model.clone());
@@ -199,6 +215,15 @@ pub(crate) fn decode(
             let read = plan.rows as usize * plan.width as usize;
             data.iter_mut().skip(read).for_each(|v| *v = 0);
             data
+        }
+        Coding::Words => {
+            let available = (bytes.len() as u64).saturating_sub(plan.offset);
+            panasonic::words(
+                file.slice(plan.offset, available)?,
+                plan.width,
+                plan.height,
+                cancel,
+            )?
         }
         Coding::Strips(s) => {
             let n = s.offsets.len();
@@ -514,6 +539,45 @@ pub(crate) mod tests {
             crate::decode(&info, &file, &cancel),
             Err(crate::Error::Unsupported(_))
         ));
+    }
+
+    #[test]
+    fn decodes_the_oldest_files_words_and_packed_blocks() {
+        // No raw format: compression 34828, 12-bit samples in the high bits
+        // of 16-bit words, whatever the bit depth tag says.
+        let mut entries = header(4, 14, [2, 2]);
+        entries.retain(|e| e.0 != 0x2d && !(0x24..=0x26).contains(&e.0));
+        entries.extend([short(0x0b, 34828), short(0x11, 512), short(0x12, 384)]);
+        // Old presets: count, then (light source, red, blue).
+        let presets: Vec<u8> = [1u16, 9, 423, 363]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        entries.push((0x13, 7, presets));
+        let data: Vec<u8> = [0x1230u16, 0x4560, 0x7890, 0xfff0]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        let file = rw2(&entries, &data);
+        let info = crate::open(&file).unwrap();
+        assert_eq!(info.variant, crate::Variant::Rw2Unpacked);
+        assert_eq!(info.cam_mul, [2., 1., 1.5, 1.]);
+        assert_eq!(info.presets.fine_weather, [423., 256., 363.]);
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        assert_eq!(s.data, [0x123, 0x456, 0x789, 0xfff]);
+        assert_eq!(s.white, 4095);
+        // Raw format 2: packed 12-bit blocks, not rotated, black as tagged.
+        let mut word = 0u128;
+        for i in 0..10u128 {
+            word |= (0x100 + i) << (12 * i);
+        }
+        let file = rw2(&header(2, 12, [10, 1]), &word.to_le_bytes());
+        let info = crate::open(&file).unwrap();
+        assert_eq!(info.variant, crate::Variant::Rw2Packed);
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let want: [u16; 10] = std::array::from_fn(|i| 0x100 + i as u16);
+        assert_eq!(s.data, want);
+        assert_eq!(s.black, [100, 101, 102, 101]);
     }
 
     #[test]
