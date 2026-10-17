@@ -119,6 +119,20 @@ column's and row's deltas) is subtracted, the result scaled by 1 / (white −
 the largest black) and clipped to 0–65535, with black 0 and white 65535.
 LibRaw truncated fractional blacks and ignored the deltas.
 
+DNG opcodes (`container/dng/opcodes.rs`, the specification's "Opcode List
+Processing"): OpcodeList1's apply to the stored image before the
+LinearizationTable, OpcodeList2's to the active area's linear values (so a
+file with any becomes linear values as above): FixBadPixelsConstant and
+FixBadPixelsList (each bad pixel the mean of its colour's nearest good
+neighbours), MapTable, MapPolynomial, GainMap (phones' lens shading, gains up
+to 6 in our files), DeltaPerRow/Column, ScalePerRow/Column and, in
+OpcodeList1, FixVignetteRadial. OpcodeList2's FixVignetteRadial is left to
+development, which reads it as the file's lens correction with OpcodeList3's
+warps (`rawmakase-model`'s DNG reader). Warps, TrimBounds, later versions'
+and unknown opcodes, and gain maps of gains 1 are skipped; a list that does
+not parse is not applied. A GainMap's point for a pixel is its row and column
+over the modified image's height and width. LibRaw applied none of them.
+
 Panasonic and Leica (`vendor::panasonic`): the visible area is the full
 height and the columns up to the right sensor border plus the left border's
 width; the default crop is the camera's crop tags (else the sensor borders)

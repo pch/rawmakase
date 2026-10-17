@@ -1,6 +1,7 @@
 //! Adobe DNG (DNG Specification 1.7): the raw image directory, its tiles or
 //! strips and their compression, the CFA layout, levels and linearization, the
-//! active area and default crop, and the colour tags.
+//! active area and default crop, the colour tags, and the data opcodes of
+//! OpcodeList1 and 2 (`opcodes`).
 use super::tiff::{Ifd, TiffFile};
 use crate::codec::{bits::Msb, dct, ljpeg};
 use crate::error::{Error, Result, corrupt};
@@ -9,6 +10,9 @@ use crate::io::{Bytes, Order};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
 use std::sync::atomic::{AtomicBool, Ordering};
+
+mod opcodes;
+use opcodes::Opcode;
 
 /// Where a DNG's raw image is and how it is coded.
 #[derive(Clone, Debug, Default)]
@@ -37,6 +41,8 @@ pub(crate) struct DngPlan {
     pub little: bool,
     /// LinearizationTable: stored value to linear value.
     pub curve: Vec<u16>,
+    /// OpcodeList1 and OpcodeList2's opcodes applied here.
+    pub opcodes: [Vec<Opcode>; 2],
 }
 
 /// Reads a DNG's header facts. `t` is the parsed TIFF.
@@ -197,9 +203,24 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         tiles,
         little: t.little(),
         curve,
+        opcodes: [list(&t, ifd, 51008), list(&t, ifd, 51009)],
     });
     let _ = bytes;
     Ok(info)
+}
+
+/// The opcodes of OpcodeList1 (`tag` 51008) or 2 (51009) applied to the
+/// sensor data. OpcodeList2's FixVignetteRadial is not: development reads
+/// it as the file's lens correction (rawmakase-model's DNG reader), with
+/// OpcodeList3's warps.
+fn list(t: &TiffFile, ifd: &Ifd, tag: u16) -> Vec<Opcode> {
+    let ops = t
+        .raw(ifd, tag)
+        .and_then(|l| opcodes::parse(&l))
+        .unwrap_or_default();
+    ops.into_iter()
+        .filter(|op| tag != 51009 || !matches!(op, Opcode::FixVignetteRadial { .. }))
+        .collect()
 }
 
 /// The tile size and every tile's offset and length; strips as tiles.
@@ -370,6 +391,15 @@ pub(crate) fn decode(
             }
         }
     }
+    // OpcodeList1 works on the stored image.
+    let mut stored = opcodes::Image {
+        data: &mut data,
+        stride: width,
+        origin: [0, 0],
+        width,
+        height,
+    };
+    opcodes::apply(&plan.opcodes[0], &mut stored, cancel)?;
     if !plan.curve.is_empty() {
         let last = plan.curve.len() - 1;
         for v in &mut data {
@@ -381,8 +411,17 @@ pub(crate) fn decode(
     let white = plan
         .white
         .unwrap_or_else(|| ((1u64 << plan.bps.min(16)) - 1) as u32);
-    if !whole_levels(plan) {
+    if !whole_levels(plan) || !plan.opcodes[1].is_empty() {
         linearize(&mut data, plan, area, white, cancel)?;
+        // OpcodeList2 works on the linear values of the active area.
+        let mut active = opcodes::Image {
+            data: &mut data,
+            stride: width,
+            origin: [left as usize, top as usize],
+            width: info.width as usize,
+            height: info.height as usize,
+        };
+        opcodes::apply(&plan.opcodes[1], &mut active, cancel)?;
         // The black pattern, applied, is zeros.
         let pattern = match plan.black_dim {
             Some([rows, cols]) => (rows, cols, vec![0; (rows * cols) as usize]),
@@ -420,7 +459,8 @@ const LINEAR_WHITE: u32 = 65535;
 /// Whether the levels are whole numbers the sensor data can keep: a
 /// BlackLevel of whole values and no BlackLevelDeltaH or DeltaV. Other
 /// levels (Google's and Sigma's fractional blacks, Canon EOS-1Ds Mark III's
-/// per-row deltas) are applied to the samples instead.
+/// per-row deltas) are applied to the samples instead, as they are for
+/// OpcodeList2, which works on linear values.
 fn whole_levels(plan: &DngPlan) -> bool {
     plan.black.iter().all(|v| v.fract() == 0.)
         && plan
@@ -763,6 +803,53 @@ mod tests {
         );
         assert_eq!((s.black, s.white), ([0; 4], 65535));
         assert_eq!(s.black_pattern, (1, 2, vec![0, 0]));
+    }
+
+    /// OpcodeList1 works on the stored image (its coordinates include the
+    /// masked column), before the LinearizationTable; OpcodeList2 on the
+    /// active area's linear values; OpcodeList2's FixVignetteRadial is left
+    /// to development.
+    #[test]
+    fn opcode_lists_apply_at_their_stages() {
+        use super::opcodes::tests::{doubles, gain_map, list, longs};
+        let le32s = |v: &[u32]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+        let le16s = |v: &[u16]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+        // MapTable on the stored image's top-left pixel: 0 → 3, 1 → 4.
+        let mut table = longs(&[0, 0, 1, 1, 0, 1, 1, 1, 2]);
+        table.extend([0, 3, 0, 4]);
+        let list1 = list(&[(7, 0, table)]);
+        // Gain 2 on the active area's top-left pixel only.
+        let list2 = list(&[(9, 1, gain_map([0, 0, 1, 1, 1], [1, 1], &[2.]))]);
+        let len = |l: &Vec<u8>| l.len() as u32;
+        let f = dng(
+            3,
+            1,
+            &[
+                (50829, 4, 4, le32s(&[0, 1, 1, 3])),
+                // A LinearizationTable that doubles.
+                (50712, 3, 8, le16s(&[0, 2, 4, 6, 8, 10, 12, 14])),
+                (50714, 3, 1, le16s(&[0])),
+                (50717, 3, 1, le16s(&[14])),
+                (51008, 7, len(&list1), list1.clone()),
+                (51009, 7, len(&list2), list2),
+            ],
+        );
+        let s = decode(&with_samples(f, &[0, 7, 7]));
+        // Stored 0 → 3 (OpcodeList1) → 6 (the table); 7 → 14. As linear
+        // values (white 14): 6 / 14, then 1.0 × 2 clipped, and 1.0.
+        assert_eq!(s.data, [28086, 65535, 65535]);
+        assert_eq!((s.black, s.white), ([0; 4], 65535));
+        // FixVignetteRadial in OpcodeList2 alone: the levels stay the file's.
+        let mut vignette = doubles(&[1., 0., 0., 0., 0.]);
+        vignette.extend(doubles(&[0.5, 0.5]));
+        let list2 = list(&[(3, 0, vignette)]);
+        let f = dng(2, 1, &[(51009, 7, len(&list2), list2)]);
+        let s = decode(&with_samples(f, &[100, 200]));
+        assert_eq!((s.data, s.white), (vec![100, 200], 65535));
+        assert_eq!(s.black_pattern, (0, 0, vec![]));
+        // A list that does not parse is not applied.
+        let f = dng(2, 1, &[(51008, 7, 6, list1[..6].to_vec())]);
+        assert_eq!(decode(&with_samples(f, &[0, 1])).data, [0, 1]);
     }
 
     /// Whole levels stay the file's.

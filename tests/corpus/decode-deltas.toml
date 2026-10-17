@@ -26154,8 +26154,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "5541093a369f0487fef92bcd1f5fef1be6e4e3cec2aa4d52ad38d2211f3309d7"
 field = "sensor.data_sha256"
 before = "d784db9650990f6641b49767439a830942701cf0b0b9cc6f26c09558eefa622d"
-after = "2617a85d9c8f99b0c3cddf130b489067b7c0657f8cf9172ae7aba75b9373b5c4"
-evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 63.93 63.81 63.75 63.87 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.13 of 65535"
+after = "0666a917645a06e2df9d974f869d5671ac1f049fb5e4c36180afe60c1baea172"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 63.93 63.81 63.75 63.87 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.13 of 65535; then DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 4.04), GainMap (gains 1.01 to 3.27), GainMap (gains 1.01 to 3.29), GainMap (gains 1.03 to 3.17), applied (OpcodeList2 to the linear values (black 0, white 65535))"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -26181,8 +26181,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "3a859e917a91698a3e15ce3b3721a48a1fb1296873e0697d3bf7c2793297200d"
 field = "sensor.data_sha256"
 before = "19eb22b33793fa3aceed80d1eef531380d7e90a061308766591be852a06e3309"
-after = "d1d0ef2e58989ac553e4ca6e6340427a32d0f744e8f81a540c841e639281c9d0"
-evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1023.31 1023.29 1023.01 1023.03 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.01 of 65535"
+after = "3892ba0d672e1a2ef191c84d542cca12551bd4604dd159398011009679fa8c17"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1023.31 1023.29 1023.01 1023.03 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.01 of 65535; then DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 4.68), GainMap (gains 1.00 to 4.32) x2, GainMap (gains 1.07 to 4.31), applied (OpcodeList2 to the linear values (black 0, white 65535))"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -26208,8 +26208,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "6b921558944db5fdb4f1c63dc64919b6666ef700857a187e18500099c6e7c6c6"
 field = "sensor.data_sha256"
 before = "eb6d1a0159c5fe1a72669d5b200de83d196b38a65962cb491abeec5a7f8907e7"
-after = "f90aad746556c726815c84fcde23b361905b039751b60d7b4e48798bf1b13bc4"
-evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1024.11 1024.31 1024.31 1024.13 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.00 of 65535"
+after = "7df67c5b67068d3c5064560e914f90107566a67e82fca4d9fe9b043cbd63b7cc"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1024.11 1024.31 1024.31 1024.13 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.00 of 65535; then DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 1.57), GainMap (gains 1.01 to 1.54) x2, GainMap (gains 1.00 to 1.47), applied (OpcodeList2 to the linear values (black 0, white 65535))"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -26235,8 +26235,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "45420c595401547cca950ae58d552bc82b32d31ce1d58c082df33004016197f5"
 field = "sensor.data_sha256"
 before = "7dfed0fc9eda58ffe30b4d52aaa78f8cae3dbdb33fef169ed7763ad32c9e507d"
-after = "4d6aa2ada613ead5f834fd20aa96f39d0170a2042c674389f0812aa8f9cd342f"
-evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1024.12 1024.14 1024.17 1024.12 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.00 of 65535"
+after = "083dbec96a83d170d271f3ed90f91d57136bb59a67141f7c47f611c3ad273a29"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 1024.12 1024.14 1024.17 1024.12 subtracted per pixel and scaled by 1 / (WhiteLevel 16368 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.00 of 65535; then DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 4.22), GainMap (gains 1.01 to 3.46) x2, GainMap (gains 1.01 to 3.19), applied (OpcodeList2 to the linear values (black 0, white 65535))"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -26262,8 +26262,8 @@ approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 sha256 = "006bb472cf71157b1c2562263d9306714acb284a7adaab9e9fda6b231c0077c9"
 field = "sensor.data_sha256"
 before = "846d06c1c4f3f1ebb6a2331d306421b6795e92b8bf270dd4cdf4debc3e1c779c"
-after = "684021111e55fc53a53863579ab4901a74aa6d486d88bc0515225d39c6d0b14a"
-evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 52.16 52.11 51.84 52.28 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.06 of 65535"
+after = "f5cedab068e8f55ef1d4a11f563c0e8730c647ca075be4c0292e096b3885cd3d"
+evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 52.16 52.11 51.84 52.28 subtracted per pixel and scaled by 1 / (WhiteLevel 1023 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.06 of 65535; then DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 3.44), GainMap (gains 1.00 to 3.06), GainMap (gains 1.00 to 3.02), GainMap (gains 1.00 to 3.13), applied (OpcodeList2 to the linear values (black 0, white 65535))"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
 [[delta]]
@@ -26462,4 +26462,1015 @@ field = "sensor.white"
 before = 15100
 after = 65535
 evidence = "DNG Specification 1.7.1.0, Mapping Raw Values to Linear Reference Values: BlackLevel 0 with BlackLevelDeltaV per row (1022.49 to 1026.84) subtracted per pixel and scaled by 1 / (WhiteLevel 15100 - the largest black), as linear values 0-65535 (black 0, white 65535); Adobe DNG Converter 18.7 keeps these tags, and its linear values agree with ours within 0.03 of 65535"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# DNG: the data opcodes of OpcodeList1 and OpcodeList2 are applied as the DNG
+# specification says, OpcodeList2 to linear values.
+
+[[delta]]
+# Autel Robotics/XB015/MAX_0001.DNG
+sha256 = "4e889a718a14e9f613ff4a3429bf7b84263d4920ebc497a11d12a7d2a4076e90"
+field = "sensor.data_sha256"
+before = "55d54945bd9f2c79c95346abcc9183641fbde238222d49ad5efa510a2b5bad47"
+after = "8978f4b1ebb25e4b0a5067ccaf3b8962dd83b444c89d700466c3efc4d8faca46"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsList, applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon DIGITAL IXUS 60/CRW_2069.DNG
+sha256 = "cbfba320fd5d140b53fa81ff4f55360cb9adf704f58daca75eb8b88903c8e22f"
+field = "sensor.data_sha256"
+before = "41bb7d2a09a0f890a50f597613adc650a83149a1293eeb8414a8393f371bd2bd"
+after = "d36f1110dea2c1346cc4929b36cb25eb41979df352228b0d8deb800e8ea54fe6"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon DIGITAL IXUS 95 IS/CRW_2593_01.DNG
+sha256 = "7b32cc5527be297eaab8018bafffb886731b6cf07f1762cf7328e1371edf540a"
+field = "sensor.data_sha256"
+before = "35cbc756c6d0ae7beec0b3c2dbbc8da34788e3e68b9ad6465fd44c153d84d90d"
+after = "6d7b2f821490d7a2aff9a674fe174cdd5eb89ebd0d23e57c8f85ae044fc7d68f"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A3100 IS/CRW_3338.DNG
+sha256 = "fbd4f60e06f4face42f185ca014234db973b4e153cb845864221240840d72a61"
+field = "sensor.data_sha256"
+before = "4988551044d0232c03c5a393372ecc05c6a2b16da01a3026eec909b2e7cb0e0b"
+after = "ef7807559ab20bffdb88e723bdf806088db0f44ba65b3cf637193c436497c566"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A3300 IS/CRW_1140.DNG
+sha256 = "a151bcd889ba8535bc42fb521904951606044cf6e40a8c46ca1874044f19dd7e"
+field = "sensor.data_sha256"
+before = "9989f558ca2a59c2340c3a2bc8efcabf58baab4f6ecf27fba5357d59e9f14fb5"
+after = "8d5e6ed89f365abbb560ad7c7785f758c971bd186c1ec55d49e52d0b9ff7fe4e"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A410/CANON_A410_CHDK_CRW_0741.DNG
+sha256 = "f0d2fe47507fadf50008bddbc6bd2c5e39fddbe90cca6bca72dd360fa0e0eb38"
+field = "sensor.data_sha256"
+before = "ed33a76eaa9ec7ea8e1bcdb14d75aeeeddffbfb0e26aa880d78a6dfcd589af51"
+after = "b08c5ba06dd0db6347b4433ca251a3d1494b351bf412a521b2f6770d0caa976c"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A480/CRW_0010.DNG
+sha256 = "9818d3cee76c86e06a291f8061f807a876e7014ce9cc04a25955ce2617631d38"
+field = "sensor.data_sha256"
+before = "1acb994ee40880dcfd6b7dcd9cdaa396e9048b7b9400d2237d0a9be17b501c9b"
+after = "4047463b611c0d3ebfb26d1f6a397cfda3970ddc193ed0d6445e943d505974c5"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A540/CANON_A540_CHDK_CRW_0010.DNG
+sha256 = "15acc0208610b7b78d2a8ae4da09db94d71ec2bbb7e36dc5a440c9295cda2975"
+field = "sensor.data_sha256"
+before = "52b41d47c505c25ebb3bbea74e7898184517ccb2252816e22eecbbcabb915e76"
+after = "da4168bd454b126ae80f983c7827fd465fcbc5e127fdfad6bbf8ce3c214850b6"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A550/CRW_0006.DNG
+sha256 = "881a953b9bf45c0275bacfee025e1a7236793b208dc618184ecb0bc7fbda3280"
+field = "sensor.data_sha256"
+before = "ec99aaf04daee5a988d34f7729761fb83e6d2cce4d752086cbb8405927e52271"
+after = "452c2aae28b452681cdaea235098e7d885fba2294a82329e0a97734f0950ef7f"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A560/IMG_2641.DNG
+sha256 = "d00bdd088479d0ef1f93145bbdb5e79139358e833e8bc423dca26e3e9865d13c"
+field = "sensor.data_sha256"
+before = "7673e1331871e7a7e79aba61047e9630eded18b466deb2daba24492811a8eb07"
+after = "1bb92877bb558637e129c09a79522834a76063497e4f181fad2ecbe8043322b0"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A570 IS/CRW_1918.DNG
+sha256 = "68034ca58c285659708b32cf4e208cce599788f36a8516a3d25326589d2e90a6"
+field = "sensor.data_sha256"
+before = "477d2cc6813b9b83a8aeeafaec7c91f31a17f5064bddbb786624cf35db2d3bde"
+after = "e745feb7e5bb99e606ce2b67f238fbc528fe280d95ddc9f301197ff7bfcf2eb8"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A610/IMG_1574.CRW
+sha256 = "4e75887580221ebca582f80b2caf15a177fa42e5e0b47ec1ce7b7c97ebc38318"
+field = "sensor.data_sha256"
+before = "b10d4c80e6a6796a4f9bfe6d6a5ce1e3ffea31484071b892397e0b06eeeeba47"
+after = "c82d8380c6d3c1353399bbd6305333e644eab3d0d9871af730daa6f3916f3b4d"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A640/CRW_0440.DNG
+sha256 = "4908e8aa8112364ff9d27ec5b40331d21f14e20503cefa95e2e72070830c7b7c"
+field = "sensor.data_sha256"
+before = "a1cb7ec6828556d3fb2ca81f5385a3e3b19251624256a6d009872d856a38dcfd"
+after = "c2a7a4e13b0b5d450f0e112ca71adee49e9b543bcc53f74490fa45b264e3e0b5"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot D10/CANON_D10_CHDK_CRW_0626.DNG
+sha256 = "d48279b03bf47552e68dc8cf4cac8014ec3110de183ee0fbb5116d6a81963ec1"
+field = "sensor.data_sha256"
+before = "0d0b28abe26458da3f1edc510485fa829ae0ba50e23d7c72008a879d78c9a2c0"
+after = "2e1b2c9500d726b5aa865a26c95de04adfe8729d0035c4019b0da7afe36ae0f1"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot ELPH 130 IS/CANON_IXUS140_ELPH130_CHDK_CRW_5645.DNG
+sha256 = "017ca55fee62751ed3973b5258df92bf3b13fe98ab73c5e6123ff925232f5455"
+field = "sensor.data_sha256"
+before = "2104c5dae89c64c78e5a4fa7db83f6c58fe66b9ea21bb1d8d8c73c64546c36f8"
+after = "d0d4e1eacf7cd710700b521a32e20ee476662a153a1ac33c045d49d9285fcfb2"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot ELPH 160/RAW_CANON_POWERSHOT_IXUS160_CHDK.DNG
+sha256 = "054d7b30a3fdb88a06471b0b2fbf026860bf65ab37ac99f50dfb2180e6e4328e"
+field = "sensor.data_sha256"
+before = "22a7dcfba839ee4d0bd2b1c4e16af572f5fac528565aa692d7e39e767f9a363c"
+after = "db8bd0d08a525d0a185cf5e196821ddf0a673f365b310ca9532882dc568ecb20"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot ELPH 180/CANON_IXUS175_ELPH180_CHDK_CRW_0194.DNG
+sha256 = "9803b24ce3b817e00c368085b693cda3e75f58d75129cffb66e7634f27ce6428"
+field = "sensor.data_sha256"
+before = "4bcb9d5ad382e4d110d923f4f9b95a1a844c8ca032a9815473b7a19967c27f23"
+after = "12d6687fed27b44ac361c4e61c6b6c11b1a1655a9c07bc092779611102c32730"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot ELPH 310 HS/CRW_9720.DNG
+sha256 = "3e8e170403a995834cc9591e6cfc1ad298cd6c96449b50ed219d78691cf7e2df"
+field = "sensor.data_sha256"
+before = "67943831a8773326952aa05346d1155f3f35bcbaa0dc1154acf544c9c166cad5"
+after = "cf79596c4d1dc7fc4c1a4a7657e6bef842ca9d17199a06047b6755b1c01a0d29"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot A720 IS/IMG_8329.DNG
+sha256 = "0da2c4f55f7a7245544a49dee564e44736860c9f8fcfc30f4516faf406587c3c"
+field = "sensor.data_sha256"
+before = "032e1b1e892358d2a3da52a146a16f2325f907859fbbdb886aa136a23aee7b2f"
+after = "9be0d5acdde4df6735f79125a4802202f4f2e2634609050ef52685380bdf6a74"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot S100/CRW_1369.DNG
+sha256 = "b299ea73df723cb13f9c4816f4301f6cd33d14e0193526469b3c50f413644f6c"
+field = "sensor.data_sha256"
+before = "6a0db8a00d6f14c36d66dcae5fcb18114a283ee5277b9be0cdf881f44b860c8f"
+after = "213bde23990d82282892469b1ab6693a5712c23442145c9d42fec45e4de26eed"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX130 IS/CRW_8815.DNG
+sha256 = "213eb921a08120f3163a89936036de6a8c5840562a22c7e5875f65560889c936"
+field = "sensor.data_sha256"
+before = "208f034d969973fbd4ae2026da634a8170234f88133ea9c906c566a3d7174367"
+after = "67abc0cd34bdf0f661921fc1a9a84db68bc867e45c0d72d4dc55cd0a2124cd82"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX160 IS/CANON_SX160IS_CHDK_CRW_5152.DNG
+sha256 = "c2ab2dc51222cf858297136edb44c9a89187bc9edb58cd36c2330d0c10f32171"
+field = "sensor.data_sha256"
+before = "8ae7d7f2e0687242319a331b4ac36f47e79a7be29369a9ca941fbf51653716a8"
+after = "03556d622fcf466a7e9744aa0acdeec86cf927e3711c61a584416ec51b2037a5"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX20 IS/CRW_6489.DNG
+sha256 = "0d351a64441f0a1888bd483316b11bcc4f2bcae39492479d407d75756875dd62"
+field = "sensor.data_sha256"
+before = "a67e35251b70800a5392f0cfb3795ee67720e2d7369266fbbb531efd79438296"
+after = "5de4a5dd13376cddc4d5c4f7d358945b020c196c70a33204b26c55e9df5d9290"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX230 HS/CRW_5894.DNG
+sha256 = "dd19277ab5ca85faaf3e6cc1696534771d25beda820734d5c9655ea3d20da9d6"
+field = "sensor.data_sha256"
+before = "d840a2733f6f1c4143e9e5ce2748db27f4384535f976cc16d8c1ba8c6111a558"
+after = "79bc92cdbf0299192c59f1410d44137ca17cfd9d507b90e233ed8313051b3ba7"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX30 IS/CRW_0763.DNG
+sha256 = "b81ee66a4f9e37b7c72214ebbb9cbbcb6b5af081a6af51e81e7277e2c04f5d4f"
+field = "sensor.data_sha256"
+before = "5683a4813dc01f526f8ab6a87b53228a9c7a6f0f4176f531d25e5fc6a9f74249"
+after = "84b15c313d56784dfe3611f8fc953cb070626910e7ff7c4344b2f0867ae1284a"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/PowerShot SX530 HS/CRW_4494.DNG
+sha256 = "f9f3dad20aebf8f90549eb83619e063445910aeee1f6c52668d946eb7cd528c6"
+field = "sensor.data_sha256"
+before = "9383c4d76b7b1d9b320e61df288b3c9f6e1e2ccd3367dc6e69e97dc6ef27dbd0"
+after = "df13e09b153efa4e4d503f2e681efbace68e782b0bb1cc02c7d32e1b292295a4"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# DJI/FC220/DJI_0004.DNG
+sha256 = "85a4fc27cca3c1358abd22898d6426dc3448060ca5143e7bd255cb5fff64392d"
+field = "sensor.data_sha256"
+before = "af06459524621d22ee2078b9b3b59e9449a1fd2f58ed4bd789bbb2db5958d769"
+after = "aa98092b737e475839a065f6be1829c9c3c7211cbe902a5dc5aaf24954ce923b"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsList, applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# DJI/FC350/DJI_0040.DNG
+sha256 = "33573ffde7cefc12cec3e06af7351594405151660fb7b064fc461afb7714542f"
+field = "sensor.data_sha256"
+before = "02845340a7c980e82a3f497da8626903a8fff0f5d7ac8b37322a99186823a222"
+after = "4eec04cbb6614b11b453c75d76ffabb7b6df9199b741cb2c4f151e19c5fa9448"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsList, applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 3a/IMG_20190918_164153.dng
+sha256 = "78c7bec867f3f739d43df6f027fad36ead73502d062570ce6ca14f59cdc4a0dd"
+field = "sensor.black_pattern.values"
+before = [1023, 1023, 1022, 1022]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 3.43), GainMap (gains 1.03 to 2.95) x2, GainMap (gains 1.04 to 2.78), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 3a/IMG_20190918_164153.dng
+sha256 = "78c7bec867f3f739d43df6f027fad36ead73502d062570ce6ca14f59cdc4a0dd"
+field = "sensor.data_sha256"
+before = "208ca2a92aad33d92bf319a7e200322f154dbbd690a6a9c85f7f0ccf9655563f"
+after = "99ee71367c47892ef505da4eb5e1205c722423ce5961e56364b5bd21b224741f"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 3.43), GainMap (gains 1.03 to 2.95) x2, GainMap (gains 1.04 to 2.78), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 3a/IMG_20190918_164153.dng
+sha256 = "78c7bec867f3f739d43df6f027fad36ead73502d062570ce6ca14f59cdc4a0dd"
+field = "sensor.white"
+before = 16368
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 3.43), GainMap (gains 1.03 to 2.95) x2, GainMap (gains 1.04 to 2.78), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 4 XL/IMG_20191023_125156.dng
+sha256 = "0c03a6c93b4b8593cd0e4426166e6389710007238b82eb23861ef191322f0c54"
+field = "sensor.black_pattern.values"
+before = [1024, 1024, 1024, 1024]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 1.91), GainMap (gains 1.01 to 1.78) x2, GainMap (gains 1.02 to 1.72), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 4 XL/IMG_20191023_125156.dng
+sha256 = "0c03a6c93b4b8593cd0e4426166e6389710007238b82eb23861ef191322f0c54"
+field = "sensor.data_sha256"
+before = "02de42f4c626a8a39b18088b79c2387ea12df597f5c7e940f4c5a61acd5e6194"
+after = "be958f540cd520bc031ba94f5ab8e720c9f3224920d7dd21bde4ee6c7c3c5593"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 1.91), GainMap (gains 1.01 to 1.78) x2, GainMap (gains 1.02 to 1.72), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 4 XL/IMG_20191023_125156.dng
+sha256 = "0c03a6c93b4b8593cd0e4426166e6389710007238b82eb23861ef191322f0c54"
+field = "sensor.white"
+before = 16383
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 1.91), GainMap (gains 1.01 to 1.78) x2, GainMap (gains 1.02 to 1.72), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 4a/PXL_20201121_100251397.dng
+sha256 = "11b38186ee3455376291bcdb3049728a3f9dcd94b9e82ff76855d9f3430e44be"
+field = "sensor.black_pattern.values"
+before = [1023, 1023, 1022, 1022]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 3.41), GainMap (gains 1.06 to 3.21) x2, GainMap (gains 1.08 to 3.18), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 4a/PXL_20201121_100251397.dng
+sha256 = "11b38186ee3455376291bcdb3049728a3f9dcd94b9e82ff76855d9f3430e44be"
+field = "sensor.data_sha256"
+before = "2cd9915665ee78570976816a844da9c813f5428a15cf606bfae22bc7da037a02"
+after = "0b9120602e3a5b4ac15440c88dceba1230dfc1d46bacba37218c9911b7f1fb14"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 3.41), GainMap (gains 1.06 to 3.21) x2, GainMap (gains 1.08 to 3.18), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 4a/PXL_20201121_100251397.dng
+sha256 = "11b38186ee3455376291bcdb3049728a3f9dcd94b9e82ff76855d9f3430e44be"
+field = "sensor.white"
+before = 16368
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 3.41), GainMap (gains 1.06 to 3.21) x2, GainMap (gains 1.08 to 3.18), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HMD Global/Nokia 7 plus/IMG_20190612_120131.dng
+sha256 = "82e060c5197fda5eff12d658285256a2ba2c5eaf8ae4997507bda2242a766216"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 4.25), GainMap (gains 1.03 to 3.83), GainMap (gains 1.04 to 3.84), GainMap (gains 1.03 to 4.03), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HMD Global/Nokia 7 plus/IMG_20190612_120131.dng
+sha256 = "82e060c5197fda5eff12d658285256a2ba2c5eaf8ae4997507bda2242a766216"
+field = "sensor.data_sha256"
+before = "1f2112f3b4c9a37d1032bbf9cdf28b7a7b478c1c85e99199255711ea9a699c6b"
+after = "09ca1fc6a9479cb73ba36edf6808143f4d53df2bea394a422d9a23fd6b004937"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 4.25), GainMap (gains 1.03 to 3.83), GainMap (gains 1.04 to 3.84), GainMap (gains 1.03 to 4.03), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HMD Global/Nokia 7 plus/IMG_20190612_120131.dng
+sha256 = "82e060c5197fda5eff12d658285256a2ba2c5eaf8ae4997507bda2242a766216"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 4.25), GainMap (gains 1.03 to 3.83), GainMap (gains 1.04 to 3.84), GainMap (gains 1.03 to 4.03), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HTC/HTC 10/IMAG1305.dng
+sha256 = "3aac646ae2bb9cceda41559afaf6354c66ef371b6ade02bcbe1ba1be093696bd"
+field = "sensor.black_pattern.values"
+before = [202, 202, 202, 202]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.03 to 5.80), GainMap (gains 1.01 to 4.76), GainMap (gains 1.01 to 4.75), GainMap (gains 1.01 to 4.48), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HTC/HTC 10/IMAG1305.dng
+sha256 = "3aac646ae2bb9cceda41559afaf6354c66ef371b6ade02bcbe1ba1be093696bd"
+field = "sensor.data_sha256"
+before = "3cfbab388c1dce2f995cd7e5635e8d85dc95a2562a84614f83b0be51d2320b43"
+after = "9912aa6a16829d61960dacaaff94758cadb225db31c732e5470247a86573f694"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.03 to 5.80), GainMap (gains 1.01 to 4.76), GainMap (gains 1.01 to 4.75), GainMap (gains 1.01 to 4.48), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HTC/HTC 10/IMAG1305.dng
+sha256 = "3aac646ae2bb9cceda41559afaf6354c66ef371b6ade02bcbe1ba1be093696bd"
+field = "sensor.white"
+before = 4095
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.03 to 5.80), GainMap (gains 1.01 to 4.76), GainMap (gains 1.01 to 4.75), GainMap (gains 1.01 to 4.48), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/AUM-L29/IMG_20181222_154757.dng
+sha256 = "cdb7ac8f515f2f8bfd0fe308d3247e217a417f1ff0577c4b2d7f672775b3ce85"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 4.69), GainMap (gains 1.02 to 4.35), GainMap (gains 1.02 to 4.26), GainMap (gains 1.05 to 4.38), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/AUM-L29/IMG_20181222_154757.dng
+sha256 = "cdb7ac8f515f2f8bfd0fe308d3247e217a417f1ff0577c4b2d7f672775b3ce85"
+field = "sensor.data_sha256"
+before = "c21d97e0469f666ee76a2c9667aa72a78d80db39cab640a8285c98aba83c7bb5"
+after = "3c7c17c0a3b7a3f419768dd98ba78642decdf458c120b7d0c56aa0a545a8b020"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 4.69), GainMap (gains 1.02 to 4.35), GainMap (gains 1.02 to 4.26), GainMap (gains 1.05 to 4.38), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/AUM-L29/IMG_20181222_154757.dng
+sha256 = "cdb7ac8f515f2f8bfd0fe308d3247e217a417f1ff0577c4b2d7f672775b3ce85"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 4.69), GainMap (gains 1.02 to 4.35), GainMap (gains 1.02 to 4.26), GainMap (gains 1.05 to 4.38), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/DLI-L22/IMG_20171028_150510.dng
+sha256 = "85b790b0eb3f0ccb87da8b0d3d0c69acdbd959592306ec0698817da14c9233eb"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.17 to 4.58), GainMap (gains 1.13 to 4.33), GainMap (gains 1.13 to 4.34), GainMap (gains 1.17 to 4.19), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/DLI-L22/IMG_20171028_150510.dng
+sha256 = "85b790b0eb3f0ccb87da8b0d3d0c69acdbd959592306ec0698817da14c9233eb"
+field = "sensor.data_sha256"
+before = "0bbd91ab9d440ed53d82851b4429755b790fb0fa12aaf30f725864030ece4967"
+after = "1e318033057cdcbadf185ce280581583b20fb9dd2ec0fe9d5085ec0d0a63fb9d"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.17 to 4.58), GainMap (gains 1.13 to 4.33), GainMap (gains 1.13 to 4.34), GainMap (gains 1.17 to 4.19), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# HUAWEI/DLI-L22/IMG_20171028_150510.dng
+sha256 = "85b790b0eb3f0ccb87da8b0d3d0c69acdbd959592306ec0698817da14c9233eb"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.17 to 4.58), GainMap (gains 1.13 to 4.33), GainMap (gains 1.13 to 4.34), GainMap (gains 1.17 to 4.19), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/H815/20161227_150823.dng
+sha256 = "6719693cddbbe348781592144cbd2ac375adbb8ed80e9e8753f429e2a89c97c9"
+field = "sensor.data_sha256"
+before = "bb0220398640500831e4a7cd0588bfcc05935d98729e0bd5b6c8c18e08398b66"
+after = "ce5115276a43e28cbc31e2efe1d7d4642713898fe354dbef774e03c910674ba6"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/LG-F800K/20171028_174609.dng
+sha256 = "9b68e4e3406502d1b9d84cfd3c7172093de4422b55186e61b73d0f458d410bcd"
+field = "sensor.data_sha256"
+before = "a889d5ae7e9daf970630bcfa00d7d0dd4a13ac470ba515f7b0de19bc799c0c31"
+after = "e0ad4623217f7984dca6db917c5240ecb472243758b3953a470156c400d12759"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/LG-H850/LGG5_Camera_Front.dng
+sha256 = "be58e948626b193538217e96bc6d9ff5fdeb91a3a8a8af65624dab41ae39895f"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 3.02), GainMap (gains 1.03 to 3.03) x2, GainMap (gains 1.01 to 3.16), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/LG-H850/LGG5_Camera_Front.dng
+sha256 = "be58e948626b193538217e96bc6d9ff5fdeb91a3a8a8af65624dab41ae39895f"
+field = "sensor.data_sha256"
+before = "d62c4181367dca2b89f9b9bec9a38693eada8ff244db98ca2e76243510cd479b"
+after = "ec34156177b79ed54ccc1affcbc9cd0a7116fa8d0af03ba9a9693f2a11b9d1be"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 3.02), GainMap (gains 1.03 to 3.03) x2, GainMap (gains 1.01 to 3.16), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/LG-H850/LGG5_Camera_Front.dng
+sha256 = "be58e948626b193538217e96bc6d9ff5fdeb91a3a8a8af65624dab41ae39895f"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 3.02), GainMap (gains 1.03 to 3.03) x2, GainMap (gains 1.01 to 3.16), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/LG-H870/20180705_215945.dng
+sha256 = "6dcd2d12d8064629f0ad48e2625d793f98d5cc6cfd34eae648bf5e4cb33b65f0"
+field = "sensor.data_sha256"
+before = "2453cbfb9b533e922951460552da6771a86fbca1c2997ff50e98d80c04f20d80"
+after = "e680d8ea343c445779f8e16f227e0222f9120f9e8f10b17e2beff668328a21be"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixBadPixelsConstant (constant 0), applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/LG-H910/opn_20190921_065338_0.dng
+sha256 = "60dc3c582cb964ab12fef030fa4ecf98421dbe69dd8d036383610e100556147b"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 3.57), GainMap (gains 1.00 to 2.98), GainMap (gains 1.00 to 2.97), GainMap (gains 1.01 to 2.83), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/LG-H910/opn_20190921_065338_0.dng
+sha256 = "60dc3c582cb964ab12fef030fa4ecf98421dbe69dd8d036383610e100556147b"
+field = "sensor.data_sha256"
+before = "88ff20444996a3f9d4f642d401d6dd41ef146e23290d46cc9f511900fd10ea6c"
+after = "b8d7bdfac14bfbb2634ef0f78465df6816f9678cc40d7baab0060e2c0cba5195"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 3.57), GainMap (gains 1.00 to 2.98), GainMap (gains 1.00 to 2.97), GainMap (gains 1.01 to 2.83), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/LG-H910/opn_20190921_065338_0.dng
+sha256 = "60dc3c582cb964ab12fef030fa4ecf98421dbe69dd8d036383610e100556147b"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 3.57), GainMap (gains 1.00 to 2.98), GainMap (gains 1.00 to 2.97), GainMap (gains 1.01 to 2.83), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/US996/IMG_20170821_025047.dng
+sha256 = "19ef8a8849babe6bd247e1d74f1438e811f66f42fda3e96651f526fc086544b2"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 3.20), GainMap (gains 1.00 to 2.82) x2, GainMap (gains 1.01 to 2.82), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/US996/IMG_20170821_025047.dng
+sha256 = "19ef8a8849babe6bd247e1d74f1438e811f66f42fda3e96651f526fc086544b2"
+field = "sensor.data_sha256"
+before = "6d184910ec225daaf27a2316870ca99982cd816194d502a28ac920a03c1641e6"
+after = "60f7aed314433ef45796739d9c8f1f66d87721105a6c8f67390378c66016e8d3"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 3.20), GainMap (gains 1.00 to 2.82) x2, GainMap (gains 1.01 to 2.82), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LG/US996/IMG_20170821_025047.dng
+sha256 = "19ef8a8849babe6bd247e1d74f1438e811f66f42fda3e96651f526fc086544b2"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 3.20), GainMap (gains 1.00 to 2.82) x2, GainMap (gains 1.01 to 2.82), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Microsoft/Lumia 950 XL Dual SIM/Microsoft_-_Lumia_950XL.dng
+sha256 = "b941427cea25c3e3b6136f143adfc514fede9854e5ab3f84a8ebacc95c4f1731"
+field = "sensor.black_pattern.values"
+before = [16, 16, 16, 16]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 1.97), GainMap (gains 1.00 to 2.06), GainMap (gains 1.00 to 2.07), GainMap (gains 1.00 to 2.34), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Microsoft/Lumia 950 XL Dual SIM/Microsoft_-_Lumia_950XL.dng
+sha256 = "b941427cea25c3e3b6136f143adfc514fede9854e5ab3f84a8ebacc95c4f1731"
+field = "sensor.data_sha256"
+before = "b9d495792ba4322ff8c71cb520df1fe08e16c5b7a385b9e3ee0d572d65cd969c"
+after = "b3ade37b6406c4626d0fd7b4c212e3e2ac82857dc4125501987c0b06ac21a735"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 1.97), GainMap (gains 1.00 to 2.06), GainMap (gains 1.00 to 2.07), GainMap (gains 1.00 to 2.34), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Microsoft/Lumia 950 XL Dual SIM/Microsoft_-_Lumia_950XL.dng
+sha256 = "b941427cea25c3e3b6136f143adfc514fede9854e5ab3f84a8ebacc95c4f1731"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 1.97), GainMap (gains 1.00 to 2.06), GainMap (gains 1.00 to 2.07), GainMap (gains 1.00 to 2.34), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Nokia/Lumia 1020/RAW_NOKIA_LUMIA_1020.DNG
+sha256 = "0a5bc55096c0d4b43effc4d49947f3b9337c5cfa1e76dac026f6286190f4daf0"
+field = "sensor.data_sha256"
+before = "b093e3198e5c183cdf4cdef55ea4e1c64b4d1ced51bd4d37a059ea04f5c8e138"
+after = "24a425f6217ccf4e1233a14304b683a7d029cae8fd5abe8828ccbbf6e223469b"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 MapTable x4; OpcodeList2 GainMap (gains 1.00 to 2.31), GainMap (gains 1.01 to 2.61), GainMap (gains 1.00 to 2.56), GainMap (gains 1.01 to 2.66), applied (OpcodeList1 to the stored raw image and OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Nokia/Lumia 1020/RAW_NOKIA_LUMIA_1020.DNG
+sha256 = "0a5bc55096c0d4b43effc4d49947f3b9337c5cfa1e76dac026f6286190f4daf0"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 MapTable x4; OpcodeList2 GainMap (gains 1.00 to 2.31), GainMap (gains 1.01 to 2.61), GainMap (gains 1.00 to 2.56), GainMap (gains 1.01 to 2.66), applied (OpcodeList1 to the stored raw image and OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Nokia/Lumia 930/WP_20180612_19_16_03_Raw__highres.dng
+sha256 = "d0ec6d07b79b1de2999503d0a1da53473a71b6a4a12daf7a529ee1d1a6c72d61"
+field = "sensor.black_pattern.values"
+before = [16, 16, 16, 16]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 2.89), GainMap (gains 1.01 to 3.39) x2, GainMap (gains 1.00 to 3.36), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Nokia/Lumia 930/WP_20180612_19_16_03_Raw__highres.dng
+sha256 = "d0ec6d07b79b1de2999503d0a1da53473a71b6a4a12daf7a529ee1d1a6c72d61"
+field = "sensor.data_sha256"
+before = "48a2cdfde5cde4d250a2b0ecf505e075899a51f1b3cff9041b2247e4ea573338"
+after = "3476329f84e643823b22c23a9ef5cb81af8c0235d8ba7a9436df3e256ef05f0e"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 2.89), GainMap (gains 1.01 to 3.39) x2, GainMap (gains 1.00 to 3.36), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Nokia/Lumia 930/WP_20180612_19_16_03_Raw__highres.dng
+sha256 = "d0ec6d07b79b1de2999503d0a1da53473a71b6a4a12daf7a529ee1d1a6c72d61"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 2.89), GainMap (gains 1.01 to 3.39) x2, GainMap (gains 1.00 to 3.36), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# OnePlus/One/IMG_20150729_201116.dng
+sha256 = "ff5385e5b1066d8c2ef452ceb98a669177be059b424b9a7ade430355c1051a1b"
+field = "sensor.black"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 4.72), GainMap (gains 1.00 to 4.20) x2, GainMap (gains 1.00 to 3.92), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# OnePlus/One/IMG_20150729_201116.dng
+sha256 = "ff5385e5b1066d8c2ef452ceb98a669177be059b424b9a7ade430355c1051a1b"
+field = "sensor.data_sha256"
+before = "2074065e2b08917a1fbff62324814f55ded22c5b46fc64adbae15fd0f7d3cdea"
+after = "ba83cfa88b63a1677e787307f66ff709fff057a7f5e5757f498d872e548264c8"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 4.72), GainMap (gains 1.00 to 4.20) x2, GainMap (gains 1.00 to 3.92), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# OnePlus/One/IMG_20150729_201116.dng
+sha256 = "ff5385e5b1066d8c2ef452ceb98a669177be059b424b9a7ade430355c1051a1b"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 4.72), GainMap (gains 1.00 to 4.20) x2, GainMap (gains 1.00 to 3.92), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Parrot/Anafi/100000190019.DNG
+sha256 = "a257a296047ff2d396109fd2e6947fa36aa7986695b6815f83979d59e98a84e6"
+field = "sensor.black_pattern.values"
+before = [1024, 1024, 1024, 1024]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 2.28) x2, GainMap (gains 1.00 to 2.25), GainMap (gains 1.00 to 2.18), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Parrot/Anafi/100000190019.DNG
+sha256 = "a257a296047ff2d396109fd2e6947fa36aa7986695b6815f83979d59e98a84e6"
+field = "sensor.data_sha256"
+before = "1f05c5bb5d37b9396ce9b70a844cf1da6f4444f24a8667b392bc914a74a46dae"
+after = "9af527da55718cebb054e98dbc1da46ae55841e6db66ce673353a459d3a89f9b"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 2.28) x2, GainMap (gains 1.00 to 2.25), GainMap (gains 1.00 to 2.18), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Parrot/Anafi/100000190019.DNG
+sha256 = "a257a296047ff2d396109fd2e6947fa36aa7986695b6815f83979d59e98a84e6"
+field = "sensor.white"
+before = 16383
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 2.28) x2, GainMap (gains 1.00 to 2.25), GainMap (gains 1.00 to 2.18), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Realme/RMX1851/IMG_OCT_20191005_163311.dng
+sha256 = "ddb5698dd9944eb68ba5a18d51958068e9b2b98ecb814ec5741e94fa537d3f0a"
+field = "sensor.black_pattern.values"
+before = [63, 64, 64, 63]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 2.78), GainMap (gains 1.01 to 2.68), GainMap (gains 1.01 to 2.66), GainMap (gains 1.02 to 2.75), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Realme/RMX1851/IMG_OCT_20191005_163311.dng
+sha256 = "ddb5698dd9944eb68ba5a18d51958068e9b2b98ecb814ec5741e94fa537d3f0a"
+field = "sensor.data_sha256"
+before = "9855293a468f783b908fcde3dd9096b1afe024b8690a56003a6bba30ad534bf3"
+after = "573ac0a222033e4312ab69cf9b0efa336c3b9a9f9d4c2e5cf4d4ea68cb5e0795"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 2.78), GainMap (gains 1.01 to 2.68), GainMap (gains 1.01 to 2.66), GainMap (gains 1.02 to 2.75), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Realme/RMX1851/IMG_OCT_20191005_163311.dng
+sha256 = "ddb5698dd9944eb68ba5a18d51958068e9b2b98ecb814ec5741e94fa537d3f0a"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 2.78), GainMap (gains 1.01 to 2.68), GainMap (gains 1.01 to 2.66), GainMap (gains 1.02 to 2.75), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Ricoh/GR II/R0000443.DNG
+sha256 = "bc8e00ccfd8e4753e8ee0735255bff4dcca5fb8d1a1352adfa59b86806d03f44"
+field = "sensor.data_sha256"
+before = "a2857741bc1b546c29afaee70f6539b8e0e1ab13e6a922f26bedd245760cf769"
+after = "01d3561034c8a2404c308eed82d9a383699bc3016d0610fdfe862c8108da5167"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList1 FixVignetteRadial, applied (OpcodeList1 to the stored raw image)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/M2010J19CG/IMG_20201224_141323.dng
+sha256 = "e1cb49299faa6609547bbb9b2c5a6167031694a99a1d252e1e048ce18ddf214f"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 3.88), GainMap (gains 1.00 to 3.74) x2, GainMap (gains 1.00 to 3.43), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/M2010J19CG/IMG_20201224_141323.dng
+sha256 = "e1cb49299faa6609547bbb9b2c5a6167031694a99a1d252e1e048ce18ddf214f"
+field = "sensor.data_sha256"
+before = "d585a7549103743a14f947527a5fc7a6f4cb2c13850c6bbe8500e7658806ffe2"
+after = "b14ed334ba15376e5a3b33097bb4f541456c45bb872ea4761ecbd8ff424076a4"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 3.88), GainMap (gains 1.00 to 3.74) x2, GainMap (gains 1.00 to 3.43), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/M2010J19CG/IMG_20201224_141323.dng
+sha256 = "e1cb49299faa6609547bbb9b2c5a6167031694a99a1d252e1e048ce18ddf214f"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 3.88), GainMap (gains 1.00 to 3.74) x2, GainMap (gains 1.00 to 3.43), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/MI 8/IMG_20200101_174326.dng
+sha256 = "f1793dd915e12a7c7c0a8a83cab269f05ae99cc6155e81dc913feed57e6ce8a5"
+field = "sensor.black_pattern.values"
+before = [1024, 1024, 1024, 1024]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 3.83), GainMap (gains 1.03 to 3.08) x2, GainMap (gains 1.03 to 2.89), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/MI 8/IMG_20200101_174326.dng
+sha256 = "f1793dd915e12a7c7c0a8a83cab269f05ae99cc6155e81dc913feed57e6ce8a5"
+field = "sensor.data_sha256"
+before = "8f4fc95654d7ded2e90027f81dead7e798f851eb49c4882ee2ddb2706d53603d"
+after = "7e3cefc85c0c405ff8f329c323c5a5d079fc128011fd7744a475510cdeb55dae"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 3.83), GainMap (gains 1.03 to 3.08) x2, GainMap (gains 1.03 to 2.89), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/MI 8/IMG_20200101_174326.dng
+sha256 = "f1793dd915e12a7c7c0a8a83cab269f05ae99cc6155e81dc913feed57e6ce8a5"
+field = "sensor.white"
+before = 16368
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 3.83), GainMap (gains 1.03 to 3.08) x2, GainMap (gains 1.03 to 2.89), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/Mi 9 Lite/IMG_20200324_073611.dng
+sha256 = "5d443fe71ec4372804587079e3fa8f46a6612f709008e7fc4ebe34be00206c4b"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 4.29), GainMap (gains 1.01 to 4.02), GainMap (gains 1.01 to 4.04), GainMap (gains 1.03 to 3.77), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/Mi 9 Lite/IMG_20200324_073611.dng
+sha256 = "5d443fe71ec4372804587079e3fa8f46a6612f709008e7fc4ebe34be00206c4b"
+field = "sensor.data_sha256"
+before = "3d075d481599a247498fceabe9cf0f98f6c80d2590cbd7c4540430056b4a3605"
+after = "0745826f69b0528b579e72d730a63815fd1dad09497a3a0044758834b9c0efaf"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 4.29), GainMap (gains 1.01 to 4.02), GainMap (gains 1.01 to 4.04), GainMap (gains 1.03 to 3.77), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/Mi 9 Lite/IMG_20200324_073611.dng
+sha256 = "5d443fe71ec4372804587079e3fa8f46a6612f709008e7fc4ebe34be00206c4b"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 4.29), GainMap (gains 1.01 to 4.02), GainMap (gains 1.01 to 4.04), GainMap (gains 1.03 to 3.77), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/Redmi Note 7/IMG_20190615_155524.dng
+sha256 = "0fb715f9427037cb72f13f27f51e2f0bfe825a9ed06a4ef743800d095781ff04"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 4.59), GainMap (gains 1.03 to 4.12), GainMap (gains 1.03 to 4.10), GainMap (gains 1.03 to 3.58), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/Redmi Note 7/IMG_20190615_155524.dng
+sha256 = "0fb715f9427037cb72f13f27f51e2f0bfe825a9ed06a4ef743800d095781ff04"
+field = "sensor.data_sha256"
+before = "5546f8f507b3249dd005541cc224727a3ef1e55c28f458ae8ff4edf12ca24b2e"
+after = "e3718b7a453a353be53e94cd75b73d95133328c0304fbc00e6845f628bd57f85"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 4.59), GainMap (gains 1.03 to 4.12), GainMap (gains 1.03 to 4.10), GainMap (gains 1.03 to 3.58), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/Redmi Note 7/IMG_20190615_155524.dng
+sha256 = "0fb715f9427037cb72f13f27f51e2f0bfe825a9ed06a4ef743800d095781ff04"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 4.59), GainMap (gains 1.03 to 4.12), GainMap (gains 1.03 to 4.10), GainMap (gains 1.03 to 3.58), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/Redmi Note 8T/IMG_20200715_094601.dng
+sha256 = "b9284b49a1f583d4a11319c4a55090df7d946c19caa97d735a3f207a9c67bea3"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 3.72), GainMap (gains 1.03 to 3.80), GainMap (gains 1.03 to 3.78), GainMap (gains 1.03 to 3.31), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/Redmi Note 8T/IMG_20200715_094601.dng
+sha256 = "b9284b49a1f583d4a11319c4a55090df7d946c19caa97d735a3f207a9c67bea3"
+field = "sensor.data_sha256"
+before = "22f6307999e5841e32f8aee4ecf363cf94f1eddfc20438cc002ff5dd0fec57db"
+after = "c0e6809956d1b2a2a88624f0c89152333ee9c1fd52aff9e29608df06e7f08938"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 3.72), GainMap (gains 1.03 to 3.80), GainMap (gains 1.03 to 3.78), GainMap (gains 1.03 to 3.31), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Xiaomi/Redmi Note 8T/IMG_20200715_094601.dng
+sha256 = "b9284b49a1f583d4a11319c4a55090df7d946c19caa97d735a3f207a9c67bea3"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 3.72), GainMap (gains 1.03 to 3.80), GainMap (gains 1.03 to 3.78), GainMap (gains 1.03 to 3.31), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# asus/ASUS_I01WD/P_20190922_161212.dng
+sha256 = "4ecfa74046da397396d481c964550e69e6abc178e83b10a057cac3e97ec4c260"
+field = "sensor.black_pattern.values"
+before = [63, 63, 63, 63]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 6.14), GainMap (gains 1.01 to 5.91) x2, GainMap (gains 1.03 to 5.02), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# asus/ASUS_I01WD/P_20190922_161212.dng
+sha256 = "4ecfa74046da397396d481c964550e69e6abc178e83b10a057cac3e97ec4c260"
+field = "sensor.data_sha256"
+before = "e1a3041bbee787f7fabdfce72043928b578224b6af5aaba09021fa6535eb1d80"
+after = "c5d2a7038fbb51665bdc0bd3aeb2d8fd9b884d14a04353c567e3458a10e512ab"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 6.14), GainMap (gains 1.01 to 5.91) x2, GainMap (gains 1.03 to 5.02), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# asus/ASUS_I01WD/P_20190922_161212.dng
+sha256 = "4ecfa74046da397396d481c964550e69e6abc178e83b10a057cac3e97ec4c260"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 6.14), GainMap (gains 1.01 to 5.91) x2, GainMap (gains 1.03 to 5.02), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# bq/Aquaris U Plus/IMG_20180217_111328_894.dng
+sha256 = "3ee9fe258a9b3128fdb93f47d47200fc3c1c291f61c6d6706be090a89c7e8f55"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 2.94), GainMap (gains 1.02 to 3.08), GainMap (gains 1.02 to 3.07), GainMap (gains 1.00 to 2.81), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# bq/Aquaris U Plus/IMG_20180217_111328_894.dng
+sha256 = "3ee9fe258a9b3128fdb93f47d47200fc3c1c291f61c6d6706be090a89c7e8f55"
+field = "sensor.data_sha256"
+before = "9e541326fc95ab8630f5d6c8be3ad70722413b0f58c334f07e852b4a77806f73"
+after = "a85ba836c62330dac820f55362847a32683380175c545fb4525bcefbd94d4ada"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 2.94), GainMap (gains 1.02 to 3.08), GainMap (gains 1.02 to 3.07), GainMap (gains 1.00 to 2.81), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# bq/Aquaris U Plus/IMG_20180217_111328_894.dng
+sha256 = "3ee9fe258a9b3128fdb93f47d47200fc3c1c291f61c6d6706be090a89c7e8f55"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 2.94), GainMap (gains 1.02 to 3.08), GainMap (gains 1.02 to 3.07), GainMap (gains 1.00 to 2.81), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# motorola/Moto G (5S) Plus/IMG_20180328_152254.dng
+sha256 = "dc54074b5b71d727cd62aca2d99ffe322ccb0ee6d8572f392edde62cf41c30fe"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 2.52), GainMap (gains 1.01 to 2.49), GainMap (gains 1.01 to 2.47), GainMap (gains 1.01 to 2.31), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# motorola/Moto G (5S) Plus/IMG_20180328_152254.dng
+sha256 = "dc54074b5b71d727cd62aca2d99ffe322ccb0ee6d8572f392edde62cf41c30fe"
+field = "sensor.data_sha256"
+before = "ed5acf786bc132078d8653b157efa1cb74baa31bde8021d133100f3952982b1e"
+after = "90883bf3e1ef3aa2f3960cff0f3c8a7431068fc258e91e8b72c43af97f325d44"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 2.52), GainMap (gains 1.01 to 2.49), GainMap (gains 1.01 to 2.47), GainMap (gains 1.01 to 2.31), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# motorola/Moto G (5S) Plus/IMG_20180328_152254.dng
+sha256 = "dc54074b5b71d727cd62aca2d99ffe322ccb0ee6d8572f392edde62cf41c30fe"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.02 to 2.52), GainMap (gains 1.01 to 2.49), GainMap (gains 1.01 to 2.47), GainMap (gains 1.01 to 2.31), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# motorola/Nexus 6/DSC_0017.DNG
+sha256 = "c92496d31742e61918ca9f30148c630a61581db0cff512995d54ae5b473f1d4f"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.18 to 3.80), GainMap (gains 1.15 to 3.56), GainMap (gains 1.15 to 3.41), GainMap (gains 1.22 to 3.27), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# motorola/Nexus 6/DSC_0017.DNG
+sha256 = "c92496d31742e61918ca9f30148c630a61581db0cff512995d54ae5b473f1d4f"
+field = "sensor.data_sha256"
+before = "1b1c9ae471da849fb2734dc8734637596a2f39c0a6f4ce984da4bd2a1a9ea6ec"
+after = "1383ff8ae202aa8edbb8b241a7a43e14c81ec6af7606b6bf8d965fc6825fa0ee"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.18 to 3.80), GainMap (gains 1.15 to 3.56), GainMap (gains 1.15 to 3.41), GainMap (gains 1.22 to 3.27), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# motorola/Nexus 6/DSC_0017.DNG
+sha256 = "c92496d31742e61918ca9f30148c630a61581db0cff512995d54ae5b473f1d4f"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.18 to 3.80), GainMap (gains 1.15 to 3.56), GainMap (gains 1.15 to 3.41), GainMap (gains 1.22 to 3.27), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# motorola/moto g(7) play/IMG_20191114_091702382.dng
+sha256 = "d46953b116ee7a88b99fb28edc7b2f1b631ed09d66f73391c4ccc2e2ec959575"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 4.54), GainMap (gains 1.01 to 4.30), GainMap (gains 1.01 to 4.29), GainMap (gains 1.03 to 4.06), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# motorola/moto g(7) play/IMG_20191114_091702382.dng
+sha256 = "d46953b116ee7a88b99fb28edc7b2f1b631ed09d66f73391c4ccc2e2ec959575"
+field = "sensor.data_sha256"
+before = "376ce759834ec20faac9217fb7d1127996dd17ec2a7ca693283ba5410243f6d7"
+after = "b96b1ac61ebec43f77f3136d8d98af89c2b806e1200d3dcbca19de7c2df1d46a"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 4.54), GainMap (gains 1.01 to 4.30), GainMap (gains 1.01 to 4.29), GainMap (gains 1.03 to 4.06), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# motorola/moto g(7) play/IMG_20191114_091702382.dng
+sha256 = "d46953b116ee7a88b99fb28edc7b2f1b631ed09d66f73391c4ccc2e2ec959575"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.01 to 4.54), GainMap (gains 1.01 to 4.30), GainMap (gains 1.01 to 4.29), GainMap (gains 1.03 to 4.06), applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Free Raw Files - Tag @signatureeditsco - IMG_20220608_030235.dng
+sha256 = "dc1cddc4e20b485c2f3af95fd1b764f3122101b4cc64591f1dba79d577242f29"
+field = "sensor.black_pattern.values"
+before = [64, 64, 64, 64]
+after = [0, 0, 0, 0]
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 1.76) x2, GainMap (gains 1.00 to 1.81) x2, applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Free Raw Files - Tag @signatureeditsco - IMG_20220608_030235.dng
+sha256 = "dc1cddc4e20b485c2f3af95fd1b764f3122101b4cc64591f1dba79d577242f29"
+field = "sensor.data_sha256"
+before = "d3080a20c775d853ebbab1e3f945f002c943eefad0cefed4cdce4976faa445b0"
+after = "9f77f7f9e05c46457e55ffcff95fa44883cb227858b50a49c4a84628d437ac59"
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 1.76) x2, GainMap (gains 1.00 to 1.81) x2, applied (OpcodeList2 to the linear values (black 0, white 65535))"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Free Raw Files - Tag @signatureeditsco - IMG_20220608_030235.dng
+sha256 = "dc1cddc4e20b485c2f3af95fd1b764f3122101b4cc64591f1dba79d577242f29"
+field = "sensor.white"
+before = 1023
+after = 65535
+evidence = "DNG Specification 1.7.1.0, Opcode List Processing: the file's OpcodeList2 GainMap (gains 1.00 to 1.76) x2, GainMap (gains 1.00 to 1.81) x2, applied (OpcodeList2 to the linear values (black 0, white 65535))"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
