@@ -126,6 +126,10 @@ pub enum Variant {
     FffUncompressed,
     /// Hasselblad 3FR and FFF, Hasselblad's coded pairs of differences.
     FffCompressed,
+    /// Leaf MOS, one lossless JPEG tile of the image's rows.
+    MosLosslessJpeg,
+    /// Leaf MOS, 16-bit words.
+    MosUncompressed,
 }
 
 impl Variant {
@@ -184,6 +188,8 @@ impl Variant {
             Variant::IiqUncompressed => "iiq-uncompressed",
             Variant::FffUncompressed => "3fr-uncompressed",
             Variant::FffCompressed => "3fr-compressed",
+            Variant::MosLosslessJpeg => "mos-ljpeg",
+            Variant::MosUncompressed => "mos-uncompressed",
         }
     }
 }
@@ -207,6 +213,7 @@ pub(crate) enum Plan {
     Crw(crate::container::ciff::CrwPlan),
     Iiq(crate::container::iiq::IiqPlan),
     Fff(crate::container::fff::FffPlan),
+    Mos(crate::container::mos::MosPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -259,6 +266,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         }
         if crate::container::fff::is_fff(&t) {
             return crate::container::fff::open(t);
+        }
+        if crate::container::mos::is_mos(&t) {
+            return crate::container::mos::open(t);
         }
         if crate::container::erf::is_erf(&t) {
             return crate::container::erf::open(t);
@@ -364,6 +374,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         }
         (Plan::Fff(plan), Variant::FffUncompressed | Variant::FffCompressed) => {
             crate::container::fff::decode(info, plan, bytes, cancel)
+        }
+        (Plan::Mos(plan), Variant::MosLosslessJpeg | Variant::MosUncompressed) => {
+            crate::container::mos::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(

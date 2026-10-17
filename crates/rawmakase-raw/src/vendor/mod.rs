@@ -5,6 +5,7 @@ pub(crate) mod canon_cr3;
 pub(crate) mod epson;
 pub(crate) mod fujifilm;
 pub(crate) mod hasselblad;
+pub(crate) mod leaf;
 pub(crate) mod nikon;
 pub(crate) mod olympus;
 pub(crate) mod panasonic;

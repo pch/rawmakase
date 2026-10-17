@@ -41,8 +41,8 @@ Modules, each with a small `pub(crate)` surface:
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
 | `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings, Canon's CRW blocks, Phase One's IIQ rows, Hasselblad's pairs |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`) |
-| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`, `phase_one`, `hasselblad`) |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`, `mos`) |
+| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`, `phase_one`, `hasselblad`, `leaf`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
 | `color` | The camera-to-sRGB matrix and daylight multipliers from a camera's XYZ matrix |
@@ -94,6 +94,8 @@ A file of a recognised container in a variant this crate does not decode is
 | `IiqS` | Phase One's first IIQ S: IIQ L's rows, values below 256 on a square-law curve | as `IiqL` |
 | `IiqUncompressed` | Phase One IIQ and TIFF, 16-bit words | ExifTool's PhaseOne tag names, our own measurements |
 | `FffUncompressed` | Hasselblad 3FR and FFF, 16-bit words | TIFF 6, DNG 1.7 (level tags), our own measurements |
+| `MosLosslessJpeg` | Leaf MOS, one lossless JPEG tile whose MCU rows are the image's rows | TIFF 6, ITU T.81, ExifTool's Leaf tag names, our own measurements |
+| `MosUncompressed` | Leaf MOS, 16-bit words | TIFF 6, ExifTool's Leaf tag names, our own measurements |
 | `FffCompressed` | Hasselblad 3FR and FFF (compression 7): lossless JPEG headers, then pairs of coded differences in little-endian 32-bit words | ITU T.81, prior general knowledge of the coding verified against LibRaw's output, our own measurements |
 | `OrfCompressed` | Olympus and OM Digital ORF/ORI, Olympus's compressed coding of 12 or 14-bit samples | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 | `OrfPacked` | Olympus ORF, packed 12-bit samples: 16-byte blocks of ten, 32-bit words, or two interlaced fields of rows | TIFF 6, ExifTool's Olympus tag names, our own measurements |
@@ -485,6 +487,21 @@ megapixels appended for the older bodies' names (`[[name]]` rows); its
 colour is named from the maker note's sensor code (0x0011) and coating
 (0x0016), as RAWmakase has always named it ("50-15-Coated5-3FR"). Visible
 areas are `compat-observed` rows. Multi-shot files are `Unsupported`.
+
+Leaf MOS (`container::mos`, `vendor::leaf`): IFD0 is the raw image, one
+tile, and its tag 0x8606 Leaf's data: nested packets ("PKTS", a version, a
+40-byte name, a big-endian size) of text values. The back type
+(ShootObj_back_type) names the back through `[[name]]` rows, NeutObj_neutrals
+give the white balance (the first level over each channel's),
+ImgProf_rotation_angle the orientation, CaptProf_mosaic_pattern the filter
+(1 red, 0 blue, 2 and 3 green, row by row), JPEG_preview_data the preview,
+and Rows_data 1 says the coded rows are the image's even rows, then its odd
+rows from the bottom up (our measurement). The lossless JPEG's scan numbers
+its components from one where the frame numbers them from zero, so a scan
+naming none of the frame's components takes them in order. Black is 0;
+white is the camera table's (`adobe-dng`: 15000 for the Aptus 22, Adobe
+DNG Converter's), else 16383, what RAWmakase has always read. Files of
+several planes are `Unsupported`.
 
 Canon files whose values differ from LibRaw's on purpose are approved in
 `tests/corpus/decode-deltas.toml`, with Adobe DNG Converter's value as the

@@ -9,6 +9,7 @@ pub(crate) mod erf;
 pub(crate) mod fff;
 pub(crate) mod headerless;
 pub(crate) mod iiq;
+pub(crate) mod mos;
 pub(crate) mod nef;
 pub(crate) mod orf;
 pub(crate) mod pef;

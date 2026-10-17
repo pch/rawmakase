@@ -150,10 +150,23 @@ pub(crate) fn header(data: &[u8]) -> Result<Header> {
                         "lossless JPEG with several scans".into(),
                     ));
                 }
+                // Leaf's MOS number the scan's components from one and the
+                // frame's from zero (our measurement): unless every component
+                // of the frame is named in the scan, the scan's are the frame's in
+                // order.
+                let named = components
+                    .iter()
+                    .all(|c| (0..n).any(|i| body[1 + 2 * i] == c.id));
                 let mut tables = Vec::with_capacity(n);
-                for c in &components {
+                for (k, c) in components.iter().enumerate() {
                     let table = (0..n)
-                        .find(|&i| body[1 + 2 * i] == c.id)
+                        .find(|&i| {
+                            if named {
+                                body[1 + 2 * i] == c.id
+                            } else {
+                                i == k
+                            }
+                        })
                         .map(|i| usize::from(body[2 + 2 * i] >> 4))
                         .ok_or_else(|| corrupt("SOS component"))?;
                     if table >= 4 || huffman[table].is_none() {
@@ -409,6 +422,18 @@ fn decode_with(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn a_scan_naming_none_of_the_frame_s_components_takes_them_in_order() {
+        let samples: Vec<u16> = (0..16).map(|v| v * 100).collect();
+        let mut jpeg = encode(&samples, 4, 16, 1);
+        // The frame's component (after SOF3's marker, length, precision,
+        // size and count) renumbered: the scan names it no more.
+        let sof = jpeg.windows(2).position(|w| w == [0xff, 0xc3]).unwrap();
+        jpeg[sof + 10] = jpeg[sof + 10].wrapping_add(7);
+        let (_, out) = decode(&jpeg, &AtomicBool::new(false)).unwrap();
+        assert_eq!(out, samples);
+    }
 
     /// A lossless JPEG of `width × height` samples of one component with
     /// `predictor`, Huffman-coding every difference with a table of lengths

@@ -29781,3 +29781,24 @@ after = 62914
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 65535; Adobe rescales the samples of some files; its white fitted to RAWmakase's samples is 96% of the file's WhiteLevel (62914, or 31456 for a WhiteLevel of 32767) on every body measured (H4D-40, H4D-50, CFV-50, X1D, X2D 3FR and FFF), RAWmakase's"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
+
+# Leaf MOS: white is Adobe DNG Converter's where it converts the back.
+
+[[delta]]
+# Leaf/Aptus 22/L_003172.mos
+sha256 = "8a1a101cb3940b0648af54a721d92e6fb8612dd29a0909036ea2753196a00ec2"
+field = "sensor.white"
+before = 16383
+after = 15000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15000 (another file of the body); RAWmakase's is the camera table's adobe-dng row; Adobe's white fitted to RAWmakase's samples is 15000.0 on every channel (L_003173.mos)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leaf/Aptus 22/L_003173.mos
+sha256 = "2a54d6fb8da0f01a966aaa21b896a036428c83fb2009824bb2ba946b9216a81c"
+field = "sensor.white"
+before = 16383
+after = 15000
+evidence = "Adobe DNG Converter 18.7 WhiteLevel 15000; RAWmakase's is the camera table's adobe-dng row; Adobe's white fitted to RAWmakase's samples is 15000.0 on every channel (L_003173.mos)"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+

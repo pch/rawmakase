@@ -8164,3 +8164,30 @@ dng = false
 raw_size = [11904, 8842]
 visible = [124, 92, 11664, 8750]
 source = "compat-observed"
+
+# Leaf MOS: the backs RAWmakase has always named by their back type.
+
+[[name]]
+make = "Leaf"
+model = "back type 12"
+is = "Aptus 22"
+source = "compat-observed"
+
+[[name]]
+make = "Leaf"
+model = "back type 13"
+is = "Aptus 75"
+source = "compat-observed"
+
+[[name]]
+make = "Leaf"
+model = "back type 38"
+is = "AFi-II 12"
+source = "compat-observed"
+
+[[camera]]
+make = "Leaf"
+model = "Aptus 22"
+dng = false
+white = 15000
+source = "adobe-dng"
