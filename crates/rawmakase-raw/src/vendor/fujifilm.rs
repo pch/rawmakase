@@ -340,6 +340,21 @@ fn raf_data_list(data: &[u8]) -> Option<Vec<(u32, [u32; 3])>> {
     )
 }
 
+/// The header directory of the RAF header Adobe DNG Converter keeps in a
+/// DNG's private data ("RAF " record): the byte order, the length of the
+/// header's bytes from its format version on, those bytes, the directory's
+/// length and the directory (our own reading of the dataset's DNGs).
+pub(crate) fn dng_directory(raf: &[u8]) -> Option<&[u8]> {
+    let b = Bytes::new(raf, Order::Big);
+    if raf.get(..2)? != b"MM" {
+        return None;
+    }
+    let header = u64::from(b.u32(2).ok()?);
+    let at = 6u64.checked_add(header)?;
+    let len = u64::from(b.u32(at).ok()?);
+    b.slice(at + 4, len).ok()
+}
+
 /// DevelopmentDynamicRange from the maker notes (EXIF tag 0x927C: "FUJIFILM",
 /// then the little-endian offset of a directory whose offsets are from the
 /// notes' start).

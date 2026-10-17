@@ -185,9 +185,25 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         && let Some(at) = t.offset_of(entry)
     {
         // Nikon's maker note, in Adobe's record of DNGPrivateData.
+        let private = t.raw(ifd0, 50740).unwrap_or_default();
         let model = crate::names::model("Nikon", &info.make, &info.model);
         if let Some(notes) = crate::vendor::nikon::read_dng(bytes, at, &model) {
             info.lens_id = notes.lens_id;
+        }
+        // Fujifilm's: the maker note's dynamic range, and the RAF header's
+        // exposure bias Adobe DNG Converter keeps.
+        use crate::vendor::fujifilm as fuji;
+        if let Some(dr) = adobe_record(&private, *b"MakN")
+            .and_then(|n| n.get(6..))
+            .and_then(fuji::dynamic_range)
+        {
+            info.fuji_dynamic_range = dr;
+        }
+        if let Some(shift) = adobe_record(&private, *b"RAF ")
+            .and_then(fuji::dng_directory)
+            .and_then(|dir| fuji::exposure_shift(&fuji::Records::parse(dir)))
+        {
+            info.fuji_exposure_shift = shift;
         }
     }
     info.previews = t.previews();
@@ -227,6 +243,23 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         opcodes: [list(&t, ifd, 51008), list(&t, ifd, 51009)],
     });
     Ok(info)
+}
+
+/// The data of record `name` in Adobe's DNGPrivateData ("Adobe\0", then
+/// records of a four-byte name, a big-endian length and the data; DNG
+/// Specification 1.7, DNGPrivateData, and our own reading of Adobe DNG
+/// Converter's DNGs).
+fn adobe_record(private: &[u8], name: [u8; 4]) -> Option<&[u8]> {
+    let mut rest = private.strip_prefix(b"Adobe\0")?;
+    while rest.len() >= 8 {
+        let len = u32::from_be_bytes([rest[4], rest[5], rest[6], rest[7]]) as usize;
+        let data = rest.get(8..8usize.checked_add(len)?)?;
+        if rest[..4] == name {
+            return Some(data);
+        }
+        rest = &rest[8 + len..];
+    }
+    None
 }
 
 /// The colour temperature of an Exif LightSource code a calibration names
@@ -956,6 +989,40 @@ pub(crate) mod tests {
             super::d65_matrix([None, zeros.clone()], [Some(17), Some(21)]).unwrap()[0][0],
             0.
         );
+    }
+
+    /// A Fujifilm DNG's dynamic range and exposure bias come from the maker
+    /// note and RAF header Adobe keeps in DNGPrivateData.
+    #[test]
+    fn fujifilm_facts_come_from_adobe_private_data() {
+        let mut note = b"FUJIFILM".to_vec();
+        note.extend(12u32.to_le_bytes());
+        note.extend(1u16.to_le_bytes());
+        note.extend([0x03, 0x14, 3, 0, 1, 0, 0, 0, 100, 0, 0, 0]);
+        let mut makn = b"II\0\0\0\0".to_vec();
+        makn.extend(note);
+        let mut dir = 1u32.to_be_bytes().to_vec();
+        dir.extend([0x96, 0x50, 0, 4, 0xff, 0xb8, 0, 100]);
+        let mut raf = b"MM".to_vec();
+        raf.extend(4u32.to_be_bytes());
+        raf.extend(b"0201");
+        raf.extend((dir.len() as u32).to_be_bytes());
+        raf.extend(dir);
+        let mut private = b"Adobe\0".to_vec();
+        for (name, data) in [(b"MakN", makn), (b"RAF ", raf)] {
+            private.extend(name);
+            private.extend((data.len() as u32).to_be_bytes());
+            private.extend(data);
+        }
+        let f = dng(2, 1, &[(50740, 1, private.len() as u32, private.clone())]);
+        let info = crate::open(&f).unwrap();
+        assert_eq!(
+            (info.fuji_dynamic_range, info.fuji_exposure_shift),
+            (100, -0.72)
+        );
+        for n in 0..private.len() {
+            let _ = super::adobe_record(&private[..n], *b"RAF ");
+        }
     }
 
     /// A DNG without Make and Model is named by its UniqueCameraModel.
