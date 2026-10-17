@@ -115,6 +115,8 @@ A classified copy of the whole raw.pixls.us archive, for choosing test photos by
 
 A decoding difference made on purpose is approved in [`decode-deltas.toml`](decode-deltas.toml): the file's SHA-256, the field's dotted name (`header.metadata.wb`, `sensor.white`, `full.pixels_sha256`), its value before and after, the evidence and the approval. Both scripts then skip exactly that change; any other value is still reported.
 
+Known gap: the colour-matrix deltas (Adobe's matrices, `data/raw-matrices.toml`) approve the decode fingerprints' `cam_xyz`, `matrix` and `daylight_wb` only. The develop fingerprints of the same files hash that metadata too (`full.metadata_sha256`, `half.metadata_sha256`), so `dataset-develop.py check --decoder own` still reports those hashes until their deltas are recorded when RAWmakase switches to its own decoders.
+
 `scripts/corpus/dataset-fingerprints.py` runs it on every file of the dataset (2,944 files, 56 GB: about 4½ minutes from the USB SSD on an M1 Pro) and compares the result with the baselines:
 
 ```

@@ -426,6 +426,23 @@ decode facts only (black and white levels, the as-shot white balance scale),
 never geometry (visible area, default crop, orientation, colour filter), which
 stays the file's or `compat-observed`; the facts test enforces this.
 
+## Colour matrices
+
+A camera's XYZ (D65) to camera matrix is Adobe's, from `data/raw-matrices.toml`
+(written by `scripts/cameras/raw-matrices.py`, whose docstring has the
+commands): the ColorMatrix Adobe DNG Converter writes for the camera
+(`adobe-dng`), else the one of Camera Raw's Adobe Standard profile for it
+(`adobe-dcp`, the nine numbers only). Only a camera Adobe has no matrix for
+keeps the one LibRaw reported (`compat-observed`). A camera known only from
+its own DNGs mostly has no row: the converter keeps each file's matrix
+(rescaled), and so does the decoder. Where Adobe's matrix is not LibRaw's,
+`cam_xyz`, `matrix` and `daylight_wb` differ from the recorded fingerprints
+on purpose.
+
+Known: a DNG without a D65 matrix is read with its ColorMatrix1, which for
+GoPro's GPRs (illuminants Standard A and D50) and Leica's Q and SL DNGs is
+the tungsten one, not the D50 one Camera Raw would use at D65.
+
 ## Checking against LibRaw
 
 LibRaw is the oracle while the decoders are written, never a fallback after.

@@ -1,13 +1,34 @@
 # XYZ (D65) to camera matrices, in ten-thousandths, for RAWmakase's own RAW
-# decoders (crates/rawmakase-raw/src/facts.rs). source is adobe-dng: the
-# ColorMatrix for illuminant D65 that Adobe DNG Converter 18.7 writes for the
-# camera (2026-10-16), from a native RAW when there is one, else from a DNG the
-# camera wrote. Written by scripts/cameras/raw-matrices.py.
+# decoders (crates/rawmakase-raw/src/facts.rs), from Adobe (2026-10-17):
+# adobe-dng is the ColorMatrix Adobe DNG Converter 18.7 writes for the camera
+# (for illuminant D65, else its only one), from a native RAW when there is one,
+# else from a DNG the camera wrote; adobe-dcp the D65 ColorMatrix of Camera Raw
+# 18.7's Adobe Standard profile for a camera the converter gives no usable
+# matrix for; compat-observed, only for a camera Adobe has no matrix for, the
+# cam_xyz LibRaw reported on our files. Written by scripts/cameras/raw-matrices.py.
 
 [[matrix]]
 make = "Autel Robotics"
 model = "XB015"
 xyz = [9945, -3550, -868, -2576, 10944, 1866, -426, 1697, 5299]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Broadcom"
+model = "RPi IMX219"
+xyz = [5302, 1083, -728, -5320, 14112, 1699, -863, 2371, 5136]
+source = "compat-observed"
+
+[[matrix]]
+make = "Canon"
+model = "DIGITAL IXUS 95 IS"
+xyz = [14847, -5310, -2081, 1431, 7936, 839, 1463, -447, 4304]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "EOS 1000D"
+xyz = [6772, -1140, -977, -7818, 15123, 2927, -1244, 1437, 7533]
 source = "adobe-dng"
 
 [[matrix]]
@@ -54,6 +75,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Canon"
+model = "EOS 20D"
+xyz = [6599, -537, -891, -8071, 15783, 2424, -1984, 2234, 7462]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
 model = "EOS 250D"
 xyz = [9079, -1923, -1236, -4677, 12454, 2492, -922, 2319, 5565]
 source = "adobe-dng"
@@ -72,14 +99,56 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Canon"
+model = "EOS 30D"
+xyz = [6256, -303, -1000, -7879, 15621, 2396, -1713, 1905, 7047]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "EOS 350D"
+xyz = [6019, -617, -966, -8645, 15882, 2975, -1530, 1719, 7642]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "EOS 400D"
+xyz = [7054, -1501, -990, -8156, 15544, 2812, -1278, 1414, 7797]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "EOS 40D"
+xyz = [6070, -746, -856, -7652, 15365, 2442, -2025, 2553, 7314]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "EOS 450D"
+xyz = [5784, -261, -821, -7539, 15064, 2673, -1982, 2681, 7427]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
 model = "EOS 500D"
 xyz = [4763, 712, -646, -6821, 14399, 2640, -1921, 3276, 6561]
 source = "adobe-dng"
 
 [[matrix]]
 make = "Canon"
+model = "EOS 50D"
+xyz = [4920, 616, -593, -6494, 13965, 2784, -1774, 3178, 7004]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
 model = "EOS 550D"
 xyz = [6941, -1164, -857, -3825, 11597, 2534, -416, 1540, 6039]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "EOS 5D"
+xyz = [6347, -479, -972, -8297, 15954, 2480, -1967, 2132, 7649]
 source = "adobe-dng"
 
 [[matrix]]
@@ -206,6 +275,12 @@ source = "adobe-dng"
 make = "Canon"
 model = "EOS 90D"
 xyz = [11498, -3759, -1516, -5073, 12954, 2349, -892, 1867, 6118]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "EOS D2000C"
+xyz = [24542, -10860, -3401, -1490, 11370, -297, 2858, -605, 3225]
 source = "adobe-dng"
 
 [[matrix]]
@@ -348,6 +423,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Canon"
+model = "EOS R6 Mark III"
+xyz = [8309, -1786, -1095, -4851, 12736, 2353, -956, 1911, 5534]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
 model = "EOS R7"
 xyz = [10424, -3138, -1300, -4221, 11938, 2584, -547, 1658, 6183]
 source = "adobe-dng"
@@ -362,6 +443,30 @@ source = "adobe-dng"
 make = "Canon"
 model = "EOS RP"
 xyz = [8608, -2097, -1178, -5425, 13265, 2383, -1149, 2238, 5680]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "EOS-1D"
+xyz = [6805, -179, -1020, -8097, 16416, 1687, -3266, 4236, 7690]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "EOS-1D Mark II"
+xyz = [6264, -582, -724, -8312, 15948, 2505, -1743, 1919, 8664]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "EOS-1D Mark II N"
+xyz = [6241, -466, -822, -8180, 15825, 2500, -1801, 1937, 8042]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "EOS-1D Mark III"
+xyz = [6290, -540, -976, -8350, 16145, 2311, -1714, 1858, 7326]
 source = "adobe-dng"
 
 [[matrix]]
@@ -393,6 +498,60 @@ make = "Canon"
 model = "EOS-1Ds"
 xyz = [3925, 4060, -1739, -8973, 16552, 2545, -3287, 3945, 8243]
 source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "EOS-1Ds Mark II"
+xyz = [6517, -602, -867, -8181, 15926, 2378, -1618, 1771, 7633]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "EOS-1Ds Mark III"
+xyz = [5858, -211, -930, -8254, 16018, 2354, -1732, 1888, 7448]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "IXUS 160"
+xyz = [11657, -3781, -1136, -3544, 11262, 2283, -160, 1219, 4700]
+source = "compat-observed"
+
+[[matrix]]
+make = "Canon"
+model = "PowerShot A3300 IS"
+xyz = [10826, -3654, -1023, -3215, 11310, 1906, 0, 999, 4960]
+source = "compat-observed"
+
+[[matrix]]
+make = "Canon"
+model = "PowerShot A620"
+xyz = [15265, -6193, -1558, -4125, 12116, 2010, -888, 1639, 5220]
+source = "compat-observed"
+
+[[matrix]]
+make = "Canon"
+model = "PowerShot A630"
+xyz = [14201, -5308, -1757, -6087, 14472, 1617, -2191, 3105, 5348]
+source = "compat-observed"
+
+[[matrix]]
+make = "Canon"
+model = "PowerShot A640"
+xyz = [13124, -5329, -1390, -3602, 11658, 1944, -1612, 2863, 4885]
+source = "compat-observed"
+
+[[matrix]]
+make = "Canon"
+model = "PowerShot A650 IS"
+xyz = [9427, -3036, -959, -2581, 10671, 1911, -1039, 1982, 4430]
+source = "compat-observed"
+
+[[matrix]]
+make = "Canon"
+model = "PowerShot A720 IS"
+xyz = [14573, -5482, -1546, -1266, 9799, 1468, -1040, 1912, 3810]
+source = "compat-observed"
 
 [[matrix]]
 make = "Canon"
@@ -516,6 +675,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Canon"
+model = "PowerShot G9"
+xyz = [7368, -2141, -598, -5621, 13254, 2625, -1419, 1696, 5743]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
 model = "PowerShot G9 X"
 xyz = [9602, -3823, -937, -2984, 11495, 1675, -407, 1415, 5049]
 source = "adobe-dng"
@@ -558,6 +723,18 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Canon"
+model = "PowerShot S2 IS"
+xyz = [5477, -1435, -992, -1868, 6639, 510, -58, 792, 2670]
+source = "compat-observed"
+
+[[matrix]]
+make = "Canon"
+model = "PowerShot S3 IS"
+xyz = [14062, -5199, -1446, -4712, 12470, 2243, -1286, 2028, 4836]
+source = "compat-observed"
+
+[[matrix]]
+make = "Canon"
 model = "PowerShot S30"
 xyz = [10744, -3813, -1142, -7962, 15966, 2075, -2492, 2805, 7744]
 source = "adobe-dng"
@@ -588,6 +765,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Canon"
+model = "PowerShot S70"
+xyz = [9976, -3810, -832, -7115, 14463, 2906, -902, 989, 7889]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
 model = "PowerShot S90"
 xyz = [12374, -5016, -1049, -1677, 9902, 2078, -83, 852, 4683]
 source = "adobe-dng"
@@ -603,6 +786,36 @@ make = "Canon"
 model = "PowerShot SX1 IS"
 xyz = [6578, -259, -502, -5974, 13030, 3309, -308, 1058, 4970]
 source = "adobe-dng"
+
+[[matrix]]
+make = "Canon"
+model = "PowerShot SX110 IS"
+xyz = [14134, -5576, -1527, -1991, 10719, 1273, -1158, 1929, 3581]
+source = "compat-observed"
+
+[[matrix]]
+make = "Canon"
+model = "PowerShot SX20 IS"
+xyz = [8275, -2904, -1260, -128, 5305, 505, 51, 481, 2450]
+source = "compat-observed"
+
+[[matrix]]
+make = "Canon"
+model = "PowerShot SX220 HS"
+xyz = [13898, -5076, -1447, -1405, 10109, 1297, -244, 1860, 3687]
+source = "compat-observed"
+
+[[matrix]]
+make = "Canon"
+model = "PowerShot SX30 IS"
+xyz = [13014, -4698, -1026, -2001, 9615, 2386, -164, 1423, 3759]
+source = "compat-observed"
+
+[[matrix]]
+make = "Canon"
+model = "PowerShot SX40 HS"
+xyz = [54480, -17404, -8039, -7505, 44044, 1136, -580, 7158, 11891]
+source = "compat-observed"
 
 [[matrix]]
 make = "Canon"
@@ -641,6 +854,12 @@ xyz = [13161, -5451, -1344, -1989, 10654, 1531, -47, 1271, 4955]
 source = "adobe-dng"
 
 [[matrix]]
+make = "Canon"
+model = "PowerShot V1"
+xyz = [12600, -4747, -2027, -6110, 15868, -29, 110, 479, 6011]
+source = "adobe-dng"
+
+[[matrix]]
 make = "DJI"
 model = "FC220"
 xyz = [8760, -2517, -607, -2745, 10465, 2644, -943, 1792, 5458]
@@ -665,6 +884,24 @@ xyz = [8257, -2417, -1016, -4478, 13209, 1344, -640, 1694, 5385]
 source = "adobe-dng"
 
 [[matrix]]
+make = "Epson"
+model = "R-D1"
+xyz = [6828, -1878, -732, -8429, 16012, 2564, -704, 592, 7145]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Epson"
+model = "R-D1s"
+xyz = [6828, -1878, -732, -8429, 16012, 2564, -704, 592, 7145]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Epson"
+model = "R-D1x"
+xyz = [6828, -1878, -732, -8429, 16012, 2564, -704, 592, 7145]
+source = "adobe-dng"
+
+[[matrix]]
 make = "Eyedeas"
 model = "E1"
 xyz = [6770, -1895, -744, -5232, 13145, 2303, -1664, 2691, 5703]
@@ -672,8 +909,20 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Fujifilm"
+model = "DBP for GX680"
+xyz = [12741, -4916, -1420, -8510, 16791, 1715, -1767, 2302, 7771]
+source = "compat-observed"
+
+[[matrix]]
+make = "Fujifilm"
 model = "E550"
 xyz = [11044, -3888, -1120, -7248, 15167, 2208, -1531, 2276, 8069]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "E900"
+xyz = [9183, -2526, -1078, -7461, 15071, 2574, -2023, 2440, 8638]
 source = "adobe-dng"
 
 [[matrix]]
@@ -686,6 +935,12 @@ source = "adobe-dng"
 make = "Fujifilm"
 model = "F600EXR"
 xyz = [13690, -5358, -1474, -3369, 11600, 1998, -132, 1554, 4395]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "F700"
+xyz = [10004, -3219, -1201, -7036, 15047, 2107, -1863, 2565, 7735]
 source = "adobe-dng"
 
 [[matrix]]
@@ -721,6 +976,12 @@ source = "adobe-dng"
 [[matrix]]
 make = "Fujifilm"
 model = "GFX100 II"
+xyz = [12806, -5779, -1110, -3546, 11507, 2318, -177, 996, 5715]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "GFX100RF"
 xyz = [12806, -5779, -1110, -3546, 11507, 2318, -177, 996, 5715]
 source = "adobe-dng"
 
@@ -780,6 +1041,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Fujifilm"
+model = "S100FS"
+xyz = [11521, -4355, -1065, -6524, 13768, 3059, -1466, 1984, 6045]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
 model = "S200EXR"
 xyz = [11401, -4498, -1312, -5088, 12751, 2613, -838, 1568, 5941]
 source = "adobe-dng"
@@ -788,6 +1055,72 @@ source = "adobe-dng"
 make = "Fujifilm"
 model = "S2Pro"
 xyz = [12741, -4916, -1420, -8510, 16791, 1715, -1767, 2302, 7771]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "S3Pro"
+xyz = [11808, -4612, -1294, -8927, 16969, 1988, -2120, 2742, 8006]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "S5000"
+xyz = [8754, -2733, -1019, -7204, 15069, 2276, -1702, 2334, 6982]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "S5200"
+xyz = [9635, -2804, -988, -7442, 15040, 2589, -1803, 2312, 8621]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "S5500"
+xyz = [11940, -4431, -1255, -6766, 14428, 2542, -994, 1165, 7421]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "S5600"
+xyz = [9635, -2804, -988, -7442, 15040, 2589, -1803, 2312, 8621]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "S5Pro"
+xyz = [12301, -5111, -1305, -9117, 17143, 1997, -1947, 2449, 8100]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "S6000fd"
+xyz = [12628, -4886, -1401, -6860, 14997, 1962, -2198, 2782, 7091]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "S6500fd"
+xyz = [12628, -4886, -1401, -6860, 14997, 1962, -2198, 2782, 7091]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "S7000"
+xyz = [10190, -3506, -1312, -7153, 15051, 2238, -2004, 2398, 7505]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "S9500"
+xyz = [10491, -3423, -1145, -7385, 15027, 2539, -1809, 2275, 8692]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "S9600"
+xyz = [12343, -4515, -1285, -7165, 14900, 2435, -1895, 2496, 8801]
 source = "adobe-dng"
 
 [[matrix]]
@@ -860,6 +1193,12 @@ source = "adobe-dng"
 make = "Fujifilm"
 model = "X-E4"
 xyz = [13426, -6334, -1177, -4244, 12136, 2371, -580, 1303, 5980]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
+model = "X-E5"
+xyz = [11809, -5358, -1141, -4248, 12164, 2343, -514, 1097, 5848]
 source = "adobe-dng"
 
 [[matrix]]
@@ -984,6 +1323,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Fujifilm"
+model = "X-T30 III"
+xyz = [12836, -5909, -1032, -3087, 11132, 2236, -35, 872, 5330]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Fujifilm"
 model = "X-T4"
 xyz = [13426, -6334, -1177, -4244, 12136, 2371, -580, 1303, 5980]
 source = "adobe-dng"
@@ -1085,6 +1430,30 @@ xyz = [9252, -2704, -1064, -5893, 14265, 1717, -1101, 2341, 4349]
 source = "adobe-dng"
 
 [[matrix]]
+make = "GITUP"
+model = "GIT2 16:9"
+xyz = [8489, -2583, -1036, -8051, 15583, 2643, -1307, 1407, 7354]
+source = "compat-observed"
+
+[[matrix]]
+make = "GITUP"
+model = "GIT2 4:3"
+xyz = [8489, -2583, -1036, -8051, 15583, 2643, -1307, 1407, 7354]
+source = "compat-observed"
+
+[[matrix]]
+make = "GITUP"
+model = "GIT2P 16:9"
+xyz = [8489, -2583, -1036, -8051, 15583, 2643, -1307, 1407, 7354]
+source = "compat-observed"
+
+[[matrix]]
+make = "GITUP"
+model = "GIT2P 4:3"
+xyz = [8489, -2583, -1036, -8051, 15583, 2643, -1307, 1407, 7354]
+source = "compat-observed"
+
+[[matrix]]
 make = "Google"
 model = "Pixel 4 XL"
 xyz = [17743, -8430, -2730, -9956, 19269, 401, 401, -1525, 7948]
@@ -1104,8 +1473,74 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Hasselblad"
+model = "CF-22"
+xyz = [8523, -3257, -280, -5078, 13458, 1743, -1449, 2961, 7809]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Hasselblad"
 model = "CFV-100c"
 xyz = [6468, -1899, -545, -4526, 12267, 2542, -388, 1276, 6096]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Hasselblad"
+model = "CFV-16"
+xyz = [8519, -3260, -280, -5081, 13459, 1738, -1449, 2960, 7809]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Hasselblad"
+model = "CFV-50"
+xyz = [5280, -614, 39, -4950, 12426, 2843, -939, 2434, 5968]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Hasselblad"
+model = "CFV-50c"
+xyz = [5002, -878, 111, -4856, 11929, 3338, -1183, 2041, 7022]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Hasselblad"
+model = "H3DII-39"
+xyz = [3857, 452, -46, -6008, 14477, 1596, -2627, 4481, 5718]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Hasselblad"
+model = "H4D-40"
+xyz = [5656, -659, -346, -3923, 12306, 1791, -1602, 3509, 5442]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Hasselblad"
+model = "H4D-50"
+xyz = [5280, -614, 39, -4950, 12426, 2843, -939, 2434, 5968]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Hasselblad"
+model = "H4D-60"
+xyz = [9296, 336, -1088, -6442, 14323, 2289, -1433, 2942, 5756]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Hasselblad"
+model = "H5D-40"
+xyz = [5963, -1357, -172, -5439, 12762, 3007, -964, 2222, 7172]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Hasselblad"
+model = "H5D-50c"
+xyz = [5002, -878, 111, -4856, 11929, 3338, -1183, 2041, 7022]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Hasselblad"
+model = "H6D-100cMS"
+xyz = [5656, -659, -346, -3923, 12306, 1791, -1602, 3509, 5442]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1118,6 +1553,18 @@ source = "adobe-dng"
 make = "Hasselblad"
 model = "Lunar"
 xyz = [5491, -1192, -363, -4951, 12342, 2948, -911, 1722, 7192]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Hasselblad"
+model = "X1D II 50C"
+xyz = [5002, -878, 111, -4856, 11929, 3338, -1183, 2041, 7022]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Hasselblad"
+model = "X1D-50c"
+xyz = [5002, -878, 111, -4856, 11929, 3338, -1183, 2041, 7022]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1160,6 +1607,18 @@ source = "adobe-dng"
 make = "Kodak"
 model = "DCS460D"
 xyz = [10592, -2206, -967, -1944, 11685, 230, 2206, 670, 1273]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Kodak"
+model = "DCS520C"
+xyz = [24542, -10860, -3401, -1490, 11370, -297, 2858, -605, 3225]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Kodak"
+model = "DCS560C"
+xyz = [20482, -7172, -3125, -1033, 10410, -285, 2542, 226, 3136]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1224,6 +1683,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Leaf"
+model = "Aptus 75"
+xyz = [7914, 1414, -1190, -8776, 16582, 2280, -2811, 4605, 5562]
+source = "adobe-dcp"
+
+[[matrix]]
+make = "Leaf"
 model = "Credo 40"
 xyz = [8035, 435, -962, -6001, 13872, 2320, -1159, 3065, 5434]
 source = "adobe-dng"
@@ -1244,6 +1709,12 @@ source = "adobe-dng"
 make = "Leica"
 model = "D-LUX (Typ 109)"
 xyz = [8844, -3538, -768, -3709, 11762, 2200, -698, 1792, 5220]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Leica"
+model = "D-LUX 3"
+xyz = [8047, -2810, -624, -6449, 13519, 3272, -1701, 2146, 7050]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1272,8 +1743,26 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Leica"
+model = "DIGILUX 2"
+xyz = [11340, -4069, -1276, -7555, 15265, 2448, -2960, 3426, 7686]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Leica"
+model = "DIGILUX 3"
+xyz = [8054, -1886, -1025, -8348, 16367, 2040, -2805, 3542, 7630]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Leica"
 model = "V-LUX (Typ 114)"
 xyz = [7830, -2696, -763, -3325, 11667, 1866, -641, 1712, 4824]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Leica"
+model = "V-LUX 1"
+xyz = [7906, -2709, -594, -6231, 13352, 3220, -1923, 2631, 6538]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1286,6 +1775,12 @@ source = "adobe-dng"
 make = "Leica"
 model = "V-Lux 5"
 xyz = [9803, -4185, -992, -4066, 12578, 1628, -838, 1824, 5288]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Mamiya"
+model = "ZD"
+xyz = [7645, 2579, -1363, -8689, 16717, 2014, -3712, 5941, 5961]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1302,8 +1797,20 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Minolta"
+model = "ALPHA-7 DIGITAL"
+xyz = [10239, -3104, -1099, -8037, 15727, 2452, -928, 926, 6871]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Minolta"
 model = "DYNAX 5D"
 xyz = [10284, -3283, -1086, -7957, 15762, 2316, -829, 882, 6644]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Minolta"
+model = "DYNAX 7D"
+xyz = [10239, -3104, -1099, -8037, 15727, 2452, -928, 926, 6871]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1334,6 +1841,30 @@ source = "adobe-dng"
 make = "Minolta"
 model = "DiMAGE A1"
 xyz = [9274, -2548, -1167, -8220, 16324, 1943, -2273, 2721, 8340]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Minolta"
+model = "DiMAGE A2"
+xyz = [9097, -2726, -1052, -8074, 15506, 2762, -966, 982, 7763]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Minolta"
+model = "DiMAGE A200"
+xyz = [8560, -2487, -986, -8111, 15535, 2771, -1209, 1324, 7742]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Minolta"
+model = "DiMAGE Z2"
+xyz = [11280, -3564, -1370, -4655, 12374, 2282, -1423, 2168, 5396]
+source = "compat-observed"
+
+[[matrix]]
+make = "Minolta"
+model = "MAXXUM 7D"
+xyz = [10239, -3104, -1099, -8037, 15727, 2452, -928, 926, 6871]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1428,6 +1959,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Nikon"
+model = "COOLPIX P1100"
+xyz = [14294, -6116, -1333, -1628, 10219, 1637, -14, 1158, 5022]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
 model = "COOLPIX P330"
 xyz = [10321, -3920, -931, -2750, 11146, 1824, -442, 1545, 5539]
 source = "adobe-dng"
@@ -1482,8 +2019,26 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Nikon"
+model = "D100"
+xyz = [5902, -933, -782, -8982, 16719, 2354, -1402, 1455, 6464]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
 model = "D1H"
 xyz = [7659, -2238, -935, -8942, 16969, 2004, -2701, 3051, 8690]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
+model = "D1X"
+xyz = [7702, -2244, -975, -9114, 17242, 1875, -2679, 3055, 8522]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
+model = "D200"
+xyz = [8367, -2248, -763, -8758, 16447, 2422, -1528, 1551, 8053]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1512,8 +2067,26 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Nikon"
+model = "D3"
+xyz = [8139, -2171, -664, -8748, 16541, 2296, -1924, 2008, 8093]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
+model = "D300"
+xyz = [9030, -1992, -716, -8465, 16302, 2256, -2689, 3217, 8069]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
 model = "D3000"
 xyz = [8736, -2458, -935, -9075, 16894, 2251, -1354, 1242, 8263]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
+model = "D300S"
+xyz = [9030, -1992, -716, -8465, 16302, 2256, -2689, 3217, 8069]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1566,6 +2139,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Nikon"
+model = "D40"
+xyz = [6992, -1667, -806, -8138, 15748, 2543, -874, 850, 7896]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
 model = "D40X"
 xyz = [8819, -2543, -911, -9025, 16928, 2151, -1329, 1213, 8449]
 source = "adobe-dng"
@@ -1580,6 +2159,12 @@ source = "adobe-dng"
 make = "Nikon"
 model = "D5"
 xyz = [9200, -3522, -992, -5755, 13803, 2117, -753, 1486, 6338]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
+model = "D50"
+xyz = [7732, -2421, -789, -8238, 15883, 2498, -859, 783, 7330]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1650,8 +2235,26 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Nikon"
+model = "D70"
+xyz = [7732, -2421, -789, -8238, 15883, 2498, -859, 783, 7330]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
+model = "D700"
+xyz = [8139, -2171, -664, -8748, 16541, 2296, -1924, 2008, 8093]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
 model = "D7000"
 xyz = [8198, -2239, -724, -4871, 12389, 2798, -1043, 2050, 7181]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
+model = "D70s"
+xyz = [7732, -2421, -789, -8238, 15883, 2498, -859, 783, 7330]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1686,6 +2289,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Nikon"
+model = "D80"
+xyz = [8628, -2410, -883, -9055, 16940, 2171, -1491, 1363, 8520]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
 model = "D800"
 xyz = [7866, -2108, -555, -4869, 12483, 2681, -1176, 2069, 7501]
 source = "adobe-dng"
@@ -1710,6 +2319,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Nikon"
+model = "D90"
+xyz = [7309, -1403, -519, -8474, 16008, 2622, -2433, 2826, 8064]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
 model = "Df"
 xyz = [8598, -2848, -857, -5618, 13606, 2195, -1002, 1773, 7137]
 source = "adobe-dng"
@@ -1718,6 +2333,18 @@ source = "adobe-dng"
 make = "Nikon"
 model = "E5400"
 xyz = [9349, -2988, -1001, -7918, 15766, 2266, -2097, 2680, 6839]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
+model = "E8400"
+xyz = [7842, -2319, -992, -8154, 15719, 2599, -1098, 1342, 7560]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
+model = "E8800"
+xyz = [7970, -2314, -913, -8452, 15762, 2894, -1442, 1521, 7610]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1788,6 +2415,18 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Nikon"
+model = "Z50_2"
+xyz = [11640, -4829, -1079, -5107, 13006, 2325, -972, 1711, 7380]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
+model = "Z5_2"
+xyz = [13133, -5542, -1280, -4325, 12543, 1972, 34, 792, 7662]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Nikon"
 model = "Z6_3"
 xyz = [11206, -4286, -941, -4879, 12847, 2251, -745, 1654, 7374]
 source = "adobe-dng"
@@ -1800,8 +2439,26 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "OM Digital"
+model = "OM-1MarkII"
+xyz = [9090, -3591, -756, -3252, 11396, 2109, -318, 1059, 5606]
+source = "adobe-dng"
+
+[[matrix]]
+make = "OM Digital"
+model = "OM-3"
+xyz = [9090, -3591, -756, -3252, 11396, 2109, -318, 1059, 5606]
+source = "adobe-dng"
+
+[[matrix]]
+make = "OM Digital"
 model = "OM-5"
 xyz = [11896, -5110, -1076, -3181, 11378, 2048, -519, 1224, 5166]
+source = "adobe-dng"
+
+[[matrix]]
+make = "OM Digital"
+model = "OM-5MarkII"
+xyz = [12008, -5230, -1123, -2265, 10496, 2046, 69, 734, 4938]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1818,8 +2475,26 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Olympus"
+model = "C5060WZ"
+xyz = [10445, -3361, -1307, -7662, 15691, 2058, -1135, 1175, 7602]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Olympus"
 model = "C7070WZ"
 xyz = [10252, -3531, -1095, -7114, 14850, 2436, -1451, 1723, 6365]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Olympus"
+model = "C8080WZ"
+xyz = [8606, -2508, -1014, -8238, 15714, 2703, -943, 979, 7760]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Olympus"
+model = "E-1"
+xyz = [11847, -4767, -945, -7027, 15878, 1089, -2699, 4123, 8312]
 source = "adobe-dng"
 
 [[matrix]]
@@ -1854,6 +2529,30 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Olympus"
+model = "E-330"
+xyz = [8962, -2473, -1084, -7980, 15990, 2067, -2319, 3035, 8249]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Olympus"
+model = "E-400"
+xyz = [6169, -1482, -21, -7107, 14760, 2536, -2904, 3581, 8568]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Olympus"
+model = "E-410"
+xyz = [8856, -2582, -1026, -7761, 15767, 2081, -2009, 2576, 7469]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Olympus"
+model = "E-420"
+xyz = [8745, -2425, -1095, -7594, 15613, 2073, -1780, 2309, 7416]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Olympus"
 model = "E-450"
 xyz = [8745, -2425, -1095, -7594, 15613, 2073, -1780, 2309, 7416]
 source = "adobe-dng"
@@ -1862,6 +2561,24 @@ source = "adobe-dng"
 make = "Olympus"
 model = "E-5"
 xyz = [11200, -3783, -1325, -4576, 12593, 2206, -695, 1742, 7504]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Olympus"
+model = "E-500"
+xyz = [8136, -1968, -299, -5481, 13742, 1871, -2556, 4205, 6631]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Olympus"
+model = "E-510"
+xyz = [8785, -2528, -1033, -7639, 15624, 2112, -1782, 2300, 7817]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Olympus"
+model = "E-520"
+xyz = [8343, -2322, -1020, -7596, 15635, 2048, -1748, 2269, 7287]
 source = "adobe-dng"
 
 [[matrix]]
@@ -2058,9 +2775,39 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Olympus"
+model = "SP350"
+xyz = [12078, -4836, -1069, -6671, 14305, 2578, -786, 939, 7418]
+source = "adobe-dcp"
+
+[[matrix]]
+make = "Olympus"
+model = "SP500UZ"
+xyz = [9494, -3415, -665, -5210, 12334, 3260, -1549, 2262, 6482]
+source = "adobe-dcp"
+
+[[matrix]]
+make = "Olympus"
+model = "SP510UZ"
+xyz = [10594, -3607, -1010, -5881, 13127, 3083, -1200, 1804, 6720]
+source = "adobe-dcp"
+
+[[matrix]]
+make = "Olympus"
+model = "SP550UZ"
+xyz = [11596, -4007, -1048, -5432, 12798, 2957, -1029, 1750, 6516]
+source = "adobe-dcp"
+
+[[matrix]]
+make = "Olympus"
 model = "SP565UZ"
 xyz = [11856, -4469, -1159, -4814, 12368, 2756, -993, 1779, 5589]
 source = "adobe-dng"
+
+[[matrix]]
+make = "Olympus"
+model = "SP570UZ"
+xyz = [11522, -4044, -1145, -4737, 12172, 2903, -987, 1829, 6039]
+source = "adobe-dcp"
 
 [[matrix]]
 make = "Olympus"
@@ -2118,6 +2865,24 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Panasonic"
+model = "DC-FZ45"
+xyz = [13639, -5535, -1371, -1698, 9633, 2430, 316, 1152, 4108]
+source = "compat-observed"
+
+[[matrix]]
+make = "Panasonic"
+model = "DC-FZ80"
+xyz = [11532, -4324, -1066, -2375, 10847, 1749, -564, 1699, 4351]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
+model = "DC-FZ82"
+xyz = [11532, -4324, -1066, -2375, 10847, 1749, -564, 1699, 4351]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
 model = "DC-G100"
 xyz = [8370, -2869, -710, -3389, 11372, 2298, -640, 1599, 4887]
 source = "adobe-dng"
@@ -2155,6 +2920,18 @@ source = "adobe-dng"
 [[matrix]]
 make = "Panasonic"
 model = "DC-G95"
+xyz = [9657, -3963, -748, -3361, 11378, 2258, -568, 1415, 5158]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
+model = "DC-G95D"
+xyz = [9657, -3963, -748, -3361, 11378, 2258, -568, 1415, 5158]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
+model = "DC-G97"
 xyz = [9657, -3963, -748, -3361, 11378, 2258, -568, 1415, 5158]
 source = "adobe-dng"
 
@@ -2250,8 +3027,26 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Panasonic"
+model = "DC-S1M2"
+xyz = [10730, -4442, -922, -4478, 12504, 2199, -380, 1198, 6039]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
+model = "DC-S1M2ES"
+xyz = [11333, -4794, -1062, -3912, 12027, 2115, 42, 784, 5904]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
 model = "DC-S1R"
 xyz = [11822, -5321, -1249, -5958, 15114, 766, -614, 1264, 7043]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
+model = "DC-S1RM2"
+xyz = [9941, -4056, -871, -3745, 11604, 2433, -254, 1132, 5526]
 source = "adobe-dng"
 
 [[matrix]]
@@ -2310,6 +3105,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Panasonic"
+model = "DC-TZ95D"
+xyz = [12194, -5340, -1329, -3035, 11394, 1858, -50, 1418, 5219]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
 model = "DC-TZ96"
 xyz = [12194, -5340, -1329, -3035, 11394, 1858, -50, 1418, 5219]
 source = "adobe-dng"
@@ -2352,6 +3153,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Panasonic"
+model = "DMC-FZ18"
+xyz = [9932, -3059, -936, -5809, 13330, 2752, -1267, 2155, 5575]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
 model = "DMC-FZ200"
 xyz = [8112, -2563, -740, -3730, 11784, 2197, -941, 2075, 4933]
 source = "adobe-dng"
@@ -2372,6 +3179,12 @@ source = "adobe-dng"
 make = "Panasonic"
 model = "DMC-FZ28"
 xyz = [10109, -3488, -993, -5412, 12812, 2916, -1305, 2140, 5543]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
+model = "DMC-FZ30"
+xyz = [10977, -4030, -1142, -7918, 15490, 2600, -1669, 2072, 8246]
 source = "adobe-dng"
 
 [[matrix]]
@@ -2406,6 +3219,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Panasonic"
+model = "DMC-FZ50"
+xyz = [7906, -2709, -594, -6231, 13352, 3220, -1923, 2631, 6538]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
 model = "DMC-FZ70"
 xyz = [11532, -4324, -1066, -2375, 10847, 1749, -564, 1699, 4351]
 source = "adobe-dng"
@@ -2414,6 +3233,12 @@ source = "adobe-dng"
 make = "Panasonic"
 model = "DMC-FZ72"
 xyz = [11532, -4324, -1066, -2375, 10847, 1749, -564, 1699, 4351]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
+model = "DMC-FZ8"
+xyz = [8986, -2756, -801, -6341, 13576, 3077, -1476, 2144, 6379]
 source = "adobe-dng"
 
 [[matrix]]
@@ -2604,8 +3429,26 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Panasonic"
+model = "DMC-L1"
+xyz = [8054, -1886, -1025, -8348, 16367, 2040, -2805, 3542, 7630]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
+model = "DMC-L10"
+xyz = [8026, -1942, -1050, -7919, 15904, 2100, -2456, 3004, 7040]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
 model = "DMC-LF1"
 xyz = [9379, -3267, -816, -3227, 11560, 1881, -926, 1928, 5340]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
+model = "DMC-LX1"
+xyz = [10704, -4187, -1230, -8314, 15953, 2501, -920, 945, 8927]
 source = "adobe-dng"
 
 [[matrix]]
@@ -2624,6 +3467,12 @@ source = "adobe-dng"
 make = "Panasonic"
 model = "DMC-LX15"
 xyz = [7790, -2736, -755, -3452, 11870, 1769, -628, 1647, 4898]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Panasonic"
+model = "DMC-LX2"
+xyz = [8047, -2810, -624, -6449, 13519, 3272, -1701, 2146, 7050]
 source = "adobe-dng"
 
 [[matrix]]
@@ -2724,6 +3573,12 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Parrot"
+model = "Anafi"
+xyz = [13119, -5543, -1310, -4014, 12491, 1672, -523, 2038, 6100]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Parrot"
 model = "Bebop 2"
 xyz = [12470, -1485, -653, -4211, 13116, 1145, 283, 2460, 8806]
 source = "adobe-dng"
@@ -2732,6 +3587,30 @@ source = "adobe-dng"
 make = "Parrot"
 model = "Bebop Drone"
 xyz = [12470, -1485, -653, -4211, 13116, 1145, 283, 2460, 8806]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Pentax"
+model = "*ist D"
+xyz = [9652, -2058, -1189, -8881, 16512, 2487, -1460, 1345, 10687]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Pentax"
+model = "*ist DL"
+xyz = [10829, -2838, -1115, -8339, 15817, 2695, -837, 680, 11939]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Pentax"
+model = "*ist DL2"
+xyz = [10504, -2439, -1189, -8603, 16208, 2531, -1022, 863, 12242]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Pentax"
+model = "*ist DS"
+xyz = [10371, -2333, -1206, -8688, 16232, 2602, -1230, 1116, 11282]
 source = "adobe-dng"
 
 [[matrix]]
@@ -2838,14 +3717,44 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Pentax"
+model = "K100D"
+xyz = [11095, -3157, -1324, -8377, 15834, 2720, -1107, 947, 11688]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Pentax"
+model = "K100D Super"
+xyz = [11095, -3157, -1324, -8377, 15834, 2720, -1107, 947, 11688]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Pentax"
 model = "K10D"
 xyz = [9679, -2965, -811, -8622, 16514, 2182, -975, 883, 9793]
 source = "adobe-dng"
 
 [[matrix]]
 make = "Pentax"
+model = "K110D"
+xyz = [11095, -3157, -1324, -8377, 15834, 2720, -1107, 947, 11688]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Pentax"
 model = "K2000"
 xyz = [9730, -2989, -970, -8527, 16258, 2381, -1060, 970, 8362]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Pentax"
+model = "K200D"
+xyz = [9186, -2678, -908, -8692, 16518, 2260, -1129, 1094, 8524]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Pentax"
+model = "K20D"
+xyz = [9427, -2714, -868, -7493, 16093, 1373, -2199, 3264, 7180]
 source = "adobe-dng"
 
 [[matrix]]
@@ -2862,9 +3771,21 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Phase One"
+model = "H 25"
+xyz = [2905, 732, -237, -8135, 16626, 1476, -3038, 4253, 7517]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Phase One"
 model = "IQ140"
 xyz = [8035, 435, -962, -6001, 13872, 2320, -1159, 3065, 5434]
 source = "adobe-dng"
+
+[[matrix]]
+make = "Phase One"
+model = "IQ150"
+xyz = [10325, 845, -604, -4113, 13385, 481, -1791, 4163, 6924]
+source = "compat-observed"
 
 [[matrix]]
 make = "Phase One"
@@ -2874,8 +3795,38 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Phase One"
+model = "IQ3 100MP"
+xyz = [10999, 354, -742, -4590, 13342, 937, -1060, 2166, 8120]
+source = "compat-observed"
+
+[[matrix]]
+make = "Phase One"
+model = "IQ3 100MP Trichr"
+xyz = [10999, 354, -742, -4590, 13342, 937, -1060, 2166, 8120]
+source = "compat-observed"
+
+[[matrix]]
+make = "Phase One"
 model = "IQ4 150MP"
 xyz = [6644, -2257, -804, -6459, 14562, 2019, -1221, 1876, 6411]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Phase One"
+model = "P20+"
+xyz = [2905, 732, -237, -8135, 16626, 1476, -3038, 4253, 7517]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Phase One"
+model = "P25"
+xyz = [2905, 732, -237, -8135, 16626, 1476, -3038, 4253, 7517]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Phase One"
+model = "P25+"
+xyz = [2905, 732, -237, -8135, 16626, 1476, -3038, 4253, 7517]
 source = "adobe-dng"
 
 [[matrix]]
@@ -2942,6 +3893,12 @@ source = "adobe-dng"
 make = "Samsung"
 model = "EX2F"
 xyz = [10648, -3897, -1055, -2022, 10573, 1668, -492, 1611, 4742]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Samsung"
+model = "GX-1L"
+xyz = [10504, -2439, -1189, -8603, 16208, 2531, -1022, 863, 12242]
 source = "adobe-dng"
 
 [[matrix]]
@@ -3059,6 +4016,12 @@ xyz = [12093, -3557, -1155, -1000, 9534, 1733, -22, 1787, 4576]
 source = "adobe-dng"
 
 [[matrix]]
+make = "Sinar"
+model = "Sinarback eVolution 75, Sinar p3 / f3"
+xyz = [16442, -2956, -2422, -2877, 12128, 750, -1136, 6066, 4559]
+source = "compat-observed"
+
+[[matrix]]
 make = "Sony"
 model = "DSC-HX95"
 xyz = [13076, -5686, -1481, -4027, 12851, 1251, -167, 725, 4937]
@@ -3068,6 +4031,12 @@ source = "adobe-dng"
 make = "Sony"
 model = "DSC-HX99"
 xyz = [13076, -5686, -1481, -4027, 12851, 1251, -167, 725, 4937]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Sony"
+model = "DSC-R1"
+xyz = [8512, -2641, -694, -8041, 15670, 2526, -1820, 2117, 7414]
 source = "adobe-dng"
 
 [[matrix]]
@@ -3180,8 +4149,38 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Sony"
+model = "DSC-RX1RM3"
+xyz = [9034, -3490, -777, -4004, 11841, 2448, -484, 1352, 5552]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Sony"
+model = "DSLR-A100"
+xyz = [9437, -2812, -774, -8405, 16215, 2291, -709, 596, 7181]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Sony"
+model = "DSLR-A200"
+xyz = [9847, -3091, -929, -8485, 16346, 2225, -714, 595, 7103]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Sony"
+model = "DSLR-A230"
+xyz = [9847, -3091, -929, -8485, 16346, 2225, -714, 595, 7103]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Sony"
 model = "DSLR-A290"
 xyz = [6038, -1484, -579, -9145, 16746, 2512, -875, 746, 7218]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Sony"
+model = "DSLR-A300"
+xyz = [9847, -3091, -929, -8485, 16346, 2225, -714, 595, 7103]
 source = "adobe-dng"
 
 [[matrix]]
@@ -3234,8 +4233,20 @@ source = "adobe-dng"
 
 [[matrix]]
 make = "Sony"
+model = "DSLR-A700"
+xyz = [5775, -805, -359, -8573, 16294, 2391, -1943, 2342, 7249]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Sony"
 model = "DSLR-A850"
 xyz = [5413, -1162, -365, -5665, 13098, 2866, -608, 1179, 8440]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Sony"
+model = "DSLR-A900"
+xyz = [5209, -1072, -397, -8845, 16121, 2919, -1618, 1802, 8654]
 source = "adobe-dng"
 
 [[matrix]]
@@ -3422,6 +4433,12 @@ source = "adobe-dng"
 make = "Sony"
 model = "ILCE-7RM5"
 xyz = [8200, -2976, -719, -4296, 12053, 2532, -429, 1282, 5774]
+source = "adobe-dng"
+
+[[matrix]]
+make = "Sony"
+model = "ILCE-7RM6"
+xyz = [11765, -5595, -1192, -3689, 11507, 2485, 51, 681, 5731]
 source = "adobe-dng"
 
 [[matrix]]
