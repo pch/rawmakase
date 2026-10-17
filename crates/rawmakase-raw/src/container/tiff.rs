@@ -83,6 +83,12 @@ impl<'a> TiffFile<'a> {
         }
         self.bytes.slice(u64::from(self.u32(&e.value)), len).ok()
     }
+    /// Where an entry's value is, from the TIFF header, when it is not in the
+    /// entry itself.
+    pub fn offset_of(&self, e: &Entry) -> Option<u64> {
+        let len = u64::from(e.count).checked_mul(e.type_size()? as u64)?;
+        (len > 4).then(|| u64::from(self.u32(&e.value)))
+    }
     fn u32(&self, b: &[u8]) -> u32 {
         match self.bytes.order {
             Order::Little => u32::from_le_bytes([b[0], b[1], b[2], b[3]]),

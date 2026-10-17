@@ -58,6 +58,12 @@ pub(crate) struct Camera {
     /// The visible area: left, top, width, height in sensor coordinates.
     #[serde(default)]
     pub visible: Option<[u32; 4]>,
+    /// The white level, and the black level of every channel, where the file
+    /// does not give the ones RAWmakase has always read it with.
+    #[serde(default)]
+    pub white: Option<u32>,
+    #[serde(default)]
+    pub black: Option<u32>,
     #[allow(dead_code)]
     pub source: Source,
     #[allow(dead_code)]
@@ -127,14 +133,14 @@ pub(crate) fn canonical(make: &str, model: &str) -> Option<&'static [String; 2]>
 }
 
 /// The decode facts for a file of this camera, DNG or not, of this stored
-/// size.
+/// size: every row that matches, the first giving a fact being its source.
 pub(crate) fn camera(
     make: &str,
     model: &str,
     dng: bool,
     raw_size: [u32; 2],
-) -> Option<&'static Camera> {
-    cameras().camera.iter().find(|c| {
+) -> impl Iterator<Item = &'static Camera> {
+    cameras().camera.iter().filter(move |c| {
         c.make == make
             && c.model == model
             && c.dng.is_none_or(|d| d == dng)
@@ -171,7 +177,10 @@ mod tests {
         let mut cams = std::collections::HashSet::new();
         for c in &cameras.camera {
             assert!(cams.insert((&c.make, &c.model, c.dng, c.raw_size)), "{c:?}");
-            assert!(c.visible.is_some(), "{c:?}");
+            assert!(
+                c.visible.is_some() || c.white.is_some() || c.black.is_some(),
+                "{c:?}"
+            );
             assert_ne!(c.source, Source::AdobeDng, "{c:?}");
         }
         for m in &matrices.matrix {

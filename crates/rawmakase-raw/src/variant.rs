@@ -18,6 +18,12 @@ pub enum Variant {
     DngDeflate,
     /// DNG, uncompressed floating-point samples.
     DngUncompressedFloat,
+    /// Panasonic RW2 (raw formats 3 and 4): delta-coded 16-byte blocks, the
+    /// chunks of format 4 rotated.
+    Rw2Delta,
+    /// Panasonic RW2 (raw format 5): packed 12 or 14-bit samples in 16-byte
+    /// blocks, chunks rotated.
+    Rw2PackedRotated,
 }
 
 impl Variant {
@@ -27,6 +33,8 @@ impl Variant {
             Variant::DngLosslessJpeg => "dng-ljpeg",
             Variant::DngDeflate => "dng-deflate",
             Variant::DngUncompressedFloat => "dng-float",
+            Variant::Rw2Delta => "rw2-delta",
+            Variant::Rw2PackedRotated => "rw2-packed-rotated",
         }
     }
 }
@@ -36,6 +44,7 @@ impl Variant {
 pub(crate) enum Plan {
     None,
     Dng(crate::container::dng::DngPlan),
+    Rw2(crate::container::rw2::Rw2Plan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -49,6 +58,11 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
 
 /// The container's own reading of the file, names as the file writes them.
 fn probe(bytes: &[u8]) -> Result<RawInfo> {
+    if crate::container::rw2::is_rw2(bytes) {
+        let t = crate::container::tiff::TiffFile::parse(bytes, 0)
+            .ok_or_else(|| crate::error::corrupt("RW2 directory"))?;
+        return crate::container::rw2::open(t);
+    }
     if let Some(t) = crate::container::tiff::TiffFile::parse(bytes, 0) {
         let ifd0 = &t.ifds[0];
         if ifd0.has(50706) {
@@ -68,6 +82,13 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::DngDeflate
             | Variant::DngUncompressedFloat,
         ) => crate::container::dng::decode(info, plan, bytes, cancel),
+        (Plan::Rw2(plan), Variant::Rw2Delta | Variant::Rw2PackedRotated) => {
+            crate::container::rw2::decode(info, plan, bytes, cancel)
+        }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
+        (_, variant) => Err(Error::Unsupported(format!(
+            "{} with another container's plan",
+            variant.name()
+        ))),
     }
 }

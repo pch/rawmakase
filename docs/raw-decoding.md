@@ -35,8 +35,9 @@ Modules, each with a small `pub(crate)` surface:
 | Module | Owns |
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
-| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`) |
+| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Panasonic's blocks |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `rw2`) |
+| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) (`panasonic`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
 | `color` | The camera-to-sRGB matrix and daylight multipliers from a camera's XYZ matrix |
@@ -53,6 +54,8 @@ A file of a recognised container in a variant this crate does not decode is
 | `DngLosslessJpeg` | DNG, lossless JPEG tiles or strips; DCT JPEG ones some writers store under the same code | DNG 1.7, ITU T.81 |
 | `DngDeflate` | DNG, Deflate tiles, integer (horizontal differences) or floating point (byte planes) | DNG 1.7, Adobe TIFF Technical Note 3 |
 | `DngUncompressedFloat` | DNG, uncompressed 16, 24 or 32-bit floating point | DNG 1.7, IEEE 754 |
+| `Rw2Delta` | Panasonic RW2/RWL raw formats 3 and 4: delta-coded 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
+| `Rw2PackedRotated` | Panasonic RW2 raw format 5: packed 12 or 14-bit samples in 16-byte blocks | TIFF 6, ExifTool's PanasonicRaw tag names, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -63,6 +66,15 @@ keeps a sample's integer part. HDRMerge's floating-point mosaics (predictor
 34894) difference bytes two apart, the same colour's in a Bayer row. Blackmagic's
 DCT-coded tiles decode with an exact inverse DCT; they differ from LibRaw's
 (libjpeg-turbo's) by one 12-bit level in under 0.03% of samples.
+
+Panasonic and Leica (`vendor::panasonic`): the visible area is the full
+height and the columns up to the right sensor border plus the left border's
+width; the default crop is the camera's crop tags (else the sensor borders)
+starting on even rows and columns; black is the black level tags, 15 above
+them for raw formats 3 and 4; white is the bit depth's range. Older bodies
+whose files RAWmakase has always read with other areas or levels have
+`compat-observed` rows in `data/raw-cameras.toml` (`visible`, `white`,
+`black`).
 
 ## Checking against LibRaw
 

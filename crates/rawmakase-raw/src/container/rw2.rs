@@ -1,0 +1,374 @@
+//! Panasonic RW2 and Leica RWL, and the older Panasonic and Leica RAW files
+//! of the same structure: a TIFF with its own magic number (`IIU`) whose
+//! first directory holds Panasonic's tags (`vendor::panasonic`), the EXIF
+//! directory, the embedded JPEG (tag 0x2E) and where the sensor data is (tag
+//! 0x118, else the strip offset). The raw format (tag 0x2D) and compression
+//! (tag 0x0B) say how the data is coded.
+//!
+//! Sources: TIFF 6, Exif 2.32, ExifTool's PanasonicRaw tag documentation,
+//! and our own measurements.
+use super::tiff::TiffFile;
+use crate::codec::panasonic::{self, Block};
+use crate::error::{Error, Result, corrupt};
+use crate::info::RawInfo;
+use crate::io::Bytes;
+use crate::sensor::Sensor;
+use crate::variant::{Plan, Variant};
+use crate::vendor::panasonic as tags;
+use std::sync::atomic::AtomicBool;
+
+/// How the sensor data is coded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Coding {
+    /// 16-byte blocks, whole 0x4000-byte chunks rotated when `rotated`.
+    Blocks { block: Block, rotated: bool },
+}
+
+/// Where an RW2's sensor data is and how it is coded, and its levels.
+#[derive(Clone, Debug)]
+pub(crate) struct Rw2Plan {
+    pub offset: u64,
+    pub coding: Coding,
+    pub width: u32,
+    pub height: u32,
+    pub black: [u32; 4],
+    pub white: u32,
+    pub linear_white: [u32; 4],
+}
+
+/// Whether `bytes` is an RW2-structured file.
+pub(crate) fn is_rw2(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"IIU\0")
+}
+
+/// Reads an RW2's header facts. `t` is the parsed TIFF.
+pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
+    let ifd0 = &t.ifds[0];
+    let width = t
+        .int(ifd0, tags::SENSOR_WIDTH)
+        .ok_or_else(|| corrupt("RW2 sensor width"))?;
+    let height = t
+        .int(ifd0, tags::SENSOR_HEIGHT)
+        .ok_or_else(|| corrupt("RW2 sensor height"))?;
+    crate::io::samples(width, height, 1)?;
+    let bits = t.int(ifd0, tags::BITS).unwrap_or(12);
+    let format = t.int(ifd0, tags::RAW_FORMAT);
+    let (variant, coding) = match (format, bits) {
+        (Some(3 | 4), 12) => (
+            Variant::Rw2Delta,
+            Coding::Blocks {
+                block: Block::Delta,
+                rotated: format == Some(4),
+            },
+        ),
+        (Some(5), 12 | 14) => (
+            Variant::Rw2PackedRotated,
+            Coding::Blocks {
+                block: Block::Packed { bits },
+                rotated: true,
+            },
+        ),
+        (Some(f), _) => {
+            return Err(Error::Unsupported(format!(
+                "Panasonic raw format {f} of {bits} bits"
+            )));
+        }
+        (None, _) => {
+            let c = t.int(ifd0, tags::COMPRESSION).unwrap_or(0);
+            return Err(Error::Unsupported(format!("Panasonic compression {c}")));
+        }
+    };
+    let offset = t
+        .int(ifd0, tags::RAW_OFFSET)
+        .or_else(|| t.int(ifd0, 273))
+        .ok_or_else(|| corrupt("RW2 data offset"))?;
+    let mut info = crate::info::base(variant);
+    info.make = t.text(ifd0, 271).unwrap_or_default();
+    info.model = t.text(ifd0, 272).unwrap_or_default();
+    // The camera table is keyed by RAWmakase's names.
+    crate::names::apply(&mut info);
+    info.raw_width = width;
+    info.raw_height = height;
+    let borders = tags::borders(&t, ifd0);
+    info.sensor_borders = borders;
+    info.width = tags::visible_width(width, borders);
+    info.height = height;
+    info.frame = tags::frame(&t, ifd0);
+    info.cfa = Some(tags::cfa(&t, ifd0));
+    info.flip = crate::geometry::flip(t.int(ifd0, 274).unwrap_or(1));
+    info.cam_mul = tags::white_balance(&t, ifd0);
+    info.presets = tags::presets(&t, ifd0);
+    if let Some(iso) = tags::iso(&t, ifd0) {
+        info.iso = iso;
+    }
+    if let Some(e) = ifd0.entries.get(&tags::JPEG)
+        && let Some(at) = t.offset_of(e)
+    {
+        info.previews.push(crate::preview::Candidate {
+            offset: t.base + at,
+            len: u64::from(e.count),
+            pixels: 0,
+        });
+    }
+    super::tiff_exif::read(&t, &mut info);
+    let (mut black, mut white, linear_white) = tags::levels(&t, ifd0, format, bits);
+    // What the file does not say: the visible area and levels RAWmakase has
+    // always read some cameras' files with.
+    let (make, model) = (info.make.clone(), info.model.clone());
+    let rows = || crate::facts::camera(&make, &model, false, [width, height]);
+    if let Some([left, top, w, h]) = rows().find_map(|c| c.visible)
+        && left.checked_add(w).is_some_and(|r| r <= width)
+        && top.checked_add(h).is_some_and(|b| b <= height)
+    {
+        info.margins = [left, top];
+        info.width = w;
+        info.height = h;
+        let cfa = info.cfa.take();
+        info.cfa = cfa.map(|c| c.shifted(top as usize, left as usize));
+    }
+    if let Some(b) = rows().find_map(|c| c.black) {
+        black = [b; 4];
+    }
+    if let Some(w) = rows().find_map(|c| c.white) {
+        white = w;
+    }
+    info.plan = Plan::Rw2(Rw2Plan {
+        offset: t.base + u64::from(offset),
+        coding,
+        width,
+        height,
+        black,
+        white,
+        linear_white,
+    });
+    Ok(info)
+}
+
+/// Decodes the sensor data.
+pub(crate) fn decode(
+    info: &RawInfo,
+    plan: &Rw2Plan,
+    bytes: &[u8],
+    cancel: &AtomicBool,
+) -> Result<Sensor> {
+    let file = Bytes::new(bytes, crate::io::Order::Little);
+    let data = match plan.coding {
+        Coding::Blocks { block, rotated } => {
+            // To the end of the file: the last chunk is rotated whole.
+            let available = (bytes.len() as u64).saturating_sub(plan.offset);
+            let src = file.slice(plan.offset, available)?;
+            panasonic::decode(src, block, rotated, plan.width, plan.height, cancel)?
+        }
+    };
+    let [left, top] = info.margins;
+    Ok(Sensor {
+        width: plan.width,
+        height: plan.height,
+        channels: 1,
+        data,
+        area: [left, top, info.width, info.height],
+        black: plan.black,
+        black_pattern: (0, 0, Vec::new()),
+        white: plan.white,
+        linear_white: plan.linear_white,
+    })
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use crate::info::UNSET;
+    use std::sync::atomic::AtomicBool;
+
+    /// A little-endian RW2 file: IFD0 with `entries` (tag, type, values as
+    /// bytes), then `data` at the offset tag 0x118 names.
+    pub(crate) fn rw2(entries: &[(u16, u16, Vec<u8>)], data: &[u8]) -> Vec<u8> {
+        let mut entries = entries.to_vec();
+        let n = entries.len() + 1;
+        let ifd_end = 8 + 2 + 12 * n + 4;
+        let extra: usize = entries.iter().map(|e| e.2.len()).filter(|&l| l > 4).sum();
+        let data_at = (ifd_end + extra).next_multiple_of(16) as u32;
+        entries.push((0x118, 4, data_at.to_le_bytes().to_vec()));
+        entries.sort_by_key(|e| e.0);
+        let mut out = b"IIU\0".to_vec();
+        out.extend(8u32.to_le_bytes());
+        out.extend((n as u16).to_le_bytes());
+        let mut values: Vec<u8> = Vec::new();
+        for (tag, kind, v) in &entries {
+            let size = match kind {
+                3 => 2,
+                4 => 4,
+                _ => 1,
+            };
+            out.extend(tag.to_le_bytes());
+            out.extend(kind.to_le_bytes());
+            out.extend(((v.len() / size) as u32).to_le_bytes());
+            if v.len() <= 4 {
+                let mut inline = v.clone();
+                inline.resize(4, 0);
+                out.extend(inline);
+            } else {
+                out.extend(((ifd_end + values.len()) as u32).to_le_bytes());
+                values.extend(v);
+            }
+        }
+        out.extend(0u32.to_le_bytes());
+        out.extend(values);
+        out.resize(data_at as usize, 0);
+        out.extend(data);
+        out
+    }
+    pub(crate) fn short(tag: u16, v: u16) -> (u16, u16, Vec<u8>) {
+        (tag, 3, v.to_le_bytes().to_vec())
+    }
+    fn text(tag: u16, v: &str) -> (u16, u16, Vec<u8>) {
+        let mut b = v.as_bytes().to_vec();
+        b.push(0);
+        (tag, 2, b)
+    }
+    /// A block of 14 delta-coded samples: seeds `a` and `b` (12 bits, high
+    /// part non-zero) for the two colours, every later code 0 (keep).
+    fn flat_block(a: u16, b: u16) -> [u8; 16] {
+        let word = (u128::from(a) << 116) | (u128::from(b) << 104);
+        word.to_le_bytes()
+    }
+    /// One 0x4000-byte chunk stored rotated, holding `logical`.
+    fn rotated(logical: &[u8]) -> Vec<u8> {
+        let mut chunk = logical.to_vec();
+        chunk.resize(0x4000, 0);
+        chunk.rotate_right(0x1ff8);
+        chunk
+    }
+    pub(crate) fn header(format: u16, bits: u16, size: [u16; 2]) -> Vec<(u16, u16, Vec<u8>)> {
+        vec![
+            short(0x02, size[0]),
+            short(0x03, size[1]),
+            // Borders: top 1, left 2, bottom size − 1, right size − 2.
+            short(0x04, 1),
+            short(0x05, 2),
+            short(0x06, size[1] - 1),
+            short(0x07, size[0] - 2),
+            short(0x09, 3),
+            short(0x0a, bits),
+            short(0x1c, 100),
+            short(0x1d, 101),
+            short(0x1e, 102),
+            short(0x24, 512),
+            short(0x25, 256),
+            short(0x26, 384),
+            short(0x17, 400),
+            short(0x2d, format),
+            text(271, "Panasonic"),
+            text(272, "DMC-GX80"),
+        ]
+    }
+
+    #[test]
+    fn reads_the_header_facts() {
+        let mut entries = header(4, 12, [28, 4]);
+        // White balance presets: fine weather (9) and cloudy (10).
+        let presets: Vec<u8> = [2u16, 9, 600, 256, 400, 10, 650, 256, 380]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        entries.push((0x27, 7, presets));
+        // The camera's crop: top 1, left 3, bottom 3, right 25.
+        entries.extend([
+            short(0x2f, 1),
+            short(0x30, 3),
+            short(0x31, 3),
+            short(0x32, 25),
+        ]);
+        let file = rw2(&entries, &[0; 0x4000]);
+        let info = crate::open(&file).unwrap();
+        assert_eq!(info.variant, crate::Variant::Rw2Delta);
+        assert_eq!(
+            (info.make.as_str(), info.model.as_str()),
+            ("Panasonic", "DMC-GX80")
+        );
+        assert_eq!([info.raw_width, info.raw_height], [28, 4]);
+        // The left border once more past the right one: 26 + 2.
+        assert_eq!([info.width, info.height, info.margins[0]], [28, 4, 0]);
+        assert_eq!(info.sensor_borders, Some([2, 1, 24, 2]));
+        // The crop starts on even rows and columns, keeping its far edges.
+        assert_eq!(info.frame, [4, 2, 21, 1]);
+        assert_eq!(info.aspect, [UNSET, UNSET, 0, 0]);
+        // GBRG, the green beside blue the second.
+        assert_eq!(info.cfa.as_ref().unwrap().colors, vec![3, 2, 0, 1]);
+        assert_eq!(info.cam_mul, [2., 1., 1.5, 1.]);
+        assert_eq!(info.presets.fine_weather, [600., 256., 400.]);
+        assert_eq!(info.presets.shade, [0.; 3]);
+        assert_eq!(info.iso, 400.);
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        // Raw format 4: 15 above the tags; 12 bits.
+        assert_eq!(s.black, [115, 116, 117, 116]);
+        assert_eq!(s.white, 4095);
+    }
+
+    #[test]
+    fn decodes_delta_blocks_of_rotated_chunks() {
+        // 28 × 2 samples: four blocks, each colour flat.
+        let logical: Vec<u8> = [0x123, 0x456, 0x789, 0x9ab]
+            .iter()
+            .flat_map(|&a| flat_block(a, a + 1))
+            .collect();
+        let file = rw2(&header(4, 12, [28, 2]), &rotated(&logical));
+        let info = crate::open(&file).unwrap();
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        assert_eq!(&s.data[..4], &[0x123, 0x124, 0x123, 0x124]);
+        assert_eq!(s.data[14..16], [0x456, 0x457]);
+        assert_eq!(s.data[55], 0x9ac);
+        // Format 3 is not rotated.
+        let file = rw2(&header(3, 12, [28, 2]), &logical);
+        let info = crate::open(&file).unwrap();
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        assert_eq!(s.data[28..30], [0x789, 0x78a]);
+        assert_eq!(s.black[0], 115);
+    }
+
+    #[test]
+    fn decodes_packed_blocks_of_rotated_chunks() {
+        // Raw format 5, 12 bits: ten samples per block from the lowest bit.
+        let mut word = 0u128;
+        for i in 0..10u128 {
+            word |= (0x800 + i) << (12 * i);
+        }
+        let logical: Vec<u8> = (0..2).flat_map(|_| word.to_le_bytes()).collect();
+        let file = rw2(&header(5, 12, [10, 2]), &rotated(&logical));
+        let info = crate::open(&file).unwrap();
+        assert_eq!(info.variant, crate::Variant::Rw2PackedRotated);
+        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let want: [u16; 10] = std::array::from_fn(|i| 0x800 + i as u16);
+        assert_eq!(s.data[..10], want);
+        // Raw format 5 records black as it is.
+        assert_eq!(s.black, [100, 101, 102, 101]);
+    }
+
+    #[test]
+    fn truncated_and_garbage_files_are_errors_not_panics() {
+        let file = rw2(&header(4, 12, [28, 2]), &[0x5a; 0x4000]);
+        let cancel = AtomicBool::new(false);
+        for len in (0..file.len()).step_by(7) {
+            if let Ok(info) = crate::open(&file[..len]) {
+                let _ = crate::decode(&info, &file[..len], &cancel);
+            }
+        }
+        // The data cut short is an error.
+        let short = &file[..file.len() - 0x3fe0];
+        let info = crate::open(short).unwrap();
+        assert!(crate::decode(&info, short, &cancel).is_err());
+        // Every byte of the header changed in turn.
+        for at in 4..file.len() - 0x4000 {
+            let mut bad = file.clone();
+            bad[at] ^= 0xff;
+            if let Ok(info) = crate::open(&bad) {
+                let _ = crate::decode(&info, &bad, &cancel);
+            }
+        }
+        // An unknown raw format is unsupported.
+        let file = rw2(&header(9, 12, [28, 2]), &[0; 64]);
+        assert!(matches!(
+            crate::open(&file),
+            Err(crate::Error::Unsupported(_))
+        ));
+    }
+}

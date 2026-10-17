@@ -21,6 +21,7 @@ mod names;
 mod preview;
 mod sensor;
 mod variant;
+mod vendor;
 
 pub use error::{Error, Result};
 pub use info::{Cfa, Presets, RawInfo, UNSET};

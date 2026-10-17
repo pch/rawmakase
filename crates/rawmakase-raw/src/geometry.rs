@@ -22,7 +22,7 @@ pub(crate) fn apply(info: &mut crate::info::RawInfo) {
     let dng = info.dng_version > 0;
     let size = [info.raw_width, info.raw_height];
     let Some([left, top, width, height]) =
-        crate::facts::camera(&info.make, &info.model, dng, size).and_then(|c| c.visible)
+        crate::facts::camera(&info.make, &info.model, dng, size).find_map(|c| c.visible)
     else {
         return;
     };

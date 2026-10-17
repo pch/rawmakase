@@ -7,7 +7,8 @@
 #                which camera profiles may use
 # [[camera]]     decode facts, for the camera's files matching `dng` and
 #                `raw_size` when given: the visible area (`visible`, left, top,
-#                width, height in sensor coordinates) and levels
+#                width, height in sensor coordinates) and levels (`white`,
+#                and `black` for every channel)
 #
 # source says where the values come from:
 #   file             a rule from the file's own tags, for files that lack them
@@ -144,3 +145,451 @@ raw_size = [4864, 3136]
 visible = [0, 0, 4688, 3124]
 source = "compat-observed"
 
+
+[[camera]]
+make = "Panasonic"
+model = "DC-G9"
+dng = false
+raw_size = [10480, 7794]
+visible = [0, 0, 10402, 7794]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FX150"
+dng = false
+raw_size = [4508, 2962]
+visible = [0, 0, 4429, 2958]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FX150"
+dng = false
+raw_size = [4508, 3330]
+visible = [0, 0, 4429, 3324]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ28"
+dng = false
+raw_size = [3724, 2450]
+visible = [0, 0, 3664, 2448]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ28"
+dng = false
+white = 3990
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ35"
+dng = false
+raw_size = [4060, 3018]
+visible = [0, 0, 4016, 3016]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-FZ38"
+dng = false
+raw_size = [4060, 3018]
+visible = [0, 0, 4016, 3016]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-G1"
+dng = false
+white = 3988
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-G10"
+dng = false
+black = 0
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-G2"
+dng = false
+white = 3900
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-GF1"
+dng = false
+white = 3986
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-GH1"
+dng = false
+white = 3986
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-GH2"
+dng = false
+white = 3989
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-L10"
+dng = false
+raw_size = [3710, 2751]
+visible = [0, 0, 3677, 2751]
+source = "compat-observed"
+
+[[camera]]
+make = "Panasonic"
+model = "DMC-L10"
+dng = false
+white = 3990
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "C (Typ 112)"
+canonical = ["Panasonic", "DMC-LF1"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "C-Lux"
+canonical = ["Panasonic", "DC-ZS200"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "D-LUX (Typ 109)"
+canonical = ["Panasonic", "DMC-LX100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "D-LUX 3"
+canonical = ["Panasonic", "DMC-LX2"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "D-LUX 4"
+canonical = ["Panasonic", "DMC-LX3"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "D-LUX 5"
+canonical = ["Panasonic", "DMC-LX5"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "D-LUX 6"
+canonical = ["Panasonic", "DMC-LX7"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "D-Lux 7"
+canonical = ["Panasonic", "DC-LX100M2"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "DIGILUX 2"
+canonical = ["Panasonic", "DMC-LC1"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "DIGILUX 3"
+canonical = ["Panasonic", "DMC-L1"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "V-LUX (Typ 114)"
+canonical = ["Panasonic", "DMC-FZ1000"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "V-LUX 1"
+canonical = ["Panasonic", "DMC-FZ50"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "V-LUX 4"
+canonical = ["Panasonic", "DMC-FZ200"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Leica"
+model = "V-Lux 5"
+canonical = ["Panasonic", "DC-FZ1000M2"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-FZ10002"
+canonical = ["Panasonic", "DC-FZ1000M2"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-FZ45"
+canonical = ["Panasonic", "DMC-FZ40"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-FZ82"
+canonical = ["Panasonic", "DC-FZ80"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-G110"
+canonical = ["Panasonic", "DC-G100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-G90"
+canonical = ["Panasonic", "DC-G99"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-G91"
+canonical = ["Panasonic", "DC-G99"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-G95"
+canonical = ["Panasonic", "DC-G99"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-GX7MK3"
+canonical = ["Panasonic", "DC-GX9"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-GX800"
+canonical = ["Panasonic", "DC-GF9"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-GX850"
+canonical = ["Panasonic", "DC-GF9"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-GX880"
+canonical = ["Panasonic", "DC-GF10"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-TZ200D"
+canonical = ["Panasonic", "DC-ZS200"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-TZ202"
+canonical = ["Panasonic", "DC-ZS200"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-TZ90"
+canonical = ["Panasonic", "DC-ZS70"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-TZ91"
+canonical = ["Panasonic", "DC-ZS70"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-TZ95"
+canonical = ["Panasonic", "DC-ZS80"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-TZ96"
+canonical = ["Panasonic", "DC-ZS80"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DC-ZS200D"
+canonical = ["Panasonic", "DC-ZS200"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-FZ2000"
+canonical = ["Panasonic", "DMC-FZ2500"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-FZ330"
+canonical = ["Panasonic", "DMC-FZ300"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-FZ38"
+canonical = ["Panasonic", "DMC-FZ35"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-FZ45"
+canonical = ["Panasonic", "DMC-FZ40"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-FZ72"
+canonical = ["Panasonic", "DMC-FZ70"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-G70"
+canonical = ["Panasonic", "DMC-G7"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-G80"
+canonical = ["Panasonic", "DMC-G8"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-G81"
+canonical = ["Panasonic", "DMC-G8"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-G85"
+canonical = ["Panasonic", "DMC-G8"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-GM1S"
+canonical = ["Panasonic", "DMC-GM1"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-GX7MK2"
+canonical = ["Panasonic", "DMC-GX85"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-GX80"
+canonical = ["Panasonic", "DMC-GX85"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-LX10"
+canonical = ["Panasonic", "DMC-LX9"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-LX15"
+canonical = ["Panasonic", "DMC-LX9"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TX1"
+canonical = ["Panasonic", "DMC-ZS100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ100"
+canonical = ["Panasonic", "DMC-ZS100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ101"
+canonical = ["Panasonic", "DMC-ZS100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ110"
+canonical = ["Panasonic", "DMC-ZS100"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ60"
+canonical = ["Panasonic", "DMC-ZS40"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ61"
+canonical = ["Panasonic", "DMC-ZS40"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ70"
+canonical = ["Panasonic", "DMC-ZS50"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ71"
+canonical = ["Panasonic", "DMC-ZS50"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ80"
+canonical = ["Panasonic", "DMC-ZS60"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Panasonic"
+model = "DMC-TZ81"
+canonical = ["Panasonic", "DMC-ZS60"]
+source = "compat-observed"

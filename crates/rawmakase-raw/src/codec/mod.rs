@@ -3,3 +3,4 @@ pub(crate) mod bits;
 pub(crate) mod dct;
 pub(crate) mod huffman;
 pub(crate) mod ljpeg;
+pub(crate) mod panasonic;
