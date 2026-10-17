@@ -4,7 +4,10 @@ pub(crate) mod arw;
 pub(crate) mod cr3;
 pub(crate) mod dng;
 pub(crate) mod nef;
+pub(crate) mod orf;
 pub(crate) mod raf;
 pub(crate) mod rw2;
+#[cfg(test)]
+pub(crate) mod test_tiff;
 pub(crate) mod tiff;
 pub(crate) mod tiff_exif;

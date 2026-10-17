@@ -64,6 +64,17 @@ impl<R: Read + Seek> Tiff<R> {
     pub fn open_within(f: R, base: u64, len: u64) -> Option<Self> {
         Self::start(f, base, Some(len))
     }
+    /// Directories at offsets from `base` without a TIFF header there, in
+    /// the given byte order: a maker note's.
+    pub fn headless(f: R, base: u64, little: bool) -> Self {
+        Self {
+            f,
+            base,
+            len: None,
+            little,
+            first: 0,
+        }
+    }
     fn start(f: R, base: u64, len: Option<u64>) -> Option<Self> {
         let mut t = Self {
             f,
@@ -76,7 +87,7 @@ impl<R: Read + Seek> Tiff<R> {
         let little = match &h[..4] {
             // Olympus ORF and Panasonic RW2 use their own magic numbers.
             b"II*\0" | b"IIRO" | b"IIRS" | b"IIU\0" => true,
-            b"MM\0*" => false,
+            b"MM\0*" | b"MMOR" => false,
             _ => return None,
         };
         t.little = little;

@@ -114,8 +114,19 @@ impl<'a> TiffFile<'a> {
     /// The directory at `offset` (from the TIFF header), outside the chain:
     /// a maker note's or a private one.
     pub fn ifd_at(&self, offset: u64) -> Option<Ifd> {
-        let mut t = Tiff::open(Cursor::new(self.bytes.data), 0)?;
+        let mut t = Tiff::headless(Cursor::new(self.bytes.data), 0, self.little());
         t.ifd(offset).map(|entries| Ifd { entries })
+    }
+    /// A maker note whose offsets count from `base` in `file`, in `order`:
+    /// it has no directories of its own (`ifds` is empty); read them with
+    /// [`TiffFile::ifd_at`].
+    pub fn view(file: &'a [u8], base: u64, order: Order) -> Option<Self> {
+        Some(Self {
+            bytes: Bytes::new(file.get(usize::try_from(base).ok()?..)?, order),
+            base,
+            ifds: Vec::new(),
+            exif: None,
+        })
     }
     /// A tag's bytes, wherever they are.
     pub fn raw(&self, ifd: &Ifd, tag: u16) -> Option<Vec<u8>> {

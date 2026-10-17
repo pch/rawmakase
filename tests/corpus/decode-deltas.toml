@@ -1430,3 +1430,22 @@ before = 16383
 after = 12500
 evidence = "Adobe DNG Converter 18.7 WhiteLevel 12500"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Olympus: where the file and Adobe DNG Converter agree against LibRaw.
+# Olympus/E-P1/P1080385.ORF
+[[delta]]
+sha256 = "862b9d409279af0528810aa02eb5b4140d7854f9d637d4188b82ebaf4bf0d4cf"
+field = "sensor.white"
+before = 4093
+after = 4095
+evidence = "12-bit samples (the note's ValidBits 12); Adobe DNG Converter 18.7 WhiteLevel 4095"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# Olympus/E-P2/P9084305.ORF
+[[delta]]
+sha256 = "2666a6ed03e8678bc6ce0e5354f39a07284e6f8b200dc696d9b543dc9f82bdd5"
+field = "sensor.white"
+before = 4093
+after = 4095
+evidence = "12-bit samples (the note's ValidBits 12); Adobe DNG Converter 18.7 WhiteLevel 4095"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"

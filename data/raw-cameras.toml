@@ -3251,3 +3251,330 @@ raw_size = [5928, 3944]
 visible = [156, 92, 5759, 3839]
 source = "compat-observed"
 
+# Olympus and OM Digital Solutions
+
+[[canonical]]
+make = "OM Digital"
+model = "OM-1"
+canonical = ["Olympus", "OM-1"]
+source = "compat-observed"
+
+[[canonical]]
+make = "OM Digital"
+model = "OM-1MarkII"
+canonical = ["Olympus", "OM-1 Mark II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "OM Digital"
+model = "OM-3"
+canonical = ["Olympus", "OM-3"]
+source = "compat-observed"
+
+[[canonical]]
+make = "OM Digital"
+model = "OM-5"
+canonical = ["Olympus", "OM-5"]
+source = "compat-observed"
+
+[[canonical]]
+make = "OM Digital"
+model = "OM-5MarkII"
+canonical = ["Olympus", "OM-5MarkII"]
+source = "compat-observed"
+
+[[canonical]]
+make = "OM Digital"
+model = "TG-7"
+canonical = ["Olympus", "TG-7"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "C5050Z"
+canonical = ["Olympus", "C-5050Z"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "C5060WZ"
+canonical = ["Olympus", "C-5060WZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "C7070WZ"
+canonical = ["Olympus", "C-7070WZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "C8080WZ"
+canonical = ["Olympus", "C-8080WZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-20,E-20N,E-20P"
+canonical = ["Olympus", "E-20"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-M10MarkII"
+canonical = ["Olympus", "E-M10 Mark II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-M10MarkIV"
+canonical = ["Olympus", "E-M10 Mark IV"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-M1MarkII"
+canonical = ["Olympus", "E-M1 Mark II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-M1MarkIII"
+canonical = ["Olympus", "E-M1 Mark III"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-M5MarkII"
+canonical = ["Olympus", "E-M5 Mark II"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "E-M5MarkIII"
+canonical = ["Olympus", "E-M5 Mark III"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "SP350"
+canonical = ["Olympus", "SP-350"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "SP500UZ"
+canonical = ["Olympus", "SP-500UZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "SP510UZ"
+canonical = ["Olympus", "SP-510UZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "SP550UZ"
+canonical = ["Olympus", "SP-550UZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "SP565UZ"
+canonical = ["Olympus", "SP-565UZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "SP570UZ"
+canonical = ["Olympus", "SP-570UZ"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "STYLUS1"
+canonical = ["Olympus", "Stylus 1"]
+source = "compat-observed"
+
+[[canonical]]
+make = "Olympus"
+model = "STYLUS1,1s"
+canonical = ["Olympus", "Stylus 1"]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-300"
+dng = false
+raw_size = [3360, 2504]
+visible = [0, 0, 3340, 2504]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-330"
+dng = false
+raw_size = [3280, 2450]
+visible = [0, 0, 3250, 2450]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-500"
+dng = false
+raw_size = [3360, 2504]
+visible = [0, 0, 3340, 2504]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-M5MarkII"
+dng = false
+raw_size = [9280, 6932]
+visible = [0, 0, 9274, 6926]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "STYLUS1"
+dng = false
+raw_size = [4000, 2992]
+visible = [0, 0, 3984, 2992]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "STYLUS1,1s"
+dng = false
+raw_size = [4000, 2992]
+visible = [0, 0, 3984, 2992]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "TG-4"
+dng = false
+raw_size = [4640, 3472]
+visible = [0, 0, 4624, 3472]
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-3"
+dng = false
+raw_size = [3720, 2800]
+white = 3993
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-30"
+dng = false
+raw_size = [4100, 3084]
+white = 4028
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-410"
+dng = false
+raw_size = [3720, 2800]
+white = 3946
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-420"
+dng = false
+raw_size = [3720, 2800]
+white = 4055
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-450"
+dng = false
+raw_size = [3720, 2800]
+white = 4050
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-5"
+dng = false
+raw_size = [4100, 3084]
+white = 3820
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-510"
+dng = false
+raw_size = [3720, 2800]
+white = 3946
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-520"
+dng = false
+raw_size = [3720, 2800]
+white = 4050
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-600"
+dng = false
+raw_size = [4100, 3084]
+white = 4015
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-620"
+dng = false
+raw_size = [4100, 3084]
+white = 4015
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-M5"
+dng = false
+raw_size = [4640, 3472]
+white = 4065
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL2"
+dng = false
+raw_size = [4100, 3084]
+white = 3315
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "E-PL5"
+dng = false
+raw_size = [4640, 3472]
+white = 4043
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "SP510UZ"
+dng = false
+raw_size = [3088, 2310]
+white = 4094
+source = "compat-observed"
+
+[[camera]]
+make = "Olympus"
+model = "SP550UZ"
+dng = false
+raw_size = [3088, 2310]
+white = 4094
+source = "compat-observed"

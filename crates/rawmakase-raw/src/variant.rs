@@ -80,6 +80,12 @@ pub enum Variant {
     Cr3Lossless,
     /// Canon CR3, C-RAW: CRX planes in three wavelet levels, quantized.
     Cr3Craw,
+    /// Olympus ORF and ORI, Olympus's compressed coding.
+    OrfCompressed,
+    /// Olympus ORF, packed 12-bit samples (in words, blocks or two fields).
+    OrfPacked,
+    /// Olympus ORF, 16-bit words.
+    OrfUnpacked,
 }
 
 impl Variant {
@@ -116,6 +122,9 @@ impl Variant {
             Variant::RafCompressed => "raf-compressed",
             Variant::Cr3Lossless => "cr3-lossless",
             Variant::Cr3Craw => "cr3-craw",
+            Variant::OrfCompressed => "orf-compressed",
+            Variant::OrfPacked => "orf-packed",
+            Variant::OrfUnpacked => "orf-unpacked",
         }
     }
 }
@@ -130,6 +139,7 @@ pub(crate) enum Plan {
     Nef(crate::container::nef::NefPlan),
     Raf(crate::container::raf::RafPlan),
     Cr3(crate::container::cr3::Cr3Plan),
+    Orf(crate::container::orf::OrfPlan),
 }
 
 /// Reads the header facts of the RAW file in `bytes`.
@@ -164,6 +174,9 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         }
         if crate::container::nef::is_nef(&t) {
             return crate::container::nef::open(bytes, t);
+        }
+        if crate::container::orf::is_orf(bytes, &t) {
+            return crate::container::orf::open(t);
         }
     }
     Err(Error::NotRaw)
@@ -218,6 +231,9 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
         ) => crate::container::raf::decode(info, plan, bytes, cancel),
         (Plan::Cr3(plan), Variant::Cr3Lossless | Variant::Cr3Craw) => {
             crate::container::cr3::decode(info, plan, bytes, cancel)
+        }
+        (Plan::Orf(plan), Variant::OrfCompressed | Variant::OrfPacked | Variant::OrfUnpacked) => {
+            crate::container::orf::decode(info, plan, bytes, cancel)
         }
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(

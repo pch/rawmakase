@@ -35,9 +35,9 @@ Modules, each with a small `pub(crate)` surface:
 | Module | Owns |
 | --- | --- |
 | `io` | Bounded byte reads and the allocation limits |
-| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX |
-| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`) |
-| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`) |
+| `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, lossless JPEG, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples |
+| `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`) |
+| `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`) |
 | `variant` | The one selector: `enum Variant`, and one exhaustive `match` from variant to reader and codec |
 | `levels`, `geometry` | The one policy each for black and white levels, and for orientation and crops |
 | `color` | The camera-to-sRGB matrix and daylight multipliers from a camera's XYZ matrix |
@@ -81,6 +81,9 @@ A file of a recognised container in a variant this crate does not decode is
 | `RafCompressed` | Fujifilm RAF, compressed stripes, lossless or lossy, Bayer or X-Trans | The public description of Fujifilm's lossless compression on capnfabs.net, ExifTool's FujiFilm tag names, our own measurements |
 | `Cr3Lossless` | Canon CR3, lossless CRX: Bayer planes predicted as JPEG-LS predicts, Golomb-Rice coded | ISO/IEC 14496-12, Laurent Clévy's CR3 description, ITU T.87, ExifTool's Canon tag names, our own measurements |
 | `Cr3Craw` | Canon CR3 C-RAW: CRX planes in three quantized integer 5/3 wavelet levels (version 2 of the coding with quantization maps) | as `Cr3Lossless`, ITU T.800 Annex F, ITU-T H.265 (quantization steps) |
+| `OrfCompressed` | Olympus and OM Digital ORF/ORI, Olympus's compressed coding of 12 or 14-bit samples | TIFF 6, ExifTool's Olympus tag names, our own measurements |
+| `OrfPacked` | Olympus ORF, packed 12-bit samples: 16-byte blocks of ten, 32-bit words, or two interlaced fields of rows | TIFF 6, ExifTool's Olympus tag names, our own measurements |
+| `OrfUnpacked` | Olympus ORF, 16-bit words holding samples of the note's bit depth | TIFF 6, ExifTool's Olympus tag names, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits
@@ -226,6 +229,22 @@ with red and blue scaled down by factors the file does not give; the
 factors are observed compatibility data (`wb_scale` rows, about 0.901 and
 0.885, 0.761 and 0.857 for the back), so these files keep the white balance
 RAWmakase has always read.
+
+Olympus and OM Digital (`vendor::olympus`): white balance, presets, black,
+bit depth, crop and aspect ratio come from the maker note's ImageProcessing
+directory (RawInfo on older compacts; the main directory's red and blue
+balance first where it has them). The default crop and the aspect-ratio crop
+(centred in it, at the ratio the note names) start on even rows and columns.
+Black is on the 12-bit scale and scaled to 14-bit samples; white is the bit
+depth's range. The compressed coding was written from prior general
+knowledge of the format (no decoder source consulted), then verified and
+corrected by measurement against LibRaw's output; that 14-bit data's codes
+start a byte later is what the measurement found. Visible widths shorter
+than the stored rows are a rule by
+stored width (our measurements, every body of a sensor alike) or
+`compat-observed` rows; so are the white levels of older bodies and the
+canonical names (`E-M1MarkIII` is `E-M1 Mark III`, OM Digital's bodies are
+Olympus's). 14-bit compressed data starts a byte later than 12-bit.
 
 Canon CR3 (`container::cr3`, `codec::crx`, `vendor::canon_cr3`): the raw image
 is the first of the largest raw tracks (a Dual Pixel file's second image is as
