@@ -165,15 +165,14 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         }
         info.cam_mul[3] = info.cam_mul[1];
     }
-    // The colour matrix for D65 (illuminant 21), else the only one.
-    let illuminants = [t.int(ifd0, 50778), t.int(ifd0, 50779)];
-    let which = if illuminants[1] == Some(21) { 1 } else { 0 };
-    let matrix = t
-        .reals(ifd0, [50721, 50722][which])
-        .or_else(|| t.reals(ifd0, 50721))
-        .filter(|m| m.len() == 9)
-        .map(|m| std::array::from_fn(|r| std::array::from_fn(|c| m[r * 3 + c] as f32)));
-    info.file_matrix = matrix;
+    let matrix = |tag| {
+        t.reals(ifd0, tag)
+            .filter(|m| m.len() == 9 && m.iter().all(|v| v.is_finite()))
+    };
+    info.file_matrix = d65_matrix(
+        [matrix(50721), matrix(50722)],
+        [t.int(ifd0, 50778), t.int(ifd0, 50779)],
+    );
     super::tiff_exif::read(&t, &mut info);
     if let Some(notes) = crate::vendor::pentax::dng_notes(&t) {
         info.lens_id = notes.lens_id;
@@ -219,6 +218,69 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     });
     let _ = bytes;
     Ok(info)
+}
+
+/// The colour temperature of an Exif LightSource code a calibration names
+/// (Exif 2.3's illuminants: CIE standard illuminants A, B, C, D50–D75 and ISO
+/// studio tungsten at their correlated temperatures, the others at the
+/// middle of their ranges); `None` for unknown and other light.
+fn illuminant_temperature(code: u32) -> Option<f64> {
+    Some(match code {
+        17 => 2856.,
+        3 => 2850.,
+        16 => 2940.,
+        24 => 3200.,
+        15 => 3450.,
+        2 | 14 => 4150.,
+        18 => 4874.,
+        13 => 5000.,
+        23 => 5003.,
+        1 | 4 | 9 => 5500.,
+        20 => 5503.,
+        12 => 6430.,
+        10 => 6500.,
+        21 => 6504.,
+        19 => 6774.,
+        11 => 7500.,
+        22 => 7504.,
+        _ => return None,
+    })
+}
+
+/// The XYZ-to-camera matrix at D65 from ColorMatrix1 and 2 (rows of three)
+/// and their CalibrationIlluminants, as the DNG Specification's "Mapping
+/// Camera Color Space to CIE XYZ Space" interpolates two calibrations: by
+/// inverse colour temperature between them, the nearer one's beyond them.
+/// D65 when a calibration is D65 (most files); one matrix alone is the
+/// camera's; with an illuminant of unknown temperature, the first.
+fn d65_matrix(
+    matrices: [Option<Vec<f64>>; 2],
+    illuminants: [Option<u32>; 2],
+) -> Option<[[f32; 3]; 3]> {
+    let to_f32 = |m: &[f64]| std::array::from_fn(|r| std::array::from_fn(|c| m[r * 3 + c] as f32));
+    const D65: f64 = 6504.;
+    let [m1, m2] = matrices;
+    let (Some(m1), Some(m2)) = (&m1, &m2) else {
+        return m1.or(m2).map(|m| to_f32(&m));
+    };
+    let temps = illuminants.map(|i| i.and_then(illuminant_temperature));
+    let (Some(t1), Some(t2)) = (temps[0], temps[1]) else {
+        return Some(to_f32(m1));
+    };
+    if t1 == D65 || t1 == t2 {
+        return Some(to_f32(m1));
+    }
+    if t2 == D65 {
+        return Some(to_f32(m2));
+    }
+    // The weight of the first calibration, in inverse temperature.
+    let g = ((1. / D65 - 1. / t2) / (1. / t1 - 1. / t2)).clamp(0., 1.);
+    let m: Vec<f64> = m1
+        .iter()
+        .zip(m2)
+        .map(|(a, b)| g * a + (1. - g) * b)
+        .collect();
+    Some(to_f32(&m))
 }
 
 /// The opcodes of OpcodeList1 (`tag` 51008) or 2 (51009) applied to the
@@ -862,6 +924,29 @@ pub(crate) mod tests {
         // A list that does not parse is not applied.
         let f = dng(2, 1, &[(51008, 7, 6, list1[..6].to_vec())]);
         assert_eq!(decode(&with_samples(f, &[0, 1])).data, [0, 1]);
+    }
+
+    /// The matrix at D65: a D65 calibration's, else interpolated in inverse
+    /// temperature between A (2856 K) and D75 (7504 K), else the nearer of
+    /// two on one side of D65 (Leica's A and D50: D50's).
+    #[test]
+    fn colour_matrix_is_taken_at_d65() {
+        let ones = Some(vec![1.; 9]);
+        let zeros = Some(vec![0.; 9]);
+        let at = |ill: [u32; 2]| {
+            super::d65_matrix([ones.clone(), zeros.clone()], ill.map(Some)).unwrap()[0][0]
+        };
+        assert_eq!(at([21, 17]), 1.);
+        assert_eq!(at([17, 21]), 0.);
+        assert!((at([17, 22]) - 0.094_473_84).abs() < 1e-6);
+        assert_eq!(at([17, 23]), 0.);
+        assert_eq!(at([20, 17]), 1.);
+        // Unknown light: the first; one matrix: that one.
+        assert_eq!(at([0, 21]), 1.);
+        assert_eq!(
+            super::d65_matrix([None, zeros.clone()], [Some(17), Some(21)]).unwrap()[0][0],
+            0.
+        );
     }
 
     /// A DNG without Make and Model is named by its UniqueCameraModel.

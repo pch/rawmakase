@@ -8944,7 +8944,6 @@ after = [1.661184310913086, 1.0, 1.4586913585662842]
 evidence = "Adobe DNG Converter 18.7 AsShotNeutral 0.601956 1.0 0.685518"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
 
-
 # Colour matrices: Adobe's (data/raw-matrices.toml), not LibRaw's.
 
 [[delta]]
@@ -27963,4 +27962,672 @@ field = "header.metadata.iso"
 before = 0.0
 after = 50.0
 evidence = "The file's ISOSpeedRatings 50 (TIFF/EP, IFD0 or Exif), which Adobe DNG Converter 18.7 keeps (checked on the Pixel 2 XL, Pentax K-5 II and Samsung GX20); LibRaw read none or the maker note's"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+# DNG colour: Adobe's matrices for cameras it knows, else the file's at D65 as the DNG specification interpolates them.
+
+[[delta]]
+# Blackmagic Design/Pocket Cinema Camera 6k Pro/A010_04101355_S068.dng
+sha256 = "28b6a26662fea4723afa2fdd7148bf9fa2691c00c8cacf771469e90eaeb90736"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.646619975566864, -0.22599999606609344, -0.06261000037193298], [-0.5163999795913696, 1.296339988708496, 0.1785999983549118], [-0.11407999694347382, 0.210999995470047, 0.5781099796295166]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Blackmagic/Blackmagic Pocket Cinema Camera 4k/4k_DCI_uncompressed.dng
+sha256 = "a5c06d82b458da23965a04ab53277369e3cb01ee1dfc4130cda56f8f21dee9f7"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.6879500150680542, -0.24747000634670258, -0.048659998923540115], [-0.3925600051879883, 1.20114004611969, 0.15793000161647797], [-0.0891600027680397, 0.20062999427318573, 0.5814800262451172]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Blackmagic/Blackmagic Pocket Cinema Camera 4k/BMPCC_4k_DCI_3-1.dng
+sha256 = "1491a5e5d580a9be151747bddce89faca4d0b9d352503270f516bbf8e8cdf0d9"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.6879500150680542, -0.24747000634670258, -0.048659998923540115], [-0.3925600051879883, 1.20114004611969, 0.15793000161647797], [-0.0891600027680397, 0.20062999427318573, 0.5814800262451172]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Blackmagic/Blackmagic Pocket Cinema Camera 4k/BMPCC_4k_DCI_4-1.dng
+sha256 = "adb7beb2753978d8e2bb1a868057ce373f103957908a6d36b2c4da714e211e25"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.6879500150680542, -0.24747000634670258, -0.048659998923540115], [-0.3925600051879883, 1.20114004611969, 0.15793000161647797], [-0.0891600027680397, 0.20062999427318573, 0.5814800262451172]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Blackmagic/Blackmagic Pocket Cinema Camera 4k/BMPCC_4k_DCI_lossless.dng
+sha256 = "a90b542deab594093cdc91211c71ca9c3e451db12d400d5372fcfb6fc4cd27d3"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.6879500150680542, -0.24747000634670258, -0.048659998923540115], [-0.3925600051879883, 1.20114004611969, 0.15793000161647797], [-0.0891600027680397, 0.20062999427318573, 0.5814800262451172]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Blackmagic/Blackmagic Pocket Cinema Camera 4k/BMPCC_4k_DCI_uncompressed.dng
+sha256 = "1253e2e1fb76cf9c1ecace9849f13181f2a9abd5538ecc0290ea2b0609f79fd9"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.6879500150680542, -0.24747000634670258, -0.048659998923540115], [-0.3925600051879883, 1.20114004611969, 0.15793000161647797], [-0.0891600027680397, 0.20062999427318573, 0.5814800262451172]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon DIGITAL IXUS 95 IS/CRW_2593_01.DNG
+sha256 = "7b32cc5527be297eaab8018bafffb886731b6cf07f1762cf7328e1371edf540a"
+field = "header.metadata.daylight_wb"
+before = [1.561931848526001, 1.0, 1.8133947849273682]
+after = [1.56193208694458, 1.0, 1.8133949041366577]
+evidence = "Adobe DNG Converter 18.7 rewrites the Canon DIGITAL IXUS 95 IS's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon DIGITAL IXUS 95 IS/CRW_2593_01.DNG
+sha256 = "7b32cc5527be297eaab8018bafffb886731b6cf07f1762cf7328e1371edf540a"
+field = "header.metadata.matrix"
+before = [[1.4545791149139404, -0.45723235607147217, 0.002653261413797736], [-0.5007534623146057, 1.8542176485061646, -0.35346415638923645], [-0.11607246100902557, -0.24485044181346893, 1.360922932624817]]
+after = [[1.4545789957046509, -0.4572323262691498, 0.0026532961055636406], [-0.5007534027099609, 1.8542176485061646, -0.35346415638923645], [-0.11607246100902557, -0.24485045671463013, 1.360922932624817]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Canon DIGITAL IXUS 95 IS's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A540/CANON_A540_CHDK_CRW_0010.DNG
+sha256 = "15acc0208610b7b78d2a8ae4da09db94d71ec2bbb7e36dc5a440c9295cda2975"
+field = "header.metadata.cam_xyz"
+before = [[-0.5706999897956848, 1.0307999849319458, 0.20020000636577606], [0.2662000060081482, 0.18289999663829803, 0.4138999879360199], [-0.6265000104904175, 1.1062999963760376, 0.6032999753952026]]
+after = [[0.6871470212936401, -0.20196400582790375, -0.1250240057706833], [-0.14840300381183624, 0.5668100118637085, 0.04540099948644638], [-0.009472000412642956, 0.06318599730730057, 0.20860199630260468]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A540/CANON_A540_CHDK_CRW_0010.DNG
+sha256 = "15acc0208610b7b78d2a8ae4da09db94d71ec2bbb7e36dc5a440c9295cda2975"
+field = "header.metadata.daylight_wb"
+before = [1.5084545612335205, 1.0, 1.689177393913269]
+after = [1.50845468044281, 1.0, 1.6891776323318481]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A540/CANON_A540_CHDK_CRW_0010.DNG
+sha256 = "15acc0208610b7b78d2a8ae4da09db94d71ec2bbb7e36dc5a440c9295cda2975"
+field = "header.metadata.matrix"
+before = [[1.4076189994812012, -0.560977041721344, 0.15335804224014282], [-0.2341766506433487, 1.49625825881958, -0.26208165287971497], [-0.017316261306405067, -0.45819956064224243, 1.4755158424377441]]
+after = [[1.4076189994812012, -0.560977041721344, 0.15335804224014282], [-0.2341766506433487, 1.49625825881958, -0.26208165287971497], [-0.01731625758111477, -0.45819956064224243, 1.4755158424377441]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A550/CRW_0006.DNG
+sha256 = "881a953b9bf45c0275bacfee025e1a7236793b208dc618184ecb0bc7fbda3280"
+field = "header.metadata.cam_xyz"
+before = [[-0.5706999897956848, 1.0307999849319458, 0.20020000636577606], [0.2662000060081482, 0.18289999663829803, 0.4138999879360199], [-0.6265000104904175, 1.1062999963760376, 0.6032999753952026]]
+after = [[0.6732509732246399, -0.20068399608135223, -0.09867999702692032], [-0.16363799571990967, 0.6512470245361328, 0.07400400191545486], [0.01422099955379963, 0.0529789999127388, 0.2652910053730011]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A550/CRW_0006.DNG
+sha256 = "881a953b9bf45c0275bacfee025e1a7236793b208dc618184ecb0bc7fbda3280"
+field = "header.metadata.daylight_wb"
+before = [1.7369953393936157, 1.0, 1.6217472553253174]
+after = [1.7369955778121948, 1.0, 1.621747374534607]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A550/CRW_0006.DNG
+sha256 = "881a953b9bf45c0275bacfee025e1a7236793b208dc618184ecb0bc7fbda3280"
+field = "header.metadata.matrix"
+before = [[1.5190925598144531, -0.5513691902160645, 0.032276589423418045], [-0.25224754214286804, 1.5665374994277954, -0.31428998708724976], [-0.05803448334336281, -0.40456709265708923, 1.4626015424728394]]
+after = [[1.5190925598144531, -0.5513691902160645, 0.032276593148708344], [-0.25224754214286804, 1.5665374994277954, -0.31428998708724976], [-0.05803447589278221, -0.40456709265708923, 1.4626015424728394]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A560/IMG_2641.DNG
+sha256 = "d00bdd088479d0ef1f93145bbdb5e79139358e833e8bc423dca26e3e9865d13c"
+field = "header.metadata.cam_xyz"
+before = [[-0.5706999897956848, 1.0307999849319458, 0.20020000636577606], [0.2662000060081482, 0.18289999663829803, 0.4138999879360199], [-0.6265000104904175, 1.1062999963760376, 0.6032999753952026]]
+after = [[15265.0, -6193.0, -1558.0], [-4125.0, 12116.0, 2010.0], [-888.0, 1639.0, 5220.0]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A570 IS/CRW_1918.DNG
+sha256 = "68034ca58c285659708b32cf4e208cce599788f36a8516a3d25326589d2e90a6"
+field = "header.metadata.cam_xyz"
+before = [[-0.5706999897956848, 1.0307999849319458, 0.20020000636577606], [0.2662000060081482, 0.18289999663829803, 0.4138999879360199], [-0.6265000104904175, 1.1062999963760376, 0.6032999753952026]]
+after = [[0.5282829999923706, -0.1442590057849884, -0.08596599847078323], [-0.20278899371623993, 0.7365630269050598, 0.07300800085067749], [-0.027130000293254852, 0.10770200192928314, 0.26454299688339233]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A570 IS/CRW_1918.DNG
+sha256 = "68034ca58c285659708b32cf4e208cce599788f36a8516a3d25326589d2e90a6"
+field = "header.metadata.daylight_wb"
+before = [2.358743190765381, 1.0, 1.6848163604736328]
+after = [2.35874342918396, 1.0, 1.6848164796829224]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A570 IS/CRW_1918.DNG
+sha256 = "68034ca58c285659708b32cf4e208cce599788f36a8516a3d25326589d2e90a6"
+field = "header.metadata.matrix"
+before = [[1.5234371423721313, -0.6210619807243347, 0.09762484580278397], [-0.2437615841627121, 1.5505247116088867, -0.3067631125450134], [-0.006067139096558094, -0.5616869330406189, 1.5677540302276611]]
+after = [[1.5234371423721313, -0.6210619807243347, 0.09762483090162277], [-0.2437615990638733, 1.5505247116088867, -0.3067631125450134], [-0.006067132577300072, -0.5616869330406189, 1.5677540302276611]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A610/IMG_1574.CRW
+sha256 = "4e75887580221ebca582f80b2caf15a177fa42e5e0b47ec1ce7b7c97ebc38318"
+field = "header.metadata.cam_xyz"
+before = [[1.5591000318527222, -0.6402000188827515, -0.15919999778270721], [-0.5364999771118164, 1.3198000192642212, 0.2168000042438507], [-0.12999999523162842, 0.18240000307559967, 0.5074999928474426]]
+after = [[1.5887000560760498, -0.652400016784668, -0.16220000386238098], [-0.5467000007629395, 1.3449000120162964, 0.22089999914169312], [-0.13249999284744263, 0.1859000027179718, 0.5171999931335449]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A610/IMG_1574.CRW
+sha256 = "4e75887580221ebca582f80b2caf15a177fa42e5e0b47ec1ce7b7c97ebc38318"
+field = "header.metadata.daylight_wb"
+before = [1.565044641494751, 1.0, 1.710465669631958]
+after = [1.5650445222854614, 1.0, 1.710465669631958]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Canon/Canon PowerShot A610/IMG_1574.CRW
+sha256 = "4e75887580221ebca582f80b2caf15a177fa42e5e0b47ec1ce7b7c97ebc38318"
+field = "header.metadata.matrix"
+before = [[1.3375513553619385, -0.16093072295188904, -0.17662064731121063], [-0.12298644334077835, 1.4770299196243286, -0.35404345393180847], [0.051864203065633774, -0.4537624418735504, 1.4018982648849487]]
+after = [[1.3375513553619385, -0.16093072295188904, -0.17662064731121063], [-0.12298644334077835, 1.4770299196243286, -0.35404345393180847], [0.05186419561505318, -0.4537624418735504, 1.4018982648849487]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# FIMI/X8SE/IMG_20180808_081040_0001.DNG
+sha256 = "8f82cfc6832ee7747ec0775aa653059bd3ed63c4a7b41f9a776516c4598dad5b"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.7497000098228455, -0.1964000016450882, -0.04830000177025795], [-0.38269999623298645, 1.1576000452041626, 0.2676999866962433], [-0.10830000042915344, 0.23479999601840973, 0.6000999808311462]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# FIMI/X8SE/IMG_20180808_081040_0001.DNG
+sha256 = "8f82cfc6832ee7747ec0775aa653059bd3ed63c4a7b41f9a776516c4598dad5b"
+field = "header.metadata.daylight_wb"
+before = [2.341218948364258, 1.0, 1.3821152448654175]
+after = [2.341219186782837, 1.0, 1.382115364074707]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# FIMI/X8SE/IMG_20180808_081040_0001.DNG
+sha256 = "8f82cfc6832ee7747ec0775aa653059bd3ed63c4a7b41f9a776516c4598dad5b"
+field = "header.metadata.matrix"
+before = [[1.8446954488754272, -0.6553637981414795, -0.18933165073394775], [-0.25129297375679016, 1.8179320096969604, -0.5666390061378479], [0.03403571993112564, -0.6233039498329163, 1.5892682075500488]]
+after = [[1.8446954488754272, -0.6553637981414795, -0.18933166563510895], [-0.25129300355911255, 1.817931890487671, -0.5666389465332031], [0.03403572738170624, -0.6233039498329163, 1.5892682075500488]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 4a/PXL_20201121_100251397.dng
+sha256 = "11b38186ee3455376291bcdb3049728a3f9dcd94b9e82ff76855d9f3430e44be"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.062600016593933, -0.4465999901294708, -0.11159999668598175], [-0.4205000102519989, 1.2766000032424927, 0.15620000660419464], [-0.0738999992609024, 0.21320000290870667, 0.5473999977111816]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 4a/PXL_20201121_100251397.dng
+sha256 = "11b38186ee3455376291bcdb3049728a3f9dcd94b9e82ff76855d9f3430e44be"
+field = "header.metadata.daylight_wb"
+before = [2.2916407585144043, 1.0, 1.4510552883148193]
+after = [2.3695566654205322, 1.0, 1.4168102741241455]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 8 Pro/PXL_20240415_103400204.RAW-02.ORIGINAL.dng
+sha256 = "45420c595401547cca950ae58d552bc82b32d31ce1d58c082df33004016197f5"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.1502000093460083, -0.516700029373169, -0.08389999717473984], [-0.20280000567436218, 1.100100040435791, 0.11569999903440475], [0.042500000447034836, 0.1340000033378601, 0.5041000247001648]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Google Pixel 8 Pro's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Google/Pixel 8 Pro/PXL_20240415_103400204.RAW-02.ORIGINAL.dng
+sha256 = "45420c595401547cca950ae58d552bc82b32d31ce1d58c082df33004016197f5"
+field = "header.metadata.daylight_wb"
+before = [2.1923515796661377, 1.0, 1.440424919128418]
+after = [2.1923515796661377, 1.0, 1.444602131843567]
+evidence = "Adobe DNG Converter 18.7 rewrites the Google Pixel 8 Pro's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# LEICA CAMERA AG/LEICA SL2/L1020010.DNG
+sha256 = "d00f05468793e4509b53230e90dcdc078e823b254eee95f1c68b29e217df99bf"
+field = "header.metadata.cam_xyz"
+before = [[0.5748999714851379, -0.10719999670982361, -0.03819999843835831], [-0.42739999294281006, 1.2431999444961548, 0.20479999482631683], [-0.11659999936819077, 0.31040000915527344, 0.7105000019073486]]
+after = [[1.2311999797821045, -0.5440000295639038, -0.1307000070810318], [-0.6407999992370605, 1.5499000549316406, 0.08240000158548355], [-0.10750000178813934, 0.16769999265670776, 0.722000002861023]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Leica SL2's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica Camera AG/LEICA M10-R/M10R0324.DNG
+sha256 = "ba35d25d521c7ddbc4feca69c8cdbe071ac65dcd6cf2c93374391bf6f3662b8d"
+field = "header.metadata.cam_xyz"
+before = [[0.9089999794960022, -0.334199994802475, -0.07400000095367432], [-0.40059998631477356, 1.3456000089645386, 0.049300000071525574], [-0.05689999833703041, 0.22660000622272491, 0.6870999932289124]]
+after = [[0.5296000242233276, -0.18809999525547028, -0.04230000078678131], [-0.54830002784729, 1.3366999626159668, 0.23270000517368317], [-0.1225999966263771, 0.25940001010894775, 0.5550000071525574]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Leica M10-R's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Leica/SL (Typ 601)/20160915_Lechtaler_001.DNG
+sha256 = "aa9fd9ef937ed34467d6f91bfa2603be00cb47542b7fffd7258b79652d3b7bef"
+field = "header.metadata.cam_xyz"
+before = [[1.1864999532699585, -0.4523000121116638, -0.14409999549388885], [-0.5422999858856201, 1.4457999467849731, 0.09350000321865082], [-0.15870000422000885, 0.2687000036239624, 0.4830000102519989]]
+after = [[1.1491999626159668, -0.49300000071525574, -0.11879999935626984], [-0.5593000054359436, 1.4673000574111938, 0.08730000257492065], [-0.0608999989926815, 0.14740000665187836, 0.6342999935150146]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Leica SL (Typ 601)'s DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# MADV/QJXJ01FJ/IMG_20190326_134416.DNG
+sha256 = "4b2db2bed2807e1006fbf3b9d49784a4b789e7c9149917c477eb2760d1cb7ed8"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[3.1338560581207275, -1.6168667078018188, -0.4906145930290222], [-0.9787684082984924, 1.9161415100097656, 0.03345400094985962], [0.07194530218839645, -0.22899140417575836, 1.405242681503296]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# MADV/QJXJ01FJ/IMG_20190326_134416.DNG
+sha256 = "4b2db2bed2807e1006fbf3b9d49784a4b789e7c9149917c477eb2760d1cb7ed8"
+field = "header.metadata.daylight_wb"
+before = [1.2352708578109741, 1.0, 0.7464816570281982]
+after = [1.2352708578109741, 1.0, 0.746481716632843]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# MADV/QJXJ01FJ/IMG_20190326_134416.DNG
+sha256 = "4b2db2bed2807e1006fbf3b9d49784a4b789e7c9149917c477eb2760d1cb7ed8"
+field = "header.metadata.matrix"
+before = [[0.8806329369544983, 0.09960442781448364, 0.01976265199482441], [-0.003867056919261813, 0.9974124431610107, 0.006454611662775278], [-0.005298566538840532, -0.022668074816465378, 1.0279666185379028]]
+after = [[0.8806328773498535, 0.09960445016622543, 0.01976265385746956], [-0.003867055755108595, 0.9974124431610107, 0.006454611197113991], [-0.005298566073179245, -0.02266807295382023, 1.0279666185379028]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# OnePlus/One/IMG_20150729_201116.dng
+sha256 = "ff5385e5b1066d8c2ef452ceb98a669177be059b424b9a7ade430355c1051a1b"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.8400400280952454, -0.1959100067615509, -0.06722000241279602], [-0.37852001190185547, 1.1773500442504883, 0.20116999745368958], [-0.05178000032901764, 0.2078399956226349, 0.5102199912071228]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Parrot/Anafi/100000190019.DNG
+sha256 = "a257a296047ff2d396109fd2e6947fa36aa7986695b6815f83979d59e98a84e6"
+field = "header.metadata.cam_xyz"
+before = [[0.801800012588501, -0.2093999981880188, -0.05040000006556511], [-0.2863999903202057, 1.1026999950408936, 0.2101999968290329], [-0.003000000026077032, 0.19529999792575836, 0.5486999750137329]]
+after = [[1.311900019645691, -0.5543000102043152, -0.13099999725818634], [-0.40139999985694885, 1.2490999698638916, 0.1671999990940094], [-0.052299998700618744, 0.2037999927997589, 0.6100000143051147]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Parrot Anafi's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# RICOH/RICOH GX200/R0014336-20180515-ss620-ap4.6-fl5-iso64.DNG
+sha256 = "0f328905ee6f5b4823040a666103ced651178a13b8ccd0c4c60662f7265dd87f"
+field = "header.metadata.cam_xyz"
+before = [[0.8040000200271606, -0.23680000007152557, -0.06260000169277191], [-0.4659000039100647, 1.2542999982833862, 0.2363000065088272], [-0.11249999701976776, 0.15809999406337738, 0.5659999847412109]]
+after = [[0.8227999806404114, -0.24250000715255737, -0.065700002014637], [-0.45680001378059387, 1.250100016593933, 0.23080000281333923], [-0.11240000277757645, 0.1565999984741211, 0.5543000102043152]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# RaspberryPi/RP_imx477/pi.dng
+sha256 = "57be25b3d1dc98a84a3e79ffb2486b06d2747d22d16fc6c9baac0262331d34b8"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.5602999925613403, -0.13510000705718994, -0.05999999865889549], [-0.287200003862381, 1.1180000305175781, 0.21320000290870667], [0.05999999865889549, 0.04529999941587448, 0.582099974155426]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# RaspberryPi/RP_imx477/pi_hq_picamera.dng
+sha256 = "24e5816c0431ff2f57ef8f02741fa810dec021a411c8ecdfbfa17459d2d8dc2e"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.5602999925613403, -0.13510000705718994, -0.05999999865889549], [-0.287200003862381, 1.1180000305175781, 0.21320000290870667], [0.05999999865889549, 0.04529999941587448, 0.582099974155426]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# RaspberryPi/RP_imx477/pi_hq_raspistill.dng
+sha256 = "840c21e7bed51328225d53a6917c1c4da0b82c45355e21ef7ea605676b3fcc7c"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.5602999925613403, -0.13510000705718994, -0.05999999865889549], [-0.287200003862381, 1.1180000305175781, 0.21320000290870667], [0.05999999865889549, 0.04529999941587448, 0.582099974155426]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Ricoh/GR IIIx/R0001005.DNG
+sha256 = "1e318af31be4baa9949f0ed4af5cfe8ffb2c180e2c12926cd75ac1d029bb0fae"
+field = "header.metadata.cam_xyz"
+before = [[0.6126999855041504, -0.1776999980211258, -0.05849999934434891], [-0.5913000106811523, 1.3698999881744385, 0.24279999732971191], [-0.1088000014424324, 0.17800000309944153, 0.6017000079154968]]
+after = [[0.6471999883651733, -0.210099995136261, -0.05739999935030937], [-0.45190000534057617, 1.2343000173568726, 0.24420000612735748], [-0.027499999850988388, 0.1103999987244606, 0.5627999901771545]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Ricoh GR IIIx's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Samsung/GX20/_G205027.DNG
+sha256 = "5557016b2712b621befdb05731923562a802beafd13e0f366737390a8f7b3286"
+field = "header.metadata.cam_xyz"
+before = [[0.9427000284194946, -0.27140000462532043, -0.0868000015616417], [-0.7493000030517578, 1.6092000007629395, 0.13729999959468842], [-0.2198999971151352, 0.3264000117778778, 0.7179999947547913]]
+after = [[0.9427000284194946, -0.27140000462532043, -0.0868000015616417], [-0.7493000030517578, 1.6093000173568726, 0.13729999959468842], [-0.2198999971151352, 0.3264000117778778, 0.7179999947547913]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Samsung GX20's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Samsung/GX20/_G205027.DNG
+sha256 = "5557016b2712b621befdb05731923562a802beafd13e0f366737390a8f7b3286"
+field = "header.metadata.daylight_wb"
+before = [1.636962890625, 1.0, 1.232666015625]
+after = [4.590381145477295, 1.0, 1.1385811567306519]
+evidence = "Adobe DNG Converter 18.7 rewrites the Samsung GX20's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Samsung/SAMSUNG-SM-G930A/20180105_103031.dng
+sha256 = "d3eee0353f3621338f349ddc9773796062bb157bfaf468699da726c0073953ff"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.9926999807357788, -0.37040001153945923, -0.10239999741315842], [-0.3935000002384186, 1.2757999897003174, 0.1256999969482422], [-0.03889999911189079, 0.15119999647140503, 0.4993000030517578]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Samsung SAMSUNG-SM-G930A's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Samsung/SAMSUNG-SM-G930A/20180105_103031.dng
+sha256 = "d3eee0353f3621338f349ddc9773796062bb157bfaf468699da726c0073953ff"
+field = "header.metadata.daylight_wb"
+before = [2.4311845302581787, 1.0, 1.5021671056747437]
+after = [2.47629451751709, 1.0, 1.5755150318145752]
+evidence = "Adobe DNG Converter 18.7 rewrites the Samsung SAMSUNG-SM-G930A's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Samsung/SM-G930T/20180602_132834.dng
+sha256 = "4e0fc62bff6a2cd53b5bfd5b15a217e37ee0bb3dd8d1845402da95b109b9828c"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.9926999807357788, -0.37040001153945923, -0.10239999741315842], [-0.3935000002384186, 1.2757999897003174, 0.1256999969482422], [-0.03889999911189079, 0.15119999647140503, 0.4993000030517578]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Samsung SM-G930T's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Samsung/SM-G930T/20180602_132834.dng
+sha256 = "4e0fc62bff6a2cd53b5bfd5b15a217e37ee0bb3dd8d1845402da95b109b9828c"
+field = "header.metadata.daylight_wb"
+before = [2.4428954124450684, 1.0, 1.5709128379821777]
+after = [2.47629451751709, 1.0, 1.5755150318145752]
+evidence = "Adobe DNG Converter 18.7 rewrites the Samsung SM-G930T's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Samsung/SM-G950U/20170828_141409.dng
+sha256 = "7b0327cf015270ec98627ed1dee02ff39a47d1a6d6ff1ecfe164586e7dc7a749"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.9926999807357788, -0.37040001153945923, -0.10239999741315842], [-0.3935000002384186, 1.2757999897003174, 0.1256999969482422], [-0.03889999911189079, 0.15119999647140503, 0.4993000030517578]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Samsung SM-G950U's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Samsung/SM-G950U/20170828_141409.dng
+sha256 = "7b0327cf015270ec98627ed1dee02ff39a47d1a6d6ff1ecfe164586e7dc7a749"
+field = "header.metadata.daylight_wb"
+before = [2.356342315673828, 1.0, 1.5906051397323608]
+after = [2.3793535232543945, 1.0, 1.5160455703735352]
+evidence = "Adobe DNG Converter 18.7 rewrites the Samsung SM-G950U's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Yuneec/CGO3/YUN00038.dng
+sha256 = "ad04545fb82426dd0592dc80a9f3df7882304e9be9a71f90d3efd761b1a88dcb"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.0363919734954834, -0.35373905301094055, -0.11691546440124512], [-0.2371506243944168, 1.0950109958648682, 0.16205187141895294], [-0.041730694472789764, 0.1607082486152649, 0.4770015776157379]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Yuneec/CGO3/YUN00038.dng
+sha256 = "ad04545fb82426dd0592dc80a9f3df7882304e9be9a71f90d3efd761b1a88dcb"
+field = "header.metadata.daylight_wb"
+before = [2.0187692642211914, 1.0, 1.6407506465911865]
+after = [2.0754234790802, 1.0, 1.6333914995193481]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Yuneec/CGO3/YUN00038.dng
+sha256 = "ad04545fb82426dd0592dc80a9f3df7882304e9be9a71f90d3efd761b1a88dcb"
+field = "header.metadata.matrix"
+before = [[1.7030071020126343, -0.6241090297698975, -0.07889804989099503], [-0.2980708181858063, 1.6717498302459717, -0.3736790418624878], [0.01407615840435028, -0.5647571086883545, 1.5506808757781982]]
+after = [[1.5262643098831177, -0.41953256726264954, -0.10673178732395172], [-0.29783937335014343, 1.685339331626892, -0.38749995827674866], [0.014757598750293255, -0.5540021657943726, 1.539244532585144]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Yuneec/CGO3P/YUN00007.dng
+sha256 = "9ad52c1cd091eda9a132b8febc0c9a35b7ee6fdb2f45a44694878f0cfb5de299"
+field = "header.metadata.cam_xyz"
+before = [[1.0363918542861938, -0.3537389934062958, -0.11691545695066452], [-0.237150639295578, 1.0950111150741577, 0.16205187141895294], [-0.04173070192337036, 0.1607082486152649, 0.4770015478134155]]
+after = [[1.0363919734954834, -0.35373905301094055, -0.11691546440124512], [-0.23715060949325562, 1.0950109958648682, 0.16205187141895294], [-0.041730694472789764, 0.1607082486152649, 0.4770015776157379]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Yuneec/CGO3P/YUN00007.dng
+sha256 = "9ad52c1cd091eda9a132b8febc0c9a35b7ee6fdb2f45a44694878f0cfb5de299"
+field = "header.metadata.daylight_wb"
+before = [2.0187692642211914, 1.0, 1.6407506465911865]
+after = [2.0754234790802, 1.0, 1.6333914995193481]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# Yuneec/CGO3P/YUN00007.dng
+sha256 = "9ad52c1cd091eda9a132b8febc0c9a35b7ee6fdb2f45a44694878f0cfb5de299"
+field = "header.metadata.matrix"
+before = [[1.7030071020126343, -0.6241090297698975, -0.07889804989099503], [-0.2980708181858063, 1.6717498302459717, -0.3736790418624878], [0.01407615840435028, -0.5647571086883545, 1.5506808757781982]]
+after = [[1.5262643098831177, -0.41953256726264954, -0.10673178732395172], [-0.29783937335014343, 1.685339331626892, -0.38749995827674866], [0.014757602475583553, -0.5540021657943726, 1.539244532585144]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# - credit_signatureedits.com - DSC.3003.dng
+sha256 = "47a4b56a36a8799ba45dc9f5e967f52f4a34931ac2c18429843d372d1ebe5a6a"
+field = "header.metadata.cam_xyz"
+before = [[0.5748999714851379, -0.10719999670982361, -0.03819999843835831], [-0.42739999294281006, 1.2431999444961548, 0.20479999482631683], [-0.11659999936819077, 0.31040000915527344, 0.7105000019073486]]
+after = [[0.9824000000953674, -0.38530001044273376, -0.07540000230073929], [-0.38350000977516174, 1.1728999614715576, 0.2387000024318695], [-0.04830000177025795, 0.14030000567436218, 0.5684000253677368]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Leica SL2-S's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# 1 signatureedits89u3.dng
+sha256 = "d902c99e38955560858b3c6a9f835a034a8b5e8981330454a18a082a699248b0"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.073099970817566, -0.44110000133514404, -0.1096000000834465], [-0.42170000076293945, 1.2890000343322754, 0.14259999990463257], [-0.058400001376867294, 0.1712000072002411, 0.49900001287460327]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back telephoto camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# 1 signatureedits9823u.dng
+sha256 = "c7684fe33a13602b26f0bf8ae2a9fe4a3a5eb1bbd59a79a5642c63b41888732a"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[0.857200026512146, -0.30469998717308044, -0.09189999848604202], [-0.46880000829696655, 1.3393000364303589, 0.13680000603199005], [-0.05689999833703041, 0.16200000047683716, 0.517300009727478]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone10,3 back telephoto camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# APC_0031.DNG
+sha256 = "35aa4ca2f978f733aa784d68352453af7e61ee1b98b84a1a041c75294cdca962"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.073099970817566, -0.44110000133514404, -0.1096000000834465], [-0.42170000076293945, 1.2890000343322754, 0.14259999990463257], [-0.058400001376867294, 0.1712000072002411, 0.49900001287460327]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back telephoto camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# APC_0083.DNG
+sha256 = "14f87f9539c34f1e54e02248d8aed84404d2908f3bcf22ef16edbe4710cc95e1"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.073099970817566, -0.44110000133514404, -0.1096000000834465], [-0.42170000076293945, 1.2890000343322754, 0.14259999990463257], [-0.058400001376867294, 0.1712000072002411, 0.49900001287460327]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back telephoto camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# APC_0140.DNG
+sha256 = "5f03f39456cf5c5e31f1194246e0eca8e083638c394f5c19868e112655ce3bf3"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.073099970817566, -0.44110000133514404, -0.1096000000834465], [-0.42170000076293945, 1.2890000343322754, 0.14259999990463257], [-0.058400001376867294, 0.1712000072002411, 0.49900001287460327]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back telephoto camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# APC_0144-2.DNG
+sha256 = "53a31861ada23c63234d51b4a6552f347cb18114b1300738530ae3c8c27100f6"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.073099970817566, -0.44110000133514404, -0.1096000000834465], [-0.42170000076293945, 1.2890000343322754, 0.14259999990463257], [-0.058400001376867294, 0.1712000072002411, 0.49900001287460327]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back telephoto camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# APC_0183.DNG
+sha256 = "24b352f71321a58ce74d61b02004c5b03d9769c730f309faffc8b7096fb4c7df"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.073099970817566, -0.44110000133514404, -0.1096000000834465], [-0.42170000076293945, 1.2890000343322754, 0.14259999990463257], [-0.058400001376867294, 0.1712000072002411, 0.49900001287460327]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back telephoto camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# APC_0225-2.DNG
+sha256 = "fa3756f402f299f54975c073b10ab7c56a2715844ca3b807da81b695769931d2"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.073099970817566, -0.44110000133514404, -0.1096000000834465], [-0.42170000076293945, 1.2890000343322754, 0.14259999990463257], [-0.058400001376867294, 0.1712000072002411, 0.49900001287460327]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back telephoto camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# APC_0239.DNG
+sha256 = "88771d3a95f080d62eadd2b3f3c0ec99a1644d608b96ed2f8e3dbae0fc25c815"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.0456000566482544, -0.46000000834465027, -0.10419999808073044], [-0.45500001311302185, 1.3207000494003296, 0.14319999516010284], [-0.0706000030040741, 0.16680000722408295, 0.46970000863075256]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# APC_0245-2.DNG
+sha256 = "a877e28229d29eb4b8c1c634eaa7bd9a6ee885067bf24bd95d8c02e01e69607b"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.0456000566482544, -0.46000000834465027, -0.10419999808073044], [-0.45500001311302185, 1.3207000494003296, 0.14319999516010284], [-0.0706000030040741, 0.16680000722408295, 0.46970000863075256]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# APC_0302.DNG
+sha256 = "09a609f0074f2f3d22451855183d8a3bc2f117d349541bddb382079c746cb1e3"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.0456000566482544, -0.46000000834465027, -0.10419999808073044], [-0.45500001311302185, 1.3207000494003296, 0.14319999516010284], [-0.0706000030040741, 0.16680000722408295, 0.46970000863075256]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# APC_0347.DNG
+sha256 = "7507eb6b0937f1c8f040b5b20fc71b9c92e3aea2e8b6e5ba1541be756a68e515"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.0456000566482544, -0.46000000834465027, -0.10419999808073044], [-0.45500001311302185, 1.3207000494003296, 0.14319999516010284], [-0.0706000030040741, 0.16680000722408295, 0.46970000863075256]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# credit @signatureeditsco - signatureedits.com - 01020304.dng
+sha256 = "96e82feb5d790e4ae3706e8fed75c5bc73d1a7b514d640a739a2715587fc7a32"
+field = "header.metadata.daylight_wb"
+before = [2.4769980907440186, 1.0, 1.3186229467391968]
+after = [2.4713010787963867, 1.0, 1.2855255603790283]
+evidence = "Adobe DNG Converter 18.7 rewrites the Canon EOS-1Ds Mark III's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# free raw files - credit signatureedits.com - CF000981.dng
+sha256 = "bc5e8af06334e715ba9524069fac4c09e1292da99f75d6b2dccbb7f7c87f296b"
+field = "header.metadata.cam_xyz"
+before = [[1.0325000286102295, 0.08449999988079071, -0.06040000170469284], [-0.41130000352859497, 1.3385000228881836, 0.04809999838471413], [-0.17910000681877136, 0.4162999987602234, 0.6923999786376953]]
+after = [[0.3984000086784363, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.7666000127792358]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# free raw files - credit signatureedits.com - Capture00674.dng
+sha256 = "78ee2c9a12cc77332cf791aa98f25981f4bac290315b3552699c7f07a3e82dac"
+field = "header.metadata.cam_xyz"
+before = [[1.0325000286102295, 0.08449999988079071, -0.06040000170469284], [-0.41130000352859497, 1.3385000228881836, 0.04809999838471413], [-0.17910000681877136, 0.4162999987602234, 0.6923999786376953]]
+after = [[0.3984000086784363, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.7666000127792358]]
+evidence = "The file's ColorMatrix at D65 (DNG Specification, Mapping Camera Color Space to CIE XYZ Space: the D65 calibration, else interpolated in inverse temperature between the two, else the nearer), which Adobe DNG Converter 18.7 keeps; the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# signature edits APC_00171.dng
+sha256 = "233f64f11514e7fca0420d459c12fe54976eaf2be858deea4c9275d41d8b8b5a"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.073099970817566, -0.44110000133514404, -0.1096000000834465], [-0.42170000076293945, 1.2890000343322754, 0.14259999990463257], [-0.058400001376867294, 0.1712000072002411, 0.49900001287460327]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back telephoto camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# signatureedits3jnfiufn.dng
+sha256 = "1fc414dcd42ef44d298db14c580c633a606c7e3e0cb4a80bc46c2ba776d15960"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.073099970817566, -0.44110000133514404, -0.1096000000834465], [-0.42170000076293945, 1.2890000343322754, 0.14259999990463257], [-0.058400001376867294, 0.1712000072002411, 0.49900001287460327]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back telephoto camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
+approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"
+
+[[delta]]
+# signatureedits8u42.dng
+sha256 = "d3b503a1530bfea401eb3a0f175e61da4e9a925d378eac712829e3f45fd1be52"
+field = "header.metadata.cam_xyz"
+before = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+after = [[1.0456000566482544, -0.46000000834465027, -0.10419999808073044], [-0.45500001311302185, 1.3207000494003296, 0.14319999516010284], [-0.0706000030040741, 0.16680000722408295, 0.46970000863075256]]
+evidence = "Adobe DNG Converter 18.7 rewrites the Apple iPhone11,6 back camera's DNGs with its own colour matrices; cam_xyz is its D65 ColorMatrix (data/raw-matrices.toml, adobe-dng), the daylight balance and matrix derived from it"
 approval = "Piotr 2026-10-17: Adobe parity with RAWs (Adobe value as evidence)"

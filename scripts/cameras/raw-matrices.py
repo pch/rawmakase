@@ -35,8 +35,12 @@ recorded for the same files (tests/corpus/dataset/pixls-decode.json and the
 local baselines). A sample comes from
 
   "Adobe DNG Converter" -c -u -p0 -d OUT FILE
-  exiftool -n -j -UniqueCameraModel -CalibrationIlluminant1 \\
-      -CalibrationIlluminant2 -ColorMatrix1 -ColorMatrix2 OUT/*.dng
+  exiftool -n -j -IFD0:UniqueCameraModel -IFD0:CalibrationIlluminant1 \\
+      -IFD0:CalibrationIlluminant2 -IFD0:ColorMatrix1 -IFD0:ColorMatrix2 OUT/*.dng
+
+(IFD0's: converting a camera's DNG, the converter writes Adobe's matrices
+there and keeps the file's own as an extra profile named "Embedded", whose
+tags exiftool reports without the group.)
 
 and the table from
 
@@ -162,11 +166,15 @@ def main():
         # A DNG the camera wrote: the converter's matrix where it is the one
         # every file carries, or Adobe's own in place of the file's.
         dngs = [(adobe_matrix(t), path) for native, t, path in found if not native]
-        for matrix, path in [d for d in dngs if d[0]][:1] if row is None else []:
+        # Any sample of a DNG the camera wrote may show it (an earlier one may
+        # have been read from the converter's "Embedded" profile, the file's own).
+        for matrix, path in [d for d in dngs if d[0]] if row is None else []:
             if all(xyz == matrix for _, xyz in recorded[camera]):
                 row = (matrix, 'adobe-dng')
             elif args.dataset and not rescaled(matrix, own_matrix(args.dataset, path)):
                 row = (matrix, 'adobe-dng')
+            if row:
+                break
         if row is None and native_files:
             names = [t.get('UniqueCameraModel') for _, t, _ in found] + [f'{make} {model}']
             profile = [dcp[n] for n in names if dcp.get(n)]

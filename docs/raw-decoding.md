@@ -119,6 +119,14 @@ column's and row's deltas) is subtracted, the result scaled by 1 / (white −
 the largest black) and clipped to 0–65535, with black 0 and white 65535.
 LibRaw truncated fractional blacks and ignored the deltas.
 
+DNG colour: a camera Adobe knows has Adobe's matrix (`data/raw-matrices.toml`;
+Adobe DNG Converter rewrites such DNGs with its own matrices, so its D65
+ColorMatrix for a DNG the camera wrote is the row). Otherwise the file's
+ColorMatrix at D65, as the DNG Specification interpolates two calibrations:
+the D65 one, else by inverse colour temperature between the two (Yuneec's A
+and D75), else the nearer (D50 of A and D50). LibRaw interpolates the same way
+(its Yuneec CGO3+ matrix is ours to 1e-7).
+
 DNG names: a DNG without Make and Model (Blackmagic's, Parrot's) is named by
 its UniqueCameraModel, the first word the maker. Ricoh Imaging's Pentax
 bodies are Pentax's (`names`). Canonical makes are empty for makers outside
