@@ -76,6 +76,8 @@ A file of a recognised container in a variant this crate does not decode is
 | `RafUnpacked` | Fujifilm RAF, 16-bit words row by row (the raw image directory's, or the older bodies' samples after the header) | ExifTool's FujiFilm tag names, TIFF 6, our own measurements |
 | `RafSuperCcdSr` | Fujifilm RAF of a Super CCD SR (FinePix F700): each row's S pixels, then its R pixels; the S pixels are read | ExifTool's FujiFilm tag names, our own measurements |
 | `RafTiled` | Fujifilm RAF of the GX680 digital back: big-endian 16-bit words in vertical tiles | ExifTool's FujiFilm tag names, our own measurements |
+| `RafPacked` | Fujifilm RAF, 12-bit samples packed least significant bit first | ExifTool's FujiFilm tag names, TIFF 6, our own measurements |
+| `RafPackedWords` | Fujifilm RAF, 12 or 14-bit samples packed most significant bit first in little-endian 32-bit words (raw image directory tag 0xF006 = 1) | ExifTool's FujiFilm tag names, TIFF 6, our own measurements |
 
 Notes from our own measurements: some action cameras' DNGs write 16 bits after
 a lossless JPEG difference of length 16, which T.81 codes with none; those bits

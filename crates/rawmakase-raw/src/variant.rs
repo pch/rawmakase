@@ -69,6 +69,11 @@ pub enum Variant {
     RafSuperCcdSr,
     /// Fujifilm RAF of a digital back: 16-bit words in vertical tiles.
     RafTiled,
+    /// Fujifilm RAF, 12-bit samples packed least significant bit first.
+    RafPacked,
+    /// Fujifilm RAF, samples packed most significant bit first in 32-bit
+    /// words.
+    RafPackedWords,
 }
 
 impl Variant {
@@ -100,6 +105,8 @@ impl Variant {
             Variant::RafUnpacked => "raf-unpacked",
             Variant::RafSuperCcdSr => "raf-super-ccd-sr",
             Variant::RafTiled => "raf-tiled",
+            Variant::RafPacked => "raf-packed",
+            Variant::RafPackedWords => "raf-packed-words",
         }
     }
 }
@@ -187,9 +194,14 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Resul
             | Variant::NefPacked14
             | Variant::NefSmallRaw,
         ) => crate::container::nef::decode(info, plan, bytes, cancel),
-        (Plan::Raf(plan), Variant::RafUnpacked | Variant::RafSuperCcdSr | Variant::RafTiled) => {
-            crate::container::raf::decode(info, plan, bytes, cancel)
-        }
+        (
+            Plan::Raf(plan),
+            Variant::RafUnpacked
+            | Variant::RafSuperCcdSr
+            | Variant::RafTiled
+            | Variant::RafPacked
+            | Variant::RafPackedWords,
+        ) => crate::container::raf::decode(info, plan, bytes, cancel),
         (Plan::None, _) => Err(Error::Unsupported("no sensor data".into())),
         (_, variant) => Err(Error::Unsupported(format!(
             "{} with another container's plan",

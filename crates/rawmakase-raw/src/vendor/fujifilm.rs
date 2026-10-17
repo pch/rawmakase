@@ -42,6 +42,7 @@ pub(crate) const RAF_DATA: u16 = 0xc000;
 pub(crate) const RAW_WIDTH: u16 = 0xf001;
 pub(crate) const RAW_HEIGHT: u16 = 0xf002;
 pub(crate) const RAW_BITS: u16 = 0xf003;
+pub(crate) const RAW_STRIDE: u16 = 0xf005;
 pub(crate) const RAW_PACKING: u16 = 0xf006;
 pub(crate) const RAW_OFFSET: u16 = 0xf007;
 pub(crate) const RAW_LENGTH: u16 = 0xf008;

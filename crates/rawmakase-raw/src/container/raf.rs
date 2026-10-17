@@ -28,6 +28,12 @@ pub(crate) enum Coding {
     /// 16-bit big-endian words in vertical tiles `tile` columns wide, each
     /// stored whole, left to right.
     Tiles { tile: u32 },
+    /// Samples of `bits` packed least significant bit first, rows `stride`
+    /// bytes apart.
+    Packed { bits: u32, stride: u32 },
+    /// Samples of `bits` packed most significant bit first in little-endian
+    /// 32-bit words, rows `stride` bytes apart.
+    PackedWords { bits: u32, stride: u32 },
 }
 
 /// Where a RAF's sensor data is and how it is coded, and its levels.
@@ -266,19 +272,37 @@ fn tiff_plan(
     let offset = raw_at + u64::from(int(fuji::RAW_OFFSET).ok_or_else(|| corrupt("RAF data"))?);
     let length = u64::from(int(fuji::RAW_LENGTH).ok_or_else(|| corrupt("RAF data"))?);
     let pixels = u64::from(width) * u64::from(height);
+    let row_bytes = |bits: u32| {
+        let packed = (u64::from(width) * u64::from(bits)).div_ceil(8);
+        let stride = u64::from(int(fuji::RAW_STRIDE).unwrap_or(0)) * 4;
+        u32::try_from(stride.max(packed)).map_err(|_| Error::TooLarge("RAF row"))
+    };
     if matches!(header.u32(108), Ok(2 | 3)) {
         return Err(Error::Unsupported("Fujifilm compressed RAF".into()));
     }
-    if int(fuji::RAW_PACKING) == Some(1) || length < pixels * 2 {
+    let (variant, coding) = if int(fuji::RAW_PACKING) == Some(1) {
+        let stride = row_bytes(bits)?;
+        (
+            Variant::RafPackedWords,
+            Coding::PackedWords { bits, stride },
+        )
+    } else if length >= pixels * 2 {
+        (
+            Variant::RafUnpacked,
+            Coding::Words {
+                big: false,
+                stride: width,
+            },
+        )
+    } else if bits == 12 {
+        let stride = row_bytes(bits)?;
+        (Variant::RafPacked, Coding::Packed { bits, stride })
+    } else {
         return Err(Error::Unsupported(format!(
             "RAF of {bits}-bit samples in {length} bytes"
         )));
-    }
-    info.variant = Variant::RafUnpacked;
-    let coding = Coding::Words {
-        big: false,
-        stride: width,
     };
+    info.variant = variant;
     let phase = int(fuji::RAW_CFA_PHASE).filter(|&p| p < 4).unwrap_or(0);
     let cfa = fuji::cfa(records, phase);
     // Black per filter position, from the stored data's corner.
@@ -439,6 +463,45 @@ pub(crate) fn decode(
                 }
             }
         }
+        Coding::Packed { bits, stride } | Coding::PackedWords { bits, stride } => {
+            let words = matches!(plan.coding, Coding::PackedWords { .. });
+            let stride = stride as usize;
+            let row_bytes = (w * bits as usize).div_ceil(8);
+            // The word-swapped row, for the 32-bit word packing only.
+            let mut line = Vec::new();
+            if words {
+                line.try_reserve_exact(row_bytes.next_multiple_of(4))
+                    .map_err(|_| Error::TooLarge("RAF row"))?;
+            }
+            for (y, row) in data.chunks_exact_mut(w).enumerate() {
+                if y % 64 == 0 && cancelled() {
+                    return Err(Error::Cancelled);
+                }
+                let at = y * stride;
+                let packed = src
+                    .get(at..at + row_bytes)
+                    .ok_or_else(|| corrupt("RAF data ends early"))?;
+                if words {
+                    // Each 32-bit word's bytes, most significant first.
+                    line.clear();
+                    let whole = src.get(at..at + packed.len().next_multiple_of(4));
+                    let whole = whole.ok_or_else(|| corrupt("RAF data ends early"))?;
+                    line.extend(
+                        whole
+                            .as_chunks::<4>()
+                            .0
+                            .iter()
+                            .flat_map(|c| [c[3], c[2], c[1], c[0]]),
+                    );
+                    let mut pump = crate::codec::bits::Msb::new(&line);
+                    for v in row.iter_mut() {
+                        *v = pump.get(bits) as u16;
+                    }
+                } else {
+                    unpack_lsb(packed, bits, row);
+                }
+            }
+        }
     }
     let [left, top] = info.margins;
     // The black pattern from the visible area's corner.
@@ -476,6 +539,28 @@ fn needed(coding: Coding, width: u32, height: u32) -> u64 {
     match coding {
         Coding::Words { stride, .. } => rows(2 * u64::from(stride), 2 * w),
         Coding::Tiles { .. } => 2 * w * h,
+        Coding::Packed { bits, stride } => {
+            rows(u64::from(stride), (w * u64::from(bits)).div_ceil(8))
+        }
+        Coding::PackedWords { bits, stride } => {
+            rows(u64::from(stride), (w * u64::from(bits)).div_ceil(32) * 4)
+        }
+    }
+}
+
+/// Samples of `bits` packed least significant bit first.
+fn unpack_lsb(src: &[u8], bits: u32, out: &mut [u16]) {
+    let mask = (1u32 << bits) - 1;
+    let (mut acc, mut have, mut at) = (0u32, 0u32, 0usize);
+    for v in out.iter_mut() {
+        while have < bits {
+            acc |= u32::from(src.get(at).copied().unwrap_or(0)) << have;
+            at += 1;
+            have += 8;
+        }
+        *v = (acc & mask) as u16;
+        acc >>= bits;
+        have -= bits;
     }
 }
 
@@ -718,6 +803,48 @@ mod tests {
             crate::decode(&info, &file, &cancelled).unwrap_err(),
             crate::Error::Cancelled
         );
+    }
+
+    #[test]
+    fn reads_packed_samples() {
+        // 12-bit samples least significant bit first.
+        let packed = [0x23, 0x61, 0x45, 0x89, 0xc7, 0xab];
+        let file = raf(
+            "X-A9",
+            &records(false),
+            &block(&entries(4, 1, 12), &packed),
+            0,
+        );
+        let (info, s) = decode(&file);
+        assert_eq!(info.variant, crate::Variant::RafPacked);
+        assert_eq!(s.data, [0x123, 0x456, 0x789, 0xabc]);
+        // 14-bit samples most significant first in little-endian words.
+        let mut e = entries(2, 1, 14);
+        e.push((0xf006, vec![1]));
+        let word: u32 = (0x1234 << 18) | (0x2abc << 4);
+        let file = raf("X-A9", &records(false), &block(&e, &word.to_le_bytes()), 0);
+        let (info, s) = decode(&file);
+        assert_eq!(info.variant, crate::Variant::RafPackedWords);
+        assert_eq!(s.data, [0x1234, 0x2abc]);
+        // A row stride of 4 GB on a one-row image: no scratch row of it.
+        let mut e = entries(2, 1, 14);
+        e.push((0xf006, vec![1]));
+        e.push((0xf005, vec![0x3fff_ffff]));
+        let file = raf("X-A9", &records(false), &block(&e, &word.to_le_bytes()), 0);
+        let (_, s) = decode(&file);
+        assert_eq!(s.data, [0x1234, 0x2abc]);
+        // 40000 × 40000 packed samples in 8 bytes: refused before allocating.
+        let cancel = AtomicBool::new(false);
+        for packing in [0, 1] {
+            let mut e = entries(40000, 40000, 12);
+            e.push((0xf006, vec![packing]));
+            let file = raf("X-A9", &records(false), &block(&e, &[0; 8]), 0);
+            let info = crate::open(&file).unwrap();
+            assert!(matches!(
+                crate::decode(&info, &file, &cancel),
+                Err(crate::Error::Corrupt(_))
+            ));
+        }
     }
 
     #[test]
