@@ -150,6 +150,9 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         });
     }
     super::tiff_exif::read(&t, &mut info);
+    if let Some(focal) = tags::focal_35mm(&t, ifd0) {
+        info.focal_35mm = focal;
+    }
     // Words hold 12-bit samples whatever the bit depth tag says.
     let sample_bits = if coding == Coding::Words { 12 } else { bits };
     let (mut black, mut white, linear_white) = tags::levels(&t, ifd0, format, sample_bits);
@@ -578,6 +581,58 @@ pub(crate) mod tests {
         let want: [u16; 10] = std::array::from_fn(|i| 0x100 + i as u16);
         assert_eq!(s.data, want);
         assert_eq!(s.black, [100, 101, 102, 101]);
+    }
+
+    /// A little-endian TIFF whose IFD0 holds SHORT `entries` (and, for a tag
+    /// 0x8769, a second directory with `exif` at the offset that follows).
+    fn tiff(entries: &[(u16, u16)], exif: &[(u16, u16)]) -> Vec<u8> {
+        let ifd = |entries: &[(u16, u16)], kind: u16| {
+            let mut b = (entries.len() as u16).to_le_bytes().to_vec();
+            for &(tag, v) in entries {
+                b.extend(tag.to_le_bytes());
+                b.extend(kind.to_le_bytes());
+                b.extend(1u32.to_le_bytes());
+                b.extend(u32::from(v).to_le_bytes());
+            }
+            b.extend(0u32.to_le_bytes());
+            b
+        };
+        let mut out = b"II*\0".to_vec();
+        out.extend(8u32.to_le_bytes());
+        if exif.is_empty() {
+            out.extend(ifd(entries, 3));
+        } else {
+            // IFD0: one LONG entry, the EXIF directory right after it.
+            out.extend(ifd(&[(0x8769, 8 + 18)], 4));
+            out.extend(ifd(exif, 3));
+        }
+        out
+    }
+
+    #[test]
+    fn reads_the_35mm_focal_length_from_the_camera_directory() {
+        let jpeg_exif = tiff(&[], &[(41989, 30)]);
+        let mut jpeg = vec![0xff, 0xd8, 0xff, 0xe1];
+        jpeg.extend(((jpeg_exif.len() + 8) as u16).to_be_bytes());
+        jpeg.extend(b"Exif\0\0");
+        jpeg.extend(&jpeg_exif);
+        jpeg.extend([0xff, 0xd9]);
+        let mut entries = header(4, 12, [28, 2]);
+        entries.push((0x2e, 7, jpeg));
+        // The embedded JPEG's EXIF value (cropped to the aspect ratio) is
+        // not used.
+        let file = rw2(&entries, &[0; 0x4000]);
+        assert_eq!(crate::open(&file).unwrap().focal_35mm, 0.);
+        // The camera directory (tag 0x120) wins: tag 0x1203.
+        entries.push((0x120, 7, tiff(&[(0x1203, 25)], &[])));
+        let file = rw2(&entries, &[0; 0x4000]);
+        assert_eq!(crate::open(&file).unwrap().focal_35mm, 25.);
+        // Damaged directories and JPEGs are errors or ignored, not panics.
+        for at in 4..file.len() - 0x4000 {
+            let mut bad = file.clone();
+            bad[at] ^= 0xff;
+            let _ = crate::open(&bad);
+        }
     }
 
     #[test]

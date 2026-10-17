@@ -6,7 +6,7 @@
 //! balance presets, 0x17 and 0x37 ISO, 0x1C–0x1E black levels, 0x24–0x26
 //! white balance levels, 0x2D the raw format, 0x2E the embedded JPEG,
 //! 0x2F–0x32 the camera's crop, 0x40–0x48 raw format 8's codes and strips,
-//! 0x118 the raw data offset.
+//! 0x118 the raw data offset, 0x120 the camera directory (CameraIFD).
 //!
 //! Where the tags leave a choice (which crop, which levels), the rules below
 //! are our own measurements of how RAWmakase has always read these files,
@@ -160,6 +160,19 @@ pub(crate) fn presets(t: &TiffFile, ifd: &Ifd) -> Presets {
     }
     presets
 }
+
+/// The 35 mm equivalent focal length: tag 0x1203 of the camera directory
+/// (tag 0x120, a TIFF of its own; ExifTool's CameraIFD) when the file has
+/// it; else the RW2's own EXIF FocalLengthIn35mmFormat, read with the other
+/// EXIF facts. The embedded JPEG's EXIF value follows the in-camera aspect
+/// ratio crop and is not used.
+pub(crate) fn focal_35mm(t: &TiffFile, ifd: &Ifd) -> Option<f32> {
+    let at = ifd.entries.get(&CAMERA_IFD).and_then(|e| t.offset_of(e))?;
+    let camera = TiffFile::parse(t.bytes.data, at)?;
+    camera.int(&camera.ifds[0], 0x1203).map(|v| v as f32)
+}
+
+const CAMERA_IFD: u16 = 0x120;
 
 /// ISO: tag 0x17, or the 32-bit tag 0x37 of files whose ISO does not fit.
 pub(crate) fn iso(t: &TiffFile, ifd: &Ifd) -> Option<f32> {
