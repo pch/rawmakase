@@ -7,7 +7,7 @@ use anyhow::{Result, ensure};
 use rawmakase_raw::RawInfo;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A developed image: width, height and pixels.
 pub(super) type Developed = (u32, u32, Vec<[f32; 3]>);
@@ -103,12 +103,6 @@ impl Own {
         let Some(cfa) = self.info.cfa.clone() else {
             return Ok(None);
         };
-        // A Super CCD's stored rows are its image turned by 45°: not a
-        // mosaic of the image's rows and columns.
-        anyhow::ensure!(
-            self.info.rotated.is_none(),
-            "RAWmakase's decoders do not develop Super CCD files yet"
-        );
         let s = self.decode(cancel)?;
         if s.channels != 1 || s.white <= s.black.iter().copied().min().unwrap_or(0) {
             return Ok(None);
@@ -136,6 +130,9 @@ impl Own {
                 *dst = ((f32::from(v) - black) / (white - black).max(1.)).max(0.);
             }
         }
+        if let Some(turn) = self.info.super_ccd {
+            return turned(turn, &cfa, &data, [w, h], cancel).map(Some);
+        }
         let n = crate::demosaic::PATTERN;
         let mut tile = [0u8; crate::demosaic::PATTERN * crate::demosaic::PATTERN];
         for r in 0..n {
@@ -151,6 +148,79 @@ impl Own {
             data,
         }))
     }
+}
+
+/// A Super CCD's stored mosaic `data` (`size` = stored width and height,
+/// filter `cfa`) turned by 45° into the mosaic it develops as: each stored
+/// pixel where `turn` places it, 0 outside the turned area. The turned
+/// pixels form a Bayer mosaic (checked: one colour per position of its 2 × 2
+/// period).
+fn turned(
+    turn: rawmakase_raw::SuperCcd,
+    cfa: &rawmakase_raw::Cfa,
+    data: &[f32],
+    [w, h]: [usize; 2],
+    cancel: &AtomicBool,
+) -> Result<Cfa> {
+    ensure!(!cancel.load(Ordering::Relaxed), "Development cancelled");
+    // Super CCD sensors are near square: the longer stored side at most
+    // four times the shorter (the dataset's widest is three), so the turned
+    // image is at most 2.25 times the stored area. Anything else is not a
+    // Super CCD, and would make the turned and demosaiced buffers huge.
+    let [sw, sh] = turn.stored.map(|v| v as usize);
+    ensure!(
+        [sw, sh] == [w, h] && sw.min(sh) > 0 && sw.max(sh) <= 4 * sw.min(sh),
+        "Super CCD data of an impossible shape ({sw} × {sh})"
+    );
+    let [tw, th] = turn.size().map(|v| v as usize);
+    ensure!(
+        (tw as u64) * (th as u64) <= 9 * (w as u64) * (h as u64) / 4,
+        "Super CCD image larger than its data"
+    );
+    let mut out = Vec::new();
+    out.try_reserve_exact(tw * th)
+        .map_err(|_| anyhow::anyhow!("Super CCD image too large to develop"))?;
+    out.resize(tw * th, 0f32);
+    // The colour at each of the turned mosaic's 2 × 2 period's positions.
+    let mut period = [None; 4];
+    for y in 0..h {
+        if y % 256 == 0 {
+            ensure!(!cancel.load(Ordering::Relaxed), "Development cancelled");
+        }
+        for x in 0..w {
+            if let Some([tx, ty]) = turn.position(y as u32, x as u32) {
+                let i = ty as usize * tw + tx as usize;
+                out[i] = data[y * w + x];
+                let c = match cfa.color(y, x) {
+                    3 => 1,
+                    c => c,
+                };
+                let p = &mut period[(ty as usize % 2) * 2 + tx as usize % 2];
+                ensure!(
+                    p.is_none_or(|p| p == c),
+                    "Super CCD filter that does not turn into a Bayer mosaic"
+                );
+                *p = Some(c);
+            }
+        }
+    }
+    ensure!(
+        period.iter().all(|c| c.is_some_and(|c| c < 3)),
+        "Super CCD mosaic without a whole Bayer period"
+    );
+    let n = crate::demosaic::PATTERN;
+    let mut tile = [0u8; crate::demosaic::PATTERN * crate::demosaic::PATTERN];
+    for r in 0..n {
+        for c in 0..n {
+            tile[r * n + c] = period[(r % 2) * 2 + c % 2].unwrap_or(1);
+        }
+    }
+    Ok(Cfa {
+        width: tw as u32,
+        height: th as u32,
+        pattern: tile,
+        data: out,
+    })
 }
 
 /// The header facts both decoders report, from `rawmakase-raw`'s.
@@ -185,8 +255,8 @@ fn header(i: &RawInfo) -> Header {
         model: i.model.clone(),
         normalized: [i.normalized_make.clone(), i.normalized_model.clone()],
         // A Super CCD's image is its stored rows turned by 45°.
-        width: i.rotated.map_or(i.width, |r| r[0]),
-        height: i.rotated.map_or(i.height, |r| r[1]),
+        width: i.super_ccd.map_or(i.width, |s| s.size()[0]),
+        height: i.super_ccd.map_or(i.height, |s| s.size()[1]),
         raw_width: i.raw_width,
         raw_height: i.raw_height,
         margins: i.margins,
@@ -213,5 +283,89 @@ fn header(i: &RawInfo) -> Header {
         lens: i.lens.clone(),
         lens_id: i.lens_id,
         dng_version: i.dng_version,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::AtomicBool;
+
+    /// A tall Super CCD's 2 × 4 stored samples develop as a 4 × 3 diamond:
+    /// each sample where the turn places it, 0 elsewhere, a Bayer period.
+    #[test]
+    fn super_ccd_mosaic_develops_turned() {
+        let turn = rawmakase_raw::SuperCcd {
+            stored: [2, 4],
+            wide: false,
+        };
+        let cfa = rawmakase_raw::Cfa {
+            rows: 4,
+            cols: 2,
+            colors: vec![0, 2, 1, 3, 2, 0, 3, 1],
+        };
+        let data: Vec<f32> = (1..=8).map(|v| v as f32 / 10.).collect();
+        let out = super::turned(turn, &cfa, &data, [2, 4], &AtomicBool::new(false)).unwrap();
+        assert_eq!([out.width, out.height], [4, 3]);
+        // Row 0 runs up and right from (0, 1); row 1 one column on.
+        let at = |x: usize, y: usize| out.data[y * 4 + x];
+        assert_eq!(
+            [at(0, 1), at(1, 0), at(1, 1), at(2, 0)],
+            [0.1, 0.2, 0.3, 0.4]
+        );
+        assert_eq!(out.data.iter().filter(|&&v| v > 0.).count(), 8);
+        let mut period: Vec<u8> = out.pattern[..2].to_vec();
+        period.extend(&out.pattern[crate::demosaic::PATTERN..crate::demosaic::PATTERN + 2]);
+        period.sort();
+        assert_eq!(period, [0, 1, 1, 2]);
+        let cancelled = AtomicBool::new(true);
+        assert!(super::turned(turn, &cfa, &data, [2, 4], &cancelled).is_err());
+    }
+
+    /// A RAF of the older layout: header, the records, then `data`.
+    fn older_raf(records: &[(u16, Vec<u8>)], data: &[u8]) -> Vec<u8> {
+        let mut dir = (records.len() as u32).to_be_bytes().to_vec();
+        for (tag, v) in records {
+            dir.extend(tag.to_be_bytes());
+            dir.extend((v.len() as u16).to_be_bytes());
+            dir.extend(v);
+        }
+        let mut out = b"FUJIFILMCCD-RAW 0201FF000000FinePix F700".to_vec();
+        out.resize(160, 0);
+        let jpeg = [0xff, 0xd8, 0xff, 0xd9];
+        let (d, r) = (164u32, 164 + dir.len() as u32);
+        let pointers = [160, 4, d, dir.len() as u32, r, data.len() as u32];
+        for (i, v) in pointers.into_iter().enumerate() {
+            out[84 + 4 * i..88 + 4 * i].copy_from_slice(&v.to_be_bytes());
+        }
+        out.extend(jpeg);
+        out.extend(dir);
+        out.extend(data);
+        out
+    }
+
+    /// A tall Super CCD of 4 × 65,532 stored samples (512 KiB) would turn
+    /// into 32,770 × 32,769 pixels (4.3 GB of floats): refused before the
+    /// turned or demosaiced image is allocated.
+    #[test]
+    fn super_ccd_of_an_impossible_shape_does_not_develop() {
+        let pair = |a: u16, b: u16| [a.to_be_bytes(), b.to_be_bytes()].concat();
+        let records = [
+            (0x100, pair(65532, 4)),
+            (0x120, pair(0, 0)),
+            (0x121, pair(65532, 8)),
+            (0x130, vec![0x80, 0x81, 0x82, 0x83]),
+        ];
+        let file = older_raf(&records, &vec![0x10; 4 * 65532 * 2]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tall.raf");
+        std::fs::write(&path, file).unwrap();
+        let raw = crate::raw::Raw::open_with(&path, crate::raw::Decoder::Own).unwrap();
+        assert_eq!([raw.metadata.width, raw.metadata.height], [32770, 32769]);
+        let developed = raw.develop(
+            crate::camera_data::Decode::Full(crate::camera_data::Demosaic::Rawmakase),
+            &AtomicBool::new(false),
+        );
+        let error = format!("{:#}", developed.err().unwrap());
+        assert!(error.contains("impossible shape"), "{error}");
     }
 }

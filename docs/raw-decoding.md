@@ -201,7 +201,12 @@ Super CCD's as it is); a camera aspect ratio (0x115) wider than it by more
 than 1% cuts its height, centred. A Super CCD's visible area is its stored
 rows (for the tall layouts, half the image record 0x121's columns from half
 its 0x120 offset), developing to a square of the shorter side plus half the
-longer one (`RawInfo::rotated`). Black is the raw image directory's per
+longer one (`RawInfo::super_ccd`). Development places each stored pixel
+where `SuperCcd::position` turns it (rows of the tall layout two to a step
+across the diagonals, columns of the wide one two to a step along them; our
+own measurements of LibRaw's developed images), 0 outside the turned area, and
+demosaics the result as the Bayer mosaic it is; the image keeps LibRaw's size
+and orientation. Black is the raw image directory's per
 filter position (0xF00A), or the older bodies' record 0x4000 (green, red,
 second green, blue); white is the bit depth's range. As-shot white balance is
 the raw image directory's (0xF00E) or record 0x2FF0; D65 the illuminant list's

@@ -175,10 +175,11 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
         info.width = w;
         info.height = h;
     }
-    if super_ccd.is_some() {
-        let (short, long) = (info.width.min(info.height), info.width.max(info.height));
-        let side = short + long / 2;
-        info.rotated = Some([side, side.saturating_sub(1)]);
+    if let Some(layout) = super_ccd {
+        info.super_ccd = Some(crate::info::SuperCcd {
+            stored: [info.width, info.height],
+            wide: layout == SuperCcd::Wide,
+        });
     }
     let cfa = info.cfa.take();
     info.cfa = cfa.map(|c| c.shifted(info.margins[1] as usize, info.margins[0] as usize));
@@ -784,7 +785,7 @@ mod tests {
         // Stored area: half the image's columns from half its offset; the
         // image turned by 45°: 2 + 3 / 2 square, less a row.
         assert_eq!(s.area, [1, 0, 3, 2]);
-        assert_eq!(info.rotated, Some([3, 2]));
+        assert_eq!(info.super_ccd.map(|s| s.size()), Some([3, 2]));
         assert_eq!(info.cfa.as_ref().map(|c| (c.rows, c.cols)), Some((4, 2)));
     }
 

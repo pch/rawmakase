@@ -23,10 +23,9 @@ pub struct RawInfo {
     pub width: u32,
     pub height: u32,
     pub margins: [u32; 2],
-    /// The size a Fujifilm Super CCD's data develops to, its stored rows
-    /// turned by 45° (the visible area is the stored one); `None` for other
-    /// sensors.
-    pub rotated: Option<[u32; 2]>,
+    /// A Fujifilm Super CCD's stored rows, which develop turned by 45° (the
+    /// visible area is the stored one); `None` for other sensors.
+    pub super_ccd: Option<SuperCcd>,
     /// The default crop and the camera's aspect-ratio crop, `[left, top,
     /// width, height]` in sensor coordinates ([`UNSET`] positions when only a
     /// size is known; all [`UNSET`] and zero sizes when there is none).
@@ -81,6 +80,42 @@ pub struct RawInfo {
     pub(crate) file_matrix: Option<[[f32; 3]; 3]>,
 }
 
+/// How a Fujifilm Super CCD's stored rows develop: each a diagonal of the
+/// image, which is the stored area turned by 45° into a square of the
+/// shorter side plus half the longer one, less a row (our own measurements
+/// of the images RAWmakase has always developed).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SuperCcd {
+    /// The stored (visible) area's width and height.
+    pub stored: [u32; 2],
+    /// Rows of the wide layout (FujiLayout 0 to 3, two stored columns per
+    /// step along a diagonal) rather than the tall one (0x80 to 0x83, two
+    /// stored rows per step across diagonals).
+    pub wide: bool,
+}
+
+impl SuperCcd {
+    /// The developed image's width and height.
+    pub fn size(&self) -> [u32; 2] {
+        let [w, h] = self.stored;
+        let side = w.min(h) + w.max(h) / 2;
+        [side, side.saturating_sub(1)]
+    }
+    /// Where the stored area's `row` and `col` develop (column, row), when
+    /// inside the developed image.
+    pub fn position(&self, row: u32, col: u32) -> Option<[u32; 2]> {
+        let [w, _] = self.stored.map(i64::from);
+        let (r, c) = (i64::from(row), i64::from(col));
+        let (x, y) = if self.wide {
+            ((c + 1) / 2 + r, w / 2 - 1 - c / 2 + r)
+        } else {
+            (c + (r + 1) / 2, w - 1 - c + r / 2)
+        };
+        let [sw, sh] = self.size().map(i64::from);
+        ((0..sw).contains(&x) && (0..sh).contains(&y)).then_some([x as u32, y as u32])
+    }
+}
+
 /// White balance presets the camera stored (red, green, blue), zero when
 /// absent.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -115,7 +150,7 @@ pub(crate) fn base(variant: Variant) -> RawInfo {
         width: 0,
         height: 0,
         margins: [0, 0],
-        rotated: None,
+        super_ccd: None,
         frame: [UNSET, UNSET, 0, 0],
         aspect: [UNSET, UNSET, 0, 0],
         sensor_borders: None,
@@ -179,5 +214,64 @@ impl Cfa {
     /// Whether this is X-Trans's 6 × 6 pattern.
     pub fn is_xtrans(&self) -> bool {
         self.rows == 6 && self.cols == 6
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every stored pixel lands on its own developed pixel, the turned area
+    /// is a diamond without holes, and the filters there form a Bayer
+    /// pattern (the RAF reader's Super CCD filters, green as 1).
+    #[test]
+    fn super_ccd_turns_into_a_bayer_diamond() {
+        let tall = [0u8, 2, 1, 1, 2, 0, 1, 1];
+        let wide = [0u8, 1, 2, 1, 2, 1, 0, 1];
+        for (stored, wide_layout, filter, rows, cols) in [
+            ([8u32, 12], false, &tall, 4, 2),
+            ([12, 6], true, &wide, 2, 4),
+        ] {
+            let turn = SuperCcd {
+                stored,
+                wide: wide_layout,
+            };
+            let [tw, th] = turn.size();
+            let side = stored[0].min(stored[1]) + stored[0].max(stored[1]) / 2;
+            assert_eq!([tw, th], [side, side - 1]);
+            let mut colour = vec![u8::MAX; (tw * th) as usize];
+            for r in 0..stored[1] {
+                for c in 0..stored[0] {
+                    let [x, y] = turn.position(r, c).unwrap();
+                    let i = (y * tw + x) as usize;
+                    assert_eq!(colour[i], u8::MAX, "{r} {c} twice");
+                    colour[i] = filter[(r as usize % rows) * cols + c as usize % cols];
+                }
+            }
+            // Each developed row's stored pixels are one run.
+            for y in 0..th {
+                let row = &colour[(y * tw) as usize..((y + 1) * tw) as usize];
+                let set: Vec<usize> = (0..row.len()).filter(|&x| row[x] != u8::MAX).collect();
+                if let (Some(a), Some(b)) = (set.first(), set.last()) {
+                    assert_eq!(b - a + 1, set.len(), "row {y}");
+                }
+            }
+            // A Bayer pattern: period 2 both ways, two greens per period.
+            let mut period = [u8::MAX; 4];
+            for y in 0..th {
+                for x in 0..tw {
+                    let c = colour[(y * tw + x) as usize];
+                    if c == u8::MAX {
+                        continue;
+                    }
+                    let p = &mut period[((y % 2) * 2 + x % 2) as usize];
+                    assert!(*p == u8::MAX || *p == c, "{y} {x}");
+                    *p = c;
+                }
+            }
+            let mut sorted = period;
+            sorted.sort();
+            assert_eq!(sorted, [0, 1, 1, 2]);
+        }
     }
 }

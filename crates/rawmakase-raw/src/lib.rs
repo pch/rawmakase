@@ -24,7 +24,7 @@ mod variant;
 mod vendor;
 
 pub use error::{Error, Result};
-pub use info::{Cfa, Presets, RawInfo, UNSET};
+pub use info::{Cfa, Presets, RawInfo, SuperCcd, UNSET};
 pub use preview::NoPreview;
 pub use sensor::Sensor;
 use std::sync::atomic::AtomicBool;
