@@ -40,7 +40,8 @@ jobs:
       matrix:
         # Preserve the languages and weekly coverage of GitHub's default
         # setup, while allowing website- and stats-only changes to skip these jobs.
-        language: [actions, c-cpp, python, ruby, rust]
+        # No C or C++ is left to analyse since the LibRaw bridge went (#526).
+        language: [actions, python, ruby, rust]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

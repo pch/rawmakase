@@ -1,6 +1,6 @@
 # Maintainer: pch <https://github.com/pch>
 pkgname=rawmakase-git
-pkgver=0.3.3
+pkgver=0.4.0
 pkgrel=1
 # ONNX Runtime for Subject, Sky and Background selection: the release every other
 # package bundles (packaging/onnxruntime.py), not Arch's onnxruntime-cpu.
