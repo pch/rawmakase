@@ -29,7 +29,7 @@ yuv = "0.8.19"
 # The errno rav1d's C interface returns.
 libc = "0.2"
 # Colour management of JPEG, PNG and TIFF files, in pure Rust; the version `image` uses.
-moxcms = { version = "0.8.1", features = ["options"] }
+moxcms = { version = "0.9.1", features = ["options"] }
 rayon = "1.12"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
