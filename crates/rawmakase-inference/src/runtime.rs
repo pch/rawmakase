@@ -3,15 +3,18 @@
 //! The library is never linked: it is opened at run time from a path this
 //! module chooses, so an absent or unusable runtime is an
 //! [`InferenceError::RuntimeUnavailable`] value and nothing else in the app is
-//! affected. The first successfully opened library is kept for the life of the
-//! process (ONNX Runtime cannot be unloaded safely).
+//! affected. The first successfully opened library, and the one environment
+//! `ort` allows per process, are kept for the life of the process (ONNX Runtime
+//! cannot be unloaded safely).
 
 use std::env;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use ort::environment::Environment;
 use ort::ep::{self, ExecutionProviderDispatch};
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::{RunOptions, Session as OrtSession};
@@ -38,6 +41,11 @@ const CANCEL_POLL: Duration = Duration::from_millis(15);
 /// Upper bound on the intra-op threads: beyond this the encoder kernels
 /// stop scaling and only compete with the UI and render threads.
 const MAX_THREADS: usize = 8;
+
+/// The process-wide ONNX Runtime environment, built once the library opens.
+/// `ort` refuses a second environment even after the first is dropped, so it
+/// is never released.
+static ENVIRONMENT: Mutex<Option<Environment>> = Mutex::new(None);
 
 /// The library file names to look for, most specific first.
 pub fn runtime_file_names() -> &'static [&'static str] {
@@ -138,7 +146,7 @@ impl Subject {
     }
 
     pub fn load_with(dir: &Path, options: &LoadOptions) -> Result<Session, InferenceError> {
-        load_runtime(options.runtime_library.as_deref())?;
+        let environment = load_runtime(options.runtime_library.as_deref())?;
         let spec = SUBJECT;
         check_files(dir)?;
         let threads = options.threads.unwrap_or_else(default_threads).max(1);
@@ -148,12 +156,14 @@ impl Subject {
         let (encoder, decoder, panoptic) = catch_unwind(AssertUnwindSafe(|| {
             Ok::<_, InferenceError>((
                 build_session(
+                    &environment,
                     &dir.join(spec.encoder_file),
                     threads,
                     GraphOptimizationLevel::All,
                     provider,
                 )?,
                 build_session(
+                    &environment,
                     &dir.join(spec.decoder_file),
                     threads,
                     GraphOptimizationLevel::All,
@@ -161,6 +171,7 @@ impl Subject {
                 )?,
                 // The half-precision graph breaks the full fusion pass.
                 build_session(
+                    &environment,
                     &dir.join(PANOPTIC.file.name),
                     threads,
                     GraphOptimizationLevel::Level1,
@@ -684,12 +695,13 @@ fn check_files(dir: &Path) -> Result<(), InferenceError> {
 }
 
 fn build_session(
+    environment: &Environment,
     model_path: &Path,
     threads: usize,
     level: GraphOptimizationLevel,
     provider: Provider,
 ) -> Result<OrtSession, InferenceError> {
-    OrtSession::builder()
+    OrtSession::builder(environment)
         .map_err(failed)?
         .with_optimization_level(level)
         .map_err(failed)?
@@ -714,8 +726,9 @@ fn build_session(
 }
 
 /// Opens the ONNX Runtime library if it is not open yet. The first successful
-/// load is process-wide; later calls with another path are no-ops.
-pub fn load_runtime(explicit: Option<&Path>) -> Result<(), InferenceError> {
+/// load is process-wide; later calls with another path are no-ops. Returns the
+/// environment sessions are built in.
+pub fn load_runtime(explicit: Option<&Path>) -> Result<Environment, InferenceError> {
     let mut tried = Vec::new();
     let candidates = runtime_candidates(explicit);
     if candidates.is_empty() {
@@ -726,7 +739,7 @@ pub fn load_runtime(explicit: Option<&Path>) -> Result<(), InferenceError> {
     }
     for path in candidates {
         match open_runtime(&path) {
-            Ok(()) => return Ok(()),
+            Ok(environment) => return Ok(environment),
             Err(why) => tried.push(format!("{}: {why}", path.display())),
         }
     }
@@ -752,7 +765,7 @@ fn runtime_candidates(explicit: Option<&Path>) -> Vec<PathBuf> {
     candidates
 }
 
-fn open_runtime(path: &Path) -> Result<(), String> {
+fn open_runtime(path: &Path) -> Result<Environment, String> {
     if !path.is_absolute() {
         return Err("the runtime path must be absolute".into());
     }
@@ -762,12 +775,18 @@ fn open_runtime(path: &Path) -> Result<(), String> {
     // `ort` validates the version and returns an error rather than panicking,
     // but a panic here must still never take the caller down.
     catch_unwind(AssertUnwindSafe(|| {
-        ort::init_from(path).map(|builder| {
-            builder.with_name("rawmakase").commit();
-        })
+        let builder = ort::init_from(path).map_err(|e| e.to_string())?;
+        let mut environment = ENVIRONMENT.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(environment) = environment.as_ref() {
+            return Ok(environment.clone());
+        }
+        let built = builder
+            .with_name("rawmakase")
+            .build()
+            .map_err(|e| e.to_string())?;
+        Ok(environment.insert(built).clone())
     }))
     .map_err(|_| "loading the library panicked".to_string())?
-    .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
