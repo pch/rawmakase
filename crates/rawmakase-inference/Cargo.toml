@@ -15,4 +15,4 @@ publish = false
 # and `coreml` features add nothing to link under `load-dynamic`; they compile
 # in the code that registers those providers with whatever runtime library was
 # opened, which fails with a real error when it cannot.
-ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "load-dynamic", "cuda", "coreml"] }
+ort = { version = "=2.0.0-rc.14", default-features = false, features = ["std", "load-dynamic", "cuda", "coreml"] }
