@@ -1183,6 +1183,7 @@ impl Editor {
         }
     }
     pub(super) fn develop_shortcuts(&mut self, ctx: &egui::Context) {
+        self.view.masking.expire_rename(ctx.cumulative_pass_nr());
         if !self.activity.is_busy() && !ctx.text_edit_focused() {
             self.zoom_keys(ctx);
             self.develop_delete_key(ctx);
@@ -1407,7 +1408,9 @@ impl Editor {
                 if i.key_pressed(egui::Key::T) && i.modifiers.shift && !i.modifiers.command {
                     self.toggle_guided_tool();
                 }
-                if i.key_pressed(egui::Key::Escape) {
+                // egui lets go of a text field on Escape before this runs; a mask's
+                // name field still takes that Escape to keep the old name.
+                if i.key_pressed(egui::Key::Escape) && !self.view.masking.is_renaming() {
                     self.view.tool = Tool::None;
                 }
                 if self.view.is(Tool::Crop) {

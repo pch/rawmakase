@@ -4332,6 +4332,18 @@ fn preset_amount_scales_the_preset_from_the_settings_before_it() {
     editor.document.edit.replace(recipe);
     editor.finish_edit_frame(frame, &ctx);
     assert!(editor.presets.amount.is_none());
+    // An edit earlier in the frame the slider moves in (a mask's name kept as the
+    // slider was clicked) ends it there, rather than being taken back by it.
+    editor.apply_preset(0).unwrap();
+    let frame = editor.begin_edit_frame();
+    editor.document.edit.recipe_mut().vibrance = 0.3;
+    assert_eq!(
+        editor.set_preset_amount(0.5),
+        super::presets::AmountChange::Same
+    );
+    editor.finish_edit_frame(frame, &ctx);
+    assert_eq!(editor.document.edit.recipe().vibrance, 0.3);
+    assert!(editor.presets.amount.is_none());
 }
 #[test]
 fn red_eye_brackets_resize_the_circle_a_click_uses() {

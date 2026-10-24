@@ -44,6 +44,8 @@ pub(crate) struct EditSession {
     /// An editor frame is open (see [`EditSession::begin`]): the settings may be
     /// changed in place, and the frame records the change when it finishes.
     frame_open: bool,
+    /// See [`Self::mask_lists`].
+    mask_lists: u64,
 }
 impl EditSession {
     /// The settings.
@@ -91,7 +93,23 @@ impl EditSession {
     /// History state shown, settings read back. History and save state are the
     /// caller's to set alongside, as the case needs.
     pub(crate) fn replace(&mut self, recipe: Recipe) -> Recipe {
-        std::mem::replace(&mut self.recipe, recipe)
+        self.set_whole(|s| std::mem::replace(&mut s.recipe, recipe))
+    }
+    /// Counts the times setting the settings as a whole (a photo, preset, snapshot
+    /// or History state shown, an Undo) brought other masks. A mask's index may name
+    /// another mask once this moves, even one just like it; edits in place, a
+    /// preset's Amount or settings that keep their masks leave it.
+    pub(crate) fn mask_lists(&self) -> u64 {
+        self.mask_lists
+    }
+    /// Sets the settings as a whole with `set`, counting a change of masks.
+    fn set_whole<T>(&mut self, set: impl FnOnce(&mut Self) -> T) -> T {
+        let masks = self.recipe.masks.clone();
+        let out = set(self);
+        if self.recipe.masks != masks {
+            self.mask_lists += 1;
+        }
+        out
     }
     /// Ends a gesture still held (a drag, a wheel scroll), as one History step
     /// to be saved.
@@ -132,7 +150,7 @@ impl EditSession {
     /// `step` (Undo of a catalog command, say).
     pub(crate) fn restore(&mut self, at: history::Mark, target: &Recipe, step: Step) {
         let changed = self.recipe != *target;
-        self.history.restore(at, target, &mut self.recipe, step);
+        self.set_whole(|s| s.history.restore(at, target, &mut s.recipe, step));
         if changed {
             self.save.mark_changed();
         }
@@ -140,7 +158,7 @@ impl EditSession {
     /// Sets the settings to `target` as History step `step`, to be saved.
     pub(crate) fn set(&mut self, target: &Recipe, step: Step) {
         let changed = self.recipe != *target;
-        self.history.set(target, &mut self.recipe, step);
+        self.set_whole(|s| s.history.set(target, &mut s.recipe, step));
         if changed {
             self.save.mark_changed();
         }
@@ -162,12 +180,12 @@ impl EditSession {
     /// Undoes the latest History step on the settings.
     #[cfg(test)]
     pub(crate) fn undo(&mut self) -> bool {
-        self.history.undo(&mut self.recipe)
+        self.set_whole(|s| s.history.undo(&mut s.recipe))
     }
     /// Shows History state `applied` (steps applied), as a History click does,
     /// to be saved.
     pub(crate) fn jump(&mut self, applied: usize) -> bool {
-        let moved = self.history.jump(applied, &mut self.recipe);
+        let moved = self.set_whole(|s| s.history.jump(applied, &mut s.recipe));
         if moved {
             self.save.mark_changed();
         }
@@ -233,6 +251,26 @@ pub(crate) fn sequence() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn setting_the_settings_as_a_whole_counts_only_other_masks() {
+        let mut session = EditSession::default();
+        let mut other = session.recipe().clone();
+        other.exposure = 1.;
+        session.replace(other);
+        session.change(None, |r| r.masks.push(Default::default()));
+        assert_eq!(session.mask_lists(), 0);
+        // Another mask, though just like the one there.
+        let mut more = session.recipe().clone();
+        more.masks.push(Default::default());
+        session.replace(more);
+        assert_eq!(session.mask_lists(), 1);
+        assert!(session.undo());
+        assert_eq!(session.mask_lists(), 2);
+        // Back to the step that added the first mask.
+        assert!(session.jump(1));
+        assert_eq!(session.mask_lists(), 3);
+    }
 
     #[test]
     fn a_change_outside_a_frame_is_one_named_step_to_save() {

@@ -490,6 +490,17 @@ impl Editor {
     /// Sets the Amount of the preset just applied (0–2, 1 = 100%), and whether that
     /// changed the photo.
     pub(super) fn set_preset_amount(&mut self, amount: f32) -> AmountChange {
+        // An edit earlier in this frame (a mask's name kept as the slider was clicked)
+        // ends the Amount now: the settings it holds would take that edit back.
+        if self.presets.amount.is_some() {
+            self.end_stale_preset_amount();
+            if self.presets.amount.is_none() {
+                self.context.data_mut(|d| {
+                    d.remove_temp::<(String, String)>(super::widgets::history_step_id())
+                });
+                return AmountChange::Same;
+            }
+        }
         let (Some(session), Some(m)) = (&mut self.presets.amount, &self.document.metadata) else {
             return AmountChange::Same;
         };
