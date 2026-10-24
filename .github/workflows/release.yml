@@ -288,7 +288,7 @@ jobs:
         run: |
           mkdir -p dist
           tar -C dist -xf "$RUNNER_TEMP/app/RAWmakase.app.tar"
-      - uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
+      - uses: ruby/setup-ruby@b1da4809b005e0178fe08a1d57317bffc00b7b4c # v1
         with:
           ruby-version: '3.3'
       - name: Sign and notarize DMG
@@ -375,7 +375,7 @@ jobs:
           cargo build --release --locked --manifest-path release-source/Cargo.toml --target-dir "$env:GITHUB_WORKSPACE\target"
           packaging/windows/stage.ps1 target\release\rawmakase.exe dist\windows
       - if: steps.source.outputs.windows == 'true'
-        uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
+        uses: ruby/setup-ruby@b1da4809b005e0178fe08a1d57317bffc00b7b4c # v1
         with:
           ruby-version: ${{ matrix.ruby }}
       - if: steps.source.outputs.windows == 'true'
@@ -470,7 +470,7 @@ jobs:
       - name: Final checksums
         working-directory: dist
         run: sha256sum -- * > SHA256SUMS
-      - uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
+      - uses: ruby/setup-ruby@b1da4809b005e0178fe08a1d57317bffc00b7b4c # v1
         with:
           ruby-version: '3.3'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

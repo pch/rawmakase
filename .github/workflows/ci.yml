@@ -74,7 +74,7 @@ jobs:
           rustup default stable
       # Only pushes to main save caches: pull requests restore main's, and
       # release validation would save caches nothing else restores.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
       # Compiling the declared MSRV is what makes it a minimum: comparing
@@ -124,7 +124,7 @@ jobs:
           sudo apt-get install -y build-essential pkg-config libvulkan1 libxkbcommon-dev libwayland-dev
           rustup toolchain install stable --profile minimal
           rustup default stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
       - name: Test
@@ -152,7 +152,7 @@ jobs:
           rustup toolchain install stable --profile minimal --component clippy
           rustup default stable
       - if: steps.source.outputs.windows == 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
       - if: steps.source.outputs.windows == 'true'
@@ -188,7 +188,7 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal --component clippy
           rustup default stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -211,7 +211,7 @@ jobs:
           ref: ${{ inputs.source-ref || github.sha }}
       # makepkg rebuilds its source folder, so the build goes to target-arch outside it,
       # and that and the cargo registry are cached between runs.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: ". -> target-arch"
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}

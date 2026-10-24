@@ -43,7 +43,7 @@ jobs:
           latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
           test "$RELEASE_TAG" = "$latest" || { echo 'Only the latest stable release can update the tap.' >&2; exit 1; }
           git merge-base --is-ancestor "refs/tags/$RELEASE_TAG^{commit}" origin/main
-      - uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
+      - uses: ruby/setup-ruby@b1da4809b005e0178fe08a1d57317bffc00b7b4c # v1
         with:
           ruby-version: '3.3'
       - name: Prepare and verify the published cask
