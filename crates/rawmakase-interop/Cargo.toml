@@ -15,7 +15,7 @@ test-support = ["rawmakase-model/test-support"]
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
 anyhow = "1"
 # The Exif and XMP boxes JPEG XL files keep brotli-compressed.
-brotli-decompressor = "5.0.3"
+brotli-decompressor = "6.1.1"
 rayon = "1.12"
 roxmltree = "0.21.1"
 serde = { version = "1", features = ["derive", "rc"] }
