@@ -37,6 +37,12 @@ pub(in crate::app) struct Palette {
 /// Lightroom's panels, controls and text sit at these levels.
 const LEVELS: [u8; 9] = [22, 35, 43, 52, 59, 67, 125, 160, 225];
 
+struct IntegratedTheme {
+    id: &'static str,
+    name: &'static str,
+    palette: Palette,
+}
+
 impl Palette {
     /// Lightroom's dark greys, which the interface was drawn in.
     pub(in crate::app) const DEFAULT: Palette = Palette {
@@ -92,6 +98,36 @@ impl Palette {
             self.text,
         ]
     }
+    /// Lightroom Classic themed interface palette.
+    const LIGHTROOM_CLASSIC: Palette = Palette {
+        light: false,
+        window: Color32::from_gray(41),
+        panel: Color32::from_gray(129),
+        surface: Color32::from_gray(43),
+        surface_hover: Color32::from_gray(59),
+        surface_active: Color32::from_gray(146),
+        outline: Color32::from_gray(99),
+        text: Color32::from_gray(229),
+        secondary: Color32::from_gray(239),
+        dim: Color32::from_gray(191),
+        accent: Color32::from_gray(86),
+        accent_hover: Color32::from_gray(118),
+        on_accent: Color32::from_gray(255),
+        danger: Color32::from_rgb(190, 43, 27),
+        warning: Color32::from_rgb(233, 211, 43),
+        overlay: Color32::from_gray(35),
+        shadow: Color32::from_gray(0),
+    };
+}
+
+const INTEGRATED_THEMES: &[IntegratedTheme] = &[IntegratedTheme {
+    id: "rawmakase:lightroom-classic",
+    name: "Lightroom Classic",
+    palette: Palette::LIGHTROOM_CLASSIC,
+}];
+
+fn integrated_theme(id: &str) -> Option<&'static IntegratedTheme> {
+    INTEGRATED_THEMES.iter().find(|theme| theme.id == id)
 }
 
 impl fastframe_theme::Palette for Palette {
@@ -379,7 +415,7 @@ impl Themes {
                 presets: true,
             });
         self.catalog
-            .start(Self::directory(), self.selected(), &self.waker);
+            .start(Self::directory(), self.catalog_selection(), &self.waker);
         self.started = true;
     }
     /// Rescans on a change to the themes folder or Omarchy's theme, and
@@ -390,7 +426,7 @@ impl Themes {
         }
         if self.catalog.needs_reload() {
             self.catalog
-                .start(Self::directory(), self.selected(), &self.waker);
+                .start(Self::directory(), self.catalog_selection(), &self.waker);
         }
         self.catalog.poll();
         let wanted = self.resolve();
@@ -418,6 +454,10 @@ impl Themes {
                 .then(|| fastframe_theme::omarchy::FILENAME.to_string()),
         }
     }
+    fn catalog_selection(&self) -> Option<String> {
+        self.selected()
+            .filter(|name| integrated_theme(name).is_none())
+    }
     pub(in crate::app) fn choose(&mut self, theme: Option<String>) {
         self.chosen = Some(theme);
     }
@@ -425,10 +465,14 @@ impl Themes {
     fn resolve(&self) -> Palette {
         match &self.selected() {
             None => Palette::DEFAULT,
-            Some(name) => self
-                .catalog
-                .find(name)
-                .map_or(self.applied, |theme| theme.palette),
+            Some(name) => integrated_theme(name).map_or_else(
+                || {
+                    self.catalog
+                        .find(name)
+                        .map_or(self.applied, |theme| theme.palette)
+                },
+                |theme| theme.palette,
+            ),
         }
     }
     /// Choices for the theme menu: file name and display name.
@@ -439,12 +483,15 @@ impl Themes {
                 let name = fastframe_theme::display_name(&t.filename).to_string();
                 (t.filename.clone(), name)
             })
+            .chain(INTEGRATED_THEMES.iter().map(|theme| {
+                (theme.id.to_string(), theme.name.to_string())
+            }))
             .collect()
     }
     /// What to say under the setting, if anything.
     pub(in crate::app) fn status(&self) -> Option<String> {
         use fastframe_theme::{Problem, Status};
-        Some(match self.catalog.status(self.selected().as_deref())? {
+        Some(match self.catalog.status(self.catalog_selection().as_deref())? {
             Status::Loading => "Loading themes…".into(),
             Status::SelectedUnavailable => {
                 "The chosen theme is missing; the last one stays until it is back.".into()
