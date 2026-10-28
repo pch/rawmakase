@@ -8776,3 +8776,232 @@ fn a_window_reopened_maximized_keeps_that_until_the_window_manager_maximizes_it(
     }
     Ok(())
 }
+/// An editor showing a square photo, saving its session to `session`.
+fn backdrop_editor(ctx: &egui::Context, session: &std::path::Path) -> Editor {
+    let mut editor = Editor::with_context(
+        ctx,
+        None,
+        crate::app::session::Session::default(),
+        Some(session.to_path_buf()),
+    );
+    editor.document.set_image(Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 200,
+        height: 200,
+        pixels: vec![[0.1; 3]; 40000],
+        metadata: Metadata {
+            width: 200,
+            height: 200,
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+    }));
+    editor.preview.texture = Some(
+        ctx.load_texture(
+            "photo",
+            egui::ColorImage::filled([200, 200], egui::Color32::GRAY),
+            egui::TextureOptions::LINEAR,
+        )
+        .into(),
+    );
+    editor.module = Module::Develop;
+    editor
+}
+/// One frame of the viewport, 400 × 200 points: the square photo with backdrop on
+/// its left and right. Returns what was drawn.
+fn backdrop_frame(
+    ctx: &egui::Context,
+    editor: &mut Editor,
+    time: f64,
+    events: Vec<egui::Event>,
+) -> Vec<egui::epaint::ClippedShape> {
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400., 200.))),
+            time: Some(time),
+            events,
+            ..Default::default()
+        },
+        |ui| {
+            editor.viewport_ui(ui);
+        },
+    );
+    output.textures_delta.clear();
+    output.shapes
+}
+fn backdrop_menu_open(ctx: &egui::Context) -> bool {
+    ctx.memory(|m| {
+        m.areas()
+            .visible_layer_ids()
+            .into_iter()
+            .any(|layer| layer.order == egui::Order::Foreground)
+    })
+}
+/// Where `label` was drawn: its rectangle.
+fn drawn_text(shapes: &[egui::epaint::ClippedShape], label: &str) -> Option<Rect> {
+    shapes.iter().find_map(|clipped| match &clipped.shape {
+        egui::Shape::Text(text) if text.galley.text() == label => {
+            Some(Rect::from_min_size(text.pos, text.galley.size()))
+        }
+        _ => None,
+    })
+}
+const BACKDROP_PHOTO: Pos2 = Pos2::new(200., 100.);
+const BESIDE_THE_PHOTO: Pos2 = Pos2::new(20., 100.);
+#[test]
+fn a_right_click_beside_the_photo_chooses_develops_backdrop_and_the_session_keeps_it()
+-> anyhow::Result<()> {
+    use super::backdrop::Backdrop;
+    let dir = tempfile::tempdir()?;
+    let session = dir.path().join("session.json");
+    let ctx = egui::Context::default();
+    let mut editor = backdrop_editor(&ctx, &session);
+    let mut time = 0.;
+    let mut frame = |editor: &mut Editor, events| {
+        time += 0.5;
+        backdrop_frame(&ctx, editor, time, events)
+    };
+    frame(&mut editor, vec![]);
+    // On the photo, a right click opens nothing.
+    frame(
+        &mut editor,
+        click_at(BACKDROP_PHOTO, egui::PointerButton::Secondary),
+    );
+    frame(&mut editor, vec![]);
+    assert!(!backdrop_menu_open(&ctx));
+    // Beside it, the menu opens; White in it is chosen and saved.
+    frame(
+        &mut editor,
+        click_at(BESIDE_THE_PHOTO, egui::PointerButton::Secondary),
+    );
+    let shapes = frame(&mut editor, vec![]);
+    assert!(backdrop_menu_open(&ctx));
+    let white = drawn_text(&shapes, "White").expect("White in the menu");
+    frame(
+        &mut editor,
+        click_at(white.center(), egui::PointerButton::Primary),
+    );
+    frame(&mut editor, vec![]);
+    assert!(!backdrop_menu_open(&ctx));
+    assert_eq!(editor.view.backdrop, Backdrop::White);
+    assert_eq!(editor.develop_backdrop(&ctx), egui::Color32::WHITE);
+    let saved: crate::app::session::Session = crate::storage::read_json_or_default(&session);
+    assert_eq!(saved.develop_backdrop, "white");
+    let reopened = Editor::with_context(&ctx, None, saved, None);
+    assert_eq!(reopened.view.backdrop, Backdrop::White);
+    // The Library's Loupe shares the viewport but keeps the theme's backdrop and
+    // opens no menu.
+    editor.module = Module::Library;
+    frame(
+        &mut editor,
+        click_at(BESIDE_THE_PHOTO, egui::PointerButton::Secondary),
+    );
+    frame(&mut editor, vec![]);
+    assert!(!backdrop_menu_open(&ctx));
+    assert_eq!(
+        editor.develop_backdrop(&ctx),
+        super::theme::palette(&ctx).photo_backdrop()
+    );
+    Ok(())
+}
+#[test]
+fn the_border_slider_snaps_to_steps_of_20_and_is_saved_when_let_go() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let session = dir.path().join("session.json");
+    let ctx = egui::Context::default();
+    let mut editor = backdrop_editor(&ctx, &session);
+    let mut time = 0.;
+    let mut frame = |editor: &mut Editor, events| {
+        time += 0.5;
+        backdrop_frame(&ctx, editor, time, events)
+    };
+    let saved_border = || {
+        crate::storage::read_json_or_default::<crate::app::session::Session>(&session)
+            .develop_border
+    };
+    assert_eq!(editor.view.border, 20.);
+    frame(&mut editor, vec![]);
+    frame(
+        &mut editor,
+        click_at(BESIDE_THE_PHOTO, egui::PointerButton::Secondary),
+    );
+    let shapes = frame(&mut editor, vec![]);
+    // The rail runs from the label's column to the number at the row's end, which
+    // the separator above it spans.
+    let label = drawn_text(&shapes, "Border").expect("Border in the menu");
+    let row = shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::LineSegment { points: [a, b], .. } if a.y == b.y => Some((a.x, b.x)),
+            _ => None,
+        })
+        .max_by(|a, b| (a.1 - a.0).total_cmp(&(b.1 - b.0)))
+        .expect("the separator");
+    let (left, right) = (label.right() + 10., row.1 - 52. - 4. - 5.);
+    let at = |t: f32| Pos2::new(egui::lerp(left..=right, t), label.center().y);
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    // Pressed near the rail's start and dragged along it: each step on the way,
+    // then the nearest step to 77%.
+    frame(
+        &mut editor,
+        vec![egui::Event::PointerMoved(at(0.1)), button(at(0.1), true)],
+    );
+    frame(&mut editor, vec![egui::Event::PointerMoved(at(0.25))]);
+    assert_eq!(editor.view.border, 20.);
+    frame(&mut editor, vec![egui::Event::PointerMoved(at(0.4))]);
+    assert_eq!(editor.view.border, 40.);
+    frame(&mut editor, vec![egui::Event::PointerMoved(at(0.77))]);
+    assert_eq!(editor.view.border, 80.);
+    // Not saved while dragged; saved once let go, with the menu still open.
+    assert_eq!(saved_border(), None);
+    frame(&mut editor, vec![button(at(0.77), false)]);
+    frame(&mut editor, vec![]);
+    assert_eq!(saved_border(), Some(80));
+    assert!(backdrop_menu_open(&ctx));
+    // A click at the rail's very end, past its last step, is 100, the most.
+    frame(
+        &mut editor,
+        click_at(at(1.04), egui::PointerButton::Primary),
+    );
+    frame(&mut editor, vec![]);
+    assert_eq!(editor.view.border, 100.);
+    assert_eq!(saved_border(), Some(100));
+    let reopened = Editor::with_context(
+        &ctx,
+        None,
+        crate::storage::read_json_or_default(&session),
+        None,
+    );
+    assert_eq!(reopened.view.border, 100.);
+    Ok(())
+}
+#[test]
+fn develops_backdrop_and_border_read_from_the_session_or_fall_back_to_the_default() {
+    use super::backdrop::{Backdrop, border_from_session};
+    for backdrop in Backdrop::ALL {
+        assert_eq!(Backdrop::from_key(backdrop.key()), backdrop);
+    }
+    // A name from another version is the default.
+    assert_eq!(Backdrop::from_key("sepia"), Backdrop::DarkGray);
+    let old: crate::app::session::Session =
+        serde_json::from_str(r#"{"last_path":null,"monitor":null}"#).unwrap();
+    assert_eq!(
+        Backdrop::from_key(&old.develop_backdrop),
+        Backdrop::DarkGray
+    );
+    assert_eq!(border_from_session(old.develop_border), 20.);
+    // A border between steps reads as the nearest; one out of range as the default.
+    assert_eq!(border_from_session(Some(35)), 40.);
+    assert_eq!(border_from_session(Some(0)), 0.);
+    assert_eq!(border_from_session(Some(500)), 20.);
+    let saved = serde_json::to_value(crate::app::session::Session::default()).unwrap();
+    assert!(saved.get("develop_backdrop").is_none());
+    assert!(saved.get("develop_border").is_none());
+}

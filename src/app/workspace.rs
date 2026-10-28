@@ -1735,15 +1735,25 @@ impl Editor {
     }
     fn develop_photo(&mut self, ui: &mut egui::Ui) {
         // The photo's backdrop reaches the panels around it, leaving the
-        // photo a margin of its own colour.
-        let backdrop = theme::palette(ui.ctx()).photo_backdrop();
+        // photo a border of its own colour, as wide as the user set it.
+        let backdrop = self.develop_backdrop(ui.ctx());
         let area = egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
                     .fill(backdrop)
-                    .inner_margin(egui::Margin::same(PHOTO_MARGIN as i8)),
+                    .inner_margin(egui::Margin::same(self.view.border as i8)),
             )
-            .show(ui, |ui| self.viewport_ui(ui))
+            .show(ui, |ui| {
+                // The border opens the backdrop's menu too. Sensed before the
+                // viewport, which is above it and keeps the clicks inside it.
+                let border = ui.interact(
+                    ui.max_rect().expand(self.view.border),
+                    ui.id().with("backdrop-border"),
+                    egui::Sense::click(),
+                );
+                self.viewport_ui(ui);
+                self.backdrop_menu(&border, &[ui.max_rect()]);
+            })
             .response
             .rect;
         self.drop_area = Some(area);

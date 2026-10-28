@@ -317,6 +317,12 @@ pub(super) struct ViewState {
     pub(super) crop_guides: super::crop_tool::CropGuides,
     /// When the overlay was last changed; it shows for a moment after, even in Auto.
     pub(super) crop_guides_changed: Option<std::time::Instant>,
+    /// Develop's backdrop around the photo; saved in the session.
+    pub(super) backdrop: super::backdrop::Backdrop,
+    /// The border Develop leaves around the photo's area, in points; saved in the
+    /// session once a drag of its slider ends (until then `border_unsaved`).
+    pub(super) border: f32,
+    pub(super) border_unsaved: bool,
     /// The Crop tool's Straighten ruler.
     pub(super) ruler: super::crop_tool::Ruler,
     /// Spot removal settings, selection and drag in progress.
@@ -368,6 +374,9 @@ impl Default for ViewState {
             chosen_aspect: -1.,
             crop_guides: Default::default(),
             crop_guides_changed: None,
+            backdrop: Default::default(),
+            border: super::backdrop::DEFAULT_BORDER,
+            border_unsaved: false,
             ruler: Default::default(),
             retouch: Default::default(),
             red_eye: Default::default(),

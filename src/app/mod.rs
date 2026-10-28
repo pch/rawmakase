@@ -282,6 +282,8 @@ impl Editor {
                     session.monitor_srgb,
                 ),
                 crop_guides: crop_tool::CropGuides::from_session(&session.crop_guides),
+                backdrop: backdrop::Backdrop::from_key(&session.develop_backdrop),
+                border: backdrop::border_from_session(session.develop_border),
                 chosen_aspect: inspector::aspect_from_key(&session.crop_aspect),
                 ..Default::default()
             },
@@ -418,6 +420,8 @@ impl Editor {
                     copy_groups: Some(self.copy_groups.clone()),
                     crop_guides: self.view.crop_guides.to_session(),
                     crop_aspect: inspector::aspect_key(self.view.chosen_aspect).into(),
+                    develop_backdrop: self.view.backdrop.key().into(),
+                    develop_border: Some(self.view.border as u32),
                     raw_defaults: self.raw_defaults.settings().clone(),
                     standard_preview_size: Some(self.preview_builds.standard_size),
                     decoded_cache_size_gib: Some((self.decode_cache.limit() >> 30) as u32),
@@ -856,6 +860,7 @@ fn survive_surface_errors(device: &wgpu::Device) {
 
 mod auto;
 mod automation;
+mod backdrop;
 mod basic_keys;
 mod before_after;
 mod brush_scroll;

@@ -80,6 +80,14 @@ pub(crate) struct Session {
     /// version does not know reads as Original.
     #[serde(default)]
     pub crop_aspect: String,
+    /// Develop's backdrop around the photo, by stable name ("black", "dark-gray",
+    /// …, "white"); empty, or a name this version does not know, is the theme's.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub develop_backdrop: String,
+    /// The border Develop leaves around the photo, in points; none, or one out of
+    /// range, is the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub develop_border: Option<u32>,
     /// Preferences > Raw Defaults: what photos without an edit start from.
     #[serde(default, deserialize_with = "crate::raw_defaults::lenient_settings")]
     pub raw_defaults: crate::raw_defaults::RawDefaults,

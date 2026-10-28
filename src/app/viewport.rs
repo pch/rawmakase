@@ -294,7 +294,7 @@ impl Editor {
         let (whole, response) =
             ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
         ui.painter()
-            .rect_filled(whole, 0., theme::palette(ui.ctx()).photo_backdrop());
+            .rect_filled(whole, 0., self.develop_backdrop(ui.ctx()));
         // The edit's side of the viewport; all of it unless Before shows beside it.
         let panes = before_after::panes(self.view.compare, whole);
         let area = panes.after.area;
@@ -423,6 +423,16 @@ impl Editor {
         // reference photo takes its own (see `reference_pointer`).
         let before_rect = self.before_pane_ui(ui, &panes, rect);
         let on_reference = self.reference_pointer(ui, &response, &panes, before_rect);
+        // A right click beside the photos, not on them, chooses Develop's backdrop.
+        // Each photo only where its pane shows it: zoomed in, it runs past the pane.
+        let photos: Vec<Rect> = std::iter::once(rect.intersect(panes.after.clip))
+            .chain(
+                before_rect
+                    .zip(panes.before)
+                    .map(|(r, p)| r.intersect(p.clip)),
+            )
+            .collect();
+        self.backdrop_menu(&response, &photos);
         let mirrored = before_rect.filter(|_| !self.reference_view());
         let on_after = |pos: Pos2| match (mirrored, panes.before) {
             (Some(before), Some(pane))
@@ -846,6 +856,7 @@ impl Editor {
         area: Rect,
     ) {
         let palette = theme::palette(ui.ctx());
+        let backdrop = self.develop_backdrop(ui.ctx());
         const CELLS: i32 = 5;
         const CELL: f32 = 30.;
         let painter = ui
@@ -945,9 +956,7 @@ impl Editor {
                 )
                 .shrink(0.5);
                 let color = pixel(cx + i - half, cy + j - half)
-                    .map_or(palette.photo_backdrop(), |[r, g, b]| {
-                        Color32::from_rgb(r, g, b)
-                    });
+                    .map_or(backdrop, |[r, g, b]| Color32::from_rgb(r, g, b));
                 painter.rect_filled(cell, 0., color);
             }
         }
