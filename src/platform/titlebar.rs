@@ -4,7 +4,10 @@
 //! be a Force Touch pressure, drag or release event at that point. Capture
 //! the original mouse-down for both its click count and native window dragging.
 //! Zoom/Minimize have one explicit owner across the whole accepted header;
-//! there is no native-strip split or change to NSWindow's movable state.
+//! there is no native-strip split or change to NSWindow's movable state. Where
+//! AppKit answers the double click itself (some macOS releases do), the header
+//! does not act again: its action waits `NATIVE_GRACE` and is done only if the
+//! window has not started changing.
 
 /// Register this viewport's native window before drawing its header.
 #[cfg(target_os = "macos")]
@@ -49,6 +52,19 @@ enum Press {
     Minimize,
     /// Leave Fill to AppKit, as fastframe does; unknown settings do nothing.
     NativeOrNothing,
+}
+
+/// How long a double click's action waits for AppKit to answer it first.
+#[cfg(target_os = "macos")]
+const NATIVE_GRACE: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// Whether AppKit answered a double click itself: the window's size, or whether
+/// it is zoomed, changed since the press. On some macOS releases AppKit zooms a
+/// window whose title bar the header covers, animating the zoom after the press;
+/// the header's own Zoom would undo it.
+#[cfg(any(target_os = "macos", test))]
+fn answered_natively(at_press: ([f64; 2], bool), now: ([f64; 2], bool)) -> bool {
+    at_press != now
 }
 
 /// `AppleActionOnDoubleClick` stores Zoom as `Maximize`. Without it, the
@@ -105,6 +121,48 @@ mod appkit {
     thread_local! {
         static MONITOR_INSTALLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
         static PRESSES: RefCell<MouseDowns> = RefCell::default();
+        /// A double click's action waiting for AppKit to answer first: the window,
+        /// the action, its size and zoom at the press, and when to act.
+        static WAITING: std::cell::Cell<Option<Waiting>> = const { std::cell::Cell::new(None) };
+    }
+
+    #[derive(Clone, Copy)]
+    struct Waiting {
+        window: isize,
+        zoom: bool,
+        at_press: ([f64; 2], bool),
+        due: std::time::Instant,
+    }
+
+    fn state(window: &objc2_app_kit::NSWindow) -> ([f64; 2], bool) {
+        let size = window.frame().size;
+        ([size.width, size.height], window.isZoomed())
+    }
+
+    /// Does what a double click waited for, unless AppKit answered it meanwhile.
+    fn settle(ctx: &eframe::egui::Context, app: &NSApplication) {
+        let Some(waiting) = WAITING.get() else {
+            return;
+        };
+        let now = std::time::Instant::now();
+        if now < waiting.due {
+            ctx.request_repaint_after(waiting.due - now);
+            return;
+        }
+        WAITING.set(None);
+        let Some(window) = app.windowWithWindowNumber(waiting.window) else {
+            return;
+        };
+        if super::answered_natively(waiting.at_press, state(&window)) || window.isMiniaturized() {
+            return;
+        }
+        let selector = if waiting.zoom {
+            sel!(performZoom:)
+        } else {
+            sel!(performMiniaturize:)
+        };
+        // SAFETY: these NSWindow selectors take one optional sender argument.
+        unsafe { window.performSelector_withObject_afterDelay(selector, None, 0.0) };
     }
 
     fn window_id(ctx: &eframe::egui::Context) -> eframe::egui::Id {
@@ -134,6 +192,7 @@ mod appkit {
                 .retain(|number, _| app.windowWithWindowNumber(*number).is_some());
             presses.windows.entry(number).or_default();
         });
+        settle(ctx, &app);
         if MONITOR_INSTALLED.replace(true) {
             return;
         }
@@ -178,9 +237,10 @@ mod appkit {
             .map(|value| value.to_string());
         let legacy_minimize =
             defaults.boolForKey(&NSString::from_str("AppleMiniaturizeOnDoubleClick"));
-        let selector = match super::press(event.clickCount(), action.as_deref(), legacy_minimize) {
-            Press::Zoom => sel!(performZoom:),
-            Press::Minimize => sel!(performMiniaturize:),
+        let press = super::press(event.clickCount(), action.as_deref(), legacy_minimize);
+        let zoom = match press {
+            Press::Zoom => true,
+            Press::Minimize => false,
             Press::Drag => {
                 if down {
                     // AppKit requires the original mouse-down, not the current
@@ -191,9 +251,16 @@ mod appkit {
             }
             Press::NativeOrNothing => return,
         };
-        // Finish the egui pass before AppKit resizes/minimizes the window.
-        // SAFETY: these NSWindow selectors take one optional sender argument.
-        unsafe { window.performSelector_withObject_afterDelay(selector, None, 0.0) };
+        // AppKit may answer the double click itself (it does on some macOS
+        // releases); acting too would undo its zoom. The action waits a moment and
+        // is done only if the window has not started changing (`settle`).
+        WAITING.set(Some(Waiting {
+            window: number,
+            zoom,
+            at_press: state(&window),
+            due: std::time::Instant::now() + super::NATIVE_GRACE,
+        }));
+        ctx.request_repaint_after(super::NATIVE_GRACE);
     }
 
     #[cfg(test)]
@@ -273,6 +340,24 @@ mod tests {
             assert_eq!(press(clicks, Some("Maximize"), false), Press::Drag);
         }
         assert_eq!(press(2, Some("Maximize"), false), Press::Zoom);
+    }
+
+    #[test]
+    fn a_double_click_appkit_already_zoomed_is_not_zoomed_again() {
+        // Resizing, or zoomed, since the press: AppKit answered; ours would undo it.
+        assert!(answered_natively(
+            ([1440., 960.], false),
+            ([1444., 963.], false)
+        ));
+        assert!(answered_natively(
+            ([1440., 960.], false),
+            ([1440., 960.], true)
+        ));
+        // Unchanged: the header zooms.
+        assert!(!answered_natively(
+            ([1440., 960.], false),
+            ([1440., 960.], false)
+        ));
     }
 
     #[test]
