@@ -7,6 +7,7 @@
 //! header's own CICP is not consulted, as it is read only when decoding).
 //! The matrix and range come from the `nclx` box, or from the AV1 header
 //! without one. Alpha is dropped. Tiled (`grid`) images are refused.
+
 use super::{Unsupported, av1};
 use anyhow::{Result, anyhow, bail};
 use image::ImageDecoder;
@@ -21,11 +22,66 @@ use yuv::{YuvChromaSubsampling, YuvGrayImage, YuvPlanarImage, YuvRange, YuvStand
 
 /// The CICP code points of an `nclx` box.
 #[derive(Clone, Copy, Debug)]
-struct Nclx {
-    primaries: u16,
-    transfer: u16,
-    matrix: u16,
-    full_range: bool,
+pub(super) struct Nclx {
+    pub(super) primaries: u16,
+    pub(super) transfer: u16,
+    pub(super) matrix: u16,
+    pub(super) full_range: bool,
+}
+
+impl Nclx {
+    /// An HDR transfer: PQ or HLG.
+    pub(super) fn hdr(self) -> bool {
+        matches!(self.transfer, 16 | 18)
+    }
+}
+
+/// An item's colour: its ICC profile and its `nclx`, either when it has one.
+pub(super) fn colour(props: &[&Property]) -> (Option<Vec<u8>>, Option<Nclx>) {
+    let icc = props.iter().find_map(|p| match p {
+        Property::Colour(Colour::Icc(icc)) => Some(icc.clone()),
+        _ => None,
+    });
+    let nclx = props.iter().find_map(|p| match p {
+        Property::Colour(Colour::Nclx {
+            primaries,
+            transfer,
+            matrix,
+            full_range,
+        }) => Some(Nclx {
+            primaries: *primaries,
+            transfer: *transfer,
+            matrix: *matrix,
+            full_range: *full_range,
+        }),
+        _ => None,
+    });
+    (icc, nclx)
+}
+
+/// The ICC profile describing an item's pixels: its own, else one built
+/// from its CICP code points; `None` for sRGB.
+pub(super) fn profile(icc: Option<&Vec<u8>>, nclx: Option<Nclx>) -> Option<Vec<u8>> {
+    match (icc, nclx) {
+        (Some(icc), _) => Some(icc.clone()),
+        (None, Some(n)) => cicp_profile(n.primaries, n.transfer).and_then(|p| p.encode().ok()),
+        (None, None) => None,
+    }
+}
+
+/// The orientation an item's `irot` and `imir` give, applied in the order
+/// they are associated; a turn after a mirror is the opposite turn before it.
+pub(super) fn transforms(props: &[&Property]) -> Orientation {
+    let (mut rotation, mut mirror) = (0, None);
+    for p in props {
+        match p {
+            Property::Rotation(r) if mirror.is_some() => rotation = r.wrapping_neg() & 3,
+            Property::Rotation(r) => rotation = *r,
+            Property::Mirror(m) => mirror = Some(*m),
+            _ => {}
+        }
+    }
+    orientation(rotation, mirror)
 }
 
 pub(super) struct AvifFile {
@@ -83,35 +139,8 @@ impl AvifFile {
                 _ => None,
             })
             .ok_or_else(|| anyhow!("The AVIF image has no size"))?;
-        let icc = props.iter().find_map(|p| match p {
-            Property::Colour(Colour::Icc(icc)) => Some(icc.clone()),
-            _ => None,
-        });
-        let nclx = props.iter().find_map(|p| match p {
-            Property::Colour(Colour::Nclx {
-                primaries,
-                transfer,
-                matrix,
-                full_range,
-            }) => Some(Nclx {
-                primaries: *primaries,
-                transfer: *transfer,
-                matrix: *matrix,
-                full_range: *full_range,
-            }),
-            _ => None,
-        });
-        // Applied in the order they are associated; a turn after a mirror is
-        // the opposite turn before it.
-        let (mut rotation, mut mirror) = (0, None);
-        for p in &props {
-            match p {
-                Property::Rotation(r) if mirror.is_some() => rotation = r.wrapping_neg() & 3,
-                Property::Rotation(r) => rotation = *r,
-                Property::Mirror(m) => mirror = Some(*m),
-                _ => {}
-            }
-        }
+        let (icc, nclx) = colour(&props);
+        let orientation = transforms(&props);
         // av1C's third byte: seq_tier_0, then high_bitdepth.
         let deep = props.iter().any(|p| match p {
             Property::Depth(d) => d.iter().any(|b| *b > 8),
@@ -120,7 +149,7 @@ impl AvifFile {
         });
         let refused = if tiled {
             Some(Unsupported("tiled AVIF".into()))
-        } else if nclx.is_some_and(|n| matches!(n.transfer, 16 | 18)) {
+        } else if nclx.is_some_and(Nclx::hdr) {
             Some(Unsupported("HDR".into()))
         } else if heif.brands.contains(b"avis") {
             Some(Unsupported("animated".into()))
@@ -134,7 +163,7 @@ impl AvifFile {
             source: (!tiled).then_some((file, heif)),
             icc,
             nclx,
-            orientation: orientation(rotation, mirror),
+            orientation,
             refused,
         })
     }
@@ -147,7 +176,7 @@ impl AvifFile {
 /// A profile for CICP `primaries` and `transfer`, unspecified ones taken as
 /// sRGB's (as libavif does); `None` for sRGB itself or primaries moxcms can't
 /// describe. A transfer it can't describe is taken as sRGB's.
-fn cicp_profile(primaries: u16, transfer: u16) -> Option<ColorProfile> {
+pub(super) fn cicp_profile(primaries: u16, transfer: u16) -> Option<ColorProfile> {
     let primaries = if primaries == 2 { 1 } else { primaries };
     let transfer = if transfer == 2 { 13 } else { transfer };
     if (primaries, transfer) == (1, 13) {
@@ -174,7 +203,7 @@ fn cicp_profile(primaries: u16, transfer: u16) -> Option<ColorProfile> {
 }
 
 /// The `yuv` matrix for CICP matrix coefficients `code`.
-fn matrix(code: u8) -> YuvStandardMatrix {
+pub(super) fn matrix(code: u8) -> YuvStandardMatrix {
     match code {
         1 => YuvStandardMatrix::Bt709,
         9 => YuvStandardMatrix::Bt2020,
@@ -279,7 +308,7 @@ fn upsample(plane: &[u16], stride: u32, w: usize, h: usize, y: usize, out: &mut 
 }
 
 /// `samples` of `depth` bits scaled to 16, as native-endian bytes.
-fn widen(samples: &[u16], depth: u8) -> Vec<u8> {
+pub(super) fn widen(samples: &[u16], depth: u8) -> Vec<u8> {
     let max = (1u32 << depth) - 1;
     let mut out = vec![0u16; samples.len()];
     for (o, v) in out.iter_mut().zip(samples) {
@@ -427,11 +456,7 @@ impl ImageDecoder for AvifFile {
         }
     }
     fn icc_profile(&mut self) -> image::ImageResult<Option<Vec<u8>>> {
-        Ok(match (&self.icc, self.nclx) {
-            (Some(icc), _) => Some(icc.clone()),
-            (None, Some(n)) => cicp_profile(n.primaries, n.transfer).and_then(|p| p.encode().ok()),
-            (None, None) => None,
-        })
+        Ok(profile(self.icc.as_ref(), self.nclx))
     }
     fn orientation(&mut self) -> image::ImageResult<Orientation> {
         Ok(self.orientation)
