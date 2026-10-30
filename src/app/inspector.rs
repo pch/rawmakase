@@ -1637,28 +1637,8 @@ impl Editor {
             match result {
                 Ok(done) => {
                     if !done.imported.is_empty() {
-                        self.profile_library = crate::camera_profiles::library_fingerprint();
-                        let crate::camera_profiles::Listed {
-                            profiles,
-                            errors,
-                            groups,
-                        } = crate::camera_profiles::listed(&m);
-                        // As the loader's: the raw defaults are resolved again
-                        // after this frame, so changing an unedited photo's recipe
-                        // is not taken for an edit.
-                        let profiles = super::camera_look::keep_fitted_default(
-                            &self.document.profiles,
-                            &m,
-                            profiles,
-                        );
-                        let _ = self.tx.send(super::worker::Event::Profiles {
-                            id: self.load.id(),
-                            profiles,
-                            errors,
-                            groups,
-                        });
+                        self.list_imported_profiles(&m);
                         ui.ctx().request_repaint();
-                        self.refresh_library_defaults();
                     }
                     let mut reasons: Vec<&str> =
                         done.skipped.iter().map(|(_, e)| e.as_str()).collect();
@@ -1683,6 +1663,28 @@ impl Editor {
                 Err(e) => self.messages.fail(format!("Profiles not imported: {e:#}")),
             }
         }
+    }
+    /// Lists the open photo's profiles again after Adobe profiles were imported
+    /// for its camera. As the loader's, the raw defaults are resolved again after
+    /// this frame, so changing an unedited photo's recipe is not taken for an
+    /// edit; the Library's previews follow them then, once it is known whether
+    /// the open photo's recipe changed.
+    pub(super) fn list_imported_profiles(&mut self, m: &crate::camera_data::Metadata) {
+        self.profile_library = crate::camera_profiles::library_fingerprint();
+        let crate::camera_profiles::Listed {
+            profiles,
+            errors,
+            groups,
+        } = crate::camera_profiles::listed(m);
+        let profiles =
+            super::camera_look::keep_fitted_default(&self.document.profiles, m, profiles);
+        let _ = self.tx.send(super::worker::Event::Profiles {
+            id: self.load.id(),
+            profiles,
+            errors,
+            groups,
+            imported: true,
+        });
     }
 }
 

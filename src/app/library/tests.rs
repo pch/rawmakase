@@ -37,8 +37,33 @@ fn develop_workspace_drains_library_preview_results() -> Result<()> {
     Ok(())
 }
 
+/// Where profiles were imported from while a photo is open in Develop.
+#[derive(Clone, Copy, PartialEq)]
+enum ProfileImport {
+    /// The file chooser or Preferences, applied when the import finishes.
+    Manual,
+    /// The Inspector's Adobe shortcuts, applied after the frame.
+    Shortcut,
+    /// A shortcut whose listing arrives after another photo began loading.
+    StaleShortcut,
+}
+
 #[test]
 fn manual_profile_import_keeps_only_the_unchanged_current_thumbnail() -> Result<()> {
+    profile_import_keeps_only_the_unchanged_current_thumbnail(ProfileImport::Manual)
+}
+
+#[test]
+fn adobe_profile_shortcut_keeps_only_the_unchanged_current_thumbnail() -> Result<()> {
+    profile_import_keeps_only_the_unchanged_current_thumbnail(ProfileImport::Shortcut)
+}
+
+#[test]
+fn a_stale_adobe_profile_shortcut_keeps_no_thumbnail() -> Result<()> {
+    profile_import_keeps_only_the_unchanged_current_thumbnail(ProfileImport::StaleShortcut)
+}
+
+fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImport) -> Result<()> {
     use crate::app::bulk_import::{ImportKind, Summary};
     for (new_defaults, missing_metadata, wrong_path, dirty) in [
         (false, false, false, false),
@@ -53,6 +78,7 @@ fn manual_profile_import_keeps_only_the_unchanged_current_thumbnail() -> Result<
         let photos = library.session.photos.clone();
         let mut editor = crate::app::Editor::with_context(&ctx, None, Default::default(), None);
         editor.presets.next_scan();
+        editor.load.start();
         let metadata = crate::camera_data::Metadata {
             make: "Test".into(),
             model: "Import refresh".into(),
@@ -60,7 +86,7 @@ fn manual_profile_import_keeps_only_the_unchanged_current_thumbnail() -> Result<
             ..Default::default()
         };
         editor.document.profiles = crate::camera_profiles::listed(&metadata).profiles;
-        editor.document.metadata = Some(metadata);
+        editor.document.metadata = Some(metadata.clone());
         editor.refresh_photo_defaults();
         if dirty {
             editor.document.edit.setup_mut().exposure = 1.25;
@@ -93,6 +119,16 @@ fn manual_profile_import_keeps_only_the_unchanged_current_thumbnail() -> Result<
             photos[0].path.clone()
         });
         editor.library = Some(Box::new(library));
+        if import != ProfileImport::Manual {
+            // The shortcut lists the profiles in its frame; they apply later.
+            editor.list_imported_profiles(&metadata);
+            let library = editor.library.as_ref().unwrap();
+            assert_eq!(
+                library.thumbnail(current).map(egui::TextureHandle::id),
+                Some(original),
+                "nothing is discarded before the listing applies"
+            );
+        }
         if new_defaults {
             editor.raw_defaults = std::sync::Arc::new(crate::raw_defaults::brighter_defaults());
         }
@@ -100,21 +136,30 @@ fn manual_profile_import_keeps_only_the_unchanged_current_thumbnail() -> Result<
             editor.document.metadata = None;
             editor.document.defaults = None;
         }
-        editor.imported(
-            Summary {
-                kind: ImportKind::CameraProfiles,
-                imported: 1,
-                already: 0,
-                without_base: 0,
-                failed: Vec::new(),
-                cubes: Vec::new(),
-            },
-            &ctx,
-        );
+        match import {
+            ProfileImport::Manual => editor.imported(
+                Summary {
+                    kind: ImportKind::CameraProfiles,
+                    imported: 1,
+                    already: 0,
+                    without_base: 0,
+                    failed: Vec::new(),
+                    cubes: Vec::new(),
+                },
+                &ctx,
+            ),
+            ProfileImport::Shortcut => editor.events(&ctx),
+            ProfileImport::StaleShortcut => {
+                editor.load.start();
+                editor.events(&ctx);
+            }
+        }
+        let stale = import == ProfileImport::StaleShortcut;
         let library = editor.library.as_ref().unwrap();
         assert_eq!(
             library.thumbnail(current).map(egui::TextureHandle::id),
-            ((!new_defaults || dirty) && !missing_metadata && !wrong_path).then_some(original),
+            ((!new_defaults || dirty) && !missing_metadata && !wrong_path && !stale)
+                .then_some(original),
             "only the unchanged, identified open photo keeps its render"
         );
         assert!(library.thumbnail(photos[1].id).is_none());
@@ -124,7 +169,7 @@ fn manual_profile_import_keeps_only_the_unchanged_current_thumbnail() -> Result<
         );
         assert_eq!(
             editor.document.edit.recipe().exposure,
-            if new_defaults && !dirty {
+            if new_defaults && !dirty && !stale {
                 0.7
             } else {
                 recipe.exposure

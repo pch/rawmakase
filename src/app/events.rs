@@ -192,7 +192,9 @@ impl Editor {
                     profiles,
                     errors,
                     groups,
+                    imported,
                 } if id == self.load.id() => {
+                    let before = self.document.edit.recipe().clone();
                     self.document.profiles = profiles;
                     self.document.profile_errors = errors;
                     self.document.profile_groups = groups;
@@ -203,7 +205,13 @@ impl Editor {
                         // The Lightroom edit is the starting point, not an unsaved change.
                         self.document.edit.save_state_mut().saved();
                     }
+                    if imported {
+                        let current = self.unchanged_current_photo(&before);
+                        self.refresh_library_defaults_preserving(current);
+                    }
                 }
+                // Profiles imported for a photo no longer open: none keeps its preview.
+                Event::Profiles { imported: true, .. } => self.refresh_library_defaults(),
                 Event::Import(kind, paths) => {
                     self.activity.finish_dialog();
                     self.import(kind, paths, ctx);
