@@ -187,7 +187,7 @@ A profile fitted to one photo's embedded JPEG, the maker's in-camera rendering (
 
 Opening and decoding a photo never fits or reads a preview for it: the provenance facts the fit needs (`Metadata::matrix_source`, `embedded_profile_status`) are values the decoders already compute, and the preview's EXIF, its colour conversion, the small renders and the solvers (a few seconds a photo) run only when a fit is asked for. A fitted default for photos without colour data must keep it so: fitted once per file and build, kept in the fit cache, and only for those photos.
 
-Everything is deterministic: the solvers run in a fixed order, the renders per pixel. `--report` also scores the fitted look and an unconstrained reference (the look plus a free correction of its remaining error on a 17³ lattice over the scene colour) on the scene stage directly, which measures what the representation loses, and `--drop-matrix` fits a matrix for a camera that has one and compares the two (the no-matrix trial).
+Everything is deterministic: the solvers run in a fixed order, the renders per pixel. `--report` also scores the fitted look and an unconstrained reference (the look plus a free correction of its remaining error on a 17³ lattice over the scene colour) on the scene stage directly, which measures what the representation loses, and `--drop-matrix` fits a matrix for a camera that has one and compares the two (the no-matrix trial). `--dump <dir>` writes, per accepted fit, what a regression check needs to judge it beside its JPEG, which the held-out score can't (contours, blotches, a small face's hue): 1280-pixel renders of the look and of the baseline through the fit's own recipe, the JPEG lined up on them, the table's input and the table.
 
 ## Rendering
 

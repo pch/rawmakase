@@ -378,6 +378,69 @@ pub fn preview_srgb(path: &Path) -> anyhow::Result<CameraPreview> {
     Ok(CameraPreview { image, look })
 }
 
+/// A fitted look beside what it was fitted to, for `rawmakase fit-look --dump`: the
+/// renders through the fit's own recipe, and the camera's JPEG lined up on them.
+/// Encoded sRGB, except `scene`.
+pub struct Comparison {
+    pub width: u32,
+    pub height: u32,
+    pub fitted: Vec<Rgb>,
+    /// The render the look replaces: RAWmakase Standard, else no profile.
+    pub baseline: Vec<Rgb>,
+    /// NaN outside the JPEG.
+    pub jpeg: Vec<Rgb>,
+    /// What the look's table receives: the scene tone stage's linear ProPhoto RGB.
+    pub scene: Vec<Rgb>,
+}
+
+/// The [`Comparison`] of the photo at `path` and its fit, at `edge` pixels on the long
+/// edge or the JPEG's, if that is smaller.
+pub fn compare(path: &Path, fitted: &Fitted, edge: u32) -> anyhow::Result<Comparison> {
+    let cancel = Cancel::NEVER;
+    let mut raw = crate::photo::open(path)?;
+    let m = raw.metadata.clone();
+    let preview = pairs::preview(path, &mut raw).map_err(|e| anyhow::anyhow!(e.reason))?;
+    let edge = edge.min(preview.width.max(preview.height));
+    let im = raw.develop(Decode::Half, cancel)?;
+    let render = |profile: Option<CameraProfile>| {
+        let recipe = pairing_recipe(&m, profile);
+        develop::render(&im, &recipe.checked()?, edge, cancel)
+    };
+    let look = render(Some(fitted.profile.clone()))?;
+    let baseline = render(fitted::standard_base(&m))?;
+    let (width, height) = (look.width, look.height);
+    let mut base = fitted.profile.clone();
+    base.enhanced = None;
+    let scene = develop::quality::render_stage_sized(
+        &im,
+        &pairing_recipe(&m, Some(base)),
+        develop::quality::Stage::SceneOutput,
+        edge,
+        cancel,
+    )?;
+    anyhow::ensure!(
+        [baseline.width, baseline.height] == [width, height]
+            && [scene.width, scene.height] == [width, height],
+        "The renders differ in size"
+    );
+    let (preview, _) = pairs::to_aspect(preview, width, height);
+    let sampled = pairs::sample_aligned(&preview, [width, height], &fitted.report.alignment);
+    let jpeg = sampled
+        .iter()
+        .map(|p| mul(PRO_TO_RGB, *p).map(|v| srgb_encode(v.clamp(0., 1.))))
+        .zip(&sampled)
+        .map(|(e, p)| if p[0].is_nan() { [f32::NAN; 3] } else { e })
+        .collect();
+    Ok(Comparison {
+        width,
+        height,
+        fitted: look.pixels,
+        baseline: baseline.pixels,
+        jpeg,
+        scene: scene.pixels,
+    })
+}
+
 /// Fits a camera look to the photo at `path`, or says why it can't.
 pub fn fit(path: &Path, inputs: &FitInputs, cancel: Cancel<'_>) -> Result<Fitted, Refusal> {
     let start = std::time::Instant::now();

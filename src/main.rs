@@ -1,7 +1,7 @@
 // A console subsystem puts the generic console icon on the Windows taskbar.
 // Command output still attaches to the parent console when there is one.
 #![cfg_attr(windows, windows_subsystem = "windows")]
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use rawmakase::model::recipe::Recipe;
 use rawmakase::{camera_data, develop, raw};
@@ -196,6 +196,12 @@ enum Command {
         /// compare it with the camera's own (the no-matrix trial).
         #[arg(long)]
         drop_matrix: bool,
+        /// For a regression check: write each accepted fit's comparison with its JPEG
+        /// to <DIR>/<file name>/ (16-bit PNGs of the fitted render, the render it
+        /// replaces, the JPEG lined up on them and the look table's input, and the
+        /// table as floats).
+        #[arg(long, value_name = "DIR")]
+        dump: Option<PathBuf>,
     },
     Benchmark {
         input: PathBuf,
@@ -358,6 +364,44 @@ fn show_error(error: &anyhow::Error) {
         )
     };
 }
+/// `fit-look --dump`: what the regression check compares, at a size that shows a
+/// face's contours; the comparison's pixels NaN outside the JPEG become transparent.
+fn dump_fit(
+    path: &std::path::Path,
+    fitted: &rawmakase::camera_look::Fitted,
+    dir: &std::path::Path,
+) -> anyhow::Result<()> {
+    let c = rawmakase::camera_look::compare(path, fitted, 1280)?;
+    std::fs::create_dir_all(dir)?;
+    let write = |name: &str, pixels: &[[f32; 3]]| -> anyhow::Result<()> {
+        let bytes: Vec<u16> = pixels
+            .iter()
+            .flat_map(|p| {
+                let alpha = if p[0].is_nan() { 0 } else { u16::MAX };
+                let [r, g, b] = p.map(|v| (v.clamp(0., 1.) * 65535. + 0.5) as u16);
+                [r, g, b, alpha]
+            })
+            .collect();
+        image::ImageBuffer::<image::Rgba<u16>, _>::from_raw(c.width, c.height, bytes)
+            .context("A dumped image's size")?
+            .save(dir.join(name))?;
+        Ok(())
+    };
+    write("fitted.png", &c.fitted)?;
+    write("baseline.png", &c.baseline)?;
+    write("jpeg.png", &c.jpeg)?;
+    write("scene.png", &c.scene)?;
+    if let Some(table) = rawmakase::camera_profiles::fitted::look_table(&fitted.profile) {
+        let floats: Vec<u8> = table
+            .iter()
+            .flatten()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        std::fs::write(dir.join("table.f32"), floats)?;
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     #[cfg(windows)]
     attach_console();
@@ -571,11 +615,24 @@ fn main() -> Result<()> {
             files,
             report,
             drop_matrix,
+            dump,
         }) => {
             use rawmakase::camera_look::{FitInputs, fit};
             let inputs = FitInputs { drop_matrix };
+            if dump.is_some() {
+                let names: std::collections::HashSet<_> =
+                    files.iter().map(|f| f.file_name()).collect();
+                anyhow::ensure!(
+                    names.len() == files.len(),
+                    "Dumped files need distinct names"
+                );
+            }
             for path in &files {
                 let result = fit(path, &inputs, Cancel::NEVER);
+                if let (Some(dir), Ok(fitted)) = (&dump, &result) {
+                    let name = path.file_name().context("A file without a name")?;
+                    dump_fit(path, fitted, &dir.join(name))?;
+                }
                 let (measured, outcome) = match &result {
                     Ok(f) => (Some(&f.report), format!("{:?} look", f.report.kind)),
                     Err(e) => (e.report.as_deref(), format!("refused: {}", e.reason)),

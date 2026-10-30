@@ -355,6 +355,25 @@ fn sample(
     Sampled { pro, clipped }
 }
 
+/// The preview on a `width` × `height` grid of any size, where `alignment`, found at
+/// the proxy's size, puts it: NaN outside it.
+pub(super) fn sample_aligned(
+    p: &Preview,
+    [width, height]: [u32; 2],
+    alignment: &Alignment,
+) -> Vec<Rgb> {
+    let per_proxy = width.max(height) as f32 / PROXY_EDGE as f32;
+    sample(
+        p,
+        &Integral::new(p),
+        [width, height],
+        alignment.scale,
+        alignment.radial,
+        alignment.shift.map(|v| v * per_proxy),
+    )
+    .pro
+}
+
 /// Log luminance less its 5 × 5 mean: the detail two renders of one scene share
 /// whatever their tone curves.
 fn detail(lum: &[f32], width: u32, height: u32) -> Vec<f32> {
@@ -642,6 +661,40 @@ pub(super) fn monochrome(target: &[Rgb], usable: &[bool]) -> bool {
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicBool;
+
+    /// A shift found at the proxy's size lands in the same place of a larger grid.
+    #[test]
+    fn an_alignment_carries_to_a_larger_grid() {
+        let (w, h) = (960u32, 640u32);
+        let pro: Vec<Rgb> = (0..w * h)
+            .map(|i| [(i % w) as f32 / w as f32, (i / w) as f32 / h as f32, 0.5])
+            .collect();
+        let p = Preview {
+            width: w,
+            height: h,
+            clipped: vec![false; pro.len()],
+            pro,
+            space: "srgb",
+        };
+        let alignment = Alignment {
+            scale: 1.,
+            shift: [2., -1.],
+            ..Default::default()
+        };
+        let (gw, gh) = (480u32, 320u32);
+        let out = sample_aligned(&p, [gw, gh], &alignment);
+        // 480 is 2.5 proxy pixels each: 5 and -2.5 here, 10 and -5 in the preview.
+        let at = out[(100 * gw + 200) as usize];
+        assert!(
+            (at[0] - (200.5 * 2. - 10.) / w as f32).abs() < 2. / w as f32,
+            "{at:?}"
+        );
+        assert!(
+            (at[1] - (100.5 * 2. + 5.) / h as f32).abs() < 2. / h as f32,
+            "{at:?}"
+        );
+        assert!(out[0][0].is_nan(), "outside the JPEG");
+    }
 
     fn preview(width: u32, height: u32, f: impl Fn(u32, u32) -> f32) -> Preview {
         Preview {
