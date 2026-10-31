@@ -72,6 +72,29 @@ impl Outputs {
         self.running()
             .any(|job| !job.cancel.load(Ordering::Relaxed))
     }
+    /// A job that stays running until cancelled, with no thread, for tests.
+    #[cfg(test)]
+    pub(crate) fn hold_running(&mut self) {
+        self.next += 1;
+        let state = OutputState {
+            job_id: self.next,
+            status: Status::Running,
+            generation: 0,
+            revision: 0,
+            path: PathBuf::new(),
+            progress: 0.,
+            notice: None,
+            error: None,
+        };
+        self.jobs.insert(
+            self.next,
+            Job {
+                state: Arc::new(Mutex::new(state)),
+                cancel: Arc::default(),
+                thread: None,
+            },
+        );
+    }
     /// Cancels every job still running, after the stage it is in.
     pub(crate) fn cancel_all(&self) {
         for job in self.jobs.values() {

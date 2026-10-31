@@ -34,6 +34,9 @@ impl Own {
     pub(super) fn thumbnail(&self) -> Result<Vec<u8>> {
         Ok(rawmakase_raw::preview(&self.info, &self.bytes)?.to_vec())
     }
+    pub(super) fn thumbnail_reaching(&self, edge: u32) -> Result<Vec<u8>> {
+        Ok(rawmakase_raw::preview_reaching(&self.info, &self.bytes, edge)?.to_vec())
+    }
     fn decode(&self, cancel: &AtomicBool) -> Result<rawmakase_raw::Sensor> {
         let s = rawmakase_raw::decode(&self.info, &self.bytes, cancel)?;
         let [left, top, w, h] = s.area;

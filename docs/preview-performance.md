@@ -456,6 +456,25 @@ Through the real loader, in a folder of three X100F photos: the first open showe
 the half-size image at 166 ms and the full image at 884 ms; reopening it showed the
 full image at 140 ms, and the two prefetched neighbours opened in 190 and 300 ms.
 
+## Library edited previews — 2026-10-29
+
+The Library's 640-pixel edited previews render with `develop::render_fitted`,
+Develop's Fit path from the resolution pyramid, on the CPU. They used to render
+the half-size decode whole, as an export does, and reduce the result. Measured
+with a throwaway harness on an Apple M5 Pro (18 cores), 24 Nikon Z 6 NEF and DNG
+files, four threads, medians of one run on a machine that was not idle:
+
+| Recipe | Half-size decode | Whole render | Fit, CPU | Fit, GPU |
+| --- | ---: | ---: | ---: | ---: |
+| Defaults | 90 ms (NEF), 220 ms (DNG) | 824 ms | 69 ms | 50 ms |
+| Exposure, Shadows, Highlights, Clarity | | 943 ms | 129 ms | 111 ms |
+| The same and luminance noise reduction | | 976 ms | 170 ms | 147 ms |
+
+The mean difference from the whole render was about 0.01 (0–1 scale) on the NEFs
+and 0.002–0.006 on the DNGs; only the mean was measured. The GPU added too little
+to share Develop's device for, so previews stay on the CPU. Previews cached
+before are keyed by `EditSource::preview_tag` and made again.
+
 ## Decoder speed — 2026-10-18
 
 RAWmakase's own decoders against LibRaw, measured at the switch to them on 45

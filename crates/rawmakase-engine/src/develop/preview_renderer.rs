@@ -44,6 +44,18 @@ pub(crate) struct Stages<'a> {
 }
 /// Pixel budget of a reduced 100% drag preview.
 const PREVIEW_PIXELS: u64 = 600_000;
+/// The whole photo within `max_edge`, as Develop's Fit draws it (from the smallest
+/// pyramid level with a pixel per output pixel), on the CPU and keeping nothing
+/// between calls: previews of many photos, such as the Library's edited ones. Stops
+/// once `cancel` is set. Exports render at full resolution with [`super::render`].
+pub fn render_fitted(
+    image: &CameraImage,
+    recipe: &Recipe,
+    max_edge: u32,
+    cancel: &AtomicBool,
+) -> Result<Rendered> {
+    PreviewRenderer::default().render(image, recipe, max_edge, None, cancel)
+}
 impl PreviewRenderer {
     /// A hardware device is optional; failure leaves a fully working CPU renderer.
     pub fn with_gpu() -> Self {

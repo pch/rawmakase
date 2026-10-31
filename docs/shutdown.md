@@ -43,6 +43,12 @@ Workers that read or decode photos behind the user's back start from
 `raw::spawn_background` or `raw::background_pool` (`crates/rawmakase-decode`):
 their threads run at a lower scheduling priority (Linux and Windows), and parallel
 work they start runs on a pool of two background threads, never the shared pool.
+The Library's edited previews use a wider pool while the Library is in front
+with nothing else rendering (up to four renders on every core but one; see
+`previews::Pace`), and drop back to one render on two threads, cancelling the
+wider renders under way, when it is not. Its thumbnail workers (two to four, by
+core count) run at normal priority, as the one worker before them did, so the
+grid fills first.
 That pool belongs to the worker: dropping it, when the worker's work returns, lets
 its threads end on their own; nothing joins them, so a pool never blocks the thread
 that drops it.
@@ -59,9 +65,9 @@ that drops it.
 | MIDI listener | `app/automation/midi.rs` | A 2 s wait on its stop channel between port scans | The device dropped, which closes the channel | Yes; it stops at once |
 | Control socket listener | `app/automation/socket.rs` | A blocking `accept`; then its connections, which it joins | The stop flag, seen after a wake-up connection | Yes, under the deadline: if the wake-up connection fails, `accept` never returns |
 | Control socket connections | `app/automation/socket.rs` | A 5 s read; **a wait for the UI thread's reply: 3 s, or up to 8 s for a `wait` command**; a 5 s write | The stop flag; the request queue's receiver dropped, which answers the wait at once | Through the listener, after the request queue's receiver is dropped |
-| Library thumbnails | `app/library/previews.rs` | The request channel; preview cache and file reads; **a send on a result channel bounded at 24** | Its channels dropped | Yes, after dropping the result receiver |
+| Library thumbnails | `app/library/previews.rs` | Two to four workers side by side (scoped threads), each with its own preview cache connection: the shared request channel; preview cache and file reads; **a send on a result channel bounded at 24** | Its channels dropped; the thread joined returns once every worker has | Yes, after dropping the result receiver |
 | Stored preview readers (opening, neighbour) | `app/stand_in.rs` | A job; one preview cache read and JPEG decode | Both `Latest`s stopped, between jobs | Yes, both |
-| Library edited previews | `app/library/previews.rs` | A queue of renders | Its closed flag, which cancels the render under way; its channels dropped | Yes, after closing |
+| Library edited previews | `app/library/previews.rs` | A queue of renders, one or several under way on its pools; the preview cache's lock, briefly | Its queue closed (`EditQueue::close`, or dropped), which cancels every render under way; the worker returns once they have stopped | Yes, after closing |
 | Library screen previews | `app/library/screen.rs` | A job; renders | `ScreenPreviews` closed, which cancels the renders under way | Yes, after closing |
 | Library background readers | `catalog_session/background.rs` | File reads in batches, possibly on a network share | The reader's cancel, per batch | No: a stalled share can hang a read |
 | Synchronize Folder scan | `app/folder_sync.rs` | Listing folders and hashing files, possibly on a network share | Its cancel flag, between files and hash chunks | Yes, under the deadline: a stalled read can't be interrupted |
@@ -79,7 +85,8 @@ The Develop loader, Reference View, Library previews, preview builds, exports an
 Sync also fit the default Camera Look of a photo without colour data, once per file
 and build (seconds; a fit cache hit otherwise, and nothing for every other photo).
 The fit takes the job's cancel flag inside its renders and between its stages, so it
-stops as a decode does; a fit stopped that way is neither used nor cached.
+stops as a decode does; a fit stopped that way is neither used nor cached. A job
+waiting for another's fit of the same file sees its own cancel within 50 ms.
 
 One-shot jobs stay detached: Auto, Upright, Auto straighten, Profile → Fit Camera
 Look, the Point Color and

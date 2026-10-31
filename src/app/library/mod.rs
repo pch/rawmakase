@@ -69,7 +69,7 @@ pub(in crate::app) use cell::copy_suffix;
 pub(crate) use descriptive::DescriptiveCommand;
 pub(crate) use filmstrip::{DraggedPhoto, Module, Pick};
 pub(crate) use metadata::{Metadata, MetadataCommand};
-pub(in crate::app) use previews::EditSource;
+pub(in crate::app) use previews::{EditSource, Pace};
 pub(crate) use quick::CollectionCommand;
 pub(in crate::app) use stacks::StackAction;
 pub(crate) use stacks::StackCommand;
@@ -1296,10 +1296,23 @@ impl Library {
         self.cache.poll(ctx);
         self.screen.poll(ctx);
     }
-    /// Hands the worker the photos shown last frame. Call once per frame.
+    /// Hands the worker the photos shown last frame, and at full pace asks
+    /// for the edited previews of the ones after them. Call once per frame.
     pub(super) fn publish_shown(&mut self) {
         self.cache.publish_shown();
         self.screen.publish_shown();
+        let catalog = &self.session.catalog;
+        self.cache.request_ahead(
+            &self.session.photos,
+            (self.shown_version, &self.visible),
+            self.grid_shown.end,
+            |id| edit_source(catalog, id),
+        );
+    }
+    /// How fast edited previews are rendered from now on: at full pace while
+    /// the Library is in front and nothing else renders.
+    pub(in crate::app) fn set_preview_pace(&mut self, pace: previews::Pace) {
+        self.cache.set_pace(pace);
     }
     /// The photo's preview: its edit once rendered, else the embedded one.
     fn texture(&self, photo: &Photo) -> Option<&egui::TextureHandle> {

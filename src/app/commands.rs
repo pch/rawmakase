@@ -28,6 +28,11 @@ impl Automation {
     pub(super) fn outputs_running(&self) -> bool {
         self.outputs.any_running()
     }
+    /// An output job that runs until cancelled, for tests.
+    #[cfg(test)]
+    pub(super) fn hold_running_output(&mut self) {
+        self.outputs.hold_running();
+    }
     /// Cancels the export and preview jobs commands started.
     pub(super) fn cancel_outputs(&self) {
         self.outputs.cancel_all();

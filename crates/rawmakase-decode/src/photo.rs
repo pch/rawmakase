@@ -2,7 +2,9 @@
 //! the file says beyond them and what the user's libraries add: the lens tables
 //! the camera embedded, a DNG's profile, baseline exposure, colour matrix, lens
 //! and default crop, and the imported lens profiles that fit. Everything that
-//! develops, previews or exports a photo opens it here.
+//! develops, previews or exports a photo opens it here; the Library's
+//! thumbnails, which need only the file's facts and its embedded preview,
+//! use [`Raw::open_file`] and `raw::thumbnail_reaching`.
 use crate::raster;
 use crate::raw::Raw;
 use anyhow::Result;

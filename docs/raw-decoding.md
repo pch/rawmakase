@@ -36,7 +36,11 @@ Three operations on the file's bytes, read into memory once:
 - `preview(&RawInfo, bytes)`: the embedded preview thumbnails use, the
   largest JPEG or JPEG XL (Lightroom's DNGs of HDR and panorama merges embed
   a 1024-pixel JPEG XL beside a 256-pixel JPEG); `rawmakase-decode`'s
-  `raw::thumbnail` decodes either;
+  `raw::thumbnail` decodes either. `preview_reaching(&RawInfo, bytes, edge)`
+  is the one the Library's thumbnails use: the JPEG with the fewest pixels
+  that is at least `edge` pixels on its long side and has the largest one's
+  shape (not letterboxed or turned), else the largest, so a full-size JPEG
+  is decoded for a 640-pixel thumbnail only when nothing smaller will do;
 - `decode(&RawInfo, bytes, &cancel) -> Sensor`: the sensor data, with the
   levels read after unpacking. Decoders check `cancel` inside their loops.
 

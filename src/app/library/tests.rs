@@ -1418,7 +1418,7 @@ fn an_edited_preview_from_develop_outranks_renders_in_flight() -> Result<()> {
     let (_directory, mut library) = library_of(&["a.RAF"])?;
     let ctx = library.ctx.clone();
     let id = library.session.photos[0].id;
-    let (job_tx, jobs) = std::sync::mpsc::channel();
+    let (job_tx, jobs) = previews::EditQueue::detached();
     let (result_tx, results) = std::sync::mpsc::channel();
     let (thumb_tx, _thumbs) = std::sync::mpsc::sync_channel(8);
     library.cache.edit_tx = job_tx;
@@ -1428,7 +1428,7 @@ fn an_edited_preview_from_develop_outranks_renders_in_flight() -> Result<()> {
     let photo = library.session.photos[0].clone();
     library.request_previews(&photo, &ctx);
     library.request_previews(&photo, &ctx);
-    assert!(jobs.try_recv().is_err());
+    assert!(jobs.try_recv().is_none());
     assert_eq!(library.cache.edits_pending, 0);
     let first = library.cache.edited_requested[&id];
     // Develop's render arrives: it is shown, kept, and outranks `first`.
@@ -1436,7 +1436,7 @@ fn an_edited_preview_from_develop_outranks_renders_in_flight() -> Result<()> {
     assert!(library.has_edited_thumbnail(id));
     assert!(matches!(
         jobs.try_recv(),
-        Ok(previews::EditJob::Store { .. })
+        Some(previews::EditJob::Store { .. })
     ));
     let newest = library.cache.edited_requested[&id];
     assert!(newest > first);
@@ -4299,5 +4299,105 @@ fn a_filmstrip_badge_collapses_an_open_stack_shown_whole() -> Result<()> {
     frame(&mut library, vec![click(false)]);
     assert_eq!(library.shown(), [a]);
     frame(&mut library, vec![]);
+    Ok(())
+}
+#[test]
+fn edited_previews_are_asked_ahead_only_at_full_pace_in_order_from_the_view() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF", "b.RAF", "c.RAF", "d.RAF"])?;
+    let (queue, jobs) = previews::EditQueue::detached();
+    let (result_tx, results) = std::sync::mpsc::channel();
+    library.cache.edit_tx = queue;
+    library.cache.edit_rx = results;
+    let ctx = library.ctx.clone();
+    let photos = library.session.photos.clone();
+    let order: Vec<usize> = (0..photos.len()).collect();
+    let edit = |_| Some(previews::EditSource::Recipe("{}".into()));
+    let asked = |jobs: &previews::Sent| {
+        std::iter::from_fn(|| jobs.try_recv())
+            .map(|job| match job {
+                previews::EditJob::Render { id, ahead, .. } => {
+                    assert!(ahead);
+                    id
+                }
+                previews::EditJob::Store { .. } => panic!("not a render"),
+            })
+            .collect::<Vec<_>>()
+    };
+    // Develop in front: nothing ahead.
+    library.cache.request_ahead(&photos, (0, &order), 2, edit);
+    assert!(asked(&jobs).is_empty());
+    library.cache.set_pace(Pace::Full);
+    // Not while embedded previews asked for are still coming.
+    library.cache.pending.insert(photos[0].path.clone());
+    library.cache.request_ahead(&photos, (0, &order), 2, edit);
+    assert!(asked(&jobs).is_empty());
+    library.cache.pending.clear();
+    // Before the grid is drawn its range ends at usize::MAX: from the first.
+    library
+        .cache
+        .request_ahead(&photos, (0, &order), usize::MAX, |_| None);
+    assert!(asked(&jobs).is_empty());
+    assert_eq!(library.cache.edited_requested.len(), photos.len());
+    library.cache.edited_requested.clear();
+    // Photo b is shown, so asked already; the rest from after the view on.
+    library.cache.edited_requested.insert(photos[1].id, 99);
+    library.cache.request_ahead(&photos, (0, &order), 2, edit);
+    assert_eq!(asked(&jobs), [photos[2].id, photos[3].id, photos[0].id]);
+    assert_eq!(library.cache.ahead.len(), 3);
+    assert_eq!(library.cache.edits_pending, 0);
+    // Asked once.
+    library.cache.request_ahead(&photos, (0, &order), 2, edit);
+    assert!(asked(&jobs).is_empty());
+    // Kept: asked again only when shown, from the cache.
+    let ticket = library.cache.edited_requested[&photos[2].id];
+    result_tx.send(previews::EditResult::Kept(photos[2].id, ticket))?;
+    library.poll_previews(&ctx);
+    assert!(library.cache.kept.contains(&photos[2].id));
+    assert!(!library.cache.edited_requested.contains_key(&photos[2].id));
+    assert_eq!(library.cache.ahead.len(), 2);
+    assert!(!library.has_edited_thumbnail(photos[2].id));
+    library.cache.request_ahead(&photos, (0, &order), 2, edit);
+    assert!(asked(&jobs).is_empty());
+    // Given up for Develop: asked ahead again once back at full pace.
+    let ticket = library.cache.edited_requested[&photos[3].id];
+    result_tx.send(previews::EditResult::Skipped(photos[3].id, ticket))?;
+    library.poll_previews(&ctx);
+    library.cache.request_ahead(&photos, (0, &order), 2, edit);
+    assert_eq!(asked(&jobs), [photos[3].id]);
+    // Another list from the same position, as another folder at its top:
+    // asked over again, the first photo after the view first.
+    let other = [3, 2, 1, 0];
+    library.cache.edited_requested.remove(&photos[1].id);
+    library.cache.request_ahead(&photos, (1, &other), 2, edit);
+    assert_eq!(asked(&jobs), [photos[1].id]);
+    // Failed ahead, its file offline say: tried again once shown, not before.
+    let ticket = library.cache.edited_requested[&photos[3].id];
+    result_tx.send(previews::EditResult::Failed(photos[3].id, ticket))?;
+    library.poll_previews(&ctx);
+    library.cache.request_ahead(&photos, (1, &other), 2, edit);
+    assert!(asked(&jobs).is_empty());
+    library
+        .cache
+        .request_edited(&photos[3], || edit(photos[3].id));
+    assert!(matches!(
+        jobs.try_recv(),
+        Some(previews::EditJob::Render { ahead: false, .. })
+    ));
+    // Another list again: what was asked ahead and not started is dropped.
+    library.cache.edited_requested.remove(&photos[0].id);
+    library.cache.request_ahead(&photos, (2, &other), 2, edit);
+    assert_eq!(jobs.dropped(), 0);
+    library.cache.request_ahead(&photos, (3, &other), 2, edit);
+    assert_eq!(jobs.dropped(), 1);
+    assert_eq!(asked(&jobs), [photos[0].id]);
+    // Shown by the time it is done: shown.
+    let ticket = library.cache.edited_requested[&photos[0].id];
+    result_tx.send(previews::EditResult::Ready(
+        photos[0].id,
+        ticket,
+        image::RgbImage::new(4, 4),
+    ))?;
+    library.poll_previews(&ctx);
+    assert!(library.has_edited_thumbnail(photos[0].id));
     Ok(())
 }

@@ -306,11 +306,14 @@ impl Catalog {
             Ok(new)
         })?;
         // Everything each photo brings is read before the transaction, so
-        // that it is written with the photo or not at all.
-        let photos: Vec<NewPhoto> = files
-            .into_iter()
-            .map(|(file, place)| self.read_new_photo(file, place, defaults))
-            .collect();
+        // that it is written with the photo or not at all. The files are read
+        // side by side, as one after another leaves a slow disk or a network
+        // share waiting on each; the checks against the catalog follow in order.
+        let photos: Vec<NewPhoto> =
+            side_by_side(files, |(file, place)| read_new_photo(file, place, defaults))
+                .into_iter()
+                .map(|read| self.new_photo(read))
+                .collect();
         let edited_at = rawmakase_model::time::now_text();
         // An edit naming a Lensfun lens raises the catalog to the format for them,
         // in this transaction.
@@ -442,40 +445,30 @@ impl Catalog {
             Ok(())
         })
     }
-    /// What a new photo brings from its files: the edit an older release
-    /// saved beside it, its sidecar's and its own XMP metadata, and the
-    /// defaults where neither has a value.
-    fn read_new_photo<'a>(
-        &self,
-        file: PathBuf,
-        place: &'a Place,
-        defaults: &super::NewPhotoDefaults,
-    ) -> NewPhoto<'a> {
-        let edit = crate::storage::is_raw(&file)
-            .then(|| self.read_legacy_edit(&file))
-            // A sidecar that no longer matches its photo stays unused on disk.
-            .and_then(|edit| edit.ok().flatten());
-        let (metadata, report) = super::sidecar::read_file(&file, defaults.raw_xmp());
-        let defaults = defaults.for_file(&file, metadata.as_ref());
+    /// What a new photo brings, its legacy edit checked for the catalog.
+    fn new_photo<'a>(&self, read: FilesRead<'a>) -> NewPhoto<'a> {
+        let edit = read.legacy.and_then(|legacy| {
+            legacy
+                .and_then(|legacy| self.check_legacy_edit(&read.file, legacy))
+                // A sidecar that no longer matches its photo stays unused on disk.
+                .ok()
+                .flatten()
+        });
         NewPhoto {
-            file,
-            place,
+            file: read.file,
+            place: read.place,
             edit,
-            metadata,
-            report,
-            defaults,
+            metadata: read.metadata,
+            report: read.report,
+            defaults: read.defaults,
         }
     }
     /// The edit a photo got outside any catalog, in its photo.rawmakase.json
     /// sidecar, checked for the catalog. The sidecar stays on disk.
-    fn read_legacy_edit(&self, file: &Path) -> Result<Option<LegacyEdit>> {
-        let Some((sidecar, bitmaps)) = super::legacy_sidecar::import(file)? else {
+    fn check_legacy_edit(&self, file: &Path, legacy: Option<Legacy>) -> Result<Option<LegacyEdit>> {
+        let Some((sidecar, bitmaps)) = legacy else {
             return Ok(None);
         };
-        let bitmaps = bitmaps
-            .iter()
-            .map(|bitmap| Ok((bitmap.hash(), bitmap.compress()?)))
-            .collect::<Result<_>>()?;
         let checked = self.check_new_edit(file, &sidecar.recipe, &sidecar.export)?;
         Ok(Some(LegacyEdit {
             bitmaps,
@@ -483,6 +476,117 @@ impl Catalog {
             lensfun: sidecar.recipe.uses_lensfun(),
         }))
     }
+}
+
+/// What a new photo's files hold: the edit an older release saved beside it
+/// (a RAW's only), its sidecar's and its own XMP metadata, and the defaults
+/// where neither has a value. Nothing of the catalog is read.
+fn read_new_photo<'a>(
+    file: PathBuf,
+    place: &'a Place,
+    defaults: &super::NewPhotoDefaults,
+) -> FilesRead<'a> {
+    // Its masks compressed as they are read, so a folder of them is never
+    // held decompressed at once.
+    let legacy = crate::storage::is_raw(&file).then(|| {
+        let Some((sidecar, bitmaps)) = super::legacy_sidecar::import(&file)? else {
+            return Ok(None);
+        };
+        let bitmaps = bitmaps
+            .iter()
+            .map(|bitmap| Ok((bitmap.hash(), bitmap.compress()?)))
+            .collect::<Result<_>>()?;
+        Ok(Some((sidecar, bitmaps)))
+    });
+    let (metadata, report) = super::sidecar::read_file(&file, defaults.raw_xmp());
+    let defaults = defaults.for_file(&file, metadata.as_ref());
+    FilesRead {
+        file,
+        place,
+        legacy,
+        metadata,
+        report,
+        defaults,
+    }
+}
+/// An older release's edit beside a photo, with its spots' and masks' bitmaps
+/// (hash, compressed).
+type Legacy = (super::legacy_sidecar::Sidecar, Vec<(String, Vec<u8>)>);
+/// [`read_new_photo`]'s.
+struct FilesRead<'a> {
+    file: PathBuf,
+    place: &'a Place,
+    legacy: Option<Result<Option<Legacy>>>,
+    metadata: Option<crate::xmp::descriptive::Read>,
+    report: super::SidecarReport,
+    defaults: super::defaults::Fill,
+}
+
+/// Threads that read files side by side.
+const READERS: usize = 4;
+/// `read` of each of `items`, in their order, on up to [`READERS`] threads
+/// side by side. A panic in one stops the others before their next item and
+/// is the caller's, as it would be read in turn; items no thread could be
+/// started for are read on the caller's.
+fn side_by_side<T: Send, R: Send>(items: Vec<T>, read: impl Fn(T) -> R + Sync) -> Vec<R> {
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .clamp(1, READERS)
+        .min(items.len());
+    if threads <= 1 {
+        return items.into_iter().map(read).collect();
+    }
+    let items = std::sync::Mutex::new(items.into_iter().enumerate());
+    let stopped = std::sync::atomic::AtomicBool::new(false);
+    let next = || {
+        if stopped.load(std::sync::atomic::Ordering::Relaxed) {
+            return None;
+        }
+        items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .next()
+    };
+    /// Stops the readers as one unwinds.
+    struct Stop<'a>(&'a std::sync::atomic::AtomicBool);
+    impl Drop for Stop<'_> {
+        fn drop(&mut self) {
+            if std::thread::panicking() {
+                self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+    }
+    let mut done: Vec<(usize, R)> = std::thread::scope(|scope| {
+        let readers: Vec<_> = (0..threads)
+            .filter_map(|_| {
+                std::thread::Builder::new()
+                    .spawn_scoped(scope, || {
+                        let _stop = Stop(&stopped);
+                        let mut done = Vec::new();
+                        while let Some((index, item)) = next() {
+                            done.push((index, read(item)));
+                        }
+                        done
+                    })
+                    .ok()
+            })
+            .collect();
+        let mut done: Vec<_> = readers
+            .into_iter()
+            .flat_map(|reader| {
+                reader
+                    .join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            })
+            .collect();
+        // Left when no reader could be started.
+        while let Some((index, item)) = next() {
+            done.push((index, read(item)));
+        }
+        done
+    });
+    done.sort_unstable_by_key(|(index, _)| *index);
+    done.into_iter().map(|(_, read)| read).collect()
 }
 
 /// The catalog folder at `logical` in `root`, made if there is none, in
@@ -837,4 +941,51 @@ pub(in crate::catalog) fn folder_rows(
         photos.extend(copies);
     }
     Ok(photos.into_iter().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn new_photos_files_are_read_side_by_side_and_kept_in_order() {
+        let readers = std::thread::available_parallelism()
+            .map_or(1, |n| n.get())
+            .min(super::READERS);
+        let running = AtomicUsize::new(0);
+        let most = AtomicUsize::new(0);
+        let read = super::side_by_side((0..40).collect(), |n: u32| {
+            let now = running.fetch_add(1, Ordering::SeqCst) + 1;
+            most.fetch_max(now, Ordering::SeqCst);
+            // Waits a little for the others, as a slow disk would.
+            let started = Instant::now();
+            while running.load(Ordering::SeqCst) < readers
+                && started.elapsed() < Duration::from_millis(200)
+            {
+                std::thread::yield_now();
+            }
+            running.fetch_sub(1, Ordering::SeqCst);
+            n * 2
+        });
+        assert_eq!(read, (0..40).map(|n| n * 2).collect::<Vec<_>>());
+        assert_eq!(most.load(Ordering::SeqCst), readers);
+        assert!(super::side_by_side(Vec::<u32>::new(), |n| n).is_empty());
+    }
+
+    #[test]
+    fn a_panicking_read_stops_the_others() {
+        let reads = AtomicUsize::new(0);
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            super::side_by_side((0..1000).collect(), |n: u32| {
+                reads.fetch_add(1, Ordering::SeqCst);
+                assert_ne!(n, 3, "unreadable");
+                std::thread::sleep(Duration::from_millis(10));
+            })
+        }));
+        assert!(panicked.is_err());
+        // The others stop once it unwinds, after the panic hook (a backtrace
+        // can take a while), long before the 2.5 s the rest would take.
+        assert!(reads.load(Ordering::SeqCst) < 1000, "{reads:?}");
+    }
 }
