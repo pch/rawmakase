@@ -1,5 +1,5 @@
-//! The camera's own EXIF, read from a RAW, JPEG, TIFF, PNG, WebP, AVIF or JPEG
-//! XL: for an export to carry as Lightroom's do (capture settings, lens, dates,
+//! The camera's own EXIF, read from a RAW, JPEG, TIFF, PNG, WebP, AVIF, HEIF or
+//! JPEG XL: for an export to carry as Lightroom's do (capture settings, lens, dates,
 //! serial numbers and GPS), and for the catalog's capture time and photo info.
 //! Maker notes, thumbnail offsets and other pointers into the RAW are left out;
 //! they would not survive the move to a new file. `sequence` reads a few
@@ -289,7 +289,7 @@ const SKIP: [u16; 4] = [
 pub const MAX_VALUE: usize = 4096;
 
 /// Reads the camera EXIF of a TIFF-based RAW (ARW, NEF, CR2, DNG, ORF, RW2, PEF…),
-/// a JPEG, TIFF, PNG, WebP, AVIF or JPEG XL, or a Fujifilm RAF, whose EXIF lives in its preview JPEG.
+/// a JPEG, TIFF, PNG, WebP, AVIF, HEIF or JPEG XL, or a Fujifilm RAF, whose EXIF lives in its preview JPEG.
 /// `None` when the file has none that can be read, e.g. a CR3, whose EXIF
 /// RAWmakase's RAW decoders find for [`read_tiffs`].
 pub fn read(path: &Path) -> Option<CameraExif> {
@@ -350,7 +350,7 @@ pub fn capture_time_of(dates: [(Option<String>, Option<String>); 3]) -> Option<S
         .find_map(|(date, subseconds)| lightroom_time(&date?, subseconds.as_deref()))
 }
 
-/// Camera, lens and exposure settings of a JPEG, TIFF, PNG, WebP, AVIF, JPEG XL or TIFF-based RAW
+/// Camera, lens and exposure settings of a JPEG, TIFF, PNG, WebP, AVIF, HEIF, JPEG XL or TIFF-based RAW
 /// from its EXIF; `None` when it has none. Dimensions are not read here.
 pub fn photo_info(path: &Path) -> Option<crate::metadata::PhotoInfo> {
     directories(path, |tag| tag == MAKE || tag == MODEL)?.photo_info()
@@ -495,8 +495,8 @@ enum Source {
     Memory(Tiff<std::io::Cursor<Vec<u8>>>),
 }
 
-/// The TIFF holding the EXIF of the RAW, JPEG, TIFF, PNG, WebP, AVIF or
-/// JPEG XL at `path`; `None` when there is none to read.
+/// The TIFF holding the EXIF of the RAW, JPEG, TIFF, PNG, WebP, AVIF, HEIF
+/// or JPEG XL at `path`; `None` when there is none to read.
 fn open_tiff(path: &Path) -> Option<Source> {
     let mut f = File::open(path).ok()?;
     // Enough to tell the containers apart and find a RAF's preview; a small
@@ -581,8 +581,8 @@ fn gps_tag(tag: u16) -> bool {
 }
 
 /// Whether an `ftyp` box lists the AVIF/HEIF-image brands (`avif`, `avis`,
-/// `mif1`) as major or compatible brand; other ISOBMFF files (Canon CR3, MP4)
-/// are left to the TIFF path.
+/// `mif1`, and HEIC's `heic` and `heix`) as major or compatible brand; other
+/// ISOBMFF files (Canon CR3, MP4) are left to the TIFF path.
 fn has_heif_brand(head: &[u8]) -> bool {
     let Some(brands) = head.get(8..head.len().min(64)) else {
         return false;
@@ -592,7 +592,7 @@ fn has_heif_brand(head: &[u8]) -> bool {
     brands
         .iter()
         .enumerate()
-        .any(|(i, b)| i != 1 && matches!(b, b"avif" | b"avis" | b"mif1"))
+        .any(|(i, b)| i != 1 && matches!(b, b"avif" | b"avis" | b"mif1" | b"heic" | b"heix"))
 }
 
 /// Offset of the TIFF header in a WebP's EXIF chunk (some writers keep
@@ -604,8 +604,8 @@ fn exif_in_webp(f: &mut File) -> Option<(u64, u64)> {
     tiff_after_header(f, chunk.start, chunk.start.checked_add(chunk.size)?)
 }
 
-/// An AVIF's Exif item, up to 16 MiB: the 4-byte offset to the TIFF header,
-/// then the TIFF.
+/// An AVIF's or a HEIF's Exif item, up to 16 MiB: the 4-byte offset to the
+/// TIFF header, then the TIFF.
 fn exif_in_heif(f: &mut File) -> Option<Vec<u8>> {
     let heif = crate::isobmff::Heif::read(f)?;
     let id = heif
@@ -970,13 +970,14 @@ mod container_tests {
             .join(name)
     }
     #[test]
-    fn webp_avif_and_jxl_exif_is_read() {
+    fn webp_avif_heif_and_jxl_exif_is_read() {
         // metadata-brob.jxl has its Exif box brotli-compressed, as cjxl
         // writes by default; split-exif.avif has its Exif item in two pieces.
         for name in [
             "metadata.webp",
             "metadata.avif",
             "split-exif.avif",
+            "metadata.heic",
             "metadata.jxl",
             "metadata-brob.jxl",
         ] {
@@ -995,9 +996,31 @@ mod container_tests {
     }
     #[test]
     fn files_without_exif_have_none() {
-        for name in ["ten-bit.avif", "animated.webp", "sixteen-bit.jxl"] {
+        for name in [
+            "ten-bit.avif",
+            "grid.heic",
+            "animated.webp",
+            "sixteen-bit.jxl",
+        ] {
             assert_eq!(super::camera_names(&fixture(name)), None, "{name}");
         }
+    }
+    /// A HEIC's EXIF is read by its own brand, without MIAF's `mif1`.
+    #[test]
+    fn a_heic_listing_only_its_own_brand_has_its_exif_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("only-heic.heic");
+        let mut bytes = std::fs::read(fixture("metadata.heic")).unwrap();
+        // Major brand heic; compatible mif1, heic, miaf.
+        for brand in [b"mif1", b"miaf"] {
+            let at = bytes.windows(4).position(|w| w == brand).unwrap();
+            bytes[at..at + 4].copy_from_slice(b"isom");
+        }
+        std::fs::write(&path, bytes).unwrap();
+        assert_eq!(
+            super::camera_names(&path),
+            Some(("Fixture".into(), "Synthetic 1".into()))
+        );
     }
     #[test]
     fn other_isobmff_files_are_not_read_as_heif() {

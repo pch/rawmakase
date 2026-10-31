@@ -16,7 +16,8 @@ rawmakase-catalog = { path = "../rawmakase-catalog", version = "0.1.0" }
 rawmakase-engine = { path = "../rawmakase-engine", version = "0.1.0" }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0" }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
-rawmakase-decode = { path = "../rawmakase-decode", version = "0.1.0" }
+# Its HEVC decoder is the app's to choose.
+rawmakase-decode = { path = "../rawmakase-decode", version = "0.1.0", default-features = false }
 anyhow = "1"
 image.workspace = true
 # The GUID of ExtendedXMP in JPEG exports is an MD5.

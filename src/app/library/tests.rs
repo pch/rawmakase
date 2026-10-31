@@ -272,6 +272,45 @@ fn an_unsupported_jpeg_says_why_in_develop() -> Result<()> {
     Ok(())
 }
 
+/// A phone's HEIC is added with a folder and opens in Develop as a JPEG does;
+/// an HDR one is shown in the Library but Develop says why it can't edit it.
+#[cfg(feature = "software-hevc")]
+#[test]
+fn a_heic_opens_in_develop_and_an_hdr_one_says_why_not() -> Result<()> {
+    let formats = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/formats");
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    std::fs::copy(formats.join("grid.heic"), folder.join("IMG_0001.HEIC"))?;
+    std::fs::copy(formats.join("pq.heic"), folder.join("IMG_0002.HEIC"))?;
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&folder)?;
+    let ctx = egui::Context::default();
+    let library = Library::load(&path, ctx.clone())?;
+    let photo = |name: &str| {
+        library
+            .session
+            .photos
+            .iter()
+            .find(|p| p.filename == name)
+            .cloned()
+            .unwrap()
+    };
+    let (heic, hdr) = (photo("IMG_0001.HEIC"), photo("IMG_0002.HEIC"));
+    assert_eq!(develop_refusal(&heic, true), None);
+    let refusal = develop_refusal(&hdr, true).expect("refused");
+    assert_eq!(refusal.label(), "HEIC file");
+    assert_eq!(refusal.detail(), "RAWmakase can't edit HDR images");
+    let mut editor = crate::app::Editor::with_context(&ctx, None, Default::default(), None);
+    editor.library = Some(Box::new(library));
+    editor.module = Module::Library;
+    editor.develop_catalog_photo(heic.id);
+    assert!(editor.module == Module::Develop);
+    assert!(!editor.messages.has_entry_with("can't be opened"));
+    assert_eq!(editor.document.catalog_photo, Some(heic.id));
+    Ok(())
+}
+
 /// A folder of a.jpg, b.jpg (CMYK, which Develop can't edit) and c.jpg, in a
 /// catalog loaded into an editor showing the Library; and the three photos.
 fn editor_with_a_cmyk_jpeg_between(

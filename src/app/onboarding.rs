@@ -639,8 +639,8 @@ impl Editor {
             ),
             Some(n) => (
                 format!("No photos in the {} added", count(n, "folder")),
-                "RAWmakase reads RAW, DNG, JPEG, PNG and TIFF files. Add a folder that holds \
-                 some, or find the folder again if it has moved.",
+                "RAWmakase reads RAW, DNG, JPEG, HEIC, PNG, TIFF, WebP, AVIF and JPEG XL \
+                 files. Add a folder that holds some, or find the folder again if it has moved.",
             ),
             None => (
                 "No catalog is open".to_string(),

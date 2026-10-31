@@ -3781,6 +3781,7 @@ dependencies = [
  "rawmakase-model",
  "rawmakase-raw",
  "rayon",
+ "rust_h265",
  "serde",
  "serde_json",
  "sha2",
@@ -4160,6 +4161,12 @@ dependencies = [
  "smallvec",
  "sqlite-wasm-rs",
 ]
+
+[[package]]
+name = "rust_h265"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb29b707000aaf70f4214ffbb563e67af5be4187ebff4733f4c5437bf21124b9"
 
 [[package]]
 name = "rustc-hash"

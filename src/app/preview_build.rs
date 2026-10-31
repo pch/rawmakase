@@ -710,7 +710,8 @@ enum Files {
 pub(in crate::app) struct Queued {
     pub queued: usize,
     /// Offline photos, files Develop can't open, and JPEG, PNG, TIFF, WebP,
-    /// AVIF or JPEG XL files without an edit, which are their own previews.
+    /// AVIF, HEIF or JPEG XL files without an edit, which are their own
+    /// previews.
     pub skipped: usize,
 }
 
@@ -772,7 +773,7 @@ impl Editor {
     }
 
     /// What building `ids` would capture now: an item per available RAW or edited
-    /// JPEG, PNG, TIFF, WebP, AVIF or JPEG XL, and how many others were skipped.
+    /// JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL, and how many others were skipped.
     fn build_items(
         &self,
         ids: &[PhotoId],
@@ -814,7 +815,7 @@ impl Editor {
         let mut items = Vec::with_capacity(chosen.len());
         for ((photo, name, path), record) in chosen.into_iter().zip(records) {
             let edited = has_edit(&record.edit);
-            // A JPEG, PNG, TIFF, WebP, AVIF or JPEG XL without an edit is its own
+            // A JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL without an edit is its own
             // preview.
             if !edited && !crate::storage::is_raw(&path) {
                 skipped += 1;

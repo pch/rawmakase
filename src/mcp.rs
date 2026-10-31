@@ -396,7 +396,7 @@ impl Server {
         self.send(request, Some(p.target)).await
     }
     #[tool(
-        description = "Build previews of the selected photos (the Library selection, or in Develop the Filmstrip's) in the background: Standard-Sized Previews, which Develop shows while each photo opens, or 1:1 previews, which let an offline photo be zoomed to 100% in the Loupe. Returns how many were queued and skipped (offline, not editable, or an unedited JPEG, PNG, TIFF, WebP, AVIF or JPEG XL, which is its own preview); queueing is not completion: get_state's building_previews shows progress."
+        description = "Build previews of the selected photos (the Library selection, or in Develop the Filmstrip's) in the background: Standard-Sized Previews, which Develop shows while each photo opens, or 1:1 previews, which let an offline photo be zoomed to 100% in the Loupe. Returns how many were queued and skipped (offline, not editable, or an unedited JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL, which is its own preview); queueing is not completion: get_state's building_previews shows progress."
     )]
     async fn build_previews(&self, Parameters(p): Parameters<BuildPreviews>) -> CallToolResult {
         use rawmakase_protocol::request::PreviewKind;

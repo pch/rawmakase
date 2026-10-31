@@ -603,13 +603,13 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let photos = [
             "A.NEF", "b.dng", "C.jpg", "D.JPG", "E.jpeg", "F.JPEG", "G.png", "H.PNG", "I.tif",
-            "J.TIF", "K.tiff", "L.Tiff", "N.webp", "O.avif", "P.jxl", "Q2.WEBP", "R2.Avif",
-            "S2.JXL",
+            "J.TIF", "K.tiff", "L.Tiff", "M.heic", "N.webp", "O.avif", "P.jxl", "Q2.WEBP",
+            "R2.Avif", "S2.JXL", "T2.HEIC", "U2.heif", "V2.HIF",
         ];
         let others = [
             "A.NEF.xmp",
             "C.xmp",
-            "M.heic",
+            "M.heic.xmp",
             "Q.gif",
             "R.psd",
             "S.mov",

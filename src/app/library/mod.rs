@@ -1403,12 +1403,12 @@ impl Library {
         self.fields.clear();
     }
 }
-/// Why Develop cannot open a photo: it edits RAW, JPEG, PNG, TIFF, WebP, AVIF
-/// and JPEG XL files that are online and whose pixels it can read.
+/// Why Develop cannot open a photo: it edits RAW, JPEG, PNG, TIFF, WebP, AVIF,
+/// HEIF and JPEG XL files that are online and whose pixels it can read.
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::app) enum Refusal {
     Offline,
-    /// A JPEG, PNG, TIFF, WebP, AVIF or JPEG XL of a kind Develop can't edit: its `format` (e.g. "JPG")
+    /// A JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL of a kind Develop can't edit: its `format` (e.g. "JPG")
     /// and the `reason` (e.g. "CMYK").
     Unsupported {
         format: String,
@@ -1417,7 +1417,7 @@ pub(in crate::app) enum Refusal {
 }
 impl Refusal {
     /// What opening `path` failed with, when it is a refusal rather than an error:
-    /// a JPEG, PNG, TIFF, WebP, AVIF or JPEG XL of a kind Develop can't edit.
+    /// a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL of a kind Develop can't edit.
     pub(in crate::app) fn opening(path: &std::path::Path, error: &anyhow::Error) -> Option<Self> {
         error
             .downcast_ref::<crate::raster::Unsupported>()
@@ -1467,7 +1467,7 @@ pub(in crate::app) fn availability_refusal(available: bool) -> Option<Refusal> {
     (!available).then_some(Refusal::Offline)
 }
 /// Why Develop cannot open `photo`, if it cannot, given whether its file is
-/// `available`: [`availability_refusal`], or a JPEG, PNG, TIFF, WebP, AVIF or JPEG XL whose header
+/// `available`: [`availability_refusal`], or a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL whose header
 /// says Develop can't edit its pixels (`raster::probe`). It reads the file (a
 /// whole JPEG), so it is for one photo at a time: opening it, or showing why it
 /// can't be. A RAW's file is not read.

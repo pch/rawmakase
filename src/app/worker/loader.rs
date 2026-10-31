@@ -450,6 +450,38 @@ pub(in crate::app) mod tests {
         Ok(())
     }
 
+    /// A HEIC opens as a JPEG does: at full size at once, with its own
+    /// profile, and never decode-cached.
+    #[cfg(feature = "software-hevc")]
+    #[test]
+    fn a_heic_loads_straight_to_full_size() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("IMG_0001.HEIC");
+        std::fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/formats/grid.heic"),
+            &path,
+        )?;
+        let cache = dir.path().join("decoded");
+
+        let events = load(&path, &cache);
+
+        assert_eq!(
+            events.iter().map(name).collect::<Vec<_>>(),
+            ["Header", "Profiles", "Ready"]
+        );
+        let Event::Header(header) = &events[0] else {
+            unreachable!()
+        };
+        assert!(header.metadata.is_rendered());
+        let Event::Ready { full, .. } = &events[2] else {
+            unreachable!()
+        };
+        assert_eq!((full.width, full.height), (120, 100));
+        let cached = std::fs::read_dir(&cache).map_or(0, |entries| entries.count());
+        assert_eq!(cached, 0, "a rendered file is never decode-cached");
+        Ok(())
+    }
+
     fn ready(events: &[Event]) -> (&CameraImage, &str) {
         match events.last() {
             Some(Event::Ready { full, status, .. }) => (full, status),

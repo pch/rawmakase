@@ -17,9 +17,18 @@ members = ["crates/rawmakase-catalog", "crates/rawmakase-decode", "crates/rawmak
 # list for every crate that decodes or encodes them.
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "tiff", "webp"] }
 
+[features]
+default = ["software-hevc"]
+# HEIC photos decoded in pure Rust (rust_h265), on every platform. A packager
+# who leaves software HEVC decoders out (for HEVC's patents) builds with
+# --no-default-features: HEIF photos are then listed, with their metadata, but
+# not shown or edited.
+software-hevc = ["rawmakase-decode/software-hevc"]
+
 [dependencies]
 rawmakase-catalog = { path = "crates/rawmakase-catalog", version = "0.1.0" }
-rawmakase-decode = { path = "crates/rawmakase-decode", version = "0.1.0" }
+# Its HEVC decoder is the software-hevc feature's to choose.
+rawmakase-decode = { path = "crates/rawmakase-decode", version = "0.1.0", default-features = false }
 rawmakase-engine = { path = "crates/rawmakase-engine", version = "0.1.0" }
 rawmakase-export = { path = "crates/rawmakase-export", version = "0.1.0" }
 rawmakase-inference = { path = "crates/rawmakase-inference", version = "0.1.0" }
@@ -126,7 +135,7 @@ windows-core = "0.62"
 # The model's fixtures, for the app's tests.
 [dev-dependencies]
 rawmakase-catalog = { path = "crates/rawmakase-catalog", version = "0.1.0", features = ["test-support"] }
-rawmakase-decode = { path = "crates/rawmakase-decode", version = "0.1.0", features = ["test-support"] }
+rawmakase-decode = { path = "crates/rawmakase-decode", version = "0.1.0", default-features = false, features = ["test-support"] }
 rawmakase-engine = { path = "crates/rawmakase-engine", version = "0.1.0", features = ["test-support"] }
 rawmakase-export = { path = "crates/rawmakase-export", version = "0.1.0", features = ["test-support"] }
 rawmakase-interop = { path = "crates/rawmakase-interop", version = "0.1.0", features = ["test-support"] }

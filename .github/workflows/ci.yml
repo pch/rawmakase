@@ -103,6 +103,12 @@ jobs:
       - run: PATH="/usr/bin/vendor_perl:$PATH" cargo test --locked -p rawmakase -p rawmakase-decode -p rawmakase-export
         env:
           RAWMAKASE_REQUIRE_EXIFTOOL: "1"
+      # Packagers may leave out RAWmakase's own HEVC decoder (HEVC is
+      # patented; docs/dependencies.md): build, lint and test that too.
+      - name: Without the software HEVC decoder
+        run: |
+          cargo clippy --locked --all-targets --no-default-features -p rawmakase -p rawmakase-decode -- -D warnings
+          cargo test --locked --no-default-features -p rawmakase-decode
       - name: Validate desktop entry
         run: desktop-file-validate packaging/applications/rawmakase.desktop
 

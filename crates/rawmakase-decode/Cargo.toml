@@ -8,6 +8,10 @@ license = "MIT"
 publish = false
 
 [features]
+default = ["software-hevc"]
+# HEIC decoded in pure Rust (rust_h265), on every platform. Without it a
+# build lists HEIF photos but can't show them.
+software-hevc = ["dep:rust_h265"]
 # The model's fixtures, for tests that share them.
 test-support = ["rawmakase-model/test-support", "rawmakase-engine/test-support"]
 
@@ -24,8 +28,11 @@ image.workspace = true
 jxl-oxide = { version = "0.12.6", default-features = false, features = ["image", "rayon"] }
 # AVIF: AV1 in pure Rust, with its assembly off so the build needs no nasm.
 rav1d = { version = "1.1.0", default-features = false, features = ["bitdepth_8", "bitdepth_16"] }
-# AV1's YUV to RGB, in pure Rust.
+# AV1's and HEVC's YUV to RGB, in pure Rust.
 yuv = "0.8.19"
+# HEIC's HEVC in pure Rust, without `unsafe` or build scripts (the
+# software-hevc feature).
+rust_h265 = { version = "0.2.0", optional = true }
 # The errno rav1d's C interface returns.
 libc = "0.2"
 # Colour management of JPEG, PNG and TIFF files, in pure Rust; the version `image` uses.

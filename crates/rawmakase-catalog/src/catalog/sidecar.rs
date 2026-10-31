@@ -1,5 +1,5 @@
 //! Descriptive metadata read from XMP sidecars and from the XMP inside JPEG,
-//! TIFF, PNG, WebP, AVIF, JPEG XL, DNG and CR3 files (a CR3's found by the
+//! TIFF, PNG, WebP, AVIF, HEIF, JPEG XL, DNG and CR3 files (a CR3's found by the
 //! reader the app passes in): when a folder is added, for its
 //! new photos, and on Read Metadata from Files, for photos already in the
 //! catalog. Never at render time; the catalog stays the source of truth.
@@ -145,9 +145,9 @@ pub fn sidecars(file: &Path) -> Vec<PathBuf> {
 pub type RawXmpReader = fn(&Path) -> Option<Vec<u8>>;
 
 /// The XMP inside a JPEG (its standard APP1 packet), TIFF (tag 700), PNG (its
-/// XMP text chunk), WebP ("XMP " chunk), AVIF (its XMP item) or JPEG XL ("xml "
-/// box, or "brob" box compressing one); in another file, what `raw_xmp`
-/// finds.
+/// XMP text chunk), WebP ("XMP " chunk), AVIF or HEIF (its XMP item) or JPEG
+/// XL ("xml " box, or "brob" box compressing one); in another file, what
+/// `raw_xmp` finds.
 fn embedded(file: &Path, raw_xmp: RawXmpReader) -> Result<Option<String>> {
     match RasterFormat::of(file) {
         Some(RasterFormat::Jpeg) => {
@@ -173,7 +173,7 @@ fn embedded(file: &Path, raw_xmp: RawXmpReader) -> Result<Option<String>> {
         Some(RasterFormat::Tiff) => in_tiff(file),
         Some(RasterFormat::Png) => in_png(file),
         Some(RasterFormat::Webp) => in_webp(file),
-        Some(RasterFormat::Avif) => in_heif(file),
+        Some(RasterFormat::Avif | RasterFormat::Heif) => in_heif(file),
         Some(RasterFormat::Jxl) => in_jxl(file),
         // A DNG keeps its XMP in the same TIFF tag.
         None if file
@@ -197,7 +197,8 @@ fn in_webp(file: &Path) -> Result<Option<String>> {
     text(riff::chunk_data(&mut f, &chunk))
 }
 
-/// The XMP item ("application/rdf+xml") describing an AVIF's primary image.
+/// The XMP item ("application/rdf+xml") describing an AVIF's or a HEIF's
+/// primary image.
 fn in_heif(file: &Path) -> Result<Option<String>> {
     let mut f = std::fs::File::open(file)?;
     let Some(heif) = isobmff::Heif::read(&mut f) else {

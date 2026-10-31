@@ -1,6 +1,6 @@
-//! Bounded reading of ISO base media files: the boxes of an AVIF (HEIF) or a
-//! JPEG XL container, and an AVIF's items with their locations, properties and
-//! references. Only headers and the bytes asked for are read.
+//! Bounded reading of ISO base media files: the boxes of a HEIF (an AVIF or a
+//! HEIC) or a JPEG XL container, and a HEIF's items with their locations,
+//! properties and references. Only headers and the bytes asked for are read.
 use std::io::{Read, Seek, SeekFrom};
 
 const MAX_BODY: u64 = 16 << 20;
@@ -106,8 +106,9 @@ pub fn jxl_metadata<R: Read + Seek>(r: &mut R, kind: [u8; 4]) -> Option<Vec<u8>>
     None
 }
 
-/// An item of a HEIF file, e.g. the AV1 image ("av01"), a grid ("grid"),
-/// its EXIF ("Exif") or XMP ("mime", content type "application/rdf+xml").
+/// An item of a HEIF file, e.g. an AV1 image ("av01"), an HEVC one ("hvc1"),
+/// a grid of them ("grid"), its EXIF ("Exif") or XMP ("mime", content type
+/// "application/rdf+xml").
 #[derive(Clone, Debug, PartialEq)]
 pub struct Item {
     pub id: u32,
@@ -120,6 +121,8 @@ pub struct Item {
 pub enum Property {
     /// `av1C`: the AV1 configuration record.
     Av1Config(Vec<u8>),
+    /// `hvcC`: the HEVC configuration record, with its parameter sets.
+    HevcConfig(Vec<u8>),
     /// `colr`.
     Colour(Colour),
     /// `ispe`: width and height.
@@ -133,7 +136,19 @@ pub enum Property {
     Mirror(u8),
     /// `auxC`: an auxiliary image's type, e.g. alpha.
     Auxiliary(String),
+    /// `clap`: a crop.
+    CleanAperture(CleanAperture),
     Other([u8; 4]),
+}
+
+/// A `clap` box: the size of the image kept, and how far its centre is from
+/// the full image's, each a fraction (numerator, denominator).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CleanAperture {
+    pub width: (u32, u32),
+    pub height: (u32, u32),
+    pub horizontal_offset: (i32, u32),
+    pub vertical_offset: (i32, u32),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -172,6 +187,8 @@ pub struct Heif {
     associations: Vec<Association>,
     /// (kind, from, to).
     references: Vec<([u8; 4], u32, u32)>,
+    /// The `idat` box's body: the data of items stored in the `meta` box.
+    idat: Vec<u8>,
 }
 
 /// A big-endian cursor over a box body; every read is bounds-checked.
@@ -193,6 +210,11 @@ impl<'a> Bytes<'a> {
     fn u32(&mut self) -> Option<u32> {
         self.take(4)
             .map(|b| u32::from_be_bytes(b.try_into().unwrap()))
+    }
+    /// A fraction: a numerator then a denominator other than 0.
+    fn fraction(&mut self) -> Option<(u32, u32)> {
+        let (n, d) = (self.u32()?, self.u32()?);
+        (d != 0).then_some((n, d))
     }
     fn sized(&mut self, size: u8) -> Option<u64> {
         match size {
@@ -264,6 +286,7 @@ impl Heif {
                 b"iloc" => heif.locations = locations(b)?,
                 b"iprp" => heif.read_properties(b)?,
                 b"iref" => heif.references = references(b)?,
+                b"idat" => heif.idat = body.to_vec(),
                 _ => {}
             }
         }
@@ -285,15 +308,23 @@ impl Heif {
             .collect()
     }
 
-    /// An essential property of item `id` that is not read here, which a
-    /// reader must understand to show the item, e.g. `clap` (a crop).
-    pub fn unread_essential(&self, id: u32) -> Option<[u8; 4]> {
+    /// The properties of item `id` it marks essential, which a reader must
+    /// understand to show it.
+    pub fn essential_properties(&self, id: u32) -> Vec<&Property> {
         self.associations
             .iter()
             .filter(|(item, _)| *item == id)
             .flat_map(|(_, indexes)| indexes.iter())
             .filter(|(_, essential)| *essential)
             .filter_map(|(i, _)| self.properties.get((*i as usize).checked_sub(1)?))
+            .collect()
+    }
+
+    /// An essential property of item `id` that is not read here, e.g. `lsel`
+    /// (a layer selection).
+    pub fn unread_essential(&self, id: u32) -> Option<[u8; 4]> {
+        self.essential_properties(id)
+            .into_iter()
             .find_map(|p| match p {
                 Property::Other(kind) => Some(*kind),
                 _ => None,
@@ -312,9 +343,10 @@ impl Heif {
         }
     }
 
-    /// Item `id`'s data from the file, its extents joined; up to 256 MiB, and
-    /// `None` when an extent runs past the file. Construction method 1 (`idat`)
-    /// and length 0 ("to the end of the file") are not read.
+    /// Item `id`'s data from the file, or from the `idat` box (construction
+    /// method 1), its extents joined; up to 256 MiB, and `None` when an extent
+    /// runs past the file or the box. Length 0 ("to the end of the file") is
+    /// not read.
     pub fn data<R: Read + Seek>(&self, r: &mut R, id: u32) -> Option<Vec<u8>> {
         self.data_up_to(r, id, MAX_ITEM)
     }
@@ -326,7 +358,19 @@ impl Heif {
         let l = self
             .locations
             .iter()
-            .find(|l| l.id == id && l.method == 0)?;
+            .find(|l| l.id == id && l.method <= 1)?;
+        if l.method == 1 {
+            let mut data = Vec::new();
+            for (offset, len) in &l.extents {
+                let start = usize::try_from(l.base.checked_add(*offset)?).ok()?;
+                let end = start.checked_add(usize::try_from(*len).ok()?)?;
+                data.extend_from_slice(self.idat.get(start..end)?);
+                if data.len() as u64 > max.min(MAX_ITEM) {
+                    return None;
+                }
+            }
+            return Some(data);
+        }
         let file_len = file_len(r)?;
         let mut total = 0u64;
         for (offset, len) in &l.extents {
@@ -346,6 +390,28 @@ impl Heif {
         Some(data)
     }
 
+    /// Whether item `id`'s data is all there, in the file or the `idat` box,
+    /// without reading it: what a decoder that reads the file itself would
+    /// otherwise find cut off.
+    pub fn stored_within<R: Seek>(&self, r: &mut R, id: u32) -> bool {
+        let Some(l) = self.locations.iter().find(|l| l.id == id && l.method <= 1) else {
+            return false;
+        };
+        let Some(end) = (match l.method {
+            0 => file_len(r),
+            _ => Some(self.idat.len() as u64),
+        }) else {
+            return false;
+        };
+        !l.extents.is_empty()
+            && l.extents.iter().all(|(offset, len)| {
+                l.base
+                    .checked_add(*offset)
+                    .and_then(|at| at.checked_add(*len))
+                    .is_some_and(|e| *len > 0 && e <= end)
+            })
+    }
+
     /// The items with a `kind` reference to item `of`: for "cdsc", the
     /// metadata that describes it.
     pub fn describing(&self, kind: [u8; 4], of: u32) -> Vec<u32> {
@@ -353,6 +419,16 @@ impl Heif {
             .iter()
             .filter(|(k, _, to)| *k == kind && *to == of)
             .map(|(_, from, _)| *from)
+            .collect()
+    }
+
+    /// The items item `from` has a `kind` reference to, in the order it lists
+    /// them: for "dimg" from a grid, its tiles row by row.
+    pub fn referenced(&self, kind: [u8; 4], from: u32) -> Vec<u32> {
+        self.references
+            .iter()
+            .filter(|(k, f, _)| *k == kind && *f == from)
+            .map(|(_, _, to)| *to)
             .collect()
     }
 
@@ -366,8 +442,14 @@ impl Heif {
                         .map(|(kind, body)| property(kind, body).unwrap_or(Property::Other(kind)))
                         .collect()
                 }
-                // One per version and flags, so there may be several.
-                b"ipma" => self.associations.extend(associations(Bytes(body))?),
+                // One per version and flags, so there may be several; an
+                // item has one association at most, so there are no more
+                // associations than items can be listed. Each lookup scans
+                // them all.
+                b"ipma" if self.associations.len() < MAX_BOXES => {
+                    self.associations.extend(associations(Bytes(body))?);
+                    self.associations.truncate(MAX_BOXES);
+                }
                 _ => {}
             }
         }
@@ -521,6 +603,7 @@ fn property(kind: [u8; 4], body: &[u8]) -> Option<Property> {
     let mut b = Bytes(body);
     Some(match &kind {
         b"av1C" => Property::Av1Config(body.to_vec()),
+        b"hvcC" => Property::HevcConfig(body.to_vec()),
         b"colr" => match &b.kind()? {
             b"nclx" => {
                 let (primaries, transfer, matrix) = (b.u16()?, b.u16()?, b.u16()?);
@@ -548,6 +631,17 @@ fn property(kind: [u8; 4], body: &[u8]) -> Option<Property> {
         b"auxC" => {
             b.take(4)?;
             Property::Auxiliary(b.string()?)
+        }
+        b"clap" => {
+            let (width, height) = (b.fraction()?, b.fraction()?);
+            let (horizontal, vertical) = (b.fraction()?, b.fraction()?);
+            Property::CleanAperture(CleanAperture {
+                width,
+                height,
+                // The offsets are signed.
+                horizontal_offset: (horizontal.0 as i32, horizontal.1),
+                vertical_offset: (vertical.0 as i32, vertical.1),
+            })
         }
         _ => Property::Other(kind),
     })
@@ -646,11 +740,108 @@ mod tests {
 
     #[test]
     fn an_essential_property_it_does_not_read_is_named() {
-        let cropped = Heif::read(&mut fixture("cropped.avif")).unwrap();
-        assert_eq!(cropped.unread_essential(cropped.primary), Some(*b"clap"));
-        // irot is essential too, and read.
-        let rotated = Heif::read(&mut fixture("rotated.avif")).unwrap();
-        assert_eq!(rotated.unread_essential(rotated.primary), None);
+        // Item 1 has an essential `lsel` (a layer selection, not read here)
+        // and a non-essential `free`.
+        let ipco = bx(b"ipco", &[bx(b"lsel", &[0, 0]), bx(b"free", &[])].concat());
+        let ipma = bx(b"ipma", &[0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 2, 0x81, 0x02]);
+        let meta = [vec![0; 4], bx(b"iprp", &[ipco, ipma].concat())].concat();
+        let file = [bx(b"ftyp", b"heic\0\0\0\0mif1heic"), bx(b"meta", &meta)].concat();
+        let heif = Heif::read(&mut Cursor::new(&file)).unwrap();
+        assert_eq!(heif.unread_essential(1), Some(*b"lsel"));
+        // irot and clap are essential too, and read.
+        for name in ["rotated.avif", "cropped.avif"] {
+            let heif = Heif::read(&mut fixture(name)).unwrap();
+            assert_eq!(heif.unread_essential(heif.primary), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_clean_aperture_is_read_as_fractions() {
+        // avifenc --crop 2,2,8,8 of a 16x12 image: 8x8, its centre 2 left of
+        // the image's and level with it.
+        let heif = Heif::read(&mut fixture("cropped.avif")).unwrap();
+        let clap = heif
+            .properties(heif.primary)
+            .into_iter()
+            .find_map(|p| match p {
+                Property::CleanAperture(c) => Some(*c),
+                _ => None,
+            })
+            .unwrap();
+        let value = |(n, d): (i32, u32)| f64::from(n) / f64::from(d);
+        assert_eq!(value((clap.width.0 as i32, clap.width.1)), 8.);
+        assert_eq!(value((clap.height.0 as i32, clap.height.1)), 8.);
+        assert_eq!(value(clap.horizontal_offset), -2.);
+        assert_eq!(value(clap.vertical_offset), 0.);
+        // A zero denominator is no fraction: the box is not read.
+        let zero = [[0, 0, 0, 8], [0; 4], [0, 0, 0, 8], [0, 0, 0, 1]].concat();
+        assert_eq!(property(*b"clap", &[zero.clone(), zero].concat()), None);
+    }
+
+    #[test]
+    fn an_item_in_the_meta_box_is_read_from_idat() {
+        // iloc version 1, 4-byte offsets and lengths: item 1, construction
+        // method 1, two extents of the idat body ("bc" then "e").
+        let mut iloc = vec![1, 0, 0, 0, 0x44, 0x00, 0, 1];
+        iloc.extend([0, 1, 0, 1, 0, 0, 0, 2]);
+        iloc.extend([0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 4, 0, 0, 0, 1]);
+        let idat = bx(b"idat", b"abcdef");
+        let meta = [vec![0; 4], bx(b"iloc", &iloc), idat].concat();
+        let file = [bx(b"ftyp", b"heic\0\0\0\0mif1"), bx(b"meta", &meta)].concat();
+        let mut r = Cursor::new(&file);
+        let heif = Heif::read(&mut r).unwrap();
+        assert_eq!(heif.data(&mut r, 1).as_deref(), Some(b"bce".as_slice()));
+        assert_eq!(heif.data_up_to(&mut r, 1, 2), None);
+        // An extent past the end of the box is not read.
+        let mut past = iloc.clone();
+        past[23] = 9;
+        let meta = [vec![0; 4], bx(b"iloc", &past), bx(b"idat", b"abcdef")].concat();
+        let file = [bx(b"ftyp", b"heic\0\0\0\0mif1"), bx(b"meta", &meta)].concat();
+        let mut r = Cursor::new(&file);
+        assert_eq!(Heif::read(&mut r).unwrap().data(&mut r, 1), None);
+    }
+
+    #[test]
+    fn an_item_is_stored_within_the_file_only_when_all_its_extents_are() {
+        let mut f = fixture("rotated.avif");
+        let heif = Heif::read(&mut f).unwrap();
+        assert!(heif.stored_within(&mut f, heif.primary));
+        assert!(!heif.stored_within(&mut f, 999));
+        let bytes = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/data/formats/rotated.avif"),
+        )
+        .unwrap();
+        let mut cut = Cursor::new(bytes[..bytes.len() - 1].to_vec());
+        assert!(!heif.stored_within(&mut cut, heif.primary));
+        // In idat: within the box, and past it.
+        let mut iloc = vec![1, 0, 0, 0, 0x44, 0x00, 0, 1];
+        iloc.extend([0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 4]);
+        let meta = [vec![0; 4], bx(b"iloc", &iloc), bx(b"idat", b"abcdef")].concat();
+        let file = [bx(b"ftyp", b"heic\0\0\0\0mif1"), bx(b"meta", &meta)].concat();
+        let mut r = Cursor::new(&file);
+        let heif = Heif::read(&mut r).unwrap();
+        assert!(heif.stored_within(&mut r, 1));
+        let mut past = iloc.clone();
+        past[23] = 5;
+        let meta = [vec![0; 4], bx(b"iloc", &past), bx(b"idat", b"abcdef")].concat();
+        let file = [bx(b"ftyp", b"heic\0\0\0\0mif1"), bx(b"meta", &meta)].concat();
+        let mut r = Cursor::new(&file);
+        assert!(!Heif::read(&mut r).unwrap().stored_within(&mut r, 1));
+    }
+
+    #[test]
+    fn a_grids_tiles_are_its_dimg_references_in_order() {
+        // iref version 0: dimg from 1 to 4, 2, 3; thmb from 5 to 1.
+        let dimg = bx(b"dimg", &[0, 1, 0, 3, 0, 4, 0, 2, 0, 3]);
+        let thmb = bx(b"thmb", &[0, 5, 0, 1, 0, 1]);
+        let iref = bx(b"iref", &[vec![0; 4], dimg, thmb].concat());
+        let meta = [vec![0; 4], iref].concat();
+        let file = [bx(b"ftyp", b"heic\0\0\0\0mif1"), bx(b"meta", &meta)].concat();
+        let heif = Heif::read(&mut Cursor::new(&file)).unwrap();
+        assert_eq!(heif.referenced(*b"dimg", 1), [4, 2, 3]);
+        assert_eq!(heif.referenced(*b"dimg", 5), [] as [u32; 0]);
+        assert_eq!(heif.describing(*b"thmb", 1), [5]);
     }
 
     #[test]
@@ -773,6 +964,34 @@ mod tests {
         let heif = Heif::read(&mut Cursor::new(&file)).unwrap();
         assert_eq!(heif.properties(1), [&Property::Size(1, 2)]);
         assert_eq!(heif.properties(2), [&Property::Rotation(1)]);
+    }
+
+    /// An item has one association at most, so no more are kept than items
+    /// can be listed: each lookup scans them all, and a grid looks up every
+    /// tile.
+    #[test]
+    fn associations_beyond_as_many_as_items_are_not_kept() {
+        let ipco = bx(b"ipco", &bx(b"irot", &[1]));
+        let ipma = |ids: std::ops::Range<u32>| {
+            let mut body = vec![1, 0, 0, 0];
+            body.extend((ids.len() as u32).to_be_bytes());
+            for id in ids {
+                body.extend(id.to_be_bytes());
+                body.extend([1, 0x81]);
+            }
+            bx(b"ipma", &body)
+        };
+        let full = MAX_BOXES as u32;
+        let iprp = bx(
+            b"iprp",
+            &[ipco, ipma(1..full + 1), ipma(full + 1..full + 3)].concat(),
+        );
+        let meta = [vec![0; 4], iprp].concat();
+        let file = [bx(b"ftyp", b"heic\0\0\0\0mif1"), bx(b"meta", &meta)].concat();
+        let heif = Heif::read(&mut Cursor::new(&file)).unwrap();
+        assert_eq!(heif.associations.len(), MAX_BOXES);
+        assert_eq!(heif.essential_properties(full), [&Property::Rotation(1)]);
+        assert!(heif.properties(full + 1).is_empty());
     }
 
     #[test]
