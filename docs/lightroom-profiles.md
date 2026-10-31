@@ -4,6 +4,68 @@ RAWmakase renders with profiles from its own library and files the user explicit
 
 ## Import and select
 
+### Community camera profiles
+
+RAWmakase knows of free camera profiles other projects made for 72 camera bodies
+(Nikon 21, Canon 17, Fujifilm 13, Sony 13, Panasonic 3, Olympus 2, Pentax 2,
+Samsung 1): 76 DCPs from [RawTherapee](https://rawtherapee.com) and
+[ART](https://art.pixls.us), listed in the app's [catalogue](#camera-profile-catalogue).
+These are camera colour profiles, not film simulations or Adobe's profiles.
+
+When a RAW photo of one of these bodies is open in Develop, a **Community** card
+appears under **Basic › Profile**, as Lens Corrections offers Lensfun's profiles.
+It names each profile for this camera, who made it, its terms (public domain or
+CC0, as the file itself states; the file's own notice is in the hover text) and a
+link to the exact file at its pinned revision. Matching uses the catalogue shipped
+with the app and the same camera rule as imported profiles, so another body's
+profile is never offered or substituted. Rendered files (JPEG, TIFF and the other
+rendered formats) and bodies the catalogue doesn't cover show nothing.
+
+- **Download & Apply** downloads that exact file, checks it, adds it to your
+  profile library and uses it for this photo: one History step, **Profile**, as
+  choosing a profile in the menu is, at 100% Amount, with Temp and Tint and
+  Treatment following the profile. Your other settings stay as they are.
+- **Apply** appears instead when the exact file is already in your profile
+  library, installed before or imported by hand; it uses it with no download.
+- **Dismiss** hides the card for this camera until RAWmakase restarts. Other
+  cameras keep theirs. **Profile › Show community profiles for this camera**
+  brings it back; the menu offers it only for a camera the catalogue covers.
+
+The card stays quiet unasked when the photo already uses one of these profiles,
+or when Adobe's profiles for the camera are imported (Adobe Standard is listed) or
+can be imported from Lightroom's installation: Adobe's profiles take precedence.
+Nothing changes the default profile of new photos; that stays the raw defaults'
+choice (Preferences › Raw Defaults).
+
+**Download & Apply** is the only thing that contacts the profile's host
+(raw.githubusercontent.com). No photo, file path or metadata is sent. The download
+uses the source's pinned commit, the exact byte count and SHA-256, then the DCP is
+parsed and checked against the reviewed name, camera and notice, and installed
+with the same validated, no-clobber importer as **Import profiles…**. The request
+has a 30-second budget; a slow connection can import the pinned file by hand
+instead (the card's source link). A failure says why and offers **Retry**; Cancel
+stops a download before it is installed.
+
+A download is a library operation: it carries on while you move to other photos.
+When it finishes, profiles, raw defaults, preset support and Library previews
+refresh exactly as after importing the same DCP by hand. The profile is applied
+only to the photo it was asked for, and only if that photo is still open, its file
+unchanged on disk, with the profile it had and no **Fit Camera Look** asked for
+since; otherwise it is just installed and you can choose it in the Profile menu.
+What is applied is the installed file read once and checked again as the download
+was: a file put in its place before then is not used. **Apply** checks the
+installed file the same way. The card says a profile is in use only when the photo
+uses that exact profile, not another source's with the same name. A different file with the
+same name in your profile library is never overwritten: the card says so, and
+moving or renaming that file lets you download this one. Reopen the offer through
+**Profile › Show community profiles for this camera** to recheck the library.
+Profiles from two
+sources for the same body (the X-T4, EOS RP, EOS-1D X Mark III and K-50) install
+under different file names; where they share a profile name, the menu tells them
+apart by file name.
+
+### Import files
+
 Use **Import profiles…** in the Develop Profile menu or **Import Profiles…** in Preferences. Select one or more `.dcp` / `.xmp` files, `.cube` LUTs (see [.cube LUTs](#cube-luts)), or folders holding them. **Import .cube LUTs…** in the Profile menu and **Import LUTs…** in Preferences import LUTs only, asking first which colour space they expect ([below](#cube-luts)); a folder chosen there gives its `.cube` files and leaves the DCPs and look XMPs beside them, which LUT packs often ship, to **Import profiles from folder…**. For Adobe Color and the other Adobe Raw looks, import both the camera model's **Adobe Standard DCP** and the desired **XMP look profiles**. You can select these together or import the DCP first. Missing dependencies produce an error; another camera's profile is never substituted.
 
 The CLI uses the same importer:
@@ -19,6 +81,74 @@ It prints a line for each `.cube` and for each file it could not import, and fai
 Selected files are validated and copied into `camera-profiles` under RAWmakase's application data directory (`~/Library/Application Support/RAWmakase` on macOS, `$XDG_DATA_HOME/rawmakase` on Linux). An identical reimport is harmless. A different file with the same filename is reported instead of overwritten. The entire selection is validated before copying starts. Source files remain unchanged.
 
 Importing does not change the current edit. Choose the imported look in **Profile**. New unedited photos prefer a compatible imported Adobe Color, then imported Adobe Standard, then a DNG's embedded profile, then RAWmakase Color. Saved edits retain their embedded profile and previous rendering flags, so edits made before RAWmakase Color existed keep LibRaw's camera matrix with the DNG default tone curve (engine 4, see [color-pipeline.md](color-pipeline.md)).
+
+## Camera-profile catalogue
+
+The catalogue is data in [`data/camera-profiles`](../data/camera-profiles), read
+by the model's `camera_profiles::catalogue`; no profile files are in the repository
+or the app.
+
+- `sources.toml`, hand-written and reviewed: each source's stable id, name,
+  homepage and credit, its GitHub repository and the full commit the files are
+  downloaded from, the directory they are in, and the repository's own license
+  for reference.
+- `catalogue.toml`, generated: one entry per profile with a stable id
+  (`<source>/<slug>`), its file, the name it installs under, the DCP's camera,
+  name and copyright notice verbatim, the terms that notice states, its size and
+  SHA-256.
+- `excluded.toml`, generated: every other DCP at those revisions, with why it is
+  left out.
+
+**What is listed.** A DCP is listed only when RAWmakase's importer supports it and
+its own notice dedicates it: `public domain`, or a CC0 dedication. A source
+repository's license is not taken as a profile's license, and an embedding policy
+is not a copyright grant. At the pinned revisions (RawTherapee `b2ee504c`, ART
+`1ff135df`; 161 and 160 DCPs) that lists 55 of RawTherapee's and 21 of ART's that
+RawTherapee doesn't have byte for byte. The 245 others are excluded: 118 whose
+notice is a bare copyright (“Copyright Maciej Dworak”, “Maciej Dworak”), 9 more
+with another notice that grants nothing (“Copyright Dr Slony”, “RawTherapee”, the
+DCamProf “creator of this profile” notice), 2 with no notice, 67 matrix-only
+profiles the importer can't read yet, and 49 byte-identical copies in ART of files
+listed from RawTherapee. This is why RawTherapee's own X-T20 profile (the one an
+earlier draft pinned at `eacfa93e`), and its X-T1, X-T10, X-Pro2, X-S1, X-E1,
+X-E2, X100S, X100T, GFX 50R and FinePix F600EXR profiles, are not offered; ART's public-domain X-T2, X-T20
+and X-T30 profiles are. Excluded profiles can be listed once their authors state
+terms that allow it.
+
+**Regenerating.** Check out each source at its pinned revision (a sparse checkout
+of the DCP directory is enough), then:
+
+```bash
+cargo run -p rawmakase-model --example profile_catalogue -- generate \
+    rawtherapee=<checkout>/rtdata/dcpprofiles art=<checkout>/data/dcpprofiles
+```
+
+It parses every DCP with RAWmakase's own reader and writes both generated files
+deterministically (sources in `sources.toml`'s order, files by name, the first
+source's copy of identical bytes, a file name two profiles share given its
+source's name). `check` instead of `generate` fails if the checked-in files differ.
+Review the whole diff, including the exclusions, as one change.
+
+**Checks.** CI parses the shipped catalogue in the model's unit tests with no
+network: pinned 40-hex revisions on `https://github.com/` only, safe file names
+that can't escape the library, unique ids, install names and digests, sizes within
+16 MB, terms matching each notice, and each profile matching its own camera and no
+other body's. Two opt-in audits use the real files: the ignored model test
+`pinned_checkouts_regenerate_the_shipped_catalogue_and_install` (set
+`RAWMAKASE_PROFILE_SOURCES=rawtherapee=<dir>,art=<dir>`) regenerates both files from
+local checkouts and installs every profile into a temporary library; the ignored
+app test `published_catalogue_files_match_their_pins` downloads every profile from
+its pinned URL (about 5.9 MB) and verifies it as a download is, and checks each
+source's license link. Neither runs in CI. The app never fetches catalogue updates:
+a new profile ships only in a reviewed `catalogue.toml`.
+
+**Adding a source.** Add it to `sources.toml` with its full commit, check that its
+files' own notices really state their terms, regenerate, and add it to
+[dependencies](dependencies.md) as the sources there are. Profiles made for
+RAWmakase belong here too: commit the DCPs to this repository under
+`data/camera-profiles/<source>/` with their terms in their notice, then, once
+merged, add a source for this repository pinned to that commit and regenerate. The
+schema needs nothing else for them.
 
 ## RAWmakase profiles
 

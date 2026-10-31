@@ -551,7 +551,7 @@ fn import_readable_into(paths: &[std::path::PathBuf], destination: &Path) -> Res
     };
     Ok(Imported { imported, skipped })
 }
-fn import_into(
+pub(super) fn import_into(
     paths: &[std::path::PathBuf],
     destination: &Path,
     space: LutSpace,

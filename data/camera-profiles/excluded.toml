@@ -1,0 +1,1228 @@
+# The DCPs in sources.toml's checkouts that catalogue.toml leaves out, and why.
+# Generated with catalogue.toml; never edited by hand.
+schema = 1
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 100D.dcp"
+reason = "its notice (\"RawTherapee\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 1300D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 20D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 400D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 40D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 450D.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 50D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 550D.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 5D Mark III.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 5D.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 600D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 60D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 650D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 6D Mark II.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 6D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 7D Mark II.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 7D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS 90D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS D60.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon EOS-1D Mark III.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon PowerShot G10.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon PowerShot G12.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon PowerShot G7 X.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon PowerShot S110.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Canon PowerShot S120.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "FUJIFILM FinePix F600EXR.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "FUJIFILM GFX 50R.dcp"
+reason = "its notice (\"Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "FUJIFILM X-Pro2.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "FUJIFILM X-S1.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "FUJIFILM X-T1.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "FUJIFILM X-T10.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "FUJIFILM X-T2.dcp"
+reason = "its notice (\"Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "FUJIFILM X-T20.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "FUJIFILM X-T30.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "FUJIFILM X100S.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "FUJIFILM X100T.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Fujifilm FinePix S9500.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Fujifilm X-E1.dcp"
+reason = "its notice (\"Copyright, the creator of this profile (generated by DCamProf v0.10.4)\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Fujifilm X-E2.dcp"
+reason = "its notice (\"Copyright, the creator of this profile (generated by DCamProf v0.10.4)\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "LG Mobile LG-H815.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Leaf Aptus 75.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "MINOLTA DYNAX 7D.dcp"
+reason = "its notice (\"Copyright Dr Slony\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "NIKON COOLPIX P7800.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "NIKON D300.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "NIKON D50.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "NIKON D5000.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "NIKON D5600.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "NIKON D600.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "NIKON D700.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "NIKON D70s.dcp"
+reason = "its notice (\"Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "NIKON D7200.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "NIKON D750.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "NIKON D80.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "NIKON D800E.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "NIKON D810.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Nikon D200.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Nikon D3000.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Nikon D3100.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Nikon D3S.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Nikon D5100.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Nikon D7000.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "OLYMPUS E-510.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "OLYMPUS E-M10.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "OLYMPUS E-M1MarkII.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Olympus E-1.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Olympus E-520.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Olympus E-M5.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Olympus E-P2.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Olympus XZ-1.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "PENTAX K-5 II.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "PENTAX K-5.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "PENTAX K10D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DC-G9.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DC-GX9.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DC-S1.dcp"
+reason = "its notice (\"Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DC-S5.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DC-TZ91.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DMC-FZ1000.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DMC-FZ150.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DMC-FZ35.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DMC-FZ38.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DMC-G1.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DMC-G3.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DMC-G5.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DMC-GH1.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DMC-GH2.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DMC-GX7.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Panasonic DMC-GX85.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Pentax K-r.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Pentax K200D.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "RICOH GR III.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "RICOH PENTAX K-1.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "RICOH PENTAX K-3.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "SONY DSLR-A580.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "SONY ILCE-6000.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "SONY ILCE-6300.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "SONY ILCE-6500.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "SONY ILCE-7M2.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "SONY ILCE-7M3.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "SONY ILCE-7RM3.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "SONY SLT-A99V.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Sony DSLR-A700.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Sony DSLR-A900.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Sony NEX-5N.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "rawtherapee"
+file = "Sony SLT-A55V.dcp"
+reason = "no copyright notice: its terms are unknown"
+
+[[excluded]]
+source = "rawtherapee"
+file = "YI TECHNOLOGY M1.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "CANON EOS 250D.dcp"
+reason = "the same file as rawtherapee/canon-eos-250d"
+
+[[excluded]]
+source = "art"
+file = "CANON EOS 5D MARK IV.dcp"
+reason = "the same file as rawtherapee/canon-eos-5d-mark-iv"
+
+[[excluded]]
+source = "art"
+file = "CANON EOS 800D.dcp"
+reason = "the same file as rawtherapee/canon-eos-800d"
+
+[[excluded]]
+source = "art"
+file = "CANON EOS M50.dcp"
+reason = "the same file as rawtherapee/canon-eos-m50"
+
+[[excluded]]
+source = "art"
+file = "CANON EOS M6 MARK II.dcp"
+reason = "the same file as rawtherapee/canon-eos-m6-mark-ii"
+
+[[excluded]]
+source = "art"
+file = "CANON EOS R.dcp"
+reason = "the same file as rawtherapee/canon-eos-r"
+
+[[excluded]]
+source = "art"
+file = "CANON EOS R5.dcp"
+reason = "the same file as rawtherapee/canon-eos-r5"
+
+[[excluded]]
+source = "art"
+file = "CANON EOS R6.dcp"
+reason = "the same file as rawtherapee/canon-eos-r6"
+
+[[excluded]]
+source = "art"
+file = "CANON POWERSHOT G1 X MARK II.dcp"
+reason = "the same file as rawtherapee/canon-powershot-g1-x-mark-ii"
+
+[[excluded]]
+source = "art"
+file = "CANON POWERSHOT G5 X MARK II.dcp"
+reason = "the same file as rawtherapee/canon-powershot-g5-x-mark-ii"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 100D.dcp"
+reason = "its notice (\"RawTherapee\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 1300D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 20D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 400D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 40D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 450D.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 50D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 550D.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 5D Mark II.dcp"
+reason = "the same file as rawtherapee/canon-eos-5d-mark-ii"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 5D Mark III.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 5D.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 600D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 60D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 650D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 6D Mark II.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 7D Mark II.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS 7D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS D60.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS-1D Mark III.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Canon EOS-1Ds Mark II.dcp"
+reason = "the same file as rawtherapee/canon-eos-1ds-mark-ii"
+
+[[excluded]]
+source = "art"
+file = "Canon PowerShot G10.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Canon PowerShot G12.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Canon PowerShot G7 X.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon PowerShot S110.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Canon PowerShot S120.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM FinePix F600EXR.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM GFX 50R.dcp"
+reason = "its notice (\"Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM X-A5.dcp"
+reason = "the same file as rawtherapee/fujifilm-x-a5"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM X-A7.dcp"
+reason = "the same file as rawtherapee/fujifilm-x-a7"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM X-E3.dcp"
+reason = "the same file as rawtherapee/fujifilm-x-e3"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM X-H1.dcp"
+reason = "the same file as rawtherapee/fujifilm-x-h1"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM X-PRO3.dcp"
+reason = "the same file as rawtherapee/fujifilm-x-pro3"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM X-Pro2.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM X-S1.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM X-S10.dcp"
+reason = "the same file as rawtherapee/fujifilm-x-s10"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM X-T1.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM X-T10.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM X-T3.dcp"
+reason = "the same file as rawtherapee/fujifilm-x-t3"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM X100S.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "FUJIFILM X100T.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Fujifilm FinePix S9500.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Fujifilm X-E1.dcp"
+reason = "its notice (\"Copyright, the creator of this profile (generated by DCamProf v0.10.4)\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Fujifilm X-E2.dcp"
+reason = "its notice (\"Copyright, the creator of this profile (generated by DCamProf v0.10.4)\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "LG Mobile LG-H815.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Leaf Aptus 75.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "MINOLTA DYNAX 7D.dcp"
+reason = "its notice (\"Copyright Dr Slony\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "NIKON COOLPIX P7800.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "NIKON D3300.dcp"
+reason = "the same file as rawtherapee/nikon-d3300"
+
+[[excluded]]
+source = "art"
+file = "NIKON D50.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "NIKON D500.dcp"
+reason = "the same file as rawtherapee/nikon-d500"
+
+[[excluded]]
+source = "art"
+file = "NIKON D5000.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "NIKON D5300.dcp"
+reason = "the same file as rawtherapee/nikon-d5300"
+
+[[excluded]]
+source = "art"
+file = "NIKON D5600.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "NIKON D600.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "NIKON D610.dcp"
+reason = "the same file as rawtherapee/nikon-d610"
+
+[[excluded]]
+source = "art"
+file = "NIKON D700.dcp"
+reason = "its notice (\"Copyright, the creator of this profile (generated by DCamProf v1.0.6)\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "NIKON D70s.dcp"
+reason = "its notice (\"Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "NIKON D7100.dcp"
+reason = "the same file as rawtherapee/nikon-d7100"
+
+[[excluded]]
+source = "art"
+file = "NIKON D7500.dcp"
+reason = "the same file as rawtherapee/nikon-d7500"
+
+[[excluded]]
+source = "art"
+file = "NIKON D80.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "NIKON D800.dcp"
+reason = "the same file as rawtherapee/nikon-d800"
+
+[[excluded]]
+source = "art"
+file = "NIKON D800E.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "NIKON D850.dcp"
+reason = "the same file as rawtherapee/nikon-d850"
+
+[[excluded]]
+source = "art"
+file = "NIKON Z 5.dcp"
+reason = "the same file as rawtherapee/nikon-z-5"
+
+[[excluded]]
+source = "art"
+file = "NIKON Z 50.dcp"
+reason = "the same file as rawtherapee/nikon-z-50"
+
+[[excluded]]
+source = "art"
+file = "NIKON Z 6.dcp"
+reason = "the same file as rawtherapee/nikon-z-6"
+
+[[excluded]]
+source = "art"
+file = "NIKON Z 6_2.dcp"
+reason = "the same file as rawtherapee/nikon-z-6-2"
+
+[[excluded]]
+source = "art"
+file = "NIKON Z 7.dcp"
+reason = "the same file as rawtherapee/nikon-z-7"
+
+[[excluded]]
+source = "art"
+file = "NIKON Z 8.dcp"
+reason = "the same file as rawtherapee/nikon-z-8"
+
+[[excluded]]
+source = "art"
+file = "NIKON Z 9.dcp"
+reason = "the same file as rawtherapee/nikon-z-9"
+
+[[excluded]]
+source = "art"
+file = "NIKON Z F.dcp"
+reason = "the same file as rawtherapee/nikon-z-f"
+
+[[excluded]]
+source = "art"
+file = "Nikon D200.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Nikon D3000.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Nikon D3100.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Nikon D3S.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Nikon D5100.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "OLYMPUS E-510.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "OLYMPUS E-M1.dcp"
+reason = "the same file as rawtherapee/olympus-e-m1"
+
+[[excluded]]
+source = "art"
+file = "OLYMPUS E-M10.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "OLYMPUS E-M1MarkII.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "OLYMPUS E-M5MARKII.dcp"
+reason = "the same file as rawtherapee/olympus-e-m5markii"
+
+[[excluded]]
+source = "art"
+file = "Olympus E-1.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Olympus E-520.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Olympus E-M5.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Olympus E-P2.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Olympus XZ-1.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "PANASONIC DC-S5M2.dcp"
+reason = "the same file as rawtherapee/panasonic-dc-s5m2"
+
+[[excluded]]
+source = "art"
+file = "PANASONIC DMC-LX100.dcp"
+reason = "the same file as rawtherapee/panasonic-dmc-lx100"
+
+[[excluded]]
+source = "art"
+file = "PENTAX K-5.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "PENTAX K10D.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DC-G9.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DC-GX9.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DC-S1.dcp"
+reason = "its notice (\"Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DC-TZ91.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DMC-FZ1000.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DMC-FZ150.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DMC-FZ35.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DMC-FZ38.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DMC-G1.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DMC-G3.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DMC-G5.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DMC-GH1.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DMC-GH2.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DMC-GX7.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Panasonic DMC-GX85.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Pentax K-r.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Pentax K200D.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "RICOH GR III.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "RICOH PENTAX K-1.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "RICOH PENTAX K-3.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "SONY DSC-RX100M6.dcp"
+reason = "the same file as rawtherapee/sony-dsc-rx100m6"
+
+[[excluded]]
+source = "art"
+file = "SONY DSLR-A580.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "SONY ILCE-6300.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "SONY ILCE-6400.dcp"
+reason = "the same file as rawtherapee/sony-ilce-6400"
+
+[[excluded]]
+source = "art"
+file = "SONY ILCE-6600.dcp"
+reason = "the same file as rawtherapee/sony-ilce-6600"
+
+[[excluded]]
+source = "art"
+file = "SONY ILCE-7.dcp"
+reason = "the same file as rawtherapee/sony-ilce-7"
+
+[[excluded]]
+source = "art"
+file = "SONY ILCE-7C.dcp"
+reason = "the same file as rawtherapee/sony-ilce-7c"
+
+[[excluded]]
+source = "art"
+file = "SONY ILCE-7M4.dcp"
+reason = "the same file as rawtherapee/sony-ilce-7m4"
+
+[[excluded]]
+source = "art"
+file = "SONY ILCE-7RM3.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "SONY ILCE-7RM4.dcp"
+reason = "the same file as rawtherapee/sony-ilce-7rm4"
+
+[[excluded]]
+source = "art"
+file = "SONY ILCE-7SM3.dcp"
+reason = "the same file as rawtherapee/sony-ilce-7sm3"
+
+[[excluded]]
+source = "art"
+file = "SONY ILCE-9.dcp"
+reason = "the same file as rawtherapee/sony-ilce-9"
+
+[[excluded]]
+source = "art"
+file = "SONY SLT-A99V.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "Sony DSLR-A700.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Sony DSLR-A900.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Sony NEX-5N.dcp"
+reason = "not supported: A forward-matrix DCP is required; matrix-only profiles are not yet supported: Missing DCP tag 50964"
+
+[[excluded]]
+source = "art"
+file = "Sony SLT-A55V.dcp"
+reason = "no copyright notice: its terms are unknown"
+
+[[excluded]]
+source = "art"
+file = "YI TECHNOLOGY M1.dcp"
+reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "samsung SM-G930V.dcp"
+reason = "the same file as rawtherapee/samsung-sm-g930v"

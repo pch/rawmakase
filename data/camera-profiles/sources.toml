@@ -1,0 +1,38 @@
+# Where the camera-profile catalogue's DCPs come from, and how to credit them
+# (docs/lightroom-profiles.md#camera-profile-catalogue). Hand-written and reviewed;
+# catalogue.toml, which pins each profile, is generated from checkouts of these
+# revisions and must be regenerated when one changes.
+#
+# id                       stable, used in profile ids; never reuse one for other files
+# name, homepage, credit   what the app shows beside a profile from the source
+# repository, revision     a GitHub repository and the full commit the files are
+#                          downloaded from (raw.githubusercontent.com, never a branch)
+# directory                where the DCPs are at that revision
+# repository_license(_file) the repository's own license, for reference. It is not
+#                          taken as any profile's license: a profile is listed only
+#                          when its own copyright notice dedicates it (terms in
+#                          catalogue.toml); a bare copyright notice, or none, is
+#                          excluded (excluded.toml says why for each file).
+schema = 1
+
+[[source]]
+id = "rawtherapee"
+name = "RawTherapee"
+homepage = "https://rawtherapee.com"
+credit = "RawTherapee contributors"
+repository = "https://github.com/RawTherapee/RawTherapee"
+revision = "b2ee504c47e5e6d5e054395aa12bf1fe43bd1c3c"
+directory = "rtdata/dcpprofiles"
+repository_license = "GPL-3.0"
+repository_license_file = "LICENSE"
+
+[[source]]
+id = "art"
+name = "ART"
+homepage = "https://art.pixls.us"
+credit = "ART contributors (Alberto Griggio and others)"
+repository = "https://github.com/artraweditor/ART"
+revision = "1ff135dff99a4fe2bcbd61d935c22f009ac05ed9"
+directory = "data/dcpprofiles"
+repository_license = "GPL-3.0"
+repository_license_file = "LICENSE.txt"

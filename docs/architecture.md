@@ -44,7 +44,7 @@ files should preserve.
 | `dng`, `tiff` | A DNG's rendering hints (embedded profile, baseline exposure, crop, opcodes) and the bounded TIFF reader behind them (`crates/rawmakase-tiff`, a leaf crate with no RAW knowledge, re-exported as `model::tiff`) | `dng.rs`, `rawmakase-tiff/src/lib.rs` |
 | `decode` | A photo's full-size image, made one way for Develop, prefetch, Reference View and export: the cache's copy, else a decode with highlights recovered and stored, as a `DecodePolicy` asks | `decode.rs` |
 | `decode_cache` | Disk cache of developed camera images, keyed by file identity, demosaic setting and build; the app shares one live size limit and folder across Develop, prefetch, Reference View, export and preview builds, persisted in its session | `decode_cache.rs` |
-| `camera_profiles` | DCP parsing and validation, camera transforms, RAWmakase's own profiles, profile library and camera matching, `.cube` LUTs imported as look profiles, fitted camera looks as profiles (built only; fitting is `camera_look`'s), DNG temperature/tint | `dcp.rs`, `library.rs`, `open.rs`, `cube_look.rs`, `fitted.rs`, `reference.rs` |
+| `camera_profiles` | DCP parsing and validation, camera transforms, RAWmakase's own profiles, profile library and camera matching, the community profile catalogue (`data/camera-profiles`: parsing, validation, matching, byte and identity verification, and its generator), `.cube` LUTs imported as look profiles, fitted camera looks as profiles (built only; fitting is `camera_look`'s), DNG temperature/tint | `dcp.rs`, `library.rs`, `catalogue.rs`, `open.rs`, `cube_look.rs`, `fitted.rs`, `reference.rs` |
 | `camera_look` | Fitting Camera Look (fitted) to a RAW's embedded JPEG: preview choice, pairing with the photo's render, solvers and acceptance on held-out tiles, and the default fit of photos without colour data through its fit cache. In `rawmakase-decode`, as it opens RAWs and decodes their previews; the model only builds and checks what it finds, and the catalog, `xmp` and presets never fit (the app and export pass the default in with the photo's profiles) | `camera_look/` |
 | `optics` | The lens correction model the renderer evaluates (vignetting, distortion and lateral CA as radial functions), Adobe lens profiles (LCP) as data, and Lensfun calibrations as data with their evaluation for a photo; depends only on `xml` | `mod.rs`, `lcp.rs`, `lensfun.rs` |
 | `lens` | Readers that fill the `optics` model: the tables cameras embed in their RAWs, imported Adobe LCPs, Lensfun's database (read, matched, installed) and lateral CA measurement, plus profile selection; an edit's Lensfun lens carries its own copy of the calibration, so rendering never reads the database | `embedded.rs`, `lcp.rs`, `lensfun/`, `auto_ca.rs`, `choice.rs` |
@@ -108,6 +108,39 @@ Fullscreen skips the handler; native traffic-light buttons remain available.
 A panel should call the domain API responsible for an operation, rather than
 implementing file formats, SQL or pixel processing itself. Thumbnail decoding
 belongs to `raw`; library browsing does not call into the preview renderer.
+
+The community camera-profile catalogue has three owners. The model's
+`camera_profiles::catalogue` owns the checked-in data (`data/camera-profiles`:
+hand-written `sources.toml`, generated `catalogue.toml` and `excluded.toml`), its
+validation, matching by the same camera rule the profile library lists by,
+verification of downloaded bytes and installation through the existing no-clobber
+importer, and the deterministic generator; it has no HTTP or UI dependency and
+never reaches the network. `app::profile_download` owns the HTTP request, the task
+and what the offer shows for the open photo: which profiles match, measured once
+per camera and profile library rather than every frame, and the offer's per-camera
+dismissal for the session. `app::inspector::profile_offer` draws the offer under
+Basic › Profile; it only reports clicks. A download captures its profile, camera
+metadata and destination once. It is an application-wide library operation, so
+navigation does not cancel it. Its completion calls `bulk_import::imported` with a
+one-profile camera-profile summary, so profiles, raw defaults (with the fitted
+default kept for a photo without colour data), preset support, Library previews
+(keeping only the unchanged open photo's) and the reference refresh exactly as
+after a manual import. Only then is the profile applied, and only to the photo it
+was asked for, if that photo is still open (same load), its file still has the
+`storage::Identity` it was opened with (checked when the download starts and again
+at completion: an outside replacement or deletion causes no new load), still has
+the profile it had and no camera-look fit was asked for since: one History step
+through `change_edit`, as a Profile menu choice is. Otherwise it is just installed.
+What applies is `Entry::read_installed`: the installed file read once, bounded, and
+verified as the download was, so a file substituted after installation is never
+applied or credited. An installed profile's Apply is clicked during Develop's edit
+frame and changes the profile in place, as the menu does, so the frame records its
+one step. Measuring keeps each installed profile's verified content, which says
+whether the photo uses it: sources may share a profile name and camera.
+Cancellation and publication claim one atomic state, so a published install cannot
+be reported as cancelled. Task generations reject cancelled, superseded and
+duplicate completions; a panicking worker reports a failure through the task
+wrapper, which clears the busy state.
 
 Whether Develop opens a catalog photo has one owner, `app::library::Refusal`:
 `develop_refusal` refuses an offline file, and a JPEG, PNG, TIFF, WebP, AVIF or JPEG XL whose header

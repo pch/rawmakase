@@ -89,7 +89,7 @@ pub(super) fn choose(r: &mut Recipe, m: &Metadata, db: &Installed, lens: &Lens) 
 /// within the panel. Returns what it can't do itself.
 pub(super) fn card(ui: &mut egui::Ui, r: &mut Recipe, m: &Metadata, view: &View) -> Option<Action> {
     let mut action = None;
-    band(ui, |ui| action = contents(ui, r, m, view));
+    band(ui, "Lensfun", |ui| action = contents(ui, r, m, view));
     action
 }
 fn contents(ui: &mut egui::Ui, r: &mut Recipe, m: &Metadata, view: &View) -> Option<Action> {
@@ -375,10 +375,10 @@ pub(in crate::app) fn terms(ui: &mut egui::Ui) {
 }
 
 /// Lays `add` out beside the label column, from the rail start to the panel's edge
-/// less a margin, wrapping; when it adds anything, puts "Lensfun" in the label
+/// less a margin, wrapping; when it adds anything, puts `label` in the label
 /// column at its first line and a faint accent band with an outline behind both.
-/// Adds nothing to the panel when `add` shows nothing.
-fn band(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+/// Adds nothing to the panel when `add` shows nothing. Every offer card uses it.
+pub(super) fn band(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
     const PAD: f32 = space::M;
     let background = ui.painter().add(egui::Shape::Noop);
     let full = ui.available_rect_before_wrap();
@@ -413,7 +413,7 @@ fn band(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     ui.painter().text(
         egui::pos2(full.left() + label_column(ui) - LABEL_GAP, used.top()),
         egui::Align2::RIGHT_TOP,
-        "Lensfun",
+        label,
         egui::FontId::proportional(text::SMALL),
         palette.tone(Tone::SOFT),
     );
@@ -421,7 +421,7 @@ fn band(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     ui.add_space(space::XS);
 }
 /// The offer's first line: a lens, or what the offer is about.
-fn title(ui: &mut egui::Ui, text: &str) {
+pub(super) fn title(ui: &mut egui::Ui, text: &str) {
     ui.add(
         egui::Label::new(
             egui::RichText::new(text)
@@ -432,7 +432,7 @@ fn title(ui: &mut egui::Ui, text: &str) {
     );
 }
 /// The offer's one action, in the accent colour.
-fn accent_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
+pub(super) fn accent_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     let fill = if ui.is_enabled() {
         palette.accent()
@@ -452,7 +452,7 @@ fn accent_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     )
 }
 /// The download's bar and Cancel. Returns whether Cancel was clicked.
-fn progress(ui: &mut egui::Ui, done: u64, total: u64) -> bool {
+pub(super) fn progress(ui: &mut egui::Ui, done: u64, total: u64) -> bool {
     let fraction = if total > 0 {
         done as f32 / total as f32
     } else {
@@ -470,7 +470,7 @@ fn progress(ui: &mut egui::Ui, done: u64, total: u64) -> bool {
     });
     cancel
 }
-fn warning(ui: &mut egui::Ui, text: &str) {
+pub(super) fn warning(ui: &mut egui::Ui, text: &str) {
     ui.add(
         egui::Label::new(
             egui::RichText::new(text)
@@ -480,7 +480,7 @@ fn warning(ui: &mut egui::Ui, text: &str) {
         .wrap(),
     );
 }
-fn note(ui: &mut egui::Ui, text: &str) {
+pub(super) fn note(ui: &mut egui::Ui, text: &str) {
     ui.add(
         egui::Label::new(
             egui::RichText::new(text)
@@ -490,7 +490,7 @@ fn note(ui: &mut egui::Ui, text: &str) {
         .wrap(),
     );
 }
-fn small(ui: &mut egui::Ui, text: &str) {
+pub(super) fn small(ui: &mut egui::Ui, text: &str) {
     ui.label(
         egui::RichText::new(text)
             .size(text::SMALL)

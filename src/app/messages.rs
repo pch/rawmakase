@@ -897,6 +897,10 @@ impl super::Editor {
         if let Some(progress) = &self.importing {
             add(true, "import", &progress.text());
         }
+        // A library operation: shown wherever the user is, not only in its offer.
+        if let Some(name) = self.profile_download.downloading() {
+            add(true, "profile download", &format!("Downloading {name}…"));
+        }
         work
     }
 }

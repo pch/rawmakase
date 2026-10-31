@@ -104,6 +104,7 @@ pub(crate) struct Editor {
     catalog_work: Option<String>,
     /// Progress of a running profile or preset import.
     importing: Option<std::sync::Arc<bulk_import::ImportProgress>>,
+    profile_download: profile_download::Downloads,
     close_confirm: bool,
     /// The close was refused only to let work finish (an export, Sync Settings, a
     /// folder change, a command output): it is asked for again once that is done.
@@ -347,6 +348,7 @@ impl Editor {
             messages: messages::Messages::starting_with("Pick a photo in the Library to begin"),
             catalog_work: None,
             importing: None,
+            profile_download: Default::default(),
             close_confirm: false,
             close_after_work: false,
             quit_by: None,
@@ -929,6 +931,7 @@ mod point_color_panel;
 mod preferences;
 mod presets;
 mod preview_build;
+mod profile_download;
 mod raw_defaults;
 mod readout;
 mod red_eye_tool;

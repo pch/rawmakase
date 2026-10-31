@@ -59,6 +59,11 @@ pub(crate) enum AutoKind {
     WhiteBalance,
 }
 pub(crate) enum Event {
+    /// A verified camera profile was installed into the library, or why not.
+    ProfileDownloaded {
+        id: u64,
+        result: Result<PathBuf, String>,
+    },
     DialogClosed,
     /// The system report's probe answered, or stopped (see `app::report_issue`).
     SystemProbed {

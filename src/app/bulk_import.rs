@@ -611,7 +611,8 @@ pub fn import_profiles(picks: &[PathBuf], space: LutSpace) -> Summary {
 impl Editor {
     /// Starts importing `picks` in the background; the status line follows it.
     pub(super) fn import(&mut self, kind: ImportKind, picks: Vec<PathBuf>, ctx: &egui::Context) {
-        if self.importing.is_some() || picks.is_empty() {
+        // A profile download publishes through the same importer.
+        if self.importing.is_some() || self.profile_download.task.is_running() || picks.is_empty() {
             return;
         }
         let progress = Arc::new(ImportProgress::new(ctx.clone()));

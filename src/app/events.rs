@@ -17,6 +17,7 @@ impl Editor {
         }
         while let Ok(event) = self.rx.try_recv() {
             match event {
+                Event::ProfileDownloaded { id, result } => self.profile_downloaded(id, result, ctx),
                 Event::CatalogWorking(message) => {
                     self.catalog_work = Some(message);
                 }

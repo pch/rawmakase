@@ -1,0 +1,920 @@
+# The camera-profile catalogue: generated from checkouts of the revisions in
+# sources.toml, never edited by hand (docs/lightroom-profiles.md#camera-profile-catalogue):
+#
+#     cargo run -p rawmakase-model --example profile_catalogue -- generate \
+#         rawtherapee=<checkout>/rtdata/dcpprofiles art=<checkout>/data/dcpprofiles
+#
+# terms come from each DCP's own notice (its ProfileCopyright, verbatim here).
+schema = 1
+
+[[profile]]
+id = "rawtherapee/canon-eos-250d"
+source = "rawtherapee"
+file = "CANON EOS 250D.dcp"
+filename = "CANON EOS 250D.dcp"
+camera = "CANON EOS REBEL SL3"
+name = "CANON EOS REBEL SL3"
+notice = "public domain"
+terms = "public-domain"
+size = 65366
+sha256 = "a89f35cc730468159bbc670b1a13e5ca38c168e7f3892368ef8a533a379427e9"
+
+[[profile]]
+id = "rawtherapee/canon-eos-800d"
+source = "rawtherapee"
+file = "CANON EOS 800D.dcp"
+filename = "CANON EOS 800D.dcp"
+camera = "CANON EOS 800D"
+name = "CANON EOS 800D"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "01ff3fcea370670cb4141c96cec037137853ec0cb3089c644349745580d21c52"
+
+[[profile]]
+id = "rawtherapee/canon-eos-m50"
+source = "rawtherapee"
+file = "CANON EOS M50.dcp"
+filename = "CANON EOS M50.dcp"
+camera = "CANON EOS M50"
+name = "CANON EOS M50"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "fb794bbda43e02dc8b7493d28664cb4b8e817e5a5119c5f2cdfac1bd4f55c5ca"
+
+[[profile]]
+id = "rawtherapee/canon-powershot-g5-x-mark-ii"
+source = "rawtherapee"
+file = "CANON POWERSHOT G5 X MARK II.dcp"
+filename = "CANON POWERSHOT G5 X MARK II.dcp"
+camera = "CANON POWERSHOT G5 X MARK II"
+name = "CANON POWERSHOT G5 X MARK II"
+notice = "public domain"
+terms = "public-domain"
+size = 65390
+sha256 = "0a3ffedbb200430fbc9a07dedf879c998d30026b46631bdbbea1665446544de6"
+
+[[profile]]
+id = "rawtherapee/canon-eos-5d-mark-ii"
+source = "rawtherapee"
+file = "Canon EOS 5D Mark II.dcp"
+filename = "Canon EOS 5D Mark II.dcp"
+camera = "Canon EOS 5D Mark II"
+name = "Canon EOS 5D Mark II"
+notice = "RawTherapee CC0"
+terms = "CC0-1.0"
+size = 65374
+sha256 = "3b1f931b77075362ed486571890ac3fa6dca2a9a7012cff22652d5ea8f789381"
+
+[[profile]]
+id = "rawtherapee/canon-eos-5d-mark-iv"
+source = "rawtherapee"
+file = "Canon EOS 5D Mark IV.dcp"
+filename = "Canon EOS 5D Mark IV.dcp"
+camera = "CANON EOS 5D MARK IV"
+name = "CANON EOS 5D MARK IV"
+notice = "public domain"
+terms = "public-domain"
+size = 32782
+sha256 = "eacbd3ffb00a0a992890dcbda8137722d453cff7957fb2894747f71e8fb2ce56"
+
+[[profile]]
+id = "rawtherapee/canon-eos-m6-mark-ii"
+source = "rawtherapee"
+file = "Canon EOS M6 Mark II.dcp"
+filename = "Canon EOS M6 Mark II.dcp"
+camera = "CANON EOS M6 MARK II"
+name = "CANON EOS M6 MARK II"
+notice = "public domain"
+terms = "public-domain"
+size = 65374
+sha256 = "e84be8dbfad04a36d79c8dff1fcaa26158a7a09272005ad7d9cea7e1e0bebd47"
+
+[[profile]]
+id = "rawtherapee/canon-eos-r"
+source = "rawtherapee"
+file = "Canon EOS R.dcp"
+filename = "Canon EOS R.dcp"
+camera = "CANON EOS R"
+name = "CANON EOS R"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "8c708031e6ad308affa70261c88cedd654e5ff1d2ad872af524071dfac4598ef"
+
+[[profile]]
+id = "rawtherapee/canon-eos-r5"
+source = "rawtherapee"
+file = "Canon EOS R5.dcp"
+filename = "Canon EOS R5.dcp"
+camera = "CANON EOS R5"
+name = "CANON EOS R5"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "47dbb2573e1cb78de67ba63a42f47c109457920b7388fcde829a7b026c076b98"
+
+[[profile]]
+id = "rawtherapee/canon-eos-r6"
+source = "rawtherapee"
+file = "Canon EOS R6.dcp"
+filename = "Canon EOS R6.dcp"
+camera = "CANON EOS R6"
+name = "CANON EOS R6"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "98f82e951c5243eded0045c54e5f428112a372338955ea604cc64338baf1996d"
+
+[[profile]]
+id = "rawtherapee/canon-eos-r8"
+source = "rawtherapee"
+file = "Canon EOS R8.dcp"
+filename = "Canon EOS R8.dcp"
+camera = "Canon EOS R8"
+name = "Canon EOS R8"
+notice = "RawTherapee CC0"
+terms = "CC0-1.0"
+size = 65342
+sha256 = "488f264aa090b2a1a2bd636e0361f4e00fd4a86c1d151dbed89fafec7e419bc0"
+
+[[profile]]
+id = "rawtherapee/canon-eos-rp"
+source = "rawtherapee"
+file = "Canon EOS RP.dcp"
+filename = "Canon EOS RP (RawTherapee).dcp"
+camera = "Canon EOS RP"
+name = "Canon EOS RP"
+notice = "RawTherapee CC0"
+terms = "CC0-1.0"
+size = 1045590
+sha256 = "27e08c7e3c62a5c698fca41402b004a8d076ea0db66ab3516fc0098ecca7027f"
+
+[[profile]]
+id = "rawtherapee/canon-eos-1d-x-mark-iii"
+source = "rawtherapee"
+file = "Canon EOS-1D X Mark III.dcp"
+filename = "Canon EOS-1D X Mark III (RawTherapee).dcp"
+camera = "Canon EOS-1D X Mark III"
+name = "Canon EOS-1D X Mark III"
+notice = "RawTherapee CC0"
+terms = "CC0-1.0"
+size = 65374
+sha256 = "fa7e06daac7aa65f1ca9f40f577deb0719960d7ea7656dc23289c289b4335242"
+
+[[profile]]
+id = "rawtherapee/canon-eos-1ds-mark-ii"
+source = "rawtherapee"
+file = "Canon EOS-1Ds Mark II.dcp"
+filename = "Canon EOS-1Ds Mark II.dcp"
+camera = "Canon EOS-1Ds Mark II"
+name = "Canon EOS-1Ds Mark II"
+notice = "RawTherapee CC0"
+terms = "CC0-1.0"
+size = 65374
+sha256 = "39a25ab64201096d42b76157bf5f15d21e12c149cb2358fd3d34ae0ac0c092d1"
+
+[[profile]]
+id = "rawtherapee/canon-powershot-g1-x-mark-ii"
+source = "rawtherapee"
+file = "Canon PowerShot G1 X Mark II.dcp"
+filename = "Canon PowerShot G1 X Mark II.dcp"
+camera = "CANON POWERSHOT G1 X MARK II"
+name = "CANON POWERSHOT G1 X MARK II"
+notice = "public domain"
+terms = "public-domain"
+size = 65390
+sha256 = "8648e287ff5749cc08174dbf46150342ba8662687d94ffc2bc2188cc20a4e618"
+
+[[profile]]
+id = "rawtherapee/fujifilm-dbp-for-gx680"
+source = "rawtherapee"
+file = "FUJIFILM DBP for GX680.dcp"
+filename = "FUJIFILM DBP for GX680.dcp"
+camera = "FUJIFILM DBP for GX680"
+name = "FUJIFILM DBP for GX680"
+notice = "RawTherapee CC0"
+terms = "CC0-1.0"
+size = 65374
+sha256 = "b04365bf883c84c6a3080938ab1cd58dbbd3dbc9132b354470eb50d8a8483d8f"
+
+[[profile]]
+id = "rawtherapee/fujifilm-x-a5"
+source = "rawtherapee"
+file = "FUJIFILM X-A5.dcp"
+filename = "FUJIFILM X-A5.dcp"
+camera = "FUJIFILM X-A5"
+name = "FUJIFILM X-A5"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "bc9baff104cef67499fc63fb1733ffd80469b1dd7929a5ff40e819433c127d06"
+
+[[profile]]
+id = "rawtherapee/fujifilm-x-a7"
+source = "rawtherapee"
+file = "FUJIFILM X-A7.dcp"
+filename = "FUJIFILM X-A7.dcp"
+camera = "FUJIFILM X-A7"
+name = "FUJIFILM X-A7"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "6360a31b20066b7c27619a7fe393d78885908faaa27292467b51d2ea31dc2e5d"
+
+[[profile]]
+id = "rawtherapee/fujifilm-x-e3"
+source = "rawtherapee"
+file = "FUJIFILM X-E3.dcp"
+filename = "FUJIFILM X-E3.dcp"
+camera = "FUJIFILM X-E3"
+name = "FUJIFILM X-E3"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "cfbeaf5832882f2363e2667c918c7222314785820f683e030bf6d49d6d37a3ed"
+
+[[profile]]
+id = "rawtherapee/fujifilm-x-h1"
+source = "rawtherapee"
+file = "FUJIFILM X-H1.dcp"
+filename = "FUJIFILM X-H1.dcp"
+camera = "FUJIFILM X-H1"
+name = "FUJIFILM X-H1"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "a64339856f77b44548e6b7aba75a62fe4abb66a89af35c13ace7bdf47f5f7f61"
+
+[[profile]]
+id = "rawtherapee/fujifilm-x-pro3"
+source = "rawtherapee"
+file = "FUJIFILM X-Pro3.dcp"
+filename = "FUJIFILM X-Pro3.dcp"
+camera = "FUJIFILM X-PRO3"
+name = "FUJIFILM X-PRO3"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "568861079c16d7a8ab2d06afadae293d8a23cc2819eeafb3a394e3c59155377c"
+
+[[profile]]
+id = "rawtherapee/fujifilm-x-s10"
+source = "rawtherapee"
+file = "FUJIFILM X-S10.dcp"
+filename = "FUJIFILM X-S10.dcp"
+camera = "FUJIFILM X-S10"
+name = "FUJIFILM X-S10"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "8d7bea27da185984d717ccf077a061238417917941fb8505349d89fe7c7a0939"
+
+[[profile]]
+id = "rawtherapee/fujifilm-x-t3"
+source = "rawtherapee"
+file = "FUJIFILM X-T3.dcp"
+filename = "FUJIFILM X-T3.dcp"
+camera = "FUJIFILM X-T3"
+name = "FUJIFILM X-T3"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "f0687ad09e554536c7bd9cdc20650dc264b7de8f647a87ba9cdf1e3edbda5334"
+
+[[profile]]
+id = "rawtherapee/fujifilm-x-t4"
+source = "rawtherapee"
+file = "FUJIFILM X-T4.dcp"
+filename = "FUJIFILM X-T4 (RawTherapee).dcp"
+camera = "FUJIFILM X-T4"
+name = "FUJIFILM X-T4"
+notice = "RawTherapee CC0"
+terms = "CC0-1.0"
+size = 65358
+sha256 = "1bfc63b7b782c652ef246759c510ec22b6c885eec2b48824e493639a15a28c40"
+
+[[profile]]
+id = "rawtherapee/nikon-d3300"
+source = "rawtherapee"
+file = "NIKON D3300.dcp"
+filename = "NIKON D3300.dcp"
+camera = "NIKON D3300"
+name = "NIKON D3300"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "dfd4e9d33f02dc9715b358ee44d79fcabf3e23747af313ad0dff6bf3d8a99a4f"
+
+[[profile]]
+id = "rawtherapee/nikon-d500"
+source = "rawtherapee"
+file = "NIKON D500.dcp"
+filename = "NIKON D500.dcp"
+camera = "NIKON D500"
+name = "NIKON D500"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "41f756fa1625979eff53dc88feae0839e8f7cb1af7854320a245cb3e7606e848"
+
+[[profile]]
+id = "rawtherapee/nikon-d5300"
+source = "rawtherapee"
+file = "NIKON D5300.dcp"
+filename = "NIKON D5300.dcp"
+camera = "NIKON D5300"
+name = "NIKON D5300"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "979ca824289aeb9f688360f70f036f136c5372506c1c9efcb94f181d75dfce32"
+
+[[profile]]
+id = "rawtherapee/nikon-d610"
+source = "rawtherapee"
+file = "NIKON D610.dcp"
+filename = "NIKON D610.dcp"
+camera = "NIKON D610"
+name = "NIKON D610"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "8fd57940d9ddfefa63cd33beb000b37f79209650777757340e2f084004daf3ee"
+
+[[profile]]
+id = "rawtherapee/nikon-d7100"
+source = "rawtherapee"
+file = "NIKON D7100.dcp"
+filename = "NIKON D7100.dcp"
+camera = "NIKON D7100"
+name = "NIKON D7100"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "dba2090fc819e65eb56f778f526f661c952dd0eca3d64f8149301c6bb27cec4e"
+
+[[profile]]
+id = "rawtherapee/nikon-d7500"
+source = "rawtherapee"
+file = "NIKON D7500.dcp"
+filename = "NIKON D7500.dcp"
+camera = "NIKON D7500"
+name = "NIKON D7500"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "be3dd3e117b2a4c04e946e5459e626beeb32b92e358237dde6a9ce7c40779e6e"
+
+[[profile]]
+id = "rawtherapee/nikon-d800"
+source = "rawtherapee"
+file = "NIKON D800.dcp"
+filename = "NIKON D800.dcp"
+camera = "NIKON D800"
+name = "NIKON D800"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "e79b0bddeef3e254f31bf9a9eab012732b32202375c1c0ad65ce5957c71c48c4"
+
+[[profile]]
+id = "rawtherapee/nikon-d850"
+source = "rawtherapee"
+file = "NIKON D850.dcp"
+filename = "NIKON D850.dcp"
+camera = "NIKON D850"
+name = "NIKON D850"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "0d699c2f7f1c32928ae4635aee22933c625d040a987b552d4e705d5fba6648ec"
+
+[[profile]]
+id = "rawtherapee/nikon-z-5"
+source = "rawtherapee"
+file = "NIKON Z 5.dcp"
+filename = "NIKON Z 5.dcp"
+camera = "NIKON Z 5"
+name = "NIKON Z 5"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "9f9cbe66270704d5c811ee7e13bf2003a549a8521ff8a744f700d18b62c94d3a"
+
+[[profile]]
+id = "rawtherapee/nikon-z-50"
+source = "rawtherapee"
+file = "NIKON Z 50.dcp"
+filename = "NIKON Z 50.dcp"
+camera = "NIKON Z 50"
+name = "NIKON Z 50"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "ac12c09c44fa185f717dfd4def3cca4a880f2cf4a005c34c5e4966271a150e6d"
+
+[[profile]]
+id = "rawtherapee/nikon-z-6"
+source = "rawtherapee"
+file = "NIKON Z 6.dcp"
+filename = "NIKON Z 6.dcp"
+camera = "NIKON Z 6"
+name = "NIKON Z 6"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "690a233382579f96c635d7f330dcc99234bcb1c76a708f2b569435d57dd450df"
+
+[[profile]]
+id = "rawtherapee/nikon-z-6-2"
+source = "rawtherapee"
+file = "NIKON Z 6_2.dcp"
+filename = "NIKON Z 6_2.dcp"
+camera = "NIKON Z 6_2"
+name = "NIKON Z 6_2"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "e843307c021cdd4b4208f4d17183ed0f318cf641a8ce95054db3520bd3f13bc9"
+
+[[profile]]
+id = "rawtherapee/nikon-z-7"
+source = "rawtherapee"
+file = "NIKON Z 7.dcp"
+filename = "NIKON Z 7.dcp"
+camera = "NIKON Z 7"
+name = "NIKON Z 7"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "d359225a2fe6fb73385cc58c810c64b542727756f7683174266da8e4931eeff5"
+
+[[profile]]
+id = "rawtherapee/nikon-z-8"
+source = "rawtherapee"
+file = "NIKON Z 8.dcp"
+filename = "NIKON Z 8.dcp"
+camera = "NIKON Z 8"
+name = "NIKON Z 8"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "eef2ad2709fcaeb3830a25f63bd9079d68166d4bcac5419bcefe21753cc3b228"
+
+[[profile]]
+id = "rawtherapee/nikon-z-9"
+source = "rawtherapee"
+file = "NIKON Z 9.dcp"
+filename = "NIKON Z 9.dcp"
+camera = "NIKON Z 9"
+name = "NIKON Z 9"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "4691341158d79dd941df8de1dd9f2b5cf7e236dfd4b3f7df6b804fd73aa87077"
+
+[[profile]]
+id = "rawtherapee/nikon-z-f"
+source = "rawtherapee"
+file = "NIKON Z F.dcp"
+filename = "NIKON Z F.dcp"
+camera = "NIKON Z F"
+name = "NIKON Z F"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "740fc374967e1d18a3f81b1c24a61f99d9673a118971011b58a7898a07df23ca"
+
+[[profile]]
+id = "rawtherapee/olympus-e-m1"
+source = "rawtherapee"
+file = "OLYMPUS E-M1.dcp"
+filename = "OLYMPUS E-M1.dcp"
+camera = "OLYMPUS E-M1"
+name = "OLYMPUS E-M1"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "c40ef5040f4ee2ac01e10aeb75488a422eddb2a2a20dccef6662209011f547f4"
+
+[[profile]]
+id = "rawtherapee/olympus-e-m5markii"
+source = "rawtherapee"
+file = "OLYMPUS E-M5MarkII.dcp"
+filename = "OLYMPUS E-M5MarkII.dcp"
+camera = "OLYMPUS E-M5MARKII"
+name = "OLYMPUS E-M5MARKII"
+notice = "public domain"
+terms = "public-domain"
+size = 65366
+sha256 = "3bf68bc0a64386f426bfc5cb5b730de29ae84c1c0e2c960ac8061a9c84348080"
+
+[[profile]]
+id = "rawtherapee/panasonic-dc-s5m2"
+source = "rawtherapee"
+file = "PANASONIC DC-S5M2.dcp"
+filename = "PANASONIC DC-S5M2.dcp"
+camera = "PANASONIC DC-S5M2"
+name = "PANASONIC DC-S5M2"
+notice = "public domain"
+terms = "public-domain"
+size = 65366
+sha256 = "545b0349323a4a15cd9b5aabf9e8521564133bae9350db18e1f1163179abaea9"
+
+[[profile]]
+id = "rawtherapee/panasonic-dmc-lx100"
+source = "rawtherapee"
+file = "PANASONIC DMC-LX100.dcp"
+filename = "PANASONIC DMC-LX100.dcp"
+camera = "PANASONIC DMC-LX100"
+name = "PANASONIC DMC-LX100"
+notice = "public domain"
+terms = "public-domain"
+size = 65366
+sha256 = "45839ac9afa8dca3b9ac3c7f2357a8bb1bf39ec2e009cf78da8ba06f583446b4"
+
+[[profile]]
+id = "rawtherapee/pentax-k-50"
+source = "rawtherapee"
+file = "PENTAX K-50.dcp"
+filename = "PENTAX K-50 (RawTherapee).dcp"
+camera = "PENTAX K-50"
+name = "PENTAX K-50"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "014e0670f831db0a03a76c21b306bc79826d06c025a1f60ad8f621a88a0a527e"
+
+[[profile]]
+id = "rawtherapee/sony-dsc-rx100m6"
+source = "rawtherapee"
+file = "SONY DSC-RX100M6.dcp"
+filename = "SONY DSC-RX100M6.dcp"
+camera = "SONY DSC-RX100M6"
+name = "SONY DSC-RX100M6"
+notice = "public domain"
+terms = "public-domain"
+size = 65366
+sha256 = "de21b7ee17bc95895c0bf9048659a9c20521a02105eb98e17174faa7ebc8d6c8"
+
+[[profile]]
+id = "rawtherapee/sony-ilce-6400"
+source = "rawtherapee"
+file = "SONY ILCE-6400.dcp"
+filename = "SONY ILCE-6400.dcp"
+camera = "SONY ILCE-6400"
+name = "SONY ILCE-6400"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "9e05c295993f4234b9d320f177b0306e407ba7cfa2a00d8e2d4fdfb9a7fecf64"
+
+[[profile]]
+id = "rawtherapee/sony-ilce-6600"
+source = "rawtherapee"
+file = "SONY ILCE-6600.dcp"
+filename = "SONY ILCE-6600.dcp"
+camera = "SONY ILCE-6600"
+name = "SONY ILCE-6600"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "a9c63f0a4952d97c7d2c5c9ec083db4843974e943154f9731562a3b4909a11e6"
+
+[[profile]]
+id = "rawtherapee/sony-ilce-7"
+source = "rawtherapee"
+file = "SONY ILCE-7.dcp"
+filename = "SONY ILCE-7.dcp"
+camera = "SONY ILCE-7"
+name = "SONY ILCE-7"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "a043c215c543bfbcf731a72993322e88b35d4462199863164dd9cbb95b212fc3"
+
+[[profile]]
+id = "rawtherapee/sony-ilce-7c"
+source = "rawtherapee"
+file = "SONY ILCE-7C.dcp"
+filename = "SONY ILCE-7C.dcp"
+camera = "SONY ILCE-7C"
+name = "SONY ILCE-7C"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "e5f65867a18ae37d0745bd448300c9e80d41d2314f599ecee8c4c0f05abc04fb"
+
+[[profile]]
+id = "rawtherapee/sony-ilce-7m4"
+source = "rawtherapee"
+file = "SONY ILCE-7M4.dcp"
+filename = "SONY ILCE-7M4.dcp"
+camera = "SONY ILCE-7M4"
+name = "SONY ILCE-7M4"
+notice = "RawTherapee CC0"
+terms = "CC0-1.0"
+size = 65358
+sha256 = "8b209fdcf76b996cd4a663a9a8d784895c7daf4a78415adc37141e8205ef7c4d"
+
+[[profile]]
+id = "rawtherapee/sony-ilce-7rm4"
+source = "rawtherapee"
+file = "SONY ILCE-7RM4.dcp"
+filename = "SONY ILCE-7RM4.dcp"
+camera = "SONY ILCE-7RM4"
+name = "SONY ILCE-7RM4"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "c5cba52b7f7a957426b4cda286ec35802b8bf3da27d63ec559228df188d1f122"
+
+[[profile]]
+id = "rawtherapee/sony-ilce-7sm3"
+source = "rawtherapee"
+file = "SONY ILCE-7SM3.dcp"
+filename = "SONY ILCE-7SM3.dcp"
+camera = "SONY ILCE-7SM3"
+name = "SONY ILCE-7SM3"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "4921d6d2e38d9fbc2ec10e61f09fd487c0b6cb08109013590e34c6f0ca7ca443"
+
+[[profile]]
+id = "rawtherapee/sony-ilce-9"
+source = "rawtherapee"
+file = "SONY ILCE-9.dcp"
+filename = "SONY ILCE-9.dcp"
+camera = "SONY ILCE-9"
+name = "SONY ILCE-9"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "3de07fa0380b2a34f351065d0804e49d49000d9fd810b4e24ac767bb9ce6490c"
+
+[[profile]]
+id = "rawtherapee/samsung-sm-g930v"
+source = "rawtherapee"
+file = "samsung SM-G930V.dcp"
+filename = "samsung SM-G930V.dcp"
+camera = "samsung SM-G930V"
+name = "samsung SM-G930V"
+notice = "RawTherapee CC0"
+terms = "CC0-1.0"
+size = 65366
+sha256 = "f9a6d2352672ebb1929138874044eef92c4d451f47fc6174985d529d4255765d"
+
+[[profile]]
+id = "art/canon-eos-6d"
+source = "art"
+file = "CANON EOS 6D.dcp"
+filename = "CANON EOS 6D.dcp"
+camera = "CANON EOS 6D"
+name = "CANON EOS 6D"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "e5603d1068c41e5edfe324fc54507c8fa438ce297bfceb5a3a5a83d39f53ac1f"
+
+[[profile]]
+id = "art/canon-eos-90d"
+source = "art"
+file = "CANON EOS 90D.dcp"
+filename = "CANON EOS 90D.dcp"
+camera = "CANON EOS 90D"
+name = "CANON EOS 90D"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "d665f60863e38bb942690ccd19c310322fd89366aba7c150abccf4e062b21718"
+
+[[profile]]
+id = "art/canon-eos-rp"
+source = "art"
+file = "CANON EOS RP.dcp"
+filename = "CANON EOS RP (ART).dcp"
+camera = "CANON EOS RP"
+name = "CANON EOS RP"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "de0155278086df5bbecd05bc411c1b544ed5e61d1e0304a7e276ef1ebc4d7b19"
+
+[[profile]]
+id = "art/canon-eos-1d-x-mark-iii"
+source = "art"
+file = "CANON EOS-1D X MARK III.dcp"
+filename = "CANON EOS-1D X MARK III (ART).dcp"
+camera = "CANON EOS-1D X MARK III"
+name = "CANON EOS-1D X MARK III"
+notice = "public domain"
+terms = "public-domain"
+size = 65374
+sha256 = "c902e852bfc16be9afa4238f08478f48085d9840071e643390d71e1a2f351512"
+
+[[profile]]
+id = "art/fujifilm-gfx-100"
+source = "art"
+file = "FUJIFILM GFX 100.dcp"
+filename = "FUJIFILM GFX 100.dcp"
+camera = "FUJIFILM GFX 100"
+name = "FUJIFILM GFX 100"
+notice = "public domain"
+terms = "public-domain"
+size = 65366
+sha256 = "237f1e884b7d70c2809369d9f9d6bd7eb093871f38c1068c1c0799b5dd093978"
+
+[[profile]]
+id = "art/fujifilm-x-t2"
+source = "art"
+file = "FUJIFILM X-T2.dcp"
+filename = "FUJIFILM X-T2.dcp"
+camera = "FUJIFILM X-T2"
+name = "FUJIFILM X-T2"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "67712a9d3f916e5e7c6c2ffed6938f3054366478dea4d329cf9da257538a0fbf"
+
+[[profile]]
+id = "art/fujifilm-x-t20"
+source = "art"
+file = "FUJIFILM X-T20.dcp"
+filename = "FUJIFILM X-T20.dcp"
+camera = "FUJIFILM X-T20"
+name = "FUJIFILM X-T20"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "88c281435efdfc1955d309784041d7c526cf7f7c14a8f5ffe48264b2e1938730"
+
+[[profile]]
+id = "art/fujifilm-x-t30"
+source = "art"
+file = "FUJIFILM X-T30.dcp"
+filename = "FUJIFILM X-T30.dcp"
+camera = "FUJIFILM X-T30"
+name = "FUJIFILM X-T30"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "5bd94b69964c481166c5cdd1e3de2d852b753fa4e600e01dd9622a2c940bf582"
+
+[[profile]]
+id = "art/fujifilm-x-t4"
+source = "art"
+file = "FUJIFILM X-T4.dcp"
+filename = "FUJIFILM X-T4 (ART).dcp"
+camera = "FUJIFILM X-T4"
+name = "FUJIFILM X-T4"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "52ef50c5dde600dfdca32152e124df594012e62227937848067c68a2cbdc4fe5"
+
+[[profile]]
+id = "art/nikon-d300"
+source = "art"
+file = "NIKON D300.dcp"
+filename = "NIKON D300.dcp"
+camera = "NIKON D300"
+name = "NIKON D300"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "67ec85d1ed26271815ae78ef75053cebbc85125f542234ae24697abab4ddd0f7"
+
+[[profile]]
+id = "art/nikon-d7000"
+source = "art"
+file = "NIKON D7000.dcp"
+filename = "NIKON D7000.dcp"
+camera = "NIKON D7000"
+name = "NIKON D7000"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "659335ac02c74da029cd973b2cd06dfa74bd83cff4c6bf4ef78ab579727e483c"
+
+[[profile]]
+id = "art/nikon-d7200"
+source = "art"
+file = "NIKON D7200.dcp"
+filename = "NIKON D7200.dcp"
+camera = "NIKON D7200"
+name = "NIKON D7200"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "9ce14224f373b6e71f1975631f56c4a51d30e54ebbd8a32fd3df18e48fb1bd4e"
+
+[[profile]]
+id = "art/nikon-d750"
+source = "art"
+file = "NIKON D750.dcp"
+filename = "NIKON D750.dcp"
+camera = "NIKON D750"
+name = "NIKON D750"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "9441dc004e2648754813e7f9c3575794cd228720693335915f50be70429c196c"
+
+[[profile]]
+id = "art/nikon-d810"
+source = "art"
+file = "NIKON D810.dcp"
+filename = "NIKON D810.dcp"
+camera = "NIKON D810"
+name = "NIKON D810"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "444fd6968cd9758e8513bedd8a29f324dea54b5d4eb16dd6772ea75cabc4603c"
+
+[[profile]]
+id = "art/panasonic-dc-s5"
+source = "art"
+file = "PANASONIC DC-S5.dcp"
+filename = "PANASONIC DC-S5.dcp"
+camera = "PANASONIC DC-S5"
+name = "PANASONIC DC-S5"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "1b456b29d298267b124c2ee60297767f88065c3b3706b7fcbbbdcb97ce95f353"
+
+[[profile]]
+id = "art/pentax-k-5-ii"
+source = "art"
+file = "PENTAX K-5 II.dcp"
+filename = "PENTAX K-5 II.dcp"
+camera = "PENTAX K-5 II"
+name = "PENTAX K-5 II"
+notice = "public domain"
+terms = "public-domain"
+size = 510
+sha256 = "bf936a857433beec5f58ff6d2a544efc04c24634662a0a6323136290d67ac295"
+
+[[profile]]
+id = "art/pentax-k-50"
+source = "art"
+file = "PENTAX K-50.dcp"
+filename = "PENTAX K-50 (ART).dcp"
+camera = "PENTAX K-50"
+name = "PENTAX K-50"
+notice = "public domain"
+terms = "public-domain"
+size = 65350
+sha256 = "72abaee2a8dd90081c6ef64bbb696b4882e6177193ff297cf2228e6039014f0a"
+
+[[profile]]
+id = "art/sony-ilce-6000"
+source = "art"
+file = "SONY ILCE-6000.dcp"
+filename = "SONY ILCE-6000.dcp"
+camera = "SONY ILCE-6000"
+name = "SONY ILCE-6000"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "03d87d038efbc48e5bfb33b67451b7739ba52b51f7a6ab4fe3d9270fe1a49edf"
+
+[[profile]]
+id = "art/sony-ilce-6500"
+source = "art"
+file = "SONY ILCE-6500.dcp"
+filename = "SONY ILCE-6500.dcp"
+camera = "SONY ILCE-6500"
+name = "SONY ILCE-6500"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "8cb0f4bb2d72f081ec7a945a70ebd1c3e741c7c8bb48e216bd562e92a9cce6be"
+
+[[profile]]
+id = "art/sony-ilce-7m2"
+source = "art"
+file = "SONY ILCE-7M2.dcp"
+filename = "SONY ILCE-7M2.dcp"
+camera = "SONY ILCE-7M2"
+name = "SONY ILCE-7M2"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "01889d0a253b59cb55a047e1a6aab1ac9a3ec58cac134fa40ee04de1cffea5d0"
+
+[[profile]]
+id = "art/sony-ilce-7m3"
+source = "art"
+file = "SONY ILCE-7M3.dcp"
+filename = "SONY ILCE-7M3.dcp"
+camera = "SONY ILCE-7M3"
+name = "SONY ILCE-7M3"
+notice = "public domain"
+terms = "public-domain"
+size = 65358
+sha256 = "1e9cf6f96b45d14f17891d8961cf63cc895694a3879db25583537be68f6630ab"
