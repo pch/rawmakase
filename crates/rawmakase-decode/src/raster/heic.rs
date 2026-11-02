@@ -185,6 +185,35 @@ impl HeicFile {
         Ok(())
     }
 
+    /// Whether every SPS, in a tile's `hvcC` or among its NAL units, codes it
+    /// no wider or taller than the header's size in whole 64-pixel blocks: a
+    /// picture is coded in whole coding blocks, at most 64 pixels a side, and
+    /// cropped to its size. The system's decoder would otherwise decode, and
+    /// allocate, a picture as large as an SPS says, whatever the header says.
+    fn coded_within(&mut self) -> Result<()> {
+        let blocks = |v: u32| u64::from(v).div_ceil(64) * 64;
+        let (width, height) = self.layout.tile;
+        let mut checked = std::collections::HashSet::new();
+        for (id, config) in &self.layout.tiles {
+            if !checked.insert(*id) {
+                continue;
+            }
+            let data = self
+                .heif
+                .data(&mut self.file, *id)
+                .ok_or_else(|| anyhow!("The HEIF image data is missing or cut off"))?;
+            let coded = hevc::coded_in(&data, config.length_size)
+                .ok_or_else(|| anyhow!("The HEVC image data is corrupt"))?;
+            for &(w, h) in config.coded.iter().chain(&coded) {
+                ensure!(
+                    u64::from(w) <= blocks(width) && u64::from(h) <= blocks(height),
+                    "The HEVC image is coded larger than the header says ({w} x {h})"
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Whether a picture of `width` × `height` is this image: the whole
     /// picture, or its crop alone. A system decoder's size is checked so
     /// before anything that size is allocated.
@@ -378,6 +407,7 @@ impl ImageDecoder for HeicFile {
         let (crop, deep) = (self.crop, self.deep);
         let full = (self.layout.width, self.layout.height);
         self.stored().map_err(failed)?;
+        self.coded_within().map_err(failed)?;
         let Pixels { width, height, rgb } = pixels(self).map_err(failed)?;
         // The whole picture, cropped here, or the crop alone: any other size
         // is not the image the header describes (a system decoder that turned

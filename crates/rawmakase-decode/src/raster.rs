@@ -1533,8 +1533,8 @@ mod tests {
     }
 
     /// A header saying a picture is smaller than it is coded is not believed:
-    /// the system decoder's picture is refused by its size, before anything
-    /// that size is allocated.
+    /// its SPS says the size it is coded at, and the picture is refused before
+    /// a system decoder decodes it, on every platform.
     #[test]
     fn a_heic_coded_larger_than_its_header_says_is_refused() {
         if cfg!(target_os = "macos") {
@@ -1551,8 +1551,6 @@ mod tests {
         std::fs::write(&path, bytes).unwrap();
         assert_eq!(super::dimensions(&path), Some((64, 64)));
         let error = format!("{:#}", decode(&path).unwrap_err());
-        if cfg!(target_os = "macos") {
-            assert!(error.contains("not the size it says"), "{error}");
-        }
+        assert!(error.contains("coded larger"), "{error}");
     }
 }
