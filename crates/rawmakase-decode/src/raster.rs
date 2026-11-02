@@ -1394,6 +1394,22 @@ mod tests {
         assert_eq!(super::probe(&path).unwrap_err().0, "animated");
     }
 
+    /// A HEIC with alpha (an auxiliary image) is listed by its size; on macOS
+    /// it is decoded composited over black, a transparent one as black rather
+    /// than refused as a decode that drew nothing.
+    #[test]
+    fn a_heic_with_alpha_is_shown_over_black() {
+        for name in ["transparent.heic", "half-alpha.heic"] {
+            assert_eq!(super::dimensions(&fixture(name)), Some((16, 12)), "{name}");
+        }
+        if cfg!(target_os = "macos") {
+            let image = decode(&fixture("transparent.heic")).unwrap();
+            assert!(image.pixels().all(|p| p.0 == [0; 3]));
+            let image = decode(&fixture("half-alpha.heic")).unwrap();
+            assert_corners_near([image.get_pixel(8, 6).0; 4], [[128, 0, 0]; 4], 6);
+        }
+    }
+
     /// The size and the refusal come from a HEIC's header: its HEVC data is
     /// read only to decode it, and a picture cut short is an error on every
     /// platform, whatever a system decoder would make of it.

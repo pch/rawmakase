@@ -26,7 +26,9 @@
 //! nothing: the photo would come out black, not as an error. So the image is
 //! decoded when it is made, and drawn small onto black and onto white first:
 //! an image drawn shows the same on both (where it is opaque), one not drawn
-//! shows the background, and is an error.
+//! shows the background, and is an error. An image transparent everywhere
+//! shows the background too, so one with alpha that shows nothing is taken
+//! as drawn when its decoded pixels are there to read.
 use super::super::avif;
 use super::{HeicFile, Pixels};
 use anyhow::{Result, anyhow, ensure};
@@ -37,8 +39,8 @@ use objc2_core_foundation::{
     kCFBooleanTrue,
 };
 use objc2_core_graphics::{
-    CGBitmapContextCreate, CGColorSpace, CGColorSpaceModel, CGContext, CGImage, CGImageAlphaInfo,
-    CGImageByteOrderInfo, CGInterpolationQuality, kCGColorSpaceITUR_2100_HLG,
+    CGBitmapContextCreate, CGColorSpace, CGColorSpaceModel, CGContext, CGDataProvider, CGImage,
+    CGImageAlphaInfo, CGImageByteOrderInfo, CGInterpolationQuality, kCGColorSpaceITUR_2100_HLG,
     kCGColorSpaceITUR_2100_PQ, kCGColorSpaceSRGB,
 };
 use objc2_image_io::{CGImageSource, CGImageSourceStatus, kCGImageSourceShouldCacheImmediately};
@@ -80,8 +82,8 @@ fn space(file: &HeicFile) -> Option<CFRetained<CGColorSpace>> {
 
 /// Whether `image` draws: drawn 16 × 16 onto black and onto white, an opaque
 /// image comes out the same on both, and one with alpha isn't the background
-/// everywhere. The edge pixels, which smoothing may blend with the
-/// background, are not compared.
+/// everywhere, or, transparent, has its decoded pixels. The edge pixels,
+/// which smoothing may blend with the background, are not compared.
 fn drawn(image: &CGImage) -> Result<bool> {
     const SIDE: usize = 16;
     // SAFETY: a constant CoreGraphics defines.
@@ -138,7 +140,17 @@ fn drawn(image: &CGImage) -> Result<bool> {
             .iter()
             .zip(&white)
             .any(|(b, w)| *b != [0; 3] || *w != [255; 3])
+            || decoded(image)
     })
+}
+
+/// Whether `image`'s decoded pixels are there to read: all its rows, from its
+/// data provider.
+fn decoded(image: &CGImage) -> bool {
+    let size = CGImage::bytes_per_row(Some(image)).checked_mul(CGImage::height(Some(image)));
+    CGImage::data_provider(Some(image))
+        .and_then(|provider| CGDataProvider::data(Some(&provider)))
+        .is_some_and(|data| size.is_some_and(|size| size > 0 && data.length() as usize >= size))
 }
 
 fn decode(file: &HeicFile) -> Result<Pixels> {

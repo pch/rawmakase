@@ -26,7 +26,10 @@ The HEIC fixtures are drawn by `python3 scripts/make-heic-fixtures.py tests/data
 `pillow-heif`, whose libheif and x265 versions the script prints for the commit message), from the
 same `corners.png` drawing. `metadata.heic` (Exif and XMP as above), `ten-bit.heic`, `p3.heic`
 (CICP P3) and `pq.heic` (10-bit PQ) are libheif's own files, each a 64×64 picture it crops (`clap`)
-to 16×12. All are 4:2:0, as phones write, so the system decoders macOS and Windows use read them. The script writes the others around x265's HEVC: `rotated.heic` and
+to 16×12. `wide.heic` is a 192×128 picture, to be patched to a smaller header; `transparent.heic`
+and `half-alpha.heic` are 16×12 with an alpha image, transparent everywhere and red at half
+opacity. All are 4:2:0, as phones write, so the system decoders macOS and Windows use read them.
+The script writes the others around x265's HEVC: `rotated.heic` and
 `rotated-mirrored.heic` add `irot` 1 and `imir` 0 as their AVIF namesakes do, and `grid.heic` is a
 2×2 grid of 64×64 tiles cut to 120×100, laid out as an iPhone writes one: hidden tiles carrying the
 `nclx` (BT.709, limited range), an sRGB ICC profile on the grid, the grid's description in `idat`.
