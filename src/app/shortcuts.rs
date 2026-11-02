@@ -16,8 +16,12 @@ type Shortcut = (&'static str, &'static str);
 /// A titled group of shortcuts.
 type Group<'a> = (&'a str, &'a [Shortcut]);
 
-const LIBRARY: [Shortcut; 16] = [
+const LIBRARY: [Shortcut; 17] = [
     ("Arrows", "Move the active photo"),
+    (
+        "Page Up / Page Down",
+        "Move the active photo a page up / down",
+    ),
     ("Home / End", "First / last photo"),
     ("Shift+Arrows / Shift+click", "Extend the selection"),
     ("Cmd+click", "Add or remove a photo"),

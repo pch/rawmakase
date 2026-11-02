@@ -207,6 +207,12 @@ impl Library {
                 );
                 self.grid_kinetic.end(ui, glide);
                 self.grid_offset = output.state.offset.y;
+                // Page Up and Page Down move by the rows wholly in view, with
+                // half a point's grace for rounding.
+                let top = ((output.state.offset.y - 0.5) / height).ceil();
+                let bottom =
+                    ((output.state.offset.y + output.inner_rect.height() + 0.5) / height).floor();
+                self.grid_page_rows = (bottom - top).max(1.) as usize;
             });
         ui.spacing_mut().item_spacing = spacing;
         if let Some((photo, menu)) = metadata_edit
