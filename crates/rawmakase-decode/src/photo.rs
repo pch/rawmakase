@@ -127,6 +127,13 @@ pub fn open(path: &Path) -> Result<Raw> {
     if let Some(lens) = metadata.lens_profiles.lens_by_id(metadata) {
         metadata.lens_model = lens.to_string();
     }
+    // Older Nikon bodies record no lens name either, only the lens's focal range and
+    // apertures: name it from those, as Camera Raw does, so Lensfun can match it.
+    if metadata.lens_model.is_empty()
+        && let Some(info) = metadata.lens_info
+    {
+        metadata.lens_model = rawmakase_model::lens::lcp::lens_info_name(info);
+    }
     Ok(raw)
 }
 

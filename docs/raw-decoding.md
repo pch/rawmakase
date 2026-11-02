@@ -256,7 +256,8 @@ rounded inward to even rows and columns.
 DNG lens IDs come from the maker note DNGPrivateData keeps: Pentax's and
 Samsung's Pentax bodies' own ("PENTAX \0", `vendor::pentax`: LensType's
 series × 256 + number, as Adobe's aux:LensID "4 28" is 1052), or Nikon's in
-Adobe's "MakN" record (`vendor::nikon`, read as a NEF's note).
+Adobe's "MakN" record (`vendor::nikon`, read as a NEF's note), with its Lens
+tag (0x0084: focal range and maximum apertures, `RawInfo::lens_info`).
 
 A DNG whose white balance is AsShotWhiteXY (no AsShotNeutral) has the
 white's camera neutral: AnalogBalance × CameraCalibration × ColorMatrix,
