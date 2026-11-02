@@ -18,7 +18,7 @@ anyhow = "1"
 flate2 = "1"
 getrandom = "0.4"
 image.workspace = true
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+rusqlite = { version = "0.41.0", features = ["bundled"] }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 sha2 = "0.11"
@@ -27,6 +27,6 @@ tempfile = "3"
 
 [dev-dependencies]
 # Counting commits, for the throughput tests.
-rusqlite = { version = "0.40.2", features = ["bundled", "hooks"] }
+rusqlite = { version = "0.41.0", features = ["bundled", "hooks"] }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0", features = ["test-support"] }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }

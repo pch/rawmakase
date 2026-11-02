@@ -8759,6 +8759,7 @@ fn import_cube_luts_asks_the_space_before_the_files() {
             profiles,
             errors: Vec::new(),
             groups: Default::default(),
+            imported: false,
         },
     ] {
         editor.tx.send(event).unwrap();
@@ -8870,6 +8871,7 @@ fn the_basic_panel_offers_relative_white_balance_for_a_jpeg() {
             profiles,
             errors: Vec::new(),
             groups: Default::default(),
+            imported: false,
         },
     ] {
         editor.tx.send(event).unwrap();

@@ -56,7 +56,7 @@ md-5 = "0.11"
 # Installed fonts for text watermarks are mapped, not read whole.
 memmap2 = "0.9"
 # Glyph outlines for text watermarks (also behind egui's text).
-skrifa = "0.48"
+skrifa = "0.49"
 clap = { version = "4", features = ["derive"] }
 eframe = { version = "=0.36.2", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
 # eframe's windowing, to run its event loop (see app::run). Where a Wayland
@@ -133,7 +133,7 @@ rawmakase-interop = { path = "crates/rawmakase-interop", version = "0.1.0", feat
 rawmakase-model = { path = "crates/rawmakase-model", version = "0.1.0", features = ["test-support"] }
 # Tests set up and inspect catalog files directly; the app itself reaches
 # the catalog's database only through rawmakase-catalog.
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+rusqlite = { version = "0.41.0", features = ["bundled"] }
 
 # The icon and version information Windows shows for the executable.
 [target.'cfg(windows)'.build-dependencies]

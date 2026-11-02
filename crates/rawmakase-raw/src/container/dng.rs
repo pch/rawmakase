@@ -305,6 +305,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         let model = crate::names::model("Nikon", &info.make, &info.model);
         if let Some(notes) = crate::vendor::nikon::read_dng(bytes, at, &model) {
             info.lens_id = notes.lens_id;
+            info.lens_info = notes.lens_info;
         }
         // Fujifilm's: the maker note's dynamic range, and the RAF header's
         // exposure bias Adobe DNG Converter keeps.

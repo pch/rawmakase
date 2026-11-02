@@ -275,11 +275,11 @@ pub(super) fn carried(name: &OsStr) -> bool {
 /// None where its volume keeps none.
 #[cfg(any(target_vendor = "apple", target_os = "linux", target_os = "android"))]
 pub(super) fn extra_names(path: &Path) -> Result<Vec<OsString>, FsError> {
-    use rustix::fs::llistxattr;
+    use rustix::fs::{llistxattr, llistxattr_query};
     use rustix::io::Errno;
     // Asked for its size, then read; again should it grow between.
     let list = loop {
-        let size = match llistxattr(path, &mut [0u8; 0][..]) {
+        let size = match llistxattr_query(path) {
             Ok(size) => size,
             Err(e) if unsupported(e) => return Ok(Vec::new()),
             Err(e) => return Err(io(e)),
@@ -306,10 +306,10 @@ pub(super) fn extra_names(path: &Path) -> Result<Vec<OsString>, FsError> {
 /// fork too).
 #[cfg(any(target_vendor = "apple", target_os = "linux", target_os = "android"))]
 pub(super) fn read_extra(path: &Path, name: &OsStr) -> Result<Vec<u8>, FsError> {
-    use rustix::fs::lgetxattr;
+    use rustix::fs::{lgetxattr, lgetxattr_query};
     use rustix::io::Errno;
     loop {
-        let size = lgetxattr(path, name, &mut [0u8; 0][..]).map_err(io)?;
+        let size = lgetxattr_query(path, name).map_err(io)?;
         let mut value = vec![0u8; size];
         match lgetxattr(path, name, &mut value[..]) {
             Ok(len) => {
