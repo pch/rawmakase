@@ -213,16 +213,18 @@ pub(super) fn cicp_profile(primaries: u16, transfer: u16) -> Option<ColorProfile
         .or_else(|| build(TransferCharacteristics::Srgb))
 }
 
-/// The `yuv` matrix for CICP matrix coefficients `code`.
-pub(super) fn matrix(code: u8) -> YuvStandardMatrix {
-    match code {
+/// The `yuv` matrix for CICP matrix coefficients `code`; `None` for one it
+/// has none for, such as YCgCo or ICtCp, or a reserved code.
+fn matrix(code: u8) -> Option<YuvStandardMatrix> {
+    Some(match code {
         1 => YuvStandardMatrix::Bt709,
         9 => YuvStandardMatrix::Bt2020,
         7 => YuvStandardMatrix::Smpte240,
         4 => YuvStandardMatrix::Fcc,
-        // 5, 6 and unspecified (2): BT.601, as libavif assumes.
-        _ => YuvStandardMatrix::Bt601,
-    }
+        // Unspecified (2): BT.601, as libavif assumes.
+        2 | 5 | 6 => YuvStandardMatrix::Bt601,
+        _ => return None,
+    })
 }
 
 /// A plane of 16-bit samples as `u16`s and its stride in them: borrowed
@@ -333,7 +335,8 @@ pub(super) fn widen(samples: &[u16], depth: u8) -> Vec<u8> {
 fn to_rgb(picture: &av1::Picture, nclx: Option<Nclx>) -> Result<Vec<u8>> {
     let (w, h) = (picture.width(), picture.height());
     let (code, full) = match nclx {
-        Some(n) => (u8::try_from(n.matrix).unwrap_or(2), n.full_range),
+        // No code above 255 is defined.
+        Some(n) => (u8::try_from(n.matrix).unwrap_or(u8::MAX), n.full_range),
         None => (picture.matrix(), picture.full_range()),
     };
     // BT.2020 constant luminance (10) and chroma-derived constant luminance
@@ -351,7 +354,8 @@ fn to_rgb(picture: &av1::Picture, nclx: Option<Nclx>) -> Result<Vec<u8>> {
     } else {
         YuvRange::Limited
     };
-    let m = matrix(code);
+    let m = matrix(code)
+        .ok_or_else(|| anyhow!("AVIF images with matrix coefficients {code} can't be read"))?;
     let depth = picture.depth();
     let (y, ys) = picture.plane(0);
     let (u, us) = picture.plane(1);
