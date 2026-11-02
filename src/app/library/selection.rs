@@ -40,6 +40,9 @@ pub(super) enum Mark {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Step {
     By(isize),
+    /// Page Up and Page Down: whole rows in the same column, stopping at the
+    /// first or last photo.
+    Rows(isize),
     Home,
     End,
 }
@@ -192,7 +195,7 @@ impl Library {
             (_, _) if self.visible.is_empty() => return,
             (Step::Home, _) => 0,
             (Step::End, _) => last,
-            (Step::By(_), None) => 0,
+            (Step::By(_) | Step::Rows(_), None) => 0,
             // Up and Down stay put at the first or last row rather than
             // jumping sideways; Left and Right stop at the ends.
             (Step::By(delta), Some(at)) => match at.checked_add_signed(delta) {
@@ -201,9 +204,14 @@ impl Library {
                 Some(_) => last,
                 None => 0,
             },
+            (Step::Rows(rows), Some(at)) => {
+                let columns = self.grid_columns.max(1) as isize;
+                at.checked_add_signed(rows * columns)
+                    .map_or(0, |to| to.min(last))
+            }
         };
         let id = self.session.photos[self.visible[to]].id;
-        if let Step::By(delta) = step {
+        if let Step::By(delta) | Step::Rows(delta) = step {
             self.loupe_direction = if delta < 0 { -1 } else { 1 };
         }
         if extend && let Some(anchor) = self.selection.anchor.or(self.selection.active) {
@@ -235,7 +243,8 @@ impl Library {
             self.selection.anchor = self.selection.active;
         }
     }
-    /// The Grid's selection keys: Cmd+A, Cmd+D, `/`, arrows, Home and End;
+    /// The Grid's selection keys: Cmd+A, Cmd+D, `/`, arrows, Page Up and Page
+    /// Down, Home and End;
     /// in the Loupe, moving and its own zoom.
     pub(in crate::app) fn selection_keys(&mut self, ctx: &egui::Context) {
         // A menu or popup takes the keys first, Escape above all.
@@ -267,6 +276,7 @@ impl Library {
     }
     fn grid_keys(&mut self, presses: &[Press]) {
         let columns = self.grid_columns.max(1) as isize;
+        let page = self.grid_page_rows.max(1) as isize;
         for press in presses {
             let shift = press.modifiers.shift;
             match (press.key, press.modifiers.command) {
@@ -316,6 +326,8 @@ impl Library {
                 (Key::ArrowRight, false) => self.step(Step::By(1), shift),
                 (Key::ArrowUp, false) => self.step(Step::By(-columns), shift),
                 (Key::ArrowDown, false) => self.step(Step::By(columns), shift),
+                (Key::PageUp, false) => self.step(Step::Rows(-page), shift),
+                (Key::PageDown, false) => self.step(Step::Rows(page), shift),
                 (Key::Home, false) => self.step(Step::Home, shift),
                 (Key::End, false) => self.step(Step::End, shift),
                 _ => {}

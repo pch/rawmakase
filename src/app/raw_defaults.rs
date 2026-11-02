@@ -112,6 +112,24 @@ impl Editor {
         // An unedited reference photo follows them too, profiles imported included.
         self.reload_reference();
     }
+    /// The open photo whose Library thumbnail an import of profiles leaves
+    /// valid: its Develop recipe is still `before`, so no render replaces the
+    /// thumbnail, and it is still the catalog's photo at the open path.
+    pub(super) fn unchanged_current_photo(
+        &self,
+        before: &crate::model::recipe::Recipe,
+    ) -> Option<crate::catalog::PhotoId> {
+        if self.document.metadata.is_none() || self.document.edit.recipe() != before {
+            return None;
+        }
+        self.document.catalog_photo.filter(|id| {
+            self.library.as_ref().is_some_and(|library| {
+                library
+                    .photo(*id)
+                    .is_some_and(|photo| Some(&photo.path) == self.document.path.as_ref())
+            })
+        })
+    }
     /// Lists the cameras to choose from, when Preferences opens.
     pub(super) fn measure_raw_defaults(&mut self) {
         let mut cameras = self
@@ -419,6 +437,7 @@ mod tests {
                     profiles: profiles(&m),
                     errors: Vec::new(),
                     groups: Default::default(),
+                    imported: false,
                 },
             ] {
                 editor.tx.send(event).unwrap();
@@ -540,6 +559,7 @@ mod tests {
                 profiles: profiles(&m),
                 errors: Vec::new(),
                 groups: Default::default(),
+                imported: false,
             },
         ] {
             editor.tx.send(event).unwrap();
