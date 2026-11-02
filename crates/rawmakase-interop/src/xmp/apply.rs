@@ -115,6 +115,8 @@ const METADATA: &[&str] = &[
     "OverrideLookVignette",
     "CompatibleVersion",
     "AlreadyApplied",
+    // Lightroom 18 marks presets that may carry filters; `FilterList` holds them.
+    "AllowFilters",
     "RawFileName",
     // Marks a preset made in RAWmakase, which it may update, rename or delete.
     "RAWmakasePreset",
