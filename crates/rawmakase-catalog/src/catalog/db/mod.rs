@@ -331,6 +331,10 @@ impl super::Catalog {
     pub fn db_for_tests(&self) -> &Connection {
         self.db.connection()
     }
+    /// The SQLite connection, for tests that hook into it.
+    pub fn db_mut_for_tests(&mut self) -> &mut Connection {
+        self.db.connection_mut()
+    }
     /// Makes every write of descriptive metadata fail, as on a full disk.
     pub fn fail_metadata_writes(&self) -> Result<()> {
         self.db_for_tests().execute_batch(
@@ -418,6 +422,13 @@ reads_on_connection!(Db, Snapshot<'_>, Write<'_>);
 impl Db {
     fn connection(&self) -> &Connection {
         match &self.backend {
+            Backend::Sqlite(db) => db,
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    fn connection_mut(&mut self) -> &mut Connection {
+        match &mut self.backend {
             Backend::Sqlite(db) => db,
         }
     }

@@ -133,7 +133,7 @@ rawmakase-interop = { path = "crates/rawmakase-interop", version = "0.1.0", feat
 rawmakase-model = { path = "crates/rawmakase-model", version = "0.1.0", features = ["test-support"] }
 # Tests set up and inspect catalog files directly; the app itself reaches
 # the catalog's database only through rawmakase-catalog.
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+rusqlite = { version = "0.41.0", features = ["bundled"] }
 
 # The icon and version information Windows shows for the executable.
 [target.'cfg(windows)'.build-dependencies]
