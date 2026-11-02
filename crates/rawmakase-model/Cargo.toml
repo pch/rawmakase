@@ -33,7 +33,7 @@ toml = { version = "1", default-features = false, features = ["parse", "serde", 
 libc = "0.2"
 # `storage::fsops`: the exclusive rename (renameat2, renameatx_np) and the
 # volume queries, without hand-written FFI.
-rustix = { version = "1.1", features = ["fs"] }
+rustix = { version = "1.1.6", features = ["fs"] }
 
 [target.'cfg(windows)'.dependencies]
 # `storage::fsops`: MoveFileExW without replacing, file ids and volume facts.
