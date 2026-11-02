@@ -3107,6 +3107,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-image-io"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32b0446e98cf4a784cc7a0177715ff317eeaa8463841c616cfc78aa4f953c4ea"
+dependencies = [
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+]
+
+[[package]]
 name = "objc2-io-surface"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3776,6 +3786,10 @@ dependencies = [
  "jxl-oxide",
  "libc",
  "moxcms",
+ "objc2 0.6.5",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-image-io",
  "rav1d",
  "rawmakase-engine",
  "rawmakase-interop",
@@ -3786,6 +3800,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
+ "windows",
  "windows-sys 0.61.2",
  "yuv",
 ]

@@ -7,7 +7,9 @@
 //! header's own CICP is not consulted, as it is read only when decoding).
 //! The matrix and range come from the `nclx` box, or from the AV1 header
 //! without one. Alpha is dropped. Tiled (`grid`) images are refused.
-
+//!
+//! A HEIC ([`super::heic`]) shares the reading of colour, orientation and
+//! CICP here.
 use super::{Unsupported, av1};
 use anyhow::{Result, anyhow, bail};
 use image::ImageDecoder;
@@ -132,6 +134,15 @@ impl AvifFile {
             bail!("The AVIF image needs `{kind}`, which RAWmakase can't read");
         }
         let props = heif.properties(heif.primary);
+        // An essential crop is read (a HEIC applies it), but an AVIF's is not
+        // applied yet; one not marked essential is ignored, as before.
+        if heif
+            .essential_properties(heif.primary)
+            .iter()
+            .any(|p| matches!(p, Property::CleanAperture(_)))
+        {
+            bail!("The AVIF image needs `clap`, which RAWmakase can't read");
+        }
         let (width, height) = props
             .iter()
             .find_map(|p| match p {
