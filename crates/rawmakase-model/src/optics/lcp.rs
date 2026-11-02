@@ -39,6 +39,9 @@ pub struct Entry {
     /// `LensIDNumber`, for Pentax its two `LensType` bytes, written "4 252" and held
     /// as LibRaw reads them, 4 << 8 | 252. `None` when the profile writes none.
     pub lens_id: Option<u32>,
+    /// `stCamera:LensInfo`: the lens's shortest and longest focal length and its
+    /// maximum aperture at each, as `Metadata::lens_info`.
+    pub lens_info: Option<[f32; 4]>,
     /// The lens's display name (`LensPrettyName`, else `ProfileName`).
     pub name: String,
     /// `ProfileName`, the name Lightroom records as `LensProfileName`.
@@ -112,6 +115,23 @@ fn lens_id(v: &str) -> Option<u32> {
     }
 }
 
+/// `stCamera:LensInfo`, four rationals ("180/10 550/10 35/10 56/10"); `None` unless
+/// all four are there and finite.
+fn lens_info(v: &str) -> Option<[f32; 4]> {
+    let mut parts = v.split_whitespace().map(|p| {
+        let (n, d) = p.split_once('/').unwrap_or((p, "1"));
+        let (n, d): (f32, f32) = (n.parse().ok()?, d.parse().ok()?);
+        Some(n / d).filter(|v| v.is_finite())
+    });
+    let info = [
+        parts.next()??,
+        parts.next()??,
+        parts.next()??,
+        parts.next()??,
+    ];
+    parts.next().is_none().then_some(info)
+}
+
 pub fn parse(text: &str) -> Result<Vec<Entry>> {
     ensure!(text.len() <= 16_000_000, "Lens profile too large");
     let doc = roxmltree::Document::parse(text).context("Invalid lens profile XML")?;
@@ -148,6 +168,7 @@ pub fn parse(text: &str) -> Result<Vec<Entry>> {
             profile_name: attr(d, "ProfileName").unwrap_or_default(),
             lens,
             lens_id: attr(d, "LensID").and_then(|v| lens_id(&v)),
+            lens_info: attr(d, "LensInfo").and_then(|v| lens_info(&v)),
             raw: attr(d, "CameraRawProfile").is_some_and(|v| v.eq_ignore_ascii_case("true")),
             prefer_metadata_distortion: attr(d, "PreferMetadataDistort")
                 .is_some_and(|v| v.eq_ignore_ascii_case("true")),

@@ -79,12 +79,23 @@ impl Editor {
             crate::app::library::Pace::Background
         }
     }
+    /// What goes on without the interface, including while the window is not
+    /// drawn: control requests, worker results (a photo loading, an export
+    /// finishing) and saving what they changed. Each only takes what is new,
+    /// so running it twice in a pass changes nothing.
+    pub(super) fn background(&mut self, ctx: &egui::Context) {
+        self.control_commands(ctx);
+        self.events(ctx);
+        self.finish_paused_turn(ctx);
+        self.save_when_due(ctx);
+    }
     pub(super) fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         // Before any field takes this frame's keys, or gives them up.
         let typing = ctx.text_edit_focused();
-        self.control_commands(&ctx);
-        self.events(&ctx);
+        // Already done by `logic` this pass in the app; a pass run without it
+        // (a test's) still takes requests and results here.
+        self.background(&ctx);
         self.take_library_messages();
         let work = self.running_work();
         self.messages.set_work(&ctx, work);
@@ -1917,7 +1928,8 @@ impl Editor {
             None
         }
     }
-    pub(super) fn pending_work(&mut self, ctx: &egui::Context) {
+    /// Saves the open edit once due, or wakes the app when it will be.
+    fn save_when_due(&mut self, ctx: &egui::Context) {
         self.autosave(ctx);
         // For a quit the close guard doesn't see (the Dock, logging out).
         crate::platform::quit::set_work_pending(self.quitting_would_cut_off_work());
@@ -1925,6 +1937,10 @@ impl Editor {
             // Just after it is due, so the frame finds it ready.
             ctx.request_repaint_after(due + Duration::from_millis(10));
         }
+    }
+    pub(super) fn pending_work(&mut self, ctx: &egui::Context) {
+        // After this pass's edits, which `background` ran before.
+        self.save_when_due(ctx);
         if ctx.input(|i| i.viewport().close_requested()) {
             let until = Instant::now() + super::exit::DEADLINE;
             let anyway = std::mem::take(&mut self.close_anyway);

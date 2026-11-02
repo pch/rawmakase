@@ -38,6 +38,7 @@ pub(crate) fn apply(info: &mut crate::info::RawInfo) {
         return;
     }
     visible(info);
+    holds_sony_frame(info);
     let dng = info.dng_version > 0;
     let size = [info.raw_width, info.raw_height];
     if dng
@@ -81,6 +82,34 @@ pub(crate) fn camera_frame(info: &mut crate::info::RawInfo, bytes: &[u8]) {
         w,
         h,
     ];
+}
+
+/// A Sony crop-mode file whose crop runs past the table's visible area (the a7 IV's
+/// APS-C lossless M and S, the a7 III's APS-C): the area grows to as much past the crop
+/// as before it, the sensor area those files record (SonyRawImageSize).
+fn holds_sony_frame(info: &mut crate::info::RawInfo) {
+    if info.dng_version > 0 || !info.make.eq_ignore_ascii_case("sony") {
+        return;
+    }
+    let [left, top, width, height] = info.frame;
+    if left == crate::info::UNSET || top == crate::info::UNSET || width == 0 || height == 0 {
+        return;
+    }
+    let grown = |at: u32, len: u32, margin: u32, shown: u32, raw: u32| {
+        let Some(before) = at.checked_sub(margin) else {
+            return shown;
+        };
+        let end = before.saturating_add(len);
+        let wanted = end.saturating_add(before);
+        if end > shown && margin.saturating_add(wanted) <= raw {
+            wanted
+        } else {
+            shown
+        }
+    };
+    let [mx, my] = info.margins;
+    info.width = grown(left, width, mx, info.width, info.raw_width);
+    info.height = grown(top, height, my, info.height, info.raw_height);
 }
 
 fn visible(info: &mut crate::info::RawInfo) {
@@ -149,6 +178,25 @@ fn visible(info: &mut crate::info::RawInfo) {
 mod tests {
     use crate::info::{UNSET, base};
     use crate::variant::Variant;
+
+    #[test]
+    fn a_sony_crop_past_the_visible_area_grows_it() {
+        // The a7 IV's APS-C lossless M: the table's row is the full-frame M's.
+        let mut info = base(Variant::ArwLosslessJpeg);
+        info.make = "Sony".into();
+        info.model = "ILCE-7M4".into();
+        (info.raw_width, info.raw_height) = (5120, 3584);
+        (info.width, info.height) = (5120, 3584);
+        info.frame = [44, 30, 4608, 3072];
+        super::apply(&mut info);
+        assert_eq!((info.width, info.height), (4696, 3132));
+        // The full-frame M's crop fits the row, which stays.
+        info.frame = [8, 4, 4608, 3072];
+        (info.width, info.height) = (5120, 3584);
+        info.margins = [0, 0];
+        super::apply(&mut info);
+        assert_eq!((info.width, info.height), (4624, 3080));
+    }
 
     /// A 6048 × 4024 sensor whose visible area starts at (8, 6).
     fn info() -> crate::info::RawInfo {

@@ -6,7 +6,7 @@
 use super::{Editor, before_after::Compare, worker::Event};
 use crate::app::design::{Tone, text};
 use crate::app::theme;
-use eframe::egui::{self, Color32, Pos2, Rect};
+use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use std::path::{Path, PathBuf};
 
 /// The longest edge kept: some cameras embed a 60 MP JPEG.
@@ -70,6 +70,20 @@ fn upload(
         egui::ColorImage::from_rgb(size, &rgb),
         egui::TextureOptions::LINEAR,
     )
+}
+
+/// The shape the thumbnail is drawn in: the photo's when they are nearly the same, as
+/// a 1616 × 1080 preview of a 3:2 frame holds all of that frame in rounded sizes.
+/// Another shape is another crop (16:9 in camera), drawn as it is.
+fn drawn_size(texture: Vec2, photo: Option<[f32; 2]>) -> Vec2 {
+    match photo {
+        Some([w, h])
+            if w > 0. && h > 0. && (texture.x / texture.y / (w / h) - 1.).abs() <= 0.02 =>
+        {
+            Vec2::new(texture.y * w / h, texture.y)
+        }
+        _ => texture,
+    }
 }
 
 /// `im` at most [`MAX_EDGE`] long.
@@ -145,13 +159,17 @@ impl Editor {
     /// The view: the thumbnail, or that it is being read, or why there is none.
     pub(super) fn camera_thumbnail_ui(&mut self, ui: &egui::Ui, area: Rect) {
         let monitor = self.view.display_profile();
+        let photo = self
+            .document
+            .full()
+            .map(|im| crate::model::image_frame::ImageFrame::new(im).size());
         let mut label = LABEL.to_owned();
         match &mut self.document.camera_thumbnail {
             Some(Ok(thumbnail)) => {
                 thumbnail.follow(ui.ctx(), monitor);
                 label = thumbnail.label();
                 let texture = &thumbnail.texture;
-                let size = texture.size_vec2();
+                let size = drawn_size(texture.size_vec2(), photo);
                 let k = (area.width() / size.x).min(area.height() / size.y);
                 let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
                 let rect = Rect::from_center_size(area.center(), size * k);
@@ -186,6 +204,18 @@ mod tests {
 
     fn editor(ctx: &egui::Context) -> Editor {
         Editor::with_context(ctx, None, crate::app::session::Session::default(), None)
+    }
+
+    #[test]
+    fn a_rounded_preview_is_drawn_in_the_photos_shape_and_another_crop_in_its_own() {
+        let preview = Vec2::new(1616., 1080.);
+        assert_eq!(
+            drawn_size(preview, Some([9504., 6336.])),
+            Vec2::new(1620., 1080.)
+        );
+        let wide = Vec2::new(1920., 1080.);
+        assert_eq!(drawn_size(wide, Some([9504., 6336.])), wide);
+        assert_eq!(drawn_size(preview, None), preview);
     }
 
     #[test]

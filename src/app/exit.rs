@@ -67,6 +67,7 @@ impl Editor {
     }
     /// Every job in progress stops at its next check.
     fn cancel_jobs(&mut self) {
+        self.profile_download.cancel();
         self.load.invalidate();
         self.preview.task.invalidate();
         self.preview.before.task.invalidate();

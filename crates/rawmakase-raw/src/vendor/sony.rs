@@ -168,6 +168,9 @@ const BLACK_LEVEL: u16 = 0x7310;
 const WB_RGGB: u16 = 0x7313;
 const CROP_TOP_LEFT: u16 = 0x74c7;
 const CROP_SIZE: u16 = 0x74c8;
+/// DNG's DefaultCropOrigin and DefaultCropSize, in the same directory.
+const DEFAULT_CROP_ORIGIN: u16 = 0xc61f;
+const DEFAULT_CROP_SIZE: u16 = 0xc620;
 const WHITE_LEVEL: u16 = 50717;
 /// The SR2SubIFD's older levels: black, and as-shot white balance green,
 /// red, blue, green.
@@ -239,7 +242,16 @@ pub(crate) fn read(t: &TiffFile, raw: &Ifd, info: &mut RawInfo) -> Levels {
     }
     info.frame = match (raw_shorts(CROP_TOP_LEFT), raw_shorts(CROP_SIZE)) {
         (Some(at), Some(size)) if at.len() == 2 && size.len() == 2 => {
-            [at[0], at[1], size[0], size[1]]
+            // The a7R III's and a7R IV's own tag starts at column 0, 8 and 32
+            // columns left of what their JPEGs and Camera Raw show. Along a side
+            // the crop does not cut, the default crop places it.
+            let origin = raw_shorts(DEFAULT_CROP_ORIGIN).filter(|v| v.len() == 2);
+            let whole = raw_shorts(DEFAULT_CROP_SIZE).filter(|v| v.len() == 2);
+            let place = |axis: usize| match (&origin, &whole) {
+                (Some(origin), Some(whole)) if whole[axis] == size[axis] => origin[axis],
+                _ => at[axis],
+            };
+            [place(0), place(1), size[0], size[1]]
         }
         _ => match maker_note(t).and_then(|mn| t.ints(&mn, FULL_IMAGE_SIZE, 2)) {
             Some(s) if s.len() == 2 && s[0] > 0 && s[1] > 0 => [UNSET, UNSET, s[1], s[0]],

@@ -23,6 +23,12 @@ use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 mod lens_profile;
 mod lensfun;
+mod profile_offer;
+/// What the community profile offer says when a profile can be downloaded, for tests.
+#[cfg(test)]
+pub(super) fn profile_offer_available() -> &'static str {
+    profile_offer::AVAILABLE
+}
 /// Lensfun's terms, for Preferences.
 pub(super) use lensfun::terms as lensfun_terms;
 mod profile_menu;
@@ -450,6 +456,8 @@ impl Editor {
         let mut import_folder = None;
         let mut import_luts = false;
         let mut import_adobe = false;
+        let mut show_community_profiles = false;
+        let mut offer_action = None;
         // Cached per camera: this scans Adobe's profile folders.
         let adobe_key = self
             .document
@@ -464,6 +472,9 @@ impl Editor {
             }),
             _ => Vec::new(),
         };
+        // Community profiles from the catalogue: matched here, measured once per camera.
+        let community_profiles = self.has_catalogue_profiles();
+        let community_offer = self.profile_offer();
         let metadata = self.document.metadata.clone();
         // A JPEG, TIFF or PNG: its Embedded profile, and relative white balance.
         let rendered = metadata.as_ref().is_some_and(|m| m.is_rendered());
@@ -551,6 +562,8 @@ impl Editor {
             control_row(ui, "Profile", |ui| {
                 egui::ComboBox::from_id_salt("camera-profile")
                     .width(ui.available_width())
+                    // Leave room for the import actions as well as the profiles.
+                    .height(size::MENU * 12.)
                     .selected_text(r.profile.as_ref().map_or_else(
                         || matrix.to_owned(),
                         |p| profile_groups.entry(p).title,
@@ -564,6 +577,15 @@ impl Editor {
                             return;
                         }
                         ui.separator();
+                        if community_profiles
+                            && ui
+                                .button("Show community profiles for this camera")
+                                .on_hover_text("Free camera profiles made for this camera by other projects, which you can download and apply")
+                                .clicked()
+                        {
+                            show_community_profiles = true;
+                            ui.close();
+                        }
                         if !adobe.is_empty()
                             && ui
                                 .button("Import Adobe profiles for this camera")
@@ -611,6 +633,9 @@ impl Editor {
                         }
                     });
             });
+            if let Some(offer) = &community_offer {
+                offer_action = profile_offer::card(ui, offer);
+            }
             // Lightroom's Profile Amount, under the profile. Profiles without one show
             // it dimmed at 100%, so the panel doesn't move when switching.
             let supports_amount = r.profile.as_ref().is_some_and(|p| p.supports_amount());
@@ -1602,6 +1627,12 @@ impl Editor {
         if import_profiles {
             self.dialog(FileDialog::CameraProfile, &ui.ctx().clone());
         }
+        if show_community_profiles && let Some(m) = self.document.metadata.clone() {
+            self.profile_download.request(&m);
+        }
+        if let Some(action) = offer_action {
+            self.profile_offer_action(action, &ui.ctx().clone());
+        }
         if import_lens {
             self.dialog(FileDialog::LensProfile, &ui.ctx().clone());
         }
@@ -1637,28 +1668,8 @@ impl Editor {
             match result {
                 Ok(done) => {
                     if !done.imported.is_empty() {
-                        self.profile_library = crate::camera_profiles::library_fingerprint();
-                        let crate::camera_profiles::Listed {
-                            profiles,
-                            errors,
-                            groups,
-                        } = crate::camera_profiles::listed(&m);
-                        // As the loader's: the raw defaults are resolved again
-                        // after this frame, so changing an unedited photo's recipe
-                        // is not taken for an edit.
-                        let profiles = super::camera_look::keep_fitted_default(
-                            &self.document.profiles,
-                            &m,
-                            profiles,
-                        );
-                        let _ = self.tx.send(super::worker::Event::Profiles {
-                            id: self.load.id(),
-                            profiles,
-                            errors,
-                            groups,
-                        });
+                        self.list_imported_profiles(&m);
                         ui.ctx().request_repaint();
-                        self.refresh_library_defaults();
                     }
                     let mut reasons: Vec<&str> =
                         done.skipped.iter().map(|(_, e)| e.as_str()).collect();
@@ -1683,6 +1694,28 @@ impl Editor {
                 Err(e) => self.messages.fail(format!("Profiles not imported: {e:#}")),
             }
         }
+    }
+    /// Lists the open photo's profiles again after Adobe profiles were imported
+    /// for its camera. As the loader's, the raw defaults are resolved again after
+    /// this frame, so changing an unedited photo's recipe is not taken for an
+    /// edit; the Library's previews follow them then, once it is known whether
+    /// the open photo's recipe changed.
+    pub(super) fn list_imported_profiles(&mut self, m: &crate::camera_data::Metadata) {
+        self.profile_library = crate::camera_profiles::library_fingerprint();
+        let crate::camera_profiles::Listed {
+            profiles,
+            errors,
+            groups,
+        } = crate::camera_profiles::listed(m);
+        let profiles =
+            super::camera_look::keep_fitted_default(&self.document.profiles, m, profiles);
+        let _ = self.tx.send(super::worker::Event::Profiles {
+            id: self.load.id(),
+            profiles,
+            errors,
+            groups,
+            imported: true,
+        });
     }
 }
 

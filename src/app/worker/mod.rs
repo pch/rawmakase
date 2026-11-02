@@ -59,6 +59,11 @@ pub(crate) enum AutoKind {
     WhiteBalance,
 }
 pub(crate) enum Event {
+    /// A verified camera profile was installed into the library, or why not.
+    ProfileDownloaded {
+        id: u64,
+        result: Result<PathBuf, String>,
+    },
     DialogClosed,
     /// The system report's probe answered, or stopped (see `app::report_issue`).
     SystemProbed {
@@ -159,6 +164,9 @@ pub(crate) enum Event {
         profiles: Vec<Arc<crate::camera_profiles::CameraProfile>>,
         errors: Vec<String>,
         groups: crate::camera_profiles::Groups,
+        /// Listed again after Adobe profiles were imported, which changes what
+        /// the defaults of the Library's photos without an edit resolve to.
+        imported: bool,
     },
     PresetLoad(PathBuf),
     /// Point Color's dropper sample for the photo loaded as `id`, taken with

@@ -311,6 +311,114 @@ fn jpeg_carries_camera_exif_gps_and_xmp() -> Result<()> {
     assert!(image::open(&tif).is_ok());
     Ok(())
 }
+/// The segments of a JPEG up to its scan, each as marker and body, read by
+/// their length fields; `None` where a length does not lead to the next marker.
+fn jpeg_segments(jpeg: &[u8]) -> Option<Vec<(u8, &[u8])>> {
+    let mut out = Vec::new();
+    let mut at = 2;
+    loop {
+        let marker = *jpeg.get(at + 1).filter(|_| jpeg[at] == 0xff)?;
+        if marker == 0xda {
+            return Some(out);
+        }
+        let len = u16::from_be_bytes([*jpeg.get(at + 2)?, *jpeg.get(at + 3)?]) as usize;
+        out.push((marker, jpeg.get(at + 4..at + 2 + len)?));
+        at += 2 + len;
+    }
+}
+
+#[test]
+fn camera_exif_too_large_for_a_jpeg_segment_is_cut_to_fit() -> Result<()> {
+    // A source whose EXIF directory holds more than a JPEG's 64 KB APP1
+    // segment: each value is under the 4096 bytes reading keeps, but there are
+    // twenty of them. The export used to write the segment's length modulo
+    // 65536, which leaves a JPEG whose segments can't be followed.
+    let dir = tempfile::tempdir()?;
+    let source = dir.path().join("source.ARW");
+    fs::write(&source, b"source")?;
+    let image = Rendered {
+        width: 8,
+        height: 4,
+        pixels: vec![[0.5; 3]; 32],
+    };
+    let filler = "x".repeat(4000);
+    let mut exif = vec![
+        crate::exif::Field::ascii(0x9003, "2018:08:26 10:39:33"),
+        crate::exif::Field::ascii(0xa434, "FE 55mm F1.8 ZA"),
+    ];
+    exif.extend((0..20).map(|i| crate::exif::Field::ascii(0xa500 + i, &filler)));
+    let embed = Embed {
+        camera: Some(crate::exif::CameraExif {
+            main: vec![
+                crate::exif::Field::ascii(0x010f, "SONY"),
+                crate::exif::Field::ascii(0x0110, "ILCE-7M2"),
+            ],
+            exif,
+            gps: vec![crate::exif::Field::rational(0x0002, 52, 1)],
+        }),
+        ..Default::default()
+    };
+    let jpg = dir.path().join("out.jpg");
+    export_with(
+        &jpg,
+        &source,
+        &image,
+        &Metadata::default(),
+        &ExportOptions::default(),
+        &embed,
+        Replace::NoClobber,
+    )?;
+    let bytes = fs::read(&jpg)?;
+    let segments = jpeg_segments(&bytes).expect("segments that lead to the scan");
+    let exif: Vec<&[u8]> = segments
+        .iter()
+        .filter(|(marker, body)| *marker == 0xe1 && body.starts_with(b"Exif\0\0"))
+        .map(|(_, body)| *body)
+        .collect();
+    assert_eq!(exif.len(), 1);
+    assert!(image::open(&jpg).is_ok());
+    // What matters is kept: the camera, the capture time, the lens and GPS;
+    // only filler is left out.
+    let read = crate::exif::read(&jpg).expect("the export's EXIF");
+    let text = |fields: &[crate::exif::Field], tag| {
+        fields.iter().find(|f| f.tag == tag).and_then(|f| f.text())
+    };
+    assert_eq!(text(&read.main, 0x010f).as_deref(), Some("SONY"));
+    assert_eq!(text(&read.main, 0x0110).as_deref(), Some("ILCE-7M2"));
+    assert_eq!(
+        text(&read.exif, 0x9003).as_deref(),
+        Some("2018:08:26 10:39:33")
+    );
+    assert_eq!(text(&read.exif, 0xa434).as_deref(), Some("FE 55mm F1.8 ZA"));
+    assert_eq!(read.gps.len(), 1);
+    let kept = read
+        .exif
+        .iter()
+        .filter(|f| (0xa500..0xa514).contains(&f.tag))
+        .count();
+    assert!((1..20).contains(&kept), "{kept} of the 20 fillers kept");
+    // TIFF and PNG have no such limit: they keep all of it.
+    for name in ["out.tif", "out.png"] {
+        let path = dir.path().join(name);
+        export_with(
+            &path,
+            &source,
+            &image,
+            &Metadata::default(),
+            &ExportOptions::default(),
+            &embed,
+            Replace::NoClobber,
+        )?;
+        let read = crate::exif::read(&path).expect("the export's EXIF");
+        let kept = read
+            .exif
+            .iter()
+            .filter(|f| (0xa500..0xa514).contains(&f.tag))
+            .count();
+        assert_eq!(kept, 20, "{name}");
+    }
+    Ok(())
+}
 #[test]
 fn tiff_keeps_camera_text_that_is_not_plain_ascii() -> Result<()> {
     // Fujifilm writes Copyright in EXIF's two-part form (photographer, NUL,

@@ -284,6 +284,7 @@ pub(crate) struct Header {
     pub camera_look: Option<String>,
     pub lens: String,
     pub lens_id: u32,
+    pub lens_info: Option<[f32; 4]>,
     pub dng_version: u32,
     /// Black and white known on opening; see `Metadata::levels`.
     pub levels: Option<[u32; 3]>,
@@ -354,6 +355,7 @@ impl Raw {
             lens_stand_in: None,
             lens_model: h.lens.trim().to_string(),
             lens_id: h.lens_id,
+            lens_info: h.lens_info,
             adobe_names,
             baseline_exposure: None,
             dng_neutral_calibration: None,

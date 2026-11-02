@@ -43,7 +43,7 @@ fn run(fx: &mut Fx, op: FileOp) -> (Outcome, Cost) {
     let commits = Arc::new(AtomicUsize::new(0));
     let counted = commits.clone();
     fx.cat
-        .db_for_tests()
+        .db_mut_for_tests()
         .commit_hook(Some(move || {
             counted.fetch_add(1, Ordering::Relaxed);
             false
@@ -52,7 +52,7 @@ fn run(fx: &mut Fx, op: FileOp) -> (Outcome, Cost) {
     let disk = Faulty::default();
     let outcome = fx.run(op, &NoTrash, &disk);
     fx.cat
-        .db_for_tests()
+        .db_mut_for_tests()
         .commit_hook(None::<fn() -> bool>)
         .unwrap();
     let cost = Cost {

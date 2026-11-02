@@ -51,6 +51,9 @@ pub(super) struct RuleStats {
     q50: f32,
     q75: f32,
     q90: f32,
+    /// Fraction of the map within one and two stops of the top.
+    m_top1: f32,
+    m_top2: f32,
     tex: f32,
     tex_top: f32,
     /// Absolute fine and coarse residuals of every map pixel, in order of its base level
@@ -126,6 +129,8 @@ impl RuleStats {
             q50: q(0.5),
             q75: q(0.75),
             q90: q(0.9),
+            m_top1: 1. - sorted.partition_point(|v| *v <= top - 1.) as f32 / n as f32,
+            m_top2: 1. - sorted.partition_point(|v| *v <= top - 2.) as f32 / n as f32,
             tex,
             tex_top,
             sorted,
@@ -189,6 +194,11 @@ impl RuleStats {
             self.tex_top.min(TEX_TOP_CLAMP) / TEX_TOP_CLAMP,
             fine,
             coarse,
+            // How sparse the top is: a small bright spot sets the maximum, and Camera Raw
+            // lifts the darks only 0.05 EV more for a square of 0.2 to 12% of the frame a
+            // stop or two over the rest (the `partial` and `clipwb` probes).
+            self.m_top1,
+            self.m_top2,
         ]
     }
     /// Log2 gain at base level `x`: Shadows +100, Highlights −100 (the ensemble's mean).

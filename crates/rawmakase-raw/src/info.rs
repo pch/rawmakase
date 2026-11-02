@@ -129,6 +129,9 @@ pub struct RawInfo {
     pub lens: String,
     /// The maker's numeric lens ID (Nikon's LensIDNumber, Pentax's LensType).
     pub lens_id: u32,
+    /// The lens's focal range and maximum apertures, as the maker notes give them
+    /// (Nikon's Lens tag): shortest and longest focal length, aperture at each.
+    pub lens_info: Option<[f32; 4]>,
     /// Canon Highlight Tone Priority: 0 off, 1 on, 2 enhanced.
     pub highlight_tone_priority: i32,
     /// The sensor data's mean black, its white and the samples' maximum
@@ -259,6 +262,7 @@ pub(crate) fn base(variant: Variant) -> RawInfo {
         rgb_cam: [[0.; 3]; 3],
         lens: String::new(),
         lens_id: 0,
+        lens_info: None,
         highlight_tone_priority: 0,
         levels: None,
         plan: crate::variant::Plan::None,

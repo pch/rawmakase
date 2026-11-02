@@ -37,8 +37,40 @@ fn develop_workspace_drains_library_preview_results() -> Result<()> {
     Ok(())
 }
 
+/// Where profiles were imported from while a photo is open in Develop.
+#[derive(Clone, Copy, PartialEq)]
+enum ProfileImport {
+    /// The file chooser or Preferences, applied when the import finishes.
+    Manual,
+    /// The Inspector's Adobe shortcuts, applied after the frame.
+    Shortcut,
+    /// A shortcut whose listing arrives after another photo began loading.
+    StaleShortcut,
+    /// A preset import that took its pack's look profiles too (#790).
+    PresetPack,
+}
+
 #[test]
 fn manual_profile_import_keeps_only_the_unchanged_current_thumbnail() -> Result<()> {
+    profile_import_keeps_only_the_unchanged_current_thumbnail(ProfileImport::Manual)
+}
+
+#[test]
+fn a_preset_pack_with_looks_refreshes_profiles_as_a_profile_import_does() -> Result<()> {
+    profile_import_keeps_only_the_unchanged_current_thumbnail(ProfileImport::PresetPack)
+}
+
+#[test]
+fn adobe_profile_shortcut_keeps_only_the_unchanged_current_thumbnail() -> Result<()> {
+    profile_import_keeps_only_the_unchanged_current_thumbnail(ProfileImport::Shortcut)
+}
+
+#[test]
+fn a_stale_adobe_profile_shortcut_keeps_no_thumbnail() -> Result<()> {
+    profile_import_keeps_only_the_unchanged_current_thumbnail(ProfileImport::StaleShortcut)
+}
+
+fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImport) -> Result<()> {
     use crate::app::bulk_import::{ImportKind, Summary};
     for (new_defaults, missing_metadata, wrong_path, dirty) in [
         (false, false, false, false),
@@ -53,6 +85,7 @@ fn manual_profile_import_keeps_only_the_unchanged_current_thumbnail() -> Result<
         let photos = library.session.photos.clone();
         let mut editor = crate::app::Editor::with_context(&ctx, None, Default::default(), None);
         editor.presets.next_scan();
+        editor.load.start();
         let metadata = crate::camera_data::Metadata {
             make: "Test".into(),
             model: "Import refresh".into(),
@@ -60,7 +93,7 @@ fn manual_profile_import_keeps_only_the_unchanged_current_thumbnail() -> Result<
             ..Default::default()
         };
         editor.document.profiles = crate::camera_profiles::listed(&metadata).profiles;
-        editor.document.metadata = Some(metadata);
+        editor.document.metadata = Some(metadata.clone());
         editor.refresh_photo_defaults();
         if dirty {
             editor.document.edit.setup_mut().exposure = 1.25;
@@ -93,6 +126,19 @@ fn manual_profile_import_keeps_only_the_unchanged_current_thumbnail() -> Result<
             photos[0].path.clone()
         });
         editor.library = Some(Box::new(library));
+        if matches!(
+            import,
+            ProfileImport::Shortcut | ProfileImport::StaleShortcut
+        ) {
+            // The shortcut lists the profiles in its frame; they apply later.
+            editor.list_imported_profiles(&metadata);
+            let library = editor.library.as_ref().unwrap();
+            assert_eq!(
+                library.thumbnail(current).map(egui::TextureHandle::id),
+                Some(original),
+                "nothing is discarded before the listing applies"
+            );
+        }
         if new_defaults {
             editor.raw_defaults = std::sync::Arc::new(crate::raw_defaults::brighter_defaults());
         }
@@ -100,21 +146,38 @@ fn manual_profile_import_keeps_only_the_unchanged_current_thumbnail() -> Result<
             editor.document.metadata = None;
             editor.document.defaults = None;
         }
-        editor.imported(
-            Summary {
-                kind: ImportKind::CameraProfiles,
-                imported: 1,
-                already: 0,
-                without_base: 0,
-                failed: Vec::new(),
-                cubes: Vec::new(),
-            },
-            &ctx,
-        );
+        match import {
+            ProfileImport::Manual => editor.imported(
+                Summary {
+                    kind: ImportKind::CameraProfiles,
+                    imported: 1,
+                    profiles: 0,
+                    already: 0,
+                    without_base: 0,
+                    failed: Vec::new(),
+                    cubes: Vec::new(),
+                },
+                &ctx,
+            ),
+            ProfileImport::PresetPack => editor.imported(
+                Summary {
+                    profiles: 1,
+                    ..Summary::new(ImportKind::Presets)
+                },
+                &ctx,
+            ),
+            ProfileImport::Shortcut => editor.events(&ctx),
+            ProfileImport::StaleShortcut => {
+                editor.load.start();
+                editor.events(&ctx);
+            }
+        }
+        let stale = import == ProfileImport::StaleShortcut;
         let library = editor.library.as_ref().unwrap();
         assert_eq!(
             library.thumbnail(current).map(egui::TextureHandle::id),
-            ((!new_defaults || dirty) && !missing_metadata && !wrong_path).then_some(original),
+            ((!new_defaults || dirty) && !missing_metadata && !wrong_path && !stale)
+                .then_some(original),
             "only the unchanged, identified open photo keeps its render"
         );
         assert!(library.thumbnail(photos[1].id).is_none());
@@ -124,7 +187,7 @@ fn manual_profile_import_keeps_only_the_unchanged_current_thumbnail() -> Result<
         );
         assert_eq!(
             editor.document.edit.recipe().exposure,
-            if new_defaults && !dirty {
+            if new_defaults && !dirty && !stale {
                 0.7
             } else {
                 recipe.exposure
@@ -4399,5 +4462,105 @@ fn edited_previews_are_asked_ahead_only_at_full_pace_in_order_from_the_view() ->
     ))?;
     library.poll_previews(&ctx);
     assert!(library.has_edited_thumbnail(photos[0].id));
+    Ok(())
+}
+/// Page Up and Page Down move the active photo a screen of rows, in its
+/// column, and Shift extends the selection; past the ends they stop at the
+/// first or last photo.
+#[test]
+fn page_keys_move_the_active_photo_a_screen_at_a_time() -> Result<()> {
+    let names = ["a", "b", "c", "d", "e", "f", "g", "h", "i"].map(|n| format!("{n}.RAF"));
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let (_directory, mut library) = library_of(&names)?;
+    let ids = ids_of(&library);
+    // Two columns and two rows a screen: rows ab, cd, ef, gh, i.
+    library.grid_columns = 2;
+    library.grid_page_rows = 2;
+    let ctx = egui::Context::default();
+    let press = |library: &mut Library, key, modifiers| {
+        let events = vec![egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        }];
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ui| library.selection_keys(ui.ctx()),
+        );
+        output.textures_delta.clear();
+    };
+    library.select(Some(ids[1]));
+    press(&mut library, egui::Key::PageDown, egui::Modifiers::NONE);
+    assert_eq!(library.selected(), Some(ids[5]));
+    assert!(library.scroll_to_active);
+    press(&mut library, egui::Key::PageDown, egui::Modifiers::NONE);
+    assert_eq!(library.selected(), Some(ids[8]));
+    press(&mut library, egui::Key::PageUp, egui::Modifiers::NONE);
+    assert_eq!(library.selected(), Some(ids[4]));
+    press(&mut library, egui::Key::PageUp, egui::Modifiers::SHIFT);
+    assert_eq!(library.selected(), Some(ids[0]));
+    assert_eq!(library.selected_ids(), ids[..5]);
+    press(&mut library, egui::Key::PageUp, egui::Modifiers::NONE);
+    assert_eq!(library.selected_ids(), [ids[0]]);
+    Ok(())
+}
+/// A page is the rows wholly in view: with the grid scrolled half a row,
+/// Page Down lands on the row cut off at the bottom, never past it.
+#[test]
+fn a_page_is_the_rows_wholly_in_view() -> Result<()> {
+    let names: Vec<String> = (0..60).map(|n| format!("{n:02}.RAF")).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let (_directory, mut library) = library_of(&names)?;
+    let ids = ids_of(&library);
+    let ctx = egui::Context::default();
+    let run = |library: &mut Library, events: Vec<egui::Event>| {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1000., 700.),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            library.selection_keys(ui.ctx());
+            library.grid(ui, &mut Default::default(), false, None);
+        });
+        output.textures_delta.clear();
+    };
+    let key = |key| {
+        vec![egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]
+    };
+    // 1000 by 700 less 16 px margins: five columns of 193 px rows in a
+    // 668 px view, three rows and a half.
+    run(&mut library, vec![]);
+    assert_eq!(library.grid_columns, 5);
+    assert_eq!(library.grid_page_rows, 3);
+    // Scrolled half a row: rows 1 and 2 are whole, 0 and 3 cut off.
+    library.grid_offset = 96.;
+    library.keep_in_place = Some((ids[0], 0));
+    run(&mut library, vec![]);
+    assert_eq!(library.grid_offset, 96.);
+    assert_eq!(library.grid_page_rows, 2);
+    library.select(Some(ids[5]));
+    run(&mut library, key(egui::Key::PageDown));
+    assert_eq!(library.selected(), Some(ids[15]));
+    // The grid scrolls to show all of row 3, and the page is whole again.
+    run(&mut library, vec![]);
+    assert!(library.grid_offset <= 3. * 193. && 4. * 193. <= library.grid_offset + 668.);
+    assert_eq!(library.grid_page_rows, 3);
+    run(&mut library, key(egui::Key::PageUp));
+    assert_eq!(library.selected(), Some(ids[0]));
     Ok(())
 }

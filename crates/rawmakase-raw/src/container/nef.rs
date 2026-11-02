@@ -171,6 +171,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     }
     info.presets = notes.presets;
     info.lens_id = notes.lens_id;
+    info.lens_info = notes.lens_info;
     info.preview_space = notes.color_space;
     info.camera_look = notes.picture_control.clone();
     let inside =

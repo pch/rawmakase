@@ -208,7 +208,11 @@ impl Groups {
             .iter()
             .find(|(p, _)| p.name == profile.name && p.camera == profile.camera && **p == *profile)
             .map_or_else(
-                || super::fitted::title(profile).unwrap_or_else(|| profile.name.clone()),
+                || {
+                    super::fitted::title(profile)
+                        .or_else(|| super::catalogue::catalogue().title(profile))
+                        .unwrap_or_else(|| profile.name.clone())
+                },
                 |(_, title)| title.clone(),
             );
         MenuEntry {
@@ -223,8 +227,8 @@ impl Groups {
 pub fn listed_from(dirs: &[PathBuf], m: &Metadata) -> Listed {
     listed_in(dirs, m, &Cameras::default())
 }
-/// [`import_files`] into `destination` instead of the user's library, for tests.
-#[cfg(any(test, feature = "test-support"))]
+/// [`import_files`] into `destination`, a profile library folder: the user's
+/// (`data_dir()/camera-profiles`) or a test's.
 pub fn import_into_dir(
     paths: &[PathBuf],
     destination: &Path,
@@ -551,7 +555,7 @@ fn import_readable_into(paths: &[std::path::PathBuf], destination: &Path) -> Res
     };
     Ok(Imported { imported, skipped })
 }
-fn import_into(
+pub(super) fn import_into(
     paths: &[std::path::PathBuf],
     destination: &Path,
     space: LutSpace,

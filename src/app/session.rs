@@ -63,6 +63,10 @@ pub(crate) struct Session {
     /// suggestions of Lensfun profiles, which are on by default.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_lensfun_suggestions: bool,
+    /// Cameras ("make model", lower case) whose community camera-profile offer the
+    /// user dismissed under Develop's Profile menu.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub dismissed_community_profiles: std::collections::BTreeSet<String>,
     /// Preferences > Catalog: the user paused reading checksums.
     #[serde(default)]
     pub pause_checksums: bool,

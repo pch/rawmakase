@@ -117,6 +117,12 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         info.frame = crate::geometry::even(crop);
     }
     let size = [width, height];
+    // A body whose note's crop is not where its JPEGs are.
+    if let Some(frame) =
+        crate::facts::camera(&info.make, &info.model, false, size).find_map(|c| c.frame)
+    {
+        info.frame = frame;
+    }
     // Rows for files of this bit depth, or any.
     let rows = || {
         crate::facts::camera(&info.make, &info.model, false, size)

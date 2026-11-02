@@ -43,7 +43,7 @@ jobs:
           latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
           test "$RELEASE_TAG" = "$latest" || { echo 'Only the latest stable release can update the tap.' >&2; exit 1; }
           git merge-base --is-ancestor "refs/tags/$RELEASE_TAG^{commit}" origin/main
-      - uses: ruby/setup-ruby@b1da4809b005e0178fe08a1d57317bffc00b7b4c # v1
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1
         with:
           ruby-version: '3.3'
       - name: Prepare and verify the published cask
@@ -58,6 +58,7 @@ jobs:
           HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
         run: |
           brew tap-new pch/rawmakase-validation
+          brew trust pch/rawmakase-validation
           tap=$(brew --repository pch/rawmakase-validation)
           mkdir -p "$tap/Casks" "$RUNNER_TEMP/homebrew-apps"
           cp dist/homebrew-recipes/homebrew/rawmakase.rb "$tap/Casks/rawmakase.rb"

@@ -213,6 +213,12 @@ pub struct Metadata {
     /// write no lens model leave the ID as the only lens identity.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub lens_id: u32,
+    /// The lens's focal range and maximum apertures (shortest and longest focal
+    /// length, maximum aperture at each) as the maker notes give them, Nikon's
+    /// `Lens` tag: what Adobe's lens profiles hold as `stCamera:LensInfo`. It tells
+    /// apart the lenses that share a `lens_id`, and names a lens the file doesn't.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lens_info: Option<[f32; 4]>,
     /// Other names, as "Make Model", that Adobe's camera profiles may use for this
     /// camera: LibRaw's canonical name for a body sold under several names, and
     /// `crate::cameras::adobe_names`' table. See `CameraProfile::ensure_camera`.

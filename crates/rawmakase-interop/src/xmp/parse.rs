@@ -193,6 +193,8 @@ pub fn parse(path: &Path, text: &str) -> Result<Preset> {
                 items.join("; ")
             };
             settings.insert(name.to_string(), value);
+        } else if name == "FilterList" {
+            blockers.extend(super::filter_list::read(node, &mut settings));
         } else if !LABELS.contains(&name) {
             blockers.push(format!("Unsupported structured setting: {name}"));
         }

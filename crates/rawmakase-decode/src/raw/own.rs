@@ -323,6 +323,7 @@ fn header(i: &RawInfo) -> Header {
         camera_look: i.camera_look.clone(),
         lens: i.lens.clone(),
         lens_id: i.lens_id,
+        lens_info: i.lens_info,
         dng_version: i.dng_version,
         levels: i.levels,
         analog_balance: i.analog_balance,

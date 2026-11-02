@@ -1,7 +1,8 @@
 //! Imports camera profiles, lens profiles and presets from chosen files or
 //! whole folders, leniently: folders are scanned recursively, files already
 //! imported are skipped quietly, and what can't be imported is reported
-//! instead of failing the rest.
+//! instead of failing the rest. A preset import also takes the look profiles
+//! among its files, as packs ship them beside the presets that use them.
 use super::{Editor, worker::Event};
 use crate::camera_profiles::LutSpace;
 use eframe::egui;
@@ -88,6 +89,7 @@ pub(super) fn find_files(dir: &Path, extensions: &[&str], skip: &[&str]) -> Vec<
 }
 
 /// A file to import.
+#[derive(Clone)]
 struct Found {
     path: PathBuf,
     /// Its folder under the chosen one, starting with the chosen folder's
@@ -138,6 +140,8 @@ fn gather(kind: ImportKind, picks: &[PathBuf]) -> Vec<Found> {
 pub struct Summary {
     pub(super) kind: ImportKind,
     pub(super) imported: usize,
+    /// Look profiles a preset import took from among its files.
+    pub(super) profiles: usize,
     /// Identical to one already imported, or repeated within this import.
     pub(super) already: usize,
     /// Profile looks found in a folder for cameras without a base profile.
@@ -149,10 +153,11 @@ pub struct Summary {
     pub(super) cubes: Vec<(PathBuf, crate::camera_profiles::CubeImport)>,
 }
 impl Summary {
-    fn new(kind: ImportKind) -> Self {
+    pub(super) fn new(kind: ImportKind) -> Self {
         Self {
             kind,
             imported: 0,
+            profiles: 0,
             already: 0,
             without_base: 0,
             failed: Vec::new(),
@@ -165,10 +170,14 @@ impl Summary {
     /// One line: "Imported 40 presets · 3 already imported · 2 skipped".
     pub fn message(&self) -> String {
         let (imported, already, failed) = (self.imported, self.already, self.failed.len());
-        if imported + already + failed + self.without_base == 0 {
+        if imported + self.profiles + already + failed + self.without_base == 0 {
             return format!("No {} found there", self.kind.noun(2));
         }
         let mut parts = vec![format!("Imported {imported} {}", self.kind.noun(imported))];
+        if self.profiles > 0 {
+            let noun = ImportKind::CameraProfiles.noun(self.profiles);
+            parts.push(format!("{} {noun}", self.profiles));
+        }
         // A LUT import names its space, unless it is the sRGB default.
         if let ImportKind::Luts(space) = self.kind
             && space != LutSpace::Srgb
@@ -242,7 +251,7 @@ impl Summary {
     }
     /// Files imported, or found imported already.
     pub fn done(&self) -> usize {
-        self.imported + self.already
+        self.imported + self.profiles + self.already
     }
 }
 fn line(path: &Path, what: impl std::fmt::Display) -> String {
@@ -335,16 +344,26 @@ fn check_name(
     true
 }
 
+/// The largest DCP or look XMP the profile library imports
+/// (`camera_profiles::import_files`).
+const PROFILE_LIMIT: u64 = 16_000_000;
+
+/// The user's profile library, which profile imports write to.
+fn profile_library() -> PathBuf {
+    crate::storage::data_dir().join("camera-profiles")
+}
+
 /// Imports the profiles and LUTs `found` holds for `kind` (camera profiles or LUTs
-/// only), the LUTs as expecting colours in `space`.
+/// only) into the profile library `destination`, the LUTs as expecting colours in
+/// `space`.
 fn import_camera_profiles(
     found: &[Found],
     progress: &ImportProgress,
     kind: ImportKind,
     space: LutSpace,
+    destination: &Path,
 ) -> Summary {
     let mut summary = Summary::new(kind);
-    let destination = crate::storage::data_dir().join("camera-profiles");
     let mut names = BTreeMap::new();
     let (mut dcps, mut looks, mut cubes) = (Vec::new(), Vec::new(), Vec::new());
     for (i, file) in found.iter().enumerate() {
@@ -382,21 +401,21 @@ fn import_camera_profiles(
                 }
                 continue;
             }
-        } else if bytes.len() > 16_000_000 {
+        } else if bytes.len() as u64 > PROFILE_LIMIT {
             summary.fail(&file.path, "too large");
             continue;
         } else if let Err(e) = crate::camera_profiles::from_bytes(&bytes) {
             summary.fail(&file.path, format!("{e:#}"));
             continue;
         }
-        if check_name(file, &bytes, &destination, &mut names, &mut summary) {
+        if check_name(file, &bytes, destination, &mut names, &mut summary) {
             if xmp { &mut looks } else { &mut dcps }.push(file.path.clone());
         }
     }
     // Every DCP was checked above, so batches only fail on a write error.
     for batch in dcps.chunks(1000) {
         progress.set(format!("Importing profiles… {} done", summary.imported));
-        match crate::camera_profiles::import_files(batch, space) {
+        match crate::camera_profiles::import_into_dir(batch, destination, space) {
             Ok(done) => summary.imported += done.len(),
             Err(e) => batch.iter().for_each(|p| summary.fail(p, format!("{e:#}"))),
         }
@@ -409,11 +428,15 @@ fn import_camera_profiles(
     // Looks last, as they need their base profile in the library. One without
     // its base fails the batch, so then import them one by one.
     for batch in looks.chunks(1000) {
-        match crate::camera_profiles::import_files(batch, space) {
+        match crate::camera_profiles::import_into_dir(batch, destination, space) {
             Ok(done) => summary.imported += done.len(),
             Err(_) => {
                 for path in batch {
-                    match crate::camera_profiles::import_files(std::slice::from_ref(path), space) {
+                    match crate::camera_profiles::import_into_dir(
+                        std::slice::from_ref(path),
+                        destination,
+                        space,
+                    ) {
                         Ok(_) => summary.imported += 1,
                         // Camera Raw's folder of looks covers every camera; only
                         // looks chosen by name are worth a line each.
@@ -440,7 +463,7 @@ fn import_camera_profiles(
     // read above, so a batch fails only on a write error.
     for batch in cubes.chunks(1000) {
         progress.set(format!("Importing LUTs… {} done", summary.imported));
-        match crate::camera_profiles::import_files(batch, space) {
+        match crate::camera_profiles::import_into_dir(batch, destination, space) {
             Ok(done) => done.into_iter().for_each(|done| summary.add_cube(done)),
             Err(e) => batch.iter().for_each(|p| summary.fail(p, format!("{e:#}"))),
         }
@@ -496,12 +519,15 @@ fn import_lens_profiles(found: &[Found], progress: &ImportProgress) -> Summary {
 
 /// Copies presets into `root`/Imported, keeping their folders. A preset
 /// identical to one anywhere in `installed` counts as already imported; one
-/// whose name is taken by a different preset gets a numbered name.
+/// whose name is taken by a different preset gets a numbered name. Look
+/// profiles among the files are imported into the profile library `profiles`,
+/// as a profile import would, so the presets that use them work.
 fn import_presets(
     found: &[Found],
     progress: &ImportProgress,
     root: &Path,
     installed: &[PathBuf],
+    profiles: &Path,
 ) -> Summary {
     use std::io::Write;
     let mut summary = Summary::new(ImportKind::Presets);
@@ -512,10 +538,12 @@ fn import_presets(
         .filter_map(|p| std::fs::read(p).ok())
         .map(|bytes| content_hash(&bytes))
         .collect();
+    let mut looks = Vec::new();
     for (i, file) in found.iter().enumerate() {
         report(progress, i, found.len(), "presets");
+        // Read up to the profile import's limit, as the file may be a look.
         let text = match std::fs::metadata(&file.path) {
-            Ok(m) if m.len() >= 8_000_000 => {
+            Ok(m) if m.len() > PROFILE_LIMIT => {
                 summary.fail(&file.path, "too large");
                 continue;
             }
@@ -527,18 +555,18 @@ fn import_presets(
                 }
             },
         };
+        // Looks are profiles, never presets, wherever they lie.
+        if is_look(&text) {
+            looks.push(file.clone());
+            continue;
+        }
+        if text.len() >= 8_000_000 {
+            summary.fail(&file.path, "too large");
+            continue;
+        }
         let hash = content_hash(text.as_bytes());
         if known.contains(&hash) {
             summary.already += 1;
-            continue;
-        }
-        if is_look(&text) {
-            if file.chosen {
-                summary.fail(
-                    &file.path,
-                    "a camera profile; import it under Camera profiles",
-                );
-            }
             continue;
         }
         match crate::xmp::parse(&file.path, &text) {
@@ -572,7 +600,26 @@ fn import_presets(
             Err(e) => summary.fail(&file.path, format!("{e:#}")),
         }
     }
+    if !looks.is_empty() {
+        let kind = ImportKind::CameraProfiles;
+        summary.add_profiles(import_camera_profiles(
+            &looks,
+            progress,
+            kind,
+            LutSpace::Srgb,
+            profiles,
+        ));
+    }
     summary
+}
+impl Summary {
+    /// Counts in what a profile import of a preset import's looks did.
+    fn add_profiles(&mut self, looks: Summary) {
+        self.profiles += looks.imported;
+        self.already += looks.already;
+        self.without_base += looks.without_base;
+        self.failed.extend(looks.failed);
+    }
 }
 
 /// Imports what `picks` (files and folders) hold for `kind`.
@@ -582,15 +629,18 @@ fn run(kind: ImportKind, picks: &[PathBuf], progress: &ImportProgress) -> Summar
     match kind {
         // Imported as profiles, LUTs take the sRGB default.
         ImportKind::CameraProfiles => {
-            import_camera_profiles(&found, progress, kind, LutSpace::Srgb)
+            import_camera_profiles(&found, progress, kind, LutSpace::Srgb, &profile_library())
         }
-        ImportKind::Luts(space) => import_camera_profiles(&found, progress, kind, space),
+        ImportKind::Luts(space) => {
+            import_camera_profiles(&found, progress, kind, space, &profile_library())
+        }
         ImportKind::LensProfiles => import_lens_profiles(&found, progress),
         ImportKind::Presets => import_presets(
             &found,
             progress,
             &crate::storage::data_dir().join("xmp-presets"),
             &crate::presets::library_dirs(),
+            &profile_library(),
         ),
     }
 }
@@ -605,6 +655,7 @@ pub fn import_profiles(picks: &[PathBuf], space: LutSpace) -> Summary {
         &ImportProgress::default(),
         kind,
         space,
+        &profile_library(),
     )
 }
 
@@ -612,6 +663,17 @@ impl Editor {
     /// Starts importing `picks` in the background; the status line follows it.
     pub(super) fn import(&mut self, kind: ImportKind, picks: Vec<PathBuf>, ctx: &egui::Context) {
         if self.importing.is_some() || picks.is_empty() {
+            return;
+        }
+        // A profile download publishes into the same library: profiles, looks and
+        // presets (which bring their looks) wait for it, said so rather than
+        // dropped silently. Lens profiles don't touch it.
+        if !matches!(kind, ImportKind::LensProfiles)
+            && let Some(name) = self.profile_download.downloading()
+        {
+            self.messages.warn(format!(
+                "Not imported: {name} is downloading into the profile library. Import again when it finishes."
+            ));
             return;
         }
         let progress = Arc::new(ImportProgress::new(ctx.clone()));
@@ -636,38 +698,18 @@ impl Editor {
     }
     pub(super) fn imported(&mut self, summary: Summary, ctx: &egui::Context) {
         self.importing = None;
+        // A preset import takes the looks among its files too.
+        let profiles = match summary.kind {
+            ImportKind::CameraProfiles | ImportKind::Luts(_) => summary.imported,
+            ImportKind::Presets => summary.profiles,
+            ImportKind::LensProfiles => 0,
+        };
+        if profiles > 0 {
+            self.list_profiles_after_import();
+        }
         if summary.imported > 0 {
             match summary.kind {
-                ImportKind::CameraProfiles | ImportKind::Luts(_) => {
-                    self.profile_library = crate::camera_profiles::library_fingerprint();
-                    let before = self.document.edit.recipe().clone();
-                    let mut current = None;
-                    if let Some(m) = &self.document.metadata {
-                        let listed = crate::camera_profiles::listed(m);
-                        self.document.profiles = super::camera_look::keep_fitted_default(
-                            &self.document.profiles,
-                            m,
-                            listed.profiles,
-                        );
-                        self.document.profile_errors = listed.errors;
-                        self.document.profile_groups = listed.groups;
-                        // Importing never changes an edit: the user picks a
-                        // profile. A photo without one follows the raw defaults,
-                        // which may now resolve to an imported profile.
-                        self.refresh_photo_defaults();
-                        self.refresh_preset_support();
-                        if self.document.edit.recipe() == &before {
-                            current = self.document.catalog_photo.filter(|id| {
-                                self.library.as_ref().is_some_and(|library| {
-                                    library.photo(*id).is_some_and(|photo| {
-                                        Some(&photo.path) == self.document.path.as_ref()
-                                    })
-                                })
-                            });
-                        }
-                    }
-                    self.refresh_library_defaults_preserving(current);
-                }
+                ImportKind::CameraProfiles | ImportKind::Luts(_) => {}
                 ImportKind::LensProfiles => {
                     // Lens profiles are matched when a photo opens: reopen it.
                     if let Some(path) = self.document.path.clone() {
@@ -693,6 +735,28 @@ impl Editor {
             self.messages.done(said);
         }
         self.onboarding.imported(summary);
+    }
+    /// Lists the open photo's profiles again once an import has added some.
+    pub(super) fn list_profiles_after_import(&mut self) {
+        self.profile_library = crate::camera_profiles::library_fingerprint();
+        let before = self.document.edit.recipe().clone();
+        if let Some(m) = &self.document.metadata {
+            let listed = crate::camera_profiles::listed(m);
+            self.document.profiles = super::camera_look::keep_fitted_default(
+                &self.document.profiles,
+                m,
+                listed.profiles,
+            );
+            self.document.profile_errors = listed.errors;
+            self.document.profile_groups = listed.groups;
+            // Importing never changes an edit: the user picks a profile. A photo
+            // without one follows the raw defaults, which may now resolve to an
+            // imported profile.
+            self.refresh_photo_defaults();
+            self.refresh_preset_support();
+        }
+        let current = self.unchanged_current_photo(&before);
+        self.refresh_library_defaults_preserving(current);
     }
 }
 
@@ -721,29 +785,38 @@ mod tests {
         std::fs::write(pack.join("Warm/.hidden/Two.xmp"), PRESET).unwrap();
         std::fs::write(pack.join("Defaults/Three.xmp"), PRESET).unwrap();
         std::fs::write(pack.join("Broken.xmp"), "<not xmp").unwrap();
-        std::fs::write(
-            pack.join("Look.xmp"),
-            PRESET.replace("crs:Exposure", "crs:PresetType=\"Look\" crs:Exposure"),
-        )
-        .unwrap();
+        // A look profile goes to the profile library, not among the presets.
+        std::fs::write(pack.join("Warm/Look.xmp"), REPRO_LOOK).unwrap();
         let root = temp.path().join("library");
+        let profiles = temp.path().join("profiles");
         let progress = ImportProgress::default();
+        let import = |found: &[Found]| {
+            import_presets(
+                found,
+                &progress,
+                &root,
+                std::slice::from_ref(&root),
+                &profiles,
+            )
+        };
 
         let found = gather(ImportKind::Presets, std::slice::from_ref(&pack));
-        let summary = import_presets(&found, &progress, &root, std::slice::from_ref(&root));
-        assert_eq!(summary.imported, 2, "{summary:?}");
+        let summary = import(&found);
+        assert_eq!((summary.imported, summary.profiles), (2, 1), "{summary:?}");
         assert_eq!(summary.already, 1);
         assert_eq!(summary.failed.len(), 1, "only Broken.xmp is reported");
         assert!(root.join("Imported/Pack/One.xmp").is_file());
         assert!(root.join("Imported/Pack/Warm/Copy.xmp").is_file());
+        assert!(profiles.join("Look.xmp").is_file());
+        assert!(!root.join("Imported/Pack/Warm/Look.xmp").exists());
         assert_eq!(
             summary.message(),
-            "Imported 2 presets · 1 already imported · 1 skipped"
+            "Imported 2 presets · 1 profile · 1 already imported · 1 skipped"
         );
 
         // Importing again finds everything installed.
-        let again = import_presets(&found, &progress, &root, std::slice::from_ref(&root));
-        assert_eq!((again.imported, again.already), (0, 3));
+        let again = import(&found);
+        assert_eq!((again.imported, again.profiles, again.already), (0, 0, 4));
 
         // A different preset under a taken name gets a numbered one.
         let other = temp.path().join("Other");
@@ -753,7 +826,7 @@ mod tests {
         std::fs::create_dir_all(root.join("Imported/Other")).unwrap();
         std::fs::write(root.join("Imported/Other/One.xmp"), "taken").unwrap();
         let found = gather(ImportKind::Presets, &[chosen]);
-        let summary = import_presets(&found, &progress, &root, std::slice::from_ref(&root));
+        let summary = import(&found);
         assert_eq!(summary.imported, 1);
         assert!(root.join("Imported/Other/One 2.xmp").is_file());
     }
@@ -825,6 +898,7 @@ mod tests {
             &ImportProgress::default(),
             kind,
             LutSpace::AdobeRgb,
+            &temp.path().join("library"),
         );
         assert_eq!(summary.imported, 0);
         assert_eq!(
@@ -892,8 +966,10 @@ mod tests {
         assert!(!profiles.details(8).contains(" in "));
     }
 
+    /// A look chosen in a preset import is imported as a profile, so one that
+    /// can't be is reported, and nothing is written for it.
     #[test]
-    fn chosen_files_of_the_wrong_kind_are_reported() {
+    fn chosen_looks_that_cannot_be_imported_are_reported() {
         let temp = tempfile::tempdir().unwrap();
         let look = temp.path().join("Look.xmp");
         std::fs::write(
@@ -902,13 +978,165 @@ mod tests {
         )
         .unwrap();
         let found = gather(ImportKind::Presets, &[look]);
-        let summary = import_presets(
-            &found,
-            &ImportProgress::default(),
-            &temp.path().join("lib"),
-            &[],
+        let (root, profiles) = (temp.path().join("lib"), temp.path().join("profiles"));
+        let summary = import_presets(&found, &ImportProgress::default(), &root, &[], &profiles);
+        assert_eq!((summary.imported, summary.profiles), (0, 0));
+        assert_eq!(summary.failed.len(), 1, "{summary:?}");
+        assert!(summary.details(5).starts_with("Look.xmp: "), "{summary:?}");
+        assert_eq!(summary.message(), "Imported 0 presets · 1 skipped");
+        assert!(!root.exists() && !profiles.join("Look.xmp").exists());
+    }
+
+    /// Issue #790's pack: a preset and the look profile it uses, in one folder.
+    const REPRO_LOOK: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+   crs:PresetType="Look"
+   crs:UUID="C0FFEE00000000000000000000000001"
+   crs:SupportsAmount="True"
+   crs:Version="18.2.1"
+   crs:ProcessVersion="15.4"
+   crs:RGBTable="DAB0C6C9546227C6B4163C04E7D47C60"
+   crs:Table_DAB0C6C9546227C6B4163C04E7D47C60="71000OcImwM!emwO1/)wKOJQvnrwLvUf400}|nDn"
+   crs:HasSettings="True">
+   <crs:Name><rdf:Alt><rdf:li xml:lang="x-default">Repro Look</rdf:li></rdf:Alt></crs:Name>
+   <crs:Group><rdf:Alt><rdf:li xml:lang="x-default">Repro Pack</rdf:li></rdf:Alt></crs:Group>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>"#;
+    const REPRO_PRESET: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+   crs:PresetType="Normal"
+   crs:UUID="C0FFEE00000000000000000000000002"
+   crs:SupportsAmount="True"
+   crs:Version="18.2.1"
+   crs:ProcessVersion="15.4"
+   crs:Exposure2012="+0.50"
+   crs:HasSettings="True">
+   <crs:Name><rdf:Alt><rdf:li xml:lang="x-default">Repro Preset</rdf:li></rdf:Alt></crs:Name>
+   <crs:Group><rdf:Alt><rdf:li xml:lang="x-default">Repro Pack</rdf:li></rdf:Alt></crs:Group>
+   <crs:Look>
+    <rdf:Description crs:Name="Repro Look" crs:Amount="1" crs:UUID="C0FFEE00000000000000000000000001"/>
+   </crs:Look>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>"#;
+
+    /// Whether the preset imported into `root` applies to a photo with the
+    /// profiles in `profiles`, as the Presets panel checks it.
+    fn repro_preset_applies(root: &Path, profiles: &Path) -> anyhow::Result<()> {
+        let path = root.join("Imported/Repro Pack/Repro Preset.xmp");
+        let preset = crate::xmp::parse(&path, &std::fs::read_to_string(&path)?)?;
+        let photo = crate::camera_data::Metadata {
+            make: "Test".into(),
+            model: "Camera".into(),
+            cam_xyz: [[0.8, -0.2, -0.1], [-0.3, 1.1, 0.2], [-0.05, 0.15, 0.6]],
+            ..Default::default()
+        };
+        let listed = crate::camera_profiles::listed_from(&[profiles.to_path_buf()], &photo);
+        let base = crate::model::recipe::Recipe::with_profiles(&photo, &listed.profiles);
+        preset
+            .apply(&base, &photo, &listed.profiles, None)
+            .map(|_| ())
+    }
+
+    /// A preset pack ships its look profiles beside its presets; importing the
+    /// pack takes both, as Lightroom's Import Develop Profiles and Presets does,
+    /// whether the folder or its files are chosen (#790).
+    #[test]
+    fn a_preset_import_takes_the_packs_look_profiles_too() {
+        for choose_files in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let pack = temp.path().join("Repro Pack");
+            std::fs::create_dir_all(&pack).unwrap();
+            std::fs::write(pack.join("Repro Look.xmp"), REPRO_LOOK).unwrap();
+            std::fs::write(pack.join("Repro Preset.xmp"), REPRO_PRESET).unwrap();
+            let (root, profiles) = (temp.path().join("presets"), temp.path().join("profiles"));
+            let picks = if choose_files {
+                vec![pack.join("Repro Look.xmp"), pack.join("Repro Preset.xmp")]
+            } else {
+                vec![pack.clone()]
+            };
+            let found = gather(ImportKind::Presets, &picks);
+            let import = || {
+                import_presets(
+                    &found,
+                    &ImportProgress::default(),
+                    &root,
+                    std::slice::from_ref(&root),
+                    &profiles,
+                )
+            };
+
+            let summary = import();
+            assert_eq!(
+                summary.message(),
+                "Imported 1 preset · 1 profile",
+                "{choose_files}: {summary:?}"
+            );
+            assert!(summary.failed.is_empty(), "{summary:?}");
+            assert_eq!(summary.profiles, 1);
+            assert_eq!(summary.done(), 2);
+            assert_eq!(
+                std::fs::read_to_string(profiles.join("Repro Look.xmp")).unwrap(),
+                REPRO_LOOK
+            );
+            assert!(!root.join("Imported/Repro Pack/Repro Look.xmp").exists());
+            repro_preset_applies(&root, &profiles).unwrap();
+
+            let again = import();
+            assert_eq!(
+                again.message(),
+                "Imported 0 presets · 2 already imported",
+                "{choose_files}: {again:?}"
+            );
+            assert!(again.failed.is_empty(), "{again:?}");
+            assert_eq!((again.profiles, again.done()), (0, 2));
+        }
+    }
+
+    /// A look is held to the profile import's size limit, not the presets'
+    /// smaller one; a preset that large is still too large.
+    #[test]
+    fn a_large_look_imports_as_a_profile_would() {
+        let temp = tempfile::tempdir().unwrap();
+        let pack = temp.path().join("Pack");
+        std::fs::create_dir_all(&pack).unwrap();
+        let pad = |text: &str| {
+            let close = "</x:xmpmeta>";
+            let body = text.strip_suffix(close).unwrap();
+            let filler = 9_000_000 - body.len() - close.len() - "<!--  -->".len();
+            format!("{body}<!-- {} -->{close}", "x".repeat(filler))
+        };
+        std::fs::write(pack.join("Look.xmp"), pad(REPRO_LOOK)).unwrap();
+        std::fs::write(pack.join("Preset.xmp"), pad(REPRO_PRESET)).unwrap();
+        let (root, profiles) = (temp.path().join("presets"), temp.path().join("profiles"));
+        let found = gather(ImportKind::Presets, std::slice::from_ref(&pack));
+        let summary = import_presets(&found, &ImportProgress::default(), &root, &[], &profiles);
+        assert_eq!((summary.imported, summary.profiles), (0, 1), "{summary:?}");
+        assert_eq!(summary.lines(), ["Preset.xmp: too large"]);
+        assert!(profiles.join("Look.xmp").is_file());
+    }
+
+    /// Without its look, the pack's preset is the one the issue reports.
+    #[test]
+    fn the_repro_preset_needs_its_look() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("presets");
+        let pack = temp.path().join("Repro Pack");
+        std::fs::create_dir_all(&pack).unwrap();
+        std::fs::write(pack.join("Repro Preset.xmp"), REPRO_PRESET).unwrap();
+        let found = gather(ImportKind::Presets, std::slice::from_ref(&pack));
+        let profiles = temp.path().join("profiles");
+        let summary = import_presets(&found, &ImportProgress::default(), &root, &[], &profiles);
+        assert_eq!(summary.message(), "Imported 1 preset");
+        let error = format!("{:#}", repro_preset_applies(&root, &profiles).unwrap_err());
+        assert!(
+            error.contains("Missing or unsupported enhanced profile ‘Repro Look’"),
+            "{error}"
         );
-        assert_eq!(summary.failed.len(), 1);
-        assert!(summary.details(5).starts_with("Look.xmp: a camera profile"));
     }
 }

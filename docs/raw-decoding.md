@@ -260,7 +260,8 @@ rounded inward to even rows and columns.
 DNG lens IDs come from the maker note DNGPrivateData keeps: Pentax's and
 Samsung's Pentax bodies' own ("PENTAX \0", `vendor::pentax`: LensType's
 series × 256 + number, as Adobe's aux:LensID "4 28" is 1052), or Nikon's in
-Adobe's "MakN" record (`vendor::nikon`, read as a NEF's note).
+Adobe's "MakN" record (`vendor::nikon`, read as a NEF's note), with its Lens
+tag (0x0084: focal range and maximum apertures, `RawInfo::lens_info`).
 
 A DNG whose white balance is AsShotWhiteXY (no AsShotNeutral) has the
 white's camera neutral: AnalogBalance × CameraCalibration × ColorMatrix,
@@ -309,6 +310,12 @@ whose files RAWmakase has always read with other areas have
 
 Sony (from our own measurements unless said otherwise):
 
+- The default crop is SonyCropTopLeft and SonyCropSize. Along a side the crop
+  does not cut (its length is DefaultCropSize's), DefaultCropOrigin places it:
+  the a7R III's and a7R IV's own tag starts at column 0, 8 and 32 columns left of
+  their JPEGs and Camera Raw's frame. A crop running past the table's visible
+  area (crop modes of the a7 III and a7 IV) grows the area to as much past the
+  crop as before it.
 - An ARW2 code `c` is the point `2c` on Sony's 12-bit tone curve, whose slope
   starts at 1 and doubles at each SonyToneCurve threshold (in quarters).
 - The SR2SubIFD (white balance as shot and its presets, levels) is encrypted.
@@ -806,7 +813,10 @@ on even rows and columns, in sensor coordinates) come from the maker note
 decoder source consulted, and verified by an exact match with LibRaw's output
 on every PEF of our dataset);
 Pentax DNGs' lens ID and ISO from the same note in DNGPrivateData. Samsung's
-GX PEFs read the note too, but not its crop. White is the camera table's
+GX PEFs read the note too, but not its crop. The K-3 Mark III's, K-70's and
+KF's note crop is not where their JPEGs are: their frames are `measured` rows,
+aligned with those JPEGs (Camera Raw frames the K-3 Mark III and KF the same
+way). White is the camera table's
 where Adobe DNG Converter's WhiteLevel is not the file's (a fixed 16315 on
 most 14-bit bodies, where WhiteLevel 0x007E reads a few codes higher), else
 WhiteLevel, else the data's full range: the 645D, 645Z, K-5 II, K-5 II s,

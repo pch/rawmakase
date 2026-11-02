@@ -222,6 +222,74 @@ A second gap surfaced by the same probe: with a bright area of 12% of the frame,
 or not, Camera Raw lifts the mid-tones at Shadows +100 by 0.4 EV and the rule by 0.7 to
 1.2 EV. The sky and ground mosaics do not cover it.
 
+### How sparse the top is (2026-10-30)
+
+A further probe settles whether Camera Raw's rule reads a clipped pixel differently
+from a bright one: mosaics under an As Shot neutral with a square of 0.2, 3 or 12% of
+the frame at four levels, just under white, clipped in green (reconstructing 0.26 stop
+over the white), in green and blue (0.77 over) and in all three (a stop over). Camera
+Raw's Shadows +100 lift of the dark patches beside the square is the same to 0.05 EV
+at every level, and Highlights −100 pulls the square −0.84 to −1.00 EV whether it is
+clipped or not: the rule does not count clipping, and the engine's reconstruction is
+not what sets the DC-S1 field apart. What sets it apart is the histogram's top: a
+0.16% spot sets the maximum, and the rule has no input that says how little sits
+there. Reading the clipped pixels before reconstruction (their recorded luminance
+with each clipped channel held at its white) was tried on the shipped weights and
+rejected: it helps the DC-S1 field and the RX100 but hurts a DC-S1RM2, an a7 II and a
+beach by as much.
+
+Two inputs, the fraction of the map within one and within two stops of the top, were
+added to the rule, and it was retrained on the three families of mosaics with clipped
+areas under a white-balance gain (clipped squares of 0.05 to 12% of the frame, 10 to
+35% of the patches clipped, and the partially clipped squares above) and on 62 more
+CC0 raw.pixls.us photos chosen for small clipped spots, skies over deep ground, large
+bright areas and heavy clipping. Variants that failed on the way, each retrained with
+four seeds from the engine's maps:
+
+| Variant | Outcome | Decision |
+| --- | --- | --- |
+| The sensor's white, the clipped fractions and the clipped fraction at the level as inputs | The curves jump where the clipped fraction changes; no better on the photos | Rejected |
+| Those plus the 99th and 99.9th percentiles' distance from the level | DC-S1 field 6.22 → 3.12, but the mid-tones of filled histograms (a ZS200D, an X100F) over-lifted by 0.3 to 0.5 EV; gate 36 better, 42 worse | Rejected: the percentile inputs cause the over-lift |
+| The two top-mass inputs alone (shipped) | DC-S1 field 6.22 → 3.34 with the mid-tones held; gate 34 better, 20 worse | Shipped |
+| The same without the 18 mosaics with 10 to 35% clipped, or without all three clipped families | The noisy 80D sample below improves to 4.6 or stays at 7.7, three other photos worsen by 0.3 to 1.0 | Rejected |
+
+The retrained rule against the shipped one on the validation sets (median ΔE00 over
+photos; photos moving more than 0.3 in brackets):
+
+| Set | Shadows +100 | Highlights −100 | Colour Shadows +100 | Shadows +50 with Highlights −50 |
+| --- | --- | --- | --- | --- |
+| pixls | 1.40 → 1.68 (1 better, 3 worse) | 1.28 → 1.22 (2, 2) | 1.34 → 1.18 (4, 2) | 1.13 → 1.03 (0, 1) |
+| own | 1.61 → 1.51 (2, 0) | 1.11 → 1.06 (0, 0) | 1.76 → 1.37 (1, 0) | 1.09 → 1.17 (0, 0) |
+| signature edits | 2.11 → 1.94 (5, 0) | 0.88 → 0.79 (0, 1) | 1.12 → 0.99 (1, 0) | 0.76 → 0.71 (0, 0) |
+| pixls stress | 2.14 → 2.01 (1, 2) | 1.18 → 1.25 (0, 1) | 2.31 → 1.94 (2, 1) | 1.82 → 1.23 (1, 0) |
+| own stress | 1.77 → 1.68 (2, 0) | 0.87 → 0.64 (0, 0) | 1.63 → 1.45 (2, 0) | 1.27 → 1.27 (0, 0) |
+| signature edits stress | 1.14 → 1.09 (1, 2) | 0.56 → 0.57 (0, 0) | 1.14 → 0.86 (2, 2) | 0.73 → 0.75 (0, 1) |
+
+Over every non-default row the median is 0.87 → 0.86 and the mean 1.22 → 1.21; on
+the train sets Highlights −100 is 1.27 → 1.17, Colour Shadows +100 3.33 → 1.69 and
+Shadows +100 1.56 → 1.67. The two regressions above are fixed: the Rebel T7i at
+Highlights −100 1.61 → 0.89 and the DC-S1 field at Shadows +100 5.48 → 2.13; a star
+trail (DC-S1RM2) at Shadows +100 2.51 → 2.29 and the RX100 VII at 6400 K with Colour
+Shadows 2.67 → 1.62 come closer too.
+
+What the retrain costs. On filled histograms the rule now lifts the mid-tones 0.1 EV
+more than Camera Raw (a FZ1000 at Shadows +100 0.80 → 1.54, an a6600 0.82 → 1.29, the
+ZS200D 2.14 → 2.51), a GFX 50R at Highlights −100 pulls 0.1 EV more (1.71 → 2.29), and
+the X-T30 III plateau is lifted 0.5 EV more seven stops down (4.78 → 5.57). One photo
+is lost outright: a noisy Canon 80D sample with 14% of the frame within a stop of the
+top, whose mid-shadows Camera Raw lifts 1.0 EV at three stops down, is lifted 0.58
+(2.98 → 6.38 at Shadows +100, 3.12 → 6.62 with Colour Shadows). Its mid levels are
+very smooth (texture 0.015 stop) and no training photo or mosaic sits near it: the
+nearest in input space are old training photos whose lift there is 0.0 to 0.16 EV,
+and the rule without the new inputs, retrained on the same data, lifts it 0.07 EV.
+The shipped rule matched it by luck of the fit rather than by anything it had learnt.
+
+Measured on the way and not in the rule: the texture input over the top two stops
+(`tex_top`) is saturated at its clamp on every training mosaic and photo, so it is a
+constant; and on the clipped mosaics Camera Raw lifts the mid-tones only 0.2 to 0.4
+EV where photos with the same top mass are lifted 1.0 to 1.4, which is the
+large-bright-area gap above seen from the training side.
+
 ### Shadows/Highlights research: what did not work (2026-10-16)
 
 **No candidate from this investigation passed the requirements for shipping.**

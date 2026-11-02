@@ -636,6 +636,30 @@ pub(crate) mod tests {
         Ok((info, sensor))
     }
 
+    /// The a7R IV's own tag says column 0, its default crop column 32, as its JPEG
+    /// and Camera Raw frame it. A crop along the other side keeps its own place.
+    #[test]
+    fn a_sony_crop_takes_its_place_from_the_default_crop_along_a_side_it_does_not_cut() {
+        let frame = |at: [u16; 2], size: [u16; 2]| {
+            let file = arw(
+                "ILCE-7RM4",
+                [40, 24],
+                [14, 1],
+                vec![
+                    (0x74c7, Value::Short(at.to_vec())),
+                    (0x74c8, Value::Short(size.to_vec())),
+                    (0xc61f, Value::Short(vec![4, 2])),
+                    (0xc620, Value::Short(vec![32, 20])),
+                ],
+                vec![0; 40 * 24 * 2],
+            );
+            crate::open(&file).unwrap().frame
+        };
+        assert_eq!(frame([0, 2], [32, 20]), [4, 2, 32, 20]);
+        assert_eq!(frame([0, 6], [32, 12]), [4, 6, 32, 12]);
+        assert_eq!(frame([12, 2], [16, 20]), [12, 2, 16, 20]);
+    }
+
     #[test]
     fn uncompressed_arws_read_their_words_and_sony_tags() {
         let (w, h) = (6, 4);

@@ -168,6 +168,8 @@ pub(crate) struct Library {
     selection: selection::Selection,
     /// Grid columns last frame, for Up and Down.
     grid_columns: usize,
+    /// Whole grid rows the view showed last frame, for Page Up and Page Down.
+    grid_page_rows: usize,
     /// Scroll the grid to the active photo, after a key moved it.
     scroll_to_active: bool,
     /// Whether the folders missing on this computer were reported since the
@@ -318,6 +320,7 @@ impl Library {
             session,
             selection: Default::default(),
             grid_columns: 1,
+            grid_page_rows: 1,
             scroll_to_active: false,
             missing_noted: false,
             volumes: Default::default(),

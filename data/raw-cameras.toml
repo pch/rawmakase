@@ -43,6 +43,8 @@
 #   compat-observed  the earlier decoder's (LibRaw at 4f014403) output on the test
 #                    dataset's files, kept so saved edits keep their geometry and
 #                    scale (2026-10-17); never a colour matrix
+#   measured         our own measurement: a default crop aligned with the camera's
+#                    embedded JPEGs in its files (2026-10-30)
 
 [[camera]]
 make = "Canon"
@@ -8562,3 +8564,27 @@ make = "Kodak"
 model = "EOSDCS3C"
 canonical = ["Kodak", "EOSDCS3"]
 source = "compat-observed"
+
+[[camera]]
+make = "Pentax"
+model = "K-3 Mark III"
+dng = false
+raw_size = [6304, 4224]
+frame = [54, 58, 6192, 4128]
+source = "measured"
+
+[[camera]]
+make = "Pentax"
+model = "K-70"
+dng = false
+raw_size = [6080, 4064]
+frame = [66, 32, 6000, 4000]
+source = "measured"
+
+[[camera]]
+make = "Pentax"
+model = "KF"
+dng = false
+raw_size = [6080, 4064]
+frame = [66, 32, 6000, 4000]
+source = "measured"
