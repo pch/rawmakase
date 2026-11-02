@@ -1173,6 +1173,24 @@ mod tests {
         assert!(error.contains("constant luminance"), "{error}");
     }
 
+    /// YCgCo, ICtCp and other matrices `yuv` has no conversion for, and
+    /// reserved codes, are not taken as BT.601: the image can't be opened
+    /// rather than shown in wrong colours.
+    #[test]
+    fn an_avif_in_a_matrix_it_does_not_convert_is_not_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        for code in [3u16, 8, 11, 12, 14, 255, 256] {
+            let path = dir.path().join(format!("matrix-{code}.avif"));
+            let mut bytes = std::fs::read(fixture("p3.avif")).unwrap();
+            // nclx: primaries 12, transfer 13, matrix 0 becomes `code`.
+            let at = bytes.windows(4).position(|w| w == b"nclx").unwrap() + 8;
+            bytes[at..at + 2].copy_from_slice(&code.to_be_bytes());
+            std::fs::write(&path, bytes).unwrap();
+            let error = decode(&path).unwrap_err().to_string();
+            assert!(error.contains("matrix coefficients"), "{code}: {error}");
+        }
+    }
+
     /// An image sequence is refused whichever of its brands says so, not
     /// only the major one.
     #[test]
