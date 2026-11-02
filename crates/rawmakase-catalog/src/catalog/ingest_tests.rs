@@ -180,3 +180,39 @@ fn a_legacy_edits_masks_come_with_its_photo() -> Result<()> {
     assert_eq!(cat.bitmap(&raster.hash())?, Some(raster));
     assert_complete(&cat, &edit)
 }
+
+#[test]
+fn a_legacy_edit_is_not_given_to_a_raw_replaced_while_its_folder_is_read() -> Result<()> {
+    // Called for the RAW after its legacy sidecar was read: it replaces the file
+    // there, as a copy finishing during Add Folder would.
+    fn replacing(file: &std::path::Path) -> Option<Vec<u8>> {
+        if file.ends_with("edited.ARW") {
+            std::fs::write(file, b"synthetic raw, replaced while it was read").unwrap();
+        }
+        None
+    }
+    let dir = tempfile::tempdir()?;
+    let folder = dir.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    let raw = folder.join("edited.ARW");
+    std::fs::write(&raw, b"synthetic raw edited")?;
+    let edit = Recipe {
+        exposure: 0.75,
+        ..Default::default()
+    };
+    legacy_sidecar::save(&raw, &edit, &ExportOptions::default())?;
+    let mut cat = Catalog::create(&dir.path().join("Photos.rawmakase"))?;
+    let defaults = NewPhotoDefaults::new(
+        MetadataDefaults {
+            creator: String::new(),
+            copyright: String::new(),
+        },
+        crate::exif::read,
+        replacing,
+    );
+    assert_eq!(cat.import_folder(&folder, &defaults, &[])?.added, 1);
+    let photo = cat.photos()?.into_iter().next().unwrap();
+    // The edit was saved for the file as it was: never the replacement's.
+    assert!(!matches!(cat.load_edit(photo.id, &photo.path), Ok(Some(_))));
+    Ok(())
+}

@@ -449,7 +449,7 @@ impl Catalog {
     fn new_photo<'a>(&self, read: FilesRead<'a>) -> NewPhoto<'a> {
         let edit = read.legacy.and_then(|legacy| {
             legacy
-                .and_then(|legacy| self.check_legacy_edit(&read.file, legacy))
+                .and_then(|legacy| self.check_legacy_edit(legacy))
                 // A sidecar that no longer matches its photo stays unused on disk.
                 .ok()
                 .flatten()
@@ -465,11 +465,13 @@ impl Catalog {
     }
     /// The edit a photo got outside any catalog, in its photo.rawmakase.json
     /// sidecar, checked for the catalog. The sidecar stays on disk.
-    fn check_legacy_edit(&self, file: &Path, legacy: Option<Legacy>) -> Result<Option<LegacyEdit>> {
+    fn check_legacy_edit(&self, legacy: Option<Legacy>) -> Result<Option<LegacyEdit>> {
         let Some((sidecar, bitmaps)) = legacy else {
             return Ok(None);
         };
-        let checked = self.check_new_edit(file, &sidecar.recipe, &sidecar.export)?;
+        // The identity the sidecar was checked against as it was read, beside
+        // its photo: a RAW replaced since then doesn't get this edit.
+        let checked = self.check_new_edit(&sidecar.source, &sidecar.recipe, &sidecar.export)?;
         Ok(Some(LegacyEdit {
             bitmaps,
             checked,
