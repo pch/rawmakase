@@ -4,11 +4,11 @@
 Usage: python3 scripts/make-heic-fixtures.py tests/data/formats
 Needs Pillow and pillow-heif (libheif with x265). Every image is drawn here;
 nothing comes from a camera or a photo. metadata.heic, ten-bit.heic, p3.heic,
-pq.heic and wide.heic are libheif's own files; the grid and the turned files
-are written here around HEVC x265 coded, so each has the boxes its test needs,
-and without x265's SEI banner, which would make them several kilobytes. All
-are 4:2:0, as phones write, so the system decoders macOS and Windows use read
-them.
+pq.heic, wide.heic, transparent.heic and half-alpha.heic are libheif's own
+files; the grid and the turned files are written here around HEVC x265 coded,
+so each has the boxes its test needs, and without x265's SEI banner, which
+would make them several kilobytes. All are 4:2:0, as phones write, so the
+system decoders macOS and Windows use read them.
 """
 import importlib.util, io, sys
 from pathlib import Path
@@ -168,6 +168,11 @@ def main(out: Path):
     # Coded larger than a 64x64 block, so a header claiming it smaller is
     # caught before the picture is allocated.
     pillow_heif.from_pillow(corners(192, 128)).save(out / "wide.heic", quality=80)
+    # Alpha, as an auxiliary image: transparent everywhere, and red at half
+    # opacity, which macOS composites over black.
+    for name, colour in [("transparent", (255, 255, 255, 0)), ("half-alpha", (255, 0, 0, 128))]:
+        im = Image.new("RGBA", (16, 12), colour)
+        pillow_heif.from_pillow(im).save(out / f"{name}.heic", quality=95)
     deep.save(out / "pq.heic", quality=95, matrix_coefficients=9, color_primaries=9,
               transfer_characteristics=16)
 
