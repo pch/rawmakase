@@ -3,7 +3,7 @@
 //! succeeds, fails, is cancelled, arrives stale, or the worker is fed nonsense.
 use rawmakase_cancel::Cancel;
 
-use rawmakase_inference::{Coverage, Prompt, RgbImage};
+use rawmakase_inference::{Coverage, Prompt, RgbImage, SKY, SUBJECT};
 use rawmakase_remote::client::{ClientError, RemoteOptions, RemoteSession};
 use rawmakase_remote::protocol::{Op, Request, WirePrompt, write_frame};
 use rawmakase_remote::server::{Engine, EngineError, Outcome, Server};
@@ -642,6 +642,7 @@ fn a_duplicate_live_id_is_refused() {
                 width: 2,
                 height: 2,
                 pixels: photo(2, 2).data,
+                processing: SUBJECT.processing_version,
             },
         })
         .unwrap()
@@ -700,6 +701,68 @@ fn a_worker_that_takes_too_long_is_an_error_not_a_hang() {
 }
 
 #[test]
+fn another_processing_version_is_refused_without_touching_the_engine() {
+    let fake = Fake::of(Photo::of("k1", 2, 2, 1));
+    let runs = fake.runs.clone();
+    let (endpoint, _, _) = worker(fake);
+    let send = |request: &Request| {
+        let mut stream = std::net::TcpStream::connect(&endpoint).unwrap();
+        write_frame(&mut stream, &serde_json::to_vec(request).unwrap()).unwrap();
+        let mut length = [0u8; 4];
+        stream.read_exact(&mut length).unwrap();
+        let mut reply = vec![0u8; u32::from_le_bytes(length) as usize];
+        stream.read_exact(&mut reply).unwrap();
+        serde_json::from_slice::<rawmakase_remote::Response>(&reply).unwrap()
+    };
+    let pixels = photo(2, 2).data;
+    let sky = Request {
+        v: rawmakase_remote::protocol::VERSION,
+        id: "p1".into(),
+        op: Op::Sky {
+            width: 2,
+            height: 2,
+            pixels: pixels.clone(),
+            processing: SKY.processing_version + 1,
+        },
+    };
+    let answer = send(&sky);
+    assert_eq!(
+        answer.err.as_ref().map(|e| e.code),
+        Some(rawmakase_remote::protocol::Code::Unsupported)
+    );
+    assert!(
+        answer
+            .err
+            .unwrap()
+            .message
+            .contains("sky processing is version")
+    );
+    let analyze = Request {
+        v: rawmakase_remote::protocol::VERSION,
+        id: "p2".into(),
+        op: Op::Analyze {
+            width: 2,
+            height: 2,
+            pixels,
+            processing: SUBJECT.processing_version + 1,
+        },
+    };
+    let answer = send(&analyze);
+    assert_eq!(
+        answer.err.as_ref().map(|e| e.code),
+        Some(rawmakase_remote::protocol::Code::Unsupported)
+    );
+    assert!(
+        answer
+            .err
+            .unwrap()
+            .message
+            .contains("selection processing is version")
+    );
+    assert_eq!(runs.load(Ordering::SeqCst), 0, "the engine was not run");
+}
+
+#[test]
 fn malformed_requests_are_refused_without_touching_the_engine() {
     let fake = Fake::of(Photo::of("k1", 2, 2, 1));
     let runs = fake.runs.clone();
@@ -738,6 +801,7 @@ fn malformed_requests_are_refused_without_touching_the_engine() {
             width: 100,
             height: 100,
             pixels: vec![0; 6],
+            processing: SUBJECT.processing_version,
         },
     };
     let answer = send(&serde_json::to_vec(&request).unwrap());
@@ -753,6 +817,7 @@ fn malformed_requests_are_refused_without_touching_the_engine() {
             width: 0,
             height: 0,
             pixels: vec![],
+            processing: SUBJECT.processing_version,
         },
     };
     let answer = send(&serde_json::to_vec(&request).unwrap());
@@ -866,6 +931,7 @@ fn a_cancel_that_overtakes_its_request_still_stops_it() {
                 width: 2,
                 height: 2,
                 pixels: photo(2, 2).data,
+                processing: SUBJECT.processing_version,
             },
         ),
     )

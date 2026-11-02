@@ -113,8 +113,10 @@ that overtakes its request is remembered, so that request starts cancelled. The 
 runs at most one model at a time (a second request waits), refuses oversized
 or malformed frames before they reach the models, and bounds every read and
 write with timeouts. The definitions live in `crates/rawmakase-remote`; the
-protocol version is checked on both ends, so an old worker and a new app
-refuse each other instead of misreading.
+protocol version is checked on both ends, and each analyze and sky request
+names the processing version of the model it expects, so an old worker and a
+new app refuse each other instead of the app storing an old pipeline's mask
+under the new version.
 
 ## Costs and limits
 

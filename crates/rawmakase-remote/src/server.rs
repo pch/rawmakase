@@ -8,7 +8,7 @@
 
 use rawmakase_cancel::Cancel;
 use rawmakase_inference::{
-    Analysis, Coverage, InferenceError, LoadOptions, Prompt, RgbImage, SKY, Session, Sky,
+    Analysis, Coverage, InferenceError, LoadOptions, Prompt, RgbImage, SKY, SUBJECT, Session, Sky,
     SkySession, Subject,
 };
 use std::collections::{HashMap, VecDeque};
@@ -326,7 +326,20 @@ impl<E: Engine + 'static> Server<E> {
                     width,
                     height,
                     pixels,
+                    processing,
                 } => {
+                    if processing != SUBJECT.processing_version {
+                        self.refuse(
+                            &mut stream,
+                            &request_id,
+                            Code::Unsupported,
+                            format!(
+                                "this worker's selection processing is version {}, the request asks for {processing}",
+                                SUBJECT.processing_version
+                            ),
+                        )?;
+                        return Ok(());
+                    }
                     let photo = match photo(width, height, pixels) {
                         Ok(photo) => photo,
                         Err(why) => {
@@ -370,7 +383,20 @@ impl<E: Engine + 'static> Server<E> {
                     width,
                     height,
                     pixels,
+                    processing,
                 } => {
+                    if processing != SKY.processing_version {
+                        self.refuse(
+                            &mut stream,
+                            &request_id,
+                            Code::Unsupported,
+                            format!(
+                                "this worker's sky processing is version {}, the request asks for {processing}",
+                                SKY.processing_version
+                            ),
+                        )?;
+                        return Ok(());
+                    }
                     let photo = match photo(width, height, pixels) {
                         Ok(photo) => photo,
                         Err(why) => {
