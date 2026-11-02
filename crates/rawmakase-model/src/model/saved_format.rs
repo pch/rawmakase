@@ -22,12 +22,19 @@ pub const BEFORE_ONE_ENGINE: u32 = 10;
 /// it, keeping it "preserved without changes" rather than rendering or saving it
 /// without its lens. Every other recipe stays [`SCHEMA`], so they still read it.
 pub const LENSFUN_SCHEMA: u32 = 12;
+/// The version a recipe with AI Denoise on, or its Amount moved from the default, is
+/// written as: releases before it read up to [`LENSFUN_SCHEMA`] and refuse it rather
+/// than render it without AI Denoise (or drop the setting when saving). Every other
+/// recipe keeps its version.
+pub const AI_DENOISE_SCHEMA: u32 = 13;
 /// The newest version this release reads.
-pub const NEWEST: u32 = LENSFUN_SCHEMA;
+pub const NEWEST: u32 = AI_DENOISE_SCHEMA;
 
 /// The version to save `recipe` as.
 pub fn schema_for(recipe: &super::recipe::Recipe) -> u32 {
-    if recipe.uses_lensfun() {
+    if !recipe.ai_denoise.is_default() {
+        AI_DENOISE_SCHEMA
+    } else if recipe.uses_lensfun() {
         LENSFUN_SCHEMA
     } else {
         SCHEMA
@@ -144,9 +151,11 @@ mod tests {
             assert!(v["recipe"].get("engine").is_none(), "{version}");
             assert_eq!(v["recipe"]["exposure"], 0.5);
         }
-        let mut v = serde_json::json!({"schema": 12, "pipeline": 12, "recipe": {}});
-        assert!(super::migrate_recipe(&mut v).is_ok());
-        let mut v = serde_json::json!({"schema": 13, "pipeline": 13, "recipe": {}});
+        for version in [12, 13] {
+            let mut v = serde_json::json!({"schema": version, "pipeline": version, "recipe": {}});
+            assert!(super::migrate_recipe(&mut v).is_ok());
+        }
+        let mut v = serde_json::json!({"schema": 14, "pipeline": 14, "recipe": {}});
         assert!(super::migrate_recipe(&mut v).is_err());
         let mut v = serde_json::json!({"schema": 5, "pipeline": 6, "recipe": {}});
         assert!(super::migrate_recipe(&mut v).is_err());
@@ -365,5 +374,39 @@ mod tests {
         super::migrate_recipe(&mut v).unwrap();
         let old: Recipe = serde_json::from_value(v["recipe"].clone()).unwrap();
         assert_eq!(old.retouch, r.retouch);
+    }
+
+    /// AI Denoise needs schema 13 whenever it is not the default, switched off with a
+    /// moved Amount too; a recipe without it keeps the version it had.
+    #[test]
+    fn ai_denoise_is_saved_as_its_own_schema_only_when_set() {
+        use super::super::{ai_denoise::AiDenoise, recipe::Recipe};
+        let mut r = Recipe::default();
+        assert_eq!(super::schema_for(&r), super::SCHEMA);
+        assert!(
+            serde_json::to_value(&r)
+                .unwrap()
+                .get("ai_denoise")
+                .is_none()
+        );
+        for setting in [
+            AiDenoise {
+                enabled: true,
+                amount: 0.5,
+            },
+            AiDenoise {
+                enabled: false,
+                amount: 0.7,
+            },
+        ] {
+            r.ai_denoise = setting;
+            assert_eq!(super::schema_for(&r), super::AI_DENOISE_SCHEMA);
+            let saved = serde_json::to_value(&r).unwrap();
+            let read: Recipe = serde_json::from_value(saved).unwrap();
+            assert_eq!(read.ai_denoise, setting);
+            assert!(read.unknown.is_empty());
+        }
+        // A release that knows nothing of it reads up to 12 only.
+        const { assert!(super::AI_DENOISE_SCHEMA > super::LENSFUN_SCHEMA) };
     }
 }

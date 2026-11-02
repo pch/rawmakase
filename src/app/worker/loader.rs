@@ -23,6 +23,8 @@ use std::{
 struct FullJob {
     id: u64,
     path: std::path::PathBuf,
+    /// The file as read before its first decode, carried with every image of it.
+    file: Option<crate::storage::Identity>,
     cancel: Arc<std::sync::atomic::AtomicBool>,
     started: Instant,
     full: FullSize,
@@ -127,6 +129,7 @@ fn full_loader(
                     Event::Ready {
                         id: job.id,
                         full: image.clone(),
+                        file: job.file.clone(),
                         status: format!("Developed in {:.2}s", job.started.elapsed().as_secs_f32()),
                     },
                 );
@@ -197,6 +200,10 @@ fn opener(
         let result = caught(|| -> anyhow::Result<()> {
             let path = job.path.clone();
             let started = Instant::now();
+            // Read before anything is decoded: every image sent below is of this file or,
+            // if it is replaced meanwhile, of one that no longer matches (AI Denoise then
+            // refuses rather than mixing the two).
+            let file = crate::storage::Identity::read(&path).ok();
             let prefetched = ahead.take(&path);
             let was_ahead = prefetched.is_some();
             let opened = match prefetched {
@@ -253,6 +260,7 @@ fn opener(
                         Event::Ready {
                             id: job.id,
                             full: Arc::new(image),
+                            file: if was_ahead { None } else { file },
                             status: if was_ahead {
                                 "Opened ahead of time".into()
                             } else {
@@ -305,6 +313,7 @@ fn opener(
                     Event::Ready {
                         id: job.id,
                         full: Arc::new(image),
+                        file,
                         status: format!("Opened from cache in {:.2}s", t.elapsed().as_secs_f32()),
                     },
                 );
@@ -323,12 +332,14 @@ fn opener(
                 Event::Ready {
                     id: job.id,
                     full: quick,
+                    file: file.clone(),
                     status: "Loading full resolution…".into(),
                 },
             );
             full.submit(FullJob {
                 id: job.id,
                 path,
+                file,
                 cancel: job.cancel.clone(),
                 started: t,
                 full: full_size,

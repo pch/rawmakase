@@ -355,6 +355,8 @@ pub struct Batch {
     pub demosaic: crate::camera_data::Demosaic,
     /// Where each full-size decode is looked up first.
     pub cache: crate::decode_cache::DecodeCache,
+    /// Where AI Denoise sources come from.
+    pub ai: crate::ai_denoise::AiService,
 }
 
 /// How far a batch is: `done` photos of `total`, and how far the current one is.
@@ -490,6 +492,8 @@ fn render(
     cancel: &AtomicBool,
     progress: &impl Fn(f32),
 ) -> Result<(job::Prepared, Vec<String>)> {
+    // The file as it is before it is decoded: AI Denoise's result must be of the same.
+    let file = crate::storage::Identity::read(&photo.source).ok();
     let opened = crate::photo::open_source(&photo.source, cancel)
         .with_context(|| format!("{} can't be read", photo.source.display()))?;
     let (mut recipe, mut notes) = match &photo.edit {
@@ -561,6 +565,8 @@ fn render(
             watermark: batch.watermark.clone().filter(|_| preset.is_none()),
             demosaic: batch.demosaic,
             cache: batch.cache.clone(),
+            ai: batch.ai.clone(),
+            file,
         },
         &batch.settings,
         cancel,

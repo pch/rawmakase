@@ -45,8 +45,13 @@ pub(in crate::catalog) const RASTER_MASKS: i64 = 2;
 ///
 /// [`Catalog::write_recipes`]: super::Catalog
 pub(in crate::catalog) const LENSFUN: i64 = 4;
+/// The first version that may hold AI Denoise settings (an edit, a History state or a
+/// snapshot with AI Denoise on or its Amount moved), which releases before it would
+/// render without AI Denoise and save without the setting. Raised to by the first
+/// write that stores one, as [`LENSFUN`] is.
+pub(in crate::catalog) const AI_DENOISE: i64 = 5;
 /// The newest version this release opens.
-pub(in crate::catalog) const NEWEST: i64 = LENSFUN;
+pub(in crate::catalog) const NEWEST: i64 = AI_DENOISE;
 /// The newest version the releases before the one engine open.
 #[cfg(test)]
 pub(in crate::catalog) const BEFORE_ONE_ENGINE: i64 = 2;

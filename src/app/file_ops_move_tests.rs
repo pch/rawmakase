@@ -445,6 +445,7 @@ fn a_photo_shown_at_half_size_when_it_moves_is_opened_again_from_its_new_file() 
     e.tx.send(Event::Ready {
         id: opening,
         full: decoded(true),
+        file: None,
         status: "Loading full resolution…".into(),
     })
     .unwrap();

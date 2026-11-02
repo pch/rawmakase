@@ -2266,25 +2266,90 @@ fn inactive_enhance_filter_is_neutral() -> Result<()> {
     )?;
     Ok(())
 }
-/// An active Enhance filter isn't rendered: the preset names what it needs, and
-/// best-effort apply still takes the rest.
+/// A preset with Lightroom's Denoise isn't applied whole: presets do not carry AI
+/// Denoise, so it names that, and best-effort apply still takes the rest.
 #[test]
 fn active_enhance_filter_is_named() -> Result<()> {
+    const NOT_IN_PRESETS: &str = "Enhance (Denoise) is not carried by presets";
     let text = filter_preset(Some(DENOISE_ON), DENOISE_ON.0);
     let preset = parse(Path::new("filterlist-denoise-on.xmp"), &text)?;
-    assert_eq!(preset.blockers, ["Enhance (Denoise) is not supported"]);
+    assert_eq!(preset.blockers, [NOT_IN_PRESETS]);
     let m = Metadata::default();
     assert!(preset.apply(&Recipe::default(), &m, &[], None).is_err());
     let (r, skipped) = preset.apply_lenient(&Recipe::default(), &m, &[], None)?;
     assert!((r.effects.grain - 0.45).abs() < 1e-6, "{}", r.effects.grain);
-    assert_eq!(skipped, ["Enhance (Denoise) is not supported"]);
+    assert!(!r.ai_denoise.enabled);
+    assert_eq!(skipped, [NOT_IN_PRESETS]);
     // Filters sharing settings are read, and reported, once.
     let shared = text.replace(
         "</r:Seq>",
         &format!(r#"<r:li c:CompressedSettings="{}"/></r:Seq>"#, DENOISE_ON.0),
     );
     let preset = parse(Path::new("shared.xmp"), &shared)?;
-    assert_eq!(preset.blockers, ["Enhance (Denoise) is not supported"]);
+    assert_eq!(preset.blockers, [NOT_IN_PRESETS]);
+    Ok(())
+}
+/// A photo sidecar as Camera Raw 18.7 writes it with Denoise at 50: the filter's
+/// settings named on the description nested in its list item, the table among the
+/// photo's own settings (trimmed to what the import reads). It imports as AI Denoise 50.
+#[test]
+fn camera_raws_own_denoise_sidecar_imports_as_ai_denoise() -> Result<()> {
+    const TABLE: &str = "n5000pY/cquVcVffup(T[k}as/H+T2Yttj4-p(NGE{9TVjT]|osF/bt%r%UblZt.U[G3wO:M|ePG#z7'`-7|/`1y`goF:3ufXr8G$ROCv|ed]3z2@V@b`/Moy`c#m3O)kVyC[IqrR'ir=AdrQSzz.LrD%L6ag4+^t79$R*a{37VKHvDy%-(t6I:Or@=@hV*TGSApKx!2U(%jJfygtB{{m89ZVNNr(Uuxv:GeD*:SD|bLsTYMlJKVluiW2tRyNX^^ij=SzPFks8D`jc^HG-pa{K`S{E+`Sl7umBWxkvl-W%X}ozm1)V]bRIq.O$T.CC{}peAZWo'wIY+K0FW(*{$|vhfB(:(RtHMv}@`Ogj36gKA0c5vA/G+0";
+    let text = format!(
+        r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"
+    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+   photoshop:SidecarForExtension="ARW"
+   crs:Version="18.7"
+   crs:ProcessVersion="15.4"
+   crs:LuminanceSmoothing="0"
+   crs:ColorNoiseReduction="0"
+   crs:CompatibleVersion="285212672"
+   crs:AllowFilters="1"
+   crs:Table_BACB028467919733C28B990B0C544192="{TABLE}">
+   <crs:FilterList rdf:parseType="Resource">
+    <crs:Filters>
+     <rdf:Seq>
+      <rdf:li>
+       <rdf:Description
+        crs:Name="Enhance"
+        crs:Title="$$$/CRaw/Filter/Title/Denoise=Denoise"
+        crs:FilterID="1"
+        crs:CompressedSettings="BACB028467919733C28B990B0C544192"/>
+      </rdf:li>
+     </rdf:Seq>
+    </crs:Filters>
+   </crs:FilterList>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>"#
+    );
+    let photo = parse(Path::new("DSC00001.xmp"), &text)?;
+    assert!(photo.photo_settings);
+    assert!(photo.blockers.is_empty(), "{:?}", photo.blockers);
+    let r = photo.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    assert!(r.ai_denoise.enabled);
+    assert_eq!(r.ai_denoise.amount, 0.5);
+    assert_eq!((r.noise_luma, r.noise_chroma), (0., 0.));
+    Ok(())
+}
+/// A photo whose Lightroom edit has Denoise imports with AI Denoise on at its Amount.
+#[test]
+fn a_photos_lightroom_denoise_imports_as_ai_denoise() -> Result<()> {
+    let text = filter_preset(Some(DENOISE_ON), DENOISE_ON.0);
+    let sidecar = text.replace("<r:Description ", r#"<r:Description xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/" photoshop:SidecarForExtension="CR3" "#);
+    let photo = parse(Path::new("IMG.xmp"), &sidecar)?;
+    assert!(photo.photo_settings);
+    assert!(photo.blockers.is_empty(), "{:?}", photo.blockers);
+    let r = photo.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    assert!(r.ai_denoise.enabled);
+    assert!(
+        (0. ..=1.).contains(&r.ai_denoise.amount),
+        "{}",
+        r.ai_denoise.amount
+    );
     Ok(())
 }
 /// A filter whose settings are missing or unreadable is refused by name, never

@@ -1,4 +1,5 @@
 //! Headless RAW development: recipes, geometry, color and detail rendering.
+pub mod ai_denoise;
 mod auto;
 mod basic_tone;
 mod basic_tone_data;
@@ -36,6 +37,7 @@ pub mod sharpening;
 pub mod targeted;
 pub mod texture;
 pub mod upright;
+pub use ai_denoise::AiSource;
 pub use preview_renderer::PreviewRenderer;
 pub mod quality;
 mod recipe;
@@ -55,4 +57,6 @@ pub use geometry::{Geometry, rendered_crop};
 pub use image_space::ViewMapping;
 pub use orientation::{Mirror, QuarterTurn, mirror, turn};
 pub(crate) use pipeline::{Camera, camera_stage, render_base};
-pub use pipeline::{neutral_pick, pick_fringe, preview, render, render_cancellable, render_region};
+pub use pipeline::{
+    neutral_pick, pick_fringe, preview, render, render_cancellable, render_region, render_with_ai,
+};

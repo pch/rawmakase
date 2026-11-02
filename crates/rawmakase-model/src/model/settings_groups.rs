@@ -37,6 +37,7 @@ pub enum SettingGroup {
     Sharpening,
     LuminanceNoiseReduction,
     ColorNoiseReduction,
+    AiDenoise,
     LensProfileCorrections,
     ChromaticAberration,
     LensVignetting,
@@ -60,7 +61,7 @@ pub struct Section {
 }
 
 impl SettingGroup {
-    pub const ALL: [SettingGroup; 33] = [
+    pub const ALL: [SettingGroup; 34] = [
         SettingGroup::WhiteBalance,
         SettingGroup::Exposure,
         SettingGroup::Contrast,
@@ -81,6 +82,7 @@ impl SettingGroup {
         SettingGroup::Sharpening,
         SettingGroup::LuminanceNoiseReduction,
         SettingGroup::ColorNoiseReduction,
+        SettingGroup::AiDenoise,
         SettingGroup::LensProfileCorrections,
         SettingGroup::ChromaticAberration,
         SettingGroup::LensVignetting,
@@ -144,7 +146,12 @@ impl SettingGroup {
             },
             Section {
                 title: "Detail",
-                groups: &[Sharpening, LuminanceNoiseReduction, ColorNoiseReduction],
+                groups: &[
+                    Sharpening,
+                    LuminanceNoiseReduction,
+                    ColorNoiseReduction,
+                    AiDenoise,
+                ],
             },
             Section {
                 title: "Lens Corrections",
@@ -196,6 +203,7 @@ impl SettingGroup {
             Sharpening => "Sharpening",
             LuminanceNoiseReduction => "Luminance Noise Reduction",
             ColorNoiseReduction => "Color Noise Reduction",
+            AiDenoise => "AI Denoise",
             LensProfileCorrections => "Lens Profile Corrections",
             ChromaticAberration => "Chromatic Aberration",
             LensVignetting => "Lens Vignetting",
@@ -220,7 +228,7 @@ impl SettingGroup {
             ColorAdjustments => Panel::ColorMixer,
             BlackWhiteMix => Panel::BlackWhiteMix,
             ColorGrading => Panel::ColorGrading,
-            Sharpening | LuminanceNoiseReduction | ColorNoiseReduction => Panel::Detail,
+            Sharpening | LuminanceNoiseReduction | ColorNoiseReduction | AiDenoise => Panel::Detail,
             LensProfileCorrections | ChromaticAberration | LensVignetting => Panel::LensCorrections,
             UprightMode | UprightTransforms | TransformAdjustments => Panel::Transform,
             PostCropVignetting | Grain => Panel::Effects,
@@ -295,6 +303,7 @@ impl SettingGroup {
                 e.luma_detail = f.luma_detail;
                 e.luma_contrast = f.luma_contrast;
             }
+            AiDenoise => to.ai_denoise = from.ai_denoise,
             ColorNoiseReduction => {
                 to.noise_chroma = from.noise_chroma;
                 e.chroma_detail = f.chroma_detail;
@@ -455,10 +464,20 @@ pub fn transfer(
     let from = source.recipe;
     let mut recipe = to.clone();
     let mut notes = Vec::new();
+    let m = target.metadata;
+    // AI Denoise works on a RAW's mosaic: a rendered file keeps its own setting, which a
+    // RAW's would leave on with nothing to run (and its export failing). The group is
+    // not copied at all, so it does not carry the Detail panel's switch either.
+    let skip_ai = selection.contains(SettingGroup::AiDenoise) && m.is_rendered();
+    if skip_ai && from.ai_denoise != to.ai_denoise {
+        notes.push("AI Denoise applies to RAW files only".into());
+    }
     for group in selection.groups() {
+        if skip_ai && group == SettingGroup::AiDenoise {
+            continue;
+        }
         group.copy(from, &mut recipe);
     }
-    let m = target.metadata;
     // A Lensfun lens takes the target's camera, which its correction is scaled for.
     if selection.contains(SettingGroup::LensProfileCorrections) {
         recipe.lens_profile_choice.for_photo(m);
@@ -642,6 +661,7 @@ pub(crate) fn every_setting(r: &Recipe) -> Vec<(&'static str, Kind)> {
         grading: _,
         noise_luma: _,
         noise_chroma: _,
+        ai_denoise: _,
         sharpening: _,
         crop: _,
         straighten: _,
@@ -731,6 +751,7 @@ pub(crate) fn every_setting(r: &Recipe) -> Vec<(&'static str, Kind)> {
         ("grading", Group(ColorGrading)),
         ("noise_luma", Group(LuminanceNoiseReduction)),
         ("noise_chroma", Group(ColorNoiseReduction)),
+        ("ai_denoise", Group(AiDenoise)),
         ("sharpening", Group(Sharpening)),
         ("crop", Group(Crop)),
         ("straighten", Group(Crop)),

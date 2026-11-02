@@ -433,7 +433,7 @@ fn releases_before_lensfun_refuse_its_format() {
     use super::db::{LENSFUN, NEWEST};
     assert!(!opens(LENSFUN, VERSION));
     assert!(opens(LENSFUN, NEWEST) && opens(VERSION, NEWEST));
-    assert!(!opens(LENSFUN + 1, NEWEST));
+    assert!(!opens(LENSFUN, LENSFUN - 1));
 }
 
 /// Only a write that stores a Lensfun choice raises the catalog to version 4, with a
@@ -612,5 +612,89 @@ fn an_exported_lensfun_edit_keeps_its_format_and_attribution() -> Result<()> {
         provenance.source,
         "https://lensfun.github.io/db/version_2.tar.bz2"
     );
+    Ok(())
+}
+
+fn with_ai_denoise(enabled: bool, amount: f32) -> Recipe {
+    Recipe {
+        ai_denoise: rawmakase_model::model::ai_denoise::AiDenoise { enabled, amount },
+        ..Default::default()
+    }
+}
+
+/// Version 5 holds AI Denoise settings: releases that open up to 4 refuse it.
+#[test]
+fn releases_before_ai_denoise_refuse_its_format() {
+    use super::db::{AI_DENOISE, LENSFUN, NEWEST};
+    assert!(!opens(AI_DENOISE, LENSFUN));
+    assert!(opens(AI_DENOISE, NEWEST) && opens(LENSFUN, NEWEST));
+    assert!(!opens(AI_DENOISE + 1, NEWEST));
+}
+
+/// AI Denoise on, or off with its Amount moved, in the edit, a History state or a
+/// snapshot raises the catalog to version 5 (over Lensfun's 4); the default does not.
+#[test]
+fn storing_ai_denoise_anywhere_raises_the_format() -> Result<()> {
+    let (dir, path, file, id) = current_catalog()?;
+    let mut cat = Catalog::open(&path)?;
+    cat.save_edit(
+        id,
+        &file,
+        &with_ai_denoise(false, 0.5),
+        &ExportOptions::default(),
+        HistoryUpdate::Keep,
+    )?;
+    assert_eq!(cat.format_version()?, VERSION);
+    let lensfun = with_lensfun(true);
+    cat.save_edit(
+        id,
+        &file,
+        &lensfun,
+        &ExportOptions::default(),
+        HistoryUpdate::Keep,
+    )?;
+    assert_eq!(cat.format_version()?, super::db::LENSFUN);
+    let off = with_ai_denoise(false, 0.8);
+    cat.save_edit(
+        id,
+        &file,
+        &off,
+        &ExportOptions::default(),
+        HistoryUpdate::Keep,
+    )?;
+    assert_eq!(cat.format_version()?, super::db::AI_DENOISE);
+    assert_eq!(backups(dir.path())?.len(), 2);
+    drop(cat);
+    let cat = Catalog::open(&path)?;
+    assert_eq!(
+        cat.load_edit(id, &file)?.unwrap().recipe.ai_denoise,
+        off.ai_denoise
+    );
+
+    // In a History step only.
+    let (_dir, path, file, id) = current_catalog()?;
+    let mut cat = Catalog::open(&path)?;
+    let history = SavedHistory {
+        origin: Recipe::default(),
+        steps: vec![SavedStep {
+            name: "AI Denoise".into(),
+            value: "On".into(),
+            recipe: with_ai_denoise(true, 0.5),
+        }],
+        applied: 0,
+    };
+    cat.save_edit(
+        id,
+        &file,
+        &Recipe::default(),
+        &ExportOptions::default(),
+        HistoryUpdate::Replace(&history),
+    )?;
+    assert_eq!(cat.format_version()?, super::db::AI_DENOISE);
+    // In a snapshot only.
+    let (_dir, path, _file, id) = current_catalog()?;
+    let mut cat = Catalog::open(&path)?;
+    cat.add_snapshot(id, "Denoised", &with_ai_denoise(true, 1.))?;
+    assert_eq!(cat.format_version()?, super::db::AI_DENOISE);
     Ok(())
 }

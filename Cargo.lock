@@ -3771,6 +3771,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytemuck",
+ "half",
  "image",
  "jxl-oxide",
  "libc",
@@ -3834,6 +3835,7 @@ name = "rawmakase-inference"
 version = "0.1.0"
 dependencies = [
  "ort",
+ "sha2",
 ]
 
 [[package]]

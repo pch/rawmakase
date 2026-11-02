@@ -398,6 +398,18 @@ fn describe(before: &Recipe, after: &Recipe) -> Step {
     if a.profile_amount != b.profile_amount {
         return Step::new("Profile Amount", format!("{:.0}", a.profile_amount * 100.));
     }
+    if a.ai_denoise.enabled != b.ai_denoise.enabled {
+        return Step::new(
+            "AI Denoise",
+            if a.ai_denoise.enabled { "On" } else { "Off" },
+        );
+    }
+    if a.ai_denoise.amount != b.ai_denoise.amount {
+        return Step::new(
+            "AI Denoise Amount",
+            format!("{:.0}", a.ai_denoise.amount * 100.),
+        );
+    }
     if a.effects.monochrome != b.effects.monochrome {
         let treatment = if a.effects.monochrome {
             "Black & White"

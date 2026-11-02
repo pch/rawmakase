@@ -4,6 +4,40 @@ use crate::catalog::PhotoId;
 use crate::storage::{data_dir, read_json_or_default};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+/// `Session::copy_groups` as releases before AI Denoise read it.
+mod known_groups {
+    use crate::model::settings_groups::{GroupInclusion, GroupSelection, SettingGroup};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    pub(super) fn serialize<S: Serializer>(
+        groups: &Option<GroupSelection>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        groups
+            .as_ref()
+            .map(|g| {
+                g.groups()
+                    .filter(|g| *g != SettingGroup::AiDenoise)
+                    .collect::<Vec<_>>()
+            })
+            .serialize(s)
+    }
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<Option<GroupSelection>, D::Error> {
+        let names = Option::<Vec<serde_json::Value>>::deserialize(d)?;
+        Ok(names.map(|names| {
+            let mut groups = GroupSelection::none();
+            for group in names
+                .into_iter()
+                .filter_map(|n| serde_json::from_value::<SettingGroup>(n).ok())
+            {
+                groups.set(group, GroupInclusion::Included);
+            }
+            groups
+        }))
+    }
+}
 #[derive(Default, Serialize, Deserialize)]
 pub(crate) struct Session {
     pub last_path: Option<PathBuf>,
@@ -73,9 +107,15 @@ pub(crate) struct Session {
     /// How the Library showed its photos last time.
     #[serde(default)]
     pub library_layout: LibraryLayout,
-    /// The groups Copy Settings copied last time; None until it has been used.
-    #[serde(default)]
+    /// The groups Copy Settings copied last time; None until it has been used. Written
+    /// with only the groups releases before AI Denoise know (an unknown one makes them
+    /// drop the whole session) and read leniently, skipping names this release does
+    /// not know; AI Denoise's group is in `copy_ai_denoise`.
+    #[serde(default, with = "known_groups")]
     pub copy_groups: Option<crate::model::settings_groups::GroupSelection>,
+    /// Whether Copy Settings includes AI Denoise, apart from `copy_groups`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_ai_denoise: Option<bool>,
     /// The Crop tool's guide overlay.
     #[serde(default)]
     pub crop_guides: CropGuideLayout,
@@ -103,6 +143,19 @@ pub(crate) struct Session {
     pub one_to_one_discard_days: Option<u32>,
 }
 impl Session {
+    /// The Copy Settings groups saved last time, with AI Denoise's (saved apart), which
+    /// a session from before it includes, as it is by default.
+    pub fn copy_groups(&self) -> Option<crate::model::settings_groups::GroupSelection> {
+        use crate::model::settings_groups::{GroupInclusion, SettingGroup};
+        let mut groups = self.copy_groups.clone()?;
+        let inclusion = if self.copy_ai_denoise.unwrap_or(true) {
+            GroupInclusion::Included
+        } else {
+            GroupInclusion::Excluded
+        };
+        groups.set(SettingGroup::AiDenoise, inclusion);
+        Some(groups)
+    }
     pub(crate) fn decoded_cache_size_gib(&self) -> u32 {
         self.decoded_cache_size_gib
             .filter(|size| DECODED_CACHE_SIZE_RANGE.contains(size))
@@ -250,5 +303,45 @@ mod raw_defaults_tests {
         let json = serde_json::to_string(&session).unwrap();
         let back: Session = serde_json::from_str(&json).unwrap();
         assert_eq!(back.raw_defaults, settings);
+    }
+}
+
+#[cfg(test)]
+mod copy_groups_tests {
+    use super::Session;
+    use crate::model::settings_groups::{GroupInclusion, GroupSelection, SettingGroup};
+
+    /// Releases before AI Denoise drop a whole session holding a group name they do not
+    /// know: its group is saved apart, and names a later release adds are skipped.
+    #[test]
+    fn copy_groups_stay_readable_by_releases_before_ai_denoise() {
+        for included in [true, false] {
+            let mut groups = GroupSelection::default();
+            let inclusion = if included {
+                GroupInclusion::Included
+            } else {
+                GroupInclusion::Excluded
+            };
+            groups.set(SettingGroup::AiDenoise, inclusion);
+            let session = Session {
+                copy_groups: Some(groups.clone()),
+                copy_ai_denoise: Some(groups.contains(SettingGroup::AiDenoise)),
+                ..Default::default()
+            };
+            let json = serde_json::to_value(&session).unwrap();
+            let names = json["copy_groups"].as_array().unwrap();
+            assert!(!names.iter().any(|n| n == "ai_denoise"), "{names:?}");
+            assert!(names.iter().any(|n| n == "color_noise_reduction"));
+            let read: Session = serde_json::from_value(json).unwrap();
+            assert_eq!(read.copy_groups(), Some(groups));
+        }
+        // A session from before AI Denoise: included, as by default. One from a later
+        // release with a group this one does not know: read without it.
+        let older: Session =
+            serde_json::from_str(r#"{"copy_groups":["exposure","some_later_group"]}"#).unwrap();
+        let groups = older.copy_groups().unwrap();
+        assert!(groups.contains(SettingGroup::Exposure));
+        assert!(groups.contains(SettingGroup::AiDenoise));
+        assert!(!groups.contains(SettingGroup::Contrast));
     }
 }

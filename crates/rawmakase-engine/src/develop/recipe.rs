@@ -9,8 +9,15 @@ pub(crate) trait RenderedRecipe {
     /// profile's to the camera image; `None` at Amount 0.
     fn manual_vignette(&self) -> Option<crate::develop::effects::ManualVignette>;
     /// Color and luminance noise reduction on the camera image; `None` when both
-    /// amounts are zero.
-    fn denoise(&self) -> Option<Denoise>;
+    /// amounts are zero. Without AI Denoise.
+    #[cfg(test)]
+    fn denoise(&self) -> Option<Denoise> {
+        self.denoise_with(None)
+    }
+    /// AI Denoise's blend with `ai` (the photo's source, when the caller has one and AI
+    /// Denoise renders), then Color and luminance noise reduction; `None` when there is
+    /// nothing to do.
+    fn denoise_with(&self, ai: Option<&crate::develop::AiSource>) -> Option<Denoise>;
 }
 impl RenderedRecipe for Recipe {
     fn manual_vignette(&self) -> Option<crate::develop::effects::ManualVignette> {
@@ -19,7 +26,13 @@ impl RenderedRecipe for Recipe {
             self.effects.lens_vignette_midpoint,
         )
     }
-    fn denoise(&self) -> Option<Denoise> {
+    fn denoise_with(&self, ai: Option<&crate::develop::AiSource>) -> Option<Denoise> {
+        let ai = ai.filter(|_| self.ai_denoise.renders()).map(|source| {
+            crate::develop::ai_denoise::AiBlend {
+                source: source.clone(),
+                amount: self.ai_denoise.amount.min(1.),
+            }
+        });
         let chroma = crate::develop::color_noise::ChromaDenoise::new(
             self.noise_chroma,
             self.effects.chroma_detail,
@@ -30,27 +43,46 @@ impl RenderedRecipe for Recipe {
             self.effects.luma_detail,
             self.effects.luma_contrast,
         );
-        (chroma.is_some() || luminance.is_some()).then_some(Denoise { chroma, luminance })
+        (ai.is_some() || chroma.is_some() || luminance.is_some()).then_some(Denoise {
+            ai,
+            chroma,
+            luminance,
+        })
     }
 }
 
-/// All noise settings and their execution, shared by cached previews and exports.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// All noise settings and their execution, shared by cached previews and exports: AI
+/// Denoise's blend (with the source captured when the render started), then Color and
+/// luminance noise reduction.
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Denoise {
+    ai: Option<crate::develop::ai_denoise::AiBlend>,
     chroma: Option<crate::develop::color_noise::ChromaDenoise>,
     luminance: Option<crate::develop::luminance_noise::LuminanceDenoise>,
 }
 impl Denoise {
+    /// `source` (the plain image, highlights recovered) with all of it applied.
     pub(crate) fn apply(
         &self,
-        source: &crate::camera_data::CameraImage,
+        source: &std::sync::Arc<crate::camera_data::CameraImage>,
         cancel: &std::sync::atomic::AtomicBool,
-    ) -> anyhow::Result<crate::camera_data::CameraImage> {
-        let chroma = self.chroma.map(|d| d.apply(source, cancel)).transpose()?;
+    ) -> anyhow::Result<std::sync::Arc<crate::camera_data::CameraImage>> {
+        use std::sync::Arc;
+        let base = match &self.ai {
+            Some(ai) => ai.apply(source),
+            None => source.clone(),
+        };
+        anyhow::ensure!(
+            !cancel.load(std::sync::atomic::Ordering::Relaxed),
+            "Render superseded"
+        );
+        let chroma = self.chroma.map(|d| d.apply(&base, cancel)).transpose()?;
         if let Some(luminance) = self.luminance {
-            luminance.apply(chroma.as_ref().unwrap_or(source), cancel)
+            Ok(Arc::new(
+                luminance.apply(chroma.as_ref().unwrap_or(&base), cancel)?,
+            ))
         } else {
-            Ok(chroma.unwrap_or_else(|| source.clone()))
+            Ok(chroma.map(Arc::new).unwrap_or(base))
         }
     }
 }

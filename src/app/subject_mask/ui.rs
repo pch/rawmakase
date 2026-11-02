@@ -326,6 +326,7 @@ impl Editor {
                         match pack {
                             Pack::Subject => "selection models",
                             Pack::Sky => "sky model",
+                            Pack::Denoise => "AI Denoise model",
                         },
                         pack.megabytes()
                     ),

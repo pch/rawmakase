@@ -72,6 +72,8 @@ pub(crate) enum Event {
     },
     /// A Subject or Background selection finished (or failed).
     Selection(Box<crate::app::subject_mask::Done>),
+    /// News of AI Denoise for a photo Develop asked for (`app::ai_denoise`).
+    AiDenoise(Box<crate::app::ai_denoise::Update>),
     /// The selection model finished installing, or why not.
     ModelInstalled(crate::app::subject_mask::Pack, Result<(), String>),
     ModelRemoved(crate::app::subject_mask::Pack, Result<(), String>),
@@ -247,6 +249,9 @@ pub(crate) enum Event {
     Ready {
         id: u64,
         full: Arc<CameraImage>,
+        /// The file as it was before `full` was decoded from it (`None` for a photo
+        /// opened ahead of time): what AI Denoise's result must be made from.
+        file: Option<crate::storage::Identity>,
         status: String,
     },
     Rendered {
@@ -367,6 +372,8 @@ pub(crate) struct RenderJob {
     /// Also return the shown pixels, for the white balance selector's loupe.
     pub samples: bool,
     pub overlay: Overlay,
+    /// The photo's AI Denoise source when the recipe renders it, as the job started.
+    pub ai: Option<crate::develop::AiSource>,
     /// Presented textures the viewport draws until this job's preview arrives.
     pub drawn: Vec<egui::TextureId>,
 }

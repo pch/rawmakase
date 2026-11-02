@@ -22,7 +22,8 @@ pub use rawmakase_export::{export, watermark};
 // RAW decoding, colour management, demosaicing, opening and decoding a photo
 // (crates/rawmakase-decode).
 pub use rawmakase_decode::{
-    camera_look, color_management, decode_cache, decode_dump, fingerprint, half_check, photo, raw,
+    ai_cache, ai_denoise, camera_look, color_management, decode_cache, decode_dump, fingerprint,
+    half_check, photo, raw,
 };
 pub(crate) use rawmakase_decode::{decode, raster};
 // File formats and presets over the model (crates/rawmakase-interop).

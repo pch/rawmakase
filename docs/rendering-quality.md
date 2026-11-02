@@ -27,6 +27,65 @@ GPU rendering sample the same denoised image. This is an approximation, not Adob
 algorithm: texture-only scenes can overestimate noise, and high amounts can lose
 faint detail.
 
+## AI Denoise
+
+AI Denoise replaces the demosaic for a photo with RawNIND
+UtNet2 (Bayer), which denoises and demosaics the mosaic in one pass. The photo's
+visible mosaic is packed as RGGB planes (an X-Trans mosaic is demosaiced, its white
+balance taken off and sampled again as RGGB), run in 512-pixel packed tiles with 64
+pixels of mirrored or real context, and brought to the mosaic's scale by one gain
+fitted on 8×8 packed blocks without clipped samples or dark channels. Fed a mosaic
+clipped at black, the model lifts the deep shadows; their channels are scaled back
+to the mosaic's own mean over 16-pixel packed blocks, in full below 0.01 of white and
+not at all above 0.03. The result is white balanced as development balances the
+mosaic; within 8 pixels of a clipped sample, feathered over 8 more, it is the plain
+demosaic, which the model never saw unclipped. Highlights are then recovered on this
+image of its own, never with the plain image's recovery, since recovery depends on
+each pixel's values.
+
+Rendering blends the two recovered images by Amount before colour and luminance noise
+reduction, which then apply as without it: the AI source's change in luminance (the
+channels' mean) and in colour each by a weight, the AI source itself at 100%. The
+weights are Camera Raw 18.7's: its Denoise records the blend it applies (`BlendParams`)
+as 0.4375 and 0.5 at Amount 25, 0.70 and 0.75 at 50 and 1 at 100. That they are
+luminance's and colour's, the channels' mean as luminance, and linear interpolation
+between them (from 0 at 0) are RAWmakase's reading, not established Camera Raw
+behaviour. Switching AI Denoise on sets manual Luminance and Color noise reduction to
+0, and switching it off brings Color's defaults back, as Camera Raw writes them from
+its defaults (how it treats manual noise reduction the user changed is not measured); everything after is unchanged. Half-size drafts and a photo
+without a ready result (computing, model not installed, failed) render the plain
+image, the state shown beside the switch; export never does, and fails the photo
+instead. The recipe names no model: as with every other setting, an edit renders
+with the installed model, and results are cached under a key holding the model's
+SHA-256, the adapter version, the provider and the build, so a changed model or
+adapter recomputes them. Cached and fresh results differ only by half-precision
+rounding. Measured on an M1 Pro, an Amount change updates the Fit preview in
+155 ms at 24 MP and 357 ms at 61 MP, and Develop's resident memory while dragging
+grows by 0.80 GB (24 MP) and 0.90 GB (61 MP).
+
+The choices above were measured on 2026-11-02 (M1 Pro, ONNX Runtime 1.23.2; the 190
+CC0 photos above ISO 400 in the pixls archive, RawNIND's held-out test pairs). Tiles
+start at rawnind_jddc's grid origin: with the padded image's own grid, 9 of 59
+non-RGGB photos differed from upstream's alignment by up to MAE 0.009 and p99.9 0.17
+after the comparison transform, against at most 2 × 10⁻⁵ and 0.0017 on upstream's grid.
+One gain serves all three channels: on mid-tone blocks they agree within 3.2%; the
+Canon R10's 14% spread at ISO 32,000 came from lifted dark blocks, which the fit now
+leaves out. Overlap 32 left a band at tile borders 5–7 times the difference elsewhere,
+so the overlap is 64. Deep shadows were lifted up to 2.5 EV at ISO 204,800 before the
+correction. Against the scene's low-ISO frame (both in linear Rec.2020, a
+per-channel least-squares gain onto the reference, clipped and sRGB-encoded, then
+MS-SSIM over 5 scales), AI Denoise beat the best of manual Luminance 0, 25, 50 and 75 on
+82 of RawNIND's 85 noisy Bayer frames (mean 0.942 against 0.779) and on 19 of 27 X-Trans
+frames (0.955 against 0.904; its losses at ISO 2500 or below, by at most 0.01), with no
+maze or grid at 100%. No tile was non-finite on the CPU or CoreML, which stays within
+1.2 × 10⁻⁶ (relative) of the CPU, so CoreML's GPU (an ML Program in single precision) is used on
+Apple Silicon: a 24 MP photo takes about 3.5 s there and 20 s on the CPU. Against Camera Raw 18.7's
+Denoise on five of those CC0 photos at Amount 50 and 100 (100% crops, side by side):
+similar at ISO 12,800–20,000 (Camera Raw keeps slightly more fine texture); behind at
+ISO 32,000 and above, where RawNIND leaves colour blotches in dark areas and Camera Raw
+keeps more detail, and on X-Trans, where the RGGB rebuild leaves the result softer and
+mottled beside Camera Raw's own X-Trans model.
+
 ## Tone and highlights
 
 Profile-based recipes also store a camera exposure baseline independently of the Exposure slider. The verified X100F DR100 reference baseline is +0.15 EV; unverified camera/DR combinations use zero. Point curves use a natural cubic spline and the sRGB transfer function in ProPhoto primaries, with a hue-preserving master pass followed by independent RGB curves. Clipped input endpoints and 0–255 point editing are supported. Contrast preserves endpoints. See the comparison report for reference-derived metadata and limits.

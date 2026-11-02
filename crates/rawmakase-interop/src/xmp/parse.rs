@@ -195,6 +195,10 @@ pub fn parse(path: &Path, text: &str) -> Result<Preset> {
             settings.insert(name.to_string(), value);
         } else if name == "FilterList" {
             blockers.extend(super::filter_list::read(node, &mut settings));
+            // AI Denoise belongs to a photo's settings: presets do not carry it.
+            if !sidecar && settings.remove(super::filter_list::AI_DENOISE).is_some() {
+                blockers.push("Enhance (Denoise) is not carried by presets".into());
+            }
         } else if !LABELS.contains(&name) {
             blockers.push(format!("Unsupported structured setting: {name}"));
         }

@@ -91,6 +91,7 @@ impl Editor {
         ]);
         stopping.extend(self.stand_ins.stop());
         stopping.extend(self.selection.stop());
+        stopping.push(self.ai_denoise.stop());
         stopping.extend(self.lensfun.stop());
         stopping.extend(self.automation.stop_outputs());
         stopping.extend(self.controls.stop());

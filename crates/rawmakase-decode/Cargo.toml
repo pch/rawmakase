@@ -18,6 +18,8 @@ rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
 # RAWmakase's own RAW decoders, reached through the raw adapter (raw::own).
 rawmakase-raw = { path = "../rawmakase-raw", version = "0.1.0" }
 anyhow = "1"
+# AI Denoise results are cached at half precision.
+half = "2.7"
 bytemuck = { version = "1.25", features = ["derive"] }
 image.workspace = true
 # JPEG XL, in pure Rust; through its `image` decoder.

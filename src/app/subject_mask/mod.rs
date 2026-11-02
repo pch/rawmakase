@@ -20,7 +20,7 @@ use crate::model::recipe::Recipe;
 use rawmakase_inference::{Point, Prompt as ModelPrompt};
 use std::hash::{Hash, Hasher};
 
-pub(super) use models::{Models, Pack};
+pub(super) use models::{Models, Pack, runtime_dir};
 
 /// Which of the two selections a request makes. Background is the same coverage with
 /// the component inverted, so adding a brush to it still adds coverage.
@@ -339,6 +339,7 @@ impl Selection {
         ];
         stopping.extend(self.models.subject.stop());
         stopping.extend(self.models.sky.stop());
+        stopping.extend(self.models.denoise.stop());
         stopping
     }
 }
@@ -760,6 +761,12 @@ impl Editor {
     /// on.
     pub(super) fn model_installed(&mut self, pack: Pack, result: Result<(), String>) {
         match result {
+            Ok(()) if pack == Pack::Denoise => {
+                self.messages.done("AI Denoise model installed");
+                // The photo shown asks for its result now.
+                self.document.ai = Default::default();
+                self.schedule();
+            }
             Ok(()) => {
                 self.messages.done("Selection model installed");
                 match self.selection.prompt {

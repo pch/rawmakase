@@ -37,6 +37,12 @@ pub struct Photo {
     pub demosaic: Demosaic,
     /// Where a full-size decode is looked up first.
     pub cache: DecodeCache,
+    /// Where the AI Denoise source comes from when the edit has AI Denoise on.
+    pub ai: crate::ai_denoise::AiService,
+    /// The file as it was before `image` was decoded from it, for AI Denoise: a file
+    /// changed since fails the export rather than mixing two files, and so does one
+    /// whose identity could not be read (`None`).
+    pub file: Option<crate::storage::Identity>,
 }
 
 /// Exports `photo` to `target`, reporting progress from 0 to 1. Stops between
@@ -125,7 +131,15 @@ pub fn prepare(
     cancelled()?;
     progress(0.4);
     let options = settings.options();
-    let mut rendered = crate::develop::render(&image, &photo.recipe.checked()?, options.max_edge)?;
+    let ai = ai_source(photo, &image, cancel)?;
+    cancelled()?;
+    let mut rendered = crate::develop::render_with_ai(
+        &image,
+        &photo.recipe.checked()?,
+        ai.as_ref(),
+        options.max_edge,
+        cancel,
+    )?;
     if let Some(w) = &watermark
         && !w.apply(&mut rendered)
     {
@@ -179,6 +193,32 @@ pub fn decode_full(
         Some(image) => Ok(image),
         None => full.decode(raw, DecodePolicy::Export, cancel),
     }
+}
+
+/// The complete AI Denoise source of `photo` (full-size `image`) when its edit renders
+/// AI Denoise: from the service's cache, a running job, or computed now. An export never
+/// renders the plain image, or a partial result, in its place: without one it fails
+/// with the reason.
+fn ai_source(
+    photo: &Photo,
+    image: &Arc<CameraImage>,
+    cancel: &AtomicBool,
+) -> Result<Option<crate::develop::AiSource>> {
+    if !photo.recipe.as_rendered().ai_denoise.renders() {
+        return Ok(None);
+    }
+    let file = photo.file.clone().ok_or_else(|| {
+        anyhow::anyhow!(
+            "AI Denoise: the photo's file could not be identified when it was opened; open it again"
+        )
+    })?;
+    let ai = photo
+        .ai
+        .0
+        .get(&photo.source, &file, image, cancel)
+        .map_err(|e| anyhow::anyhow!("AI Denoise: {e:#}"))?;
+    let ai = Arc::try_unwrap(ai).unwrap_or_else(|shared| (*shared).clone());
+    crate::develop::AiSource::recover(ai, cancel).map(Some)
 }
 
 /// The full-resolution image: the open one, the decode cache's, or a new decode.
@@ -270,7 +310,137 @@ mod tests {
             watermark: None,
             demosaic: Demosaic::default(),
             cache: DecodeCache::new(cache.to_path_buf(), u64::MAX),
+            ai: crate::ai_denoise::AiService::refusing("no AI Denoise here"),
+            file: None,
         }
+    }
+
+    /// An AI Denoise service that answers with a fixed pattern, and counts its calls.
+    struct Flat(std::sync::atomic::AtomicUsize, f32);
+    impl crate::ai_denoise::AiBase for Flat {
+        fn get(
+            &self,
+            _: &Path,
+            _: &crate::storage::Identity,
+            plain: &Arc<CameraImage>,
+            _: &AtomicBool,
+        ) -> Result<Arc<CameraImage>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            let mut image = (**plain).clone();
+            image.recovered = Default::default();
+            // Not the plain image's pattern: rows instead of columns.
+            for (i, p) in image.pixels.iter_mut().enumerate() {
+                *p = [0.02 + self.1 * ((i / plain.width as usize) % 7) as f32 / 30.; 3];
+            }
+            Ok(Arc::new(image))
+        }
+    }
+
+    fn with_ai(mut photo: Photo, amount: f32) -> Photo {
+        photo.recipe.ai_denoise = crate::model::ai_denoise::AiDenoise {
+            enabled: true,
+            amount,
+        };
+        photo
+    }
+
+    /// Without the AI result, an export with AI Denoise on fails with the reason and
+    /// writes nothing; it never renders the plain image in its place.
+    #[test]
+    fn an_export_with_ai_denoise_and_no_service_fails_closed() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("a.dng");
+        std::fs::write(&source, b"synthetic")?;
+        let mut photo = with_ai(photo(&source, &dir.path().join("cache")), 1.);
+        photo.file = crate::storage::Identity::read(&source).ok();
+        let target = dir.path().join("out.jpg");
+        let error = run(
+            photo,
+            &ExportSettings::default(),
+            &target,
+            super::super::Replace::NoClobber,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("no AI Denoise here"), "{error}");
+        assert!(!target.exists());
+        Ok(())
+    }
+
+    /// A photo whose file could not be identified when it was decoded gets no AI result:
+    /// nothing proves the service's would be of the same file.
+    #[test]
+    fn an_export_without_the_decoded_files_identity_fails_closed() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("a.dng");
+        std::fs::write(&source, b"synthetic")?;
+        let flat = Arc::new(Flat(Default::default(), 0.6));
+        let mut photo = with_ai(photo(&source, &dir.path().join("cache")), 1.);
+        photo.ai = crate::ai_denoise::AiService(flat.clone());
+        let error = prepare(
+            &photo,
+            &ExportSettings::default(),
+            &AtomicBool::new(false),
+            &|_| {},
+        )
+        .err()
+        .unwrap();
+        assert!(
+            error.to_string().contains("could not be identified"),
+            "{error}"
+        );
+        assert_eq!(flat.0.load(Ordering::SeqCst), 0);
+        Ok(())
+    }
+
+    /// The service's source is what the export renders, blended by Amount; with AI
+    /// Denoise off the service is never asked and the render is the plain one.
+    #[test]
+    fn an_export_renders_the_services_source_and_off_never_asks() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("a.dng");
+        std::fs::write(&source, b"synthetic")?;
+        let flat = Arc::new(Flat(Default::default(), 0.6));
+        let render = |photo: &Photo| -> Result<Vec<[f32; 3]>> {
+            Ok(prepare(
+                photo,
+                &ExportSettings::default(),
+                &AtomicBool::new(false),
+                &|_| {},
+            )?
+            .rendered
+            .pixels)
+        };
+        let mut plain = photo(&source, &dir.path().join("cache"));
+        plain.ai = crate::ai_denoise::AiService(flat.clone());
+        plain.file = crate::storage::Identity::read(&source).ok();
+        // Big enough for the tone stage to keep a pattern.
+        let mut image = (*plain.image).clone();
+        (image.width, image.height) = (64, 48);
+        // A frame of that size and a camera that renders (the engine's fixtures').
+        (image.metadata.width, image.metadata.height) = (64, 48);
+        image.metadata.matrix = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
+        image.metadata.wb = [1.; 3];
+        image.metadata.daylight_wb = [1.; 3];
+        image.pixels = (0..64 * 48)
+            .map(|i| [0.02 + (i % 64) as f32 / 300.; 3])
+            .collect();
+        plain.image = Arc::new(image);
+        let off = render(&plain)?;
+        // Off at a moved Amount, and on at Amount 0, are the plain render.
+        let mut moved = plain.clone();
+        moved.recipe.ai_denoise.amount = 0.9;
+        assert_eq!(render(&moved)?, off);
+        assert_eq!(render(&with_ai(plain.clone(), 0.))?, off);
+        assert_eq!(flat.0.load(Ordering::SeqCst), 0);
+        let full = render(&with_ai(plain.clone(), 1.))?;
+        let half = render(&with_ai(plain.clone(), 0.5))?;
+        assert_eq!(flat.0.load(Ordering::SeqCst), 2);
+        assert_ne!(full, off);
+        // Half way is neither (the tone stage is not linear, so not checked as a mean).
+        assert!(half != full && half != off);
+        Ok(())
     }
 
     /// The EXIF of `photo`'s JPEG export.

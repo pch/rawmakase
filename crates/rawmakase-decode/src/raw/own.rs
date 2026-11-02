@@ -12,6 +12,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// A developed image: width, height and pixels.
 pub(super) type Developed = (u32, u32, Vec<[f32; 3]>);
 
+/// [`Own::bayer_red`]'s answer for an X-Trans mosaic, which AI Denoise takes another way
+/// (`Raw::packed_bayer`).
+pub(super) const XTRANS: &str = "X-Trans";
 pub(super) struct Own {
     bytes: Arc<[u8]>,
     info: RawInfo,
@@ -121,6 +124,48 @@ impl Own {
         let wb = if self.info.balanced { [1.; 3] } else { wb };
         let pixels = super::develop_rgb(&rows, s.channels as usize, s.black, s.white, wb);
         Ok(Some((w as u32, h as u32, pixels)))
+    }
+    /// Where red sits in the visible mosaic's 2 × 2 period (`[x, y]`), when AI Denoise's
+    /// model can take it: a Bayer mosaic of red, two greens and blue, not turned. The
+    /// reason otherwise, for the user.
+    pub(super) fn bayer_red(&self) -> Result<[usize; 2], &'static str> {
+        if self.info.monochrome {
+            return Err("AI Denoise needs a colour sensor; this one is monochrome.");
+        }
+        let Some(cfa) = &self.info.cfa else {
+            return Err(
+                "AI Denoise works on the camera's mosaic; this file stores demosaiced RGB.",
+            );
+        };
+        if cfa.is_xtrans() {
+            return Err(XTRANS);
+        }
+        if self.info.super_ccd.is_some() {
+            return Err("AI Denoise does not support Super CCD sensors.");
+        }
+        let colour = |y: usize, x: usize| match cfa.color(y, x) {
+            3 => 1,
+            c => c,
+        };
+        let bayer = (0..cfa.rows.max(2))
+            .all(|y| (0..cfa.cols.max(2)).all(|x| colour(y, x) == colour(y % 2, x % 2)));
+        let count = |c: u8| {
+            (0..2)
+                .flat_map(|y| (0..2).map(move |x| (y, x)))
+                .filter(|&(y, x)| colour(y, x) == c)
+                .count()
+        };
+        if !bayer || count(0) != 1 || count(1) != 2 || count(2) != 1 {
+            return Err("AI Denoise supports Bayer sensors only; this mosaic is not one.");
+        }
+        let (y, x) = (0..2)
+            .flat_map(|y| (0..2).map(move |x| (y, x)))
+            .find(|&(y, x)| colour(y, x) == 0)
+            .unwrap_or_default();
+        if colour(1 - y, 1 - x) != 2 {
+            return Err("AI Denoise supports Bayer sensors only; this mosaic is not one.");
+        }
+        Ok([x, y])
     }
     /// The visible mosaic as development reads it: (raw − black) / (white −
     /// black), not white balanced; `None` when the file is not a mosaic.

@@ -108,8 +108,16 @@ impl<K: PartialEq, V> Lru<K, V> {
     }
 }
 
-/// Identity of a shared value. Keys hold the value, so its address stays unique.
-pub(crate) struct Same<T>(pub(crate) Arc<T>);
+/// Identity of a shared value. Keys hold it weakly: its address stays unique while the
+/// key exists (the allocation outlives the last strong reference), but its pixels are
+/// freed once nothing else uses it, so an entry never keeps an image of an earlier edit
+/// alive (an AI Denoise blend per Amount, a retouched image per spot).
+pub(crate) struct Same<T>(std::sync::Weak<T>);
+impl<T> Same<T> {
+    pub(crate) fn of(value: &Arc<T>) -> Self {
+        Self(Arc::downgrade(value))
+    }
+}
 impl<T> Clone for Same<T> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
@@ -117,7 +125,7 @@ impl<T> Clone for Same<T> {
 }
 impl<T> PartialEq for Same<T> {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        std::sync::Weak::ptr_eq(&self.0, &other.0)
     }
 }
 
@@ -155,6 +163,7 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         upright,
         noise_luma,
         noise_chroma,
+        ai_denoise,
         effects,
         // White balance, the profile and the camera's exposure render in the per-pixel
         // stage, and the photo's measures read them (Temperature and Tint set the
@@ -262,6 +271,7 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
             lens_ca: *lens_ca,
             noise_luma: *noise_luma,
             noise_chroma: *noise_chroma,
+            ai_denoise: *ai_denoise,
             effects: Effects {
                 luma_detail: *luma_detail,
                 luma_contrast: *luma_contrast,
@@ -313,8 +323,8 @@ impl MeasuresKey {
         camera: crate::develop::Camera,
     ) -> Self {
         Self {
-            copy: Same(copy.clone()),
-            unretouched: unretouched.map(|u| Same(u.clone())),
+            copy: Same::of(copy),
+            unretouched: unretouched.map(Same::of),
             matrix: camera.matrix.map(|row| row.map(f32::to_bits)),
             clip: camera.clip.map(f32::to_bits),
             recipe: stage_recipes(r).measures,
@@ -333,7 +343,7 @@ pub(crate) struct TextureKey {
 impl TextureKey {
     pub(crate) fn new(image: &Arc<CameraImage>, scale: f32, amount: f32) -> Self {
         Self {
-            image: Same(image.clone()),
+            image: Same::of(image),
             scale: scale.to_bits(),
             amount: amount.to_bits(),
         }
@@ -357,7 +367,7 @@ impl SampleKey {
         spread: f32,
     ) -> Self {
         Self {
-            image: Same(toned.image.clone()),
+            image: Same::of(&toned.image),
             size: [g.width, g.height],
             region,
             spread: spread.to_bits(),

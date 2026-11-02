@@ -628,6 +628,7 @@ mod tests {
             .tx
             .send(Event::Ready {
                 id: generation,
+                file: None,
                 full: Arc::new(crate::camera_data::CameraImage {
                     recovered: Default::default(),
                     width: 12,
