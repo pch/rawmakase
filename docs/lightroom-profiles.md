@@ -54,8 +54,9 @@ stops a download before it is installed.
 A download is a library operation: it carries on while you move to other photos.
 When it finishes, profiles, raw defaults, preset support and Library previews
 refresh exactly as after importing the same DCP by hand. Importing camera
-profiles or LUTs by hand waits for a running download (the status line says so
-instead of dropping the files); lens profile and preset imports don't. The profile is applied
+profiles, LUTs or presets (which bring their looks) by hand waits for a running
+download (the status line says so instead of dropping the files); lens profile
+imports don't. The profile is applied
 only to the photo it was asked for, and only if that photo is still open, its file
 unchanged on disk, with the profile it had and no **Fit Camera Look** asked for
 since; otherwise it is just installed and you can choose it in the Profile menu.
@@ -74,7 +75,7 @@ excluded.
 
 ### Import files
 
-Use **Import profiles…** in the Develop Profile menu or **Import Profiles…** in Preferences. Select one or more `.dcp` / `.xmp` files, `.cube` LUTs (see [.cube LUTs](#cube-luts)), or folders holding them. **Import .cube LUTs…** in the Profile menu and **Import LUTs…** in Preferences import LUTs only, asking first which colour space they expect ([below](#cube-luts)); a folder chosen there gives its `.cube` files and leaves the DCPs and look XMPs beside them, which LUT packs often ship, to **Import profiles from folder…**. For Adobe Color and the other Adobe Raw looks, import both the camera model's **Adobe Standard DCP** and the desired **XMP look profiles**. You can select these together or import the DCP first. Missing dependencies produce an error; another camera's profile is never substituted.
+Use **Import profiles…** in the Develop Profile menu or **Import Profiles…** in Preferences. Select one or more `.dcp` / `.xmp` files, `.cube` LUTs (see [.cube LUTs](#cube-luts)), or folders holding them. **Import .cube LUTs…** in the Profile menu and **Import LUTs…** in Preferences import LUTs only, asking first which colour space they expect ([below](#cube-luts)); a folder chosen there gives its `.cube` files and leaves the DCPs and look XMPs beside them, which LUT packs often ship, to **Import profiles from folder…**. For Adobe Color and the other Adobe Raw looks, import both the camera model's **Adobe Standard DCP** and the desired **XMP look profiles**. You can select these together or import the DCP first. Missing dependencies produce an error; another camera's profile is never substituted. A preset import in the Presets panel also imports the look XMPs among its files, so a preset pack shipped with its looks needs one import ([XMP presets](xmp-presets.md)).
 
 The CLI uses the same importer:
 

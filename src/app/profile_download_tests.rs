@@ -801,22 +801,25 @@ fn manual_imports_during_a_download_wait_or_proceed_and_are_never_dropped_silent
     open(&mut e, x_t20(), dir.path());
     let job = ask(&mut e, reviewed);
     let ctx = e.context.clone();
-    // Camera profiles would publish into the same library: said, not started.
+    // Camera profiles, and presets with the looks among them, would publish into
+    // the same library: said, not started.
+    for (kind, file) in [
+        (ImportKind::CameraProfiles, "picked.dcp"),
+        (ImportKind::Presets, "picked.xmp"),
+    ] {
+        e.messages.clear_line();
+        e.import(kind, vec![dir.path().join(file)], &ctx);
+        assert!(e.importing.is_none(), "{file}");
+        assert!(
+            e.messages.line().contains("Import again when it finishes"),
+            "{file}: {}",
+            e.messages.line()
+        );
+    }
+    // A lens profile import doesn't touch the profile library: it starts.
     e.import(
-        ImportKind::CameraProfiles,
-        vec![dir.path().join("picked.dcp")],
-        &ctx,
-    );
-    assert!(e.importing.is_none());
-    assert!(
-        e.messages.line().contains("Import again when it finishes"),
-        "{}",
-        e.messages.line()
-    );
-    // A preset import doesn't touch the profile library: it starts.
-    e.import(
-        ImportKind::Presets,
-        vec![dir.path().join("picked.xmp")],
+        ImportKind::LensProfiles,
+        vec![dir.path().join("picked.lcp")],
         &ctx,
     );
     assert!(e.importing.is_some());

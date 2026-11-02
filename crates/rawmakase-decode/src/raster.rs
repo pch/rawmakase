@@ -1039,6 +1039,21 @@ mod tests {
     }
 
     #[test]
+    fn a_flat_ten_bit_420_avif_is_flat_in_every_column() {
+        // yuv 0.8.19's NEON bilinear 4:2:0 above 8 bits weights every other
+        // pixel's chroma 22/16, so on ARM a flat colour came out striped.
+        let image = decode(&fixture("ten-bit-420.avif")).unwrap();
+        let want = [200, 80, 40];
+        for (x, y, p) in image.enumerate_pixels() {
+            assert!(
+                p.0.iter().zip(want).all(|(a, b)| a.abs_diff(b) <= 3),
+                "({x}, {y}) is {:?}, not near {want:?}",
+                p.0
+            );
+        }
+    }
+
+    #[test]
     fn an_avifs_cicp_colours_are_converted() {
         // Lossless P3 (nclx 12/13/0, identity matrix): the green corner is P3
         // green, outside sRGB, so it comes out as the most saturated sRGB green

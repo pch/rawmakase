@@ -112,6 +112,11 @@ def main(out: Path):
         run("avifenc", "--lossless", "--exif", tiff_exif, "--xmp", xmp, src, out / "metadata.avif")
         split_extent(out / "metadata.avif", out / "split-exif.avif", b"Exif")
         run("avifenc", "--lossless", "-d", "10", src, out / "ten-bit.avif")
+        # 4:2:0 above 8 bits, one flat colour: yuv's NEON code tinted every
+        # other pixel of it (avif::deep420_to_rgb).
+        flat = tmp / "flat.png"
+        Image.new("RGB", (16, 12), (200, 80, 40)).save(flat)
+        run("avifenc", "-d", "10", "-y", "420", "-q", "100", flat, out / "ten-bit-420.avif")
 
         # JPEG XL
         jpeg = tmp / "meta.jpg"

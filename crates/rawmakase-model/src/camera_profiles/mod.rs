@@ -798,13 +798,18 @@ mod rgb_table;
 pub use cube_look::{Fidelity, LutSpace};
 pub use dcp::{d65_color_matrix, from_bytes};
 pub use enhanced::RgbLook;
+/// A `Table_<md5>` attribute's bytes, in the encoding Adobe shares between look
+/// tables, RGB tables and Lightroom's filter settings (`xmp::filter_list` in interop).
+pub fn table_bytes(text: &str) -> Result<Vec<u8>> {
+    enhanced::expand(text)
+}
+#[cfg(any(test, feature = "test-support"))]
+pub use library::listed_from;
 pub use library::{
     CubeImport, Groups, Imported, ImportedProfile, Listed, MenuEntry, adobe_installed, builtin,
-    compose_look, fingerprint as library_fingerprint, import_files, import_readable, installed,
-    library_dirs, listed, load, read_cube,
+    compose_look, fingerprint as library_fingerprint, import_files, import_into_dir,
+    import_readable, installed, library_dirs, listed, load, read_cube,
 };
-#[cfg(any(test, feature = "test-support"))]
-pub use library::{import_into_dir, listed_from};
 pub use look_settings::LookSettings;
 pub use rgb_table::{Dimensions, Gamma, Gamut, Primaries};
 #[cfg(test)]

@@ -2,6 +2,7 @@
 mod apply;
 pub(crate) use apply::AUTO_TONE_KEYS;
 pub mod descriptive;
+mod filter_list;
 pub mod local;
 pub(crate) mod look;
 mod parse;

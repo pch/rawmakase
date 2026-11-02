@@ -575,7 +575,7 @@ impl Editor {
             row.mark = Mark::Working;
             row.status = "Importing…".into();
         } else if let Some(result) = self.onboarding.result(kind) {
-            row.mark = if result.imported + result.already > 0 {
+            row.mark = if result.done() > 0 {
                 Mark::Done
             } else {
                 Mark::Failed

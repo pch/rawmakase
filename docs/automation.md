@@ -239,9 +239,12 @@ If execution already started but its reply times out, `outcome_unknown` means
 inspect state before retrying, especially for relative or toggle operations.
 There are no automatic mutation retries.
 
-Commands currently execute during desktop frames. A minimized/suspended window
-may not process them; queued requests then expire safely. This is live desktop
-control, not a headless daemon. For unattended rendering without a GUI, use
+Commands execute in the desktop app's event loop, which keeps running while the
+window is behind other apps, occluded or minimized: macOS then stops drawing it,
+but requests, photo loading and saving go on. The pictures of photos opened
+meanwhile stay in memory until the window is drawn again. A suspended app (a closed laptop
+lid, say) doesn't process them; queued requests then expire safely. This is live
+desktop control, not a headless daemon. For unattended rendering without a GUI, use
 `rawmakase render` and its recipe options.
 
 ## Configuration and compatibility

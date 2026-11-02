@@ -3,7 +3,7 @@
 //! is a library operation, independent of the open document: it captures its
 //! camera and destination once, survives navigation, and its completion refreshes
 //! profiles and defaults exactly as a manual camera-profile import does
-//! (`bulk_import::profile_library_changed`). It then applies the profile only to the photo it was
+//! (`bulk_import::list_profiles_after_import`). It then applies the profile only to the photo it was
 //! asked for, while still open with the profile it had and no camera-look fit asked
 //! for since, as one History step; otherwise the profile is only installed.
 use super::{Editor, task, worker::Event};
@@ -441,8 +441,8 @@ impl Editor {
                 // new defaults: that is not the user moving on.
                 let apply = self.still_asked_for(&job);
                 // As a manual import refreshes, without its summary or its state:
-                // a lens profile or preset import may be running meanwhile.
-                self.profile_library_changed();
+                // a lens profile import may be running meanwhile.
+                self.list_profiles_after_import();
                 if apply {
                     self.apply_downloaded(job.entry, &path);
                 } else {

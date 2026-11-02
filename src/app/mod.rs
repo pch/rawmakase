@@ -540,6 +540,12 @@ impl eframe::App for Editor {
             .tone(Tone::DEEP)
             .to_normalized_gamma_f32()
     }
+    /// Runs before every `ui`, and alone while the window is occluded or
+    /// minimized: macOS stops drawing a window behind other apps, and eframe
+    /// then calls only this. Control requests and the work they wait on go on.
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.background(ctx);
+    }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
         crate::platform::titlebar::configure(frame, ui.ctx());

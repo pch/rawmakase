@@ -15,8 +15,9 @@ use moxcms::{
     CicpColorPrimaries, CicpProfile, ColorProfile, MatrixCoefficients, TransferCharacteristics,
 };
 use rawmakase_interop::isobmff::{Colour, Heif, Property};
+use rayon::prelude::*;
 use std::path::Path;
-use yuv::{YuvGrayImage, YuvPlanarImage, YuvRange, YuvStandardMatrix};
+use yuv::{YuvChromaSubsampling, YuvGrayImage, YuvPlanarImage, YuvRange, YuvStandardMatrix};
 
 /// The CICP code points of an `nclx` box.
 #[derive(Clone, Copy, Debug)]
@@ -199,6 +200,84 @@ fn words(bytes: &[u8], stride: usize) -> (std::borrow::Cow<'_, [u16]>, u32) {
     (words, (stride / 2) as u32)
 }
 
+/// A 10- or 12-bit 4:2:0 `image` as RGB of its depth, with yuv's bilinear
+/// chroma weights. yuv 0.8.19's own bilinear 4:2:0 above 8 bits gets them
+/// wrong on ARM (NEON), tinting every other pixel, so the chroma is upsampled
+/// here and converted as 4:4:4, in strips of rows.
+pub(super) fn deep420_to_rgb(
+    image: &YuvPlanarImage<u16>,
+    depth: u8,
+    rgb: &mut [u16],
+    range: YuvRange,
+    m: YuvStandardMatrix,
+) -> std::result::Result<(), yuv::YuvError> {
+    const STRIP: usize = 16;
+    image.check_constraints(YuvChromaSubsampling::Yuv420)?;
+    let (w, h) = (image.width as usize, image.height as usize);
+    if w == 0 || h == 0 {
+        return Err(yuv::YuvError::ZeroBaseSize);
+    }
+    let stride = w * 3;
+    // Strips are cut from `rgb`, so one too short would leave rows unwritten.
+    if rgb.len() < stride * h {
+        return Err(yuv::YuvError::ImageDimensionsNotMatch);
+    }
+    rgb.par_chunks_mut(stride * STRIP)
+        .take(h.div_ceil(STRIP))
+        .enumerate()
+        .try_for_each(|(strip, out)| {
+            let top = strip * STRIP;
+            let rows = STRIP.min(h - top);
+            let mut u = vec![0; w * rows];
+            let mut v = vec![0; w * rows];
+            for (row, (u, v)) in u.chunks_exact_mut(w).zip(v.chunks_exact_mut(w)).enumerate() {
+                upsample(image.u_plane, image.u_stride, w, h, top + row, u);
+                upsample(image.v_plane, image.v_stride, w, h, top + row, v);
+            }
+            let strip = YuvPlanarImage {
+                y_plane: &image.y_plane[top * image.y_stride as usize..],
+                y_stride: image.y_stride,
+                u_plane: &u,
+                u_stride: w as u32,
+                v_plane: &v,
+                v_stride: w as u32,
+                width: image.width,
+                height: rows as u32,
+            };
+            if depth == 12 {
+                yuv::i412_to_rgb12(&strip, out, stride as u32, range, m)
+            } else {
+                yuv::i410_to_rgb10(&strip, out, stride as u32, range, m)
+            }
+        })
+}
+
+/// Row `y` of a `w` × `h` picture's 4:2:0 chroma `plane`, rows `stride`
+/// apart (checked to hold them), upsampled into `out` as yuv's portable code
+/// does: 9/16 from the nearest sample, 3/16 from each next one across and
+/// down, 1/16 diagonally.
+fn upsample(plane: &[u16], stride: u32, w: usize, h: usize, y: usize, out: &mut [u16]) {
+    let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
+    let (r, last) = (y / 2, ch - 1);
+    let (near, far) = if y.is_multiple_of(2) {
+        (r, (r + 1).min(last))
+    } else {
+        ((r + 1).min(last), r)
+    };
+    let row = |r: usize| &plane[r * stride as usize..][..cw];
+    let (n, f) = (row(near), row(far));
+    for (x, o) in out.iter_mut().enumerate() {
+        let k = x / 2;
+        let (a, b) = if x.is_multiple_of(2) {
+            (k, (k + 1).min(cw - 1))
+        } else {
+            ((k + 1).min(cw - 1), k)
+        };
+        let sum = 9 * u32::from(n[a]) + 3 * u32::from(n[b]) + 3 * u32::from(f[a]) + u32::from(f[b]);
+        *o = ((sum + 8) >> 4) as u16;
+    }
+}
+
 /// `samples` of `depth` bits scaled to 16, as native-endian bytes.
 fn widen(samples: &[u16], depth: u8) -> Vec<u8> {
     let max = (1u32 << depth) - 1;
@@ -288,11 +367,10 @@ fn to_rgb(picture: &av1::Picture, nclx: Option<Nclx>) -> Result<Vec<u8>> {
     let mut rgb = vec![0u16; stride as usize * h as usize];
     match (depth, picture.layout()) {
         (10, av1::Layout::I400) => yuv::y010_to_rgb10(&gray, &mut rgb, stride, range, m),
-        (10, av1::Layout::I420) => yuv::i010_to_rgb10_bilinear(&image, &mut rgb, stride, range, m),
+        (10 | 12, av1::Layout::I420) => deep420_to_rgb(&image, depth, &mut rgb, range, m),
         (10, av1::Layout::I422) => yuv::i210_to_rgb10_bilinear(&image, &mut rgb, stride, range, m),
         (10, av1::Layout::I444) => yuv::i410_to_rgb10(&image, &mut rgb, stride, range, m),
         (12, av1::Layout::I400) => yuv::y012_to_rgb12(&gray, &mut rgb, stride, range, m),
-        (12, av1::Layout::I420) => yuv::i012_to_rgb12_bilinear(&image, &mut rgb, stride, range, m),
         (12, av1::Layout::I422) => yuv::i212_to_rgb12_bilinear(&image, &mut rgb, stride, range, m),
         (12, av1::Layout::I444) => yuv::i412_to_rgb12(&image, &mut rgb, stride, range, m),
         _ => bail!("{depth}-bit AVIF images are not supported"),
@@ -412,6 +490,90 @@ mod tests {
         assert_eq!(o(2, Some(1)), FlipVertical);
         assert_eq!(o(3, Some(0)), Rotate270FlipH);
         assert_eq!(o(3, Some(1)), Rotate90FlipH);
+    }
+
+    #[test]
+    fn deep_420_chroma_is_upsampled_with_yuvs_bilinear_weights() {
+        // 2×2 chroma under a 4×4 picture, rows 2 apart.
+        let plane = [0, 160, 0, 320, 480, 0];
+        let mut rows = [[0; 4]; 2];
+        for (y, row) in rows.iter_mut().enumerate() {
+            super::upsample(&plane, 3, 4, 4, y, row);
+        }
+        assert_eq!(rows, [[120, 200, 240, 240], [280, 360, 400, 400]]);
+    }
+
+    /// yuv 0.8.19's own bilinear 4:2:0 above 8 bits tints every other pixel
+    /// of a flat colour on ARM; strips of rows must not show either.
+    #[test]
+    fn a_flat_deep_420_colour_is_flat_everywhere() {
+        use yuv::{YuvPlanarImage, YuvRange, YuvStandardMatrix};
+        let (w, h) = (37, 35);
+        let (cw, ch) = (19, 18);
+        for (depth, [y, u, v]) in [(10, [306, 339, 1023]), (12, [1224, 1356, 4092])] {
+            let image = YuvPlanarImage {
+                y_plane: &vec![y; w * h],
+                y_stride: w as u32,
+                u_plane: &vec![u; cw * ch],
+                u_stride: cw as u32,
+                v_plane: &vec![v; cw * ch],
+                v_stride: cw as u32,
+                width: w as u32,
+                height: h as u32,
+            };
+            let mut rgb = vec![0; w * h * 3];
+            super::deep420_to_rgb(
+                &image,
+                depth,
+                &mut rgb,
+                YuvRange::Full,
+                YuvStandardMatrix::Bt601,
+            )
+            .unwrap();
+            // Red, within an 8-bit level.
+            let (max, near) = ((1 << depth) - 1, 1 << (depth - 8));
+            assert!(
+                rgb[0] >= max - near && rgb[1] <= near && rgb[2] <= near,
+                "{:?}",
+                &rgb[..3]
+            );
+            let [first, ..] = rgb.as_chunks::<3>().0 else {
+                unreachable!()
+            };
+            assert!(
+                rgb.as_chunks::<3>().0.iter().all(|p| p == first),
+                "{depth} bits"
+            );
+        }
+    }
+
+    #[test]
+    fn a_deep_420_conversion_refuses_a_short_destination() {
+        use yuv::{YuvPlanarImage, YuvRange, YuvStandardMatrix};
+        // 17 rows are two strips; room for 16 must not convert only the first.
+        let (w, h) = (2, 17);
+        let image = YuvPlanarImage {
+            y_plane: &vec![512; w * h],
+            y_stride: w as u32,
+            u_plane: &[512; 9],
+            u_stride: 1,
+            v_plane: &[512; 9],
+            v_stride: 1,
+            width: w as u32,
+            height: h as u32,
+        };
+        let mut rgb = vec![0; w * 3 * 16];
+        let result = super::deep420_to_rgb(
+            &image,
+            10,
+            &mut rgb,
+            YuvRange::Full,
+            YuvStandardMatrix::Bt601,
+        );
+        assert!(
+            matches!(result, Err(yuv::YuvError::ImageDimensionsNotMatch)),
+            "{result:?}"
+        );
     }
 
     #[test]

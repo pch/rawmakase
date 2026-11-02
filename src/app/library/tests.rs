@@ -46,11 +46,18 @@ enum ProfileImport {
     Shortcut,
     /// A shortcut whose listing arrives after another photo began loading.
     StaleShortcut,
+    /// A preset import that took its pack's look profiles too (#790).
+    PresetPack,
 }
 
 #[test]
 fn manual_profile_import_keeps_only_the_unchanged_current_thumbnail() -> Result<()> {
     profile_import_keeps_only_the_unchanged_current_thumbnail(ProfileImport::Manual)
+}
+
+#[test]
+fn a_preset_pack_with_looks_refreshes_profiles_as_a_profile_import_does() -> Result<()> {
+    profile_import_keeps_only_the_unchanged_current_thumbnail(ProfileImport::PresetPack)
 }
 
 #[test]
@@ -119,7 +126,10 @@ fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImpo
             photos[0].path.clone()
         });
         editor.library = Some(Box::new(library));
-        if import != ProfileImport::Manual {
+        if matches!(
+            import,
+            ProfileImport::Shortcut | ProfileImport::StaleShortcut
+        ) {
             // The shortcut lists the profiles in its frame; they apply later.
             editor.list_imported_profiles(&metadata);
             let library = editor.library.as_ref().unwrap();
@@ -141,10 +151,18 @@ fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImpo
                 Summary {
                     kind: ImportKind::CameraProfiles,
                     imported: 1,
+                    profiles: 0,
                     already: 0,
                     without_base: 0,
                     failed: Vec::new(),
                     cubes: Vec::new(),
+                },
+                &ctx,
+            ),
+            ProfileImport::PresetPack => editor.imported(
+                Summary {
+                    profiles: 1,
+                    ..Summary::new(ImportKind::Presets)
                 },
                 &ctx,
             ),

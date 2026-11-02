@@ -123,7 +123,7 @@ imported), and the per-camera dismissal the session keeps. `app::inspector::prof
 Basic › Profile; it only reports clicks. A download captures its profile, camera
 metadata and destination once. It is an application-wide library operation, so
 navigation does not cancel it. Its completion calls
-`bulk_import::profile_library_changed`, the refresh a manual camera-profile import
+`bulk_import::list_profiles_after_import`, the refresh a manual camera-profile import
 runs, without touching a running import's state or status line, so profiles, raw defaults (with the fitted
 default kept for a photo without colour data), preset support, Library previews
 (keeping only the unchanged open photo's) and the reference refresh exactly as
