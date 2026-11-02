@@ -59,21 +59,27 @@ impl Config {
     }
 }
 
-/// The size each SPS among an item's NAL units codes the picture at, each
-/// unit after `length_size` bytes giving its length; `None` when a unit is
-/// cut off or an SPS can't be read.
-pub(super) fn coded_in(mut data: &[u8], length_size: u8) -> Option<Vec<(u32, u32)>> {
-    let mut coded = Vec::new();
+/// The pixels in a picture coded at `size`.
+pub(super) fn area((width, height): (u32, u32)) -> u128 {
+    u128::from(width) * u128::from(height)
+}
+
+/// The largest [`area`] any SPS among an item's NAL units codes the picture
+/// at, 0 with none, each unit after `length_size` bytes giving its length;
+/// `None` when a unit is cut off or an SPS can't be read. Only the largest is
+/// kept, however many SPS there are.
+pub(super) fn largest_coded_in(mut data: &[u8], length_size: u8) -> Option<u128> {
+    let mut largest = 0;
     while !data.is_empty() {
         let (len, rest) = data.split_at_checked(usize::from(length_size))?;
         let len = len.iter().fold(0usize, |n, b| n << 8 | usize::from(*b));
         let (nal, rest) = rest.split_at_checked(len)?;
         if let Some(size) = sps_size(nal)? {
-            coded.push(size);
+            largest = largest.max(area(size));
         }
         data = rest;
     }
-    Some(coded)
+    Some(largest)
 }
 
 /// The size an SPS NAL unit codes the picture at; `Some(None)` for a NAL unit
@@ -299,9 +305,16 @@ mod tests {
             data.extend((nal.len() as u32).to_be_bytes());
             data.extend(nal);
         }
-        assert_eq!(coded_in(&data, 4), Some(vec![(192, 128)]));
+        assert_eq!(largest_coded_in(&data, 4), Some(192 * 128));
+        // The largest of several.
+        let mut more = data.clone();
+        for nal in [sps(0, 4032, 3024), sps(0, 64, 64)] {
+            more.extend((nal.len() as u32).to_be_bytes());
+            more.extend(nal);
+        }
+        assert_eq!(largest_coded_in(&more, 4), Some(4032 * 3024));
         // A unit cut off is no picture to decode.
-        assert_eq!(coded_in(&data[..data.len() - 1], 4), None);
-        assert_eq!(coded_in(&[], 4), Some(vec![]));
+        assert_eq!(largest_coded_in(&data[..data.len() - 1], 4), None);
+        assert_eq!(largest_coded_in(&[], 4), Some(0));
     }
 }
