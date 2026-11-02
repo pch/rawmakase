@@ -258,6 +258,8 @@ struct Running {
     /// On the full pace's threads, so given up when the pace drops.
     full: bool,
     cancel: Arc<AtomicBool>,
+    /// The file rendered: another render of it waits for this one.
+    path: PathBuf,
 }
 impl Shared {
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
@@ -571,6 +573,7 @@ impl Renders {
             slot,
             full,
             cancel: cancel.clone(),
+            path: path.clone(),
         });
         drop(state);
         let (cache_at, cache_path, wanted, results, render) = (
@@ -696,17 +699,26 @@ fn next_step(shared: &Shared, wanted: &Wanted, full_threads: usize) -> Step {
         let visible =
             |q: &Queued| matches!(&q.job, EditJob::Render { id, .. } if shown.contains(id));
         let free = state.running.len() < renders_at(state.pace, full_threads);
+        // One render of a file at a time. Two would wait inside the pool for
+        // one Camera Look fit of it (`camera_look::default_profile`), and the
+        // waiter may run on the thread of the very render it waits for, while
+        // that render waits on the pool's work: neither would end. A second
+        // waits here instead, outside the pool, until the first is done.
+        let rendering = |q: &Queued| match &q.job {
+            EditJob::Render { path, .. } => state.running.iter().any(|r| &r.path == path),
+            EditJob::Store { .. } => false,
+        };
         // Photos shown, the latest first: from the cache whether or not a
         // render could start, rendered when one can.
         if let Some(index) = state.jobs.iter().rposition(|q| visible(q) && !q.missed) {
-            return Step::Look(index, free);
+            return Step::Look(index, free && !rendering(&state.jobs[index]));
         }
         if free {
-            if let Some(index) = state.jobs.iter().rposition(visible) {
+            if let Some(index) = state.jobs.iter().rposition(|q| visible(q) && !rendering(q)) {
                 return Step::Render(index);
             }
             // Then the ones asked ahead, in the order asked.
-            if let Some(index) = state.jobs.iter().position(|q| !visible(q)) {
+            if let Some(index) = state.jobs.iter().position(|q| !visible(q) && !rendering(q)) {
                 return if state.jobs[index].missed {
                     Step::Render(index)
                 } else {
@@ -1407,6 +1419,57 @@ pub(super) mod tests {
         ));
     }
 
+    /// A file being rendered isn't rendered again beside it: the second render
+    /// would wait inside the pool for the first's Camera Look fit, possibly on
+    /// the first's own thread. It is still looked up, and other files render.
+    #[test]
+    fn a_file_is_rendered_once_at_a_time() {
+        let (one, other) = (Path::new("/photos/one.NEF"), Path::new("/photos/other.NEF"));
+        let wanted = Wanted::default();
+        wanted
+            .lock()
+            .unwrap()
+            .extend([PhotoId(1), PhotoId(2), PhotoId(3)]);
+        let queued = |job| Queued {
+            job,
+            missed: false,
+            dropped: false,
+        };
+        let shared = Shared::default();
+        {
+            let mut state = shared.lock();
+            state.pace = Pace::Full;
+            // A virtual copy of `one` is rendering.
+            state.running.push(Running {
+                slot: 0,
+                full: true,
+                cancel: Arc::default(),
+                path: one.into(),
+            });
+            state.jobs = vec![
+                queued(render_job(2, other, false)),
+                queued(render_job(3, one, false)),
+            ];
+        }
+        // The latest, another copy of `one`: from the cache only.
+        assert!(matches!(
+            next_step(&shared, &wanted, 4),
+            Step::Look(1, false)
+        ));
+        shared.lock().jobs[1].missed = true;
+        // `other` renders beside it.
+        assert!(matches!(
+            next_step(&shared, &wanted, 4),
+            Step::Look(0, true)
+        ));
+        shared.lock().jobs[0].missed = true;
+        assert!(matches!(next_step(&shared, &wanted, 4), Step::Render(0)));
+        // Once `one`'s render is done, its other copy renders.
+        shared.lock().jobs.remove(0);
+        shared.lock().running.clear();
+        assert!(matches!(next_step(&shared, &wanted, 4), Step::Render(0)));
+    }
+
     #[test]
     fn photos_shown_go_before_the_ones_asked_ahead() {
         let directory = Path::new("/nonexistent");
@@ -1471,6 +1534,7 @@ pub(super) mod tests {
             slot: 0,
             full: false,
             cancel: Arc::default(),
+            path: PathBuf::from("/elsewhere.png"),
         });
         drop(state);
         assert!(matches!(

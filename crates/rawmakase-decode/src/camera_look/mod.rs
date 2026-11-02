@@ -311,6 +311,10 @@ impl Drop for Claim {
 /// Claims the fit of `key`, waiting while another caller fits the same file;
 /// `None` once `cancel` is set, also when the key comes free: both jobs are
 /// often cancelled together, and a cancelled one must not start a fit.
+/// The wait blocks its thread, so callers on one Rayon pool must not fit one
+/// file twice at once: a waiter run on the holder's own thread while the holder
+/// waits on the pool's work would never end. The Library renders a file once at
+/// a time for that reason.
 fn claim(key: &cache::FitKey, cancel: &AtomicBool) -> Option<Claim> {
     let mut fitting = FITTING.0.lock().unwrap_or_else(|e| e.into_inner());
     loop {
