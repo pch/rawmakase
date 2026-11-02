@@ -665,6 +665,17 @@ impl Editor {
         if self.importing.is_some() || picks.is_empty() {
             return;
         }
+        // A profile download publishes into the same library: profiles, looks and
+        // presets (which bring their looks) wait for it, said so rather than
+        // dropped silently. Lens profiles don't touch it.
+        if !matches!(kind, ImportKind::LensProfiles)
+            && let Some(name) = self.profile_download.downloading()
+        {
+            self.messages.warn(format!(
+                "Not imported: {name} is downloading into the profile library. Import again when it finishes."
+            ));
+            return;
+        }
         let progress = Arc::new(ImportProgress::new(ctx.clone()));
         self.importing = Some(progress.clone());
         let (tx, ctx) = (self.tx.clone(), ctx.clone());
@@ -726,7 +737,7 @@ impl Editor {
         self.onboarding.imported(summary);
     }
     /// Lists the open photo's profiles again once an import has added some.
-    fn list_profiles_after_import(&mut self) {
+    pub(super) fn list_profiles_after_import(&mut self) {
         self.profile_library = crate::camera_profiles::library_fingerprint();
         let before = self.document.edit.recipe().clone();
         if let Some(m) = &self.document.metadata {
