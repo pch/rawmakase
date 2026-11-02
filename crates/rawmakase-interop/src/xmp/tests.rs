@@ -2216,3 +2216,101 @@ fn white_balance_round_trips_under_a_fitted_matrix_base() -> Result<()> {
     }
     Ok(())
 }
+/// The `Table_<id>` payloads of a Camera Raw 18.2.1 Enhance filter (issue 789): Raw
+/// Details, Super Resolution and Denoise all off, and the same with Denoise on.
+const ENHANCE_OFF: (&str, &str) = (
+    "6938C31B6948CF8FBEB3F417D97F053B",
+    r##"[4000pY/cq)4eJaQTr3XG{'wUn]']f%V{X/jML2JRIdCDSxe1T*Px:)o}OApp{hDlljP@}'y!d=Go)uO!U%wN8YKO^')kAu#.2Ls@84|[ypS*Zx}sLUrqjl14lX$Pl6)lDrL[iJ52:qM$b(Q3?WXyjkq0Wh0aUr}l6T/}2oCvy}Jr2.9F{gQ3%8b{mFwrM%mDm3u0N?}*#F9mNZ^yARSBg/JKZ:OJ7+}`oY.{v4DZ4sqMCaMyrMWNt{3@=%{VGa6qjYnq}xEAAJ@B1XY^M)p#SA]}Q[1UN37AK'%57('6Y'-zd@Nf?Nv.@oHf/MgyDog3T81EO7(bdE)psLHMr!Pu2U/E94:k"##,
+);
+const DENOISE_ON: (&str, &str) = (
+    "0DA5471E2D7C6364EFB8266EED12326C",
+    r##")4000pY/cqwUdVfb`J.ekU3+(CNW`vPJQvV]hYxQxC'=hc#.S//]%oVA23|4QN|53W:I^YeRfyL$9pCS]g!izp[%Q?s^yxwOKvGq`}o-xTx%3v2i{5IHAPTqAS5UYW'c)3c|(Q!d%D8Aa`CGn=BRVGhtA6c3xHiz{vv1qMn16^XDTqJJBC@`hwh7P0|OUvh8/Bs]?%Dlid7F)`3E'.^CZq^JTf1Q5kvQ9P{gN]j?e9|QTXluQVQbj|(:+Cw.ds*g3)@=OiR?vtAJQ1s1TY(cCk8qf-!*XgHd1e]jfIcY+:Uz%*/k7i^%niuvII]qwSJk[zW`Y'#*eqXvDWa6Y9Hr$?{}TxvFVZ(jZ6C"##,
+);
+/// A preset as Camera Raw 18.2.1 exports it with one filter, its settings in `table`
+/// (or none) and `compressed` naming them.
+fn filter_preset(table: Option<(&str, &str)>, compressed: &str) -> String {
+    let table = table
+        .map(|(id, text)| format!(r#"c:Table_{id}="{text}""#))
+        .unwrap_or_default();
+    xml(
+        &format!(r#"c:PresetType="Normal" c:GrainAmount="45" c:AllowFilters="1" {table}"#),
+        &format!(
+            r#"<c:FilterList r:parseType="Resource"><c:Filters><r:Seq><r:li c:Name="" c:FilterID="1" c:OrderIndexN="100000" c:IsSignalForDelete="true" c:CompressedSettings="{compressed}"/></r:Seq></c:Filters></c:FilterList>"#
+        ),
+    )
+}
+/// Issue 789: a Lightroom Enhance filter with everything off renders nothing, so a
+/// preset that carries one applies in full, and so does a photo's own edit.
+#[test]
+fn inactive_enhance_filter_is_neutral() -> Result<()> {
+    let text = filter_preset(Some(ENHANCE_OFF), ENHANCE_OFF.0);
+    let preset = parse(Path::new("filterlist-enhance-off.xmp"), &text)?;
+    assert!(preset.blockers.is_empty(), "{:?}", preset.blockers);
+    let r = preset.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    assert!((r.effects.grain - 0.45).abs() < 1e-6, "{}", r.effects.grain);
+    // Lightroom keeps a photo's Enhance filter in its sidecar the same way.
+    let sidecar = text.replace("<r:Description ", r#"<r:Description xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/" photoshop:SidecarForExtension="CR3" "#);
+    let photo = parse(Path::new("IMG.xmp"), &sidecar)?;
+    assert!(photo.photo_settings);
+    photo.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    // An empty filter list is neutral too.
+    let empty = xml(
+        r#"c:GrainAmount="45" c:AllowFilters="1""#,
+        r#"<c:FilterList r:parseType="Resource"><c:Filters><r:Seq/></c:Filters></c:FilterList>"#,
+    );
+    parse(Path::new("empty.xmp"), &empty)?.apply(
+        &Recipe::default(),
+        &Metadata::default(),
+        &[],
+        None,
+    )?;
+    Ok(())
+}
+/// An active Enhance filter isn't rendered: the preset names what it needs, and
+/// best-effort apply still takes the rest.
+#[test]
+fn active_enhance_filter_is_named() -> Result<()> {
+    let text = filter_preset(Some(DENOISE_ON), DENOISE_ON.0);
+    let preset = parse(Path::new("filterlist-denoise-on.xmp"), &text)?;
+    assert_eq!(preset.blockers, ["Enhance (Denoise) is not supported"]);
+    let m = Metadata::default();
+    assert!(preset.apply(&Recipe::default(), &m, &[], None).is_err());
+    let (r, skipped) = preset.apply_lenient(&Recipe::default(), &m, &[], None)?;
+    assert!((r.effects.grain - 0.45).abs() < 1e-6, "{}", r.effects.grain);
+    assert_eq!(skipped, ["Enhance (Denoise) is not supported"]);
+    // Filters sharing settings are read, and reported, once.
+    let shared = text.replace(
+        "</r:Seq>",
+        &format!(r#"<r:li c:CompressedSettings="{}"/></r:Seq>"#, DENOISE_ON.0),
+    );
+    let preset = parse(Path::new("shared.xmp"), &shared)?;
+    assert_eq!(preset.blockers, ["Enhance (Denoise) is not supported"]);
+    Ok(())
+}
+/// A filter whose settings are missing or unreadable is refused by name, never
+/// taken as neutral.
+#[test]
+fn unreadable_filter_settings_are_refused() -> Result<()> {
+    let missing = parse(
+        Path::new("missing.xmp"),
+        &filter_preset(None, ENHANCE_OFF.0),
+    )?;
+    assert_eq!(
+        missing.blockers,
+        [format!(
+            "Lightroom filter settings Table_{} are missing",
+            ENHANCE_OFF.0
+        )]
+    );
+    let corrupt = parse(
+        Path::new("corrupt.xmp"),
+        &filter_preset(Some((ENHANCE_OFF.0, "[4000pY/cq")), ENHANCE_OFF.0),
+    )?;
+    assert_eq!(corrupt.blockers.len(), 1);
+    assert!(
+        corrupt.blockers[0].starts_with("Unreadable Lightroom filter settings"),
+        "{:?}",
+        corrupt.blockers
+    );
+    Ok(())
+}
