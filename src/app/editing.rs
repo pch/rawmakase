@@ -69,6 +69,19 @@ impl Editor {
         self.view.masking.leave();
         frame
     }
+    /// A dial turned on a control surface is one History step once it pauses. A
+    /// drawn frame ends it in [`Self::finish_edit_frame`]; this ends it where no
+    /// frame is drawn (the window hidden), so the step is taken and saved.
+    pub(super) fn finish_paused_turn(&mut self, ctx: &egui::Context) {
+        // A hidden window keeps the pointer of its last drawn frame: a press then
+        // holds nothing once the window lost focus.
+        let held =
+            ctx.input(|i| i.raw.focused && i.pointer.primary_down()) || self.view.wheel.active();
+        if self.automation.has_turn() && !self.automation.turning() && !held {
+            self.automation.end_turn();
+            self.finish_gesture();
+        }
+    }
     pub(super) fn finish_edit_frame(&mut self, frame: EditFrame, ctx: &egui::Context) {
         let step =
             ctx.data_mut(|d| d.remove_temp::<(String, String)>(super::widgets::history_step_id()));
