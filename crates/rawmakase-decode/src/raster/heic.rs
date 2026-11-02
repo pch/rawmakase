@@ -55,16 +55,10 @@ struct Pixels {
 /// `prepare` lets an image have.
 const MAX_PIXELS: u64 = 150_000_000;
 
-/// Whether pictures coded at `placements`' sizes, each the largest of a
-/// picture's SPS, take no more than [`MAX_PIXELS`] decoded together.
-fn coded_fits<'a>(placements: impl Iterator<Item = &'a [(u32, u32)]>) -> bool {
-    placements
-        .map(|sizes| {
-            let area = |(w, h): &(u32, u32)| u128::from(*w) * u128::from(*h);
-            sizes.iter().map(area).max().unwrap_or(0)
-        })
-        .sum::<u128>()
-        <= u128::from(MAX_PIXELS)
+/// Whether pictures placed with `areas`, each the largest any of its SPS
+/// codes, take no more than [`MAX_PIXELS`] decoded together.
+fn coded_fits(areas: impl Iterator<Item = u128>) -> bool {
+    areas.sum::<u128>() <= u128::from(MAX_PIXELS)
 }
 
 /// Whether `count` tiles of `size` take no more than [`MAX_PIXELS`] decoded.
@@ -204,22 +198,23 @@ impl HeicFile {
     /// is not refused itself: encoders pad (Apple's codes a 64×64 picture as
     /// 160×64), and the decoded image is still held to the header's size.
     fn coded_within(&mut self) -> Result<()> {
-        let mut coded: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();
+        // Each distinct tile's largest coded area, read once.
+        let mut largest: HashMap<u32, u128> = HashMap::new();
         for (id, config) in &self.layout.tiles {
-            if coded.contains_key(id) {
+            if largest.contains_key(id) {
                 continue;
             }
             let data = self
                 .heif
                 .data(&mut self.file, *id)
                 .ok_or_else(|| anyhow!("The HEIF image data is missing or cut off"))?;
-            let mut sizes = hevc::coded_in(&data, config.length_size)
+            let in_data = hevc::largest_coded_in(&data, config.length_size)
                 .ok_or_else(|| anyhow!("The HEVC image data is corrupt"))?;
-            sizes.extend(&config.coded);
-            coded.insert(*id, sizes);
+            let in_config = config.coded.iter().map(|s| hevc::area(*s)).max();
+            largest.insert(*id, in_data.max(in_config.unwrap_or(0)));
         }
         ensure!(
-            coded_fits(self.layout.tiles.iter().map(|(id, _)| &coded[id][..])),
+            coded_fits(self.layout.tiles.iter().map(|(id, _)| largest[id])),
             "The HEVC image is coded at more than 150 megapixels"
         );
         Ok(())
@@ -516,21 +511,17 @@ mod tests {
 
     #[test]
     fn pictures_are_held_to_150_megapixels_as_coded() {
+        let fits = |sizes: &[(u32, u32)]| coded_fits(sizes.iter().map(|s| hevc::area(*s)));
         // Apple's encoder codes a 64×64 picture as 160×64.
-        assert!(coded_fits([&[(160, 64)][..]].into_iter()));
-        assert!(coded_fits([&[(12_247, 12_247)][..]].into_iter()));
-        assert!(!coded_fits([&[(12_248, 12_248)][..]].into_iter()));
-        // A picture's largest SPS counts, and a tile as often as it is placed.
-        assert!(!coded_fits([&[(64, 64), (12_248, 12_248)][..]].into_iter()));
-        let tile = [(8_661, 8_661)];
-        assert!(coded_fits([&tile[..]].into_iter()));
-        assert!(!coded_fits([&tile[..], &tile[..]].into_iter()));
-        assert!(!coded_fits(std::iter::repeat_n(
-            &[(u32::MAX, u32::MAX)][..],
-            4096
-        )));
+        assert!(fits(&[(160, 64)]));
+        assert!(fits(&[(12_247, 12_247)]));
+        assert!(!fits(&[(12_248, 12_248)]));
+        // A tile counts as often as it is placed.
+        assert!(fits(&[(8_661, 8_661)]));
+        assert!(!fits(&[(8_661, 8_661); 2]));
+        assert!(!fits(&[(u32::MAX, u32::MAX); 4096]));
         // No SPS: nothing the system's decoder can decode.
-        assert!(coded_fits([&[][..]].into_iter()));
+        assert!(fits(&[(0, 0)]));
     }
 
     #[test]
