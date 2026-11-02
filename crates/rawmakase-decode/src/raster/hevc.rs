@@ -1,7 +1,7 @@
 //! A HEIF item's HEVC configuration (`hvcC`), read from the header: the depth
 //! and chroma the system's decoder will give, and the size each sequence
 //! parameter set (SPS) codes the picture at, there or in the item's data, so
-//! a picture coded larger than the header says is refused before the system's
+//! a picture coded larger than RAWmakase opens is refused before the system's
 //! decoder allocates it.
 
 /// The largest `hvcC` read: its parameter sets take a few hundred bytes, and
