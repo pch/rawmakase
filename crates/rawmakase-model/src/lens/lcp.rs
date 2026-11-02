@@ -81,6 +81,43 @@ fn lens_id_matches(e: &Entry, m: &Metadata) -> bool {
         && m.lens_id != 0
         && e.lens_id == Some(m.lens_id)
         && maker(&e.make) == maker(&m.make)
+        && lens_info_agrees(e, m)
+}
+/// Whether the entry's lens has the photo's focal range and maximum apertures, where
+/// both say them: Nikon's lens IDs are not unique, and the lenses sharing one (an
+/// 18-55mm f/3.5-5.6, a 17-35mm F4, a 50mm f/1.8) differ there. Adobe writes them to
+/// a tenth, as the maker note gives them.
+fn lens_info_agrees(e: &Entry, m: &Metadata) -> bool {
+    match (e.lens_info, m.lens_info) {
+        (Some(a), Some(b)) => a.iter().zip(b).all(|(a, b)| (a - b).abs() < 0.05),
+        _ => true,
+    }
+}
+/// A lens one profile file describes under one lens ID: its lens names (`lens_key`
+/// of `stCamera:Lens` and AlternateLensNames, as one) and the display names its
+/// entries give it (`Entry::name`, spacing and case aside; empty ones left out).
+#[derive(Clone)]
+struct FileLens {
+    lens: String,
+    display: HashSet<String>,
+}
+/// How many lenses these are: one file's lenses are as many as their lens names,
+/// and two files' lenses of one lens name are one lens when they share a display
+/// name.
+fn lens_count(lenses: &[FileLens]) -> usize {
+    let mut merged: Vec<FileLens> = Vec::new();
+    for lens in lenses {
+        let (same, other): (Vec<_>, Vec<_>) = merged
+            .into_iter()
+            .partition(|l| l.lens == lens.lens && !l.display.is_disjoint(&lens.display));
+        let lens = same.into_iter().fold(lens.clone(), |mut a, b| {
+            a.display.extend(b.display);
+            a
+        });
+        merged = other;
+        merged.push(lens);
+    }
+    merged.len()
 }
 /// The maker's first word, so Adobe's "NIKON CORPORATION" is the "Nikon" a camera
 /// records: lens IDs only compare within one maker. Ricoh makes Pentax cameras and
@@ -379,26 +416,46 @@ impl Library {
     /// carrying them describe more than one lens. Adobe's files hold the maker's own
     /// numbering, and it is not unique: Nikon's 165 is the 105mm f/1.4E, the 35mm
     /// f/1.8G and the 28-300mm f/3.5-5.6 alike, and a photo leaves no way to tell
-    /// them apart. RAW and non-RAW files of one lens name the same lens, so they
-    /// stay usable.
+    /// them apart. Lenses are told apart by their names, as Adobe's files give them
+    /// (`stCamera:Lens`); RAW and non-RAW files of one lens name the same lens, so
+    /// they stay usable. Those names can be generic ("18.0-200.0 mm f/3.5-5.6") and
+    /// two generations' alike (Nikon's 139, the 18-200mm VR and VR II), so two files'
+    /// lenses of one name are one lens only when they also share a display name;
+    /// within one file they are one lens whatever its entries' display names, which
+    /// Adobe spells two ways ("58mm" and "58.0mm"). Lenses whose focal range and
+    /// apertures differ from the photo's (`lens_info_agrees`) don't count: they
+    /// aren't the photo's lens.
     fn shared_lens_ids(&self, m: &Metadata) -> HashSet<u32> {
-        let mut lenses: HashMap<u32, HashSet<String>> = HashMap::new();
-        for e in self.profiles.iter().flat_map(|p| p.entries.iter()) {
-            let Some(id) = e.lens_id else { continue };
-            if maker(&e.make) != maker(&m.make) {
-                continue;
+        let mut lenses: HashMap<u32, Vec<FileLens>> = HashMap::new();
+        for p in &self.profiles {
+            let mut file: HashMap<(u32, String), HashSet<String>> = HashMap::new();
+            for e in &p.entries {
+                let Some(id) = e.lens_id else { continue };
+                if maker(&e.make) != maker(&m.make) || !lens_info_agrees(e, m) {
+                    continue;
+                }
+                let lens = e
+                    .lens
+                    .iter()
+                    .map(|l| lens_key(l))
+                    .collect::<Vec<_>>()
+                    .join("|");
+                let display = file.entry((id, lens)).or_default();
+                let name = e.name.split_whitespace().collect::<String>().to_lowercase();
+                if !name.is_empty() {
+                    display.insert(name);
+                }
             }
-            let lens = e
-                .lens
-                .iter()
-                .map(|l| lens_key(l))
-                .collect::<Vec<_>>()
-                .join("|");
-            lenses.entry(id).or_default().insert(lens);
+            for ((id, lens), display) in file {
+                lenses
+                    .entry(id)
+                    .or_default()
+                    .push(FileLens { lens, display });
+            }
         }
         lenses
             .into_iter()
-            .filter(|(_, lenses)| lenses.len() > 1)
+            .filter(|(_, lenses)| lens_count(lenses) > 1)
             .map(|(id, _)| id)
             .collect()
     }
@@ -583,6 +640,22 @@ impl PhotoProfiles {
             .filter(|e| lens_id_matches(e, m))
             .find_map(|e| e.lens.first())
             .map(String::as_str)
+    }
+}
+/// The name Camera Raw gives a lens that a file describes only by its focal range
+/// and maximum apertures (`Metadata::lens_info`), as Adobe's profiles of such lenses
+/// hold it in `stCamera:Lens`: "18.0-55.0 mm f/3.5-5.6", "35.0 mm f/1.8".
+pub fn lens_info_name(info: [f32; 4]) -> String {
+    let [short, long, wide, tele] = info;
+    let focal = if short == long {
+        format!("{short:.1} mm")
+    } else {
+        format!("{short:.1}-{long:.1} mm")
+    };
+    if wide == tele {
+        format!("{focal} f/{wide:.1}")
+    } else {
+        format!("{focal} f/{wide:.1}-{tele:.1}")
     }
 }
 /// Lens profiles imported one by one, so a file that can't be used doesn't
@@ -941,6 +1014,231 @@ mod tests {
                 .map(|c| c.profile.filename.as_str()),
             Some("micro.lcp")
         );
+    }
+    #[test]
+    fn a_shared_nikon_lens_id_is_told_apart_by_the_lens_focal_range_and_apertures() {
+        // Discussion #731: a D3100 with the AF-S DX VR 18-55mm writes no lens model,
+        // only LensIDNumber 154, which Adobe's profiles also give a Tokina 17-35mm F4
+        // and a Yongnuo 50mm f/1.8. The maker note's Lens tag (18-55mm f/3.5-5.6) is
+        // the profiles' stCamera:LensInfo, and tells them apart.
+        let nikon = |file: &str, lens: &str, id: u32, info: &str| {
+            let text = test_profile_with_lens_id(
+                "NIKON CORPORATION",
+                lens,
+                &format!("Adobe ({file})"),
+                Some(&id.to_string()),
+                -0.1,
+                -0.5,
+            )
+            .replace(
+                " stCamera:LensPrettyName",
+                &format!(" stCamera:LensInfo=\"{info}\" stCamera:LensPrettyName"),
+            );
+            (format!("{file}.lcp"), text)
+        };
+        let files = [
+            nikon(
+                "vr",
+                "18.0-55.0 mm f/3.5-5.6",
+                154,
+                "180/10 550/10 35/10 56/10",
+            ),
+            nikon(
+                "tokina",
+                "Tokina atx-i 17-35mm F4 FF",
+                154,
+                "170/10 350/10 40/10 40/10",
+            ),
+            nikon("yongnuo", "50.0 mm f/1.8", 154, "500/10 500/10 18/10 18/10"),
+            // Another 18-55mm, by another ID.
+            nikon(
+                "ed-ii",
+                "18.0-55.0 mm f/3.5-5.6",
+                148,
+                "180/10 550/10 35/10 56/10",
+            ),
+        ];
+        assert_eq!(
+            parse(&files[0].1).unwrap()[0].lens_info,
+            Some([18., 55., 3.5, 5.6])
+        );
+        let library = Library::from_texts(files.iter().map(|(n, t)| (n.as_str(), t.as_str())));
+        let d3100 = |lens_info: Option<[f32; 4]>| {
+            let mut m = Metadata {
+                make: "Nikon".into(),
+                model: "D3100".into(),
+                lens_id: 154,
+                lens_info,
+                focal: 35.,
+                aperture: 2.,
+                width: 4608,
+                height: 3072,
+                ..Default::default()
+            };
+            m.lens_profiles = library.for_photo(&m);
+            m
+        };
+        let auto = |m: &Metadata| m.lens_profiles.auto(m).map(|c| c.profile.filename.clone());
+        let kit = d3100(Some([18., 55., 3.5, 5.6]));
+        assert_eq!(auto(&kit).as_deref(), Some("vr.lcp"));
+        assert_eq!(
+            kit.lens_profiles.lens_by_id(&kit),
+            Some("18.0-55.0 mm f/3.5-5.6")
+        );
+        assert_eq!(
+            auto(&d3100(Some([50., 50., 1.8, 1.8]))).as_deref(),
+            Some("yongnuo.lcp")
+        );
+        // A lens none of them is, or a file that doesn't say: the ID can't tell.
+        assert_eq!(auto(&d3100(Some([24., 70., 2.8, 2.8]))), None);
+        assert_eq!(auto(&d3100(None)), None);
+    }
+    #[test]
+    fn lenses_sharing_an_id_and_focal_range_stay_a_manual_choice() {
+        // Adobe's two 18-200mm generations are both Nikon's 139, 18-200mm f/3.5-5.6,
+        // and "18.0-200.0 mm f/3.5-5.6": only their display names tell them apart.
+        // Raw and non-raw files of one lens (its name's case aside) are one lens.
+        let nikon = |pretty: &str, raw: bool| {
+            test_profile_with_lens_id(
+                "NIKON CORPORATION",
+                "18.0-200.0 mm f/3.5-5.6",
+                &format!("Adobe ({pretty})"),
+                Some("139"),
+                -0.1,
+                -0.5,
+            )
+            .replace(
+                r#"stCamera:LensPrettyName="NIKON CORPORATION 18.0-200.0 mm f/3.5-5.6""#,
+                &format!(
+                    r#"stCamera:LensInfo="180/10 2000/10 35/10 56/10" stCamera:LensPrettyName="{pretty}""#
+                ),
+            )
+            .replace(
+                r#"CameraRawProfile="True""#,
+                &format!(r#"CameraRawProfile="{}""#, if raw { "True" } else { "False" }),
+            )
+        };
+        let vr = nikon(
+            "Nikon AF-S DX VR Zoom-Nikkor 18-200mm f/3.5-5.6G IF-ED",
+            true,
+        );
+        let vr_jpeg = nikon(
+            "Nikon AF-S DX VR Zoom-NIKKOR 18-200mm f/3.5-5.6G IF-ED",
+            false,
+        );
+        let vr_ii = nikon("Nikon AF-S DX NIKKOR 18-200mm f/3.5-5.6G ED VR II", true);
+        assert_eq!(
+            parse(&vr).unwrap()[0].name,
+            "Nikon AF-S DX VR Zoom-Nikkor 18-200mm f/3.5-5.6G IF-ED"
+        );
+        let photo = |library: &Library| {
+            let mut m = Metadata {
+                make: "Nikon".into(),
+                model: "D90".into(),
+                lens_id: 139,
+                lens_info: Some([18., 200., 3.5, 5.6]),
+                focal: 35.,
+                aperture: 2.,
+                width: 4288,
+                height: 2848,
+                ..Default::default()
+            };
+            m.lens_profiles = library.for_photo(&m);
+            m
+        };
+        let auto = |m: &Metadata| m.lens_profiles.auto(m).map(|c| c.profile.filename.clone());
+        let both = Library::from_texts([("vr.lcp", vr.as_str()), ("vr-ii.lcp", vr_ii.as_str())]);
+        assert_eq!(auto(&photo(&both)), None);
+        // One file's entries may spell the name two ways ("58mm", "58.0mm" in Adobe's
+        // 58mm f/1.4G): still one lens.
+        let entry = |text: &str| {
+            let start = text.find("<rdf:li>").unwrap();
+            let end = text.find("</rdf:li>").unwrap() + "</rdf:li>".len();
+            text[start..end].to_string()
+        };
+        let other = nikon(
+            "Nikon AF-S DX DX VR Zoom-Nikkor 18-200mm f/3.5-5.6G IF-ED",
+            true,
+        )
+        .replace(r#"FocalLength="35""#, r#"FocalLength="50""#);
+        let two = vr.replace(&entry(&vr), &(entry(&vr) + &entry(&other)));
+        assert_eq!(parse(&two).unwrap().len(), 2);
+        let one_file = Library::from_texts([("vr.lcp", two.as_str())]);
+        assert_eq!(auto(&photo(&one_file)).as_deref(), Some("vr.lcp"));
+        let one = Library::from_texts([("vr.lcp", vr.as_str()), ("vr-jpeg.lcp", vr_jpeg.as_str())]);
+        assert_eq!(auto(&photo(&one)).as_deref(), Some("vr.lcp"));
+    }
+    #[test]
+    fn profiles_without_a_lens_display_name_stay_apart() {
+        // Profiles made with Adobe's Lens Profile Creator may name no lens, or give
+        // each the same profile name: lenses their names differ in stay two lenses.
+        let profile = |lens: &str, pretty: Option<&str>, name: &str| {
+            let text =
+                test_profile_with_lens_id("NIKON CORPORATION", lens, name, Some("165"), -0.1, -0.5);
+            let generated = format!(r#" stCamera:LensPrettyName="NIKON CORPORATION {lens}""#);
+            match pretty {
+                Some(p) => text.replace(&generated, &format!(r#" stCamera:LensPrettyName="{p}""#)),
+                None => text.replace(&generated, ""),
+            }
+        };
+        let photo = |library: &Library| {
+            let mut m = Metadata {
+                make: "Nikon".into(),
+                model: "D600".into(),
+                lens_id: 165,
+                focal: 35.,
+                aperture: 2.,
+                width: 6034,
+                height: 4028,
+                ..Default::default()
+            };
+            m.lens_profiles = library.for_photo(&m);
+            m
+        };
+        for (a, b) in [
+            (
+                profile("35.0 mm f/1.8", None, ""),
+                profile("105.0 mm f/1.4", None, ""),
+            ),
+            (
+                profile("35.0 mm f/1.8", Some(""), "A"),
+                profile("105.0 mm f/1.4", Some(""), "B"),
+            ),
+            (
+                profile("35.0 mm f/1.8", None, "Custom"),
+                profile("105.0 mm f/1.4", None, "Custom"),
+            ),
+        ] {
+            let library = Library::from_texts([("a.lcp", a.as_str()), ("b.lcp", b.as_str())]);
+            let m = photo(&library);
+            assert!(m.lens_profiles.auto(&m).is_none());
+            assert_eq!(m.lens_profiles.lens_by_id(&m), None);
+        }
+        // Two lenses in one file, in either order, are two lenses too.
+        let entry = |text: &str| {
+            let start = text.find("<rdf:li>").unwrap();
+            let end = text.find("</rdf:li>").unwrap() + "</rdf:li>".len();
+            text[start..end].to_string()
+        };
+        let f18 = profile("35.0 mm f/1.8", None, "Custom");
+        let f14 = profile("105.0 mm f/1.4", None, "Custom").replace("-0.1", "-0.2");
+        for (a, b) in [(&f18, &f14), (&f14, &f18)] {
+            let combined = a.replace(&entry(a), &(entry(a) + &entry(b)));
+            assert_eq!(parse(&combined).unwrap().len(), 2);
+            let library = Library::from_texts([("combined.lcp", combined.as_str())]);
+            let m = photo(&library);
+            assert!(m.lens_profiles.auto(&m).is_none());
+            assert_eq!(m.lens_profiles.lens_by_id(&m), None);
+        }
+    }
+    #[test]
+    fn a_lens_described_by_its_focal_range_is_named_as_camera_raw_names_it() {
+        assert_eq!(
+            lens_info_name([18., 55., 3.5, 5.6]),
+            "18.0-55.0 mm f/3.5-5.6"
+        );
+        assert_eq!(lens_info_name([35., 35., 1.8, 1.8]), "35.0 mm f/1.8");
+        assert_eq!(lens_info_name([24., 120., 4., 4.]), "24.0-120.0 mm f/4.0");
     }
     #[test]
     fn a_pentax_lens_type_identifies_and_names_the_lens() {
