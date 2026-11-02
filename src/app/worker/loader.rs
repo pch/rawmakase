@@ -236,6 +236,7 @@ fn opener(
                     profiles,
                     errors,
                     groups,
+                    imported: false,
                 },
             );
             let mut raw = match opened {
