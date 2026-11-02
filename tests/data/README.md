@@ -21,3 +21,12 @@ message). No camera data or photos.
 "Fixture", Model "Synthetic 1", DateTimeOriginal 2024:05:04 10:21:33 and the XMP title
 "Fixture title". Orientation fixtures: AVIF `irot`/`imir`, WebP and JXL EXIF Orientation 6.
 `pq.*` use the PQ transfer (HDR), `animated.*` have two frames, `tiled.avif` is a 2×2 grid of 64×64 cells (MIAF forbids smaller tiles). `cropped.avif` has a clean aperture (`clap`), an essential property RAWmakase does not read. `split-exif.avif` is `metadata.avif` with its Exif item stored in two `iloc` extents. `ten-bit-420.avif` is one flat colour, (200, 80, 40), in 10-bit 4:2:0.
+
+The HEIC fixtures are drawn by `python3 scripts/make-heic-fixtures.py tests/data/formats` (Pillow and
+`pillow-heif`, whose libheif and x265 versions the script prints for the commit message), from the
+same `corners.png` drawing. `metadata.heic` (Exif and XMP as above), `ten-bit.heic`, `p3.heic`
+(CICP P3) and `pq.heic` (10-bit PQ) are libheif's own files, each a 64×64 picture it crops (`clap`)
+to 16×12. All are 4:2:0, as phones write, so the system decoders macOS and Windows use read them. The script writes the others around x265's HEVC: `rotated.heic` and
+`rotated-mirrored.heic` add `irot` 1 and `imir` 0 as their AVIF namesakes do, and `grid.heic` is a
+2×2 grid of 64×64 tiles cut to 120×100, laid out as an iPhone writes one: hidden tiles carrying the
+`nclx` (BT.709, limited range), an sRGB ICC profile on the grid, the grid's description in `idat`.

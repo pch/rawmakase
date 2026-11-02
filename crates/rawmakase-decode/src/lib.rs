@@ -4,8 +4,10 @@
 //! full-size decode through the decode cache ([`decode`], [`decode_cache`]), its
 //! decode and develop fingerprints for regression checks ([`fingerprint`],
 //! [`decode_dump`]) and its half-size checks ([`half_check`]), and
-//! opening a JPEG, PNG or TIFF, which is not developed ([`raster`]). Everything
-//! here is Rust: no C library is built or linked. Highlight recovery after a
+//! opening a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL, which is not
+//! developed ([`raster`]). Everything here is Rust: no C library is built or
+//! bundled; on macOS and Windows a HEIC's pixels come from the operating
+//! system's ImageIO or Windows Imaging Component. Highlight recovery after a
 //! decode is the renderer's (crates/rawmakase-engine).
 use rawmakase_engine::develop;
 use rawmakase_model::{camera_data, camera_profiles, dng, lens, storage};
