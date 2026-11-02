@@ -713,11 +713,10 @@ fn next_step(shared: &Shared, wanted: &Wanted, full_renders: usize) -> Step {
         let visible =
             |q: &Queued| matches!(&q.job, EditJob::Render { id, .. } if shown.contains(id));
         let free = state.running.len() < renders_at(state.pace, full_renders);
-        // One render of a file at a time. Two would wait inside the pool for
-        // one Camera Look fit of it (`camera_look::default_profile`), and the
-        // waiter may run on the thread of the very render it waits for, while
-        // that render waits on the pool's work: neither would end. A second
-        // waits here instead, outside the pool, until the first is done.
+        // One render of a file at a time, so its virtual copies share one Camera
+        // Look fit (`camera_look::default_profile`): renders on the pool don't
+        // wait for each other's fits, as that could deadlock, but fit a file
+        // themselves. A second waits here instead, outside the pool.
         let rendering = |q: &Queued| match &q.job {
             EditJob::Render { path, .. } => state.running.iter().any(|r| &r.path == path),
             EditJob::Store { .. } => false,
@@ -1433,9 +1432,9 @@ pub(super) mod tests {
         ));
     }
 
-    /// A file being rendered isn't rendered again beside it: the second render
-    /// would wait inside the pool for the first's Camera Look fit, possibly on
-    /// the first's own thread. It is still looked up, and other files render.
+    /// A file being rendered isn't rendered again beside it, so the two share
+    /// one Camera Look fit rather than each making it. It is still looked up,
+    /// and other files render.
     #[test]
     fn computers_with_less_memory_render_fewer_side_by_side() {
         const GIB: u64 = 1 << 30;
