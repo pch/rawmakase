@@ -24,6 +24,11 @@ use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 mod lens_profile;
 mod lensfun;
 mod profile_offer;
+/// What the community profile offer says when a profile can be downloaded, for tests.
+#[cfg(test)]
+pub(super) fn profile_offer_available() -> &'static str {
+    profile_offer::AVAILABLE
+}
 /// Lensfun's terms, for Preferences.
 pub(super) use lensfun::terms as lensfun_terms;
 mod profile_menu;
@@ -469,7 +474,7 @@ impl Editor {
         };
         // Community profiles from the catalogue: matched here, measured once per camera.
         let community_profiles = self.has_catalogue_profiles();
-        let community_offer = self.profile_offer(!adobe.is_empty());
+        let community_offer = self.profile_offer();
         let metadata = self.document.metadata.clone();
         // A JPEG, TIFF or PNG: its Embedded profile, and relative white balance.
         let rendered = metadata.as_ref().is_some_and(|m| m.is_rendered());

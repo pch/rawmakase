@@ -3,7 +3,7 @@
 //! is a library operation, independent of the open document: it captures its
 //! camera and destination once, survives navigation, and its completion refreshes
 //! profiles and defaults exactly as a manual camera-profile import does
-//! (`bulk_import::imported`). It then applies the profile only to the photo it was
+//! (`bulk_import::profile_library_changed`). It then applies the profile only to the photo it was
 //! asked for, while still open with the profile it had and no camera-look fit asked
 //! for since, as one History step; otherwise the profile is only installed.
 use super::{Editor, task, worker::Event};
@@ -16,7 +16,7 @@ use crate::storage::Identity;
 use anyhow::{Context, Result, ensure};
 use eframe::egui;
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashSet},
     io::Read,
     path::{Path, PathBuf},
     sync::{
@@ -37,19 +37,15 @@ pub(super) struct Downloads {
     publication: Arc<AtomicU8>,
     /// The last download's failure, by catalogue profile id, for its Retry.
     failure: Option<(&'static str, String)>,
-    /// The offer for each camera this session: dismissed, or asked for from the
-    /// Profile menu. Keyed by camera, so dismissing one camera's offer leaves every
-    /// other camera's.
-    shown: HashMap<String, Shown>,
+    /// Cameras whose offer the user dismissed, kept with the session: dismissing
+    /// one camera's offer leaves every other camera's.
+    dismissed: BTreeSet<String>,
+    /// Cameras whose offer was asked for from the Profile menu this session: shown
+    /// even where it would stay quiet, dismissed or not.
+    requested: HashSet<String>,
     /// The open photo's catalogue profiles and where they are installed, measured
     /// when its camera or the profile library changes rather than every frame.
     measured: Option<Measured>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Shown {
-    Dismissed,
-    Requested,
 }
 
 struct Measured {
@@ -165,15 +161,29 @@ impl Downloads {
         self.task.is_running() && self.publication.load(Ordering::SeqCst) == 0
     }
 
+    /// The offer state the session keeps: the cameras whose offer was dismissed.
+    pub(super) fn with_dismissed(dismissed: BTreeSet<String>) -> Self {
+        Self {
+            dismissed,
+            ..Default::default()
+        }
+    }
+
+    pub(super) fn dismissed(&self) -> &BTreeSet<String> {
+        &self.dismissed
+    }
+
     /// Shows the open camera's offer again, even where it would stay quiet.
     pub(super) fn request(&mut self, m: &Metadata) {
         // An explicit search also rechecks files changed outside the app.
         self.measured = None;
-        self.shown.insert(camera_key(m), Shown::Requested);
+        self.requested.insert(camera_key(m));
     }
 
     fn dismiss(&mut self, m: &Metadata) {
-        self.shown.insert(camera_key(m), Shown::Dismissed);
+        let camera = camera_key(m);
+        self.requested.remove(&camera);
+        self.dismissed.insert(camera);
     }
 
     /// The catalogue's profiles for photo `m`, with where each is installed.
@@ -203,23 +213,26 @@ impl Editor {
         }
     }
 
-    /// The offer for the open photo, if it shows this frame. It stays quiet for a
-    /// rendered file, a camera the catalogue doesn't cover, a camera whose offer
-    /// was dismissed this session, and where it is no use: the photo already uses
-    /// one of the profiles, or Adobe's profiles for the camera are imported or can
-    /// be (`adobe`), which take precedence. Asking for it from the Profile menu
-    /// shows it anyway.
-    pub(super) fn profile_offer(&mut self, adobe: bool) -> Option<Offer> {
+    /// The offer for the open photo, if it shows this frame. It shows by default
+    /// while the photo has the profile its defaults gave it (no profile chosen by
+    /// hand), and stays quiet for a rendered file, a camera the catalogue doesn't
+    /// cover, a camera whose offer the user dismissed, and where it is no use: the
+    /// photo uses one of the profiles, or Adobe's profiles for the camera are
+    /// imported, which take precedence. Asking for it from the Profile menu shows
+    /// it anyway.
+    pub(super) fn profile_offer(&mut self) -> Option<Offer> {
         let m = self.document.metadata.clone()?;
         let library = self.profile_library.clone();
         let current = self.document.edit.recipe().profile.clone();
-        let shown = self.profile_download.shown.get(&camera_key(&m)).copied();
-        let adobe = adobe
-            || self
-                .document
-                .profiles
-                .iter()
-                .any(|p| p.name == "Adobe Standard");
+        let camera = camera_key(&m);
+        let requested = self.profile_download.requested.contains(&camera);
+        let dismissed = self.profile_download.dismissed.contains(&camera);
+        let adobe = self
+            .document
+            .profiles
+            .iter()
+            .any(|p| p.name == "Adobe Standard");
+        let chosen_by_hand = !self.has_default_profile();
         let failure = self.profile_download.failure.clone();
         let running = self.profile_download.job.as_ref().map(|job| {
             (
@@ -252,12 +265,29 @@ impl Editor {
         let downloading = running
             .as_ref()
             .is_some_and(|(id, ..)| profiles.iter().any(|p| p.entry.profile.id == *id));
-        let quiet = match shown {
-            Some(Shown::Requested) => false,
-            Some(Shown::Dismissed) => !downloading,
-            None => !downloading && (adobe || profiles.iter().any(|p| p.in_use)),
+        let quiet = if requested || downloading {
+            false
+        } else {
+            dismissed || adobe || chosen_by_hand || profiles.iter().any(|p| p.in_use)
         };
         (!quiet).then_some(Offer { profiles, running })
+    }
+
+    /// Whether the open photo's profile is the one its raw defaults give it: the
+    /// user hasn't chosen another.
+    fn has_default_profile(&self) -> bool {
+        let current = &self.document.edit.recipe().profile;
+        let same = |default: &Option<Arc<CameraProfile>>| match (current, default) {
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b) || a == b,
+            (None, None) => true,
+            _ => false,
+        };
+        match &self.document.defaults {
+            Some(defaults) => same(&defaults.recipe.profile),
+            None => self
+                .photo_defaults()
+                .is_some_and(|defaults| same(&defaults.recipe.profile)),
+        }
     }
 
     /// Does what the offer was asked. Called during Develop's edit frame, which
@@ -276,7 +306,10 @@ impl Editor {
             })
         };
         match action {
-            OfferAction::Dismiss => self.profile_download.dismiss(&m),
+            OfferAction::Dismiss => {
+                self.profile_download.dismiss(&m);
+                let _ = self.save_session();
+            }
             OfferAction::Cancel => self.profile_download.cancel(),
             OfferAction::Download(id) => {
                 if let Some((entry, _)) = listed(&self.profile_download.measured, id) {
@@ -317,7 +350,16 @@ impl Editor {
         ctx: &egui::Context,
         transport: fn(&Entry, &AtomicBool, &AtomicUsize) -> Result<Vec<u8>>,
     ) {
-        if self.profile_download.task.is_running() || self.importing.is_some() {
+        if self.profile_download.task.is_running() {
+            return;
+        }
+        // The import publishes into the same library; its result decides what this
+        // one would be.
+        if self.importing.is_some() {
+            self.messages.warn(format!(
+                "{} was not downloaded: wait for the import to finish",
+                entry.profile.name
+            ));
             return;
         }
         let Some(metadata) = self.document.metadata.clone().filter(|m| entry.fits(m)) else {
@@ -377,12 +419,7 @@ impl Editor {
         );
     }
 
-    pub(super) fn profile_downloaded(
-        &mut self,
-        id: u64,
-        result: Result<PathBuf, String>,
-        ctx: &egui::Context,
-    ) {
+    pub(super) fn profile_downloaded(&mut self, id: u64, result: Result<PathBuf, String>) {
         // A cancellation, retry or duplicate completion cannot finish another job.
         if !self.profile_download.task.is_running() || id != self.profile_download.task.id() {
             return;
@@ -403,17 +440,9 @@ impl Editor {
                 // Decided before the refresh, which may give an untouched photo
                 // new defaults: that is not the user moving on.
                 let apply = self.still_asked_for(&job);
-                self.imported(
-                    super::bulk_import::Summary {
-                        kind: super::bulk_import::ImportKind::CameraProfiles,
-                        imported: 1,
-                        already: 0,
-                        without_base: 0,
-                        failed: Vec::new(),
-                        cubes: Vec::new(),
-                    },
-                    ctx,
-                );
+                // As a manual import refreshes, without its summary or its state:
+                // a lens profile or preset import may be running meanwhile.
+                self.profile_library_changed();
                 if apply {
                     self.apply_downloaded(job.entry, &path);
                 } else {

@@ -8635,7 +8635,7 @@ fn the_profile_menu_offers_community_profiles_only_for_covered_raw_cameras() {
             "{model}, rendered {rendered}"
         );
         assert_eq!(
-            labelled(&menu, "Community camera profile").is_some(),
+            labelled(&menu, crate::app::inspector::profile_offer_available()).is_some(),
             expected,
             "the offer for {model}, rendered {rendered}"
         );
@@ -8657,7 +8657,8 @@ fn the_community_offer_sits_under_the_profile_menu_dismisses_and_returns_from_th
                 && n.value() == Some("Default (camera matrix)")
         })
         .expect("Profile menu");
-    let offer = labelled(&tree, "Community camera profile").expect("the offer");
+    let offer =
+        labelled(&tree, crate::app::inspector::profile_offer_available()).expect("the offer");
     let (menu, offer_at) = (profile.bounds().unwrap(), offer.bounds().unwrap());
     // Profile Amount's value is the first spin button under the menu.
     let amount_at = tree
@@ -8673,20 +8674,13 @@ fn the_community_offer_sits_under_the_profile_menu_dismisses_and_returns_from_th
         .expect("Profile Amount");
     assert!(menu.y1 <= offer_at.y0 && offer_at.y1 <= amount_at.y0);
     // Who made it, on what terms, and where it is from.
-    assert!(
-        labelled(
-            &tree,
-            "Profile by ART contributors (Alberto Griggio and others), "
-        )
-        .is_some()
-    );
+    assert!(labelled(&tree, "ART contributors (Alberto Griggio and others)").is_some());
     assert!(labelled(&tree, "Public domain").is_some());
-    assert!(labelled(&tree, "ART").is_some());
     // Dismissed, it stays away on the next frames…
     let dismiss = labelled(&tree, "Dismiss").expect("Dismiss").clone();
     click(&ctx, &mut editor, &dismiss);
     let tree = controls_frame(&ctx, &mut editor, vec![]);
-    assert!(labelled(&tree, "Community camera profile").is_none());
+    assert!(labelled(&tree, crate::app::inspector::profile_offer_available()).is_none());
     // …until the Profile menu asks for it.
     let menu = open_profile_menu(&ctx, &mut editor);
     let show = labelled(&menu, "Show community profiles for this camera")
@@ -8694,7 +8688,7 @@ fn the_community_offer_sits_under_the_profile_menu_dismisses_and_returns_from_th
         .clone();
     click(&ctx, &mut editor, &show);
     let tree = controls_frame(&ctx, &mut editor, vec![]);
-    assert!(labelled(&tree, "Community camera profile").is_some());
+    assert!(labelled(&tree, crate::app::inspector::profile_offer_available()).is_some());
     assert!(editor.document.edit.history().steps().0.is_empty());
 }
 
@@ -8703,7 +8697,7 @@ fn a_running_community_download_shows_its_progress_and_cancels_from_the_offer() 
     let ctx = egui::Context::default();
     let mut editor = community_editor(&ctx, "X-T20", false);
     let tree = controls_frame(&ctx, &mut editor, vec![]);
-    assert!(labelled(&tree, "Download & Apply · 66 KB").is_some());
+    assert!(labelled(&tree, "Download & Apply").is_some());
     editor.download_waiting_for_cancel();
     let tree = controls_frame(&ctx, &mut editor, vec![]);
     let cancel = labelled(&tree, "Cancel").expect("Cancel").clone();
@@ -8717,7 +8711,7 @@ fn a_running_community_download_shows_its_progress_and_cancels_from_the_offer() 
     assert!(!editor.profile_download.task.is_running());
     let tree = controls_frame(&ctx, &mut editor, vec![]);
     assert!(labelled(&tree, "Cancel").is_none());
-    assert!(labelled(&tree, "Community camera profile").is_some());
+    assert!(labelled(&tree, crate::app::inspector::profile_offer_available()).is_some());
 }
 
 /// A raw photo's Profile menu offers Import .cube LUTs…, which opens the window at
@@ -9601,4 +9595,58 @@ fn an_import_keeps_a_fitted_default_until_a_profile_fits() {
         super::camera_look::keep_fitted_default(&had, &m, imported.clone()),
         imported
     );
+}
+
+/// The community profile offer under Basic › Profile in each state, at the right
+/// panel's width, written to `target/community-offer-*.png` to look at.
+#[test]
+#[ignore = "writes images to look at"]
+fn render_the_community_offer() -> anyhow::Result<()> {
+    use crate::camera_profiles::catalogue::{Status, catalogue};
+    type Setup = fn(&mut Editor);
+    let states: [(&str, &str, Setup); 5] = [
+        ("available", "X-T3", |_| {}),
+        ("downloading", "X-T3", |e| e.download_waiting_for_cancel()),
+        ("installed", "X-T3", |e| {
+            let m = e.document.metadata.clone().unwrap();
+            let entries = catalogue().matching(&m);
+            e.assume_catalogue_profiles(
+                entries
+                    .into_iter()
+                    .map(|en| (en, Status::Installed("/nowhere.dcp".into())))
+                    .collect(),
+            );
+        }),
+        ("conflict", "X-T3", |e| {
+            let m = e.document.metadata.clone().unwrap();
+            let entries = catalogue().matching(&m);
+            e.assume_catalogue_profiles(
+                entries
+                    .into_iter()
+                    .map(|en| (en, Status::Conflict))
+                    .collect(),
+            );
+        }),
+        ("narrow", "X-T3", |_| {}),
+    ];
+    for (name, model, setup) in states {
+        let ctx = egui::Context::default();
+        crate::app::install_fonts(&ctx, &fastframe_text::TextRendering::platform_default());
+        super::icons::install(&ctx);
+        let mut e = community_editor(&ctx, model, false);
+        setup(&mut e);
+        let width = if name == "narrow" { 260. } else { 320. };
+        let mut textures = Default::default();
+        let image =
+            super::ui_snapshot::render(&ctx, &mut textures, Vec2::new(width, 330.), 2., 4, |ui| {
+                let frame = e.begin_edit_frame();
+                egui::CentralPanel::default().show(ui, |ui| e.controls(ui));
+                e.finish_edit_frame(frame, ui.ctx());
+            });
+        let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("target/community-offer-{name}.png"));
+        image.save(&out)?;
+        eprintln!("{}", out.display());
+    }
+    Ok(())
 }

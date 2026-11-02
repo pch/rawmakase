@@ -287,7 +287,7 @@ sha256 = "f0687ad09e554536c7bd9cdc20650dc264b7de8f647a87ba9cdf1e3edbda5334"
 id = "rawtherapee/fujifilm-x-t4"
 source = "rawtherapee"
 file = "FUJIFILM X-T4.dcp"
-filename = "FUJIFILM X-T4 (RawTherapee).dcp"
+filename = "FUJIFILM X-T4.dcp"
 camera = "FUJIFILM X-T4"
 name = "FUJIFILM X-T4"
 notice = "RawTherapee CC0"
@@ -539,7 +539,7 @@ sha256 = "45839ac9afa8dca3b9ac3c7f2357a8bb1bf39ec2e009cf78da8ba06f583446b4"
 id = "rawtherapee/pentax-k-50"
 source = "rawtherapee"
 file = "PENTAX K-50.dcp"
-filename = "PENTAX K-50 (RawTherapee).dcp"
+filename = "PENTAX K-50.dcp"
 camera = "PENTAX K-50"
 name = "PENTAX K-50"
 notice = "public domain"
@@ -764,18 +764,6 @@ size = 65358
 sha256 = "5bd94b69964c481166c5cdd1e3de2d852b753fa4e600e01dd9622a2c940bf582"
 
 [[profile]]
-id = "art/fujifilm-x-t4"
-source = "art"
-file = "FUJIFILM X-T4.dcp"
-filename = "FUJIFILM X-T4 (ART).dcp"
-camera = "FUJIFILM X-T4"
-name = "FUJIFILM X-T4"
-notice = "public domain"
-terms = "public-domain"
-size = 65358
-sha256 = "52ef50c5dde600dfdca32152e124df594012e62227937848067c68a2cbdc4fe5"
-
-[[profile]]
 id = "art/nikon-d300"
 source = "art"
 file = "NIKON D300.dcp"
@@ -858,18 +846,6 @@ notice = "public domain"
 terms = "public-domain"
 size = 510
 sha256 = "bf936a857433beec5f58ff6d2a544efc04c24634662a0a6323136290d67ac295"
-
-[[profile]]
-id = "art/pentax-k-50"
-source = "art"
-file = "PENTAX K-50.dcp"
-filename = "PENTAX K-50 (ART).dcp"
-camera = "PENTAX K-50"
-name = "PENTAX K-50"
-notice = "public domain"
-terms = "public-domain"
-size = 65350
-sha256 = "72abaee2a8dd90081c6ef64bbb696b4882e6177193ff297cf2228e6039014f0a"
 
 [[profile]]
 id = "art/sony-ilce-6000"

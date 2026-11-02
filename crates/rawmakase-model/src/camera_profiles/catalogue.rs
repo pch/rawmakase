@@ -45,19 +45,21 @@ pub enum Terms {
 }
 
 impl Terms {
-    /// The terms a DCP's ProfileCopyright states, if any.
+    /// The terms a DCP's ProfileCopyright states, if any. Only notices reviewed
+    /// word for word count: a notice that merely mentions a dedication ("Not CC0")
+    /// grants nothing. Add a new wording here only after reading what it means.
     pub fn of_notice(notice: &str) -> Option<Self> {
-        let notice = notice.trim();
-        if notice.eq_ignore_ascii_case("public domain") {
-            Some(Self::PublicDomain)
-        } else if notice
-            .split_whitespace()
-            .any(|w| w.eq_ignore_ascii_case("CC0"))
-        {
-            Some(Self::Cc0)
-        } else {
-            None
-        }
+        const REVIEWED: [(&str, Terms); 4] = [
+            ("public domain", Terms::PublicDomain),
+            ("CC0", Terms::Cc0),
+            ("CC0 1.0", Terms::Cc0),
+            ("RawTherapee CC0", Terms::Cc0),
+        ];
+        let notice = notice.split_whitespace().collect::<Vec<_>>().join(" ");
+        REVIEWED
+            .iter()
+            .find(|(text, _)| notice.eq_ignore_ascii_case(text))
+            .map(|(_, terms)| *terms)
     }
     pub fn label(self) -> &'static str {
         match self {
@@ -227,6 +229,12 @@ impl Catalogue {
                     e.profile.id,
                     p.id
                 );
+                ensure!(
+                    e.profile.name != p.name || !e.profile.camera.eq_ignore_ascii_case(&p.camera),
+                    "{} and {} share a profile name and camera, which XMP can't tell apart",
+                    e.profile.id,
+                    p.id
+                );
             }
             entries.push(Entry { profile: p, source });
         }
@@ -242,6 +250,20 @@ impl Catalogue {
     /// body's, and none for a rendered file.
     pub fn matching(&self, m: &Metadata) -> Vec<&Entry> {
         self.entries.iter().filter(|e| e.fits(m)).collect()
+    }
+
+    /// The Profile menu's title for a catalogue profile: its name and source,
+    /// "NIKON Z 6 (RawTherapee)", so it doesn't read as the camera maker's or
+    /// Adobe's. Only the title: the profile keeps its name, which XMP writes.
+    pub fn title(&self, profile: &CameraProfile) -> Option<String> {
+        self.entries
+            .iter()
+            .find(|e| {
+                e.profile.name == profile.name
+                    && e.profile.camera == profile.camera
+                    && e.profile.notice == profile.copyright
+            })
+            .map(|e| format!("{} ({})", profile.name, e.source.name))
     }
 
     pub fn get(&self, id: &str) -> Option<&Entry> {
@@ -341,8 +363,18 @@ impl Entry {
 
     /// Whether `path` is this profile's exact file.
     pub fn holds(&self, path: &Path) -> bool {
+        // Bounded, as `read_installed`: the file can grow after its size is read.
+        let read = || -> std::io::Result<Vec<u8>> {
+            let mut bytes = Vec::new();
+            std::fs::File::open(path)?
+                .take(self.profile.size + 1)
+                .read_to_end(&mut bytes)?;
+            Ok(bytes)
+        };
         std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.len() == self.profile.size)
-            && std::fs::read(path).is_ok_and(|b| checksum(&b) == self.profile.sha256)
+            && read().is_ok_and(|b| {
+                b.len() as u64 == self.profile.size && checksum(&b) == self.profile.sha256
+            })
     }
 
     /// The profile in the installed file at `path`, read once (at most the pinned
@@ -527,6 +559,18 @@ pub fn generate(sources: &[Source], mut found: Vec<Found>) -> Result<Generated> 
         let sha256 = checksum(&f.bytes);
         if let Some(same) = profiles.iter().find(|p| p.sha256 == sha256) {
             exclude(format!("the same file as {}", same.id));
+            continue;
+        }
+        // An edit's XMP names its profile by ProfileName, and a camera's profiles
+        // are told apart by it: two profiles sharing both would swap on a round trip.
+        if let Some(same) = profiles
+            .iter()
+            .find(|p| p.name == dcp.name && p.camera.eq_ignore_ascii_case(&dcp.camera))
+        {
+            exclude(format!(
+                "the same profile name and camera as {}, which XMP could not tell apart",
+                same.id
+            ));
             continue;
         }
         let stem = Path::new(&f.file)

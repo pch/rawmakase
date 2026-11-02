@@ -159,9 +159,8 @@ fn a_finished_download_applies_to_the_photo_it_was_asked_for_as_one_history_step
         }
         let before = steps(&e);
         let job = ask(&mut e, reviewed);
-        let ctx = e.context.clone();
         let path = write(dir.path(), "installed.dcp", &bytes);
-        e.profile_downloaded(job, Ok(path.clone()), &ctx);
+        e.profile_downloaded(job, Ok(path.clone()));
         assert!(!e.profile_download.task.is_running());
         let r = e.document.edit.recipe();
         assert_eq!(r.profile.as_ref().unwrap().name, reviewed.profile.name);
@@ -174,11 +173,11 @@ fn a_finished_download_applies_to_the_photo_it_was_asked_for_as_one_history_step
         );
         assert!(e.document.edit.save_state().needs_save());
         // The duplicate or late completion of the same job changes nothing more.
-        e.profile_downloaded(job, Ok(path.clone()), &ctx);
+        e.profile_downloaded(job, Ok(path.clone()));
         assert_eq!(steps(&e), before + 1);
         // It is in use now: the offer no longer shows unasked.
         e.assume_catalogue_profiles(vec![(reviewed, Status::Installed(path))]);
-        assert!(e.profile_offer(false).is_none());
+        assert!(e.profile_offer().is_none());
     }
 }
 
@@ -229,9 +228,8 @@ fn a_download_finishing_after_the_user_moved_on_only_installs() {
         let recipe = e.document.edit.recipe().clone();
         let before = steps(&e);
         let saving = e.document.edit.save_state().needs_save();
-        let ctx = e.context.clone();
         let path = write(dir.path(), "installed.dcp", &bytes);
-        e.profile_downloaded(job, Ok(path), &ctx);
+        e.profile_downloaded(job, Ok(path));
         assert!(!e.profile_download.task.is_running(), "{what}");
         assert_eq!(*e.document.edit.recipe(), recipe, "{what}");
         assert_eq!(steps(&e), before, "{what}");
@@ -262,9 +260,8 @@ fn a_download_asked_for_a_file_no_longer_as_opened_only_installs() {
         before(&mut e);
         let job = ask(&mut e, reviewed);
         let recipe = e.document.edit.recipe().clone();
-        let ctx = e.context.clone();
         let path = write(dir.path(), "installed.dcp", &bytes);
-        e.profile_downloaded(job, Ok(path), &ctx);
+        e.profile_downloaded(job, Ok(path));
         assert!(!e.profile_download.task.is_running(), "{what}");
         assert_eq!(*e.document.edit.recipe(), recipe, "{what}");
         assert_eq!(steps(&e), 0, "{what}");
@@ -286,8 +283,7 @@ fn a_profile_file_replaced_after_installation_is_not_applied() {
     let recipe = e.document.edit.recipe().clone();
     let swapped = write(dir.path(), "installed.dcp", &dcp(&reviewed.profile.name, 2));
     assert!(crate::camera_profiles::load(&swapped, &x_t20()).is_ok());
-    let ctx = e.context.clone();
-    e.profile_downloaded(job, Ok(swapped), &ctx);
+    e.profile_downloaded(job, Ok(swapped));
     assert!(!e.profile_download.task.is_running());
     assert_eq!(*e.document.edit.recipe(), recipe);
     assert_eq!(steps(&e), 0);
@@ -369,12 +365,12 @@ fn a_profile_sharing_another_sources_name_and_camera_is_not_taken_for_it() {
         ];
         e.assume_catalogue_profiles(measured.clone());
         // The photo uses one: the offer stays quiet until asked for again.
-        assert!(e.profile_offer(false).is_none());
+        assert!(e.profile_offer().is_none());
         e.profile_download.request(&m);
         // Request rechecks the real catalogue; supply this test's two-source
         // measurement again instead of this computer's installed profiles.
         e.assume_catalogue_profiles(measured);
-        let offer = e.profile_offer(false).expect("asked for");
+        let offer = e.profile_offer().expect("asked for");
         let in_use: Vec<_> = offer.profiles.iter().map(|p| p.in_use).collect();
         assert_eq!(in_use, [true, false], "installed {installed}");
         let tree = controls_frame(&ctx, &mut e, vec![]);
@@ -421,17 +417,17 @@ fn failures_cancellation_and_stale_completions_clear_busy_state_and_leave_a_retr
     assert!(downloading(&e));
     let recipe = e.document.edit.recipe().clone();
     let (_, bytes) = reviewed();
-    e.profile_downloaded(old, Ok(write(dir.path(), "installed.dcp", &bytes)), &ctx);
-    e.profile_downloaded(old, Err("stale failure".into()), &ctx);
+    e.profile_downloaded(old, Ok(write(dir.path(), "installed.dcp", &bytes)));
+    e.profile_downloaded(old, Err("stale failure".into()));
     assert!(e.profile_download.task.is_running());
     assert_eq!(*e.document.edit.recipe(), recipe);
-    e.profile_downloaded(current, Err("connection lost".into()), &ctx);
+    e.profile_downloaded(current, Err("connection lost".into()));
     assert!(!e.profile_download.task.is_running());
     assert!(!downloading(&e));
     assert!(e.messages.line().contains("connection lost"));
     assert_eq!(*e.document.edit.recipe(), recipe);
     e.assume_catalogue_profiles_available();
-    let offer = e.profile_offer(false).expect("the failed download's offer");
+    let offer = e.profile_offer().expect("the failed download's offer");
     let offered = offer
         .profiles
         .iter()
@@ -536,7 +532,7 @@ fn rendered_unmatched_or_unidentified_photos_never_start_a_download_or_show_an_o
         e.download_profile_using(entry(), &ctx, waits);
         assert!(!e.profile_download.task.is_running());
         assert!(!e.has_catalogue_profiles());
-        assert!(e.profile_offer(false).is_none());
+        assert!(e.profile_offer().is_none());
     }
 }
 
@@ -546,9 +542,9 @@ fn a_dismissed_offer_stays_away_for_its_camera_only_until_asked_for() {
     let ctx = e.context.clone();
     let dir = tempfile::tempdir().unwrap();
     open(&mut e, x_t20(), dir.path());
-    assert!(e.profile_offer(false).is_some());
+    assert!(e.profile_offer().is_some());
     e.profile_offer_action(OfferAction::Dismiss, &ctx);
-    assert!(e.profile_offer(false).is_none());
+    assert!(e.profile_offer().is_none());
     // Another photo of the same camera, under the decoder's other spelling.
     open(
         &mut e,
@@ -558,7 +554,7 @@ fn a_dismissed_offer_stays_away_for_its_camera_only_until_asked_for() {
         },
         dir.path(),
     );
-    assert!(e.profile_offer(false).is_none());
+    assert!(e.profile_offer().is_none());
     // Another covered camera keeps its offer.
     let other = catalogue()
         .entries()
@@ -575,31 +571,82 @@ fn a_dismissed_offer_stays_away_for_its_camera_only_until_asked_for() {
         },
         dir.path(),
     );
-    assert!(e.profile_offer(false).is_some());
+    assert!(e.profile_offer().is_some());
     // Back to the X-T20: Profile › Show community profiles brings it back.
     open(&mut e, x_t20(), dir.path());
     assert!(e.has_catalogue_profiles());
     let m = e.document.metadata.clone().unwrap();
     e.profile_download.request(&m);
-    assert!(e.profile_offer(false).is_some());
+    assert!(e.profile_offer().is_some());
 }
 
 #[test]
-fn adobe_profiles_take_precedence_unless_the_offer_is_asked_for() {
+fn imported_adobe_profiles_take_precedence_unless_the_offer_is_asked_for() {
     let mut e = editor();
     let dir = tempfile::tempdir().unwrap();
     open(&mut e, x_t20(), dir.path());
     e.assume_catalogue_profiles_available();
-    // Adobe's profiles for this camera can be imported from Lightroom's installation.
-    assert!(e.profile_offer(true).is_none());
-    // Or Adobe Standard is imported already.
+    // Adobe's profiles that could be imported but aren't don't quiet it.
+    assert!(e.profile_offer().is_some());
+    // Imported, Adobe Standard is listed: Adobe's take precedence.
     let mut standard = (*e.document.profiles[0]).clone();
     standard.name = "Adobe Standard".into();
     e.document.profiles.push(Arc::new(standard));
-    assert!(e.profile_offer(false).is_none());
+    assert!(e.profile_offer().is_none());
     let m = e.document.metadata.clone().unwrap();
     e.profile_download.request(&m);
-    assert!(e.profile_offer(true).is_some());
+    assert!(e.profile_offer().is_some());
+}
+
+#[test]
+fn the_offer_shows_by_default_only_while_the_photo_keeps_its_default_profile() {
+    let mut e = editor();
+    let dir = tempfile::tempdir().unwrap();
+    open(&mut e, x_t20(), dir.path());
+    e.assume_catalogue_profiles_available();
+    assert!(e.profile_offer().is_some(), "the default profile");
+    // A profile chosen by hand: the user picked, the offer stays quiet…
+    let other = e
+        .document
+        .profiles
+        .iter()
+        .find(|p| Some(*p) != e.document.edit.recipe().profile.as_ref())
+        .expect("another listed profile")
+        .clone();
+    e.change_edit(None, |r| r.profile = Some(other));
+    assert!(e.profile_offer().is_none());
+    // …unless asked for from the Profile menu.
+    let m = e.document.metadata.clone().unwrap();
+    e.profile_download.request(&m);
+    assert!(e.profile_offer().is_some());
+}
+
+#[test]
+fn a_dismissal_is_kept_with_the_session() {
+    let mut e = editor();
+    let ctx = e.context.clone();
+    let dir = tempfile::tempdir().unwrap();
+    open(&mut e, x_t20(), dir.path());
+    e.assume_catalogue_profiles_available();
+    e.profile_offer_action(OfferAction::Dismiss, &ctx);
+    let kept = e.profile_download.dismissed().clone();
+    assert_eq!(kept.len(), 1);
+    // The next launch reads it back from the session.
+    let json = serde_json::to_string(&crate::app::session::Session {
+        dismissed_community_profiles: kept.clone(),
+        ..Default::default()
+    })
+    .unwrap();
+    let session: crate::app::session::Session = serde_json::from_str(&json).unwrap();
+    assert_eq!(session.dismissed_community_profiles, kept);
+    let mut next = editor();
+    next.profile_download = super::Downloads::with_dismissed(session.dismissed_community_profiles);
+    open(&mut next, x_t20(), dir.path());
+    next.assume_catalogue_profiles_available();
+    assert!(next.profile_offer().is_none());
+    // A session from before this setting reads as nothing dismissed.
+    let old: crate::app::session::Session = serde_json::from_str("{}").unwrap();
+    assert!(old.dismissed_community_profiles.is_empty());
 }
 
 #[test]
@@ -613,7 +660,7 @@ fn an_installed_profile_is_checked_again_before_it_applies_without_a_download() 
     // its name and camera takes its place, so the check before applying refuses.
     let path = write(dir.path(), "installed.dcp", &reviewed_bytes());
     e.assume_catalogue_profiles(vec![(reviewed, Status::Installed(path))]);
-    let offer = e.profile_offer(false).unwrap();
+    let offer = e.profile_offer().unwrap();
     assert_eq!(offer.profiles.len(), 1);
     write(dir.path(), "installed.dcp", &dcp(&reviewed.profile.name, 2));
     let recipe = e.document.edit.recipe().clone();
@@ -728,14 +775,14 @@ fn reopening_the_offer_rechecks_a_resolved_file_conflict() {
     std::fs::create_dir_all(&library).unwrap();
     let conflict = library.join(&entry().profile.filename);
     std::fs::write(&conflict, b"a different profile already here").unwrap();
-    let first = e.profile_offer(false).unwrap();
+    let first = e.profile_offer().unwrap();
     assert_eq!(first.profiles[0].status, Status::Conflict);
     let fingerprint = e.profile_library.clone();
     std::fs::rename(&conflict, library.join("moved-aside.dcp")).unwrap();
     let m = e.document.metadata.clone().unwrap();
     e.profile_download.dismiss(&m);
     e.profile_download.request(&m);
-    let refreshed = e.profile_offer(false).unwrap();
+    let refreshed = e.profile_offer().unwrap();
     assert_eq!(refreshed.profiles[0].status, Status::Available);
     assert_eq!(
         e.profile_library, fingerprint,
@@ -743,4 +790,63 @@ fn reopening_the_offer_rechecks_a_resolved_file_conflict() {
     );
     assert!(e.document.edit.history().steps().0.is_empty());
     assert!(!e.document.edit.save_state().needs_save());
+}
+
+#[test]
+fn manual_imports_during_a_download_wait_or_proceed_and_are_never_dropped_silently() {
+    use crate::app::bulk_import::ImportKind;
+    let dir = tempfile::tempdir().unwrap();
+    let (reviewed, bytes) = reviewed();
+    let mut e = editor();
+    open(&mut e, x_t20(), dir.path());
+    let job = ask(&mut e, reviewed);
+    let ctx = e.context.clone();
+    // Camera profiles would publish into the same library: said, not started.
+    e.import(
+        ImportKind::CameraProfiles,
+        vec![dir.path().join("picked.dcp")],
+        &ctx,
+    );
+    assert!(e.importing.is_none());
+    assert!(
+        e.messages.line().contains("Import again when it finishes"),
+        "{}",
+        e.messages.line()
+    );
+    // A preset import doesn't touch the profile library: it starts.
+    e.import(
+        ImportKind::Presets,
+        vec![dir.path().join("picked.xmp")],
+        &ctx,
+    );
+    assert!(e.importing.is_some());
+    // The download finishing refreshes profiles without ending that import.
+    e.profile_downloaded(job, Ok(write(dir.path(), "installed.dcp", &bytes)));
+    assert!(
+        e.importing.is_some(),
+        "the running import keeps its progress"
+    );
+    assert_eq!(
+        e.document.edit.recipe().profile.as_ref().unwrap().name,
+        reviewed.profile.name
+    );
+}
+
+#[test]
+fn a_download_asked_for_during_an_import_says_why_it_did_not_start() {
+    use crate::app::bulk_import::ImportKind;
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = editor();
+    open(&mut e, x_t20(), dir.path());
+    let ctx = e.context.clone();
+    e.import(
+        ImportKind::Presets,
+        vec![dir.path().join("picked.xmp")],
+        &ctx,
+    );
+    assert!(e.importing.is_some());
+    let (reviewed, _) = reviewed();
+    e.download_profile_using(reviewed, &ctx, waits);
+    assert!(!e.profile_download.task.is_running());
+    assert!(e.messages.line().contains("wait for the import to finish"));
 }

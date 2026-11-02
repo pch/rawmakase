@@ -117,12 +117,14 @@ verification of downloaded bytes and installation through the existing no-clobbe
 importer, and the deterministic generator; it has no HTTP or UI dependency and
 never reaches the network. `app::profile_download` owns the HTTP request, the task
 and what the offer shows for the open photo: which profiles match, measured once
-per camera and profile library rather than every frame, and the offer's per-camera
-dismissal for the session. `app::inspector::profile_offer` draws the offer under
+per camera and profile library rather than every frame, when it shows (by
+default while the photo keeps its raw defaults' profile and no Adobe profile is
+imported), and the per-camera dismissal the session keeps. `app::inspector::profile_offer` draws the offer under
 Basic › Profile; it only reports clicks. A download captures its profile, camera
 metadata and destination once. It is an application-wide library operation, so
-navigation does not cancel it. Its completion calls `bulk_import::imported` with a
-one-profile camera-profile summary, so profiles, raw defaults (with the fitted
+navigation does not cancel it. Its completion calls
+`bulk_import::profile_library_changed`, the refresh a manual camera-profile import
+runs, without touching a running import's state or status line, so profiles, raw defaults (with the fitted
 default kept for a photo without colour data), preset support, Library previews
 (keeping only the unchanged open photo's) and the reference refresh exactly as
 after a manual import. Only then is the profile applied, and only to the photo it

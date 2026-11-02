@@ -611,8 +611,18 @@ pub fn import_profiles(picks: &[PathBuf], space: LutSpace) -> Summary {
 impl Editor {
     /// Starts importing `picks` in the background; the status line follows it.
     pub(super) fn import(&mut self, kind: ImportKind, picks: Vec<PathBuf>, ctx: &egui::Context) {
-        // A profile download publishes through the same importer.
-        if self.importing.is_some() || self.profile_download.task.is_running() || picks.is_empty() {
+        if self.importing.is_some() || picks.is_empty() {
+            return;
+        }
+        // A profile download publishes into the same library: profiles and looks
+        // wait for it, said so rather than dropped silently. Lens profiles and
+        // presets don't touch it.
+        if matches!(kind, ImportKind::CameraProfiles | ImportKind::Luts(_))
+            && let Some(name) = self.profile_download.downloading()
+        {
+            self.messages.warn(format!(
+                "Not imported: {name} is downloading into the profile library. Import again when it finishes."
+            ));
             return;
         }
         let progress = Arc::new(ImportProgress::new(ctx.clone()));
@@ -635,31 +645,35 @@ impl Editor {
             },
         );
     }
+    /// Refreshes the open photo's profiles and the Library's unedited previews after
+    /// profiles were added to the library: a manual import, or a community profile
+    /// downloaded (`profile_download`), which must not touch a running import's state.
+    pub(super) fn profile_library_changed(&mut self) {
+        self.profile_library = crate::camera_profiles::library_fingerprint();
+        let before = self.document.edit.recipe().clone();
+        if let Some(m) = &self.document.metadata {
+            let listed = crate::camera_profiles::listed(m);
+            self.document.profiles = super::camera_look::keep_fitted_default(
+                &self.document.profiles,
+                m,
+                listed.profiles,
+            );
+            self.document.profile_errors = listed.errors;
+            self.document.profile_groups = listed.groups;
+            // Importing never changes an edit: the user picks a
+            // profile. A photo without one follows the raw defaults,
+            // which may now resolve to an imported profile.
+            self.refresh_photo_defaults();
+            self.refresh_preset_support();
+        }
+        let current = self.unchanged_current_photo(&before);
+        self.refresh_library_defaults_preserving(current);
+    }
     pub(super) fn imported(&mut self, summary: Summary, ctx: &egui::Context) {
         self.importing = None;
         if summary.imported > 0 {
             match summary.kind {
-                ImportKind::CameraProfiles | ImportKind::Luts(_) => {
-                    self.profile_library = crate::camera_profiles::library_fingerprint();
-                    let before = self.document.edit.recipe().clone();
-                    if let Some(m) = &self.document.metadata {
-                        let listed = crate::camera_profiles::listed(m);
-                        self.document.profiles = super::camera_look::keep_fitted_default(
-                            &self.document.profiles,
-                            m,
-                            listed.profiles,
-                        );
-                        self.document.profile_errors = listed.errors;
-                        self.document.profile_groups = listed.groups;
-                        // Importing never changes an edit: the user picks a
-                        // profile. A photo without one follows the raw defaults,
-                        // which may now resolve to an imported profile.
-                        self.refresh_photo_defaults();
-                        self.refresh_preset_support();
-                    }
-                    let current = self.unchanged_current_photo(&before);
-                    self.refresh_library_defaults_preserving(current);
-                }
+                ImportKind::CameraProfiles | ImportKind::Luts(_) => self.profile_library_changed(),
                 ImportKind::LensProfiles => {
                     // Lens profiles are matched when a photo opens: reopen it.
                     if let Some(path) = self.document.path.clone() {

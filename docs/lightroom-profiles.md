@@ -8,15 +8,17 @@ RAWmakase renders with profiles from its own library and files the user explicit
 
 RAWmakase knows of free camera profiles other projects made for 72 camera bodies
 (Nikon 21, Canon 17, Fujifilm 13, Sony 13, Panasonic 3, Olympus 2, Pentax 2,
-Samsung 1): 76 DCPs from [RawTherapee](https://rawtherapee.com) and
+Samsung 1): 74 DCPs from [RawTherapee](https://rawtherapee.com) and
 [ART](https://art.pixls.us), listed in the app's [catalogue](#camera-profile-catalogue).
 These are camera colour profiles, not film simulations or Adobe's profiles.
 
-When a RAW photo of one of these bodies is open in Develop, a **Community** card
-appears under **Basic › Profile**, as Lens Corrections offers Lensfun's profiles.
-It names each profile for this camera, who made it, its terms (public domain or
-CC0, as the file itself states; the file's own notice is in the hover text) and a
-link to the exact file at its pinned revision. Matching uses the catalogue shipped
+When a RAW photo of one of these bodies is open in Develop and still has the
+profile its raw defaults gave it, a **Community** card appears under
+**Basic › Profile**, as Lens Corrections offers Lensfun's profiles. It leads with
+each profile for this camera: its name, who made it with a link to the exact file
+at its pinned revision, and its terms (public domain or CC0, as the file itself
+states; the file's own notice is in the hover text), then says a free profile is
+available. Matching uses the catalogue shipped
 with the app and the same camera rule as imported profiles, so another body's
 profile is never offered or substituted. Rendered files (JPEG, TIFF and the other
 rendered formats) and bodies the catalogue doesn't cover show nothing.
@@ -27,13 +29,16 @@ rendered formats) and bodies the catalogue doesn't cover show nothing.
   Treatment following the profile. Your other settings stay as they are.
 - **Apply** appears instead when the exact file is already in your profile
   library, installed before or imported by hand; it uses it with no download.
-- **Dismiss** hides the card for this camera until RAWmakase restarts. Other
-  cameras keep theirs. **Profile › Show community profiles for this camera**
-  brings it back; the menu offers it only for a camera the catalogue covers.
+- **Dismiss** hides the card for this camera, also after a restart (the session
+  keeps the dismissed cameras). Other cameras keep theirs.
+  **Profile › Show community profiles for this camera** brings it back for the
+  session; the menu offers it only for a camera the catalogue covers.
 
-The card stays quiet unasked when the photo already uses one of these profiles,
-or when Adobe's profiles for the camera are imported (Adobe Standard is listed) or
-can be imported from Lightroom's installation: Adobe's profiles take precedence.
+The card stays quiet unasked when a profile was chosen by hand (the photo's
+profile is not its raw defaults' one), when the photo uses one of these profiles,
+or when Adobe's profiles for the camera are imported (Adobe Standard is listed):
+Adobe's profiles take precedence. Adobe profiles that could be imported but are
+not yet don't quiet it; the Profile menu offers both.
 Nothing changes the default profile of new photos; that stays the raw defaults'
 choice (Preferences › Raw Defaults).
 
@@ -48,7 +53,9 @@ stops a download before it is installed.
 
 A download is a library operation: it carries on while you move to other photos.
 When it finishes, profiles, raw defaults, preset support and Library previews
-refresh exactly as after importing the same DCP by hand. The profile is applied
+refresh exactly as after importing the same DCP by hand. Importing camera
+profiles or LUTs by hand waits for a running download (the status line says so
+instead of dropping the files); lens profile and preset imports don't. The profile is applied
 only to the photo it was asked for, and only if that photo is still open, its file
 unchanged on disk, with the profile it had and no **Fit Camera Look** asked for
 since; otherwise it is just installed and you can choose it in the Profile menu.
@@ -60,9 +67,10 @@ same name in your profile library is never overwritten: the card says so, and
 moving or renaming that file lets you download this one. Reopen the offer through
 **Profile › Show community profiles for this camera** to recheck the library.
 Profiles from two
-sources for the same body (the X-T4, EOS RP, EOS-1D X Mark III and K-50) install
-under different file names; where they share a profile name, the menu tells them
-apart by file name.
+sources for the same body (the EOS RP and EOS-1D X Mark III) have different
+profile names, so an edit's XMP, which names its profile, tells them apart; a
+second source's profile with the same name and camera as a listed one is
+excluded.
 
 ### Import files
 
@@ -100,16 +108,19 @@ or the app.
   left out.
 
 **What is listed.** A DCP is listed only when RAWmakase's importer supports it and
-its own notice dedicates it: `public domain`, or a CC0 dedication. A source
+its own notice dedicates it in a wording reviewed word for word
+(`Terms::of_notice`): `public domain`, or a CC0 dedication (`CC0`, `CC0 1.0`,
+`RawTherapee CC0`). A notice that only mentions one grants nothing. A source
 repository's license is not taken as a profile's license, and an embedding policy
 is not a copyright grant. At the pinned revisions (RawTherapee `b2ee504c`, ART
-`1ff135df`; 161 and 160 DCPs) that lists 55 of RawTherapee's and 21 of ART's that
-RawTherapee doesn't have byte for byte. The 245 others are excluded: 118 whose
+`1ff135df`; 161 and 160 DCPs) that lists 55 of RawTherapee's and 19 of ART's that
+RawTherapee doesn't have. The 247 others are excluded: 118 whose
 notice is a bare copyright (“Copyright Maciej Dworak”, “Maciej Dworak”), 9 more
 with another notice that grants nothing (“Copyright Dr Slony”, “RawTherapee”, the
 DCamProf “creator of this profile” notice), 2 with no notice, 67 matrix-only
-profiles the importer can't read yet, and 49 byte-identical copies in ART of files
-listed from RawTherapee. This is why RawTherapee's own X-T20 profile (the one an
+profiles the importer can't read yet, 49 byte-identical copies in ART of files
+listed from RawTherapee, and ART's X-T4 and K-50 profiles, which share their
+profile name and camera with RawTherapee's. This is why RawTherapee's own X-T20 profile (the one an
 earlier draft pinned at `eacfa93e`), and its X-T1, X-T10, X-Pro2, X-S1, X-E1,
 X-E2, X100S, X100T, GFX 50R and FinePix F600EXR profiles, are not offered; ART's public-domain X-T2, X-T20
 and X-T30 profiles are. Excluded profiles can be listed once their authors state
@@ -125,8 +136,8 @@ cargo run -p rawmakase-model --example profile_catalogue -- generate \
 
 It parses every DCP with RAWmakase's own reader and writes both generated files
 deterministically (sources in `sources.toml`'s order, files by name, the first
-source's copy of identical bytes, a file name two profiles share given its
-source's name). `check` instead of `generate` fails if the checked-in files differ.
+source's copy of identical bytes or of a profile name and camera, a file name two
+profiles share given its source's name). `check` instead of `generate` fails if the checked-in files differ.
 Review the whole diff, including the exclusions, as one change.
 
 **Checks.** CI parses the shipped catalogue in the model's unit tests with no

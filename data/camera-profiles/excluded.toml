@@ -774,6 +774,11 @@ reason = "the same file as rawtherapee/fujifilm-x-t3"
 
 [[excluded]]
 source = "art"
+file = "FUJIFILM X-T4.dcp"
+reason = "the same profile name and camera as rawtherapee/fujifilm-x-t4, which XMP could not tell apart"
+
+[[excluded]]
+source = "art"
 file = "FUJIFILM X100S.dcp"
 reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
 
@@ -1026,6 +1031,11 @@ reason = "the same file as rawtherapee/panasonic-dmc-lx100"
 source = "art"
 file = "PENTAX K-5.dcp"
 reason = "its notice (\"Copyright Maciej Dworak\") grants no terms beyond copyright"
+
+[[excluded]]
+source = "art"
+file = "PENTAX K-50.dcp"
+reason = "the same profile name and camera as rawtherapee/pentax-k-50, which XMP could not tell apart"
 
 [[excluded]]
 source = "art"

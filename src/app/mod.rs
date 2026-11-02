@@ -348,7 +348,9 @@ impl Editor {
             messages: messages::Messages::starting_with("Pick a photo in the Library to begin"),
             catalog_work: None,
             importing: None,
-            profile_download: Default::default(),
+            profile_download: profile_download::Downloads::with_dismissed(
+                session.dismissed_community_profiles.clone(),
+            ),
             close_confirm: false,
             close_after_work: false,
             quit_by: None,
@@ -419,6 +421,7 @@ impl Editor {
                     no_auto_black_white_mix: self.first_conversion
                         == treatment::FirstConversion::KeepMix,
                     no_lensfun_suggestions: !self.lensfun.suggest,
+                    dismissed_community_profiles: self.profile_download.dismissed().clone(),
                     pause_checksums: self.checksums_paused,
                     library_layout: self.saved_layout.clone(),
                     copy_groups: Some(self.copy_groups.clone()),

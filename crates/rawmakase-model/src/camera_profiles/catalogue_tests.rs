@@ -486,3 +486,88 @@ fn pinned_checkouts_regenerate_the_shipped_catalogue_and_install() {
         );
     }
 }
+
+#[test]
+fn only_reviewed_notice_wordings_dedicate_a_profile() {
+    for (notice, terms) in [
+        ("public domain", Some(Terms::PublicDomain)),
+        ("  Public  Domain ", Some(Terms::PublicDomain)),
+        ("RawTherapee CC0", Some(Terms::Cc0)),
+        ("CC0 1.0", Some(Terms::Cc0)),
+        ("Not CC0", None),
+        ("Not licensed under CC0", None),
+        ("CC0 except commercial use", None),
+        ("not public domain", None),
+        ("Copyright Maciej Dworak", None),
+        ("", None),
+    ] {
+        assert_eq!(Terms::of_notice(notice), terms, "{notice:?}");
+    }
+    // Generation leaves a profile whose notice only mentions a dedication out.
+    let (generated, _) = synthetic(vec![found(
+        "art",
+        "Test X1.dcp",
+        dcp("Test X1", "Test X1", "Not CC0"),
+    )]);
+    assert!(generated.profiles.is_empty());
+    assert!(generated.excluded[0].reason.contains("grants no terms"));
+}
+
+#[test]
+fn a_second_source_with_the_same_profile_name_and_camera_is_left_out() {
+    // XMP names a profile by ProfileName: two sources' "Test X1" for the same
+    // camera would swap on a round trip, so only the first source's is listed.
+    let (generated, catalogue) = synthetic(vec![
+        found(
+            "rawtherapee",
+            "Test X1.dcp",
+            dcp("Test X1", "Test X1", "public domain"),
+        ),
+        found(
+            "art",
+            "Test X1.dcp",
+            dcp("TEST X1", "Test X1", "RawTherapee CC0"),
+        ),
+    ]);
+    let ids: Vec<_> = generated.profiles.iter().map(|p| p.id.as_str()).collect();
+    assert_eq!(ids, ["rawtherapee/test-x1"]);
+    assert_eq!(generated.profiles[0].filename, "Test X1.dcp");
+    assert_eq!(
+        generated.excluded[0].reason,
+        "the same profile name and camera as rawtherapee/test-x1, which XMP could not tell apart"
+    );
+    assert_eq!(catalogue.matching(&camera("Test X1")).len(), 1);
+    // A hand-edited catalogue listing both is refused.
+    let (one, _) = synthetic(vec![found(
+        "art",
+        "Test X1 Copy.dcp",
+        dcp("Test X1", "Test X1", "CC0 1.0"),
+    )]);
+    let both = format!(
+        "{}{}",
+        generated.catalogue_toml(),
+        &one.catalogue_toml()[one.catalogue_toml().find("\n[[profile]]").unwrap()..]
+    );
+    let error = Catalogue::parse(SOURCES, &both).expect_err("refused");
+    assert!(format!("{error:#}").contains("share a profile name and camera"));
+}
+
+#[test]
+fn the_profile_menu_names_a_catalogue_profiles_source() {
+    let e = &catalogue().entries()[0];
+    let profile = from_bytes(&dcp(&e.profile.camera, &e.profile.name, &e.profile.notice)).unwrap();
+    assert_eq!(
+        catalogue().title(&profile),
+        Some(format!("{} ({})", e.profile.name, e.source.name))
+    );
+    // Its name stays what XMP writes.
+    assert_eq!(profile.name, e.profile.name);
+    // A profile of that name and camera with another notice is not the catalogue's.
+    let other = from_bytes(&dcp(
+        &e.profile.camera,
+        &e.profile.name,
+        "Copyright Someone",
+    ))
+    .unwrap();
+    assert_eq!(catalogue().title(&other), None);
+}
