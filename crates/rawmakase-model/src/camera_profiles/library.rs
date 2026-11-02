@@ -223,8 +223,8 @@ impl Groups {
 pub fn listed_from(dirs: &[PathBuf], m: &Metadata) -> Listed {
     listed_in(dirs, m, &Cameras::default())
 }
-/// [`import_files`] into `destination` instead of the user's library, for tests.
-#[cfg(any(test, feature = "test-support"))]
+/// [`import_files`] into `destination`, a profile library folder: the user's
+/// (`data_dir()/camera-profiles`) or a test's.
 pub fn import_into_dir(
     paths: &[PathBuf],
     destination: &Path,
