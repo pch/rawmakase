@@ -37,34 +37,14 @@ fn sniff(head: &[u8]) -> Kind {
     {
         return Kind::Jxl;
     }
-    if head.len() >= 12 && &head[4..8] == b"ftyp" {
-        let brands = &head[8..head.len().min(64)];
-        let (brands, _) = brands.as_chunks::<4>();
-        if brands.iter().any(|b| b == b"avif" || b == b"avis") {
-            return Kind::Avif;
-        }
-        // Any other HEIF, by its image or sequence brands: HEVC's, or MIAF's,
-        // which name no codec (the HEIC reader says when it isn't HEVC).
-        // brands[1] is the minor version, not a brand.
-        if brands.iter().enumerate().any(|(i, b)| {
-            i != 1
-                && matches!(
-                    b,
-                    b"heic"
-                        | b"heix"
-                        | b"heim"
-                        | b"heis"
-                        | b"hevc"
-                        | b"hevx"
-                        | b"hevm"
-                        | b"hevs"
-                        | b"mif1"
-                        | b"msf1"
-                        | b"miaf"
-                )
-        }) {
-            return Kind::Heic;
-        }
+    use rawmakase_interop::isobmff::{AVIF_BRANDS, HEIF_BRANDS, ftyp_brands};
+    if ftyp_brands(head).any(|b| AVIF_BRANDS.contains(b)) {
+        return Kind::Avif;
+    }
+    // Any other HEIF, by its image or sequence brands: HEVC's, or MIAF's,
+    // which name no codec (the HEIC reader says when it isn't HEVC).
+    if ftyp_brands(head).any(|b| HEIF_BRANDS.contains(b)) {
+        return Kind::Heic;
     }
     Kind::Other
 }

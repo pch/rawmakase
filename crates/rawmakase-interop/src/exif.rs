@@ -580,19 +580,12 @@ fn gps_tag(tag: u16) -> bool {
     tag <= 0x1f
 }
 
-/// Whether an `ftyp` box lists the AVIF/HEIF-image brands (`avif`, `avis`,
-/// `mif1`, and HEIC's `heic` and `heix`) as major or compatible brand; other
-/// ISOBMFF files (Canon CR3, MP4) are left to the TIFF path.
+/// Whether an `ftyp` box lists an AVIF or other HEIF brand
+/// ([`crate::isobmff::AVIF_BRANDS`], [`crate::isobmff::HEIF_BRANDS`]), as the pixel reader
+/// takes them; other ISOBMFF files (Canon CR3, MP4) are left to the TIFF path.
 fn has_heif_brand(head: &[u8]) -> bool {
-    let Some(brands) = head.get(8..head.len().min(64)) else {
-        return false;
-    };
-    let (brands, _) = brands.as_chunks::<4>();
-    // brands[1] is the minor version, not a brand.
-    brands
-        .iter()
-        .enumerate()
-        .any(|(i, b)| i != 1 && matches!(b, b"avif" | b"avis" | b"mif1" | b"heic" | b"heix"))
+    crate::isobmff::ftyp_brands(head)
+        .any(|b| crate::isobmff::AVIF_BRANDS.contains(b) || crate::isobmff::HEIF_BRANDS.contains(b))
 }
 
 /// Offset of the TIFF header in a WebP's EXIF chunk (some writers keep
@@ -1021,6 +1014,29 @@ mod container_tests {
             super::camera_names(&path),
             Some(("Fixture".into(), "Synthetic 1".into()))
         );
+    }
+    /// Every brand the pixel reader takes as a HEIF's is one whose EXIF is
+    /// read: a file listing only HEVC's sequence or MIAF's brands is no less
+    /// a HEIF.
+    #[test]
+    fn a_heif_listing_any_heif_brand_has_its_exif_read() {
+        let dir = tempfile::tempdir().unwrap();
+        for brand in crate::isobmff::HEIF_BRANDS {
+            let path = dir.path().join("only.heic");
+            let mut bytes = std::fs::read(fixture("metadata.heic")).unwrap();
+            // ftyp: major brand heic, minor version 0, compatible mif1, heic,
+            // miaf; every brand becomes `brand`.
+            for at in [8, 16, 20, 24] {
+                bytes[at..at + 4].copy_from_slice(&brand);
+            }
+            std::fs::write(&path, bytes).unwrap();
+            assert_eq!(
+                super::camera_names(&path),
+                Some(("Fixture".into(), "Synthetic 1".into())),
+                "{}",
+                String::from_utf8_lossy(&brand)
+            );
+        }
     }
     #[test]
     fn other_isobmff_files_are_not_read_as_heif() {

@@ -12,6 +12,32 @@ pub const JXL_CONTAINER: [u8; 12] = [
     0, 0, 0, 0x0c, b'J', b'X', b'L', b' ', 0x0d, 0x0a, 0x87, 0x0a,
 ];
 
+/// AVIF's image and sequence brands.
+pub const AVIF_BRANDS: [[u8; 4]; 2] = [*b"avif", *b"avis"];
+
+/// The other HEIF brands RAWmakase reads a file by: HEVC's image and sequence
+/// brands, and MIAF's and HEIF's own, which name no codec.
+pub const HEIF_BRANDS: [[u8; 4]; 11] = [
+    *b"heic", *b"heix", *b"heim", *b"heis", *b"hevc", *b"hevx", *b"hevm", *b"hevs", *b"mif1",
+    *b"msf1", *b"miaf",
+];
+
+/// The major and compatible brands of the `ftyp` box `head` starts with, as
+/// far as its first 64 bytes go (not its minor version); none when it starts
+/// with no `ftyp` box.
+pub fn ftyp_brands(head: &[u8]) -> impl Iterator<Item = &[u8; 4]> {
+    let brands = match head.get(4..8) {
+        Some(b"ftyp") => head.get(8..head.len().min(64)).unwrap_or_default(),
+        _ => &[],
+    };
+    let (brands, _) = brands.as_chunks::<4>();
+    brands
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != 1)
+        .map(|(_, b)| b)
+}
+
 /// A box: its kind and its body's offset and length.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BoxHeader {
