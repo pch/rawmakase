@@ -941,3 +941,51 @@ fn a_cmyk_jpeg_is_not_editable_by_command() -> anyhow::Result<()> {
     assert_eq!(e.document.catalog_photo, None);
     Ok(())
 }
+
+/// A turn ends once it pauses even while the window is hidden and no frame is
+/// drawn, so its step is taken and autosave is no longer held off (#791).
+#[test]
+fn a_paused_turn_ends_without_drawing() {
+    let (mut e, ctx) = editor();
+    // The last drawn frame had the button down; the window then lost focus,
+    // and the release never reached egui.
+    let pressed = |pressed| egui::Event::PointerButton {
+        pos: egui::pos2(1., 1.),
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    let input = egui::RawInput {
+        events: vec![egui::Event::PointerMoved(egui::pos2(1., 1.)), pressed(true)],
+        ..Default::default()
+    };
+    ctx.run_ui(input, |_| {}).textures_delta.clear();
+    e.execute_command(
+        Command::new(Operation::Adjust(Param::Setting(ParameterId::Exposure), 1)),
+        &ctx,
+    )
+    .unwrap();
+    let hidden = egui::RawInput {
+        focused: false,
+        events: vec![pressed(false)],
+        ..Default::default()
+    };
+    let logic = |e: &mut Editor| {
+        let _ = ctx.run_logic(&hidden, |ctx| {
+            eframe::App::logic(e, ctx, &mut eframe::Frame::_new_kittest());
+        });
+    };
+    logic(&mut e);
+    assert!(
+        e.document.edit.history().in_gesture(),
+        "ended while turning"
+    );
+    let paused = std::time::Instant::now() - std::time::Duration::from_secs(1);
+    e.automation.turn = e.automation.turn.map(|(_, scope)| (paused, scope));
+    logic(&mut e);
+    assert!(!e.automation.has_turn());
+    assert!(!e.document.edit.history().in_gesture());
+    e.execute_command(Command::new(Operation::Action(Action::Undo)), &ctx)
+        .unwrap();
+    assert_eq!(e.document.edit.recipe().exposure, 0.);
+}

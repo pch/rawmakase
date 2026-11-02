@@ -530,6 +530,26 @@ mod integration_tests {
         assert_eq!(r1.recv().unwrap().unwrap_err().code, "no_document");
         assert!(r2.recv().unwrap().is_ok());
     }
+    /// A window macOS stops drawing (behind other apps) gets passes that run only
+    /// `App::logic`: control requests and the worker results they wait on are
+    /// still taken (#791).
+    #[test]
+    fn requests_and_worker_results_are_taken_without_drawing() {
+        let ctx = egui::Context::default();
+        let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+        let (tx, rx) = mpsc::sync_channel(4);
+        e.controls = Hub::new(Settings::default(), rx);
+        let (state, reply) =
+            socket::test_request(vec![Msg::Command(Command::new(commands::Operation::State))]);
+        tx.send(Msg::Request(state)).unwrap();
+        e.tx.send(crate::app::worker::Event::CatalogWorking("Reading".into()))
+            .unwrap();
+        let _ = ctx.run_logic(&egui::RawInput::default(), |ctx| {
+            eframe::App::logic(&mut e, ctx, &mut eframe::Frame::_new_kittest());
+        });
+        assert!(reply.try_recv().unwrap().is_ok());
+        assert_eq!(e.catalog_work.as_deref(), Some("Reading"));
+    }
     #[test]
     fn a_wait_is_answered_when_it_holds_or_when_its_time_is_up() {
         use std::time::Duration;
