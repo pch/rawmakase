@@ -55,6 +55,18 @@ struct Pixels {
 /// `prepare` lets an image have.
 const MAX_PIXELS: u64 = 150_000_000;
 
+/// Whether pictures coded at `placements`' sizes, each the largest of a
+/// picture's SPS, take no more than [`MAX_PIXELS`] decoded together.
+fn coded_fits<'a>(placements: impl Iterator<Item = &'a [(u32, u32)]>) -> bool {
+    placements
+        .map(|sizes| {
+            let area = |(w, h): &(u32, u32)| u128::from(*w) * u128::from(*h);
+            sizes.iter().map(area).max().unwrap_or(0)
+        })
+        .sum::<u128>()
+        <= u128::from(MAX_PIXELS)
+}
+
 /// Whether `count` tiles of `size` take no more than [`MAX_PIXELS`] decoded.
 fn within_limit(count: usize, (w, h): (u32, u32)) -> bool {
     count as u128 * u128::from(w) * u128::from(h) <= u128::from(MAX_PIXELS)
@@ -185,32 +197,31 @@ impl HeicFile {
         Ok(())
     }
 
-    /// Whether every SPS, in a tile's `hvcC` or among its NAL units, codes it
-    /// no wider or taller than the header's size in whole 64-pixel blocks: a
-    /// picture is coded in whole coding blocks, at most 64 pixels a side, and
-    /// cropped to its size. The system's decoder would otherwise decode, and
-    /// allocate, a picture as large as an SPS says, whatever the header says.
+    /// Whether the pictures, at the size their SPS code them, take no more
+    /// than [`MAX_PIXELS`] together. The system's decoder decodes a picture
+    /// at its coded size, padding and all, whatever the header says, so this,
+    /// not the header, bounds its work. A coded size larger than the header's
+    /// is not refused itself: encoders pad (Apple's codes a 64×64 picture as
+    /// 160×64), and the decoded image is still held to the header's size.
     fn coded_within(&mut self) -> Result<()> {
-        let blocks = |v: u32| u64::from(v).div_ceil(64) * 64;
-        let (width, height) = self.layout.tile;
-        let mut checked = std::collections::HashSet::new();
+        let mut coded: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();
         for (id, config) in &self.layout.tiles {
-            if !checked.insert(*id) {
+            if coded.contains_key(id) {
                 continue;
             }
             let data = self
                 .heif
                 .data(&mut self.file, *id)
                 .ok_or_else(|| anyhow!("The HEIF image data is missing or cut off"))?;
-            let coded = hevc::coded_in(&data, config.length_size)
+            let mut sizes = hevc::coded_in(&data, config.length_size)
                 .ok_or_else(|| anyhow!("The HEVC image data is corrupt"))?;
-            for &(w, h) in config.coded.iter().chain(&coded) {
-                ensure!(
-                    u64::from(w) <= blocks(width) && u64::from(h) <= blocks(height),
-                    "The HEVC image is coded larger than the header says ({w} x {h})"
-                );
-            }
+            sizes.extend(&config.coded);
+            coded.insert(*id, sizes);
         }
+        ensure!(
+            coded_fits(self.layout.tiles.iter().map(|(id, _)| &coded[id][..])),
+            "The HEVC image is coded at more than 150 megapixels"
+        );
         Ok(())
     }
 
@@ -501,6 +512,25 @@ mod tests {
         assert!(!within_limit(2, (8_661, 8_661)));
         assert!(!within_limit(4, (1 << 31, 1 << 31)));
         assert!(!within_limit(65_536, (u32::MAX, u32::MAX)));
+    }
+
+    #[test]
+    fn pictures_are_held_to_150_megapixels_as_coded() {
+        // Apple's encoder codes a 64×64 picture as 160×64.
+        assert!(coded_fits([&[(160, 64)][..]].into_iter()));
+        assert!(coded_fits([&[(12_247, 12_247)][..]].into_iter()));
+        assert!(!coded_fits([&[(12_248, 12_248)][..]].into_iter()));
+        // A picture's largest SPS counts, and a tile as often as it is placed.
+        assert!(!coded_fits([&[(64, 64), (12_248, 12_248)][..]].into_iter()));
+        let tile = [(8_661, 8_661)];
+        assert!(coded_fits([&tile[..]].into_iter()));
+        assert!(!coded_fits([&tile[..], &tile[..]].into_iter()));
+        assert!(!coded_fits(std::iter::repeat_n(
+            &[(u32::MAX, u32::MAX)][..],
+            4096
+        )));
+        // No SPS: nothing the system's decoder can decode.
+        assert!(coded_fits([&[][..]].into_iter()));
     }
 
     #[test]

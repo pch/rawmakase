@@ -1548,11 +1548,12 @@ mod tests {
         assert_eq!(super::dimensions(&fixture("grid.heic")), Some((120, 100)));
     }
 
-    /// A header saying a picture is smaller than it is coded is not believed:
-    /// its SPS says the size it is coded at, and the picture is refused before
-    /// a system decoder decodes it, on every platform.
+    /// A header saying a picture is smaller than it is coded is held to: the
+    /// image comes out no larger than the header says, or not at all. Its
+    /// coded size, within 150 megapixels, is not refused itself, as encoders
+    /// pad (Apple's codes 64×64 as 160×64).
     #[test]
-    fn a_heic_coded_larger_than_its_header_says_is_refused() {
+    fn a_heic_coded_larger_than_its_header_says_is_no_larger_shown() {
         if cfg!(target_os = "macos") {
             let image = decode(&fixture("wide.heic")).unwrap();
             assert_eq!(image.dimensions(), (192, 128));
@@ -1566,7 +1567,22 @@ mod tests {
         let path = dir.path().join("small-header.heic");
         std::fs::write(&path, bytes).unwrap();
         assert_eq!(super::dimensions(&path), Some((64, 64)));
-        let error = format!("{:#}", decode(&path).unwrap_err());
-        assert!(error.contains("coded larger"), "{error}");
+        match decode(&path) {
+            Ok(image) => assert_eq!(image.dimensions(), (64, 64)),
+            Err(error) => {
+                let error = format!("{error:#}");
+                assert!(
+                    [
+                        "not the size it says",
+                        "only on macOS",
+                        "HEVC Video Extensions"
+                    ]
+                    .iter()
+                    .any(|e| error.contains(e)),
+                    "{error}"
+                );
+                assert!(!cfg!(target_os = "macos") || error.contains("not the size"));
+            }
+        }
     }
 }
