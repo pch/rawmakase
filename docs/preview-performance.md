@@ -475,6 +475,13 @@ and 0.002–0.006 on the DNGs; only the mean was measured. The GPU added too lit
 to share Develop's device for, so previews stay on the CPU. Previews cached
 before are keyed by `EditSource::preview_tag` and made again.
 
+With larger RAWs (eight CC0 raw.pixls.us samples, 46-102 MP, same machine, the
+real workers, two runs each), eight visible edited previews took 2.0-2.3 s against
+24.9-25.3 s rendered one at a time, but peaked at 4.7-5.25 GB against 3.2-3.7 GB;
+the 102 MP GFX100S alone peaked at 2.9 GB either way. Full pace therefore renders
+one photo per 4 GB of memory side by side (`platform::memory`): two on an 8 GB
+computer, four from 16 GB.
+
 ## Decoder speed — 2026-10-18
 
 RAWmakase's own decoders against LibRaw, measured at the switch to them on 45

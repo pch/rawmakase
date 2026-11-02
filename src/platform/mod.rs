@@ -1,6 +1,7 @@
 //! Platform integration, independent of catalog and rendering policy.
 pub(crate) mod display;
 pub(crate) mod locale;
+pub(crate) mod memory;
 #[cfg(any(target_os = "macos", test))]
 pub(crate) mod menu;
 pub(crate) mod network;

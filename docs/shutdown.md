@@ -44,7 +44,8 @@ Workers that read or decode photos behind the user's back start from
 their threads run at a lower scheduling priority (Linux and Windows), and parallel
 work they start runs on a pool of two background threads, never the shared pool.
 The Library's edited previews use a wider pool while the Library is in front
-with nothing else rendering (up to four renders on every core but one; see
+with nothing else rendering (up to four renders on every core but one, one per
+4 GB of memory; see
 `previews::Pace`), and drop back to one render on two threads, cancelling the
 wider renders under way, when it is not. Its thumbnail workers (two to four, by
 core count) run at normal priority, as the one worker before them did, so the

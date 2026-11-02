@@ -362,15 +362,28 @@ fn full_threads() -> usize {
     std::thread::available_parallelism().map_or(2, |n| n.get().saturating_sub(1).max(2))
 }
 /// The most renders side by side at full pace. Each holds its file, its sensor
-/// data and a half-size image (several hundred MB for a 100-megapixel RAW),
-/// so a computer with many cores spends the rest on each render's parallel
-/// stages rather than on more renders at once.
+/// data and a half-size image, so a computer with many cores spends the rest
+/// on each render's parallel stages rather than on more renders at once.
 const FULL_RENDERS: usize = 4;
-/// Renders side by side at `pace`.
-fn renders_at(pace: Pace, full_threads: usize) -> usize {
+/// Memory per render side by side at full pace. With 46-102 MP RAWs, four at
+/// once peaked at 4.7-5.25 GB, against 2.9 GB for the largest alone and 3.2-3.7
+/// GB for one at a time: an 8 GB computer renders two at once, 16 GB or more
+/// four.
+const MEMORY_PER_RENDER: u64 = 4 << 30;
+/// Renders side by side at full pace on a computer with `memory` bytes (to the
+/// nearest [`MEMORY_PER_RENDER`], as systems keep some back) and
+/// `full_threads`; two when its memory isn't known.
+fn full_renders(memory: Option<u64>, full_threads: usize) -> usize {
+    let by_memory = memory.map_or(2, |bytes| {
+        (bytes.saturating_add(MEMORY_PER_RENDER / 2) / MEMORY_PER_RENDER) as usize
+    });
+    by_memory.clamp(1, FULL_RENDERS).min(full_threads)
+}
+/// Renders side by side at `pace`, at most `full_renders` at full pace.
+fn renders_at(pace: Pace, full_renders: usize) -> usize {
     match pace {
         Pace::Background => 1,
-        Pace::Full => full_threads.min(FULL_RENDERS),
+        Pace::Full => full_renders,
     }
 }
 /// What the worker does next.
@@ -415,6 +428,7 @@ fn spawn_edited_with(
     };
     let thread = crate::raw::spawn_background(move || {
         let full_threads = full_threads();
+        let full_renders = full_renders(crate::platform::memory::total(), full_threads);
         let renders = Renders {
             background: crate::raw::background_pool(2, "edited-preview").ok(),
             full: crate::raw::background_pool(full_threads, "edited-preview-full").ok(),
@@ -425,7 +439,7 @@ fn spawn_edited_with(
             render,
         };
         loop {
-            match next_step(&renders.results.shared, &renders.wanted, full_threads) {
+            match next_step(&renders.results.shared, &renders.wanted, full_renders) {
                 Step::Exit => break,
                 Step::Skip(id, ticket) => renders.results.send(EditResult::Skipped(id, ticket)),
                 Step::Store(path, tag, image) => renders.store(&path, &tag, &image),
@@ -655,7 +669,7 @@ impl Drop for Finished {
 /// The worker's next step, waiting while there is none. A job leaves the
 /// queue only by the step that does it, and only the worker removes jobs
 /// (the UI appends), so an index stays valid until its step.
-fn next_step(shared: &Shared, wanted: &Wanted, full_threads: usize) -> Step {
+fn next_step(shared: &Shared, wanted: &Wanted, full_renders: usize) -> Step {
     let mut state = shared.lock();
     loop {
         if state.closed {
@@ -698,7 +712,7 @@ fn next_step(shared: &Shared, wanted: &Wanted, full_threads: usize) -> Step {
         // Every job left is a render, of a photo shown or asked ahead.
         let visible =
             |q: &Queued| matches!(&q.job, EditJob::Render { id, .. } if shown.contains(id));
-        let free = state.running.len() < renders_at(state.pace, full_threads);
+        let free = state.running.len() < renders_at(state.pace, full_renders);
         // One render of a file at a time. Two would wait inside the pool for
         // one Camera Look fit of it (`camera_look::default_profile`), and the
         // waiter may run on the thread of the very render it waits for, while
@@ -1422,6 +1436,24 @@ pub(super) mod tests {
     /// A file being rendered isn't rendered again beside it: the second render
     /// would wait inside the pool for the first's Camera Look fit, possibly on
     /// the first's own thread. It is still looked up, and other files render.
+    #[test]
+    fn computers_with_less_memory_render_fewer_side_by_side() {
+        const GIB: u64 = 1 << 30;
+        let renders = |gib: f64| full_renders(Some((gib * GIB as f64) as u64), 17);
+        assert_eq!(renders(8.), 2);
+        // Less than the label says, as systems keep some back.
+        assert_eq!(renders(7.6), 2);
+        assert_eq!(renders(12.), 3);
+        assert_eq!(renders(16.), 4);
+        assert_eq!(renders(64.), 4);
+        assert_eq!(renders(4.), 1);
+        assert_eq!(renders(1.), 1);
+        // Unknown: as an 8 GB computer.
+        assert_eq!(full_renders(None, 17), 2);
+        // Never more than the full pace's threads.
+        assert_eq!(full_renders(Some(64 * GIB), 2), 2);
+    }
+
     #[test]
     fn a_file_is_rendered_once_at_a_time() {
         let (one, other) = (Path::new("/photos/one.NEF"), Path::new("/photos/other.NEF"));
