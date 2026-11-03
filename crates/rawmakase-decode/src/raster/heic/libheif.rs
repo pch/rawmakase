@@ -199,9 +199,10 @@ fn open() -> Result<Library, &'static str> {
         // SAFETY: heif_init takes optional parameters, none here; it is
         // never undone, as the library stays open.
         let init: unsafe extern "C" fn(*const c_void) -> HeifError = unsafe { cast(init) };
-        if unsafe { init(std::ptr::null()) }.code != 0 {
-            return Err(INSTALL);
-        }
+        // Its error is a plugin that would not load, as one whose optional
+        // library (ffmpeg, dav1d) isn't installed: the rest load, and whether
+        // HEVC is among them is asked next.
+        unsafe { init(std::ptr::null()) };
     }
     let have_decoder: unsafe extern "C" fn(c_int) -> c_int =
         function!(c"heif_have_decoder_for_format");
@@ -355,6 +356,40 @@ pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A plugin that won't load, as one whose optional library isn't
+    /// installed (CI's Arch has no ffmpeg or dav1d), makes heif_init say so,
+    /// but libheif is still there: it is not reported missing. With only a
+    /// broken plugin where libheif looks, a HEVC decoder that is itself a
+    /// plugin (as Debian's) is hidden, so having none is said instead; one
+    /// built in (as Arch's) is found. Run in a child process, as libheif is
+    /// opened once.
+    #[test]
+    fn a_plugin_that_wont_load_is_not_libheif_missing() {
+        const CHILD: &str = "RAWMAKASE_LIBHEIF_PLUGIN_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            let found = available();
+            assert!(found.is_ok() || found == Err(NO_HEVC.into()), "{found:?}");
+            return;
+        }
+        if available().is_err() {
+            assert!(
+                std::env::var_os("RAWMAKASE_REQUIRE_HEIF").is_none(),
+                "no libheif"
+            );
+            return;
+        }
+        let plugins = tempfile::tempdir().unwrap();
+        std::fs::write(plugins.path().join("libheif-broken.so"), b"").unwrap();
+        let name = "raster::heic::libheif::tests::a_plugin_that_wont_load_is_not_libheif_missing";
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", name])
+            .env(CHILD, "1")
+            .env("LIBHEIF_PLUGIN_PATH", plugins.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
 
     /// Exiting while a decode runs past [`EXIT_WAIT`] ends the process then,
     /// with status 1, rather than running libheif's destructors under it or
