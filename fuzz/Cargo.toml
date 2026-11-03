@@ -1,0 +1,46 @@
+# Fuzz targets for RAWmakase's own RAW decoders (rawmakase-raw): every file
+# the Library meets goes through `open`, `preview` and `decode`, so none of
+# them may panic, hang or allocate without bound on a hostile file. Run with
+# cargo-fuzz on nightly Rust (.github/workflows/fuzz.yml):
+#
+#     cargo +nightly fuzz run open fuzz/corpus/open
+#
+# A workspace of its own: libFuzzer builds only with nightly's sanitizer
+# flags, so this crate stays out of the main workspace, its lockfile and
+# `cargo test --workspace`.
+[package]
+name = "rawmakase-raw-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+rawmakase-raw = { path = "../crates/rawmakase-raw" }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "open"
+path = "fuzz_targets/open.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "preview"
+path = "fuzz_targets/preview.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode"
+path = "fuzz_targets/decode.rs"
+test = false
+doc = false
+bench = false

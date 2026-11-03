@@ -192,6 +192,7 @@ struct Library {
 // SAFETY: plain function pointers into a library never closed; libheif's
 // functions may be called from any thread, each context used by one.
 unsafe impl Send for Library {}
+// SAFETY: as for Send: shared, the pointers are only read and called.
 unsafe impl Sync for Library {}
 
 /// The library, opened and initialized once, or why it can't be used.
@@ -247,6 +248,7 @@ fn open() -> Result<Library, &'static str> {
             // Its error is a plugin that would not load, as one whose optional
             // library (ffmpeg, dav1d) isn't installed: the rest load, and whether
             // HEVC is among them is asked next.
+            // SAFETY: as above: no parameters, and called once, here.
             unsafe { init(std::ptr::null()) };
         }
         let have_decoder: unsafe extern "C" fn(c_int) -> c_int =
@@ -317,8 +319,8 @@ pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
     let bytes = file.bytes()?;
     // Declared after `bytes`, so released before them: libheif reads them
     // without a copy.
-    // SAFETY: allocations libheif makes, each released once by `Owned`.
     let context = Owned {
+        // SAFETY: an allocation libheif makes, released once by `Owned`.
         pointer: unsafe { (lib.context_alloc)() },
         release: lib.context_free,
     };

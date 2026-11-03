@@ -1,6 +1,7 @@
 //! Minimal bounded TIFF directory reading for RAW containers (ARW, DNG, the TIFF
 //! inside RAF) and the EXIF embedded in JPEGs, PNGs, WebPs, AVIFs, HEIFs and
 //! JPEG XL files. Reads only the directories and tags it is asked for.
+#![forbid(unsafe_code)]
 use std::{
     collections::BTreeMap,
     fs::File,

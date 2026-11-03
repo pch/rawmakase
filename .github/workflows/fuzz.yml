@@ -1,0 +1,57 @@
+name: Fuzz RAW decoders
+
+# libFuzzer against rawmakase-raw's `open`, `preview` and `decode`
+# (fuzz/fuzz_targets): nightly for ten minutes each, and for a minute each on a
+# pull request that changes the targets or this workflow. Seeded only from the
+# repository's own synthetic DNGs (tests/corpus/charts, tests/corpus/scene-probes),
+# never from photos. A crash, timeout or runaway allocation fails the run and
+# uploads the input that caused it.
+on:
+  schedule:
+    - cron: '41 2 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'fuzz/**'
+      - '.github/workflows/fuzz.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [open, preview, decode]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # libFuzzer's instrumentation needs nightly's -Zsanitizer.
+      - name: Rust
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo +nightly install cargo-fuzz --version 0.13.2 --locked
+      - name: Seed corpus
+        run: |
+          mkdir -p "fuzz/corpus/${{ matrix.target }}"
+          cp tests/corpus/charts/*.dng tests/corpus/scene-probes/*.dng "fuzz/corpus/${{ matrix.target }}/"
+      # -max_len covers the seeds (0.2 to 0.3 MB); -rss_limit_mb and -timeout
+      # turn an allocation sized by a hostile header, or a hang, into a failure.
+      - name: Fuzz
+        run: >-
+          cargo +nightly fuzz run ${{ matrix.target }} "fuzz/corpus/${{ matrix.target }}" --
+          -max_total_time=${{ github.event_name == 'pull_request' && 60 || 600 }}
+          -max_len=1048576 -rss_limit_mb=2048 -timeout=30
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-${{ matrix.target }}-artifacts
+          path: fuzz/artifacts/
+          if-no-files-found: ignore

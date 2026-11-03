@@ -15,6 +15,9 @@
 //! incomplete (a cut-off file). Asking is bounded rather than waited on. The
 //! context is closed before [`decode`] returns, which joins its worker
 //! threads; they are idle by then.
+// Every unsafe operation here crosses into a C API: each one says why it is
+// sound, and an unsafe function's body is no unsafe block of its own.
+#![deny(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
 use anyhow::{Result, bail};
 use rav1d::include::dav1d::data::Dav1dData;
 use rav1d::include::dav1d::dav1d::{Dav1dContext, Dav1dSettings};

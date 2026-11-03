@@ -2,6 +2,9 @@
 //! the user's back takes only cores the foreground leaves idle. Linux: ten
 //! steps nicer (at most 19), which needs no privilege and applies to the one
 //! thread. Windows: below the process's class. macOS keeps the priority.
+// The thread-priority calls cross into the platform's C API: each says why it
+// is sound.
+#![deny(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
 
 /// Lowers the calling thread's priority from now on.
 pub(super) fn lower() {

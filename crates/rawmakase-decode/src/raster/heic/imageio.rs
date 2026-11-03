@@ -163,8 +163,9 @@ fn decode(file: &HeicFile, bytes: &[u8]) -> Result<Pixels> {
     // SAFETY: the source is a live CGImageSource.
     let index = unsafe { source.primary_image_index() };
     // SAFETY: the index is the source's own.
+    let status = unsafe { source.status_at_index(index) };
     ensure!(
-        unsafe { source.status_at_index(index) } == CGImageSourceStatus::StatusComplete,
+        status == CGImageSourceStatus::StatusComplete,
         "macOS could not read the HEIF image"
     );
     // Decoded now, so a decode that fails can fail here.
