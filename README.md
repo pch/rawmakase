@@ -220,6 +220,19 @@ GPU tests are ignored as well; run them with `cargo test -p rawmakase-engine --l
 
 Application CI runs `make check`, a release build, an Arch package build and a `cargo deny` license and advisory audit. Website-only pushes and pull requests run the Hugo build instead, and stats-only changes run the stats service's tests; edits to either workflow also run the workflow linter. A stable `vX.Y.Z` tag on `main` matching `Cargo.toml` builds both macOS DMGs, the Linux packages and the Windows installer. Publication waits for Apple notarization and package checks, then refreshes the website's download links. See [packaging/RELEASING.md](packaging/RELEASING.md) for credentials, rehearsal runs, supported systems and the AUR pause.
 
+### Skills
+
+Coding agents follow [AGENTS.md](AGENTS.md). For the recurring maintainer workflows, the repository also has skills in [`.agents/skills/`](.agents/skills) (Codex reads them there; `.claude/skills` links to the same folder for Claude Code). Run one with `/name` in Claude Code or `$name` in Codex, or just ask in plain words: agents pick a skill up from its description.
+
+| Skill | What it does | Example |
+| --- | --- | --- |
+| [`issue`](.agents/skills/issue/SKILL.md) | Reads an issue and everything it links, checks for overlapping PRs, gets sample RAWs, reproduces the bug with a failing test, fixes it and hands off to `ship`. Can also stop at a diagnosis or a status report. | `/issue 812`<br>"#812: investigate, don't fix yet"<br>"where do we stand with #675?" |
+| [`ship`](.agents/skills/ship/SKILL.md) | Has a model from another provider review the change until it approves, then opens the PR, watches CI and bot comments, and merges when green. Can also review a plan before any code is written. | `/ship`<br>"let codex astra medium review, merge when green"<br>"PR only, don't wait for Windows CI"<br>"plan this with codex until you agree, let me approve" |
+| [`release`](.agents/skills/release/SKILL.md) | Waits for the PRs you name, writes the release notes from the tagged range with credits, commits `Release x.y.z`, tags it and follows the build through to publication. | `/release 0.4.12 after #812`<br>"cut 0.4.12, highlights: AI masks, credit contributors, do a tldr"<br>"what would go into the next release?" |
+| [`gh-reply`](.agents/skills/gh-reply/SKILL.md) | Writes issue and PR comments for the maintainer, signed by the model that wrote them. Drafts first when the reply makes a decision: refusing, closing or promising. | "ask the reporter for their system info, they're not technical"<br>"thank the contributor and merge"<br>"decline this PR, cite licensing risk; let me approve before posting" |
+
+The skills call on each other: `issue` hands off to `ship`, and `ship` and `issue` reply on GitHub through `gh-reply`. Each one is a short Markdown file, and the policy it follows stays in `AGENTS.md` and the docs it links.
+
 ## License
 
 RAWmakase is released under the [MIT License](LICENSE). The DNG default tone curve and temperature table come from the Adobe DNG SDK, under the license in [licenses/Adobe-DNG-SDK.txt](licenses/Adobe-DNG-SDK.txt). The interface font, Inter, is under the SIL Open Font License ([licenses/Inter-OFL.txt](licenses/Inter-OFL.txt)), and the icons are Lucide's, under the ISC License ([licenses/Lucide-ISC.txt](licenses/Lucide-ISC.txt)). egui's bundled fallback fonts are compiled into the binary as well: Hack ([licenses/Hack-MIT-BitstreamVera.txt](licenses/Hack-MIT-BitstreamVera.txt)), Noto Emoji ([licenses/NotoEmoji-OFL.txt](licenses/NotoEmoji-OFL.txt)), Ubuntu Light ([licenses/Ubuntu-UFL.txt](licenses/Ubuntu-UFL.txt)) and the emoji icon font ([licenses/emoji-icon-font-MIT.txt](licenses/emoji-icon-font-MIT.txt)). The Rust dependencies and ONNX Runtime keep their own licenses; see [dependencies](docs/dependencies.md).
