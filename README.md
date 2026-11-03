@@ -201,7 +201,7 @@ The [website source and deployment guide](website/README.md) live in `website/`.
 The [usage stats service](stats/README.md) in `stats/` still counts reports from older releases; the app no longer sends them.
 
 ```sh
-make check    # cargo fmt --check, clippy -D warnings, cargo test
+make check    # every CI check that runs locally: fmt, clippy, tests, MSRV build, scripts
 ```
 
 The repository contains no RAW photos, Lightroom catalogs or camera profiles, so tests that need them are ignored by default. Run them with your own files:
@@ -222,7 +222,7 @@ The public part of the color corpus runs with every `cargo test`: synthetic char
 
 GPU tests are ignored as well; run them with `cargo test -p rawmakase-engine --lib gpu -- --ignored` on a machine with a compute adapter.
 
-Application CI runs `make check`, a release build, an Arch package build and a `cargo deny` license and advisory audit. Website-only pushes and pull requests run the Hugo build instead, and stats-only changes run the stats service's tests; edits to either workflow also run the workflow linter. A stable `vX.Y.Z` tag on `main` matching `Cargo.toml` builds both macOS DMGs, the Linux packages and the Windows installer. Publication waits for Apple notarization and package checks, then refreshes the website's download links. See [packaging/RELEASING.md](packaging/RELEASING.md) for credentials, rehearsal runs, supported systems and the AUR pause.
+Application CI runs the checks `make check` runs, on Linux, Windows and macOS, plus a release build, an Arch package build and a `cargo deny` license and advisory audit. Website-only pushes and pull requests run the Hugo build instead, and stats-only changes run the stats service's tests; edits to either workflow also run the workflow linter. A stable `vX.Y.Z` tag on `main` matching `Cargo.toml` builds both macOS DMGs, the Linux packages and the Windows installer. Publication waits for Apple notarization and package checks, then refreshes the website's download links. See [packaging/RELEASING.md](packaging/RELEASING.md) for credentials, rehearsal runs, supported systems and the AUR pause.
 
 ### Skills
 

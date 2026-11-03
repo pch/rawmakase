@@ -146,14 +146,13 @@ capabilities before falling back to GitHub connectors or browser automation.
 
 ## Before every push
 
-Run the checks CI runs (`.github/workflows/ci.yml`) and push only when they
-pass. Use the current stable Rust, as CI does; newer clippy releases add lints.
-
-```bash
-cargo fmt --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
-```
+Run `make check` and push only when it passes. It runs every check CI runs
+(`.github/workflows/ci.yml`) that can run on this machine: dependency and crate
+closure checks, the Python calibration tests, formatting, clippy, every
+crate's tests and the MSRV build. The Makefile lists what only CI covers (the
+other platforms, the Arch package, Postgres). Use the current stable Rust, as
+CI does; newer clippy releases add lints. Where rustup's `cargo +toolchain`
+proxy doesn't work, set `MSRV_BIN` to the MSRV toolchain's `bin` folder.
 
 A `v*` tag builds and publishes a release, so the same applies before tagging.
 
