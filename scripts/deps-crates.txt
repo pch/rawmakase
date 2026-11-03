@@ -1,0 +1,33 @@
+# Workspace crates a crate must never depend on, directly or through others,
+# checked by scripts/deps.py from `cargo metadata` (normal and build
+# dependencies on every platform; dev-dependencies are the tests' own). One rule
+# per line: `crate never other...`. These name the edges that would point up or
+# sideways; edges down the layering need no line. scripts/crate-closures.sh checks
+# the crates outside the workspace (GPU, GUI, native libraries) with cargo tree.
+
+# The TIFF container reader is the bottom layer: the model and the RAW decoders read
+# through it.
+rawmakase-tiff never rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote
+# RAW decoders turn file bytes into sensor data; they know no edit, file format,
+# catalog or renderer.
+rawmakase-raw never rawmakase-model rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote
+# The control protocol's types stand alone, so the command-line client builds without
+# the app's crates.
+rawmakase-protocol never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
+rawmakase-ctl never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
+# The values an edit is made of come before file formats, the catalog, rendering and
+# decoding.
+rawmakase-model never rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
+# File formats and presets read and write the model, and use nothing above it.
+rawmakase-interop never rawmakase-raw rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
+# The catalog stores edits; it renders and decodes nothing.
+rawmakase-catalog never rawmakase-raw rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
+# The renderer takes decoded pixels and an edit; it reads no files and no catalog.
+rawmakase-engine never rawmakase-raw rawmakase-catalog rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
+# Decoding feeds rendering and export, never the other way, and keeps out of the catalog.
+rawmakase-decode never rawmakase-catalog rawmakase-export rawmakase-inference rawmakase-remote
+# Saved masks render without any inference installed.
+rawmakase-export never rawmakase-inference rawmakase-remote
+# Inference takes pixels and returns coverage; the remote worker sits on it alone.
+rawmakase-inference never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-remote
+rawmakase-remote never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol
