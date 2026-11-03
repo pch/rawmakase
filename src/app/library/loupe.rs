@@ -321,7 +321,7 @@ impl Library {
     /// E, Return or a double-click: the active photo, large.
     pub(crate) fn open_loupe(&mut self) {
         if self.selection.active.is_none() {
-            self.select(self.visible.first().map(|i| self.session.photos[*i].id));
+            self.select(self.visible.first().map(|i| self.session.photos()[*i].id));
         }
         self.loupe.open = self.selection.active.is_some();
         if self.loupe.open {
@@ -359,7 +359,7 @@ impl Library {
     /// it has an edit of its own.
     pub(super) fn develops(&self, photo: &Photo) -> bool {
         crate::storage::is_raw(&photo.path)
-            || self.session.catalog.has_edit(photo.id).unwrap_or(false)
+            || self.session.catalog().has_edit(photo.id).unwrap_or(false)
     }
     /// The zoom level at which the photo in the Loupe's own view fits, for
     /// stepping through the levels from it.

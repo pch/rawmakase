@@ -115,7 +115,7 @@ impl Editor {
         let Some(library) = &self.library else {
             return;
         };
-        let inputs = match library.session.catalog.sync_inputs(scope) {
+        let inputs = match library.session.catalog().sync_inputs(scope) {
             Ok(inputs) => inputs,
             Err(e) => {
                 self.messages
@@ -126,13 +126,13 @@ impl Editor {
         let root = match scope {
             SyncScope::Folder(folder) => library
                 .session
-                .folders
+                .folders()
                 .iter()
                 .find(|f| f.id == folder)
                 .map(|f| f.path.clone()),
             SyncScope::Root(root) => library
                 .session
-                .roots
+                .roots()
                 .iter()
                 .find(|(id, ..)| *id == root)
                 .map(|(_, original, located)| {
@@ -194,7 +194,7 @@ impl Editor {
         let Some(library) = &self.library else {
             return;
         };
-        let inputs = match library.session.catalog.find_inputs(photo, &file) {
+        let inputs = match library.session.catalog().find_inputs(photo, &file) {
             Ok(inputs) => inputs,
             Err(e) => {
                 self.messages.fail(format!("Find on Disk: {e:#}"));
@@ -269,7 +269,7 @@ impl Editor {
             name,
             root,
             finding,
-            catalog: library.session.catalog.location().clone(),
+            catalog: library.session.catalog().location().clone(),
             generation: library.session.generation(),
             files,
             cancel,
@@ -283,7 +283,7 @@ impl Editor {
             return;
         };
         let current = self.library.as_ref().is_some_and(|l| {
-            *l.session.catalog.location() == scan.catalog
+            *l.session.catalog().location() == scan.catalog
                 && l.session.generation() == scan.generation
         });
         if scan.finding {
@@ -416,7 +416,7 @@ impl Editor {
         let current = self
             .library
             .as_ref()
-            .is_some_and(|l| *l.session.catalog.location() == review.catalog);
+            .is_some_and(|l| *l.session.catalog().location() == review.catalog);
         if !current {
             self.messages
                 .warn("The catalog changed during the search; Find on Disk again");
@@ -574,7 +574,7 @@ impl Editor {
             return HashMap::new();
         };
         let session = &library.session;
-        let edited = session.catalog.edit_times().unwrap_or_default();
+        let edited = session.catalog().edit_times().unwrap_or_default();
         let photos = plan
             .moves
             .iter()
@@ -588,15 +588,15 @@ impl Editor {
         photos
             .map(|id| {
                 let copies = session
-                    .photos
+                    .photos()
                     .iter()
                     .filter(|p| p.master == Some(id))
                     .count();
-                let photo = session.photos.iter().find(|p| p.id == id);
+                let photo = session.photos().iter().find(|p| p.id == id);
                 let rating = photo.map_or(0, |p| p.rating);
                 let keywords = photo.is_some_and(|p| !p.keywords.is_empty());
                 let collections = session
-                    .collection_photos
+                    .collection_photos()
                     .values()
                     .filter(|members| members.contains(&id))
                     .count();
@@ -809,7 +809,7 @@ impl Editor {
         };
         self.folder_sync.showing = false;
         let current = self.library.as_ref().is_some_and(|l| {
-            *l.session.catalog.location() == review.catalog
+            *l.session.catalog().location() == review.catalog
                 && l.session.generation() == review.generation
         });
         if !current {
@@ -985,8 +985,8 @@ impl Editor {
                     ));
                 } else {
                     let library = self.library.as_ref().expect("read again");
-                    let moved = moved_files(&library.session.photos, &applied);
-                    let catalog = library.session.catalog.location().clone();
+                    let moved = moved_files(library.session.photos(), &applied);
+                    let catalog = library.session.catalog().location().clone();
                     self.move_preview_intents(&catalog, &moved);
                     self.messages.fail(format!(
                         "Synchronized, but the catalog could not be opened again: {e}. It was read again."
@@ -996,8 +996,8 @@ impl Editor {
             }
         };
         self.forget_removed(&applied.removed);
-        let moved = moved_files(&library.session.photos, &applied);
-        self.move_preview_intents(library.session.catalog.location(), &moved);
+        let moved = moved_files(library.session.photos(), &applied);
+        self.move_preview_intents(library.session.catalog().location(), &moved);
         self.relink_open = relink;
         self.catalog_ready(Ok(library));
     }
@@ -2212,7 +2212,7 @@ mod tests {
         let library = e.library.as_ref().unwrap();
         library
             .session
-            .photos
+            .photos()
             .iter()
             .find(|p| p.filename == name)
             .unwrap()
@@ -2273,7 +2273,7 @@ mod tests {
             e.messages.line()
         );
         // The photo added is Previous Import.
-        assert_eq!(library.session.previous_import.len(), 1);
+        assert_eq!(library.session.previous_import().len(), 1);
         assert!(library.offer_previous_import);
         Ok(())
     }
@@ -2323,7 +2323,7 @@ mod tests {
         let (_dir, mut e, _) = editor()?;
         let library = e.library.as_mut().unwrap();
         // A batch whose bursts are still to be stacked.
-        library.session.catalog.db_for_tests().execute_batch(
+        library.session.catalog().db_for_tests().execute_batch(
             "INSERT INTO import_burst_stacks(batch, seconds) SELECT id, 2.0 FROM import_batches",
         )?;
         // Applying stops them; it fails.
@@ -2355,7 +2355,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .session
-                .catalog
+                .catalog()
                 .location()
                 .clone(),
             generation: 0,
@@ -2401,7 +2401,7 @@ mod tests {
         let library = e.library.as_ref().unwrap();
         let saved = library
             .session
-            .catalog
+            .catalog()
             .load_edit(a, &trip.join("moved.dng"))?
             .expect("saved");
         assert_eq!(saved.recipe.exposure, 0.8);
@@ -2446,7 +2446,7 @@ mod tests {
         let library = e.library.as_mut().unwrap();
         library
             .session
-            .catalog
+            .catalog_mut_for_tests()
             .add_keywords(&[a], &[vec!["Trip".into()]])?;
         library.session.reload()?;
         std::fs::remove_file(trip.join("a.dng"))?;
@@ -2526,7 +2526,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .session
-            .catalog
+            .catalog_mut_for_tests()
             .add_folder(&trip)?;
         e.library.as_mut().unwrap().session.reload()?;
         let c = id(&e, "c.dng");
@@ -2534,7 +2534,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .session
-            .catalog
+            .catalog()
             .db_for_tests()
             .execute("DELETE FROM photos WHERE id=?", [c.0])?;
         e.library.as_mut().unwrap().session.reload()?;
@@ -2547,7 +2547,7 @@ mod tests {
         let ctx = e.context.clone();
         e.apply_folder_sync(&ctx);
         applied(&mut e);
-        let folders = &e.library.as_ref().unwrap().session.folders;
+        let folders = e.library.as_ref().unwrap().session.folders();
         assert!(!folders.iter().any(|f| f.relative == "day 2"));
         Ok(())
     }
@@ -2579,7 +2579,7 @@ mod tests {
         let library = e.library.as_ref().unwrap();
         library
             .session
-            .catalog
+            .catalog()
             .db_for_tests()
             .execute("DELETE FROM photo_checksums WHERE photo=?", [id.0])?;
         Ok(())
@@ -2603,7 +2603,13 @@ mod tests {
         let (_dir, mut e, trip) = editor()?;
         let a = id(&e, "a.dng");
         let to = move_out(&trip, "a.dng")?;
-        let previous = e.library.as_ref().unwrap().session.previous_import.clone();
+        let previous = e
+            .library
+            .as_ref()
+            .unwrap()
+            .session
+            .previous_import()
+            .clone();
         e.start_find_on_disk(a, to.clone());
         scanned(&mut e);
         applied(&mut e);
@@ -2615,7 +2621,7 @@ mod tests {
             "{}",
             e.messages.line()
         );
-        assert_eq!(library.session.previous_import, previous);
+        assert_eq!(library.session.previous_import(), &previous);
         assert!(!library.offer_previous_import);
         Ok(())
     }
@@ -2726,7 +2732,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .session
-                .catalog
+                .catalog()
                 .location()
                 .clone(),
             generation: 0,
@@ -2762,7 +2768,7 @@ mod tests {
         assert!(e.module == Module::Develop);
         assert!(e.flush());
         let library = e.library.as_ref().unwrap();
-        let saved = library.session.catalog.load_edit(a, &to)?.expect("saved");
+        let saved = library.session.catalog().load_edit(a, &to)?.expect("saved");
         assert_eq!(saved.recipe.exposure, 0.7);
         // A save that fails at the new path keeps the edit pending.
         e.document.edit.change(None, |r| r.exposure = 0.9);
@@ -2785,7 +2791,7 @@ mod tests {
                     .as_mut()
                     .unwrap()
                     .session
-                    .catalog
+                    .catalog_mut_for_tests()
                     .create_virtual_copy(a)?;
                 e.library.as_mut().unwrap().session.reload()?;
                 copy
@@ -2918,7 +2924,7 @@ mod tests {
         let library = e.library.as_ref().unwrap();
         assert_eq!(library.photo(a).unwrap().path, to);
         // The discarded change was never saved.
-        assert!(library.session.catalog.load_edit(a, &to)?.is_none());
+        assert!(library.session.catalog().load_edit(a, &to)?.is_none());
         Ok(())
     }
 

@@ -746,7 +746,7 @@ impl Editor {
             .as_ref()
             .expect("checked above")
             .session
-            .catalog
+            .catalog()
             .location()
             .clone();
         let intent = items
@@ -783,7 +783,7 @@ impl Editor {
         let Some(library) = &self.library else {
             return Err("No catalog is open".into());
         };
-        let catalog = library.session.catalog.location().clone();
+        let catalog = library.session.catalog().location().clone();
         let mut chosen = Vec::new();
         let mut skipped = 0;
         for &id in ids {
@@ -808,7 +808,7 @@ impl Editor {
         let photo_ids: Vec<PhotoId> = chosen.iter().map(|(id, ..)| *id).collect();
         let records = library
             .session
-            .catalog
+            .catalog()
             .photo_records(&photo_ids)
             .map_err(|e| format!("The catalog could not be read: {e:#}"))?;
         let edge = self.preview_builds.edge(kind);
@@ -850,7 +850,7 @@ impl Editor {
         let Some(library) = &self.library else {
             return;
         };
-        let catalog = library.session.catalog.location().clone();
+        let catalog = library.session.catalog().location().clone();
         let mut items = Vec::new();
         for kind in PreviewKind::ALL {
             match self.build_items(ids, kind, Files::Known) {
@@ -893,7 +893,7 @@ impl Editor {
         let Some(library) = &self.library else {
             return;
         };
-        let catalog = library.session.catalog.location().clone();
+        let catalog = library.session.catalog().location().clone();
         let paths = ids
             .iter()
             .filter_map(|id| Some(library.photo(*id)?.path.clone()))
@@ -941,7 +941,7 @@ impl Editor {
         let Some(library) = &self.library else {
             return;
         };
-        let catalog = library.session.catalog.location().clone();
+        let catalog = library.session.catalog().location().clone();
         let ctx = self.context.clone();
         let builder = self.preview_builds.builder(&ctx);
         builder.drop_waiting(Some(&[id]), &PreviewKind::ALL);
@@ -977,7 +977,7 @@ impl Editor {
         let current = self
             .library
             .as_ref()
-            .map(|l| l.session.catalog.location().clone());
+            .map(|l| l.session.catalog().location().clone());
         let builds = &mut self.preview_builds;
         if builds.catalog.is_some() && builds.catalog != current {
             if let Some(builder) = &builds.builder {
@@ -1018,14 +1018,14 @@ impl Editor {
         };
         // A relinked folder reloads the Library, whose tickets start again: the
         // photo must still be the file built.
-        if *library.session.catalog.location() != item.catalog
+        if *library.session.catalog().location() != item.catalog
             || item.ticket.is_none()
             || library.edited_ticket(item.photo) != item.ticket
             || library.photo(item.photo).map(|p| &p.path) != Some(&item.path)
         {
             return;
         }
-        let Ok(record) = library.session.catalog.edit_record(item.photo) else {
+        let Ok(record) = library.session.catalog().edit_record(item.photo) else {
             return;
         };
         if identity(

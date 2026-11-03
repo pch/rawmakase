@@ -171,7 +171,7 @@ impl Library {
         };
         let mut members: Vec<&Photo> = self
             .session
-            .photos
+            .photos()
             .iter()
             .filter(|p| p.folder == photo.folder && p.stack.is_some_and(|s| s.id == place.id))
             .collect();
@@ -307,7 +307,7 @@ impl Library {
             StackAction::CollapseAll | StackAction::ExpandAll => {
                 let mut ids: Vec<StackId> = self
                     .session
-                    .photos
+                    .photos()
                     .iter()
                     .filter_map(|p| p.stack.map(|s| s.id))
                     .collect();
@@ -386,7 +386,7 @@ impl Library {
             let shown = self
                 .visible
                 .iter()
-                .map(|i| &self.session.photos[*i])
+                .map(|i| &self.session.photos()[*i])
                 .find(|p| p.folder == folder && p.stack.is_some_and(|s| s.id == stack))
                 .map(|p| p.id);
             if let Some(id) = shown {
@@ -400,7 +400,7 @@ impl Library {
     fn auto_stack_photos(&self) -> Vec<&Photo> {
         let available = |path: &std::path::Path| self.is_available(path);
         self.session
-            .photos
+            .photos()
             .iter()
             .filter(|p| p.stack.is_none() && self.filters.source_holds(p, available))
             .collect()
@@ -463,7 +463,7 @@ impl Library {
             return false;
         }
         if sequences.read.is_none() {
-            let mut stored = match self.session.catalog.sequences() {
+            let mut stored = match self.session.catalog().sequences() {
                 Ok(stored) => stored,
                 Err(e) => {
                     self.messages
@@ -518,7 +518,7 @@ impl Library {
             known.insert(id, sequence);
         }
         if !save.is_empty()
-            && let Err(e) = self.session.catalog.save_sequences(&save)
+            && let Err(e) = self.session.save_sequences(&save)
         {
             // Still used while the window is open; read again next time.
             self.messages

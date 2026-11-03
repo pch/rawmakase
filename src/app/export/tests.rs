@@ -27,7 +27,7 @@ fn editor() -> anyhow::Result<(tempfile::TempDir, Editor, Vec<PhotoId>, egui::Co
         |_| None,
     ));
     let library = crate::app::library::Library::load(&catalog, ctx.clone())?;
-    let ids = library.session.photos.iter().map(|p| p.id).collect();
+    let ids = library.session.photos().iter().map(|p| p.id).collect();
     e.library = Some(Box::new(library));
     e.module = Module::Library;
     Ok((dir, e, ids, ctx))
@@ -401,10 +401,11 @@ const MODEL: &str = "{{com.adobe.model}}-{{image_name}}";
 fn names_come_from_the_catalog_as_it_was_when_export_was_chosen() -> anyhow::Result<()> {
     let (dir, mut e, ids, _ctx) = editor()?;
     let library = e.library.as_mut().unwrap();
-    library
-        .session
-        .catalog
-        .set_text(&ids[..1], crate::metadata::TextField::Title, "Harbour")?;
+    library.session.catalog_mut_for_tests().set_text(
+        &ids[..1],
+        crate::metadata::TextField::Title,
+        "Harbour",
+    )?;
     let copy = library.create_virtual_copy(ids[0])?.value;
     library.select(Some(copy));
     // Typed, not saved yet.
@@ -417,7 +418,7 @@ fn names_come_from_the_catalog_as_it_was_when_export_was_chosen() -> anyhow::Res
     );
     assert_eq!(fields.captured, None);
     // The catalog changes after the dialog opened.
-    let catalog = &mut e.library.as_mut().unwrap().session.catalog;
+    let catalog = e.library.as_mut().unwrap().session.catalog_mut_for_tests();
     catalog.set_text(&[copy], crate::metadata::TextField::Title, "Later")?;
     catalog.fill_capture_times(&[(copy, "2026-04-24T18:43:24.000".into())])?;
     let mut s = settings(&dir.path().join("out"));

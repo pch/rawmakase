@@ -698,7 +698,7 @@ fn matched_exposure(source: &Settings, target: &crate::camera_data::Metadata) ->
 /// goes back to having none. `path` gives each photo's current location, which a
 /// relink may have changed since.
 pub(super) fn restore(
-    catalog: &mut Catalog,
+    session: &mut crate::catalog_session::CatalogSession,
     edits: &[Synced],
     side: SyncSide,
     path: impl Fn(PhotoId) -> Option<PathBuf>,
@@ -720,7 +720,8 @@ pub(super) fn restore(
             // Redo brings back the History the Sync saved, which Undo may have cleared.
             (SyncSide::After, _) => (&e.after, HistoryUpdate::Replace(&e.history)),
         };
-        let saved = catalog
+        let saved = session
+            .catalog()
             .load_edit(e.id, &path)
             .map_err(SyncRestoreError::Write)?;
         // A saved edit's identity, which a verified move of its file refreshes,
@@ -756,7 +757,7 @@ pub(super) fn restore(
                 .map(|e| EditChange::Clear { id: e.id }),
         );
     }
-    catalog
+    session
         .change_edits(&changes)
         .map_err(SyncRestoreError::Write)
 }
@@ -815,7 +816,7 @@ impl Editor {
         let wanted: std::collections::HashSet<PhotoId> = selected.iter().copied().collect();
         let photos: std::collections::HashMap<PhotoId, &crate::catalog::Photo> = library
             .session
-            .photos
+            .photos()
             .iter()
             .filter(|p| wanted.contains(&p.id))
             .map(|p| (p.id, p))
@@ -906,7 +907,7 @@ impl Editor {
         let wanted: std::collections::HashSet<PhotoId> = selected.iter().copied().collect();
         let photos: std::collections::HashMap<PhotoId, &crate::catalog::Photo> = library
             .session
-            .photos
+            .photos()
             .iter()
             .filter(|p| wanted.contains(&p.id))
             .map(|p| (p.id, p))
@@ -946,7 +947,7 @@ impl Editor {
         let Some(library) = &self.library else {
             return;
         };
-        let catalog = library.session.catalog.location().clone();
+        let catalog = library.session.catalog().location().clone();
         let (tx, ctx) = (self.tx.clone(), self.context.clone());
         let defaults = self.raw_defaults.clone();
         let decoding = Decoding {
@@ -1002,7 +1003,12 @@ impl Editor {
     pub(super) fn synced(&mut self, result: SyncResult) {
         self.activity.finish_sync();
         // A result for a catalog no longer open must not reach this one's undo log.
-        if self.library.as_ref().map(|l| l.session.catalog.location()) != Some(&result.catalog) {
+        if self
+            .library
+            .as_ref()
+            .map(|l| l.session.catalog().location())
+            != Some(&result.catalog)
+        {
             return;
         }
         if result.cancelled {
@@ -1114,6 +1120,12 @@ mod tests {
             catalog: c,
             photos,
         })
+    }
+    /// A session on the fixture's catalog, which Undo and Redo restore a Sync
+    /// through; the fixture's own connection still sees what it writes.
+    fn open_session(dir: &tempfile::TempDir) -> Result<crate::catalog_session::CatalogSession> {
+        let location = CatalogLocation::from(&dir.path().join("sync.rawmakase"));
+        Ok(crate::catalog_session::CatalogSession::open(&location)?.session)
     }
     fn target(id: PhotoId, path: &Path) -> SyncTarget {
         SyncTarget {
@@ -1269,18 +1281,19 @@ mod tests {
                 .map(|(_, path)| path.clone())
         };
         // One Undo restores every photo; these had no edit, and have none again.
-        restore(&mut c, &result.synced, SyncSide::Before, path)?;
+        let mut session = open_session(&_dir)?;
+        restore(&mut session, &result.synced, SyncSide::Before, path)?;
         for (id, path) in &photos[1..3] {
             assert!(c.load_edit(*id, path)?.is_none());
             assert!(c.load_history(*id)?.is_none());
         }
         // Redo brings the edit back with its History step.
-        restore(&mut c, &result.synced, SyncSide::After, path)?;
+        restore(&mut session, &result.synced, SyncSide::After, path)?;
         let history = c.load_history(photos[1].0)?.unwrap();
         assert_eq!(history.steps.last().unwrap().name, "Synchronize Settings");
         // A photo removed since makes the command unusable rather than wrong.
         assert!(matches!(
-            restore(&mut c, &result.synced, SyncSide::Before, |_| None),
+            restore(&mut session, &result.synced, SyncSide::Before, |_| None),
             Err(SyncRestoreError::PhotoRemoved)
         ));
         assert_eq!(
@@ -1321,10 +1334,10 @@ mod tests {
             &BatchProgress::new("Sync", 0),
         );
         assert_eq!(again.synced.len(), 1);
-        restore(&mut c, &again.synced, SyncSide::Before, path)?;
+        restore(&mut session, &again.synced, SyncSide::Before, path)?;
         assert_eq!(c.load_history(id)?, Some(earlier));
         assert_eq!(c.load_edit(id, &path0)?.unwrap().recipe.exposure, -0.3);
-        restore(&mut c, &again.synced, SyncSide::After, path)?;
+        restore(&mut session, &again.synced, SyncSide::After, path)?;
         // Settings the photos already have change nothing.
         let again = synchronize(
             &mut c,
@@ -1337,12 +1350,12 @@ mod tests {
         );
         assert!(again.synced.is_empty() && again.failed.is_empty());
         // A file changed while it had no edit is not given the old settings again.
-        restore(&mut c, &result.synced, SyncSide::Before, path)?;
+        restore(&mut session, &result.synced, SyncSide::Before, path)?;
         let changed = &photos[1].1;
         let mut bytes = std::fs::read(changed)?;
         bytes.extend_from_slice(b"changed");
         std::fs::write(changed, bytes)?;
-        assert!(restore(&mut c, &result.synced, SyncSide::After, path).is_err());
+        assert!(restore(&mut session, &result.synced, SyncSide::After, path).is_err());
         assert!(c.load_edit(photos[2].0, &photos[2].1)?.is_none());
         Ok(())
     }
@@ -1451,11 +1464,12 @@ mod tests {
         assert_eq!(f.catalog.load_history(all[0].0)?.unwrap().steps.len(), 1);
         // One Undo: none of them has an edit again. Redo: what was measured.
         let path = |id: PhotoId| all.iter().find(|(p, _)| *p == id).map(|(_, p)| p.clone());
-        restore(&mut f.catalog, &result.synced, SyncSide::Before, path)?;
+        let mut session = open_session(&f._dir)?;
+        restore(&mut session, &result.synced, SyncSide::Before, path)?;
         for (id, path) in &all {
             assert!(f.catalog.load_edit(*id, path)?.is_none());
         }
-        restore(&mut f.catalog, &result.synced, SyncSide::After, path)?;
+        restore(&mut session, &result.synced, SyncSide::After, path)?;
         for synced in &result.synced {
             let saved = f.catalog.load_edit(synced.id, &synced.path)?.unwrap();
             assert_eq!(saved.recipe, synced.after);

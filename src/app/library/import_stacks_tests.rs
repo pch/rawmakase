@@ -32,7 +32,7 @@ fn added(
         .map(|(n, time)| {
             let photo = library
                 .session
-                .photos
+                .photos_mut_for_tests()
                 .iter_mut()
                 .find(|p| p.filename == *n)
                 .unwrap();
@@ -76,7 +76,7 @@ fn read_all(library: &mut Library, read: fn(&Path) -> Option<Sequence>) {
 fn pending(library: &Library) -> usize {
     library
         .session
-        .catalog
+        .catalog()
         .pending_burst_stacks()
         .unwrap()
         .len()
@@ -106,9 +106,9 @@ fn bursts_of_photos_added_are_stacked_once_in_one_undo_step() -> Result<()> {
     library.make_import_stacks();
     // The burst, not the other body's frame, the single shot, nor the
     // photos whose camera says nothing, however close in time.
-    assert_eq!(library.session.catalog.stack_of(a1)?, [a1, a2, a3]);
-    assert!(library.session.catalog.stack_of(b1)?.is_empty());
-    assert_eq!(library.session.catalog.stack_places()?.len(), 3);
+    assert_eq!(library.session.catalog().stack_of(a1)?, [a1, a2, a3]);
+    assert!(library.session.catalog().stack_of(b1)?.is_empty());
+    assert_eq!(library.session.catalog().stack_places()?.len(), 3);
     assert_eq!(pending(&library), 0);
     let done = library.take_stack_done();
     assert_eq!(done.len(), 1, "one undo step");
@@ -118,12 +118,12 @@ fn bursts_of_photos_added_are_stacked_once_in_one_undo_step() -> Result<()> {
         library.messages.line()
     );
     // What the files said is kept for Auto-Stack.
-    assert_eq!(library.session.catalog.sequences()?.len(), ids.len());
+    assert_eq!(library.session.catalog().sequences()?.len(), ids.len());
     // Undone, it stays undone: nothing is to be done or read again.
     library.restore_stacks(&done[0].before)?;
     read_all(&mut library, |_| panic!("read again"));
     library.make_import_stacks();
-    assert!(library.session.catalog.stack_places()?.is_empty());
+    assert!(library.session.catalog().stack_places()?.is_empty());
     assert!(library.take_stack_done().is_empty());
     Ok(())
 }
@@ -133,7 +133,7 @@ fn photos_added_without_the_option_are_left_alone() -> Result<()> {
     let (_d, mut library, _) = added(&TIMES, false)?;
     read_all(&mut library, |_| panic!("nothing to read"));
     library.make_import_stacks();
-    assert!(library.session.catalog.stack_places()?.is_empty());
+    assert!(library.session.catalog().stack_places()?.is_empty());
     Ok(())
 }
 
@@ -151,8 +151,14 @@ fn continuous_drive_frames_stack_by_the_gap_kept_with_the_batch() -> Result<()> 
     read_all(&mut library, camera);
     library.make_import_stacks();
     // Less than two seconds apart; 2.5 s splits.
-    assert_eq!(library.session.catalog.stack_of(ids[0])?, [ids[0], ids[1]]);
-    assert_eq!(library.session.catalog.stack_of(ids[2])?, [ids[2], ids[3]]);
+    assert_eq!(
+        library.session.catalog().stack_of(ids[0])?,
+        [ids[0], ids[1]]
+    );
+    assert_eq!(
+        library.session.catalog().stack_of(ids[2])?,
+        [ids[2], ids[3]]
+    );
     Ok(())
 }
 
@@ -164,13 +170,13 @@ fn a_batch_waits_for_a_photo_offline_and_is_stacked_once_it_is_back() -> Result<
     std::fs::rename(&gone, gone.with_extension("away"))?;
     read_all(&mut library, camera);
     library.make_import_stacks();
-    assert!(library.session.catalog.stack_places()?.is_empty());
+    assert!(library.session.catalog().stack_places()?.is_empty());
     assert_eq!(pending(&library), 1, "still to be done");
     assert!(library.take_stack_done().is_empty());
     std::fs::rename(gone.with_extension("away"), &gone)?;
     read_all(&mut library, camera);
     library.make_import_stacks();
-    assert_eq!(library.session.catalog.stack_of(a1)?.len(), 3);
+    assert_eq!(library.session.catalog().stack_of(a1)?.len(), 3);
     assert_eq!(pending(&library), 0);
     Ok(())
 }
@@ -180,11 +186,11 @@ fn a_lost_read_leaves_the_batch_to_be_done() -> Result<()> {
     let (_d, mut library, ids) = added(&TIMES, true)?;
     read_all(&mut library, |_| panic!("worker lost"));
     library.make_import_stacks();
-    assert!(library.session.catalog.stack_places()?.is_empty());
+    assert!(library.session.catalog().stack_places()?.is_empty());
     assert_eq!(pending(&library), 1);
     read_all(&mut library, camera);
     library.make_import_stacks();
-    assert_eq!(library.session.catalog.stack_of(ids[0])?.len(), 3);
+    assert_eq!(library.session.catalog().stack_of(ids[0])?.len(), 3);
     Ok(())
 }
 
@@ -195,7 +201,7 @@ fn a_read_of_another_generation_is_read_again_and_waits_behind_auto_stack() -> R
     // Photos removed and added since may have other ids: read again.
     library.session.bump_generation();
     library.make_import_stacks();
-    assert!(library.session.catalog.stack_places()?.is_empty());
+    assert!(library.session.catalog().stack_places()?.is_empty());
     assert!(library.session.reading_import_stacks(), "read again");
     // That read is the real cameras'; the test's reads them again.
     library.session.stop_background_reads();
@@ -203,10 +209,10 @@ fn a_read_of_another_generation_is_read_again_and_waits_behind_auto_stack() -> R
     library.stack_action(super::StackAction::AutoStack, Vec::new());
     read_all(&mut library, camera);
     library.make_import_stacks();
-    assert!(library.session.catalog.stack_places()?.is_empty());
+    assert!(library.session.catalog().stack_places()?.is_empty());
     library.auto_stack = None;
     library.make_import_stacks();
-    assert_eq!(library.session.catalog.stack_of(ids[0])?.len(), 3);
+    assert_eq!(library.session.catalog().stack_of(ids[0])?.len(), 3);
     Ok(())
 }
 
@@ -219,7 +225,7 @@ fn suspended_reads_drop_what_was_read_and_photos_stacked_meanwhile_stay() -> Res
     read_all(&mut library, camera);
     library.suspend_background_reads();
     library.make_import_stacks();
-    assert!(library.session.catalog.stack_places()?.is_empty());
+    assert!(library.session.catalog().stack_places()?.is_empty());
     library.resume_background_reads();
     // Resuming reads again; meanwhile the user stacks two of the burst.
     library.session.stop_background_reads();
@@ -228,9 +234,9 @@ fn suspended_reads_drop_what_was_read_and_photos_stacked_meanwhile_stay() -> Res
     library.take_stack_done();
     read_all(&mut library, camera);
     library.make_import_stacks();
-    assert_eq!(library.session.catalog.stack_of(a2)?, [a2, a3]);
+    assert_eq!(library.session.catalog().stack_of(a2)?, [a2, a3]);
     // a1 alone is left: no stack of one.
-    assert!(library.session.catalog.stack_of(a1)?.is_empty());
+    assert!(library.session.catalog().stack_of(a1)?.is_empty());
     assert_eq!(pending(&library), 0);
     Ok(())
 }
@@ -256,11 +262,20 @@ fn a_photo_the_catalog_has_no_time_for_yet_is_timed_from_its_file() -> Result<()
         };
         std::fs::write(path_of(&library, *id), camera_raw(Container::Cr3, camera))?;
     }
-    assert!(library.session.photos.iter().all(|p| p.captured.is_empty()));
+    assert!(
+        library
+            .session
+            .photos()
+            .iter()
+            .all(|p| p.captured.is_empty())
+    );
     read_all(&mut library, camera);
     library.make_import_stacks();
-    assert_eq!(library.session.catalog.stack_of(ids[0])?, [ids[0], ids[1]]);
-    assert!(library.session.catalog.stack_of(ids[2])?.is_empty());
+    assert_eq!(
+        library.session.catalog().stack_of(ids[0])?,
+        [ids[0], ids[1]]
+    );
+    assert!(library.session.catalog().stack_of(ids[2])?.is_empty());
     Ok(())
 }
 
@@ -271,11 +286,11 @@ fn removing_a_folder_while_reading_reads_the_batches_left_again() -> Result<()> 
     let other = d.path().join("other");
     std::fs::create_dir(&other)?;
     std::fs::write(other.join("x.ARW"), b"fixture")?;
-    library.session.catalog.add_folder(&other)?;
+    library.session.catalog_mut_for_tests().add_folder(&other)?;
     library.session.reload()?;
     let folder = library
         .session
-        .photos
+        .photos()
         .iter()
         .find(|p| p.filename == "x.ARW")
         .unwrap()
@@ -319,7 +334,7 @@ fn a_refused_folder_removal_reads_the_batches_again() -> Result<()> {
     use crate::catalog::ExportScope;
     let (d, mut library, ids) = added(&TIMES, true)?;
     let folder = library.photo(ids[0]).unwrap().folder;
-    let export = library.session.catalog.export_catalog(
+    let export = library.session.catalog().export_catalog(
         &ExportScope::Folders(vec![folder]),
         &d.path().join("out/Copy.rawmakase"),
     )?;

@@ -444,10 +444,9 @@ impl Editor {
             return false;
         };
         self.document.catalog_photo == Some(*id)
-            && self
-                .library
-                .as_ref()
-                .is_some_and(|old| old.session.catalog.location() == l.session.catalog.location())
+            && self.library.as_ref().is_some_and(|old| {
+                old.session.catalog().location() == l.session.catalog().location()
+            })
             && l.photo(*id)
                 .is_some_and(|p| path.as_ref().is_none_or(|path| &p.path == path))
     }
@@ -487,7 +486,7 @@ impl Editor {
                 self.selection.clear_catalog();
                 if !l.messages.line().is_empty() {
                     self.messages.absorb(&mut l.messages);
-                } else if l.session.photos.is_empty() {
+                } else if l.session.photos().is_empty() {
                     self.messages
                         .note("Catalog ready. Add a folder of photos to begin.");
                 } else {
@@ -496,7 +495,7 @@ impl Editor {
                 // Commands never cross catalogs; reloading this one (after
                 // adding or relinking a folder) keeps them.
                 let reloaded = self.library.as_ref().is_some_and(|old| {
-                    old.session.catalog.location() == l.session.catalog.location()
+                    old.session.catalog().location() == l.session.catalog().location()
                 });
                 if !reloaded {
                     // A folder chosen for removal belongs to the catalog left.
@@ -511,7 +510,7 @@ impl Editor {
                 // A catalog opened (not read again) may have file
                 // operations a crash left unfinished.
                 if !reloaded {
-                    self.recover_files_later(l.session.catalog.location().clone());
+                    self.recover_files_later(l.session.catalog().location().clone());
                 }
                 self.library = Some(l);
                 self.module = Module::Library;
@@ -567,13 +566,13 @@ impl Editor {
         if let (Some(l), Some(photo)) = (&self.library, self.document.catalog_photo) {
             self.document.lightroom_history = l
                 .session
-                .catalog
+                .catalog()
                 .lightroom_history(photo)
                 .unwrap_or_default();
-            self.document.snapshots.list = l.session.catalog.snapshots(photo).unwrap_or_default();
+            self.document.snapshots.list = l.session.catalog().snapshots(photo).unwrap_or_default();
             // The edit as the catalog stores it, read once: the Lightroom settings
             // applied below are the ones read with it.
-            let record = l.session.catalog.edit_record(photo);
+            let record = l.session.catalog().edit_record(photo);
             let saved = record
                 .as_ref()
                 .map_err(|e| anyhow::anyhow!("{e:#}"))
@@ -584,7 +583,7 @@ impl Editor {
                     self.document.edit.replace(saved.recipe);
                     self.document.export = saved.export;
                     // A History that cannot be read leaves the edit as it is.
-                    if let Ok(Some(history)) = l.session.catalog.load_history(photo) {
+                    if let Ok(Some(history)) = l.session.catalog().load_history(photo) {
                         self.document.edit.restore_history(history);
                     }
                     self.document.edit.save_state_mut().saved();

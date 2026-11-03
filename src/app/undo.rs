@@ -317,7 +317,7 @@ impl Editor {
                     .filter_map(|e| Some((e.id, library.photo(e.id)?.path.clone())))
                     .collect();
                 let path = |id: PhotoId| paths.get(&id).cloned();
-                match super::sync::restore(&mut library.session.catalog, &sync.edits, side, path) {
+                match super::sync::restore(&mut library.session, &sync.edits, side, path) {
                     Ok(()) => {}
                     // Nothing to return to: the command is used up, not retried.
                     Err(e @ super::sync::SyncRestoreError::PhotoRemoved) => {
@@ -398,7 +398,7 @@ impl Editor {
                 };
                 let saved = library
                     .session
-                    .catalog
+                    .catalog()
                     .load_edit(id, &path)
                     .and_then(|edit| {
                         // A saved edit's identity, which a verified move of its
@@ -411,7 +411,7 @@ impl Editor {
                             })?,
                         };
                         let export = edit.map(|e| e.export).unwrap_or_default();
-                        library.session.catalog.save_edit(
+                        library.session.save_edit(
                             id,
                             &path,
                             &source,

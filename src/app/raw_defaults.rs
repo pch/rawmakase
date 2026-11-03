@@ -65,7 +65,7 @@ impl Editor {
         let saved = match (&self.library, self.document.catalog_photo) {
             (Some(l), Some(id)) => l
                 .session
-                .catalog
+                .catalog()
                 .edit_texts(id)
                 .map_or(true, |(recipe, _)| recipe.is_some()),
             _ => false,
@@ -135,7 +135,7 @@ impl Editor {
         let mut cameras = self
             .library
             .as_ref()
-            .and_then(|l| l.session.catalog.cameras().ok())
+            .and_then(|l| l.session.catalog().cameras().ok())
             .unwrap_or_default();
         if let Some(m) = &self.document.metadata
             && !m.model.trim().is_empty()
@@ -475,7 +475,12 @@ mod tests {
         assert_eq!(*editor.document.edit.recipe(), edited);
         let library = editor.library.as_ref().unwrap();
         assert_eq!(
-            library.session.catalog.load_edit(id, &raw)?.unwrap().recipe,
+            library
+                .session
+                .catalog()
+                .load_edit(id, &raw)?
+                .unwrap()
+                .recipe,
             edited
         );
         Ok(())

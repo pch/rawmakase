@@ -482,7 +482,7 @@ impl Editor {
             .as_ref()
             .map(|l| {
                 // session.json names a file catalog by its path, as before.
-                let CatalogLocation::File(path) = l.session.catalog.location();
+                let CatalogLocation::File(path) = l.session.catalog().location();
                 path.clone()
             })
             .or_else(|| self.document.path.clone())

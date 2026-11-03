@@ -192,7 +192,7 @@ impl Editor {
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!(UNIDENTIFIED))
                 .and_then(|source| {
-                    l.session.catalog.save_edit(
+                    l.session.save_edit(
                         id,
                         path,
                         source,
@@ -201,7 +201,7 @@ impl Editor {
                         crate::catalog::HistoryUpdate::of(&history),
                     )
                 })
-                .map(|()| l.session.catalog.location().clone());
+                .map(|()| l.session.catalog().location().clone());
             match saved {
                 Ok(p) => {
                     self.saved_to(&p);
@@ -267,7 +267,7 @@ impl Editor {
             return Some(Err(UNIDENTIFIED));
         };
         Some(Ok(super::autosave::Job {
-            catalog: l.session.catalog.location().clone(),
+            catalog: l.session.catalog().location().clone(),
             photo,
             raw,
             source,

@@ -249,7 +249,10 @@ mod tests {
         editor.onboarding.visible = false;
         let library = editor.library.as_mut().unwrap();
         let copy = library.create_virtual_copy(ids[0])?.value;
-        library.session.catalog.remove_virtual_copy(copy)?;
+        library
+            .session
+            .catalog_mut_for_tests()
+            .remove_virtual_copy(copy)?;
         library.set_copy_name_draft(copy, "Unsaved name");
         editor.module = Module::Develop;
         let ctx = editor.context.clone();

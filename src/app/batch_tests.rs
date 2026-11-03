@@ -56,7 +56,11 @@ fn editor_with_scenes(
     let ids = scenes
         .iter()
         .map(|(name, _)| {
-            let p = library.session.photos.iter().find(|p| p.filename == *name);
+            let p = library
+                .session
+                .photos()
+                .iter()
+                .find(|p| p.filename == *name);
             let p = p.unwrap();
             (p.id, p.path.clone())
         })
@@ -116,7 +120,7 @@ fn saved(e: &Editor, photo: &Photo) -> Option<crate::model::recipe::Recipe> {
     let library = e.library.as_ref().unwrap();
     let edit = library
         .session
-        .catalog
+        .catalog()
         .load_edit(photo.0, &photo.1)
         .unwrap();
     edit.map(|e| e.recipe)
@@ -246,7 +250,7 @@ fn quick_develop_requests_apply_to_the_selection() -> anyhow::Result<()> {
         assert_eq!(saved(&e, photo).unwrap().exposure, 0.5);
     }
     let library = e.library.as_ref().unwrap();
-    let history = library.session.catalog.load_history(ids[0])?.unwrap();
+    let history = library.session.catalog().load_history(ids[0])?.unwrap();
     let step = history.steps.last().unwrap();
     assert_eq!(
         (step.name.as_str(), step.value.as_str()),
@@ -331,7 +335,7 @@ fn batch_preset_matches_the_preset_clicked_in_develop() -> anyhow::Result<()> {
     {
         let library = e.library.as_mut().unwrap();
         for (id, path) in &photos {
-            library.session.catalog.save_edit(
+            library.session.save_edit(
                 *id,
                 path,
                 &crate::storage::Identity::read(path)?,

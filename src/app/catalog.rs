@@ -126,7 +126,7 @@ impl Editor {
         let current = self
             .library
             .as_ref()
-            .map(|l| l.session.catalog.location().clone());
+            .map(|l| l.session.catalog().location().clone());
         super::task::spawn(
             tx,
             ctx.clone(),
@@ -310,7 +310,7 @@ impl Editor {
         let Some(current) = self
             .library
             .as_ref()
-            .map(|l| l.session.catalog.location().clone())
+            .map(|l| l.session.catalog().location().clone())
         else {
             self.messages.warn("Open or create a catalog to add photos");
             return;
@@ -409,7 +409,7 @@ impl Editor {
         let Some(current) = self
             .library
             .as_ref()
-            .map(|l| l.session.catalog.location().clone())
+            .map(|l| l.session.catalog().location().clone())
         else {
             if self.activity.is_dialog() {
                 // The catalog is still opening; add the photo once it is ready.
@@ -493,7 +493,7 @@ impl Editor {
         self.library
             .as_ref()?
             .session
-            .photos
+            .photos()
             .iter()
             // A location stored through a symlink spells the path differently;
             // only photos of the same name are looked up on disk.
@@ -718,7 +718,7 @@ impl Editor {
             return;
         };
         // Confirmed after another catalog opened: its ids are not these.
-        if library.session.catalog.location() != &removal.catalog {
+        if library.session.catalog().location() != &removal.catalog {
             self.messages.warn(format!(
                 "{} was not removed: another catalog is open now",
                 removal.name

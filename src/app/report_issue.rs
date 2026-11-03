@@ -147,10 +147,12 @@ impl Editor {
                 &self.view.monitor,
                 self.view.system_display.display(),
             ),
-            catalog: self
-                .library
-                .as_ref()
-                .map(|library| (library.session.photos.len(), library.session.folders.len())),
+            catalog: self.library.as_ref().map(|library| {
+                (
+                    library.session.photos().len(),
+                    library.session.folders().len(),
+                )
+            }),
             background_task: self.background_work(),
         }
     }

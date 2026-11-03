@@ -66,7 +66,7 @@ impl Library {
         if self
             .visible
             .iter()
-            .any(|i| self.session.photos[*i].id == id)
+            .any(|i| self.session.photos()[*i].id == id)
         {
             self.make_active(id);
         } else {
@@ -88,7 +88,7 @@ impl Library {
         let ids: Vec<PhotoId> = self
             .visible
             .iter()
-            .map(|i| self.session.photos[*i].id)
+            .map(|i| self.session.photos()[*i].id)
             .filter(|id| self.selection.selected.contains(id))
             .collect();
         if ids.is_empty() {
@@ -109,7 +109,7 @@ impl Library {
     fn position(&self, id: PhotoId) -> Option<usize> {
         self.visible
             .iter()
-            .position(|i| self.session.photos[*i].id == id)
+            .position(|i| self.session.photos()[*i].id == id)
     }
     /// The shown photos from `a` to `b`, either way round.
     fn range(&self, a: PhotoId, b: PhotoId) -> Vec<PhotoId> {
@@ -118,7 +118,7 @@ impl Library {
         };
         self.visible[a.min(b)..=a.max(b)]
             .iter()
-            .map(|i| self.session.photos[*i].id)
+            .map(|i| self.session.photos()[*i].id)
             .collect()
     }
     /// A click on a thumbnail: Cmd toggles it, Shift selects the range from
@@ -158,22 +158,22 @@ impl Library {
         let selected = |i: &usize| {
             self.selection
                 .selected
-                .contains(&self.session.photos[*i].id)
+                .contains(&self.session.photos()[*i].id)
         };
         self.visible[at + 1..]
             .iter()
             .find(|i| selected(i))
             .or_else(|| self.visible[..at].iter().rev().find(|i| selected(i)))
-            .map(|i| self.session.photos[*i].id)
+            .map(|i| self.session.photos()[*i].id)
     }
     pub(in crate::app) fn select_all(&mut self) {
         self.selection.selected = self
             .visible
             .iter()
-            .map(|i| self.session.photos[*i].id)
+            .map(|i| self.session.photos()[*i].id)
             .collect();
         if self.selection.active.is_none() {
-            self.selection.active = self.visible.first().map(|i| self.session.photos[*i].id);
+            self.selection.active = self.visible.first().map(|i| self.session.photos()[*i].id);
         }
         self.selection.anchor = self.selection.active;
     }
@@ -210,7 +210,7 @@ impl Library {
                     .map_or(0, |to| to.min(last))
             }
         };
-        let id = self.session.photos[self.visible[to]].id;
+        let id = self.session.photos()[self.visible[to]].id;
         if let Step::By(delta) | Step::Rows(delta) = step {
             self.loupe_direction = if delta < 0 { -1 } else { 1 };
         }
@@ -228,7 +228,7 @@ impl Library {
         let shown: HashSet<PhotoId> = self
             .visible
             .iter()
-            .map(|i| self.session.photos[*i].id)
+            .map(|i| self.session.photos()[*i].id)
             .collect();
         self.selection.selected.retain(|id| shown.contains(id));
         // The first photo still selected takes over from a hidden active one.
@@ -236,7 +236,7 @@ impl Library {
             self.selection.active = self
                 .visible
                 .iter()
-                .map(|i| self.session.photos[*i].id)
+                .map(|i| self.session.photos()[*i].id)
                 .find(|id| self.selection.selected.contains(id));
         }
         if self.selection.anchor.is_some_and(|id| !shown.contains(&id)) {

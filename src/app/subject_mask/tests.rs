@@ -25,7 +25,7 @@ fn fixture() -> Fixture {
     drop(c);
     let ctx = egui::Context::default();
     let library = crate::app::library::Library::load(&catalog, ctx.clone()).unwrap();
-    let id = library.session.photos[0].id;
+    let id = library.session.photos()[0].id;
     let mut editor =
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(library));
@@ -415,7 +415,7 @@ fn a_selection_needs_a_catalog_an_upgraded_one_and_the_model() {
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .db_for_tests()
         .execute_batch("PRAGMA user_version=1")
         .unwrap();
@@ -427,7 +427,7 @@ fn a_selection_needs_a_catalog_an_upgraded_one_and_the_model() {
         .as_mut()
         .unwrap()
         .session
-        .catalog
+        .catalog_mut_for_tests()
         .upgrade_for_raster_masks()
         .unwrap();
     e.selection.prompt = None;
@@ -462,7 +462,7 @@ fn a_selected_mask_survives_saving_and_reopening_without_the_store() {
         assert!(!e.document.edit.save_state().needs_save());
     }
     // The raster is in the catalog now; the process forgets it and reads it back.
-    let catalog = &f.editor.library.as_ref().unwrap().session.catalog;
+    let catalog = f.editor.library.as_ref().unwrap().session.catalog();
     let loaded = catalog
         .load_edit(f.editor.document.catalog_photo.unwrap(), &f.photo)
         .unwrap()

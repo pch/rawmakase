@@ -195,7 +195,7 @@ impl Library {
         let wanted: std::collections::HashSet<PhotoId> = ids.iter().copied().collect();
         let photos: Vec<(PhotoId, std::path::PathBuf)> = self
             .session
-            .photos
+            .photos()
             .iter()
             .filter(|p| wanted.contains(&p.id) && p.master.is_none())
             .map(|p| (p.id, p.path.clone()))
@@ -283,14 +283,14 @@ impl Library {
             .filter(|id| self.photo(*id).is_some())
             .collect();
         let wanted: std::collections::HashSet<PhotoId> = ids.iter().copied().collect();
-        let before = self.session.catalog.metadata_snapshot(&ids)?;
+        let before = self.session.catalog().metadata_snapshot(&ids)?;
         let ratings_before = self.ratings_by_id(&wanted);
         let mut report = reread.report;
         let written = self.session.apply_file_metadata(&ids, &read)?;
         report.unreadable.extend(written.unreadable);
         self.resort_by_capture_time();
         self.filter();
-        let after = self.session.catalog.metadata_snapshot(&ids)?;
+        let after = self.session.catalog().metadata_snapshot(&ids)?;
         let ratings_after = self.ratings_by_id(&wanted);
         let n = ids.len();
         let mut summary = format!("Read metadata from {}", plural(n, "file", "files"));
@@ -318,7 +318,7 @@ impl Library {
     fn ratings_by_id(&self, wanted: &std::collections::HashSet<PhotoId>) -> Vec<super::Metadata> {
         let mut found = super::metadata::ratings_of(
             self.session
-                .photos
+                .photos()
                 .iter()
                 .filter(|p| wanted.contains(&p.id)),
         );
