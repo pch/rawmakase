@@ -989,3 +989,24 @@ fn a_paused_turn_ends_without_drawing() {
         .unwrap();
     assert_eq!(e.document.edit.recipe().exposure, 0.);
 }
+
+/// A control-surface turn still going ends as its own step before the next
+/// frame's edit takes the name its control gave it.
+#[test]
+fn an_edit_during_a_turn_is_named_after_the_turn_ends() {
+    let (mut e, ctx) = editor();
+    e.execute_command(
+        Command::new(Operation::Adjust(Param::Setting(ParameterId::Exposure), 1)),
+        &ctx,
+    )
+    .unwrap();
+    assert!(e.automation.has_turn());
+    let frame = e.begin_edit_frame();
+    e.document.edit.recipe_mut().contrast = 0.2;
+    crate::app::widgets::name_frame_step(&ctx, "Contrast".into(), "+20".into());
+    e.finish_edit_frame(frame, &ctx);
+    assert!(!e.automation.has_turn());
+    let (steps, applied) = e.document.edit.history().steps();
+    let names: Vec<&str> = steps[..applied].iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["Exposure", "Contrast"]);
+}

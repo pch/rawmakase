@@ -970,6 +970,8 @@ mod side_tabs;
 #[cfg(test)]
 mod stacks_tests;
 mod stand_in;
+#[cfg(test)]
+mod step_name_tests;
 mod stroke_outline;
 mod subject_mask;
 mod targeted_tool;
