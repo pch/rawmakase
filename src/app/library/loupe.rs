@@ -166,6 +166,8 @@ impl Loupe {
         self.cancel.store(true, Ordering::Relaxed);
         self.cancel = Default::default();
         self.ticket += 1;
+        // A failure not yet said is the earlier request's, now dropped.
+        self.unreported = None;
         if !same_photo {
             self.texture = None;
             self.full = None;
@@ -444,9 +446,6 @@ impl Library {
     ) -> Action {
         let palette = theme::palette(ui.ctx());
         self.loupe.poll(ui.ctx());
-        if let Some(e) = self.loupe.take_failure() {
-            self.messages.warn(format!("Preview unavailable: {e}"));
-        }
         let Some(id) = self.selection.active else {
             self.close_loupe();
             return Action::None;
@@ -491,6 +490,11 @@ impl Library {
             }
         } else if self.loupe.requested.is_some() {
             self.loupe.reset();
+        }
+        // Said once the photo shown is the one asked for: a failure of the
+        // photo stepped away from was dropped by the request above.
+        if let Some(e) = self.loupe.take_failure() {
+            self.messages.warn(format!("Preview unavailable: {e}"));
         }
         self.request_previews(&photo, ui.ctx());
         let inset = rect.shrink(crate::app::workspace::PHOTO_MARGIN);

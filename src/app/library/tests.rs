@@ -342,6 +342,11 @@ fn an_unsupported_jpeg_says_why_in_develop() -> Result<()> {
 #[test]
 fn a_heic_opens_in_develop_and_an_hdr_one_says_why_not() -> Result<()> {
     if let Err(why) = crate::raster::heif_decoder() {
+        // CI's Arch job requires one (see raster's tests).
+        assert!(
+            std::env::var_os("RAWMAKASE_REQUIRE_HEIF").is_none(),
+            "{why}"
+        );
         eprintln!("HEIC pixels not tested: {why}");
         return Ok(());
     }
@@ -2119,8 +2124,28 @@ fn loupe_shows_a_jpeg_at_the_size_of_the_view() -> Result<()> {
     output.textures_delta.clear();
     library.loupe.wait(&ctx);
     assert!(matches!(library.loupe.state, loupe::State::Failed(_)));
-    // Said once in the top bar with the app's other messages, not over the
-    // photo, however many frames show it.
+    // Stepped away from before the Library's next frame: its failure is not
+    // said over the photo stepped to.
+    library.step(selection::Step::By(-1), false);
+    let mut output = ctx.run_ui(input(), |ui| {
+        library.grid(ui, &mut Default::default(), true, None);
+    });
+    output.textures_delta.clear();
+    library.loupe.wait(&ctx);
+    assert_eq!(library.loupe.state, loupe::State::Ready);
+    let mut output = ctx.run_ui(input(), |ui| {
+        library.grid(ui, &mut Default::default(), true, None);
+    });
+    output.textures_delta.clear();
+    assert!(!library.messages.has_entry_with("Preview unavailable"));
+    // Back on it: said once in the top bar with the app's other messages,
+    // not over the photo, however many frames show it.
+    library.step(selection::Step::By(1), false);
+    let mut output = ctx.run_ui(input(), |ui| {
+        library.grid(ui, &mut Default::default(), true, None);
+    });
+    output.textures_delta.clear();
+    library.loupe.wait(&ctx);
     for _ in 0..3 {
         let mut output = ctx.run_ui(input(), |ui| {
             library.grid(ui, &mut Default::default(), true, None);

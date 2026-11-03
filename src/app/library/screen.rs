@@ -82,9 +82,11 @@ pub(super) struct ScreenPreviews {
     /// Requests on their way, by the ticket of the latest.
     pending: HashMap<Key, u64>,
     next_ticket: u64,
-    failed: HashSet<Key>,
-    /// Failures since the Library last said them in the top bar.
-    unreported: Vec<String>,
+    /// Failed previews, each with why until it is shown and that is said.
+    failed: HashMap<Key, Option<String>>,
+    /// Why previews shown since the Library last asked failed, for the top
+    /// bar.
+    to_say: Vec<String>,
     textures: HashMap<Key, egui::TextureHandle>,
     order: VecDeque<Key>,
 }
@@ -111,8 +113,8 @@ impl ScreenPreviews {
             seen: HashSet::new(),
             pending: HashMap::new(),
             next_ticket: 0,
-            failed: HashSet::new(),
-            unreported: Vec::new(),
+            failed: HashMap::new(),
+            to_say: Vec::new(),
             textures: HashMap::new(),
             order: VecDeque::new(),
         }
@@ -135,7 +137,7 @@ impl ScreenPreviews {
         );
         self.seen.insert(key.clone());
         if !self.textures.contains_key(&key)
-            && !self.failed.contains(&key)
+            && !self.failed.contains_key(&key)
             && !self.pending.contains_key(&key)
         {
             self.next_ticket += 1;
@@ -153,15 +155,18 @@ impl ScreenPreviews {
             self.order.retain(|k| *k != key);
             self.order.push_back(key);
             Shown::Ready(texture)
-        } else if self.failed.contains(&key) {
+        } else if let Some(why) = self.failed.get_mut(&key) {
+            // Said when shown, so a photo no longer in view says nothing.
+            self.to_say.extend(why.take());
             Shown::Failed
         } else {
             Shown::Loading
         }
     }
-    /// The failures since last asked, each once, for the top bar.
+    /// Why the previews shown since last asked failed, each once, for the
+    /// top bar.
     pub(super) fn take_failures(&mut self) -> Vec<String> {
-        std::mem::take(&mut self.unreported)
+        std::mem::take(&mut self.to_say)
     }
     pub(super) fn poll(&mut self, ctx: &egui::Context) {
         while let Ok(Done {
@@ -201,8 +206,7 @@ impl ScreenPreviews {
                     self.textures.insert(key, texture);
                 }
                 Outcome::Failed(error) => {
-                    self.failed.insert(key);
-                    self.unreported.push(error);
+                    self.failed.insert(key, Some(error));
                 }
                 Outcome::Skipped => {}
             }
@@ -231,7 +235,7 @@ impl ScreenPreviews {
     pub(super) fn forget(&mut self, id: PhotoId) {
         self.textures.retain(|key, _| key.0 != id);
         self.order.retain(|key| key.0 != id);
-        self.failed.retain(|key| key.0 != id);
+        self.failed.retain(|key, _| key.0 != id);
         self.pending.retain(|key, _| key.0 != id);
     }
     #[cfg(test)]
@@ -476,12 +480,26 @@ mod tests {
         screen.wait(&ctx);
         assert!(matches!(screen.get(&a, 100, 0, || None), Shown::Failed));
         // Its failure is for the top bar once, however often it is shown.
-        assert_eq!(screen.take_failures().len(), 1);
+        assert_eq!(screen.take_failures(), ["offline"]);
         let _ = screen.get(&a, 100, 0, || None);
         screen.poll(&ctx);
         assert!(screen.take_failures().is_empty());
         screen.retry_failed();
         assert!(matches!(screen.get(&a, 100, 0, || None), Shown::Loading));
+    }
+
+    /// A preview that fails once its photo is out of view says nothing:
+    /// its failure is said when it is shown again.
+    #[test]
+    fn a_preview_failing_out_of_view_is_said_only_when_shown() {
+        let ctx = egui::Context::default();
+        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _| anyhow::bail!("offline"));
+        let a = photo(PhotoId(1), Path::new("a"));
+        let _ = screen.get(&a, 100, 0, || None);
+        screen.wait(&ctx);
+        assert!(screen.take_failures().is_empty());
+        assert!(matches!(screen.get(&a, 100, 0, || None), Shown::Failed));
+        assert_eq!(screen.take_failures(), ["offline"]);
     }
 
     #[test]

@@ -558,10 +558,16 @@ mod tests {
 
     /// Whether this system decodes a HEIC's pixels in this test: macOS, and
     /// Linux with libheif; Windows, whose extensions CI lacks, has its own
-    /// test. A test of HEIC pixels says when it is skipped.
+    /// test. CI's Arch job installs libheif and sets RAWMAKASE_REQUIRE_HEIF,
+    /// so there a test of HEIC pixels fails rather than skips without it.
     fn heic_decodes() -> bool {
         let decodes = !cfg!(windows) && super::heif_decoder().is_ok();
         if !decodes {
+            assert!(
+                std::env::var_os("RAWMAKASE_REQUIRE_HEIF").is_none(),
+                "a HEIC decoder is required: {:?}",
+                super::heif_decoder()
+            );
             eprintln!("HEIC pixels not tested: {:?}", super::heif_decoder());
         }
         decodes
@@ -1593,6 +1599,10 @@ mod tests {
                 let error = format!("{error:#}");
                 assert!(error.contains("libheif"), "{error}");
                 assert!(super::heif_decoder().is_err());
+                assert!(
+                    std::env::var_os("RAWMAKASE_REQUIRE_HEIF").is_none(),
+                    "{error}"
+                );
             }
         }
     }

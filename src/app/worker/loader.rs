@@ -469,6 +469,11 @@ pub(in crate::app) mod tests {
     #[test]
     fn a_heic_loads_straight_to_full_size() -> anyhow::Result<()> {
         if let Err(why) = crate::raster::heif_decoder() {
+            // CI's Arch job requires one (see raster's tests).
+            assert!(
+                std::env::var_os("RAWMAKASE_REQUIRE_HEIF").is_none(),
+                "{why}"
+            );
             eprintln!("HEIC pixels not tested: {why}");
             return Ok(());
         }
