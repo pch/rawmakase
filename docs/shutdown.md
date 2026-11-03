@@ -132,6 +132,21 @@ macOS run their panel on the main thread, so they are never joined from it.
       its own waited for 0.5 s: they are on the folder an export may have stalled on.
 3. eframe drops the editor, then the painter. The detached workers end with the
    process.
+4. The process exits. Where HEIC photos decode through the system's libheif (Linux
+   and other Unix systems but macOS), its static destructors would crash a decode
+   still running on a detached worker, so an exit function registered when
+   libheif is first opened (`decode::raster::heic::libheif`) runs first: no decode,
+   or libheif initialization, starts after it, and it waits for those running up to
+   2 s, then ends the process at once with status 1 rather than run the
+   destructors under them. It is registered before libheif's initialization (an
+   exit during it waits for it) and again after it and the HEVC decoder check,
+   because the initialization loads decoder plugins whose destructors register
+   then, and the process runs exit functions and destructors in the reverse order
+   of their registration: once the initialization is done, the wait runs before
+   the plugins' destructors. An exit that begins during the initialization still
+   waits for it, but may run the destructors of plugins loaded by then first. This
+   ordering is hardening: no build has been shown to crash with the wait
+   registered before the plugins load.
 
 ## Quit on macOS
 

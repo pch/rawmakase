@@ -13,9 +13,15 @@
 //!
 //! The process exiting runs libheif's static destructors, which crash its
 //! threads still decoding (a worker's, quitting mid-decode). So, once libheif
-//! is opened, exiting first waits for the decodes running, up to
-//! [`EXIT_WAIT`] (a photo decodes in well under that), and no decode starts
-//! after. A decode still running then ends the process at once, with status
+//! is opened, exiting first waits for the decodes running, and its
+//! initialization if it is running, up to [`EXIT_WAIT`] (a photo decodes in
+//! well under that), and no decode starts after. The wait is registered
+//! before the initialization and again after it, which loads the decoder
+//! plugins: the process runs exit functions and destructors in the reverse
+//! order of their registration, so once the initialization is done the wait
+//! runs before the plugins' destructors too. An exit that begins during the
+//! initialization still waits for it, but may run destructors the plugins
+//! registered before the second registration first. A decode still running then ends the process at once, with status
 //! 1 and without the rest of its teardown, rather than run libheif's
 //! destructors under it: exiting is never held up for longer.
 use super::super::avif;
@@ -28,29 +34,58 @@ use std::time::{Duration, Instant};
 /// The longest the process waits, exiting, for decodes running.
 const EXIT_WAIT: Duration = Duration::from_secs(2);
 
-/// How many decodes are running in libheif, whether the process is
-/// exiting, and the decodes' ending.
-static RUNNING: (Mutex<(usize, bool)>, Condvar) = (Mutex::new((0, false)), Condvar::new());
+/// The decodes running in libheif, and libheif's initialization while it runs.
+static RUNNING: Decodes = Decodes::new();
 
-/// A decode running in libheif, from its start to its end.
-struct Running;
+/// How many decodes are running in libheif, whether the process is exiting,
+/// and the decodes' ending.
+struct Decodes {
+    state: Mutex<(usize, bool)>,
+    ended: Condvar,
+}
 
-impl Running {
+impl Decodes {
+    const fn new() -> Self {
+        Self {
+            state: Mutex::new((0, false)),
+            ended: Condvar::new(),
+        }
+    }
     /// A decode starting; none once the process is exiting.
-    fn start() -> Option<Self> {
-        let mut running = RUNNING.0.lock().unwrap_or_else(|e| e.into_inner());
-        if running.1 {
+    fn start(&self) -> Option<Running<'_>> {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.1 {
             return None;
         }
-        running.0 += 1;
-        Some(Running)
+        state.0 += 1;
+        Some(Running(self))
+    }
+    /// Lets no decode start, and waits for those running until `until`;
+    /// whether they all ended.
+    fn exit(&self, until: Instant) -> bool {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.1 = true;
+        while state.0 > 0 {
+            let Some(left) = until.checked_duration_since(Instant::now()) else {
+                return false;
+            };
+            state = self
+                .ended
+                .wait_timeout(state, left)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+        true
     }
 }
 
-impl Drop for Running {
+/// A decode running in libheif, from its start to its end.
+struct Running<'a>(&'a Decodes);
+
+impl Drop for Running<'_> {
     fn drop(&mut self) {
-        RUNNING.0.lock().unwrap_or_else(|e| e.into_inner()).0 -= 1;
-        RUNNING.1.notify_all();
+        self.0.state.lock().unwrap_or_else(|e| e.into_inner()).0 -= 1;
+        self.0.ended.notify_all();
     }
 }
 
@@ -58,20 +93,32 @@ impl Drop for Running {
 /// start, and waits for those running, up to [`EXIT_WAIT`]; past that, ends
 /// the process at once, as its exit status can't be known here.
 extern "C" fn wait_for_decodes() {
-    let until = Instant::now() + EXIT_WAIT;
-    let mut running = RUNNING.0.lock().unwrap_or_else(|e| e.into_inner());
-    running.1 = true;
-    while running.0 > 0 {
-        let Some(left) = until.checked_duration_since(Instant::now()) else {
-            // SAFETY: ends the process without running anything more.
-            unsafe { libc::_exit(1) };
-        };
-        running = RUNNING
-            .1
-            .wait_timeout(running, left)
-            .unwrap_or_else(|e| e.into_inner())
-            .0;
+    if !RUNNING.exit(Instant::now() + EXIT_WAIT) {
+        // SAFETY: ends the process without running anything more.
+        unsafe { libc::_exit(1) };
     }
+}
+
+/// Registers [`wait_for_decodes`] to run as the process exits. The process
+/// runs these in the reverse order of their registration, its destructors
+/// among them.
+fn register_exit_wait() {
+    // SAFETY: a function that only waits, a bounded while, on a lock.
+    unsafe { libc::atexit(wait_for_decodes) };
+}
+
+/// Runs libheif's initialization, `init` (which loads its decoder plugins and
+/// asks for HEVC), counted as a decode, with the exit wait registered by
+/// `register` before it and again after it. Exiting while it runs waits for
+/// it, as for a decode; and the wait registered after it runs before the
+/// destructors of the plugins it loaded, registered during it. None, and
+/// nothing run, once the process is exiting.
+fn initialize<R>(decodes: &Decodes, register: impl Fn(), init: impl FnOnce() -> R) -> Option<R> {
+    register();
+    let _running = decodes.start()?;
+    let initialized = init();
+    register();
+    Some(initialized)
 }
 
 /// The library's file names, the versioned one first: the unversioned one is
@@ -190,26 +237,27 @@ fn open() -> Result<Library, &'static str> {
             unsafe { cast(symbol($name).ok_or(INSTALL)?) }
         };
     }
-    // Registered after libheif's own destructors, so run before them.
-    // SAFETY: a function that only waits, a bounded while, on a lock.
-    unsafe { libc::atexit(wait_for_decodes) };
-    // libheif 1.13 and later load their decoder plugins here; earlier ones
-    // have no such function and need none.
-    if let Some(init) = symbol(c"heif_init") {
-        // SAFETY: heif_init takes optional parameters, none here; it is
-        // never undone, as the library stays open.
-        let init: unsafe extern "C" fn(*const c_void) -> HeifError = unsafe { cast(init) };
-        // Its error is a plugin that would not load, as one whose optional
-        // library (ffmpeg, dav1d) isn't installed: the rest load, and whether
-        // HEVC is among them is asked next.
-        unsafe { init(std::ptr::null()) };
-    }
-    let have_decoder: unsafe extern "C" fn(c_int) -> c_int =
-        function!(c"heif_have_decoder_for_format");
-    // SAFETY: a query of the library's own decoders.
-    if unsafe { have_decoder(HEVC) } == 0 {
-        return Err(NO_HEVC);
-    }
+    let initialized = initialize(&RUNNING, register_exit_wait, || {
+        // libheif 1.13 and later load their decoder plugins here; earlier ones
+        // have no such function and need none.
+        if let Some(init) = symbol(c"heif_init") {
+            // SAFETY: heif_init takes optional parameters, none here; it is
+            // never undone, as the library stays open.
+            let init: unsafe extern "C" fn(*const c_void) -> HeifError = unsafe { cast(init) };
+            // Its error is a plugin that would not load, as one whose optional
+            // library (ffmpeg, dav1d) isn't installed: the rest load, and whether
+            // HEVC is among them is asked next.
+            unsafe { init(std::ptr::null()) };
+        }
+        let have_decoder: unsafe extern "C" fn(c_int) -> c_int =
+            function!(c"heif_have_decoder_for_format");
+        // SAFETY: a query of the library's own decoders.
+        if unsafe { have_decoder(HEVC) } == 0 {
+            return Err(NO_HEVC);
+        }
+        Ok(())
+    });
+    initialized.ok_or("RAWmakase is quitting")??;
     Ok(Library {
         context_alloc: function!(c"heif_context_alloc"),
         context_free: function!(c"heif_context_free"),
@@ -262,7 +310,9 @@ pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
     let lib = library().map_err(|e| anyhow!(e))?;
     // Declared first, so it ends after every libheif object below is
     // released.
-    let _running = Running::start().ok_or_else(|| anyhow!("RAWmakase is quitting"))?;
+    let _running = RUNNING
+        .start()
+        .ok_or_else(|| anyhow!("RAWmakase is quitting"))?;
     // The file the header was read from, whole.
     let bytes = file.bytes()?;
     // Declared after `bytes`, so released before them: libheif reads them
@@ -357,6 +407,69 @@ pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
 mod tests {
     use super::*;
 
+    /// Exiting while libheif initializes waits for it, as for a decode; the
+    /// exit wait is registered before it and again after, so it runs before
+    /// the destructors of the plugins the initialization loads.
+    #[test]
+    fn exiting_during_initialization_waits_for_it() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::mpsc;
+        static DECODES: Decodes = Decodes::new();
+        static REGISTERED: AtomicUsize = AtomicUsize::new(0);
+        let (started, started_rx) = mpsc::channel();
+        let (finish, finish_rx) = mpsc::channel::<()>();
+        let initializing = std::thread::spawn(move || {
+            initialize(
+                &DECODES,
+                || {
+                    REGISTERED.fetch_add(1, Ordering::SeqCst);
+                },
+                move || {
+                    // Registered once, before the initialization.
+                    let before = REGISTERED.load(Ordering::SeqCst);
+                    started.send(()).unwrap();
+                    finish_rx.recv().unwrap();
+                    before
+                },
+            )
+        });
+        started_rx.recv().unwrap();
+        let (exited, exited_rx) = mpsc::channel();
+        let exiting = std::thread::spawn(move || {
+            exited
+                .send(DECODES.exit(Instant::now() + Duration::from_secs(20)))
+                .unwrap();
+        });
+        // The exit has begun, with the initialization still counted.
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !DECODES.state.lock().unwrap().1 {
+            assert!(Instant::now() < deadline, "the exit never began");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(DECODES.state.lock().unwrap().0, 1);
+        assert!(
+            exited_rx.recv_timeout(Duration::from_millis(50)).is_err(),
+            "the exit did not wait for the initialization"
+        );
+        finish.send(()).unwrap();
+        assert_eq!(initializing.join().unwrap(), Some(1));
+        assert_eq!(REGISTERED.load(Ordering::SeqCst), 2);
+        assert!(exited_rx.recv_timeout(Duration::from_secs(20)).unwrap());
+        exiting.join().unwrap();
+    }
+
+    /// Once the process is exiting, libheif is not initialized, and no decode
+    /// starts.
+    #[test]
+    fn nothing_initializes_or_decodes_once_exiting() {
+        static DECODES: Decodes = Decodes::new();
+        assert!(DECODES.exit(Instant::now()));
+        let mut ran = false;
+        assert!(initialize(&DECODES, || {}, || ran = true).is_none());
+        assert!(!ran);
+        assert!(DECODES.start().is_none());
+    }
+
     /// A plugin that won't load, as one whose optional library isn't
     /// installed (CI's Arch has no ffmpeg or dav1d), makes heif_init say so,
     /// but libheif is still there: it is not reported missing. With only a
@@ -399,7 +512,7 @@ mod tests {
         const CHILD: &str = "RAWMAKASE_LIBHEIF_EXIT_CHILD";
         if std::env::var_os(CHILD).is_some() {
             if library().is_ok() {
-                std::mem::forget(Running::start());
+                std::mem::forget(RUNNING.start());
                 std::process::exit(0);
             }
             std::process::exit(2);
