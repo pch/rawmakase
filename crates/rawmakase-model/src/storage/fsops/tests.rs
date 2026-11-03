@@ -897,7 +897,7 @@ fn a_resource_fork_and_finder_info_are_carried_and_compared() {
     assert_eq!(extras(&icon).unwrap(), extras(&copy).unwrap());
     assert_eq!(fs::read(&copy).unwrap(), b"");
     // A fork that differs by a byte is told.
-    let mut other = fork.clone();
+    let mut other = fork;
     other[123_456] ^= 1;
     fs::write(copy.join("..namedfork/rsrc"), &other).unwrap();
     assert_ne!(extras(&icon).unwrap(), extras(&copy).unwrap());

@@ -480,7 +480,7 @@ mod tests {
         let singular = Metadata {
             matrix_source: Source::File,
             cam_xyz: [[1., 1., 1.]; 3],
-            ..bare.clone()
+            ..bare
         };
         assert_eq!(eligibility(&singular, &[]), Eligibility::Invalid);
     }
@@ -517,7 +517,7 @@ mod tests {
         );
         let other = Metadata {
             model: "Other".into(),
-            ..m.clone()
+            ..m
         };
         assert!(from_carried(&text, &other).is_err());
         assert!(is_fitted(&p) && !is_fitted(&base));
@@ -562,7 +562,7 @@ mod tests {
         ));
         let unbalanced = Metadata {
             wb: [0., 1., 1.],
-            ..m.clone()
+            ..m
         };
         assert!(matrix_base(&unbalanced, forward).is_err());
     }

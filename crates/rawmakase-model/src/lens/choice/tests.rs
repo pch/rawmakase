@@ -646,7 +646,7 @@ fn an_unresolved_lensfun_choice_falls_back_to_built_in_only() {
     );
     m.lens_profiles = Library::from_texts([("adobe.lcp", text.as_str())]).for_photo(&m);
     let named = fixture::choice();
-    let unresolved = LensfunChoice::unresolved(named.lens.clone(), named.label.clone(), 0);
+    let unresolved = LensfunChoice::unresolved(named.lens.clone(), named.label, 0);
     let mut r = Recipe {
         lens_profile: true,
         ..Default::default()
@@ -697,7 +697,7 @@ fn lensfun_recipes_save_in_a_format_earlier_releases_refuse() {
     assert_eq!(saved_format::schema_for(&off), saved_format::LENSFUN_SCHEMA);
     let envelope = serde_json::json!({"schema": 12, "pipeline": 12, "recipe": off});
     assert!(!saved_format::reads(&envelope, saved_format::SCHEMA));
-    let mut read = envelope.clone();
+    let mut read = envelope;
     saved_format::migrate_recipe(&mut read).unwrap();
     let back: Recipe = serde_json::from_value(read["recipe"].clone()).unwrap();
     assert_eq!(back, off);

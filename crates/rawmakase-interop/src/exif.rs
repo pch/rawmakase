@@ -827,7 +827,7 @@ mod camera_names_tests {
         );
         assert_eq!(colour_facts_of_jpeg(&[0xff, 0xd8, 0xff, 0xd9]), None);
         let none = ColourFacts::default();
-        assert_eq!(none.clone().or(facts.clone()), facts);
+        assert_eq!(none.or(facts.clone()), facts);
     }
 
     #[test]

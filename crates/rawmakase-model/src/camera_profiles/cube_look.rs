@@ -768,10 +768,7 @@ pub(super) mod tests {
         let look = LookFile::parse(&xml).unwrap();
         assert_eq!(look.name, "Portra");
         assert!(matches!(look.base, super::super::enhanced::LookBase::Any));
-        assert_eq!(
-            LookFile::identity(&xml).unwrap(),
-            ("Portra".into(), a.uuid.clone())
-        );
+        assert_eq!(LookFile::identity(&xml).unwrap(), ("Portra".into(), a.uuid));
         // Without a title or a folder, those elements are left out.
         let plain = convert(
             cube_text(2, |p| p)

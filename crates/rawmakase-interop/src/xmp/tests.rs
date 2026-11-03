@@ -468,7 +468,7 @@ fn lightroom_crops_of_a_photo_held_upright_are_of_the_unrotated_frame() -> Resul
     let cw = Metadata {
         flip: 6,
         camera_crop: None,
-        ..m.clone()
+        ..m
     };
     let left =
         r#"c:HasCrop="True" c:CropTop="0" c:CropLeft="0" c:CropBottom="1" c:CropRight="0.5""#;
@@ -1138,7 +1138,7 @@ fn channel_curves_apply_only_as_a_full_set() -> Result<()> {
         red.clone(),
         [seq("ToneCurvePV2012", &linear), red.clone()].concat(),
         [
-            red.clone(),
+            red,
             seq("ToneCurvePV2012Green", &linear),
             seq("ToneCurvePV2012Blue", &linear),
         ]

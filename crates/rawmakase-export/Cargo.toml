@@ -42,5 +42,5 @@ rawmakase-catalog = { path = "../rawmakase-catalog", version = "0.1.0", features
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0", features = ["test-support"] }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }
 
-# Not on the workspace lints yet: one clippy finding in its tests to clear first
-# (issue #808, step 0.3).
+[lints]
+workspace = true

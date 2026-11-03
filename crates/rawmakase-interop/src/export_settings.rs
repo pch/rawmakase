@@ -982,7 +982,7 @@ mod tests {
         assert_eq!((read.format, read.quality), (Format::Jpeg, 70));
         assert_eq!(read.folder, Some(PathBuf::from("/x")));
         // A format chosen here replaces it, JPEG too.
-        let mut png = read.clone();
+        let mut png = read;
         png.format = Format::Png;
         png.save_to(&file)?;
         assert_eq!(saved_format(&file)?, "Png");
