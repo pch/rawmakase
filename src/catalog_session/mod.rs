@@ -214,6 +214,9 @@ impl CatalogSession {
     /// Reads the photos, folders, collections and roots again. All or nothing:
     /// when a read fails, the lists stay as they were, still matching each other.
     pub(crate) fn reload(&mut self) -> Result<()> {
+        // Read again after a change that may move, rename, promote or remove
+        // photos: what was read before no longer applies, even if this read fails.
+        self.generation = GENERATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
         // Earlier imports could pick up macOS "._" metadata files; never show them.
         let mut photos = self.catalog.photos()?;
         photos.retain(|p| !crate::storage::is_hidden(Path::new(&p.filename)));
@@ -242,9 +245,6 @@ impl CatalogSession {
         self.collection_photos = collection_photos;
         self.roots = roots;
         self.overrides = overrides;
-        // Read again after a change that may move, rename, promote or
-        // remove photos: what was read before no longer applies.
-        self.generation = GENERATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
         self.count_checksums();
         Ok(())
     }
@@ -253,6 +253,96 @@ impl CatalogSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A catalog of two JPEGs, `a` with a virtual copy in a collection, and a session
+    /// whose next read of the catalog fails (its collections are gone).
+    fn session_that_cannot_read_again() -> Result<(tempfile::TempDir, CatalogSession, PhotoId)> {
+        let directory = tempfile::tempdir()?;
+        let folder = directory.path().join("photos");
+        std::fs::create_dir(&folder)?;
+        image::RgbImage::new(8, 8).save(folder.join("a.jpg"))?;
+        image::RgbImage::new(8, 8).save(folder.join("b.jpg"))?;
+        let path = directory.path().join("library.rawmakase");
+        let mut catalog = Catalog::create(&path)?;
+        catalog.add_folder(&folder)?;
+        let a = catalog.photos()?[0].id;
+        let copy = catalog.create_virtual_copy(a)?;
+        let collection = catalog.quick_collection()?;
+        catalog.change_collection(collection, &[copy], &[])?;
+        drop(catalog);
+        let Opened { session, .. } = CatalogSession::open(&CatalogLocation::from(&path))?;
+        session
+            .catalog
+            .db_for_tests()
+            .execute_batch("ALTER TABLE collections RENAME TO collections_gone")?;
+        Ok((directory, session, copy))
+    }
+
+    /// Issue 808 (M3, A2): a removed copy's id may be given to the next new photo, so
+    /// once it is removed the lists drop it and what background readers read before
+    /// is dropped, even when the catalog cannot be read again.
+    #[test]
+    fn a_removed_copy_leaves_the_lists_and_the_generation_when_reading_again_fails() -> Result<()> {
+        let (_directory, mut session, copy) = session_that_cannot_read_again()?;
+        let generation = session.generation();
+        let removed = session.remove_virtual_copy(copy)?;
+        assert!(removed.listed.is_err());
+        assert!(session.photos.iter().all(|p| p.id != copy));
+        assert!(
+            session
+                .collection_photos
+                .values()
+                .all(|m| !m.contains(&copy))
+        );
+        assert_eq!(session.folders[0].count, 2);
+        assert_ne!(session.generation(), generation);
+        Ok(())
+    }
+
+    /// Issue 808 (M3, review): a read of photo info or capture times under way when a
+    /// copy is removed, or a copy made the master, may hold an id given to another
+    /// photo next (or a master's file a copy now names): it stops, and is started
+    /// again by whoever shows the catalog, as when folders are removed.
+    #[test]
+    fn background_reads_stop_when_a_copy_is_removed_or_made_the_master() -> Result<()> {
+        for change in ["remove", "promote"] {
+            let directory = tempfile::tempdir()?;
+            let folder = directory.path().join("photos");
+            std::fs::create_dir(&folder)?;
+            image::RgbImage::new(8, 8).save(folder.join("a.jpg"))?;
+            let path = directory.path().join("library.rawmakase");
+            let mut catalog = Catalog::create(&path)?;
+            catalog.add_folder(&folder)?;
+            let a = catalog.photos()?[0].id;
+            let copy = catalog.create_virtual_copy(a)?;
+            drop(catalog);
+            let Opened { mut session, .. } = CatalogSession::open(&CatalogLocation::from(&path))?;
+            session.start_photo_info(|_| true);
+            session.start_capture_times(|_| true);
+            assert!(session.reading_photo_info(), "{change}");
+            match change {
+                "remove" => session.remove_virtual_copy(copy)?.listed?,
+                _ => session.set_copy_as_master(copy)?.listed?,
+            }
+            assert!(!session.reading_photo_info(), "{change}");
+            assert!(!session.reading_capture_times(), "{change}");
+        }
+        Ok(())
+    }
+
+    /// Removing folders, whose photos' ids may be reused, starts a new generation
+    /// even when the catalog cannot be read again.
+    #[test]
+    fn removed_folders_start_a_new_generation_when_reading_again_fails() -> Result<()> {
+        let (_directory, mut session, _) = session_that_cannot_read_again()?;
+        let generation = session.generation();
+        let folder = session.folders[0].id;
+        let removed = session.remove_folders(&[folder], None)?;
+        assert!(removed.listed.is_err());
+        assert!(session.photos.is_empty());
+        assert_ne!(session.generation(), generation);
+        Ok(())
+    }
 
     #[test]
     fn opening_reads_the_catalog_with_no_window() -> Result<()> {
