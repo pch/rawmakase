@@ -1793,7 +1793,7 @@ fn contrast_and_the_scene_stage_are_measured_on_the_photo_alone() {
     assert!((pivot - TYPICAL_PIVOT).abs() > 0.01, "{pivot}");
     assert_ne!(plain.measures, Default::default());
     let gpu = pixel_params::pixel_params((&im).into(), &r).unwrap();
-    assert_eq!(gpu.get("LOCAL_PIVOT"), [pivot]);
+    assert_eq!(gpu.get(pixel_params::slot::LOCAL_PIVOT), [pivot]);
     let map_pass = CurveSet::with_photo_measures((&im).into(), &r, camera);
     assert_eq!(map_pass.photo, plain.photo);
     assert_eq!(map_pass.measures, plain.measures);

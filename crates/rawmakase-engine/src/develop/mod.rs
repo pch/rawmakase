@@ -34,6 +34,7 @@ mod pyramid;
 mod shadow_context;
 mod shadow_context_data;
 pub mod sharpening;
+mod slots;
 pub mod targeted;
 pub mod texture;
 pub mod upright;

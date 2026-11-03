@@ -93,8 +93,9 @@ in the page for that stage.
 
 The per-pixel stage has a WGSL port. In
 `crates/rawmakase-engine/src/develop/pipeline/pixel_params.rs`, add a named slot and
-its length to the slot list (`("REFINE_SATURATION", 1)`) and set it from the recipe
-in the same function as its neighbours; `wgsl_prelude` turns each slot into a
+its length to the `slot` list (`REFINE_SATURATION: 1`) and set it from the recipe
+in the same function as its neighbours
+(`p.set(slot::REFINE_SATURATION, …)`); `wgsl_prelude` turns each slot into a
 `P_*` constant. Read it in `gpu/develop.wgsl` (`p(P_REFINE_SATURATION)`) at the same
 point of the stage as the CPU. A recipe the port can't render returns `None` there
 and renders on the CPU.

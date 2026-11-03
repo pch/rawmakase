@@ -2,25 +2,7 @@
 //! their ranges for the Rust side, and the `S_*` offsets generated from them for
 //! the shader, so the two sides cannot drift apart. The radial lens tables follow
 //! the header, at [`HEADER`].
-use std::ops::Range;
-
-/// Declares each slot as a `Range` that starts where the previous one ends, the
-/// header's length as `HEADER`, and every slot by name as `ALL`.
-macro_rules! slots {
-    ($($name:ident: $len:expr),* $(,)?) => {
-        slots!(@at 0; $($name: $len,)*);
-        /// Every slot, in order, by the name the shader gives it.
-        pub(crate) const ALL: &[(&str, Range<usize>)] = &[$((stringify!($name), $name)),*];
-    };
-    (@at $at:expr;) => {
-        /// Parameters before the radial tables.
-        pub(crate) const HEADER: usize = $at;
-    };
-    (@at $at:expr; $name:ident: $len:expr, $($rest:tt)*) => {
-        pub(crate) const $name: Range<usize> = $at..$at + $len;
-        slots!(@at $name.end; $($rest)*);
-    };
-}
+use crate::develop::slots::slots;
 
 slots! {
     WIDTH: 1,
