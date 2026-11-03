@@ -63,6 +63,22 @@ rounding. Measured on an M1 Pro, an Amount change updates the Fit preview in
 155 ms at 24 MP and 357 ms at 61 MP, and Develop's resident memory while dragging
 grows by 0.80 GB (24 MP) and 0.90 GB (61 MP).
 
+The Library's edited previews, Compare, Survey and the Loupe show AI Denoise only
+from a finished result in the cache for the photo's file and the installed model, on
+any provider. The previews then decode the photo at full size, as Develop does, and
+assemble the result over it. Without a finished result they render the plain image,
+from the half-size decode, as before. The Loupe never runs the model, and doesn't show
+a partial result. Once any job stores a result, previews of that file shown plain are
+made again. A preview records what it shows in its cache tag: no AI Denoise (`-fit`), the
+plain image of an edit with it (`-fit-noai`), or the finished result of a named model
+(`-fit-ai-<model>`). The plain and AI previews never replace each other, the plain one is
+not used once a result is finished, and a changed model makes the preview again. Develop
+gives its render to the Library only once its result is final; a render with a partial
+result is shown in Develop only. Previews that earlier releases kept for edits with
+AI Denoise, under `-fit` with or without the result, are not shown again. An offline photo
+keeps whichever preview it has. Only RAWmakase's own edits are read this way. An imported
+Lightroom edit with Denoise previews plain in the Library until it is edited in Develop.
+
 The choices above were measured on 2026-11-02 (M1 Pro, ONNX Runtime 1.23.2; the 190
 CC0 photos above ISO 400 in the pixls archive, RawNIND's held-out test pairs). Tiles
 start at rawnind_jddc's grid origin: with the padded image's own grid, 9 of 59

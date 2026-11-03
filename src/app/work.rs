@@ -28,6 +28,7 @@ pub(super) enum Kind {
     StandIns,
     Selection,
     AiDenoise,
+    AiLoupe,
     Auto,
     CameraLook,
     Upright,
@@ -200,6 +201,17 @@ const WORK: &[Row] = &[
         slows_previews: true,
         pauses_checksums: false,
         stop: Some(|e| vec![e.ai_denoise.stop()]),
+    },
+    // The Loupe's load of a finished AI Denoise result. Nothing shows while it
+    // runs: the photo stays plain until the result arrives.
+    Row {
+        kind: Kind::AiLoupe,
+        running: None,
+        closing: None,
+        status: None,
+        slows_previews: false,
+        pauses_checksums: false,
+        stop: Some(|e| vec![e.ai_loupe.stop()]),
     },
     Row {
         kind: Kind::Auto,

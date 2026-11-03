@@ -60,6 +60,8 @@ impl std::fmt::Debug for State {
 
 /// Where Develop's updates go.
 pub(crate) type Sink = Arc<dyn Fn(Update) + Send + Sync>;
+/// Told the path of a photo whose result was just stored.
+pub(crate) type Stored = Arc<dyn Fn(&Path) + Send + Sync>;
 /// Opens a photo's mosaic for the model (the RAW decoders in the app, a stand-in in tests).
 pub(crate) type Source = Arc<dyn Fn(&Path, &AtomicBool) -> Result<PackedBayer> + Send + Sync>;
 /// Loads the model on a provider (ONNX Runtime in the app, a stand-in in tests).
@@ -98,6 +100,70 @@ fn key_of(id: &crate::storage::Identity, provider: Provider) -> String {
         provider.name(),
         rawmakase_decode::decode_cache::build_identity(),
     )
+}
+
+/// The installed model, as a Library preview made from its result names it: a result
+/// of another model makes another preview.
+pub(crate) fn model_tag() -> String {
+    format!("{}-a{}", &RAWNIND.model.sha256[..16], RAWNIND.version)
+}
+
+/// The key of a finished result of the installed model for the file `file` names, run
+/// on any provider, when `cache` has one: what a Library preview of the photo shows.
+pub(crate) fn finished(cache: &AiCache, file: &crate::storage::Identity) -> Option<String> {
+    [Provider::Cpu, Provider::Cuda, Provider::CoreML]
+        .into_iter()
+        .map(|provider| key_of(file, provider))
+        .find(|key| cache.contains(key))
+}
+
+/// A finished result the Library's Loupe shows: `key`'s entry in `cache`, assembled
+/// over `plain`, the image it was found for.
+pub(crate) struct CachedLoad {
+    cache: AiCache,
+    key: String,
+    plain: Arc<CameraImage>,
+    /// Set once the photo is left or another load replaces this one.
+    cancel: Arc<AtomicBool>,
+}
+
+/// The worker that loads the Loupe's finished results, one at a time, the latest
+/// first: a load asked for meanwhile replaces the one waiting. It hands each result
+/// over as Develop's final result is (`Event::AiDenoise`), and stops between loads at
+/// exit; a cancelled load stops between its stages and sends nothing.
+pub(super) fn cached_loader(
+    tx: std::sync::mpsc::Sender<super::worker::Event>,
+    ctx: eframe::egui::Context,
+) -> super::worker::Latest<CachedLoad> {
+    super::worker::Latest::new(move |job: CachedLoad| {
+        let cancelled = || job.cancel.load(Ordering::Relaxed);
+        if cancelled() {
+            return;
+        }
+        let Some(entry) = job.cache.load(&job.key) else {
+            return;
+        };
+        if cancelled() {
+            return;
+        }
+        let output = ModelOutput {
+            layout: entry.layout,
+            rgb: &entry.rgb,
+            done: None,
+            clipped: &entry.clipped,
+        };
+        let source = assemble(&output, &job.plain, &job.cancel)
+            .and_then(|image| AiSource::recover(image, Cancel::new(&job.cancel)));
+        if let Ok(source) = source
+            && !cancelled()
+        {
+            let _ = tx.send(super::worker::Event::AiDenoise(Box::new(Update {
+                plain: Arc::downgrade(&job.plain),
+                state: State::Ready(source),
+            })));
+            ctx.request_repaint();
+        }
+    })
 }
 
 /// `sink`, handed a result (partial or final) only while the file at `path` is still
@@ -187,6 +253,8 @@ struct Shared {
     queue: Mutex<Queue>,
     changed: Condvar,
     cache: AiCache,
+    /// Told the photo's path each time a result is stored, whoever asked for it.
+    stored: Mutex<Option<Stored>>,
     /// The installed model's folder, `None` when it is not installed.
     model: Mutex<Option<PathBuf>>,
     provider: Provider,
@@ -271,6 +339,7 @@ impl Service {
                 queue: Mutex::default(),
                 changed: Condvar::new(),
                 cache,
+                stored: Mutex::new(None),
                 model: Mutex::new(None),
                 provider,
                 source,
@@ -421,6 +490,11 @@ impl Service {
                 );
             }
         }
+    }
+    /// Tells `stored` the path of each photo whose result is stored from now on, so
+    /// previews shown without one can show it.
+    pub(crate) fn on_stored(&self, stored: Stored) {
+        *self.shared.stored.lock().unwrap_or_else(|e| e.into_inner()) = Some(stored);
     }
     /// Asks for `request`'s photo in Develop. Its updates follow on its sink; a result
     /// already cached arrives without running anything.
@@ -703,11 +777,20 @@ impl Service {
             clipped: packed.clipped,
         };
         // A result that cannot be stored at half precision is not one.
-        if let Err(e) = self.shared.cache.store(&job.key, &entry) {
-            if e.to_string().contains("half precision") {
-                return Err(e);
+        match self.shared.cache.store(&job.key, &entry) {
+            Ok(()) => {
+                let stored = self
+                    .shared
+                    .stored
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone();
+                if let Some(stored) = stored {
+                    stored(&job.path);
+                }
             }
-            eprintln!("Could not cache the AI Denoise result: {e:#}");
+            Err(e) if e.to_string().contains("half precision") => return Err(e),
+            Err(e) => eprintln!("Could not cache the AI Denoise result: {e:#}"),
         }
         Ok(Outcome::Done(Arc::new(entry)))
     }
@@ -1090,6 +1173,11 @@ pub(crate) struct Photo {
     /// or a reopened photo asks again).
     failed: bool,
     status: Option<State>,
+    /// The image the Library's Loupe looked for a finished result for, found or not:
+    /// not looked for again until one is stored.
+    looked_up: Option<std::sync::Weak<CameraImage>>,
+    /// Cancels the Loupe's load of a finished result, once the photo is left.
+    loading: Option<Arc<AtomicBool>>,
 }
 impl Drop for Photo {
     fn drop(&mut self) {
@@ -1101,6 +1189,10 @@ impl Photo {
     pub(crate) fn source(&self) -> Option<&AiSource> {
         self.source.as_ref()
     }
+    /// Whether [`source`](Self::source) is the final result, not a partial one.
+    pub(crate) fn is_complete(&self) -> bool {
+        self.complete
+    }
     /// What happened last: running, ready, or why there is none.
     pub(crate) fn status(&self) -> Option<&State> {
         self.status.as_ref()
@@ -1110,6 +1202,11 @@ impl Photo {
     fn release(&mut self) {
         if let Some((_, wanted)) = self.requested.take() {
             wanted.store(false, Ordering::Relaxed);
+        }
+        // A load given up before it was shown is looked for again next time.
+        if let Some(cancel) = self.loading.take() {
+            cancel.store(true, Ordering::Relaxed);
+            self.looked_up = None;
         }
     }
     /// Whether `image` should be asked for: not a draft, not asked for already, and
@@ -1153,6 +1250,12 @@ impl super::Editor {
             self.document.ai.status = Some(State::Failed(CHANGED_SINCE_OPENED.into()));
             return;
         };
+        // The Library's Loupe shows a finished result, as its previews do, and never
+        // runs the model: without one, the photo shows plain.
+        if self.module == super::library::Module::Library {
+            self.load_finished_ai(image, &file);
+            return;
+        }
         let model = self.selection.models.denoise.path();
         if model.is_none() {
             self.document.ai.status = Some(State::Failed(
@@ -1193,6 +1296,55 @@ impl super::Editor {
             }),
         });
     }
+    /// For the Library's Loupe: a finished result in the cache for the file `file`
+    /// names (of any provider), loaded and assembled over `image` off the UI thread,
+    /// and handed over as Develop's final result is. Never runs the model; without a
+    /// result the photo stays plain. Looked for once per image, until one is stored.
+    fn load_finished_ai(&mut self, image: &Arc<CameraImage>, file: &crate::storage::Identity) {
+        let looked = self.document.ai.looked_up.as_ref();
+        if looked.is_some_and(|w| std::ptr::eq(w.as_ptr(), Arc::as_ptr(image))) {
+            return;
+        }
+        self.document.ai.looked_up = Some(Arc::downgrade(image));
+        let Some(key) = finished(self.ai_denoise_cache(), file) else {
+            return;
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        if let Some(earlier) = self.document.ai.loading.replace(cancel.clone()) {
+            earlier.store(true, Ordering::Relaxed);
+        }
+        self.ai_loupe.submit(CachedLoad {
+            cache: self.ai_denoise_cache().clone(),
+            key,
+            plain: image.clone(),
+            cancel,
+        });
+    }
+    /// A result was stored for the file at `path`: the Library's Loupe showing it
+    /// plain looks again.
+    pub(super) fn ai_result_stored(&mut self, path: &Path) {
+        if let Some(library) = &mut self.library {
+            library.ai_result_stored(path);
+        }
+        if self.module == super::library::Module::Library
+            && self.document.path.as_deref() == Some(path)
+            && !self.document.ai.complete
+        {
+            self.document.ai.looked_up = None;
+            self.schedule();
+        }
+    }
+    /// The AI Denoise source a render of `image` with `setting` shows: Develop's latest
+    /// result, partial or final; the Library's Loupe only a final one.
+    pub(super) fn shown_ai_source(
+        &self,
+        image: &Arc<CameraImage>,
+        setting: &crate::model::ai_denoise::AiDenoise,
+    ) -> Option<crate::develop::AiSource> {
+        self.document
+            .ai_source(image, setting)
+            .filter(|_| self.module != super::library::Module::Library || self.document.ai.complete)
+    }
     /// Removes AI Denoise's model: the service lets go of it first, off the UI thread,
     /// and the photo shown asks again (and is told to install it) when next rendered.
     pub(super) fn remove_ai_denoise_model(&mut self) {
@@ -1227,6 +1379,11 @@ impl super::Editor {
             .full()
             .is_some_and(|image| std::ptr::eq(update.plain.as_ptr(), Arc::as_ptr(image)));
         if !current {
+            return;
+        }
+        // A final result is not replaced by a partial one: the Loupe's cached load
+        // and a Develop run can both answer for one image.
+        if matches!(update.state, State::Partial(_)) && self.document.ai.complete {
             return;
         }
         let shown = matches!(update.state, State::Partial(_) | State::Ready(_));

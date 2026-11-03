@@ -5,6 +5,7 @@ use crate::catalog::preview_cache::{PreviewCache, Stamp};
 use crate::model::recipe::Recipe;
 use eframe::egui;
 use rawmakase_cancel::Cancel;
+use rawmakase_decode::ai_cache::AiCache;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -169,11 +170,41 @@ impl EditSource {
         format!("edit-{:016x}", h.finish())
     }
     /// Identifies this edit's Library preview in the preview cache: [`Self::tag`],
-    /// and how the preview is rendered (Develop's Fit path), so previews rendered
-    /// another way are made again rather than shown beside new ones.
-    pub(crate) fn preview_tag(&self) -> String {
-        format!("{}-fit", self.tag())
+    /// how the preview is rendered (Develop's Fit path), so previews rendered
+    /// another way are made again rather than shown beside new ones, and, for an
+    /// edit with AI Denoise, whether it shows the installed model's result.
+    pub(crate) fn preview_tag(&self, ai: PreviewAi) -> String {
+        self.preview_tag_of(ai, &crate::app::ai_denoise::model_tag())
     }
+    /// [`preview_tag`](Self::preview_tag) with AI Denoise's result from `model`.
+    fn preview_tag_of(&self, ai: PreviewAi, model: &str) -> String {
+        let tag = self.tag();
+        match ai {
+            PreviewAi::Off => format!("{tag}-fit"),
+            // Not "-fit": before AI Denoise was told apart, Develop kept its renders
+            // with the result under the edit's plain tag. They are not shown again.
+            PreviewAi::Plain => format!("{tag}-fit-noai"),
+            PreviewAi::Finished => format!("{tag}-fit-ai-{model}"),
+        }
+    }
+    /// Whether this edit renders AI Denoise, as far as the Library tells without
+    /// opening the file: a RAWmakase edit with it on. A Lightroom edit or the
+    /// defaults render without it here, as they did before.
+    pub(in crate::app) fn renders_ai(&self) -> bool {
+        matches!(self, Self::Recipe(json) if serde_json::from_str::<Recipe>(json)
+            .is_ok_and(|r| r.as_rendered().ai_denoise.renders()))
+    }
+}
+/// What a Library preview shows of AI Denoise (docs/rendering-quality.md#ai-denoise).
+/// A preview made with a partial result is never kept.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum PreviewAi {
+    /// The edit has no AI Denoise.
+    Off,
+    /// The edit has AI Denoise, rendered without a result: none was finished.
+    Plain,
+    /// The edit rendered with a finished result of the installed model.
+    Finished,
 }
 pub(super) enum EditJob {
     /// Render (or load from cache) catalog photo `id` with its edit. Virtual
@@ -229,6 +260,15 @@ pub(in crate::app) enum Pace {
 }
 /// Renders a 640 px edited preview, giving up once the flag is set.
 type RenderEdited = fn(&Path, &EditSource, &AtomicBool) -> anyhow::Result<image::RgbImage>;
+/// Renders a preview of an edit with AI Denoise from a finished result: the file's
+/// version the result was made for, and the result.
+type RenderWithAi = fn(
+    &Path,
+    &crate::storage::Identity,
+    &EditSource,
+    &rawmakase_decode::ai_cache::AiEntry,
+    &AtomicBool,
+) -> anyhow::Result<image::RgbImage>;
 /// Where edited preview jobs go, and how fast they are rendered. Dropping it
 /// closes the worker, as [`EditQueue::close`] does.
 pub(super) struct EditQueue(Arc<Shared>);
@@ -247,6 +287,9 @@ struct State {
     /// Renders under way.
     running: Vec<Running>,
     next_slot: u64,
+    /// Where AI Denoise's results are, which an edit with it renders from once
+    /// finished; none until the app sets it.
+    ai: Option<AiCache>,
 }
 struct Queued {
     job: EditJob,
@@ -317,6 +360,10 @@ impl EditQueue {
         }
         self.0.changed.notify_all();
     }
+    /// Finished AI Denoise results come from `cache` from now on.
+    pub(super) fn set_ai_cache(&self, cache: AiCache) {
+        self.0.lock().ai = Some(cache);
+    }
     /// Drops the photos asked ahead and not started, for a list shown no
     /// longer: each is answered `Skipped` unless it is shown by then. Renders
     /// already under way finish.
@@ -348,7 +395,7 @@ impl Drop for EditQueue {
 }
 /// The jobs sent to a detached queue, oldest first.
 #[cfg(test)]
-pub(super) struct Sent(Arc<Shared>);
+pub(in crate::app) struct Sent(Arc<Shared>);
 #[cfg(test)]
 impl Sent {
     pub(super) fn try_recv(&self) -> Option<EditJob> {
@@ -358,6 +405,18 @@ impl Sent {
     /// How many jobs sent and not taken are dropped.
     pub(super) fn dropped(&self) -> usize {
         self.0.lock().jobs.iter().filter(|q| q.dropped).count()
+    }
+    /// The tags of the previews sent to be kept and not taken, oldest first.
+    pub(in crate::app) fn stored_tags(&self) -> Vec<String> {
+        let state = self.0.lock();
+        state
+            .jobs
+            .iter()
+            .filter_map(|q| match &q.job {
+                EditJob::Store { tag, .. } => Some(tag.clone()),
+                EditJob::Render { .. } => None,
+            })
+            .collect()
     }
 }
 /// Threads the full pace renders on: every core but one.
@@ -422,6 +481,15 @@ fn spawn_edited_with(
     ctx: egui::Context,
     render: RenderEdited,
 ) -> Worker<EditQueue, EditResult> {
+    spawn_edited_with_ai(cache_path, wanted, ctx, render, render_edited_with_ai)
+}
+fn spawn_edited_with_ai(
+    cache_path: PathBuf,
+    wanted: Wanted,
+    ctx: egui::Context,
+    render: RenderEdited,
+    render_ai: RenderWithAi,
+) -> Worker<EditQueue, EditResult> {
     let shared = Arc::<Shared>::default();
     let (tx, result_rx) = mpsc::channel();
     let results = Results {
@@ -440,6 +508,7 @@ fn spawn_edited_with(
             wanted,
             results,
             render,
+            render_ai,
         };
         loop {
             match next_step(&renders.results.shared, &renders.wanted, full_renders) {
@@ -478,6 +547,7 @@ struct Renders {
     wanted: Wanted,
     results: Results,
     render: RenderEdited,
+    render_ai: RenderWithAi,
 }
 /// The preview cache, held while it is read or written.
 fn cache(cache: &Mutex<Option<PreviewCache>>) -> std::sync::MutexGuard<'_, Option<PreviewCache>> {
@@ -512,20 +582,32 @@ impl Renders {
     /// Answers the job at `index` from the cache, else renders it when
     /// `render`, else marks it to wait for a render.
     fn look(&self, index: usize, render: bool) {
-        let (id, ticket, path, tag, ahead) = match &self.results.shared.lock().jobs[index].job {
-            EditJob::Render {
-                id,
-                ticket,
-                path,
-                source,
-                ahead,
-            } => (*id, *ticket, path.clone(), source.preview_tag(), *ahead),
-            EditJob::Store { .. } => unreachable!("stores are not looked up"),
+        let (id, ticket, path, source, ahead, ai) = {
+            let state = self.results.shared.lock();
+            match &state.jobs[index].job {
+                EditJob::Render {
+                    id,
+                    ticket,
+                    path,
+                    source,
+                    ahead,
+                } => (
+                    *id,
+                    *ticket,
+                    path.clone(),
+                    source.clone(),
+                    *ahead,
+                    state.ai.clone(),
+                ),
+                EditJob::Store { .. } => unreachable!("stores are not looked up"),
+            }
         };
+        let tags = preview_tags(&path, &source, ai.as_ref());
         let hit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            cache(&self.cache)
-                .as_ref()
-                .and_then(|c| c.load_tagged(&path, &tag).ok().flatten())
+            let cache = cache(&self.cache);
+            let cache = cache.as_ref()?;
+            tags.iter()
+                .find_map(|tag| cache.load_tagged(&path, tag).ok().flatten())
         }))
         .unwrap_or_else(|_| {
             reopen(&self.cache, &self.cache_path);
@@ -586,6 +668,7 @@ impl Renders {
             }
         }
         let full = state.pace == Pace::Full;
+        let ai = state.ai.clone();
         let slot = state.next_slot;
         state.next_slot += 1;
         let cancel = Arc::<AtomicBool>::default();
@@ -596,12 +679,13 @@ impl Renders {
             path: path.clone(),
         });
         drop(state);
-        let (cache_at, cache_path, wanted, results, render) = (
+        let (cache_at, cache_path, wanted, results, render, render_ai) = (
             self.cache.clone(),
             self.cache_path.clone(),
             self.wanted.clone(),
             self.results.clone(),
             self.render,
+            self.render_ai,
         );
         let task = move || {
             let _finished = Finished(results.shared.clone(), slot);
@@ -612,10 +696,16 @@ impl Renders {
                     return None;
                 }
                 let stamp = Stamp::read(&path).ok()?;
-                let image = render(&path, &source, &cancel).ok()?;
+                let (image, shows) = match finished_entry(&path, &source, ai.as_ref()) {
+                    Some((file, entry)) => (
+                        render_ai(&path, &file, &source, &entry, &cancel).ok()?,
+                        PreviewAi::Finished,
+                    ),
+                    None => (render(&path, &source, &cancel).ok()?, plain_of(&source)),
+                };
                 if let Some(cache) = &mut *cache(&cache_at)
                     && let Err(error) =
-                        cache.store_tagged(&path, &source.preview_tag(), &stamp, &image)
+                        cache.store_tagged(&path, &source.preview_tag(shows), &stamp, &image)
                 {
                     cache_error = Some(error.to_string());
                 }
@@ -772,6 +862,117 @@ fn render_edited(
         640,
         Cancel::new(cancel),
     )?)
+}
+/// [`develop_with_ai`] at the Library's preview size.
+fn render_edited_with_ai(
+    path: &Path,
+    file: &crate::storage::Identity,
+    source: &EditSource,
+    entry: &rawmakase_decode::ai_cache::AiEntry,
+    cancel: &AtomicBool,
+) -> anyhow::Result<image::RgbImage> {
+    develop_with_ai(path, file, source, entry, 640, cancel)
+}
+/// What a render of `source` without an AI Denoise result shows.
+fn plain_of(source: &EditSource) -> PreviewAi {
+    if source.renders_ai() {
+        PreviewAi::Plain
+    } else {
+        PreviewAi::Off
+    }
+}
+/// The file at `path` as it is now and the finished AI Denoise result for it in
+/// `ai`, when `source` renders AI Denoise and there is one.
+fn finished_entry(
+    path: &Path,
+    source: &EditSource,
+    ai: Option<&AiCache>,
+) -> Option<(
+    crate::storage::Identity,
+    rawmakase_decode::ai_cache::AiEntry,
+)> {
+    if !source.renders_ai() {
+        return None;
+    }
+    let (file, key) = finished_ai(path, ai)?;
+    Some((file, ai?.load(&key)?))
+}
+/// The tags a preview of `source` at `path` may be kept under, in the order it is
+/// looked for: the plain render of an edit with AI Denoise only while no finished
+/// result is there to render from instead. An offline photo shows whichever it has.
+fn preview_tags(path: &Path, source: &EditSource, ai: Option<&AiCache>) -> Vec<String> {
+    if !source.renders_ai() {
+        return vec![source.preview_tag(PreviewAi::Off)];
+    }
+    let mut tags = vec![source.preview_tag(PreviewAi::Finished)];
+    if finished_ai(path, ai).is_none() {
+        tags.push(source.preview_tag(PreviewAi::Plain));
+    }
+    tags
+}
+/// The file at `path` as it is now and the key of a finished AI Denoise result
+/// for it in `cache`, if there is one.
+fn finished_ai(path: &Path, ai: Option<&AiCache>) -> Option<(crate::storage::Identity, String)> {
+    let file = crate::storage::Identity::read(path).ok()?;
+    let key = crate::app::ai_denoise::finished(ai?, &file)?;
+    Some((file, key))
+}
+/// `path` developed with `source` within `edge` pixels for a preview, and what it
+/// shows of AI Denoise: an edit with it on renders from a finished result of the
+/// installed model when `ai` has one for the file, decoding the photo at full size;
+/// otherwise from the half-size decode, without it, as [`develop_quickly`] does.
+pub(super) fn develop_for_preview(
+    path: &Path,
+    source: &EditSource,
+    edge: u32,
+    ai: Option<&AiCache>,
+    cancel: &AtomicBool,
+) -> anyhow::Result<(image::RgbImage, PreviewAi)> {
+    if let Some((file, entry)) = finished_entry(path, source, ai) {
+        return Ok((
+            develop_with_ai(path, &file, source, &entry, edge, cancel)?,
+            PreviewAi::Finished,
+        ));
+    }
+    Ok((
+        develop_quickly(path, Some(source), edge, cancel)?,
+        plain_of(source),
+    ))
+}
+/// The RAW at `path`, the version `file` names, decoded at full size and rendered
+/// with `source` and AI Denoise's finished result `entry` within `edge` pixels. A
+/// file changed meanwhile fails: the result is of the version it was made for.
+fn develop_with_ai(
+    path: &Path,
+    file: &crate::storage::Identity,
+    source: &EditSource,
+    entry: &rawmakase_decode::ai_cache::AiEntry,
+    edge: u32,
+    cancel: &AtomicBool,
+) -> anyhow::Result<image::RgbImage> {
+    use rawmakase_decode::ai_denoise::{ModelOutput, assemble};
+    let raw = crate::photo::open(path)?;
+    let recipe = EditSource::recipe(Some(source), &raw.metadata, path, cancel)?;
+    let plain = raw.develop(crate::camera_data::Decode::Full(Default::default()), cancel)?;
+    let denoised = assemble(
+        &ModelOutput {
+            layout: entry.layout,
+            rgb: &entry.rgb,
+            done: None,
+            clipped: &entry.clipped,
+        },
+        &plain,
+        cancel,
+    )?;
+    let ai = crate::develop::AiSource::recover(denoised, Cancel::new(cancel))?;
+    let mut renderer = crate::develop::PreviewRenderer::default();
+    renderer.set_ai(Some(ai));
+    let rendered = renderer.render(&plain, &recipe, edge, None, Cancel::new(cancel))?;
+    anyhow::ensure!(
+        crate::storage::Identity::read(path)? == *file,
+        "The photo's file changed while its preview was made"
+    );
+    rgb(rendered)
 }
 /// `path` developed with `edit` (see [`EditSource::recipe`]) within `edge` pixels:
 /// a RAW from the fast half-size decode, a JPEG, PNG or TIFF from the file.
@@ -1133,6 +1334,195 @@ pub(super) mod tests {
         Ok(())
     }
 
+    /// Stand-ins for the edited-preview renders: a plain one dark, one from AI
+    /// Denoise's result bright, each counted by file and kind.
+    static RENDERS: Mutex<Vec<(PathBuf, PreviewAi)>> = Mutex::new(Vec::new());
+    fn renders_of(path: &Path, kind: PreviewAi) -> usize {
+        let renders = RENDERS.lock().unwrap();
+        renders
+            .iter()
+            .filter(|(p, k)| p == path && *k == kind)
+            .count()
+    }
+    fn plain(path: &Path, _: &EditSource, _: &AtomicBool) -> anyhow::Result<image::RgbImage> {
+        RENDERS
+            .lock()
+            .unwrap()
+            .push((path.into(), PreviewAi::Plain));
+        Ok(image::RgbImage::from_pixel(8, 8, image::Rgb([10; 3])))
+    }
+    fn with_ai(
+        path: &Path,
+        _: &crate::storage::Identity,
+        _: &EditSource,
+        _: &rawmakase_decode::ai_cache::AiEntry,
+        _: &AtomicBool,
+    ) -> anyhow::Result<image::RgbImage> {
+        RENDERS
+            .lock()
+            .unwrap()
+            .push((path.into(), PreviewAi::Finished));
+        Ok(image::RgbImage::from_pixel(8, 8, image::Rgb([200; 3])))
+    }
+    /// An edit with AI Denoise on.
+    fn with_ai_denoise() -> anyhow::Result<EditSource> {
+        let mut recipe = Recipe::default();
+        recipe.switch_ai_denoise(true);
+        Ok(EditSource::Recipe(serde_json::to_string(&recipe)?))
+    }
+    /// Stores a finished AI Denoise result for the file at `path` in `cache`.
+    fn finish_ai(cache: &AiCache, path: &Path) -> anyhow::Result<()> {
+        let layout = rawmakase_decode::ai_denoise::Layout::new(4, 4, [0, 0]);
+        let entry = rawmakase_decode::ai_cache::AiEntry {
+            layout,
+            gain: 1.,
+            rgb: vec![0.5; 3 * layout.output_pixels()],
+            clipped: vec![false; layout.packed_width * layout.packed_height],
+        };
+        let key = crate::app::ai_denoise::key(path, rawmakase_inference::Provider::Cpu)?;
+        cache.store(&key, &entry)
+    }
+    /// What photo 1's preview, asked for with `ticket`, comes back as: whether it
+    /// is bright (rendered from AI Denoise's result).
+    fn preview_of(
+        tx: &EditQueue,
+        rx: &Receiver<EditResult>,
+        path: &Path,
+        source: &EditSource,
+        ticket: u64,
+    ) -> anyhow::Result<bool> {
+        tx.send(EditJob::Render {
+            id: PhotoId(1),
+            ticket,
+            path: path.into(),
+            source: source.clone(),
+            ahead: false,
+        })?;
+        match rx.recv_timeout(Duration::from_secs(10))? {
+            EditResult::Ready(PhotoId(1), t, image) if t == ticket => {
+                Ok(image.get_pixel(0, 0).0[0] > 100)
+            }
+            _ => anyhow::bail!("no preview"),
+        }
+    }
+
+    /// An edit with AI Denoise shows its plain render until a finished result is
+    /// cached, then the result's, kept apart from the plain one; offline, the one
+    /// kept is still shown.
+    #[test]
+    fn an_ai_denoise_preview_follows_its_finished_result_and_stays_offline() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("photo.png");
+        image::RgbImage::new(16, 16).save(&path)?;
+        let ai = AiCache::new(directory.path().join("ai"), u64::MAX);
+        let wanted = Wanted::default();
+        wanted.lock().unwrap().insert(PhotoId(1));
+        let (tx, rx, _) = spawn_edited_with_ai(
+            directory.path().join("previews.sqlite3"),
+            wanted,
+            egui::Context::default(),
+            plain,
+            with_ai,
+        );
+        tx.set_ai_cache(ai.clone());
+        let source = with_ai_denoise()?;
+        assert!(
+            !preview_of(&tx, &rx, &path, &source, 0)?,
+            "plain without a result"
+        );
+        assert!(!preview_of(&tx, &rx, &path, &source, 1)?);
+        assert_eq!(renders_of(&path, PreviewAi::Plain), 1, "the plain one kept");
+        finish_ai(&ai, &path)?;
+        assert!(
+            preview_of(&tx, &rx, &path, &source, 2)?,
+            "the result's once finished"
+        );
+        assert!(preview_of(&tx, &rx, &path, &source, 3)?);
+        assert_eq!(
+            renders_of(&path, PreviewAi::Finished),
+            1,
+            "the result's kept"
+        );
+        // Offline: no file to check a result against, the preview kept is shown.
+        std::fs::rename(&path, directory.path().join("away.png"))?;
+        assert!(preview_of(&tx, &rx, &path, &source, 4)?, "shown offline");
+        assert_eq!(renders_of(&path, PreviewAi::Finished), 1);
+        Ok(())
+    }
+
+    /// A finished result renders a RAW's preview from it: decoded at full size and
+    /// the result assembled over it, as Develop shows it.
+    #[test]
+    fn a_raw_renders_its_preview_from_a_finished_result() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("photo.dng");
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/corpus/charts/synthetic-a.dng"),
+            &path,
+        )?;
+        let cancel = AtomicBool::new(false);
+        let packed = crate::photo::open(&path)?.packed_bayer(&cancel)?;
+        let layout = packed.layout;
+        // A flat result: the preview shows it, not the chart.
+        let entry = rawmakase_decode::ai_cache::AiEntry {
+            layout,
+            gain: 1.,
+            rgb: vec![0.3; 3 * layout.output_pixels()],
+            clipped: packed.clipped,
+        };
+        let ai = AiCache::new(directory.path().join("ai"), u64::MAX);
+        let key = crate::app::ai_denoise::key(&path, rawmakase_inference::Provider::Cpu)?;
+        ai.store(&key, &entry)?;
+        let mut recipe = Recipe::default();
+        recipe.switch_ai_denoise(true);
+        recipe.ai_denoise.amount = 1.;
+        let source = EditSource::Recipe(serde_json::to_string(&recipe)?);
+        let (plain, shows) = develop_for_preview(&path, &source, 256, None, &cancel)?;
+        assert_eq!(shows, PreviewAi::Plain);
+        let (denoised, shows) = develop_for_preview(&path, &source, 256, Some(&ai), &cancel)?;
+        assert_eq!(shows, PreviewAi::Finished);
+        assert_eq!(plain.dimensions(), denoised.dimensions());
+        // Rendered from the flat result: far from the chart's own colours.
+        let difference = plain
+            .as_raw()
+            .iter()
+            .zip(denoised.as_raw())
+            .map(|(a, b)| f64::from(a.abs_diff(*b)))
+            .sum::<f64>()
+            / plain.as_raw().len() as f64;
+        assert!(difference > 30., "{difference}");
+        Ok(())
+    }
+
+    /// A preview made from another model's result is not shown for this one's.
+    #[test]
+    fn a_preview_of_another_models_result_is_made_again() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("photo.png");
+        image::RgbImage::new(16, 16).save(&path)?;
+        let ai = AiCache::new(directory.path().join("ai"), u64::MAX);
+        finish_ai(&ai, &path)?;
+        let source = with_ai_denoise()?;
+        let previews = directory.path().join("previews.sqlite3");
+        PreviewCache::open(&previews)?.store_tagged(
+            &path,
+            &source.preview_tag_of(PreviewAi::Finished, "an-earlier-model"),
+            &Stamp::read(&path)?,
+            &image::RgbImage::from_pixel(8, 8, image::Rgb([90; 3])),
+        )?;
+        let wanted = Wanted::default();
+        wanted.lock().unwrap().insert(PhotoId(1));
+        let (tx, rx, _) =
+            spawn_edited_with_ai(previews, wanted, egui::Context::default(), plain, with_ai);
+        tx.set_ai_cache(ai);
+        assert!(
+            preview_of(&tx, &rx, &path, &source, 0)?,
+            "rendered from this model's"
+        );
+        assert_eq!(renders_of(&path, PreviewAi::Finished), 1);
+        Ok(())
+    }
+
     #[test]
     fn edited_preview_cache_failures_are_reported() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
@@ -1401,6 +1791,7 @@ pub(super) mod tests {
                 ctx: egui::Context::default(),
             },
             render,
+            render_ai: render_edited_with_ai,
         };
         (renders, rx)
     }

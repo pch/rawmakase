@@ -446,7 +446,7 @@ impl Editor {
         } else {
             recipe.as_rendered().into_owned()
         };
-        let ai = self.document.ai_source(&image, &recipe.ai_denoise);
+        let ai = self.shown_ai_source(&image, &recipe.ai_denoise);
         let job = MagnifierJob {
             image,
             recipe,

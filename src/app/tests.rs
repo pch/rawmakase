@@ -700,6 +700,132 @@ fn only_the_latest_render_becomes_the_library_thumbnail() -> anyhow::Result<()> 
     Ok(())
 }
 
+/// A Develop render with AI Denoise becomes the Library's preview only once the
+/// result is complete, and under its own tag: a plain request of the same edit
+/// (no result cached for the Library) never gets it, nor a partial result.
+#[test]
+fn develop_renders_with_ai_denoise_are_kept_apart_from_plain_previews() -> anyhow::Result<()> {
+    use crate::app::ai_denoise::{State, Update};
+    let d = tempfile::tempdir()?;
+    let photos = d.path().join("photos");
+    std::fs::create_dir(&photos)?;
+    std::fs::write(photos.join("a.RAF"), b"fixture")?;
+    let path = d.path().join("test.rawmakase");
+    crate::catalog::Catalog::create(&path)?.add_folder(&photos)?;
+    let ctx = egui::Context::default();
+    let (mut e, image) =
+        editor_with_blue_photo(&ctx, crate::app::session::Session::default(), true);
+    task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
+    let (taken_tx, _taken) = std::sync::mpsc::channel();
+    let (_release, release) = std::sync::mpsc::channel();
+    e.renderer = worker::holding(taken_tx, release);
+    let mut library = library::Library::load(&path, ctx.clone())?;
+    let sent = library.detach_edited_previews();
+    let photo = library.session.photos()[0].id;
+    e.library = Some(Box::new(library));
+    e.document.catalog_photo = Some(photo);
+    e.document.opened_at(photos.join("a.RAF"));
+    e.document.image_file = e.document.file.clone();
+    e.view.viewport = Vec2::new(40., 40.);
+    in_edit_frame(&ctx, &mut e, |e| {
+        e.document.edit.recipe_mut().switch_ai_denoise(true)
+    });
+    let source = develop::AiSource::recover((*image).clone(), rawmakase_cancel::Cancel::NEVER)?;
+    let render = |e: &mut Editor| {
+        e.schedule();
+        let id = e.preview.task.id();
+        e.tx.send(Event::Rendered {
+            id,
+            pane: worker::Pane::After,
+            preview: worker::Preview::Pixels {
+                image: crate::rendered::Rendered {
+                    width: 1,
+                    height: 1,
+                    pixels: vec![[0.5; 3]],
+                },
+                display_rgb: vec![128; 3],
+                navigator: None,
+            },
+            histogram: Box::new(crate::rendered::Histogram::EMPTY),
+            thumbnail: Some(image::RgbImage::new(4, 4)),
+            samples: None,
+            stage: worker::RenderStage::Fit,
+            status: "rendered".into(),
+        })
+        .unwrap();
+        e.events(&ctx);
+    };
+    e.ai_denoise_update(Update {
+        plain: Arc::downgrade(&image),
+        state: State::Partial(source.clone()),
+    });
+    render(&mut e);
+    assert!(
+        sent.stored_tags().is_empty(),
+        "a partial result is not kept"
+    );
+    e.ai_denoise_update(Update {
+        plain: Arc::downgrade(&image),
+        state: State::Ready(source),
+    });
+    render(&mut e);
+    let json = serde_json::to_string(e.document.edit.recipe())?;
+    let source = library::EditSource::Recipe(json);
+    let stored = sent.stored_tags();
+    assert_eq!(stored.len(), 1, "{stored:?}");
+    assert_ne!(
+        stored[0],
+        source.preview_tag(library::PreviewAi::Plain),
+        "kept as the plain preview"
+    );
+    assert_eq!(stored[0], source.preview_tag(library::PreviewAi::Finished));
+    Ok(())
+}
+/// The Library's Loupe shows AI Denoise only from a finished result, as the
+/// Library's previews do: it never asks for one to be computed, and renders a
+/// partial one plain.
+#[test]
+fn the_loupe_shows_only_a_finished_ai_denoise_result() -> anyhow::Result<()> {
+    use crate::app::ai_denoise::{State, Update};
+    let d = tempfile::tempdir()?;
+    let raw = d.path().join("a.RAF");
+    std::fs::write(&raw, b"fixture")?;
+    let ctx = egui::Context::default();
+    let (mut e, image) =
+        editor_with_blue_photo(&ctx, crate::app::session::Session::default(), true);
+    task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
+    let (taken_tx, _taken) = std::sync::mpsc::channel();
+    let (_release, release) = std::sync::mpsc::channel();
+    e.renderer = worker::holding(taken_tx, release);
+    e.document.opened_at(raw);
+    e.document.image_file = e.document.file.clone();
+    e.view.viewport = Vec2::new(40., 40.);
+    e.module = Module::Library;
+    in_edit_frame(&ctx, &mut e, |e| {
+        e.document.edit.recipe_mut().switch_ai_denoise(true)
+    });
+    e.schedule();
+    assert!(e.document.ai.status().is_none(), "nothing asked for");
+    let source = develop::AiSource::recover((*image).clone(), rawmakase_cancel::Cancel::NEVER)?;
+    let rendered_ai = |e: &Editor| e.preview.request(e.preview.task.id()).map(|p| p.ai);
+    e.ai_denoise_update(Update {
+        plain: Arc::downgrade(&image),
+        state: State::Partial(source.clone()),
+    });
+    e.schedule();
+    assert_eq!(
+        rendered_ai(&e),
+        Some(state::RenderedAi::None),
+        "a partial one"
+    );
+    e.ai_denoise_update(Update {
+        plain: Arc::downgrade(&image),
+        state: State::Ready(source),
+    });
+    e.schedule();
+    assert_eq!(rendered_ai(&e), Some(state::RenderedAi::Complete));
+    Ok(())
+}
 #[test]
 fn before_and_after_renders_go_to_their_own_side() {
     use worker::Pane;

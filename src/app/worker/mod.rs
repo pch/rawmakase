@@ -77,6 +77,8 @@ pub(crate) enum Event {
     Selection(Box<crate::app::subject_mask::Done>),
     /// News of AI Denoise for a photo Develop asked for (`app::ai_denoise`).
     AiDenoise(Box<crate::app::ai_denoise::Update>),
+    /// An AI Denoise result was stored for the photo at this path, by any job.
+    AiDenoiseStored(std::path::PathBuf),
     /// The selection model finished installing, or why not.
     ModelInstalled(crate::app::subject_mask::Pack, Result<(), String>),
     ModelRemoved(crate::app::subject_mask::Pack, Result<(), String>),

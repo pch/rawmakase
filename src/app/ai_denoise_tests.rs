@@ -1227,3 +1227,92 @@ fn command_line_renders_share_one_service() {
     drop(cli);
     assert!(!f.service.busy());
 }
+
+/// The Library's Loupe shows a finished result of any provider's run, found once
+/// one is stored, without ever loading the model.
+#[test]
+fn the_loupe_loads_a_finished_result_of_any_provider_without_running_the_model() {
+    let ctx = eframe::egui::Context::default();
+    let mut editor = super::super::tests::community_editor(&ctx, "X-T20", false);
+    // The service would run on CoreML; the result was made on the CPU.
+    let f = fixture(Provider::CoreML, Behaviour::default());
+    editor.ai_denoise = f.service.clone();
+    let path = f.photo("a.raw");
+    let plain = f.plain();
+    editor.document.set_image(plain);
+    editor.document.opened_at(path.clone());
+    editor.document.image_file = editor.document.file.clone();
+    editor.module = super::super::Module::Library;
+    super::super::tests::in_edit_frame(&ctx, &mut editor, |e| {
+        e.document.edit.recipe_mut().switch_ai_denoise(true)
+    });
+    editor.schedule();
+    assert!(editor.document.ai.source().is_none(), "none stored: plain");
+    let layout = PackedBayer::pack(W, H, &mosaic(), [0, 0]).layout;
+    let entry = AiEntry {
+        layout,
+        gain: 1.,
+        rgb: vec![0.3; 3 * layout.output_pixels()],
+        clipped: vec![false; layout.packed_width * layout.packed_height],
+    };
+    f.service
+        .cache()
+        .store(&key(&path, Provider::Cpu).unwrap(), &entry)
+        .unwrap();
+    editor.ai_result_stored(&path);
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while !editor.document.ai.is_complete() {
+        assert!(std::time::Instant::now() < deadline, "never shown");
+        std::thread::sleep(Duration::from_millis(10));
+        editor.events(&ctx);
+    }
+    assert!(editor.document.ai.source().is_some());
+    assert!(
+        f.behaviour.loads.lock().unwrap().is_empty(),
+        "the model ran"
+    );
+}
+
+/// A final result is kept when a partial one for the same image comes after it, as
+/// when the Loupe's cached load and a Develop run both answer: the photo never shows,
+/// nor gives the Library, a partial result as final.
+#[test]
+fn a_partial_result_after_the_final_one_is_ignored() {
+    let ctx = eframe::egui::Context::default();
+    let mut editor = super::super::tests::community_editor(&ctx, "X-T20", false);
+    let f = fixture(Provider::Cpu, Behaviour::default());
+    let plain = f.plain();
+    editor.document.set_image(plain.clone());
+    let final_one = AiSource::recover((*plain).clone(), Cancel::NEVER).unwrap();
+    let mut other = (*plain).clone();
+    other.pixels.iter_mut().for_each(|p| p[0] = 0.9);
+    let partial = AiSource::recover(other, Cancel::NEVER).unwrap();
+    editor.ai_denoise_update(Update {
+        plain: Arc::downgrade(&plain),
+        state: State::Ready(final_one.clone()),
+    });
+    editor.ai_denoise_update(Update {
+        plain: Arc::downgrade(&plain),
+        state: State::Partial(partial),
+    });
+    assert!(editor.document.ai.is_complete());
+    assert_eq!(editor.document.ai.source(), Some(&final_one));
+}
+
+/// Leaving the photo, or switching AI Denoise off, cancels the Loupe's load of its
+/// finished result; one cancelled before it was shown is looked for again next time.
+#[test]
+fn a_cancelled_loupe_load_is_looked_for_again() {
+    let image = Arc::new(fixture(Provider::Cpu, Behaviour::default()).plain());
+    let cancel = Arc::new(AtomicBool::new(false));
+    let mut photo = Photo::default();
+    photo.looked_up = Some(Arc::downgrade(&image));
+    photo.loading = Some(cancel.clone());
+    photo.release();
+    assert!(cancel.load(Ordering::Relaxed));
+    assert!(photo.looked_up.is_none(), "looked for again");
+    let left = Arc::new(AtomicBool::new(false));
+    photo.loading = Some(left.clone());
+    drop(photo);
+    assert!(left.load(Ordering::Relaxed));
+}

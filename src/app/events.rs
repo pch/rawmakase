@@ -160,6 +160,7 @@ impl Editor {
                 }
                 Event::Selection(done) => self.selection_done(*done),
                 Event::AiDenoise(update) => self.ai_denoise_update(*update),
+                Event::AiDenoiseStored(path) => self.ai_result_stored(&path),
                 Event::ModelInstalled(pack, result) => {
                     self.selection.models.of_mut(pack).finished(&result);
                     if result.as_ref().err().is_some_and(|e| e == "Cancelled") {
@@ -362,7 +363,7 @@ impl Editor {
                         if let Some(small) = thumbnail
                             && id == self.preview.task.id()
                         {
-                            self.refresh_library_thumbnail(ctx, small);
+                            self.refresh_library_thumbnail(ctx, small, request.ai);
                         }
                     }
                     self.preview.status = status;
@@ -467,6 +468,7 @@ impl Editor {
                 self.onboarding.catalog_error = None;
                 self.messages.absorb(&mut l.messages);
                 l.set_defaults(self.raw_defaults.clone());
+                l.set_ai_cache(self.ai_denoise_cache());
                 let selected = self.document.catalog_photo;
                 self.library = Some(l);
                 if let (Some(library), Some(id)) = (&mut self.library, selected) {
@@ -507,6 +509,7 @@ impl Editor {
                     self.clear_reference();
                 }
                 l.set_defaults(self.raw_defaults.clone());
+                l.set_ai_cache(self.ai_denoise_cache());
                 // A catalog opened (not read again) may have file
                 // operations a crash left unfinished.
                 if !reloaded {
@@ -639,16 +642,38 @@ impl Editor {
             && !self.view.is(super::state::Tool::Crop)
             && self.presets.preview.is_none()
     }
-    fn refresh_library_thumbnail(&mut self, ctx: &egui::Context, small: image::RgbImage) {
+    /// A render made with a partial AI Denoise result is not the photo's thumbnail:
+    /// the final result's render will be.
+    fn refresh_library_thumbnail(
+        &mut self,
+        ctx: &egui::Context,
+        small: image::RgbImage,
+        ai: super::state::RenderedAi,
+    ) {
+        use super::library::PreviewAi;
+        use super::state::RenderedAi;
         if self.preview.mode != super::state::TextureMode::Whole || !self.shows_library_edit() {
             return;
         }
+        let shows = match ai {
+            _ if !self.document.edit.recipe().ai_denoise.renders() => PreviewAi::Off,
+            RenderedAi::None => PreviewAi::Plain,
+            RenderedAi::Complete => PreviewAi::Finished,
+            RenderedAi::Partial => return,
+        };
         let Ok(json) = serde_json::to_string(self.document.edit.recipe()) else {
             return;
         };
         let (Some(library), Some(id)) = (&mut self.library, self.document.catalog_photo) else {
             return;
         };
-        library.update_edited(ctx, id, self.document.image_file.as_ref(), small, json);
+        library.update_edited(
+            ctx,
+            id,
+            self.document.image_file.as_ref(),
+            shows,
+            small,
+            json,
+        );
     }
 }
