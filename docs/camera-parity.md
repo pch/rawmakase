@@ -1,7 +1,8 @@
 # Checking camera and tone parity
 
 The checks cover camera white-balance calibration (#353) and provide diagnostics
-for the separate, unfinished tone-control work (#354). Adobe DNG Converter
+for the tone controls ([tone controls](tone-controls.md),
+[scene tone stage](scene-tone-stage.md)). Adobe DNG Converter
 supplies white-balance calibration facts. Photoshop with Camera Raw supplies
 rendered references for tone controls; DNG Converter alone cannot do that.
 Neither is a runtime dependency of RAWmakase.

@@ -2,7 +2,7 @@
 
 `data/cameras.toml` holds what RAWmakase knows about camera bodies beyond what the raw
 file says, one `[[camera]]` row per model. It is compiled into the app
-(`src/cameras.rs`) and checked by a unit test, so a malformed row fails `cargo test`.
+(`crates/rawmakase-model/src/cameras.rs`) and checked by a unit test, so a malformed row fails `cargo test`.
 A row carries baseline exposure. Sony, Canon, Fujifilm, Olympus and OM System rows may
 also hold a `unit_calibration`: a white-balance reference that, divided by a preset the
 individual RAW stores, gives Adobe's calibration of that camera unit.
@@ -200,7 +200,7 @@ GFX100RF, GFX100S, GFX100S II and GFX50S II samples, for which RAWmakase does no
 and 645Z and Fujifilm X-T200 and X-T50, whose default crop differs from Camera Raw's.
 
 Eight rows are not from raw.pixls.us: the X100F (read from two Lightroom DNGs, see
-`macos-lightroom-validation.md`), the A7 II and A7CR, fitted to Camera Raw 18.6
+[macOS and Lightroom validation](records/macos-lightroom-validation.md)), the A7 II and A7CR, fitted to Camera Raw 18.6
 renders of private photos (8 and 4), the A7R VI, EOS 700D and A7R, read from
 Adobe DNG Converter 18.7's DNG of one private photo each, the EOS 1500D (2000D),
 read from its DNG of one Signature Edits photo, and the EOS R8 Mark II, read from

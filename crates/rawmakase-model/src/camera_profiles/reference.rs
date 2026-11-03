@@ -1,6 +1,6 @@
 //! Camera reference metadata, not fitted image corrections.
 //! X100F values were read from Lightroom-generated DNGs of DSCF7845 (ISO 400)
-//! and DSCF7853 (ISO 200), both DR100. See docs/macos-lightroom-validation.md.
+//! and DSCF7853 (ISO 200), both DR100. See docs/records/macos-lightroom-validation.md.
 //! Per-camera baseline exposures live in data/cameras.toml (crate::cameras).
 use crate::camera_data::{HighlightTonePriority, Metadata};
 /// Camera Raw's default exposure for this photo: a DNG's own BaselineExposure,

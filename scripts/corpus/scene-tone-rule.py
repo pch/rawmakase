@@ -49,7 +49,7 @@ network never saw the deepest tones and under-lifted them by 1.5 EV on interiors
 Weighting the photos up, or a wider and longer-trained network, traded the deep
 tones of dark-heavy photos against the mid-shadows of ordinary ones in both
 directions on the stress sets; this configuration had the lowest mean error there
-(2026-10-28, docs/parity-gaps.md).
+(2026-10-28, docs/records/parity-gaps.md).
 
 Features (`Photo.features`, mirrored by `RuleStats::features`): top − x, x − bottom,
 mean − x, five quantiles − x, the CDF at x, the range, the mass within eight bands
@@ -67,7 +67,7 @@ the display's; `samples` takes the rotation whose log luminance correlates with 
 map and drops a photo below 0.8 (a dozen of the 325 render with a different crop or
 fail to convert). The photos are CC0 raw.pixls.us files of all three dataset families'
 training sets plus 76 chosen for small clipped spots, skies over deep ground, large
-bright areas and heavy clipping, of which 62 align (docs/parity-gaps.md).
+bright areas and heavy clipping, of which 62 align (docs/records/parity-gaps.md).
 """
 import argparse
 import json

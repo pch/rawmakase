@@ -1,13 +1,20 @@
-//! RAWmakase's domain APIs and desktop application.
+//! RAWmakase's desktop application and command line, composed over the workspace's
+//! domain crates.
 //!
-//! Start with [`raw`] for decoding and native color management, [`camera_profiles`]
-//! for DCP transforms, and [`develop`] for recipes and rendering. [`xmp`] translates
-//! Adobe settings; [`presets`] manages reusable native and XMP presets.
+//! The crates' modules are re-exported at this root, so paths read the same on
+//! either side: what an edit is, as values ([`model`], [`camera_profiles`], [`lens`],
+//! [`optics`], [`storage`]…, crates/rawmakase-model); the file formats and presets
+//! over them ([`xmp`], [`presets`], [`raw_defaults`], crates/rawmakase-interop); the
+//! catalog and which edit a photo develops with ([`catalog`], [`edits`],
+//! crates/rawmakase-catalog); rendering ([`develop`], crates/rawmakase-engine);
+//! opening and decoding photos with RAWmakase's own RAW decoders and colour
+//! management ([`raw`], [`photo`], [`color_management`], crates/rawmakase-decode);
+//! and exports ([`export`], crates/rawmakase-export).
 //!
-//! [`storage`] owns file identity and paths, [`catalog`] owns legacy sidecar import,
-//! the photo database, edits and Lightroom import, and [`export`] writes finished images.
-//! [`app`] composes these APIs into the desktop editor; [`comparison`] provides
-//! reference-image validation and [`platform`] isolates OS integration.
+//! This crate's own modules compose those APIs: [`app`] is the desktop editor,
+//! `edit_session` keeps an open photo's edits, history and saved state together,
+//! `catalog_session` holds the open catalog, [`comparison`] provides
+//! reference-image validation and `platform` isolates OS integration.
 //!
 //! The repository's `docs/code-map.md` maps implementation files and runtime flows,
 //! and `docs/architecture.md` records ownership rules. This library exists for the

@@ -11,7 +11,7 @@ RAWmakase is a fast, non-destructive RAW photo developer for Linux, macOS and Wi
   <sub>macOS (Apple Silicon, Intel) · Linux (.deb, .rpm, Arch) · Windows (x86_64, ARM64) · <a href="#install">install notes</a></sub>
 </p>
 
-It is a personal project in active development. It develops photos from almost every current camera, including monochrome DNGs (such as the Leica Monochrom's), linear DNGs (such as iPhone ProRAW) and Lightroom's HDR and panorama merges; the exceptions are Sigma's Foveon cameras, GoPro's GPR files, the Pentax K-3 Mark III Monochrome's PEFs (its DNGs open), and Adobe's older lossy DNGs (JPEG-compressed, as Adobe DNG Converter's "lossy compression" writes them). Rendering aims for close, not exact, Lightroom parity; see [parity gaps](docs/parity-gaps.md).
+It is a personal project in active development. It develops photos from almost every current camera, including monochrome DNGs (such as the Leica Monochrom's), linear DNGs (such as iPhone ProRAW) and Lightroom's HDR and panorama merges; the exceptions are Sigma's Foveon cameras, GoPro's GPR files, the Pentax K-3 Mark III Monochrome's PEFs (its DNGs open), and Adobe's older lossy DNGs (JPEG-compressed, as Adobe DNG Converter's "lossy compression" writes them). Rendering aims for close, not exact, Lightroom parity; see [parity gaps](docs/records/parity-gaps.md).
 
 > [!WARNING]
 > **RAWmakase is early software in active development.** The rendering engine may change from one version to the next, so photos you have already edited can look different after an upgrade. Until 1.0, backwards compatibility is limited and not guaranteed. The contents of your originals are never modified, but keep exports of finished work.
@@ -74,7 +74,7 @@ Update with `brew upgrade --cask rawmakase`.
 
 Or install the DMG directly:
 
-Choose `rawmakase-v<version>-macos-arm64.dmg` for Apple Silicon or `rawmakase-v<version>-macos-x86_64.dmg` for Intel. Open the DMG, drag **RAWmakase** into **Applications**, and launch it there. Release DMGs are signed and notarized, and include their imaging libraries; Homebrew is not required.
+Choose `rawmakase-v<version>-macos-arm64.dmg` for Apple Silicon or `rawmakase-v<version>-macos-x86_64.dmg` for Intel. Open the DMG, drag **RAWmakase** into **Applications**, and launch it there. Release DMGs are signed and notarized and carry the ONNX Runtime library that subject, sky and background selection and AI Denoise need; Homebrew is not required.
 
 ### Linux (x86_64 and aarch64)
 
@@ -96,7 +96,7 @@ makepkg -si
 
 The development recipe is in [packaging/arch/rawmakase-git](packaging/arch/rawmakase-git/PKGBUILD).
 
-The `rawmakase-<version>-<arch>-linux.tar.gz` download contains the same bundled imaging libraries as the DEB/RPM packages. Extract it and run `./usr/bin/rawmakase` from the extracted folder. Keep the whole directory together. It requires the same OS/runtime baseline as the packages above; it is not a fully static build.
+The `rawmakase-<version>-<arch>-linux.tar.gz` download contains the same files as the DEB/RPM packages, including the bundled ONNX Runtime library. Extract it and run `./usr/bin/rawmakase` from the extracted folder. Keep the whole directory together. It requires the same OS/runtime baseline as the packages above; it is not a fully static build.
 
 The `rawmakase-<version>-<arch>.AppImage` download is the same build as a single file: make it executable (`chmod +x`) and run it. It needs the same OS baseline as the packages above (Ubuntu 24.04+, Debian 13+, Fedora 43+; glibc 2.39 or newer), so it does not run on older distributions. On systems without FUSE 2, run it with `APPIMAGE_EXTRACT_AND_RUN=1`. It carries update information, so AppImageUpdate, Gear Lever and similar tools can update it to the newest release, downloading only what changed.
 
@@ -128,7 +128,7 @@ make install PREFIX="$HOME/.local"    # binary, desktop entry, icon and licenses
 
 On Linux, HEIC photos are decoded by the system's libheif with its HEVC decoder (libde265), opened when RAWmakase first needs it: install `libheif` on Arch, `libheif1` and `libheif-plugin-libde265` on Debian or Ubuntu, or `libheif-freeworld` from RPM Fusion on Fedora. Without it HEIC photos are listed with their metadata, and opening one says what to install (see [dependencies](docs/dependencies.md)).
 
-On macOS, `packaging/macos/app.sh` builds `target/release/RAWmakase.app`, which you can open from Finder. It uses the Homebrew libraries installed on your Mac and is not a signed, self-contained distribution.
+On macOS, `packaging/macos/app.sh` builds `target/release/RAWmakase.app`, which you can open from Finder. It is not signed and does not include ONNX Runtime: to run the selection models or AI Denoise on this Mac, place `libonnxruntime.dylib` in the bundle's `Contents/Frameworks` (`packaging/onnxruntime.py` fetches the pinned library).
 
 ## Usage
 
@@ -196,7 +196,7 @@ Exports are always sRGB. The display defaults to sRGB; pick a monitor ICC profil
 
 ## Development
 
-Start with the [code map](docs/code-map.md) and the [architecture guide](docs/architecture.md).
+Start with [CONTRIBUTING.md](CONTRIBUTING.md), the [documentation index](docs/README.md), the [code map](docs/code-map.md) and the [architecture guide](docs/architecture.md).
 The [website source and deployment guide](website/README.md) live in `website/`.
 The [usage stats service](stats/README.md) in `stats/` still counts reports from older releases; the app no longer sends them.
 
@@ -210,8 +210,8 @@ The repository contains no RAW photos, Lightroom catalogs or camera profiles, so
 | --- | --- | --- |
 | `RAWMAKASE_FIXTURES` | `--test raw_fixtures` | A folder of RAW files (the test currently expects both a Bayer and an X-Trans file) |
 | `RAWMAKASE_PROFILES` | `--test private_profiles` | A folder of DCP files |
-| `RAWMAKASE_TEST_DCP` | `--lib camera_profiles` | A DCP file (the assertions currently match RawTherapee's `SONY ILCE-7M2.dcp`) |
-| `RAWMAKASE_LRCAT` | `--lib catalog` | A Lightroom catalog |
+| `RAWMAKASE_TEST_DCP` | `-p rawmakase-model --lib camera_profiles` | A DCP file (the assertions currently match RawTherapee's `SONY ILCE-7M2.dcp`) |
+| `RAWMAKASE_LRCAT` | `-p rawmakase-catalog --lib catalog` | A Lightroom catalog |
 | `RAWMAKASE_CORPUS` | `--test color` | The private tier of the [color corpus](tests/corpus/README.md): your own RAWs and their Camera Raw renders |
 
 ```sh

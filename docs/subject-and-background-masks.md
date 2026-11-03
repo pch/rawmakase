@@ -15,7 +15,7 @@ either selection with Add/Subtract brushes and intersect it with existing ranges
 or gradients. Saved results work offline without a model or inference runtime.
 
 Ship this complete workflow first. Implementing all the work in
-[the preliminary research](retouching-and-ai.md) would not simplify it: removal,
+the preliminary research (never committed) would not simplify it: removal,
 depth, denoise and tagging each need different models, saved representations and
 rendering contracts. Share the raster and inference foundations, then extend them
 in the order described at the end of this plan.

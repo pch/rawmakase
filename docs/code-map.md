@@ -6,7 +6,7 @@ compatibility constraints. Paths below are relative to this document and clickab
 Module roots (`mod.rs`) define their public API; implementation helpers generally
 remain private to their domain. Besides the app (`src/`) and the domain crates
 described in [architecture.md](architecture.md) (model, interop, catalog, engine,
-native and export, under `crates/`), the workspace has
+decode and export, under `crates/`), the workspace has
 [`crates/rawmakase-protocol`](../crates/rawmakase-protocol/src/lib.rs)
 (what the app and its control clients agree on: protocol version, `control.json`
 endpoint, data folder) and [`tools/rawmakase-ctl`](../tools/rawmakase-ctl/src/lib.rs)
@@ -29,7 +29,7 @@ standalone `rawmakase-ctl`). The last two build without the app.
 | Change navigation or async behavior | [Workflow](../src/app/workflow.rs), [events](../src/app/events.rs), [task lifecycle](../src/app/task.rs) | History, state reset and app regression tests |
 | Add a command-line operation | [CLI](../src/main.rs) | Call domain APIs directly; keep the operation usable without an editor |
 
-## Entry points and native boundary
+## Entry points and decoding
 
 | File | Responsibility |
 | --- | --- |
@@ -68,7 +68,7 @@ standalone `rawmakase-ctl`). The last two build without the app.
 | [crates/rawmakase-inference/](../crates/rawmakase-inference/src/lib.rs) | The selection models' and AI Denoise's pinned contracts (`manifest.rs`; `DenoiseSpec` `RAWNIND` with its files, tile, providers and the one credit text, `RAWNIND.attribution`), AI Denoise's tiler, gain fit and deep-shadow correction (`denoise.rs`), prompt and tensor mappings (`process.rs`), automatic Subject and Sky from what the models said (`auto.rs`), reading the panoptic model's answer (`panoptic.rs`), edge refinement (`refine.rs`) and the lazily loaded ONNX Runtime sessions: Subject's three networks, Sky's one and AI Denoise's `Denoiser` (`runtime.rs`, including the CPU/CUDA/CoreML provider choice). Sky's ONNX file is written by `scripts/models/export_upernet_sky.py`. |
 | [crates/rawmakase-remote/](../crates/rawmakase-remote/src/lib.rs) | Optional remote selection ([docs](remote-inference.md)): the bounded length-prefixed JSON protocol (`protocol.rs`), the client the app uses instead of its local session (`client.rs`) and the worker — one engine trait, the real `Model` over inference with its two-photos' analysis cache, and the connection loop (`server.rs`, binary `rawmakase-remote-worker`). |
 | [src/app/subject_mask/](../src/app/subject_mask/mod.rs) | Select Subject / Sky / Background: requests and their guards (`mod.rs`), the Select tiles, setup card, click-refining overlay (`ui.rs`), the model packs' download and import, AI Denoise's `Pack::Denoise` included (`models.rs`) and the inference thread with its per-photo analysis, local or over the configured remote worker (`worker.rs`). |
-| [src/app/ai_denoise.rs](../src/app/ai_denoise.rs) | AI Denoise in the app: the `Service` (one queue and worker thread for Develop, prefetch, export and the CLI; the job key; viewport-first tiles with one partial publication; the GPU-to-CPU rerun; stale results rejected; `stop`), the open photo's AI state and its Develop wiring, `command_line_source` for `render` and `render-batch`, and the `rawmakase denoise` development command. Tests in `ai_denoise_tests.rs`. |
+| [src/app/ai_denoise.rs](../src/app/ai_denoise.rs) | AI Denoise in the app: the `Service` (one queue and worker thread for Develop, export and the CLI; the job key; viewport-first tiles with one partial publication; the GPU-to-CPU rerun; stale results rejected; `stop`), the open photo's AI state and its Develop wiring, `command_line_source` for `render` and `render-batch`, and the `rawmakase denoise` development command. Tests in `ai_denoise_tests.rs`. |
 | [crates/rawmakase-model/src/model/masks.rs](../crates/rawmakase-model/src/model/masks.rs) | Masks as a recipe stores them: groups of brush, gradient and range components with their local adjustment, Amount and visibility, and their limits. Rendering their weights is in `develop/masks/`. |
 | [crates/rawmakase-model/src/model/transform.rs](../crates/rawmakase-model/src/model/transform.rs) | The Transform panel's settings as a recipe stores them: the manual sliders, Upright's mode with its analysed corrections and Guided guides, and Lightroom's guides read from older edits. Rendering, analysis and solving are in `develop/geometry.rs`, `upright.rs` and `guided.rs`. |
 | [crates/rawmakase-model/src/model/white_balance.rs](../crates/rawmakase-model/src/model/white_balance.rs) | Fallback illuminant and as-shot temperature estimation from a RAW's metadata, Lightroom's named white balance presets, and the Temp and Tint of rendered files: the white balance they render (`rendered_white_balance`) the gains it gives greys (`rendered_gains`), and the Temp and Tint that render the eyedropper's or Auto's colour neutral (`rendered_controls`). |
@@ -89,7 +89,7 @@ standalone `rawmakase-ctl`). The last two build without the app.
 | [crates/rawmakase-decode/src/demosaic/xtrans.rs](../crates/rawmakase-decode/src/demosaic/xtrans.rs) | The X-Trans half of the demosaic: directional candidates blended by colour-difference smoothness and luminance change along each direction. |
 | [crates/rawmakase-decode/src/demosaic/stripes.rs](../crates/rawmakase-decode/src/demosaic/stripes.rs) | After the X-Trans demosaic: finds stripes too fine for X-Trans's red and blue samples and replaces their false colour with the mean colour along the stripes, keeping luminance. |
 | [crates/rawmakase-model/src/cameras.rs](../crates/rawmakase-model/src/cameras.rs) | The camera table, [data/cameras.toml](../data/cameras.toml): per-model baseline exposure, with the same-make fallback, per-unit white-balance calibration references, and the names Adobe's profiles use for cameras the decoders name otherwise ([data/adobe-camera-names.toml](../data/adobe-camera-names.toml)). See [camera table](cameras.md). |
-| [src/dng.rs](../src/dng.rs) | The rendering hints a DNG carries: embedded camera profile, baseline exposure, default crop, default user crop and opcode lens corrections. |
+| [crates/rawmakase-model/src/dng.rs](../crates/rawmakase-model/src/dng.rs) | The rendering hints a DNG carries: embedded camera profile, baseline exposure, default crop, default user crop and opcode lens corrections. |
 | [crates/rawmakase-tiff/src/lib.rs](../crates/rawmakase-tiff/src/lib.rs) | Minimal bounded TIFF directory reader for RAW containers (ARW, DNG, the TIFF inside RAF), and the TIFF field types: a leaf crate, re-exported as `model::tiff`. |
 | [crates/rawmakase-interop/src/jpeg.rs](../crates/rawmakase-interop/src/jpeg.rs) | Walks a JPEG's marker segments up to the image data: embedded XMP and EXIF, and where an export inserts its XMP. |
 | [crates/rawmakase-interop/src/exif.rs](../crates/rawmakase-interop/src/exif.rs) | The camera's own EXIF read from a RAW, JPEG, TIFF, PNG, WebP, AVIF, HEIF or JPEG XL (for exports, capture times and photo info, and with the Software exports leave out, `read_for_names`, for file names; `read_tiffs` reads it by the same rules from the TIFFs RAWmakase's RAW decoders find in a CR3, MRW or X3F, and `capture_time_of` applies the capture time's fallbacks to the dates `raw::capture_time` reads from these containers), and the names of the EXIF, TIFF and GPS tags RAWmakase uses; maker notes and offsets into the RAW are left out. `exif/sequence.rs` reads a maker note alone, in place (`Tiff::part`), for Auto-Stack's Group camera bursts: the sequence a Sony, Fujifilm, Panasonic, Apple, Canon, Nikon or Olympus/OM System camera says a photo is in (`sequence`: a burst id, a frame number, continuous drive with no number, or a single shot), from the note in its EXIF, an Adobe DNG's private data (its `MakN` block, or a Panasonic's `Pano` block's JpgFromRaw) or a CR3's `CMT3` box; `SEQUENCE_VERSION` names what it reads, so catalogs read files again when it learns more; with a `test-support` fixture. |
@@ -502,24 +502,11 @@ the validation docs.
 | [rawmakase.desktop](../packaging/applications/rawmakase.desktop), [rawmakase.svg](../packaging/icons/rawmakase.svg) | Linux launcher and application icon. |
 | [LICENSE](../LICENSE), [Adobe notice](../licenses/Adobe-DNG-SDK.txt) | Project licensing and third-party DNG attribution. |
 | [README](../README.md) | Build/run instructions, controls, CLI examples and supported scope. |
-| [Architecture](architecture.md) | Module ownership, state/thread invariants and compatibility rules. |
-| [Catalogs](catalogs.md) | Catalog use, import preservation, relinking, schema and preview cache. |
-| [XMP presets](xmp-presets.md) | Supported settings and compatibility limitations. |
-| [Preview performance](preview-performance.md) | GPU/CPU responsibilities, hardware support limits, measured timings and reproduction. |
-| [Rendering quality](rendering-quality.md) | The rendering engine, profile support and reference comparisons. |
-| [Color pipeline](color-pipeline.md) | The rendering contract (native development, white balance, out-of-gamut colors, display), with the historical pipeline-1 description. |
-| [Dependencies](dependencies.md) | Native dependency and linking notes. |
-| [Validation](validation.md) | Recorded checks, evidence limits, reproduction and measured performance. |
-| [macOS / Lightroom validation](macos-lightroom-validation.md) | Dated photographic comparisons and platform validation results. |
-| [Parity gaps](parity-gaps.md) | Known differences and work still needed for Lightroom parity. |
-| [Scene tone stage](scene-tone-stage.md) | The stage that renders the Basic tone controls on scene values: pipeline, Camera Raw survey, measurement inputs and photo gates. |
-| [Tone controls](tone-controls.md), [color mixer](color-mixer.md), [lens corrections](lens-corrections.md), [transform](transform.md), [demosaic](demosaic.md) | How each rendering stage was measured against Camera Raw and what it does. |
-| [Retouching](retouching.md), [masking](masking.md) | The Remove, Red Eye and Masking tools: use, rendering, Camera Raw measurements and what is not implemented. |
-| [Lightroom profiles](lightroom-profiles.md) | RAWmakase's own profiles, importing Adobe and third-party profiles, and supported profile features. |
+| [Documentation index](README.md) | Every page under `docs/`, with its status (Current, Record or Plan). |
 
 When adding or moving a module, update its entry here. Put API contracts in Rust
 doc comments, ownership decisions in the architecture guide, and measured results
-in the validation documents so each has a clear home.
+in dated pages under [records](records/) so each has a clear home.
 
 ### Camera parity diagnostics
 

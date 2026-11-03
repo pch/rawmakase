@@ -148,7 +148,7 @@ Exposure, and parts of the cool magenta corner of Temp and Tint.
   minimum-based key. On photos that key is almost always below `BLACK_KEYS`'s first
   row (−8 stops), so Blacks renders photos through that row; keying it on the 0.1th
   percentile changes nothing, and a key relative to the median gains under 0.1 ΔE00
-  on the train photos ([parity gaps](parity-gaps.md), 2026-10-20).
+  on the train photos ([parity gaps](records/parity-gaps.md), 2026-10-20).
 
   Camera Raw 18.7 neutral ramps with the same scene values and different camera
   baselines produce the same dark outputs; raising Exposure moves the response.
@@ -213,7 +213,7 @@ histogram lifts the same mid levels 0.9 to 1.4 EV. Highlights −100 pulls a pat
 clipped in every channel, one clipped in green only and one just under white all
 alike, −0.8 to −1.3 EV depending on the histogram: clipping as such does not hold
 whites, so a clipped sky that renders darker than Camera Raw's is a reconstruction
-difference ([parity gaps](parity-gaps.md#the-global-rule-2026-10-28)).
+difference ([parity gaps](records/parity-gaps.md#the-global-rule-2026-10-28)).
 
 A perfectly flat maximum is a degenerate case for Camera Raw. Texture of 0.03 stop on
 the brightest patch alone adds about 0.4 EV of Shadows lift to every dark patch and
@@ -276,7 +276,7 @@ mean square, median over photos): held out by photo the ensemble sits at 0.17 (S
 on the train sets against main before the rule, median ΔE00: Shadows +100 2.12 → 1.53
 (7 of 14 photos better, 0 worse), +50 1.19 → 0.97, Highlights −100 1.53 → 1.27 (6
 better, 0 worse), −50 1.12 → 1.01. The validation gate's figures are in [parity
-gaps](parity-gaps.md#per-level-texture-and-the-ensemble-2026-10-28).
+gaps](records/parity-gaps.md#per-level-texture-and-the-ensemble-2026-10-28).
 
 Measured and not in the rule: the pull and the lift are colour-blind (at equal
 luminance Camera Raw pulls neutral, blue, orange, green and cyan patches alike at
@@ -523,7 +523,7 @@ Raw's renders of the train photos it is rather a veil: sized by the photo's medi
 coloured like the airlight, fading toward black, with a contrast change per photo (display
 slope 0.34–1.33) that follows the airlight's brightness. A veil model without that per-photo
 contrast term improved the median but made 11 of 26 photos worse ([parity
-gaps](parity-gaps.md), 2026-10-20).
+gaps](records/parity-gaps.md), 2026-10-20).
 
 **Positive Dehaze** is a dark-channel haze removal model (`scene_tone/haze.rs`), on the
 scene tone stage's input (linear ProPhoto), measured on the photo's measurement copy (512

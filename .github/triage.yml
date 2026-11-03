@@ -99,7 +99,7 @@ instructions: |
   For catalog import and relinking, read docs/catalogs.md. For camera profiles,
   read docs/lightroom-profiles.md. For masking, read docs/masking.md.
   Consult source only when it can establish an answer. For rendering questions,
-  check docs/parity-gaps.md and the relevant rendering guide; do not promise
+  check docs/records/parity-gaps.md and the relevant rendering guide; do not promise
   exact Lightroom parity. Check documentation for existing support before
   treating a feature request as new work.
 

@@ -1,5 +1,5 @@
-//! AI Denoise's service: one queue and one worker thread for every caller (Develop, its
-//! prefetch and export), the model loaded once, and the results' disk cache
+//! AI Denoise's service: one queue and one worker thread for every caller (Develop,
+//! export and the CLI), the model loaded once, and the results' disk cache
 //! (docs/rendering-quality.md#ai-denoise). Export reaches it as a
 //! [`rawmakase_decode::ai_denoise::AiBase`]; Develop asks for a photo with
 //! [`Service::request`] and receives its progress, a partial result after the tiles

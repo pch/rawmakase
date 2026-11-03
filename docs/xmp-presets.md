@@ -17,7 +17,7 @@ Only the Creative looks name a camera profile: Adobe Standard, which is what the
 
 The hover text and status line say when a fallback is used. Another camera's profile is never used, and one Adobe look never stands in for another. See [RAWmakase profiles](lightroom-profiles.md#rawmakase-profiles).
 
-To add one, drop an `.xmp` into a group folder, list it in `src/presets/builtin.rs`, give it a new `crs:UUID` and `crs:Copyright="RAWmakase contributors, MIT licence"`, and run the preset tests; they check that every file is listed, parses, applies without imported profiles and names no other profile.
+To add one, drop an `.xmp` into a group folder, list it in `crates/rawmakase-interop/src/presets/builtin.rs`, give it a new `crs:UUID` and `crs:Copyright="RAWmakase contributors, MIT licence"`, and run the preset tests; they check that every file is listed, parses, applies without imported profiles and names no other profile.
 
 ## Making presets
 

@@ -269,7 +269,7 @@ Known limitations, not yet addressed:
 - **Private tier is slow.** Photo parity against Camera Raw (1,305 references) takes about an hour and accepted renders about 20 minutes with `--release`. Trim to a representative subset (a few photos per camera, the `photos` cases) for routine runs.
 - **Bad sample files are accepted.** Nikon Z5II and Z50II samples decode as "data corrupted" with LibRaw 0.22.0, yet their renders were recorded in `accepted/`. Exclude files LibRaw can't decode cleanly (also Z 8, Z6III and A1 II lossless, which don't open; the Sony A7 V opens since the LibRaw update) until LibRaw supports them.
 - **Presets are not used.** The plan included about 40 of Piotr's Lightroom presets as realistic combinations; only 12 hand-picked pairs and one combined look exist.
-- **Parity numbers are not in docs/parity-gaps.md.** `scripts/corpus/parity-report.py` summarises them per control; that document still quotes ad-hoc scorecard runs.
+- **Parity numbers are not in docs/records/parity-gaps.md.** `scripts/corpus/parity-report.py` summarises them per control; that document still quotes ad-hoc scorecard runs.
 - **Known RAWmakase gaps the tests expose** (tests record them as the baseline, or fail on purpose):
   - Matrix-only DNGs (`synthetic-d65-matrix-only`) now render from the file's own D65 colour matrix and sit about ΔE00 0.9 from Camera Raw, the same as the fully-profiled `synthetic-d65` chart.
   - A DNG's embedded profile is rejected when it has no ProfileName ("Invalid profile identity").

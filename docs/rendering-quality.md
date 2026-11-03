@@ -98,7 +98,7 @@ Master point curves still have a saturated-color residual. The parametric curve 
 
 ## Color mixer and grading
 
-The color mixer, Saturation, Vibrance, color grading and Point Color render Camera Raw 18.7's measured responses: see [color mixer and grading](color-mixer.md). Legacy split-tone XMP imports restore blending 100 and clear modern grading controls. The earlier approximations, and the `reference_color` choice between them, are no longer rendered; the [color validation table](macos-lightroom-validation.md) records how they compared.
+The color mixer, Saturation, Vibrance, color grading and Point Color render Camera Raw 18.7's measured responses: see [color mixer and grading](color-mixer.md). Legacy split-tone XMP imports restore blending 100 and clear modern grading controls. The earlier approximations, and the `reference_color` choice between them, are no longer rendered; the [color validation table](records/macos-lightroom-validation.md) records how they compared.
 
 ## Camera calibration
 
@@ -159,6 +159,6 @@ rawmakase compare source.ARW lightroom.tiff /tmp/sony-comparison --origin 2400 1
 
 The output directory must not already exist. `--recipe preset.json` optionally supplies RAWmakase edits; without it the current engine defaults are used, independently of sidecars. The tool writes unscaled 512-pixel crops, a 4× difference visualization, the exact recipe, and full-image sRGB MAE/RMSE/PSNR. These metrics measure differences, not quality, and do not compensate for exposure or registration. A reference with different dimensions is rejected rather than stretched.
 
-Five X100F Lightroom comparisons across three photographs were checked on macOS, including custom white balance, master/RGB point curves and nonzero tone sliders. The corrected profile tone substantially reduced preview error, but full Lightroom parity is not established. See [macOS and Lightroom validation](macos-lightroom-validation.md) for measurements and limitations. The supplied private archives installed 62 matching camera profiles and 603 Settings presets in the user data directory; none are bundled. See [XMP support](xmp-presets.md).
+Five X100F Lightroom comparisons across three photographs were checked on macOS, including custom white balance, master/RGB point curves and nonzero tone sliders. The corrected profile tone substantially reduced preview error, but full Lightroom parity is not established. See [macOS and Lightroom validation](records/macos-lightroom-validation.md) for measurements and limitations. The supplied private archives installed 62 matching camera profiles and 603 Settings presets in the user data directory; none are bundled. See [XMP support](xmp-presets.md).
 
 CLI profile selection: `rawmakase render source.RAF output.jpg --profile /path/to/profile.dcp`. Profile libraries are read from `$RAWMAKASE_DATA_DIR/camera-profiles` and the platform RAWmakase data directory (`~/Library/Application Support/RAWmakase` on macOS, XDG on Linux); camera matching is mandatory.

@@ -167,7 +167,7 @@ schema needs nothing else for them.
 Two profiles of our own are listed for every camera with a colour matrix, with no files to import. They follow Adobe's two layers: a per-camera base and a camera-independent look.
 
 - **RAWmakase Standard**: the camera's colour matrix (the decoder's, or the D65 matrix of a DNG's own profile) with the DNG default tone curve. It uses the same colour data as "Default (camera matrix)", which stays in the Profile menu as the entry for no profile and renders through the same matrix and DNG default tone curve.
-- **RAWmakase Color**: a look on top of Standard, as Adobe Color is on Adobe Standard. A mild contrast curve and a few smooth hue, saturation and brightness shifts (reds, skin, yellows, foliage, aqua, sky), plus a slight saturation roll-off near white. Neutrals stay neutral. The table is generated from the parameters in `src/camera_profiles/open.rs`, not stored or derived from Adobe data.
+- **RAWmakase Color**: a look on top of Standard, as Adobe Color is on Adobe Standard. A mild contrast curve and a few smooth hue, saturation and brightness shifts (reds, skin, yellows, foliage, aqua, sky), plus a slight saturation roll-off near white. Neutrals stay neutral. The table is generated from the parameters in `crates/rawmakase-model/src/camera_profiles/open.rs`, not stored or derived from Adobe data.
 
 Both are embedded in the recipe like any other profile, so later changes to the look don't change existing edits. The look was tuned conservatively and has not yet been compared with Camera Raw renders; measured base profiles (ColorChecker shots per camera) can replace the matrix later without changing any preset.
 

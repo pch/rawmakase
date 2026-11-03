@@ -67,7 +67,7 @@ files should preserve.
 | `catalog` | RAWmakase SQLite database, schema, photo/folder/collection models, edits, relinking, the default Creator and Copyright of photos added from folders (below the camera's own, which the app's reader finds, as the catalog can't reach the RAW decoders), Synchronize Folder's and Find on Disk's engine (`folder_sync`: scan, matching, apply, family digest; named apart from `app/sync.rs`, which is Sync Settings) and disposable preview cache | `schema.sql`, `models.rs`, `mod.rs`, `folder_sync.rs`, `preview_cache.rs` |
 | `catalog::db` | The catalog's one connection boundary: an opaque `Db` with checked reads, `snapshot` for consistent reads, `write` as the only way to write, and `with_lightroom` for import; statements are `Sql` (portable) or `SqliteSql` (Lightroom), shape-checked at compile time; values go through the catalog's own `ToValue`/`FromRow` (`catalog::value`) | `mod.rs`, `sql.rs` |
 | `catalog::lightroom` | Read-only Lightroom snapshot import | `mod.rs`, `history.rs` |
-| `catalog::file_ops` | The one owner of changing where a photo or folder is or what it is named, on disk and in the catalog (#370, planned in #556): planning against a snapshot, the refusals, destination conflicts, names, which companion files go with a photo (by `catalog::sidecar`'s candidate rule), the journal, the operation lock, execution and recovery. Names photos from `interop::export_settings::NameTemplate`, the one owner of naming templates. Reaches the file system through its `Disk` seam over `storage::fsops`, the Trash through a `Trash` the app passes in | `plan.rs`, `execute.rs`, `recover.rs`, `journal.rs`, `rename.rs`, `tree.rs` |
+| `catalog::file_ops` | The one owner of changing where a photo or folder is or what it is named, on disk and in the catalog (#370, #556): planning against a snapshot, the refusals, destination conflicts, names, which companion files go with a photo (by `catalog::sidecar`'s candidate rule), the journal, the operation lock, execution and recovery. Names photos from `interop::export_settings::NameTemplate`, the one owner of naming templates. Reaches the file system through its `Disk` seam over `storage::fsops`, the Trash through a `Trash` the app passes in | `plan.rs`, `execute.rs`, `recover.rs`, `journal.rs`, `rename.rs`, `tree.rs` |
 | `catalog_session` | The open catalog and the lists read from it, with no window: opening it, reading it again, writes that must keep those lists in step (ratings, descriptive metadata, collections, virtual copies and their names, stacks), the background reads that fill in capture times and photo info for photos added from folders, and the throttled checksum reader, whose results a structural generation guards. Above `photo` and `raw`, as reading a RAW's info opens it; `app::library` decides which photos are online and shows the lists | `mod.rs`, `backfill.rs`, `background.rs`, `checksums.rs`, `stacks.rs` |
 | `lr_develop` | Best-effort conversion of Lightroom's serialized Develop settings into a recipe, through XMP; below the catalog, so edit resolution can use it | `lr_develop.rs` |
 | `app` | Desktop editor state, UI, dialogs, background task coordination and presentation | Components described below |
@@ -150,7 +150,7 @@ duplicate completions; a panicking worker reports a failure through the task
 wrapper, which clears the busy state.
 
 AI Denoise ([rendering quality](rendering-quality.md#ai-denoise)) has one service, `app::ai_denoise::Service`: one
-queue and one worker thread for Develop, its prefetch, export and the CLI. A job's
+queue and one worker thread for Develop, export and the CLI. A job's
 inputs are captured once as its key (the file's identity, the model's SHA-256, the
 adapter version, the provider and the build), which also names its cache entry; a
 request for a key already queued or running waits for that job. Develop's requests
@@ -418,8 +418,8 @@ cached under a key holding the model's SHA-256 and the adapter version.
 
 `make check` runs the standard suite (see the [README](../README.md#development)).
 Photographic checks, measured results and dated validation records live in
-[validation.md](validation.md), the per-stage measurement pages and
-[macOS and Lightroom validation](macos-lightroom-validation.md).
+[validation.md](records/validation.md), the per-stage measurement pages and
+[macOS and Lightroom validation](records/macos-lightroom-validation.md).
 
 ## Preview compute backend
 

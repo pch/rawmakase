@@ -979,7 +979,7 @@ unit_calibration = { preset = "d65", reference = [673, 302, 499] }
 fujifilm_exposure_shift = "ignored"
 source = "adobe-dng"
 checked = "2026-09-26"
-sample = "2 Lightroom DNGs (ISO 200 and 400), see docs/macos-lightroom-validation.md"
+sample = "2 Lightroom DNGs (ISO 200 and 400), see docs/records/macos-lightroom-validation.md"
 
 [[camera]]
 make = "Fujifilm"
