@@ -435,7 +435,7 @@ mod tests {
         assert_eq!(render(&with_ai(plain.clone(), 0.))?, off);
         assert_eq!(flat.0.load(Ordering::SeqCst), 0);
         let full = render(&with_ai(plain.clone(), 1.))?;
-        let half = render(&with_ai(plain.clone(), 0.5))?;
+        let half = render(&with_ai(plain, 0.5))?;
         assert_eq!(flat.0.load(Ordering::SeqCst), 2);
         assert_ne!(full, off);
         // Half way is neither (the tone stage is not linear, so not checked as a mean).

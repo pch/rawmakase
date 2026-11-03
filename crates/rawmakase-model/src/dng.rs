@@ -738,7 +738,7 @@ mod tests {
             (
                 lists(&[
                     (9, gain_map(area, 0, 1, 1, &[2.; 6])),
-                    (1, warp.clone()),
+                    (1, warp),
                     (9, gain_map(area, 1, 1, 1, &[2.; 6])),
                 ]),
                 [300, 400],

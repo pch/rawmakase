@@ -173,7 +173,7 @@ mod tests {
         let (logits, masks) = scene((1, 12.0), (187, 12.0));
         assert!(decode(&PANOPTIC, &logits[1..], &masks, 3, CLASSES, 8, 4).is_err());
         assert!(decode(&PANOPTIC, &logits, &masks[1..], 3, CLASSES, 8, 4).is_err());
-        let mut bad = masks.clone();
+        let mut bad = masks;
         bad[3] = f32::NAN;
         assert!(decode(&PANOPTIC, &logits, &bad, 3, CLASSES, 8, 4).is_err());
     }

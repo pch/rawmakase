@@ -1404,7 +1404,7 @@ mod tests {
             note
         };
         let len = note(0).len() as u32;
-        let drive2 = drive.clone();
+        let drive2 = drive;
         let orf = file(
             true,
             vec![

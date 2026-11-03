@@ -745,7 +745,7 @@ fn masks_made_from_a_selection_stay_on_their_photo() {
     assert_eq!(out.recipe.masks, vec![gradient.clone(), own.clone()]);
     // Even when the source fills every slot, the target's own selection survives.
     let full = Recipe {
-        masks: vec![gradient.clone(); crate::model::masks::MAX_GROUPS],
+        masks: vec![gradient; crate::model::masks::MAX_GROUPS],
         ..Default::default()
     };
     let out = transfer(from(&full, &m), &to, &selection, target);
@@ -949,7 +949,7 @@ fn a_fitted_look_moves_as_the_sources_own() {
         profile: Some(source_fit.clone()),
         ..Default::default()
     };
-    let profiles = [target_fit.clone()];
+    let profiles = [target_fit];
     let out = transfer(
         from(&source, &m),
         &Recipe::default(),
