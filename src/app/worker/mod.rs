@@ -14,6 +14,9 @@ use std::{
 pub(crate) struct LoadedHeader {
     pub id: u64,
     pub path: PathBuf,
+    /// The file as read before it was opened: what the header, and every image
+    /// of this load, are of.
+    pub file: Option<crate::storage::Identity>,
     pub metadata: Metadata,
     pub recipe: Recipe,
     pub export: ExportOptions,

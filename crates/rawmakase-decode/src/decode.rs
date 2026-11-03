@@ -45,6 +45,20 @@ impl FullSize {
             cache,
         }
     }
+    /// The photo whose file is the version `file` names, read by the caller
+    /// before opening it, with `demosaic`, cached in `cache`. The caller checks
+    /// that what it decodes is still that version; nothing is cached without one.
+    pub fn of_version(
+        file: Option<&crate::storage::Identity>,
+        demosaic: Demosaic,
+        cache: DecodeCache,
+    ) -> Self {
+        Self {
+            demosaic,
+            key: file.map(|file| DecodeCache::key_of(file, demosaic)),
+            cache,
+        }
+    }
     /// The cache's copy, with its recovered highlights; `metadata` is the opened
     /// photo's.
     pub fn cached(&self, metadata: &Metadata) -> Option<CameraImage> {

@@ -426,6 +426,7 @@ mod tests {
             for event in [
                 Event::Header(Box::new(LoadedHeader {
                     id: generation,
+                    file: crate::storage::Identity::read(&raw.clone()).ok(),
                     path: raw.clone(),
                     metadata: m.clone(),
                     recipe: adobe.clone(),
@@ -504,6 +505,7 @@ mod tests {
             .tx
             .send(Event::Header(Box::new(LoadedHeader {
                 id: generation,
+                file: crate::storage::Identity::read(&raw).ok(),
                 path: raw,
                 metadata: m,
                 recipe: adobe.clone(),
@@ -547,6 +549,7 @@ mod tests {
         for event in [
             Event::Header(Box::new(LoadedHeader {
                 id: generation,
+                file: crate::storage::Identity::read(&raw).ok(),
                 path: raw,
                 metadata: m.clone(),
                 // As the loader resolves it.

@@ -415,6 +415,7 @@ fn a_load_under_way_when_its_photo_moves_never_brings_back_the_old_path() -> any
     // The header read at the old path comes after the move.
     e.tx.send(Event::Header(Box::new(LoadedHeader {
         id: opening,
+        file: crate::storage::Identity::read(&old.clone()).ok(),
         path: old.clone(),
         metadata: Default::default(),
         recipe: Default::default(),
