@@ -2,9 +2,29 @@ name: GPU parity
 
 # The GPU port must keep matching the CPU renderer. Its tests need a hardware
 # compute adapter, so CI's test jobs skip them (#[ignore]); this lane runs them
-# weekly, and on demand, against main. It never gates a pull request: a
-# failure here is a parity regression to look at, not a merge blocker.
+# on pull requests that can change what either renders, weekly against main,
+# and on demand. A pull request that fails it changed GPU or CPU output apart
+# (#808, decision 2).
 on:
+  pull_request:
+    paths:
+      # The renderer, CPU and GPU (pipeline, shaders, stages).
+      - 'crates/rawmakase-engine/src/develop/**'
+      # The model's colour, profile and optics maths both renderers read, and
+      # what the GPU repeats in its shaders: the lens tables (optics), the
+      # clipping overlay and histogram (rendered.rs), profile adjustments
+      # (recipe.rs).
+      - 'crates/rawmakase-model/src/color/**'
+      - 'crates/rawmakase-model/src/camera_profiles/**'
+      - 'crates/rawmakase-model/src/optics/**'
+      - 'crates/rawmakase-model/src/rendered.rs'
+      - 'crates/rawmakase-model/src/model/recipe.rs'
+      - 'crates/rawmakase-model/src/model/white_balance.rs'
+      # wgpu: where it is declared, and the version Cargo.lock resolves.
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/rawmakase-engine/Cargo.toml'
+      - '.github/workflows/gpu-parity.yml'
   schedule:
     - cron: '17 4 * * 1'
   workflow_dispatch:
@@ -12,8 +32,9 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request (or branch) supersedes its run.
 concurrency:
-  group: gpu-parity
+  group: gpu-parity-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -28,8 +49,11 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-      # Its own cache, kept between weekly runs so each builds only what changed.
+      # Its own cache, saved by the weekly and on-demand runs on main so each
+      # builds only what changed; other runs restore it without saving.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Show the GPU
         run: system_profiler SPDisplaysDataType
       # Only the GPU tests: the other ignored tests need private RAW files,
