@@ -10,12 +10,12 @@ fn editor(ctx: &egui::Context) -> Editor {
     Editor::with_context(ctx, None, crate::app::session::Session::default(), None)
 }
 /// What a control does as it changes the edit: names the step being made.
-fn name(_editor: &mut Editor, ctx: &egui::Context, name: &str, value: &str) {
-    super::widgets::name_frame_step(ctx, name.into(), value.into());
+fn name(editor: &mut Editor, _ctx: &egui::Context, name: &str, value: &str) {
+    editor.step_name.name(name.into(), value.into());
 }
 /// The name a control gave in a frame not yet finished.
-fn pending(_editor: &Editor, ctx: &egui::Context) -> Option<(String, String)> {
-    ctx.data(|d| d.get_temp(super::widgets::history_step_id()))
+fn pending(editor: &Editor, _ctx: &egui::Context) -> Option<(String, String)> {
+    editor.step_name.given()
 }
 /// The names of the steps History holds, oldest first.
 fn steps(editor: &Editor) -> Vec<String> {

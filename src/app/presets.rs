@@ -503,9 +503,7 @@ impl Editor {
         if self.presets.amount.is_some() {
             self.end_stale_preset_amount();
             if self.presets.amount.is_none() {
-                self.context.data_mut(|d| {
-                    d.remove_temp::<(String, String)>(super::widgets::history_step_id())
-                });
+                self.step_name.discard();
                 return AmountChange::Same;
             }
         }
@@ -524,8 +522,7 @@ impl Editor {
         // next edit.
         if session.shown == *self.document.edit.recipe() {
             // The slider named a step; with nothing changed it would name the next edit.
-            self.context
-                .data_mut(|d| d.remove_temp::<(String, String)>(super::widgets::history_step_id()));
+            self.step_name.discard();
             return AmountChange::Same;
         }
         self.document.edit.replace(session.shown.clone());
@@ -567,6 +564,7 @@ impl Editor {
         ui.push_id("preset-amount", |ui| {
             super::widgets::slider_with(
                 ui,
+                &mut self.step_name,
                 "Amount",
                 &mut amount,
                 crate::presets::amount::RANGE,

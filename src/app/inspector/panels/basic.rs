@@ -9,6 +9,7 @@ use crate::app::bulk_import::ImportKind;
 use crate::app::design::{Tone, size, space};
 use crate::app::profile_download::Offer;
 use crate::app::state::{Tool, ViewState};
+use crate::app::step_name::StepName;
 use crate::app::theme;
 use crate::app::widgets::{
     adjustment_section, control_left, segmented, slider_with, toolbar_action,
@@ -46,6 +47,7 @@ pub(in crate::app::inspector) struct View<'a> {
 /// Draws the panel.
 pub(in crate::app::inspector) fn show(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     r: &mut Recipe,
     view: &mut ViewState,
     facts: &View<'_>,
@@ -67,7 +69,7 @@ pub(in crate::app::inspector) fn show(
     // A JPEG, TIFF or PNG: its Embedded profile, and relative white balance.
     let rendered = metadata.is_some_and(|m| m.is_rendered());
     let mut actions = Vec::new();
-    if adjustment_section(ui, "Basic", |ui| {
+    if adjustment_section(ui, step, "Basic", |ui, step| {
         let shortcut = if cfg!(target_os = "macos") {
             "⌘⇧U"
         } else {
@@ -203,7 +205,16 @@ pub(in crate::app::inspector) fn show(
                 &mut fixed
             };
             ui.push_id("profile-amount", |ui| {
-                slider_with(ui, "Amount", amount, 0. ..=2., 1., Some((100., 0)), None)
+                slider_with(
+                    ui,
+                    step,
+                    "Amount",
+                    amount,
+                    0. ..=2.,
+                    1.,
+                    Some((100., 0)),
+                    None,
+                )
             });
         })
         .response
@@ -366,11 +377,11 @@ pub(in crate::app::inspector) fn show(
                     ParameterId::IncrementalTemperature,
                     ParameterId::IncrementalTint,
                 );
-                basic_control(ui, r, temp, 0., photo, selected);
-                basic_control(ui, r, tint, 0., photo, selected);
+                basic_control(ui, step, r, temp, 0., photo, selected);
+                basic_control(ui, step, r, tint, 0., photo, selected);
             } else {
-                basic_control(ui, r, ParameterId::Temperature, 6500., photo, selected);
-                basic_control(ui, r, ParameterId::Tint, 0., photo, selected);
+                basic_control(ui, step, r, ParameterId::Temperature, 6500., photo, selected);
+                basic_control(ui, step, r, ParameterId::Tint, 0., photo, selected);
             }
         });
         subheading(ui, "Tone");
@@ -382,7 +393,7 @@ pub(in crate::app::inspector) fn show(
             ParameterId::Whites,
             ParameterId::Blacks,
         ] {
-            basic_control(ui, r, id, 0., photo, &mut view.selected_setting);
+            basic_control(ui, step, r, id, 0., photo, &mut view.selected_setting);
         }
         subheading(ui, "Presence");
         for id in [
@@ -392,7 +403,7 @@ pub(in crate::app::inspector) fn show(
             ParameterId::Vibrance,
             ParameterId::Saturation,
         ] {
-            basic_control(ui, r, id, 0., photo, &mut view.selected_setting);
+            basic_control(ui, step, r, id, 0., photo, &mut view.selected_setting);
         }
     }) {
         r.wb = [1.; 3];

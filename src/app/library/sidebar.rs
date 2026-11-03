@@ -186,7 +186,7 @@ impl Library {
         egui::ScrollArea::vertical()
             .id_salt("library-sources")
             .show(ui, |ui| {
-                section(ui, "Catalog", false, |ui| {
+                section(ui, "Catalog", |ui| {
                     let offline = self.session.photos.len() - self.available_count();
                     let all = self.filters.folder_scope.is_none()
                         && self.filters.collection.is_none()
@@ -239,7 +239,7 @@ impl Library {
                         self.filter()
                     }
                 });
-                section(ui, "Folders", false, |ui| {
+                section(ui, "Folders", |ui| {
                     // Lightroom-style volume headers with an attached light.
                     let anchors = self.anchors().into_iter().map(|(.., path)| path).collect();
                     self.volumes.check(ui.ctx(), anchors);
@@ -411,7 +411,7 @@ impl Library {
                         action = Action::AddFolder;
                     }
                 });
-                section(ui, "Collections", false, |ui| {
+                section(ui, "Collections", |ui| {
                     let tree = &trees.collections;
                     for node in tree {
                         if let Some(id) = collections::collection_row(

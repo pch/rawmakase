@@ -83,8 +83,7 @@ impl Editor {
         }
     }
     pub(super) fn finish_edit_frame(&mut self, frame: EditFrame, ctx: &egui::Context) {
-        let step =
-            ctx.data_mut(|d| d.remove_temp::<(String, String)>(super::widgets::history_step_id()));
+        let step = self.step_name.take();
         if frame.generation != self.load.id() {
             return;
         }
@@ -111,10 +110,8 @@ impl Editor {
             self.automation.end_turn();
             self.document.edit.finish_gesture_before(&frame.edit);
         }
-        if let Some((name, value)) = step {
-            self.document
-                .edit
-                .name_next_step(super::history::Step::new(name, value));
+        if let Some(step) = step {
+            self.document.edit.name_next_step(step);
         }
         self.leave_compare_for_tools();
         if frame.aspect != self.view.aspect {

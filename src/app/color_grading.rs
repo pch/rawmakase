@@ -7,10 +7,9 @@
 //!
 //! The wheels edit the values the sliders before them did (hue 0–1, saturation 0–1,
 //! luminance −1 to 1), so a grade renders the same however it was set.
+use super::step_name::StepName;
 use super::theme;
-use super::widgets::{
-    SliderStyle, name_history_step, set_edit_context, setting_slider, slider_styled, slider_with,
-};
+use super::widgets::{SliderStyle, set_edit_context, setting_slider, slider_styled, slider_with};
 use crate::app::design::{Tone, radius, size, space, text};
 use crate::model::params::ParameterId;
 use crate::model::recipe::Recipe;
@@ -86,12 +85,17 @@ const CAPTION: f32 = 16.;
 const ROW: f32 = size::CONTROL;
 
 /// The Color Grading panel's contents.
-pub(super) fn color_grading_ui(ui: &mut egui::Ui, r: &mut Recipe, view: &mut GradingView) {
+pub(super) fn color_grading_ui(
+    ui: &mut egui::Ui,
+    step: &mut StepName,
+    r: &mut Recipe,
+    view: &mut GradingView,
+) {
     view_buttons(ui, view);
     ui.add_space(space::XS);
     match *view {
-        GradingView::ThreeWay => three_way(ui, r),
-        GradingView::Single(region) => single(ui, r, region),
+        GradingView::ThreeWay => three_way(ui, step, r),
+        GradingView::Single(region) => single(ui, step, r, region),
     }
     ui.add_space(space::XS);
     set_edit_context(ui, "Color Grading");
@@ -100,7 +104,7 @@ pub(super) fn color_grading_ui(ui: &mut egui::Ui, r: &mut Recipe, view: &mut Gra
         (ParameterId::GradingBlending, 0.5),
         (ParameterId::GradingBalance, 0.),
     ] {
-        setting_slider(ui, id, id.value_mut(r), default);
+        setting_slider(ui, step, id, id.value_mut(r), default);
     }
 }
 
@@ -164,7 +168,7 @@ fn view_icon(painter: &egui::Painter, view: GradingView, c: Pos2, color: Color32
 }
 
 /// Midtones above, Shadows and Highlights side by side below, each with its numbers.
-fn three_way(ui: &mut egui::Ui, r: &mut Recipe) {
+fn three_way(ui: &mut egui::Ui, step: &mut StepName, r: &mut Recipe) {
     let width = ui.available_width();
     let gap = 12.;
     let column = (width - gap) / 2.;
@@ -175,7 +179,7 @@ fn three_way(ui: &mut egui::Ui, r: &mut Recipe) {
         Pos2::new(top.center().x, top.center().y),
         Vec2::new(column, height),
     );
-    region_column(ui, centre, r, Region::Midtones, diameter);
+    region_column(ui, step, centre, r, Region::Midtones, diameter);
     ui.add_space(space::S);
     let (bottom, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
     let left = Rect::from_min_size(bottom.min, Vec2::new(column, height));
@@ -183,13 +187,20 @@ fn three_way(ui: &mut egui::Ui, r: &mut Recipe) {
         Pos2::new(bottom.right() - column, bottom.top()),
         Vec2::new(column, height),
     );
-    region_column(ui, left, r, Region::Shadows, diameter);
-    region_column(ui, right, r, Region::Highlights, diameter);
+    region_column(ui, step, left, r, Region::Shadows, diameter);
+    region_column(ui, step, right, r, Region::Highlights, diameter);
 }
 
 /// A small wheel in `rect` under its caption, with its hue and saturation numbers and
 /// its Luminance below.
-fn region_column(ui: &mut egui::Ui, rect: Rect, r: &mut Recipe, region: Region, diameter: f32) {
+fn region_column(
+    ui: &mut egui::Ui,
+    step: &mut StepName,
+    rect: Rect,
+    r: &mut Recipe,
+    region: Region,
+    diameter: f32,
+) {
     let grade = region.grade(r);
     ui.painter().text(
         Pos2::new(rect.center().x, rect.top() + CAPTION / 2.),
@@ -202,21 +213,21 @@ fn region_column(ui: &mut egui::Ui, rect: Rect, r: &mut Recipe, region: Region, 
         Pos2::new(rect.center().x - diameter / 2., rect.top() + CAPTION),
         Vec2::splat(diameter),
     );
-    wheel(ui, wheel_rect, grade, region);
+    wheel(ui, step, wheel_rect, grade, region);
     let fields = Rect::from_min_size(
         Pos2::new(rect.left(), wheel_rect.bottom()),
         Vec2::new(rect.width(), ROW),
     );
-    hue_saturation_fields(ui, fields, grade, region);
+    hue_saturation_fields(ui, step, fields, grade, region);
     let rail = Rect::from_min_size(
         Pos2::new(rect.left(), fields.bottom()),
         Vec2::new(rect.width(), ROW),
     );
-    luminance_rail(ui, rail, &mut grade[2], region);
+    luminance_rail(ui, step, rail, &mut grade[2], region);
 }
 
 /// One large wheel with Hue, Saturation and Luminance sliders.
-fn single(ui: &mut egui::Ui, r: &mut Recipe, region: Region) {
+fn single(ui: &mut egui::Ui, step: &mut StepName, r: &mut Recipe, region: Region) {
     let palette = theme::palette(ui.ctx());
     let grade = region.grade(r);
     let diameter = ui.available_width().min(LARGE_WHEEL);
@@ -224,6 +235,7 @@ fn single(ui: &mut egui::Ui, r: &mut Recipe, region: Region) {
         ui.allocate_exact_size(Vec2::new(ui.available_width(), diameter), Sense::hover());
     wheel(
         ui,
+        step,
         Rect::from_center_size(row.center(), Vec2::splat(diameter)),
         grade,
         region,
@@ -236,13 +248,14 @@ fn single(ui: &mut egui::Ui, r: &mut Recipe, region: Region) {
             hue_rail: true,
             ..SliderStyle::default()
         };
-        slider_styled(ui, "Hue", &mut degrees, 0. ..=360., 0., wheel);
+        slider_styled(ui, step, "Hue", &mut degrees, 0. ..=360., 0., wheel);
         if degrees != grade[0] * 360. {
             grade[0] = degrees / 360.;
         }
         let tint = hue_color(grade[0], 1.);
         slider_with(
             ui,
+            step,
             "Saturation",
             &mut grade[1],
             0. ..=1.,
@@ -252,6 +265,7 @@ fn single(ui: &mut egui::Ui, r: &mut Recipe, region: Region) {
         );
         slider_with(
             ui,
+            step,
             "Luminance",
             &mut grade[2],
             -1. ..=1.,
@@ -415,7 +429,7 @@ struct WheelClick {
 }
 
 /// A hue/saturation wheel filling `rect`.
-fn wheel(ui: &mut egui::Ui, rect: Rect, grade: &mut [f32; 3], region: Region) {
+fn wheel(ui: &mut egui::Ui, step: &mut StepName, rect: Rect, grade: &mut [f32; 3], region: Region) {
     let id = ui.id().with(("grade-wheel", region));
     let response = ui.interact(rect, id, Sense::click_and_drag());
     let center = rect.center();
@@ -547,7 +561,7 @@ fn wheel(ui: &mut egui::Ui, rect: Rect, grade: &mut [f32; 3], region: Region) {
     let after = HueSat::of(grade);
     if after != before {
         let (name, value) = wheel_step(region, start, after);
-        name_history_step(ui, name, value);
+        step.name(name, value);
     }
     paint_disc(ui.painter(), center, radius, 72, 10);
     let painter = ui.painter();
@@ -594,7 +608,13 @@ fn wheel_step(region: Region, start: HueSat, end: HueSat) -> (String, String) {
 }
 
 /// A wheel's hue and saturation as typed or dragged numbers, centred in `rect`.
-fn hue_saturation_fields(ui: &mut egui::Ui, rect: Rect, grade: &mut [f32; 3], region: Region) {
+fn hue_saturation_fields(
+    ui: &mut egui::Ui,
+    step: &mut StepName,
+    rect: Rect,
+    grade: &mut [f32; 3],
+    region: Region,
+) {
     let size = Vec2::new(48., 18.);
     let gap = 6.;
     let left = Rect::from_min_size(
@@ -607,7 +627,7 @@ fn hue_saturation_fields(ui: &mut egui::Ui, rect: Rect, grade: &mut [f32; 3], re
     let right = left.translate(Vec2::new(size.x + gap, 0.));
     let mut degrees = (grade[0] * 360.).round();
     let mut percent = (grade[1] * 100.).round();
-    let step = region.step();
+    let caption = region.step();
     let hue = ui
         .put(
             left,
@@ -617,7 +637,7 @@ fn hue_saturation_fields(ui: &mut egui::Ui, rect: Rect, grade: &mut [f32; 3], re
                 .max_decimals(0)
                 .prefix("H "),
         )
-        .on_hover_text(format!("{step} Hue"));
+        .on_hover_text(format!("{caption} Hue"));
     let saturation = ui
         .put(
             right,
@@ -627,14 +647,14 @@ fn hue_saturation_fields(ui: &mut egui::Ui, rect: Rect, grade: &mut [f32; 3], re
                 .max_decimals(0)
                 .prefix("S "),
         )
-        .on_hover_text(format!("{step} Saturation"));
+        .on_hover_text(format!("{caption} Saturation"));
     if hue.changed() {
         grade[0] = degrees / 360.;
-        name_history_step(ui, format!("{step} Hue"), format!("{degrees:.0}"));
+        step.name(format!("{caption} Hue"), format!("{degrees:.0}"));
     }
     if saturation.changed() {
         grade[1] = percent / 100.;
-        name_history_step(ui, format!("{step} Saturation"), format!("{percent:.0}"));
+        step.name(format!("{caption} Saturation"), format!("{percent:.0}"));
     }
 }
 
@@ -647,7 +667,13 @@ struct LuminanceClick {
 }
 
 /// A small wheel's Luminance: a dark-to-light rail with its number, −100 to 100.
-fn luminance_rail(ui: &mut egui::Ui, rect: Rect, value: &mut f32, region: Region) {
+fn luminance_rail(
+    ui: &mut egui::Ui,
+    step: &mut StepName,
+    rect: Rect,
+    value: &mut f32,
+    region: Region,
+) {
     let palette = theme::palette(ui.ctx());
     let field = Rect::from_min_size(
         Pos2::new(rect.right() - 40., rect.center().y - 9.),
@@ -753,8 +779,7 @@ fn luminance_rail(ui: &mut egui::Ui, rect: Rect, value: &mut f32, region: Region
     painter.circle_filled(thumb, 3.5, palette.tone(Tone::SOFT));
     painter.circle_stroke(thumb, 3.5, Stroke::new(1., palette.tone(Tone::BAR)));
     if *value != before {
-        name_history_step(
-            ui,
+        step.name(
             format!("{} Luminance", region.step()),
             format!("{:.0}", *value * 100.),
         );
@@ -893,6 +918,7 @@ mod tests {
         time: f64,
         rect: Rect,
         luminance: bool,
+        step: StepName,
     }
     impl Harness {
         fn new() -> Self {
@@ -903,6 +929,7 @@ mod tests {
                 ctx,
                 time: 0.,
                 luminance: false,
+                step: StepName::default(),
                 rect: Rect::from_min_size(corner + Vec2::splat(10.), Vec2::splat(200.)),
             }
         }
@@ -924,9 +951,9 @@ mod tests {
                 },
                 |ui| {
                     if self.luminance {
-                        luminance_rail(ui, rect, &mut grade[2], Region::Shadows);
+                        luminance_rail(ui, &mut self.step, rect, &mut grade[2], Region::Shadows);
                     } else {
-                        wheel(ui, rect, grade, Region::Shadows);
+                        wheel(ui, &mut self.step, rect, grade, Region::Shadows);
                     }
                 },
             );
@@ -954,9 +981,7 @@ mod tests {
                 let p = self.at(*p);
                 self.frame(grade, vec![egui::Event::PointerMoved(p)], modifiers);
             }
-            let step = self
-                .ctx
-                .data(|d| d.get_temp(super::super::widgets::history_step_id()));
+            let step = self.step.given();
             let last = self.at(*path.last().unwrap());
             self.frame(grade, vec![button(last, false)], modifiers);
             step
@@ -1144,10 +1169,8 @@ mod tests {
                 }],
                 egui::Modifiers::NONE,
             );
-            if let Some((name, value)) = h.ctx.data_mut(|d| {
-                d.remove_temp::<(String, String)>(super::super::widgets::history_step_id())
-            }) {
-                history.label(super::super::history::Step::new(name, value));
+            if let Some(step) = h.step.take() {
+                history.label(step);
             }
             history.observe(before, &recipe, pressed);
         }

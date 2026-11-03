@@ -706,7 +706,7 @@ impl Editor {
         match operation {
             Operation::Set(param, value) => {
                 let param = self.for_photo(param, target);
-                self.command_parameter(param, Some(value), 0, target, ctx)?
+                self.command_parameter(param, Some(value), 0, target)?
             }
             Operation::Preset(target) => {
                 self.require_develop()?;
@@ -720,7 +720,7 @@ impl Editor {
                 // changes no preset name for History to recognize it by. Only a change
                 // is named, or the name would be left for the next edit.
                 if *self.document.edit.recipe() != before {
-                    super::widgets::name_frame_step(ctx, "Preset".into(), applied.name.clone());
+                    self.step_name.name("Preset".into(), applied.name.clone());
                 }
                 return Ok(Outcome::Preset { applied });
             }
@@ -741,11 +741,8 @@ impl Editor {
                 };
                 if *current != curve {
                     *current = curve;
-                    super::widgets::name_frame_step(
-                        ctx,
-                        "Point Curve".into(),
-                        format!("{channel:?}"),
-                    );
+                    self.step_name
+                        .name("Point Curve".into(), format!("{channel:?}"));
                 }
             }
             Operation::ControlValue(param, value) => {
@@ -755,13 +752,12 @@ impl Editor {
                     Some(param.control_value(value, target.mask.is_some())),
                     0,
                     target,
-                    ctx,
                 )?;
                 ctx.request_repaint_after(std::time::Duration::from_millis(450));
             }
             Operation::Adjust(param, ticks) => {
                 let param = self.for_photo(param, target);
-                self.command_parameter(param, None, ticks, target, ctx)?;
+                self.command_parameter(param, None, ticks, target)?;
                 ctx.request_repaint_after(std::time::Duration::from_millis(450));
             }
             Operation::Action(action) => return self.execute_action(action, target.photo_id),
@@ -852,7 +848,6 @@ impl Editor {
         value: Option<f32>,
         ticks: i32,
         target: &Target,
-        ctx: &egui::Context,
     ) -> Result<()> {
         self.require_develop()?;
         if value.is_some_and(|v| !v.is_finite()) {
@@ -889,7 +884,7 @@ impl Editor {
             param.label(channel)
         };
         if before_recipe != *self.document.edit.recipe() {
-            ctx.data_mut(|d| d.insert_temp(super::widgets::history_step_id(), (label, shown)));
+            self.step_name.name(label, shown);
         }
         Ok(())
     }

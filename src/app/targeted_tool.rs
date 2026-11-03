@@ -219,7 +219,7 @@ impl Editor {
             // the name never lands on another edit.
             if *self.document.edit.recipe() != before {
                 let (name, value) = weights.step(self.document.edit.recipe());
-                super::widgets::name_frame_step(&self.context, name, value);
+                self.step_name.name(name, value);
             }
             drag.last = self.document.edit.recipe().clone();
         }

@@ -2,10 +2,11 @@ use super::clipping::{self, ClipSide};
 use super::crop_tool::{Guide, GuideShow, Ruler};
 use super::dialogs::FileDialog;
 use super::state::Tool;
+use super::step_name::StepName;
 use super::tone_drag::tone_drag_ui;
 use super::widgets::{
-    LABEL_GAP, SliderEvent, control_left, keyed_setting_slider, label_column, name_history_step,
-    setting_slider, slider_with,
+    LABEL_GAP, SliderEvent, control_left, keyed_setting_slider, label_column, setting_slider,
+    slider_with,
 };
 use super::{Editor, basic_keys};
 use crate::app::design::{Tone, button, inset, radius, size, space, text};
@@ -121,6 +122,7 @@ impl Editor {
         let triangles = ClipSide::BOTH.map(|side| ClipTriangle::new(rect, side));
         let region = tone_drag_ui(
             ui,
+            &mut self.step_name,
             rect,
             &triangles.map(|t| t.hit),
             &mut self.view.tone_drag,
@@ -262,6 +264,7 @@ impl Editor {
         let mut guides = self.view.crop_guides;
         let analysing = self.document.straighten.is_running();
         let r = self.document.edit.recipe_mut();
+        let step = &mut self.step_name;
         drawer_frame().show(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::new(space::XS, space::S);
             // Every control one height, centred on its label, at the Develop
@@ -295,7 +298,7 @@ impl Editor {
                 }
             });
             crate::model::edit::change_setting(r, ParameterId::Straighten, None, |r| {
-                setting_slider(ui, ParameterId::Straighten, &mut r.straighten, 0.)
+                setting_slider(ui, step, ParameterId::Straighten, &mut r.straighten, 0.)
             });
             control_row(ui, "Straighten", |ui| {
                 let w = (ui.available_width() - 4.) / 2.;
@@ -509,22 +512,34 @@ impl Editor {
         };
         let mut requests = panels::Requests::default();
         let view = &mut self.view;
+        let step = &mut self.step_name;
         let (r, photo) = self.document.recipe_and_colors();
         let metadata = metadata.as_ref();
-        requests.add(panels::basic::show(ui, r, view, &basic_view, &palette));
+        requests.add(panels::basic::show(
+            ui,
+            step,
+            r,
+            view,
+            &basic_view,
+            &palette,
+        ));
         requests.add(panels::tone_curve::show(
             ui,
+            step,
             r,
             view,
             &histogram,
             targeted,
             &saved_curves,
         ));
-        requests.add(panels::mixer::show(ui, r, view, &photo, targeted, &palette));
-        panels::color_grading::show(ui, r, view, grading_document);
-        requests.add(panels::detail::show(ui, r, &ai_view));
+        requests.add(panels::mixer::show(
+            ui, step, r, view, &photo, targeted, &palette,
+        ));
+        panels::color_grading::show(ui, step, r, view, grading_document);
+        requests.add(panels::detail::show(ui, step, r, &ai_view));
         requests.add(panels::lens_corrections::show(
             ui,
+            step,
             r,
             view,
             metadata,
@@ -533,14 +548,15 @@ impl Editor {
         ));
         requests.add(panels::transform::show(
             ui,
+            step,
             r,
             view,
             metadata,
             upright_ready,
             &palette,
         ));
-        panels::effects::show(ui, r, metadata);
-        panels::calibration::show(ui, r, metadata);
+        panels::effects::show(ui, step, r, metadata);
+        panels::calibration::show(ui, step, r, metadata);
         self.carry_out(requests, ui, &adobe, adobe_key);
     }
     /// Carries out what the Develop panels asked for this frame, still during the
@@ -881,11 +897,16 @@ fn control_row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui
 }
 /// Defringe's Amount and hue range for Purple, then Green. Double-clicking a hue
 /// resets it to that color's own default range.
-pub(super) fn defringe_sliders(ui: &mut egui::Ui, e: &mut crate::model::effects::Effects) {
+pub(super) fn defringe_sliders(
+    ui: &mut egui::Ui,
+    step: &mut StepName,
+    e: &mut crate::model::effects::Effects,
+) {
     for (i, name, hue) in [(0, "Purple", [0.55, 0.9]), (1, "Green", [0.2, 0.5])] {
         ui.push_id(("defringe", i), |ui| {
             slider_with(
                 ui,
+                step,
                 &format!("{name} Amount"),
                 &mut e.defringe[i],
                 0. ..=1.,
@@ -901,6 +922,7 @@ pub(super) fn defringe_sliders(ui: &mut egui::Ui, e: &mut crate::model::effects:
             });
             let low = slider_with(
                 ui,
+                step,
                 &format!("{name} Hue"),
                 lo,
                 0. ..=(*hi - 0.1).max(0.),
@@ -912,6 +934,7 @@ pub(super) fn defringe_sliders(ui: &mut egui::Ui, e: &mut crate::model::effects:
                 .push_id("hi", |ui| {
                     slider_with(
                         ui,
+                        step,
                         "",
                         hi,
                         (*lo + 0.1).min(1.)..=1.,
@@ -926,8 +949,7 @@ pub(super) fn defringe_sliders(ui: &mut egui::Ui, e: &mut crate::model::effects:
             if [low, high].contains(&SliderEvent::Reset) {
                 [*lo, *hi] = defaults;
                 // Named after the whole range, not the end the slider clamped.
-                name_history_step(
-                    ui,
+                step.name(
                     format!("Defringe {name} Hue"),
                     format!("{:.0} / {:.0}", defaults[0] * 100., defaults[1] * 100.),
                 );
@@ -1018,6 +1040,7 @@ fn rail_row<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
 /// `selected` one, and a click on the label selects it.
 fn basic_control(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     r: &mut Recipe,
     id: ParameterId,
     default: f32,
@@ -1027,7 +1050,7 @@ fn basic_control(
     let canonical = basic_keys::canonical(id);
     let lit = *selected == Some(canonical) && basic_keys::enabled(id, photo);
     let event = crate::model::edit::change_setting(r, id, photo, |r| {
-        keyed_setting_slider(ui, id, id.value_mut(r), default, lit)
+        keyed_setting_slider(ui, step, id, id.value_mut(r), default, lit)
     });
     if event == SliderEvent::LabelClicked {
         *selected = Some(canonical);
@@ -1038,12 +1061,13 @@ fn basic_control(
 /// of the recipe (`model::edit`).
 fn setting_control(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     r: &mut Recipe,
     id: ParameterId,
     default: f32,
     photo: Option<&crate::camera_data::Metadata>,
 ) {
     crate::model::edit::change_setting(r, id, photo, |r| {
-        setting_slider(ui, id, id.value_mut(r), default)
+        setting_slider(ui, step, id, id.value_mut(r), default)
     });
 }

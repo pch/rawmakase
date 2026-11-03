@@ -4,6 +4,7 @@ use super::super::{PanelSwitch, control_row, subheading};
 use super::Action;
 use crate::app::design::Tone;
 use crate::app::state::{Tool, ViewState};
+use crate::app::step_name::StepName;
 use crate::app::theme;
 use crate::app::widgets::{segmented, setting_slider, switched_section};
 use crate::camera_data::Metadata;
@@ -26,6 +27,7 @@ pub(in crate::app::inspector) enum GuidedAction {
 /// analyse the photo now: decoded, and no analysis running.
 pub(in crate::app::inspector) fn show(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     r: &mut Recipe,
     view: &mut ViewState,
     metadata: Option<&Metadata>,
@@ -34,7 +36,7 @@ pub(in crate::app::inspector) fn show(
 ) -> Vec<Action> {
     let mut actions = Vec::new();
     let mut switch = PanelSwitch::new(r, Panel::Transform);
-    if switched_section(ui, "Transform", &mut switch.state, |ui| {
+    if switched_section(ui, step, "Transform", &mut switch.state, |ui, step| {
         use crate::model::transform::UprightMode;
         // As Lightroom: Update beside the heading, then the modes in two rows.
         control_row(ui, "Upright", |ui| {
@@ -133,13 +135,25 @@ pub(in crate::app::inspector) fn show(
             crate::model::transform::display_axes((turns + r.rotation) % 4, r.flip_x, r.flip_y);
         let mut shown = r.transform.displayed(axes);
         let t = &mut shown;
-        setting_slider(ui, ParameterId::TransformVertical, &mut t.vertical, 0.);
-        setting_slider(ui, ParameterId::TransformHorizontal, &mut t.horizontal, 0.);
-        setting_slider(ui, ParameterId::TransformRotate, &mut t.rotate, 0.);
-        setting_slider(ui, ParameterId::TransformAspect, &mut t.aspect, 0.);
-        setting_slider(ui, ParameterId::TransformScale, &mut t.scale, 1.);
-        setting_slider(ui, ParameterId::TransformOffsetX, &mut t.offset_x, 0.);
-        setting_slider(ui, ParameterId::TransformOffsetY, &mut t.offset_y, 0.);
+        setting_slider(
+            ui,
+            step,
+            ParameterId::TransformVertical,
+            &mut t.vertical,
+            0.,
+        );
+        setting_slider(
+            ui,
+            step,
+            ParameterId::TransformHorizontal,
+            &mut t.horizontal,
+            0.,
+        );
+        setting_slider(ui, step, ParameterId::TransformRotate, &mut t.rotate, 0.);
+        setting_slider(ui, step, ParameterId::TransformAspect, &mut t.aspect, 0.);
+        setting_slider(ui, step, ParameterId::TransformScale, &mut t.scale, 1.);
+        setting_slider(ui, step, ParameterId::TransformOffsetX, &mut t.offset_x, 0.);
+        setting_slider(ui, step, ParameterId::TransformOffsetY, &mut t.offset_y, 0.);
         if shown != r.transform.displayed(axes) {
             r.transform = shown.recorded(axes);
         }

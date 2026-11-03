@@ -1003,7 +1003,7 @@ fn an_edit_during_a_turn_is_named_after_the_turn_ends() {
     assert!(e.automation.has_turn());
     let frame = e.begin_edit_frame();
     e.document.edit.recipe_mut().contrast = 0.2;
-    crate::app::widgets::name_frame_step(&ctx, "Contrast".into(), "+20".into());
+    e.step_name.name("Contrast".into(), "+20".into());
     e.finish_edit_frame(frame, &ctx);
     assert!(!e.automation.has_turn());
     let (steps, applied) = e.document.edit.history().steps();
