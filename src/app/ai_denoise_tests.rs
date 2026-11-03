@@ -17,12 +17,21 @@ struct Behaviour {
     hang: bool,
     /// Held before each run.
     gate: Mutex<()>,
+    /// Panic when a loaded model is dropped, outside any job.
+    panic_on_drop: bool,
 }
 
 /// Nearest-neighbour stand-in for the network, at the model's own scale (×10⁶).
 struct Fake {
     provider: Provider,
     behaviour: Arc<Behaviour>,
+}
+impl Drop for Fake {
+    fn drop(&mut self) {
+        if self.behaviour.panic_on_drop && !std::thread::panicking() {
+            panic!("fake model panicked when dropped");
+        }
+    }
 }
 impl TileModel for Fake {
     fn run(&mut self, input: &[f32], cancel: &AtomicBool) -> Result<Vec<f32>, InferenceError> {
@@ -1013,4 +1022,176 @@ fn a_request_joining_another_paths_job_is_refused_when_its_file_changed() {
         std::fs::hard_link(&a, &b).unwrap();
         f.service.cache().purge();
     }
+}
+
+/// Issue 808 (D4): a sink that panics on the final result, after the job's outcome is
+/// published, must not strand the job queued behind it: its export waiter and its
+/// Develop request each get a final outcome, and the service is idle afterwards.
+#[test]
+fn a_sink_panicking_on_the_final_result_strands_no_queued_job() {
+    let f = fixture(Provider::Cpu, Behaviour::default());
+    let plain = f.plain();
+    let gate = f.behaviour.gate.lock().unwrap();
+    let a = f.photo("a.raw");
+    f.service.request(Request {
+        path: a.clone(),
+        file: crate::storage::Identity::read(&a).unwrap(),
+        plain: plain.clone(),
+        region: None,
+        wanted: Arc::new(AtomicBool::new(true)),
+        sink: Arc::new(|u: Update| {
+            if matches!(u.state, State::Ready(_) | State::Failed(_)) {
+                panic!("a sink panicked on the final result");
+            }
+        }),
+    });
+    // A's job is running (held at its first tile); B's is queued behind it.
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while f.service.queue().running.is_none() {
+        assert!(std::time::Instant::now() < deadline, "A's job never ran");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let b = f.photo("b.raw");
+    let (develop, _wanted) = f.request(&b, &plain, None);
+    let (exported, exported_rx) = mpsc::channel();
+    let (service, waiter_plain, waiter_photo) = (f.service.clone(), plain, b);
+    std::thread::spawn(move || {
+        let _ = exported.send(
+            export(
+                &service,
+                &waiter_photo,
+                &waiter_plain,
+                &AtomicBool::new(false),
+            )
+            .is_ok(),
+        );
+    });
+    while f.service.queue().waiting.is_empty() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the export never waited"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    drop(gate);
+    let states = until_final(&develop);
+    assert!(
+        matches!(states.last(), Some(State::Ready(_) | State::Failed(_))),
+        "{states:?}"
+    );
+    exported_rx
+        .recv_timeout(Duration::from_secs(20))
+        .expect("the export waiting for the queued job gets an outcome");
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while f.service.busy() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the service stays busy"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Issue 808 (D4): when the worker thread itself dies, between jobs, the jobs queued
+/// fail rather than wait for it, the service is idle, and the next request starts a
+/// new worker.
+#[test]
+fn queued_jobs_fail_when_the_worker_dies_and_the_next_request_restarts_it() {
+    let f = fixture(
+        Provider::Cpu,
+        Behaviour {
+            panic_on_drop: true,
+            ..Default::default()
+        },
+    );
+    let plain = f.plain();
+    let (first, _a) = f.request(&f.photo("a.raw"), &plain, None);
+    assert!(matches!(until_final(&first).last(), Some(State::Ready(_))));
+    // Queued while the worker is to drop its loaded model, whose drop panics.
+    let b = f.photo("b.raw");
+    let (tx, rx) = mpsc::channel();
+    let tx = Mutex::new(tx);
+    {
+        let mut queue = f.service.queue();
+        let identity = crate::storage::Identity::read(&b).unwrap();
+        queue.pending.push_back(Job {
+            key: key_of(&identity, Provider::Cpu),
+            provider: Provider::Cpu,
+            identity,
+            path: b.clone(),
+            region: None,
+            develop: vec![(
+                plain.clone(),
+                Arc::new(AtomicBool::new(true)),
+                Arc::new(move |u: Update| {
+                    let _ = tx.lock().unwrap().send(u.state);
+                }),
+            )],
+            waiters: 0,
+        });
+        queue.unload = true;
+    }
+    f.service.shared.changed.notify_all();
+    let states = until_final(&rx);
+    assert!(
+        matches!(states.last(), Some(State::Failed(why)) if why.contains("unexpectedly")),
+        "{states:?}"
+    );
+    assert!(!f.service.busy());
+    // A new worker takes the next request.
+    let (again, _b) = f.request(&b, &plain, None);
+    assert!(matches!(until_final(&again).last(), Some(State::Ready(_))));
+}
+
+/// Issue 808 (D4, review): a request made while the dying worker is still telling the
+/// jobs it failed is not left to it: it starts a new worker, which runs it.
+#[test]
+fn a_request_while_the_dying_worker_reports_its_failures_starts_a_new_worker() {
+    let f = fixture(
+        Provider::Cpu,
+        Behaviour {
+            panic_on_drop: true,
+            ..Default::default()
+        },
+    );
+    let plain = f.plain();
+    let (first, _a) = f.request(&f.photo("a.raw"), &plain, None);
+    assert!(matches!(until_final(&first).last(), Some(State::Ready(_))));
+    // B's failure is reported to a sink that holds the dying worker until released.
+    let (told, told_rx) = mpsc::channel();
+    let told = Mutex::new(told);
+    let (release, released) = mpsc::channel::<()>();
+    let released = Mutex::new(released);
+    let b = f.photo("b.raw");
+    {
+        let mut queue = f.service.queue();
+        let identity = crate::storage::Identity::read(&b).unwrap();
+        queue.pending.push_back(Job {
+            key: key_of(&identity, Provider::Cpu),
+            provider: Provider::Cpu,
+            identity,
+            path: b,
+            region: None,
+            develop: vec![(
+                plain.clone(),
+                Arc::new(AtomicBool::new(true)),
+                Arc::new(move |u: Update| {
+                    if matches!(u.state, State::Failed(_)) {
+                        told.lock().unwrap().send(()).unwrap();
+                        let _ = released.lock().unwrap().recv();
+                    }
+                }),
+            )],
+            waiters: 0,
+        });
+        queue.unload = true;
+    }
+    f.service.shared.changed.notify_all();
+    told_rx
+        .recv_timeout(Duration::from_secs(20))
+        .expect("B's failure is told");
+    let (c, _c) = f.request(&f.photo("c.raw"), &plain, None);
+    release.send(()).unwrap();
+    let states = until_final(&c);
+    assert!(matches!(states.last(), Some(State::Ready(_))), "{states:?}");
 }

@@ -115,6 +115,14 @@ fn checked(sink: Sink, path: PathBuf, identity: crate::storage::Identity) -> Sin
     })
 }
 
+/// Why a job ends when its run, or the worker, panicked.
+const STOPPED_UNEXPECTEDLY: &str = "AI Denoise stopped unexpectedly";
+
+/// Hands `update` to `sink`; a sink that panics loses its update, and nothing else.
+fn deliver(sink: &Sink, update: Update) {
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| sink(update)));
+}
+
 /// Why a photo whose file changed since it was decoded gets no result.
 const CHANGED_SINCE_OPENED: &str =
     "The photo's file changed since it was opened; open it again to use AI Denoise.";
@@ -167,6 +175,10 @@ struct Queue {
     gpu_off: bool,
     /// The worker is to drop its loaded models (the model is being removed).
     unload: bool,
+    /// A worker thread serves the queue. Cleared by a worker leaving it, under the
+    /// same lock as it takes the last of the queue, so a job queued after has a new
+    /// worker started for it rather than wait for one that is gone.
+    served: bool,
     stopped: bool,
 }
 
@@ -312,19 +324,34 @@ impl Service {
     /// Starts the worker if it is not running. When the thread cannot be started, every
     /// queued job fails with the reason: nothing would ever run them.
     fn ensure_worker(&self) {
-        let mut thread = self.thread.lock().unwrap_or_else(|e| e.into_inner());
-        if thread.as_ref().is_some_and(|t| !t.is_finished()) {
-            return;
+        {
+            let mut queue = self.queue();
+            if queue.served || queue.stopped {
+                return;
+            }
+            queue.served = true;
         }
+        let mut thread = self.thread.lock().unwrap_or_else(|e| e.into_inner());
         let service = self.clone();
         match std::thread::Builder::new()
             .name("ai-denoise".into())
-            .spawn(move || service.work())
-        {
+            .spawn(move || {
+                let lived = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    service.work();
+                }));
+                if lived.is_err() {
+                    service.worker_lost();
+                } else {
+                    service.queue().served = false;
+                }
+            }) {
+            // A worker that left the queue may still be ending: it is let go, as it
+            // runs nothing more.
             Ok(handle) => *thread = Some(handle),
             Err(e) => {
                 *thread = None;
                 drop(thread);
+                self.queue().served = false;
                 self.fail_pending(&format!("AI Denoise could not start: {e}"));
             }
         }
@@ -345,11 +372,52 @@ impl Service {
         for job in jobs {
             for (plain, wanted, sink) in job.develop {
                 if wanted.load(Ordering::Relaxed) {
-                    sink(Update {
-                        plain: Arc::downgrade(&plain),
-                        state: State::Failed(why.into()),
-                    });
+                    deliver(
+                        &sink,
+                        Update {
+                            plain: Arc::downgrade(&plain),
+                            state: State::Failed(why.into()),
+                        },
+                    );
                 }
+            }
+        }
+    }
+    /// The worker thread died outside a job's own guard: the job it held and every
+    /// queued one fail, so no Develop request or export waits for a worker that is
+    /// gone. The next request starts a new worker.
+    fn worker_lost(&self) {
+        // The queue is left in one step: a request after it starts a new worker.
+        let (joined, jobs) = {
+            let mut queue = self.queue();
+            if let Some((key, _)) = queue.running.take() {
+                queue
+                    .outcomes
+                    .entry(key)
+                    .or_insert_with(|| Outcome::Failed(STOPPED_UNEXPECTEDLY.into()));
+            }
+            let jobs: Vec<Job> = queue.pending.drain(..).collect();
+            for job in &jobs {
+                queue.outcomes.insert(
+                    job.key.clone(),
+                    Outcome::Failed(STOPPED_UNEXPECTEDLY.into()),
+                );
+            }
+            queue.working = false;
+            queue.served = false;
+            (std::mem::take(&mut queue.joined), jobs)
+        };
+        self.shared.changed.notify_all();
+        let develop = jobs.into_iter().flat_map(|job| job.develop);
+        for (plain, wanted, sink) in joined.into_iter().chain(develop) {
+            if wanted.load(Ordering::Relaxed) {
+                deliver(
+                    &sink,
+                    Update {
+                        plain: Arc::downgrade(&plain),
+                        state: State::Failed(STOPPED_UNEXPECTEDLY.into()),
+                    },
+                );
             }
         }
     }
@@ -467,7 +535,7 @@ impl Service {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 self.run(&job, &cancel, &mut models)
             }))
-            .unwrap_or_else(|_| Err(anyhow!("AI Denoise stopped unexpectedly")));
+            .unwrap_or_else(|_| Err(anyhow!(STOPPED_UNEXPECTEDLY)));
             let _working = Working(self);
             self.finish(job, result);
         }
@@ -719,12 +787,19 @@ impl Service {
             .filter(|(_, wanted, _)| wanted.load(Ordering::Relaxed))
             .map(|(plain, _, sink)| (plain.clone(), sink.clone()))
             .collect();
+        // Each listener's result is made and handed over on its own: a panic there
+        // fails that listener alone, never the jobs queued behind this one.
         let tell = |state: &dyn Fn(&Arc<CameraImage>) -> State| {
             for (plain, sink) in &listeners {
-                sink(Update {
-                    plain: Arc::downgrade(plain),
-                    state: state(plain),
-                });
+                let state = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| state(plain)))
+                    .unwrap_or_else(|_| State::Failed(STOPPED_UNEXPECTEDLY.into()));
+                deliver(
+                    sink,
+                    Update {
+                        plain: Arc::downgrade(plain),
+                        state,
+                    },
+                );
             }
         };
         match &outcome {
