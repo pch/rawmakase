@@ -33,6 +33,19 @@ capabilities before falling back to GitHub connectors or browser automation.
 - Handle save failures before navigation or termination becomes irreversible.
   A pending save is not a successful save.
 
+## Comments
+
+- Keep what the code can't say: reasons, contracts, units, colour spaces,
+  `SAFETY` notes and measured Camera Raw facts.
+- Delete comments that only restate a name or a type.
+- Rewrite terse, clause-packed comments as plain, full sentences, but only in
+  files you are already changing for other work; don't open a file just to
+  reword its comments.
+- Prefer intra-doc links (``[`Recipe::validate`]``) to plain backticked names,
+  so a rename shows up as a broken link when the docs are built.
+- There is no target for how many comments a file has, and no blanket removal:
+  judge each comment on what it tells the reader.
+
 ## Tests
 
 - Before running dataset rendering or Camera Raw parity checks, read
