@@ -650,21 +650,23 @@ def train(args):
 
 def rust(g):
     members, hidden, features = len(g['members']), len(g['members'][0]['l1.b']), len(g['mu'])
+    # One row of numbers per line: rustfmt would put each number on a line of its own.
     def arr(name, v, ty):
         v = np.array(v, dtype=np.float32)
         row = lambda r: '[' + ', '.join(f'{x:.7}' for x in r) + ']'
+        item = f'#[rustfmt::skip]\npub(super) static {name}: {ty} = '
         if v.ndim == 1:
-            return f'pub(super) static {name}: {ty} = {row(v)};\n'
+            return f'{item}{row(v)};\n'
         if v.ndim == 2:
-            return f'pub(super) static {name}: {ty} = [\n    ' + ',\n    '.join(row(r) for r in v) + ',\n];\n'
+            return f'{item}[\n    ' + ',\n    '.join(row(r) for r in v) + ',\n];\n'
         mats = ',\n    '.join('[\n        ' + ',\n        '.join(row(r) for r in m) + ',\n    ]' for m in v)
-        return f'pub(super) static {name}: {ty} = [\n    {mats},\n];\n'
+        return f'{item}[\n    {mats},\n];\n'
     head = ('//! The global Shadows/Highlights rule: an ensemble of small networks from histogram and\n'
             '//! per-level texture descriptors of a base level to the log2 gain at Shadows +100 and\n'
             '//! Highlights −100, fitted from different seeds to Camera Raw 18.7 on textured flat-patch\n'
             "//! mosaics and linear-profile training photos, from the engine's own measurement maps\n"
             '//! (scripts/corpus/scene-tone-rule.py). Generated; do not edit.\n'
-            '#![allow(clippy::excessive_precision, clippy::approx_constant, clippy::unreadable_literal)]\n'
+            '#![allow(\n    clippy::excessive_precision,\n    clippy::approx_constant,\n    clippy::unreadable_literal\n)]\n'
             f'/// Networks in the ensemble.\npub(super) const MEMBERS: usize = {members};\n'
             f'/// Units in each hidden layer.\npub(super) const HIDDEN: usize = {hidden};\n'
             f'/// Inputs the networks read.\npub(super) const FEATURES: usize = {features};\n')
