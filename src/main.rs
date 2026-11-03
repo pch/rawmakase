@@ -462,6 +462,8 @@ fn main() -> Result<()> {
                 rawmakase::photo::camera_exif(&input)
                     .unwrap_or_else(|| rawmakase::export::job::stand_in(&input, &im.metadata)),
             );
+            // One AI Denoise service for every job: the model loads once.
+            let ai_denoise = rawmakase::app::AiDenoiseCommandLine::new();
             for job in jobs.iter().filter(|j| !j.output.exists()) {
                 let rendered = (|| -> Result<()> {
                     let preset =
@@ -472,7 +474,7 @@ fn main() -> Result<()> {
                         &profiles,
                         Some(&rawmakase::develop::Measures(&im)),
                     )?;
-                    let ai = rawmakase::app::ai_denoise_source(&input, &file, &im, &edit)?;
+                    let ai = ai_denoise.source(&input, &file, &im, &edit)?;
                     let out = develop::render_with_ai(
                         &im,
                         &edit.checked()?,
@@ -625,7 +627,8 @@ fn main() -> Result<()> {
             }
             let developed = t.elapsed();
             let im = std::sync::Arc::new(im);
-            let ai = rawmakase::app::ai_denoise_source(&input, &file, &im, &edit)?;
+            let ai =
+                rawmakase::app::AiDenoiseCommandLine::new().source(&input, &file, &im, &edit)?;
             let out = develop::render_with_ai(
                 &im,
                 &edit.checked()?,
