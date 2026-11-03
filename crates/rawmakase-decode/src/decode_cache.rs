@@ -198,15 +198,21 @@ impl DecodeCache {
     }
     /// The key of `path` as the current build develops it at full size with `demosaic`.
     pub fn key(path: &Path, demosaic: Demosaic) -> Result<String> {
-        let id = crate::storage::Identity::read(path)?;
-        Ok(format!(
+        Ok(Self::key_of(
+            &crate::storage::Identity::read(path)?,
+            demosaic,
+        ))
+    }
+    /// The key of the file version `id`, as [`key`](Self::key) names it.
+    pub fn key_of(id: &crate::storage::Identity, demosaic: Demosaic) -> String {
+        format!(
             "{}-{}-{}-{:?}-{}",
             id.prefix_hash,
             id.size,
             id.modified_ns,
             demosaic,
             build_identity()
-        ))
+        )
     }
     fn file(&self, key: &str) -> PathBuf {
         file_in(&self.dir(), key)

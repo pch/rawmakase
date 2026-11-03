@@ -944,6 +944,8 @@ fn catalog_header_keeps_the_recipe_resolved_by_the_loader() -> anyhow::Result<()
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(library::Library::load(&path, ctx.clone())?));
     editor.document.catalog_photo = Some(id);
+    let opened = crate::storage::Identity::read(&raw)?;
+    std::fs::write(&raw, b"replaced before the header arrived")?;
     let (generation, _) = editor.load.start();
     let recipe = Recipe {
         exposure: 0.75,
@@ -953,6 +955,7 @@ fn catalog_header_keeps_the_recipe_resolved_by_the_loader() -> anyhow::Result<()
         .tx
         .send(Event::Header(Box::new(LoadedHeader {
             id: generation,
+            file: Some(opened.clone()),
             path: raw,
             metadata: Metadata::default(),
             recipe: recipe.clone(),
@@ -962,6 +965,9 @@ fn catalog_header_keeps_the_recipe_resolved_by_the_loader() -> anyhow::Result<()
         .unwrap();
     editor.events(&ctx);
     assert_eq!(*editor.document.edit.recipe(), recipe);
+    // The file as the loader read it before opening it, which saves are checked
+    // against, not as it is when the header arrives.
+    assert_eq!(editor.document.file, Some(opened));
     Ok(())
 }
 
@@ -984,6 +990,7 @@ fn develop_history_survives_reopening_the_photo() -> anyhow::Result<()> {
             .tx
             .send(Event::Header(Box::new(LoadedHeader {
                 id: generation,
+                file: crate::storage::Identity::read(&raw.clone()).ok(),
                 path: raw.clone(),
                 metadata: Metadata::default(),
                 recipe: Recipe::default(),
@@ -1064,6 +1071,7 @@ fn an_edited_jpeg_whose_file_changed_reopens_from_the_file() -> anyhow::Result<(
                 .tx
                 .send(Event::Header(Box::new(LoadedHeader {
                     id: generation,
+                    file: crate::storage::Identity::read(&file.clone()).ok(),
                     path: file.clone(),
                     metadata: Metadata {
                         source,
@@ -1118,6 +1126,7 @@ fn a_first_save_after_the_file_was_replaced_is_refused() -> anyhow::Result<()> {
             .tx
             .send(Event::Header(Box::new(LoadedHeader {
                 id: generation,
+                file: crate::storage::Identity::read(&raw.clone()).ok(),
                 path: raw.clone(),
                 metadata: Metadata::default(),
                 recipe: Recipe::default(),
@@ -8911,6 +8920,7 @@ fn import_cube_luts_asks_the_space_before_the_files() {
     for event in [
         Event::Header(Box::new(worker::LoadedHeader {
             id: generation,
+            file: None,
             path: "photo.dng".into(),
             metadata: m,
             recipe: Recipe::default(),
@@ -9023,6 +9033,7 @@ fn the_basic_panel_offers_relative_white_balance_for_a_jpeg() {
     for event in [
         Event::Header(Box::new(worker::LoadedHeader {
             id: generation,
+            file: None,
             path: "photo.jpg".into(),
             metadata: m.clone(),
             recipe: Recipe::for_rendered(&m),

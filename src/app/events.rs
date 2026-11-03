@@ -550,13 +550,14 @@ impl Editor {
     fn header_ready(&mut self, header: LoadedHeader) {
         let LoadedHeader {
             path: p,
+            file,
             metadata: m,
             recipe: r,
             export: ex,
             status,
             ..
         } = header;
-        self.document.file = crate::storage::Identity::read(&p).ok();
+        self.document.file = file;
         self.document.metadata = Some(m);
         self.document.edit.replace(r);
         self.document.export = ex;
