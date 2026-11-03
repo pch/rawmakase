@@ -92,8 +92,7 @@ pub fn open(path: &Path) -> Result<Raw> {
             .is_some_and(|p| p.ensure_camera(metadata).is_ok());
         metadata.embedded_profile_status = embedded_profile_status(
             dng.profile.is_some() || dng.profile_unreadable,
-            profile.is_some(),
-            fits,
+            profile.is_some().then_some(fits),
             color_matrix.is_some(),
         );
         metadata.embedded_dcp = dng.profile.filter(|_| fits).map(std::sync::Arc::from);
@@ -141,20 +140,20 @@ pub fn open(path: &Path) -> Result<Raw> {
 
 /// What a DNG's embedded profile tags are to its photo: none, a profile that
 /// parses and fits the camera, one for another camera, colour matrices alone, or
-/// tags that are neither (an error that must not read as no profile).
+/// tags that are neither (an error that must not read as no profile). `parsed`
+/// is whether a profile parsed, and then whether it fits the camera.
 fn embedded_profile_status(
     present: bool,
-    parses: bool,
-    fits: bool,
+    parsed: Option<bool>,
     matrix_only: bool,
 ) -> rawmakase_model::camera_data::EmbeddedProfileStatus {
     use rawmakase_model::camera_data::EmbeddedProfileStatus as S;
-    match (present, parses, fits, matrix_only) {
+    match (present, parsed, matrix_only) {
         (false, ..) => S::None,
-        (true, true, true, _) => S::Usable,
-        (true, true, false, _) => S::OtherCamera,
-        (true, false, _, true) => S::MatrixOnly,
-        (true, false, _, false) => S::Unreadable,
+        (true, Some(true), _) => S::Usable,
+        (true, Some(false), _) => S::OtherCamera,
+        (true, None, true) => S::MatrixOnly,
+        (true, None, false) => S::Unreadable,
     }
 }
 #[cfg(test)]
@@ -210,17 +209,14 @@ mod tests {
         assert_eq!(colourless.embedded_profile_status, S::None);
         // Tags that are there but say nothing usable are not "no profile".
         assert_eq!(
-            super::embedded_profile_status(true, false, false, false),
+            super::embedded_profile_status(true, None, false),
             S::Unreadable
         );
         assert_eq!(
-            super::embedded_profile_status(true, true, false, false),
+            super::embedded_profile_status(true, Some(false), false),
             S::OtherCamera
         );
-        assert_eq!(
-            super::embedded_profile_status(false, false, false, false),
-            S::None
-        );
+        assert_eq!(super::embedded_profile_status(false, None, false), S::None);
     }
     #[test]
     fn matrix_only_dng_keeps_its_profile_calibration_signature() {

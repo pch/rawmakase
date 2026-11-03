@@ -304,7 +304,7 @@ mod tests {
         fs::write(&path, &bytes[..bytes.len() - 1])?;
         assert!(cache.load("k").is_none());
         // A value made infinite on disk.
-        let mut bytes = bytes.clone();
+        let mut bytes = bytes;
         let header = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
         let at = 12 + header + 10;
         bytes[at..at + 2].copy_from_slice(&f16::INFINITY.to_bits().to_le_bytes());

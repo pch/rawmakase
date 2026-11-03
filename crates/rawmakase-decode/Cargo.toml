@@ -61,5 +61,5 @@ windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Im
 rawmakase-raw = { path = "../rawmakase-raw", version = "0.1.0", features = ["test-support"] }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }
 
-# Not on the workspace lints yet: 11 clippy findings (2 in the library, 9 in
-# its tests) to clear first (issue #808, step 0.3).
+[lints]
+workspace = true

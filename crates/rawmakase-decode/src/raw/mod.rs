@@ -1032,8 +1032,8 @@ mod tests {
         dir(
             &mut f,
             &[
-                (0x10f, 2, make.len() as u32, make.clone()),
-                (0x110, 2, model.len() as u32, model.clone()),
+                (0x10f, 2, make.len() as u32, make),
+                (0x110, 2, model.len() as u32, model),
                 (0x14a, 4, 1, long(sub as u32)),
             ],
         );

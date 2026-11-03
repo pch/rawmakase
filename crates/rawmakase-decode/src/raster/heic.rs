@@ -742,7 +742,7 @@ mod tests {
             full(b"meta", &boxes.concat())
         };
         let at = (ftyp.len() + meta(0).len() + 8) as u32;
-        [ftyp.clone(), meta(at), bx(b"mdat", mdat)].concat()
+        [ftyp, meta(at), bx(b"mdat", mdat)].concat()
     }
 
     /// metadata.heic's HEVC configuration and its picture's data.

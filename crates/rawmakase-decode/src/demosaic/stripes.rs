@@ -524,7 +524,7 @@ mod tests {
                 }
             })
             .collect();
-        let mut out = image.clone();
+        let mut out = image;
         suppress(&mut out, w, h);
         let mut error = 0f32;
         for y in 64..128 {
@@ -551,7 +551,7 @@ mod tests {
                 }
             })
             .collect();
-        let mut out = image.clone();
+        let mut out = image;
         suppress(&mut out, w, h);
         let mut error = 0f32;
         for y in [76, 77, 78, 109, 110, 111] {
