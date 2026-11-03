@@ -4772,3 +4772,60 @@ fn a_copy_removed_when_the_catalog_cannot_be_read_again_leaves_the_library() -> 
     assert!(!library.is_selected(copy));
     Ok(())
 }
+
+/// When the catalog can't be read again after a change made through another
+/// connection, the Library shows no photo, folder or root, so none can be changed
+/// under an id that may now name another; collections and overrides stay as
+/// listed, and what background readers read before is dropped.
+#[test]
+fn a_failed_reread_after_a_change_leaves_nothing_to_change() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let photos = dir.path().join("photos");
+    std::fs::create_dir(&photos)?;
+    image::RgbImage::new(8, 8).save(photos.join("a.jpg"))?;
+    image::RgbImage::new(8, 8).save(photos.join("b.jpg"))?;
+    let db = dir.path().join("test.rawmakase");
+    let mut catalog = crate::catalog::Catalog::create(&db)?;
+    catalog.add_folder(&photos)?;
+    let a = catalog.photos()?[0].id;
+    let quick = catalog.quick_collection()?;
+    catalog.change_collection(quick, &[a], &[])?;
+    drop(catalog);
+    let mut library = Library::load(&db, egui::Context::default())?;
+    let folder = library.session.folders[0].id;
+    library.filters.folder_scope = Some(HashSet::from([folder]));
+    library.selected_folders = folder_selection::FolderSelection::one("all");
+    assert_eq!(library.shown().len(), 2);
+    assert!(!library.session.roots.is_empty());
+    let ids = |l: &Library| {
+        l.session
+            .collections
+            .iter()
+            .map(|c| c.id)
+            .collect::<Vec<_>>()
+    };
+    let collections = ids(&library);
+    assert!(!collections.is_empty());
+    let overrides = library.session.overrides.clone();
+    let generation = library.session.generation();
+    library
+        .session
+        .catalog
+        .db_for_tests()
+        .execute_batch("ALTER TABLE collections RENAME TO collections_gone")?;
+
+    assert!(library.reread_after(&[]).is_err());
+    assert!(library.session.photos.is_empty());
+    assert!(library.session.folders.is_empty());
+    assert!(library.session.roots.is_empty());
+    assert!(library.session.collection_photos.is_empty());
+    assert!(library.session.previous_import.is_empty());
+    assert_eq!(ids(&library), collections);
+    assert_eq!(library.session.overrides, overrides);
+    assert_ne!(library.session.generation(), generation);
+    assert!(library.filters.folder_scope.is_none());
+    assert!(library.selected_folders.is_empty());
+    assert!(library.shown().is_empty());
+    assert!(library.photo(a).is_none());
+    Ok(())
+}
