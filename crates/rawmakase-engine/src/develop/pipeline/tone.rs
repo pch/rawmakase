@@ -6,7 +6,7 @@ pub(super) struct CurveSet {
     pub(super) output: PixelOutput,
     pub(super) exposure_gain: f32,
     /// Contrast as a measured Camera Raw curve.
-    pub(super) basic: Option<crate::develop::basic_tone::BasicTone>,
+    pub(super) basic: Option<crate::develop::tone_lut::ToneLut>,
     /// The Shadows/Highlights base level, built per image by `for_image`.
     pub(super) local: Option<crate::develop::local_tone::LocalToneMap>,
     /// The measured color mixer, Saturation and Vibrance.
@@ -25,7 +25,7 @@ pub(super) struct CurveSet {
     /// What Contrast follows of the photo, for the global slider and the masks'.
     pub(super) photo: crate::develop::basic_tone::PhotoTone,
     /// The measured parametric curve, when a region is set.
-    pub(super) parametric: Option<crate::develop::parametric::ParametricCurve>,
+    pub(super) parametric: Option<crate::develop::tone_lut::ToneLut>,
     pub(super) master: CurveLut,
     pub(super) channels: [CurveLut; 3],
     /// What the scene tone stage measured of the photo.
@@ -205,8 +205,8 @@ impl CurveSet {
 fn basic_tone(
     r: &Recipe,
     photo: &crate::develop::basic_tone::PhotoTone,
-) -> Option<crate::develop::basic_tone::BasicTone> {
-    crate::develop::basic_tone::BasicTone::new(r.contrast, photo)
+) -> Option<crate::develop::tone_lut::ToneLut> {
+    crate::develop::basic_tone::contrast_curve(r.contrast, photo)
 }
 /// `photo_measures`, and `photo_haze` when the recipe removes haze
 /// (`scene_tone::needs_haze`), through the stage cache when the source has its
@@ -428,15 +428,15 @@ fn box_reduce(pixels: &[[f32; 3]], width: u32, height: u32, edge: u32) -> Vec<[f
 }
 /// The measured parametric curve: the user's regions, then (layered) a look's own
 /// curve at its Profile Amount, as Camera Raw applies it.
-fn parametric_curve(r: &Recipe) -> Option<crate::develop::parametric::ParametricCurve> {
-    use crate::develop::parametric::ParametricCurve;
-    let user = ParametricCurve::new(r.effects.parametric, r.effects.splits);
+fn parametric_curve(r: &Recipe) -> Option<crate::develop::tone_lut::ToneLut> {
+    use crate::develop::{parametric::curve, tone_lut::ToneLut};
+    let user = curve(r.effects.parametric, r.effects.splits);
     let look = r
         .profile
         .as_ref()
         .and_then(|p| p.enhanced.as_ref())
-        .and_then(|look| ParametricCurve::new(look.settings.parametric, look.settings.splits));
-    ParametricCurve::then(user, look)
+        .and_then(|look| curve(look.settings.parametric, look.settings.splits));
+    ToneLut::then(user, look)
 }
 /// Whether the recipe's Contrast pivots where the photo's own measure puts it.
 pub(crate) fn measures_contrast_pivot(r: &Recipe) -> bool {

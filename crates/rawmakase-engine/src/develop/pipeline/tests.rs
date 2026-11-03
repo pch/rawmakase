@@ -1797,10 +1797,7 @@ fn contrast_and_the_scene_stage_are_measured_on_the_photo_alone() {
     let map_pass = CurveSet::with_photo_measures((&im).into(), &r, camera);
     assert_eq!(map_pass.photo, plain.photo);
     assert_eq!(map_pass.measures, plain.measures);
-    assert_eq!(
-        map_pass.basic.as_ref().map(|b| &b.lut),
-        plain.basic.as_ref().map(|b| &b.lut)
-    );
+    assert_eq!(map_pass.basic.as_ref(), plain.basic.as_ref());
     // The measured Texture, which makes a new image, does not move them.
     let textured = crate::develop::texture::TextureDetail::of(
         &im,
@@ -1848,7 +1845,7 @@ fn a_rendered_photos_contrast_pivots_higher_than_a_raws() {
 /// renders it.
 #[test]
 fn a_looks_parametric_curve_follows_the_users() {
-    use crate::develop::parametric::ParametricCurve;
+    use crate::develop::parametric::curve;
     let mut m = fixture().metadata;
     m.cam_xyz = [
         [1.1434, -0.4948, -0.121],
@@ -1864,8 +1861,8 @@ fn a_looks_parametric_curve_follows_the_users() {
         ..Default::default()
     };
     r.effects.parametric = [0., 0.3, 0., 0.];
-    let user = ParametricCurve::new([0., 0.3, 0., 0.], [0.25, 0.5, 0.75]).unwrap();
-    let own = ParametricCurve::new([0., -0.15, -0.2, -0.33], [0.25, 0.5, 0.75]).unwrap();
+    let user = curve([0., 0.3, 0., 0.], [0.25, 0.5, 0.75]).unwrap();
+    let own = curve([0., -0.15, -0.2, -0.33], [0.25, 0.5, 0.75]).unwrap();
     let layered = r.with_profile_adjustments().into_owned();
     assert_eq!(layered.effects.parametric, [0., 0.3, 0., 0.]);
     let curve = CurveSet::new(&layered).parametric.unwrap();
