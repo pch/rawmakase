@@ -10,11 +10,65 @@
 //! itself, by the image's own matrix and range; the pixels are in the colour
 //! space the header's profile describes. Alpha is dropped. The library is
 //! opened once and kept for the life of the process.
+//!
+//! The process exiting runs libheif's static destructors, which crash its
+//! threads still decoding (a worker's, quitting mid-decode). So, once libheif
+//! is opened, exiting first waits for the decodes running, up to
+//! [`EXIT_WAIT`] (a photo decodes in well under that, and exiting is never
+//! held up for longer), and no decode starts after.
 use super::super::avif;
 use super::{HeicFile, Pixels};
 use anyhow::{Result, anyhow, bail, ensure};
 use std::ffi::{CStr, c_char, c_int, c_void};
-use std::sync::OnceLock;
+use std::sync::{Condvar, Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+/// The longest the process waits, exiting, for decodes running.
+const EXIT_WAIT: Duration = Duration::from_secs(2);
+
+/// How many decodes are running in libheif, whether the process is
+/// exiting, and the decodes' ending.
+static RUNNING: (Mutex<(usize, bool)>, Condvar) = (Mutex::new((0, false)), Condvar::new());
+
+/// A decode running in libheif, from its start to its end.
+struct Running;
+
+impl Running {
+    /// A decode starting; none once the process is exiting.
+    fn start() -> Option<Self> {
+        let mut running = RUNNING.0.lock().unwrap_or_else(|e| e.into_inner());
+        if running.1 {
+            return None;
+        }
+        running.0 += 1;
+        Some(Running)
+    }
+}
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        RUNNING.0.lock().unwrap_or_else(|e| e.into_inner()).0 -= 1;
+        RUNNING.1.notify_all();
+    }
+}
+
+/// Run as the process exits, before libheif's destructors: lets no decode
+/// start, and waits for those running, up to [`EXIT_WAIT`].
+extern "C" fn wait_for_decodes() {
+    let until = Instant::now() + EXIT_WAIT;
+    let mut running = RUNNING.0.lock().unwrap_or_else(|e| e.into_inner());
+    running.1 = true;
+    while running.0 > 0 {
+        let Some(left) = until.checked_duration_since(Instant::now()) else {
+            return;
+        };
+        running = RUNNING
+            .1
+            .wait_timeout(running, left)
+            .unwrap_or_else(|e| e.into_inner())
+            .0;
+    }
+}
 
 /// The library's file names, the versioned one first: the unversioned one is
 /// often only in a `-dev` package.
@@ -132,6 +186,9 @@ fn open() -> Result<Library, &'static str> {
             unsafe { cast(symbol($name).ok_or(INSTALL)?) }
         };
     }
+    // Registered after libheif's own destructors, so run before them.
+    // SAFETY: a function that only waits, a bounded while, on a lock.
+    unsafe { libc::atexit(wait_for_decodes) };
     // libheif 1.13 and later load their decoder plugins here; earlier ones
     // have no such function and need none.
     if let Some(init) = symbol(c"heif_init") {
@@ -198,6 +255,9 @@ fn check(error: HeifError) -> Result<()> {
 
 pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
     let lib = library().map_err(|e| anyhow!(e))?;
+    // Declared first, so it ends after every libheif object below is
+    // released.
+    let _running = Running::start().ok_or_else(|| anyhow!("RAWmakase is quitting"))?;
     // The file the header was read from, whole.
     let bytes = file.bytes()?;
     // Declared after `bytes`, so released before them: libheif reads them
