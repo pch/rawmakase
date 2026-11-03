@@ -902,3 +902,115 @@ fn a_job_handing_over_its_result_keeps_the_librarys_previews_in_the_background()
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+
+/// Issue 808 (D3): Develop's request is keyed by the file's identity captured before
+/// decoding, without reading the file on the calling thread (the UI's): a file on a
+/// stalled drive must not freeze the window. The worker still checks the file.
+#[cfg(unix)]
+#[test]
+fn a_request_does_not_read_the_file_on_the_calling_thread() {
+    let f = fixture(Provider::Cpu, Behaviour::default());
+    let photo = f.photo("a.raw");
+    let file = crate::storage::Identity::read(&photo).unwrap();
+    // Replaced by a pipe nobody writes to: opening it blocks, as a stalled drive does.
+    std::fs::remove_file(&photo).unwrap();
+    let made = std::process::Command::new("mkfifo")
+        .arg(&photo)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let (tx, rx) = mpsc::channel();
+    let tx = Mutex::new(tx);
+    let (returned, returned_rx) = mpsc::channel();
+    let service = f.service.clone();
+    let plain = f.plain();
+    let path = photo.clone();
+    std::thread::spawn(move || {
+        service.request(Request {
+            path,
+            file,
+            plain,
+            region: None,
+            wanted: Arc::new(AtomicBool::new(true)),
+            sink: Arc::new(move |u: Update| {
+                let _ = tx.lock().unwrap().send(u.state);
+            }),
+        });
+        let _ = returned.send(());
+    });
+    returned_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the request read the file on the calling thread");
+    // The drive comes back with something else there: the worker refuses it.
+    drop(
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&photo)
+            .unwrap(),
+    );
+    let states = until_final(&rx);
+    assert!(
+        matches!(states.last(), Some(State::Failed(why)) if why.contains("changed")),
+        "{states:?}"
+    );
+    assert_eq!(f.behaviour.runs.load(Ordering::SeqCst), 0);
+}
+
+/// Issue 808 (D3, review): a request that joins a job for the same file under another
+/// path (a hard link) gets no result once its own file was replaced, though the job's
+/// file is unchanged: the request is checked against its own file, by the worker.
+#[cfg(unix)]
+#[test]
+fn a_request_joining_another_paths_job_is_refused_when_its_file_changed() {
+    let f = fixture(Provider::Cpu, Behaviour::default());
+    let plain = f.plain();
+    let a = f.photo("a.raw");
+    let b = f.dir.path().join("b.raw");
+    std::fs::hard_link(&a, &b).unwrap();
+    let decoded_b = crate::storage::Identity::read(&b).unwrap();
+    for joins in ["running", "pending"] {
+        let gate = f.behaviour.gate.lock().unwrap();
+        // A job ahead holds the worker while the one asked for in Develop is pending.
+        let (ahead, _x) = (joins == "pending")
+            .then(|| f.request(&f.photo("x.raw"), &plain, None))
+            .unzip();
+        let (first, _a) = f.request(&a, &plain, None);
+        std::fs::remove_file(&b).unwrap();
+        std::fs::write(&b, b"another photo under the linked name").unwrap();
+        let (tx, rx) = mpsc::channel();
+        let tx = Mutex::new(tx);
+        f.service.request(Request {
+            path: b.clone(),
+            file: decoded_b.clone(),
+            plain: plain.clone(),
+            region: None,
+            wanted: Arc::new(AtomicBool::new(true)),
+            sink: Arc::new(move |u: Update| {
+                let _ = tx.lock().unwrap().send(u.state);
+            }),
+        });
+        drop(gate);
+        if let Some(ahead) = ahead {
+            until_final(&ahead);
+        }
+        assert!(
+            matches!(until_final(&first).last(), Some(State::Ready(_))),
+            "{joins}"
+        );
+        let states = until_final(&rx);
+        assert!(
+            matches!(states.last(), Some(State::Failed(why)) if why.contains("changed")),
+            "{joins}: {states:?}"
+        );
+        assert!(
+            !states
+                .iter()
+                .any(|s| matches!(s, State::Partial(_) | State::Ready(_))),
+            "{joins}: {states:?}"
+        );
+        // Linked again for the next round.
+        std::fs::remove_file(&b).unwrap();
+        std::fs::hard_link(&a, &b).unwrap();
+        f.service.cache().purge();
+    }
+}

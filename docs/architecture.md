@@ -238,9 +238,12 @@ them, then the final one; each publication is a new `AiSource`, so the retouch
 cache, the pyramid and the GPU upload see a new source. A non-finite tile on the GPU
 discards the attempt, which reruns on the CPU under the CPU's key with every job
 queued behind it, and the GPU is not used again in the session. A request carries the
-file's identity when its plain image was decoded (`AiBase::get` takes it too): a file
-changed since, before or during the job, cached result or not, gets no result, so a
-photo is never denoised from another file. A result is rejected when the model
+file's identity when its plain image was decoded (`AiBase::get` takes it too), and
+Develop's request is keyed by it without reading the file on the UI thread; the
+worker reads the file before and after the job, and a request joined to a job of
+the same file under another path (a hard link) is checked against its own file as
+each result is handed to it: a file changed since, before or during the job, cached
+result or not, gets no result, so a photo is never denoised from another file. A result is rejected when the model
 changed during the job, and an update for a plain image that is no longer the open
 photo's is dropped. The Detail panel's switch and Amount are ordinary edits (one
 History step each); a result arriving is not one. `app::inspector::ai_denoise` draws
