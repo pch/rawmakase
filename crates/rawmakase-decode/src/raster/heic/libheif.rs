@@ -14,7 +14,6 @@ use super::super::avif;
 use super::{HeicFile, Pixels};
 use anyhow::{Result, anyhow, bail, ensure};
 use std::ffi::{CStr, c_char, c_int, c_void};
-use std::io::{Read, Seek, SeekFrom};
 use std::sync::OnceLock;
 
 /// The library's file names, the versioned one first: the unversioned one is
@@ -199,11 +198,8 @@ fn check(error: HeifError) -> Result<()> {
 
 pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
     let lib = library().map_err(|e| anyhow!(e))?;
-    // The file the header was read from, whole: the item limit already held
-    // each picture to 256 MiB, and the header to what it says.
-    let mut bytes = Vec::new();
-    file.file.seek(SeekFrom::Start(0))?;
-    file.file.read_to_end(&mut bytes)?;
+    // The file the header was read from, whole.
+    let bytes = file.bytes()?;
     // Declared after `bytes`, so released before them: libheif reads them
     // without a copy.
     // SAFETY: allocations libheif makes, each released once by `Owned`.

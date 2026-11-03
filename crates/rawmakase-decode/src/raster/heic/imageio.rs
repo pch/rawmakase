@@ -35,8 +35,7 @@ use anyhow::{Result, anyhow, ensure};
 use moxcms::{ColorProfile, DataColorSpace};
 use objc2::rc::autoreleasepool;
 use objc2_core_foundation::{
-    CFBoolean, CFData, CFDictionary, CFRetained, CFString, CFURL, CGPoint, CGRect, CGSize,
-    kCFBooleanTrue,
+    CFBoolean, CFData, CFDictionary, CFRetained, CFString, CGPoint, CGRect, CGSize, kCFBooleanTrue,
 };
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGColorSpace, CGColorSpaceModel, CGContext, CGDataProvider, CGImage,
@@ -45,8 +44,11 @@ use objc2_core_graphics::{
 };
 use objc2_image_io::{CGImageSource, CGImageSourceStatus, kCGImageSourceShouldCacheImmediately};
 
-pub(super) fn pixels(file: HeicFile) -> Result<Pixels> {
-    autoreleasepool(|_| decode(&file))
+pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
+    // Read through the file the header was read from, not opened again by
+    // its path, so ImageIO decodes what the header's checks passed.
+    let bytes = file.bytes()?;
+    autoreleasepool(|_| decode(&file, &bytes))
 }
 
 /// The colour space the header says: CoreGraphics' own for an HDR CICP in
@@ -153,11 +155,11 @@ fn decoded(image: &CGImage) -> bool {
         .is_some_and(|data| size.is_some_and(|size| size > 0 && data.length() as usize >= size))
 }
 
-fn decode(file: &HeicFile) -> Result<Pixels> {
+fn decode(file: &HeicFile, bytes: &[u8]) -> Result<Pixels> {
     let failed = || anyhow!("macOS could not decode the HEIF image");
-    let url = CFURL::from_file_path(&file.path).ok_or_else(failed)?;
     // SAFETY: no options are passed.
-    let source = unsafe { CGImageSource::with_url(&url, None) }.ok_or_else(failed)?;
+    let source =
+        unsafe { CGImageSource::with_data(&CFData::from_bytes(bytes), None) }.ok_or_else(failed)?;
     // SAFETY: the source is a live CGImageSource.
     let index = unsafe { source.primary_image_index() };
     // SAFETY: the index is the source's own.

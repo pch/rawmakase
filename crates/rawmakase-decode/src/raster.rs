@@ -1552,6 +1552,29 @@ mod tests {
         assert!(grey.iter().all(|v| v.abs_diff(128) <= 2), "{grey:?}");
     }
 
+    /// The system decoder decodes the file whose header was checked, not
+    /// whatever is at its path by then: a file replaced in between is not
+    /// decoded with the first one's crop, orientation and colour.
+    #[test]
+    fn a_heic_replaced_after_its_header_was_read_decodes_as_first_read() {
+        if !heic_decodes() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("IMG_0001.HEIC");
+        std::fs::copy(fixture("grid.heic"), &path).unwrap();
+        let super::Prepared { decoder, .. } = super::prepare(&path).unwrap();
+        // Replaced as a sync client does: written aside, then renamed over.
+        let aside = dir.path().join("replacement");
+        std::fs::copy(fixture("metadata.heic"), &aside).unwrap();
+        std::fs::rename(&aside, &path).unwrap();
+        assert_eq!(decoder.dimensions(), (120, 100));
+        let mut rgb = vec![0; decoder.total_bytes() as usize];
+        decoder.read_image_boxed(&mut rgb).unwrap();
+        let image = image::RgbImage::from_raw(120, 100, rgb).unwrap();
+        assert_corners_near(corners(&image), UPRIGHT, 4);
+    }
+
     /// Elsewhere, as on Linux, a HEIC is decoded by the system's libheif,
     /// which a system (CI's Ubuntu runners among them) may lack: it is then
     /// listed with its size and Develop opens it, but decoding says what to

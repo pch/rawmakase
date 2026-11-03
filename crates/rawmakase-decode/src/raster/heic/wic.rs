@@ -12,7 +12,7 @@
 //! header, and crops what WIC did not.
 use super::{HeicFile, Pixels};
 use anyhow::{Result, anyhow, ensure};
-use windows::Win32::Foundation::GENERIC_READ;
+use std::os::windows::io::AsRawHandle;
 use windows::Win32::Graphics::Imaging::{
     CLSID_WICImagingFactory, GUID_WICPixelFormat24bppRGB, GUID_WICPixelFormat48bppRGB,
     IWICImagingFactory, WICConvertBitmapSource, WICDecodeMetadataCacheOnDemand,
@@ -20,7 +20,6 @@ use windows::Win32::Graphics::Imaging::{
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
 };
-use windows::core::HSTRING;
 
 /// COM on this thread for as long as it lives: initialized here unless the
 /// thread already was, in another mode, which serves as well.
@@ -42,7 +41,7 @@ impl Drop for Com {
     }
 }
 
-pub(super) fn pixels(file: HeicFile) -> Result<Pixels> {
+pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
     // Declared first, so dropped after every COM object below.
     let _com = Com::init();
     let missing = |e: windows::core::Error| {
@@ -58,10 +57,19 @@ pub(super) fn pixels(file: HeicFile) -> Result<Pixels> {
     let factory: IWICImagingFactory =
         unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER) }
             .map_err(|e| anyhow!("Windows Imaging Component is unavailable: {}", e.message()))?;
-    let path = HSTRING::from(file.path.as_path());
-    // SAFETY: `path` outlives the call; no vendor is preferred.
+    // The file the header was read from, not opened again by its path, so
+    // WIC decodes what the header's checks passed.
+    std::io::Seek::rewind(&mut file.file)?;
+    let handle = file.file.as_raw_handle() as usize;
+    // SAFETY: the handle is the open file's, which outlives the decoder and
+    // every object made from it (dropped before `file`); no vendor is
+    // preferred.
     let decoder = unsafe {
-        factory.CreateDecoderFromFilename(&path, None, GENERIC_READ, WICDecodeMetadataCacheOnDemand)
+        factory.CreateDecoderFromFileHandle(
+            handle,
+            std::ptr::null(),
+            WICDecodeMetadataCacheOnDemand,
+        )
     }
     .map_err(missing)?;
     // SAFETY: frame 0 is the primary image.
