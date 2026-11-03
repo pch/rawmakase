@@ -1323,7 +1323,7 @@ fn a_file_another_app_saves_anew_keeps_only_its_own_copy_which_put_back_trashes(
     .map_err(|e| anyhow::anyhow!("{e}"))?;
     assert!(matches!(back.result, ItemResult::Unchanged(_)), "{back:?}");
     assert!(partials(&fx).is_empty(), "{:?}", partials(&fx));
-    let mut now = tree_before.clone();
+    let mut now = tree_before;
     now.insert("a.xmp".into(), Some(b"saved anew".to_vec()));
     assert_eq!(tree_of(&fx.root.join("day")), now);
     assert!(

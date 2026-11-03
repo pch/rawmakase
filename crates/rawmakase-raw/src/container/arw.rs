@@ -881,7 +881,7 @@ pub(crate) mod tests {
         let luma: Vec<u16> = vec![1000, 1010, 1020, 1030, 1040, 1050, 1060, 1070];
         let (cb, cr) = (vec![16383 + 10, 16383], vec![16383 - 20, 16383]);
         let (tile, _) = crate::codec::ljpeg::tests::encode_sampled(
-            &[luma.clone(), cb, cr],
+            &[luma, cb, cr],
             &[(2, 2), (1, 1), (1, 1)],
             2,
             1,

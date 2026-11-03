@@ -159,7 +159,7 @@ fn a_root_moves_into_a_folder_of_another_root_and_leaves_the_roots() -> Result<(
         fsops::entry(&fx.root.join("day/b.NEF"))?.id,
     );
     let op = nest(&fx, other, "trips");
-    let plan = fx.plan(op.clone());
+    let plan = fx.plan(op);
     assert_eq!(plan.summary().photos, 3);
     assert_eq!(plan.summary().folder.as_deref(), Some("trip"));
     assert!(plan.summary().across.is_none());

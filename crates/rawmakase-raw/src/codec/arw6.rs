@@ -748,7 +748,7 @@ pub(crate) mod tests {
         for end in (0..strip.len()).step_by(7) {
             let _ = decode(&strip[..end], width, height, &mut out, &cancel);
         }
-        let mut noisy = strip.clone();
+        let mut noisy = strip;
         for (i, b) in noisy.iter_mut().enumerate().skip(16) {
             *b ^= (i * 7919 % 251) as u8;
         }

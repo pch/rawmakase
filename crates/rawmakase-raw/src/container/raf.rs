@@ -764,7 +764,7 @@ mod tests {
             sr.extend(row.iter().flat_map(|v| v.to_le_bytes()));
             sr.extend([0xffu8; 8]);
         }
-        let mut r2 = r.clone();
+        let mut r2 = r;
         r2.push((0x120, pair(0, 2)));
         r2.push((0x121, pair(2, 6)));
         r2.push((0x130, vec![0x80, 0x81, 0x82, 0x83]));

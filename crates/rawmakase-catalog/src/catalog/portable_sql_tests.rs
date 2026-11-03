@@ -149,7 +149,7 @@ fn adopting_legacy_mappings_of_duplicate_folders_keeps_the_last_added() -> Resul
         .location_rows()?
         .remove(&folder.root)
         .unwrap_or_default();
-    assert_eq!(rows, vec![(folder.relative.clone(), newer)]);
+    assert_eq!(rows, vec![(folder.relative, newer)]);
     Ok(())
 }
 

@@ -493,7 +493,7 @@ mod tests {
         );
         // A section said to run past the file's end: its length is the
         // directory entry's second word.
-        let mut short = file.clone();
+        let mut short = file;
         let at = short.len() - 12;
         short[at..at + 4].copy_from_slice(&u32::MAX.to_le_bytes());
         assert_eq!(properties(&mut Cursor::new(&short)), None);
