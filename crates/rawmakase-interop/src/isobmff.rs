@@ -416,6 +416,24 @@ impl Heif {
         Some(data)
     }
 
+    /// Where item `id`'s data is stored: its construction method (0 in the
+    /// file, 1 in the `idat` box) and its extents, each (offset from the
+    /// start of either, length), in the order its data joins them; `None` for
+    /// an item stored otherwise or not at all. Items with the same extents
+    /// have the same data.
+    pub fn extents(&self, id: u32) -> Option<(u8, Vec<(u64, u64)>)> {
+        let l = self
+            .locations
+            .iter()
+            .find(|l| l.id == id && l.method <= 1)?;
+        let extents = l
+            .extents
+            .iter()
+            .map(|(offset, len)| Some((l.base.checked_add(*offset)?, *len)))
+            .collect::<Option<_>>()?;
+        Some((l.method, extents))
+    }
+
     /// Whether item `id`'s data is all there, in the file or the `idat` box,
     /// without reading it: what a decoder that reads the file itself would
     /// otherwise find cut off.

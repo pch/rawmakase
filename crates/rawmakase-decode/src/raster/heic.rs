@@ -258,21 +258,37 @@ impl HeicFile {
             ),
             too_large()
         );
-        // Then each picture's own SPS, its data read once. The pictures'
-        // data lie apart in a file, so together they are no larger than it;
-        // more is extents repeating one stretch of it.
+        // Then each picture's own SPS, read from its data. Pictures stored
+        // apart lie apart in the file, so their data together is no larger
+        // than it; more is extents repeating one stretch of it, refused
+        // before it is read. Pictures with the same stored data, as a grid's
+        // identical tiles may have, read and count it once.
+        let larger = || anyhow!("The HEIF image data is larger than the file");
         let mut budget = self.file.metadata()?.len();
+        let mut read = HashMap::new();
         let mut total = 0;
         for (id, count, config) in placed {
-            let data = self
+            let stored = self
                 .heif
-                .data(&mut self.file, id)
+                .extents(id)
                 .ok_or_else(|| anyhow!("The HEIF image data is missing or cut off"))?;
-            budget = budget
-                .checked_sub(data.len() as u64)
-                .ok_or_else(|| anyhow!("The HEIF image data is larger than the file"))?;
-            let in_data = hevc::largest_coded_in(&data, config.length_size)
-                .ok_or_else(|| anyhow!("The HEVC image data is corrupt"))?;
+            let key = (stored, config.length_size);
+            let in_data = match read.get(&key) {
+                Some(largest) => *largest,
+                None => {
+                    let len = key.0.1.iter().try_fold(0u64, |n, (_, l)| n.checked_add(*l));
+                    budget = len
+                        .and_then(|len| budget.checked_sub(len))
+                        .ok_or_else(larger)?;
+                    let data = self
+                        .heif
+                        .data_up_to(&mut self.file, id, len.unwrap_or(0))
+                        .ok_or_else(|| anyhow!("The HEIF image data is missing or cut off"))?;
+                    let largest = hevc::largest_coded_in(&data, config.length_size)
+                        .ok_or_else(|| anyhow!("The HEVC image data is corrupt"))?;
+                    *read.entry(key).or_insert(largest)
+                }
+            };
             total += count * in_data.max(configured(config).unwrap_or(0));
             ensure!(coded_fits(std::iter::once(total)), too_large());
         }
@@ -815,6 +831,43 @@ mod tests {
         let mut heic = HeicFile::open(&path).unwrap();
         let error = heic.stored().unwrap_err().to_string();
         assert!(error.contains("missing or cut off"), "{error}");
+    }
+
+    /// Pictures may share their stored data, as a grid's identical tiles may:
+    /// it is read, and counted against the file's size, once.
+    #[test]
+    fn pictures_sharing_their_data_are_read_once() {
+        let (hvcc, mut data) = coded();
+        // A filler NAL unit (type 38) makes the data most of the file.
+        data.extend(4002u32.to_be_bytes());
+        data.extend([38 << 1, 1]);
+        data.extend([0xff; 4000]);
+        let extents = vec![(0, data.len() as u32)];
+        let file = heic(
+            &[
+                Picture {
+                    id: 1,
+                    size: (64, 64),
+                    auxiliary: None,
+                    extents: extents.clone(),
+                },
+                Picture {
+                    id: 2,
+                    size: (64, 64),
+                    auxiliary: Some(ALPHA),
+                    extents,
+                },
+            ],
+            &hvcc,
+            &data,
+        );
+        assert!(2 * data.len() > file.len());
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shared.heic");
+        std::fs::write(&path, file).unwrap();
+        let mut heic = HeicFile::open(&path).unwrap();
+        heic.stored().unwrap();
+        heic.coded_within().unwrap();
     }
 
     /// Extents that repeat one stretch of the file make an item larger than
