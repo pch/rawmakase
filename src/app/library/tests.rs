@@ -4744,3 +4744,31 @@ fn a_page_is_the_rows_wholly_in_view() -> Result<()> {
     assert_eq!(library.selected(), Some(ids[0]));
     Ok(())
 }
+
+/// Issue 808 (M3): a virtual copy removed while the catalog cannot be read again
+/// leaves what the Library shows and selects, as its id may be given to the next
+/// new photo.
+#[test]
+fn a_copy_removed_when_the_catalog_cannot_be_read_again_leaves_the_library() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let photos = dir.path().join("photos");
+    std::fs::create_dir(&photos)?;
+    image::RgbImage::new(8, 8).save(photos.join("a.jpg"))?;
+    let db = dir.path().join("test.rawmakase");
+    crate::catalog::Catalog::create(&db)?.add_folder(&photos)?;
+    let mut library = Library::load(&db, egui::Context::default())?;
+    let a = library.session.photos[0].id;
+    let copy = library.create_virtual_copy(a)?.value;
+    assert!(library.is_selected(copy) && library.shown().contains(&copy));
+    library
+        .session
+        .catalog
+        .db_for_tests()
+        .execute_batch("ALTER TABLE collections RENAME TO collections_gone")?;
+    let removed = library.remove_virtual_copy(copy)?;
+    assert!(removed.listed.is_err());
+    assert!(library.photo(copy).is_none());
+    assert!(!library.shown().contains(&copy));
+    assert!(!library.is_selected(copy));
+    Ok(())
+}

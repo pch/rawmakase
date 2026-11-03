@@ -123,8 +123,10 @@ impl CatalogSession {
         })
     }
     /// Makes copy `id` its photo's master and reads the lists again. An error
-    /// means nothing changed.
+    /// means nothing changed. Reading capture times and photo info stops, as what
+    /// they read was of the masters before; start it again after.
     pub(crate) fn set_copy_as_master(&mut self, id: PhotoId) -> Result<Committed<()>> {
+        self.stop_backfill();
         self.catalog.set_copy_as_master(id)?;
         Ok(Committed {
             value: (),
@@ -139,20 +141,38 @@ impl CatalogSession {
         root: crate::catalog::RootId,
     ) -> Result<Committed<bool>> {
         let removed = self.catalog.remove_empty_root(root)?;
+        let listed = self.reload();
+        if removed && listed.is_err() {
+            self.roots.retain(|(id, ..)| *id != root);
+        }
         Ok(Committed {
             value: removed,
-            listed: self.reload(),
+            listed,
         })
     }
     /// Removes virtual copy `id` and reads the lists again. An error means the
     /// copy is still there; once this returns, it is gone and its id may be
-    /// given to a new photo, even when reading the lists failed.
+    /// given to a new photo, even when reading the lists failed. Reading capture
+    /// times and photo info stops, as it may hold the id; start it again after.
     pub(crate) fn remove_virtual_copy(&mut self, id: PhotoId) -> Result<Committed<()>> {
+        self.stop_backfill();
         self.catalog.remove_virtual_copy(id)?;
-        Ok(Committed {
-            value: (),
-            listed: self.reload(),
-        })
+        let listed = self.reload();
+        if listed.is_err() {
+            // The lists as they were, less the copy: its id may be given to a new
+            // photo.
+            if let Some(i) = self.photos.iter().position(|p| p.id == id) {
+                let copy = self.photos.remove(i);
+                if let Some(folder) = self.folders.iter_mut().find(|f| f.id == copy.folder) {
+                    folder.count = folder.count.saturating_sub(1);
+                }
+            }
+            for members in self.collection_photos.values_mut() {
+                members.remove(&id);
+            }
+            self.previous_import.remove(&id);
+        }
+        Ok(Committed { value: (), listed })
     }
     /// Removes `folders` and their photos from the catalog, leaving the files,
     /// and reads the lists again; returns the photos removed. An error means

@@ -1093,7 +1093,16 @@ impl Library {
         Ok(made)
     }
     pub(super) fn set_copy_as_master(&mut self, id: PhotoId) -> Result<Committed<()>> {
-        let made = self.session.set_copy_as_master(id)?;
+        // What the background reads read of the masters before is dropped; read
+        // again after.
+        self.stop_background_reads();
+        let made = match self.session.set_copy_as_master(id) {
+            Ok(made) => made,
+            Err(e) => {
+                self.start_background_reads();
+                return Err(e);
+            }
+        };
         if self.listed_after(&made.listed, "Master changed") {
             self.show(id);
             if let Some(p) = self.photo(id) {
@@ -1101,6 +1110,7 @@ impl Library {
                     .done(format!("This copy is now the master of {}", p.filename));
             }
         }
+        self.start_background_reads();
         Ok(made)
     }
     /// Brings what is shown in step after a change to the catalog, and says
@@ -1236,7 +1246,17 @@ impl Library {
         // previews must go even if reading the catalog again fails.
         self.cache.forget(id);
         self.screen.forget(id);
-        let removed = self.session.remove_virtual_copy(id)?;
+        // What the background reads read before may hold the id: dropped, and read
+        // again after.
+        self.stop_background_reads();
+        let removed = match self.session.remove_virtual_copy(id) {
+            Ok(removed) => removed,
+            Err(e) => {
+                self.start_background_reads();
+                return Err(e);
+            }
+        };
+        self.selection.forget_photo(id);
         let master = photo.as_ref().and_then(|p| p.master);
         if self.listed_after(&removed.listed, "Copy removed") {
             if let Some(master) = master {
@@ -1246,7 +1266,12 @@ impl Library {
                 self.messages
                     .done(format!("Removed {} of {}", p.copy_name, p.filename));
             }
+        } else {
+            // The session dropped the copy from its lists anyway; what is shown
+            // follows them before anything reads those lists.
+            self.reloaded();
         }
+        self.start_background_reads();
         Ok(Committed {
             value: master,
             listed: removed.listed,
