@@ -1253,37 +1253,75 @@ impl super::Editor {
     }
 }
 
-/// AI Denoise for a command-line render of `path` (its full-size plain `image`, decoded
-/// from the file as `file` identifies it, read before decoding): the
-/// source when `recipe` renders AI Denoise, from the installed model, waiting for it.
-/// Never the plain image in its place: without one, the error says why.
-pub fn command_line_source(
-    path: &Path,
-    file: &crate::storage::Identity,
-    image: &Arc<CameraImage>,
-    recipe: &crate::model::recipe::Recipe,
-) -> Result<Option<AiSource>> {
-    if !recipe.as_rendered().ai_denoise.renders() {
-        return Ok(None);
-    }
-    anyhow::ensure!(
-        !image.fast,
-        "AI Denoise needs the full-size image; render without --fast"
-    );
-    let pack = super::subject_mask::Pack::Denoise;
-    anyhow::ensure!(
-        pack.is_installed(),
-        "AI Denoise is on but its model is not installed"
-    );
+/// The user's AI Denoise cache as the app keeps it: in the folder `session`'s
+/// Preferences chose for decoded images, or the default one.
+fn user_cache(session: &super::session::Session) -> AiCache {
     let cache = AiCache::default();
-    let service = Service::new(cache);
-    service.set_model(Some(pack.installed_dir()));
-    let cancel = AtomicBool::new(false);
-    let result = service
-        .get(path, file, image, &cancel)
-        .and_then(|ai| AiSource::recover(Arc::unwrap_or_clone(ai), &cancel));
-    super::task::wait_for(vec![service.stop()], Duration::from_secs(3));
-    result.map(Some).map_err(|e| anyhow!("AI Denoise: {e:#}"))
+    cache.set_folder(session.decoded_cache_folder.as_deref());
+    cache
+}
+
+/// AI Denoise for command-line renders (`render`, `render-batch`): one service for the
+/// whole command, so the model loads once, with the user's cache where the app keeps
+/// it. Its worker is stopped when this is dropped, waiting at most three seconds.
+pub struct CommandLine {
+    service: Service,
+}
+impl CommandLine {
+    pub fn new() -> Self {
+        Self::with(Service::new(user_cache(&super::session::load_session())))
+    }
+    fn with(service: Service) -> Self {
+        Self { service }
+    }
+    /// The AI Denoise source for a render of `path` (its full-size plain `image`,
+    /// decoded from the file as `file` identifies it, read before decoding) when
+    /// `recipe` renders AI Denoise, from the installed model, waiting for it. Never the
+    /// plain image in its place: without one, the error says why.
+    pub fn source(
+        &self,
+        path: &Path,
+        file: &crate::storage::Identity,
+        image: &Arc<CameraImage>,
+        recipe: &crate::model::recipe::Recipe,
+    ) -> Result<Option<AiSource>> {
+        if !recipe.as_rendered().ai_denoise.renders() {
+            return Ok(None);
+        }
+        anyhow::ensure!(
+            !image.fast,
+            "AI Denoise needs the full-size image; render without --fast"
+        );
+        let pack = super::subject_mask::Pack::Denoise;
+        anyhow::ensure!(
+            pack.is_installed(),
+            "AI Denoise is on but its model is not installed"
+        );
+        self.service.set_model(Some(pack.installed_dir()));
+        self.denoise(path, file, image).map(Some)
+    }
+    fn denoise(
+        &self,
+        path: &Path,
+        file: &crate::storage::Identity,
+        image: &Arc<CameraImage>,
+    ) -> Result<AiSource> {
+        let cancel = AtomicBool::new(false);
+        self.service
+            .get(path, file, image, &cancel)
+            .and_then(|ai| AiSource::recover(Arc::unwrap_or_clone(ai), &cancel))
+            .map_err(|e| anyhow!("AI Denoise: {e:#}"))
+    }
+}
+impl Default for CommandLine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl Drop for CommandLine {
+    fn drop(&mut self) {
+        super::task::wait_for(vec![self.service.stop()], Duration::from_secs(3));
+    }
 }
 
 /// Options of `rawmakase denoise`, the development command.
@@ -1388,7 +1426,7 @@ pub fn command(c: Command) -> Result<()> {
     let job_peak = Peak::start();
     let scratch = tempfile::tempdir()?;
     let cache = if c.cache {
-        AiCache::default()
+        user_cache(&super::session::load_session())
     } else {
         AiCache::new(scratch.path().to_path_buf(), 1 << 40)
     };

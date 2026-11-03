@@ -1195,3 +1195,34 @@ fn a_request_while_the_dying_worker_reports_its_failures_starts_a_new_worker() {
     let states = until_final(&c);
     assert!(matches!(states.last(), Some(State::Ready(_))), "{states:?}");
 }
+
+/// Issue 808 (D5): command-line renders keep AI Denoise results where the app keeps
+/// them, in the folder Preferences chose for decoded images.
+#[test]
+fn command_line_renders_use_the_cache_folder_preferences_chose() {
+    let chosen = tempfile::tempdir().unwrap();
+    let session = super::super::session::Session {
+        decoded_cache_folder: Some(chosen.path().to_path_buf()),
+        ..Default::default()
+    };
+    assert!(user_cache(&session).dir().starts_with(chosen.path()));
+    let default = super::super::session::Session::default();
+    assert_eq!(user_cache(&default).dir(), AiCache::default().dir());
+}
+
+/// Issue 808 (D5): the renders of one `render-batch` share one service, so the model
+/// loads once rather than for each job.
+#[test]
+fn command_line_renders_share_one_service() {
+    let f = fixture(Provider::Cpu, Behaviour::default());
+    let plain = f.plain();
+    let cli = CommandLine::with(f.service.clone());
+    for name in ["a.raw", "b.raw"] {
+        let photo = f.photo(name);
+        let file = crate::storage::Identity::read(&photo).unwrap();
+        cli.denoise(&photo, &file, &plain).unwrap();
+    }
+    assert_eq!(*f.behaviour.loads.lock().unwrap(), vec![Provider::Cpu]);
+    drop(cli);
+    assert!(!f.service.busy());
+}

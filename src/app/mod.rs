@@ -908,7 +908,7 @@ fn survive_surface_errors(device: &wgpu::Device) {
 
 pub(crate) mod ai_denoise;
 pub use ai_denoise::{
-    Command as DenoiseCommand, command as denoise_command, command_line_source as ai_denoise_source,
+    Command as DenoiseCommand, CommandLine as AiDenoiseCommandLine, command as denoise_command,
 };
 mod auto;
 mod automation;

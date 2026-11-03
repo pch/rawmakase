@@ -229,7 +229,9 @@ full-quality CPU stages check cancellation within pixel, row and column work.
 ### AI Denoise
 
 AI Denoise ([rendering quality](rendering-quality.md#ai-denoise)) has one service, `app::ai_denoise::Service`: one
-queue and one worker thread for Develop, export and the CLI. A job's
+queue and one worker thread for Develop, export and the CLI (one service per
+command, so `render-batch` loads the model once, with the user's cache in the folder
+Preferences chose, as the app keeps it). A job's
 inputs are captured once as its key (the file's identity, the model's SHA-256, the
 adapter version, the provider and the build), which also names its cache entry; a
 request for a key already queued or running waits for that job. Develop's requests
