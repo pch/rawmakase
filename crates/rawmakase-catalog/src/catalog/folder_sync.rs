@@ -3,7 +3,7 @@
 //! photos keep their rows, and with them their ratings, edits and copies.
 //!
 //! [`Catalog::sync_inputs`] reads what a scan needs, each family's digest
-//! included, in one snapshot; [`scan`] lists the folders on disk and matches
+//! included, in one snapshot; [`scan`](fn@scan) lists the folders on disk and matches
 //! unknown files with the checksums on record, touching no catalog; and
 //! [`Catalog::apply_folder_sync`] applies what the user accepted, checking
 //! each action again first. Nothing on disk is ever changed.

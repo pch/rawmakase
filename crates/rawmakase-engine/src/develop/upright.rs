@@ -493,7 +493,8 @@ pub fn straighten_angle(im: &CameraImage, r: &Recipe) -> Option<f32> {
     (angle.abs() <= 45.).then_some(angle)
 }
 
-/// Lightroom's rotations for each Upright mode, indexed by [`super::UprightMode::code`]:
+/// Lightroom's rotations for each Upright mode, indexed by
+/// [`UprightMode::code`](crate::model::transform::UprightMode::code):
 /// Level rolls, Vertical also tilts, Full also pans, Auto corrects part of the tilt and
 /// only a slight pan.
 pub fn rotations(v: &Vanishing) -> [Mat; 5] {
@@ -630,7 +631,8 @@ fn framing(g: Mat, width: f32, height: f32, level: bool) -> Mat {
 }
 
 /// Lightroom's Upright corrections for every mode, indexed by
-/// [`super::UprightMode::code`], as [`super::Upright::corrections`] stores them: forward
+/// [`UprightMode::code`](crate::model::transform::UprightMode::code), as
+/// [`Upright::corrections`](crate::model::transform::Upright::corrections) stores them: forward
 /// homographies in 0–1 coordinates of the photo as recorded. Guided needs guides drawn
 /// on the photo, so there is none for it.
 pub fn analyse(im: &CameraImage, r: &Recipe) -> Vec<[f32; 9]> {

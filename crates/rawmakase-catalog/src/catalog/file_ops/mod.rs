@@ -1,9 +1,9 @@
 //! File operations (#370, planned in #556): the one owner of changing where
 //! a photo is, on disk and in the catalog. A request is planned against a
-//! snapshot ([`plan`]), confirmed by the user ([`Plan::confirm`]), executed
+//! snapshot ([`plan`](fn@plan)), confirmed by the user ([`Plan::confirm`]), executed
 //! item by item under the catalog's operation lock with every disk step
-//! journalled first ([`execute`]), and anything a crash cut short is
-//! decided from the journal and the disk ([`recover`]).
+//! journalled first ([`execute`](fn@execute)), and anything a crash cut short is
+//! decided from the journal and the disk ([`recover`](fn@recover)).
 //!
 //! What it guarantees:
 //! - No byte of an original is lost or overwritten. A file leaves its path
@@ -547,7 +547,7 @@ fn size(bytes: u64) -> String {
     format!("{value:.1} {}", UNITS[unit])
 }
 
-/// Plans `op` in `catalog` on this computer, as [`plan`] does, with the
+/// Plans `op` in `catalog` on this computer, as [`plan`](fn@plan) does, with the
 /// `trash` it would run with: the only way to plan [`FileOp::TrashFolder`],
 /// which refuses a drive `trash` says has none.
 pub fn plan_with_trash(
@@ -579,11 +579,11 @@ pub enum ItemResult {
     Created { folder: FolderId },
     /// Nothing changed, for this reason when there is one.
     Unchanged(Option<String>),
-    /// It is unfinished and waits for the user (see [`recover`]).
+    /// It is unfinished and waits for the user (see [`recover`](fn@recover)).
     NeedsRecovery(String),
     /// The user left it unfinished.
     Kept,
-    /// Its thread stopped before it finished; [`recover`] decides it.
+    /// Its thread stopped before it finished; [`recover`](fn@recover) decides it.
     Interrupted,
 }
 
@@ -618,7 +618,7 @@ pub struct KeptOriginal {
 pub struct Outcome {
     pub items: Vec<ItemOutcome>,
     /// Why the run stopped early, when the catalog couldn't be written: the
-    /// items after it are untouched. Only [`execute`] knows it.
+    /// items after it are untouched. Only [`execute`](fn@execute) knows it.
     pub stopped: Option<String>,
 }
 

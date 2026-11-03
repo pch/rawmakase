@@ -162,7 +162,7 @@ impl Listing {
     }
 
     /// The names there that would read the file named `companion` as
-    /// theirs ([`readers`]), but for those `left_out` says are not there.
+    /// theirs (the test helper `readers`), but for those `left_out` says are not there.
     fn readers(&self, companion: &OsStr, left_out: &dyn Fn(usize) -> bool) -> Vec<&OsString> {
         if companion.to_str().is_none() {
             return Vec::new();
@@ -182,7 +182,7 @@ impl Listing {
         found
     }
 
-    /// The companions of the file named `photo` there ([`of`]).
+    /// The companions of the file named `photo` there (the test helper `of`).
     pub fn companions(
         &self,
         photo: &OsStr,
@@ -225,7 +225,8 @@ impl Listing {
 
     /// Why the file named `photo` and its `carried` companions can't arrive
     /// in a folder whose names, once everything arriving there is in, are
-    /// these but for those `left_out` says are gone ([`arrival_conflict`]).
+    /// these but for those `left_out` says are gone (the test helper
+    /// `arrival_conflict`).
     pub fn arrival_conflict(
         &self,
         photo: &OsStr,

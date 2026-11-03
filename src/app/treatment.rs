@@ -105,7 +105,7 @@ impl Editor {
     }
 
     /// Keeps the Treatment with a newly chosen profile (see
-    /// [`Recipe::follow_profile_treatment`]). Called during the edit frame that
+    /// [`TreatmentChoice::follow_profile_treatment`]). Called during the edit frame that
     /// changed the profile, so it is part of that step.
     pub(super) fn follow_profile_treatment(
         &mut self,

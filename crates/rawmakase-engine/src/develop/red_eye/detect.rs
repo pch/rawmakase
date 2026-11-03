@@ -29,7 +29,7 @@ impl std::fmt::Display for DetectError {
     }
 }
 
-/// A pupil's ellipse in image space (see [`super::RedEyeOp`]).
+/// A pupil's ellipse in image space (see [`RedEyeOp`](crate::model::red_eye::RedEyeOp)).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Pupil {
     pub center: [f32; 2],

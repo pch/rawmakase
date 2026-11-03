@@ -40,7 +40,7 @@ pub enum DefaultChoice {
     CameraSettings,
     /// A Develop preset applied over Adobe Default.
     Preset {
-        /// `Preset::id`: "builtin:<UUID>" or the installed file's path.
+        /// `Preset::id`: `"builtin:<UUID>"` or the installed file's path.
         id: String,
         /// Shown while the preset cannot be found.
         name: String,

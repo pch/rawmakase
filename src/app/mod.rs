@@ -810,7 +810,7 @@ impl winit::application::ApplicationHandler<eframe::UserEvent> for SurfaceGate<'
 /// The UI's wgpu device also renders previews (see `develop::gpu`): prefer the
 /// discrete GPU (egui's default, unless `WGPU_POWER_PREF` says otherwise) and ask
 /// for the storage limits full-resolution regions need. On Linux the window's GPU
-/// is the one the system lists first; see [`display_adapter`].
+/// is the one the system lists first; see `display_adapter`.
 fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
     let mut options = eframe::egui_wgpu::WgpuConfiguration::default();
     if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_setup {

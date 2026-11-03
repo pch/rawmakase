@@ -6,7 +6,7 @@
 //! Zoom/Minimize have one explicit owner across the whole accepted header;
 //! there is no native-strip split or change to NSWindow's movable state.
 //!
-//! [`configure`] registers the viewport's native window. One application-lifetime
+//! `configure` registers the viewport's native window. One application-lifetime
 //! AppKit event monitor keeps the latest left mouse-down of each registered window,
 //! pruning closed ones. An accepted egui press on the header consumes that event
 //! once, across repeated passes; other windows, controls and modal input cannot

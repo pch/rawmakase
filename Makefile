@@ -42,6 +42,7 @@ check: check-python check-tools check-msrv
 	cargo test --locked -p rawmakase-model --all-features
 	cargo test --locked -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
 	cargo test --locked -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-inference
+	RUSTDOCFLAGS="-D warnings -A rustdoc::private_intra_doc_links" cargo doc --workspace --all-features --no-deps --locked --document-private-items
 
 check-msrv:
 	@test -n "$(MSRV)" || { echo "Cargo.toml declares no rust-version"; exit 1; }

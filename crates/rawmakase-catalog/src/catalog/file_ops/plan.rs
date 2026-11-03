@@ -480,7 +480,7 @@ impl Folders {
     /// Runs `checks`, all in one transaction, with each catalog folder's
     /// photos read once for [`shared`] and [`occupied`] (#692), not for
     /// each photo checked. The only photo rows `checks` may change are
-    /// those [`moved`] changes, which [`Self::refresh`] reads again.
+    /// those `execute::moved` changes, which [`Self::refresh`] reads again.
     pub fn caching<R>(&self, checks: impl FnOnce() -> R) -> R {
         struct Stop<'a>(&'a Folders);
         impl Drop for Stop<'_> {
@@ -567,7 +567,7 @@ impl Folders {
     }
 
     /// Reads master `master`'s family again into what [`Self::caching`]
-    /// keeps, once [`moved`] gave it another folder or name in the
+    /// keeps, once `execute::moved` gave it another folder or name in the
     /// transaction.
     pub fn refresh(&self, db: &impl Reads, master: PhotoId) -> anyhow::Result<()> {
         if self.photos.borrow().is_none() {

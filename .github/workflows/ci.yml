@@ -242,6 +242,34 @@ jobs:
             python -c "import ctypes; ctypes.CDLL('/usr/lib/rawmakase/libonnxruntime.so')"
           fi
 
+  docs:
+    name: Documentation
+    # rustdoc warnings fail this job, among them a link in any item's docs,
+    # private ones included, that no longer resolves. Private items are
+    # documented, so a public item's link to a private one resolves and is
+    # allowed. Linux with every feature: items only built for Windows or macOS
+    # are not documented here (`make check` documents the macOS ones).
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libvulkan1 libxkbcommon-dev libwayland-dev
+      - name: Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
+      - run: cargo doc --workspace --all-features --no-deps --locked --document-private-items
+        env:
+          RUSTDOCFLAGS: -D warnings -A rustdoc::private_intra_doc_links
+
   dependencies:
     name: Module dependencies
     # scripts/deps-allowed.txt lists the dependencies between top-level modules;

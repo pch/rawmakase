@@ -5,7 +5,7 @@
 //! [`Service::request`] and receives its progress, a partial result after the tiles
 //! covering the 100% view, and the final result as [`Update`]s.
 //!
-//! A job's inputs are captured once, as its [`key`]: the file's identity, the model's
+//! A job's inputs are captured once, as its [`key_of`]: the file's identity, the model's
 //! digest, the adapter version, the provider and the build, which name its cache entry
 //! too. A request for a key already queued or running waits for that job. Shutdown
 //! follows docs/shutdown.md: [`Service::stop`] raises the stop flag and the running

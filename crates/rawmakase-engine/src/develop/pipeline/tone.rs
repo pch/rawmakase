@@ -119,8 +119,9 @@ impl CurveSet {
     pub(super) fn with_photo_measures(im: Source, r: &Recipe, camera: Camera) -> Self {
         Self::measured(im, r, camera).0
     }
-    /// As [`Self::with_photo_measures`], with the stage cache's entry for the measures
-    /// when there is one.
+    /// Curves with the scene tone stage for this image's measures, and Contrast at
+    /// its pivot when the recipe measures it, with the stage cache's entry for the
+    /// measures when there is one.
     fn measured(
         im: Source,
         r: &Recipe,

@@ -77,7 +77,7 @@ enum Evidence {
 /// of its folder in the same directory. Refuses, with why, a file that
 /// isn't that photo by the checksum on record, an unverified file for a
 /// photo whose old location is only offline, and a directory that can't
-/// go in the catalog. `online`, `cancel` and `progress` are as [`super::scan`]'s.
+/// go in the catalog. `online`, `cancel` and `progress` are as [`super::scan`](fn@super::scan)'s.
 pub fn find_on_disk(
     inputs: &FindInputs,
     online: &dyn Fn(&Path) -> bool,
