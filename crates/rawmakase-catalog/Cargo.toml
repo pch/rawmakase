@@ -3,7 +3,7 @@ name = "rawmakase-catalog"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "RAWmakase's catalog: photos, folders, collections and edits in SQLite, Lightroom import, and which edit a photo develops with, without the RAW decoders, the renderer or the GUI"
+description = "RAWmakase's catalog: photos, folders, collections and edits in SQLite, and Lightroom import, without the RAW decoders, the renderer or the GUI"
 license.workspace = true
 publish = false
 

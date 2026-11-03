@@ -4,6 +4,7 @@ pub mod edit;
 pub mod effects;
 pub mod image_frame;
 pub mod masks;
+pub mod measures;
 pub mod operators;
 pub mod panels;
 pub mod params;

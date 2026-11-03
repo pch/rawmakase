@@ -22,12 +22,16 @@ rawmakase-model never rawmakase-raw rawmakase-interop rawmakase-catalog rawmakas
 rawmakase-interop never rawmakase-raw rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
 # The catalog stores edits; it renders and decodes nothing.
 rawmakase-catalog never rawmakase-raw rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
-# The renderer takes decoded pixels and an edit; it reads no files and no catalog.
-rawmakase-engine never rawmakase-raw rawmakase-catalog rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
+# The renderer takes decoded pixels and an edit; it reads no files, file formats or
+# catalog. Applying settings that ask for Auto reaches it through the model's
+# `PhotoMeasures`.
+rawmakase-engine never rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
 # Decoding feeds rendering and export, never the other way, and keeps out of the catalog.
 rawmakase-decode never rawmakase-catalog rawmakase-export rawmakase-inference rawmakase-remote
-# Saved masks render without any inference installed.
-rawmakase-export never rawmakase-inference rawmakase-remote
+# Export takes each photo's stored edit from its caller and resolves it with
+# `interop::edits`; it opens no catalog. Saved masks render without any inference
+# installed.
+rawmakase-export never rawmakase-catalog rawmakase-inference rawmakase-remote
 # Inference takes pixels and returns coverage; the remote worker sits on it alone.
 rawmakase-inference never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-remote
 rawmakase-remote never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol

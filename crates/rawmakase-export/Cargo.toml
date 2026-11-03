@@ -9,10 +9,9 @@ publish = false
 
 [features]
 # Helpers the app's own tests build on.
-test-support = ["rawmakase-model/test-support", "rawmakase-interop/test-support", "rawmakase-catalog/test-support", "rawmakase-engine/test-support", "rawmakase-decode/test-support"]
+test-support = ["rawmakase-model/test-support", "rawmakase-interop/test-support", "rawmakase-engine/test-support", "rawmakase-decode/test-support"]
 
 [dependencies]
-rawmakase-catalog = { path = "../rawmakase-catalog", version = "0.1.0" }
 rawmakase-engine = { path = "../rawmakase-engine", version = "0.1.0" }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0" }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }

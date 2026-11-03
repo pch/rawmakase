@@ -2,10 +2,10 @@
 # checked by scripts/deps.py. One rule per line: `module never other...`.
 # The values a photo's edit is made of are crates/rawmakase-model, which Cargo
 # builds without the RAW decoders, the renderer, wgpu or the app.
-# File formats and presets are crates/rawmakase-interop, and the catalog with edit
-# resolution crates/rawmakase-catalog, both built without the RAW decoders, the
-# renderer or the app. Rendering is crates/rawmakase-engine, built without the RAW
-# decoders, the catalog or the app, and decoding crates/rawmakase-decode. A rule may
+# File formats, presets and edit resolution are crates/rawmakase-interop, and the
+# catalog crates/rawmakase-catalog, both built without the RAW decoders, the
+# renderer or the app. Rendering is crates/rawmakase-engine, built without the file
+# formats, the RAW decoders, the catalog or the app, and decoding crates/rawmakase-decode. A rule may
 # name a module the app re-exports from those crates: the app crate depends on
 # all of them, so only this check keeps an app module from using one.
 edit_session never raw photo develop decode decode_cache app

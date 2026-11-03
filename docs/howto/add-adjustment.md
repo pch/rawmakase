@@ -65,7 +65,7 @@ In `crates/rawmakase-interop/src/xmp/`:
 
 Check the key, the scale and the default against Lightroom or Camera Raw, not
 against another program. If the setting asks for Auto, it is measured through
-`xmp::PhotoMeasures`, which the engine implements.
+`model::measures::PhotoMeasures`, which the engine implements.
 
 ## 4. Copy Settings, Sync and presets
 
