@@ -178,23 +178,31 @@ impl Editor {
         let (generation, cancel) = self.document.targeted_pick.start();
         let id = self.load.id();
         let sampled = self.document.edit.recipe().clone();
-        let tx = self.tx.clone();
-        let ctx = self.context.clone();
-        std::thread::spawn(move || {
-            let [u, v] = at;
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                crate::develop::quality::targeted_sample(&im, &sampled, u, v, &cancel)
-            }))
-            .unwrap_or_else(|_| Err(anyhow::anyhow!("sampling failed unexpectedly")))
-            .map_err(|e| format!("Cannot sample the photo: {e:#}"));
-            let _ = tx.send(super::worker::Event::TargetedSample {
-                id,
-                generation,
-                sampled: Box::new(sampled),
-                result,
-            });
-            ctx.request_repaint();
-        });
+        let on_panic = sampled.clone();
+        super::task::spawn(
+            self.tx.clone(),
+            self.context.clone(),
+            move |tx| {
+                let [u, v] = at;
+                let result = crate::develop::quality::targeted_sample(&im, &sampled, u, v, &cancel)
+                    .map_err(|e| format!("Cannot sample the photo: {e:#}"));
+                let _ = tx.send(super::worker::Event::TargetedSample {
+                    id,
+                    generation,
+                    sampled: Box::new(sampled),
+                    result,
+                });
+            },
+            // A panic still sends a result, so the drag does not wait for it.
+            move |tx, _| {
+                let _ = tx.send(super::worker::Event::TargetedSample {
+                    id,
+                    generation,
+                    sampled: Box::new(on_panic),
+                    result: Err("Cannot sample the photo: sampling failed unexpectedly".to_owned()),
+                });
+            },
+        );
     }
     /// The pointer moved `up` points up during the drag: the sliders follow, once
     /// the sample is in. Part of the pointer gesture, so one History step.
