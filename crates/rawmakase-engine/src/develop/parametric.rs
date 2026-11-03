@@ -6,61 +6,16 @@
 //! channel curved, the middle one keeping its place, so hue holds), in encoded ProPhoto
 //! RGB between the Basic panel's tone and the point curve.
 
-const SIZE: usize = 1024;
+use super::tone_lut::ToneLut;
 
-/// The measured curve for one recipe's regions and splits, sampled at `SIZE + 1`
-/// points over 0–1.
-#[derive(Clone, Debug)]
-pub(crate) struct ParametricCurve {
-    lut: Vec<f32>,
-}
-impl ParametricCurve {
-    /// `None` when every region is 0, as the curve is then the identity.
-    pub(crate) fn new(regions: [f32; 4], splits: [f32; 3]) -> Option<Self> {
-        if regions == [0.; 4] {
-            return None;
-        }
-        let shape = Shape::new(regions, splits);
-        let lut = (0..=SIZE)
-            .map(|i| shape.eval(i as f32 / SIZE as f32))
-            // Measured tables carry small non-monotone noise; tone must never invert.
-            .scan(0f32, |max, y| {
-                *max = max.max(y);
-                Some(*max)
-            })
-            .collect();
-        Some(Self { lut })
+/// The measured curve for one recipe's regions and splits; `None` when every region is
+/// 0, as the curve is then the identity.
+pub(crate) fn curve(regions: [f32; 4], splits: [f32; 3]) -> Option<ToneLut> {
+    if regions == [0.; 4] {
+        return None;
     }
-    /// `first`, then `then`, as one curve: the user's, then a look's.
-    pub(crate) fn then(first: Option<Self>, then: Option<Self>) -> Option<Self> {
-        match (first, then) {
-            (Some(a), Some(b)) => Some(Self {
-                lut: a.lut.iter().map(|y| b.eval(*y)).collect(),
-            }),
-            (a, b) => a.or(b),
-        }
-    }
-    pub(crate) fn values(&self) -> &[f32] {
-        &self.lut
-    }
-    pub(crate) fn eval(&self, x: f32) -> f32 {
-        let f = x.clamp(0., 1.) * SIZE as f32;
-        let i = (f as usize).min(SIZE - 1);
-        self.lut[i] + (self.lut[i + 1] - self.lut[i]) * (f - i as f32)
-    }
-    /// DNG RGBTone: the curve maps the largest and smallest channel, and the middle
-    /// channel keeps its relative position, preserving hue.
-    pub(crate) fn apply(&self, p: [f32; 3]) -> [f32; 3] {
-        let p = p.map(|v| v.clamp(0., 1.));
-        let lo = p.into_iter().fold(f32::INFINITY, f32::min);
-        let hi = p.into_iter().fold(0f32, f32::max);
-        let (a, b) = (self.eval(lo), self.eval(hi));
-        if hi - lo > 1e-8 {
-            p.map(|v| a + (b - a) * (v - lo) / (hi - lo))
-        } else {
-            [a; 3]
-        }
-    }
+    let shape = Shape::new(regions, splits);
+    Some(ToneLut::rising(|x| shape.eval(x)))
 }
 
 /// The parametric curve at `count + 1` points over 0–1, for drawing it in the Tone
@@ -68,7 +23,7 @@ impl ParametricCurve {
 pub fn samples(e: &crate::model::effects::Effects, count: usize) -> Vec<f32> {
     let at = |i: usize| i as f32 / count as f32;
     // The rendered table, with its monotone clean-up, so the panel shows what renders.
-    match ParametricCurve::new(e.parametric, e.splits) {
+    match curve(e.parametric, e.splits) {
         Some(curve) => (0..=count).map(|i| curve.eval(at(i))).collect(),
         // No region set: the identity.
         None => (0..=count).map(at).collect(),
@@ -317,9 +272,9 @@ mod tests {
             levels,
         } in cases
         {
-            let curve = ParametricCurve::new(regions, splits).unwrap();
+            let c = curve(regions, splits).unwrap();
             for [x, expected] in levels {
-                let y = curve.eval(x);
+                let y = c.eval(x);
                 assert!(
                     (y - expected).abs() < 1.5 / 255.,
                     "{regions:?} {splits:?}: {x} gives {y}, Camera Raw {expected}"
@@ -330,16 +285,16 @@ mod tests {
 
     #[test]
     fn curves_are_monotone_and_keep_black_and_white() {
-        assert!(ParametricCurve::new([0.; 4], [0.25, 0.5, 0.75]).is_none());
+        assert!(curve([0.; 4], [0.25, 0.5, 0.75]).is_none());
         for regions in [
             [1., 1., 1., 1.],
             [-1., -1., -1., -1.],
             [0.7, -0.3, 0.6, -0.9],
         ] {
             for splits in [[0.1, 0.2, 0.3], [0.25, 0.5, 0.75], [0.7, 0.8, 0.9]] {
-                let c = ParametricCurve::new(regions, splits).unwrap();
+                let c = curve(regions, splits).unwrap();
                 assert!(
-                    c.lut.windows(2).all(|p| p[1] >= p[0]),
+                    c.values().windows(2).all(|p| p[1] >= p[0]),
                     "{regions:?} {splits:?}"
                 );
                 assert!(c.eval(0.) < 1e-4 && c.eval(1.) > 1. - 1e-4);
@@ -350,8 +305,8 @@ mod tests {
     #[test]
     fn regions_change_only_their_side_of_the_midtone_split() {
         let midtone = crate::color::srgb_encode(0.5f32.powf(GAMMA));
-        let highlights = ParametricCurve::new([0., 0., 0., 0.8], [0.25, 0.5, 0.75]).unwrap();
-        let shadows = ParametricCurve::new([-0.8, 0., 0., 0.], [0.25, 0.5, 0.75]).unwrap();
+        let highlights = curve([0., 0., 0., 0.8], [0.25, 0.5, 0.75]).unwrap();
+        let shadows = curve([-0.8, 0., 0., 0.], [0.25, 0.5, 0.75]).unwrap();
         for i in 0..=20 {
             let x = i as f32 / 20.;
             let (h, s) = (highlights.eval(x), shadows.eval(x));
@@ -375,7 +330,7 @@ mod tests {
             [0., 0., 0., -1.],
         ] {
             for splits in [[0.32, 0.5, 0.75], [0.1, 0.5, 0.6], [0.4, 0.5, 0.9]] {
-                let c = ParametricCurve::new(regions, splits).unwrap();
+                let c = curve(regions, splits).unwrap();
                 for x in [midtone - 1e-3, midtone + 1e-3] {
                     assert!(
                         (c.eval(x) - x).abs() < 0.3 / 255.,
@@ -388,7 +343,7 @@ mod tests {
 
     #[test]
     fn the_hue_holds() {
-        let c = ParametricCurve::new([0.4, -0.3, 0.6, 0.2], [0.25, 0.5, 0.75]).unwrap();
+        let c = curve([0.4, -0.3, 0.6, 0.2], [0.25, 0.5, 0.75]).unwrap();
         let p = c.apply([0.7, 0.4, 0.2]);
         assert!(((p[1] - p[2]) / (p[0] - p[2]) - 0.4).abs() < 1e-5, "{p:?}");
     }

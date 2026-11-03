@@ -2,6 +2,7 @@
 //! chart moved to each photo's pivot. Values between the measured slider positions are
 //! interpolated linearly, with 0 as the identity.
 use super::basic_tone_data::{CONTRAST_CHART, CONTRAST_PIVOT, SLIDER_VALUES};
+use super::tone_lut::ToneLut;
 use crate::color::{srgb_decode, srgb_encode};
 
 /// What a render's Contrast follows of the photo.
@@ -85,49 +86,14 @@ pub(crate) fn blocks(pixels: &[[f32; 3]], width: usize, height: usize) -> Vec<[f
 /// Constant, mean and range-middle weights of [`photo_pivot`].
 const PIVOT_FIT: [f32; 3] = [0.577, 0.568, -0.689];
 
-const SIZE: usize = 1024;
-
-/// The Contrast curve, sampled at `SIZE + 1` points over 0–1.
-#[derive(Clone)]
-pub(crate) struct BasicTone {
-    pub(crate) lut: Vec<f32>,
-}
-impl BasicTone {
-    pub(crate) fn new(contrast: f32, photo: &PhotoTone) -> Option<Self> {
-        if contrast == 0. {
-            return None;
-        }
-        let lut = (0..=SIZE)
-            .map(|i| {
-                let x = i as f32 / SIZE as f32;
-                contrast_at(contrast, photo.contrast_pivot, x)
-            })
-            // Measured tables carry small non-monotone noise; tone must never invert.
-            .scan(0f32, |max, y| {
-                *max = max.max(y);
-                Some(*max)
-            })
-            .collect();
-        Some(Self { lut })
+/// The Contrast curve for `contrast` at the photo's pivot; `None` at 0, the identity.
+pub(crate) fn contrast_curve(contrast: f32, photo: &PhotoTone) -> Option<ToneLut> {
+    if contrast == 0. {
+        return None;
     }
-    pub(crate) fn eval(&self, x: f32) -> f32 {
-        let f = x.clamp(0., 1.) * SIZE as f32;
-        let i = (f as usize).min(SIZE - 1);
-        self.lut[i] + (self.lut[i + 1] - self.lut[i]) * (f - i as f32)
-    }
-    /// DNG RGBTone: the curve maps the largest and smallest channel, and the middle
-    /// channel keeps its relative position, preserving hue.
-    pub(crate) fn apply(&self, p: [f32; 3]) -> [f32; 3] {
-        let p = p.map(|v| v.clamp(0., 1.));
-        let lo = p.into_iter().fold(f32::INFINITY, f32::min);
-        let hi = p.into_iter().fold(0f32, f32::max);
-        let (a, b) = (self.eval(lo), self.eval(hi));
-        if hi - lo > 1e-8 {
-            p.map(|v| a + (b - a) * (v - lo) / (hi - lo))
-        } else {
-            [a; 3]
-        }
-    }
+    Some(ToneLut::rising(|x| {
+        contrast_at(contrast, photo.contrast_pivot, x)
+    }))
 }
 
 /// The measured tables in the order `develop.wgsl`'s local Contrast reads them: the
@@ -166,7 +132,7 @@ fn slider(table: &[[f32; 64]; 6], s: f32, x: f32) -> f32 {
 /// The chart's Contrast at slider `s`, moved so it pivots at `pivot` instead of
 /// [`CONTRAST_PIVOT`]: a power warp of gamma-2.2 encoded values takes one pivot to the
 /// other, which fits each photo's Camera Raw Contrast to 0.002–0.01 at every amount.
-/// The local adjustments evaluate it per pixel, without `BasicTone`'s table and
+/// The local adjustments evaluate it per pixel, without [`contrast_curve`]'s table and
 /// monotone clean-up.
 pub(crate) fn contrast_at(s: f32, pivot: f32, x: f32) -> f32 {
     if s == 0. {
@@ -195,17 +161,17 @@ mod tests {
         let typical = PhotoTone {
             contrast_pivot: TYPICAL_PIVOT,
         };
-        assert!(BasicTone::new(0., &typical).is_none());
+        assert!(contrast_curve(0., &typical).is_none());
         for c in [-1., -0.6, -0.1, 0.1, 0.4, 1.] {
-            let t = BasicTone::new(c, &typical).unwrap();
-            assert!(t.lut.windows(2).all(|p| p[1] >= p[0] - 1e-4), "{c}");
-            assert!(t.lut.iter().all(|v| (0. ..=1.).contains(v)));
+            let t = contrast_curve(c, &typical).unwrap();
+            assert!(t.values().windows(2).all(|p| p[1] >= p[0] - 1e-4), "{c}");
+            assert!(t.values().iter().all(|v| (0. ..=1.).contains(v)));
         }
         // A small slider value changes the curve only slightly.
-        let t = BasicTone::new(0.01, &typical).unwrap();
+        let t = contrast_curve(0.01, &typical).unwrap();
         assert!((0..=10).all(|i| (t.eval(i as f32 / 10.) - i as f32 / 10.).abs() < 0.01));
         // Positive contrast darkens shadows and brightens highlights.
-        let t = BasicTone::new(0.5, &typical).unwrap();
+        let t = contrast_curve(0.5, &typical).unwrap();
         assert!(t.eval(0.2) < 0.2 && t.eval(0.8) > 0.8);
         let gray = t.apply([0.3; 3]);
         assert!((gray[0] - gray[1]).abs() < 1e-6 && (gray[1] - gray[2]).abs() < 1e-6);
@@ -220,7 +186,7 @@ mod tests {
             (-1., [[0.1803, 0.2759], [0.4798, 0.5181], [0.7847, 0.7118]]),
         ];
         for (contrast, levels) in cases {
-            let t = BasicTone::new(
+            let t = contrast_curve(
                 contrast,
                 &PhotoTone {
                     contrast_pivot: CONTRAST_PIVOT,
@@ -240,7 +206,7 @@ mod tests {
     #[test]
     fn contrast_pivots_where_the_photo_puts_it() {
         for pivot in [0.35, 0.45, 0.6] {
-            let t = BasicTone::new(
+            let t = contrast_curve(
                 0.8,
                 &PhotoTone {
                     contrast_pivot: pivot,

@@ -62,7 +62,7 @@ pub(crate) mod slot {
         LOCAL_REGION: 1,
         BASIC: 1,
         LEVELS: 3,
-        // The measured parametric curve's table, or -1 (see `parametric::ParametricCurve`).
+        // The measured parametric curve's table, or -1 (see `parametric::curve`).
         PARAMETRIC_LUT: 1,
         MASTER: 1,
         REFINE_SATURATION: 1,
@@ -354,7 +354,7 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
         set_local(&mut p, local);
     }
     let basic = match &lut.basic {
-        Some(b) => p.push(b.lut.iter().copied()),
+        Some(b) => p.push(b.values().iter().copied()),
         None => -1.,
     };
     p.set(slot::BASIC, &[basic]);

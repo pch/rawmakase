@@ -203,13 +203,6 @@ fn weight(t: f32, kelvin1: f32, kelvin2: f32) -> f32 {
         ((1. / t - 1. / kelvin1) / d).clamp(0., 1.)
     }
 }
-fn decode(v: f32) -> f32 {
-    if v <= 0.04045 {
-        v / 12.92
-    } else {
-        ((v + 0.055) / 1.055).powf(2.4)
-    }
-}
 impl Table {
     fn validate(&self) -> Result<()> {
         ensure!(
@@ -307,7 +300,7 @@ impl Table {
         let s = (sat * delta[1]).clamp(0., 1.);
         // Preserve scene headroom beyond the SDR table domain instead of truncating highlights.
         let v = if encoded {
-            decode(v * delta[2])
+            crate::color::srgb_decode(v * delta[2])
         } else {
             v * delta[2]
         };
