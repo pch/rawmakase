@@ -1,8 +1,9 @@
-//! Local ONNX inference for Subject, Background and Sky selection.
+//! Local ONNX inference for Subject, Background and Sky selection, and for AI Denoise.
 //!
-//! This crate owns the pinned model contract ([`manifest`]), the pure image
-//! to tensor and matte to coverage mappings ([`process`]) and the lazily loaded
-//! ONNX Runtime session ([`runtime`]). It depends on no other workspace crate:
+//! This crate owns the pinned model contracts ([`manifest`]), the pure image
+//! to tensor and matte to coverage mappings ([`process`]), AI Denoise's tiler and
+//! gain fit on packed mosaic planes ([`denoise`]) and the lazily loaded
+//! ONNX Runtime sessions ([`runtime`]). It depends on no other workspace crate:
 //! callers pass an 8-bit sRGB [`RgbImage`] and get 8-bit [`Coverage`] back in
 //! the same frame. Where the model file lives, how it is downloaded and
 //! verified, job scheduling and cache identity belong to the callers.
@@ -11,6 +12,7 @@
 //! [`InferenceError::RuntimeUnavailable`]; the library is never linked.
 
 pub mod auto;
+pub mod denoise;
 mod error;
 pub mod manifest;
 pub mod panoptic;
@@ -19,8 +21,11 @@ pub mod refine;
 pub mod runtime;
 
 pub use error::InferenceError;
-pub use manifest::{ModelFile, ModelSpec, PANOPTIC, PanopticSpec, SKY, SUBJECT, SkySpec};
+pub use manifest::{
+    DenoiseSpec, ModelFile, ModelSpec, PANOPTIC, PanopticSpec, RAWNIND, SKY, SUBJECT, SkySpec,
+};
 pub use process::{Coverage, Point, Prompt, RgbImage};
 pub use runtime::{
-    Analysis, Embedding, LoadOptions, Provider, RUNTIME_ENV, Session, Sky, SkySession, Subject,
+    Analysis, Denoiser, Embedding, LoadOptions, Provider, RUNTIME_ENV, Session, Sky, SkySession,
+    Subject,
 };

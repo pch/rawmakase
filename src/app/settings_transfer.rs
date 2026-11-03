@@ -278,7 +278,13 @@ fn section_checkboxes(
         .groups
         .iter()
         .copied()
-        .filter(|g| purpose != Transfer::NewPreset || *g != SettingGroup::UprightTransforms)
+        .filter(|g| {
+            purpose != Transfer::NewPreset
+                || !matches!(
+                    *g,
+                    SettingGroup::UprightTransforms | SettingGroup::AiDenoise
+                )
+        })
         .collect();
     let chosen = shown.iter().filter(|g| groups.contains(**g)).count();
     let mut all = chosen == shown.len();

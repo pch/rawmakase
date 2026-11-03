@@ -23,6 +23,8 @@ pub struct PreviewRenderer {
     cache: StageCache,
     /// The recovered image with spot removal applied, updated tile by tile.
     retouch: super::retouch::RetouchCache,
+    /// The AI Denoise source the next renders use ([`Self::set_ai`]).
+    ai: Option<super::AiSource>,
 }
 /// The optional GPU and why it is not used.
 #[derive(Default)]
@@ -78,6 +80,41 @@ impl PreviewRenderer {
             ..Self::default()
         }
     }
+    /// Lets go of the noise-reduced image the next render replaces (the pyramid built on
+    /// it, its upload) before the next is made, so two full-size images of the photo
+    /// are not alive at once while AI Denoise's Amount or noise reduction moves.
+    fn release_replaced(
+        &mut self,
+        image: &CameraImage,
+        recipe: &Recipe,
+        ai: Option<&super::AiSource>,
+        cancel: &AtomicBool,
+    ) -> Result<()> {
+        use super::recipe::RenderedRecipe;
+        let recovered = quality::recovered(image, cancel)?;
+        let d = recipe.denoise_with(ai.filter(|a| a.fits(image)));
+        let Some(old) = self.retouch.replaced_by(&recovered, d.as_ref()) else {
+            return Ok(());
+        };
+        if self
+            .pyramid
+            .as_ref()
+            .is_some_and(|p| Arc::ptr_eq(p.source(), &old) || self.retouch.holds(p.source()))
+        {
+            self.pyramid = None;
+        }
+        self.retouch.forget_denoised();
+        if let Some(gpu) = &mut self.backend.gpu {
+            gpu.forget_resident(&old);
+        }
+        Ok(())
+    }
+    /// The AI Denoise source of the photo the next renders show, as the render job
+    /// captured it; `None` renders without AI Denoise (no result yet). A source of
+    /// another size than the photo is ignored.
+    pub fn set_ai(&mut self, ai: Option<super::AiSource>) {
+        self.ai = ai;
+    }
     pub fn adapter_name(&self) -> Option<&str> {
         self.backend.gpu.as_ref().map(gpu::Processor::name)
     }
@@ -128,9 +165,12 @@ impl PreviewRenderer {
         {
             return Ok(out);
         }
+        let ai = self.ai.clone();
+        self.release_replaced(image, recipe, ai.as_ref(), cancel)?;
         quality::render_preview(
             image,
             recipe,
+            ai.as_ref(),
             max_edge,
             region,
             cancel,
@@ -230,7 +270,10 @@ impl PreviewRenderer {
         if recipe.lens_ca {
             crate::lens::auto_ca::prime(image);
         }
-        let source = quality::retouched(image, recipe, cancel, Some(&mut self.retouch))?;
+        let ai = self.ai.clone();
+        self.release_replaced(image, recipe, ai.as_ref(), cancel)?;
+        let source =
+            quality::retouched(image, recipe, ai.as_ref(), cancel, Some(&mut self.retouch))?;
         match &mut self.pyramid {
             Some(p) if Arc::ptr_eq(p.source(), &source.image) => {}
             Some(p) if self.retouch.changed_from(p.source()).is_some() => {

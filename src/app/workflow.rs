@@ -453,6 +453,8 @@ impl Editor {
                     crop: geometry.crop(),
                 },
             );
+            let ai = self.document.ai_source(&image, &recipe.ai_denoise);
+            self.request_ai_denoise(&image, &geometry, region);
             let replaced = self.renderer.submit(RenderJob {
                 pane: super::worker::Pane::After,
                 max_edge,
@@ -467,6 +469,7 @@ impl Editor {
                 thumbnail,
                 samples: self.wants_samples(),
                 overlay: self.overlay(),
+                ai,
                 drawn: self.preview.presented(),
             });
             if let Some(replaced) = replaced {

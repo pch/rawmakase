@@ -1,6 +1,6 @@
 # Maintainer: pch <https://github.com/pch>
 pkgname=rawmakase-git
-pkgver=0.4.10
+pkgver=0.4.11
 pkgrel=1
 # ONNX Runtime for Subject, Sky and Background selection: the release every other
 # package bundles (packaging/onnxruntime.py), not Arch's onnxruntime-cpu.
@@ -10,7 +10,8 @@ arch=('x86_64' 'aarch64')
 url='https://github.com/pch/rawmakase'
 license=('MIT')
 depends=('gcc-libs' 'glibc' 'hicolor-icon-theme' 'libxkbcommon' 'libxkbcommon-x11' 'vulkan-icd-loader' 'wayland' 'libx11' 'libxcb' 'libxcursor' 'libxi' 'libxrandr' 'libglvnd')
-optdepends=('xdg-desktop-portal: native file dialogs')
+optdepends=('xdg-desktop-portal: native file dialogs'
+            'libheif: showing HEIC photos')
 makedepends=('cargo' 'git' 'pkgconf')
 # makepkg's LTO flags turn bundled C code (SQLite) into GCC bytecode rustc
 # cannot link.

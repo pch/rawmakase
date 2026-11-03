@@ -161,6 +161,8 @@ pub(super) fn to_after(pos: Pos2, before: Rect, after: Rect) -> Pos2 {
 struct BeforeJob {
     image: Arc<CameraImage>,
     recipe: Recipe,
+    /// The AI Denoise source the render captured: a newer result renders again.
+    ai: Option<crate::develop::AiSource>,
     region: Option<[u32; 4]>,
     max_edge: u32,
     monitor: Option<PathBuf>,
@@ -170,6 +172,7 @@ impl PartialEq for BeforeJob {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.image, &other.image)
             && self.recipe == other.recipe
+            && self.ai == other.ai
             && self.region == other.region
             && self.max_edge == other.max_edge
             && self.monitor == other.monitor
@@ -371,6 +374,7 @@ impl Editor {
         let job = BeforeJob {
             region: zoom.region(viewport, geometry.width, geometry.height),
             max_edge: super::workflow::render_edges(&zoom, viewport, &geometry).max_edge,
+            ai: self.document.ai_source(&image, &recipe.ai_denoise),
             image,
             recipe,
             monitor: self.view.display_profile(),
@@ -398,6 +402,7 @@ impl Editor {
             thumbnail: false,
             samples: false,
             overlay: super::worker::Overlay::None,
+            ai: job.ai,
             drawn,
         });
     }

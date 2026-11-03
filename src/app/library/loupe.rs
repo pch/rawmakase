@@ -81,6 +81,8 @@ pub(super) struct Loupe {
     /// double-click to undo.
     before_click: Option<(bool, f64, Option<PhotoId>)>,
     pub state: State,
+    /// The photo's failure, until the Library says it in the top bar.
+    unreported: Option<String>,
 }
 impl Loupe {
     pub(super) fn new(ctx: &egui::Context) -> Self {
@@ -133,7 +135,14 @@ impl Loupe {
             view: Vec2::ZERO,
             before_click: None,
             state: State::Loading,
+            unreported: None,
         }
+    }
+    /// A new request: the earlier one's result, and its failure not yet
+    /// said, are dropped.
+    fn next_ticket(&mut self) {
+        self.ticket += 1;
+        self.unreported = None;
     }
     /// Asks for `photo` at `edge` pixels, unless that is already on its way;
     /// from its stored preview with that identity when `stored` says so.
@@ -148,7 +157,7 @@ impl Loupe {
         if let Some(at) = self.prefetched.iter().position(|(k, _)| *k == wanted) {
             let (_, prepared) = self.prefetched.remove(at).unwrap();
             self.cancel.store(true, Ordering::Relaxed);
-            self.ticket += 1;
+            self.next_ticket();
             self.requested = Some(wanted);
             self.show(ctx, prepared);
             return;
@@ -162,7 +171,7 @@ impl Loupe {
         // Moving on cancels the photo being prepared; its result is dropped.
         self.cancel.store(true, Ordering::Relaxed);
         self.cancel = Default::default();
-        self.ticket += 1;
+        self.next_ticket();
         if !same_photo {
             self.texture = None;
             self.full = None;
@@ -224,6 +233,12 @@ impl Loupe {
         self.full = None;
         self.texture = None;
         self.state = State::Loading;
+        // A result on its way is the forgotten photo's.
+        self.next_ticket();
+    }
+    /// The photo's failure, once, for the top bar.
+    pub(super) fn take_failure(&mut self) -> Option<String> {
+        self.unreported.take()
     }
     fn poll(&mut self, ctx: &egui::Context) {
         self.regions.poll(ctx);
@@ -245,9 +260,17 @@ impl Loupe {
             }
             match done.result {
                 Ok(prepared) => self.show(ctx, prepared),
-                Err(e) => self.state = State::Failed(e),
+                Err(e) => {
+                    self.unreported = Some(e.clone());
+                    self.state = State::Failed(e);
+                }
             }
         }
+    }
+    /// Takes the results that have come in, as a frame does.
+    #[cfg(test)]
+    pub(super) fn poll_now(&mut self, ctx: &egui::Context) {
+        self.poll(ctx);
     }
     #[cfg(test)]
     pub(super) fn wait(&mut self, ctx: &egui::Context) {
@@ -478,6 +501,11 @@ impl Library {
         } else if self.loupe.requested.is_some() {
             self.loupe.reset();
         }
+        // Said once the photo shown is the one asked for: a failure of the
+        // photo stepped away from was dropped by the request above.
+        if let Some(e) = self.loupe.take_failure() {
+            self.messages.warn(format!("Preview unavailable: {e}"));
+        }
         self.request_previews(&photo, ui.ctx());
         let inset = rect.shrink(crate::app::workspace::PHOTO_MARGIN);
         // Until its own preview is in, the grid's stands in, enlarged.
@@ -646,8 +674,8 @@ impl Library {
             ),
             _ if zoom.on && (self.loupe.regions.pending || full.is_none()) => "Loading…".into(),
             (State::Loading, ..) => "Loading…".into(),
-            (State::Ready, ..) => String::new(),
-            (State::Failed(e), ..) => format!("Preview unavailable: {e}"),
+            // A failure is said in the top bar.
+            (State::Ready | State::Failed(_), ..) => String::new(),
         };
         if !note.is_empty() {
             ui.painter().text(

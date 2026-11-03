@@ -459,6 +459,20 @@ impl Preset {
         )?;
         settings.assign("LuminanceSmoothing", &mut r.noise_luma, 0.01, 0., 1.)?;
         settings.assign("ColorNoiseReduction", &mut r.noise_chroma, 0.01, 0., 1.)?;
+        // Lightroom's Denoise, from the Enhance filter (`filter_list`): AI Denoise at its
+        // Amount. Without one, the photo's own setting stays.
+        let key = super::filter_list::AI_DENOISE;
+        settings.seen.insert(key.into());
+        if let Some(amount) = number(settings.values, key)? {
+            ensure!(
+                (0. ..=100.).contains(&amount),
+                "{key} is outside supported range"
+            );
+            r.ai_denoise = crate::model::ai_denoise::AiDenoise {
+                enabled: true,
+                amount: amount / 100.,
+            };
+        }
         Ok(())
     }
 

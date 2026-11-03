@@ -16,6 +16,17 @@ pub fn recovered(im: &CameraImage, cancel: &AtomicBool) -> Result<Arc<CameraImag
     });
     Ok(im.recovered.get_or_init(|| recovered).clone())
 }
+/// The camera image after highlight recovery, AI Denoise's blend and Color and
+/// luminance noise reduction, before retouching: what noise reduction made of the photo,
+/// for measuring it (`rawmakase denoise --camera-dump`).
+pub fn denoised_camera(
+    im: &CameraImage,
+    r: &Recipe,
+    ai: Option<&develop::AiSource>,
+    cancel: &AtomicBool,
+) -> Result<Arc<CameraImage>> {
+    Ok(retouched(im, r, ai, cancel, None)?.unretouched)
+}
 /// The retouched photo at full resolution, and the image it was retouched from.
 #[derive(Clone)]
 pub(crate) struct Retouched {
@@ -32,12 +43,13 @@ pub(crate) struct Retouched {
 pub(crate) fn retouched(
     im: &CameraImage,
     r: &Recipe,
+    ai: Option<&develop::AiSource>,
     cancel: &AtomicBool,
     cache: Option<&mut develop::retouch::RetouchCache>,
 ) -> Result<Retouched> {
     let recovered = recovered(im, cancel)?;
     let ops = develop::retouch::Retouching::of(r);
-    let denoise = r.denoise();
+    let denoise = r.denoise_with(ai.filter(|a| a.fits(im)));
     let (base, image) = match cache {
         Some(cache) => {
             let base = cache.denoised(&recovered, denoise, cancel)?;
@@ -46,7 +58,7 @@ pub(crate) fn retouched(
         }
         None => {
             let base = match denoise {
-                Some(d) => Arc::new(d.apply(&recovered, cancel)?),
+                Some(d) => d.apply(&recovered, cancel)?,
                 None => recovered,
             };
             let image = match ops.is_empty() {
@@ -166,7 +178,7 @@ pub fn render_stage_sized(
         let g = Geometry::new(im, r, max_edge);
         return develop::pipeline::camera_samples(im, r, &g, [0, 0, g.width, g.height], cancel);
     }
-    let source = retouched(im, r, cancel, None)?;
+    let source = retouched(im, r, None, cancel, None)?;
     let g = Geometry::new(&source.image, r, max_edge);
     let (toned, tonal) = local_stage(&source.image, &source, r, 1., cancel, None)?;
     let output = match stage {
@@ -202,7 +214,7 @@ fn stage_means<const N: usize>(
     }
     // Through a fresh retouch cache, which checks `cancel` between operations.
     let mut retouch = develop::retouch::RetouchCache::default();
-    let source = retouched(im, r, cancel, Some(&mut retouch))?;
+    let source = retouched(im, r, None, cancel, Some(&mut retouch))?;
     let g = Geometry::new(&source.image, r, 0);
     let (toned, tonal) = local_stage(&source.image, &source, r, 1., cancel, None)?;
     let at = |t: f32, size: u32| {

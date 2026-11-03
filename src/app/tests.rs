@@ -6645,6 +6645,7 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
                 watermark: None,
                 demosaic: Default::default(),
                 cache: editor.decode_cache.clone(),
+                ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
             },
             &Default::default(),
             |_| {},

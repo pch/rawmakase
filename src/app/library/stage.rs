@@ -111,7 +111,8 @@ impl Library {
         match self.screen.get(photo, edge, stamp, edit) {
             Shown::Ready(texture) => (Some(texture.clone()), None),
             Shown::Loading => (stand_in, Some("Loading…".into())),
-            Shown::Failed(error) => (stand_in, Some(format!("Preview unavailable: {error}"))),
+            // Said in the top bar (`poll_previews`); the grid's preview stays.
+            Shown::Failed => (stand_in, None),
         }
     }
     /// The photo's edit stamp (see `Catalog::edit_stamp`), read again at

@@ -75,6 +75,17 @@ impl Editor {
             return;
         };
         let info = PresetInfo::new(&form.name, &form.group);
+        // Presets do not carry AI Denoise (docs/rendering-quality.md#ai-denoise).
+        let mut groups = groups.clone();
+        groups.set(
+            crate::model::settings_groups::SettingGroup::AiDenoise,
+            crate::model::settings_groups::GroupInclusion::Excluded,
+        );
+        if groups.is_empty() {
+            self.messages.warn("Preset not created: no settings chosen");
+            return;
+        }
+        let groups = &groups;
         match user.create(self.document.edit.recipe(), &shown, &info, groups) {
             Ok(_) => {
                 self.messages
@@ -284,6 +295,19 @@ mod tests {
         e.create_preset_in(&user, &form, &groups);
         assert!(
             e.messages.line().starts_with("Preset not created"),
+            "{}",
+            e.messages.line()
+        ); // Presets do not carry AI Denoise: chosen alone, nothing is made.
+        let mut ai_only = GroupSelection::none();
+        ai_only.set(SettingGroup::AiDenoise, GroupInclusion::Included);
+        let form = PresetForm {
+            name: "Denoised".into(),
+            group: "Mine".into(),
+        };
+        e.create_preset_in(&user, &form, &ai_only);
+        assert!(!user.dir.join("Mine/Denoised.xmp").exists());
+        assert!(
+            e.messages.line().contains("no settings chosen"),
             "{}",
             e.messages.line()
         );

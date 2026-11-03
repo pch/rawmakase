@@ -60,6 +60,8 @@ struct Usage {
     camera_profiles: usize,
     lens_profiles: usize,
     decode_cache: (usize, u64),
+    /// AI Denoise results: entries and bytes.
+    ai_cache: (usize, u64),
     /// The preview cache's file, and what each kind of preview holds of it.
     previews: u64,
     preview_kinds: Option<crate::catalog::preview_cache::PreviewUsage>,
@@ -172,6 +174,7 @@ impl Editor {
             camera_profiles: files(&camera_profiles_dir(), &["dcp", "xmp"]).0,
             lens_profiles: files(&lens_profiles_dir(), &["lcp"]).0,
             decode_cache: files(&self.decode_cache.dir(), &["decoded"]),
+            ai_cache: files(&self.ai_denoise_cache().dir(), &["aidenoise"]),
             previews: std::fs::metadata(PreviewCache::path()).map_or(0, |m| m.len()),
             preview_kinds: PreviewCache::open(&PreviewCache::path())
                 .and_then(|cache| cache.usage())
@@ -416,6 +419,11 @@ impl Editor {
             value(ui, &crate::raw::version());
         });
         form_row(ui, "Updates", |ui| self.automatic_updates_checkbox(ui));
+        for (name, credit) in third_party_models() {
+            form_row(ui, name, |ui| {
+                ui.add(egui::Label::new(egui::RichText::new(credit).size(text::SMALL)).wrap());
+            });
+        }
         gap(ui);
         group(ui, "Locations");
         let data = crate::storage::data_dir();
@@ -907,6 +915,18 @@ impl Editor {
                 ),
             );
         });
+        let (ai_entries, ai_size) = self.preferences.usage.ai_cache;
+        form_row(ui, "AI Denoise", |ui| {
+            value(
+                ui,
+                &format!(
+                    "{} of {} GiB · {}",
+                    bytes(ai_size),
+                    self.ai_denoise_cache().limit() >> 30,
+                    plural(ai_entries, "result", "results")
+                ),
+            );
+        });
         let (mut purge, mut choose, mut default) = (false, false, false);
         form_row(ui, "", |ui| {
             choose = ui.button("Choose Folder…").clicked();
@@ -916,7 +936,7 @@ impl Editor {
         });
         form_row(ui, "", |ui| {
             purge = ui
-                .add_enabled(entries > 0, egui::Button::new("Purge Cache"))
+                .add_enabled(entries + ai_entries > 0, egui::Button::new("Purge Cache"))
                 .clicked();
             reveal_button(ui, &dir);
         });
@@ -939,9 +959,11 @@ impl Editor {
         });
         if purge {
             let removed = self.decode_cache.purge();
+            let denoised = self.ai_denoise_cache().purge();
             self.messages.done(format!(
-                "Purged {} from the cache",
-                plural(removed, "photo", "photos")
+                "Purged {} and {} from the cache",
+                plural(removed, "photo", "photos"),
+                plural(denoised, "AI Denoise result", "AI Denoise results")
             ));
             self.measure_usage();
         }
@@ -964,6 +986,13 @@ impl Editor {
                 return;
             }
         };
+        // AI Denoise's results follow, in a subfolder of their own.
+        if let Err(e) = self.ai_denoise_cache().relocate(folder.as_deref()) {
+            self.messages.fail(format!(
+                "AI Denoise results stay in {}: {e}",
+                self.ai_denoise_cache().dir().display()
+            ));
+        }
         let saved = self.save_session();
         let moved = match &saved {
             Ok(()) if removed > 0 => format!(
@@ -1433,5 +1462,23 @@ mod tests {
         for tab in Tab::ALL {
             assert_eq!(cut_off(tab), Vec::<String>::new(), "{}", tab.title());
         }
+    }
+}
+
+/// The models RAWmakase downloads on request that ask for credit wherever they are used,
+/// each with the manifest's credit text: listed in About.
+pub(super) fn third_party_models() -> [(&'static str, &'static str); 1] {
+    [("AI Denoise model", rawmakase_inference::RAWNIND.attribution)]
+}
+
+#[cfg(test)]
+mod third_party_tests {
+    #[test]
+    fn about_credits_ai_denoises_model_with_the_manifests_text() {
+        assert!(
+            super::third_party_models()
+                .iter()
+                .any(|(_, credit)| *credit == rawmakase_inference::RAWNIND.attribution)
+        );
     }
 }

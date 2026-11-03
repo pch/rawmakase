@@ -271,6 +271,26 @@ impl Processor {
         resident.samples.truncate(SAMPLES);
         Ok(samples)
     }
+    /// Lets go of `image` and its buffer if the resident path keeps it (current or
+    /// parked): an image about to be replaced (an AI Denoise blend at another Amount)
+    /// need not stay alive while its successor is made.
+    pub(crate) fn forget_resident(&mut self, image: &Arc<CameraImage>) {
+        if let Some(r) = &mut self.resident {
+            if r.photo
+                .as_ref()
+                .is_some_and(|(kept, _)| Arc::ptr_eq(kept, image))
+            {
+                r.photo = None;
+                r.samples.clear();
+            }
+            if r.parked
+                .as_ref()
+                .is_some_and(|p| Arc::ptr_eq(&p.photo.0, image))
+            {
+                r.parked = None;
+            }
+        }
+    }
     /// Drops everything kept on the device for the resident path.
     pub(super) fn release_resident(&mut self) {
         if let Some(r) = &mut self.resident {

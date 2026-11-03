@@ -23,6 +23,8 @@ use std::{
 struct FullJob {
     id: u64,
     path: std::path::PathBuf,
+    /// The file as read before its first decode, carried with every image of it.
+    file: Option<crate::storage::Identity>,
     cancel: Arc<std::sync::atomic::AtomicBool>,
     started: Instant,
     full: FullSize,
@@ -127,6 +129,7 @@ fn full_loader(
                     Event::Ready {
                         id: job.id,
                         full: image.clone(),
+                        file: job.file.clone(),
                         status: format!("Developed in {:.2}s", job.started.elapsed().as_secs_f32()),
                     },
                 );
@@ -197,6 +200,10 @@ fn opener(
         let result = caught(|| -> anyhow::Result<()> {
             let path = job.path.clone();
             let started = Instant::now();
+            // Read before anything is decoded: every image sent below is of this file or,
+            // if it is replaced meanwhile, of one that no longer matches (AI Denoise then
+            // refuses rather than mixing the two).
+            let file = crate::storage::Identity::read(&path).ok();
             let prefetched = ahead.take(&path);
             let was_ahead = prefetched.is_some();
             let opened = match prefetched {
@@ -253,6 +260,7 @@ fn opener(
                         Event::Ready {
                             id: job.id,
                             full: Arc::new(image),
+                            file: if was_ahead { None } else { file },
                             status: if was_ahead {
                                 "Opened ahead of time".into()
                             } else {
@@ -305,6 +313,7 @@ fn opener(
                     Event::Ready {
                         id: job.id,
                         full: Arc::new(image),
+                        file,
                         status: format!("Opened from cache in {:.2}s", t.elapsed().as_secs_f32()),
                     },
                 );
@@ -323,12 +332,14 @@ fn opener(
                 Event::Ready {
                     id: job.id,
                     full: quick,
+                    file: file.clone(),
                     status: "Loading full resolution…".into(),
                 },
             );
             full.submit(FullJob {
                 id: job.id,
                 path,
+                file,
                 cancel: job.cancel.clone(),
                 started: t,
                 full: full_size,
@@ -446,6 +457,48 @@ pub(in crate::app) mod tests {
         };
         assert!(!full.fast);
         assert_eq!((full.width, full.height), (40, 30));
+        let cached = std::fs::read_dir(&cache).map_or(0, |entries| entries.count());
+        assert_eq!(cached, 0, "a rendered file is never decode-cached");
+        Ok(())
+    }
+
+    /// A HEIC opens as a JPEG does: at full size at once, with its own
+    /// profile, and never decode-cached; where this system decodes HEIC
+    /// (macOS, and Linux with libheif).
+    #[cfg(not(windows))]
+    #[test]
+    fn a_heic_loads_straight_to_full_size() -> anyhow::Result<()> {
+        if let Err(why) = crate::raster::heif_decoder() {
+            // CI's Arch job requires one (see raster's tests).
+            assert!(
+                std::env::var_os("RAWMAKASE_REQUIRE_HEIF").is_none(),
+                "{why}"
+            );
+            eprintln!("HEIC pixels not tested: {why}");
+            return Ok(());
+        }
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("IMG_0001.HEIC");
+        std::fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/formats/grid.heic"),
+            &path,
+        )?;
+        let cache = dir.path().join("decoded");
+
+        let events = load(&path, &cache);
+
+        assert_eq!(
+            events.iter().map(name).collect::<Vec<_>>(),
+            ["Header", "Profiles", "Ready"]
+        );
+        let Event::Header(header) = &events[0] else {
+            unreachable!()
+        };
+        assert!(header.metadata.is_rendered());
+        let Event::Ready { full, .. } = &events[2] else {
+            unreachable!()
+        };
+        assert_eq!((full.width, full.height), (120, 100));
         let cached = std::fs::read_dir(&cache).map_or(0, |entries| entries.count());
         assert_eq!(cached, 0, "a rendered file is never decode-cached");
         Ok(())

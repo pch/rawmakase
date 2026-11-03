@@ -62,7 +62,7 @@ fn measurement_copy(
     };
     match cache {
         Some(cache) => cache.measured.get_or_try(
-            crate::develop::stage_cache::Same(full.clone()),
+            crate::develop::stage_cache::Same::of(full),
             |im: &CameraImage| im.pixels.len() * 12,
             make,
         ),

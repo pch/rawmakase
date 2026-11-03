@@ -82,6 +82,8 @@ impl Magnifier {
 struct MagnifierJob {
     image: Arc<CameraImage>,
     recipe: Recipe,
+    /// The AI Denoise source the render captured: a newer result renders again.
+    ai: Option<crate::develop::AiSource>,
     region: [u32; 4],
     monitor: Option<PathBuf>,
     clipping: ClipOverlay,
@@ -90,6 +92,7 @@ impl PartialEq for MagnifierJob {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.image, &other.image)
             && self.recipe == other.recipe
+            && self.ai == other.ai
             && self.region == other.region
             && self.monitor == other.monitor
             && self.clipping == other.clipping
@@ -443,9 +446,11 @@ impl Editor {
         } else {
             recipe.as_rendered().into_owned()
         };
+        let ai = self.document.ai_source(&image, &recipe.ai_denoise);
         let job = MagnifierJob {
             image,
             recipe,
+            ai,
             region,
             monitor: self.view.display_profile(),
             clipping: self.view.clipping.overlay(),
@@ -472,6 +477,7 @@ impl Editor {
             thumbnail: false,
             samples: false,
             overlay: super::worker::Overlay::None,
+            ai: job.ai,
             drawn,
         });
     }

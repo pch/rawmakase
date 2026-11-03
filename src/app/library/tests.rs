@@ -335,6 +335,55 @@ fn an_unsupported_jpeg_says_why_in_develop() -> Result<()> {
     Ok(())
 }
 
+/// A phone's HEIC is added with a folder and opens in Develop as a JPEG does;
+/// an HDR one is shown in the Library but Develop says why it can't edit it;
+/// where this system decodes HEIC (macOS, and Linux with libheif).
+#[cfg(not(windows))]
+#[test]
+fn a_heic_opens_in_develop_and_an_hdr_one_says_why_not() -> Result<()> {
+    if let Err(why) = crate::raster::heif_decoder() {
+        // CI's Arch job requires one (see raster's tests).
+        assert!(
+            std::env::var_os("RAWMAKASE_REQUIRE_HEIF").is_none(),
+            "{why}"
+        );
+        eprintln!("HEIC pixels not tested: {why}");
+        return Ok(());
+    }
+    let formats = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/formats");
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    std::fs::copy(formats.join("grid.heic"), folder.join("IMG_0001.HEIC"))?;
+    std::fs::copy(formats.join("pq.heic"), folder.join("IMG_0002.HEIC"))?;
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&folder)?;
+    let ctx = egui::Context::default();
+    let library = Library::load(&path, ctx.clone())?;
+    let photo = |name: &str| {
+        library
+            .session
+            .photos
+            .iter()
+            .find(|p| p.filename == name)
+            .cloned()
+            .unwrap()
+    };
+    let (heic, hdr) = (photo("IMG_0001.HEIC"), photo("IMG_0002.HEIC"));
+    assert_eq!(develop_refusal(&heic, true), None);
+    let refusal = develop_refusal(&hdr, true).expect("refused");
+    assert_eq!(refusal.label(), "HEIC file");
+    assert_eq!(refusal.detail(), "RAWmakase can't edit HDR images");
+    let mut editor = crate::app::Editor::with_context(&ctx, None, Default::default(), None);
+    editor.library = Some(Box::new(library));
+    editor.module = Module::Library;
+    editor.develop_catalog_photo(heic.id);
+    assert!(editor.module == Module::Develop);
+    assert!(!editor.messages.has_entry_with("can't be opened"));
+    assert_eq!(editor.document.catalog_photo, Some(heic.id));
+    Ok(())
+}
+
 /// A folder of a.jpg, b.jpg (CMYK, which Develop can't edit) and c.jpg, in a
 /// catalog loaded into an editor showing the Library; and the three photos.
 fn editor_with_a_cmyk_jpeg_between(
@@ -2036,6 +2085,104 @@ fn a_filmstrip_click_does_what_the_view_shown_does() -> Result<()> {
     ));
     Ok(())
 }
+/// A result on its way when the Loupe is reset is the forgotten photo's:
+/// its failure is neither shown nor said about whatever is shown next.
+#[test]
+fn loupe_reset_drops_a_failure_on_its_way() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    std::fs::write(folder.join("c.jpg"), b"not a jpeg")?;
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&folder)?;
+    let ctx = egui::Context::default();
+    let mut library = Library::load(&path, ctx.clone())?;
+    library.wait_for_availability();
+    library.select(Some(library.session.photos[0].id));
+    library.open_loupe();
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200., 800.),
+        )),
+        ..Default::default()
+    };
+    let mut output = ctx.run_ui(input, |ui| {
+        library.grid(ui, &mut Default::default(), true, None);
+    });
+    output.textures_delta.clear();
+    // Its failure comes in, not yet taken, as the Loupe is reset.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    library.loupe.reset();
+    library.loupe.poll_now(&ctx);
+    assert_eq!(library.loupe.state, loupe::State::Loading);
+    assert_eq!(library.loupe.take_failure(), None);
+    Ok(())
+}
+
+/// A failure received for a photo stepped away from to one prepared ahead,
+/// which is shown at once, is not said over it.
+#[test]
+fn loupe_says_no_failure_over_a_photo_prepared_ahead() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    for name in ["a.jpg", "b.jpg"] {
+        image::RgbImage::from_pixel(300, 200, image::Rgb([200, 120, 40]))
+            .save(folder.join(name))?;
+    }
+    std::fs::write(folder.join("c.jpg"), b"not a jpeg")?;
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&folder)?;
+    let ctx = egui::Context::default();
+    let mut library = Library::load(&path, ctx.clone())?;
+    library.wait_for_availability();
+    let id = |library: &Library, name: &str| {
+        library
+            .session
+            .photos
+            .iter()
+            .find(|p| p.filename == name)
+            .unwrap()
+            .id
+    };
+    let (a, b, c) = (
+        id(&library, "a.jpg"),
+        id(&library, "b.jpg"),
+        id(&library, "c.jpg"),
+    );
+    library.select(Some(a));
+    library.open_loupe();
+    let frame = |library: &mut Library| {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200., 800.),
+            )),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            library.grid(ui, &mut Default::default(), true, None);
+        });
+        output.textures_delta.clear();
+    };
+    // a is shown, and b, the next one along, prepared.
+    frame(&mut library);
+    library.loupe.wait(&ctx);
+    frame(&mut library);
+    library.loupe.wait_ahead(&ctx);
+    // c fails, and before the Library's next frame says so, b is chosen.
+    library.select(Some(c));
+    frame(&mut library);
+    library.loupe.wait(&ctx);
+    assert!(matches!(library.loupe.state, loupe::State::Failed(_)));
+    library.select(Some(b));
+    frame(&mut library);
+    assert_eq!(library.loupe.state, loupe::State::Ready);
+    assert!(!library.messages.has_entry_with("Preview unavailable"));
+    Ok(())
+}
+
 #[test]
 fn loupe_shows_a_jpeg_at_the_size_of_the_view() -> Result<()> {
     let directory = tempfile::tempdir()?;
@@ -2075,6 +2222,36 @@ fn loupe_shows_a_jpeg_at_the_size_of_the_view() -> Result<()> {
     output.textures_delta.clear();
     library.loupe.wait(&ctx);
     assert!(matches!(library.loupe.state, loupe::State::Failed(_)));
+    // Stepped away from before the Library's next frame: its failure is not
+    // said over the photo stepped to.
+    library.step(selection::Step::By(-1), false);
+    let mut output = ctx.run_ui(input(), |ui| {
+        library.grid(ui, &mut Default::default(), true, None);
+    });
+    output.textures_delta.clear();
+    library.loupe.wait(&ctx);
+    assert_eq!(library.loupe.state, loupe::State::Ready);
+    let mut output = ctx.run_ui(input(), |ui| {
+        library.grid(ui, &mut Default::default(), true, None);
+    });
+    output.textures_delta.clear();
+    assert!(!library.messages.has_entry_with("Preview unavailable"));
+    // Back on it: said once in the top bar with the app's other messages,
+    // not over the photo, however many frames show it.
+    library.step(selection::Step::By(1), false);
+    let mut output = ctx.run_ui(input(), |ui| {
+        library.grid(ui, &mut Default::default(), true, None);
+    });
+    output.textures_delta.clear();
+    library.loupe.wait(&ctx);
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(input(), |ui| {
+            library.grid(ui, &mut Default::default(), true, None);
+        });
+        output.textures_delta.clear();
+    }
+    assert!(library.messages.has_entry_with("Preview unavailable"));
+    assert_eq!(library.messages.entry_count(), 1);
     library.close_loupe();
     assert!(!library.loupe_open());
     Ok(())

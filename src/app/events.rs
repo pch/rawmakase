@@ -159,6 +159,7 @@ impl Editor {
                     self.auto_straighten_ready(generation, &analysed, result)
                 }
                 Event::Selection(done) => self.selection_done(*done),
+                Event::AiDenoise(update) => self.ai_denoise_update(*update),
                 Event::ModelInstalled(pack, result) => {
                     self.selection.models.of_mut(pack).finished(&result);
                     if result.as_ref().err().is_some_and(|e| e == "Cancelled") {
@@ -268,8 +269,14 @@ impl Editor {
                     self.preview.crop = Some([0., 0., 1., 1.]);
                     self.preview.status = "Camera preview • developing RAW…".into();
                 }
-                Event::Ready { id, full, status } if id == self.load.id() => {
+                Event::Ready {
+                    id,
+                    full,
+                    file,
+                    status,
+                } if id == self.load.id() => {
                     self.document.set_image(full);
+                    self.document.image_file = file;
                     self.load.finish(id);
                     // An Upright mode chosen before the photo decoded still needs analysing.
                     self.ensure_analysis();

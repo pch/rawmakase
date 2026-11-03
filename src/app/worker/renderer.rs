@@ -47,6 +47,7 @@ fn draft_edge(width: u32, height: u32) -> Option<u32> {
 /// A finished render and the view it shows.
 struct Shown {
     image: Arc<crate::camera_data::CameraImage>,
+    ai: Option<develop::AiSource>,
     recipe: Recipe,
     max_edge: u32,
     region: Option<[u32; 4]>,
@@ -70,6 +71,7 @@ impl Shown {
     fn new(job: &RenderJob, out: Shot) -> Self {
         Self {
             image: job.image.clone(),
+            ai: job.ai.clone(),
             recipe: job.recipe.clone(),
             max_edge: job.max_edge,
             region: job.region,
@@ -83,6 +85,7 @@ impl Shown {
     /// The same photo, view and edit, with pixels that are still there.
     fn matches(&self, job: &RenderJob, gpu: Option<&gpu::Processor>) -> bool {
         let same = Arc::ptr_eq(&self.image, &job.image)
+            && self.ai == job.ai
             && self.max_edge == job.max_edge
             && self.region == job.region
             && self.recipe == job.recipe
@@ -253,7 +256,7 @@ struct PaneState {
     quick_fit: bool,
     /// The whole photo's histogram for the last edit shown at 100%, so panning
     /// there does not render the whole photo again.
-    whole_shown: Option<(Arc<crate::camera_data::CameraImage>, Recipe, Histogram)>,
+    whole_shown: Option<WholeHistogram>,
 }
 
 fn render(
@@ -438,6 +441,8 @@ fn render(
                 },
             );
         };
+        // The AI Denoise source this job captured.
+        processor.set_ai(job.ai.clone());
         let result = (|| -> anyhow::Result<()> {
             if job.cancel.load(Ordering::Relaxed) {
                 return Ok(());
@@ -525,7 +530,12 @@ fn render(
                     // While editing at 100%, a reduced preview keeps sliders responsive;
                     // a newer job cancels the full-resolution render that follows.
                     // Zooming in goes straight to the full region, over the enlarged Fit.
-                    if *showing_region && !*quick_region {
+                    // So does a change of AI Denoise: its reduced preview would need the
+                    // same full-size blend as the region, adding only a blurry frame.
+                    let ai_changed = zoomed.as_ref().is_some_and(|s| {
+                        s.ai != job.ai || s.recipe.ai_denoise != job.recipe.ai_denoise
+                    });
+                    if *showing_region && !*quick_region && !ai_changed {
                         let out = processor.render_region_preview_to(
                             &job.image,
                             &job.recipe,
@@ -616,6 +626,14 @@ fn render(
 }
 
 type Histogram = Box<crate::rendered::Histogram>;
+/// A whole photo's histogram and what it was rendered from: the image, its AI Denoise
+/// source and the edit.
+type WholeHistogram = (
+    Arc<crate::camera_data::CameraImage>,
+    Option<develop::AiSource>,
+    Recipe,
+    Histogram,
+);
 
 /// At 100% the view shows a region, but the histogram describes the whole
 /// photo, as Lightroom's does: from the Fit render of the same edit when there
@@ -625,32 +643,40 @@ fn whole_histogram(
     job: &RenderJob,
     processor: &mut develop::PreviewRenderer,
     fit: &Option<Shown>,
-    whole: &mut Option<(Arc<crate::camera_data::CameraImage>, Recipe, Histogram)>,
+    whole: &mut Option<WholeHistogram>,
     tx: &Sender<Event>,
     ctx: &egui::Context,
 ) -> anyhow::Result<()> {
-    let same = |image: &Arc<crate::camera_data::CameraImage>, recipe: &Recipe| {
-        Arc::ptr_eq(image, &job.image) && *recipe == job.recipe
+    let same = |image: &Arc<crate::camera_data::CameraImage>,
+                ai: &Option<develop::AiSource>,
+                recipe: &Recipe| {
+        Arc::ptr_eq(image, &job.image) && *ai == job.ai && *recipe == job.recipe
     };
-    let histogram = if let Some((.., histogram)) = whole.as_ref().filter(|(i, r, _)| same(i, r)) {
-        histogram.clone()
-    } else if let Some(shown) = fit.as_ref().filter(|s| same(&s.image, &s.recipe)) {
-        match &shown.out {
-            Shot::Pixels(out) => Box::new(out.histogram()),
-            Shot::Frame { histogram, .. } => histogram.clone(),
-        }
-    } else {
-        let out = processor.render_to(
-            &job.image,
-            &job.recipe,
-            job.max_edge,
-            None,
-            &job.cancel,
-            None,
-        )?;
-        Box::new(out.pixels().histogram())
-    };
-    *whole = Some((job.image.clone(), job.recipe.clone(), histogram.clone()));
+    let histogram =
+        if let Some((.., histogram)) = whole.as_ref().filter(|(i, a, r, _)| same(i, a, r)) {
+            histogram.clone()
+        } else if let Some(shown) = fit.as_ref().filter(|s| same(&s.image, &s.ai, &s.recipe)) {
+            match &shown.out {
+                Shot::Pixels(out) => Box::new(out.histogram()),
+                Shot::Frame { histogram, .. } => histogram.clone(),
+            }
+        } else {
+            let out = processor.render_to(
+                &job.image,
+                &job.recipe,
+                job.max_edge,
+                None,
+                &job.cancel,
+                None,
+            )?;
+            Box::new(out.pixels().histogram())
+        };
+    *whole = Some((
+        job.image.clone(),
+        job.ai.clone(),
+        job.recipe.clone(),
+        histogram.clone(),
+    ));
     if !job.cancel.load(Ordering::Relaxed) {
         send(
             tx,
@@ -716,7 +742,7 @@ mod tests {
         recipe: &Recipe,
         region: Option<[u32; 4]>,
     ) -> Vec<(RenderStage, Vec<[f32; 3]>)> {
-        run_at(worker, rx, pane, id, image, recipe, region, 60)
+        run_at(worker, rx, pane, id, image, recipe, region, 60, None)
     }
     /// `run_in`, for a view whose Fit has the long edge `max_edge`.
     #[expect(clippy::too_many_arguments)]
@@ -729,6 +755,7 @@ mod tests {
         recipe: &Recipe,
         region: Option<[u32; 4]>,
         max_edge: u32,
+        ai: Option<develop::AiSource>,
     ) -> Vec<(RenderStage, Vec<[f32; 3]>)> {
         worker.submit(RenderJob {
             id,
@@ -744,6 +771,7 @@ mod tests {
             thumbnail: false,
             samples: false,
             overlay: Default::default(),
+            ai,
             drawn: Vec::new(),
         });
         let mut stages = Vec::new();
@@ -765,6 +793,91 @@ mod tests {
                 _ => {}
             }
         }
+    }
+    /// At 100%, a change of AI Denoise (its Amount, or a new result) renders the full
+    /// region at once: a reduced preview would need the same full-size blend first, so
+    /// it only adds a blurry frame before the sharp one (the view "bounced" while the
+    /// Amount slider moved). Other edits still show one first.
+    #[test]
+    fn ai_denoise_changes_at_100_percent_show_no_reduced_preview() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = renderer(tx, egui::Context::default());
+        let image = image();
+        let ai = develop::AiSource::recover((*image_of(240, 160)).clone(), &AtomicBool::new(false))
+            .unwrap();
+        let mut recipe = Recipe::default();
+        recipe.ai_denoise.enabled = true;
+        recipe.ai_denoise.amount = 0.5;
+        let region = Some([10, 10, 80, 60]);
+        let run = |id, recipe: &Recipe, ai: &develop::AiSource| {
+            run_at(
+                &worker,
+                &rx,
+                Pane::After,
+                id,
+                &image,
+                recipe,
+                region,
+                60,
+                Some(ai.clone()),
+            )
+        };
+        assert_eq!(run(1, &recipe, &ai).len(), 1);
+        recipe.ai_denoise.amount = 0.6;
+        let moved = run(2, &recipe, &ai);
+        assert_eq!(moved.len(), 1, "no reduced preview while Amount moves");
+        assert_eq!(moved[0].0, RenderStage::Region);
+        // A new result (the final one after a partial) is rendered at once too.
+        let next = develop::AiSource::recover((*image).clone(), &AtomicBool::new(false)).unwrap();
+        assert_eq!(run(3, &recipe, &next).len(), 1);
+        // Any other edit still shows a reduced preview first.
+        recipe.exposure = 0.5;
+        let edited = run(4, &recipe, &next);
+        assert_eq!(edited.len(), 2);
+        assert_eq!(edited[0].0, RenderStage::Draft);
+    }
+    /// At 100% the whole photo's histogram follows the AI Denoise result: one that
+    /// arrives (or replaces a partial one) with the edit unchanged is not answered with
+    /// the histogram kept from before it.
+    #[test]
+    fn the_whole_histogram_at_100_percent_follows_the_ai_result() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = renderer(tx, egui::Context::default());
+        let image = image();
+        let brighter = Arc::new(CameraImage {
+            pixels: image.pixels.iter().map(|p| p.map(|v| v * 2.)).collect(),
+            ..(*image).clone()
+        });
+        let ai = develop::AiSource::recover((*brighter).clone(), &AtomicBool::new(false)).unwrap();
+        let mut recipe = Recipe::default();
+        recipe.ai_denoise.enabled = true;
+        recipe.ai_denoise.amount = 1.;
+        let region = Some([10, 10, 80, 60]);
+        let histogram = |id, ai: Option<develop::AiSource>| {
+            run_at(
+                &worker,
+                &rx,
+                Pane::After,
+                id,
+                &image,
+                &recipe,
+                region,
+                60,
+                ai,
+            );
+            loop {
+                match rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap() {
+                    Event::Histogram { id: i, histogram } if i == id => return histogram,
+                    _ => {}
+                }
+            }
+        };
+        let waiting = histogram(1, None);
+        let ready = histogram(2, Some(ai));
+        assert!(
+            *ready != *waiting,
+            "the result's histogram, not the one from before it"
+        );
     }
     #[test]
     fn switching_views_shows_the_previous_images_without_drafts() {
@@ -809,7 +922,17 @@ mod tests {
         let image = image_of(1800, 1200);
         let mut recipe = Recipe::default();
         let fit = |id, recipe: &Recipe, edge| {
-            run_at(&worker, &rx, Pane::After, id, &image, recipe, None, edge)
+            run_at(
+                &worker,
+                &rx,
+                Pane::After,
+                id,
+                &image,
+                recipe,
+                None,
+                edge,
+                None,
+            )
         };
         // Opening the photo renders the full Fit directly.
         assert_eq!(fit(1, &recipe, 1500).len(), 1);
@@ -878,6 +1001,7 @@ mod tests {
             thumbnail: false,
             samples: false,
             overlay: Default::default(),
+            ai: None,
             drawn: Vec::new(),
         });
         loop {
@@ -915,6 +1039,7 @@ mod tests {
                 thumbnail: false,
                 samples: false,
                 overlay: Default::default(),
+                ai: None,
                 drawn: Vec::new(),
             });
             loop {

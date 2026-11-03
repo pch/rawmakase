@@ -44,7 +44,7 @@ impl Catalog {
     /// so a catalog of an earlier format is upgraded in the same transaction, after
     /// its backup: when `write` fails, the catalog stays as it was (the backup is
     /// left beside it). `stores` says what the write stores: a Lensfun lens choice
-    /// raises the catalog to version 4.
+    /// raises the catalog to version 4, an AI Denoise setting to version 5.
     pub(super) fn write_recipes<R>(
         &mut self,
         stores: Stores,
@@ -66,25 +66,34 @@ pub(super) enum Stores {
     Recipes,
     /// A Lensfun lens choice, in use or not, resolved or not.
     Lensfun,
+    /// AI Denoise not at its default (on, or its Amount moved), with or without a
+    /// Lensfun lens choice.
+    AiDenoise,
 }
 impl Stores {
     /// For a write of `recipes`.
     pub(super) fn of<'r>(
         recipes: impl IntoIterator<Item = &'r crate::model::recipe::Recipe>,
     ) -> Self {
-        if recipes
+        recipes
             .into_iter()
-            .any(crate::model::recipe::Recipe::uses_lensfun)
-        {
-            Self::Lensfun
-        } else {
-            Self::Recipes
-        }
+            .map(|r| {
+                if !r.ai_denoise.is_default() {
+                    Self::AiDenoise
+                } else if r.uses_lensfun() {
+                    Self::Lensfun
+                } else {
+                    Self::Recipes
+                }
+            })
+            .max_by_key(|s| s.version())
+            .unwrap_or(Self::Recipes)
     }
-    fn version(self) -> i64 {
+    pub(super) fn version(self) -> i64 {
         match self {
             Self::Recipes => super::db::VERSION,
             Self::Lensfun => super::db::LENSFUN,
+            Self::AiDenoise => super::db::AI_DENOISE,
         }
     }
 }

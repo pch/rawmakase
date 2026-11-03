@@ -40,6 +40,8 @@ pub(crate) struct Editor {
     loader: worker::Loader,
     /// Shared size policy for Develop, neighbour prefetch and Reference View.
     decode_cache: crate::decode_cache::DecodeCache,
+    /// AI Denoise's queue, worker and cache, shared with exports.
+    ai_denoise: ai_denoise::Service,
     renderer: worker::Renderer,
     /// Develop's Reference View, and the worker developing its photo.
     reference: reference::ReferenceView,
@@ -258,9 +260,13 @@ impl Editor {
         // is missing now (an unplugged drive) is not replaced by it.
         let first_catalog = session.last_path.is_none() && session_file.is_some();
         let (tx, rx) = mpsc::channel();
+        let copy_groups = session.copy_groups();
         let decode_cache = crate::decode_cache::DecodeCache::default();
         decode_cache.set_limit(u64::from(session.decoded_cache_size_gib()) << 30);
         decode_cache.set_folder(session.decoded_cache_folder.as_deref());
+        let ai_cache = crate::ai_cache::AiCache::default();
+        ai_cache.set_folder(session.decoded_cache_folder.as_deref());
+        let ai_denoise = ai_denoise::Service::new(ai_cache);
         let loader = worker::Loader::new(tx.clone(), ctx.clone(), decode_cache.clone());
         let renderer = worker::renderer_with_backend(tx.clone(), ctx.clone(), backend);
         let reference_loader =
@@ -301,6 +307,7 @@ impl Editor {
             rx,
             loader,
             decode_cache,
+            ai_denoise,
             renderer,
             reference: Default::default(),
             reference_loader,
@@ -308,7 +315,7 @@ impl Editor {
             previous_settings: None,
             curves: Default::default(),
             lut_import: None,
-            copy_groups: session.copy_groups.clone().unwrap_or_default(),
+            copy_groups: copy_groups.unwrap_or_default(),
             collapsed: session.collapsed.clone(),
             solo: session.solo.clone(),
             maximized: session.maximized,
@@ -425,6 +432,10 @@ impl Editor {
                     pause_checksums: self.checksums_paused,
                     library_layout: self.saved_layout.clone(),
                     copy_groups: Some(self.copy_groups.clone()),
+                    copy_ai_denoise: Some(
+                        self.copy_groups
+                            .contains(crate::model::settings_groups::SettingGroup::AiDenoise),
+                    ),
                     crop_guides: self.view.crop_guides.to_session(),
                     crop_aspect: inspector::aspect_key(self.view.chosen_aspect).into(),
                     raw_defaults: self.raw_defaults.settings().clone(),
@@ -891,6 +902,10 @@ fn survive_surface_errors(device: &wgpu::Device) {
     }));
 }
 
+pub(crate) mod ai_denoise;
+pub use ai_denoise::{
+    Command as DenoiseCommand, command as denoise_command, command_line_source as ai_denoise_source,
+};
 mod auto;
 mod automation;
 mod basic_keys;

@@ -261,9 +261,30 @@ impl RetouchCache {
         self.base = None;
         self.image = None;
         self.change = None;
-        let out = Arc::new(d.apply(source, cancel)?);
+        let out = d.apply(source, cancel)?;
         self.denoised = Some((source.clone(), d, out.clone()));
         Ok(out)
+    }
+    /// The last noise-reduced image, when the next [`Self::denoised`] of `source` with
+    /// `d` will replace it rather than reuse it.
+    pub(crate) fn replaced_by(
+        &self,
+        source: &Arc<CameraImage>,
+        d: Option<&Denoise>,
+    ) -> Option<Arc<CameraImage>> {
+        let (s, last, out) = self.denoised.as_ref()?;
+        (!(Arc::ptr_eq(s, source) && Some(last) == d)).then(|| out.clone())
+    }
+    /// Whether `image` is the retouched image this cache holds.
+    pub(crate) fn holds(&self, image: &Arc<CameraImage>) -> bool {
+        self.image.as_ref().is_some_and(|i| Arc::ptr_eq(i, image))
+    }
+    /// Lets go of the noise-reduced image and everything built on it.
+    pub(crate) fn forget_denoised(&mut self) {
+        self.denoised = None;
+        self.base = None;
+        self.image = None;
+        self.change = None;
     }
     /// What the last change replaced, and where the images differ.
     /// Whether `image` is what the last change replaced; then the current image

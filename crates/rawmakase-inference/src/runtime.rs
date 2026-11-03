@@ -21,8 +21,11 @@ use ort::session::{RunOptions, Session as OrtSession};
 use ort::value::TensorRef;
 
 use crate::auto::{self, SIDE};
+use crate::denoise::TileModel;
 use crate::error::InferenceError;
-use crate::manifest::{ModelFile, ModelSpec, PANOPTIC, SKY, SUBJECT, all_files, sky_files};
+use crate::manifest::{
+    ModelFile, ModelSpec, PANOPTIC, RAWNIND, SKY, SUBJECT, all_files, denoise_files, sky_files,
+};
 use crate::panoptic::{self, Labels};
 use crate::process::{self, Coverage, Prompt, RgbImage};
 
@@ -84,7 +87,7 @@ pub fn runtime_search_dirs() -> Vec<PathBuf> {
 /// the loaded ONNX Runtime actually registers the provider: a missing CUDA
 /// runtime or CoreML device is an error from [`Subject::load_with`], never a
 /// silent slide back to the CPU.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum Provider {
     #[default]
     Cpu,
@@ -271,6 +274,104 @@ fn sky_input_size(width: usize, height: usize) -> (usize, usize) {
     let scale = SKY.long_edge as f64 / width.max(height) as f64;
     let side = |v: usize| ((v as f64 * scale).round() as usize).max(SKY.min_side);
     (side(width), side(height))
+}
+
+/// The loaded AI Denoise model ([`RAWNIND`]). One tile at a time; dropping it releases the
+/// model's memory.
+pub struct Denoiser {
+    network: OrtSession,
+    provider: Provider,
+}
+
+impl Denoiser {
+    /// Opens the runtime as [`Subject::load_with`] does and the denoiser in folder `dir`
+    /// (with its `LICENSE` and `NOTICE`). A provider the manifest does not allow is an
+    /// error. On CoreML the graph runs as an ML Program on the CPU and GPU, in single
+    /// precision: the network's activations overflow half precision.
+    pub fn load_with(dir: &Path, options: &LoadOptions) -> Result<Self, InferenceError> {
+        let provider = options.provider.unwrap_or_default();
+        if !RAWNIND.providers.contains(&provider) {
+            return Err(InferenceError::Failed(format!(
+                "AI Denoise does not run on {}",
+                provider.name()
+            )));
+        }
+        let environment = load_runtime(options.runtime_library.as_deref())?;
+        check_files(dir, &denoise_files())?;
+        let threads = options.threads.unwrap_or_else(default_threads).max(1);
+        let network = catch_unwind(AssertUnwindSafe(|| {
+            build_session_with(
+                &environment,
+                &dir.join(RAWNIND.model.name),
+                threads,
+                GraphOptimizationLevel::All,
+                provider,
+                denoise_providers(provider),
+            )
+        }))
+        .map_err(|_| {
+            InferenceError::Failed("ONNX Runtime panicked while loading the model".into())
+        })??;
+        Ok(Self { network, provider })
+    }
+
+    /// The provider the runtime accepted.
+    pub fn provider(&self) -> Provider {
+        self.provider
+    }
+}
+
+impl TileModel for Denoiser {
+    fn run(&mut self, input: &[f32], cancel: &AtomicBool) -> Result<Vec<f32>, InferenceError> {
+        cancelled(cancel)?;
+        let side = RAWNIND.tile;
+        if input.len() != 4 * side * side {
+            return Err(InferenceError::OutputInvalid(format!(
+                "a denoiser tile holds {} values, expected {}",
+                input.len(),
+                4 * side * side
+            )));
+        }
+        let network = &mut self.network;
+        guarded(cancel, |options| {
+            let tensor =
+                TensorRef::from_array_view(([1usize, 4, side, side], input)).map_err(failed)?;
+            let outputs = network
+                .run_with_options(ort::inputs![RAWNIND.input => tensor], options)
+                .map_err(failed)?;
+            let output = outputs.get(RAWNIND.output).ok_or_else(|| {
+                InferenceError::ModelInvalid(format!(
+                    "the denoiser has no output `{}`",
+                    RAWNIND.output
+                ))
+            })?;
+            let (shape, data) = output.try_extract_tensor::<f32>().map_err(failed)?;
+            let expected = [1, 3, 2 * side as i64, 2 * side as i64];
+            if **shape != expected {
+                return Err(InferenceError::OutputInvalid(format!(
+                    "the denoiser answered with shape {shape:?}, expected {expected:?}"
+                )));
+            }
+            Ok(data.to_vec())
+        })
+    }
+}
+
+/// The denoiser's providers: CoreML as an ML Program on the CPU and GPU (the measured
+/// configuration), the CPU otherwise.
+fn denoise_providers(provider: Provider) -> Vec<ExecutionProviderDispatch> {
+    match provider {
+        Provider::CoreML => vec![
+            ep::CoreML::default()
+                .with_model_format(ep::coreml::ModelFormat::MLProgram)
+                .with_compute_units(ep::coreml::ComputeUnits::CPUAndGPU)
+                .with_static_input_shapes(true)
+                .build()
+                .error_on_failure(),
+            ep::CPU::default().with_arena_allocator(false).build(),
+        ],
+        other => other.providers(),
+    }
 }
 
 /// What the image encoder made of one photo: reused for every click on it. The
@@ -716,6 +817,24 @@ fn build_session(
     level: GraphOptimizationLevel,
     provider: Provider,
 ) -> Result<OrtSession, InferenceError> {
+    build_session_with(
+        environment,
+        model_path,
+        threads,
+        level,
+        provider,
+        provider.providers(),
+    )
+}
+
+fn build_session_with(
+    environment: &Environment,
+    model_path: &Path,
+    threads: usize,
+    level: GraphOptimizationLevel,
+    provider: Provider,
+    providers: Vec<ExecutionProviderDispatch>,
+) -> Result<OrtSession, InferenceError> {
     OrtSession::builder(environment)
         .map_err(failed)?
         .with_optimization_level(level)
@@ -728,7 +847,7 @@ fn build_session(
         .map_err(failed)?
         .with_memory_pattern(false)
         .map_err(failed)?
-        .with_execution_providers(provider.providers())
+        .with_execution_providers(providers)
         .map_err(failed)?
         .commit_from_file(model_path)
         .map_err(|e| {

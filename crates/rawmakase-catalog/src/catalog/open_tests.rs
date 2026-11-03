@@ -35,8 +35,8 @@ fn writing(path: &Path) -> Result<Connection> {
 #[test]
 fn an_unsupported_version_is_refused_with_the_file_unchanged() -> Result<()> {
     let (_dir, path) = ready()?;
-    // One past the newest this release opens (4, which may hold Lensfun lenses).
-    Connection::open(&path)?.execute_batch("PRAGMA user_version=5")?;
+    // One past the newest this release opens (5, which may hold AI Denoise settings).
+    Connection::open(&path)?.execute_batch("PRAGMA user_version=6")?;
     let before = std::fs::read(&path)?;
     let error = Catalog::open_as(&path, &computer("linux")).err().unwrap();
     assert!(

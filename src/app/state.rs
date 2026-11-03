@@ -48,6 +48,12 @@ pub(super) struct Document {
     pub(super) profile_errors: Vec<String>,
     /// Where the Profile menu lists each of `profiles`.
     pub(super) profile_groups: crate::camera_profiles::Groups,
+    /// The file as it was before the decoded image was made from it (the loader's
+    /// reading, not the header's): what AI Denoise's result and an export of it must be
+    /// made from. `None` when not known.
+    pub(super) image_file: Option<crate::storage::Identity>,
+    /// AI Denoise's result for the decoded image and what the Detail panel says of it.
+    pub(super) ai: super::ai_denoise::Photo,
     /// The Auto estimate for this photo; dropping it with the document cancels it.
     pub(super) auto: super::task::Task,
     /// Point Color's dropper sampling the photo, off the UI thread.
@@ -705,6 +711,22 @@ impl Document {
     pub(crate) fn set_image(&mut self, full: Arc<CameraImage>) {
         self.image = Some(full);
         self.color_spread = Default::default();
+        // A result belongs to the image it was made for, as does the file it came from.
+        self.ai = Default::default();
+        self.image_file = None;
+    }
+    /// The AI Denoise source a render of `image` with `setting` uses: the latest result,
+    /// partial or final, when the setting renders AI Denoise and `image` is this
+    /// document's own (never another photo's, such as Reference View's).
+    pub(crate) fn ai_source(
+        &self,
+        image: &Arc<CameraImage>,
+        setting: &crate::model::ai_denoise::AiDenoise,
+    ) -> Option<crate::develop::AiSource> {
+        let own = self.image.as_ref().is_some_and(|i| Arc::ptr_eq(i, image));
+        (own && setting.renders())
+            .then(|| self.ai.source().cloned())
+            .flatten()
     }
     /// How the decoded photo's colors spread, once it is decoded.
     pub(super) fn color_spread(&self) -> Option<crate::develop::ColorSpread> {

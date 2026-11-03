@@ -21,6 +21,7 @@ use crate::model::{operators::SharpeningSliders, white_balance::NamedWhiteBalanc
 use crate::{app::theme, develop::targeted::Target};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
+mod ai_denoise;
 mod lens_profile;
 mod lensfun;
 mod profile_offer;
@@ -453,6 +454,14 @@ impl Editor {
             suggest: self.lensfun.suggest,
         };
         let mut lensfun_action = None;
+        let ai_view = ai_denoise::View {
+            installed: self.selection.models.denoise.installed(),
+            progress: self.selection.models.denoise.progress(),
+            install_failure: self.selection.models.denoise.failure().map(str::to_string),
+            megabytes: crate::app::subject_mask::Pack::Denoise.megabytes(),
+            status: self.document.ai.status().cloned(),
+        };
+        let mut ai_action = None;
         let mut import_folder = None;
         let mut import_luts = false;
         let mut import_adobe = false;
@@ -1259,7 +1268,11 @@ impl Editor {
                 control(ui, ParameterId::ColorNoiseDetail, 0.5);
                 control(ui, ParameterId::ColorNoiseSmoothness, 0.5);
             });
+            ui.push_id("ai-denoise", |ui| {
+                ai_action = ai_denoise::controls(ui, r, &ai_view);
+            });
         }) {
+            r.ai_denoise = Default::default();
             let d = Recipe::default().effects;
             r.noise_luma = 0.;
             r.effects.luma_detail = d.luma_detail;
@@ -1635,6 +1648,19 @@ impl Editor {
         }
         if import_lens {
             self.dialog(FileDialog::LensProfile, &ui.ctx().clone());
+        }
+        match ai_action {
+            Some(ai_denoise::Action::Install) => {
+                self.install_model(crate::app::subject_mask::Pack::Denoise);
+            }
+            Some(ai_denoise::Action::Remove) => self.remove_ai_denoise_model(),
+            Some(ai_denoise::Action::Cancel) => {
+                self.selection
+                    .models
+                    .of_mut(crate::app::subject_mask::Pack::Denoise)
+                    .cancel();
+            }
+            None => {}
         }
         match lensfun_action {
             Some(lensfun::Action::Download) => {

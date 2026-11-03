@@ -2,7 +2,7 @@
 
 */raw·muh·KAH·say/, RAW + omakase*
 
-RAWmakase is a fast, non-destructive RAW photo developer for Linux, macOS and Windows, written in Rust. It develops RAW, JPEG, PNG, TIFF, WebP, AVIF and JPEG XL files with a Lightroom-style set of controls and exports JPEG, 16-bit TIFF or PNG (exporting to WebP, AVIF and JPEG XL is not available yet). It can also import a Lightroom Classic catalog with its ratings, flags, labels, keywords and compatible develop settings, without ever writing to the original catalog or your photos.
+RAWmakase is a fast, non-destructive RAW photo developer for Linux, macOS and Windows, written in Rust. It develops RAW, JPEG, PNG, TIFF, WebP, AVIF, HEIF/HEIC and JPEG XL files with a Lightroom-style set of controls and exports JPEG, 16-bit TIFF or PNG (exporting to WebP, AVIF, HEIF and JPEG XL is not available yet). It can also import a Lightroom Classic catalog with its ratings, flags, labels, keywords and compatible develop settings, without ever writing to the original catalog or your photos.
 
 ![RAWmakase Develop view with presets, the photo, and the Basic and Tone Curve panels](docs/images/screenshot-2026-10-13-1111.png)
 
@@ -104,6 +104,8 @@ The `rawmakase-<version>-<arch>.AppImage` download is the same build as a single
 
 Run `rawmakase-v<version>-x86_64-pc-windows-msvc-setup.exe`, or `rawmakase-v<version>-aarch64-pc-windows-msvc-setup.exe` on an ARM64 PC. It installs for your user account only, without administrator rights, and adds RAWmakase to the Start menu. The installer is not code-signed yet, so Microsoft Defender SmartScreen may warn about an unrecognized app: choose **More info → Run anyway**. For a copy without installing, extract `rawmakase-v<version>-<arch>-pc-windows-msvc.zip` and run `rawmakase.exe` from the extracted folder.
 
+HEIC photos (from phones) are decoded by Windows itself, which needs Microsoft's **HEIF Image Extensions** and **HEVC Video Extensions** from the Microsoft Store; some PCs come with them. Without them HEIC photos are listed but not shown, and opening one says what to install.
+
 ### Updates and verification
 
 RAWmakase checks GitHub for a newer release after launch and once an hour, and shows a notice when one is out (turn the check off in Preferences). The Apple Silicon DMG and the Windows installer download and install the update themselves; Intel Macs, the Linux tarball and AppImage, the Windows archive and package-managed installs (Homebrew, DEB, RPM, Arch) are pointed at the release page or their package manager. Settings and catalogs are kept separately from the installed application, so reinstalling over an old version loses nothing.
@@ -124,6 +126,8 @@ make install PREFIX="$HOME/.local"    # binary, desktop entry, icon and licenses
 
 `make install` never builds, so `make && sudo make install PREFIX=/usr` does not compile as root. `make uninstall` removes the installed files.
 
+On Linux, HEIC photos are decoded by the system's libheif with its HEVC decoder (libde265), opened when RAWmakase first needs it: install `libheif` on Arch, `libheif1` and `libheif-plugin-libde265` on Debian or Ubuntu, or `libheif-freeworld` from RPM Fusion on Fedora. Without it HEIC photos are listed with their metadata, and opening one says what to install (see [dependencies](docs/dependencies.md)).
+
 On macOS, `packaging/macos/app.sh` builds `target/release/RAWmakase.app`, which you can open from Finder. It uses the Homebrew libraries installed on your Mac and is not a signed, self-contained distribution.
 
 ## Usage
@@ -134,7 +138,7 @@ rawmakase Photos.rawmakase    # open a catalog
 rawmakase photo.dng           # add the photo's folder to the last catalog and edit it
 ```
 
-Photos are edited through the Library. The first launch starts a catalog named Photos in RAWmakase's data folder and asks for a folder of photos; to keep your Lightroom Classic folders, ratings and edits, import its catalog instead. Both, and other catalogs, are available later from the **Catalog** menu. Folders dropped onto the window, one or several, are added to the open catalog; right-click a folder in the Library's Folders panel to remove it and its photos from the catalog (its files stay on disk), or select photos and press Delete to move their files to the Trash or just remove them from the catalog. Drag photos onto a folder, or use Move to Folder… in their menu, to move their files there; New Folder Inside… in a folder's menu makes a folder and can move the selection into it. F2 renames a photo, or several by a template in the order they were taken; Rename Folder… renames a folder, and a folder dragged onto another (or Move Folder…) moves there. A photo dropped there or passed on the command line has its folder added, then opens in Develop; edits it got in earlier releases (its `photo.rawmakase.json`) come along. You can also drop a catalog onto the window. The camera's embedded JPEG shows immediately while the RAW develops. A JPEG, PNG, TIFF, WebP, AVIF or JPEG XL opens in Develop like a RAW: untouched it looks as the file does, and its white balance is Lightroom's relative Temp and Tint (−100 to 100) rather than Kelvin. WebP, AVIF and JPEG XL are read only for now, and Develop does not edit HDR (PQ or HLG), animated or tiled AVIF files; HDR and animated ones still show in the Library.
+Photos are edited through the Library. The first launch starts a catalog named Photos in RAWmakase's data folder and asks for a folder of photos; to keep your Lightroom Classic folders, ratings and edits, import its catalog instead. Both, and other catalogs, are available later from the **Catalog** menu. Folders dropped onto the window, one or several, are added to the open catalog; right-click a folder in the Library's Folders panel to remove it and its photos from the catalog (its files stay on disk), or select photos and press Delete to move their files to the Trash or just remove them from the catalog. Drag photos onto a folder, or use Move to Folder… in their menu, to move their files there; New Folder Inside… in a folder's menu makes a folder and can move the selection into it. F2 renames a photo, or several by a template in the order they were taken; Rename Folder… renames a folder, and a folder dragged onto another (or Move Folder…) moves there. A photo dropped there or passed on the command line has its folder added, then opens in Develop; edits it got in earlier releases (its `photo.rawmakase.json`) come along. You can also drop a catalog onto the window. The camera's embedded JPEG shows immediately while the RAW develops. A JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL opens in Develop like a RAW: untouched it looks as the file does, and its white balance is Lightroom's relative Temp and Tint (−100 to 100) rather than Kelvin. WebP, AVIF, HEIF and JPEG XL are read only for now, and Develop does not edit HDR (PQ or HLG), animated, tiled AVIF or 4:2:2 and monochrome HEIF files; HDR and animated ones still show in the Library.
 
 Useful shortcuts:
 
@@ -219,6 +223,19 @@ The public part of the color corpus runs with every `cargo test`: synthetic char
 GPU tests are ignored as well; run them with `cargo test -p rawmakase-engine --lib gpu -- --ignored` on a machine with a compute adapter.
 
 Application CI runs `make check`, a release build, an Arch package build and a `cargo deny` license and advisory audit. Website-only pushes and pull requests run the Hugo build instead, and stats-only changes run the stats service's tests; edits to either workflow also run the workflow linter. A stable `vX.Y.Z` tag on `main` matching `Cargo.toml` builds both macOS DMGs, the Linux packages and the Windows installer. Publication waits for Apple notarization and package checks, then refreshes the website's download links. See [packaging/RELEASING.md](packaging/RELEASING.md) for credentials, rehearsal runs, supported systems and the AUR pause.
+
+### Skills
+
+Coding agents follow [AGENTS.md](AGENTS.md). For the recurring maintainer workflows, the repository also has skills in [`.agents/skills/`](.agents/skills) (Codex reads them there; `.claude/skills` links to the same folder for Claude Code). Run one with `/name` in Claude Code or `$name` in Codex, or just ask in plain words: agents pick a skill up from its description.
+
+| Skill | What it does | Example |
+| --- | --- | --- |
+| [`issue`](.agents/skills/issue/SKILL.md) | Reads an issue and everything it links, checks for overlapping PRs, gets sample RAWs, reproduces the bug with a failing test, fixes it and hands off to `ship`. Can also stop at a diagnosis or a status report. | `/issue 812`<br>"#812: investigate, don't fix yet"<br>"where do we stand with #675?" |
+| [`ship`](.agents/skills/ship/SKILL.md) | Has a model from another provider review the change until it approves, then opens the PR, watches CI and bot comments, and merges when green. Can also review a plan before any code is written. | `/ship`<br>"let codex astra medium review, merge when green"<br>"PR only, don't wait for Windows CI"<br>"plan this with codex until you agree, let me approve" |
+| [`release`](.agents/skills/release/SKILL.md) | Waits for the PRs you name, writes the release notes from the tagged range with credits, commits `Release x.y.z`, tags it and follows the build through to publication. | `/release 0.4.12 after #812`<br>"cut 0.4.12, highlights: AI masks, credit contributors, do a tldr"<br>"what would go into the next release?" |
+| [`gh-reply`](.agents/skills/gh-reply/SKILL.md) | Writes issue and PR comments for the maintainer, signed by the model that wrote them. Drafts first when the reply makes a decision: refusing, closing or promising. | "ask the reporter for their system info, they're not technical"<br>"thank the contributor and merge"<br>"decline this PR, cite licensing risk; let me approve before posting" |
+
+The skills call on each other: `issue` hands off to `ship`, and `ship` and `issue` reply on GitHub through `gh-reply`. Each one is a short Markdown file, and the policy it follows stays in `AGENTS.md` and the docs it links.
 
 ## License
 
