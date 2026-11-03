@@ -1,0 +1,8 @@
+# cargo-fuzz's output, and the lockfile of this workspace of its own: each
+# nightly run resolves the latest compatible versions. Keep the Cargo.lock
+# of a run whose crash you reproduce.
+/target/
+/corpus/
+/artifacts/
+/coverage/
+/Cargo.lock

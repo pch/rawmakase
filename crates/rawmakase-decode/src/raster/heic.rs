@@ -20,6 +20,9 @@
 //! Alpha, depth maps, gain maps and thumbnails are not shown; an alpha image,
 //! which a system decoder decodes with the image, is held to the image's
 //! limits with it.
+// Every unsafe operation here crosses into a C API: each one says why it is
+// sound, and an unsafe function's body is no unsafe block of its own.
+#![deny(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
 use super::avif::{self, Nclx};
 use super::{Unsupported, hevc};
 use anyhow::{Result, anyhow, bail, ensure};

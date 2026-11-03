@@ -224,6 +224,8 @@ GPU tests are ignored as well; run them with `cargo test -p rawmakase-engine --l
 
 Application CI runs the checks `make check` runs, on Linux, Windows and macOS, plus a release build, an Arch package build and a `cargo deny` license and advisory audit. Website-only pushes and pull requests run the Hugo build instead, and stats-only changes run the stats service's tests; edits to either workflow also run the workflow linter. A stable `vX.Y.Z` tag on `main` matching `Cargo.toml` builds both macOS DMGs, the Linux packages and the Windows installer. Publication waits for Apple notarization and package checks, then refreshes the website's download links. See [packaging/RELEASING.md](packaging/RELEASING.md) for credentials, rehearsal runs, supported systems and the AUR pause.
 
+The RAW decoders have fuzz targets (`fuzz/`: `open`, `preview` and `decode` of `rawmakase-raw`), run nightly by the Fuzz RAW decoders workflow, seeded only from the repository's synthetic DNGs. Locally: `cargo +nightly fuzz run open` from the repository root, with [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz).
+
 ### Skills
 
 Coding agents follow [AGENTS.md](AGENTS.md). For the recurring maintainer workflows, the repository also has skills in [`.agents/skills/`](.agents/skills) (Codex reads them there; `.claude/skills` links to the same folder for Claude Code). Run one with `/name` in Claude Code or `$name` in Codex, or just ask in plain words: agents pick a skill up from its description.
