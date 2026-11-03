@@ -1,12 +1,13 @@
 //! A HEIC (a HEIF of HEVC) still: our reading of its container
 //! ([`rawmakase_interop::isobmff`]) here, its pixels decoded by the system's
 //! HEVC decoder: macOS's ImageIO (`imageio`), Windows Imaging Component
-//! (`wic`). The header here says the size, crop, colour and orientation, and
-//! what Develop refuses.
+//! (`wic`), and elsewhere, as on Linux, the system's libheif (`libheif`),
+//! opened when first needed. The header here says the size, crop, colour and
+//! orientation, and what Develop refuses.
 //!
-//! RAWmakase has no HEVC decoder of its own, as HEVC is patented. Elsewhere,
-//! as on Linux, the header is still read, so the photo is listed with its size
-//! and metadata, but its pixels are refused.
+//! RAWmakase has no HEVC decoder of its own, as HEVC is patented. Without the
+//! system's, the header is still read, so the photo is listed with its size
+//! and metadata, and opening it says what to install.
 //!
 //! A phone's photo is a grid (`grid`) of tiles, 512×512 on an iPhone, each its
 //! own HEVC picture. A clean aperture (`clap`) crops the picture, before its
@@ -35,10 +36,26 @@ use imageio::pixels;
 mod wic;
 #[cfg(windows)]
 use wic::pixels;
+#[cfg(all(unix, not(target_vendor = "apple")))]
+mod libheif;
+#[cfg(all(unix, not(target_vendor = "apple")))]
+use libheif::pixels;
 /// No decoder on this system.
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(any(unix, windows)))]
 fn pixels(_: HeicFile) -> Result<Pixels> {
-    bail!("RAWmakase shows HEIF images only on macOS and Windows, with their HEVC decoders")
+    bail!("RAWmakase can't show HEIF images on this system")
+}
+
+/// Whether this system can decode a HEIC's pixels, or what to install:
+/// macOS can; Windows' extensions are found only by decoding; elsewhere,
+/// libheif with its HEVC decoder.
+pub(super) fn decoder() -> std::result::Result<(), String> {
+    #[cfg(all(unix, not(target_vendor = "apple")))]
+    return libheif::available();
+    #[cfg(any(target_os = "macos", windows))]
+    return Ok(());
+    #[cfg(not(any(unix, windows)))]
+    Err("RAWmakase can't show HEIF images on this system".into())
 }
 
 /// Decoded pixels: `width` × `height` of interleaved RGB, 8-bit samples or
@@ -91,10 +108,11 @@ pub(super) struct HeicFile {
     crop: Crop,
     /// More than 8 bits per sample, from `hvcC`.
     deep: bool,
-    /// Where the file is, for a system decoder to open.
+    /// Where the file is, for a system decoder that opens it itself.
     #[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
     path: std::path::PathBuf,
-    /// The file and its boxes, to read the pictures from when decoding.
+    /// The file and its boxes, to read the pictures from when decoding, and
+    /// the bytes libheif decodes.
     file: std::fs::File,
     heif: Heif,
     layout: Layout,
@@ -148,11 +166,9 @@ impl HeicFile {
             "The HEIF image's tiles differ in depth or chroma"
         );
         let animated = [b"msf1", b"hevc", b"hevx", b"hevm", b"hevs"];
-        // Without a system decoder, Develop says why from the header; with
-        // one, the decoder decides what chroma and depth it reads.
-        let refused = if cfg!(not(any(target_os = "macos", windows))) {
-            Some(Unsupported("HEIF".into()))
-        } else if nclx.is_some_and(Nclx::hdr) {
+        // The system's decoder decides what chroma and depth it reads, and
+        // says what to install when there is none.
+        let refused = if nclx.is_some_and(Nclx::hdr) {
             Some(Unsupported("HDR".into()))
         } else if heif.brands.iter().any(|b| animated.contains(&b)) {
             Some(Unsupported("animated".into()))
@@ -223,7 +239,7 @@ impl HeicFile {
     /// Whether a picture of `width` × `height` is this image: the whole
     /// picture, or its crop alone. A system decoder's size is checked so
     /// before anything that size is allocated.
-    #[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
+    #[cfg_attr(not(any(unix, windows)), allow(dead_code))]
     fn expects(&self, width: u32, height: u32) -> bool {
         (width, height) == (self.layout.width, self.layout.height)
             || (width, height) == (self.crop.width, self.crop.height)

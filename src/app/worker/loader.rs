@@ -463,10 +463,15 @@ pub(in crate::app) mod tests {
     }
 
     /// A HEIC opens as a JPEG does: at full size at once, with its own
-    /// profile, and never decode-cached.
-    #[cfg(target_os = "macos")]
+    /// profile, and never decode-cached; where this system decodes HEIC
+    /// (macOS, and Linux with libheif).
+    #[cfg(not(windows))]
     #[test]
     fn a_heic_loads_straight_to_full_size() -> anyhow::Result<()> {
+        if let Err(why) = crate::raster::heif_decoder() {
+            eprintln!("HEIC pixels not tested: {why}");
+            return Ok(());
+        }
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("IMG_0001.HEIC");
         std::fs::copy(

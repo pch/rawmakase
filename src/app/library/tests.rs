@@ -336,10 +336,15 @@ fn an_unsupported_jpeg_says_why_in_develop() -> Result<()> {
 }
 
 /// A phone's HEIC is added with a folder and opens in Develop as a JPEG does;
-/// an HDR one is shown in the Library but Develop says why it can't edit it.
-#[cfg(target_os = "macos")]
+/// an HDR one is shown in the Library but Develop says why it can't edit it;
+/// where this system decodes HEIC (macOS, and Linux with libheif).
+#[cfg(not(windows))]
 #[test]
 fn a_heic_opens_in_develop_and_an_hdr_one_says_why_not() -> Result<()> {
+    if let Err(why) = crate::raster::heif_decoder() {
+        eprintln!("HEIC pixels not tested: {why}");
+        return Ok(());
+    }
     let formats = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/formats");
     let directory = tempfile::tempdir()?;
     let folder = directory.path().join("photos");

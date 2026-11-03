@@ -237,6 +237,13 @@ pub(crate) fn open(path: &Path, cancel: &AtomicBool) -> Result<CameraImage> {
     })
 }
 
+/// Whether this system can decode a HEIF (HEIC) photo's pixels, or what to
+/// install: macOS can; Windows says so only when decoding; elsewhere, as on
+/// Linux, it takes the system's libheif with its HEVC decoder.
+pub fn heif_decoder() -> std::result::Result<(), String> {
+    heic::decoder()
+}
+
 /// Whether Develop can convert the pixels of the file at `path`, from its header
 /// and embedded ICC profile alone, without decoding them: [`Unsupported`] for a
 /// colour space [`open`] refuses. A file that can't be read is not refused here;
@@ -548,6 +555,17 @@ mod tests {
         [(1, 1), (w - 2, 1), (1, h - 2), (w - 2, h - 2)].map(|(x, y)| image.get_pixel(x, y).0)
     }
     const UPRIGHT: [[u8; 3]; 4] = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 255]];
+
+    /// Whether this system decodes a HEIC's pixels in this test: macOS, and
+    /// Linux with libheif; Windows, whose extensions CI lacks, has its own
+    /// test. A test of HEIC pixels says when it is skipped.
+    fn heic_decodes() -> bool {
+        let decodes = !cfg!(windows) && super::heif_decoder().is_ok();
+        if !decodes {
+            eprintln!("HEIC pixels not tested: {:?}", super::heif_decoder());
+        }
+        decodes
+    }
     /// `got` within `tolerance` per channel of `want`: for files that went
     /// through a lossy JPEG before, whose pixels are not exactly 0 or 255.
     fn assert_corners_near(got: [[u8; 3]; 4], want: [[u8; 3]; 4], tolerance: u8) {
@@ -957,9 +975,11 @@ mod tests {
             // A JPEG transcode, so the pixels are only near.
             ("metadata.jxl", "c.webp", 8),
             // Lossy 4:2:0, where there is a HEVC decoder.
-            #[cfg(target_os = "macos")]
             ("grid.heic", "d.jpg", 4),
         ] {
+            if from.ends_with(".heic") && !heic_decodes() {
+                continue;
+            }
             let path = dir.path().join(to);
             std::fs::copy(fixture(from), &path).unwrap();
             assert_corners_near(corners(&decode(&path).unwrap()), UPRIGHT, tolerance);
@@ -1285,9 +1305,11 @@ mod tests {
 
     /// libheif's own HEIC: 4:2:0 in a 64×64 picture it crops (`clap`) to the
     /// 16×12 drawing.
-    #[cfg(target_os = "macos")]
     #[test]
     fn a_heic_decodes_cropped_with_its_colours() {
+        if !heic_decodes() {
+            return;
+        }
         assert_eq!(super::dimensions(&fixture("metadata.heic")), Some((16, 12)));
         let image = decode(&fixture("metadata.heic")).unwrap();
         assert_eq!(image.dimensions(), (16, 12));
@@ -1300,9 +1322,11 @@ mod tests {
     /// A grid as an iPhone writes one: four tiles laid in place and cut to
     /// the grid's size, each converted by the matrix and range of its own
     /// `nclx` (BT.709, limited range), as the grid has only an ICC profile.
-    #[cfg(target_os = "macos")]
     #[test]
     fn a_heic_grid_is_laid_out_and_cut_to_its_size() {
+        if !heic_decodes() {
+            return;
+        }
         assert_eq!(super::dimensions(&fixture("grid.heic")), Some((120, 100)));
         let image = decode(&fixture("grid.heic")).unwrap();
         assert_eq!(image.dimensions(), (120, 100));
@@ -1319,9 +1343,11 @@ mod tests {
         assert!(last.iter().all(|v| *v >= 250), "{last:?}");
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn a_heic_decodes_upright_by_its_rotation_and_mirror() {
+        if !heic_decodes() {
+            return;
+        }
         // As rotated.avif: irot 1 brings the top-right (green) to the top-left,
         // after the crop.
         assert_eq!(super::dimensions(&fixture("rotated.heic")), Some((12, 16)));
@@ -1341,9 +1367,11 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn a_ten_bit_heic_keeps_its_depth_and_colours() -> anyhow::Result<()> {
+        if !heic_decodes() {
+            return Ok(());
+        }
         assert_corners_near(corners(&decode(&fixture("ten-bit.heic"))?), UPRIGHT, 1);
         let super::Prepared { decoder, .. } = super::prepare(&fixture("ten-bit.heic"))?;
         assert_eq!(decoder.color_type(), image::ColorType::Rgb16);
@@ -1354,9 +1382,11 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn a_heics_cicp_colours_are_converted() {
+        if !heic_decodes() {
+            return;
+        }
         // As p3.avif, but 4:2:0.
         let image = decode(&fixture("p3.heic")).unwrap();
         let grey = image.get_pixel(8, 6).0;
@@ -1374,7 +1404,6 @@ mod tests {
     /// refusals come from the header, wherever the pixels come from; how an
     /// HDR picture's preview looks, and whether a system decoder shows a still
     /// it takes for a sequence, are its own.
-    #[cfg(any(target_os = "macos", windows))]
     #[test]
     fn hdr_and_sequence_heics_are_refused_for_develop() {
         assert_eq!(super::probe(&fixture("pq.heic")).unwrap_err().0, "HDR");
@@ -1407,13 +1436,17 @@ mod tests {
             assert!(image.pixels().all(|p| p.0 == [0; 3]));
             let image = decode(&fixture("half-alpha.heic")).unwrap();
             assert_corners_near([image.get_pixel(8, 6).0; 4], [[128, 0, 0]; 4], 6);
+        } else if heic_decodes() {
+            // libheif's alpha is dropped: the colour, as an AVIF's.
+            for name in ["transparent.heic", "half-alpha.heic"] {
+                assert_eq!(decode(&fixture(name)).unwrap().dimensions(), (16, 12));
+            }
         }
     }
 
     /// The size and the refusal come from a HEIC's header: its HEVC data is
     /// read only to decode it, and a picture cut short is an error on every
     /// platform, whatever a system decoder would make of it.
-    #[cfg(any(target_os = "macos", windows))]
     #[test]
     fn a_heic_header_is_read_without_its_image_data() {
         let dir = tempfile::tempdir().unwrap();
@@ -1496,9 +1529,11 @@ mod tests {
     }
 
     /// A grid may list one tile several times; each place shows it.
-    #[cfg(target_os = "macos")]
     #[test]
     fn a_heic_grid_listing_a_tile_twice_shows_it_twice() {
+        if !heic_decodes() {
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let mut bytes = std::fs::read(fixture("grid.heic")).unwrap();
         // dimg from the grid (1) to its four tiles (2 to 5): all to tile 2.
@@ -1517,15 +1552,26 @@ mod tests {
         assert!(grey.iter().all(|v| v.abs_diff(128) <= 2), "{grey:?}");
     }
 
-    /// A build without a HEVC decoder lists a HEIC with its size, but Develop
-    /// refuses it and decoding says why.
-    #[cfg(not(any(target_os = "macos", windows)))]
+    /// Elsewhere, as on Linux, a HEIC is decoded by the system's libheif,
+    /// which a system (CI's Ubuntu runners among them) may lack: it is then
+    /// listed with its size and Develop opens it, but decoding says what to
+    /// install.
+    #[cfg(all(unix, not(target_vendor = "apple")))]
     #[test]
-    fn without_a_decoder_a_heic_is_listed_but_refused() {
+    fn with_libheif_a_heic_decodes_and_without_it_says_what_to_install() {
         assert_eq!(super::dimensions(&fixture("grid.heic")), Some((120, 100)));
-        assert_eq!(super::probe(&fixture("grid.heic")).unwrap_err().0, "HEIF");
-        let err = decode(&fixture("grid.heic")).unwrap_err().to_string();
-        assert!(err.contains("only on macOS and Windows"), "{err}");
+        assert!(super::probe(&fixture("grid.heic")).is_ok());
+        match decode(&fixture("grid.heic")) {
+            Ok(image) => {
+                assert_eq!(image.dimensions(), (120, 100));
+                assert_corners_near(corners(&image), UPRIGHT, 4);
+            }
+            Err(error) => {
+                let error = format!("{error:#}");
+                assert!(error.contains("libheif"), "{error}");
+                assert!(super::heif_decoder().is_err());
+            }
+        }
     }
 
     /// On Windows a HEIC is decoded by Microsoft's HEIF and HEVC extensions,
@@ -1554,7 +1600,7 @@ mod tests {
     /// pad (Apple's codes 64×64 as 160×64).
     #[test]
     fn a_heic_coded_larger_than_its_header_says_is_no_larger_shown() {
-        if cfg!(target_os = "macos") {
+        if heic_decodes() {
             let image = decode(&fixture("wide.heic")).unwrap();
             assert_eq!(image.dimensions(), (192, 128));
             assert_corners_near(corners(&image), UPRIGHT, 4);
@@ -1572,15 +1618,12 @@ mod tests {
             Err(error) => {
                 let error = format!("{error:#}");
                 assert!(
-                    [
-                        "not the size it says",
-                        "only on macOS",
-                        "HEVC Video Extensions"
-                    ]
-                    .iter()
-                    .any(|e| error.contains(e)),
+                    ["not the size it says", "libheif", "HEVC Video Extensions"]
+                        .iter()
+                        .any(|e| error.contains(e)),
                     "{error}"
                 );
+                // libheif refuses it itself, by its own check of the size.
                 assert!(!cfg!(target_os = "macos") || error.contains("not the size"));
             }
         }

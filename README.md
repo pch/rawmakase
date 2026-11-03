@@ -2,7 +2,7 @@
 
 */raw·muh·KAH·say/, RAW + omakase*
 
-RAWmakase is a fast, non-destructive RAW photo developer for Linux, macOS and Windows, written in Rust. It develops RAW, JPEG, PNG, TIFF, WebP, AVIF, HEIF/HEIC (on macOS and Windows) and JPEG XL files with a Lightroom-style set of controls and exports JPEG, 16-bit TIFF or PNG (exporting to WebP, AVIF, HEIF and JPEG XL is not available yet). It can also import a Lightroom Classic catalog with its ratings, flags, labels, keywords and compatible develop settings, without ever writing to the original catalog or your photos.
+RAWmakase is a fast, non-destructive RAW photo developer for Linux, macOS and Windows, written in Rust. It develops RAW, JPEG, PNG, TIFF, WebP, AVIF, HEIF/HEIC and JPEG XL files with a Lightroom-style set of controls and exports JPEG, 16-bit TIFF or PNG (exporting to WebP, AVIF, HEIF and JPEG XL is not available yet). It can also import a Lightroom Classic catalog with its ratings, flags, labels, keywords and compatible develop settings, without ever writing to the original catalog or your photos.
 
 ![RAWmakase Develop view with presets, the photo, and the Basic and Tone Curve panels](docs/images/screenshot-2026-10-13-1111.png)
 
@@ -126,7 +126,7 @@ make install PREFIX="$HOME/.local"    # binary, desktop entry, icon and licenses
 
 `make install` never builds, so `make && sudo make install PREFIX=/usr` does not compile as root. `make uninstall` removes the installed files.
 
-On Linux, HEIC photos are listed with their metadata but not shown or edited: RAWmakase decodes them with the system's HEVC decoder, which only macOS and Windows provide (see [dependencies](docs/dependencies.md)).
+On Linux, HEIC photos are decoded by the system's libheif with its HEVC decoder (libde265), opened when RAWmakase first needs it: install `libheif` on Arch, `libheif1` and `libheif-plugin-libde265` on Debian or Ubuntu, or `libheif-freeworld` from RPM Fusion on Fedora. Without it HEIC photos are listed with their metadata, and opening one says what to install (see [dependencies](docs/dependencies.md)).
 
 On macOS, `packaging/macos/app.sh` builds `target/release/RAWmakase.app`, which you can open from Finder. It uses the Homebrew libraries installed on your Mac and is not a signed, self-contained distribution.
 
