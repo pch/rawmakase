@@ -21,6 +21,7 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 impl Catalog {
+    #[cfg(any(test, feature = "test-support"))]
     /// The catalog's format version.
     pub fn format_version(&self) -> Result<i64> {
         self.db.version()

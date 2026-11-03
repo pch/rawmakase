@@ -152,7 +152,7 @@ pub(crate) fn preview_source(im: Source, max: u32) -> CameraImage {
 }
 /// A detail sample averaged over an output pixel's footprint: four taps at ±`spread`
 /// source pixels, which with bilinear sampling approximate a box filter.
-pub(super) fn footprint_sample(im: Source, x: f32, y: f32, _r: &Recipe, spread: f32) -> [f32; 3] {
+pub(super) fn footprint_sample(im: Source, x: f32, y: f32, spread: f32) -> [f32; 3] {
     if spread == 0. {
         return sample(im, x, y);
     }

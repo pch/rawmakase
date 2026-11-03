@@ -119,7 +119,7 @@ impl<'a> LensWarp<'a> {
             gain_map: GainField::new(im, r),
         })
     }
-    pub(super) fn sample(&self, im: Source, x: f32, y: f32, r: &Recipe, spread: f32) -> [f32; 3] {
+    pub(super) fn sample(&self, im: Source, x: f32, y: f32, spread: f32) -> [f32; 3] {
         let m = &self.map;
         let ([dx, dy], scale) = m.scales(x, y);
         let at = |c: usize| {
@@ -130,11 +130,11 @@ impl<'a> LensWarp<'a> {
         };
         let [gx, gy] = at(1);
         let p = if scale[0] == scale[1] && scale[2] == scale[1] {
-            footprint_sample(im, gx, gy, r, spread)
+            footprint_sample(im, gx, gy, spread)
         } else {
             let samples = std::array::from_fn(|c| {
                 let [sx, sy] = at(c);
-                footprint_sample(im, sx, sy, r, spread)
+                footprint_sample(im, sx, sy, spread)
             });
             if im.metadata.xtrans {
                 stripe_ca_sample(im, gx, gy, samples)

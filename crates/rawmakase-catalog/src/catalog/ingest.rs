@@ -171,6 +171,7 @@ pub(in crate::catalog) enum Place {
 }
 
 impl Catalog {
+    #[cfg(any(test, feature = "test-support"))]
     pub fn add_folder(&mut self, folder: &Path) -> Result<usize> {
         Ok(self.add_folder_with(folder, &Default::default())?.0)
     }

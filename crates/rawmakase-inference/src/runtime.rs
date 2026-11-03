@@ -32,12 +32,6 @@ use crate::process::{self, Coverage, Prompt, RgbImage};
 /// Environment variable naming the ONNX Runtime library file to load.
 pub const RUNTIME_ENV: &str = "RAWMAKASE_ORT_LIB";
 
-/// The ONNX Runtime version the packaged library is pinned to. Any release at
-/// or above the `ort` crate's minimum API (1.17) loads; this is the one that
-/// is tested and shipped for every platform, because 1.23.2 is the last release
-/// with an official macOS x86_64 build.
-pub const PINNED_RUNTIME_VERSION: &str = "1.23.2";
-
 /// How often a running inference polls the caller's cancel flag.
 const CANCEL_POLL: Duration = Duration::from_millis(15);
 

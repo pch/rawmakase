@@ -381,11 +381,13 @@ impl Catalog {
         }
         Ok(places)
     }
+    #[cfg(any(test, feature = "test-support"))]
     /// The photos of the stack `photo` is in, top first; empty when it is
     /// in none.
     pub fn stack_of(&self, photo: PhotoId) -> Result<Vec<PhotoId>> {
         Ok(group_of(&self.db, photo)?.map_or_else(Vec::new, |g| g.photos))
     }
+    #[cfg(any(test, feature = "test-support"))]
     /// The stacks of `photos`: every stack one of them is in, with all of
     /// its photos.
     pub fn stack_state(&self, photos: &[PhotoId]) -> Result<StackState> {

@@ -178,7 +178,7 @@ impl Editor {
                     }
                 }
                 Event::ModelRemoved(pack, result) => {
-                    self.selection.models.of_mut(pack).removed(result.is_ok());
+                    self.selection.models.of_mut(pack).removed();
                     match result {
                         Ok(()) => self.messages.done("Selection model removed"),
                         Err(e) => self.messages.fail(format!("Model not removed: {e}")),
