@@ -520,9 +520,19 @@ mod tests {
     }
 
     #[test]
-    fn open_source_opens_webp_avif_and_jxl_as_rendered() {
+    fn open_source_opens_webp_avif_heif_and_jxl_as_rendered() {
         let cancel = std::sync::atomic::AtomicBool::new(false);
-        for name in ["metadata.webp", "ten-bit.avif", "metadata.jxl"] {
+        for name in [
+            "metadata.webp",
+            "ten-bit.avif",
+            // Where this system decodes HEIC: macOS, and Linux with libheif.
+            "grid.heic",
+            "metadata.jxl",
+        ] {
+            if name.ends_with(".heic") && (cfg!(windows) || crate::raster::heif_decoder().is_err())
+            {
+                continue;
+            }
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../tests/data/formats")
                 .join(name);

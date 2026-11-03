@@ -39,12 +39,23 @@ serde_json = "1"
 sha2 = "0.11"
 tempfile = "3"
 
+# HEIC decoded by the system's ImageIO, drawn by CoreGraphics, in an
+# autorelease pool (objc2, the version the app builds).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes", "CFData", "CFDictionary", "CFNumber"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGBitmapContext", "CGColorSpace", "CGContext", "CGDataProvider", "CGImage"] }
+objc2-image-io = { version = "0.3", default-features = false, features = ["std", "CGImageSource", "objc2-core-graphics"] }
+
 # Background threads' scheduling priority (raw::spawn_background).
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_Threading"] }
+# HEIC decoded by Windows Imaging Component, a COM API windows-sys has no
+# vtables for; the version the app builds.
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Imaging", "Win32_System_Com"] }
 
 [dev-dependencies]
 rawmakase-raw = { path = "../rawmakase-raw", version = "0.1.0", features = ["test-support"] }

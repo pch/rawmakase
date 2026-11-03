@@ -1,4 +1,4 @@
-//! Opening a JPEG, PNG, TIFF, WebP, AVIF or JPEG XL, the files RAWmakase shows without developing.
+//! Opening a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL, the files RAWmakase shows without developing.
 use anyhow::{Result, anyhow};
 use image::metadata::Orientation;
 use image::{DynamicImage, ImageDecoder, RgbImage};
@@ -12,12 +12,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 mod av1;
 mod avif;
+mod heic;
+mod hevc;
 mod jxl;
 
 /// What a file's first bytes say it is.
 #[derive(Debug, PartialEq)]
 enum Kind {
     Avif,
+    Heic,
     Jxl,
     Webp { animated: bool },
     Other,
@@ -34,16 +37,14 @@ fn sniff(head: &[u8]) -> Kind {
     {
         return Kind::Jxl;
     }
-    if head.len() >= 12 && &head[4..8] == b"ftyp" {
-        let brands = &head[8..head.len().min(64)];
-        if brands
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .any(|b| b == b"avif" || b == b"avis")
-        {
-            return Kind::Avif;
-        }
+    use rawmakase_interop::isobmff::{AVIF_BRANDS, HEIF_BRANDS, ftyp_brands};
+    if ftyp_brands(head).any(|b| AVIF_BRANDS.contains(b)) {
+        return Kind::Avif;
+    }
+    // Any other HEIF, by its image or sequence brands: HEVC's, or MIAF's,
+    // which name no codec (the HEIC reader says when it isn't HEVC).
+    if ftyp_brands(head).any(|b| HEIF_BRANDS.contains(b)) {
+        return Kind::Heic;
     }
     Kind::Other
 }
@@ -92,6 +93,11 @@ fn open_decoder(path: &Path) -> Result<(Box<dyn ImageDecoder>, Option<Unsupporte
         }
         Kind::Avif => {
             let file = avif::AvifFile::open(path)?;
+            let refused = file.refusal();
+            (Box::new(file), refused)
+        }
+        Kind::Heic => {
+            let file = heic::HeicFile::open(path)?;
             let refused = file.refusal();
             (Box::new(file), refused)
         }
@@ -229,6 +235,13 @@ pub(crate) fn open(path: &Path, cancel: &AtomicBool) -> Result<CameraImage> {
         scale_factor: 1.,
         scale_clipped: 0,
     })
+}
+
+/// Whether this system can decode a HEIF (HEIC) photo's pixels, or what to
+/// install: macOS can; Windows says so only when decoding; elsewhere, as on
+/// Linux, it takes the system's libheif with its HEVC decoder.
+pub fn heif_decoder() -> std::result::Result<(), String> {
+    heic::decoder()
 }
 
 /// Whether Develop can convert the pixels of the file at `path`, from its header
@@ -542,6 +555,23 @@ mod tests {
         [(1, 1), (w - 2, 1), (1, h - 2), (w - 2, h - 2)].map(|(x, y)| image.get_pixel(x, y).0)
     }
     const UPRIGHT: [[u8; 3]; 4] = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 255]];
+
+    /// Whether this system decodes a HEIC's pixels in this test: macOS, and
+    /// Linux with libheif; Windows, whose extensions CI lacks, has its own
+    /// test. CI's Arch job installs libheif and sets RAWMAKASE_REQUIRE_HEIF,
+    /// so there a test of HEIC pixels fails rather than skips without it.
+    fn heic_decodes() -> bool {
+        let decodes = !cfg!(windows) && super::heif_decoder().is_ok();
+        if !decodes {
+            assert!(
+                std::env::var_os("RAWMAKASE_REQUIRE_HEIF").is_none(),
+                "a HEIC decoder is required: {:?}",
+                super::heif_decoder()
+            );
+            eprintln!("HEIC pixels not tested: {:?}", super::heif_decoder());
+        }
+        decodes
+    }
     /// `got` within `tolerance` per channel of `want`: for files that went
     /// through a lossy JPEG before, whose pixels are not exactly 0 or 255.
     fn assert_corners_near(got: [[u8; 3]; 4], want: [[u8; 3]; 4], tolerance: u8) {
@@ -911,6 +941,24 @@ mod tests {
         assert_eq!(super::dimensions(&fixture("cropped.avif")), None);
     }
 
+    /// A crop not marked essential is ignored, as it was before RAWmakase
+    /// read crops: the image opens uncropped.
+    #[test]
+    fn an_avif_crop_not_marked_essential_is_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("optional-crop.avif");
+        let mut bytes = std::fs::read(fixture("cropped.avif")).unwrap();
+        // The primary item's associations: ispe, pixi, av1C (essential), colr,
+        // clap (essential).
+        let at = bytes
+            .windows(3)
+            .position(|w| w == [0x83, 0x04, 0x85])
+            .unwrap();
+        bytes[at + 2] = 0x05;
+        std::fs::write(&path, bytes).unwrap();
+        assert_eq!(decode(&path).unwrap().dimensions(), (16, 12));
+    }
+
     /// The size and the refusal come from an AVIF's header: its AV1 data is
     /// read only to decode it.
     #[test]
@@ -932,7 +980,12 @@ mod tests {
             ("ten-bit.avif", "b.png", 0),
             // A JPEG transcode, so the pixels are only near.
             ("metadata.jxl", "c.webp", 8),
+            // Lossy 4:2:0, where there is a HEVC decoder.
+            ("grid.heic", "d.jpg", 4),
         ] {
+            if from.ends_with(".heic") && !heic_decodes() {
+                continue;
+            }
             let path = dir.path().join(to);
             std::fs::copy(fixture(from), &path).unwrap();
             assert_corners_near(corners(&decode(&path).unwrap()), UPRIGHT, tolerance);
@@ -1126,6 +1179,24 @@ mod tests {
         assert!(error.contains("constant luminance"), "{error}");
     }
 
+    /// YCgCo, ICtCp and other matrices `yuv` has no conversion for, and
+    /// reserved codes, are not taken as BT.601: the image can't be opened
+    /// rather than shown in wrong colours.
+    #[test]
+    fn an_avif_in_a_matrix_it_does_not_convert_is_not_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        for code in [3u16, 8, 11, 12, 14, 255, 256] {
+            let path = dir.path().join(format!("matrix-{code}.avif"));
+            let mut bytes = std::fs::read(fixture("p3.avif")).unwrap();
+            // nclx: primaries 12, transfer 13, matrix 0 becomes `code`.
+            let at = bytes.windows(4).position(|w| w == b"nclx").unwrap() + 8;
+            bytes[at..at + 2].copy_from_slice(&code.to_be_bytes());
+            std::fs::write(&path, bytes).unwrap();
+            let error = decode(&path).unwrap_err().to_string();
+            assert!(error.contains("matrix coefficients"), "{code}: {error}");
+        }
+    }
+
     /// An image sequence is refused whichever of its brands says so, not
     /// only the major one.
     #[test]
@@ -1236,5 +1307,358 @@ mod tests {
         std::fs::write(&path, bytes).unwrap();
         let err = decode(&path).unwrap_err().to_string();
         assert!(err.contains("too large"), "{err}");
+    }
+
+    /// libheif's own HEIC: 4:2:0 in a 64×64 picture it crops (`clap`) to the
+    /// 16×12 drawing.
+    #[test]
+    fn a_heic_decodes_cropped_with_its_colours() {
+        if !heic_decodes() {
+            return;
+        }
+        assert_eq!(super::dimensions(&fixture("metadata.heic")), Some((16, 12)));
+        let image = decode(&fixture("metadata.heic")).unwrap();
+        assert_eq!(image.dimensions(), (16, 12));
+        assert_corners_near(corners(&image), UPRIGHT, 4);
+        let grey = image.get_pixel(8, 6).0;
+        assert!(grey.iter().all(|v| v.abs_diff(128) <= 2), "{grey:?}");
+        assert!(super::probe(&fixture("metadata.heic")).is_ok());
+    }
+
+    /// A grid as an iPhone writes one: four tiles laid in place and cut to
+    /// the grid's size, each converted by the matrix and range of its own
+    /// `nclx` (BT.709, limited range), as the grid has only an ICC profile.
+    #[test]
+    fn a_heic_grid_is_laid_out_and_cut_to_its_size() {
+        if !heic_decodes() {
+            return;
+        }
+        assert_eq!(super::dimensions(&fixture("grid.heic")), Some((120, 100)));
+        let image = decode(&fixture("grid.heic")).unwrap();
+        assert_eq!(image.dimensions(), (120, 100));
+        assert_corners_near(corners(&image), UPRIGHT, 4);
+        // Grey either side of the tiles' edges, and the last pixel white.
+        for (x, y) in [(63, 50), (64, 50), (60, 63), (60, 64)] {
+            let grey = image.get_pixel(x, y).0;
+            assert!(
+                grey.iter().all(|v| v.abs_diff(128) <= 2),
+                "{x},{y}: {grey:?}"
+            );
+        }
+        let last = image.get_pixel(119, 99).0;
+        assert!(last.iter().all(|v| *v >= 250), "{last:?}");
+    }
+
+    #[test]
+    fn a_heic_decodes_upright_by_its_rotation_and_mirror() {
+        if !heic_decodes() {
+            return;
+        }
+        // As rotated.avif: irot 1 brings the top-right (green) to the top-left,
+        // after the crop.
+        assert_eq!(super::dimensions(&fixture("rotated.heic")), Some((12, 16)));
+        // 4:2:0, as phones write, so near.
+        let rotated = decode(&fixture("rotated.heic")).unwrap();
+        assert_eq!(rotated.dimensions(), (12, 16));
+        assert_corners_near(
+            corners(&rotated),
+            [[0, 255, 0], [255, 255, 255], [255, 0, 0], [0, 0, 255]],
+            4,
+        );
+        let mirrored = decode(&fixture("rotated-mirrored.heic")).unwrap();
+        assert_corners_near(
+            corners(&mirrored),
+            [[255, 0, 0], [0, 0, 255], [0, 255, 0], [255, 255, 255]],
+            4,
+        );
+    }
+
+    #[test]
+    fn a_ten_bit_heic_keeps_its_depth_and_colours() -> anyhow::Result<()> {
+        if !heic_decodes() {
+            return Ok(());
+        }
+        assert_corners_near(corners(&decode(&fixture("ten-bit.heic"))?), UPRIGHT, 1);
+        let super::Prepared { decoder, .. } = super::prepare(&fixture("ten-bit.heic"))?;
+        assert_eq!(decoder.color_type(), image::ColorType::Rgb16);
+        let im = super::open(&fixture("ten-bit.heic"), &Default::default())?;
+        assert_eq!((im.width, im.height), (16, 12));
+        let red = im.pixels[16 + 1];
+        assert!(red[0] > 0.4 && red[1] < 0.1 && red[2] < 0.1, "{red:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn a_heics_cicp_colours_are_converted() {
+        if !heic_decodes() {
+            return;
+        }
+        // As p3.avif, but 4:2:0.
+        let image = decode(&fixture("p3.heic")).unwrap();
+        let grey = image.get_pixel(8, 6).0;
+        assert!(grey.iter().all(|v| v.abs_diff(128) <= 1), "{grey:?}");
+        let [red, ..] = corners(&image);
+        assert_corners_near([red; 4], [[255, 0, 0]; 4], 1);
+        let super::Prepared { profile, .. } = super::prepare(&fixture("p3.heic")).unwrap();
+        let p3 = moxcms::ColorProfile::new_display_p3();
+        let profile = profile.expect("a profile from CICP");
+        assert!((profile.red_colorant.x - p3.red_colorant.x).abs() < 1e-3);
+    }
+
+    /// A PQ HEIC is shown, its reference white as white, but not edited; nor
+    /// is a still in a file whose brands say it holds a sequence. The
+    /// refusals come from the header, wherever the pixels come from; how an
+    /// HDR picture's preview looks, and whether a system decoder shows a still
+    /// it takes for a sequence, are its own.
+    #[test]
+    fn hdr_and_sequence_heics_are_refused_for_develop() {
+        assert_eq!(super::probe(&fixture("pq.heic")).unwrap_err().0, "HDR");
+        if cfg!(target_os = "macos") {
+            // ImageIO's HDR decoding is its own, but the grey is shown neither
+            // black nor clipped.
+            let image = decode(&fixture("pq.heic")).unwrap();
+            let centre = image.get_pixel(8, 6).0;
+            assert!(centre.iter().all(|v| (16..=250).contains(v)), "{centre:?}");
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sequence.heic");
+        let mut bytes = std::fs::read(fixture("metadata.heic")).unwrap();
+        let at = bytes.windows(4).position(|w| w == b"miaf").unwrap();
+        bytes[at..at + 4].copy_from_slice(b"msf1");
+        std::fs::write(&path, bytes).unwrap();
+        assert_eq!(super::probe(&path).unwrap_err().0, "animated");
+    }
+
+    /// A HEIC with alpha (an auxiliary image) is listed by its size; on macOS
+    /// it is decoded composited over black, a transparent one as black rather
+    /// than refused as a decode that drew nothing.
+    #[test]
+    fn a_heic_with_alpha_is_shown_over_black() {
+        for name in ["transparent.heic", "half-alpha.heic"] {
+            assert_eq!(super::dimensions(&fixture(name)), Some((16, 12)), "{name}");
+        }
+        if cfg!(target_os = "macos") {
+            let image = decode(&fixture("transparent.heic")).unwrap();
+            assert!(image.pixels().all(|p| p.0 == [0; 3]));
+            let image = decode(&fixture("half-alpha.heic")).unwrap();
+            assert_corners_near([image.get_pixel(8, 6).0; 4], [[128, 0, 0]; 4], 6);
+        } else if heic_decodes() {
+            // libheif's alpha is dropped: the colour, as an AVIF's.
+            for name in ["transparent.heic", "half-alpha.heic"] {
+                assert_eq!(decode(&fixture(name)).unwrap().dimensions(), (16, 12));
+            }
+        }
+    }
+
+    /// The size and the refusal come from a HEIC's header: its HEVC data is
+    /// read only to decode it, and a picture cut short is an error on every
+    /// platform, whatever a system decoder would make of it.
+    #[test]
+    fn a_heic_header_is_read_without_its_image_data() {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, size) in [("rotated.heic", (12, 16)), ("grid.heic", (120, 100))] {
+            let path = dir.path().join(name);
+            let bytes = std::fs::read(fixture(name)).unwrap();
+            std::fs::write(&path, &bytes[..bytes.len() - 20]).unwrap();
+            assert_eq!(super::dimensions(&path), Some(size), "{name}");
+            assert!(super::probe(&path).is_ok(), "{name}");
+            assert!(decode(&path).is_err(), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_truncated_or_corrupt_heic_is_an_error_not_a_crash() {
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = std::fs::read(fixture("grid.heic")).unwrap();
+        for keep in [bytes.len() - 10, bytes.len() * 3 / 4, bytes.len() / 2, 40] {
+            let path = dir.path().join(format!("cut-{keep}.heic"));
+            std::fs::write(&path, &bytes[..keep]).unwrap();
+            assert!(decode(&path).is_err(), "{keep}");
+        }
+        // Every byte of a tile's HEVC data flipped in turn: an error or an
+        // image, never a panic out of the decoder.
+        let mdat = bytes.windows(4).rposition(|w| w == b"mdat").unwrap() + 4;
+        let path = dir.path().join("corrupt.heic");
+        for at in (mdat..bytes.len()).step_by(7) {
+            let mut corrupt = bytes.clone();
+            corrupt[at] ^= 0xff;
+            std::fs::write(&path, corrupt).unwrap();
+            let _ = decode(&path);
+        }
+    }
+
+    #[test]
+    fn a_heic_over_150_megapixels_is_refused_from_its_header() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bytes = std::fs::read(fixture("metadata.heic")).unwrap();
+        // Rewrite the ispe property to 20000 x 10000.
+        let at = bytes.windows(4).position(|w| w == b"ispe").unwrap() + 8;
+        bytes[at..at + 4].copy_from_slice(&20_000u32.to_be_bytes());
+        bytes[at + 4..at + 8].copy_from_slice(&10_000u32.to_be_bytes());
+        let path = dir.path().join("huge.heic");
+        std::fs::write(&path, bytes).unwrap();
+        let err = decode(&path).unwrap_err().to_string();
+        assert!(err.contains("too large"), "{err}");
+    }
+
+    /// A grid whose tiles don't add up to it is not laid out wrongly.
+    #[test]
+    fn a_heic_grid_its_tiles_dont_cover_is_not_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bytes = std::fs::read(fixture("grid.heic")).unwrap();
+        // The grid's description in idat: 2 x 2 tiles of 64 for 120 x 100;
+        // claim 130 wide.
+        let at = bytes
+            .windows(8)
+            .position(|w| w == [0, 0, 1, 1, 0, 120, 0, 100])
+            .unwrap();
+        bytes[at + 5] = 130;
+        let path = dir.path().join("short.heic");
+        std::fs::write(&path, bytes).unwrap();
+        let err = decode(&path).unwrap_err().to_string();
+        assert!(err.contains("cover"), "{err}");
+    }
+
+    /// A tile is laid as it is coded: one that says it is turned is not
+    /// laid out wrongly.
+    #[test]
+    fn a_heic_grid_whose_tiles_are_turned_is_not_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bytes = std::fs::read(fixture("grid.heic")).unwrap();
+        // The tiles' colr (nclx) becomes an irot.
+        let at = bytes.windows(8).position(|w| w == b"colrnclx").unwrap();
+        bytes[at..at + 4].copy_from_slice(b"irot");
+        let path = dir.path().join("turned-tiles.heic");
+        std::fs::write(&path, bytes).unwrap();
+        let err = decode(&path).unwrap_err().to_string();
+        assert!(err.contains("turned"), "{err}");
+    }
+
+    /// A grid may list one tile several times; each place shows it.
+    #[test]
+    fn a_heic_grid_listing_a_tile_twice_shows_it_twice() {
+        if !heic_decodes() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut bytes = std::fs::read(fixture("grid.heic")).unwrap();
+        // dimg from the grid (1) to its four tiles (2 to 5): all to tile 2.
+        let at = bytes
+            .windows(12)
+            .position(|w| w == [0, 1, 0, 4, 0, 2, 0, 3, 0, 4, 0, 5])
+            .unwrap();
+        bytes[at + 4..at + 12].copy_from_slice(&[0, 2, 0, 2, 0, 2, 0, 2]);
+        let path = dir.path().join("one-tile.heic");
+        std::fs::write(&path, bytes).unwrap();
+        let image = decode(&path).unwrap();
+        // The top-left tile's red corner, and its grey where the top-right
+        // tile's green was.
+        assert_corners_near([corners(&image)[0]; 4], [UPRIGHT[0]; 4], 4);
+        let grey = corners(&image)[1];
+        assert!(grey.iter().all(|v| v.abs_diff(128) <= 2), "{grey:?}");
+    }
+
+    /// The system decoder decodes the file whose header was checked, not
+    /// whatever is at its path by then: a file replaced in between is not
+    /// decoded with the first one's crop, orientation and colour.
+    #[test]
+    fn a_heic_replaced_after_its_header_was_read_decodes_as_first_read() {
+        if !heic_decodes() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("IMG_0001.HEIC");
+        std::fs::copy(fixture("grid.heic"), &path).unwrap();
+        let super::Prepared { decoder, .. } = super::prepare(&path).unwrap();
+        // Replaced as a sync client does: written aside, then renamed over.
+        let aside = dir.path().join("replacement");
+        std::fs::copy(fixture("metadata.heic"), &aside).unwrap();
+        std::fs::rename(&aside, &path).unwrap();
+        assert_eq!(decoder.dimensions(), (120, 100));
+        let mut rgb = vec![0; decoder.total_bytes() as usize];
+        decoder.read_image_boxed(&mut rgb).unwrap();
+        let image = image::RgbImage::from_raw(120, 100, rgb).unwrap();
+        assert_corners_near(corners(&image), UPRIGHT, 4);
+    }
+
+    /// Elsewhere, as on Linux, a HEIC is decoded by the system's libheif,
+    /// which a system (CI's Ubuntu runners among them) may lack: it is then
+    /// listed with its size and Develop opens it, but decoding says what to
+    /// install.
+    #[cfg(all(unix, not(target_vendor = "apple")))]
+    #[test]
+    fn with_libheif_a_heic_decodes_and_without_it_says_what_to_install() {
+        assert_eq!(super::dimensions(&fixture("grid.heic")), Some((120, 100)));
+        assert!(super::probe(&fixture("grid.heic")).is_ok());
+        match decode(&fixture("grid.heic")) {
+            Ok(image) => {
+                assert_eq!(image.dimensions(), (120, 100));
+                assert_corners_near(corners(&image), UPRIGHT, 4);
+            }
+            Err(error) => {
+                let error = format!("{error:#}");
+                assert!(error.contains("libheif"), "{error}");
+                assert!(super::heif_decoder().is_err());
+                assert!(
+                    std::env::var_os("RAWMAKASE_REQUIRE_HEIF").is_none(),
+                    "{error}"
+                );
+            }
+        }
+    }
+
+    /// On Windows a HEIC is decoded by Microsoft's HEIF and HEVC extensions,
+    /// which a PC (CI's among them) may lack: it is then refused with what to
+    /// install, and otherwise decoded as elsewhere.
+    #[cfg(windows)]
+    #[test]
+    fn on_windows_a_heic_decodes_or_says_what_to_install() {
+        match decode(&fixture("grid.heic")) {
+            Ok(image) => {
+                assert_eq!(image.dimensions(), (120, 100));
+                assert_corners_near(corners(&image), UPRIGHT, 4);
+            }
+            Err(error) => {
+                let error = format!("{error:#}");
+                assert!(error.contains("HEVC Video Extensions"), "{error}");
+            }
+        }
+        // The header is RAWmakase's to read either way.
+        assert_eq!(super::dimensions(&fixture("grid.heic")), Some((120, 100)));
+    }
+
+    /// A header saying a picture is smaller than it is coded is held to: the
+    /// image comes out no larger than the header says, or not at all. Its
+    /// coded size, within 150 megapixels, is not refused itself, as encoders
+    /// pad (Apple's codes 64×64 as 160×64).
+    #[test]
+    fn a_heic_coded_larger_than_its_header_says_is_no_larger_shown() {
+        if heic_decodes() {
+            let image = decode(&fixture("wide.heic")).unwrap();
+            assert_eq!(image.dimensions(), (192, 128));
+            assert_corners_near(corners(&image), UPRIGHT, 4);
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut bytes = std::fs::read(fixture("wide.heic")).unwrap();
+        // ispe: 192 x 128 becomes 64 x 64.
+        let at = bytes.windows(4).position(|w| w == b"ispe").unwrap() + 8;
+        bytes[at..at + 8].copy_from_slice(&[0, 0, 0, 64, 0, 0, 0, 64]);
+        let path = dir.path().join("small-header.heic");
+        std::fs::write(&path, bytes).unwrap();
+        assert_eq!(super::dimensions(&path), Some((64, 64)));
+        match decode(&path) {
+            Ok(image) => assert_eq!(image.dimensions(), (64, 64)),
+            Err(error) => {
+                let error = format!("{error:#}");
+                assert!(
+                    ["not the size it says", "libheif", "HEVC Video Extensions"]
+                        .iter()
+                        .any(|e| error.contains(e)),
+                    "{error}"
+                );
+                // libheif refuses it itself, by its own check of the size.
+                assert!(!cfg!(target_os = "macos") || error.contains("not the size"));
+            }
+        }
     }
 }

@@ -321,6 +321,11 @@ impl Messages {
     pub(super) fn has_entry_with(&self, text: &str) -> bool {
         self.entries.iter().any(|c| c.text.contains(text))
     }
+    /// How many messages the bar holds.
+    #[cfg(test)]
+    pub(super) fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
     /// Empties the status line. The bar's messages stay.
     pub(super) fn clear_line(&mut self) {
         self.line = Line::default();

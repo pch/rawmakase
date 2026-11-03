@@ -58,11 +58,13 @@ jobs:
     steps:
       # rustup replaces Arch's rolling rust package: the lints a clippy release
       # adds would otherwise break the lint job on an ordinary day. rustup
-      # conflicts with the rust package, so it takes its place here.
+      # conflicts with the rust package, so it takes its place here. libheif
+      # (with its built-in HEVC decoder) lets the HEIC pixel tests run here;
+      # the Ubuntu jobs have none and skip them.
       - name: Install dependencies
         run: >-
           pacman -Syu --noconfirm --needed
-          rustup git pkgconf desktop-file-utils perl-image-exiftool
+          rustup git pkgconf desktop-file-utils perl-image-exiftool libheif
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source-ref || github.sha }}
@@ -100,9 +102,12 @@ jobs:
       # Tests that need private RAW files, camera profiles or a GPU are #[ignore]d.
       # exiftool reads exported metadata back as an independent reader; Arch
       # installs it in vendor_perl, outside PATH.
+      # libheif, installed above, decodes the HEIC pixel tests, which fail
+      # here rather than skip without it.
       - run: PATH="/usr/bin/vendor_perl:$PATH" cargo test --locked -p rawmakase -p rawmakase-decode -p rawmakase-export
         env:
           RAWMAKASE_REQUIRE_EXIFTOOL: "1"
+          RAWMAKASE_REQUIRE_HEIF: "1"
       - name: Validate desktop entry
         run: desktop-file-validate packaging/applications/rawmakase.desktop
 

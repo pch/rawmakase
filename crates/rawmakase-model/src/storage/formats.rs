@@ -12,16 +12,19 @@ pub enum RasterFormat {
     Png,
     Webp,
     Avif,
+    /// HEIF of HEVC: a HEIC, as phones write, or a camera's HEIF (`.hif`).
+    Heif,
     Jxl,
 }
 
 impl RasterFormat {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Jpeg,
         Self::Tiff,
         Self::Png,
         Self::Webp,
         Self::Avif,
+        Self::Heif,
         Self::Jxl,
     ];
 
@@ -34,6 +37,7 @@ impl RasterFormat {
             Self::Png => &["png"],
             Self::Webp => &["webp"],
             Self::Avif => &["avif"],
+            Self::Heif => &["heic", "heif", "hif"],
             Self::Jxl => &["jxl"],
         }
     }
@@ -48,6 +52,7 @@ impl RasterFormat {
             Self::Png => "image/png",
             Self::Webp => "image/webp",
             Self::Avif => "image/avif",
+            Self::Heif => "image/heic",
             Self::Jxl => "image/jxl",
         }
     }
@@ -59,6 +64,7 @@ impl RasterFormat {
             Self::Png => "PNG",
             Self::Webp => "WebP",
             Self::Avif => "AVIF",
+            Self::Heif => "HEIF",
             Self::Jxl => "JPEG XL",
         }
     }
@@ -78,8 +84,8 @@ impl RasterFormat {
     }
 }
 
-/// A file RAWmakase takes as a photo: a RAW, or a JPEG, TIFF, PNG, WebP, AVIF or
-/// JPEG XL, and not hidden.
+/// A file RAWmakase takes as a photo: a RAW, or a JPEG, TIFF, PNG, WebP, AVIF,
+/// HEIF or JPEG XL, and not hidden.
 pub fn is_photo(path: &Path) -> bool {
     super::is_raw(path) || (!super::is_hidden(path) && RasterFormat::of(path).is_some())
 }
@@ -99,6 +105,9 @@ mod tests {
             ("dir.png/A.PNG", RasterFormat::Png),
             ("A.webp", RasterFormat::Webp),
             ("A.AVIF", RasterFormat::Avif),
+            ("A.heic", RasterFormat::Heif),
+            ("A.HEIF", RasterFormat::Heif),
+            ("A.HIF", RasterFormat::Heif),
             ("A.Jxl", RasterFormat::Jxl),
         ] {
             assert_eq!(RasterFormat::of(Path::new(name)), Some(format), "{name}");
@@ -128,13 +137,14 @@ mod tests {
                 ("png", "image/png", "PNG"),
                 ("webp", "image/webp", "WebP"),
                 ("avif", "image/avif", "AVIF"),
+                ("heic", "image/heic", "HEIF"),
                 ("jxl", "image/jxl", "JPEG XL"),
             ]
         );
     }
     #[test]
     fn photos_are_raws_and_rendered_files_not_hidden() {
-        for name in ["A.NEF", "A.jpeg", "A.TIF", "A.png", "A.webp"] {
+        for name in ["A.NEF", "A.jpeg", "A.TIF", "A.png", "A.webp", "A.HEIC"] {
             assert!(is_photo(Path::new(name)), "{name}");
         }
         for name in ["._A.jpg", ".A.png", "A.xmp", "A"] {

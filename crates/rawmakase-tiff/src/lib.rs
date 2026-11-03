@@ -1,6 +1,6 @@
 //! Minimal bounded TIFF directory reading for RAW containers (ARW, DNG, the TIFF
-//! inside RAF) and the EXIF embedded in JPEGs, PNGs, WebPs, AVIFs and JPEG XL
-//! files. Reads only the directories and tags it is asked for.
+//! inside RAF) and the EXIF embedded in JPEGs, PNGs, WebPs, AVIFs, HEIFs and
+//! JPEG XL files. Reads only the directories and tags it is asked for.
 use std::{
     collections::BTreeMap,
     fs::File,
@@ -61,7 +61,8 @@ impl<R: Read + Seek> Tiff<R> {
     }
     /// The TIFF of `len` bytes at `base`, embedded in another file's container
     /// (a JPEG's APP1 segment, a PNG's eXIf chunk, a WebP's EXIF chunk, an
-    /// AVIF's Exif item, a JPEG XL's Exif box): nothing outside it is read.
+    /// AVIF's or HEIF's Exif item, a JPEG XL's Exif box): nothing outside it is
+    /// read.
     pub fn open_within(f: R, base: u64, len: u64) -> Option<Self> {
         Self::start(f, base, Some(len))
     }

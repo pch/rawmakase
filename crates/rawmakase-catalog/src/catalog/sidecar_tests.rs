@@ -339,13 +339,14 @@ fn formats_fixture(name: &str, dir: &Path) -> Result<PathBuf> {
 }
 
 #[test]
-fn webp_avif_and_jxl_files_own_xmp_is_read() -> Result<()> {
+fn webp_avif_heif_and_jxl_files_own_xmp_is_read() -> Result<()> {
     let dir = tempfile::tempdir()?;
     // metadata-brob.jxl has its "xml " box brotli-compressed, as cjxl writes
     // by default.
     for name in [
         "metadata.webp",
         "metadata.avif",
+        "metadata.heic",
         "metadata.jxl",
         "metadata-brob.jxl",
     ] {
@@ -394,9 +395,14 @@ fn an_avifs_xmp_item_over_16_mib_is_not_read() -> Result<()> {
 }
 
 #[test]
-fn webp_avif_and_jxl_files_without_xmp_read_nothing_and_are_not_unreadable() -> Result<()> {
+fn webp_avif_heif_and_jxl_files_without_xmp_read_nothing_and_are_not_unreadable() -> Result<()> {
     let dir = tempfile::tempdir()?;
-    for name in ["animated.webp", "ten-bit.avif", "sixteen-bit.jxl"] {
+    for name in [
+        "animated.webp",
+        "ten-bit.avif",
+        "grid.heic",
+        "sixteen-bit.jxl",
+    ] {
         let file = formats_fixture(name, dir.path())?;
         let (read, report) = read_file(&file, |_| None);
         assert!(report.unreadable.is_empty(), "{name}: {report:?}");
