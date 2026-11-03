@@ -140,6 +140,46 @@ enum Command {
         #[arg(required = true, num_args = 1..)]
         files: Vec<PathBuf>,
     },
+    /// Development command: run AI Denoise (RawNIND UtNet2) on one RAW and print the
+    /// times and the fitted gain as JSON; optionally render it and the plain image.
+    Denoise {
+        input: PathBuf,
+        /// The model's folder (the installed model by default).
+        #[arg(long)]
+        model: Option<PathBuf>,
+        /// cpu or coreml.
+        #[arg(long, default_value = "cpu")]
+        provider: String,
+        #[arg(long, default_value_t = 1.0)]
+        amount: f32,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        plain_output: Option<PathBuf>,
+        #[arg(long, default_value_t = 0)]
+        max_edge: u32,
+        #[arg(long)]
+        dump: Option<PathBuf>,
+        /// Read and write the user's AI Denoise cache.
+        #[arg(long)]
+        cache: bool,
+        /// Time Develop's renders while Amount moves (Fit view of this long edge, and a
+        /// 100% region).
+        #[arg(long)]
+        bench_fit: Option<u32>,
+        /// With --bench-fit: the baseline without AI Denoise.
+        #[arg(long)]
+        bench_plain: bool,
+        /// Write centre crops of the camera image (plain, AI, manual noise reduction)
+        /// to this folder, for phase 0's quality measures.
+        #[arg(long)]
+        camera_dump: Option<PathBuf>,
+        #[arg(long, default_value_t = 2048)]
+        camera_crop: u32,
+        /// Luminance noise reduction amounts (0–1) for --camera-dump.
+        #[arg(long, value_delimiter = ',')]
+        nr_luma: Vec<f32>,
+    },
     /// Print each file's develop fingerprint as a line of JSON: the image each
     /// decode mode (full, half) makes, hashed, for decoder regression checks.
     DecodeDump {
@@ -409,11 +449,13 @@ fn main() -> Result<()> {
                 max_edge: u32,
             }
             let jobs: Vec<Job> = serde_json::from_str(&std::fs::read_to_string(&jobs)?)?;
+            // Read before decoding: AI Denoise's result must be of the same file.
+            let file = rawmakase::storage::Identity::read(&input)?;
             let photo = rawmakase::photo::open(&input)?;
-            let im = photo.develop(
+            let im = std::sync::Arc::new(photo.develop(
                 camera_data::Decode::full(Default::default()),
                 &AtomicBool::new(false),
-            )?;
+            )?);
             let (profiles, _) = rawmakase::camera_profiles::installed(&im.metadata);
             let base = Recipe::with_profiles(&im.metadata, &profiles);
             let camera = Some(
@@ -430,7 +472,14 @@ fn main() -> Result<()> {
                         &profiles,
                         Some(&rawmakase::develop::Measures(&im)),
                     )?;
-                    let out = develop::render(&im, &edit.checked()?, job.max_edge)?;
+                    let ai = rawmakase::app::ai_denoise_source(&input, &file, &im, &edit)?;
+                    let out = develop::render_with_ai(
+                        &im,
+                        &edit.checked()?,
+                        ai.as_ref(),
+                        job.max_edge,
+                        &AtomicBool::new(false),
+                    )?;
                     rawmakase::export::export_with(
                         &job.output,
                         &input,
@@ -478,6 +527,8 @@ fn main() -> Result<()> {
             tap,
         }) => {
             let t = Instant::now();
+            // Read before decoding: AI Denoise's result must be of the same file.
+            let file = rawmakase::storage::Identity::read(&input)?;
             let r = rawmakase::photo::open(&input)?;
             let mut edit = if let Some(p) = recipe {
                 rawmakase::presets::load_preset(&p)?.recipe
@@ -557,6 +608,12 @@ fn main() -> Result<()> {
                 rawmakase::presets::save_preset(&path, &edit, &im.metadata)?;
             }
             if let Some(tap) = tap {
+                // A stage tap renders without AI Denoise: refused rather than written
+                // as if the recipe had none.
+                anyhow::ensure!(
+                    !edit.as_rendered().ai_denoise.renders(),
+                    "--tap does not render AI Denoise; switch it off in the recipe"
+                );
                 let stage = match tap {
                     Tap::SceneInput => develop::quality::Stage::SceneInput,
                     Tap::SceneOutput => develop::quality::Stage::SceneOutput,
@@ -567,7 +624,15 @@ fn main() -> Result<()> {
                 return Ok(());
             }
             let developed = t.elapsed();
-            let out = develop::render(&im, &edit.checked()?, max_edge)?;
+            let im = std::sync::Arc::new(im);
+            let ai = rawmakase::app::ai_denoise_source(&input, &file, &im, &edit)?;
+            let out = develop::render_with_ai(
+                &im,
+                &edit.checked()?,
+                ai.as_ref(),
+                max_edge,
+                &AtomicBool::new(false),
+            )?;
             let rendered = t.elapsed() - developed;
             rawmakase::export::export_with(
                 &output,
@@ -662,6 +727,44 @@ fn main() -> Result<()> {
                     println!("{}: {outcome}{scores}", path.display());
                 }
             }
+        }
+        Some(Command::Denoise {
+            input,
+            model,
+            provider,
+            amount,
+            output,
+            plain_output,
+            max_edge,
+            dump,
+            cache,
+            bench_fit,
+            bench_plain,
+            camera_dump,
+            camera_crop,
+            nr_luma,
+        }) => {
+            let provider = match provider.as_str() {
+                "cpu" => rawmakase_inference::Provider::Cpu,
+                "coreml" => rawmakase_inference::Provider::CoreML,
+                other => anyhow::bail!("Unknown provider {other}"),
+            };
+            rawmakase::app::denoise_command(rawmakase::app::DenoiseCommand {
+                input,
+                model,
+                provider,
+                amount,
+                output,
+                plain_output,
+                max_edge,
+                dump,
+                cache,
+                bench_fit,
+                bench_plain,
+                camera_dump,
+                camera_crop,
+                nr_luma,
+            })?;
         }
         Some(Command::Benchmark { input, iterations }) => {
             anyhow::ensure!(

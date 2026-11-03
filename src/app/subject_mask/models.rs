@@ -5,7 +5,7 @@ use super::super::task::Stopping;
 use super::super::worker::Event;
 use eframe::egui;
 use rawmakase_inference::ModelFile;
-use rawmakase_inference::manifest::{all_files, sky_files};
+use rawmakase_inference::manifest::{all_files, denoise_files, sky_files};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -24,18 +24,22 @@ struct Progress {
 }
 
 /// One set of model files, installed and removed as a unit: Subject and Background share
-/// one, Sky has its own, so neither obliges anyone to fetch the other's.
+/// one, Sky and AI Denoise each have their own, so none obliges anyone to fetch another's.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum Pack {
     #[default]
     Subject,
     Sky,
+    /// AI Denoise's model, with its `LICENSE` and `NOTICE`: an install without them is
+    /// not one.
+    Denoise,
 }
 impl Pack {
     fn files(self) -> Vec<ModelFile> {
         match self {
             Self::Subject => all_files(),
             Self::Sky => sky_files(),
+            Self::Denoise => denoise_files(),
         }
     }
     fn bytes(self) -> u64 {
@@ -53,13 +57,25 @@ impl Pack {
                 rawmakase_inference::SKY.id,
                 rawmakase_inference::SKY.version,
             ),
+            Self::Denoise => (
+                rawmakase_inference::RAWNIND.id,
+                rawmakase_inference::RAWNIND.version,
+            ),
         };
         crate::storage::local_data_dir()
             .join("models")
             .join(format!("{id}-v{version}"))
     }
+    /// Whether every file is in place and verified.
+    pub(in crate::app) fn is_installed(self) -> bool {
+        is_installed(&self.dir(), self)
+    }
+    /// Where the pack is installed (whether or not it is).
+    pub(in crate::app) fn installed_dir(self) -> PathBuf {
+        self.dir()
+    }
     /// The megabytes the drawer quotes.
-    pub(super) fn megabytes(self) -> u64 {
+    pub(in crate::app) fn megabytes(self) -> u64 {
         self.bytes().div_ceil(1_000_000)
     }
 }
@@ -68,6 +84,7 @@ impl Pack {
 pub(crate) struct Models {
     pub(in crate::app) subject: Installer,
     pub(in crate::app) sky: Installer,
+    pub(in crate::app) denoise: Installer,
 }
 impl Default for Models {
     fn default() -> Self {
@@ -75,6 +92,10 @@ impl Default for Models {
             subject: Installer::default(),
             sky: Installer {
                 pack: Pack::Sky,
+                ..Installer::default()
+            },
+            denoise: Installer {
+                pack: Pack::Denoise,
                 ..Installer::default()
             },
         }
@@ -85,12 +106,14 @@ impl Models {
         match pack {
             Pack::Subject => &self.subject,
             Pack::Sky => &self.sky,
+            Pack::Denoise => &self.denoise,
         }
     }
     pub(in crate::app) fn of_mut(&mut self, pack: Pack) -> &mut Installer {
         match pack {
             Pack::Subject => &mut self.subject,
             Pack::Sky => &mut self.sky,
+            Pack::Denoise => &mut self.denoise,
         }
     }
 }
@@ -111,7 +134,7 @@ pub(crate) struct Installer {
 }
 
 /// Where the app looks for a runtime library it did not come with.
-pub(super) fn runtime_dir() -> PathBuf {
+pub(in crate::app) fn runtime_dir() -> PathBuf {
     crate::storage::local_data_dir().join("runtime")
 }
 /// Installed: every file there with its size, and the receipt the installer wrote
@@ -1124,5 +1147,31 @@ mod tests {
             .set_len(5)
             .unwrap();
         assert!(!is_installed(dir.path(), Pack::Subject));
+    }
+
+    /// AI Denoise's model is installed only with its licence and credit beside it: a
+    /// folder without `LICENSE` or `NOTICE`, receipt or not, is not an install.
+    #[test]
+    fn the_denoiser_needs_its_licence_and_notice() {
+        let dir = tempfile::tempdir().unwrap();
+        for file in Pack::Denoise.files() {
+            std::fs::File::create(dir.path().join(file.name))
+                .unwrap()
+                .set_len(file.size_bytes)
+                .unwrap();
+        }
+        std::fs::write(dir.path().join(RECEIPT), receipt(Pack::Denoise)).unwrap();
+        assert!(is_installed(dir.path(), Pack::Denoise));
+        for name in ["LICENSE", "NOTICE"] {
+            let path = dir.path().join(name);
+            let kept = std::fs::read(&path).unwrap();
+            std::fs::remove_file(&path).unwrap();
+            assert!(!is_installed(dir.path(), Pack::Denoise), "{name}");
+            std::fs::write(&path, kept).unwrap();
+        }
+        assert!(receipt(Pack::Denoise).contains(" LICENSE\n"));
+        assert!(receipt(Pack::Denoise).contains(" NOTICE\n"));
+        // Its own folder: none of the selection models' files.
+        assert_ne!(Pack::Denoise.dir(), Pack::Subject.dir());
     }
 }

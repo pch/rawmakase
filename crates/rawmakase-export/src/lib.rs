@@ -5,7 +5,7 @@
 #[cfg(test)]
 use rawmakase_catalog::catalog;
 use rawmakase_catalog::edits;
-use rawmakase_decode::{color_management, decode, decode_cache, photo, raw};
+use rawmakase_decode::{ai_denoise, color_management, decode, decode_cache, photo, raw};
 use rawmakase_engine::develop;
 use rawmakase_interop::{exif, export_settings, jpeg, raw_defaults, xmp};
 use rawmakase_model::{

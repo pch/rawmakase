@@ -16,3 +16,7 @@ publish = false
 # in the code that registers those providers with whatever runtime library was
 # opened, which fails with a real error when it cannot.
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic", "cuda", "coreml"] }
+
+[dev-dependencies]
+# The credit file's digest is checked against the manifest's text.
+sha2 = "0.11"

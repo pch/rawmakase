@@ -106,6 +106,14 @@ pub struct Recipe {
     pub grading: [[f32; 3]; 3],
     pub noise_luma: f32,
     pub noise_chroma: f32,
+    /// AI Denoise (Detail). Omitted when off at the default Amount, so releases that
+    /// predate it read the recipe; any other value needs the saved format that knows it
+    /// (`saved_format::schema_for`).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::model::ai_denoise::AiDenoise::is_default"
+    )]
+    pub ai_denoise: crate::model::ai_denoise::AiDenoise,
     pub sharpening: f32,
     pub crop: [f32; 4],
     pub straighten: f32,
@@ -222,6 +230,7 @@ impl Default for Recipe {
             grading: [[0.; 3]; 3],
             noise_luma: 0.,
             noise_chroma: 0.,
+            ai_denoise: Default::default(),
             sharpening: 0.35,
             crop: [0., 0., 1., 1.],
             straighten: 0.,
@@ -513,6 +522,7 @@ impl Recipe {
                 .all(|v| (0. ..=1.).contains(v)),
             "Invalid detail adjustment"
         );
+        ensure!(self.ai_denoise.is_valid(), "Invalid AI Denoise Amount");
         ensure!(
             self.crop.iter().all(|v| (0. ..=1.).contains(v))
                 && self.crop[2] - self.crop[0] >= 0.01
@@ -673,6 +683,23 @@ impl Recipe {
     }
     /// Color noise reduction at its defaults: Lightroom's Amount 25 for raw files
     /// (Detail and Smoothness 50).
+    /// AI Denoise's switch, as Lightroom's Denoise switch edits: switched on, manual
+    /// Luminance and Color noise reduction go to 0 (Camera Raw 18.7 writes them so; the
+    /// AI result has no noise left for them); switched off, Color's defaults come back
+    /// while it is still at the 0 switching on left (Camera Raw restores them). Amount is
+    /// kept either way.
+    pub fn switch_ai_denoise(&mut self, on: bool) {
+        if self.ai_denoise.enabled == on {
+            return;
+        }
+        self.ai_denoise.enabled = on;
+        if on {
+            self.noise_luma = 0.;
+            self.noise_chroma = 0.;
+        } else if self.noise_chroma == 0. {
+            self.set_color_noise_defaults();
+        }
+    }
     pub fn set_color_noise_defaults(&mut self) {
         let d = crate::model::effects::Effects::default();
         self.noise_chroma = 0.25;
@@ -1277,5 +1304,28 @@ mod tests {
         r.lens_builtin = false;
         r.set_profile_corrections(&m, ProfileCorrections::On);
         assert!(r.lens_correction(&m).is_none());
+    }
+
+    /// As Camera Raw 18.7 writes it: Denoise on sets manual noise reduction to 0, off
+    /// brings Color's defaults back; the Amount stays.
+    #[test]
+    fn switching_ai_denoise_follows_lightrooms_noise_reduction() {
+        let mut r = Recipe {
+            noise_luma: 0.3,
+            ..Default::default()
+        };
+        r.set_color_noise_defaults();
+        r.ai_denoise.amount = 0.7;
+        r.switch_ai_denoise(true);
+        assert!(r.ai_denoise.enabled);
+        assert_eq!((r.noise_luma, r.noise_chroma), (0., 0.));
+        r.switch_ai_denoise(false);
+        assert_eq!(r.noise_chroma, 0.25);
+        assert_eq!(r.ai_denoise.amount, 0.7);
+        // A Color amount set while on is the user's: kept when switching off.
+        r.switch_ai_denoise(true);
+        r.noise_chroma = 0.4;
+        r.switch_ai_denoise(false);
+        assert_eq!(r.noise_chroma, 0.4);
     }
 }

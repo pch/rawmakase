@@ -270,11 +270,22 @@ pub fn render_cancellable(
     region: Option<[u32; 4]>,
     cancel: &std::sync::atomic::AtomicBool,
 ) -> Result<Rendered> {
-    render_preview(im, r, max_edge, region, cancel, None).map(Output::pixels)
+    render_preview(im, r, None, max_edge, region, cancel, None).map(Output::pixels)
+}
+/// [`render_cancellable`] of a photo whose AI Denoise source is `ai`.
+pub fn render_with_ai(
+    im: &CameraImage,
+    r: &ValidRecipe,
+    ai: Option<&crate::develop::AiSource>,
+    max_edge: u32,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<Rendered> {
+    render_preview(im, r, ai, max_edge, None, cancel, None).map(Output::pixels)
 }
 pub(crate) fn render_preview(
     im: &CameraImage,
     r: &ValidRecipe,
+    ai: Option<&crate::develop::AiSource>,
     max_edge: u32,
     region: Option<[u32; 4]>,
     cancel: &std::sync::atomic::AtomicBool,
@@ -292,7 +303,7 @@ pub(crate) fn render_preview(
     if r.lens_ca {
         crate::lens::auto_ca::prime(im);
     }
-    let source = retouched(im, r, cancel, stages.as_mut().map(|s| &mut *s.retouch))?;
+    let source = retouched(im, r, ai, cancel, stages.as_mut().map(|s| &mut *s.retouch))?;
     let g = Geometry::new(&source.image, r, 0);
     let [x, y, w, h] = region.unwrap_or([0, 0, g.width, g.height]);
     ensure!(

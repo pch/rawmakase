@@ -118,6 +118,9 @@ impl Panel {
                 r.sharpening_masking = defaults.sharpening_masking;
                 r.noise_luma = 0.;
                 r.noise_chroma = 0.;
+                // Off. The recipe this works on is a copy (`as_rendered`,
+                // `holds_change`): the edit keeps its Amount for when the panel is on.
+                r.ai_denoise = defaults.ai_denoise;
                 e.luma_detail = d.luma_detail;
                 e.luma_contrast = d.luma_contrast;
                 e.chroma_detail = d.chroma_detail;
@@ -205,6 +208,19 @@ impl Recipe {
 mod tests {
     use super::*;
 
+    /// With Detail switched off, moving AI Denoise's Amount is still Detail's change
+    /// (so editing it switches the panel back on), and the edit keeps the Amount.
+    #[test]
+    fn ai_denoise_amount_belongs_to_detail_when_it_is_off() {
+        let mut before = Recipe::default();
+        before.ai_denoise.enabled = true;
+        before.panels.set(Panel::Detail, PanelState::Off);
+        let mut after = before.clone();
+        after.ai_denoise.amount = 0.8;
+        assert!(Panel::Detail.holds_change(&before, &after));
+        assert!(!after.as_rendered().ai_denoise.renders());
+        assert_eq!(after.ai_denoise.amount, 0.8);
+    }
     #[test]
     fn a_change_inside_one_panel_is_held_by_that_panel_alone() {
         let before = Recipe::default();

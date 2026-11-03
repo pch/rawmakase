@@ -124,6 +124,7 @@ fn fixed_change(a: &Recipe, b: &Recipe) -> Option<SettingGroup> {
             SpotRemoval,
         ),
         (a.masks != b.masks, Masking),
+        (a.ai_denoise != b.ai_denoise, AiDenoise),
         (!same_swatches(a, b), ColorAdjustments),
         // Settings from a newer release: their kind is unknown.
         (a.unknown != b.unknown, ProcessVersion),
@@ -373,6 +374,7 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         grading,
         noise_luma,
         noise_chroma,
+        ai_denoise,
         sharpening,
         crop,
         straighten,
@@ -481,6 +483,7 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         grading: std::array::from_fn(|i| wheel(a.grading[i], grading[i], t)),
         noise_luma: lerp(a.noise_luma, *noise_luma, t, 0., 1.),
         noise_chroma: lerp(a.noise_chroma, *noise_chroma, t, 0., 1.),
+        ai_denoise: *ai_denoise,
         sharpening: lerp(a.sharpening, *sharpening, t, 0., 1.),
         crop: *crop,
         straighten: *straighten,

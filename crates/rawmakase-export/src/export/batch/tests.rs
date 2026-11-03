@@ -224,6 +224,7 @@ impl Fixture {
             watermark: None,
             demosaic: Default::default(),
             cache: Default::default(),
+            ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
         }
     }
 }
@@ -703,6 +704,7 @@ fn exporting_a_jpeg_never_replaces_it() -> Result<()> {
             watermark: None,
             demosaic: Default::default(),
             cache: Default::default(),
+            ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
         };
         run_all(&batch)
     };
@@ -765,4 +767,38 @@ fn a_custom_template_names_from_the_fields_taken_at_export() {
         plan.entries[1].notes,
         ["the camera's make and model were not read"]
     );
+}
+
+/// A photo with AI Denoise on and no AI result to be had fails with the reason; the
+/// batch carries on with the others, and never writes that photo without AI Denoise.
+#[test]
+fn a_photo_without_its_ai_result_fails_and_the_batch_carries_on() -> Result<()> {
+    let mut f = fixture(&["a.dng", "b.dng"])?;
+    let [(a, a_path), _] = &f.photos[..] else {
+        panic!("two photos");
+    };
+    let m = crate::photo::open(a_path)?.metadata;
+    let (profiles, _) = crate::camera_profiles::installed(&m);
+    let mut denoised = Recipe::with_profiles(&m, &profiles);
+    denoised.ai_denoise = crate::model::ai_denoise::AiDenoise {
+        enabled: true,
+        amount: 0.5,
+    };
+    f.catalog.save_edit(
+        *a,
+        a_path,
+        &denoised,
+        &Default::default(),
+        HistoryUpdate::Keep,
+    )?;
+    let outcomes = run_all(&f.batch(f.batch_photos()?, settings(&f.out())));
+    match &outcomes[0] {
+        Outcome::Failed(reason) => {
+            assert!(reason.contains("no AI Denoise in tests"), "{reason}");
+        }
+        other => panic!("{other:?}"),
+    }
+    exported(&outcomes[1]);
+    assert_eq!(listing(&f.out()), ["b.tif"]);
+    Ok(())
 }

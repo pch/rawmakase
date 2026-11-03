@@ -47,6 +47,8 @@ pub enum ParameterId {
     ColorNoise,
     ColorNoiseDetail,
     ColorNoiseSmoothness,
+    /// Detail: AI Denoise's Amount.
+    AiDenoiseAmount,
     /// Effects: Post-Crop Vignetting.
     VignetteAmount,
     VignetteMidpoint,
@@ -194,7 +196,7 @@ const fn percent<Id: Copy>(id: Id, label: &'static str) -> Descriptor<Id> {
     }
 }
 
-const DESCRIPTORS: [Descriptor; 59] = [
+const DESCRIPTORS: [Descriptor; 60] = [
     Descriptor {
         id: ParameterId::Exposure,
         label: "Exposure",
@@ -306,6 +308,7 @@ const DESCRIPTORS: [Descriptor; 59] = [
     amount(ParameterId::ColorNoise, "Color"),
     amount(ParameterId::ColorNoiseDetail, "Detail"),
     amount(ParameterId::ColorNoiseSmoothness, "Smoothness"),
+    amount(ParameterId::AiDenoiseAmount, "Amount"),
     percent(ParameterId::VignetteAmount, "Amount"),
     amount(ParameterId::VignetteMidpoint, "Midpoint"),
     amount(ParameterId::VignetteFeather, "Feather"),
@@ -404,7 +407,7 @@ impl ParameterId {
         [Self::BluePrimaryHue, Self::BluePrimarySaturation],
     ];
     #[cfg(test)]
-    pub const ALL: [Self; 59] = [
+    pub const ALL: [Self; 60] = [
         Self::Exposure,
         Self::Contrast,
         Self::Highlights,
@@ -431,6 +434,7 @@ impl ParameterId {
         Self::ColorNoise,
         Self::ColorNoiseDetail,
         Self::ColorNoiseSmoothness,
+        Self::AiDenoiseAmount,
         Self::VignetteAmount,
         Self::VignetteMidpoint,
         Self::VignetteFeather,
@@ -497,6 +501,7 @@ impl ParameterId {
             Self::ColorNoise => &mut r.noise_chroma,
             Self::ColorNoiseDetail => &mut r.effects.chroma_detail,
             Self::ColorNoiseSmoothness => &mut r.effects.chroma_smoothness,
+            Self::AiDenoiseAmount => &mut r.ai_denoise.amount,
             Self::VignetteAmount => &mut r.effects.vignette,
             Self::VignetteMidpoint => &mut r.effects.vignette_midpoint,
             Self::VignetteFeather => &mut r.effects.vignette_feather,

@@ -15,9 +15,10 @@ colour management (`raw`, `demosaic`, `photo`,
 and the full-size decode in `decode` and `decode_cache`, which uses the engine's
 highlight recovery); `crates/rawmakase-export` develops and writes exports with
 their watermarks over both; `crates/rawmakase-inference` is the one leaf that runs
-the selection models through a lazily loaded ONNX Runtime (pixels in,
-coverage out; it knows no other workspace crate, and no value, catalog or
-rendering crate can reach it, so saved masks render without any inference);
+the selection models and AI Denoise's model through a lazily loaded ONNX Runtime
+(pixels in, coverage or denoised camera RGB out; it knows no other workspace crate,
+and no value, catalog or rendering crate can reach it, so saved masks render without
+any inference and a photo with AI Denoise renders from a result handed to it);
 `crates/rawmakase-remote` sits directly on inference alone — the optional
 worker binary that runs the same models on another computer, and the client the
 app uses when configured to, over a bounded TCP protocol that knows no catalog,
@@ -44,6 +45,8 @@ files should preserve.
 | `dng`, `tiff` | A DNG's rendering hints (embedded profile, baseline exposure, crop, opcodes) and the bounded TIFF reader behind them (`crates/rawmakase-tiff`, a leaf crate with no RAW knowledge, re-exported as `model::tiff`) | `dng.rs`, `rawmakase-tiff/src/lib.rs` |
 | `decode` | A photo's full-size image, made one way for Develop, prefetch, Reference View and export: the cache's copy, else a decode with highlights recovered and stored, as a `DecodePolicy` asks | `decode.rs` |
 | `decode_cache` | Disk cache of developed camera images, keyed by file identity, demosaic setting and build; the app shares one live size limit and folder across Develop, prefetch, Reference View, export and preview builds, persisted in its session | `decode_cache.rs` |
+| `ai_denoise` | AI Denoise's side of decoding, with no model knowledge: the visible mosaic packed as the model takes it (`PackedBayer`, RGGB; X-Trans rebuilt as RGGB by `Raw::packed_bayer`), the camera image assembled from the model's output (`assemble`), and `AiBase`, the trait export and the app ask for a photo's complete AI source through (`AiService`; `Refusing` for callers without one) | `ai_denoise.rs` |
+| `ai_cache` | Disk cache of AI Denoise results: its own subfolder, extension and size cap (10 GB by default) over the decode cache's trim, purge and relocation (`decode_cache::Namespace`); half-precision payload with the gain applied, checked finite when stored and loaded | `ai_cache.rs` |
 | `camera_profiles` | DCP parsing and validation, camera transforms, RAWmakase's own profiles, profile library and camera matching, the community profile catalogue (`data/camera-profiles`: parsing, validation, matching, byte and identity verification, and its generator), `.cube` LUTs imported as look profiles, fitted camera looks as profiles (built only; fitting is `camera_look`'s), DNG temperature/tint | `dcp.rs`, `library.rs`, `catalogue.rs`, `open.rs`, `cube_look.rs`, `fitted.rs`, `reference.rs` |
 | `camera_look` | Fitting Camera Look (fitted) to a RAW's embedded JPEG: preview choice, pairing with the photo's render, solvers and acceptance on held-out tiles, and the default fit of photos without colour data through its fit cache. In `rawmakase-decode`, as it opens RAWs and decodes their previews; the model only builds and checks what it finds, and the catalog, `xmp` and presets never fit (the app and export pass the default in with the photo's profiles) | `camera_look/` |
 | `optics` | The lens correction model the renderer evaluates (vignetting, distortion and lateral CA as radial functions), Adobe lens profiles (LCP) as data, and Lensfun calibrations as data with their evaluation for a photo; depends only on `xml` | `mod.rs`, `lcp.rs`, `lensfun.rs` |
@@ -143,6 +146,25 @@ Cancellation and publication claim one atomic state, so a published install cann
 be reported as cancelled. Task generations reject cancelled, superseded and
 duplicate completions; a panicking worker reports a failure through the task
 wrapper, which clears the busy state.
+
+AI Denoise ([rendering quality](rendering-quality.md#ai-denoise)) has one service, `app::ai_denoise::Service`: one
+queue and one worker thread for Develop, its prefetch, export and the CLI. A job's
+inputs are captured once as its key (the file's identity, the model's SHA-256, the
+adapter version, the provider and the build), which also names its cache entry; a
+request for a key already queued or running waits for that job. Develop's requests
+run the tiles covering the 100% view first and publish one partial source after
+them, then the final one; each publication is a new `AiSource`, so the retouch
+cache, the pyramid and the GPU upload see a new source. A non-finite tile on the GPU
+discards the attempt, which reruns on the CPU under the CPU's key with every job
+queued behind it, and the GPU is not used again in the session. A request carries the
+file's identity when its plain image was decoded (`AiBase::get` takes it too): a file
+changed since, before or during the job, cached result or not, gets no result, so a
+photo is never denoised from another file. A result is rejected when the model
+changed during the job, and an update for a plain image that is no longer the open
+photo's is dropped. The Detail panel's switch and Amount are ordinary edits (one
+History step each); a result arriving is not one. `app::inspector::ai_denoise` draws
+the panel's controls, credit and install offer; the model installs as
+`subject_mask::Pack::Denoise` with the selection models' installer.
 
 Whether Develop opens a catalog photo has one owner, `app::library::Refusal`:
 `develop_refusal` refuses an offline file, and a JPEG, PNG, TIFF, WebP, AVIF or JPEG XL whose header
@@ -295,6 +317,17 @@ inject a temporary file, without changing the process-wide environment.
   image), never from the region or preview size being rendered; the darkest level
   the default black follows comes from the same copy without red eye corrections
   and spot removal (`Toned::unretouched`, the same copy when there are none).
+- AI Denoise keeps the crate direction: `rawmakase-inference` runs the model and
+  knows no workspace crate; `rawmakase-decode` packs the mosaic and assembles the
+  result without knowing the model and defines `AiBase`; the app implements
+  `AiBase` with inference (`app::ai_denoise::Service`) and owns the queue, the model
+  install and the cache. **The engine never sees `AiBase`:** it receives a resolved,
+  immutable `develop::AiSource` (highlights recovered on its own, equal only to
+  itself) inside the captured `Denoise`, from the Develop session
+  (`PreviewRenderer::set_ai`) or from export (`render_with_ai`). An export of a
+  photo with AI Denoise on gets the complete source or fails that photo with the
+  reason; it never renders the plain image in its place, and callers without the
+  service pass `AiService::refusing`.
 - Keep OS integration in `platform` and native decoding/color management in
   `raw`. Use the existing asset-path policy instead of duplicating environment
   variable handling in feature modules.
@@ -369,11 +402,15 @@ kept for outside callers. `src/lib.rs` exports only the modules they use; the re
 are `pub(crate)`, and the desktop app exposes only `app::run`, so the
 compiler reports what in them nothing uses. The compatibility surface is the saved data: recipe and
 preset envelopes are versioned and migrated by `model::saved_format` (written as
-version 11, which releases before the one engine refuse, or 12 for a recipe naming a
-Lensfun lens, which releases before Lensfun refuse); a catalog opens at versions 1
-to 4 (others are refused, the file left unchanged), is upgraded to 3 before a recipe
-is stored in it and to 4 before a Lensfun choice is, and its schema only ever gains
-tables, applied idempotently on open; see [catalogs](catalogs.md#sqlite-format-versions-1-to-4).
+version 11, which releases before the one engine refuse, 12 for a recipe naming a
+Lensfun lens, which releases before Lensfun refuse, or 13 for one with AI Denoise
+not at its default, which releases before AI Denoise refuse); a catalog opens at
+versions 1 to 5 (others are refused, the file left unchanged), is upgraded to 3
+before a recipe is stored in it, to 4 before a Lensfun choice is and to 5 before an
+AI Denoise setting is, and its schema only ever gains tables, applied idempotently
+on open; see [catalogs](catalogs.md#sqlite-format-versions-1-to-5). An AI Denoise
+result is never part of the saved data: the recipe names no model, and results are
+cached under a key holding the model's SHA-256 and the adapter version.
 
 ## Validation
 

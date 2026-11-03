@@ -71,6 +71,10 @@ fn everything_changed() -> Recipe {
         grading: [[0.5, 0.2, 0.1]; 3],
         noise_luma: 0.3,
         noise_chroma: 0.4,
+        ai_denoise: crate::model::ai_denoise::AiDenoise {
+            enabled: true,
+            amount: 0.7,
+        },
         sharpening: 0.5,
         crop: [0.1, 0.1, 0.9, 0.9],
         straighten: 2.,
@@ -237,7 +241,8 @@ fn each_group_transfers_exactly_its_settings() {
             // The source has Detail switched off.
             SettingGroup::Sharpening
             | SettingGroup::LuminanceNoiseReduction
-            | SettingGroup::ColorNoiseReduction => {
+            | SettingGroup::ColorNoiseReduction
+            | SettingGroup::AiDenoise => {
                 expected.insert("panels".into());
             }
             _ => {}
@@ -800,6 +805,71 @@ fn syncing_from_a_raw_to_a_jpeg_keeps_the_jpegs_white_balance_and_profile() {
     );
     assert_eq!(r.camera_exposure, 0.);
     assert_eq!(out.notes, vec![SEPARATE.to_string()]);
+}
+
+/// AI Denoise runs on a RAW's mosaic: syncing it onto a JPEG keeps the JPEG's own
+/// setting (off) and says so; between RAWs it transfers.
+#[test]
+fn ai_denoise_is_not_synced_onto_a_rendered_file() {
+    let raw = camera("Sony", "ILCE-7M2");
+    let jpeg = jpeg();
+    let source = Recipe {
+        ai_denoise: crate::model::ai_denoise::AiDenoise {
+            enabled: true,
+            amount: 0.8,
+        },
+        exposure: 0.5,
+        ..Default::default()
+    };
+    let to = Recipe::for_rendered(&jpeg);
+    let mut selection = GroupSelection::none();
+    selection.set(SettingGroup::AiDenoise, GroupInclusion::Included);
+    selection.set(SettingGroup::Exposure, GroupInclusion::Included);
+    let out = transfer(
+        from(&source, &raw),
+        &to,
+        &selection,
+        Target {
+            metadata: &jpeg,
+            profiles: &[],
+        },
+    );
+    assert_eq!(out.recipe.ai_denoise, to.ai_denoise);
+    assert_eq!(out.recipe.exposure, 0.5);
+    assert_eq!(
+        out.notes,
+        vec!["AI Denoise applies to RAW files only".to_string()]
+    );
+    // Skipped whole: a source with Detail off does not switch the JPEG's Detail off.
+    let mut detail_off = source.clone();
+    detail_off.panels.set(
+        crate::model::panels::Panel::Detail,
+        crate::model::panels::PanelState::Off,
+    );
+    let mut ai_only = GroupSelection::none();
+    ai_only.set(SettingGroup::AiDenoise, GroupInclusion::Included);
+    let out = transfer(
+        from(&detail_off, &raw),
+        &to,
+        &ai_only,
+        Target {
+            metadata: &jpeg,
+            profiles: &[],
+        },
+    );
+    assert_eq!(out.recipe, to);
+    let other = camera("Canon", "EOS R10");
+    let out = transfer(
+        from(&source, &raw),
+        &Recipe::default(),
+        &selection,
+        Target {
+            metadata: &other,
+            profiles: &[],
+        },
+    );
+    assert_eq!(out.recipe.ai_denoise, source.ai_denoise);
+    assert!(out.notes.is_empty());
 }
 
 #[test]

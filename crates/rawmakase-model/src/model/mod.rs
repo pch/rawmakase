@@ -1,4 +1,5 @@
 //! What an edit is, as values the renderer, the catalog and file formats share.
+pub mod ai_denoise;
 pub mod edit;
 pub mod effects;
 pub mod image_frame;

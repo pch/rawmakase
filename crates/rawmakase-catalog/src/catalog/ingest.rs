@@ -312,16 +312,13 @@ impl Catalog {
             .map(|(file, place)| self.read_new_photo(file, place, defaults))
             .collect();
         let edited_at = rawmakase_model::time::now_text();
-        // An edit naming a Lensfun lens raises the catalog to the format for them,
-        // in this transaction.
-        let stores = if photos
+        // An edit naming a Lensfun lens, or with AI Denoise, raises the catalog to the
+        // format for it, in this transaction.
+        let stores = photos
             .iter()
-            .any(|p| p.edit.as_ref().is_some_and(|e| e.lensfun))
-        {
-            super::format_upgrade::Stores::Lensfun
-        } else {
-            super::format_upgrade::Stores::Recipes
-        };
+            .filter_map(|p| p.edit.as_ref().map(|e| e.stores))
+            .max_by_key(|s| s.version())
+            .unwrap_or(super::format_upgrade::Stores::Recipes);
         let write = |w: &mut super::db::Write<'_>| {
             // The newest batch is Previous Import, empty when nothing new
             // was found.
@@ -417,8 +414,8 @@ impl Catalog {
             Ok((added, report, edits))
         };
         let (added, report, edits) = match stores {
-            super::format_upgrade::Stores::Lensfun => self.write_recipes(stores, write)?,
             super::format_upgrade::Stores::Recipes => self.db.write(write)?,
+            _ => self.write_recipes(stores, write)?,
         };
         edits.iter().for_each(|change| change.committed());
         Ok((added, report))
@@ -480,7 +477,7 @@ impl Catalog {
         Ok(Some(LegacyEdit {
             bitmaps,
             checked,
-            lensfun: sidecar.recipe.uses_lensfun(),
+            stores: super::format_upgrade::Stores::of([&sidecar.recipe]),
         }))
     }
 }
@@ -585,8 +582,8 @@ struct NewPhoto<'a> {
 struct LegacyEdit {
     bitmaps: Vec<(String, Vec<u8>)>,
     checked: super::edit_rows::CheckedNew,
-    /// It names a Lensfun lens (`format_upgrade::Stores`).
-    lensfun: bool,
+    /// What its edit stores, for the catalog format it needs (`format_upgrade::Stores`).
+    stores: super::format_upgrade::Stores,
 }
 
 /// This computer's locations, for matching folders found on disk.

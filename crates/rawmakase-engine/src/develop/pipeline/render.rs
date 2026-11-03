@@ -14,6 +14,18 @@ pub fn render_cancellable(
 ) -> Result<Rendered> {
     crate::develop::quality::render_cancellable(im, r, max_edge, None, cancel)
 }
+/// [`render_cancellable`] of a photo with AI Denoise: `ai` is its source, resolved by
+/// the caller (`None` renders without AI Denoise whatever the recipe says, as a preview
+/// does before a result is ready; exports must not pass `None` for a recipe that has it).
+pub fn render_with_ai(
+    im: &CameraImage,
+    r: &ValidRecipe,
+    ai: Option<&crate::develop::AiSource>,
+    max_edge: u32,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<Rendered> {
+    crate::develop::quality::render_with_ai(im, r, ai, max_edge, cancel)
+}
 pub fn render_region(im: &CameraImage, r: &ValidRecipe, region: [u32; 4]) -> Result<Rendered> {
     crate::develop::quality::render(im, r, 0, Some(region))
 }
