@@ -99,6 +99,22 @@ fn key_of(id: &crate::storage::Identity, provider: Provider) -> String {
     )
 }
 
+/// `sink`, handed a result (partial or final) only while the file at `path` is still
+/// `identity`, else told why not. Called by the worker, so the file is read there.
+fn checked(sink: Sink, path: PathBuf, identity: crate::storage::Identity) -> Sink {
+    Arc::new(move |update: Update| {
+        let result = matches!(update.state, State::Partial(_) | State::Ready(_));
+        if result && crate::storage::Identity::read(&path).ok().as_ref() != Some(&identity) {
+            sink(Update {
+                plain: update.plain,
+                state: State::Failed(CHANGED_SINCE_OPENED.into()),
+            });
+        } else {
+            sink(update);
+        }
+    })
+}
+
 /// Why a photo whose file changed since it was decoded gets no result.
 const CHANGED_SINCE_OPENED: &str =
     "The photo's file changed since it was opened; open it again to use AI Denoise.";
@@ -273,31 +289,25 @@ impl Service {
             self.shared.provider
         }
     }
-    /// The inputs of a request for `path`, captured with the provider in use: the file
-    /// is read without the queue's lock (a stalled drive must not hold up quitting),
-    /// and read again if the GPU was switched off meanwhile. Returns the queue locked.
-    fn keyed(&self, path: &Path) -> Result<(Keyed, std::sync::MutexGuard<'_, Queue>)> {
-        loop {
-            let provider = {
-                let queue = self.queue();
-                ensure_running(&queue)?;
-                self.provider(&queue)
-            };
-            let identity = crate::storage::Identity::read(path)?;
-            let queue = self.queue();
-            ensure_running(&queue)?;
-            if self.provider(&queue) == provider {
-                let key = key_of(&identity, provider);
-                return Ok((
-                    Keyed {
-                        key,
-                        provider,
-                        identity,
-                    },
-                    queue,
-                ));
-            }
-        }
+    /// The inputs of a request for the file `identity`, captured once, with the
+    /// provider in use. Nothing is read from the file: the worker checks it before and
+    /// after the job. Returns the queue locked.
+    fn keyed(
+        &self,
+        identity: crate::storage::Identity,
+    ) -> Result<(Keyed, std::sync::MutexGuard<'_, Queue>)> {
+        let queue = self.queue();
+        ensure_running(&queue)?;
+        let provider = self.provider(&queue);
+        let key = key_of(&identity, provider);
+        Ok((
+            Keyed {
+                key,
+                provider,
+                identity,
+            },
+            queue,
+        ))
     }
     /// Starts the worker if it is not running. When the thread cannot be started, every
     /// queued job fails with the reason: nothing would ever run them.
@@ -364,31 +374,26 @@ impl Service {
                 identity,
             },
             mut queue,
-        ) = match self.keyed(&path) {
+        ) = match self.keyed(file) {
             Ok(keyed) => keyed,
-            Err(_) if self.queue().stopped => return,
-            Err(e) => {
-                sink(Update {
-                    plain: Arc::downgrade(&plain),
-                    state: State::Failed(format!("The photo's file cannot be read: {e}")),
-                });
+            // Only refused when quitting.
+            Err(_) => return,
+        };
+        let running = queue.running.as_ref().is_some_and(|(k, _)| *k == key);
+        if running || queue.pending.iter().any(|j| j.key == key) {
+            // Joined to a job of the same file that may run under another path (a
+            // hard link): its results come only while this request's own file is
+            // still the one it asked for.
+            let entry = (plain.clone(), wanted, checked(sink.clone(), path, identity));
+            if running {
+                queue.joined.push(entry);
                 return;
             }
-        };
-        if file != identity {
-            drop(queue);
-            sink(Update {
-                plain: Arc::downgrade(&plain),
-                state: State::Failed(CHANGED_SINCE_OPENED.into()),
-            });
-            return;
-        }
-        let entry = (plain.clone(), wanted, sink.clone());
-        if queue.running.as_ref().is_some_and(|(k, _)| *k == key) {
-            queue.joined.push(entry);
-            return;
-        }
-        if let Some(job) = queue.pending.iter_mut().find(|j| j.key == key) {
+            let job = queue
+                .pending
+                .iter_mut()
+                .find(|j| j.key == key)
+                .expect("found");
             job.develop.push(entry);
             // The photo on screen goes first, with its region.
             job.region = region.or(job.region);
@@ -403,7 +408,7 @@ impl Service {
                 identity,
                 path,
                 region,
-                develop: vec![entry],
+                develop: vec![(plain.clone(), wanted, sink.clone())],
                 waiters: 0,
             });
         }
@@ -797,11 +802,12 @@ impl Service {
         file: &crate::storage::Identity,
         cancel: &AtomicBool,
     ) -> Result<Arc<AiEntry>> {
-        let (keyed, queue) = self.keyed(path)?;
-        drop(queue);
-        if *file != keyed.identity {
+        // Read without the queue's lock: a stalled drive must not hold up quitting.
+        if crate::storage::Identity::read(path)? != *file {
             bail!("{CHANGED_SINCE_OPENED}");
         }
+        let (keyed, queue) = self.keyed(file.clone())?;
+        drop(queue);
         // Read without the queue's lock; the file checked again after a slow read.
         if let Some(entry) = self.shared.cache.load(&keyed.key) {
             if crate::storage::Identity::read(path).ok().as_ref() != Some(&keyed.identity) {
