@@ -109,9 +109,13 @@ cargo test --locked -p rawmakase-engine --lib gpu -- --ignored
 
 ## 7. The inspector
 
-The Develop panels are drawn in `src/app/inspector.rs` (and `src/app/inspector/`).
-Draw the slider with `setting_slider(ui, ParameterId::…, &mut value, default)` in its
-panel, at Lightroom's place, and reset it with the panel's reset. Change the recipe
+Each Develop panel has its own file in `src/app/inspector/panels/` (Refine
+Saturation is in `tone_curve.rs`); `src/app/inspector.rs` draws them in order and
+carries out the actions they return. Draw the slider with
+`setting_slider(ui, ParameterId::…, &mut value, default)` in its panel, at
+Lightroom's place, and reset it with the panel's reset. A panel edits the recipe it
+is given; anything it can't do itself (Auto, an import, a dialog) it returns as an
+action. Change the recipe
 only through the editor's frame: the frame records one History step, marks the edit
 for saving and turns on a switched-off panel.
 
