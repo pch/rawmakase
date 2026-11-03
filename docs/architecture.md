@@ -87,8 +87,11 @@ library discovers its folders through the other.
 
 `app/mod.rs` owns the `Editor`, initialization and lifecycle. Its fields remain
 private. UI and workflow methods have visibility limited to the app module, one
-file per tool, workflow or policy; the Develop adjustment panels currently share
-`inspector.rs`. The [code map](code-map.md#desktop-application) lists them.
+file per tool, workflow or policy. Each Develop adjustment panel has its own file
+in `inspector/panels/`: it takes the recipe, the view state and a read-only view
+of what it shows, edits the recipe during the edit frame and returns the actions
+it can't carry out itself (Auto, imports, dialogs), which `Editor::controls`
+carries out after every panel is drawn. The [code map](code-map.md#desktop-application) lists them.
 
 `platform::menu` owns the macOS menu objects and queues typed actions, waking the
 UI without reaching editor state. The AppKit objects stay on the main thread;
