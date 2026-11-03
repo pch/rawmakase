@@ -54,6 +54,14 @@ impl Identity {
             prefix_hash: format!("{hash:016x}"),
         })
     }
+    /// The size and modification time this identity names, as a preview's
+    /// [`Stamp`] keeps them.
+    pub fn stamp(&self) -> Stamp {
+        Stamp {
+            size: self.size,
+            modified_ns: self.modified_ns,
+        }
+    }
     /// A file name for state kept per file, unique to this identity.
     pub fn key(&self) -> String {
         format!("{}-{}-{}", self.prefix_hash, self.size, self.modified_ns)

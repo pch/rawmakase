@@ -1356,18 +1356,22 @@ impl Library {
             .request(photo, ctx, || edit_source(catalog, photo.id));
     }
     /// Shows Develop's latest render as the photo's thumbnail and caches it
-    /// under the edit it was rendered with.
+    /// under the edit it was rendered with, for the file `rendered` names (the
+    /// one its pixels were decoded from); without one it is not cached.
     pub(super) fn update_edited(
         &mut self,
         ctx: &egui::Context,
         id: PhotoId,
+        rendered: Option<&crate::storage::Identity>,
         image: image::RgbImage,
         recipe_json: String,
     ) {
         let Some(path) = self.photo(id).map(|p| p.path.clone()) else {
             return;
         };
-        self.cache.store_edited(ctx, id, path, image, recipe_json);
+        let stamp = rendered.map(crate::storage::Identity::stamp);
+        self.cache
+            .store_edited(ctx, id, path, stamp, image, recipe_json);
     }
     /// The selected photo, or else the first one shown in the current
     /// folder or filter (which then becomes selected), as Lightroom does

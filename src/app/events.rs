@@ -650,6 +650,6 @@ impl Editor {
         let (Some(library), Some(id)) = (&mut self.library, self.document.catalog_photo) else {
             return;
         };
-        library.update_edited(ctx, id, small, json);
+        library.update_edited(ctx, id, self.document.image_file.as_ref(), small, json);
     }
 }

@@ -112,6 +112,7 @@ fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImpo
             library.update_edited(
                 &ctx,
                 photo.id,
+                crate::storage::Identity::read(&photo.path).ok().as_ref(),
                 image::RgbImage::from_pixel(4, 4, image::Rgb([30, 140, 250])),
                 serde_json::to_string(&recipe)?,
             );
@@ -1527,6 +1528,40 @@ fn preview_textures_keep_the_newest_192() -> Result<()> {
     assert_eq!(library.cache.thumb_order.len(), 192);
     Ok(())
 }
+/// Develop's render is kept for the file it was rendered from: the store
+/// carries that file's stamp, and a render of a file not known is shown, not
+/// cached.
+#[test]
+fn an_edited_preview_from_develop_is_kept_for_the_file_it_was_rendered_from() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF"])?;
+    let ctx = library.ctx.clone();
+    let photo = library.session.photos[0].clone();
+    let (job_tx, jobs) = previews::EditQueue::detached();
+    library.cache.edit_tx = job_tx;
+    library.update_edited(
+        &ctx,
+        photo.id,
+        None,
+        image::RgbImage::new(4, 4),
+        "{}".into(),
+    );
+    assert!(library.has_edited_thumbnail(photo.id));
+    assert!(jobs.try_recv().is_none(), "nothing to check it against");
+    let rendered = crate::storage::Identity::read(&photo.path)?;
+    std::fs::write(&photo.path, b"replaced since")?;
+    library.update_edited(
+        &ctx,
+        photo.id,
+        Some(&rendered),
+        image::RgbImage::new(4, 4),
+        "{}".into(),
+    );
+    match jobs.try_recv() {
+        Some(previews::EditJob::Store { stamp, .. }) => assert_eq!(stamp, rendered.stamp()),
+        _ => panic!("not a store"),
+    }
+    Ok(())
+}
 #[test]
 fn an_edited_preview_from_develop_outranks_renders_in_flight() -> Result<()> {
     let (_directory, mut library) = library_of(&["a.RAF"])?;
@@ -1546,7 +1581,14 @@ fn an_edited_preview_from_develop_outranks_renders_in_flight() -> Result<()> {
     assert_eq!(library.cache.edits_pending, 0);
     let first = library.cache.edited_requested[&id];
     // Develop's render arrives: it is shown, kept, and outranks `first`.
-    library.update_edited(&ctx, id, image::RgbImage::new(4, 4), "{}".into());
+    let rendered = crate::storage::Identity::read(&photo.path)?;
+    library.update_edited(
+        &ctx,
+        id,
+        Some(&rendered),
+        image::RgbImage::new(4, 4),
+        "{}".into(),
+    );
     assert!(library.has_edited_thumbnail(id));
     assert!(matches!(
         jobs.try_recv(),
