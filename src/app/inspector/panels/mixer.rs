@@ -8,6 +8,7 @@ use super::super::{
 use super::Action;
 use crate::app::design::{Tone, space};
 use crate::app::state::{MixerTab, PhotoColorSource, Tool, ViewState};
+use crate::app::step_name::StepName;
 use crate::app::targeted_tool::{hsl_target, target_button};
 use crate::app::theme;
 use crate::app::widgets::{segmented, slider_with, switched_section};
@@ -20,6 +21,7 @@ use eframe::egui::{self, Pos2, Rect, Sense, Stroke, Vec2};
 /// what a Targeted Adjustment Tool drag is moving.
 pub(in crate::app::inspector) fn show(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     r: &mut Recipe,
     view: &mut ViewState,
     photo: &PhotoColorSource<'_>,
@@ -36,7 +38,7 @@ pub(in crate::app::inspector) fn show(
         ("Color Mixer", Panel::ColorMixer)
     };
     let mut switch = PanelSwitch::new(r, mixer_panel);
-    if switched_section(ui, mixer_title, &mut switch.state, |ui| {
+    if switched_section(ui, step, mixer_title, &mut switch.state, |ui, step| {
         if black_white {
             let heading = subheading(ui, "Black & White Mix");
             // Measured (once) only while this panel is open.
@@ -88,6 +90,7 @@ pub(in crate::app::inspector) fn show(
                 let row = ui.push_id(("bw", i), |ui| {
                     slider_with(
                         ui,
+                        step,
                         name,
                         &mut r.effects.gray_mix[i],
                         -1. ..=1.,
@@ -114,7 +117,7 @@ pub(in crate::app::inspector) fn show(
             );
         });
         if view.mixer_tab == MixerTab::PointColor {
-            crate::app::point_color_panel::point_color_panel(ui, &mut r.point_colors, view);
+            crate::app::point_color_panel::point_color_panel(ui, step, &mut r.point_colors, view);
             return;
         }
         control_row(ui, "Mixer", |ui| {
@@ -148,6 +151,7 @@ pub(in crate::app::inspector) fn show(
                 for (c, name) in ["Hue", "Saturation", "Luminance"].into_iter().enumerate() {
                     slider_with(
                         ui,
+                        step,
                         name,
                         &mut r.hsl[i][c],
                         -1. ..=1.,
@@ -212,6 +216,7 @@ pub(in crate::app::inspector) fn show(
                     let row = ui.push_id(("hsl-all", c, i), |ui| {
                         slider_with(
                             ui,
+                            step,
                             name,
                             &mut r.hsl[i][c],
                             -1. ..=1.,

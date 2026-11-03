@@ -25,7 +25,7 @@ impl Library {
             .id_salt("library-info")
             .auto_shrink(false)
             .show(ui, |ui| {
-                section(ui, "Quick Develop", false, |ui| {
+                section(ui, "Quick Develop", |ui| {
                     let refusal = photo.as_ref().and_then(|p| self.shown_refusal(p));
                     let open = ui
                         .add_enabled(
@@ -63,7 +63,7 @@ impl Library {
                     quick(ui);
                     ui.add_space(space::XS);
                 });
-                section(ui, "Metadata", false, |ui| {
+                section(ui, "Metadata", |ui| {
                     match &photo {
                         Some(p) => {
                             // In Loupe and Compare, as for their keys, only the
@@ -128,7 +128,7 @@ impl Library {
                         }
                     }
                 });
-                section(ui, "Keywording", false, |ui| {
+                section(ui, "Keywording", |ui| {
                     self.keyword_fields(ui);
                 });
             });

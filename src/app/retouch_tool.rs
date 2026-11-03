@@ -424,6 +424,7 @@ impl Editor {
         };
         slider_with(
             ui,
+            &mut self.step_name,
             "Size",
             &mut size,
             0.001..=0.25,
@@ -433,6 +434,7 @@ impl Editor {
         );
         slider_with(
             ui,
+            &mut self.step_name,
             "Feather",
             &mut feather,
             0. ..=1.,
@@ -442,6 +444,7 @@ impl Editor {
         );
         slider_with(
             ui,
+            &mut self.step_name,
             "Opacity",
             &mut opacity,
             0. ..=1.,
@@ -464,6 +467,7 @@ impl Editor {
         if self.view.retouch.visualize {
             slider_with(
                 ui,
+                &mut self.step_name,
                 "Threshold",
                 &mut self.view.retouch.threshold,
                 0. ..=1.,

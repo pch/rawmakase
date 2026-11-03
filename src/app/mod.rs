@@ -25,6 +25,8 @@ pub(crate) struct Editor {
     load: task::Task,
     presets: PresetBrowser,
     view: ViewState,
+    /// The name the controls drawn this frame gave the History step they make.
+    step_name: step_name::StepName,
     preview: PreviewState,
     document: Document,
     context: egui::Context,
@@ -298,6 +300,7 @@ impl Editor {
                 chosen_aspect: inspector::aspect_from_key(&session.crop_aspect),
                 ..Default::default()
             },
+            step_name: Default::default(),
             preview: Default::default(),
             document: Default::default(),
             context: ctx.clone(),
@@ -970,6 +973,9 @@ mod side_tabs;
 #[cfg(test)]
 mod stacks_tests;
 mod stand_in;
+mod step_name;
+#[cfg(test)]
+mod step_name_tests;
 mod stroke_outline;
 mod subject_mask;
 mod targeted_tool;

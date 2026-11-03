@@ -369,6 +369,7 @@ impl Editor {
                 let before = op.clone();
                 slider_with(
                     ui,
+                    &mut self.step_name,
                     "Pupil Size",
                     &mut op.pupil_size,
                     0. ..=1.,
@@ -381,6 +382,7 @@ impl Editor {
                     EyeKind::Red => {
                         slider_with(
                             ui,
+                            &mut self.step_name,
                             "Darken",
                             &mut op.darken,
                             0. ..=1.,
@@ -404,7 +406,7 @@ impl Editor {
                 if *op != before {
                     let name = format!("Update {} Correction", op.kind.name());
                     self.show_red_eye();
-                    super::widgets::name_history_step(ui, name, String::new());
+                    self.step_name.name(name, String::new());
                 }
             }
             None => hint(ui, "Select a correction to change it"),

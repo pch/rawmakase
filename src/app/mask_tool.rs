@@ -1028,6 +1028,7 @@ impl Editor {
             let percent = Some((100., 0));
             slider_with(
                 ui,
+                &mut self.step_name,
                 "Size",
                 &mut b.size,
                 0.002..=0.5,
@@ -1035,9 +1036,36 @@ impl Editor {
                 Some((1000., 0)),
                 None,
             );
-            slider_with(ui, "Feather", &mut b.feather, 0. ..=1., 0.5, percent, None);
-            slider_with(ui, "Flow", &mut b.flow, 0. ..=1., 1., percent, None);
-            slider_with(ui, "Density", &mut b.density, 0. ..=1., 1., percent, None);
+            slider_with(
+                ui,
+                &mut self.step_name,
+                "Feather",
+                &mut b.feather,
+                0. ..=1.,
+                0.5,
+                percent,
+                None,
+            );
+            slider_with(
+                ui,
+                &mut self.step_name,
+                "Flow",
+                &mut b.flow,
+                0. ..=1.,
+                1.,
+                percent,
+                None,
+            );
+            slider_with(
+                ui,
+                &mut self.step_name,
+                "Density",
+                &mut b.density,
+                0. ..=1.,
+                1.,
+                percent,
+                None,
+            );
             indented(ui, |ui| {
                 ui.checkbox(&mut b.auto_mask, "Auto Mask")
                     .on_hover_text("Keep the brush within areas like the colour under its centre");
@@ -1065,14 +1093,32 @@ impl Editor {
         let component = &mut self.document.edit.recipe_mut().masks[m].components[c];
         match &mut component.shape {
             MaskShape::Radial { feather, .. } => {
-                slider_with(ui, "Feather", feather, 0. ..=1., 0.5, percent, None);
+                slider_with(
+                    ui,
+                    &mut self.step_name,
+                    "Feather",
+                    feather,
+                    0. ..=1.,
+                    0.5,
+                    percent,
+                    None,
+                );
                 hint(
                     ui,
                     "Drag the centre to move it, the edge handles to size and turn it",
                 );
             }
             MaskShape::ColorRange { amount, samples } => {
-                slider_with(ui, "Refine", amount, 0. ..=1., 0.5, percent, None);
+                slider_with(
+                    ui,
+                    &mut self.step_name,
+                    "Refine",
+                    amount,
+                    0. ..=1.,
+                    0.5,
+                    percent,
+                    None,
+                );
                 let text = format!(
                     "{} sampled · click the photo to pick again, Shift-click adds",
                     samples.len()
@@ -1080,10 +1126,29 @@ impl Editor {
                 hint(ui, &text);
             }
             MaskShape::LuminanceRange { low, high, falloff } => {
-                slider_with(ui, "Range Low", low, 0. ..=1., 0.5, percent, None);
-                slider_with(ui, "Range High", high, 0. ..=1., 1., percent, None);
                 slider_with(
                     ui,
+                    &mut self.step_name,
+                    "Range Low",
+                    low,
+                    0. ..=1.,
+                    0.5,
+                    percent,
+                    None,
+                );
+                slider_with(
+                    ui,
+                    &mut self.step_name,
+                    "Range High",
+                    high,
+                    0. ..=1.,
+                    1.,
+                    percent,
+                    None,
+                );
+                slider_with(
+                    ui,
+                    &mut self.step_name,
                     "Falloff Low",
                     &mut falloff[0],
                     0. ..=1.,
@@ -1093,6 +1158,7 @@ impl Editor {
                 );
                 slider_with(
                     ui,
+                    &mut self.step_name,
                     "Falloff High",
                     &mut falloff[1],
                     0. ..=1.,
@@ -1139,6 +1205,7 @@ impl Editor {
         set_edit_context(ui, &format!("{}:", mask_name(mask, m)));
         slider_with(
             ui,
+            &mut self.step_name,
             "Amount",
             &mut mask.amount,
             0. ..=2.,
@@ -1150,7 +1217,7 @@ impl Editor {
         for group in LOCAL_GROUPS {
             ui.add_space(space::XS);
             for &id in group {
-                local_setting_slider(ui, id, id.value_mut(a), 0.);
+                local_setting_slider(ui, &mut self.step_name, id, id.value_mut(a), 0.);
             }
         }
         ui.add_space(space::XS);

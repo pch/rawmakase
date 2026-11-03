@@ -1,5 +1,6 @@
 use crate::app::design::{self, Tone, button, inset, radius, size, space, text};
 use crate::app::icons::{self, Icon};
+use crate::app::step_name::StepName;
 use crate::app::theme;
 use crate::develop::effects::EffectsRendering;
 use crate::model::panels::PanelState;
@@ -91,29 +92,20 @@ pub(super) fn toolbar_action_sized(
         response
     }
 }
+/// A resettable Develop panel; returns whether reset was clicked. A click names
+/// its History step in `step`, before the contents are drawn with it.
 pub(super) fn adjustment_section(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     title: &str,
-    contents: impl FnOnce(&mut egui::Ui),
+    contents: impl FnOnce(&mut egui::Ui, &mut StepName),
 ) -> bool {
-    section(ui, title, true, contents)
+    section_header(ui, title, HeaderButton::Reset, None, step, contents)
 }
 /// Where the set of collapsed section titles lives in egui memory; the editor
 /// seeds it from the session and saves it back when it changes.
 pub(super) fn collapsed_sections_id() -> egui::Id {
     egui::Id::new("rawmakase-collapsed-sections")
-}
-/// Where a control names the edit it just made, for the History panel. The
-/// editor takes it at the end of the frame.
-pub(super) fn history_step_id() -> egui::Id {
-    egui::Id::new("rawmakase-history-step")
-}
-pub(super) fn name_history_step(ui: &egui::Ui, name: String, value: String) {
-    name_frame_step(ui.ctx(), name, value);
-}
-/// As [`name_history_step`], for an edit made outside a control during the frame.
-pub(super) fn name_frame_step(ctx: &egui::Context, name: String, value: String) {
-    ctx.data_mut(|d| d.insert_temp(history_step_id(), (name, value)));
 }
 /// The panel or sub-panel being drawn ("Detail", then "Sharpening"), so a
 /// slider's step reads "Sharpening Amount" rather than "Amount".
@@ -126,19 +118,9 @@ fn edit_context(ui: &egui::Ui) -> String {
         .data(|d| d.get_temp(egui::Id::new("rawmakase-edit-context")))
         .unwrap_or_default()
 }
-/// Collapsible Lightroom-style panel header; returns whether reset was clicked.
-pub(super) fn section(
-    ui: &mut egui::Ui,
-    title: &str,
-    resettable: bool,
-    contents: impl FnOnce(&mut egui::Ui),
-) -> bool {
-    let button = if resettable {
-        HeaderButton::Reset
-    } else {
-        HeaderButton::None
-    };
-    section_with(ui, title, button, contents)
+/// Collapsible Lightroom-style panel with no header button.
+pub(super) fn section(ui: &mut egui::Ui, title: &str, contents: impl FnOnce(&mut egui::Ui)) {
+    section_with(ui, title, HeaderButton::None, contents);
 }
 /// The button at the right of a panel header.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,24 +131,29 @@ pub(super) enum HeaderButton {
     /// Adds an item, as the Snapshots panel's +.
     Add,
 }
-/// [`section`] with any header button; returns whether it was clicked.
+/// [`section`] with a header button other than Reset, which names a History
+/// step ([`adjustment_section`]); returns whether it was clicked.
 pub(super) fn section_with(
     ui: &mut egui::Ui,
     title: &str,
     button: HeaderButton,
     contents: impl FnOnce(&mut egui::Ui),
 ) -> bool {
-    section_header(ui, title, button, None, contents)
+    debug_assert!(button != HeaderButton::Reset, "Reset names a step");
+    // Without Reset the header names no step.
+    let mut unnamed = StepName::default();
+    section_header(ui, title, button, None, &mut unnamed, |ui, _| contents(ui))
 }
 /// A resettable Develop panel with Lightroom's on/off switch in its header, over
 /// the photo's `Enable*` setting; returns whether reset was clicked.
 pub(super) fn switched_section(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     title: &str,
     switch: &mut PanelState,
-    contents: impl FnOnce(&mut egui::Ui),
+    contents: impl FnOnce(&mut egui::Ui, &mut StepName),
 ) -> bool {
-    section_header(ui, title, HeaderButton::Reset, Some(switch), contents)
+    section_header(ui, title, HeaderButton::Reset, Some(switch), step, contents)
 }
 /// The side of the window a panel is in. Solo Mode is per side, as in Lightroom.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -286,7 +273,8 @@ fn section_header(
     title: &str,
     button: HeaderButton,
     switch: Option<&mut PanelState>,
-    contents: impl FnOnce(&mut egui::Ui),
+    step: &mut StepName,
+    contents: impl FnOnce(&mut egui::Ui, &mut StepName),
 ) -> bool {
     let palette = theme::palette(ui.ctx());
     let resettable = button != HeaderButton::None;
@@ -451,7 +439,7 @@ fn section_header(
         }
     }
     if button == HeaderButton::Reset && reset.clicked() {
-        name_history_step(ui, format!("Reset {title}"), String::new());
+        step.name(format!("Reset {title}"), String::new());
     }
     if open {
         set_edit_context(ui, title);
@@ -470,7 +458,7 @@ fn section_header(
                     top: space::M as i8,
                     bottom: space::L as i8,
                 })
-                .show(ui, contents);
+                .show(ui, |ui| contents(ui, step));
         });
     }
     resettable && reset.clicked()
@@ -895,12 +883,13 @@ const SLIDER_VALUE_WIDTH: f32 = 52.;
 /// (×100), matching Lightroom's numbers while the recipe keeps its units.
 pub(super) fn slider(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     label: &str,
     value: &mut f32,
     range: std::ops::RangeInclusive<f32>,
     default: f32,
 ) {
-    slider_with(ui, label, value, range, default, None, None);
+    slider_with(ui, step, label, value, range, default, None, None);
 }
 /// What happened to a slider this frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -941,8 +930,12 @@ fn fill_origin(start: f32, default: f32, coloured: bool) -> FillOrigin {
         }
     }
 }
+/// [`slider`] with its shown scale and a coloured rail; the parameters are
+/// those of a slider row, and `step` the edit's History name.
+#[expect(clippy::too_many_arguments)]
 pub(super) fn slider_with(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     label: &str,
     value: &mut f32,
     range: std::ops::RangeInclusive<f32>,
@@ -955,7 +948,7 @@ pub(super) fn slider_with(
         gradient,
         ..SliderStyle::default()
     };
-    slider_styled(ui, label, value, range, default, style)
+    slider_styled(ui, step, label, value, range, default, style)
 }
 /// How a slider looks and moves beyond its label, range and default.
 #[derive(Clone, Copy, Debug, Default)]
@@ -991,16 +984,18 @@ pub(super) const TINT_GRADIENT: (Color32, Color32) = (
 /// The slider for a develop setting, as its descriptor describes it.
 pub(super) fn setting_slider(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     id: ParameterId,
     value: &mut f32,
     default: f32,
 ) -> SliderEvent {
-    keyed_setting_slider(ui, id, value, default, false)
+    keyed_setting_slider(ui, step, id, value, default, false)
 }
 /// [`setting_slider`] for a slider the Basic panel's keys step: its label stands
 /// out while `selected`, and a click on it selects it.
 pub(super) fn keyed_setting_slider(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     id: ParameterId,
     value: &mut f32,
     default: f32,
@@ -1015,11 +1010,20 @@ pub(super) fn keyed_setting_slider(
         }
         _ => None,
     };
-    descriptor_slider(ui, id.descriptor(), value, default, gradient, selected)
+    descriptor_slider(
+        ui,
+        step,
+        id.descriptor(),
+        value,
+        default,
+        gradient,
+        selected,
+    )
 }
 /// The slider for a mask's adjustment, as its descriptor describes it.
 pub(super) fn local_setting_slider(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     id: LocalParameterId,
     value: &mut f32,
     default: f32,
@@ -1029,10 +1033,11 @@ pub(super) fn local_setting_slider(
         LocalParameterId::Tint => Some(TINT_GRADIENT),
         _ => None,
     };
-    descriptor_slider(ui, id.descriptor(), value, default, gradient, false)
+    descriptor_slider(ui, step, id.descriptor(), value, default, gradient, false)
 }
 fn descriptor_slider<Id>(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     d: &params::Descriptor<Id>,
     value: &mut f32,
     default: f32,
@@ -1048,7 +1053,15 @@ fn descriptor_slider<Id>(
         typed: Some((*d.valid.start(), *d.valid.end())),
         selected,
     };
-    slider_styled(ui, d.label, value, d.interactive.clone(), default, style)
+    slider_styled(
+        ui,
+        step,
+        d.label,
+        value,
+        d.interactive.clone(),
+        default,
+        style,
+    )
 }
 /// How a slider's number field was changed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1075,6 +1088,7 @@ fn number_input(
 }
 pub(super) fn slider_styled(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     label: &str,
     value: &mut f32,
     range: std::ops::RangeInclusive<f32>,
@@ -1086,7 +1100,7 @@ pub(super) fn slider_styled(
         display,
         gradient,
         reciprocal,
-        drag_step: step,
+        drag_step: snap,
         hue_rail,
         typed,
         selected,
@@ -1305,12 +1319,12 @@ pub(super) fn slider_styled(
             && let Some(p) = response.interact_pointer_pos()
         {
             let v = from_rail(p.x, rail);
-            let v = step.map_or(v, |step| (v / step).round() * step);
+            let v = snap.map_or(v, |snap| (v / snap).round() * snap);
             *value = v.clamp(start, end);
         } else if let Some(nudge) = hovered_nudge(ui, row) {
             // Lightroom's keys over a hovered slider: Up and Down move it by its
             // smallest shown step, ten with Shift.
-            let unit = step.unwrap_or(10f32.powi(-(decimals as i32)) / scale);
+            let unit = snap.unwrap_or(10f32.powi(-(decimals as i32)) / scale);
             *value = crate::model::params::nudged(*value, nudge * unit, start..=end);
         }
         let x = to_rail(*value, rail);
@@ -1352,7 +1366,7 @@ pub(super) fn slider_styled(
             format!("{context} {label}")
         };
         let shown = format_value(f64::from(*value * scale), decimals, signed);
-        name_history_step(ui, name, shown);
+        step.name(name, shown);
     }
     event
 }
@@ -2247,7 +2261,13 @@ mod slider_tests {
                     egui::CentralPanel::default()
                         .frame(egui::Frame::NONE)
                         .show(ui, |ui| {
-                            setting_slider(ui, ParameterId::Exposure, &mut value, 0.);
+                            setting_slider(
+                                ui,
+                                &mut StepName::default(),
+                                ParameterId::Exposure,
+                                &mut value,
+                                0.,
+                            );
                         });
                 },
             );
@@ -2298,7 +2318,13 @@ mod slider_tests {
                     egui::CentralPanel::default()
                         .frame(egui::Frame::NONE)
                         .show(ui, |ui| {
-                            setting_slider(ui, ParameterId::Exposure, &mut value, 0.);
+                            setting_slider(
+                                ui,
+                                &mut StepName::default(),
+                                ParameterId::Exposure,
+                                &mut value,
+                                0.,
+                            );
                         });
                 },
             );
@@ -2362,7 +2388,13 @@ mod slider_tests {
                     egui::CentralPanel::default()
                         .frame(egui::Frame::NONE)
                         .show(ui, |ui| {
-                            setting_slider(ui, ParameterId::Exposure, &mut value, 0.);
+                            setting_slider(
+                                ui,
+                                &mut StepName::default(),
+                                ParameterId::Exposure,
+                                &mut value,
+                                0.,
+                            );
                         });
                 },
             );
@@ -2387,7 +2419,13 @@ mod slider_tests {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::NONE)
                     .show(ui, |ui| {
-                        setting_slider(ui, ParameterId::Exposure, &mut value, 0.);
+                        setting_slider(
+                            ui,
+                            &mut StepName::default(),
+                            ParameterId::Exposure,
+                            &mut value,
+                            0.,
+                        );
                     });
             });
             output.textures_delta.clear();

@@ -188,7 +188,11 @@ waits for, or says it goes on without, what its names need.
 Document reset clears its edit history and decoded images together; a catalog
 photo's History then comes back from the catalog with its edit. A frame's
 history transaction is bound to the load generation, so navigation during drawing
-cannot record the previous photo's edits against the new photo. Preset-browser
+cannot record the previous photo's edits against the new photo. A control names
+the History step it makes in the editor's `StepName`, passed to it explicitly
+with the recipe; the frame hands the last name given to History as it finishes,
+after ending a wheel scroll or control-surface turn still going as steps of
+their own. Preset-browser
 preferences survive navigation; hover previews and compatibility results do not.
 Session preference writes have an explicit destination; UI tests disable them or
 inject a temporary file, without changing the process-wide environment.

@@ -38,7 +38,7 @@ impl Editor {
                 }
             });
         };
-        section(ui, "History", false, |ui| {
+        section(ui, "History", |ui| {
             ui.spacing_mut().item_spacing.y = 0.;
             for (i, step) in steps.iter().enumerate().rev() {
                 row(ui, i + 1, &step.name, &step.value);

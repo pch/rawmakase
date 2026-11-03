@@ -5,6 +5,7 @@ use super::Action;
 use crate::app::curve_menu::CurveChoice;
 use crate::app::design::space;
 use crate::app::state::{Tool, ViewState};
+use crate::app::step_name::StepName;
 use crate::app::targeted_tool::target_button;
 use crate::app::widgets::{
     parametric_curve_ui, segmented, setting_slider, slider, switched_section, tone_curve_ui,
@@ -20,6 +21,7 @@ use eframe::egui::{self, Sense, Vec2};
 /// Adjustment Tool drag is moving, `saved_curves` the Point Curve menu's own.
 pub(in crate::app::inspector) fn show(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     r: &mut Recipe,
     view: &mut ViewState,
     histogram: &[[u32; 256]; 3],
@@ -28,7 +30,7 @@ pub(in crate::app::inspector) fn show(
 ) -> Vec<Action> {
     let mut actions = Vec::new();
     let mut switch = PanelSwitch::new(r, Panel::ToneCurve);
-    if switched_section(ui, "Tone Curve", &mut switch.state, |ui| {
+    if switched_section(ui, step, "Tone Curve", &mut switch.state, |ui, step| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = space::S;
             let (button, _) = ui.allocate_exact_size(Vec2::new(22., 22.), Sense::hover());
@@ -69,7 +71,7 @@ pub(in crate::app::inspector) fn show(
             // Lightroom lists them lightest first.
             for (i, id) in ParameterId::PARAMETRIC.into_iter().enumerate().rev() {
                 let row = ui.push_id(("parametric", i), |ui| {
-                    setting_slider(ui, id, id.value_mut(r), 0.)
+                    setting_slider(ui, step, id, id.value_mut(r), 0.)
                 });
                 highlight_targeted(ui, row.response.rect, moving.map_or(0., |w| w.shares[i]));
             }
@@ -136,7 +138,7 @@ pub(in crate::app::inspector) fn show(
             let mut shown = r.curve_saturation.min(1.);
             let before = shown;
             ui.add_enabled_ui(view.selected_curve == 0, |ui| {
-                setting_slider(ui, ParameterId::CurveSaturation, &mut shown, 1.);
+                setting_slider(ui, step, ParameterId::CurveSaturation, &mut shown, 1.);
             });
             if shown != before {
                 r.curve_saturation = shown;
@@ -145,6 +147,7 @@ pub(in crate::app::inspector) fn show(
         subheading(ui, "Levels");
         slider(
             ui,
+            step,
             "Black point",
             &mut r.black_point,
             0. ..=r.white_point - 0.01,
@@ -152,12 +155,13 @@ pub(in crate::app::inspector) fn show(
         );
         slider(
             ui,
+            step,
             "White point",
             &mut r.white_point,
             r.black_point + 0.01..=1.,
             1.,
         );
-        setting_slider(ui, ParameterId::Midtone, &mut r.midtone, 1.);
+        setting_slider(ui, step, ParameterId::Midtone, &mut r.midtone, 1.);
     }) {
         r.black_point = 0.;
         r.white_point = 1.;

@@ -4388,6 +4388,7 @@ fn double_clicking_a_defringe_hue_resets_it_to_its_colors_default() {
         ..Default::default()
     };
     let mut time = 0.;
+    let mut step = super::step_name::StepName::default();
     let mut frame =
         |effects: &mut crate::model::effects::Effects, events: Vec<egui::Event>, wait: f64| {
             time += wait;
@@ -4398,7 +4399,7 @@ fn double_clicking_a_defringe_hue_resets_it_to_its_colors_default() {
                     events,
                     ..Default::default()
                 },
-                |ui| super::inspector::defringe_sliders(ui, effects),
+                |ui| super::inspector::defringe_sliders(ui, &mut step, effects),
             );
             output.textures_delta.clear();
         };
@@ -4425,10 +4426,8 @@ fn double_clicking_a_defringe_hue_resets_it_to_its_colors_default() {
     }
     assert_eq!(effects.defringe_ranges, [[0.3, 0.7], [0.4, 0.6]]);
     // History names the range reset, not the value the clamped end briefly took.
-    let step: Option<(String, String)> =
-        ctx.data(|d| d.get_temp(super::widgets::history_step_id()));
     assert_eq!(
-        step,
+        step.given(),
         Some(("Defringe Green Hue".to_string(), "40 / 60".to_string()))
     );
 }
@@ -5596,12 +5595,9 @@ fn preset_amount_scales_the_preset_from_the_settings_before_it() {
     editor.finish_edit_frame(frame, &ctx);
     let frame = editor.begin_edit_frame();
     // As the slider does while it moves.
-    ctx.data_mut(|d| {
-        d.insert_temp(
-            super::widgets::history_step_id(),
-            ("Preset Amount".to_string(), "50".to_string()),
-        )
-    });
+    editor
+        .step_name
+        .name("Preset Amount".to_string(), "50".to_string());
     editor.set_preset_amount(0.5);
     editor.finish_edit_frame(frame, &ctx);
     let frame = editor.begin_edit_frame();
@@ -5897,12 +5893,9 @@ fn an_edit_right_after_a_wheel_scroll_is_its_own_history_step() {
     // At once, before the scroll pauses, a slider moves, naming its step.
     let edit = editor.begin_edit_frame();
     editor.document.edit.setup_mut().exposure = 0.5;
-    ctx.data_mut(|d| {
-        d.insert_temp(
-            super::widgets::history_step_id(),
-            ("Exposure".to_string(), "+0.50".to_string()),
-        )
-    });
+    editor
+        .step_name
+        .name("Exposure".to_string(), "+0.50".to_string());
     editor.finish_edit_frame(edit, &ctx);
     let (steps, applied) = editor.document.edit.history().steps();
     assert_eq!(applied, 2);
@@ -5943,12 +5936,9 @@ fn a_wheel_scroll_is_its_own_step_however_late_the_next_frame_comes() {
     std::thread::sleep(std::time::Duration::from_millis(450));
     let edit = editor.begin_edit_frame();
     editor.document.edit.setup_mut().exposure = 0.5;
-    ctx.data_mut(|d| {
-        d.insert_temp(
-            super::widgets::history_step_id(),
-            ("Exposure".to_string(), "+0.50".to_string()),
-        )
-    });
+    editor
+        .step_name
+        .name("Exposure".to_string(), "+0.50".to_string());
     editor.finish_edit_frame(edit, &ctx);
     let (steps, applied) = editor.document.edit.history().steps();
     assert_eq!(applied, 2);
@@ -6271,9 +6261,15 @@ fn a_panel_header_switch_turns_the_panel_off_and_on_without_opening_it() {
     let draw = |state: &mut PanelState, events, time| {
         widget_frame(&ctx, time, events, |ui| {
             area.set(ui.max_rect());
-            super::widgets::switched_section(ui, "Tone Curve", state, |ui| {
-                ui.label("contents");
-            });
+            super::widgets::switched_section(
+                ui,
+                &mut Default::default(),
+                "Tone Curve",
+                state,
+                |ui, _| {
+                    ui.label("contents");
+                },
+            );
         })
     };
     draw(&mut state, vec![], 0.);
@@ -6344,7 +6340,7 @@ fn solo_mode_opens_one_panel_per_side_and_is_set_from_the_header_menu() {
             headers.borrow_mut().clear();
             for title in titles {
                 headers.borrow_mut().push(ui.cursor().top() + 8. + 14.);
-                super::widgets::section(ui, title, false, |ui| {
+                super::widgets::section(ui, title, |ui| {
                     ui.label(title);
                 });
             }
@@ -6386,7 +6382,7 @@ fn the_panel_header_menu_fits_its_item_not_the_header() {
         widget_frame(&ctx, time, events, |ui| {
             let _side = SectionSide::enter(ui, SectionGroup::DevelopRight);
             header.set(ui.cursor().top() + 14. + 14.);
-            super::widgets::section(ui, "Basic", false, |ui| {
+            super::widgets::section(ui, "Basic", |ui| {
                 ui.label("Basic");
             });
         })
@@ -6418,7 +6414,14 @@ fn up_and_down_nudge_the_hovered_slider_but_never_while_typing_or_scrolling() {
     let mut draw = |value: &mut f32, focus: bool, events: Vec<egui::Event>, time| {
         widget_frame(&ctx, time, events, |ui| {
             let top = ui.cursor().min;
-            super::widgets::slider(ui, "Contrast", value, -1. ..=1., 0.);
+            super::widgets::slider(
+                ui,
+                &mut Default::default(),
+                "Contrast",
+                value,
+                -1. ..=1.,
+                0.,
+            );
             row.set(Rect::from_min_max(
                 top,
                 Pos2::new(ui.max_rect().right(), ui.cursor().top()),
@@ -6482,7 +6485,14 @@ fn a_disabled_slider_ignores_up_and_down() {
         widget_frame(&ctx, time, events, |ui| {
             let top = ui.cursor().min;
             ui.add_enabled_ui(false, |ui| {
-                super::widgets::slider(ui, "Contrast", value, -1. ..=1., 0.);
+                super::widgets::slider(
+                    ui,
+                    &mut Default::default(),
+                    "Contrast",
+                    value,
+                    -1. ..=1.,
+                    0.,
+                );
             });
             row.set(Rect::from_min_max(
                 top,
@@ -6520,7 +6530,7 @@ fn b_and_w_opens_and_closes_with_the_color_mixer_in_solo_mode() {
             headers.borrow_mut().clear();
             for title in ["Tone Curve", mixer] {
                 headers.borrow_mut().push(ui.cursor().top() + 8. + 14.);
-                super::widgets::section(ui, title, false, |ui| {
+                super::widgets::section(ui, title, |ui| {
                     ui.label(title);
                 });
             }
@@ -6940,6 +6950,7 @@ fn an_imported_value_outside_the_slider_survives_being_shown_and_nudged() {
             let top = ui.cursor().min;
             super::widgets::setting_slider(
                 ui,
+                &mut Default::default(),
                 crate::model::params::ParameterId::Exposure,
                 value,
                 0.,

@@ -543,6 +543,7 @@ fn a_label_click_selects_its_slider_and_lights_it() {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
                     let e = super::super::widgets::keyed_setting_slider(
                         ui,
+                        &mut Default::default(),
                         ParameterId::Exposure,
                         value,
                         0.,

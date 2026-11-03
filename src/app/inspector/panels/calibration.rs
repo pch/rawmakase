@@ -2,6 +2,7 @@
 //! Shadows tint and the red, green and blue primaries.
 use super::super::{PanelSwitch, control_row, rail_row, subheading};
 use crate::app::design::{Tone, space, text};
+use crate::app::step_name::StepName;
 use crate::app::theme;
 use crate::app::widgets::{setting_slider, switched_section};
 use crate::camera_data::Metadata;
@@ -13,11 +14,12 @@ use eframe::egui;
 /// Draws the panel for photo `metadata`.
 pub(in crate::app::inspector) fn show(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     r: &mut Recipe,
     metadata: Option<&Metadata>,
 ) {
     let mut switch = PanelSwitch::new(r, Panel::Calibration);
-    if switched_section(ui, "Calibration", &mut switch.state, |ui| {
+    if switched_section(ui, step, "Calibration", &mut switch.state, |ui, step| {
         // The process version as a row of the slider grid, the camera's
         // exposure baseline under it at the rails' start.
         ui.add_space(space::XS);
@@ -45,7 +47,13 @@ pub(in crate::app::inspector) fn show(
         }
         subheading(ui, "Shadows");
         ui.push_id("calibration-shadows", |ui| {
-            setting_slider(ui, ParameterId::ShadowTint, &mut r.effects.shadow_tint, 0.);
+            setting_slider(
+                ui,
+                step,
+                ParameterId::ShadowTint,
+                &mut r.effects.shadow_tint,
+                0.,
+            );
         });
         for (i, name) in ["Red Primary", "Green Primary", "Blue Primary"]
             .iter()
@@ -55,7 +63,7 @@ pub(in crate::app::inspector) fn show(
             ui.push_id(("calibration", i), |ui| {
                 let primary = ParameterId::PRIMARIES[i];
                 for id in primary {
-                    setting_slider(ui, id, id.value_mut(r), 0.);
+                    setting_slider(ui, step, id, id.value_mut(r), 0.);
                 }
             });
         }

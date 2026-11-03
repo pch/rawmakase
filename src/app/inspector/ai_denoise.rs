@@ -6,6 +6,7 @@ use super::lensfun::{accent_button, band, note, progress, small, title, warning}
 use super::{control_row, subheading};
 use crate::app::ai_denoise::State;
 use crate::app::design::text;
+use crate::app::step_name::StepName;
 use crate::model::params::ParameterId;
 use crate::model::recipe::Recipe;
 use eframe::egui;
@@ -29,7 +30,12 @@ pub(in crate::app) enum Action {
 }
 
 /// The AI Denoise rows of the Detail panel.
-pub(super) fn controls(ui: &mut egui::Ui, r: &mut Recipe, view: &View) -> Option<Action> {
+pub(super) fn controls(
+    ui: &mut egui::Ui,
+    step: &mut StepName,
+    r: &mut Recipe,
+    view: &View,
+) -> Option<Action> {
     let heading = subheading(ui, "AI Denoise");
     credit_button(ui, heading);
     control_row(ui, "", |ui| {
@@ -49,6 +55,7 @@ pub(super) fn controls(ui: &mut egui::Ui, r: &mut Recipe, view: &View) -> Option
     ui.add_enabled_ui(r.ai_denoise.enabled, |ui| {
         super::super::widgets::setting_slider(
             ui,
+            step,
             ParameterId::AiDenoiseAmount,
             &mut r.ai_denoise.amount,
             0.5,

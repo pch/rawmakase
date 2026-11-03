@@ -2,6 +2,7 @@
 //! Blacks, Shadows, Exposure, Highlights and Whites, and dragging sideways in
 //! one moves that slider. The regions are fifths of the width, along the
 //! histogram's grid lines.
+use crate::app::step_name::StepName;
 use crate::model::recipe::Recipe;
 use eframe::egui::{self, CursorIcon, Rect, Sense};
 
@@ -106,6 +107,7 @@ pub(super) struct ToneDrag {
 /// Returns the region to show: the one dragged, or the one under the pointer.
 pub(super) fn tone_drag_ui(
     ui: &egui::Ui,
+    step: &mut StepName,
     rect: Rect,
     controls: &[Rect],
     drag: &mut Option<ToneDrag>,
@@ -135,11 +137,7 @@ pub(super) fn tone_drag_ui(
             // Named only when it changed, or the name would go to the next edit.
             if *slider != value {
                 *slider = value;
-                super::widgets::name_history_step(
-                    ui,
-                    d.region.label().to_string(),
-                    d.region.display(value),
-                );
+                step.name(d.region.label().to_string(), d.region.display(value));
             }
         } else {
             *drag = None;
@@ -160,7 +158,7 @@ pub(super) fn tone_drag_ui(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::history::{History, Step};
+    use crate::app::history::History;
     use eframe::egui::{Pos2, Vec2};
 
     #[test]
@@ -207,6 +205,7 @@ mod tests {
         drag: Option<ToneDrag>,
         history: History,
         controls: Vec<Rect>,
+        step: StepName,
     }
     impl Harness {
         const RECT: Rect = Rect::from_min_max(Pos2::ZERO, Pos2::new(500., 100.));
@@ -217,6 +216,7 @@ mod tests {
                 drag: None,
                 history: History::default(),
                 controls,
+                step: StepName::default(),
             };
             h.frame(vec![]);
             h
@@ -224,21 +224,23 @@ mod tests {
         fn frame(&mut self, events: Vec<egui::Event>) -> Option<ToneRegion> {
             let before = self.recipe.clone();
             let mut shown = None;
-            let (recipe, drag, controls) = (&mut self.recipe, &mut self.drag, &self.controls);
+            let (recipe, drag, controls, step) = (
+                &mut self.recipe,
+                &mut self.drag,
+                &self.controls,
+                &mut self.step,
+            );
             let mut output = self.ctx.run_ui(
                 egui::RawInput {
                     screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(600.))),
                     events,
                     ..Default::default()
                 },
-                |ui| shown = tone_drag_ui(ui, Self::RECT, controls, drag, recipe),
+                |ui| shown = tone_drag_ui(ui, step, Self::RECT, controls, drag, recipe),
             );
             output.textures_delta.clear();
-            let label = self.ctx.data_mut(|d| {
-                d.remove_temp::<(String, String)>(super::super::widgets::history_step_id())
-            });
-            if let Some((name, value)) = label {
-                self.history.label(Step::new(name, value));
+            if let Some(step) = self.step.take() {
+                self.history.label(step);
             }
             let down = self.ctx.input(|i| i.pointer.primary_down());
             self.history.observe(before, &self.recipe, down);
@@ -303,11 +305,7 @@ mod tests {
         h.drag(egui::PointerButton::Primary, Pos2::new(250., 50.), &[]);
         assert_eq!(h.recipe, Recipe::default());
         assert!(h.steps().is_empty());
-        assert!(
-            h.ctx
-                .data(|d| d.get_temp::<(String, String)>(super::super::widgets::history_step_id()))
-                .is_none()
-        );
+        assert!(h.step.given().is_none());
     }
 
     #[test]

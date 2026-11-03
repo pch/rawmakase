@@ -3,8 +3,9 @@
 //! Visualize Range. Each gesture is one History step.
 use super::state::{PointColorView, Tool, ViewState};
 use super::theme;
-use super::widgets::{name_history_step, set_edit_context, slider_with};
+use super::widgets::{set_edit_context, slider_with};
 use crate::app::design::{Tone, radius, text};
+use crate::app::step_name::StepName;
 use crate::model::point_color::{MAX_SWATCHES, PointColor};
 use crate::model::recipe::Recipe;
 use crate::{
@@ -104,6 +105,7 @@ impl super::Editor {
 /// The tab's contents. `list` is the photo's swatches.
 pub(super) fn point_color_panel(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     list: &mut Vec<PointColor>,
     view: &mut ViewState,
 ) {
@@ -111,7 +113,7 @@ pub(super) fn point_color_panel(
     let pc = &mut view.point_color;
     pc.selected = pc.selected.filter(|i| *i < list.len());
     let picking = view.tool == Tool::PointColor;
-    if swatch_row(ui, list, &mut view.point_color, picking) {
+    if swatch_row(ui, step, list, &mut view.point_color, picking) {
         view.toggle(Tool::PointColor);
     }
     let pc = &mut view.point_color;
@@ -126,10 +128,20 @@ pub(super) fn point_color_panel(
             .into_iter()
             .enumerate()
         {
-            slider_with(ui, name, &mut swatch.shift[c], -1. ..=1., 0., None, None);
+            slider_with(
+                ui,
+                step,
+                name,
+                &mut swatch.shift[c],
+                -1. ..=1.,
+                0.,
+                None,
+                None,
+            );
         }
         slider_with(
             ui,
+            step,
             "Variance",
             &mut swatch.variance,
             -1. ..=1.,
@@ -137,10 +149,19 @@ pub(super) fn point_color_panel(
             None,
             None,
         );
-        slider_with(ui, "Range", &mut swatch.range, 0. ..=1., 0.5, None, None);
+        slider_with(
+            ui,
+            step,
+            "Range",
+            &mut swatch.range,
+            0. ..=1.,
+            0.5,
+            None,
+            None,
+        );
         disclosure(ui, &mut pc.ranges);
         if pc.ranges {
-            ranges(ui, swatch);
+            ranges(ui, step, swatch);
         }
         ui.horizontal(|ui| {
             ui.add_space(super::widgets::label_column(ui));
@@ -153,6 +174,7 @@ pub(super) fn point_color_panel(
 /// The dropper and the swatches. Returns whether the dropper was clicked.
 fn swatch_row(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     list: &mut Vec<PointColor>,
     pc: &mut PointColorView,
     picking: bool,
@@ -186,11 +208,11 @@ fn swatch_row(
     let toggle = response
         .on_hover_text("Point Color dropper: click a color in the photo to add a swatch")
         .clicked();
-    let step = ((row.right() - row.left() - 88.) / MAX_SWATCHES as f32).min(24.);
+    let pitch = ((row.right() - row.left() - 88.) / MAX_SWATCHES as f32).min(24.);
     let mut delete = None;
     for slot in 0..MAX_SWATCHES {
         let center = Pos2::new(
-            row.left() + 88. + step * (slot as f32 + 0.5),
+            row.left() + 88. + pitch * (slot as f32 + 0.5),
             row.center().y,
         );
         let Some(swatch) = list.get(slot) else {
@@ -198,7 +220,7 @@ fn swatch_row(
                 .circle_stroke(center, 7., Stroke::new(1., palette.tone(Tone::HOVER)));
             continue;
         };
-        let rect = Rect::from_center_size(center, Vec2::splat(step));
+        let rect = Rect::from_center_size(center, Vec2::splat(pitch));
         let response = ui.interact(rect, ui.id().with(("swatch", slot)), Sense::click());
         ui.painter()
             .circle_filled(center, 8., display(swatch.source_prophoto()));
@@ -224,12 +246,12 @@ fn swatch_row(
         Some(Some(slot)) => {
             list.remove(slot);
             pc.selected = (!list.is_empty()).then(|| slot.min(list.len() - 1));
-            name_history_step(ui, "Point Color".into(), "Delete Swatch".into());
+            step.name("Point Color".into(), "Delete Swatch".into());
         }
         Some(None) => {
             list.clear();
             pc.selected = None;
-            name_history_step(ui, "Point Color".into(), "Delete All Swatches".into());
+            step.name("Point Color".into(), "Delete All Swatches".into());
         }
         None => {}
     }
@@ -254,13 +276,14 @@ fn comparison(ui: &mut egui::Ui, swatch: &PointColor) {
 }
 
 /// The Hue, Saturation and Luminance ranges, as four points each.
-fn ranges(ui: &mut egui::Ui, swatch: &mut PointColor) {
+fn ranges(ui: &mut egui::Ui, step: &mut StepName, swatch: &mut PointColor) {
     let defaults = PointColor::sampled(swatch.source);
     let [h, s, v] = swatch.source;
     let hue = h / 6. * std::f32::consts::TAU;
     let window = crate::develop::point_color::HUE_WINDOW;
     range_points(
         ui,
+        step,
         "Hue Range",
         &mut swatch.hue_range,
         Hold::InnerSpan,
@@ -269,6 +292,7 @@ fn ranges(ui: &mut egui::Ui, swatch: &mut PointColor) {
     );
     range_points(
         ui,
+        step,
         "Sat Range",
         &mut swatch.saturation_range,
         Hold::Value(s),
@@ -277,6 +301,7 @@ fn ranges(ui: &mut egui::Ui, swatch: &mut PointColor) {
     );
     range_points(
         ui,
+        step,
         "Lum Range",
         &mut swatch.luminance_range,
         Hold::Value(crate::develop::srgb_encode(v)),
@@ -298,6 +323,7 @@ enum Hold {
 /// moves the nearest handle between its neighbours; double-clicking resets it.
 fn range_points(
     ui: &mut egui::Ui,
+    step: &mut StepName,
     label: &str,
     points: &mut [f32; 4],
     hold: Hold,
@@ -376,7 +402,7 @@ fn range_points(
     });
     if *points != before {
         let shown: Vec<String> = points.iter().map(|p| format!("{:.0}", p * 100.)).collect();
-        name_history_step(ui, format!("Point Color {label}"), shown.join(" / "));
+        step.name(format!("Point Color {label}"), shown.join(" / "));
     }
 }
 
