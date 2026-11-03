@@ -245,7 +245,10 @@ the same file under another path (a hard link) is checked against its own file a
 each result is handed to it: a file changed since, before or during the job, cached
 result or not, gets no result, so a photo is never denoised from another file. A result is rejected when the model
 changed during the job, and an update for a plain image that is no longer the open
-photo's is dropped. The Detail panel's switch and Amount are ordinary edits (one
+photo's is dropped. A panic in a job's run fails that job; one while handing a result
+to a listener fails that listener alone; and if the worker thread dies anyway, the job
+it held and every queued one fail, so no Develop request or export waits for it, and
+the next request starts a new worker. The Detail panel's switch and Amount are ordinary edits (one
 History step each); a result arriving is not one. `app::inspector::ai_denoise` draws
 the panel's controls, credit and install offer; the model installs as
 `subject_mask::Pack::Denoise` with the selection models' installer.
