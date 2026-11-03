@@ -1,7 +1,7 @@
 // The per-pixel color and tone stage: a port of `pipeline::process_pixel` for recipes
 // with a camera profile (see `pixel_params.rs`).
 // The CPU implementation is the reference; functions keep its names and order.
-// `P_*` indices into `params` are generated from `pixel_params::FIELDS`.
+// `P_*` indices into `params` are generated from `pixel_params::slot`.
 
 @group(0) @binding(0) var<storage, read> samples: array<f32>;
 @group(0) @binding(1) var<storage, read> positions: array<f32>;

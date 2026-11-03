@@ -4,107 +4,107 @@
 use super::{Camera, CurveSet, Source, camera_stage};
 use crate::develop::local_tone::LocalToneMap;
 use crate::model::recipe::Recipe;
+use std::ops::Range;
 
-/// Named slots of the parameter array and their lengths. `wgsl_prelude` turns them into
-/// `P_*` index constants for the shader.
-const FIELDS: &[(&str, usize)] = &[
-    ("CAMERA", 9),
-    // `Camera::clip`, each channel's.
-    ("CAMERA_CLIP", 3),
-    ("WB", 3),
-    ("HUE", 5),
-    ("HUE2", 1),
-    ("HUE_WEIGHT", 1),
-    ("PROFILE_SCALE", 1),
-    ("CALIBRATION", 9),
-    ("SHADOW_TINT", 1),
-    ("EXPOSURE", 1),
-    // The scene tone stage's white curves (`GlobalTone::gpu_curves`), its default
-    // black and its blacks curve, or -1 each.
-    ("SCENE_WHITE", 1),
-    ("SCENE_DEFAULT_BLACK", 1),
-    ("SCENE_SHADOW_BLACK", 2),
-    ("SCENE_BLACKS", 1),
-    // For masks' Whites and Blacks: their curves (`gpu_mask_table`), or -1; and
-    // `GlobalTone::gpu_keys`.
-    ("SCENE_TABLES", 1),
-    ("SCENE_KEYS", 6),
-    // Dehaze and the level negative Dehaze's response is relative to
-    // (`SceneTone::dehaze_key`).
-    ("DEHAZE", 2),
-    // Positive Dehaze's haze (`scene_tone::Dehazing`): its density's table, or -1, the
-    // grid's size and scale, then the airlight at the render's Exposure.
-    ("HAZE", 5),
-    ("HAZE_AIR", 3),
-    ("LOOK", 5),
-    ("ENH", 5),
-    ("ENH_CURVE", 1),
-    ("TONE", 1),
-    ("TONE_COUNT", 1),
-    ("LOCAL", 1),
-    ("LOCAL_SIZE", 2),
-    ("LOCAL_SCALE", 2),
-    ("LOCAL_A", 3),
-    // The fine mean's offset into the grid (`local_tone::MapGrid::fine_at`).
-    ("LOCAL_FINE", 1),
-    ("SHADOWS", 4),
-    ("HIGHLIGHTS", 4),
-    // Positive Shadows' detail and region curves (as SHADOWS), and the regional level's
-    // grid or -1 (see `local_tone::LocalToneMap::lift`).
-    ("LIFT", 8),
-    // The photo's global rule at full strength: positive Shadows' and negative
-    // Highlights' curves (as SHADOWS), for masks (`local_tone::LocalToneMap::rule`).
-    ("RULE", 8),
-    ("LOCAL_REGION", 1),
-    ("BASIC", 1),
-    ("LEVELS", 3),
-    // The measured parametric curve's table, or -1 (see `parametric::ParametricCurve`).
-    ("PARAMETRIC_LUT", 1),
-    ("MASTER", 1),
-    ("REFINE_SATURATION", 1),
-    ("CHANNELS", 3),
-    ("MIXER", 1),
-    // `black_white::gray_grid`, or -1.
-    ("GRAY_GRID", 1),
-    // `ColorMixer::saturation_gray`: how far colors fade to their luminance.
-    ("SATURATION_GRAY", 1),
-    // `ColorMixer::gray_source`: its grid, or -1.
-    ("GRAY_SOURCE", 1),
-    // Point Color: table offset and number of swatches (see `point_color::params`).
-    ("POINT", 2),
-    // A look's RGB table: samples offset, dimensions, divisions, gamma, gamut and
-    // amount, then the matrices into its primaries and back.
-    ("RGB", 6),
-    ("RGB_INTO", 9),
-    ("RGB_BACK", 9),
-    // Color grading: gain tables and samples (see `color_grade::ColorGrade`).
-    ("GRADE", 2),
-    ("ADJUST", 1),
-    ("DEFRINGE", 2),
-    ("DEFRINGE_RANGES", 4),
-    // Masks (see `masks::local`): how many, weight words per pixel, their deltas.
-    ("MASKS", 1),
-    ("MASK_WORDS", 1),
-    ("MASK_DELTAS", 1),
-    ("EXPOSURE_EV", 1),
-    ("LOCAL_WB", 6),
-    ("LOCAL_TONE", 1),
-    // The masks' Contrast pivot.
-    ("LOCAL_PIVOT", 1),
-    ("LOCAL_FAMILIES", 1),
-    ("LOCAL_KEYS", 3),
-    ("GLOBAL_SH", 2),
-];
+/// Named slots of the parameter array and their ranges in it. `wgsl_prelude` turns them
+/// into `P_*` index constants for the shader.
+pub(crate) mod slot {
+    use crate::develop::slots::slots;
+
+    slots! {
+        CAMERA: 9,
+        // `Camera::clip`, each channel's.
+        CAMERA_CLIP: 3,
+        WB: 3,
+        HUE: 5,
+        HUE2: 1,
+        HUE_WEIGHT: 1,
+        PROFILE_SCALE: 1,
+        CALIBRATION: 9,
+        SHADOW_TINT: 1,
+        EXPOSURE: 1,
+        // The scene tone stage's white curves (`GlobalTone::gpu_curves`), its default
+        // black and its blacks curve, or -1 each.
+        SCENE_WHITE: 1,
+        SCENE_DEFAULT_BLACK: 1,
+        SCENE_SHADOW_BLACK: 2,
+        SCENE_BLACKS: 1,
+        // For masks' Whites and Blacks: their curves (`gpu_mask_table`), or -1; and
+        // `GlobalTone::gpu_keys`.
+        SCENE_TABLES: 1,
+        SCENE_KEYS: 6,
+        // Dehaze and the level negative Dehaze's response is relative to
+        // (`SceneTone::dehaze_key`).
+        DEHAZE: 2,
+        // Positive Dehaze's haze (`scene_tone::Dehazing`): its density's table, or -1, the
+        // grid's size and scale, then the airlight at the render's Exposure.
+        HAZE: 5,
+        HAZE_AIR: 3,
+        LOOK: 5,
+        ENH: 5,
+        ENH_CURVE: 1,
+        TONE: 1,
+        TONE_COUNT: 1,
+        LOCAL: 1,
+        LOCAL_SIZE: 2,
+        LOCAL_SCALE: 2,
+        LOCAL_A: 3,
+        // The fine mean's offset into the grid (`local_tone::MapGrid::fine_at`).
+        LOCAL_FINE: 1,
+        SHADOWS: 4,
+        HIGHLIGHTS: 4,
+        // Positive Shadows' detail and region curves (as SHADOWS), and the regional level's
+        // grid or -1 (see `local_tone::LocalToneMap::lift`).
+        LIFT: 8,
+        // The photo's global rule at full strength: positive Shadows' and negative
+        // Highlights' curves (as SHADOWS), for masks (`local_tone::LocalToneMap::rule`).
+        RULE: 8,
+        LOCAL_REGION: 1,
+        BASIC: 1,
+        LEVELS: 3,
+        // The measured parametric curve's table, or -1 (see `parametric::ParametricCurve`).
+        PARAMETRIC_LUT: 1,
+        MASTER: 1,
+        REFINE_SATURATION: 1,
+        CHANNELS: 3,
+        MIXER: 1,
+        // `black_white::gray_grid`, or -1.
+        GRAY_GRID: 1,
+        // `ColorMixer::saturation_gray`: how far colors fade to their luminance.
+        SATURATION_GRAY: 1,
+        // `ColorMixer::gray_source`: its grid, or -1.
+        GRAY_SOURCE: 1,
+        // Point Color: table offset and number of swatches (see `point_color::params`).
+        POINT: 2,
+        // A look's RGB table: samples offset, dimensions, divisions, gamma, gamut and
+        // amount, then the matrices into its primaries and back.
+        RGB: 6,
+        RGB_INTO: 9,
+        RGB_BACK: 9,
+        // Color grading: gain tables and samples (see `color_grade::ColorGrade`).
+        GRADE: 2,
+        ADJUST: 1,
+        DEFRINGE: 2,
+        DEFRINGE_RANGES: 4,
+        // Masks (see `masks::local`): how many, weight words per pixel, their deltas.
+        MASKS: 1,
+        MASK_WORDS: 1,
+        MASK_DELTAS: 1,
+        EXPOSURE_EV: 1,
+        LOCAL_WB: 6,
+        LOCAL_TONE: 1,
+        // The masks' Contrast pivot.
+        LOCAL_PIVOT: 1,
+        LOCAL_FAMILIES: 1,
+        LOCAL_KEYS: 3,
+        GLOBAL_SH: 2,
+    }
+}
 pub(crate) fn wgsl_prelude() -> String {
     use crate::develop::point_color::{CONSTANT_PARAMS, SWATCH_PARAMS};
-    let mut at = 0;
-    let fields: String = FIELDS
+    let fields: String = slot::ALL
         .iter()
-        .map(|(name, len)| {
-            let line = format!("const P_{name}: u32 = {at}u;\n");
-            at += len;
-            line
-        })
+        .map(|(name, range)| format!("const P_{name}: u32 = {}u;\n", range.start))
         .collect();
     use crate::develop::scene_tone::{
         MASK_VALUES, SLIDER_STEP, SLIDERS, T_FIRST, T_SAMPLES, T_STEP, U_FIRST, U_SAMPLES, U_STEP,
@@ -143,41 +143,26 @@ pub(crate) struct PixelParams {
 impl PixelParams {
     /// Parameters of zeros but for `values`, without tables.
     #[cfg(test)]
-    pub(crate) fn with(values: &[(&str, &[f32])]) -> Self {
+    pub(crate) fn with(values: &[(Range<usize>, &[f32])]) -> Self {
         let mut p = Self {
-            params: vec![0.; FIELDS.iter().map(|f| f.1).sum()],
+            params: vec![0.; slot::HEADER],
             tables: Vec::new(),
             weights: Vec::new(),
             grid: None,
             color: None,
         };
-        for (name, v) in values {
-            p.set(name, v);
+        for (at, v) in values {
+            p.set(at.clone(), v);
         }
         p
     }
-    fn set(&mut self, name: &str, values: &[f32]) {
-        let mut at = 0;
-        for (field, len) in FIELDS {
-            if *field == name {
-                assert_eq!(values.len(), *len, "{name}");
-                self.params[at..at + len].copy_from_slice(values);
-                return;
-            }
-            at += len;
-        }
-        unreachable!("Unknown parameter {name}");
+    /// Sets the slot `at` (one of [`slot`]'s) to `values`, which must fill it.
+    fn set(&mut self, at: Range<usize>, values: &[f32]) {
+        self.params[at].copy_from_slice(values);
     }
-    /// The values of parameter `name`.
-    pub(crate) fn get(&self, name: &str) -> &[f32] {
-        let mut at = 0;
-        for (field, len) in FIELDS {
-            if *field == name {
-                return &self.params[at..at + len];
-            }
-            at += len;
-        }
-        unreachable!("Unknown parameter {name}");
+    /// The values of the slot `at` (one of [`slot`]'s).
+    pub(crate) fn get(&self, at: Range<usize>) -> &[f32] {
+        &self.params[at]
     }
     /// Appends a table and returns its offset as a parameter value.
     fn push(&mut self, values: impl IntoIterator<Item = f32>) -> f32 {
@@ -185,15 +170,15 @@ impl PixelParams {
         self.tables.extend(values);
         at as f32
     }
-    fn table(&mut self, name: &str, table: Option<&crate::camera_profiles::Table>) {
+    fn table(&mut self, at: Range<usize>, table: Option<&crate::camera_profiles::Table>) {
         let Some(t) = table else {
-            return self.set(name, &[-1., 0., 0., 0., 0.]);
+            return self.set(at, &[-1., 0., 0., 0., 0.]);
         };
-        let at = self.push(t.data().iter().flatten().copied());
+        let offset = self.push(t.data().iter().flatten().copied());
         let [a, b, c] = t.dims();
         self.set(
-            name,
-            &[at, a as f32, b as f32, c as f32, t.srgb() as u8 as f32],
+            at,
+            &[offset, a as f32, b as f32, c as f32, t.srgb() as u8 as f32],
         );
     }
 }
@@ -221,19 +206,19 @@ fn masks_need_map(r: &Recipe) -> bool {
         .any(|m| m.is_active() && (m.adjust.shadows != 0. || m.adjust.highlights != 0.))
 }
 fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
-    p.set("LOCAL", &[1.]);
-    p.set("LOCAL_KEYS", &local.keys);
-    p.set("LOCAL_SIZE", &[local.width as f32, local.height as f32]);
-    p.set("LOCAL_SCALE", &local.scale);
+    p.set(slot::LOCAL, &[1.]);
+    p.set(slot::LOCAL_KEYS, &local.keys);
+    p.set(slot::LOCAL_SIZE, &[local.width as f32, local.height as f32]);
+    p.set(slot::LOCAL_SCALE, &local.scale);
     let grid = local.grid();
     let clarity = match &local.clarity {
         Some(c) => p.push(c.values()),
         None => -1.,
     };
-    p.set("LOCAL_A", &[0., grid.cells() as f32, clarity]);
-    p.set("LOCAL_FINE", &[grid.fine_at() as f32]);
+    p.set(slot::LOCAL_A, &[0., grid.cells() as f32, clarity]);
+    p.set(slot::LOCAL_FINE, &[grid.fine_at() as f32]);
     p.set(
-        "LOCAL_REGION",
+        slot::LOCAL_REGION,
         &[grid.region_at().map_or(-1., |at| at as f32)],
     );
     p.grid = Some(grid);
@@ -254,15 +239,15 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
         None => [curve(None), curve(None)],
     };
     let [rule_s, rule_h] = [curve(local.rule[0].as_ref()), curve(local.rule[1].as_ref())];
-    p.set("SHADOWS", &shadows);
-    p.set("HIGHLIGHTS", &highlights);
-    p.set("LIFT", &[detail, region].concat());
-    p.set("RULE", &[rule_s, rule_h].concat());
+    p.set(slot::SHADOWS, &shadows);
+    p.set(slot::HIGHLIGHTS, &highlights);
+    p.set(slot::LIFT, &[detail, region].concat());
+    p.set(slot::RULE, &[rule_s, rule_h].concat());
 }
 fn set_rgb_table(p: &mut PixelParams, look: Option<&crate::camera_profiles::RgbLook>) {
     use crate::camera_profiles::{Dimensions, Gamut};
     let Some(look) = look else {
-        return p.set("RGB", &[-1., 0., 0., 0., 0., 0.]);
+        return p.set(slot::RGB, &[-1., 0., 0., 0., 0., 0.]);
     };
     let t = look.table();
     let at = p.push(t.samples().iter().flatten().copied());
@@ -275,7 +260,7 @@ fn set_rgb_table(p: &mut PixelParams, look: Option<&crate::camera_profiles::RgbL
         Gamut::Extend => 1.,
     };
     p.set(
-        "RGB",
+        slot::RGB,
         &[
             at,
             dimensions,
@@ -286,34 +271,33 @@ fn set_rgb_table(p: &mut PixelParams, look: Option<&crate::camera_profiles::RgbL
         ],
     );
     let [into, back] = t.matrices();
-    p.set("RGB_INTO", into.as_flattened());
-    p.set("RGB_BACK", back.as_flattened());
+    p.set(slot::RGB_INTO, into.as_flattened());
+    p.set(slot::RGB_BACK, back.as_flattened());
 }
 fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     let profile = r.profile.as_ref()?;
-    let len = FIELDS.iter().map(|f| f.1).sum();
     let mut p = PixelParams {
-        params: vec![0.; len],
+        params: vec![0.; slot::HEADER],
         tables: Vec::new(),
         weights: Vec::new(),
         grid: None,
         color: None,
     };
-    p.set("CAMERA", camera.matrix.as_flattened());
-    p.set("CAMERA_CLIP", &camera.clip);
-    p.set("WB", &r.wb);
+    p.set(slot::CAMERA, camera.matrix.as_flattened());
+    p.set(slot::CAMERA_CLIP, &camera.clip);
+    p.set(slot::WB, &r.wb);
     let t = profile.gpu_tables(r.temperature);
-    p.table("HUE", t.hue.map(|h| h.0));
+    p.table(slot::HUE, t.hue.map(|h| h.0));
     let hue2 = match t.hue.and_then(|h| h.1) {
         Some(table) => p.push(table.data().iter().flatten().copied()),
         None => -1.,
     };
-    p.set("HUE2", &[hue2]);
-    p.set("HUE_WEIGHT", &[t.hue.map_or(0., |h| h.2)]);
-    p.set("PROFILE_SCALE", &[t.exposure_scale]);
-    p.set("CALIBRATION", lut.calibration.matrix.as_flattened());
-    p.set("SHADOW_TINT", &[lut.calibration.shadow]);
-    p.set("EXPOSURE", &[lut.exposure_gain]);
+    p.set(slot::HUE2, &[hue2]);
+    p.set(slot::HUE_WEIGHT, &[t.hue.map_or(0., |h| h.2)]);
+    p.set(slot::PROFILE_SCALE, &[t.exposure_scale]);
+    p.set(slot::CALIBRATION, lut.calibration.matrix.as_flattened());
+    p.set(slot::SHADOW_TINT, &[lut.calibration.shadow]);
+    p.set(slot::EXPOSURE, &[lut.exposure_gain]);
     let global = &lut.scene.global;
     let white = p.push(global.gpu_curves());
     let default_black = match global.default_black_samples() {
@@ -324,22 +308,22 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
         Some(b) => p.push(b.iter().copied()),
         None => -1.,
     };
-    p.set("SCENE_WHITE", &[white]);
-    p.set("SCENE_DEFAULT_BLACK", &[default_black]);
+    p.set(slot::SCENE_WHITE, &[white]);
+    p.set(slot::SCENE_DEFAULT_BLACK, &[default_black]);
     let shadow_black = match global.shadow_black_samples() {
         Some((s, rows)) => [p.push(rows.iter().copied()), s],
         None => [-1., 0.],
     };
-    p.set("SCENE_SHADOW_BLACK", &shadow_black);
-    p.set("SCENE_BLACKS", &[blacks]);
-    p.set("SCENE_KEYS", &global.gpu_keys());
-    p.set("SCENE_TABLES", &[-1.]);
-    p.set("DEHAZE", &[lut.scene.dehaze, lut.scene.dehaze_key]);
+    p.set(slot::SCENE_SHADOW_BLACK, &shadow_black);
+    p.set(slot::SCENE_BLACKS, &[blacks]);
+    p.set(slot::SCENE_KEYS, &global.gpu_keys());
+    p.set(slot::SCENE_TABLES, &[-1.]);
+    p.set(slot::DEHAZE, &[lut.scene.dehaze, lut.scene.dehaze_key]);
     match &lut.scene.haze {
         Some(h) => {
             let density = p.push(h.haze.density.iter().copied());
             p.set(
-                "HAZE",
+                slot::HAZE,
                 &[
                     density,
                     h.haze.width as f32,
@@ -348,24 +332,24 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
                     h.scale[1],
                 ],
             );
-            p.set("HAZE_AIR", &h.air);
+            p.set(slot::HAZE_AIR, &h.air);
         }
-        None => p.set("HAZE", &[-1., 0., 0., 0., 0.]),
+        None => p.set(slot::HAZE, &[-1., 0., 0., 0., 0.]),
     }
     let families = p.push(crate::develop::local_tone::gpu_families());
-    p.set("LOCAL_FAMILIES", &[families]);
-    p.table("LOOK", t.look);
-    p.table("ENH", t.enhanced);
+    p.set(slot::LOCAL_FAMILIES, &[families]);
+    p.table(slot::LOOK, t.look);
+    p.table(slot::ENH, t.enhanced);
     let curve = match t.enhanced_curve {
         Some(curve) => p.push(curve.values().iter().copied()),
         None => -1.,
     };
-    p.set("ENH_CURVE", &[curve]);
+    p.set(slot::ENH_CURVE, &[curve]);
     let tone = p.push(t.tone.iter().flatten().copied());
-    p.set("TONE", &[tone]);
-    p.set("TONE_COUNT", &[t.tone.len() as f32]);
-    p.set("EXPOSURE_EV", &[r.exposure + r.camera_exposure]);
-    p.set("GLOBAL_SH", &[r.shadows, r.highlights]);
+    p.set(slot::TONE, &[tone]);
+    p.set(slot::TONE_COUNT, &[t.tone.len() as f32]);
+    p.set(slot::EXPOSURE_EV, &[r.exposure + r.camera_exposure]);
+    p.set(slot::GLOBAL_SH, &[r.shadows, r.highlights]);
     if let Some(local) = &lut.local {
         set_local(&mut p, local);
     }
@@ -373,49 +357,49 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
         Some(b) => p.push(b.lut.iter().copied()),
         None => -1.,
     };
-    p.set("BASIC", &[basic]);
+    p.set(slot::BASIC, &[basic]);
     let tone = p.push(crate::develop::basic_tone::gpu_tables());
-    p.set("LOCAL_TONE", &[tone]);
-    p.set("LOCAL_PIVOT", &[lut.photo.contrast_pivot]);
-    p.set("LEVELS", &[r.black_point, r.white_point, r.midtone]);
+    p.set(slot::LOCAL_TONE, &[tone]);
+    p.set(slot::LOCAL_PIVOT, &[lut.photo.contrast_pivot]);
+    p.set(slot::LEVELS, &[r.black_point, r.white_point, r.midtone]);
     let e = &r.effects;
     let parametric = match &lut.parametric {
         Some(c) => p.push(c.values().iter().copied()),
         None => -1.,
     };
-    p.set("PARAMETRIC_LUT", &[parametric]);
+    p.set(slot::PARAMETRIC_LUT, &[parametric]);
     let master = p.push(lut.master.values().iter().copied());
-    p.set("MASTER", &[master]);
-    p.set("REFINE_SATURATION", &[r.curve_saturation.clamp(0., 1.)]);
+    p.set(slot::MASTER, &[master]);
+    p.set(slot::REFINE_SATURATION, &[r.curve_saturation.clamp(0., 1.)]);
     let channels = lut
         .channels
         .each_ref()
         .map(|c| p.push(c.values().iter().copied()));
-    p.set("CHANNELS", &channels);
+    p.set(slot::CHANNELS, &channels);
     let mixer = match &lut.mixer {
         Some(m) => p.push(m.delta.iter().flatten().copied()),
         None => -1.,
     };
-    p.set("MIXER", &[mixer]);
+    p.set(slot::MIXER, &[mixer]);
     let gray_grid = match &lut.gray_grid {
         Some(g) => p.push(g.iter().flatten().copied()),
         None => -1.,
     };
-    p.set("GRAY_GRID", &[gray_grid]);
+    p.set(slot::GRAY_GRID, &[gray_grid]);
     p.set(
-        "SATURATION_GRAY",
+        slot::SATURATION_GRAY,
         &[lut.mixer.as_ref().map_or(0., |m| m.saturation_gray)],
     );
     let gray_source = match lut.mixer.as_ref().and_then(|m| m.gray_source.as_ref()) {
         Some(g) => p.push(g.iter().flatten().copied()),
         None => -1.,
     };
-    p.set("GRAY_SOURCE", &[gray_source]);
+    p.set(slot::GRAY_SOURCE, &[gray_source]);
     let point = match &lut.point_colors {
         Some(pc) => [p.push(pc.params()), pc.len() as f32],
         None => [-1., 0.],
     };
-    p.set("POINT", &point);
+    p.set(slot::POINT, &point);
     set_rgb_table(&mut p, lut.rgb_table.as_ref());
     let grade = match &lut.grade {
         Some(g) => [
@@ -424,10 +408,10 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
         ],
         None => [-1., 0.],
     };
-    p.set("GRADE", &grade);
-    p.set("ADJUST", &[lut.color_adjustments as u8 as f32]);
-    p.set("DEFRINGE", &e.defringe);
-    p.set("DEFRINGE_RANGES", e.defringe_ranges.as_flattened());
+    p.set(slot::GRADE, &grade);
+    p.set(slot::ADJUST, &[lut.color_adjustments as u8 as f32]);
+    p.set(slot::DEFRINGE, &e.defringe);
+    p.set(slot::DEFRINGE_RANGES, e.defringe_ranges.as_flattened());
     Some(p)
 }
 impl PixelParams {
@@ -457,15 +441,15 @@ impl PixelParams {
             return false;
         }
         let words = n.div_ceil(4);
-        self.set("MASKS", &[n as f32]);
-        self.set("MASK_WORDS", &[words as f32]);
+        self.set(slot::MASKS, &[n as f32]);
+        self.set(slot::MASK_WORDS, &[words as f32]);
         let deltas = self.push(w.deltas.iter().flatten().copied());
-        self.set("MASK_DELTAS", &[deltas]);
+        self.set(slot::MASK_DELTAS, &[deltas]);
         let math = local::LocalMath::new(&im.metadata, r);
-        self.set("LOCAL_WB", math.white_balance.as_flattened());
+        self.set(slot::LOCAL_WB, math.white_balance.as_flattened());
         if w.deltas.iter().any(|d| local::uses(d, &local::SCENE_SLOTS)) {
             let masks = self.push(crate::develop::scene_tone::gpu_mask_table());
-            self.set("SCENE_TABLES", &[masks]);
+            self.set(slot::SCENE_TABLES, &[masks]);
         }
         let pixels = w.data.len() / n;
         self.weights = vec![0; pixels * words];
