@@ -1,29 +1,26 @@
 use super::clipping::{self, ClipSide};
 use super::crop_tool::{Guide, GuideShow, Ruler};
 use super::dialogs::FileDialog;
-use super::state::{MixerTab, Tool};
-use super::targeted_tool::{hsl_target, target_button};
+use super::state::Tool;
 use super::tone_drag::tone_drag_ui;
 use super::widgets::{
-    LABEL_GAP, SliderEvent, adjustment_section, control_left, keyed_setting_slider, label_column,
-    name_history_step, parametric_curve_ui, segmented, setting_slider, slider, slider_with,
-    switched_section, tone_curve_ui, toolbar_action,
+    LABEL_GAP, SliderEvent, control_left, keyed_setting_slider, label_column, name_history_step,
+    setting_slider, slider_with,
 };
-use super::worker::AutoKind;
-use super::{Editor, basic_keys, bulk_import::ImportKind};
+use super::{Editor, basic_keys};
 use crate::app::design::{Tone, button, inset, radius, size, space, text};
 use crate::app::icons::{self, Icon};
+use crate::app::theme;
 use crate::model::panels::{Panel, PanelState};
 use crate::model::params::ParameterId;
 use crate::model::recipe::Recipe;
-use crate::model::recipe::Treatment;
-use crate::model::{operators::SharpeningSliders, white_balance::NamedWhiteBalance};
-use crate::{app::theme, develop::targeted::Target};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use panels::transform::GuidedAction;
 
 mod ai_denoise;
 mod lens_profile;
 mod lensfun;
+mod panels;
 mod profile_offer;
 /// What the community profile offer says when a profile can be downloaded, for tests.
 #[cfg(test)]
@@ -440,8 +437,6 @@ impl Editor {
         ui.spacing_mut().button_padding = button::COMPACT;
         ui.spacing_mut().interact_size.y = size::ROW;
         ui.add_space(space::S);
-        let mut import_profiles = false;
-        let mut import_lens = false;
         // Lensfun's database as the Lens Corrections panel shows it this frame.
         let lensfun_view = lensfun::View {
             db: self.lensfun.database(),
@@ -453,7 +448,6 @@ impl Editor {
                 .map(str::to_string),
             suggest: self.lensfun.suggest,
         };
-        let mut lensfun_action = None;
         let ai_view = ai_denoise::View {
             installed: self.selection.models.denoise.installed(),
             progress: self.selection.models.denoise.progress(),
@@ -461,12 +455,6 @@ impl Editor {
             megabytes: crate::app::subject_mask::Pack::Denoise.megabytes(),
             status: self.document.ai.status().cloned(),
         };
-        let mut ai_action = None;
-        let mut import_folder = None;
-        let mut import_luts = false;
-        let mut import_adobe = false;
-        let mut show_community_profiles = false;
-        let mut offer_action = None;
         // Cached per camera: this scans Adobe's profile folders.
         let adobe_key = self
             .document
@@ -485,8 +473,6 @@ impl Editor {
         let community_profiles = self.has_catalogue_profiles();
         let community_offer = self.profile_offer();
         let metadata = self.document.metadata.clone();
-        // A JPEG, TIFF or PNG: its Embedded profile, and relative white balance.
-        let rendered = metadata.as_ref().is_some_and(|m| m.is_rendered());
         let profiles = self.document.profiles.clone();
         let profile_errors = self.document.profile_errors.clone();
         let profile_groups = self.document.profile_groups.clone();
@@ -494,16 +480,9 @@ impl Editor {
         // Auto needs the decoded photo, and runs one estimate at a time.
         let auto_ready = self.document.full().is_some() && !self.document.auto.is_running();
         let auto_in_effect = self.auto_in_effect();
-        let mut auto_request = None;
         // Upright analyses the decoded photo once and keeps a correction for every mode.
         let upright_ready = self.document.full().is_some() && !self.document.upright.is_running();
-        let mut upright_request = false;
-        let mut guided_action = None;
-        let mut treatment_request = None;
-        let mut fit_camera_look = false;
         let can_fit_camera_look = self.can_fit_camera_look();
-        let mut auto_mix_request = false;
-        let mut profile_changed_from = None;
         // A conversion to black & white waiting for the photo to decode.
         let pending_treatment = self
             .document
@@ -512,1092 +491,87 @@ impl Editor {
             .map(|p| p.treatment);
         let grading_document = self.document.edit.history().id();
         let saved_curves = self.saved_curves();
-        let mut curve_choice = None;
         // The Targeted Adjustment Tool: the sliders a drag is moving, and a target
         // button's click.
         let targeted = self.targeted_weights();
-        let mut targeted_request = None;
+        let basic_view = panels::basic::View {
+            metadata: metadata.as_ref(),
+            profiles: &profiles,
+            profile_errors: &profile_errors,
+            profile_groups: &profile_groups,
+            adobe: &adobe,
+            community_profiles,
+            community_offer: community_offer.as_ref(),
+            pending_treatment,
+            auto_ready,
+            auto_in_effect,
+            can_fit_camera_look,
+        };
+        let mut requests = panels::Requests::default();
         let view = &mut self.view;
         let (r, photo) = self.document.recipe_and_colors();
-
-        if adjustment_section(ui, "Basic", |ui| {
-            let shortcut = if cfg!(target_os = "macos") {
-                "⌘⇧U"
-            } else {
-                "Ctrl+Shift+U"
-            };
-            // Auto, right-aligned, styled as the toolbar's Before and Clipping.
-            let (row, _) =
-                ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.), Sense::hover());
-            ui.scope_builder(
-                egui::UiBuilder::new()
-                    .max_rect(row)
-                    .layout(egui::Layout::right_to_left(egui::Align::Center)),
-                |ui| {
-                    let tip = if auto_in_effect {
-                        "Auto settings are applied".to_owned()
-                    } else {
-                        format!("Set the tone sliders automatically · {shortcut}")
-                    };
-                    let auto =
-                        toolbar_action(ui, "Auto", 52., false, auto_ready && !auto_in_effect, 0);
-                    if auto.on_hover_text(tip).clicked() {
-                        auto_request = Some(AutoKind::Settings);
-                    }
-                },
-            );
-            // Lightroom's Treatment, above the profile; V switches it.
-            // A conversion waiting for the photo to decode shows as made.
-            let shown = pending_treatment.unwrap_or_else(|| r.treatment());
-            let mut treatment = shown;
-            control_row(ui, "Treatment", |ui| {
-                let w = ui.available_width();
-                segmented(
-                    ui,
-                    &mut treatment,
-                    &[
-                        (Treatment::Color, "Color"),
-                        (Treatment::BlackWhite, "Black & White"),
-                    ],
-                    w,
-                );
-            });
-            if treatment != shown {
-                treatment_request = Some(treatment);
-            }
-            let old_profile = r.profile.clone();
-            // Without a profile the matrix path renders through the DNG default look.
-            let matrix = "Default (camera matrix)";
-            control_row(ui, "Profile", |ui| {
-                egui::ComboBox::from_id_salt("camera-profile")
-                    .width(ui.available_width())
-                    // Leave room for the import actions as well as the profiles.
-                    .height(size::MENU * 12.)
-                    .selected_text(r.profile.as_ref().map_or_else(
-                        || matrix.to_owned(),
-                        |p| profile_groups.entry(p).title,
-                    ))
-                    .show_ui(ui, |ui| {
-                        if !rendered {
-                            ui.selectable_value(&mut r.profile, None, matrix);
-                        }
-                        profile_menu::items(ui, &mut r.profile, &profiles, &profile_groups);
-                        if rendered {
-                            return;
-                        }
-                        ui.separator();
-                        if community_profiles
-                            && ui
-                                .button("Show community profiles for this camera")
-                                .on_hover_text("Free camera profiles made for this camera by other projects, which you can download and apply")
-                                .clicked()
-                        {
-                            show_community_profiles = true;
-                            ui.close();
-                        }
-                        if !adobe.is_empty()
-                            && ui
-                                .button("Import Adobe profiles for this camera")
-                                .on_hover_text(format!(
-                                    "Adds Adobe Standard and the Camera Matching profiles from Lightroom's installation ({} files), which Adobe Color and the other Adobe looks build on.",
-                                    adobe.len()
-                                ))
-                                .clicked()
-                        {
-                            import_adobe = true;
-                            ui.close();
-                        }
-                        if ui
-                            .button("Import profiles…")
-                            .on_hover_text("Import DCP camera profiles and XMP look profiles. Select the matching base DCP and XMP together.")
-                            .clicked()
-                        {
-                            import_profiles = true;
-                            ui.close();
-                        }
-                        if ui
-                            .button("Import profiles from folder…")
-                            .on_hover_text("Import every DCP profile and XMP look in a folder and its subfolders")
-                            .clicked()
-                        {
-                            import_folder = Some(ImportKind::CameraProfiles);
-                            ui.close();
-                        }
-                        if ui
-                            .button("Import .cube LUTs…")
-                            .on_hover_text("Import .cube LUTs as looks, choosing the colour space they expect first")
-                            .clicked()
-                        {
-                            import_luts = true;
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui
-                            .add_enabled(can_fit_camera_look, egui::Button::new("Fit Camera Look"))
-                            .on_hover_text("Fits a look to this photo's own JPEG preview, the camera's rendering of it, and uses it as the profile: Camera Look (fitted). It is saved with the edit; fitting again makes a new one.")
-                            .clicked()
-                        {
-                            fit_camera_look = true;
-                            ui.close();
-                        }
-                    });
-            });
-            if let Some(offer) = &community_offer {
-                offer_action = profile_offer::card(ui, offer);
-            }
-            // Lightroom's Profile Amount, under the profile. Profiles without one show
-            // it dimmed at 100%, so the panel doesn't move when switching.
-            let supports_amount = r.profile.as_ref().is_some_and(|p| p.supports_amount());
-            ui.add_enabled_ui(supports_amount, |ui| {
-                let mut fixed = 1.;
-                let amount = if supports_amount {
-                    &mut r.profile_amount
-                } else {
-                    &mut fixed
-                };
-                ui.push_id("profile-amount", |ui| {
-                    slider_with(ui, "Amount", amount, 0. ..=2., 1., Some((100., 0)), None)
-                });
-            })
-            .response
-            .on_disabled_hover_text("This profile has no Amount");
-            if !profile_errors.is_empty() {
-                ui.horizontal(|ui| {
-                    ui.add_space(control_left(ui));
-                    ui.small(format!("{} profiles unavailable", profile_errors.len()))
-                        .on_hover_text(profile_errors.join("\n"));
-                });
-                // On a line of its own, so it never widens the panel.
-                if !adobe.is_empty() {
-                    ui.horizontal(|ui| {
-                        ui.add_space(control_left(ui));
-                        if ui.small_button("Import Adobe base profile").clicked() {
-                            import_adobe = true;
-                        }
-                    });
-                }
-            }
-            if old_profile != r.profile {
-                // A newly chosen profile starts at 100%, as in Lightroom.
-                r.profile_amount = 1.;
-            }
-            if old_profile != r.profile
-                && let Some(m) = &metadata
-            {
-                r.profile_changed(m);
-                profile_changed_from = Some(old_profile);
-            }
-            // White balance is its own group below the profile, as in Lightroom.
-            ui.add_space(space::L);
-            let as_shot = metadata.as_ref().map(|m| {
-                let mut shot = r.clone();
-                shot.reset_white_balance(m);
-                (shot.temperature, shot.tint)
-            });
-            let photo = metadata.as_ref();
-            // A monochrome photo has no white balance: Lightroom disables it.
-            let white_balance = basic_keys::enabled(ParameterId::Temperature, photo);
-            ui.add_enabled_ui(white_balance, |ui| {
-                control_row(ui, "WB", |ui| {
-                    // A rendered file's white balance is relative Temp and Tint, which
-                    // Auto records too; As Shot is 0 and 0.
-                    let (current, as_shot) = if rendered {
-                        (
-                            (r.incremental_temperature, r.incremental_tint),
-                            Some((0., 0.)),
-                        )
-                    } else {
-                        ((r.temperature, r.tint), as_shot)
-                    };
-                    let near = |(t, n): (f32, f32)| {
-                        (t - current.0).abs() < 1. && (n - current.1).abs() < 0.5
-                    };
-                    let selected = if r.auto_white_balance.is_some_and(|[t, n]| near((t, n))) {
-                        "Auto"
-                    } else if as_shot.is_some_and(near) {
-                        "As Shot"
-                    } else if rendered {
-                        "Custom"
-                    } else {
-                        NamedWhiteBalance::ALL
-                            .into_iter()
-                            .find(|w| near((w.values().temperature, w.values().tint)))
-                            .map_or("Custom", NamedWhiteBalance::name)
-                    };
-                    // The selector sits at the row's far left, so the menu lines up
-                    // with Profile's.
-                    let rect = Rect::from_center_size(
-                        Pos2::new(
-                            ui.max_rect().left() - control_left(ui) + 13.,
-                            ui.max_rect().center().y,
-                        ),
-                        Vec2::new(26., 20.),
-                    );
-                    let response = ui.interact(rect, ui.id().with("wb-selector"), Sense::click());
-                    let picking = view.is(Tool::WhiteBalance);
-                    if picking || response.hovered() {
-                        ui.painter().rect_filled(
-                            rect,
-                            3.,
-                            palette.tone(if picking {
-                                Tone::PRESSED
-                            } else {
-                                Tone::OUTLINE
-                            }),
-                        );
-                    }
-                    eyedropper_icon(ui.painter(), rect.center(), picking || response.hovered());
-                    if response
-                        .on_hover_text(
-                            "White balance selector (W): click a neutral area of the photo",
-                        )
-                        .clicked()
-                    {
-                        view.toggle(Tool::WhiteBalance);
-                    }
-                    egui::ComboBox::from_id_salt("white-balance")
-                        .width(ui.available_width())
-                        .selected_text(selected)
-                        .show_ui(ui, |ui| {
-                            if ui
-                                .selectable_label(selected == "As Shot", "As Shot")
-                                .clicked()
-                                && let Some(m) = &metadata
-                            {
-                                r.wb = [1.; 3];
-                                r.reset_white_balance(m);
-                            }
-                            if ui
-                                .add_enabled(
-                                    auto_ready,
-                                    egui::Button::selectable(selected == "Auto", "Auto"),
-                                )
-                                .on_hover_text("Make the photo's near-neutral areas neutral")
-                                .clicked()
-                            {
-                                auto_request = Some(AutoKind::WhiteBalance);
-                            }
-                            // Kelvin presets are for RAW files, as in Lightroom.
-                            let named = if rendered {
-                                &[][..]
-                            } else {
-                                &NamedWhiteBalance::ALL[..]
-                            };
-                            // A fitted matrix base reads As Shot as D65 whatever the
-                            // light: its temperatures are relative, so named whites
-                            // would be wrong (imported XMP keeps them as written).
-                            let uncalibrated = r
-                                .profile
-                                .as_ref()
-                                .is_some_and(|p| crate::camera_profiles::fitted::is_uncalibrated_base(p));
-                            for &named in named {
-                                if ui
-                                    .add_enabled(
-                                        !uncalibrated,
-                                        egui::Button::selectable(selected == named.name(), named.name()),
-                                    )
-                                    .on_disabled_hover_text("This photo has no colour data of its own: its Camera Look (fitted) knows the white as shot, not the light's temperature. As Shot, Auto, the selector and Temp and Tint still work.")
-                                    .clicked()
-                                    && let Some(m) = &metadata
-                                {
-                                    let values = named.values();
-                                    r.temperature = values.temperature;
-                                    r.tint = values.tint;
-                                    r.update_wb(m);
-                                    r.auto_white_balance = None;
-                                }
-                            }
-                            ui.add_enabled(
-                                false,
-                                egui::Button::selectable(selected == "Custom", "Custom"),
-                            );
-                        });
-                });
-                let selected = &mut view.selected_setting;
-                if rendered {
-                    let (temp, tint) = (
-                        ParameterId::IncrementalTemperature,
-                        ParameterId::IncrementalTint,
-                    );
-                    basic_control(ui, r, temp, 0., photo, selected);
-                    basic_control(ui, r, tint, 0., photo, selected);
-                } else {
-                    basic_control(ui, r, ParameterId::Temperature, 6500., photo, selected);
-                    basic_control(ui, r, ParameterId::Tint, 0., photo, selected);
-                }
-            });
-            subheading(ui, "Tone");
-            for id in [
-                ParameterId::Exposure,
-                ParameterId::Contrast,
-                ParameterId::Highlights,
-                ParameterId::Shadows,
-                ParameterId::Whites,
-                ParameterId::Blacks,
-            ] {
-                basic_control(ui, r, id, 0., photo, &mut view.selected_setting);
-            }
-            subheading(ui, "Presence");
-            for id in [
-                ParameterId::Texture,
-                ParameterId::Clarity,
-                ParameterId::Dehaze,
-                ParameterId::Vibrance,
-                ParameterId::Saturation,
-            ] {
-                basic_control(ui, r, id, 0., photo, &mut view.selected_setting);
-            }
-        }) {
-            r.wb = [1.; 3];
-            r.tint = 0.;
-            if let Some(m) = &metadata {
-                r.reset_white_balance(m);
-            }
-            r.effects.monochrome = false;
-            r.effects.texture = 0.;
-            r.effects.clarity = 0.;
-            r.effects.dehaze = 0.;
-            r.vibrance = 0.;
-            r.saturation = 0.;
-            r.exposure = Recipe::default().exposure;
-            r.contrast = 0.;
-            r.highlights = 0.;
-            r.shadows = 0.;
-            r.whites = 0.;
-            r.blacks = 0.;
-        }
-
-        let mut switch = PanelSwitch::new(r, Panel::ToneCurve);
-        if switched_section(ui, "Tone Curve", &mut switch.state, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = space::S;
-                let (button, _) = ui.allocate_exact_size(Vec2::new(22., 22.), Sense::hover());
-                if target_button(
-                    ui,
-                    button,
-                    view.is(Tool::Targeted(Target::ToneCurve)),
-                    &format!("Targeted adjustment: drag up or down on the photo to move the region of the tone curve there · {}", targeted_shortcut("T")),
-                ) {
-                    targeted_request = Some(Target::ToneCurve);
-                }
-                segmented(
-                    ui,
-                    &mut view.parametric_curve,
-                    &[(true, "Parametric"), (false, "Point")],
-                    112.,
-                );
-                if !view.parametric_curve {
-                    let w = ui.available_width();
-                    segmented(
-                        ui,
-                        &mut view.selected_curve,
-                        &[(0, "RGB"), (1, "R"), (2, "G"), (3, "B")],
-                        w,
-                    );
-                }
-            });
-            ui.add_space(space::XS);
-            if view.parametric_curve {
-                let moving = targeted.filter(|w| w.target == Target::ToneCurve);
-                parametric_curve_ui(
-                    ui,
-                    &mut r.effects,
-                    &histogram,
-                    moving.and_then(|w| (0..4).find(|i| w.shares[*i] > 0.)),
-                );
-                subheading(ui, "Region");
-                // Lightroom lists them lightest first.
-                for (i, id) in ParameterId::PARAMETRIC.into_iter().enumerate().rev() {
-                    let row = ui.push_id(("parametric", i), |ui| {
-                        setting_slider(ui, id, id.value_mut(r), 0.)
-                    });
-                    highlight_targeted(ui, row.response.rect, moving.map_or(0., |w| w.shares[i]));
-                }
-            } else {
-                ui.push_id(view.selected_curve, |ui| {
-                    tone_curve_ui(
-                        ui,
-                        if view.selected_curve == 0 {
-                            &mut r.curve
-                        } else {
-                            &mut r.effects.channels[view.selected_curve - 1]
-                        },
-                        &histogram,
-                        view.selected_curve,
-                    );
-                });
-                // Lightroom's Point Curve menu: the built-in curves, saved ones, Save….
-                use crate::presets::curves::ShownCurve;
-                let chosen = ShownCurve::of(r, &saved_curves);
-                let shown = chosen.name(&saved_curves).to_string();
-                control_row(ui, "Point Curve", |ui| {
-                    egui::ComboBox::from_id_salt("point-curve")
-                        .width(ui.available_width())
-                        .selected_text(&shown)
-                        .show_ui(ui, |ui| {
-                            use super::curve_menu::CurveChoice;
-                            use crate::presets::curves::BuiltinCurve;
-                            for curve in BuiltinCurve::ALL {
-                                if ui
-                                    .selectable_label(
-                                        chosen == ShownCurve::Builtin(curve),
-                                        curve.name(),
-                                    )
-                                    .clicked()
-                                {
-                                    curve_choice = Some(CurveChoice::Builtin(curve));
-                                }
-                            }
-                            if !saved_curves.is_empty() {
-                                ui.separator();
-                            }
-                            for (i, saved) in saved_curves.iter().enumerate() {
-                                if ui
-                                    .selectable_label(chosen == ShownCurve::Saved(i), &saved.name)
-                                    .clicked()
-                                {
-                                    curve_choice = Some(CurveChoice::Saved(saved.clone()));
-                                }
-                            }
-                            ui.separator();
-                            if ui
-                                .selectable_label(false, "Save…")
-                                .on_hover_text(
-                                    "Save the RGB, Red, Green and Blue curves under a name",
-                                )
-                                .clicked()
-                            {
-                                curve_choice = Some(CurveChoice::Save);
-                            }
-                        });
-                });
-                // Lightroom's Refine Saturation, under the RGB point curve it acts on;
-                // the channel curves keep the same height so nothing below moves.
-                subheading(ui, "Refine");
-                // Camera Raw renders 101–200 as 100: shown there, and kept as imported
-                // until the slider is moved.
-                let mut shown = r.curve_saturation.min(1.);
-                let before = shown;
-                ui.add_enabled_ui(view.selected_curve == 0, |ui| {
-                    setting_slider(ui, ParameterId::CurveSaturation, &mut shown, 1.);
-                });
-                if shown != before {
-                    r.curve_saturation = shown;
-                }
-            }
-            subheading(ui, "Levels");
-            slider(
-                ui,
-                "Black point",
-                &mut r.black_point,
-                0. ..=r.white_point - 0.01,
-                0.,
-            );
-            slider(
-                ui,
-                "White point",
-                &mut r.white_point,
-                r.black_point + 0.01..=1.,
-                1.,
-            );
-            setting_slider(ui, ParameterId::Midtone, &mut r.midtone, 1.);
-        }) {
-            r.black_point = 0.;
-            r.white_point = 1.;
-            r.midtone = 1.;
-            r.curve = Recipe::default().curve;
-            r.effects.channels = std::array::from_fn(|_| Default::default());
-            r.curve_saturation = 1.;
-            r.effects.parametric = [0.; 4];
-        }
-        switch.finish(r);
-
-        // The B&W panel replaces the Color Mixer whenever the photo renders black &
-        // white, by its Treatment or by a black & white profile.
-        let black_white = r.treatment() == Treatment::BlackWhite;
-        let (mixer_title, mixer_panel) = if black_white {
-            ("B&W", Panel::BlackWhiteMix)
-        } else {
-            ("Color Mixer", Panel::ColorMixer)
-        };
-        let mut switch = PanelSwitch::new(r, mixer_panel);
-        if switched_section(ui, mixer_title, &mut switch.state, |ui| {
-            if black_white {
-                let heading = subheading(ui, "Black & White Mix");
-                // Measured (once) only while this panel is open.
-                let auto_mix = photo
-                    .spread()
-                    .zip(photo.metadata)
-                    .map(|(spread, metadata)| {
-                        crate::develop::AutoMix {
-                            spread: &spread,
-                            metadata,
-                        }
-                        .for_recipe(r)
-                    });
-                let button = Rect::from_min_size(
-                    Pos2::new(heading.right() - 52., heading.top() - 4.),
-                    Vec2::new(52., 24.),
-                );
-                // Greyed out while the mix is Auto's, as the Basic panel's Auto.
-                let enabled = auto_mix.is_some_and(|mix| mix != r.effects.gray_mix);
-                let auto = ui
-                    .scope_builder(egui::UiBuilder::new().max_rect(button), |ui| {
-                        ui.add_enabled(enabled, egui::Button::new("Auto").small())
-                    })
-                    .inner;
-                if auto
-                    .on_hover_text("Set the mix from the photo's colors")
-                    .on_disabled_hover_text("The Auto mix is applied")
-                    .clicked()
-                {
-                    auto_mix_request = true;
-                }
-                let target = Rect::from_min_size(
-                    Pos2::new(button.left() - 28., button.top() + 1.),
-                    Vec2::splat(22.),
-                );
-                if target_button(
-                    ui,
-                    target,
-                    view.is(Tool::Targeted(Target::BlackWhite)),
-                    &format!(
-                        "Targeted adjustment: drag up or down on the photo to brighten or darken its color · {}",
-                        targeted_shortcut("G")
-                    ),
-                ) {
-                    targeted_request = Some(Target::BlackWhite);
-                }
-                let moving = targeted.filter(|w| w.target == Target::BlackWhite);
-                for (i, name) in BANDS.iter().enumerate() {
-                    let row = ui.push_id(("bw", i), |ui| {
-                        slider_with(
-                            ui,
-                            name,
-                            &mut r.effects.gray_mix[i],
-                            -1. ..=1.,
-                            0.,
-                            None,
-                            Some((palette.tone(Tone::FIELD), band_color(i))),
-                        )
-                    });
-                    highlight_targeted(ui, row.response.rect, moving.map_or(0., |w| w.shares[i]));
-                }
-                return;
-            }
-            // Lightroom's tabs: the HSL and Color mixer, and Point Color.
-            ui.horizontal(|ui| {
-                let w = ui.available_width();
-                segmented(
-                    ui,
-                    &mut view.mixer_tab,
-                    &[
-                        (MixerTab::Mixer, "Mixer"),
-                        (MixerTab::PointColor, "Point Color"),
-                    ],
-                    w,
-                );
-            });
-            if view.mixer_tab == MixerTab::PointColor {
-                super::point_color_panel::point_color_panel(ui, &mut r.point_colors, view);
-                return;
-            }
-            control_row(ui, "Mixer", |ui| {
-                let w = ui.available_width();
-                segmented(
-                    ui,
-                    &mut view.mixer_color,
-                    &[(false, "HSL"), (true, "Color")],
-                    w,
-                );
-            });
-            if view.mixer_color {
-                ui.horizontal(|ui| {
-                    for (i, band) in BANDS.iter().enumerate() {
-                        let (rect, response) =
-                            ui.allocate_exact_size(Vec2::splat(27.), Sense::click());
-                        ui.painter().circle_filled(rect.center(), 7., band_color(i));
-                        if view.selected_band == i {
-                            ui.painter().circle_stroke(
-                                rect.center(),
-                                10.,
-                                Stroke::new(1.5, palette.tone(Tone::TEXT)),
-                            );
-                        }
-                        if response.on_hover_text(*band).clicked() {
-                            view.selected_band = i;
-                        }
-                    }
-                });
-                let i = view.selected_band;
-                ui.push_id(("hsl", i), |ui| {
-                    for (c, name) in ["Hue", "Saturation", "Luminance"].into_iter().enumerate() {
-                        slider_with(
-                            ui,
-                            name,
-                            &mut r.hsl[i][c],
-                            -1. ..=1.,
-                            0.,
-                            None,
-                            Some(hsl_gradient(&palette, i, c)),
-                        );
-                    }
-                });
-            } else {
-                let all = view.mixer_adjust == 3;
-                let channel_tip = |c: usize| {
-                    let name = ["hue", "saturation", "luminance"][c];
-                    format!(
-                        "Targeted adjustment: drag up or down on the photo to change its color's {name} · {}",
-                        targeted_shortcut(["H", "S", "L"][c])
-                    )
-                };
-                control_row(ui, "Adjust", |ui| {
-                    ui.spacing_mut().item_spacing.x = space::S;
-                    if !all {
-                        let (button, _) =
-                            ui.allocate_exact_size(Vec2::new(22., 22.), Sense::hover());
-                        let target = hsl_target(view.mixer_adjust);
-                        if target_button(
-                            ui,
-                            button,
-                            view.is(Tool::Targeted(target)),
-                            &channel_tip(view.mixer_adjust),
-                        ) {
-                            targeted_request = Some(target);
-                        }
-                    }
-                    let w = ui.available_width();
-                    segmented(
-                        ui,
-                        &mut view.mixer_adjust,
-                        &[(0, "Hue"), (1, "Sat"), (2, "Lum"), (3, "All")],
-                        w,
-                    );
-                });
-                // Again after the tabs, which may have just changed.
-                let all = view.mixer_adjust == 3;
-                let channels = if all {
-                    0..3
-                } else {
-                    view.mixer_adjust..view.mixer_adjust + 1
-                };
-                for c in channels {
-                    let target = hsl_target(c);
-                    if all {
-                        let heading = subheading(ui, ["Hue", "Saturation", "Luminance"][c]);
-                        let button = Rect::from_min_size(
-                            Pos2::new(heading.right() - 24., heading.top() - 3.),
-                            Vec2::splat(22.),
-                        );
-                        if target_button(
-                            ui,
-                            button,
-                            view.is(Tool::Targeted(target)),
-                            &channel_tip(c),
-                        ) {
-                            targeted_request = Some(target);
-                        }
-                    }
-                    let moving = targeted.filter(|w| w.target == target);
-                    for (i, name) in BANDS.iter().enumerate() {
-                        let row = ui.push_id(("hsl-all", c, i), |ui| {
-                            slider_with(
-                                ui,
-                                name,
-                                &mut r.hsl[i][c],
-                                -1. ..=1.,
-                                0.,
-                                None,
-                                Some(hsl_gradient(&palette, i, c)),
-                            );
-                        });
-                        highlight_targeted(
-                            ui,
-                            row.response.rect,
-                            moving.map_or(0., |w| w.shares[i]),
-                        );
-                    }
-                }
-            }
-        }) {
-            if black_white {
-                r.effects.gray_mix = [0.; 8];
-            } else {
-                // Both tabs: the mixer and Point Color.
-                r.hsl = [[0.; 3]; 8];
-                r.point_colors.clear();
-            }
-        }
-        switch.finish(r);
-
-        let mut switch = PanelSwitch::new(r, Panel::ColorGrading);
-        if switched_section(ui, "Color Grading", &mut switch.state, |ui| {
-            ui.push_id(grading_document, |ui| {
-                super::color_grading::color_grading_ui(ui, r, &mut view.grading);
-            });
-        }) {
-            r.grading = [[0.; 3]; 3];
-            r.effects.global_grade = [0.; 3];
-            r.effects.balance = 0.;
-            r.effects.blending = 0.5;
-        }
-        switch.finish(r);
-
-        let mut switch = PanelSwitch::new(r, Panel::Detail);
-        let sharpening = SharpeningSliders::defaults();
-        if switched_section(ui, "Detail", &mut switch.state, |ui| {
-            // Lightroom's Color noise reduction default for raw files.
-            let color_default = 0.25;
-            let mut control = |ui: &mut egui::Ui, id: ParameterId, default: f32| {
-                setting_slider(ui, id, id.value_mut(r), default);
-            };
-            subheading(ui, "Sharpening");
-            control(ui, ParameterId::SharpeningAmount, sharpening.amount);
-            control(ui, ParameterId::SharpeningRadius, sharpening.radius);
-            control(ui, ParameterId::SharpeningDetail, sharpening.detail);
-            control(ui, ParameterId::SharpeningMasking, sharpening.masking);
-            subheading(ui, "Noise Reduction");
-            control(ui, ParameterId::LuminanceNoise, 0.);
-            ui.push_id("luma-nr", |ui| {
-                control(ui, ParameterId::LuminanceDetail, 0.5);
-                control(ui, ParameterId::LuminanceContrast, 0.);
-            });
-            control(ui, ParameterId::ColorNoise, color_default);
-            ui.push_id("color-nr", |ui| {
-                control(ui, ParameterId::ColorNoiseDetail, 0.5);
-                control(ui, ParameterId::ColorNoiseSmoothness, 0.5);
-            });
-            ui.push_id("ai-denoise", |ui| {
-                ai_action = ai_denoise::controls(ui, r, &ai_view);
-            });
-        }) {
-            r.ai_denoise = Default::default();
-            let d = Recipe::default().effects;
-            r.noise_luma = 0.;
-            r.effects.luma_detail = d.luma_detail;
-            r.effects.luma_contrast = d.luma_contrast;
-            r.set_color_noise_defaults();
-            r.set_sharpening_defaults();
-        }
-        switch.finish(r);
-
-        let mut switch = PanelSwitch::new(r, Panel::LensCorrections);
-        if switched_section(ui, "Lens Corrections", &mut switch.state, |ui| {
-            let photo = metadata.as_ref();
-            subheading(ui, "Profile");
-            control_row(ui, "", |ui| {
-                ui.checkbox(&mut r.lens_ca, "Remove Chromatic Aberration")
-                    .on_hover_text("Remove red/cyan and blue/yellow fringes toward the edges of the frame, measured from the photo itself.");
-            });
-            control_row(ui, "", |ui| {
-                let mut on = r.lens_profile;
-                if ui
-                    .checkbox(&mut on, "Enable Profile Corrections")
-                    .on_hover_text("Correct distortion and vignetting with an Adobe lens profile, or the lens data the camera stored in the RAW.")
-                    .changed()
-                    && let Some(m) = &metadata
-                {
-                    let state = if on {
-                        crate::model::recipe::ProfileCorrections::On
-                    } else {
-                        crate::model::recipe::ProfileCorrections::Off
-                    };
-                    r.set_profile_corrections(m, state);
-                }
-            });
-            let lens = metadata
-                .as_ref()
-                .map(|m| m.lens_model.clone())
-                .filter(|l| !l.is_empty());
-            control_row(ui, "Lens", |ui| {
-                ui.label(
-                    egui::RichText::new(lens.as_deref().unwrap_or("Unknown"))
-                        .size(text::SMALL)
-                        .color(palette.tone(Tone::SOFT)),
-                );
-            });
-            lens_profile::profile_menus(ui, r, metadata.as_ref(), &lensfun_view);
-            // Said here as well as on import, so a missing profile is never silent.
-            if let Some(missing) = metadata.as_ref().and_then(|m| r.missing_lens_profile(m)) {
-                control_row(ui, "", |ui| {
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(missing)
-                                .size(text::SMALL)
-                                .color(palette.tone(Tone::SECONDARY)),
-                        )
-                        .wrap(),
-                    );
-                });
-            }
-            if let Some(m) = &metadata {
-                lensfun_action = lensfun::card(ui, r, m, &lensfun_view);
-            }
-            if r.lens_profile {
-                subheading(ui, "Amount");
-                ui.push_id("lens-amount", |ui| {
-                    setting_control(ui, r, ParameterId::LensDistortion, 1., photo);
-                    setting_control(ui, r, ParameterId::LensVignetting, 1., photo);
-                });
-            }
-            control_row(ui, "", |ui| {
-                if ui
-                    .small_button("Import Lens Profiles…")
-                    .on_hover_text("Import Adobe .lcp lens profiles, e.g. from /Library/Application Support/Adobe/CameraRaw/LensProfiles")
-                    .clicked()
-                {
-                    import_lens = true;
-                }
-                if ui
-                    .small_button("Import Folder…")
-                    .on_hover_text("Import every .lcp lens profile in a folder and its subfolders")
-                    .clicked()
-                {
-                    import_folder = Some(ImportKind::LensProfiles);
-                }
-            });
-            // Lightroom's Manual tab: Distortion, then Defringe and Vignetting.
-            subheading(ui, "Distortion");
-            ui.push_id("manual-distortion", |ui| {
-                setting_control(ui, r, ParameterId::ManualDistortion, 0., photo);
-            });
-            let row = subheading(ui, "Defringe");
-            // The Fringe Color Selector, at the row's far left as White Balance's.
-            let rect = Rect::from_center_size(
-                Pos2::new(row.left() + 13., row.center().y),
-                Vec2::new(26., 20.),
-            );
-            let response = ui.interact(rect, ui.id().with("fringe-selector"), Sense::click());
-            let picking = view.is(Tool::Defringe);
-            if picking || response.hovered() {
-                ui.painter().rect_filled(
-                    rect,
-                    radius::CONTROL,
-                    palette.tone(if picking {
-                        Tone::PRESSED
-                    } else {
-                        Tone::OUTLINE
-                    }),
-                );
-            }
-            eyedropper_icon(ui.painter(), rect.center(), picking || response.hovered());
-            if response
-                .on_hover_text("Fringe color selector: click a purple or green fringe in the photo")
-                .clicked()
-            {
-                view.toggle(Tool::Defringe);
-            }
-            defringe_sliders(ui, &mut r.effects);
-            subheading(ui, "Vignetting");
-            ui.push_id("lens-vignette", |ui| {
-                setting_control(ui, r, ParameterId::LensVignetteAmount, 0., photo);
-                setting_control(ui, r, ParameterId::LensVignetteMidpoint, 0.5, photo);
-            });
-        }) {
-            if let Some(m) = &metadata {
-                r.lens_builtin = m.lens.as_ref().is_none_or(|l| l.default_on);
-            }
-            let defaults = Recipe::default();
-            r.lens_ca = defaults.lens_ca;
-            r.lens_profile = defaults.lens_profile;
-            r.lens_profile_choice = defaults.lens_profile_choice;
-            r.lens_distortion = defaults.lens_distortion;
-            r.lens_vignetting = defaults.lens_vignetting;
-            r.lens_manual_distortion = defaults.lens_manual_distortion;
-            let d = Recipe::default().effects;
-            r.effects.defringe = d.defringe;
-            r.effects.defringe_ranges = d.defringe_ranges;
-            r.effects.lens_vignette = d.lens_vignette;
-            r.effects.lens_vignette_midpoint = d.lens_vignette_midpoint;
-        }
-        switch.finish(r);
-
-        let mut switch = PanelSwitch::new(r, Panel::Transform);
-        if switched_section(ui, "Transform", &mut switch.state, |ui| {
-            use crate::model::transform::UprightMode;
-            // As Lightroom: Update beside the heading, then the modes in two rows.
-            control_row(ui, "Upright", |ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Guided solves its guides again; without guides it has nothing to go by.
-                    let analysed = match r.upright.mode {
-                        UprightMode::Off => false,
-                        UprightMode::Guided => !r.upright.guides.is_empty(),
-                        _ => true,
-                    };
-                    if ui
-                        .add_enabled(upright_ready && analysed, egui::Button::new("Update"))
-                        .on_hover_text(
-                            "Analyse the photo again, e.g. after changing lens corrections",
-                        )
-                        .clicked()
-                    {
-                        upright_request = true;
-                    }
-                });
-            });
-            let u = &mut r.upright;
-            let before = u.mode;
-            for row in [
-                [
-                    (UprightMode::Off, "Off"),
-                    (UprightMode::Auto, "Auto"),
-                    (UprightMode::Guided, "Guided"),
-                ],
-                [
-                    (UprightMode::Level, "Level"),
-                    (UprightMode::Vertical, "Vertical"),
-                    (UprightMode::Full, "Full"),
-                ],
-            ] {
-                let w = ui.available_width();
-                segmented(ui, &mut u.mode, &row, w);
-            }
-            if u.mode != before {
-                if u.mode == UprightMode::Guided {
-                    // As in Lightroom, choosing Guided picks up its tool.
-                    guided_action = Some(GuidedAction::Choose);
-                } else if u.mode != UprightMode::Off && u.corrections.len() <= u.mode.code() {
-                    upright_request = true;
-                }
-            }
-            if u.mode == UprightMode::Guided {
-                let count = u.guides.len();
-                control_row(ui, "Guides", |ui| {
-                    let drawing = view.is(Tool::Guided);
-                    if ui
-                        .selectable_label(drawing, "Draw")
-                        .on_hover_text(
-                            "Draw up to four guides along verticals and horizontals · Shift+T",
-                        )
-                        .clicked()
-                    {
-                        guided_action = Some(GuidedAction::Toggle);
-                    }
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{count} of {}",
-                            crate::model::transform::MAX_GUIDES
-                        ))
-                        .color(palette.tone(Tone::LABEL)),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .add_enabled(count > 0, egui::Button::new("Clear"))
-                            .on_hover_text("Remove every guide")
-                            .clicked()
-                        {
-                            guided_action = Some(GuidedAction::Clear);
-                        }
-                    });
-                });
-                if view.is(Tool::Guided) {
-                    control_row(ui, "", |ui| {
-                        ui.checkbox(&mut view.guided.loupe, "Show Loupe")
-                            .on_hover_text("Magnify the photo while placing a guide's end");
-                        ui.checkbox(&mut view.guided.grid, "Grid");
-                    });
-                }
-            } else if view.is(Tool::Guided) {
-                view.tool = Tool::None;
-            }
-            control_row(ui, "", |ui| {
-                ui.checkbox(&mut r.constrain_crop, "Constrain Crop")
-                    .on_hover_text("Shrink the crop, keeping its aspect, to leave out the white areas outside the photo");
-            });
-            subheading(ui, "Transform");
-            // Stored as Camera Raw applies them, before the photo is turned for
-            // display; shown, as in Lightroom, along the displayed photo's axes.
-            let turns = metadata.as_ref().map_or(0, |m| {
-                crate::model::image_frame::ImageFrame::for_metadata(m).turns
-            });
-            let axes =
-                crate::model::transform::display_axes((turns + r.rotation) % 4, r.flip_x, r.flip_y);
-            let mut shown = r.transform.displayed(axes);
-            let t = &mut shown;
-            setting_slider(ui, ParameterId::TransformVertical, &mut t.vertical, 0.);
-            setting_slider(ui, ParameterId::TransformHorizontal, &mut t.horizontal, 0.);
-            setting_slider(ui, ParameterId::TransformRotate, &mut t.rotate, 0.);
-            setting_slider(ui, ParameterId::TransformAspect, &mut t.aspect, 0.);
-            setting_slider(ui, ParameterId::TransformScale, &mut t.scale, 1.);
-            setting_slider(ui, ParameterId::TransformOffsetX, &mut t.offset_x, 0.);
-            setting_slider(ui, ParameterId::TransformOffsetY, &mut t.offset_y, 0.);
-            if shown != r.transform.displayed(axes) {
-                r.transform = shown.recorded(axes);
-            }
-        }) {
-            r.transform = Default::default();
-            r.upright = Default::default();
-            r.constrain_crop = false;
-        }
-        switch.finish(r);
-
-        let mut switch = PanelSwitch::new(r, Panel::Effects);
-        if switched_section(ui, "Effects", &mut switch.state, |ui| {
-            let photo = metadata.as_ref();
-            subheading(ui, "Post-Crop Vignetting");
-            setting_control(ui, r, ParameterId::VignetteAmount, 0., photo);
-            setting_control(ui, r, ParameterId::VignetteMidpoint, 0.5, photo);
-            setting_control(ui, r, ParameterId::VignetteFeather, 0.5, photo);
-            subheading(ui, "Grain");
-            ui.push_id("grain", |ui| {
-                setting_control(ui, r, ParameterId::GrainAmount, 0., photo);
-                setting_control(ui, r, ParameterId::GrainSize, 0.25, photo);
-                setting_control(ui, r, ParameterId::GrainRoughness, 0.5, photo);
-            });
-        }) {
-            r.effects.reset_post_crop();
-        }
-        switch.finish(r);
-
-        let mut switch = PanelSwitch::new(r, Panel::Calibration);
-        if switched_section(ui, "Calibration", &mut switch.state, |ui| {
-            // The process version as a row of the slider grid, the camera's
-            // exposure baseline under it at the rails' start.
-            ui.add_space(space::XS);
-            control_row(ui, "Process", |ui| {
-                let palette = theme::palette(ui.ctx());
-                ui.label(
-                    egui::RichText::new("Current version")
-                        .size(text::LABEL)
-                        .color(palette.tone(Tone::SOFT)),
-                );
-            });
-            if r.profile.is_some()
-                && let Some(m) = &metadata
-            {
-                let baseline = crate::camera_profiles::reference::baseline_exposure(m);
-                if baseline != r.camera_exposure {
-                    let use_baseline = rail_row(ui, |ui| {
-                        ui.small_button("Use camera exposure baseline")
-                            .on_hover_text("Apply the camera's reference exposure offset while leaving the Exposure slider unchanged.")
-                    });
-                    if use_baseline.clicked() {
-                        r.camera_exposure = baseline;
-                    }
-                }
-            }
-            subheading(ui, "Shadows");
-            ui.push_id("calibration-shadows", |ui| {
-                setting_slider(ui, ParameterId::ShadowTint, &mut r.effects.shadow_tint, 0.);
-            });
-            for (i, name) in ["Red Primary", "Green Primary", "Blue Primary"]
-                .iter()
-                .enumerate()
-            {
-                subheading(ui, name);
-                ui.push_id(("calibration", i), |ui| {
-                    let primary = ParameterId::PRIMARIES[i];
-                    for id in primary {
-                        setting_slider(ui, id, id.value_mut(r), 0.);
-                    }
-                });
-            }
-        }) {
-            r.effects.calibration = [[0.; 2]; 3];
-            r.effects.shadow_tint = 0.;
-        }
-        switch.finish(r);
+        let metadata = metadata.as_ref();
+        requests.add(panels::basic::show(ui, r, view, &basic_view, &palette));
+        requests.add(panels::tone_curve::show(
+            ui,
+            r,
+            view,
+            &histogram,
+            targeted,
+            &saved_curves,
+        ));
+        requests.add(panels::mixer::show(ui, r, view, &photo, targeted, &palette));
+        panels::color_grading::show(ui, r, view, grading_document);
+        requests.add(panels::detail::show(ui, r, &ai_view));
+        requests.add(panels::lens_corrections::show(
+            ui,
+            r,
+            view,
+            metadata,
+            &lensfun_view,
+            &palette,
+        ));
+        requests.add(panels::transform::show(
+            ui,
+            r,
+            view,
+            metadata,
+            upright_ready,
+            &palette,
+        ));
+        panels::effects::show(ui, r, metadata);
+        panels::calibration::show(ui, r, metadata);
+        self.carry_out(requests, ui, &adobe, adobe_key);
+    }
+    /// Carries out what the Develop panels asked for this frame, still during the
+    /// edit frame they were drawn in.
+    fn carry_out(
+        &mut self,
+        requests: panels::Requests,
+        ui: &egui::Ui,
+        adobe: &[std::path::PathBuf],
+        adobe_key: Option<egui::Id>,
+    ) {
+        let panels::Requests {
+            auto: auto_request,
+            profile_changed_from,
+            treatment: treatment_request,
+            fit_camera_look,
+            auto_mix: auto_mix_request,
+            curve: curve_choice,
+            targeted: targeted_request,
+            upright: upright_request,
+            guided: guided_action,
+            import_profiles,
+            show_community_profiles,
+            offer: offer_action,
+            import_lens,
+            ai_denoise: ai_action,
+            lensfun: lensfun_action,
+            import_folder,
+            import_luts,
+            import_adobe,
+        } = requests;
         if let Some(kind) = auto_request {
             self.start_auto(kind);
         }
@@ -1680,7 +654,7 @@ impl Editor {
             self.open_lut_import();
         }
         if import_adobe && let Some(m) = self.document.metadata.clone() {
-            let result = crate::camera_profiles::import_readable(&adobe);
+            let result = crate::camera_profiles::import_readable(adobe);
             if let Some(key) = adobe_key {
                 // Imported or unreadable, none of them is worth offering again.
                 ui.ctx().data_mut(|d| {
@@ -2037,16 +1011,6 @@ fn rail_row<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
         add(ui)
     })
     .inner
-}
-
-/// What the Transform panel asks of the Guided Upright tool.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum GuidedAction {
-    /// Guided was chosen among the modes.
-    Choose,
-    /// Draw: open or close the tool.
-    Toggle,
-    Clear,
 }
 
 /// [`setting_control`] for a Basic slider, which the `.` and `,` keys select for
