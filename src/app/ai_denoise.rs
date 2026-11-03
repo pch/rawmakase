@@ -246,6 +246,12 @@ impl Service {
     pub(crate) fn cache(&self) -> &AiCache {
         &self.shared.cache
     }
+    /// Whether a job is queued or running. A running job finishes even once nobody
+    /// wants it, so this outlasts the photo it was asked for.
+    pub(crate) fn busy(&self) -> bool {
+        let queue = self.queue();
+        queue.running.is_some() || !queue.pending.is_empty()
+    }
     fn queue(&self) -> std::sync::MutexGuard<'_, Queue> {
         self.shared.queue.lock().unwrap_or_else(|e| e.into_inner())
     }

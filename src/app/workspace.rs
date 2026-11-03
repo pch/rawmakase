@@ -66,13 +66,15 @@ impl Editor {
     }
     /// How fast the Library renders edited previews: at full pace only with
     /// the Library in front and nothing else rendering, neither an export, a
-    /// preview build, Develop's load, nor an output a command started.
+    /// preview build, Develop's load, an output a command started, nor AI
+    /// Denoise.
     pub(super) fn preview_pace(&self) -> crate::app::library::Pace {
         if self.module == Module::Library
             && !self.exporting()
             && !self.load.is_running()
             && !self.preview_builds.progress().is_some_and(|p| p.running())
             && !self.automation.outputs_running()
+            && !self.ai_denoise.busy()
         {
             crate::app::library::Pace::Full
         } else {

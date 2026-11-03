@@ -826,3 +826,34 @@ fn an_image_without_its_files_identity_gets_no_ai_request() {
         editor.document.ai.status()
     );
 }
+
+/// A job queued or running holds the Library's edited previews at background pace,
+/// also once the photo it was asked for is left: the run goes on, on most cores.
+#[test]
+fn a_job_under_way_keeps_the_librarys_previews_in_the_background() {
+    use crate::app::library::Pace;
+    let ctx = eframe::egui::Context::default();
+    let mut editor = super::super::tests::community_editor(&ctx, "X-T20", false);
+    let f = fixture(Provider::Cpu, Behaviour::default());
+    editor.ai_denoise = f.service.clone();
+    editor.module = super::super::Module::Library;
+    assert_eq!(editor.preview_pace(), Pace::Full);
+    let plain = f.plain();
+    let gate = f.behaviour.gate.lock().unwrap();
+    let (states, wanted) = f.request(&f.photo("a.raw"), &plain, None);
+    assert_eq!(editor.preview_pace(), Pace::Background);
+    assert!(matches!(
+        states.recv_timeout(Duration::from_secs(20)),
+        Ok(State::Running(_))
+    ));
+    // Left for the Library: no longer wanted, but the run finishes.
+    wanted.store(false, Ordering::Relaxed);
+    assert_eq!(editor.preview_pace(), Pace::Background);
+    drop(gate);
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while editor.preview_pace() == Pace::Background {
+        assert!(std::time::Instant::now() < deadline, "the run never ended");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(f.behaviour.runs.load(Ordering::SeqCst), tiles());
+}
