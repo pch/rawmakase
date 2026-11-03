@@ -138,6 +138,12 @@ impl Loupe {
             unreported: None,
         }
     }
+    /// A new request: the earlier one's result, and its failure not yet
+    /// said, are dropped.
+    fn next_ticket(&mut self) {
+        self.ticket += 1;
+        self.unreported = None;
+    }
     /// Asks for `photo` at `edge` pixels, unless that is already on its way;
     /// from its stored preview with that identity when `stored` says so.
     fn request(&mut self, ctx: &egui::Context, photo: &Photo, edge: u32, stored: Option<String>) {
@@ -151,7 +157,7 @@ impl Loupe {
         if let Some(at) = self.prefetched.iter().position(|(k, _)| *k == wanted) {
             let (_, prepared) = self.prefetched.remove(at).unwrap();
             self.cancel.store(true, Ordering::Relaxed);
-            self.ticket += 1;
+            self.next_ticket();
             self.requested = Some(wanted);
             self.show(ctx, prepared);
             return;
@@ -165,9 +171,7 @@ impl Loupe {
         // Moving on cancels the photo being prepared; its result is dropped.
         self.cancel.store(true, Ordering::Relaxed);
         self.cancel = Default::default();
-        self.ticket += 1;
-        // A failure not yet said is the earlier request's, now dropped.
-        self.unreported = None;
+        self.next_ticket();
         if !same_photo {
             self.texture = None;
             self.full = None;

@@ -2085,6 +2085,69 @@ fn a_filmstrip_click_does_what_the_view_shown_does() -> Result<()> {
     ));
     Ok(())
 }
+/// A failure received for a photo stepped away from to one prepared ahead,
+/// which is shown at once, is not said over it.
+#[test]
+fn loupe_says_no_failure_over_a_photo_prepared_ahead() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    for name in ["a.jpg", "b.jpg"] {
+        image::RgbImage::from_pixel(300, 200, image::Rgb([200, 120, 40]))
+            .save(folder.join(name))?;
+    }
+    std::fs::write(folder.join("c.jpg"), b"not a jpeg")?;
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&folder)?;
+    let ctx = egui::Context::default();
+    let mut library = Library::load(&path, ctx.clone())?;
+    library.wait_for_availability();
+    let id = |library: &Library, name: &str| {
+        library
+            .session
+            .photos
+            .iter()
+            .find(|p| p.filename == name)
+            .unwrap()
+            .id
+    };
+    let (a, b, c) = (
+        id(&library, "a.jpg"),
+        id(&library, "b.jpg"),
+        id(&library, "c.jpg"),
+    );
+    library.select(Some(a));
+    library.open_loupe();
+    let frame = |library: &mut Library| {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200., 800.),
+            )),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            library.grid(ui, &mut Default::default(), true, None);
+        });
+        output.textures_delta.clear();
+    };
+    // a is shown, and b, the next one along, prepared.
+    frame(&mut library);
+    library.loupe.wait(&ctx);
+    frame(&mut library);
+    library.loupe.wait_ahead(&ctx);
+    // c fails, and before the Library's next frame says so, b is chosen.
+    library.select(Some(c));
+    frame(&mut library);
+    library.loupe.wait(&ctx);
+    assert!(matches!(library.loupe.state, loupe::State::Failed(_)));
+    library.select(Some(b));
+    frame(&mut library);
+    assert_eq!(library.loupe.state, loupe::State::Ready);
+    assert!(!library.messages.has_entry_with("Preview unavailable"));
+    Ok(())
+}
+
 #[test]
 fn loupe_shows_a_jpeg_at_the_size_of_the_view() -> Result<()> {
     let directory = tempfile::tempdir()?;
