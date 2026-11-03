@@ -2085,6 +2085,41 @@ fn a_filmstrip_click_does_what_the_view_shown_does() -> Result<()> {
     ));
     Ok(())
 }
+/// A result on its way when the Loupe is reset is the forgotten photo's:
+/// its failure is neither shown nor said about whatever is shown next.
+#[test]
+fn loupe_reset_drops_a_failure_on_its_way() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    std::fs::write(folder.join("c.jpg"), b"not a jpeg")?;
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&folder)?;
+    let ctx = egui::Context::default();
+    let mut library = Library::load(&path, ctx.clone())?;
+    library.wait_for_availability();
+    library.select(Some(library.session.photos[0].id));
+    library.open_loupe();
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200., 800.),
+        )),
+        ..Default::default()
+    };
+    let mut output = ctx.run_ui(input, |ui| {
+        library.grid(ui, &mut Default::default(), true, None);
+    });
+    output.textures_delta.clear();
+    // Its failure comes in, not yet taken, as the Loupe is reset.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    library.loupe.reset();
+    library.loupe.poll_now(&ctx);
+    assert_eq!(library.loupe.state, loupe::State::Loading);
+    assert_eq!(library.loupe.take_failure(), None);
+    Ok(())
+}
+
 /// A failure received for a photo stepped away from to one prepared ahead,
 /// which is shown at once, is not said over it.
 #[test]

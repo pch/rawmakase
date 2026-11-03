@@ -233,7 +233,8 @@ impl Loupe {
         self.full = None;
         self.texture = None;
         self.state = State::Loading;
-        self.unreported = None;
+        // A result on its way is the forgotten photo's.
+        self.next_ticket();
     }
     /// The photo's failure, once, for the top bar.
     pub(super) fn take_failure(&mut self) -> Option<String> {
@@ -265,6 +266,11 @@ impl Loupe {
                 }
             }
         }
+    }
+    /// Takes the results that have come in, as a frame does.
+    #[cfg(test)]
+    pub(super) fn poll_now(&mut self, ctx: &egui::Context) {
+        self.poll(ctx);
     }
     #[cfg(test)]
     pub(super) fn wait(&mut self, ctx: &egui::Context) {
