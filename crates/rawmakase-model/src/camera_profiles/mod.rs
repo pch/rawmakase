@@ -332,17 +332,6 @@ impl CameraProfile {
             ..self.clone()
         }
     }
-    /// The camera part of the profile, without its look: what the stages before the
-    /// per-pixel color stage read.
-    pub fn camera_part(self: &std::sync::Arc<Self>) -> std::sync::Arc<Self> {
-        if self.enhanced.is_none() {
-            return self.clone();
-        }
-        std::sync::Arc::new(Self {
-            enhanced: None,
-            ..(**self).clone()
-        })
-    }
     /// Whether this is a look with Lightroom's Profile Amount.
     pub fn supports_amount(&self) -> bool {
         self.enhanced.as_ref().is_some_and(|e| e.amount.is_some())

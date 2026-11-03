@@ -42,7 +42,7 @@ fn fixture(dir: &Path) -> (Catalog, std::path::PathBuf) {
         }
     }
     let mut cat = Catalog::create(&dir.join("Photos.rawmakase")).unwrap();
-    cat.add_folder(&root).unwrap();
+    cat.add_folder_with(&root, &Default::default()).unwrap();
     (cat, root)
 }
 

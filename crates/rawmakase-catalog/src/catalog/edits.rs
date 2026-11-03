@@ -24,6 +24,7 @@ pub struct EditToSave<'a> {
 }
 
 impl Catalog {
+    #[cfg(any(test, feature = "test-support"))]
     /// Stores `bitmap` once and returns the hash that refers to it.
     pub fn put_bitmap(&mut self, bitmap: &crate::storage::bitmaps::Bitmap) -> Result<String> {
         let hash = bitmap.hash();

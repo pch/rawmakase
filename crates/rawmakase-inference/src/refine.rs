@@ -7,9 +7,6 @@
 //! take a few tens of milliseconds at the sizes used here.
 use crate::process::{Coverage, RgbImage};
 
-/// Version of this step; part of what a generated selection's identity covers.
-pub const REFINE_VERSION: u32 = 1;
-
 /// Moves `coverage`'s edges onto `image`'s. Does nothing when they differ in size.
 pub fn refine(coverage: &mut Coverage, image: &RgbImage) {
     let (w, h) = (coverage.width, coverage.height);

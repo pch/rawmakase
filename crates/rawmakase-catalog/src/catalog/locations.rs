@@ -465,10 +465,6 @@ impl Catalog {
         }
         Ok(rows)
     }
-    /// A folder's root and logical path.
-    fn logical_path(&self, folder: FolderId) -> Result<(RootId, String)> {
-        logical_path(&self.db, folder)?.context("Unknown folder")
-    }
     /// Finds root `id` at `path` on this computer, keeping its folders'
     /// own locations.
     pub fn relink_root(&mut self, id: RootId, path: &Path) -> Result<()> {
@@ -519,10 +515,11 @@ impl Catalog {
             Ok(())
         })
     }
+    #[cfg(any(test, feature = "test-support"))]
     /// Finds folder `id` and its subfolders at `path` on this computer,
     /// keeping the locations of folders below it.
     pub fn relink_folder(&mut self, id: FolderId, path: &Path) -> Result<()> {
-        let (root, logical) = self.logical_path(id)?;
+        let (root, logical) = logical_path(&self.db, id)?.context("Unknown folder")?;
         self.relink_folder_at(root, &logical, path, Overrides::Keep)
     }
     /// Finds the folder of `root` at logical path `relative` and everything

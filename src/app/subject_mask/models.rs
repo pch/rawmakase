@@ -283,7 +283,7 @@ impl Installer {
             ctx.request_repaint();
         });
     }
-    pub(in crate::app) fn removed(&mut self, _ok: bool) {
+    pub(in crate::app) fn removed(&mut self) {
         self.removing = false;
         self.forget();
     }

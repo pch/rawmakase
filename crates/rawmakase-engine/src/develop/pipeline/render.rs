@@ -336,8 +336,8 @@ fn sample_region(
                 return ([1.; 3], [f32::NAN; 2]);
             }
             match &warp {
-                Some(w) => (w.sample(im, sx, sy, r, spread), w.map.forward(sx, sy)),
-                None => (footprint_sample(im, sx, sy, r, spread), [sx, sy]),
+                Some(w) => (w.sample(im, sx, sy, spread), w.map.forward(sx, sy)),
+                None => (footprint_sample(im, sx, sy, spread), [sx, sy]),
             }
         })
         .unzip();
@@ -479,8 +479,8 @@ pub(super) fn render_region_inner(
             return [1.; 3];
         }
         let (p, pos) = match &warp {
-            Some(w) => (w.sample(im, sx, sy, r, spread), w.map.forward(sx, sy)),
-            None => (footprint_sample(im, sx, sy, r, spread), [sx, sy]),
+            Some(w) => (w.sample(im, sx, sy, spread), w.map.forward(sx, sy)),
+            None => (footprint_sample(im, sx, sy, spread), [sx, sy]),
         };
         process_pixel(p, r, &lut, camera, pos, None)
     };

@@ -1068,7 +1068,7 @@ fn gain_maps_before_a_warp_follow_each_channels_source() {
     let (x, y) = (w - 1., 3.);
     let red_before = {
         let warp = LensWarp::new(&im, &r).unwrap();
-        let p = warp.sample(Source::new(&im), x, y, &r, 0.);
+        let p = warp.sample(Source::new(&im), x, y, 0.);
         let m = &warp.map;
         let ([dx, dy], scale) = m.scales(x, y);
         let field = warp.gain_map.as_ref().unwrap();
@@ -1090,7 +1090,7 @@ fn gain_maps_before_a_warp_follow_each_channels_source() {
         l.gain_map.as_mut().unwrap().after_warp = true;
     }
     let warp = LensWarp::new(&im, &r).unwrap();
-    let p = warp.sample(Source::new(&im), x, y, &r, 0.);
+    let p = warp.sample(Source::new(&im), x, y, 0.);
     let m = &warp.map;
     let ([dx, dy], _) = m.scales(x, y);
     let g = warp
@@ -2242,7 +2242,7 @@ fn lens_ca_stripe_error(period: f32, phase: f32) -> f32 {
     let mut error = 0f32;
     for y in 75..113 {
         for x in 30..162 {
-            let p = warp.sample((&im).into(), x as f32, y as f32, &r, 0.);
+            let p = warp.sample((&im).into(), x as f32, y as f32, 0.);
             error = error.max((p[0] / p[1] - 1.08).abs());
         }
     }
@@ -2317,8 +2317,8 @@ fn stripe_ca_guard_keeps_isolated_edges_resolved_colour_and_noise() {
                 if case == 4 && x < 68 {
                     continue;
                 }
-                let p = a.sample((&im).into(), x as f32, y as f32, &r, 0.);
-                let q = b.sample((&unguarded).into(), x as f32, y as f32, &r, 0.);
+                let p = a.sample((&im).into(), x as f32, y as f32, 0.);
+                let q = b.sample((&unguarded).into(), x as f32, y as f32, 0.);
                 if case == 3 {
                     changed += usize::from(p.iter().zip(q).any(|(a, b)| (a - b).abs() > 1e-5));
                 } else {
