@@ -1,10 +1,10 @@
 [package]
 name = "rawmakase-raw"
 version = "0.1.0"
-edition = "2024"
-rust-version = "1.98"
+edition.workspace = true
+rust-version.workspace = true
 description = "RAWmakase's own RAW decoders in pure Rust: containers, maker notes, sensor codecs, camera facts and embedded previews"
-license = "MIT"
+license.workspace = true
 publish = false
 
 [features]
@@ -17,8 +17,11 @@ rawmakase-tiff = { path = "../rawmakase-tiff", version = "0.1.0" }
 miniz_oxide = "0.9"
 # JPEG XL-compressed DNG tiles (DNG 1.7).
 jxl-oxide = { version = "0.12.6", default-features = false }
-rayon = "1.12"
+rayon.workspace = true
 # The camera fact tables (data/raw-cameras.toml, raw-matrices.toml), parsed
 # once.
 serde = { version = "1", features = ["derive"] }
-toml = { version = "1", default-features = false, features = ["parse", "serde", "std"] }
+toml.workspace = true
+
+# Not on the workspace lints yet: 15 clippy findings in its tests to clear first
+# (issue #808, step 0.3).

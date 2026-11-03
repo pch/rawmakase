@@ -1,10 +1,10 @@
 [package]
 name = "rawmakase-decode"
 version = "0.1.0"
-edition = "2024"
-rust-version = "1.98"
+edition.workspace = true
+rust-version.workspace = true
 description = "RAWmakase's native boundary: RAW files through RAWmakase's own decoders, colour management, RAWmakase's own demosaicing, opening a photo and its full-size decode with the decode cache"
-license = "MIT"
+license.workspace = true
 publish = false
 
 [features]
@@ -17,10 +17,10 @@ rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0" }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
 # RAWmakase's own RAW decoders, reached through the raw adapter (raw::own).
 rawmakase-raw = { path = "../rawmakase-raw", version = "0.1.0" }
-anyhow = "1"
+anyhow.workspace = true
 # AI Denoise results are cached at half precision.
 half = "2.7"
-bytemuck = { version = "1.25", features = ["derive"] }
+bytemuck.workspace = true
 image.workspace = true
 # JPEG XL, in pure Rust; through its `image` decoder.
 jxl-oxide = { version = "0.12.6", default-features = false, features = ["image", "rayon"] }
@@ -29,27 +29,27 @@ rav1d = { version = "1.1.0", default-features = false, features = ["bitdepth_8",
 # AV1's YUV to RGB, in pure Rust.
 yuv = "0.8.19"
 # The errno rav1d's C interface returns.
-libc = "0.2"
+libc.workspace = true
 # Colour management of JPEG, PNG and TIFF files, in pure Rust; the version `image` uses.
 moxcms = { version = "0.8.1", features = ["options"] }
-rayon = "1.12"
+rayon.workspace = true
 serde = { version = "1", features = ["derive", "rc"] }
-serde_json = "1"
+serde_json.workspace = true
 # Decode fingerprints hash the unpacked sensor data.
-sha2 = "0.11"
-tempfile = "3"
+sha2.workspace = true
+tempfile.workspace = true
 
 # HEIC decoded by the system's ImageIO, drawn by CoreGraphics, in an
 # autorelease pool (objc2, the version the app builds).
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
+objc2.workspace = true
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes", "CFData", "CFDictionary", "CFNumber"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGBitmapContext", "CGColorSpace", "CGContext", "CGDataProvider", "CGImage"] }
 objc2-image-io = { version = "0.3", default-features = false, features = ["std", "CGImageSource", "objc2-core-graphics"] }
 
 # Background threads' scheduling priority (raw::spawn_background).
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"
+libc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_Threading"] }
@@ -60,3 +60,6 @@ windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Im
 [dev-dependencies]
 rawmakase-raw = { path = "../rawmakase-raw", version = "0.1.0", features = ["test-support"] }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }
+
+# Not on the workspace lints yet: 11 clippy findings (2 in the library, 9 in
+# its tests) to clear first (issue #808, step 0.3).

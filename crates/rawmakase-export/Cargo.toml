@@ -1,10 +1,10 @@
 [package]
 name = "rawmakase-export"
 version = "0.1.0"
-edition = "2024"
-rust-version = "1.98"
+edition.workspace = true
+rust-version.workspace = true
 description = "RAWmakase's export: developing photos with the renderer and writing JPEG, TIFF and PNG files with their metadata and watermarks, without the GUI"
-license = "MIT"
+license.workspace = true
 publish = false
 
 [features]
@@ -17,27 +17,30 @@ rawmakase-engine = { path = "../rawmakase-engine", version = "0.1.0" }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0" }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
 rawmakase-decode = { path = "../rawmakase-decode", version = "0.1.0" }
-anyhow = "1"
+anyhow.workspace = true
 image.workspace = true
 # The GUID of ExtendedXMP in JPEG exports is an MD5.
-md-5 = "0.11"
+md-5.workspace = true
 # Installed fonts for text watermarks are mapped, not read whole.
 memmap2 = "0.9"
 # PNG exports, with XMP in an iTXt chunk, which image's encoder cannot write.
 png = "0.18.1"
-roxmltree = "0.21.1"
+roxmltree.workspace = true
 serde = { version = "1", features = ["derive", "rc"] }
-serde_json = "1"
+serde_json.workspace = true
 # Glyph outlines for text watermarks.
 skrifa = "0.49"
-tempfile = "3"
-tiff = "0.11.3"
-unicode-normalization = "0.1"
+tempfile.workspace = true
+tiff.workspace = true
+unicode-normalization.workspace = true
 # Inter and the installed-font directories for text watermarks. It is built for
 # egui and brings egui along, though nothing here draws with it.
-fastframe-fonts = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0" }
+fastframe-fonts.workspace = true
 
 [dev-dependencies]
 rawmakase-catalog = { path = "../rawmakase-catalog", version = "0.1.0", features = ["test-support"] }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0", features = ["test-support"] }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }
+
+# Not on the workspace lints yet: one clippy finding in its tests to clear first
+# (issue #808, step 0.3).

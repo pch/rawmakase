@@ -1,10 +1,10 @@
 [package]
 name = "rawmakase-catalog"
 version = "0.1.0"
-edition = "2024"
-rust-version = "1.98"
+edition.workspace = true
+rust-version.workspace = true
 description = "RAWmakase's catalog: photos, folders, collections and edits in SQLite, Lightroom import, and which edit a photo develops with, without the RAW decoders, the renderer or the GUI"
-license = "MIT"
+license.workspace = true
 publish = false
 
 [features]
@@ -14,19 +14,22 @@ test-support = ["rawmakase-model/test-support", "rawmakase-interop/test-support"
 [dependencies]
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0" }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
-anyhow = "1"
-flate2 = "1"
-getrandom = "0.4"
+anyhow.workspace = true
+flate2.workspace = true
+getrandom.workspace = true
 image.workspace = true
 rusqlite = { version = "0.41.0", features = ["bundled"] }
 serde = { version = "1", features = ["derive", "rc"] }
-serde_json = "1"
-sha2 = "0.11"
-unicode-normalization = "0.1"
-tempfile = "3"
+serde_json.workspace = true
+sha2.workspace = true
+unicode-normalization.workspace = true
+tempfile.workspace = true
 
 [dev-dependencies]
 # Counting commits, for the throughput tests.
 rusqlite = { version = "0.41.0", features = ["bundled", "hooks"] }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0", features = ["test-support"] }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }
+
+# Not on the workspace lints yet: 11 clippy findings in its tests to clear first
+# (issue #808, step 0.3).
