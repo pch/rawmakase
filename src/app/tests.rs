@@ -3754,6 +3754,40 @@ fn removing_a_copy_from_the_library_stays_in_the_library() -> anyhow::Result<()>
     assert_eq!(library.selected(), Some(master));
     Ok(())
 }
+/// A virtual copy still loading in the Library's Loupe, removed: no master opens in
+/// its place, so the copy's load must not refill the document once it reports, and
+/// what was shown of it goes, as when any other open photo is closed.
+#[test]
+fn removing_a_copy_still_loading_outside_develop_ends_its_load() -> anyhow::Result<()> {
+    let (_dir, _ctx, mut editor, [a, _]) = two_photo_editor()?;
+    let copy = editor
+        .library
+        .as_mut()
+        .unwrap()
+        .create_virtual_copy(a)?
+        .value;
+    let path = editor
+        .library
+        .as_ref()
+        .unwrap()
+        .photo(a)
+        .unwrap()
+        .path
+        .clone();
+    assert!(editor.load_raw(path, Some(copy)));
+    assert_eq!(editor.module, Module::Library);
+    let ticket = editor.load.id();
+    assert!(editor.load.is_running());
+    editor.view.zoom.on = true;
+    let presets = editor.presets.revision;
+    editor.remove_virtual_copy(copy);
+    assert_eq!(editor.document.catalog_photo, None);
+    assert_ne!(editor.load.id(), ticket, "the copy's load still counts");
+    assert!(!editor.load.is_running());
+    assert!(!editor.view.zoom.on);
+    assert!(editor.presets.revision > presets);
+    Ok(())
+}
 #[test]
 fn a_copy_name_that_cannot_be_saved_keeps_the_app_from_moving_on() -> anyhow::Result<()> {
     let dir = tempfile::tempdir()?;

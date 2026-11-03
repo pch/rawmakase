@@ -479,16 +479,11 @@ impl Editor {
             Ok(mut l) => {
                 self.relink_open = None;
                 self.onboarding.catalog_error = None;
-                self.load.invalidate();
                 // The photo being left is Previous, as when moving between photos.
                 if let Some(settings) = self.current_settings() {
                     self.previous_settings = Some(settings);
                 }
-                self.messages.document_closed();
-                self.document.reset(None);
-                self.preview.clear_document();
-                self.presets.clear_document();
-                self.view.clear_document();
+                self.close_document();
                 self.selection.clear_catalog();
                 if !l.messages.line().is_empty() {
                     self.messages.absorb(&mut l.messages);
