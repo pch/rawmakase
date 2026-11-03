@@ -139,6 +139,9 @@ struct Queue {
     pending: VecDeque<Job>,
     /// The running job's key and its cancel flag.
     running: Option<(String, Arc<AtomicBool>)>,
+    /// The worker has a job, from taking it until its result is handed over (which
+    /// goes on after `running` is cleared).
+    working: bool,
     /// Develop requests that joined the running job.
     joined: Vec<(Arc<CameraImage>, Arc<AtomicBool>, Sink)>,
     outcomes: HashMap<String, Outcome>,
@@ -160,6 +163,14 @@ struct Shared {
     provider: Provider,
     source: Source,
     loader: Loader,
+}
+
+/// Clears [`Queue::working`] once a job is finished with, also when finishing panics.
+struct Working<'a>(&'a Service);
+impl Drop for Working<'_> {
+    fn drop(&mut self) {
+        self.0.queue().working = false;
+    }
 }
 
 /// The service; clones share it.
@@ -246,11 +257,11 @@ impl Service {
     pub(crate) fn cache(&self) -> &AiCache {
         &self.shared.cache
     }
-    /// Whether a job is queued or running. A running job finishes even once nobody
-    /// wants it, so this outlasts the photo it was asked for.
+    /// Whether a job is queued, running or handing over its result. A running job
+    /// finishes even once nobody wants it, so this outlasts the photo it was asked for.
     pub(crate) fn busy(&self) -> bool {
         let queue = self.queue();
-        queue.running.is_some() || !queue.pending.is_empty()
+        queue.working || !queue.pending.is_empty()
     }
     fn queue(&self) -> std::sync::MutexGuard<'_, Queue> {
         self.shared.queue.lock().unwrap_or_else(|e| e.into_inner())
@@ -432,6 +443,7 @@ impl Service {
                     if let Some(job) = queue.pending.pop_front() {
                         let cancel = Arc::new(AtomicBool::new(false));
                         queue.running = Some((job.key.clone(), cancel));
+                        queue.working = true;
                         break job;
                     }
                     queue = self
@@ -451,6 +463,7 @@ impl Service {
                 self.run(&job, &cancel, &mut models)
             }))
             .unwrap_or_else(|_| Err(anyhow!("AI Denoise stopped unexpectedly")));
+            let _working = Working(self);
             self.finish(job, result);
         }
     }

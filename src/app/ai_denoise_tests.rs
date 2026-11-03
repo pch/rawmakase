@@ -857,3 +857,48 @@ fn a_job_under_way_keeps_the_librarys_previews_in_the_background() {
     }
     assert_eq!(f.behaviour.runs.load(Ordering::SeqCst), tiles());
 }
+
+/// The result is assembled at full size and handed over after the job leaves the
+/// queue: the Library's previews stay in the background until that is done too.
+#[test]
+fn a_job_handing_over_its_result_keeps_the_librarys_previews_in_the_background() {
+    use crate::app::library::Pace;
+    let ctx = eframe::egui::Context::default();
+    let mut editor = super::super::tests::community_editor(&ctx, "X-T20", false);
+    let f = fixture(Provider::Cpu, Behaviour::default());
+    editor.ai_denoise = f.service.clone();
+    editor.module = super::super::Module::Library;
+    // The final result's sink waits here, inside the hand-over.
+    let handing = Arc::new(Mutex::new(()));
+    let held = handing.lock().unwrap();
+    let (tx, rx) = mpsc::channel();
+    let tx = Mutex::new(tx);
+    let sink_gate = handing.clone();
+    let photo = f.photo("a.raw");
+    f.service.request(Request {
+        path: photo.clone(),
+        file: crate::storage::Identity::read(&photo).unwrap(),
+        plain: f.plain(),
+        region: None,
+        wanted: Arc::new(AtomicBool::new(true)),
+        sink: Arc::new(move |u: Update| {
+            let last = matches!(u.state, State::Ready(_) | State::Failed(_));
+            if last {
+                let _ = tx.lock().unwrap().send(());
+                drop(sink_gate.lock().unwrap());
+            }
+        }),
+    });
+    rx.recv_timeout(Duration::from_secs(20))
+        .expect("the result is handed over");
+    assert_eq!(editor.preview_pace(), Pace::Background);
+    drop(held);
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while editor.preview_pace() == Pace::Background {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the hand-over never ended"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
