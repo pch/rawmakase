@@ -25,7 +25,9 @@ mod known_groups {
     pub(super) fn deserialize<'de, D: Deserializer<'de>>(
         d: D,
     ) -> Result<Option<GroupSelection>, D::Error> {
-        let names = Option::<Vec<serde_json::Value>>::deserialize(d)?;
+        let names =
+            Option::<Vec<serde_json::Value>>::deserialize(serde_json::Value::deserialize(d)?)
+                .unwrap_or_default();
         Ok(names.map(|names| {
             let mut groups = GroupSelection::none();
             for group in names
@@ -38,74 +40,101 @@ mod known_groups {
         }))
     }
 }
+/// Reads a session field, or its default when the value does not read: a malformed
+/// field resets itself, not the whole session.
+fn lenient<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    Ok(T::deserialize(serde_json::Value::deserialize(d)?).unwrap_or_default())
+}
 #[derive(Default, Serialize, Deserialize)]
 pub(crate) struct Session {
+    #[serde(default, deserialize_with = "lenient")]
     pub last_path: Option<PathBuf>,
     /// Preferences > Monitor profile: a chosen ICC profile; none follows the
     /// system, or with `monitor_srgb` shows sRGB as it is.
+    #[serde(default, deserialize_with = "lenient")]
     pub monitor: Option<PathBuf>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
     pub monitor_srgb: bool,
     /// The window was maximized when last seen; it opens maximized again.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
     pub maximized: bool,
     /// Titles of panel sections the user collapsed; all others start open.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub collapsed: std::collections::BTreeSet<String>,
     /// The sides of the window in Solo Mode, where opening a panel closes the
     /// others: "develop-left", "develop-right", "library-left", "library-right".
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub solo: std::collections::BTreeSet<String>,
     /// The panels Develop and the Library show; all of them by default.
     #[serde(default, deserialize_with = "crate::app::panels::lenient")]
     pub panels: crate::app::panels::WorkspacePanels,
     /// The first-run setup was completed; until then it opens on launch.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub onboarding_done: bool,
     /// Where the user was in the last catalog: the Library folder, the
     /// selected photo, and whether Develop was open.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub library_source: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub selected_photo: Option<PhotoId>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub develop: bool,
     /// Which demosaic full-size decodes use.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub demosaic: crate::camera_data::Demosaic,
     /// The user turned off checking for updates, which is on by default.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub no_update_checks: bool,
     /// A release the user chose to skip; newer ones are still offered.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub skipped_version: Option<String>,
     /// The interface's palette file; None is RAWmakase's own greys.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub theme: Option<String>,
     /// The user picked `theme`. Until then Omarchy's theme is followed on
     /// an Omarchy desktop, and RAWmakase's greys elsewhere.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub theme_chosen: bool,
     /// Photo > Auto Advance: a rating, flag or label moves to the next photo.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub auto_advance: bool,
     /// The user turned off applying the Auto mix when first converting to black &
     /// white, which is on by default.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub no_auto_black_white_mix: bool,
     /// Preferences > Profiles & Presets: the user turned off Lens Corrections'
     /// suggestions of Lensfun profiles, which are on by default.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
     pub no_lensfun_suggestions: bool,
     /// Cameras ("make model", lower case) whose community camera-profile offer the
     /// user dismissed under Develop's Profile menu.
-    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::collections::BTreeSet::is_empty"
+    )]
     pub dismissed_community_profiles: std::collections::BTreeSet<String>,
     /// Preferences > Catalog: the user paused reading checksums.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub pause_checksums: bool,
     /// How the Library showed its photos last time.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub library_layout: LibraryLayout,
     /// The groups Copy Settings copied last time; None until it has been used. Written
     /// with only the groups releases before AI Denoise know (an unknown one makes them
@@ -114,34 +143,76 @@ pub(crate) struct Session {
     #[serde(default, with = "known_groups")]
     pub copy_groups: Option<crate::model::settings_groups::GroupSelection>,
     /// Whether Copy Settings includes AI Denoise, apart from `copy_groups`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub copy_ai_denoise: Option<bool>,
     /// The Crop tool's guide overlay.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub crop_guides: CropGuideLayout,
     /// The Crop tool's aspect last chosen from its menu, by stable name ("original",
     /// "free", "1x1", "4x5", …); an uncropped photo opens with it. A name this
     /// version does not know reads as Original.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub crop_aspect: String,
     /// Preferences > Raw Defaults: what photos without an edit start from.
     #[serde(default, deserialize_with = "crate::raw_defaults::lenient_settings")]
     pub raw_defaults: crate::raw_defaults::RawDefaults,
     /// Preferences > Standard Preview Size, the long edge in pixels.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub standard_preview_size: Option<u32>,
     /// Preferences > Catalog: decoded-image disk cache limit in GiB.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub decoded_cache_size_gib: Option<u32>,
     /// Preferences > Performance: the folder chosen for decoded images; `None`
     /// keeps them in the per-user cache directory.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub decoded_cache_folder: Option<PathBuf>,
     /// Preferences > Automatically Discard 1:1 Previews, in days unused; 0 is
     /// Never.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub one_to_one_discard_days: Option<u32>,
+    /// Fields this release does not know, written by a later or an earlier one: kept
+    /// as they were read and written back, so going back to that release keeps them.
+    #[serde(flatten)]
+    pub unknown: Unknown,
 }
+/// A session's fields this release does not know. A retired field that earlier
+/// releases still read strictly is kept only when it reads as they expect: a
+/// malformed one would make them drop the whole session.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(transparent)]
+pub(crate) struct Unknown(serde_json::Map<String, serde_json::Value>);
+impl<'de> Deserialize<'de> for Unknown {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mut fields = serde_json::Map::deserialize(d)?;
+        fields.retain(|name, value| match name.as_str() {
+            // Pinned panels, read by v0.3.0 to v0.4.7.
+            "pinned" => std::collections::BTreeSet::<String>::deserialize(value.clone()).is_ok(),
+            _ => true,
+        });
+        Ok(Self(fields))
+    }
+}
+
 impl Session {
     /// The Copy Settings groups saved last time, with AI Denoise's (saved apart), which
     /// a session from before it includes, as it is by default.
@@ -343,5 +414,279 @@ mod copy_groups_tests {
         assert!(groups.contains(SettingGroup::Exposure));
         assert!(groups.contains(SettingGroup::AiDenoise));
         assert!(!groups.contains(SettingGroup::Contrast));
+    }
+}
+
+#[cfg(test)]
+mod compatibility_tests {
+    use super::Session;
+    use crate::app::Editor;
+    use crate::model::settings_groups::{GroupInclusion, SettingGroup};
+    use serde::Deserialize;
+    use serde_json::json;
+
+    /// `Session` as v0.4.10, the last release before AI Denoise, read it: strictly,
+    /// so a value it cannot read drops the whole session and resets every
+    /// preference. The panels and raw defaults it read leniently are left out.
+    #[derive(Deserialize)]
+    #[allow(dead_code)]
+    struct SessionV0_4_10 {
+        last_path: Option<std::path::PathBuf>,
+        monitor: Option<std::path::PathBuf>,
+        #[serde(default)]
+        monitor_srgb: bool,
+        #[serde(default)]
+        maximized: bool,
+        #[serde(default)]
+        collapsed: std::collections::BTreeSet<String>,
+        #[serde(default)]
+        solo: std::collections::BTreeSet<String>,
+        #[serde(default)]
+        onboarding_done: bool,
+        #[serde(default)]
+        library_source: String,
+        #[serde(default)]
+        selected_photo: Option<i64>,
+        #[serde(default)]
+        develop: bool,
+        #[serde(default)]
+        demosaic: DemosaicV0_4_10,
+        #[serde(default)]
+        no_update_checks: bool,
+        #[serde(default)]
+        skipped_version: Option<String>,
+        #[serde(default)]
+        theme: Option<String>,
+        #[serde(default)]
+        theme_chosen: bool,
+        #[serde(default)]
+        auto_advance: bool,
+        #[serde(default)]
+        no_auto_black_white_mix: bool,
+        #[serde(default)]
+        no_lensfun_suggestions: bool,
+        #[serde(default)]
+        pause_checksums: bool,
+        #[serde(default)]
+        library_layout: LibraryLayoutV0_4_10,
+        #[serde(default)]
+        copy_groups: Option<Vec<GroupV0_4_10>>,
+        #[serde(default)]
+        crop_guides: CropGuideLayoutV0_4_10,
+        #[serde(default)]
+        crop_aspect: String,
+        #[serde(default)]
+        standard_preview_size: Option<u32>,
+        #[serde(default)]
+        decoded_cache_size_gib: Option<u32>,
+        #[serde(default)]
+        decoded_cache_folder: Option<std::path::PathBuf>,
+        #[serde(default)]
+        one_to_one_discard_days: Option<u32>,
+    }
+    #[derive(Default, Deserialize)]
+    enum DemosaicV0_4_10 {
+        #[default]
+        #[serde(alias = "Libraw")]
+        Rawmakase,
+    }
+    #[derive(Default, Deserialize)]
+    #[serde(default)]
+    #[allow(dead_code)]
+    struct LibraryLayoutV0_4_10 {
+        view: String,
+        sort: String,
+        reverse: bool,
+        cell_style: String,
+        thumb_size: Option<f32>,
+        query: String,
+        flags: Vec<i32>,
+        rating: Option<i32>,
+        rating_op: String,
+        labels: Vec<String>,
+        kind: String,
+        filters_off: bool,
+        subfolders_hidden: bool,
+    }
+    #[derive(Default, Deserialize)]
+    #[serde(default)]
+    #[allow(dead_code)]
+    struct CropGuideLayoutV0_4_10 {
+        guide: String,
+        orientation: u32,
+        show: String,
+    }
+    /// The one field v0.3.0 to v0.4.7 read that later releases retired, as they
+    /// read it.
+    #[derive(Deserialize)]
+    #[allow(dead_code)]
+    struct PinnedV0_4_7 {
+        #[serde(default)]
+        pinned: std::collections::BTreeSet<String>,
+    }
+    /// v0.4.10's setting groups; any other name fails its whole session.
+    #[derive(Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(dead_code)]
+    enum GroupV0_4_10 {
+        WhiteBalance,
+        Exposure,
+        Contrast,
+        Highlights,
+        Shadows,
+        Whites,
+        Blacks,
+        Texture,
+        Clarity,
+        Dehaze,
+        Vibrance,
+        Saturation,
+        TreatmentAndProfile,
+        ToneCurve,
+        ColorAdjustments,
+        BlackWhiteMix,
+        ColorGrading,
+        Sharpening,
+        LuminanceNoiseReduction,
+        ColorNoiseReduction,
+        LensProfileCorrections,
+        ChromaticAberration,
+        LensVignetting,
+        UprightMode,
+        UprightTransforms,
+        TransformAdjustments,
+        PostCropVignetting,
+        Grain,
+        ProcessVersion,
+        Calibration,
+        SpotRemoval,
+        Crop,
+        Masking,
+    }
+
+    /// A session as a later release might write it: fields this release does not
+    /// know, beside ones it does.
+    fn later_release_session() -> serde_json::Value {
+        json!({
+            "last_path": null,
+            "monitor": null,
+            "onboarding_done": true,
+            "auto_advance": true,
+            "theme": "nord.toml",
+            "copy_groups": ["exposure", "some_later_group"],
+            "copy_ai_denoise": true,
+            "decoded_cache_size_gib": 16,
+            "a_later_preference": {"nested": [1, 2, 3], "on": true},
+            "another_later_flag": "kept as written",
+        })
+    }
+
+    /// Loads `session` into an editor, saves it again, and returns what was saved.
+    fn saved_through_the_editor(session: serde_json::Value) -> serde_json::Value {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        std::fs::write(&path, serde_json::to_vec(&session).unwrap()).unwrap();
+        let session: Session = crate::storage::read_json_or_default(&path);
+        let mut e = Editor::with_context(&eframe::egui::Context::default(), None, session, None);
+        e.session_file = Some(path.clone());
+        e.save_session().unwrap();
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap()
+    }
+
+    /// Fields a later release wrote survive this one loading and saving the session,
+    /// so going back to that release keeps its preferences.
+    #[test]
+    fn fields_this_release_does_not_know_survive_a_save() {
+        let saved = saved_through_the_editor(later_release_session());
+        assert_eq!(
+            saved["a_later_preference"],
+            json!({"nested": [1, 2, 3], "on": true})
+        );
+        assert_eq!(saved["another_later_flag"], "kept as written");
+        // Known fields are still this release's.
+        assert_eq!(saved["onboarding_done"], true);
+        assert_eq!(saved["theme"], "nord.toml");
+        assert_eq!(saved["decoded_cache_size_gib"], 16);
+    }
+
+    /// A field that does not read as this release expects resets alone: the rest of
+    /// the session, and the fields it does not know, are kept.
+    #[test]
+    fn a_malformed_field_resets_only_itself() {
+        let mut session = later_release_session();
+        let fields = session.as_object_mut().unwrap();
+        fields.insert("maximized".into(), json!("yes"));
+        fields.insert("collapsed".into(), json!(7));
+        fields.insert("library_layout".into(), json!([1, 2]));
+        fields.insert("library_source".into(), json!({"folder": 1}));
+        fields.insert("selected_photo".into(), json!("photo"));
+        fields.insert("demosaic".into(), json!("Amaze"));
+        fields.insert("copy_groups".into(), json!(3));
+        fields.insert("copy_ai_denoise".into(), json!("no"));
+        fields.insert("crop_guides".into(), json!(false));
+        fields.insert("standard_preview_size".into(), json!(-1));
+        fields.insert("decoded_cache_folder".into(), json!(42));
+        fields.insert("last_path".into(), json!(["not", "a", "path"]));
+        let read: Session = serde_json::from_value(session.clone()).unwrap();
+        assert!(read.onboarding_done && read.auto_advance);
+        assert_eq!(read.theme.as_deref(), Some("nord.toml"));
+        assert_eq!(read.decoded_cache_size_gib(), 16);
+        assert!(!read.maximized && read.collapsed.is_empty());
+        assert_eq!(read.library_layout, Default::default());
+        assert_eq!(read.copy_groups(), None);
+        assert_eq!(read.last_path, None);
+        assert_eq!(read.decoded_cache_folder, None);
+
+        let saved = saved_through_the_editor(session);
+        assert_eq!(saved["onboarding_done"], true);
+        assert_eq!(saved["another_later_flag"], "kept as written");
+        serde_json::from_value::<SessionV0_4_10>(saved).unwrap();
+    }
+
+    /// What this release saves stays readable by v0.4.10, which drops a whole session
+    /// it cannot read: AI Denoise's group stays out of `copy_groups`, and fields from
+    /// a later release are ones it skips.
+    #[test]
+    fn a_saved_session_stays_readable_by_the_release_before_ai_denoise() {
+        for ai_denoise in [GroupInclusion::Included, GroupInclusion::Excluded] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("session.json");
+            std::fs::write(&path, serde_json::to_vec(&later_release_session()).unwrap()).unwrap();
+            let session: Session = crate::storage::read_json_or_default(&path);
+            let mut e =
+                Editor::with_context(&eframe::egui::Context::default(), None, session, None);
+            e.session_file = Some(path.clone());
+            e.copy_groups.set(SettingGroup::AiDenoise, ai_denoise);
+            e.copy_groups
+                .set(SettingGroup::ColorNoiseReduction, GroupInclusion::Included);
+            e.maximized = true;
+            e.auto_advance = true;
+            e.save_session().unwrap();
+            let bytes = std::fs::read(&path).unwrap();
+            let old: SessionV0_4_10 = serde_json::from_slice(&bytes).unwrap();
+            assert!(old.maximized && old.auto_advance && old.onboarding_done);
+            assert!(old.copy_groups.is_some_and(|g| !g.is_empty()));
+            // And this release reads it back as it was.
+            let back: Session = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(back.copy_groups(), Some(e.copy_groups.clone()));
+        }
+    }
+
+    /// Pinned panels, retired in v0.4.8, are still read strictly by v0.3.0 to v0.4.7:
+    /// kept when they read as those releases expect, dropped when they do not.
+    #[test]
+    fn a_retired_field_is_kept_only_as_older_releases_read_it() {
+        let mut session = later_release_session();
+        session["pinned"] = json!(["Histogram", "Navigator"]);
+        let saved = saved_through_the_editor(session.clone());
+        assert_eq!(saved["pinned"], json!(["Histogram", "Navigator"]));
+        serde_json::from_value::<PinnedV0_4_7>(saved).unwrap();
+        for malformed in [json!(7), json!([1, 2]), json!(null), json!({"a": "b"})] {
+            session["pinned"] = malformed;
+            let saved = saved_through_the_editor(session.clone());
+            assert!(saved.get("pinned").is_none(), "{saved}");
+            assert_eq!(saved["another_later_flag"], "kept as written");
+            serde_json::from_value::<PinnedV0_4_7>(saved).unwrap();
+        }
     }
 }

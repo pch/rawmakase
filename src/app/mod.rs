@@ -29,6 +29,8 @@ pub(crate) struct Editor {
     document: Document,
     context: egui::Context,
     session_file: Option<PathBuf>,
+    /// The session's fields this release does not know, written back as read.
+    session_unknown: crate::app::session::Unknown,
     library: Option<Box<crate::app::library::Library>>,
     /// The module shown: the Library grid, or Develop.
     module: Module,
@@ -300,6 +302,7 @@ impl Editor {
             document: Default::default(),
             context: ctx.clone(),
             session_file,
+            session_unknown: session.unknown.clone(),
             library: None,
             module: Module::Develop,
             chrome: Default::default(),
@@ -445,6 +448,7 @@ impl Editor {
                     one_to_one_discard_days: Some(
                         self.preview_builds.discard_one_to_one_after.unwrap_or(0),
                     ),
+                    unknown: self.session_unknown.clone(),
                 },
             )?;
         }
