@@ -81,6 +81,8 @@ pub(super) struct Loupe {
     /// double-click to undo.
     before_click: Option<(bool, f64, Option<PhotoId>)>,
     pub state: State,
+    /// The photo's failure, until the Library says it in the top bar.
+    unreported: Option<String>,
 }
 impl Loupe {
     pub(super) fn new(ctx: &egui::Context) -> Self {
@@ -133,6 +135,7 @@ impl Loupe {
             view: Vec2::ZERO,
             before_click: None,
             state: State::Loading,
+            unreported: None,
         }
     }
     /// Asks for `photo` at `edge` pixels, unless that is already on its way;
@@ -224,6 +227,11 @@ impl Loupe {
         self.full = None;
         self.texture = None;
         self.state = State::Loading;
+        self.unreported = None;
+    }
+    /// The photo's failure, once, for the top bar.
+    pub(super) fn take_failure(&mut self) -> Option<String> {
+        self.unreported.take()
     }
     fn poll(&mut self, ctx: &egui::Context) {
         self.regions.poll(ctx);
@@ -245,7 +253,10 @@ impl Loupe {
             }
             match done.result {
                 Ok(prepared) => self.show(ctx, prepared),
-                Err(e) => self.state = State::Failed(e),
+                Err(e) => {
+                    self.unreported = Some(e.clone());
+                    self.state = State::Failed(e);
+                }
             }
         }
     }
@@ -433,6 +444,9 @@ impl Library {
     ) -> Action {
         let palette = theme::palette(ui.ctx());
         self.loupe.poll(ui.ctx());
+        if let Some(e) = self.loupe.take_failure() {
+            self.messages.warn(format!("Preview unavailable: {e}"));
+        }
         let Some(id) = self.selection.active else {
             self.close_loupe();
             return Action::None;
@@ -646,8 +660,8 @@ impl Library {
             ),
             _ if zoom.on && (self.loupe.regions.pending || full.is_none()) => "Loading…".into(),
             (State::Loading, ..) => "Loading…".into(),
-            (State::Ready, ..) => String::new(),
-            (State::Failed(e), ..) => format!("Preview unavailable: {e}"),
+            // A failure is said in the top bar.
+            (State::Ready | State::Failed(_), ..) => String::new(),
         };
         if !note.is_empty() {
             ui.painter().text(

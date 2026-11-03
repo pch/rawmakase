@@ -1298,6 +1298,9 @@ impl Library {
         self.poll_reread();
         self.cache.poll(ctx);
         self.screen.poll(ctx);
+        for e in self.screen.take_failures() {
+            self.messages.warn(format!("Preview unavailable: {e}"));
+        }
     }
     /// Hands the worker the photos shown last frame. Call once per frame.
     pub(super) fn publish_shown(&mut self) {

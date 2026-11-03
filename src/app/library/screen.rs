@@ -68,7 +68,8 @@ struct Shared {
 pub(super) enum Shown<'a> {
     Ready(&'a egui::TextureHandle),
     Loading,
-    Failed(&'a str),
+    /// Failed; why is said in the top bar (`take_failures`).
+    Failed,
 }
 
 pub(super) struct ScreenPreviews {
@@ -81,7 +82,9 @@ pub(super) struct ScreenPreviews {
     /// Requests on their way, by the ticket of the latest.
     pending: HashMap<Key, u64>,
     next_ticket: u64,
-    failed: HashMap<Key, String>,
+    failed: HashSet<Key>,
+    /// Failures since the Library last said them in the top bar.
+    unreported: Vec<String>,
     textures: HashMap<Key, egui::TextureHandle>,
     order: VecDeque<Key>,
 }
@@ -108,7 +111,8 @@ impl ScreenPreviews {
             seen: HashSet::new(),
             pending: HashMap::new(),
             next_ticket: 0,
-            failed: HashMap::new(),
+            failed: HashSet::new(),
+            unreported: Vec::new(),
             textures: HashMap::new(),
             order: VecDeque::new(),
         }
@@ -131,7 +135,7 @@ impl ScreenPreviews {
         );
         self.seen.insert(key.clone());
         if !self.textures.contains_key(&key)
-            && !self.failed.contains_key(&key)
+            && !self.failed.contains(&key)
             && !self.pending.contains_key(&key)
         {
             self.next_ticket += 1;
@@ -149,11 +153,15 @@ impl ScreenPreviews {
             self.order.retain(|k| *k != key);
             self.order.push_back(key);
             Shown::Ready(texture)
-        } else if let Some(error) = self.failed.get(&key) {
-            Shown::Failed(error)
+        } else if self.failed.contains(&key) {
+            Shown::Failed
         } else {
             Shown::Loading
         }
+    }
+    /// The failures since last asked, each once, for the top bar.
+    pub(super) fn take_failures(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.unreported)
     }
     pub(super) fn poll(&mut self, ctx: &egui::Context) {
         while let Ok(Done {
@@ -193,7 +201,8 @@ impl ScreenPreviews {
                     self.textures.insert(key, texture);
                 }
                 Outcome::Failed(error) => {
-                    self.failed.insert(key, error);
+                    self.failed.insert(key);
+                    self.unreported.push(error);
                 }
                 Outcome::Skipped => {}
             }
@@ -222,7 +231,7 @@ impl ScreenPreviews {
     pub(super) fn forget(&mut self, id: PhotoId) {
         self.textures.retain(|key, _| key.0 != id);
         self.order.retain(|key| key.0 != id);
-        self.failed.retain(|key, _| key.0 != id);
+        self.failed.retain(|key| key.0 != id);
         self.pending.retain(|key, _| key.0 != id);
     }
     #[cfg(test)]
@@ -395,12 +404,18 @@ mod tests {
         screen.wait(&ctx);
         assert!(matches!(
             screen.get(&photos[0], 100, 0, || None),
-            Shown::Failed("The preview could not be rendered")
+            Shown::Failed
         ));
         assert!(matches!(
             screen.get(&photos[1], 100, 0, || None),
-            Shown::Failed("no such photo")
+            Shown::Failed
         ));
+        let mut failures = screen.take_failures();
+        failures.sort();
+        assert_eq!(
+            failures,
+            ["The preview could not be rendered", "no such photo"]
+        );
         assert!(matches!(
             screen.get(&photos[2], 100, 0, || None),
             Shown::Ready(_)
@@ -459,7 +474,12 @@ mod tests {
         let a = photo(PhotoId(1), Path::new("a"));
         let _ = screen.get(&a, 100, 0, || None);
         screen.wait(&ctx);
-        assert!(matches!(screen.get(&a, 100, 0, || None), Shown::Failed(_)));
+        assert!(matches!(screen.get(&a, 100, 0, || None), Shown::Failed));
+        // Its failure is for the top bar once, however often it is shown.
+        assert_eq!(screen.take_failures().len(), 1);
+        let _ = screen.get(&a, 100, 0, || None);
+        screen.poll(&ctx);
+        assert!(screen.take_failures().is_empty());
         screen.retry_failed();
         assert!(matches!(screen.get(&a, 100, 0, || None), Shown::Loading));
     }

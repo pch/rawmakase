@@ -2114,6 +2114,16 @@ fn loupe_shows_a_jpeg_at_the_size_of_the_view() -> Result<()> {
     output.textures_delta.clear();
     library.loupe.wait(&ctx);
     assert!(matches!(library.loupe.state, loupe::State::Failed(_)));
+    // Said once in the top bar with the app's other messages, not over the
+    // photo, however many frames show it.
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(input(), |ui| {
+            library.grid(ui, &mut Default::default(), true, None);
+        });
+        output.textures_delta.clear();
+    }
+    assert!(library.messages.has_entry_with("Preview unavailable"));
+    assert_eq!(library.messages.entry_count(), 1);
     library.close_loupe();
     assert!(!library.loupe_open());
     Ok(())
