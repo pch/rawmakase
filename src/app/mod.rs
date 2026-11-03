@@ -955,6 +955,8 @@ mod monitor;
 mod naming;
 mod navigator;
 mod onboarding;
+#[cfg(test)]
+mod one_shot_worker_tests;
 mod overlay;
 mod panels;
 mod photo_metadata;

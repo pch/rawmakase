@@ -499,6 +499,34 @@ mod tests {
         assert_eq!(e.view.tool, Tool::None);
     }
 
+    /// Should the sample panic, it still reports, so the drag stops waiting.
+    #[test]
+    fn a_panicking_sample_still_reports_and_stops_running() {
+        let ctx = egui::Context::default();
+        let mut e = editor(&ctx);
+        e.document
+            .set_image(crate::app::one_shot_worker_tests::broken_photo());
+        e.toggle_targeted(Target::ToneCurve);
+        e.start_targeted_drag(Target::ToneCurve, [0.5, 0.5]);
+        assert!(e.document.targeted_pick.is_running());
+        let (sampled, result) = loop {
+            match e.rx.recv_timeout(std::time::Duration::from_secs(30)) {
+                Ok(crate::app::worker::Event::TargetedSample {
+                    sampled, result, ..
+                }) => break (sampled, result),
+                Ok(_) => continue,
+                Err(err) => panic!("no sample: {err}"),
+            }
+        };
+        assert_eq!(*sampled, *e.document.edit.recipe());
+        assert_eq!(
+            result.as_ref().map(|_| ()),
+            Err(&"Cannot sample the photo: sampling failed unexpectedly".to_string())
+        );
+        e.targeted_sample_ready(&sampled, result);
+        assert!(!e.document.targeted_pick.is_running());
+    }
+
     #[test]
     fn a_drag_released_before_its_sample_is_applied_when_it_arrives() {
         let ctx = egui::Context::default();
