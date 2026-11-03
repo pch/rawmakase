@@ -103,6 +103,7 @@ fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImpo
         library.session.catalog.save_edit(
             photos[2].id,
             &photos[2].path,
+            &crate::storage::Identity::read(&photos[2].path)?,
             &recipe,
             &Default::default(),
             crate::catalog::HistoryUpdate::Keep,
@@ -120,7 +121,7 @@ fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImpo
         let saved = library.thumbnail(photos[2].id).unwrap().id();
         assert!(!library.cache.thumbs.contains_key(&photos[0].path));
         editor.document.catalog_photo = Some(current);
-        editor.document.path = Some(if wrong_path {
+        editor.document.opened_at(if wrong_path {
             PathBuf::from("a-replaced-photo.RAF")
         } else {
             photos[0].path.clone()
@@ -482,6 +483,7 @@ fn loupe_develops_a_jpeg_once_it_has_an_edit() -> Result<()> {
     library.session.catalog.save_edit(
         id,
         &file,
+        &crate::storage::Identity::read(&file)?,
         &recipe,
         &Default::default(),
         crate::catalog::HistoryUpdate::Keep,
@@ -2889,6 +2891,7 @@ fn photos_sort_in_lightrooms_orders() -> Result<()> {
     library.session.catalog.save_edit(
         b9,
         &path,
+        &crate::storage::Identity::read(&path)?,
         &crate::model::recipe::Recipe::default(),
         &Default::default(),
         crate::catalog::HistoryUpdate::Keep,

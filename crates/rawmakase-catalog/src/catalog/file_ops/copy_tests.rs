@@ -118,6 +118,7 @@ fn edited(fx: &mut Fx, name: &str) -> Result<()> {
     fx.cat.save_edit(
         id,
         &source,
+        &crate::storage::Identity::read(&source)?,
         &Recipe::default(),
         &ExportOptions::default(),
         HistoryUpdate::Keep,

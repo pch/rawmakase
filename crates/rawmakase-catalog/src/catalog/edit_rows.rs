@@ -60,8 +60,8 @@ impl CheckedNew {
 
 impl Catalog {
     /// Checks `change` before it is written: the recipe and export options
-    /// are valid, the photo's file can be identified, and the edit it
-    /// replaces was saved for that same file.
+    /// are valid, the photo's file is still the one the edit was made for,
+    /// and the edit it replaces was saved for that same file.
     pub(super) fn check_edit<'a>(&self, change: &EditChange<'_, 'a>) -> Result<CheckedChange<'a>> {
         let e = match change {
             EditChange::Clear { id } => {
@@ -72,7 +72,12 @@ impl Catalog {
             }
             EditChange::Save(e) => e,
         };
-        let save = self.checked(&Identity::read(e.path)?, e.recipe, e.export, e.history)?;
+        ensure!(
+            Identity::read(e.path)? == *e.source,
+            "{} changed since its edit was made; edit not saved",
+            e.path.display()
+        );
+        let save = self.checked(e.source, e.recipe, e.export, e.history)?;
         // Refuse replacing an edit after the underlying source changed.
         let _ = self.load_edit(e.id, e.path)?;
         Ok(CheckedChange {

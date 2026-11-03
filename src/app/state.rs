@@ -469,6 +469,13 @@ impl Document {
         self.path = Some(path);
         self.edit.save_state_mut().retry_now();
     }
+    /// Stands in for opening the file at `path`: its path and its identity as
+    /// read now, which saves are checked against.
+    #[cfg(test)]
+    pub(super) fn opened_at(&mut self, path: PathBuf) {
+        self.file = crate::storage::Identity::read(&path).ok();
+        self.path = Some(path);
+    }
     pub(crate) fn reset(&mut self, catalog_photo: Option<PhotoId>) {
         *self = Self {
             catalog_photo,

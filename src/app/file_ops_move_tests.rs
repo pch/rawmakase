@@ -78,7 +78,7 @@ fn moving_asks_with_its_counts_and_the_files_rows_and_open_photo_follow() -> any
     // moves.
     e.module = Module::Develop;
     e.document.catalog_photo = Some(a);
-    e.document.path = Some(d.path().join("photos/a.RAF"));
+    e.document.opened_at(d.path().join("photos/a.RAF"));
     e.document.set_image(decoded(false));
     e.request_photo_move(vec![a, b], root(&e), "sub".into(), "sub".into());
     settle(&mut e);
@@ -324,7 +324,7 @@ fn an_open_edit_that_cant_be_saved_puts_off_the_check_once() -> anyhow::Result<(
     let file = d.path().join("photos/a.RAF");
     e.module = Module::Develop;
     e.document.catalog_photo = Some(a);
-    e.document.path = Some(file.clone());
+    e.document.opened_at(file.clone());
     e.document.edit.change(None, |r| r.exposure = 0.8);
     std::fs::rename(&file, d.path().join("photos/gone.RAF"))?;
     let catalog = e
@@ -440,7 +440,7 @@ fn a_photo_shown_at_half_size_when_it_moves_is_opened_again_from_its_new_file() 
     // a opened, shown at half size; its full-size decode, of the old path,
     // still to come.
     e.document.reset(Some(a));
-    e.document.path = Some(old.clone());
+    e.document.opened_at(old.clone());
     let (opening, _) = e.load.start();
     e.tx.send(Event::Ready {
         id: opening,
@@ -479,7 +479,7 @@ fn a_photo_whose_load_failed_before_it_moved_is_opened_again_from_its_new_file()
     let (d, mut e, _) = editor_with_folders(&["a.RAF", "sub/x.RAF"])?;
     let a = photo(&e, &d, "a.RAF");
     e.document.reset(Some(a));
-    e.document.path = Some(d.path().join("photos/a.RAF"));
+    e.document.opened_at(d.path().join("photos/a.RAF"));
     let (opening, _) = e.load.start();
     e.tx.send(Event::Failed {
         id: opening,

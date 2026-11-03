@@ -56,6 +56,7 @@ fn save(cat: &mut Catalog, id: PhotoId, file: &Path, recipe: &Recipe) -> Result<
     cat.save_edit(
         id,
         file,
+        &crate::storage::Identity::read(file)?,
         recipe,
         &ExportOptions::default(),
         HistoryUpdate::Keep,

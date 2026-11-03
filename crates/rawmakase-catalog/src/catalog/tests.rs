@@ -221,6 +221,7 @@ fn import_is_lossless_atomic_and_virtual_copies_are_independent() -> Result<()> 
     cat.save_edit(
         PhotoId(40),
         &p,
+        &crate::storage::Identity::read(&p)?,
         &edit,
         &ExportOptions::default(),
         crate::catalog::HistoryUpdate::Keep,
@@ -237,6 +238,7 @@ fn import_is_lossless_atomic_and_virtual_copies_are_independent() -> Result<()> 
         cat.save_edit(
             PhotoId(40),
             &p,
+            &crate::storage::Identity::read(&p)?,
             &edit,
             &ExportOptions::default(),
             crate::catalog::HistoryUpdate::Keep
@@ -673,6 +675,7 @@ fn catalog_keeps_spots_and_masks_out_of_the_recipe_column() -> Result<()> {
     c.save_edit(
         id,
         &photo,
+        &crate::storage::Identity::read(&photo)?,
         &r,
         &ExportOptions::default(),
         crate::catalog::HistoryUpdate::Keep,
@@ -692,6 +695,7 @@ fn catalog_keeps_spots_and_masks_out_of_the_recipe_column() -> Result<()> {
     c.save_edit(
         id,
         &photo,
+        &crate::storage::Identity::read(&photo)?,
         &Recipe::default(),
         &ExportOptions::default(),
         crate::catalog::HistoryUpdate::Keep,
@@ -769,6 +773,7 @@ fn virtual_copies_are_created_promoted_renamed_and_removed() -> Result<()> {
     cat.save_edit(
         original.id,
         &path,
+        &crate::storage::Identity::read(&path)?,
         &edit,
         &ExportOptions::default(),
         crate::catalog::HistoryUpdate::Keep,
@@ -803,6 +808,7 @@ fn virtual_copies_are_created_promoted_renamed_and_removed() -> Result<()> {
     cat.save_edit(
         first,
         &path,
+        &crate::storage::Identity::read(&path)?,
         &other,
         &ExportOptions::default(),
         crate::catalog::HistoryUpdate::Keep,
@@ -1068,6 +1074,7 @@ fn reopening_a_catalog_adds_the_tables_a_newer_release_needs() -> Result<()> {
     cat.save_edit(
         id,
         &photo,
+        &crate::storage::Identity::read(&photo)?,
         &Recipe::default(),
         &ExportOptions::default(),
         crate::catalog::HistoryUpdate::Keep,
@@ -1254,13 +1261,21 @@ fn develop_history_saves_with_the_edit_and_goes_with_the_photo() -> Result<()> {
     c.save_edit(
         id,
         &photo,
+        &crate::storage::Identity::read(&photo)?,
         &edited,
         &export,
         HistoryUpdate::Replace(&history),
     )?;
     assert_eq!(c.load_history(id)?, Some(history.clone()));
     // Saving from outside Develop keeps it.
-    c.save_edit(id, &photo, &Recipe::default(), &export, HistoryUpdate::Keep)?;
+    c.save_edit(
+        id,
+        &photo,
+        &crate::storage::Identity::read(&photo)?,
+        &Recipe::default(),
+        &export,
+        HistoryUpdate::Keep,
+    )?;
     assert_eq!(c.load_history(id)?, Some(history.clone()));
     // A History from a newer release is left unread, not misread.
     c.db_for_tests().execute(
@@ -1282,7 +1297,14 @@ fn develop_history_saves_with_the_edit_and_goes_with_the_photo() -> Result<()> {
         steps: Vec::new(),
         applied: 0,
     };
-    c.save_edit(id, &photo, &edited, &export, HistoryUpdate::of(&empty))?;
+    c.save_edit(
+        id,
+        &photo,
+        &crate::storage::Identity::read(&photo)?,
+        &edited,
+        &export,
+        HistoryUpdate::of(&empty),
+    )?;
     let count = |c: &Catalog| -> Result<i64> {
         Ok(c.db_for_tests()
             .query_row("SELECT COUNT(*) FROM develop_history", [], |r| r.get(0))?)
@@ -1291,6 +1313,7 @@ fn develop_history_saves_with_the_edit_and_goes_with_the_photo() -> Result<()> {
     c.save_edit(
         id,
         &photo,
+        &crate::storage::Identity::read(&photo)?,
         &edited,
         &export,
         HistoryUpdate::Replace(&history),

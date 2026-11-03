@@ -2378,7 +2378,7 @@ mod tests {
         // Open in Develop with an edit not yet saved.
         e.module = Module::Develop;
         e.document.catalog_photo = Some(a);
-        e.document.path = Some(trip.join("a.dng"));
+        e.document.opened_at(trip.join("a.dng"));
         e.document.edit.change(None, |r| r.exposure = 0.8);
         let steps = e.document.edit.history().steps().0.len();
         std::fs::rename(trip.join("a.dng"), trip.join("moved.dng"))?;
@@ -2414,7 +2414,7 @@ mod tests {
         let a = id(&e, "a.dng");
         e.module = Module::Develop;
         e.document.catalog_photo = Some(a);
-        e.document.path = Some(trip.join("a.dng"));
+        e.document.opened_at(trip.join("a.dng"));
         e.document.edit.change(None, |r| r.exposure = 0.6);
         std::fs::rename(trip.join("a.dng"), trip.join("moved.dng"))?;
         e.start_folder_sync(SyncScope::All, "trip".into());
@@ -2573,7 +2573,7 @@ mod tests {
     fn open_in_develop(e: &mut Editor, id: PhotoId, path: PathBuf) {
         e.module = Module::Develop;
         e.document.catalog_photo = Some(id);
-        e.document.path = Some(path);
+        e.document.opened_at(path);
     }
     fn forget_checksum(e: &Editor, id: PhotoId) -> anyhow::Result<()> {
         let library = e.library.as_ref().unwrap();

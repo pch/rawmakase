@@ -31,7 +31,7 @@ fn f2_renames_one_photo_and_its_sidecar_and_the_open_photo_follows() -> anyhow::
     select(&mut e, &[a]);
     e.module = Module::Library;
     e.document.catalog_photo = Some(a);
-    e.document.path = Some(d.path().join("photos/a.RAF"));
+    e.document.opened_at(d.path().join("photos/a.RAF"));
     e.document.set_image(decoded(false));
     tap(&mut e, Key::F2, Modifiers::NONE);
     settle(&mut e);

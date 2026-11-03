@@ -73,6 +73,7 @@ fn edited() -> Result<(tempfile::TempDir, Catalog, PathBuf, PhotoId)> {
     cat.save_edit(
         id,
         &file,
+        &crate::storage::Identity::read(&file)?,
         &recipe,
         &ExportOptions::default(),
         HistoryUpdate::Keep,
@@ -176,10 +177,46 @@ fn a_photo_has_an_edit_once_one_is_saved() -> Result<()> {
     cat.save_edit(
         id,
         &file,
+        &crate::storage::Identity::read(&file)?,
         &Recipe::default(),
         &ExportOptions::default(),
         HistoryUpdate::Keep,
     )?;
     assert!(cat.has_edit(id)?);
+    Ok(())
+}
+
+/// An edit is saved for the file it was made for: a file replaced since gets
+/// none of it, even with no saved edit there whose identity would protect it.
+#[test]
+fn a_save_for_a_file_replaced_since_is_refused() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let file = dir.path().join("a.ARW");
+    std::fs::write(&file, b"the photo opened")?;
+    let mut cat = Catalog::create(&dir.path().join("Replaced.rawmakase"))?;
+    cat.add_folder(dir.path())?;
+    let id = cat.photos()?[0].id;
+    let opened = crate::storage::Identity::read(&file)?;
+    std::fs::write(&file, b"another photo, same name")?;
+    let recipe = Recipe {
+        exposure: 1.,
+        ..Default::default()
+    };
+    let save = |cat: &mut Catalog, source| {
+        cat.save_edit(
+            id,
+            &file,
+            source,
+            &recipe,
+            &ExportOptions::default(),
+            HistoryUpdate::Keep,
+        )
+    };
+    let refused = save(&mut cat, &opened).unwrap_err();
+    assert!(refused.to_string().contains("changed"), "{refused}");
+    assert!(cat.load_edit(id, &file)?.is_none());
+    // The file as it is now takes an edit made for it.
+    save(&mut cat, &crate::storage::Identity::read(&file)?)?;
+    assert_eq!(cat.load_edit(id, &file)?.unwrap().recipe.exposure, 1.);
     Ok(())
 }

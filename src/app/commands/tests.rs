@@ -342,7 +342,7 @@ fn output_job_publishes_the_captured_revision_and_never_clobbers() -> anyhow::Re
     let source = dir.path().join("synthetic.dng");
     // The decoded synthetic pixels are supplied directly; no private RAW fixture.
     std::fs::write(&source, b"synthetic")?;
-    e.document.path = Some(source);
+    e.document.opened_at(source);
     let path = dir.path().join("preview.jpg");
     let result = e
         .execute_command(
@@ -426,7 +426,7 @@ fn save_success_means_the_catalog_contains_the_current_edit() -> anyhow::Result<
     )?));
     let id = e.library.as_ref().unwrap().session.photos[0].id;
     e.document.catalog_photo = Some(id);
-    e.document.path = Some(source.clone());
+    e.document.opened_at(source.clone());
     set(&mut e, &ctx, 1.25).unwrap();
     let result = e
         .execute_command(Command::new(Operation::Save), &ctx)

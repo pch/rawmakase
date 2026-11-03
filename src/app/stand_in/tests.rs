@@ -138,6 +138,7 @@ fn a_preview_stored_for_another_edit_is_not_shown() {
         .save_edit(
             ids[0],
             &path,
+            &crate::storage::Identity::read(&path).unwrap(),
             &Default::default(),
             &Default::default(),
             crate::catalog::HistoryUpdate::Keep,
@@ -197,6 +198,7 @@ fn an_edited_jpeg_has_a_stored_preview_and_an_unedited_one_does_not() {
         .save_edit(
             ids[0],
             &path,
+            &crate::storage::Identity::read(&path).unwrap(),
             &Default::default(),
             &Default::default(),
             crate::catalog::HistoryUpdate::Keep,

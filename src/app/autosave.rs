@@ -6,6 +6,7 @@ use crate::{
     catalog::{Catalog, CatalogLocation, PhotoId, SavedHistory},
     export_settings::ExportOptions,
     model::recipe::Recipe,
+    storage::Identity,
 };
 use eframe::egui;
 use std::{
@@ -21,6 +22,9 @@ pub(super) struct Job {
     pub catalog: CatalogLocation,
     pub photo: PhotoId,
     pub raw: PathBuf,
+    /// The file as it was when the photo was opened: a file replaced since gets
+    /// none of the edit.
+    pub source: Identity,
     pub recipe: Recipe,
     pub export: ExportOptions,
     /// Its Develop History, saved in the same transaction.
@@ -188,6 +192,7 @@ fn save(catalog: &mut Option<Catalog>, job: &Job) -> anyhow::Result<CatalogLocat
     c.save_edit(
         job.photo,
         &job.raw,
+        &job.source,
         &job.recipe,
         &job.export,
         crate::catalog::HistoryUpdate::of(&job.history),
@@ -220,6 +225,11 @@ mod tests {
             catalog: CatalogLocation::File("test.rawmakase".into()),
             photo,
             raw: PathBuf::from("image.ARW"),
+            source: Identity {
+                size: 0,
+                modified_ns: 0,
+                prefix_hash: String::new(),
+            },
             recipe: Recipe::default(),
             export: ExportOptions::default(),
             history: SavedHistory {

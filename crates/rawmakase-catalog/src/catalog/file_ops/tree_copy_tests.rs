@@ -1095,6 +1095,7 @@ fn edited(fx: &mut Fx, folder: &str, name: &str) -> Result<()> {
     fx.cat.save_edit(
         id,
         &source,
+        &crate::storage::Identity::read(&source)?,
         &crate::model::recipe::Recipe::default(),
         &crate::export_settings::ExportOptions::default(),
         crate::catalog::HistoryUpdate::Keep,

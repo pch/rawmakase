@@ -268,6 +268,7 @@ fn every_photo_is_exported_with_its_own_edit_or_said_why_not() -> Result<()> {
         f.catalog.save_edit(
             id,
             path,
+            &crate::storage::Identity::read(path)?,
             &brighter,
             &Default::default(),
             HistoryUpdate::Keep,
@@ -454,14 +455,26 @@ fn a_batch_exports_the_edits_as_they_were_when_export_was_pressed() -> Result<()
     let (profiles, _) = crate::camera_profiles::installed(&m);
     let mut edit = Recipe::with_profiles(&m, &profiles);
     edit.exposure = 0.5;
-    f.catalog
-        .save_edit(*id, path, &edit, &Default::default(), HistoryUpdate::Keep)?;
+    f.catalog.save_edit(
+        *id,
+        path,
+        &crate::storage::Identity::read(path)?,
+        &edit,
+        &Default::default(),
+        HistoryUpdate::Keep,
+    )?;
     let before = f.batch(f.batch_photos()?, settings(&f.out().join("before")));
     let expected = run_all(&before);
     // Edited again after Export was pressed.
     edit.exposure = -1.;
-    f.catalog
-        .save_edit(*id, path, &edit, &Default::default(), HistoryUpdate::Keep)?;
+    f.catalog.save_edit(
+        *id,
+        path,
+        &crate::storage::Identity::read(path)?,
+        &edit,
+        &Default::default(),
+        HistoryUpdate::Keep,
+    )?;
     let snapshot = Batch {
         settings: settings(&f.out().join("after")),
         plan: plan(&before.photos, &settings(&f.out().join("after")), None).unwrap(),
@@ -787,6 +800,7 @@ fn a_photo_without_its_ai_result_fails_and_the_batch_carries_on() -> Result<()> 
     f.catalog.save_edit(
         *a,
         a_path,
+        &crate::storage::Identity::read(a_path)?,
         &denoised,
         &Default::default(),
         HistoryUpdate::Keep,

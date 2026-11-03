@@ -58,6 +58,7 @@ fn trip() -> Trip {
         .save_edit(
             copy,
             &fx.root.join("day/a.NEF"),
+            &crate::storage::Identity::read(&fx.root.join("day/a.NEF")).unwrap(),
             &Recipe::default(),
             &ExportOptions::default(),
             HistoryUpdate::Keep,
@@ -763,6 +764,7 @@ fn a_catalog_change_since_the_question_stops_it() {
             .save_edit(
                 t.a,
                 &t.fx.root.join("day/a.NEF"),
+                &crate::storage::Identity::read(&t.fx.root.join("day/a.NEF")).unwrap(),
                 &Recipe::default(),
                 &ExportOptions::default(),
                 HistoryUpdate::Keep,
@@ -775,6 +777,7 @@ fn a_catalog_change_since_the_question_stops_it() {
             .save_edit(
                 t.stray,
                 &t.fx.root.join("other/c.NEF"),
+                &crate::storage::Identity::read(&t.fx.root.join("other/c.NEF")).unwrap(),
                 &Recipe::default(),
                 &ExportOptions::default(),
                 HistoryUpdate::Keep,

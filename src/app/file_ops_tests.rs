@@ -244,7 +244,7 @@ fn delete_in_an_imported_collection_changes_nothing_and_says_so() -> anyhow::Res
 fn the_open_edit_is_saved_first_and_a_failed_save_asks_nothing() -> anyhow::Result<()> {
     let (d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
     e.document.catalog_photo = Some(ids[1]);
-    e.document.path = Some(d.path().join("photos/b.RAF"));
+    e.document.opened_at(d.path().join("photos/b.RAF"));
     let before = e.document.edit.recipe().clone();
     e.document.edit.setup_mut().exposure = 1.;
     e.commit_edit(before, None);
@@ -284,7 +284,7 @@ fn removing_the_open_photo_closes_it_and_forgets_it() -> anyhow::Result<()> {
     let (d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
     e.module = Module::Develop;
     e.document.catalog_photo = Some(ids[0]);
-    e.document.path = Some(d.path().join("photos/a.RAF"));
+    e.document.opened_at(d.path().join("photos/a.RAF"));
     e.reference.photo = Some(ids[0]);
     e.library.as_mut().unwrap().edit_metadata(
         ids[0],
@@ -364,7 +364,7 @@ fn delete_in_develop_asks_for_the_open_photo_unless_a_tool_is_open() -> anyhow::
     let (d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
     e.module = Module::Develop;
     e.document.catalog_photo = Some(ids[1]);
-    e.document.path = Some(d.path().join("photos/b.RAF"));
+    e.document.opened_at(d.path().join("photos/b.RAF"));
     // A tool takes Delete for its own (a spot, a mask, a guide).
     e.view.tool = crate::app::state::Tool::Crop;
     tap(&mut e, Key::Delete, Modifiers::NONE);
@@ -465,7 +465,7 @@ fn a_load_of_the_open_photo_under_way_is_dropped_when_it_is_removed() -> anyhow:
     let (d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
     e.module = Module::Develop;
     e.document.catalog_photo = Some(ids[0]);
-    e.document.path = Some(d.path().join("photos/a.RAF"));
+    e.document.opened_at(d.path().join("photos/a.RAF"));
     let (loading, _) = e.load.start();
     e.request_photo_removal(vec![ids[0]]);
     settle(&mut e);
@@ -480,7 +480,7 @@ fn a_load_of_the_open_photo_under_way_is_dropped_when_it_is_removed() -> anyhow:
 fn an_unreadable_outcome_forgets_every_photo_that_may_be_gone() -> anyhow::Result<()> {
     let (d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
     e.document.catalog_photo = Some(ids[0]);
-    e.document.path = Some(d.path().join("photos/a.RAF"));
+    e.document.opened_at(d.path().join("photos/a.RAF"));
     e.request_photo_removal(vec![ids[0]]);
     settle(&mut e);
     let (batch, plan) = e.file_ops.take_confirmed_for_tests();

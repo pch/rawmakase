@@ -52,6 +52,7 @@ fn a_folder_is_renamed_with_its_subtree_and_its_photos_follow() -> Result<()> {
     fx.cat.save_edit(
         a,
         &source,
+        &crate::storage::Identity::read(&source)?,
         &Recipe::default(),
         &ExportOptions::default(),
         HistoryUpdate::Keep,

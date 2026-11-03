@@ -129,6 +129,7 @@ fn save_edit(e: &mut Editor, id: PhotoId, exposure: f32) {
         .save_edit(
             id,
             &path,
+            &crate::storage::Identity::read(&path).unwrap(),
             &recipe,
             &Default::default(),
             crate::catalog::HistoryUpdate::Keep,

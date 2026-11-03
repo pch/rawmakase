@@ -170,6 +170,7 @@ fn edits_are_said_to_be_lost_with_a_trashed_photo() -> anyhow::Result<()> {
     library.session.catalog.save_edit(
         a,
         &path,
+        &crate::storage::Identity::read(&path)?,
         &edit,
         &Default::default(),
         crate::catalog::HistoryUpdate::Keep,
@@ -256,7 +257,7 @@ fn the_open_photo_trashed_in_develop_is_closed() -> anyhow::Result<()> {
     let path = e.library.as_ref().unwrap().photo(a).unwrap().path.clone();
     e.module = crate::app::Module::Develop;
     e.document.catalog_photo = Some(a);
-    e.document.path = Some(path);
+    e.document.opened_at(path);
     frame(&mut e, Vec::new());
     tap(&mut e, Key::Delete, TRASH_KEYS);
     settle(&mut e);
@@ -282,6 +283,7 @@ fn delete_says_what_each_choice_takes_when_some_files_cant_go() -> anyhow::Resul
     library.session.catalog.save_edit(
         b,
         &path,
+        &crate::storage::Identity::read(&path)?,
         &edit,
         &Default::default(),
         crate::catalog::HistoryUpdate::Keep,
