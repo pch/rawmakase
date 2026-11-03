@@ -1,18 +1,18 @@
 [package]
 name = "rawmakase-remote"
 version = "0.1.0"
-edition = "2024"
-rust-version = "1.98"
+edition.workspace = true
+rust-version.workspace = true
 description = "Optional remote inference for RAWmakase's selection models: a small TCP worker that runs them where the GPU is, and the client the app talks to"
-license = "MIT"
+license.workspace = true
 publish = false
 
 [dependencies]
 rawmakase-inference = { path = "../rawmakase-inference", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json.workspace = true
 # Pixels and coverage ride inside the JSON frames as base64.
-base64 = "0.23"
+base64.workspace = true
 
 [dev-dependencies]
 # The real-photo test decodes an sRGB JPEG the caller names; the app itself
@@ -25,3 +25,6 @@ image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
 [[bin]]
 name = "rawmakase-remote-worker"
 path = "src/bin/worker.rs"
+
+# Not on the workspace lints yet: 3 clippy findings in its integration test
+# to clear first (issue #808, step 0.3).

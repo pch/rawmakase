@@ -1,10 +1,10 @@
 [package]
 name = "rawmakase-model"
 version = "0.1.0"
-edition = "2024"
-rust-version = "1.98"
+edition.workspace = true
+rust-version.workspace = true
 description = "What a RAWmakase edit is, as values: recipes, camera and lens profiles, colour and output buffers, without the RAW decoders, the renderer or the GUI"
-license = "MIT"
+license.workspace = true
 publish = false
 
 [features]
@@ -14,23 +14,23 @@ test-support = []
 [dependencies]
 rawmakase-protocol = { path = "../rawmakase-protocol", version = "0.1.0" }
 rawmakase-tiff = { path = "../rawmakase-tiff", version = "0.1.0" }
-anyhow = "1"
-flate2 = "1"
+anyhow.workspace = true
+flate2.workspace = true
 # Names a look's RGB table, as Adobe names tables (`Table_<md5>`).
-md-5 = "0.11"
-sha2 = "0.11"
-unicode-normalization = "0.1"
-rayon = "1.12"
-roxmltree = "0.21.1"
+md-5.workspace = true
+sha2.workspace = true
+unicode-normalization.workspace = true
+rayon.workspace = true
+roxmltree.workspace = true
 serde = { version = "1", features = ["derive", "rc"] }
-serde_json = "1"
-tempfile = "3"
-toml = { version = "1", default-features = false, features = ["parse", "serde", "std"] }
+serde_json.workspace = true
+tempfile.workspace = true
+toml.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 # ENOTSUP, which exFAT on macOS answers an exclusive rename with, and
 # pathconf(_PC_CASE_SENSITIVE), which rustix doesn't reach.
-libc = "0.2"
+libc.workspace = true
 # `storage::fsops`: the exclusive rename (renameat2, renameatx_np) and the
 # volume queries, without hand-written FFI.
 rustix = { version = "1.1.6", features = ["fs"] }
@@ -38,3 +38,6 @@ rustix = { version = "1.1.6", features = ["fs"] }
 [target.'cfg(windows)'.dependencies]
 # `storage::fsops`: MoveFileExW without replacing, file ids and volume facts.
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Storage_InstallableFileSystems", "Win32_System_SystemServices", "Win32_System_WindowsProgramming"] }
+
+# Not on the workspace lints yet: 10 clippy findings in its tests to clear first
+# (issue #808, step 0.3).

@@ -1,10 +1,10 @@
 [package]
 name = "rawmakase"
 version = "0.4.11"
-edition = "2024"
-rust-version = "1.98"
+edition.workspace = true
+rust-version.workspace = true
 description = "A fast, non-destructive RAW photo developer"
-license = "MIT"
+license.workspace = true
 repository = "https://github.com/pch/rawmakase"
 
 # The control protocol and its command-line client build on their own, without
@@ -12,10 +12,48 @@ repository = "https://github.com/pch/rawmakase"
 [workspace]
 members = ["crates/rawmakase-catalog", "crates/rawmakase-decode", "crates/rawmakase-engine", "crates/rawmakase-export", "crates/rawmakase-inference", "crates/rawmakase-interop", "crates/rawmakase-model", "crates/rawmakase-protocol", "crates/rawmakase-raw", "crates/rawmakase-remote", "crates/rawmakase-tiff", "tools/rawmakase-ctl"]
 
+# What every crate of the workspace shares. CI and `make check` read the minimum
+# Rust version from the `rust-version` line here.
+[workspace.package]
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+
+# Lints beyond the defaults. CI denies warnings, so each one listed here holds
+# at zero in every crate that adopts them with `[lints] workspace = true`. More
+# join as the refactor in issue #216 clears them: unreachable_pub with the
+# narrowing of `pub` (184 today), struct_excessive_bools with the state structs
+# (10).
+[workspace.lints.clippy]
+fn_params_excessive_bools = "warn"
+large_enum_variant = "warn"
+redundant_clone = "warn"
+
 [workspace.dependencies]
 # The rendered formats the app reads and writes (`storage::RasterFormat`): one
 # list for every crate that decodes or encodes them.
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "tiff", "webp"] }
+# Dependencies more than one crate declares with the same version and features.
+# A crate that needs other features declares its own.
+anyhow = "1"
+base64 = "0.23"
+bytemuck = { version = "1.25", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
+fastframe-fonts = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0" }
+flate2 = "1"
+getrandom = "0.4"
+libc = "0.2"
+md-5 = "0.11"
+objc2 = "0.6"
+rayon = "1.12"
+roxmltree = "0.21.1"
+serde_json = "1"
+sha2 = "0.11"
+tempfile = "3"
+tiff = "0.11.3"
+toml = { version = "1", default-features = false, features = ["parse", "serde", "std"] }
+unicode-normalization = "0.1"
+wgpu = { version = "30", default-features = false, features = ["wgsl"] }
 
 [dependencies]
 rawmakase-catalog = { path = "crates/rawmakase-catalog", version = "0.1.0" }
@@ -32,18 +70,18 @@ rawmakase-ctl = { path = "tools/rawmakase-ctl", version = "0.1.0" }
 # Local MCP adapter; no HTTP server or remote authorization stack.
 rmcp = { version = "3.5", default-features = false, features = ["server", "macros", "transport-io"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
-base64 = "0.23"
+base64.workspace = true
 # Verifies a downloaded or imported selection model against its pinned digest.
-sha2 = "0.11"
-getrandom = "0.4"
-anyhow = "1"
+sha2.workspace = true
+getrandom.workspace = true
+anyhow.workspace = true
 serde = { version = "1", features = ["derive", "rc"] }
-serde_json = "1"
-rayon = "1.12"
-wgpu = { version = "30", default-features = false, features = ["wgsl"] }
+serde_json.workspace = true
+rayon.workspace = true
+wgpu.workspace = true
 image.workspace = true
-tempfile = "3"
-clap = { version = "4", features = ["derive"] }
+tempfile.workspace = true
+clap.workspace = true
 eframe = { version = "=0.36.2", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
 # eframe's windowing, to run its event loop (see app::run). Where a Wayland
 # compositor leaves decorations to the app (GNOME), winit draws an
@@ -64,7 +102,7 @@ tar = { version = "0.4", default-features = false }
 # yet: pin a tag and update it deliberately.
 fastframe-update = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0" }
 fastframe-text = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0", features = ["watch"] }
-fastframe-fonts = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0" }
+fastframe-fonts.workspace = true
 fastframe-icons = { git = "https://github.com/crmne/fastframe", tag = "v0.13.0", version = "0.13.0" }
 # The SVG loader behind the icons, at eframe's egui version.
 egui_extras = { version = "0.36", default-features = false, features = ["svg"] }
@@ -77,7 +115,7 @@ midir = "0.11"
 
 # Native quit handling and display color management (src/platform/).
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
+objc2.workspace = true
 # The title bar's event monitor (src/platform/titlebar.rs).
 block2 = "0.6"
 dispatch2 = "0.3"
@@ -123,21 +161,15 @@ rawmakase-model = { path = "crates/rawmakase-model", version = "0.1.0", features
 rusqlite = { version = "0.41.0", features = ["bundled"] }
 # The sync tests write a compressed catalog edit; the private RAW fixture
 # test reads the ICC profile tag of an exported TIFF.
-flate2 = "1"
-tiff = "0.11.3"
+flate2.workspace = true
+tiff.workspace = true
 
 # The icon and version information Windows shows for the executable.
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 
-# Lints beyond the defaults. CI denies warnings, so each one listed here holds
-# at zero. More join as the refactor in issue #216 clears them: unreachable_pub
-# with the narrowing of `pub` (184 today), struct_excessive_bools with the
-# state structs (10).
-[lints.clippy]
-fn_params_excessive_bools = "warn"
-large_enum_variant = "warn"
-redundant_clone = "warn"
+[lints]
+workspace = true
 
 # crmne's egui and winit forks, which fastframe's apps build against: fixes
 # waiting for upstream releases (fastframe's getting started guide, "egui and

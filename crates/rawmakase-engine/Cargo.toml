@@ -1,10 +1,10 @@
 [package]
 name = "rawmakase-engine"
 version = "0.1.0"
-edition = "2024"
-rust-version = "1.98"
+edition.workspace = true
+rust-version.workspace = true
 description = "RAWmakase's renderer: developing a decoded image with a recipe on the CPU, and the GPU preview port, without the RAW decoders, the catalog or the GUI"
-license = "MIT"
+license.workspace = true
 publish = false
 
 [features]
@@ -14,19 +14,17 @@ test-support = ["rawmakase-model/test-support", "rawmakase-interop/test-support"
 [dependencies]
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0" }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
-anyhow = "1"
-bytemuck = { version = "1.25", features = ["derive"] }
+anyhow.workspace = true
+bytemuck.workspace = true
 image.workspace = true
 pollster = "1"
-rayon = "1.12"
-serde_json = "1"
-wgpu = { version = "30", default-features = false, features = ["wgsl"] }
+rayon.workspace = true
+serde_json.workspace = true
+wgpu.workspace = true
 
 [dev-dependencies]
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0", features = ["test-support"] }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }
 
-[lints.clippy]
-fn_params_excessive_bools = "warn"
-large_enum_variant = "warn"
-redundant_clone = "warn"
+[lints]
+workspace = true
