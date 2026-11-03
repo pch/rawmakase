@@ -317,7 +317,7 @@ pub enum Demosaic {
     #[serde(alias = "Libraw")]
     Rawmakase,
 }
-/// What [`Raw::develop`] makes of the sensor data. A job captures it when it is
+/// What `rawmakase_decode`'s `Raw::develop` makes of the sensor data. A job captures it when it is
 /// created and keys its decode-cache entry with the same value, so a preference
 /// changed while the job runs can never file one demosaic under another's key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

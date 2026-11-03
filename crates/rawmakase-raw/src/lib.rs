@@ -3,11 +3,11 @@
 //!
 //! Three operations, cheapest first, each on the file's bytes in memory:
 //! [`open`] reads the header facts ([`RawInfo`]) without decoding the
-//! sensor data, [`preview`] finds the embedded JPEG, and [`decode`] unpacks
+//! sensor data, [`preview`](fn@preview) finds the embedded JPEG, and [`decode`] unpacks
 //! the sensor data ([`Sensor`]), checking `cancel` as it goes. One selector
 //! ([`Variant`]) decides which reader and codec handle a file; a file of a
 //! known container in a variant not decoded here is [`Error::Unsupported`].
-//! [`capture_dates`] and [`exif_tiffs`] read, from the file itself, the few
+//! [`capture_dates`] and [`exif_tiffs`](fn@exif_tiffs) read, from the file itself, the few
 //! parts that date a photo and hold its camera's EXIF in the containers
 //! whose EXIF is not a TIFF at the file's start; [`embedded_xmp`] the XMP a
 //! CR3 keeps in a box of its own.
@@ -111,7 +111,7 @@ pub fn embedded_xmp(file: &mut (impl std::io::Read + std::io::Seek)) -> Option<V
 /// the photo info it has of one.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct X3fMetadata {
-    /// The preview's EXIF, a TIFF of its own, as [`exif_tiffs`] finds it;
+    /// The preview's EXIF, a TIFF of its own, as [`exif_tiffs`](fn@exif_tiffs) finds it;
     /// none on the SD9 and SD10.
     pub exif: Option<Vec<u8>>,
     pub properties: X3fProperties,
@@ -157,7 +157,7 @@ pub fn preview<'a>(
 }
 
 /// The embedded preview a thumbnail `edge` pixels on its long side is best
-/// made from, as [`preview`] gives it: the smallest JPEG that reaches `edge`
+/// made from, as [`preview`](fn@preview) gives it: the smallest JPEG that reaches `edge`
 /// and has the largest preview's shape, else the largest.
 pub fn preview_reaching<'a>(
     info: &RawInfo,

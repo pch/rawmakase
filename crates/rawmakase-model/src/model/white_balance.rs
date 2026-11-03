@@ -103,7 +103,7 @@ impl NamedWhiteBalance {
 /// Lightroom's Temp for a rendered file (`IncrementalTemperature`, −100…100) as the
 /// DNG SDK's reciprocal temperature of the white it names and a drift of its DNG
 /// tint: `[Temp, mired, tint drift]`. Measured on Lightroom Classic 15.6 (Camera Raw
-/// 18.7) renders of synthetic JPEG charts, as the white [`camera_white_balance`] needs
+/// 18.7) renders of synthetic JPEG charts, as the white [`rendered_white_balance`] needs
 /// to reproduce them (`scripts/corpus/rendered-white-balance.py`). At 0 it is the
 /// file's D50 white; Temp moves only the temperature, except a drift of a few units of
 /// tint at the coldest Temp.

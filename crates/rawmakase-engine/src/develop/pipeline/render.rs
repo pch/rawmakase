@@ -5,7 +5,7 @@ use super::*;
 pub fn render(im: &CameraImage, r: &ValidRecipe, max_edge: u32) -> Result<Rendered> {
     crate::develop::quality::render(im, r, max_edge, None)
 }
-/// [`render`], stopping with an error once `cancel` is set.
+/// [`render`](fn@render), stopping with an error once `cancel` is set.
 pub fn render_cancellable(
     im: &CameraImage,
     r: &ValidRecipe,

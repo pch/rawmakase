@@ -1,7 +1,7 @@
 //! The journal of file operations: the `file_operations` and
 //! `file_operation_members` rows, written and read only here. Each disk step
 //! is journalled before the next one starts, so whatever a crash leaves is
-//! decided by [`super::recover`] from the journal and the disk, never
+//! decided by [`super::recover`](fn@super::recover) from the journal and the disk, never
 //! guessed.
 use super::super::PhotoId;
 use super::super::db::{Reads, Write, sql};

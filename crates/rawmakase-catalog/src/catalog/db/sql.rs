@@ -3,7 +3,7 @@
 
 /// One statement of the catalog's portable SQL: what SQLite and Postgres
 /// both accept, with `?` or numbered `?N` placeholders. Write it with
-/// [`sql!`](crate::catalog::db::sql), which checks it at compile time.
+/// [`sql!`](macro@crate::catalog::db::sql), which checks it at compile time.
 ///
 /// It must be a single statement starting with `SELECT`, `WITH`, `INSERT`,
 /// `UPDATE` or `DELETE` and contain no `;`, so domain SQL can't change the
@@ -35,7 +35,7 @@ pub(in crate::catalog) struct Sql(&'static str);
 
 impl Sql {
     /// `sql`, refused unless it has the allowed shape; called in a constant
-    /// by [`sql!`](crate::catalog::db::sql), so a refusal fails the build.
+    /// by [`sql!`](macro@crate::catalog::db::sql), so a refusal fails the build.
     pub(in crate::catalog) const fn new(sql: &'static str) -> Self {
         assert_shape(sql);
         Self(sql)

@@ -27,7 +27,7 @@ pub struct CaptureDates {
 
 /// The capture dates of a CR3, CRW, MRW or X3F; none for another file or
 /// one that can't be read. A CR3's, MRW's and X3F's are its camera's EXIF
-/// ([`crate::exif_tiffs`]), the EXIF directory's before IFD0's; an X3F
+/// ([`crate::exif_tiffs`](fn@crate::exif_tiffs)), the EXIF directory's before IFD0's; an X3F
 /// without them has its TIME.
 pub(crate) fn read(file: &mut dyn ReadSeek) -> CaptureDates {
     let Some(mut f) = Pieces::new(file) else {

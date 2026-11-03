@@ -5,7 +5,7 @@
 //! The catalog reads the stored edit ([`Catalog::edit_record`](crate::catalog::Catalog::edit_record))
 //! and [`resolve`] works it out after, so a caller can read many photos at once
 //! and resolve them later, off the UI thread. Upright's analysis needs the
-//! developed photo, so it is a step of its own: [`crate::develop::upright::complete`].
+//! developed photo, so it is a step of its own: `rawmakase_engine::develop::upright::complete`.
 use crate::{
     camera_data::Metadata, camera_profiles::CameraProfile, export_settings::ExportOptions,
     model::recipe::Recipe, raw_defaults::DevelopDefaults, storage::Identity,
