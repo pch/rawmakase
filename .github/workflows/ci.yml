@@ -246,7 +246,8 @@ jobs:
     name: Module dependencies
     # scripts/deps-allowed.txt lists the dependencies between top-level modules;
     # a new one, a listed one the code no longer has, a cycle, or a chain that
-    # scripts/deps-closures.txt forbids fails this job.
+    # scripts/deps-closures.txt forbids fails this job, as does a workspace crate
+    # depending on one scripts/deps-crates.txt forbids.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

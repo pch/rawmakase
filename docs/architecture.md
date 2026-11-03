@@ -249,6 +249,12 @@ inject a temporary file, without changing the process-wide environment.
   modules must never reach, even through others: the edit session never reaches
   the RAW decoders, the renderer or the app, and the renderer never reaches the app or
   export. The check prints the chain that breaks a rule.
+- `scripts/deps-crates.txt` lists the workspace crates each crate must never
+  depend on, directly or through others: the model never on file formats, the
+  catalog, rendering or decoding; the RAW decoders on no edit; the protocol and
+  inference on no other crate. `scripts/deps.py check` reads the rules against
+  `cargo metadata --no-deps`, so an edge that points up the layering fails
+  without a build.
 - The model, file formats, catalog and control protocol are crates, so Cargo
   rules out a dependency back on the app. `scripts/crate-closures.sh` (CI and
   `make check`) fails when one of them gains the app, a GPU or GUI crate, or a

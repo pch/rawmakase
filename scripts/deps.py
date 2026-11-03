@@ -9,6 +9,11 @@ fails on a cycle, and on a module reaching, through any chain, one that
 `scripts/deps-closures.txt` says it never may (the edit's values never reach
 the RAW decoders or the renderer). The target layering is in docs/architecture.md.
 
+`check` also reads the workspace's crates from `cargo metadata` (no build, no network)
+and fails when a crate depends,
+directly or through others, on a workspace crate `scripts/deps-crates.txt` says it
+never may (the model never on the renderer, the RAW decoders on no edit).
+
     python3 scripts/deps.py check    # what CI runs
     python3 scripts/deps.py report   # every edge with its sites, and the cycles
     python3 scripts/deps.py write    # rewrite the allow-list from the code
@@ -20,6 +25,8 @@ types are not paths, so they are not seen.
 """
 import re
 import sys
+import json
+import subprocess
 from collections import defaultdict
 from pathlib import Path
 
@@ -27,6 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 ALLOWED = ROOT / "scripts" / "deps-allowed.txt"
 CLOSURES = ROOT / "scripts" / "deps-closures.txt"
+CRATE_RULES = ROOT / "scripts" / "deps-crates.txt"
 
 
 def blank(text):
@@ -279,14 +287,7 @@ def reaches(edges, module):
 
 def read_closures():
     """(module, forbidden modules) from deps-closures.txt: `catalog never raw develop`."""
-    rules = []
-    for line in CLOSURES.read_text(encoding="utf-8").splitlines():
-        words = line.split("#")[0].split()
-        if words:
-            if len(words) < 3 or words[1] != "never":
-                sys.exit(f"{CLOSURES.relative_to(ROOT)}: expected `module never other...`: {line}")
-            rules.append((words[0], words[2:]))
-    return rules
+    return read_rules(CLOSURES)
 
 
 def path_to(edges, source, target):
@@ -324,6 +325,55 @@ def check_closures(edges):
     return broken
 
 
+def read_rules(path):
+    """(name, forbidden names) from a rules file: `catalog never raw develop`."""
+    rules = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        words = line.split("#")[0].split()
+        if words:
+            if len(words) < 3 or words[1] != "never":
+                sys.exit(f"{path.relative_to(ROOT)}: expected `name never other...`: {line}")
+            rules.append((words[0], words[2:]))
+    return rules
+
+
+def workspace_crates():
+    """{crate: {workspace crates it depends on}}: normal and build dependencies, on
+    every platform. Dev-dependencies are left out: they build only the crate's own
+    tests. Cargo resolves membership, inherited and renamed dependencies."""
+    out = subprocess.run(
+        ["cargo", "metadata", "--format-version", "1", "--no-deps", "--offline"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    if out.returncode:
+        sys.exit(f"cargo metadata failed:\n{out.stderr}")
+    packages = json.loads(out.stdout)["packages"]
+    names = {p["name"] for p in packages}
+    return {
+        p["name"]: {d["name"] for d in p["dependencies"] if d["kind"] != "dev" and d["name"] in names}
+        for p in packages
+    }
+
+
+def check_crates():
+    """Crate rules from deps-crates.txt against the Cargo.toml files."""
+    graph = workspace_crates()
+    edges = {(a, b) for a, deps in graph.items() for b in deps}
+    broken = 0
+    rules = read_rules(CRATE_RULES)
+    for crate, forbidden in rules:
+        for name in [crate, *forbidden]:
+            if name not in graph:
+                print(f"{CRATE_RULES.relative_to(ROOT)} names {name}, which is no workspace crate")
+                broken += 1
+        reached = reaches(edges, crate)
+        for other in forbidden:
+            if other in reached:
+                print(f"{crate} must not depend on {other}, but does: {path_to(edges, crate, other)}")
+                broken += 1
+    return broken, len(rules)
+
+
 def check(edges):
     allowed = read_allowed()
     new = sorted(set(edges) - allowed)
@@ -343,9 +393,14 @@ def check(edges):
     for component in found:
         print("Cycle between " + ", ".join(component))
     broken = check_closures(production_edges(with_crates=True))
+    broken_crates, crate_rules = check_crates()
+    broken += broken_crates
     if not new and not stale and not found and not broken:
         rules = len(read_closures())
-        print(f"{len(edges)} module dependencies, all allowed; no cycles; {rules} closure rules hold.")
+        print(
+            f"{len(edges)} module dependencies, all allowed; no cycles; {rules} closure rules"
+            f" and {crate_rules} crate rules hold."
+        )
     return 1 if new or stale or found or broken else 0
 
 
