@@ -576,7 +576,7 @@ mod tests {
                 [1.08 * l, l, 0.92 * l]
             })
             .collect();
-        let mut out = image.clone();
+        let mut out = image;
         stripes::suppress(&mut out, w, h);
         let mut error = 0f32;
         for y in 40..h - 40 {

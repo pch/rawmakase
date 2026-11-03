@@ -164,7 +164,7 @@ impl Transform {
             } else if let Some(t) = xyz_table(dst.lut_a_to_b_colorimetric.as_ref()) {
                 Table::of(&t, false)?.apply([0.; 3]).map(|v| v * LUT_XYZ)
             } else {
-                let mut linear = srgb.clone();
+                let mut linear = srgb;
                 let one = ToneReprCurve::Parametric(vec![1.0]);
                 linear.red_trc = Some(one.clone());
                 linear.green_trc = Some(one.clone());

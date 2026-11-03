@@ -179,7 +179,7 @@ fn a_selection_round_trips_and_a_second_one_reuses_the_analysis() {
     let cancel = AtomicBool::new(false);
     let analysis = session.analyze(&photo(4, 3), &cancel).unwrap();
     assert_eq!(&analysis.key, "k1");
-    assert_eq!(analysis.subject.clone().data, vec![200; 12]);
+    assert_eq!(analysis.subject.data, vec![200; 12]);
     assert_eq!(
         session.sky(&photo(4, 3), &cancel).unwrap().data,
         vec![201; 12]
@@ -200,7 +200,7 @@ fn a_selection_round_trips_and_a_second_one_reuses_the_analysis() {
 fn a_cancelled_selection_says_so_and_stops_the_worker() {
     let mut fake = Fake::of(Photo::of("k1", 2, 2, 1));
     let holding = Arc::new(AtomicBool::new(true));
-    fake.holding = Some(holding.clone());
+    fake.holding = Some(holding);
     let engine_cancelled = fake.cancelled.clone();
     let (endpoint, _, _) = worker(fake);
     let session = RemoteSession::new(&endpoint);
@@ -257,7 +257,7 @@ fn a_stale_click_after_the_worker_forgot_the_photo_asks_for_it_again() {
     let analysis = session.analyze(&photo(2, 2), &cancel).unwrap();
     let stale = rawmakase_remote::RemoteAnalysis {
         key: "gone".into(),
-        subject: analysis.subject.clone(),
+        subject: analysis.subject,
     };
     assert_eq!(
         session.segment(&stale, &click(0.5, 0.5), &cancel),
