@@ -762,9 +762,16 @@ impl Editor {
         }
     }
     /// Closes the open photo, removed from the catalog or its unsaved change
-    /// discarded: nothing may save into it, nor a load still under way bring
-    /// it back.
+    /// discarded, and shows the Library.
     pub(super) fn close_removed_document(&mut self) {
+        self.close_document();
+        self.module = Module::Library;
+    }
+    /// Closes the open photo, leaving no photo open: nothing may save into it, nor
+    /// a load still under way bring it back, and its picture, preset previews,
+    /// tools and selection go with it. Opening another photo instead goes through
+    /// `load_raw`, whose new load supersedes this one's.
+    pub(super) fn close_document(&mut self) {
         self.messages.document_closed();
         self.load.invalidate();
         self.selection.clear_document();
@@ -772,7 +779,6 @@ impl Editor {
         self.preview.clear_document();
         self.presets.clear_document();
         self.view.clear_document();
-        self.module = Module::Library;
     }
     /// Asks before Read Metadata from Files, as Lightroom does: it replaces
     /// the catalog's values, edits included.
@@ -835,12 +841,9 @@ impl Editor {
                     {
                         self.develop_catalog_photo(master);
                     }
-                    // Nothing may save into the removed copy.
+                    // Nothing may save into the removed copy, nor its load refill it.
                     if self.document.catalog_photo == Some(id) {
-                        self.messages.document_closed();
-                        self.document.reset(None);
-                        self.preview.clear_document();
-                        self.module = Module::Library;
+                        self.close_removed_document();
                     }
                 }
             }
