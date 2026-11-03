@@ -1,11 +1,42 @@
 //! Community camera profiles from the catalogue (`camera_profiles::catalogue`):
-//! the offer under Develop's Profile menu, downloads, and applying one. A download
-//! is a library operation, independent of the open document: it captures its
-//! camera and destination once, survives navigation, and its completion refreshes
-//! profiles and defaults exactly as a manual camera-profile import does
-//! (`bulk_import::list_profiles_after_import`). It then applies the profile only to the photo it was
-//! asked for, while still open with the profile it had and no camera-look fit asked
-//! for since, as one History step; otherwise the profile is only installed.
+//! the offer under Develop's Profile menu, downloads, and applying one.
+//!
+//! The catalogue has three owners. The model's `camera_profiles::catalogue` owns
+//! the checked-in data (`data/camera-profiles`), its validation, matching by the
+//! same camera rule the profile library lists by, verification of downloaded bytes,
+//! installation through the no-clobber importer and the generator; it never reaches
+//! the network. This module owns the HTTP request, the task and what the offer shows
+//! for the open photo: which profiles match, measured once per camera and profile
+//! library rather than every frame, when it shows (by default while the photo keeps
+//! its raw defaults' profile and no Adobe profile is imported), and the per-camera
+//! dismissal the session keeps. `app::inspector::profile_offer` draws the offer under
+//! Basic › Profile and only reports clicks.
+//!
+//! A download is a library operation, independent of the open document: it
+//! captures its profile, camera metadata and destination once, and navigation does
+//! not cancel it. Its completion calls `bulk_import::list_profiles_after_import`,
+//! the refresh a manual camera-profile import runs, without touching a running
+//! import's state or status line, so profiles, raw defaults (with the fitted default
+//! kept for a photo without colour data), preset support, Library previews (keeping
+//! only the unchanged open photo's) and the reference refresh exactly as after a
+//! manual import. Only then is the profile applied, and only to the photo it was
+//! asked for, if that photo is still open (same load), its file still has the
+//! [`Identity`] it was opened with (checked when the download starts and again at
+//! completion: an outside replacement or deletion causes no new load), still has the
+//! profile it had and no camera-look fit was asked for since: one History step
+//! through `change_edit`, as a Profile menu choice is. Otherwise it is only
+//! installed.
+//!
+//! What applies is `Entry::read_installed`: the installed file read once, bounded,
+//! and verified as the download was, so a file substituted after installation is
+//! never applied or credited. An installed profile's Apply is clicked during
+//! Develop's edit frame and changes the profile in place, as the menu does, so the
+//! frame records its one step. Measuring keeps each installed profile's verified
+//! content, which says whether the photo uses it: sources may share a profile name
+//! and camera. Cancellation and publication claim one atomic state, so a published
+//! install cannot be reported as cancelled. Task generations reject cancelled,
+//! superseded and duplicate completions; a panicking worker reports a failure
+//! through the task wrapper, which clears the busy state.
 use super::{Editor, task, worker::Event};
 use crate::camera_data::Metadata;
 use crate::camera_profiles::CameraProfile;

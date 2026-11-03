@@ -4,7 +4,82 @@
 //! On the desktop it shares the UI's wgpu device, so a preview is finished straight
 //! into a texture the viewport draws (`present.rs`). Headless callers (tests, the
 //! benchmark) create their own device. Buffers are bounded and reused for equal
-//! dimensions; callers retain CPU pixels for fallback.
+//! dimensions; callers retain CPU pixels for fallback. The CPU stages are the
+//! reference, and exports always use them (docs/architecture.md).
+//!
+//! # Backends and devices
+//!
+//! Portable WGSL compute through wgpu: Metal on macOS, Vulkan on supported Linux
+//! drivers, including NVIDIA and AMD, and DirectX 12 on Windows. Windows leaves
+//! Vulkan out while a DirectX 12 device can be created, because an Intel Vulkan
+//! driver crashed the app at launch where DirectX 12 worked (#623). If that device
+//! fails, it tries Vulkan and then OpenGL before opening the window (#768);
+//! `WGPU_BACKEND` overrides all of this. The UI and a standalone processor share that
+//! choice ([`backends`]). The desktop creates the UI's device with the storage limits
+//! previews need ([`required_limits`]) and a high-performance adapter. On Linux the
+//! window's adapter is the first GPU the system lists instead: the display's GPU, or
+//! the discrete one under `prime-run` or `DRI_PRIME=1`, because a render-offload GPU
+//! can claim it presents to the window and then fail to configure it. OpenGL and
+//! software adapters are not used for compute. Every GPU call runs inside its own
+//! validation, internal and out-of-memory error scopes, so a failure disables the
+//! preview GPU without reaching the UI. Only ordinary 32-bit storage buffers,
+//! Rgba8Unorm storage textures and compute workgroups are used, without vendor
+//! extensions. Hardware validated so far: Apple M1 Pro.
+//!
+//! # What runs here
+//!
+//! The per-pixel colour and tone stage (`develop.wgsl`, fed by
+//! `pipeline/pixel_params.rs`) runs on the stage cache's samples for every recipe
+//! resolved with a camera profile; unresolved recipes use the CPU stage. Each pass is
+//! compiled for the features its parameters use (`develop::Variant`); the
+//! Shadows/Highlights map's grids stay on the device per map base, and each sample
+//! set's camera colour per the recipe fields it reads (`develop::Kept`), written once
+//! a second render with the same settings asks for it and read after its pass is
+//! submitted.
+//!
+//! When the GPU renders a preview, the developed pixels stay on the device and
+//! `present.wgsl` finishes them into a texture that egui draws directly (registered
+//! as a native texture by the render worker): sharpening, vignettes and grain, the
+//! clipping overlay, the monitor profile (a 52³ lattice sampled from
+//! `color_management` once per profile, interpolated trilinearly) and 8-bit encoding,
+//! in the CPU reference's order. The histogram is counted in the same pass and the
+//! minimap's copy is reduced on the GPU; only the histogram (3 KB) and, for catalog
+//! photos, a 640-pixel Library thumbnail are read back. Nothing is converted or
+//! uploaded on the UI thread. Recipes the port does not cover, and machines without a
+//! usable adapter, render on the CPU, and the worker then prepares the display bytes,
+//! histogram and reduced copies before the UI uploads the texture. Full-resolution
+//! regions keep the sharpening halo before cropping. Lanczos3 resizing of full
+//! renders stays on the GPU for readback callers. The status line says `GPU` for
+//! presented frames, `GPU finish` when only finishing used the GPU, and `CPU`
+//! otherwise.
+//!
+//! For the same recipes, the stages before the per-pixel stage also run on the
+//! device when the photo fits its buffer limits (`resident.rs`): the photo or pyramid
+//! level is kept there, and regions are sampled there through geometry and lens
+//! correction. Colour and luminance noise reduction run on the CPU on the full camera
+//! image, before retouching and before the preview pyramid is built
+//! (`develop::recipe::Denoise` captures their settings and execution together; the
+//! retouch cache keys that value and the source image identity), so the GPU samples
+//! the already denoised image. Exports run the same stage without the cache. The Shadows/Highlights map (with Clarity's gain) is
+//! built on the CPU from the photo's measurement copy, and the scene tone stage reads
+//! it in `develop.wgsl`. Texture's image is made on the CPU, and a mask's Clarity or
+//! Texture renders the whole preview on the CPU. A failure in these stages turns off
+//! only this path for the session.
+//!
+//! # Textures, buffers and failure
+//!
+//! Presented textures are kept per view (the whole photo, or a 100% region) and
+//! size, two of each, so a slider moving alternates between the reduced preview's and
+//! the full render's textures without allocating. Each texture carries a generation
+//! that changes whenever it is written; the worker reuses a finished frame when
+//! switching views only while its texture still holds it.
+//!
+//! Buffers are reused by dimensions, limited by the adapter and a 1 GiB aggregate
+//! buffer budget. No compatible adapter, oversized buffers, allocation or validation
+//! errors and readback failures fall back to the CPU. After a GPU failure the preview
+//! renderer releases the backend and does not retry it for every edit; restarting
+//! creates a new backend. GPU work already submitted cannot be interrupted: obsolete
+//! results are discarded before they are published.
 use crate::model::recipe::Recipe;
 use crate::rendered::Rendered;
 use anyhow::{Context, Result, ensure};
