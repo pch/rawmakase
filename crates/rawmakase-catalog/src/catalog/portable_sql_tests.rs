@@ -197,6 +197,7 @@ fn edit_times_keep_their_text_form() -> Result<()> {
     cat.save_edit(
         ids[0],
         &folder.join("image0.ARW"),
+        &crate::storage::Identity::read(&folder.join("image0.ARW"))?,
         &Recipe::default(),
         &ExportOptions::default(),
         HistoryUpdate::Keep,

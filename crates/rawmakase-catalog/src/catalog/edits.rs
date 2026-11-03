@@ -4,6 +4,7 @@ use super::db::{Reads, Write, sql};
 use super::value::row;
 use super::{Catalog, PhotoId};
 use crate::edits::{SavedEdit, local_edits};
+use crate::storage::Identity;
 use crate::{export_settings::ExportOptions, model::recipe::Recipe};
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -18,6 +19,10 @@ pub enum EditChange<'a, 'b> {
 pub struct EditToSave<'a> {
     pub id: PhotoId,
     pub path: &'a Path,
+    /// The file the edit was made for, as read when its photo was opened or its
+    /// settings read: a save to a file at `path` that no longer matches it is
+    /// refused, even with no saved edit there to protect.
+    pub source: &'a Identity,
     pub recipe: &'a Recipe,
     pub export: &'a ExportOptions,
     pub history: super::HistoryUpdate<'a>,
@@ -43,6 +48,7 @@ impl Catalog {
         &mut self,
         id: PhotoId,
         path: &Path,
+        source: &Identity,
         recipe: &Recipe,
         export: &ExportOptions,
         history: super::HistoryUpdate<'_>,
@@ -50,6 +56,7 @@ impl Catalog {
         self.save_edits(&[EditToSave {
             id,
             path,
+            source,
             recipe,
             export,
             history,

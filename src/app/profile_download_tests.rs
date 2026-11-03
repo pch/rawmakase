@@ -118,7 +118,7 @@ fn open(e: &mut Editor, m: Metadata, dir: &Path) {
     e.document.reset(None);
     e.load.start();
     e.document.file = crate::storage::Identity::read(&path).ok();
-    e.document.path = Some(path);
+    e.document.opened_at(path);
     e.document.profiles = crate::camera_profiles::listed_from(&[], &m).profiles;
     e.document.metadata = Some(m);
     e.refresh_photo_defaults();

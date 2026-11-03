@@ -814,7 +814,7 @@ fn an_image_without_its_files_identity_gets_no_ai_request() {
     let f = fixture(Provider::Cpu, Behaviour::default());
     let plain = f.plain();
     editor.document.set_image(plain.clone());
-    editor.document.path = Some(f.photo("a.raw"));
+    editor.document.opened_at(f.photo("a.raw"));
     editor.document.edit.setup_mut().ai_denoise.enabled = true;
     assert_eq!(editor.document.image_file, None);
     let geometry = crate::develop::Geometry::new(&plain, editor.document.edit.recipe(), 0);

@@ -30,7 +30,7 @@ fn fixture() -> Fixture {
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(library));
     editor.document.catalog_photo = Some(id);
-    editor.document.path = Some(photo.clone());
+    editor.document.opened_at(photo.clone());
     let metadata = Metadata {
         width: 8,
         height: 6,

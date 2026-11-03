@@ -442,6 +442,7 @@ mod tests {
         library.session.catalog.save_edit(
             other,
             &photos.join("b.dng"),
+            &crate::storage::Identity::read(&photos.join("b.dng"))?,
             &edit,
             &Default::default(),
             crate::catalog::HistoryUpdate::Keep,
@@ -450,7 +451,7 @@ mod tests {
             Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
         editor.library = Some(Box::new(library));
         editor.document.catalog_photo = Some(open);
-        editor.document.path = Some(photos.join("a.dng"));
+        editor.document.opened_at(photos.join("a.dng"));
         editor.view.viewport = eframe::egui::Vec2::new(200., 150.);
         Ok(Fixture {
             _dir: dir,
@@ -518,6 +519,7 @@ mod tests {
         library.session.catalog.save_edit(
             other,
             &path,
+            &crate::storage::Identity::read(&path)?,
             &edit,
             &Default::default(),
             crate::catalog::HistoryUpdate::Keep,

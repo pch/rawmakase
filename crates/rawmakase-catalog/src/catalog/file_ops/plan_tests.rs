@@ -138,6 +138,7 @@ fn a_move_keeps_the_file_object_its_time_identity_edit_and_checksum() -> Result<
     fx.cat.save_edit(
         a,
         &source,
+        &crate::storage::Identity::read(&source)?,
         &Recipe::default(),
         &ExportOptions::default(),
         HistoryUpdate::Keep,

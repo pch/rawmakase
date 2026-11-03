@@ -162,6 +162,7 @@ mod tests {
         c.save_edit(
             a.0,
             &a.1,
+            &crate::storage::Identity::read(&a.1)?,
             &saved,
             &export,
             super::super::HistoryUpdate::Keep,
@@ -215,6 +216,7 @@ mod tests {
         c.save_edit(
             changed.0,
             &changed.1,
+            &crate::storage::Identity::read(&changed.1)?,
             &edit,
             &ExportOptions::default(),
             super::super::HistoryUpdate::Keep,
@@ -229,6 +231,7 @@ mod tests {
         c.save_edit(
             unreadable.0,
             &unreadable.1,
+            &crate::storage::Identity::read(&unreadable.1)?,
             &edit,
             &ExportOptions::default(),
             super::super::HistoryUpdate::Keep,

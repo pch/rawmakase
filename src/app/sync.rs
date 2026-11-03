@@ -403,6 +403,7 @@ pub(super) fn synchronize(
         .map(|p| EditToSave {
             id: p.synced.id,
             path: &p.synced.path,
+            source: &p.synced.identity,
             recipe: &p.synced.after,
             export: &p.export,
             history: HistoryUpdate::Replace(&p.synced.history),
@@ -722,24 +723,25 @@ pub(super) fn restore(
         let saved = catalog
             .load_edit(e.id, &path)
             .map_err(SyncRestoreError::Write)?;
-        // Without an edit there is no stored identity to protect the file: compare
-        // with the one the Sync read before writing its settings again.
-        if saved.is_none()
-            && crate::storage::Identity::read(&path).map_err(SyncRestoreError::Write)? != e.identity
-        {
+        // A saved edit's identity, which a verified move of its file refreshes,
+        // protects the file. Without an edit there is none: compare with the one
+        // the Sync read before writing its settings again.
+        let now = crate::storage::Identity::read(&path).map_err(SyncRestoreError::Write)?;
+        if saved.is_none() && now != e.identity {
             return Err(SyncRestoreError::Write(anyhow::anyhow!(
                 "{} changed since the Sync",
                 path.display()
             )));
         }
         let export = saved.map(|saved| saved.export).unwrap_or_default();
-        saves.push((e.id, path, recipe, export, history));
+        saves.push((e.id, path, now, recipe, export, history));
     }
     let saves: Vec<EditToSave> = saves
         .iter()
-        .map(|(id, path, recipe, export, history)| EditToSave {
+        .map(|(id, path, source, recipe, export, history)| EditToSave {
             id: *id,
             path,
+            source,
             recipe,
             export,
             history: *history,
@@ -1304,6 +1306,7 @@ mod tests {
         c.save_edit(
             id,
             &path0,
+            &crate::storage::Identity::read(&path0)?,
             &edited,
             &ExportOptions::default(),
             HistoryUpdate::Replace(&earlier),
@@ -1507,6 +1510,7 @@ mod tests {
         f.catalog.save_edit(
             id,
             &png,
+            &crate::storage::Identity::read(&png)?,
             &start,
             &ExportOptions::default(),
             HistoryUpdate::Keep,
@@ -1540,6 +1544,7 @@ mod tests {
         f.catalog.save_edit(
             id,
             &png,
+            &crate::storage::Identity::read(&png)?,
             &settled,
             &ExportOptions::default(),
             HistoryUpdate::Keep,
@@ -1671,6 +1676,7 @@ mod tests {
         c.save_edit(
             id,
             &path,
+            &crate::storage::Identity::read(&path)?,
             &before,
             &ExportOptions::default(),
             HistoryUpdate::Keep,
@@ -1786,6 +1792,7 @@ mod tests {
         c.save_edit(
             source_id,
             &source_path,
+            &crate::storage::Identity::read(&source_path)?,
             &edit,
             &ExportOptions::default(),
             HistoryUpdate::Keep,
@@ -1823,6 +1830,7 @@ mod tests {
         c.save_edit(
             source_id,
             &source_path,
+            &crate::storage::Identity::read(&source_path)?,
             &edit,
             &ExportOptions::default(),
             HistoryUpdate::Keep,
@@ -1874,6 +1882,7 @@ mod tests {
         c.save_edit(
             id,
             &path,
+            &crate::storage::Identity::read(&path)?,
             &Recipe::default(),
             &ExportOptions::default(),
             HistoryUpdate::Keep,

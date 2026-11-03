@@ -20,6 +20,10 @@ pub(super) enum Flushed {
     Late,
 }
 
+/// Why the open photo's edit can't be saved: with no identity read when it
+/// opened, there is nothing to check its file against.
+const UNIDENTIFIED: &str = "the photo's file could not be read when it was opened";
+
 impl Editor {
     pub(super) fn open(&mut self, path: PathBuf) {
         let catalog = path
@@ -182,16 +186,21 @@ impl Editor {
                 .edit
                 .history()
                 .saved(self.document.edit.recipe());
-            let saved = l
-                .session
-                .catalog
-                .save_edit(
-                    id,
-                    path,
-                    self.document.edit.recipe(),
-                    &self.document.export,
-                    crate::catalog::HistoryUpdate::of(&history),
-                )
+            let saved = self
+                .document
+                .file
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!(UNIDENTIFIED))
+                .and_then(|source| {
+                    l.session.catalog.save_edit(
+                        id,
+                        path,
+                        source,
+                        self.document.edit.recipe(),
+                        &self.document.export,
+                        crate::catalog::HistoryUpdate::of(&history),
+                    )
+                })
                 .map(|()| l.session.catalog.location().clone());
             match saved {
                 Ok(p) => {
@@ -226,8 +235,10 @@ impl Editor {
         {
             return;
         }
-        let Some(job) = self.save_job() else {
-            return;
+        let job = match self.save_job() {
+            None => return,
+            Some(Ok(job)) => job,
+            Some(Err(error)) => return self.unidentified(error),
         };
         match self.autosave.submit(job, ctx) {
             Ok(()) => self.document.edit.save_state_mut().saving(),
@@ -237,16 +248,29 @@ impl Editor {
             }
         }
     }
-    /// The edit as it stands, to save to the catalog photo it belongs to.
-    fn save_job(&self) -> Option<super::autosave::Job> {
+    /// Notes that the open photo's edit can't be saved, as its file could not be
+    /// identified when it opened.
+    fn unidentified(&mut self, error: &'static str) {
+        self.document.edit.save_state_mut().failed(error.into());
+        self.messages
+            .fail_on(Topic::Save, format!("Edits not saved: {error}"));
+    }
+    /// The edit as it stands, to save to the catalog photo it belongs to; `None`
+    /// when it belongs to none. A file that could not be identified when it
+    /// opened gets none: the edit can't be checked against it.
+    fn save_job(&self) -> Option<Result<super::autosave::Job, &'static str>> {
         let raw = self.document.path.clone()?;
         let (Some(l), Some(photo)) = (&self.library, self.document.catalog_photo) else {
             return None;
         };
-        Some(super::autosave::Job {
+        let Some(source) = self.document.file.clone() else {
+            return Some(Err(UNIDENTIFIED));
+        };
+        Some(Ok(super::autosave::Job {
             catalog: l.session.catalog.location().clone(),
             photo,
             raw,
+            source,
             recipe: self.document.edit.recipe().clone(),
             export: self.document.export.clone(),
             history: self
@@ -254,7 +278,7 @@ impl Editor {
                 .edit
                 .history()
                 .saved(self.document.edit.recipe()),
-        })
+        }))
     }
     /// Saves the edit as [`flush`](Self::flush) does, but on the autosave thread,
     /// giving up at `until`: a catalog on a stalled network share must not hold up
@@ -280,9 +304,18 @@ impl Editor {
                 return Flushed::Late;
             }
         }
-        if self.document.edit.save_state().needs_save()
-            && let Some(job) = self.save_job()
-        {
+        let job = if self.document.edit.save_state().needs_save() {
+            match self.save_job() {
+                Some(Err(error)) => {
+                    self.unidentified(error);
+                    return Flushed::Failed;
+                }
+                job => job.and_then(Result::ok),
+            }
+        } else {
+            None
+        };
+        if let Some(job) = job {
             // A saver lost since the last save is started again by a second
             // submit; saving here instead could stall as long as the catalog does.
             let submitted = self

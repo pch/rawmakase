@@ -334,6 +334,7 @@ fn batch_preset_matches_the_preset_clicked_in_develop() -> anyhow::Result<()> {
             library.session.catalog.save_edit(
                 *id,
                 path,
+                &crate::storage::Identity::read(path)?,
                 &start,
                 &Default::default(),
                 crate::catalog::HistoryUpdate::Keep,
@@ -415,7 +416,7 @@ fn an_open_edit_that_cannot_be_saved_holds_the_batch() -> anyhow::Result<()> {
     select(&mut e, &[photos[0].0, photos[1].0]);
     // An edit of a photo no longer in the catalog: saving it fails.
     e.document.catalog_photo = Some(PhotoId(9999));
-    e.document.path = Some(photos[0].1.clone());
+    e.document.opened_at(photos[0].1.clone());
     e.document.edit.setup_mut().exposure = 0.3;
     e.document.edit.save_state_mut().mark_changed();
     e.start_batch(BatchChange::AutoSettings);

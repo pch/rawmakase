@@ -104,6 +104,7 @@ fn invalid_export_defaults_never_replace_saved_edits() -> Result<()> {
     catalog.save_edit(
         id,
         &raw,
+        &rawmakase::storage::Identity::read(&raw)?,
         &recipe,
         &ExportOptions::default(),
         rawmakase::catalog::HistoryUpdate::Keep,
@@ -129,6 +130,7 @@ fn invalid_export_defaults_never_replace_saved_edits() -> Result<()> {
                 .save_edit(
                     id,
                     &raw,
+                    &rawmakase::storage::Identity::read(&raw)?,
                     &recipe,
                     &options,
                     rawmakase::catalog::HistoryUpdate::Keep
@@ -152,6 +154,7 @@ fn invalid_export_defaults_never_replace_saved_edits() -> Result<()> {
             .save_edit(
                 id,
                 &raw,
+                &rawmakase::storage::Identity::read(&raw)?,
                 &recipe,
                 &ExportOptions::default(),
                 rawmakase::catalog::HistoryUpdate::Keep

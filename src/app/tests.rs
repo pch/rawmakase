@@ -31,7 +31,7 @@ fn autosave_writes_the_catalog_in_the_background() -> anyhow::Result<()> {
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(l));
     editor.document.catalog_photo = Some(id);
-    editor.document.path = Some(photo.clone());
+    editor.document.opened_at(photo.clone());
     let settled = || {
         save_state::SaveState::Pending(
             std::time::Instant::now() - std::time::Duration::from_secs(1),
@@ -99,7 +99,7 @@ fn catalog_edits_save_to_database_and_library_renders() -> anyhow::Result<()> {
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(l));
     editor.document.catalog_photo = Some(id);
-    editor.document.path = Some(photo.clone());
+    editor.document.opened_at(photo.clone());
     editor.document.edit.setup_mut().exposure = 1.2;
     editor.document.edit.save_state_mut().mark_changed();
     assert!(editor.flush());
@@ -660,7 +660,7 @@ fn only_the_latest_render_becomes_the_library_thumbnail() -> anyhow::Result<()> 
     let photo = library.session.photos[0].id;
     e.library = Some(Box::new(library));
     e.document.catalog_photo = Some(photo);
-    e.document.path = Some(photos.join("a.RAF"));
+    e.document.opened_at(photos.join("a.RAF"));
     e.view.viewport = Vec2::new(40., 40.);
     e.schedule();
     let first = e.preview.task.id();
@@ -1047,6 +1047,7 @@ fn an_edited_jpeg_whose_file_changed_reopens_from_the_file() -> anyhow::Result<(
         catalog.save_edit(
             id,
             &file,
+            &crate::storage::Identity::read(&file)?,
             &saved,
             &Default::default(),
             crate::catalog::HistoryUpdate::Keep,
@@ -1087,6 +1088,69 @@ fn an_edited_jpeg_whose_file_changed_reopens_from_the_file() -> anyhow::Result<(
             editor.document.lightroom_notice.contains("Photo changed"),
             "{name}: {}",
             editor.document.lightroom_notice
+        );
+    }
+    Ok(())
+}
+/// A photo with no saved edit has no stored identity to protect it: the edit is
+/// saved for the file it was opened as, so a file replaced while it is open gets
+/// none of it, whether autosave or a save before navigation writes it. The edit
+/// stays unsaved.
+#[test]
+fn a_first_save_after_the_file_was_replaced_is_refused() -> anyhow::Result<()> {
+    use worker::LoadedHeader;
+    for autosave in [false, true] {
+        let dir = tempfile::tempdir()?;
+        let raw = dir.path().join("photo.ARW");
+        std::fs::write(&raw, b"identity fixture")?;
+        let path = dir.path().join("photos.rawmakase");
+        let mut catalog = crate::catalog::Catalog::create(&path)?;
+        catalog.add_folder(dir.path())?;
+        let id = catalog.photos()?[0].id;
+        drop(catalog);
+        let ctx = egui::Context::default();
+        let mut editor =
+            Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+        editor.library = Some(Box::new(library::Library::load(&path, ctx.clone())?));
+        editor.document.reset(Some(id));
+        let (generation, _) = editor.load.start();
+        editor
+            .tx
+            .send(Event::Header(Box::new(LoadedHeader {
+                id: generation,
+                path: raw.clone(),
+                metadata: Metadata::default(),
+                recipe: Recipe::default(),
+                export: Default::default(),
+                status: "Original".into(),
+            })))
+            .unwrap();
+        editor.events(&ctx);
+
+        std::fs::write(&raw, b"another photo, same name")?;
+        let before = editor.document.edit.recipe().clone();
+        editor.document.edit.setup_mut().exposure = 1.;
+        editor.commit_edit(before, None);
+        if autosave {
+            *editor.document.edit.save_state_mut() = save_state::SaveState::Pending(
+                std::time::Instant::now() - std::time::Duration::from_secs(1),
+            );
+            editor.autosave(&ctx);
+            while editor.autosave.busy() {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+                editor.autosave(&ctx);
+            }
+        } else {
+            assert!(!editor.flush(), "autosave {autosave}");
+        }
+        let catalog = &editor.library.as_ref().unwrap().session.catalog;
+        assert!(
+            catalog.edit_record(id)?.saved(&raw)?.is_none(),
+            "autosave {autosave}: the replaced file got the edit"
+        );
+        assert!(
+            editor.document.edit.save_state().needs_save(),
+            "autosave {autosave}"
         );
     }
     Ok(())
@@ -1156,7 +1220,7 @@ fn session_preferences_use_the_injected_store() -> anyhow::Result<()> {
         crate::app::session::Session::default(),
         Some(path.clone()),
     );
-    editor.document.path = Some(dir.path().join("photo.ARW"));
+    editor.document.opened_at(dir.path().join("photo.ARW"));
     editor
         .tx
         .send(Event::Monitor(dir.path().join("display.icc")))
@@ -2955,7 +3019,7 @@ fn a_synced_photo_open_in_develop_opens_again() -> anyhow::Result<()> {
     let path = library.photo(ids[0]).unwrap().path.clone();
     let catalog = library.session.catalog.location().clone();
     e.document.catalog_photo = Some(ids[0]);
-    e.document.path = Some(path.clone());
+    e.document.opened_at(path.clone());
     let synced = |id| sync::Synced {
         id,
         path: path.clone(),
@@ -3404,7 +3468,7 @@ fn crop_tool_stays_open_from_photo_to_photo() {
     // loads: its own crop's aspect, and an uncropped one stays uncropped.
     let path = std::path::PathBuf::from("missing-crop-fixture.ARW");
     let reload = |editor: &mut Editor, crop: [f32; 4]| {
-        editor.document.path = Some(path.clone());
+        editor.document.opened_at(path.clone());
         editor.open_raw(path.clone(), None);
         assert!(editor.view.is(state::Tool::Crop));
         editor.document.set_image(image.clone());
@@ -3692,7 +3756,7 @@ fn a_virtual_copy_made_in_develop_keeps_the_unsaved_edit_and_opens() -> anyhow::
     editor.library = Some(Box::new(l));
     editor.module = Module::Develop;
     editor.document.catalog_photo = Some(id);
-    editor.document.path = Some(photo.clone());
+    editor.document.opened_at(photo.clone());
     editor.document.edit.setup_mut().exposure = 0.7;
     editor.document.edit.save_state_mut().mark_changed();
     editor.virtual_copy(library::CopyAction::Create(id));
@@ -3866,7 +3930,7 @@ fn undo_in_develop_reverses_the_flag_before_the_exposure() -> anyhow::Result<()>
     let (d, mut e, ids) = editor_with_catalog(&["a.RAF"])?;
     e.module = Module::Develop;
     e.document.catalog_photo = Some(ids[0]);
-    e.document.path = Some(d.path().join("photos/a.RAF"));
+    e.document.opened_at(d.path().join("photos/a.RAF"));
     let original = e.document.edit.recipe().clone();
     e.document.edit.setup_mut().exposure = 1.;
     e.commit_edit(original.clone(), None);
@@ -3884,6 +3948,74 @@ fn undo_in_develop_reverses_the_flag_before_the_exposure() -> anyhow::Result<()>
     e.redo();
     assert_eq!(e.document.edit.recipe().exposure, 1.);
     assert_eq!(e.library.as_ref().unwrap().photo(ids[0]).unwrap().flag, 1);
+    Ok(())
+}
+/// Undoing a Develop change on a photo closed since saves to the file its saved
+/// edit names, which a verified move refreshes: the same bytes with another
+/// modification time still take the undo.
+#[test]
+fn undo_on_a_closed_photo_follows_a_verified_move_of_its_file() -> anyhow::Result<()> {
+    let (d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    let a = d.path().join("photos/a.RAF");
+    e.module = Module::Develop;
+    e.document.catalog_photo = Some(ids[0]);
+    e.document.opened_at(a.clone());
+    let original = e.document.edit.recipe().clone();
+    e.document.edit.setup_mut().exposure = 1.;
+    e.commit_edit(original, None);
+    assert!(e.flush());
+    e.sync_undo();
+    e.document.reset(Some(ids[1]));
+    e.document.opened_at(d.path().join("photos/b.RAF"));
+    // As a verified move with a coarser time leaves it: the catalog's edit names
+    // the file as it is now.
+    std::fs::File::options()
+        .write(true)
+        .open(&a)?
+        .set_modified(std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1))?;
+    let library = e.library.as_mut().unwrap();
+    assert!(library.session.catalog.load_edit(ids[0], &a).is_err());
+    let crate::catalog::CatalogLocation::File(catalog) = library.session.catalog.location().clone();
+    rusqlite::Connection::open(catalog)?.execute(
+        "UPDATE photos SET identity=? WHERE id=?",
+        rusqlite::params![
+            serde_json::to_string(&crate::storage::Identity::read(&a)?)?,
+            ids[0].0
+        ],
+    )?;
+    e.undo();
+    let library = e.library.as_ref().unwrap();
+    let saved = library.session.catalog.load_edit(ids[0], &a)?.unwrap();
+    assert_eq!(saved.recipe.exposure, 0.);
+    Ok(())
+}
+/// Closing with an edit that can't be checked against its file, as its identity
+/// could not be read when it opened, is a failed save, not a saved one.
+#[test]
+fn closing_with_an_unidentified_file_is_a_failed_save() -> anyhow::Result<()> {
+    let (d, mut e, ids) = editor_with_catalog(&["a.RAF"])?;
+    e.module = Module::Develop;
+    e.document.catalog_photo = Some(ids[0]);
+    e.document.path = Some(d.path().join("photos/a.RAF"));
+    assert!(e.document.file.is_none());
+    let original = e.document.edit.recipe().clone();
+    e.document.edit.setup_mut().exposure = 1.;
+    e.commit_edit(original, None);
+    assert_eq!(
+        e.flush_by(std::time::Instant::now() + std::time::Duration::from_secs(1)),
+        workflow::Flushed::Failed
+    );
+    assert!(e.document.edit.save_state().needs_save());
+    assert!(!e.flush());
+    let library = e.library.as_ref().unwrap();
+    assert!(
+        library
+            .session
+            .catalog
+            .edit_record(ids[0])?
+            .saved(&d.path().join("photos/a.RAF"))?
+            .is_none()
+    );
     Ok(())
 }
 #[test]
@@ -3917,7 +4049,7 @@ fn a_library_change_is_undone_in_the_library() -> anyhow::Result<()> {
     // Off to Develop on the other photo.
     e.module = Module::Develop;
     e.document.catalog_photo = Some(ids[0]);
-    e.document.path = Some(d.path().join("photos/a.RAF"));
+    e.document.opened_at(d.path().join("photos/a.RAF"));
     e.library.as_mut().unwrap().select(Some(ids[0]));
     e.undo();
     assert!(e.module == Module::Library);
@@ -4295,7 +4427,7 @@ fn paste_works_out_white_balance_for_this_camera_and_previous_pastes_the_last_ph
     let other = std::path::PathBuf::from("missing-previous-fixture.ARW");
     editor.open_raw(other.clone(), None);
     editor.document.metadata = Some(first);
-    editor.document.path = Some(other.clone());
+    editor.document.opened_at(other.clone());
     editor.document.edit.setup_mut().exposure = -1.;
     editor.open_raw(other, None);
     editor.document.metadata = Some(second);
@@ -4946,7 +5078,7 @@ fn leaving_a_photo_mid_drag_saves_the_drag_as_a_history_step() -> anyhow::Result
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(l));
     editor.document.catalog_photo = Some(id);
-    editor.document.path = Some(photo);
+    editor.document.opened_at(photo);
     // A slider still held down when Left or Right leaves the photo.
     let frame = editor.document.edit.begin();
     editor.document.edit.setup_mut().exposure = 0.6;
@@ -6412,6 +6544,7 @@ fn develop_opens_photos_with_the_edit_the_catalog_resolves() -> anyhow::Result<(
     c.save_edit(
         ids[0].0,
         &ids[0].1,
+        &crate::storage::Identity::read(&ids[0].1)?,
         &saved,
         &Default::default(),
         crate::catalog::HistoryUpdate::Keep,
@@ -6508,6 +6641,7 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
         c.save_edit(
             *id,
             path,
+            &crate::storage::Identity::read(path)?,
             r,
             &Default::default(),
             crate::catalog::HistoryUpdate::Keep,
@@ -6859,7 +6993,7 @@ fn quitting_saves_an_edit_still_waiting_for_autosave() -> anyhow::Result<()> {
     let path = d.path().join("photos/a.RAF");
     e.module = Module::Develop;
     e.document.catalog_photo = Some(ids[0]);
-    e.document.path = Some(path.clone());
+    e.document.opened_at(path.clone());
     let before = e.document.edit.recipe().clone();
     e.document.edit.setup_mut().exposure = 0.7;
     e.commit_edit(before, None);
@@ -6877,7 +7011,7 @@ fn editor_with_a_stalled_catalog() -> anyhow::Result<(tempfile::TempDir, Editor)
     let (d, mut e, ids) = editor_with_catalog(&["a.RAF"])?;
     e.module = Module::Develop;
     e.document.catalog_photo = Some(ids[0]);
-    e.document.path = Some(d.path().join("photos/a.RAF"));
+    e.document.opened_at(d.path().join("photos/a.RAF"));
     e.autosave = autosave::Autosave::stalled();
     let before = e.document.edit.recipe().clone();
     e.document.edit.setup_mut().exposure = 0.7;
@@ -7231,7 +7365,7 @@ fn a_quit_with_an_edit_whose_next_save_fails_keeps_the_window_open() -> anyhow::
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(l));
     editor.document.catalog_photo = Some(id);
-    editor.document.path = Some(photo.clone());
+    editor.document.opened_at(photo.clone());
     editor.document.edit.save_state_mut().mark_changed();
     assert!(editor.flush());
     assert!(!editor.quitting_would_cut_off_work());

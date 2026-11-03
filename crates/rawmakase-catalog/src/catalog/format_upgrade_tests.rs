@@ -84,6 +84,7 @@ fn earlier_catalog() -> Result<(tempfile::TempDir, PathBuf, PathBuf, PhotoId)> {
     cat.save_edit(
         id,
         &file,
+        &crate::storage::Identity::read(&file)?,
         &Recipe::default(),
         &ExportOptions::default(),
         HistoryUpdate::Replace(&history),
@@ -173,7 +174,14 @@ fn storing_an_edit_upgrades_the_catalog_first_and_earlier_releases_refuse_it() -
     let mut cat = Catalog::open(&path)?;
     let mut edit = cat.load_edit(id, &file)?.unwrap();
     edit.recipe.contrast = 0.1;
-    cat.save_edit(id, &file, &edit.recipe, &edit.export, HistoryUpdate::Keep)?;
+    cat.save_edit(
+        id,
+        &file,
+        &crate::storage::Identity::read(&file)?,
+        &edit.recipe,
+        &edit.export,
+        HistoryUpdate::Keep,
+    )?;
     drop(cat);
     assert_eq!(version(&path)?, VERSION);
     // A release before the one engine refuses the upgraded catalog...
@@ -240,7 +248,14 @@ fn a_failed_upgrade_leaves_the_catalog_and_its_backup_intact() -> Result<()> {
     let mut edit = cat.load_edit(id, &file)?.unwrap();
     edit.recipe.contrast = 0.1;
     let error = cat
-        .save_edit(id, &file, &edit.recipe, &edit.export, HistoryUpdate::Keep)
+        .save_edit(
+            id,
+            &file,
+            &crate::storage::Identity::read(&file)?,
+            &edit.recipe,
+            &edit.export,
+            HistoryUpdate::Keep,
+        )
         .unwrap_err();
     assert!(format!("{error:#}").contains("disk full"), "{error:#}");
     assert_eq!(cat.format_version()?, 2);
@@ -269,7 +284,14 @@ fn a_failed_upgrade_leaves_the_catalog_and_its_backup_intact() -> Result<()> {
     assert_eq!(version(&backup)?, 2);
     // Without the failure, the next save upgrades it, beside the first backup.
     let mut cat = Catalog::open(&path)?;
-    cat.save_edit(id, &file, &edit.recipe, &edit.export, HistoryUpdate::Keep)?;
+    cat.save_edit(
+        id,
+        &file,
+        &crate::storage::Identity::read(&file)?,
+        &edit.recipe,
+        &edit.export,
+        HistoryUpdate::Keep,
+    )?;
     assert_eq!(cat.format_version()?, VERSION);
     assert_eq!(backups(dir.path())?.len(), 2);
     assert!(
@@ -295,6 +317,7 @@ fn a_failed_save_or_snapshot_does_not_upgrade_the_catalog() -> Result<()> {
         cat.save_edit(
             id,
             &missing,
+            &crate::storage::Identity::read(&file)?,
             &edit.recipe,
             &edit.export,
             HistoryUpdate::Keep
@@ -307,6 +330,7 @@ fn a_failed_save_or_snapshot_does_not_upgrade_the_catalog() -> Result<()> {
         cat.save_edit(
             id,
             &changed,
+            &crate::storage::Identity::read(&changed)?,
             &edit.recipe,
             &edit.export,
             HistoryUpdate::Keep
@@ -352,7 +376,14 @@ fn the_upgrade_keeps_what_it_does_not_know_in_a_history() -> Result<()> {
     drop(db);
     let mut cat = Catalog::open(&path)?;
     let edit = cat.load_edit(id, &file)?.unwrap();
-    cat.save_edit(id, &file, &edit.recipe, &edit.export, HistoryUpdate::Keep)?;
+    cat.save_edit(
+        id,
+        &file,
+        &crate::storage::Identity::read(&file)?,
+        &edit.recipe,
+        &edit.export,
+        HistoryUpdate::Keep,
+    )?;
     drop(cat);
     let after = decompress(&stored(&Connection::open(&path)?, id)?.history)?;
     let mut expected = history;
@@ -393,7 +424,14 @@ fn the_upgrade_leaves_a_damaged_edit_as_it_was() -> Result<()> {
     drop(db);
     let mut cat = Catalog::open(&path)?;
     let edit = cat.load_edit(id, &file)?.unwrap();
-    cat.save_edit(id, &file, &edit.recipe, &edit.export, HistoryUpdate::Keep)?;
+    cat.save_edit(
+        id,
+        &file,
+        &crate::storage::Identity::read(&file)?,
+        &edit.recipe,
+        &edit.export,
+        HistoryUpdate::Keep,
+    )?;
     assert_eq!(cat.format_version()?, VERSION);
     drop(cat);
     let after = stored(&Connection::open(&path)?, id)?;
@@ -449,6 +487,7 @@ fn storing_a_lensfun_choice_raises_the_format_and_nothing_else_does() -> Result<
     cat.save_edit(
         id,
         &file,
+        &crate::storage::Identity::read(&file)?,
         &plain,
         &ExportOptions::default(),
         HistoryUpdate::Keep,
@@ -461,6 +500,7 @@ fn storing_a_lensfun_choice_raises_the_format_and_nothing_else_does() -> Result<
     cat.save_edit(
         id,
         &file,
+        &crate::storage::Identity::read(&file)?,
         &off,
         &ExportOptions::default(),
         HistoryUpdate::Keep,
@@ -503,6 +543,7 @@ fn a_lensfun_choice_anywhere_in_history_or_a_snapshot_raises_the_format() -> Res
     cat.save_edit(
         id,
         &file,
+        &crate::storage::Identity::read(&file)?,
         &Recipe::default(),
         &ExportOptions::default(),
         HistoryUpdate::Replace(&history),
@@ -531,6 +572,7 @@ fn a_failed_lensfun_save_leaves_the_format_and_the_edit() -> Result<()> {
         .save_edit(
             id,
             &file,
+            &crate::storage::Identity::read(&file)?,
             &lensfun,
             &ExportOptions::default(),
             HistoryUpdate::Keep,
@@ -546,6 +588,7 @@ fn a_failed_lensfun_save_leaves_the_format_and_the_edit() -> Result<()> {
     cat.save_edit(
         id,
         &file,
+        &crate::storage::Identity::read(&file)?,
         &lensfun,
         &ExportOptions::default(),
         HistoryUpdate::Keep,
@@ -586,6 +629,7 @@ fn an_exported_lensfun_edit_keeps_its_format_and_attribution() -> Result<()> {
     cat.save_edit(
         id,
         &file,
+        &crate::storage::Identity::read(&file)?,
         &with_lensfun(true),
         &ExportOptions::default(),
         HistoryUpdate::Keep,
@@ -640,6 +684,7 @@ fn storing_ai_denoise_anywhere_raises_the_format() -> Result<()> {
     cat.save_edit(
         id,
         &file,
+        &crate::storage::Identity::read(&file)?,
         &with_ai_denoise(false, 0.5),
         &ExportOptions::default(),
         HistoryUpdate::Keep,
@@ -649,6 +694,7 @@ fn storing_ai_denoise_anywhere_raises_the_format() -> Result<()> {
     cat.save_edit(
         id,
         &file,
+        &crate::storage::Identity::read(&file)?,
         &lensfun,
         &ExportOptions::default(),
         HistoryUpdate::Keep,
@@ -658,6 +704,7 @@ fn storing_ai_denoise_anywhere_raises_the_format() -> Result<()> {
     cat.save_edit(
         id,
         &file,
+        &crate::storage::Identity::read(&file)?,
         &off,
         &ExportOptions::default(),
         HistoryUpdate::Keep,
@@ -686,6 +733,7 @@ fn storing_ai_denoise_anywhere_raises_the_format() -> Result<()> {
     cat.save_edit(
         id,
         &file,
+        &crate::storage::Identity::read(&file)?,
         &Recipe::default(),
         &ExportOptions::default(),
         HistoryUpdate::Replace(&history),

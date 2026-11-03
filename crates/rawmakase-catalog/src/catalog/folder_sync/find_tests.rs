@@ -124,6 +124,7 @@ impl Fixture {
         self.cat.save_edit(
             id,
             &path,
+            &crate::storage::Identity::read(&path)?,
             &recipe,
             &ExportOptions::default(),
             crate::catalog::HistoryUpdate::Keep,

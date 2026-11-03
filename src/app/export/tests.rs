@@ -136,7 +136,7 @@ fn an_open_photo_whose_edit_isnt_final_holds_back_only_its_own_export() -> anyho
         .clone();
     // Open in Develop, its Lightroom edit still to be applied.
     e.document.catalog_photo = Some(ids[0]);
-    e.document.path = Some(path);
+    e.document.opened_at(path);
     e.document.metadata = Some(Default::default());
     e.document
         .set_image(Arc::new(crate::camera_data::CameraImage {
@@ -199,7 +199,7 @@ fn a_photo_opened_without_a_catalog_is_exported_only_while_its_file_is_there() -
     )?;
     let ctx = egui::Context::default();
     let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
-    e.document.path = Some(path.clone());
+    e.document.opened_at(path.clone());
     e.document.metadata = Some(Default::default());
     e.document
         .set_image(Arc::new(crate::camera_data::CameraImage {

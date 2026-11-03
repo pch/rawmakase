@@ -76,6 +76,7 @@ fn an_exported_folder_keeps_everything_of_its_photos_and_nothing_of_others() -> 
     c.save_edit(
         s.a1,
         &a1_path,
+        &crate::storage::Identity::read(&a1_path)?,
         &edited(1.25),
         &ExportOptions::default(),
         HistoryUpdate::Keep,

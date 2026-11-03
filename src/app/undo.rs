@@ -31,10 +31,12 @@ pub(super) enum Command {
     /// more photos; undone in the Library.
     Descriptive(Box<DescriptiveCommand>),
     /// A Develop step or History click on `photo` (`None`: a file outside
-    /// the catalog), in the History identified by `history`.
+    /// the catalog), in the History identified by `history`, made on the file
+    /// `source` (`None`: it could not be read when the photo opened).
     Develop {
         photo: Option<PhotoId>,
         history: u64,
+        source: Option<crate::storage::Identity>,
         change: Box<Recorded>,
     },
     /// Settings synchronized to several photos at once; undone and redone together.
@@ -145,6 +147,7 @@ impl Editor {
                     Command::Develop {
                         photo,
                         history,
+                        source: self.document.file.clone(),
                         change: Box::new(change),
                     },
                 )
@@ -343,6 +346,7 @@ impl Editor {
             Command::Develop {
                 photo,
                 history,
+                source,
                 change,
             } => {
                 let (target, at) = match direction {
@@ -352,9 +356,11 @@ impl Editor {
                 // The History that recorded it goes back to the exact state;
                 // the same photo opened again since gets the recipe as a step.
                 let same_history = self.document.edit.history().id() == *history;
+                // A file replaced since the change was made gets none of it.
                 let reopened = photo.is_some()
                     && self.document.catalog_photo == *photo
-                    && self.document.path.is_some();
+                    && self.document.path.is_some()
+                    && self.document.file == *source;
                 if same_history || reopened {
                     self.module = Module::Develop;
                     let step = Step::new(verb, "");
@@ -395,10 +401,20 @@ impl Editor {
                     .catalog
                     .load_edit(id, &path)
                     .and_then(|edit| {
+                        // A saved edit's identity, which a verified move of its
+                        // file refreshes, protects the file; without one, the
+                        // file the change was made on does.
+                        let source = match &edit {
+                            Some(_) => crate::storage::Identity::read(&path)?,
+                            None => source.clone().ok_or_else(|| {
+                                anyhow::anyhow!("its file could not be read when it was edited")
+                            })?,
+                        };
                         let export = edit.map(|e| e.export).unwrap_or_default();
                         library.session.catalog.save_edit(
                             id,
                             &path,
+                            &source,
                             target,
                             &export,
                             crate::catalog::HistoryUpdate::Keep,
