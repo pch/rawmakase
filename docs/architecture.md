@@ -110,7 +110,9 @@ Fullscreen skips the handler; native traffic-light buttons remain available.
 `Editor` deliberately remains the coordinator for state shared across panels.
 A panel should call the domain API responsible for an operation, rather than
 implementing file formats, SQL or pixel processing itself. Thumbnail decoding
-belongs to `raw`; library browsing does not call into the preview renderer.
+belongs to `raw`; library browsing does not call into the preview renderer
+(`PreviewRenderer` and its state). Its edited previews use `develop::render_fitted`,
+Develop's Fit path on the CPU, keeping nothing between photos.
 
 The community camera-profile catalogue has three owners. The model's
 `camera_profiles::catalogue` owns the checked-in data (`data/camera-profiles`:

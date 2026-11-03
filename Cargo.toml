@@ -104,19 +104,22 @@ objc2-quartz-core = { version = "0.3", default-features = false, features = ["st
 # and URLForDirectory for whether a volume has one; a drive's name for the
 # Folders panel (src/platform/volume.rs): NSURLVolumeNameKey; the region's
 # decimal separator for file names (src/platform/locale.rs): NSLocale.
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "FoundationErrors", "NSError", "NSFileManager", "NSLocale", "NSPathUtilities", "NSRunLoop", "NSString", "NSURL", "NSUserDefaults"] }
+# The computer's memory (src/platform/memory.rs): NSProcessInfo.
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "FoundationErrors", "NSError", "NSFileManager", "NSLocale", "NSPathUtilities", "NSProcessInfo", "NSRunLoop", "NSString", "NSURL", "NSUserDefaults"] }
 
 # The freedesktop Trash (src/platform/trash/freedesktop.rs, also built for
 # macOS's tests): the user's id, and whether a folder could be made where
 # its Trash would be. Its rename is storage::fsops's.
+# The computer's memory on Linux (src/platform/memory.rs): sysinfo.
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "1.1", features = ["fs", "process"] }
+rustix = { version = "1.1", features = ["fs", "process", "system"] }
 
 [target.'cfg(windows)'.dependencies]
 # Win32_Storage_FileSystem and Win32_System_WindowsProgramming: the drive
 # type of a volume, for whether it has a Recycle Bin (src/platform/trash/
 # windows.rs); rawmakase-model builds both already.
-windows-sys = { version = "0.61", features = ["Win32_Devices_Display", "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Registry", "Win32_System_WindowsProgramming", "Win32_UI_ColorSystem", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+# Win32_System_SystemInformation: the computer's memory (src/platform/memory.rs).
+windows-sys = { version = "0.61", features = ["Win32_Devices_Display", "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_WindowsProgramming", "Win32_UI_ColorSystem", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 # The Recycle Bin (src/platform/trash/windows.rs): IFileOperation and its
 # progress sink, COM interfaces windows-sys has no vtables for; the sink's
 # #[implement] names windows-core.

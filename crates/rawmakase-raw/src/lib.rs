@@ -153,7 +153,24 @@ pub fn preview<'a>(
     info: &RawInfo,
     bytes: &'a [u8],
 ) -> std::result::Result<std::borrow::Cow<'a, [u8]>, NoPreview> {
-    let (at, len) = preview::find(info, bytes)?;
+    embedded(bytes, preview::find(info, bytes)?)
+}
+
+/// The embedded preview a thumbnail `edge` pixels on its long side is best
+/// made from, as [`preview`] gives it: the smallest JPEG that reaches `edge`
+/// and has the largest preview's shape, else the largest.
+pub fn preview_reaching<'a>(
+    info: &RawInfo,
+    bytes: &'a [u8],
+    edge: u32,
+) -> std::result::Result<std::borrow::Cow<'a, [u8]>, NoPreview> {
+    embedded(bytes, preview::find_reaching(info, bytes, edge)?)
+}
+
+fn embedded(
+    bytes: &[u8],
+    (at, len): (u64, u64),
+) -> std::result::Result<std::borrow::Cow<'_, [u8]>, NoPreview> {
     let range = usize::try_from(at)
         .ok()
         .zip(usize::try_from(at.saturating_add(len)).ok());

@@ -134,3 +134,85 @@ fn a_legacy_edit_that_cant_be_kept_leaves_its_photo_added_without_it() -> Result
     assert!(cat.load_edit(plain.id, &plain.path)?.is_none());
     assert_complete(&cat, &edit)
 }
+
+#[test]
+fn a_legacy_edits_masks_come_with_its_photo() -> Result<()> {
+    use crate::model::masks::{BITMAP_SAMPLING, BitmapMask, MaskComponent, MaskGroup, MaskShape};
+    use crate::storage::bitmaps::{Bitmap, to_base64};
+    let (_dir, folder, mut cat, edit) = folder()?;
+    let raster = Bitmap {
+        width: 2,
+        height: 1,
+        channels: 1,
+        depth: 1,
+        data: vec![43, 3],
+    };
+    let masked = Recipe {
+        masks: vec![MaskGroup {
+            components: vec![MaskComponent::new(MaskShape::Bitmap(BitmapMask {
+                id: raster.hash(),
+                width: 2,
+                height: 1,
+                sampling: BITMAP_SAMPLING,
+                source: None,
+            }))],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let plain = folder.join("plain.dng");
+    legacy_sidecar::save(&plain, &masked, &ExportOptions::default())?;
+    // Its raster saved beside it, as the release that made it did.
+    let companion = folder.join("plain.dng.rawmakase-local.json");
+    let mut json: serde_json::Value = serde_json::from_slice(&std::fs::read(&companion)?)?;
+    json["bitmaps"] = serde_json::json!({ raster.hash(): to_base64(&raster.compress()?) });
+    std::fs::write(&companion, serde_json::to_vec(&json)?)?;
+    assert_eq!(cat.import_folder(&folder, &defaults(), &[])?.added, 3);
+    let plain = cat
+        .photos()?
+        .into_iter()
+        .find(|p| p.filename == "plain.dng")
+        .unwrap();
+    assert_eq!(
+        cat.load_edit(plain.id, &plain.path)?.unwrap().recipe.masks,
+        masked.masks
+    );
+    assert_eq!(cat.bitmap(&raster.hash())?, Some(raster));
+    assert_complete(&cat, &edit)
+}
+
+#[test]
+fn a_legacy_edit_is_not_given_to_a_raw_replaced_while_its_folder_is_read() -> Result<()> {
+    // Called for the RAW after its legacy sidecar was read: it replaces the file
+    // there, as a copy finishing during Add Folder would.
+    fn replacing(file: &std::path::Path) -> Option<Vec<u8>> {
+        if file.ends_with("edited.ARW") {
+            std::fs::write(file, b"synthetic raw, replaced while it was read").unwrap();
+        }
+        None
+    }
+    let dir = tempfile::tempdir()?;
+    let folder = dir.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    let raw = folder.join("edited.ARW");
+    std::fs::write(&raw, b"synthetic raw edited")?;
+    let edit = Recipe {
+        exposure: 0.75,
+        ..Default::default()
+    };
+    legacy_sidecar::save(&raw, &edit, &ExportOptions::default())?;
+    let mut cat = Catalog::create(&dir.path().join("Photos.rawmakase"))?;
+    let defaults = NewPhotoDefaults::new(
+        MetadataDefaults {
+            creator: String::new(),
+            copyright: String::new(),
+        },
+        crate::exif::read,
+        replacing,
+    );
+    assert_eq!(cat.import_folder(&folder, &defaults, &[])?.added, 1);
+    let photo = cat.photos()?.into_iter().next().unwrap();
+    // The edit was saved for the file as it was: never the replacement's.
+    assert!(!matches!(cat.load_edit(photo.id, &photo.path), Ok(Some(_))));
+    Ok(())
+}

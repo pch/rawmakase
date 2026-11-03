@@ -38,7 +38,7 @@ pub mod targeted;
 pub mod texture;
 pub mod upright;
 pub use ai_denoise::AiSource;
-pub use preview_renderer::PreviewRenderer;
+pub use preview_renderer::{PreviewRenderer, render_fitted};
 pub mod quality;
 mod recipe;
 pub mod red_eye;

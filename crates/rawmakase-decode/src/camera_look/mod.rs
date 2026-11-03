@@ -33,7 +33,7 @@ use rawmakase_model::{
 use serde::Serialize;
 use std::{
     path::Path,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{Arc, Condvar, Mutex, atomic::AtomicBool},
 };
 
 type Rgb = [f32; 3];
@@ -262,6 +262,12 @@ fn default_profile(
     if let Some(result) = cache::load(dir, &key, m) {
         return result.ok();
     }
+    // One fit of a file at a time where waiting is safe: another caller's is
+    // waited for, and its result read from the cache (see `claim`).
+    let _turn = claim(&key, cancel)?;
+    if let Some(result) = cache::load(dir, &key, m) {
+        return result.ok();
+    }
     // A fit that panics must not stop the photo opening: it starts from what it
     // would have without one, and is tried again next time.
     let fitted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -289,6 +295,58 @@ fn default_profile(
         );
     }
     result.ok()
+}
+
+/// The files being fitted, by fit key, and a wake-up for each fit that ends.
+static FITTING: (Mutex<Vec<cache::FitKey>>, Condvar) = (Mutex::new(Vec::new()), Condvar::new());
+/// The fit of a file, claimed by one caller until dropped.
+struct Claim(cache::FitKey);
+/// What claiming a file's fit came to.
+enum Turn {
+    /// This caller fits the file; others wait for it.
+    #[allow(dead_code)]
+    Mine(Claim),
+    /// Another caller is fitting it and this one may not wait: it fits the
+    /// file too.
+    Theirs,
+}
+impl Drop for Claim {
+    fn drop(&mut self) {
+        let mut fitting = FITTING.0.lock().unwrap_or_else(|e| e.into_inner());
+        fitting.retain(|key| *key != self.0);
+        FITTING.1.notify_all();
+    }
+}
+/// Claims the fit of `key`, waiting while another caller fits the same file;
+/// `None` once `cancel` is set, also when the key comes free: both jobs are
+/// often cancelled together, and a cancelled one must not start a fit.
+/// A caller on a Rayon thread never waits ([`Turn::Theirs`]): while a fit waits
+/// on its pool's work, a thread running part of that work may take the next job,
+/// and if that job waited for the fit, neither would end. Different files that
+/// read the same (hard links, copies) can't be told apart before the key, so no
+/// rule about which jobs run together could rule that out.
+fn claim(key: &cache::FitKey, cancel: &AtomicBool) -> Option<Turn> {
+    let may_wait = rayon::current_thread_index().is_none();
+    let mut fitting = FITTING.0.lock().unwrap_or_else(|e| e.into_inner());
+    loop {
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            return None;
+        }
+        if !fitting.contains(key) {
+            break;
+        }
+        if !may_wait {
+            return Some(Turn::Theirs);
+        }
+        // Bounded, so a cancel is seen without the fit ending.
+        fitting = FITTING
+            .1
+            .wait_timeout(fitting, std::time::Duration::from_millis(50))
+            .unwrap_or_else(|e| e.into_inner())
+            .0;
+    }
+    fitting.push(key.clone());
+    Some(Turn::Mine(Claim(key.clone())))
 }
 
 /// The camera's embedded JPEG of a photo, upright, as sRGB, and the look the camera
@@ -613,6 +671,59 @@ mod tests {
         std::fs::write(&other, &bytes).unwrap();
         assert!(default_profile(&other, &m, &cache, &AtomicBool::new(true)).is_none());
         assert!(cache::load(&cache, &cache::FitKey::of(&other).unwrap(), &m).is_none());
+    }
+
+    /// While a file is fitted, another caller for it waits instead of fitting it
+    /// too, gives up once cancelled, and goes on once the first has finished.
+    #[test]
+    fn a_file_is_fitted_by_one_caller_at_a_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("photo.dng");
+        std::fs::write(&path, b"one file, fitted once").unwrap();
+        let key = cache::FitKey::of(&path).unwrap();
+        let first = claim(&key, &AtomicBool::new(false)).unwrap();
+        // Cancelled while it waits.
+        assert!(claim(&key, &AtomicBool::new(true)).is_none());
+        let waiting = std::thread::spawn({
+            let key = key.clone();
+            move || claim(&key, &AtomicBool::new(false)).is_some()
+        });
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        assert!(
+            !waiting.is_finished(),
+            "a second fit started beside the first"
+        );
+        drop(first);
+        assert!(waiting.join().unwrap());
+        // Released again: the same file is free, but not to a cancelled job,
+        // as when the holder and its waiter are cancelled at once.
+        assert!(claim(&key, &AtomicBool::new(true)).is_none());
+        assert!(claim(&key, &AtomicBool::new(false)).is_some());
+    }
+
+    /// A caller on a Rayon thread doesn't wait for another's fit of the file:
+    /// the fit may be waiting for work that thread runs under it.
+    #[test]
+    fn a_caller_on_a_rayon_thread_never_waits_for_a_fit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("linked.dng");
+        std::fs::write(&path, b"one file, two names").unwrap();
+        let key = cache::FitKey::of(&path).unwrap();
+        let held = claim(&key, &AtomicBool::new(false)).unwrap();
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        pool.spawn(move || {
+            let turn = claim(&key, &AtomicBool::new(false));
+            tx.send(matches!(turn, Some(Turn::Theirs))).unwrap();
+        });
+        let theirs = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("a Rayon thread waited for another caller's fit");
+        assert!(theirs);
+        drop(held);
     }
 
     /// A photo whose lens correction brightens the corners: bright but unclipped
