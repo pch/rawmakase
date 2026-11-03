@@ -509,7 +509,7 @@ mod tests {
                 let _ = crate::decode(&info, &file[..end], &AtomicBool::new(false));
             }
         }
-        let mut noisy = file.clone();
+        let mut noisy = file;
         for (i, b) in noisy.iter_mut().enumerate().skip(8) {
             *b ^= (i * 7919 % 251) as u8;
         }

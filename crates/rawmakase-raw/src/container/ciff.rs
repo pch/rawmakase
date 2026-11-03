@@ -585,7 +585,7 @@ mod tests {
             .windows(12)
             .position(|w| w == b"PowerShot T1")
             .unwrap();
-        let mut g1 = bytes.clone();
+        let mut g1 = bytes;
         g1[at..at + 12].copy_from_slice(b"PowerShot G1");
         assert!(matches!(
             crate::open(&g1),
@@ -638,7 +638,7 @@ mod tests {
                 let _ = crate::decode(&info, &bytes[..end], &AtomicBool::new(false));
             }
         }
-        let mut garbage = bytes.clone();
+        let mut garbage = bytes;
         for (i, b) in garbage.iter_mut().enumerate().skip(14) {
             *b ^= (i * 131 % 251) as u8;
         }

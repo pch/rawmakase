@@ -718,7 +718,7 @@ pub(crate) mod tests {
             .windows(8)
             .position(|w| w == [0x40, 0xc6, 3, 0, 3, 0, 0, 0])
             .unwrap();
-        let mut past = bytes.clone();
+        let mut past = bytes;
         past[at + 8..at + 12].copy_from_slice(&u32::MAX.to_le_bytes());
         assert!(matches!(crate::open(&past), Err(crate::Error::Corrupt(_))));
     }
@@ -883,7 +883,7 @@ pub(crate) mod tests {
         let info = crate::open(&bytes).unwrap();
         assert_eq!(info.frame, [crate::UNSET, crate::UNSET, 0, 0]);
         // A frame header claiming far more samples than the strip can code.
-        let mut huge = jpeg.clone();
+        let mut huge = jpeg;
         let sof = huge.windows(2).position(|w| w == [0xff, 0xc3]).unwrap();
         huge[sof + 5..sof + 9].copy_from_slice(&[0x40, 0, 0x40, 0]);
         let bytes = cr2(&huge, &[], &[]);
@@ -915,7 +915,7 @@ pub(crate) mod tests {
                 let _ = crate::decode(&info, &bytes[..end], &AtomicBool::new(false));
             }
         }
-        let mut garbage = bytes.clone();
+        let mut garbage = bytes;
         for (i, b) in garbage.iter_mut().enumerate().skip(16) {
             *b ^= (i * 131 % 251) as u8;
         }
@@ -986,7 +986,7 @@ pub(crate) mod tests {
             }
         }
         // RawDataOffset past the file's end is an error.
-        let mut far = f.clone();
+        let mut far = f;
         let at = far.windows(4).position(|w| w == [0x81, 0, 4, 0]).unwrap();
         far[at + 8..at + 12].copy_from_slice(&u32::MAX.to_le_bytes());
         assert!(crate::open(&far).is_err());

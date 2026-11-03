@@ -882,7 +882,7 @@ fn a_batch_is_numbered_by_capture_time_then_undated_by_filename() -> Result<()> 
     })
     .collect();
     let copy = cat.create_virtual_copy(given[0])?;
-    let mut with_copy = given.clone();
+    let mut with_copy = given;
     with_copy.push(copy);
     let order = rename_order(&cat, &with_copy).map_err(|e| anyhow::anyhow!("{e}"))?;
     let names: Vec<(&str, Option<&str>)> = order

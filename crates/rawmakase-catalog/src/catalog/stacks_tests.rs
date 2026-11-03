@@ -195,11 +195,11 @@ fn undo_puts_back_the_stacks_as_they_were() -> Result<()> {
     assert_eq!(changed.after.stacks, after.stacks);
     assert_eq!(cat.stack_of(a)?, [a, c]);
 
-    cat.change_stacks(&StackChange::Restore(before.clone()))?;
+    cat.change_stacks(&StackChange::Restore(before))?;
     assert_eq!(cat.stack_of(a)?, [a, b, c]);
     assert_eq!(cat.stack_of(e)?, [d, e]);
     assert!(!cat.stack_places()?[&a].collapsed);
-    cat.change_stacks(&StackChange::Restore(after.clone()))?;
+    cat.change_stacks(&StackChange::Restore(after))?;
     assert_eq!(cat.stack_of(b)?, [d, b]);
     assert_eq!(cat.stack_of(c)?, [a, c]);
     assert!(cat.stack_of(e)?.is_empty());

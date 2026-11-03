@@ -315,7 +315,7 @@ fn a_files_own_xmp_is_read_by_its_extension() -> Result<()> {
         assert_eq!(title_of(name, &png)?, set("Inside"), "{name}");
     }
     // A compressed one, which the XMP standard does not allow, is passed over.
-    let mut compressed = png.clone();
+    let mut compressed = png;
     let flag = compressed
         .windows(18)
         .position(|w| w == b"XML:com.adobe.xmp\0")

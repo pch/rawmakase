@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(crate::open(&file).unwrap().make, "Minolta");
         assert_eq!(
             crate::exif_tiffs(&mut std::io::Cursor::new(&file)).main,
-            Some(ttw.clone())
+            Some(ttw)
         );
         // Without TTW, no dates.
         assert_eq!(
@@ -411,7 +411,7 @@ mod tests {
         for end in 0..file.len() {
             let _ = decode(&file[..end]);
         }
-        let mut noisy = file.clone();
+        let mut noisy = file;
         for (i, b) in noisy.iter_mut().enumerate().skip(4) {
             *b ^= (i * 7919 % 251) as u8;
         }

@@ -1427,7 +1427,7 @@ fn a_drive_offline_at_recovery_is_decided_once_it_is_back() -> Result<()> {
     let (mut t, trash, batch) = crashed_with_receipt(false);
     let offline = Faulty::default();
     offline.unlistable.borrow_mut().push(t.fx.root.clone());
-    offline.unlistable.borrow_mut().push(trash.dir.clone());
+    offline.unlistable.borrow_mut().push(trash.dir);
     let recovery = t.fx.recover(&offline);
     assert_eq!(recovery.unfinished.len(), 1, "{recovery:?}");
     assert!(rows_intact(&t));

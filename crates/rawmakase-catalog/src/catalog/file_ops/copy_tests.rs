@@ -273,11 +273,7 @@ fn a_move_to_or_from_a_drive_whose_file_ids_can_t_be_proven_is_refused() -> Resu
     let fx = files();
     let (here, there) = (fx.root.clone(), fx.root.join("far"));
     let why = "Moving photos to or from this kind of drive (network drives other than SMB shares, and others)";
-    for unstable in [
-        vec![there.clone()],
-        vec![here.clone()],
-        vec![here.clone(), there],
-    ] {
+    for unstable in [vec![there.clone()], vec![here.clone()], vec![here, there]] {
         let disk = Faulty {
             unstable_ids: unstable.clone(),
             ..far(&fx)
@@ -2564,7 +2560,7 @@ fn a_copy_left_on_a_share_with_the_only_bytes_isnt_said_to_be_deletable() -> Res
     let original = fx.root.join("A.NEF");
     // A.NEF is copied whole; once its sidecar's copy is made, another app
     // rewrites it, and the share fills.
-    let watched = original.clone();
+    let watched = original;
     let (sidecar, copied) = (fx.root.join("far/A.xmp"), fx.root.join("far/A.NEF"));
     let disk = Faulty {
         faults: vec![(Op::Copy, 1, Fault::Fail)],

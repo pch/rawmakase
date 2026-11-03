@@ -398,7 +398,7 @@ fn every_member_journalled_moved_was_renamed_and_its_folders_synced_first() {
         }
     };
     let watched = check.clone();
-    let recorded = calls.clone();
+    let recorded = calls;
     let disk = Faulty {
         watch: Some(Box::new(move |call: &Call| {
             watched();
