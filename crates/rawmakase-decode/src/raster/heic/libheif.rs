@@ -14,8 +14,10 @@
 //! The process exiting runs libheif's static destructors, which crash its
 //! threads still decoding (a worker's, quitting mid-decode). So, once libheif
 //! is opened, exiting first waits for the decodes running, up to
-//! [`EXIT_WAIT`] (a photo decodes in well under that, and exiting is never
-//! held up for longer), and no decode starts after.
+//! [`EXIT_WAIT`] (a photo decodes in well under that), and no decode starts
+//! after. A decode still running then ends the process at once, with status
+//! 1 and without the rest of its teardown, rather than run libheif's
+//! destructors under it: exiting is never held up for longer.
 use super::super::avif;
 use super::{HeicFile, Pixels};
 use anyhow::{Result, anyhow, bail, ensure};
@@ -53,14 +55,16 @@ impl Drop for Running {
 }
 
 /// Run as the process exits, before libheif's destructors: lets no decode
-/// start, and waits for those running, up to [`EXIT_WAIT`].
+/// start, and waits for those running, up to [`EXIT_WAIT`]; past that, ends
+/// the process at once, as its exit status can't be known here.
 extern "C" fn wait_for_decodes() {
     let until = Instant::now() + EXIT_WAIT;
     let mut running = RUNNING.0.lock().unwrap_or_else(|e| e.into_inner());
     running.1 = true;
     while running.0 > 0 {
         let Some(left) = until.checked_duration_since(Instant::now()) else {
-            return;
+            // SAFETY: ends the process without running anything more.
+            unsafe { libc::_exit(1) };
         };
         running = RUNNING
             .1
@@ -346,4 +350,47 @@ pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
         rows.flatten().copied().collect()
     };
     Ok(Pixels { width, height, rgb })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Exiting while a decode runs past [`EXIT_WAIT`] ends the process then,
+    /// with status 1, rather than running libheif's destructors under it or
+    /// waiting longer. Run in a child process, which exits.
+    #[test]
+    fn exiting_mid_decode_ends_once_the_wait_is_over() {
+        const CHILD: &str = "RAWMAKASE_LIBHEIF_EXIT_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            if library().is_ok() {
+                std::mem::forget(Running::start());
+                std::process::exit(0);
+            }
+            std::process::exit(2);
+        }
+        let started = Instant::now();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "raster::heic::libheif::tests::exiting_mid_decode_ends_once_the_wait_is_over",
+            ])
+            .env(CHILD, "1")
+            .status()
+            .unwrap();
+        match status.code() {
+            Some(2) => {
+                assert!(
+                    std::env::var_os("RAWMAKASE_REQUIRE_HEIF").is_none(),
+                    "no libheif"
+                );
+                eprintln!("libheif's exit not tested: {:?}", available());
+            }
+            code => {
+                assert_eq!(code, Some(1));
+                let took = started.elapsed();
+                assert!(took >= EXIT_WAIT && took < EXIT_WAIT * 3, "{took:?}");
+            }
+        }
+    }
 }
