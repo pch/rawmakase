@@ -4536,8 +4536,8 @@ fn auto_stack_checks_bursts_again_under_a_new_generation_and_never_stacks_after_
     assert_eq!(library.auto_stacks_of(&dialog), [vec![a, b]]);
     // A new structural generation checks them again, against what the
     // catalog kept: their files are unchanged, so none is read.
+    // (The check may finish within its first poll, every file kept.)
     library.session.bump_generation();
-    assert!(library.read_sequences_by(&mut dialog, |_| panic!("read again")));
     finish_sequences(&mut library, &mut dialog, |_| panic!("read again"));
     assert!(dialog.can_stack());
     assert_eq!(library.auto_stacks_of(&dialog), [vec![a, b]]);
