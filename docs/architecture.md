@@ -1,36 +1,71 @@
 # Architecture
 
-RAWmakase is the app crate with explicit domain modules, on top of
-`crates/rawmakase-model`: what an edit is, as values (the recipe and its settings,
-camera and lens profiles, colour primitives, DNG hints, output buffers, storage helpers), which
-Cargo builds without the RAW decoders, the renderer, wgpu or the GUI, and
-`crates/rawmakase-interop`: the file formats and presets over it (XMP, Lightroom's
-Develop settings, presets, raw defaults, EXIF and JPEG, export settings),
-built the same way, and `crates/rawmakase-catalog`: the SQLite catalog, Lightroom
-catalog import and which edit a photo develops with. Above the model,
-`crates/rawmakase-engine` is the renderer (`develop`, CPU and the GPU preview port),
-built without the RAW decoders, the catalog or the GUI; `crates/rawmakase-decode` is the only
-crate that reaches RAWmakase's own RAW decoders (`crates/rawmakase-raw`) and does
-colour management (`raw`, `demosaic`, `photo`,
-and the full-size decode in `decode` and `decode_cache`, which uses the engine's
-highlight recovery); `crates/rawmakase-export` develops and writes exports with
-their watermarks over both; `crates/rawmakase-inference` is the one leaf that runs
-the selection models and AI Denoise's model through a lazily loaded ONNX Runtime
-(pixels in, coverage or denoised camera RGB out; it knows no other workspace crate,
-and no value, catalog or rendering crate can reach it, so saved masks render without
-any inference and a photo with AI Denoise renders from a result handed to it);
-`crates/rawmakase-remote` sits directly on inference alone — the optional
-worker binary that runs the same models on another computer, and the client the
-app uses when configured to, over a bounded TCP protocol that knows no catalog,
-renderer or GUI. The app crate re-exports these crates' modules at its
-root (`crate::model`, `crate::xmp`, `crate::catalog`, `crate::develop`…), so paths
-read the same on either side. The desktop app and CLI compose these APIs;
-parsing, persistence and rendering implementations do not import the desktop UI.
-Use the domain paths below for new work.
+Status: Current. How RAWmakase is divided, which way dependencies point, how work
+moves between threads, and the rules and contracts every change keeps. For
+file-by-file navigation, runtime flows, storage locations and feature entry points,
+see the [code map](code-map.md); for the words used here, the
+[glossary](glossary.md). Feature details live in each module's `//!` docs.
 
-For file-by-file navigation, runtime flows, storage locations and feature entry
-points, see the [code map](code-map.md). This guide describes the boundaries those
-files should preserve.
+## Crates and dependency direction
+
+RAWmakase is a Cargo workspace. The app crate (`src/`) is the desktop editor and
+the command line; everything it composes is a crate below it, and dependencies
+point only down:
+
+```mermaid
+flowchart TD
+    app["rawmakase (app, CLI)"]
+    export[rawmakase-export]
+    decode[rawmakase-decode]
+    catalog[rawmakase-catalog]
+    engine[rawmakase-engine]
+    interop[rawmakase-interop]
+    model[rawmakase-model]
+    raw[rawmakase-raw]
+    tiff[rawmakase-tiff]
+    protocol[rawmakase-protocol]
+    ctl[rawmakase-ctl]
+    remote[rawmakase-remote]
+    inference[rawmakase-inference]
+
+    app --> export & decode & catalog & engine & interop & model
+    app --> ctl & remote & inference
+    export --> catalog & decode & engine
+    decode --> engine & raw
+    catalog --> interop
+    engine --> interop
+    interop --> model
+    model --> tiff & protocol
+    raw --> tiff
+    ctl --> protocol
+    remote --> inference
+```
+
+(Edges implied by others are left out: every crate above the model also depends
+on it directly.)
+
+| Crate | Owns | Builds without |
+| --- | --- | --- |
+| `rawmakase-model` | What an edit is, as values: the recipe and its settings, camera and lens profiles, colour primitives, DNG hints, output buffers, file identity and storage helpers | The RAW decoders, the renderer, wgpu, the GUI |
+| `rawmakase-interop` | The file formats and presets over the model: XMP, Lightroom's Develop settings, presets, raw defaults, EXIF and JPEG, export settings | The same |
+| `rawmakase-catalog` | The SQLite catalog, Lightroom catalog import, file operations, and which edit a photo develops with | The same |
+| `rawmakase-engine` | The renderer (`develop`): the CPU pipeline, which is the reference, and the GPU preview port | The RAW decoders, the catalog, the GUI |
+| `rawmakase-raw` | RAWmakase's own RAW decoders ([RAW decoding](raw-decoding.md)) | Everything but `rawmakase-tiff` |
+| `rawmakase-tiff` | The bounded TIFF reader DNGs and RAW containers use; no RAW knowledge | Everything |
+| `rawmakase-decode` | Opening and decoding photos: the only crate that reaches `rawmakase-raw`; colour management, demosaicing, rendered files (JPEG … HEIF), the full-size decode and its cache, AI Denoise's packing and assembly, Camera Look fitting | C imaging libraries, the catalog, export, the GUI |
+| `rawmakase-export` | Developing and writing exports, with their watermarks | The app, a window or GPU backend |
+| `rawmakase-inference` | Running the selection models and AI Denoise's model through a lazily loaded ONNX Runtime: pixels in, coverage or denoised camera RGB out | Every other workspace crate |
+| `rawmakase-remote` | The optional worker binary that runs the same models on another computer, and the app's client for it, over a bounded TCP protocol | Everything but inference |
+| `rawmakase-protocol` | What the app and its control clients agree on: protocol version, `control.json` endpoint, data folder | Everything |
+| `rawmakase-ctl` (`tools/`) | The control client, used by `rawmakase control`, `rawmakase mcp` and the standalone `rawmakase-ctl` | The app |
+
+No value, catalog or rendering crate can reach `rawmakase-inference`, so saved masks
+render without any inference installed and a photo with AI Denoise renders from a
+result handed to it. The app crate re-exports these crates' modules at its root
+(`crate::model`, `crate::xmp`, `crate::catalog`, `crate::develop`…), so paths read
+the same on either side; parsing, persistence and rendering never import the
+desktop UI. Inside the app crate, `scripts/deps.py` checks the same direction
+between top-level modules (see [boundaries](#boundaries-to-preserve)).
 
 ## Module ownership
 
@@ -83,141 +118,59 @@ interface use it without depending on recipe or render orchestration. Presets an
 camera profiles independently use storage's asset-directory policy; neither
 library discovers its folders through the other.
 
-## Desktop composition
+## Threads and jobs
 
-`app/mod.rs` owns the `Editor`, initialization and lifecycle. Its fields remain
-private. UI and workflow methods have visibility limited to the app module, one
-file per tool, workflow or policy. Each Develop adjustment panel has its own file
-in `inspector/panels/`: it takes the recipe, the view state and a read-only view
-of what it shows, edits the recipe during the edit frame and returns the actions
-it can't carry out itself (Auto, imports, dialogs), which `Editor::controls`
-carries out after every panel is drawn. The [code map](code-map.md#desktop-application) lists them.
+The UI thread owns the `Editor` and draws every frame. Long work (decoding,
+rendering, opening or importing a catalog, file operations, autosave) runs on
+worker threads, which report back, mostly through named `worker::Event`s and
+otherwise through a channel of the service's own (autosave, the catalog session's
+background readers), and ask for a repaint; the UI thread applies a result only if
+it is still wanted. Some short catalog work stays on the UI thread on purpose: the
+synchronous save before navigating to another photo (`Editor::flush`, after
+waiting for the autosave in flight) and the catalog session writing what its
+background readers found (`catalog_session::backfill`). Closing and quitting save
+the Develop edit on the autosave thread instead and wait only until a deadline
+(`Editor::flush_by`), so a stalled catalog cannot hold up closing on it. Two writes
+before it still run on the UI thread without a deadline: a Library Copy Name or
+metadata field being typed, and the session file ([shutdown](shutdown.md#where-the-code-stands)). Four kinds of worker exist:
 
-`platform::menu` owns the macOS menu objects and queues typed actions, waking the
-UI without reaching editor state. The AppKit objects stay on the main thread;
-`app::native_menu` owns availability and revalidates each action before calling
-the existing editor operations. Close and Quit retain the normal save guard.
+- **One-off tasks** (`app::task::spawn`): opening a catalog, an import, a file
+  operation, a fit. A panic still reaches the UI as a failure. The state that owns
+  the work says it is running. Fits and downloads are owned by a `Task`, whose
+  generation and cancel flag reject stale results. Catalog dialogs, opening and
+  import, folder changes, batch edits and file operations hold
+  `app::activity::Activity`, which allows one foreground operation at a time and
+  keeps the busy state; how each of those checks that its result still applies is
+  its own (a catalog location, the catalog session's structural generation).
+- **Latest-only workers** (`app::worker::Latest`): the Develop loader, its full-size
+  stage and prefetch, the renderer (with lanes for the edit and Before), Reference
+  View, stand-ins, the Loupe and its zoom. A single-slot mailbox replaces pending
+  work with the newest request; a panicking job does not end the thread.
+- **Owned services with their own queue**: autosave (its own thread and catalog
+  connection), AI Denoise (`app::ai_denoise::Service`: one queue and one worker for
+  Develop, export and the CLI), the Library's edited-preview scheduler and thumbnail
+  workers, and the catalog session's background reads (capture times, photo info,
+  checksums).
+- **Rayon pools** inside a job, for pixel work; background work such as the
+  neighbour's prefetch uses a small pool at background priority
+  (`raw::background_pool`).
 
-`platform::titlebar` owns the macOS header's drag widget and double-click
-(fastframe's widget is used elsewhere). `configure` registers the native window
-for the current viewport. An application-lifetime AppKit event monitor retains
-the latest left mouse-down for each registered window; closed windows are pruned.
-An accepted egui header press consumes that event once, across repeated passes.
-Other windows, controls and modal input cannot spend its event. Native dragging
-receives the original mouse-down, never `currentEvent`, which can already be a
-trackpad pressure, drag or release event. The second press performs the system's
-Zoom or Minimize setting once across the entire header; Fill remains native as
-in fastframe. There is no native-strip ownership split or `setMovable` override.
-Fullscreen skips the handler; native traffic-light buttons remain available.
+Every worker, what it blocks on, how it stops and whether quitting waits for it is
+in the [shutdown contract](shutdown.md); a change that adds a worker or changes
+what one waits on updates it.
 
-`Editor` deliberately remains the coordinator for state shared across panels.
-A panel should call the domain API responsible for an operation, rather than
-implementing file formats, SQL or pixel processing itself. Thumbnail decoding
-belongs to `raw`; library browsing does not call into the preview renderer
-(`PreviewRenderer` and its state). Its edited previews use `develop::render_fitted`,
-Develop's Fit path on the CPU, keeping nothing between photos.
+The rules every job must follow (known gaps are tracked in #808):
 
-The community camera-profile catalogue has three owners. The model's
-`camera_profiles::catalogue` owns the checked-in data (`data/camera-profiles`:
-hand-written `sources.toml`, generated `catalogue.toml` and `excluded.toml`), its
-validation, matching by the same camera rule the profile library lists by,
-verification of downloaded bytes and installation through the existing no-clobber
-importer, and the deterministic generator; it has no HTTP or UI dependency and
-never reaches the network. `app::profile_download` owns the HTTP request, the task
-and what the offer shows for the open photo: which profiles match, measured once
-per camera and profile library rather than every frame, when it shows (by
-default while the photo keeps its raw defaults' profile and no Adobe profile is
-imported), and the per-camera dismissal the session keeps. `app::inspector::profile_offer` draws the offer under
-Basic › Profile; it only reports clicks. A download captures its profile, camera
-metadata and destination once. It is an application-wide library operation, so
-navigation does not cancel it. Its completion calls
-`bulk_import::list_profiles_after_import`, the refresh a manual camera-profile import
-runs, without touching a running import's state or status line, so profiles, raw defaults (with the fitted
-default kept for a photo without colour data), preset support, Library previews
-(keeping only the unchanged open photo's) and the reference refresh exactly as
-after a manual import. Only then is the profile applied, and only to the photo it
-was asked for, if that photo is still open (same load), its file still has the
-`storage::Identity` it was opened with (checked when the download starts and again
-at completion: an outside replacement or deletion causes no new load), still has
-the profile it had and no camera-look fit was asked for since: one History step
-through `change_edit`, as a Profile menu choice is. Otherwise it is just installed.
-What applies is `Entry::read_installed`: the installed file read once, bounded, and
-verified as the download was, so a file substituted after installation is never
-applied or credited. An installed profile's Apply is clicked during Develop's edit
-frame and changes the profile in place, as the menu does, so the frame records its
-one step. Measuring keeps each installed profile's verified content, which says
-whether the photo uses it: sources may share a profile name and camera.
-Cancellation and publication claim one atomic state, so a published install cannot
-be reported as cancelled. Task generations reject cancelled, superseded and
-duplicate completions; a panicking worker reports a failure through the task
-wrapper, which clears the busy state.
-
-AI Denoise ([rendering quality](rendering-quality.md#ai-denoise)) has one service, `app::ai_denoise::Service`: one
-queue and one worker thread for Develop, export and the CLI. A job's
-inputs are captured once as its key (the file's identity, the model's SHA-256, the
-adapter version, the provider and the build), which also names its cache entry; a
-request for a key already queued or running waits for that job. Develop's requests
-run the tiles covering the 100% view first and publish one partial source after
-them, then the final one; each publication is a new `AiSource`, so the retouch
-cache, the pyramid and the GPU upload see a new source. A non-finite tile on the GPU
-discards the attempt, which reruns on the CPU under the CPU's key with every job
-queued behind it, and the GPU is not used again in the session. A request carries the
-file's identity when its plain image was decoded (`AiBase::get` takes it too): a file
-changed since, before or during the job, cached result or not, gets no result, so a
-photo is never denoised from another file. A result is rejected when the model
-changed during the job, and an update for a plain image that is no longer the open
-photo's is dropped. The Detail panel's switch and Amount are ordinary edits (one
-History step each); a result arriving is not one. `app::inspector::ai_denoise` draws
-the panel's controls, credit and install offer; the model installs as
-`subject_mask::Pack::Denoise` with the selection models' installer.
-
-Whether Develop opens a catalog photo has one owner, `app::library::Refusal`:
-`develop_refusal` refuses an offline file, and a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL whose header
-`raster::probe` finds Develop can't edit (`raster::Unsupported`, such as a CMYK
-JPEG, an HDR or animated file, or a tiled AVIF), before anything opens it. The probe reads the file, so only work on one
-photo uses it (opening it, its dialog, Quick Develop, the context menu,
-automation's `open`); export and preview builds over many photos use
-`availability_refusal` and meet such a file as that photo's failure; `Refusal::opening` turns the same error, should
-opening find it, into the reason the loader reports. Whether the Library shows a photo developed or as its file is
-`Library::develops`: a RAW always, any other format once it has an edit, since
-its defaults reproduce the file. Preview builds and stored previews follow the
-same rule from the photo's edit record.
-
-`app::messages` owns what the app says to the user. `Editor::messages` is the one
-way to say it, and the Library's own `Messages` are taken on each frame. Each thing
-is said in one place and nothing is drawn over the photo. `note` (progress, small
-confirmations) stays in the status line. `done` (a result, briefly), `warn` (a
-refusal or partial result, longer; neither goes while the pointer is on it or the
-window is away) and `fail` (what the user asked for did not happen, until dismissed)
-show in the top bar after the progress, past a hairline: the worst and newest as a lamp, one line, and a cross on hover that dismisses them all (or Shift+Esc), a problem tinted once as it arrives. A click opens every message in full.
-They take no keys. Without the bar (the chrome hidden) they show small at the
-window's top. A failure a later event ends is posted with a `Topic` (`fail_on`) and
-`settle`d by that event, so a retried save neither repeats a dismissed message nor
-leaves a stale one.
-
-Work the user started shows in the same slot as a label over a sweeping line, once it
-has run for a moment. `Editor::running_work` reads it each frame from the state that
-owns the work (a `Task` and the like), so no call starts or ends it: it goes when the
-work ends, however it ends. New long work adds one line there. Work with a place of
-its own (an export's or scan's progress, a batch's window, a selection's tile, opening
-a photo's badge) is not said again.
-
-`app::monitor` owns the Monitor profile choice (System, sRGB or a chosen ICC
-profile) and resolves it, with what `platform::display` reports about the
-window's display, into the profile each render job captures. `app::display`
-installs a paint callback for the macOS surface color declaration;
-`platform::display` owns the AppKit/Metal layer access and the Windows display
-profile and advanced-color queries. Following the system lets macOS's
-compositor match the display, and on Windows converts to the display's assigned
-profile unless Windows manages color itself. sRGB and a chosen profile output
-device RGB and bypass compositor conversion. No mode changes the renderer's
-output color space or export profiles.
-
-Folder-drop workers resolve the imported folder tree keys against actual local
-locations (including mapped symlinks). The source keys travel with the reopened
-Library result; the UI applies them after restoring layout and filters, so the
-result's source cannot be replaced by the old view. Filesystem resolution stays
-on the worker.
+- **Inputs are captured once**, when the job is made, and the same values give its
+  cache identity. A job never reads editor state while it runs.
+- **Results are checked against the current state.** A generation (the task's, the
+  load's or the catalog session's structural one) rejects cancelled, superseded and
+  duplicate completions, and a file's `Identity` rejects a result for a file replaced
+  meanwhile.
+- **Every ending clears busy state**: success, failure, panic, cancellation and a
+  worker that disconnects.
+- **No unbounded waits.** Quitting signals every worker, then waits with a
+  deadline (`task::wait_for`); nothing joins in `Drop`.
 
 Each load/render task owns its generation, cancellation token and lifecycle.
 The single-slot mailbox replaces pending work. The app discards obsolete results,
@@ -240,6 +193,135 @@ preferences survive navigation; hover previews and compatibility results do not.
 Session preference writes have an explicit destination; UI tests disable them or
 inject a temporary file, without changing the process-wide environment.
 
+Folder-drop workers resolve the imported folder tree keys against actual local
+locations (including mapped symlinks). The source keys travel with the reopened
+Library result; the UI applies them after restoring layout and filters, so the
+result's source cannot be replaced by the old view. Filesystem resolution stays
+on the worker.
+
+### Previews
+
+How preview renders are scheduled; what runs on the GPU, its backends, budgets and
+textures are described in [`develop::gpu`](../crates/rawmakase-engine/src/develop/gpu/mod.rs)'s
+module docs.
+
+There is no separate draft pipeline. Fit renders the current pipeline from the
+smallest pyramid level at or above the physical viewport size on every change. While
+an edit is slower to present than 40 ms, a reduced render from the pyramid is
+published first as a draft stage: at 100% the region at half resolution or less, and
+for the whole photo at an edge halved until it has at most a megapixel. The
+single-slot mailbox keeps only the latest pending job. An edit of the same document
+and view (`Editor::schedule_edit`, `Task::supersede`) lets the running render finish,
+and its frame shows with the settings it was asked for, so a GPU slower than the
+slider still shows frames during a drag; any other render, and the next view or
+photo, cancels the running ones, and a result older than the one shown is dropped.
+
+`develop::PreviewRenderer` owns the optional GPU processor and fallback state.
+The desktop renderer creates it on its worker thread. Headless UI tests and the
+legacy `worker::renderer` entry point remain CPU-only. Domain color processing,
+RAW development and exports use the existing CPU implementation, which is the
+reference: the GPU port covers recipes resolved with a camera profile, and
+everything else renders on the CPU. Any GPU failure falls back to the CPU and turns
+the failing path off for the session. GPU work already submitted cannot be
+interrupted, so obsolete results are discarded before they are published;
+full-quality CPU stages check cancellation within pixel, row and column work.
+
+### AI Denoise
+
+AI Denoise ([rendering quality](rendering-quality.md#ai-denoise)) has one service, `app::ai_denoise::Service`: one
+queue and one worker thread for Develop, export and the CLI. A job's
+inputs are captured once as its key (the file's identity, the model's SHA-256, the
+adapter version, the provider and the build), which also names its cache entry; a
+request for a key already queued or running waits for that job. Develop's requests
+run the tiles covering the 100% view first and publish one partial source after
+them, then the final one; each publication is a new `AiSource`, so the retouch
+cache, the pyramid and the GPU upload see a new source. A non-finite tile on the GPU
+discards the attempt, which reruns on the CPU under the CPU's key with every job
+queued behind it, and the GPU is not used again in the session. A request carries the
+file's identity when its plain image was decoded (`AiBase::get` takes it too): a file
+changed since, before or during the job, cached result or not, gets no result, so a
+photo is never denoised from another file. A result is rejected when the model
+changed during the job, and an update for a plain image that is no longer the open
+photo's is dropped. The Detail panel's switch and Amount are ordinary edits (one
+History step each); a result arriving is not one. `app::inspector::ai_denoise` draws
+the panel's controls, credit and install offer; the model installs as
+`subject_mask::Pack::Denoise` with the selection models' installer.
+
+## Data flow
+
+The [code map](code-map.md#how-an-operation-moves-through-the-app) follows each
+operation step by step; in terms of the crates:
+
+- **Opening a photo.** The Library (`app::library`) decides whether Develop may
+  open it (below). The catalog resolves its starting edit (`edits::resolve`: saved
+  edit, Lightroom edit or raw defaults); the loader opens it through
+  `rawmakase-decode` (`photo::open_source`, then the embedded preview, the half-size
+  and the full-size decode through the decode cache) and the renderer develops it
+  with `rawmakase-engine`.
+- **Editing.** A panel changes the recipe inside the editor's frame
+  (`edit_session`): the frame records one History step and marks the edit for
+  saving. The renderer gets the captured recipe and view; autosave writes the edit
+  through `catalog::edit_rows` on its own thread.
+- **Exporting.** The export job captures each photo's recipe and options, decodes
+  with `DecodePolicy::Export`, renders on the CPU, and `rawmakase-export` encodes and
+  publishes the file atomically. With AI Denoise on it asks the service for the
+  photo's complete AI source first.
+- **Settings in and out.** XMP and presets enter through `rawmakase-interop`
+  (parse, then apply to a recipe, which is validated); exports' XMP and Lightroom
+  presets leave through it. A Lightroom catalog is imported by
+  `rawmakase-catalog` (`catalog::lightroom`, inside `Db::with_lightroom`); its
+  Develop settings are converted by interop's `lr_develop`.
+- **Library previews.** Thumbnails come from the files' embedded previews
+  (`raw`, `raster`); edited previews are rendered with `develop::render_fitted` on the CPU and
+  stored in the catalog's preview cache.
+
+Whether Develop opens a catalog photo has one owner, `app::library::Refusal`:
+`develop_refusal` refuses an offline file, and a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL whose header
+`raster::probe` finds Develop can't edit (`raster::Unsupported`, such as a CMYK
+JPEG, an HDR or animated file, or a tiled AVIF), before anything opens it. The probe reads the file, so only work on one
+photo uses it (opening it, its dialog, Quick Develop, the context menu,
+automation's `open`); export and preview builds over many photos use
+`availability_refusal` and meet such a file as that photo's failure; `Refusal::opening` turns the same error, should
+opening find it, into the reason the loader reports. Whether the Library shows a photo developed or as its file is
+`Library::develops`: a RAW always, any other format once it has an edit, since
+its defaults reproduce the file. Preview builds and stored previews follow the
+same rule from the photo's edit record.
+
+## Desktop composition
+
+`app/mod.rs` owns the `Editor`, initialization and lifecycle. Its fields remain
+private. UI and workflow methods have visibility limited to the app module, one
+file per tool, workflow or policy. Each Develop adjustment panel has its own file
+in `inspector/panels/`: it takes the recipe, the view state and a read-only view
+of what it shows, edits the recipe during the edit frame and returns the actions
+it can't carry out itself (Auto, imports, dialogs), which `Editor::controls`
+carries out after every panel is drawn. The [code map](code-map.md#desktop-application) lists them.
+
+`Editor` deliberately remains the coordinator for state shared across panels.
+A panel should call the domain API responsible for an operation, rather than
+implementing file formats, SQL or pixel processing itself. Thumbnail decoding
+belongs to `raw`; library browsing does not call into the preview renderer
+(`PreviewRenderer` and its state). Its edited previews use `develop::render_fitted`,
+Develop's Fit path on the CPU, keeping nothing between photos.
+
+Some features span several owners; each module's docs describe its part:
+
+- `platform::menu` owns the macOS menu objects and queues typed actions, waking the
+  UI without reaching editor state; `app::native_menu` owns availability and
+  revalidates each action before calling the existing editor operations. Close and
+  Quit keep the normal save guard. `platform::titlebar` owns the macOS header's
+  drag area and double-click.
+- The community camera-profile catalogue: the model's `camera_profiles::catalogue`
+  owns the data, its validation, matching and verification and never reaches the
+  network; `app::profile_download` owns the request, the task and the offer, and
+  `app::inspector::profile_offer` draws it.
+- `app::messages` owns what the app says to the user, and the running-work line
+  is read each frame from the state that owns the work, so nothing starts or ends it
+  by hand.
+- `app::monitor` resolves the Monitor profile into the profile each render job
+  captures; `platform::display` owns the OS queries. No choice changes the
+  renderer's output colour space or export profiles.
+
 ## Boundaries to preserve
 
 - Dependencies between top-level modules are listed in
@@ -254,8 +336,9 @@ inject a temporary file, without changing the process-wide environment.
   `make check`) fails when one of them gains the app, a GPU or GUI crate, or a
   C RAW library or Little CMS binding, and when any workspace crate depends on
   one or a build script links one (`rawmakase-decode` has no build script). The
-  whole workspace is Rust apart from the catalog's bundled SQLite, which is
-  intended.
+  only C compiled comes with Rust crates' own sources (the catalog's bundled
+  SQLite, ring, Wayland's backend on Linux); HEIC pixels come from the operating
+  system's decoders, opened at run time ([dependencies](dependencies.md)).
 - Keep `eframe`, `egui` and native chooser code in `app`. The CLI must be able to
   use domain operations without creating an editor or UI context. The crate still
   links its existing GUI dependencies; this is module separation, not a separate
@@ -333,8 +416,8 @@ inject a temporary file, without changing the process-wide environment.
   photo with AI Denoise on gets the complete source or fails that photo with the
   reason; it never renders the plain image in its place, and callers without the
   service pass `AiService::refusing`.
-- Keep OS integration in `platform` and native decoding/color management in
-  `raw`. Use the existing asset-path policy instead of duplicating environment
+- Keep OS integration in `platform`, and decoding and colour management in
+  `rawmakase-decode`. Use the existing asset-path policy instead of duplicating environment
   variable handling in feature modules.
 
 ## Invariants the code relies on
@@ -397,6 +480,14 @@ inject a temporary file, without changing the process-wide environment.
   placement and user-state digests, its folders' resolved paths) are captured
   once in the plan and checked again in the transaction that journals it, the
   one that completes it, and by recovery.
+- A community profile download captures its profile, camera metadata and
+  destination once and survives navigation. It applies only to the photo it was
+  asked for, while that photo is still open (same load), its file still has the
+  `storage::Identity` it was opened with (checked when the download starts and at
+  completion), it still has the profile it had and no camera-look fit was asked for
+  since, as one History step; otherwise the profile is only installed. What applies
+  is the installed file read once and verified as the download was. Cancellation
+  and publication claim one atomic state ([`app::profile_download`](../src/app/profile_download.rs)).
 
 ## Compatibility
 
@@ -420,100 +511,8 @@ cached under a key holding the model's SHA-256 and the adapter version.
 ## Validation
 
 `make check` runs the standard suite (see the [README](../README.md#development)).
-Photographic checks, measured results and dated validation records live in
-[validation.md](records/validation.md), the per-stage measurement pages and
-[macOS and Lightroom validation](records/macos-lightroom-validation.md).
-
-## Preview compute backend
-
-`develop::PreviewRenderer` owns the optional GPU processor and fallback state.
-The desktop renderer creates it on its worker thread. Headless UI tests and the
-legacy `worker::renderer` entry point remain CPU-only. Domain color processing,
-RAW development and exports use the existing CPU implementation.
-
-`develop::gpu` uses portable WGSL compute through wgpu: Metal on macOS, Vulkan
-on supported Linux drivers, including NVIDIA and AMD, and DirectX 12 on Windows.
-Windows leaves Vulkan out while a DirectX 12 device can be created, because an
-Intel Vulkan driver crashed the app at launch where DirectX 12 worked (#623). If
-that device fails, it tries Vulkan and then OpenGL before opening the window
-(#768); `WGPU_BACKEND` overrides all of this. The UI and a standalone processor
-share that choice (`gpu::backends`). On the desktop it shares the
-UI's wgpu device (eframe's), which the app creates with the storage limits previews
-need (`gpu::required_limits`) and a high-performance adapter. On Linux the window's
-adapter is the first GPU the system lists instead: the display's GPU, or the discrete
-one under `prime-run` or `DRI_PRIME=1`, because a render-offload GPU can claim it
-presents to the window and then fail to configure it. OpenGL and software adapters
-are not used for compute. Every GPU call runs inside its own validation,
-internal and out-of-memory error scopes, so a failure disables the preview GPU
-without reaching the UI. Headless callers (tests, the benchmark) create a device of
-their own. It uses ordinary 32-bit storage buffers, Rgba8Unorm storage textures and
-compute workgroups, without vendor extensions. The current hardware validation is
-Apple M1 Pro; Linux GPU vendors require validation on those machines before claiming
-equivalent performance or numerical precision.
-
-The per-pixel color and tone stage runs on the GPU for previews
-(`gpu/develop.wgsl`, fed by `pipeline/pixel_params.rs`), on the stage cache's
-samples, for every recipe resolved with a camera profile; unresolved recipes and
-all exports use the CPU stage, which is the reference. Each pass is compiled for the
-features its parameters use (`gpu::develop::Variant`); the Shadows/Highlights map's
-grids stay on the device per map base, and each sample set's camera colour per the
-recipe fields it reads (`gpu::develop::Kept`), written once a second render with the
-same settings asks for it and read after its pass is submitted.
-When the GPU renders a preview, the developed pixels stay on the device and
-`gpu/present.wgsl` finishes them into a texture that egui draws directly (registered
-as a native texture by the render worker): sharpening, vignettes and grain, the
-clipping overlay, the monitor profile (a 52³ lattice sampled from `color_management` once per
-profile, interpolated trilinearly) and 8-bit encoding, in the CPU reference's order.
-The histogram is counted in the same pass and the minimap's copy is reduced on the
-GPU; only the histogram (3 KB) and, for catalog photos, a 640-pixel library
-thumbnail are read back. Nothing is converted or uploaded on the UI thread. Recipes
-the port does not cover and machines without a usable adapter render
-on the CPU, and the worker then prepares the display bytes, histogram and reduced
-copies before the UI uploads the texture. Fit and zoomed-out previews render from a
-resolution pyramid at output size (see
-[preview performance](preview-performance.md#resolution-pyramid)). Full-resolution
-regions preserve the sharpening halo before cropping. Lanczos3 resizing of full
-renders remains on the GPU for readback callers. Export remains on the CPU. The
-status line says `GPU` for presented frames, `GPU finish` when only finishing used
-the GPU, and `CPU` otherwise.
-
-For the same recipes, the stages before the per-pixel stage also run on the device
-when the photo fits its buffer limits (`gpu/resident.rs`): the photo or pyramid level
-is kept there, and regions are sampled there through geometry and lens correction.
-Color and luminance noise reduction run on the full camera image before retouching
-and before building the preview pyramid. `develop::recipe::Denoise` captures their
-settings and execution together; the retouch cache keys that value and the source
-image identity. Exports run the same stage without the cache, and the GPU samples
-the already denoised image. The Shadows/Highlights map (with Clarity's gain) is built on the
-CPU from the photo's measurement copy, and the scene tone stage reads it
-in `develop.wgsl`. Texture's image is made on the CPU, and a mask's Clarity or
-Texture renders the whole preview on the CPU. A failure in these stages turns off
-only this path for the session.
-
-Presented textures are kept per view (the whole photo, or a 100% region) and size,
-two of each, so a slider moving alternates between the reduced preview's and the
-full render's textures without allocating. Each texture carries a generation that
-changes whenever it is written; the worker reuses a finished frame when switching
-views only while its texture still holds it.
-
-Buffers are reused by dimensions, limited by the adapter and a 1 GiB aggregate
-buffer budget. No compatible adapter, oversized buffers, allocation/validation
-errors and readback failures fall back to CPU. After a GPU failure the preview
-renderer releases the backend and avoids retrying it for every edit. Restarting
-creates a new backend. GPU execution already submitted cannot be interrupted;
-obsolete results are discarded before they are published. Full-quality CPU stages check cancellation
-within pixel/row/column work. Pending jobs still coalesce in a single-slot mailbox.
-
-There is no separate draft pipeline. Fit renders the current pipeline from the
-smallest pyramid level at or above the physical viewport size on every change. While
-an edit is slower to present than 40 ms, a reduced render from the pyramid is
-published first as a draft stage: at 100% the region at half resolution or less, and
-for the whole photo at an edge halved until it has at most a megapixel. The
-single-slot mailbox keeps only the latest pending job. An edit of the same document
-and view (`Editor::schedule_edit`, `Task::supersede`) lets the running render finish,
-and its frame shows with the settings it was asked for, so a GPU slower than the
-slider still shows frames during a drag; any other render, and the next view or
-photo, cancels the running ones, and a result older than the one shown is dropped.
+Photographic checks and measured results live in the per-stage pages and in dated
+[records](records/); see the [documentation index](README.md).
 
 ## Live application control
 

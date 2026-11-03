@@ -5,6 +5,16 @@
 //! the original mouse-down for both its click count and native window dragging.
 //! Zoom/Minimize have one explicit owner across the whole accepted header;
 //! there is no native-strip split or change to NSWindow's movable state.
+//!
+//! [`configure`] registers the viewport's native window. One application-lifetime
+//! AppKit event monitor keeps the latest left mouse-down of each registered window,
+//! pruning closed ones. An accepted egui press on the header consumes that event
+//! once, across repeated passes; other windows, controls and modal input cannot
+//! spend it. Native dragging receives the original mouse-down, never
+//! `currentEvent`. A second press performs the system's Zoom or Minimize setting
+//! once across the whole header; Fill stays AppKit's, as in fastframe. Fullscreen
+//! skips the handler, and the traffic-light buttons stay native. Off macOS the
+//! header uses fastframe's own widget.
 
 /// Register this viewport's native window before drawing its header.
 #[cfg(target_os = "macos")]

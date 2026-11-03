@@ -1,5 +1,15 @@
 //! Preferences > Monitor profile: which profile the viewport converts its sRGB
 //! pixels to, and the display profile the system assigns to the window.
+//!
+//! The choice (System, sRGB or a chosen ICC profile) is resolved here, with what
+//! `platform::display` reports about the window's display, into the profile each
+//! render job captures. `app::display` installs a paint callback for the macOS
+//! surface colour declaration; `platform::display` owns the AppKit/Metal layer
+//! access and the Windows display profile and advanced-colour queries. Following the
+//! system lets macOS's compositor match the display, and on Windows converts to the
+//! display's assigned profile unless Windows manages colour itself. sRGB and a chosen
+//! profile output device RGB and bypass compositor conversion. No choice changes the
+//! renderer's output colour space or export profiles.
 pub(crate) use crate::platform::display::SystemDisplay;
 use std::path::{Path, PathBuf};
 

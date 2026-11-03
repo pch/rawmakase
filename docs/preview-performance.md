@@ -21,8 +21,9 @@ limits. Unsupported adapters, oversized images and GPU failures fall back to CPU
 support, not evidence of testing on every driver. **Hardware tested here: Apple
 M1 Pro only. Linux/NVIDIA/AMD runtime validation remains outstanding.**
 
-See [architecture](architecture.md#preview-compute-backend) for resource limits,
-fallback behavior, cancellation and the division between CPU and GPU work.
+See [architecture](architecture.md#previews) for scheduling, fallback and
+cancellation, and [`develop::gpu`](../crates/rawmakase-engine/src/develop/gpu/mod.rs)'s
+module docs for backends, resource limits and the division between CPU and GPU work.
 
 ## Resolution pyramid
 

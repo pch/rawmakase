@@ -3,12 +3,27 @@
 //! where its progress was; [`Messages::warn`], for a refusal or a partial result,
 //! for longer; [`Messages::fail`], for what
 //! the user asked for and did not happen, stays there until dismissed. Running work
-//! ([`Editor::running_work`]) shows beside them, in the same slot as an export's
+//! ([`Editor::running_work`](super::Editor::running_work)) shows beside them, in the same slot as an export's
 //! progress.
 //!
 //! Each thing is said once and nothing is drawn over the photo. A problem tints
 //! once as it arrives, then rests as a lamp, one line and a cross; the whole message
 //! opens on a click. It takes no keyboard input.
+//!
+//! The editor's `messages` field is the one way to say something, and the Library's own
+//! `Messages` are taken each frame. A result or a warning does not go while the
+//! pointer is on it or the window is away. The bar's cross, on hover, dismisses
+//! every message (as Shift+Esc does); with the chrome hidden they show small at the
+//! window's top. A failure a later event ends is posted with a [`Topic`]
+//! ([`Messages::fail_on`]) and [`Messages::settle`]d by that event, so a retried save
+//! neither repeats a dismissed message nor leaves a stale one.
+//!
+//! Work the user started shows in the same slot as a label over a sweeping line,
+//! once it has run for a moment. [`Editor::running_work`](super::Editor::running_work) reads it each frame from
+//! the state that owns the work (a `Task` and the like), so no call starts or ends
+//! it: it goes when the work ends, however it ends. New long work adds one line
+//! there. Work with a place of its own (an export's or scan's progress, a batch's
+//! window, a selection's tile, opening a photo's badge) is not said again.
 use super::design::{Tone, radius, space, text};
 use super::theme;
 use eframe::egui::{self, Color32, Rect, Stroke, Vec2};
@@ -60,7 +75,7 @@ struct Entry {
 }
 
 /// Something the user started that is still running. It is asked for afresh
-/// each frame from the state that owns the work ([`Editor::running_work`]), so a
+/// each frame from the state that owns the work ([`Editor::running_work`](super::Editor::running_work)), so a
 /// row can't outlive it: there is nothing to finish, whichever way it ends.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Work {
