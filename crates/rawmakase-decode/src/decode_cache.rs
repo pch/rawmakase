@@ -269,12 +269,18 @@ impl DecodeCache {
             start + n * 12,
             bytemuck::cast_slice_mut(&mut changes),
         )?;
+        // Like a decode of the file, the loaded image measures its own Auto CA
+        // rather than sharing one measured on the image `metadata` came from.
+        let metadata = Metadata {
+            lateral_ca: Default::default(),
+            ..metadata.clone()
+        };
         let image = CameraImage {
             recovered: Default::default(),
             width: header.width,
             height: header.height,
             pixels,
-            metadata: metadata.clone(),
+            metadata,
             fast: header.fast,
             scale_factor: header.scale_factor,
             scale_clipped: header.scale_clipped,

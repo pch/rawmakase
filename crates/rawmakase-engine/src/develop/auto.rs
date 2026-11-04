@@ -50,6 +50,12 @@ pub fn auto_white_balance(im: &CameraImage, base: &Recipe, cancel: Cancel<'_>) -
 /// `base` are kept, as in Lightroom. Stops with an error once `cancel` is set.
 pub fn auto_tone(im: &CameraImage, base: &Recipe, cancel: Cancel<'_>) -> Result<Recipe> {
     let t = auto_tone_basis(base);
+    // The reduced copy shares the photo's Auto CA measurement. Measure it on the
+    // photo first, as rendering the photo would, so rendering the copy uses it.
+    if t.as_rendered().resolved(&im.metadata).lens_ca {
+        check_cancel(cancel)?;
+        crate::lens::auto_ca::prime(im);
+    }
     let small = tone_copy(im, &t, cancel)?;
     let mut r = base.clone();
     AutoTone::predict(&Measure::of(&small, &t, cancel)?).apply(&mut r);
@@ -395,6 +401,52 @@ mod tests {
             scale_factor: 1.,
             scale_clipped: 0,
         }
+    }
+    /// Auto CA is measured on the photo itself: Auto Tone, whose reduced copy shares
+    /// the photo's measurement, run before any render leaves the measurement a render
+    /// of the photo makes, not one of the copy (#868).
+    #[test]
+    fn auto_tone_leaves_auto_ca_measured_on_the_photo() {
+        let (width, height) = (1500u32, 1000u32);
+        // Soft discs on a grid, red magnified and blue shrunk about the centre, as a
+        // lens's lateral chromatic aberration does.
+        let (cx, cy) = (width as f32 / 2., height as f32 / 2.);
+        let disc = |x: f32, y: f32| {
+            let (gx, gy) = ((x / 37.).fract() - 0.5, (y / 37.).fract() - 0.5);
+            let d = (gx * gx + gy * gy).sqrt() * 37.;
+            0.1 + 0.6 * (1. / (1. + ((d - 11.) / 1.2).exp()))
+        };
+        let pixels = (0..width * height)
+            .map(|i| {
+                let (dx, dy) = ((i % width) as f32 + 0.5 - cx, (i / width) as f32 + 0.5 - cy);
+                let at = |k: f32| disc(cx + dx / k + 1000., cy + dy / k + 1000.);
+                [at(1.0008), at(1.), at(0.9995)]
+            })
+            .collect();
+        let im = CameraImage {
+            pixels,
+            width,
+            height,
+            metadata: Metadata {
+                width,
+                height,
+                ..scene([1.; 3], 0.5).metadata
+            },
+            ..scene([1.; 3], 0.5)
+        };
+        let r = Recipe {
+            lens_ca: true,
+            ..Default::default()
+        };
+        auto_tone(&im, &r, Cancel::NEVER).unwrap();
+        let photo = crate::lens::auto_ca::estimate(
+            &im.pixels,
+            width,
+            height,
+            crate::lens::auto_ca::centre(&im.metadata),
+        );
+        assert!(photo.is_some());
+        assert_eq!(crate::lens::auto_ca::measured(&im), photo.as_ref());
     }
     /// Auto measures every photo with the same sharpening, whichever Detail settings
     /// the edit uses.
