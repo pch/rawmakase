@@ -360,10 +360,10 @@ fn round(v: f32, steps: f32) -> f32 {
 }
 
 /// The measurements applying XMP settings asks of a decoded photo (see
-/// [`crate::xmp::PhotoMeasures`]).
+/// [`crate::model::measures::PhotoMeasures`]).
 pub struct Measures<'a>(pub &'a CameraImage);
 
-impl crate::xmp::PhotoMeasures for Measures<'_> {
+impl crate::model::measures::PhotoMeasures for Measures<'_> {
     fn auto_tone(&self, base: &Recipe) -> Result<Recipe> {
         auto_tone(self.0, base)
     }

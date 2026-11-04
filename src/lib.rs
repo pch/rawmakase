@@ -4,8 +4,8 @@
 //! The crates' modules are re-exported at this root, so paths read the same on
 //! either side: what an edit is, as values ([`model`], [`camera_profiles`], [`lens`],
 //! [`optics`], [`storage`]…, crates/rawmakase-model); the file formats and presets
-//! over them ([`xmp`], [`presets`], [`raw_defaults`], crates/rawmakase-interop); the
-//! catalog and which edit a photo develops with ([`catalog`], [`edits`],
+//! over them, and which edit a photo develops with ([`xmp`], [`presets`],
+//! [`raw_defaults`], [`edits`], crates/rawmakase-interop); the catalog ([`catalog`],
 //! crates/rawmakase-catalog); rendering ([`develop`], crates/rawmakase-engine);
 //! opening and decoding photos with RAWmakase's own RAW decoders and colour
 //! management ([`raw`], [`photo`], [`color_management`], crates/rawmakase-decode);
@@ -20,8 +20,8 @@
 //! and `docs/architecture.md` records ownership rules. This library exists for the
 //! RAWmakase binary, its examples and its tests; it is not a stable public API.
 // The values a photo's edit is made of, built on their own (crates/rawmakase-model).
-// The catalog and which edit a photo develops with (crates/rawmakase-catalog).
-pub use rawmakase_catalog::{catalog, edits};
+// The catalog (crates/rawmakase-catalog).
+pub use rawmakase_catalog::catalog;
 // Rendering (crates/rawmakase-engine).
 pub use rawmakase_engine::develop;
 // Developing and writing exports, with their watermarks (crates/rawmakase-export).
@@ -33,8 +33,11 @@ pub use rawmakase_decode::{
     half_check, photo, raw,
 };
 pub(crate) use rawmakase_decode::{decode, raster};
-// File formats and presets over the model (crates/rawmakase-interop).
-pub use rawmakase_interop::{exif, export_settings, jpeg, lr_develop, presets, raw_defaults, xmp};
+// File formats and presets over the model, and which edit a photo develops with
+// (crates/rawmakase-interop).
+pub use rawmakase_interop::{
+    edits, exif, export_settings, jpeg, lr_develop, presets, raw_defaults, xmp,
+};
 pub(crate) use rawmakase_model::time;
 pub use rawmakase_model::{
     camera_data, camera_profiles, cameras, color, dng, ids, lens, metadata, model, optics,
