@@ -760,7 +760,11 @@ impl Editor {
     }
     /// The installer finished or was cancelled; a request waiting for the model goes
     /// on.
-    pub(super) fn model_installed(&mut self, pack: Pack, result: Result<(), String>) {
+    pub(super) fn model_installed(
+        &mut self,
+        pack: Pack,
+        result: Result<(), crate::model_install::InstallError>,
+    ) {
         match result {
             Ok(()) if pack == Pack::Denoise => {
                 self.messages.done("AI Denoise model installed");

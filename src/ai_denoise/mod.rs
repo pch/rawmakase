@@ -740,7 +740,7 @@ impl Service {
                     stored(&job.path);
                 }
             }
-            Err(e) if e.to_string().contains("half precision") => return Err(e),
+            Err(e) if e.is::<crate::ai_cache::BeyondHalfPrecision>() => return Err(e),
             Err(e) => eprintln!("Could not cache the AI Denoise result: {e:#}"),
         }
         Ok(Outcome::Done(Arc::new(entry)))
