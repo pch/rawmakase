@@ -65,7 +65,7 @@ pub(crate) type Sink = Arc<dyn Fn(Update) + Send + Sync>;
 /// Told the path of a photo whose result was just stored.
 pub(crate) type Stored = Arc<dyn Fn(&Path) + Send + Sync>;
 /// Opens a photo's mosaic for the model (the RAW decoders in the app, a stand-in in tests).
-pub(crate) type Source = Arc<dyn Fn(&Path, &AtomicBool) -> Result<PackedBayer> + Send + Sync>;
+pub(crate) type Source = Arc<dyn Fn(&Path, Cancel<'_>) -> Result<PackedBayer> + Send + Sync>;
 /// Loads the model on a provider (ONNX Runtime in the app, a stand-in in tests).
 pub(crate) type Loader =
     Arc<dyn Fn(&Path, Provider) -> Result<Box<dyn TileModel + Send>, String> + Send + Sync>;
@@ -241,13 +241,13 @@ pub(crate) fn preferred_provider() -> Provider {
 }
 
 /// Opens the RAW at `path` and packs its mosaic.
-fn open_mosaic(path: &Path, cancel: &AtomicBool) -> Result<PackedBayer> {
+fn open_mosaic(path: &Path, cancel: Cancel<'_>) -> Result<PackedBayer> {
     if !crate::storage::is_raw(path) {
         return Err(anyhow::Error::new(Unsupported(
             "AI Denoise works on RAW files only.",
         )));
     }
-    crate::photo::open(path)?.packed_bayer(Cancel::new(cancel))
+    crate::photo::open(path)?.packed_bayer(cancel)
 }
 
 /// ONNX Runtime threads: fewer than rendering's, so a running job leaves the UI and
@@ -561,7 +561,7 @@ impl Service {
                 .map(|(_, c)| c.clone())
                 .unwrap_or_default();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                self.run(&job, &cancel, &mut models)
+                self.run(&job, Cancel::new(&cancel), &mut models)
             }))
             .unwrap_or_else(|_| Err(anyhow!(STOPPED_UNEXPECTEDLY)));
             let _working = Working(self);
@@ -594,7 +594,7 @@ impl Service {
     fn run(
         &self,
         job: &Job,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
         models: &mut HashMap<(PathBuf, Provider), Box<dyn TileModel + Send>>,
     ) -> Result<Outcome> {
         // The file it was asked for, from the cache too.
@@ -659,7 +659,7 @@ impl Service {
             &tiles,
             model.as_mut(),
             &mut out,
-            Cancel::new(cancel),
+            cancel,
             |done, out| {
                 if first > 0 && done == first && done < total {
                     // The 100% view's tiles: one partial result, at a provisional gain.
@@ -679,12 +679,10 @@ impl Service {
                                     clipped: &packed.clipped,
                                 },
                                 plain,
-                                Cancel::new(cancel),
+                                cancel,
                             )
                             .ok()?;
-                            AiSource::recover(image, Cancel::new(cancel))
-                                .ok()
-                                .map(State::Partial)
+                            AiSource::recover(image, cancel).ok().map(State::Partial)
                         });
                     }
                 }

@@ -12,11 +12,7 @@ use eframe::egui;
 use rawmakase_cancel::Cancel;
 use std::{
     path::{Path, PathBuf},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-        mpsc::Sender,
-    },
+    sync::{Arc, Mutex, atomic::Ordering, mpsc::Sender},
     time::Instant,
 };
 /// The slow second stage of opening a photo, run on its own worker so the
@@ -74,16 +70,15 @@ impl Ahead {
     }
     /// Opens `path` and holds it, dropping what was held first. A cancelled
     /// prefetch keeps nothing: the photo it was for has been moved past or opened.
-    fn prefetch(&self, path: &Path, cancel: &AtomicBool) {
+    fn prefetch(&self, path: &Path, cancel: Cancel<'_>) {
         *self.held() = None;
         let Ok(identity) = crate::storage::Identity::read(path) else {
             return;
         };
-        let Ok(Opened::Rendered(image)) = crate::photo::open_source(path, Cancel::new(cancel))
-        else {
+        let Ok(Opened::Rendered(image)) = crate::photo::open_source(path, cancel) else {
             return;
         };
-        if !cancel.load(Ordering::Relaxed) {
+        if !cancel.is_cancelled() {
             *self.held() = Some(Held {
                 path: path.into(),
                 identity,
@@ -115,7 +110,7 @@ fn prefetcher(cache: DecodeCache, ahead: Ahead) -> Latest<Prefetch> {
             return;
         }
         if !crate::storage::is_raw(&job.path) {
-            pool.install(|| ahead.prefetch(&job.path, &job.cancel));
+            pool.install(|| ahead.prefetch(&job.path, Cancel::new(&job.cancel)));
             return;
         }
         let full = FullSize::with_cache(&job.path, job.demosaic, cache.clone());
@@ -683,7 +678,7 @@ pub(in crate::app) mod tests {
         let path = dir.path().join("next.jpg");
         image::RgbImage::from_pixel(40, 30, image::Rgb([120, 90, 60])).save(&path)?;
         let ahead = Ahead::default();
-        ahead.prefetch(&path, &AtomicBool::new(false));
+        ahead.prefetch(&path, Cancel::NEVER);
 
         let events = load_with(&path, &dir.path().join("decoded"), ahead.clone());
 
@@ -711,7 +706,7 @@ pub(in crate::app) mod tests {
         let path = dir.path().join("next.jpg");
         image::RgbImage::from_pixel(40, 30, image::Rgb([120, 90, 60])).save(&path)?;
         let ahead = Ahead::default();
-        ahead.prefetch(&path, &AtomicBool::new(false));
+        ahead.prefetch(&path, Cancel::NEVER);
         image::RgbImage::from_pixel(20, 10, image::Rgb([20, 30, 40])).save(&path)?;
 
         let events = load_with(&path, &dir.path().join("decoded"), ahead);
@@ -734,7 +729,7 @@ pub(in crate::app) mod tests {
             (m.len(), m.modified()?)
         };
         let ahead = Ahead::default();
-        ahead.prefetch(&path, &AtomicBool::new(false));
+        ahead.prefetch(&path, Cancel::NEVER);
         image::RgbImage::from_pixel(40, 30, image::Rgb([0, 0, 200])).save(&path)?;
         std::fs::File::options()
             .write(true)
@@ -762,7 +757,10 @@ pub(in crate::app) mod tests {
         image::RgbImage::new(4, 4).save(&path)?;
         let ahead = Ahead::default();
 
-        ahead.prefetch(&path, &AtomicBool::new(true));
+        ahead.prefetch(
+            &path,
+            Cancel::new(&std::sync::atomic::AtomicBool::new(true)),
+        );
 
         assert!(
             ahead

@@ -46,13 +46,14 @@ use crate::model::recipe::Recipe;
 use crate::storage::Identity;
 use anyhow::{Context, Result, ensure};
 use eframe::egui;
+use rawmakase_cancel::Cancel;
 use std::{
     collections::{BTreeSet, HashSet},
     io::Read,
     path::{Path, PathBuf},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
+        atomic::{AtomicU8, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -379,7 +380,7 @@ impl Editor {
         &mut self,
         entry: &'static Entry,
         ctx: &egui::Context,
-        transport: fn(&Entry, &AtomicBool, &AtomicUsize) -> Result<Vec<u8>>,
+        transport: fn(&Entry, Cancel<'_>, &AtomicUsize) -> Result<Vec<u8>>,
     ) {
         if self.profile_download.task.is_running() {
             return;
@@ -427,7 +428,7 @@ impl Editor {
             ctx.clone(),
             move |tx| {
                 let result = (|| {
-                    let bytes = transport(entry, &cancel, &progress)?;
+                    let bytes = transport(entry, Cancel::new(&cancel), &progress)?;
                     entry.verify(&bytes, &metadata)?;
                     ensure!(
                         !cancel.load(Ordering::Relaxed)
@@ -563,11 +564,8 @@ fn choose(r: &mut Recipe, profile: Arc<CameraProfile>, m: &Metadata) -> Option<A
     old
 }
 
-fn fetch(entry: &Entry, cancel: &AtomicBool, progress: &AtomicUsize) -> Result<Vec<u8>> {
-    ensure!(
-        !cancel.load(Ordering::Relaxed),
-        "Profile download cancelled"
-    );
+fn fetch(entry: &Entry, cancel: Cancel<'_>, progress: &AtomicUsize) -> Result<Vec<u8>> {
+    ensure!(!cancel.is_cancelled(), "Profile download cancelled");
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .max_redirects(0)
         .timeout_connect(Some(Duration::from_secs(10)))
@@ -598,7 +596,7 @@ fn fetch(entry: &Entry, cancel: &AtomicBool, progress: &AtomicUsize) -> Result<V
 fn read_body(
     mut reader: impl Read,
     size: u64,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     progress: &AtomicUsize,
 ) -> Result<Vec<u8>> {
     ensure!(size <= MAX_BYTES, "Profile exceeds the download limit");
@@ -606,10 +604,7 @@ fn read_body(
     let mut bytes = Vec::with_capacity(size);
     let mut chunk = [0u8; 16 * 1024];
     loop {
-        ensure!(
-            !cancel.load(Ordering::Relaxed),
-            "Profile download cancelled"
-        );
+        ensure!(!cancel.is_cancelled(), "Profile download cancelled");
         let limit = chunk.len().min(size + 1 - bytes.len());
         let n = reader
             .read(&mut chunk[..limit])
@@ -624,10 +619,7 @@ fn read_body(
         );
         progress.store(bytes.len(), Ordering::Relaxed);
     }
-    ensure!(
-        !cancel.load(Ordering::Relaxed),
-        "Profile download cancelled"
-    );
+    ensure!(!cancel.is_cancelled(), "Profile download cancelled");
     ensure!(bytes.len() == size, "Profile download is incomplete");
     Ok(bytes)
 }

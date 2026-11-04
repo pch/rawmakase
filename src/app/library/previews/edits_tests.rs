@@ -8,7 +8,7 @@ fn counting(
     cache: Option<PreviewCache>,
     wanted: Wanted,
 ) -> (Renders, Receiver<EditResult>) {
-    fn render(_: &Path, _: &EditSource, _: &AtomicBool) -> anyhow::Result<image::RgbImage> {
+    fn render(_: &Path, _: &EditSource, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
         RENDERED.fetch_add(1, Ordering::SeqCst);
         Ok(image::RgbImage::new(4, 4))
     }

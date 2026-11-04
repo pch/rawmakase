@@ -1,6 +1,7 @@
 //! `rawmakase denoise`, the development command: AI Denoise on one photo, timed and
 //! measured.
 use super::*;
+use rawmakase_cancel::Cancel;
 
 /// Options of `rawmakase denoise`, the development command.
 pub struct Command {
@@ -141,7 +142,7 @@ pub fn command(c: Command) -> Result<()> {
     if let Some(dump) = &c.dump {
         let bytes: Vec<u8> = entry.rgb.iter().flat_map(|v| v.to_le_bytes()).collect();
         std::fs::write(dump, bytes)?;
-        let packed = open_mosaic(&c.input, &AtomicBool::new(false))?;
+        let packed = open_mosaic(&c.input, Cancel::NEVER)?;
         let planes: Vec<u8> = packed.planes.iter().flat_map(|v| v.to_le_bytes()).collect();
         std::fs::write(dump.with_extension("planes"), planes)?;
         std::fs::write(

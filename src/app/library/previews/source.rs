@@ -1,10 +1,7 @@
 //! What an edited preview is rendered from, and the tag it is kept under.
 use crate::model::recipe::Recipe;
 use rawmakase_cancel::Cancel;
-use std::{
-    path::Path,
-    sync::{Arc, atomic::AtomicBool},
-};
+use std::{path::Path, sync::Arc};
 
 /// What an edited preview is rendered from.
 #[derive(Clone)]
@@ -24,10 +21,10 @@ impl EditSource {
         edit: Option<&Self>,
         m: &crate::camera_data::Metadata,
         path: &Path,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> anyhow::Result<Recipe> {
         let (profiles, _) = crate::camera_profiles::installed(m);
-        let profiles = crate::camera_look::with_default(path, m, profiles, Cancel::new(cancel));
+        let profiles = crate::camera_look::with_default(path, m, profiles, cancel);
         Ok(match edit {
             Some(Self::Recipe(json)) => serde_json::from_str(json)?,
             Some(Self::Lightroom(text)) => {

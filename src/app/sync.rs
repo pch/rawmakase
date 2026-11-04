@@ -369,7 +369,7 @@ pub(super) fn synchronize(
             target,
             defaults,
             decoding,
-            &progress.stop,
+            Cancel::new(&progress.stop),
         ) {
             Ok(p) => {
                 result.notes.extend(p.notes.iter().map(|note| SyncNote {
@@ -444,7 +444,7 @@ impl Opened {
     fn image(
         &mut self,
         decoding: &Decoding,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<&crate::camera_data::CameraImage> {
         if self.image.is_none() {
             let image = match self.opened.take().context("the photo is not open")? {
@@ -457,17 +457,14 @@ impl Opened {
                         );
                         match full.cached(&raw.metadata) {
                             Some(image) => image,
-                            None => full.decode(
-                                raw,
-                                crate::decode::DecodePolicy::Export,
-                                Cancel::new(cancel),
-                            )?,
+                            None => {
+                                full.decode(raw, crate::decode::DecodePolicy::Export, cancel)?
+                            }
                         }
                     }
-                    None => raw.develop(
-                        crate::camera_data::Decode::full(decoding.demosaic),
-                        Cancel::new(cancel),
-                    )?,
+                    None => {
+                        raw.develop(crate::camera_data::Decode::full(decoding.demosaic), cancel)?
+                    }
                 },
                 crate::photo::Opened::Rendered(image) => image,
             };
@@ -484,7 +481,7 @@ fn prepare(
     target: &SyncTarget,
     defaults: &DevelopDefaults,
     decoding: &Decoding,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Prepared> {
     // Read first, so a file replaced while its settings are worked out is noticed.
     let identity = crate::storage::Identity::read(&target.path)?;
@@ -497,8 +494,7 @@ fn prepare(
         image: None,
     };
     let (profiles, _) = crate::camera_profiles::installed(&metadata);
-    let profiles =
-        crate::camera_look::with_default(&target.path, &metadata, profiles, Cancel::new(cancel));
+    let profiles = crate::camera_look::with_default(&target.path, &metadata, profiles, cancel);
     let record = catalog.edit_record(target.id)?;
     let resolved = edits::resolve(&record, &target.path, &metadata, &profiles, defaults)?;
     let starting_warnings = starting_warnings(resolved.origin, resolved.warnings);
@@ -549,11 +545,7 @@ fn prepare(
         },
         // Develop's Auto: the same estimate on the same image.
         BatchChange::AutoSettings => settings_groups::Transferred {
-            recipe: crate::develop::auto_tone(
-                photo.image(decoding, cancel)?,
-                &start,
-                Cancel::new(cancel),
-            )?,
+            recipe: crate::develop::auto_tone(photo.image(decoding, cancel)?, &start, cancel)?,
             notes: Vec::new(),
         },
         // As a click in Develop applies it; decoded only to measure an Auto in it.

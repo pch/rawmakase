@@ -4,10 +4,7 @@ use super::source::{EditSource, PreviewAi};
 use crate::model::recipe::Recipe;
 use rawmakase_cancel::Cancel;
 use rawmakase_decode::ai_cache::AiCache;
-use std::{
-    path::Path,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::path::Path;
 
 /// A 640 px preview of `path` developed with `source`, as Develop's Fit draws it
 /// (`develop::render_fitted`): from a reduced copy of the photo, several times
@@ -15,15 +12,10 @@ use std::{
 pub(super) fn render_edited(
     path: &Path,
     source: &EditSource,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
     let (image, recipe) = open_quickly(path, Some(source), cancel)?;
-    rgb(crate::develop::render_fitted(
-        &image,
-        &recipe,
-        640,
-        Cancel::new(cancel),
-    )?)
+    rgb(crate::develop::render_fitted(&image, &recipe, 640, cancel)?)
 }
 /// [`develop_with_ai`] at the Library's preview size.
 pub(super) fn render_edited_with_ai(
@@ -31,7 +23,7 @@ pub(super) fn render_edited_with_ai(
     file: &crate::storage::Identity,
     source: &EditSource,
     entry: &rawmakase_decode::ai_cache::AiEntry,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
     develop_with_ai(path, file, source, entry, 640, cancel)
 }
@@ -88,7 +80,7 @@ pub(in crate::app::library) fn develop_for_preview(
     source: &EditSource,
     edge: u32,
     ai: Option<&AiCache>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> anyhow::Result<(image::RgbImage, PreviewAi)> {
     if let Some((file, entry)) = finished_entry(path, source, ai) {
         return Ok((
@@ -110,15 +102,12 @@ fn develop_with_ai(
     source: &EditSource,
     entry: &rawmakase_decode::ai_cache::AiEntry,
     edge: u32,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
     use rawmakase_decode::ai_denoise::{ModelOutput, assemble};
     let raw = crate::photo::open(path)?;
     let recipe = EditSource::recipe(Some(source), &raw.metadata, path, cancel)?;
-    let plain = raw.develop(
-        crate::camera_data::Decode::Full(Default::default()),
-        Cancel::new(cancel),
-    )?;
+    let plain = raw.develop(crate::camera_data::Decode::Full(Default::default()), cancel)?;
     let denoised = assemble(
         &ModelOutput {
             layout: entry.layout,
@@ -127,12 +116,12 @@ fn develop_with_ai(
             clipped: &entry.clipped,
         },
         &plain,
-        Cancel::new(cancel),
+        cancel,
     )?;
-    let ai = crate::develop::AiSource::recover(denoised, Cancel::new(cancel))?;
+    let ai = crate::develop::AiSource::recover(denoised, cancel)?;
     let mut renderer = crate::develop::PreviewRenderer::default();
     renderer.set_ai(Some(ai));
-    let rendered = renderer.render(&plain, &recipe, edge, None, Cancel::new(cancel))?;
+    let rendered = renderer.render(&plain, &recipe, edge, None, cancel)?;
     anyhow::ensure!(
         crate::storage::Identity::read(path)? == *file,
         "The photo's file changed while its preview was made"
@@ -145,7 +134,7 @@ pub(in crate::app::library) fn develop_quickly(
     path: &Path,
     edit: Option<&EditSource>,
     edge: u32,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
     let (image, recipe) = open_quickly(path, edit, cancel)?;
     finish_quickly(&image, &recipe, edge, cancel)
@@ -155,17 +144,15 @@ pub(in crate::app::library) fn develop_quickly(
 pub(super) fn open_quickly(
     path: &Path,
     edit: Option<&EditSource>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> anyhow::Result<(crate::camera_data::CameraImage, Recipe)> {
-    let opened = crate::photo::open_source(path, Cancel::new(cancel))?;
+    let opened = crate::photo::open_source(path, cancel)?;
     let recipe = EditSource::recipe(edit, opened.metadata(), path, cancel)?;
     let image = match opened {
-        crate::photo::Opened::Raw(raw) => {
-            raw.develop(crate::camera_data::Decode::Half, Cancel::new(cancel))?
-        }
+        crate::photo::Opened::Raw(raw) => raw.develop(crate::camera_data::Decode::Half, cancel)?,
         crate::photo::Opened::Rendered(image) => image,
     };
-    anyhow::ensure!(!cancel.load(Ordering::Relaxed), "Cancelled");
+    anyhow::ensure!(!cancel.is_cancelled(), "Cancelled");
     Ok((image, recipe))
 }
 pub(super) fn rgb(out: crate::rendered::Rendered) -> anyhow::Result<image::RgbImage> {
@@ -179,12 +166,12 @@ pub(super) fn finish_quickly(
     image: &crate::camera_data::CameraImage,
     recipe: &Recipe,
     edge: u32,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
     rgb(crate::develop::render(
         image,
         &recipe.checked()?,
         edge,
-        Cancel::new(cancel),
+        cancel,
     )?)
 }

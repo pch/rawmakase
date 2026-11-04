@@ -142,12 +142,7 @@ impl Editor {
             SyncScope::All => None,
         };
         self.spawn_scan(name, root, false, move |stopped, progress| {
-            scan(
-                &inputs,
-                &crate::volume_mounted,
-                Cancel::new(stopped),
-                progress,
-            )
+            scan(&inputs, &crate::volume_mounted, stopped, progress)
         });
     }
     /// Find on Disk…: asks for the file of `photo`, offline, starting where
@@ -213,12 +208,7 @@ impl Editor {
             .unwrap_or_default();
         let root = file.parent().map(PathBuf::from);
         self.spawn_scan(name, root, true, move |stopped, progress| {
-            find_on_disk(
-                &inputs,
-                &crate::volume_mounted,
-                Cancel::new(stopped),
-                progress,
-            )
+            find_on_disk(&inputs, &crate::volume_mounted, stopped, progress)
         });
     }
     /// Runs `work`, a synchronization's scan or Find on Disk's (`finding`),
@@ -228,7 +218,7 @@ impl Editor {
         name: String,
         root: Option<PathBuf>,
         finding: bool,
-        work: impl FnOnce(&AtomicBool, &dyn Fn(usize)) -> anyhow::Result<SyncPlan> + Send + 'static,
+        work: impl FnOnce(Cancel<'_>, &dyn Fn(usize)) -> anyhow::Result<SyncPlan> + Send + 'static,
     ) {
         let Some(library) = &self.library else {
             return;
@@ -250,7 +240,7 @@ impl Editor {
                     ctx.request_repaint();
                 };
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    work(&stopped, &progress)
+                    work(Cancel::new(&stopped), &progress)
                 }));
                 let result = match result {
                     Ok(Ok(plan)) => Ok(plan),
@@ -2715,7 +2705,7 @@ mod tests {
         );
         // Stopped.
         e.spawn_scan("a.dng".into(), None, true, |stopped, _| {
-            while !stopped.load(Ordering::Relaxed) {
+            while !stopped.is_cancelled() {
                 std::thread::sleep(Duration::from_millis(5));
             }
             anyhow::bail!("Find on Disk stopped")
