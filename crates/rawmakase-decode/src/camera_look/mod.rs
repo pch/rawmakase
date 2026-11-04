@@ -607,11 +607,11 @@ fn matrix_distance(a: &CameraProfile, b: &CameraProfile, camera: &[Rgb]) -> f32 
     let (ma, mb) = (a.camera_matrix(6504.), b.camera_matrix(6504.));
     let to_lab = |m, c: Rgb| {
         let srgb = mul(PRO_TO_RGB, mul(m, c)).map(|v| f64::from(v.clamp(0., 1.)));
-        crate::half_check::lab(srgb)
+        crate::color_difference::lab(srgb)
     };
     let total: f64 = camera
         .iter()
-        .map(|c| crate::half_check::delta_e2000(to_lab(ma, *c), to_lab(mb, *c)))
+        .map(|c| crate::color_difference::delta_e2000(to_lab(ma, *c), to_lab(mb, *c)))
         .sum();
     (total / camera.len().max(1) as f64) as f32
 }

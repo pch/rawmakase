@@ -397,17 +397,17 @@ impl Raw {
     pub(crate) fn sensor(&self) -> Result<Sensor> {
         self.own.sensor()
     }
-    /// The visible mosaic in AI Denoise's model domain ([`crate::ai_denoise::PackedBayer`]),
-    /// or why this file cannot have it ([`crate::ai_denoise::Unsupported`]). An X-Trans
+    /// The visible mosaic in AI Denoise's model domain ([`crate::ai::denoise::PackedBayer`]),
+    /// or why this file cannot have it ([`crate::ai::denoise::Unsupported`]). An X-Trans
     /// mosaic is demosaiced as development does it, its white balance taken off, and
     /// sampled again as an RGGB mosaic of the same size
     /// (docs/rendering-quality.md#ai-denoise).
-    pub fn packed_bayer(self, cancel: Cancel<'_>) -> Result<crate::ai_denoise::PackedBayer> {
+    pub fn packed_bayer(self, cancel: Cancel<'_>) -> Result<crate::ai::denoise::PackedBayer> {
         let red = match self.own.bayer_red() {
             Ok(red) => red,
             Err(own::XTRANS) => return self.packed_xtrans(cancel),
             Err(why) => {
-                return Err(anyhow::Error::new(crate::ai_denoise::Unsupported(why)));
+                return Err(anyhow::Error::new(crate::ai::denoise::Unsupported(why)));
             }
         };
         let cfa = self
@@ -415,7 +415,7 @@ impl Raw {
             .cfa(cancel)?
             .ok_or_else(|| anyhow::anyhow!("Sensor data RAWmakase cannot develop"))?;
         ensure!(!cancel.is_cancelled(), "Development cancelled");
-        Ok(crate::ai_denoise::PackedBayer::pack(
+        Ok(crate::ai::denoise::PackedBayer::pack(
             cfa.width as usize,
             cfa.height as usize,
             &cfa.data,
@@ -423,7 +423,7 @@ impl Raw {
         ))
     }
     /// An X-Trans photo's [`Self::packed_bayer`].
-    fn packed_xtrans(self, cancel: Cancel<'_>) -> Result<crate::ai_denoise::PackedBayer> {
+    fn packed_xtrans(self, cancel: Cancel<'_>) -> Result<crate::ai::denoise::PackedBayer> {
         let wb = self.metadata.wb;
         let image = self.develop(Decode::Full(Default::default()), cancel)?;
         let (w, h) = (image.width as usize, image.height as usize);
@@ -442,7 +442,7 @@ impl Raw {
             })
             .collect();
         ensure!(!cancel.is_cancelled(), "Development cancelled");
-        Ok(crate::ai_denoise::PackedBayer::pack(w, h, &data, [0, 0]))
+        Ok(crate::ai::denoise::PackedBayer::pack(w, h, &data, [0, 0]))
     }
     pub fn develop(self, decode: Decode, cancel: Cancel<'_>) -> Result<CameraImage> {
         // Small RAWs develop at full size in either mode, as they always have.

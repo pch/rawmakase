@@ -24,7 +24,7 @@
 //! registered before the second registration first. A decode still running then ends the process at once, with status
 //! 1 and without the rest of its teardown, rather than run libheif's
 //! destructors under it: exiting is never held up for longer.
-use super::super::avif;
+use super::super::heif;
 use super::{HeicFile, Pixels};
 use anyhow::{Result, anyhow, bail, ensure};
 use std::ffi::{CStr, c_char, c_int, c_void};
@@ -398,7 +398,7 @@ pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
         let samples: Vec<u16> = rows
             .flat_map(|r| r.as_chunks::<2>().0.iter().map(|s| u16::from_le_bytes(*s)))
             .collect();
-        avif::widen(&samples, bits)
+        heif::widen(&samples, bits)
     } else {
         rows.flatten().copied().collect()
     };

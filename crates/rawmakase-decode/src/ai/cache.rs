@@ -10,7 +10,7 @@
 //! flags assembly needs. The model's raw output cannot be stored in half precision: its
 //! scale is arbitrary (medians reach 10⁵, beyond half precision's 65,504). Every value is
 //! checked finite when stored and when loaded. Saved edits never need the cache.
-use crate::ai_denoise::Layout;
+use crate::ai::denoise::Layout;
 use crate::decode_cache::{Dir, Namespace, cache_dir, entry_in, purge, read_at, trim};
 use anyhow::{Result, ensure};
 use half::f16;
@@ -46,9 +46,9 @@ pub struct AiEntry {
     /// The gain applied, kept for reference.
     pub gain: f32,
     /// Red, green and blue planes of `2 × packed_width` by `2 × packed_height`, the gain
-    /// applied (`crate::ai_denoise::ModelOutput::rgb`).
+    /// applied (`crate::ai::denoise::ModelOutput::rgb`).
     pub rgb: Vec<f32>,
-    /// `crate::ai_denoise::PackedBayer::clipped`.
+    /// `crate::ai::denoise::PackedBayer::clipped`.
     pub clipped: Vec<bool>,
 }
 

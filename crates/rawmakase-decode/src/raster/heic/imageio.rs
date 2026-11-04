@@ -29,7 +29,7 @@
 //! shows the background, and is an error. An image transparent everywhere
 //! shows the background too, so one with alpha that shows nothing is taken
 //! as drawn when its decoded pixels are there to read.
-use super::super::avif;
+use super::super::heif;
 use super::{HeicFile, Pixels};
 use anyhow::{Result, anyhow, ensure};
 use moxcms::{ColorProfile, DataColorSpace};
@@ -67,7 +67,7 @@ fn space(file: &HeicFile) -> Option<CFRetained<CGColorSpace>> {
     let space = match (&file.icc, file.nclx.map(|n| (n.primaries, n.transfer))) {
         (None, Some((9, 16))) => named(pq),
         (None, Some((9, 18))) => named(hlg),
-        _ => avif::profile(file.icc.as_ref(), file.nclx)
+        _ => heif::profile(file.icc.as_ref(), file.nclx)
             .filter(|icc| {
                 ColorProfile::new_from_slice(icc)
                     .is_ok_and(|profile| profile.color_space == DataColorSpace::Rgb)
