@@ -7,10 +7,7 @@ use crate::camera_data::CameraImage;
 use anyhow::{Result, ensure};
 use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::{
-    path::Path,
-    sync::{Arc, atomic::AtomicBool},
-};
+use std::{path::Path, sync::Arc};
 
 /// Sensor pixels around a clipped sample where the AI source is the plain demosaic: the
 /// model sees the mosaic clipped at white, so near clipping its output is what the plain
@@ -279,7 +276,7 @@ pub trait AiBase: Send + Sync {
         path: &Path,
         file: &crate::storage::Identity,
         plain: &Arc<CameraImage>,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Arc<CameraImage>>;
 }
 
@@ -307,7 +304,7 @@ impl AiBase for Refusing {
         _: &Path,
         _: &crate::storage::Identity,
         _: &Arc<CameraImage>,
-        _: &AtomicBool,
+        _: Cancel<'_>,
     ) -> Result<Arc<CameraImage>> {
         anyhow::bail!("{}", self.0)
     }
@@ -533,7 +530,7 @@ mod tests {
                 prefix_hash: String::new(),
             },
             &plain,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
         ) else {
             panic!("refused nothing");
         };

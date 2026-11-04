@@ -17,10 +17,7 @@ use anyhow::{Result, ensure};
 use rawmakase_cancel::Cancel;
 use std::{
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
 };
 
 /// The photo as it was when Export was chosen.
@@ -55,7 +52,7 @@ pub fn run(
     settings: &ExportSettings,
     target: &Path,
     replace: super::Replace,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     progress: impl Fn(f32),
 ) -> Result<Option<String>> {
     let prepared = prepare(&photo, settings, cancel, &progress)?;
@@ -90,11 +87,11 @@ pub struct Prepared {
 pub fn prepare(
     photo: &Photo,
     settings: &ExportSettings,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     progress: &impl Fn(f32),
 ) -> Result<Prepared> {
     let cancelled = || -> Result<()> {
-        ensure!(!cancel.load(Ordering::Relaxed), "Cancelled");
+        ensure!(!cancel.is_cancelled(), "Cancelled");
         Ok(())
     };
     progress(0.05);
@@ -139,7 +136,7 @@ pub fn prepare(
         &photo.recipe.checked()?,
         ai.as_ref(),
         options.max_edge,
-        Cancel::new(cancel),
+        cancel,
     )?;
     if let Some(w) = &watermark
         && !w.apply(&mut rendered)
@@ -187,12 +184,12 @@ pub fn decode_full(
     source: &Path,
     demosaic: Demosaic,
     cache: &DecodeCache,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<CameraImage> {
     let full = FullSize::with_cache(source, demosaic, cache.clone());
     match full.cached(&raw.metadata) {
         Some(image) => Ok(image),
-        None => full.decode(raw, DecodePolicy::Export, Cancel::new(cancel)),
+        None => full.decode(raw, DecodePolicy::Export, cancel),
     }
 }
 
@@ -203,7 +200,7 @@ pub fn decode_full(
 fn ai_source(
     photo: &Photo,
     image: &Arc<CameraImage>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Option<crate::develop::AiSource>> {
     if !photo.recipe.as_rendered().ai_denoise.renders() {
         return Ok(None);
@@ -219,7 +216,7 @@ fn ai_source(
         .get(&photo.source, &file, image, cancel)
         .map_err(|e| anyhow::anyhow!("AI Denoise: {e:#}"))?;
     let ai = Arc::try_unwrap(ai).unwrap_or_else(|shared| (*shared).clone());
-    crate::develop::AiSource::recover(ai, Cancel::new(cancel)).map(Some)
+    crate::develop::AiSource::recover(ai, cancel).map(Some)
 }
 
 /// The full-resolution image: the open one, the decode cache's, or a new decode.
@@ -228,7 +225,7 @@ fn full_size(
     source: &Path,
     demosaic: Demosaic,
     cache: &DecodeCache,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Arc<CameraImage>> {
     if !image.fast {
         return Ok(image);
@@ -236,11 +233,7 @@ fn full_size(
     let full = FullSize::with_cache(source, demosaic, cache.clone());
     Ok(Arc::new(match full.cached(&image.metadata) {
         Some(cached) => cached,
-        None => full.decode(
-            crate::photo::open(source)?,
-            DecodePolicy::Export,
-            Cancel::new(cancel),
-        )?,
+        None => full.decode(crate::photo::open(source)?, DecodePolicy::Export, cancel)?,
     }))
 }
 
@@ -286,6 +279,7 @@ fn xmp(
 mod tests {
     use super::*;
     use crate::exif::{CameraExif, Field, tag};
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     /// The photo at `source`, its image decoded already, as Develop has it.
     fn photo(source: &Path, cache: &Path) -> Photo {
@@ -328,7 +322,7 @@ mod tests {
             _: &Path,
             _: &crate::storage::Identity,
             plain: &Arc<CameraImage>,
-            _: &AtomicBool,
+            _: Cancel<'_>,
         ) -> Result<Arc<CameraImage>> {
             self.0.fetch_add(1, Ordering::SeqCst);
             let mut image = (**plain).clone();
@@ -364,7 +358,7 @@ mod tests {
             &ExportSettings::default(),
             &target,
             super::super::Replace::NoClobber,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
             |_| {},
         )
         .unwrap_err();
@@ -383,14 +377,9 @@ mod tests {
         let flat = Arc::new(Flat(Default::default(), 0.6));
         let mut photo = with_ai(photo(&source, &dir.path().join("cache")), 1.);
         photo.ai = crate::ai_denoise::AiService(flat.clone());
-        let error = prepare(
-            &photo,
-            &ExportSettings::default(),
-            &AtomicBool::new(false),
-            &|_| {},
-        )
-        .err()
-        .unwrap();
+        let error = prepare(&photo, &ExportSettings::default(), Cancel::NEVER, &|_| {})
+            .err()
+            .unwrap();
         assert!(
             error.to_string().contains("could not be identified"),
             "{error}"
@@ -408,14 +397,11 @@ mod tests {
         std::fs::write(&source, b"synthetic")?;
         let flat = Arc::new(Flat(Default::default(), 0.6));
         let render = |photo: &Photo| -> Result<Vec<[f32; 3]>> {
-            Ok(prepare(
-                photo,
-                &ExportSettings::default(),
-                &AtomicBool::new(false),
-                &|_| {},
-            )?
-            .rendered
-            .pixels)
+            Ok(
+                prepare(photo, &ExportSettings::default(), Cancel::NEVER, &|_| {})?
+                    .rendered
+                    .pixels,
+            )
         };
         let mut plain = photo(&source, &dir.path().join("cache"));
         plain.ai = crate::ai_denoise::AiService(flat.clone());
@@ -462,7 +448,7 @@ mod tests {
             &settings,
             &target,
             super::super::Replace::NoClobber,
-            &cancel,
+            Cancel::new(&cancel),
             |_| {},
         )?;
         crate::exif::read(&target).ok_or_else(|| anyhow::anyhow!("no EXIF in the export"))
@@ -573,13 +559,7 @@ mod tests {
         };
         let _ = cached.recovered.set(Arc::new(cached.clone()));
         cache.store(&DecodeCache::key(&chart, Demosaic::default())?, &cached)?;
-        let image = decode_full(
-            raw,
-            &chart,
-            Demosaic::default(),
-            &cache,
-            &AtomicBool::new(false),
-        )?;
+        let image = decode_full(raw, &chart, Demosaic::default(), &cache, Cancel::NEVER)?;
         assert_eq!((image.width, image.height), (4, 3));
         Ok(())
     }

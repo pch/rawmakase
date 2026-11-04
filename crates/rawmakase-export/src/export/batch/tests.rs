@@ -3,7 +3,9 @@ use crate::{
     catalog::{Catalog, HistoryUpdate, PhotoId},
     export_settings::{Destination, Format},
 };
+use rawmakase_cancel::Cancel;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A photo of a batch at `source`, without an edit.
 fn photo(source: &Path) -> BatchPhoto {
@@ -229,7 +231,7 @@ impl Fixture {
     }
 }
 fn run_all(batch: &Batch) -> Vec<Outcome> {
-    run(batch, &AtomicBool::new(false), |_| {})
+    run(batch, Cancel::NEVER, |_| {})
 }
 fn exported(outcome: &Outcome) -> &Path {
     match outcome {
@@ -422,7 +424,7 @@ fn cancel_before_a_commit_leaves_nothing_and_after_it_counts_as_exported() -> Re
         let out = f.out().join(format!("{at}"));
         let batch = f.batch(photos.clone(), settings(&out));
         let cancel = AtomicBool::new(false);
-        let outcomes = run(&batch, &cancel, |p| {
+        let outcomes = run(&batch, Cancel::new(&cancel), |p| {
             if p.done == 0 && p.fraction >= at {
                 cancel.store(true, Ordering::Relaxed);
             }

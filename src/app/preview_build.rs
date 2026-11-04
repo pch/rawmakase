@@ -216,7 +216,7 @@ pub(super) fn render(item: &Item, cancel: &AtomicBool) -> anyhow::Result<image::
                 &item.path,
                 item.demosaic,
                 &item.decode_cache,
-                cancel,
+                Cancel::new(cancel),
             )?
         }
         Opened::Raw(raw) => raw.develop(Decode::Half, Cancel::new(cancel))?,
