@@ -10,7 +10,7 @@
 //! ends, however it ends.
 use super::super::{Catalog, CatalogLocation};
 use super::FileOpError;
-use crate::storage::fsops::{self, EntryKind, FileId};
+use crate::fsops::{self, EntryKind, FileId};
 use std::fs::{File, TryLockError};
 use std::path::{Path, PathBuf};
 

@@ -15,7 +15,7 @@ use super::disk::{Disk, Presence, parent, presence, spelled};
 use super::journal::{self, Item, ItemState, Subject};
 use super::names::{self, NameProblem};
 use super::preconditions::RELOCATED;
-use crate::storage::fsops::{EntryKind, FileId, FsError};
+use crate::fsops::{EntryKind, FileId, FsError};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;

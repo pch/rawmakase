@@ -5,9 +5,9 @@ use super::tests::{FakeTrash, Faulty, NoTrash, bytes, fixture, results};
 use super::*;
 use crate::catalog::{Catalog, HistoryUpdate};
 use crate::export_settings::ExportOptions;
+use crate::fsops;
 use crate::model::recipe::Recipe;
 use crate::storage::Identity;
-use crate::storage::fsops;
 use anyhow::Result;
 use rawmakase_cancel::Cancel;
 

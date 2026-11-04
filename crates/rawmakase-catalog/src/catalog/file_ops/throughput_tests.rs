@@ -124,7 +124,7 @@ fn a_folders_photos_read_once_follow_the_transactions_own_moves() -> anyhow::Res
     use super::plan::{Folders, occupied, shared};
     use crate::catalog::db::sql;
     use crate::catalog::folder_sync::locate_folders;
-    use crate::storage::fsops;
+    use crate::fsops;
     use std::ffi::OsStr;
     let mut fx = fixture(&["a.NEF", "b.NEF", "sub/"]);
     let a = fx.photo("a.NEF");

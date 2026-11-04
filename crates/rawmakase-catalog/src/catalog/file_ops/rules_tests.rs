@@ -2,7 +2,7 @@
 use super::companions::{self, Companions, readers};
 use super::conflicts::{Destination, Names, Taken};
 use super::disk::Real;
-use crate::storage::fsops::{Folding, NameRules};
+use crate::fsops::{Folding, NameRules};
 use std::collections::HashSet;
 use std::ffi::OsString;
 

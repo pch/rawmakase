@@ -16,7 +16,7 @@ pub struct Catalog {
     computer: locations::Computer,
     /// The file object the catalog was when it opened, if that could be
     /// told; file operations check it is still the one at its path.
-    file: Option<crate::storage::fsops::FileId>,
+    file: Option<crate::fsops::FileId>,
 }
 
 mod checksums;

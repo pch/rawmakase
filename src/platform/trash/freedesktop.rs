@@ -17,7 +17,7 @@
 //! Where the Trashes are comes in as [`Places`], so tests point them at
 //! temporary folders.
 use crate::catalog::file_ops::{TrashError, TrashReceipt, TrashSupport};
-use crate::storage::fsops::{self, FsError};
+use rawmakase_fs::{self as fsops, FsError};
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{self, Write as _};

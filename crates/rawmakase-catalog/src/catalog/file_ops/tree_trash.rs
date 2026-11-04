@@ -48,7 +48,7 @@ use super::tree_copy::{Entry, walk};
 use super::{
     BatchId, FileOpError, Plan, Summary, Trash, TrashError, TrashReceipt, TrashSupport, TreeCounts,
 };
-use crate::storage::fsops::{EntryKind, FileId, VolumeKind};
+use crate::fsops::{EntryKind, FileId, VolumeKind};
 use anyhow::{Context, Result};
 use rawmakase_cancel::Cancel;
 use serde::{Deserialize, Serialize};

@@ -6,7 +6,7 @@ use super::journal;
 use super::recover_tests;
 use super::tests::*;
 use super::*;
-use crate::storage::fsops;
+use crate::fsops;
 use rawmakase_cancel::Cancel;
 
 /// Photos `IMG_0000.NEF`… in one folder, every third with an XMP sidecar.
@@ -29,8 +29,8 @@ fn a_name_an_earlier_item_takes_in_the_catalog_leaves_the_later_one_untouched() 
     // when items went one at a time.
     let mut fx = fixture(&["x/a.NEF", "y/A.NEF", "sub/"]);
     let sub = fx.root.join("sub");
-    let names = crate::storage::fsops::list(&sub).unwrap();
-    if crate::storage::fsops::probe(&sub, &names).case != crate::storage::fsops::Folding::Exact {
+    let names = crate::fsops::list(&sub).unwrap();
+    if crate::fsops::probe(&sub, &names).case != crate::fsops::Folding::Exact {
         return;
     }
     let photos = vec![fx.photo("x/a.NEF"), fx.photo("y/A.NEF")];

@@ -10,8 +10,8 @@ use super::folder::FolderState;
 use super::preconditions::Preconditions;
 use super::tree::TreeState;
 use super::tree_trash::TrashTreeState;
+use crate::fsops::{ContentHash, FileId};
 use crate::storage::Identity;
-use crate::storage::fsops::{ContentHash, FileId};
 use anyhow::{Context, Result, anyhow};
 use std::path::{Path, PathBuf};
 

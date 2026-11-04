@@ -7,34 +7,38 @@
 
 # The cancellation token is shared by every crate that does long work, the RAW
 # decoders and inference among them, so it depends on none of them.
-rawmakase-cancel never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-ctl
+rawmakase-cancel never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-ctl rawmakase-fs
+# The file system steps moving a user's file needs are policy-free: they know no
+# photo, edit or catalog. Only the catalog's file operations and the app's Trash
+# use them, so nothing below the catalog builds the platform file system code.
+rawmakase-fs never rawmakase-cancel rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-ctl
 # The TIFF container reader is the bottom layer: the model and the RAW decoders read
 # through it.
-rawmakase-tiff never rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote
+rawmakase-tiff never rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-fs
 # RAW decoders turn file bytes into sensor data; they know no edit, file format,
 # catalog or renderer.
-rawmakase-raw never rawmakase-model rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote
+rawmakase-raw never rawmakase-model rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-fs
 # The control protocol's types stand alone, so the command-line client builds without
 # the app's crates.
-rawmakase-protocol never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
-rawmakase-ctl never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
+rawmakase-protocol never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-fs
+rawmakase-ctl never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-fs
 # The values an edit is made of come before file formats, the catalog, rendering and
 # decoding.
-rawmakase-model never rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
+rawmakase-model never rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-fs
 # File formats and presets read and write the model, and use nothing above it.
-rawmakase-interop never rawmakase-raw rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
+rawmakase-interop never rawmakase-raw rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-fs
 # The catalog stores edits; it renders and decodes nothing.
 rawmakase-catalog never rawmakase-raw rawmakase-engine rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
 # The renderer takes decoded pixels and an edit; it reads no files, file formats or
 # catalog. Applying settings that ask for Auto reaches it through the model's
 # `PhotoMeasures`.
-rawmakase-engine never rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote
+rawmakase-engine never rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-decode rawmakase-export rawmakase-inference rawmakase-remote rawmakase-fs
 # Decoding feeds rendering and export, never the other way, and keeps out of the catalog.
-rawmakase-decode never rawmakase-catalog rawmakase-export rawmakase-inference rawmakase-remote
+rawmakase-decode never rawmakase-catalog rawmakase-export rawmakase-inference rawmakase-remote rawmakase-fs
 # Export takes each photo's stored edit from its caller and resolves it with
 # `interop::edits`; it opens no catalog. Saved masks render without any inference
 # installed.
-rawmakase-export never rawmakase-catalog rawmakase-inference rawmakase-remote
+rawmakase-export never rawmakase-catalog rawmakase-inference rawmakase-remote rawmakase-fs
 # Inference takes pixels and returns coverage; the remote worker sits on it alone.
-rawmakase-inference never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-remote
-rawmakase-remote never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol
+rawmakase-inference never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-remote rawmakase-fs
+rawmakase-remote never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-fs

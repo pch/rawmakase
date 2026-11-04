@@ -3715,6 +3715,7 @@ dependencies = [
  "rawmakase-decode",
  "rawmakase-engine",
  "rawmakase-export",
+ "rawmakase-fs",
  "rawmakase-inference",
  "rawmakase-interop",
  "rawmakase-model",
@@ -3754,6 +3755,7 @@ dependencies = [
  "getrandom 0.4.3",
  "image",
  "rawmakase-cancel",
+ "rawmakase-fs",
  "rawmakase-interop",
  "rawmakase-model",
  "rusqlite",
@@ -3846,6 +3848,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rawmakase-fs"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rustix 1.1.6",
+ "sha2",
+ "tempfile",
+ "unicode-normalization",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "rawmakase-inference"
 version = "0.1.0"
 dependencies = [
@@ -3880,14 +3894,12 @@ dependencies = [
  "rawmakase-tiff",
  "rayon",
  "roxmltree 0.21.2",
- "rustix 1.1.6",
  "serde",
  "serde_json",
  "sha2",
  "tempfile",
  "toml",
  "unicode-normalization",
- "windows-sys 0.61.2",
 ]
 
 [[package]]

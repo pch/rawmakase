@@ -3,8 +3,8 @@
 use super::journal::{self, ItemState, Kind, MemberState, NewMember};
 use super::preconditions::Preconditions;
 use super::tests::fixture;
+use crate::fsops;
 use crate::storage::Identity;
-use crate::storage::fsops;
 use anyhow::Result;
 
 #[test]
