@@ -7,7 +7,7 @@ use crate::app::*;
 #[test]
 fn unflagging_the_photo_open_in_develop_with_picked_shown_opens_one_still_shown()
 -> anyhow::Result<()> {
-    use crate::app::photo_metadata::Edit;
+    use crate::app::library::photo_metadata::Edit;
     let (_dir, _ctx, mut editor, [a, b]) = two_photo_editor()?;
     let library = editor.library.as_mut().unwrap();
     library.edit_photos(&[a, b], Edit::Flag(1), false)?;

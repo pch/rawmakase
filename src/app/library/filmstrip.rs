@@ -6,8 +6,8 @@ use super::grid::filter_caption;
 use super::selection::{Mark, Selection};
 use super::views::View;
 use super::{Action, Library, cell};
-use crate::app::design::{Tone, inset, radius, space, text};
-use crate::app::theme;
+use crate::app::ui::design::{Tone, inset, radius, space, text};
+use crate::app::ui::theme;
 use crate::catalog::{Photo, PhotoId};
 use eframe::egui::{self, Color32, Vec2};
 
@@ -204,7 +204,7 @@ impl Library {
         let side = if library {
             inset::BAR.left
         } else {
-            crate::app::workspace::PHOTO_MARGIN as i8
+            crate::app::shell::workspace::PHOTO_MARGIN as i8
         };
         egui::Frame::new()
             .inner_margin(egui::Margin::symmetric(side, space::XS as i8))
@@ -216,7 +216,7 @@ impl Library {
                 ui.allocate_ui_with_layout(
                     Vec2::new(
                         ui.available_width(),
-                        crate::app::photo_metadata::controls_height(ui),
+                        crate::app::library::photo_metadata::controls_height(ui),
                     ),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
@@ -411,7 +411,7 @@ impl Library {
             let develop = self.photo_action(ui.ctx(), photo, menu, whole_selection);
             return (develop.map(Pick::Develop), edited);
         }
-        let context = crate::app::widgets::context_clicked(&response);
+        let context = crate::app::ui::widgets::context_clicked(&response);
         let clicked = response
             .on_hover_text(format!("{}{}", photo.filename, cell::copy_suffix(photo)))
             .clicked();
@@ -462,7 +462,7 @@ fn paint_cell(
         Mark::None if hovered => Tone::HOVER,
         Mark::None => Tone::FIELD,
     });
-    let fill = crate::app::photo_metadata::label_color(palette, &photo.label)
+    let fill = crate::app::library::photo_metadata::label_color(palette, &photo.label)
         .map_or(base, |label| {
             base.lerp_to_gamma(label, if mark == Mark::None { 0.25 } else { 0.35 })
         });
@@ -491,7 +491,7 @@ fn paint_cell(
     let y = cell.bottom() - strip / 2. - 2.;
     let mut x = cell.left() + 6.;
     if photo.flag != 0 {
-        crate::app::photo_metadata::flag_icon(
+        crate::app::library::photo_metadata::flag_icon(
             painter,
             palette,
             egui::pos2(x + 4., y),

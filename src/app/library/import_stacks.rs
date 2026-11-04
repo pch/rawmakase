@@ -8,7 +8,7 @@
 //! stacked.
 use super::Library;
 use super::stacks::StackCommand;
-use crate::app::widgets::plural;
+use crate::app::ui::widgets::plural;
 use crate::catalog::{BurstCandidate, Photo, PhotoId, SavedSequence, StacksChanged};
 use crate::catalog_session::{BurstRead, BurstsRead};
 use std::collections::HashMap;

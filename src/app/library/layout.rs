@@ -1,12 +1,12 @@
 //! The Library's layout kept across launches: its view, filter bar, sort,
-//! grid and whether folders show their subfolders' photos (see `app::session::LibraryLayout`). Each setting is saved under a
+//! grid and whether folders show their subfolders' photos (see `app::preferences::session::LibraryLayout`). Each setting is saved under a
 //! stable key, so renaming one in the interface keeps what was saved.
 use super::Library;
 use super::cell::Style;
 use super::filter::{Kind, Label, RatingOp};
 use super::sort::Sort;
 use super::views::View;
-use crate::app::session::LibraryLayout;
+use crate::app::preferences::session::LibraryLayout;
 
 /// A setting saved by key.
 trait Keyed: Copy + PartialEq + Default + 'static {

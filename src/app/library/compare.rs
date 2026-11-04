@@ -6,8 +6,8 @@
 use super::grid::filter_caption;
 use super::stage::MARGIN;
 use super::{Action, Library};
-use crate::app::design::{Tone, inset, space, text};
-use crate::app::theme;
+use crate::app::ui::design::{Tone, inset, space, text};
+use crate::app::ui::theme;
 use crate::catalog::PhotoId;
 use eframe::egui::{self, Rect, Vec2};
 
@@ -196,7 +196,7 @@ impl Library {
     /// Shift, the candidate moves on.
     pub(crate) fn edit_compared(
         &mut self,
-        edit: crate::app::photo_metadata::Edit,
+        edit: crate::app::library::photo_metadata::Edit,
         advance: bool,
     ) -> anyhow::Result<()> {
         let Some(id) = self.compare.id(self.compare.active) else {

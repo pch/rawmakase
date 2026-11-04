@@ -1,10 +1,10 @@
 //! Lightroom's Export dialog, and the question it asks when the file exists.
 use super::{Editor, Status};
-use crate::app::design::{Tone, button, radius, size, space, text};
-use crate::app::naming::menu::Choice;
-use crate::app::naming::presets::Preset;
-use crate::app::theme;
-use crate::app::widgets::{confirm_modal, form_row, modal_frame, pretty_path, primary_button};
+use crate::app::export::naming::menu::Choice;
+use crate::app::export::naming::presets::Preset;
+use crate::app::ui::design::{Tone, button, radius, size, space, text};
+use crate::app::ui::theme;
+use crate::app::ui::widgets::{confirm_modal, form_row, modal_frame, pretty_path, primary_button};
 use crate::export_settings::{AfterExport, Destination, Existing, Format, Include, NameContext};
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use std::{path::Path, sync::atomic::Ordering};
@@ -112,7 +112,7 @@ impl Editor {
                         .join(", ");
                     let line = format!(
                         "{} won't be exported: {reasons}",
-                        crate::app::widgets::plural(left_out.len(), "photo", "photos")
+                        crate::app::ui::widgets::plural(left_out.len(), "photo", "photos")
                     );
                     let at = egui::Rect::from_min_size(
                         rect.left_top() + Vec2::new(200., 16.),
@@ -278,19 +278,23 @@ impl Editor {
         let naming = s.naming();
         let custom = s.custom_tokens().map(str::to_string);
         let mut edit_names = false;
-        form_row(ui, "Rename To", |ui| match crate::app::naming::menu::combo(
+        form_row(
             ui,
-            "export-naming",
-            220.,
-            naming,
-            custom.as_deref(),
-            &self.exports.saved,
-        ) {
-            Some(Choice::Preset(n)) => s.choose_naming(n),
-            Some(Choice::Tokens(tokens)) => s.choose_tokens(&tokens),
-            Some(Choice::Edit) => edit_names = true,
-            None => {}
-        });
+            "Rename To",
+            |ui| match crate::app::export::naming::menu::combo(
+                ui,
+                "export-naming",
+                220.,
+                naming,
+                custom.as_deref(),
+                &self.exports.saved,
+            ) {
+                Some(Choice::Preset(n)) => s.choose_naming(n),
+                Some(Choice::Tokens(tokens)) => s.choose_tokens(&tokens),
+                Some(Choice::Edit) => edit_names = true,
+                None => {}
+            },
+        );
         let template = s.name_template();
         form_row(ui, "Custom Text", |ui| {
             ui.add_enabled(

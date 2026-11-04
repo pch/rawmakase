@@ -108,8 +108,12 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
 
     let ctx = egui::Context::default();
     let library = crate::app::library::Library::load(&catalog, ctx.clone())?;
-    let mut editor =
-        Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
     let defaults = Arc::new(crate::raw_defaults::DevelopDefaults::with_presets(
         Default::default(),
         |_| None,

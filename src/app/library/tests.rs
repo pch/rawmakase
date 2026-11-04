@@ -72,7 +72,7 @@ fn a_stale_adobe_profile_shortcut_keeps_no_thumbnail() -> Result<()> {
 }
 
 fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImport) -> Result<()> {
-    use crate::app::bulk_import::{ImportKind, Summary};
+    use crate::app::presets::bulk_import::{ImportKind, Summary};
     for (new_defaults, missing_metadata, wrong_path, dirty) in [
         (false, false, false, false),
         (true, false, false, false),
@@ -253,10 +253,10 @@ fn a_folder_added_with_something_skipped_is_a_warning() -> Result<()> {
         unreadable: vec![("a.xmp".into(), "not XML".into())],
         ignored: Vec::new(),
     };
-    crate::app::folder_locations::folder_added(&mut library, &report, &[]);
+    crate::app::catalog::folder_locations::folder_added(&mut library, &report, &[]);
     assert_eq!(
         library.messages.level(),
-        crate::app::messages::Level::Warning
+        crate::app::shell::messages::Level::Warning
     );
     assert!(
         library
@@ -588,7 +588,7 @@ fn photo_cells_preserve_texture_proportions_at_different_grid_widths() {
 }
 #[test]
 fn metadata_edits_persist_toggle_and_advance_through_filtered_photos() -> Result<()> {
-    use crate::app::photo_metadata::Edit;
+    use crate::app::library::photo_metadata::Edit;
     let d = tempfile::tempdir()?;
     let folder = d.path().join("photos");
     std::fs::create_dir(&folder)?;
@@ -837,7 +837,7 @@ fn a_folder_can_show_only_its_own_photos() -> Result<()> {
 
     // Kept across launches: the session's source comes back as it was shown.
     let layout = library.layout();
-    let saved: crate::app::session::LibraryLayout =
+    let saved: crate::app::preferences::session::LibraryLayout =
         serde_json::from_str(&serde_json::to_string(&layout)?)?;
     let mut restored = Library::load(&path, egui::Context::default())?;
     restored.restore_source(&key("day1"), None);
@@ -845,7 +845,8 @@ fn a_folder_can_show_only_its_own_photos() -> Result<()> {
     assert!(!restored.subfolders_shown());
     assert_eq!(shown(&restored), "one.RAF");
     // A layout saved before the setting shows subfolders.
-    let old: crate::app::session::LibraryLayout = serde_json::from_str(r#"{"sort": "rating"}"#)?;
+    let old: crate::app::preferences::session::LibraryLayout =
+        serde_json::from_str(r#"{"sort": "rating"}"#)?;
     restored.apply_layout(&old);
     assert!(restored.subfolders_shown());
     assert_eq!(shown(&restored), "deep.RAF one.RAF");
@@ -1882,7 +1883,7 @@ fn a_rejected_range_leaves_the_unflagged_view_in_one_write() -> Result<()> {
     library.filter();
     library.click(ids[1], egui::Modifiers::NONE);
     library.click(ids[3], egui::Modifiers::SHIFT);
-    library.edit_selection(crate::app::photo_metadata::Edit::Flag(-1), false)?;
+    library.edit_selection(crate::app::library::photo_metadata::Edit::Flag(-1), false)?;
     assert_eq!(visible_names(&library), ["a.RAF", "e.RAF"]);
     assert_eq!(library.selected(), Some(ids[4]));
     assert_eq!(library.messages.line(), "3 photos · Reject");
@@ -1911,7 +1912,7 @@ fn a_rejected_range_leaves_the_unflagged_view_in_one_write() -> Result<()> {
 }
 #[test]
 fn a_toggle_on_a_selection_follows_the_active_photo() -> Result<()> {
-    use crate::app::photo_metadata::Edit;
+    use crate::app::library::photo_metadata::Edit;
     let (_directory, mut library) = library_of(&["a.RAF", "b.RAF", "c.RAF"])?;
     let ids = ids_of(&library);
     library.edit_metadata(ids[0], Edit::Flag(1), false)?;
@@ -1946,8 +1947,16 @@ fn up_and_down_stay_in_their_column_at_the_edges() -> Result<()> {
 fn a_hidden_active_photo_hands_over_to_the_rest_of_the_selection() -> Result<()> {
     let (_directory, mut library) = library_of(&["a.RAF", "b.RAF", "c.RAF"])?;
     let ids = ids_of(&library);
-    library.edit_metadata(ids[1], crate::app::photo_metadata::Edit::Rating(3), false)?;
-    library.edit_metadata(ids[2], crate::app::photo_metadata::Edit::Rating(3), false)?;
+    library.edit_metadata(
+        ids[1],
+        crate::app::library::photo_metadata::Edit::Rating(3),
+        false,
+    )?;
+    library.edit_metadata(
+        ids[2],
+        crate::app::library::photo_metadata::Edit::Rating(3),
+        false,
+    )?;
     library.select_all();
     library.select(Some(ids[0]));
     library.select_all();
@@ -2355,7 +2364,7 @@ fn loupe_shows_a_jpeg_at_the_size_of_the_view() -> Result<()> {
 }
 #[test]
 fn flag_steps_up_and_down_and_stops_at_the_ends() {
-    use crate::app::photo_metadata::Edit;
+    use crate::app::library::photo_metadata::Edit;
     let photo = |flag| Photo {
         id: PhotoId(1),
         folder: FolderId(1),
@@ -2398,8 +2407,8 @@ fn the_loupes_own_view_magnifies_from_the_full_resolution_file() -> Result<()> {
     library.open_loupe();
     assert!(library.loupe_develops().is_none());
     assert!(library.loupe_zoomable());
-    let mut zoom = crate::app::navigator::Zoom::default();
-    let mut magnifier = crate::app::magnifier::Magnifier::default();
+    let mut zoom = crate::app::view::navigator::Zoom::default();
+    let mut magnifier = crate::app::view::magnifier::Magnifier::default();
     let mut frame = |library: &mut Library, lens: bool| {
         ctx.run_ui(
             egui::RawInput {
@@ -2457,8 +2466,8 @@ fn moving_on_with_the_magnifier_lets_the_last_photos_decode_go() -> Result<()> {
     library.wait_for_availability();
     library.select(Some(library.session.photos()[0].id));
     library.open_loupe();
-    let mut zoom = crate::app::navigator::Zoom::default();
-    let mut magnifier = crate::app::magnifier::Magnifier::default();
+    let mut zoom = crate::app::view::navigator::Zoom::default();
+    let mut magnifier = crate::app::view::magnifier::Magnifier::default();
     let mut frame = |library: &mut Library, pointer: egui::Event| {
         ctx.run_ui(
             egui::RawInput {
@@ -2509,8 +2518,8 @@ fn loupe_zooms_at_the_navigator_levels_and_prepares_the_next_photo() -> Result<(
     library.wait_for_availability();
     library.select(Some(library.session.photos()[0].id));
     library.open_loupe();
-    let mut zoom = crate::app::navigator::Zoom::default();
-    let frame = |library: &mut Library, zoom: &mut crate::app::navigator::Zoom| {
+    let mut zoom = crate::app::view::navigator::Zoom::default();
+    let frame = |library: &mut Library, zoom: &mut crate::app::view::navigator::Zoom| {
         let mut output = ctx.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
@@ -2589,7 +2598,7 @@ fn photo_info_of_folder_photos_is_read_once_and_kept() -> Result<()> {
 }
 #[test]
 fn compare_shows_the_select_beside_a_candidate() -> Result<()> {
-    use crate::app::photo_metadata::Edit;
+    use crate::app::library::photo_metadata::Edit;
     let (_directory, mut library) = library_of(&["a.RAF", "b.RAF", "c.RAF", "d.RAF"])?;
     let ids = ids_of(&library);
     // The active photo beside the next one selected with it.
@@ -2663,7 +2672,7 @@ fn compare_shows_the_select_beside_a_candidate() -> Result<()> {
 }
 #[test]
 fn compare_follows_edits_sources_and_other_commands() -> Result<()> {
-    use crate::app::photo_metadata::Edit;
+    use crate::app::library::photo_metadata::Edit;
     let (_directory, mut library) = library_of(&["a.RAF", "b.RAF", "c.RAF", "d.RAF"])?;
     let ids = ids_of(&library);
     library.select(Some(ids[0]));
@@ -2706,7 +2715,7 @@ fn compare_follows_edits_sources_and_other_commands() -> Result<()> {
 }
 #[test]
 fn a_compare_edit_keeps_the_select_and_records_where_it_left() -> Result<()> {
-    use crate::app::photo_metadata::Edit;
+    use crate::app::library::photo_metadata::Edit;
     let (_directory, mut library) = library_of(&["a.RAF", "b.RAF", "c.RAF", "d.RAF"])?;
     let ids = ids_of(&library);
     library.select(Some(ids[0]));
@@ -2749,7 +2758,7 @@ fn a_compare_edit_keeps_the_select_and_records_where_it_left() -> Result<()> {
 }
 #[test]
 fn survey_shows_the_selection_and_rates_the_active_photo() -> Result<()> {
-    use crate::app::photo_metadata::Edit;
+    use crate::app::library::photo_metadata::Edit;
     let (_directory, mut library) = library_of(&["a.RAF", "b.RAF", "c.RAF", "d.RAF"])?;
     let ids = ids_of(&library);
     library.click(ids[0], egui::Modifiers::NONE);
@@ -3033,7 +3042,7 @@ fn the_library_layout_is_kept_and_returned_to() -> Result<()> {
     library.open_survey();
     let layout = library.layout();
     // Through the session file and back.
-    let saved: crate::app::session::LibraryLayout =
+    let saved: crate::app::preferences::session::LibraryLayout =
         serde_json::from_str(&serde_json::to_string(&layout)?)?;
     let (_other, mut restored) = library_of(&["a.RAF", "b.RAF", "c.RAF"])?;
     restored.select(Some(ids_of(&restored)[1]));
@@ -3041,7 +3050,7 @@ fn the_library_layout_is_kept_and_returned_to() -> Result<()> {
     assert_eq!(restored.layout(), layout);
     assert!(restored.survey_open());
     // A layout from another version keeps what it can.
-    let partial: crate::app::session::LibraryLayout =
+    let partial: crate::app::preferences::session::LibraryLayout =
         serde_json::from_str(r#"{"sort": "rating", "view": "lightbox", "cell_style": "?"}"#)?;
     restored.apply_layout(&partial);
     assert_eq!(restored.filters.sort, super::sort::Sort::Rating);
@@ -3521,7 +3530,7 @@ fn the_filmstrip_cells_keep_their_size_when_the_selection_opens_a_photo() -> Res
     // Through an Editor, as the window does, so the strip's header is laid out
     // at the app's spacing.
     let _editor = crate::app::Editor::with_context(&ctx, None, Default::default(), None);
-    crate::app::icons::install(&ctx);
+    crate::app::ui::icons::install(&ctx);
     let mut library = Library::load(&path, ctx.clone())?;
     let photo = library.session.photos()[0].clone();
     let texture = ctx.load_texture(

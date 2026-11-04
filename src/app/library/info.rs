@@ -1,9 +1,9 @@
 //! The Library's right panel: Quick Develop and the selected photo's metadata.
 use super::rows::{ROW, caption_at, paint_truncated, value_at};
 use super::{Action, Library};
-use crate::app::design::{Tone, space};
-use crate::app::theme;
-use crate::app::widgets::section;
+use crate::app::ui::design::{Tone, space};
+use crate::app::ui::theme;
+use crate::app::ui::widgets::section;
 use crate::catalog::{Photo, PhotoId};
 use crate::metadata::PhotoInfo;
 use eframe::egui::{self, Vec2};
@@ -143,7 +143,8 @@ impl Library {
         whole_selection: bool,
     ) -> bool {
         if let Some(photo) = self.photo(id).cloned()
-            && let Some(edit) = crate::app::photo_metadata::controls(ui, &photo, &self.labels())
+            && let Some(edit) =
+                crate::app::library::photo_metadata::controls(ui, &photo, &self.labels())
         {
             let ids = if whole_selection && self.selection.selected.contains(&id) {
                 self.selected_ids()

@@ -5,8 +5,8 @@
 use super::grid::filter_caption;
 use super::stage::MARGIN;
 use super::{Action, Library};
-use crate::app::design::{Tone, inset, space, text};
-use crate::app::theme;
+use crate::app::ui::design::{Tone, inset, space, text};
+use crate::app::ui::theme;
 use crate::catalog::PhotoId;
 use eframe::egui::{self, Rect, Vec2};
 
@@ -86,7 +86,7 @@ impl Library {
     /// surveyed becomes active; with Shift, the next one does anyway.
     pub(crate) fn edit_surveyed(
         &mut self,
-        edit: crate::app::photo_metadata::Edit,
+        edit: crate::app::library::photo_metadata::Edit,
         advance: bool,
     ) -> anyhow::Result<()> {
         let Some(id) = self.selection.active else {
@@ -257,9 +257,9 @@ impl Library {
                     Tone::CARD
                 }),
             );
-            crate::app::icons::paint_at(
+            crate::app::ui::icons::paint_at(
                 ui.painter(),
-                crate::app::icons::Icon::Close,
+                crate::app::ui::icons::Icon::Close,
                 close.center(),
                 12.,
                 palette.tone(Tone::TEXT),

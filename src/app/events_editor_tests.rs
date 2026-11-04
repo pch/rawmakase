@@ -8,7 +8,12 @@ use std::sync::Arc;
 #[test]
 fn stale_preview_results_are_discarded() {
     let ctx = egui::Context::default();
-    let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
     let (old, _) = e.preview.task.start();
     e.preview.task.start();
     e.tx.send(Event::Rendered {
@@ -40,7 +45,11 @@ fn stale_preview_results_are_discarded() {
 #[test]
 fn a_render_overtaken_by_an_edit_still_shows_with_its_own_settings() {
     let ctx = egui::Context::default();
-    let (mut e, _) = editor_with_blue_photo(&ctx, crate::app::session::Session::default(), true);
+    let (mut e, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
     // Only the results sent here arrive: the renderer takes a job and holds it.
     task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
     let (taken_tx, taken) = std::sync::mpsc::channel();
@@ -128,7 +137,11 @@ fn only_the_latest_render_becomes_the_library_thumbnail() -> anyhow::Result<()> 
     catalog.add_folder(&photos)?;
     drop(catalog);
     let ctx = egui::Context::default();
-    let (mut e, _) = editor_with_blue_photo(&ctx, crate::app::session::Session::default(), true);
+    let (mut e, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
     task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
     let (taken_tx, taken) = std::sync::mpsc::channel();
     let (_release, release) = std::sync::mpsc::channel();
@@ -190,8 +203,11 @@ fn develop_renders_with_ai_denoise_are_kept_apart_from_plain_previews() -> anyho
     let path = d.path().join("test.rawmakase");
     crate::catalog::Catalog::create(&path)?.add_folder(&photos)?;
     let ctx = egui::Context::default();
-    let (mut e, image) =
-        editor_with_blue_photo(&ctx, crate::app::session::Session::default(), true);
+    let (mut e, image) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
     task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
     let (taken_tx, _taken) = std::sync::mpsc::channel();
     let (_release, release) = std::sync::mpsc::channel();
@@ -263,7 +279,12 @@ fn develop_renders_with_ai_denoise_are_kept_apart_from_plain_previews() -> anyho
 fn before_and_after_renders_go_to_their_own_side() {
     use worker::Pane;
     let ctx = egui::Context::default();
-    let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
     // Each side counts its renders from the same start: ids alone do not tell them apart.
     let (after, _) = e.preview.task.start();
     let (before, _) = e.preview.before.task.start();
@@ -302,7 +323,12 @@ fn before_and_after_renders_go_to_their_own_side() {
 fn a_failed_before_render_renders_the_edit_again_but_not_before() {
     use worker::{Pane, TaskKind};
     let ctx = egui::Context::default();
-    let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
     e.document.set_image(Arc::new(CameraImage {
         recovered: Default::default(),
         width: 2,
@@ -318,8 +344,8 @@ fn a_failed_before_render_renders_the_edit_again_but_not_before() {
         scale_clipped: 0,
     }));
     e.view.viewport = Vec2::new(40., 40.);
-    e.set_compare(before_after::Compare::SideBySide(
-        before_after::Axis::LeftRight,
+    e.set_compare(crate::app::develop::before_after::Compare::SideBySide(
+        crate::app::develop::before_after::Axis::LeftRight,
     ));
     e.schedule();
     let after = e.preview.task.id();
@@ -344,7 +370,12 @@ fn a_failed_before_render_renders_the_edit_again_but_not_before() {
 fn a_failed_magnifier_render_renders_the_edit_again_but_not_the_magnifier() {
     use worker::{Pane, TaskKind};
     let ctx = egui::Context::default();
-    let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
     e.document.set_image(Arc::new(CameraImage {
         recovered: Default::default(),
         width: 2,
@@ -383,7 +414,12 @@ fn a_failed_magnifier_render_renders_the_edit_again_but_not_the_magnifier() {
 fn a_failed_edit_render_renders_before_again_but_not_the_edit() {
     use worker::{Pane, TaskKind};
     let ctx = egui::Context::default();
-    let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
     e.document.set_image(Arc::new(CameraImage {
         recovered: Default::default(),
         width: 2,
@@ -399,7 +435,9 @@ fn a_failed_edit_render_renders_before_again_but_not_the_edit() {
         scale_clipped: 0,
     }));
     e.view.viewport = Vec2::new(40., 40.);
-    e.set_compare(before_after::Compare::Split(before_after::Axis::LeftRight));
+    e.set_compare(crate::app::develop::before_after::Compare::Split(
+        crate::app::develop::before_after::Axis::LeftRight,
+    ));
     e.schedule();
     let before = e.preview.before.task.id();
     e.preview.before.task.finish(before);
@@ -421,8 +459,12 @@ fn a_failed_edit_render_renders_before_again_but_not_the_edit() {
 fn worker_failures_are_scoped_and_render_stages_do_not_depend_on_status_text() {
     use worker::{RenderStage, TaskKind};
     let ctx = egui::Context::default();
-    let mut editor =
-        Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
     let (load_id, _) = editor.load.start();
     let (render_id, _) = editor.preview.task.start();
     editor
@@ -499,8 +541,12 @@ fn catalog_header_keeps_the_recipe_resolved_by_the_loader() -> anyhow::Result<()
     let id = catalog.photos()?[0].id;
     drop(catalog);
     let ctx = egui::Context::default();
-    let mut editor =
-        Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
     editor.library = Some(Box::new(library::Library::load(&path, ctx.clone())?));
     editor.document.catalog_photo = Some(id);
     let opened = crate::storage::Identity::read(&raw)?;

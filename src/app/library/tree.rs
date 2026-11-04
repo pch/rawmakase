@@ -1,7 +1,7 @@
 use super::folder_selection::{Click, FolderSelection};
-use crate::app::design::{Tone, radius, text};
-use crate::app::icons::{self, Icon};
-use crate::app::theme;
+use crate::app::ui::design::{Tone, radius, text};
+use crate::app::ui::icons::{self, Icon};
+use crate::app::ui::theme;
 use crate::catalog::{Folder, FolderId, PhotoId, RootId};
 use eframe::egui::{self, Vec2};
 use std::collections::{HashMap, HashSet};
@@ -373,7 +373,7 @@ pub(super) fn folder_tree_row(
             to: node.logical.clone(),
         });
     }
-    if response.clicked() && !crate::app::widgets::context_clicked(&response) {
+    if response.clicked() && !crate::app::ui::widgets::context_clicked(&response) {
         let pointer = response.interact_pointer_pos().unwrap_or(rect.center());
         if !node.children.is_empty() && pointer.x < x + 6. {
             if open {
@@ -386,8 +386,8 @@ pub(super) fn folder_tree_row(
             action = Some(TreeAction::Select(node.key.clone(), click));
         }
     }
-    crate::app::widgets::context_menu(&response, |ui| {
-        use crate::app::widgets::{menu_item, menu_separator};
+    crate::app::ui::widgets::context_menu(&response, |ui| {
+        use crate::app::ui::widgets::{menu_item, menu_separator};
         ui.set_width(210.);
         ui.spacing_mut().item_spacing.y = 0.;
         if menu_item(

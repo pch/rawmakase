@@ -41,7 +41,7 @@ impl Library {
             self.messages.warn(format!(
                 "{} found on this computer. Locate them in Preferences › Catalog › \
                  Folder locations, or right-click a folder.",
-                crate::app::widgets::plural(missing, "folder isn't", "folders aren't")
+                crate::app::ui::widgets::plural(missing, "folder isn't", "folders aren't")
             ));
         }
     }

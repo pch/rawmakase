@@ -4,9 +4,9 @@
 use super::Library;
 use super::previews::EditSource;
 use super::screen::Shown;
-use crate::app::design::{Tone, inset, radius, text};
-use crate::app::photo_metadata::{flag_icon, label_color};
-use crate::app::theme;
+use crate::app::library::photo_metadata::{flag_icon, label_color};
+use crate::app::ui::design::{Tone, inset, radius, text};
+use crate::app::ui::theme;
 use crate::catalog::{Photo, PhotoId};
 use eframe::egui::{self, Color32, Rect, Vec2};
 use std::collections::HashMap;

@@ -1,8 +1,8 @@
 //! The grid, with the filter bar above it and its toolbar below.
 use super::cell::{self, photo_cell};
 use super::{Action, Library};
-use crate::app::design::{self, Tone, inset, space, text};
-use crate::app::theme;
+use crate::app::ui::design::{self, Tone, inset, space, text};
+use crate::app::ui::theme;
 use crate::catalog::{Photo, PhotoId};
 use eframe::egui::{self, Vec2};
 
@@ -72,9 +72,9 @@ impl Library {
     pub(in crate::app) fn grid(
         &mut self,
         ui: &mut egui::Ui,
-        zoom: &mut crate::app::navigator::Zoom,
+        zoom: &mut crate::app::view::navigator::Zoom,
         chrome: bool,
-        magnifier: Option<&mut crate::app::magnifier::Magnifier>,
+        magnifier: Option<&mut crate::app::view::magnifier::Magnifier>,
     ) -> Action {
         self.auto_stack_window(ui.ctx());
         if self.compare.open {
@@ -96,7 +96,7 @@ impl Library {
                 .show(ui, |ui| self.grid_toolbar(ui));
         }
         // Inset on the photo's backdrop, as the Loupe's photo is.
-        let margin = crate::app::workspace::PHOTO_MARGIN;
+        let margin = crate::app::shell::workspace::PHOTO_MARGIN;
         let inner = ui.available_width() - 2. * margin;
         let columns = ((inner / self.thumb_size).floor() as usize).max(1);
         let width = (inner / columns as f32).floor().max(80.);
@@ -443,7 +443,7 @@ impl Library {
     }
     /// The grid cell style, from a menu as well as J.
     fn cell_style_menu(&mut self, ui: &mut egui::Ui) {
-        let keys = crate::app::shortcuts::keys_text("J");
+        let keys = crate::app::shell::shortcuts::keys_text("J");
         ui.menu_button(
             egui::RichText::new(self.cell_style.name())
                 .size(text::SMALL)

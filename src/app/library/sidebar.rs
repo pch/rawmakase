@@ -3,9 +3,9 @@
 use super::folder_selection::{Click, FolderSelection};
 use super::tree::{FolderNode, TreeAction, folder_tree_row};
 use super::{Action, Library, collections, volumes};
-use crate::app::design::{Tone, space, text};
-use crate::app::theme;
-use crate::app::widgets::section;
+use crate::app::ui::design::{Tone, space, text};
+use crate::app::ui::theme;
+use crate::app::ui::widgets::section;
 use crate::catalog::{CollectionKind, FolderId, PhotoId, RootId};
 use eframe::egui::{self, Vec2};
 use std::collections::{HashMap, HashSet};
@@ -746,9 +746,9 @@ fn add_row(ui: &mut egui::Ui, label: &str) -> egui::Response {
     // The icon and label centred together.
     let width = 13. + 6. + text.size().x;
     let left = rect.center().x - width / 2.;
-    crate::app::icons::paint_at(
+    crate::app::ui::icons::paint_at(
         ui.painter(),
-        crate::app::icons::Icon::Add,
+        crate::app::ui::icons::Icon::Add,
         egui::pos2(left + 6.5, rect.center().y),
         13.,
         color,

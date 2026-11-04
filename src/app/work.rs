@@ -10,7 +10,7 @@
 //!
 //! Changing a row's policy (AI Denoise blocking close, say) changes what the
 //! app does: it is a change of behaviour of its own, not a refactor.
-use crate::app::messages::Work;
+use crate::app::shell::messages::Work;
 use crate::app::{Editor, task};
 use std::borrow::Cow;
 

@@ -1,8 +1,8 @@
 //! The rows of the Library's Metadata panel, as Lightroom's: a caption
 //! column, then a value or a text field, at a fixed height so the panel never
 //! widens or reflows.
-use crate::app::design::{self, Tone, size, space, text};
-use crate::app::theme;
+use crate::app::ui::design::{self, Tone, size, space, text};
+use crate::app::ui::theme;
 use eframe::egui::{self, Color32};
 
 /// The height of a row.

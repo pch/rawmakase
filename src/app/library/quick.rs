@@ -3,7 +3,7 @@
 //! any other, the one imported from Lightroom or made on first use, and each
 //! change is one undoable command.
 use super::{Library, Place};
-use crate::app::widgets::plural;
+use crate::app::ui::widgets::plural;
 use crate::catalog::PhotoId;
 use anyhow::Result;
 
