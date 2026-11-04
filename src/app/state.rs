@@ -166,6 +166,8 @@ pub(super) struct Pending {
     pub(super) recipe: Option<Recipe>,
     pub(super) mode: TextureMode,
     pub(super) crop: [f32; 4],
+    /// The AI Denoise result the render was given.
+    pub(super) ai: RenderedAi,
 }
 impl Default for Pending {
     fn default() -> Self {
@@ -173,8 +175,17 @@ impl Default for Pending {
             recipe: None,
             mode: TextureMode::Whole,
             crop: [0., 0., 1., 1.],
+            ai: RenderedAi::None,
         }
     }
+}
+/// The AI Denoise result a render was given: none, the tiles done so far, or the
+/// final one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RenderedAi {
+    None,
+    Partial,
+    Complete,
 }
 /// The document, photo, region and size a render shows.
 pub(super) struct RenderView {

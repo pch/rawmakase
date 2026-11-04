@@ -161,6 +161,7 @@ fn quitting_stops_the_workers_in_order() {
             StandIns,
             Selection,
             AiDenoise,
+            AiLoupe,
             Lensfun,
             Outputs,
             Controls,

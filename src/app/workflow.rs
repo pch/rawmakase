@@ -475,6 +475,12 @@ impl Editor {
                 .as_ref()
                 .is_some_and(|v| v.same(&view));
             self.preview.last_view = Some(view);
+            let ai = self.shown_ai_source(&image, &recipe.ai_denoise);
+            let rendered_ai = match &ai {
+                None => super::state::RenderedAi::None,
+                Some(_) if self.document.ai.is_complete() => super::state::RenderedAi::Complete,
+                Some(_) => super::state::RenderedAi::Partial,
+            };
             let (id, cancel) = self.preview.start(
                 edit && same_view,
                 super::state::Pending {
@@ -484,9 +490,9 @@ impl Editor {
                         super::state::TextureMode::Region,
                     ),
                     crop: geometry.crop(),
+                    ai: rendered_ai,
                 },
             );
-            let ai = self.document.ai_source(&image, &recipe.ai_denoise);
             self.request_ai_denoise(&image, &geometry, region);
             let replaced = self.renderer.submit(RenderJob {
                 pane: super::worker::Pane::After,

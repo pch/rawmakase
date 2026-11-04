@@ -69,7 +69,7 @@ pub(in crate::app) use cell::copy_suffix;
 pub(crate) use descriptive::DescriptiveCommand;
 pub(crate) use filmstrip::{DraggedPhoto, Module, Pick};
 pub(crate) use metadata::{Metadata, MetadataCommand};
-pub(in crate::app) use previews::{EditSource, Pace};
+pub(in crate::app) use previews::{EditSource, Pace, PreviewAi};
 pub(crate) use quick::CollectionCommand;
 pub(in crate::app) use stacks::StackAction;
 pub(crate) use stacks::StackCommand;
@@ -1351,14 +1351,24 @@ impl Library {
         self.cache
             .request(photo, ctx, || edit_source(catalog, photo.id));
     }
+    /// Replaces the edited-preview worker's queue with one nothing takes from:
+    /// what is sent to it is read from the returned end.
+    #[cfg(test)]
+    pub(in crate::app) fn detach_edited_previews(&mut self) -> previews::Sent {
+        let (queue, sent) = previews::EditQueue::detached();
+        self.cache.edit_tx = queue;
+        sent
+    }
     /// Shows Develop's latest render as the photo's thumbnail and caches it
-    /// under the edit it was rendered with, for the file `rendered` names (the
-    /// one its pixels were decoded from); without one it is not cached.
+    /// under the edit it was rendered with, and what it shows of AI Denoise
+    /// (`ai`), for the file `rendered` names (the one its pixels were decoded
+    /// from); without one it is not cached.
     pub(super) fn update_edited(
         &mut self,
         ctx: &egui::Context,
         id: PhotoId,
         rendered: Option<&crate::storage::Identity>,
+        ai: PreviewAi,
         image: image::RgbImage,
         recipe_json: String,
     ) {
@@ -1366,8 +1376,29 @@ impl Library {
             return;
         };
         let stamp = rendered.map(crate::storage::Identity::stamp);
-        self.cache
-            .store_edited(ctx, id, path, stamp, image, recipe_json);
+        let tag = EditSource::Recipe(recipe_json).preview_tag(ai);
+        self.cache.store_edited(ctx, id, path, stamp, tag, image);
+    }
+    /// An AI Denoise result was stored for the file at `path`: its photos' edited
+    /// previews are asked for again, so one shown plain shows the result. What is
+    /// shown stays until the new preview arrives.
+    pub(in crate::app) fn ai_result_stored(&mut self, path: &std::path::Path) {
+        let ids: Vec<PhotoId> = self
+            .session
+            .photos()
+            .iter()
+            .filter(|p| p.path == path)
+            .map(|p| p.id)
+            .collect();
+        for id in ids {
+            self.cache.ask_again(id);
+            self.screen.forget(id);
+        }
+    }
+    /// Edited previews with AI Denoise render from the finished results in `cache`.
+    pub(in crate::app) fn set_ai_cache(&mut self, cache: &rawmakase_decode::ai_cache::AiCache) {
+        self.cache.edit_tx.set_ai_cache(cache.clone());
+        self.screen.set_ai_cache(cache);
     }
     /// The selected photo, or else the first one shown in the current
     /// folder or filter (which then becomes selected), as Lightroom does

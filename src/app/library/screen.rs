@@ -9,6 +9,7 @@ use super::previews::EditSource;
 use super::thumbnails;
 use crate::catalog::{Photo, PhotoId};
 use eframe::egui;
+use rawmakase_decode::ai_cache::AiCache;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
@@ -62,6 +63,8 @@ struct Shared {
     queue: Mutex<Queue>,
     ready: Condvar,
     cancel: AtomicBool,
+    /// Where AI Denoise's finished results are; none until the app sets it.
+    ai: Mutex<Option<AiCache>>,
 }
 
 /// What a view can draw for a photo.
@@ -93,6 +96,10 @@ pub(super) struct ScreenPreviews {
 impl ScreenPreviews {
     pub(super) fn new(ctx: &egui::Context) -> Self {
         Self::with(ctx, render)
+    }
+    /// Previews of edits with AI Denoise render from the finished results in `cache`.
+    pub(super) fn set_ai_cache(&self, cache: &AiCache) {
+        *self.shared.ai.lock().unwrap() = Some(cache.clone());
     }
     fn with(ctx: &egui::Context, render: Render) -> Self {
         let shared: Arc<Shared> = Default::default();
@@ -293,8 +300,22 @@ fn work(
         let outcome = if !wanted.lock().unwrap().contains(&key) {
             Outcome::Skipped
         } else {
+            let ai = shared.ai.lock().unwrap().clone();
             let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                render(&key.1, key.2, edit.as_ref(), &shared.cancel)
+                match (&edit, &ai) {
+                    // As the Library's edited previews: from a finished result, else plain.
+                    (Some(source), Some(_)) if source.renders_ai() => {
+                        super::previews::develop_for_preview(
+                            &key.1,
+                            source,
+                            key.2,
+                            ai.as_ref(),
+                            &shared.cancel,
+                        )
+                        .map(|(image, _)| image)
+                    }
+                    _ => render(&key.1, key.2, edit.as_ref(), &shared.cancel),
+                }
             }));
             match rendered {
                 Ok(Ok(image)) => Outcome::Ready(image),
@@ -316,7 +337,8 @@ fn work(
 
 /// `path` within `edge` pixels: developed with its edit (or, for a RAW, the
 /// defaults Develop opens it with), as `previews::develop_quickly` does; a JPEG,
-/// TIFF or PNG without an edit as it is, which its defaults reproduce.
+/// TIFF or PNG without an edit as it is, which its defaults reproduce. An edit with
+/// AI Denoise renders from a finished result instead (see `work`).
 fn render(
     path: &Path,
     edge: u32,

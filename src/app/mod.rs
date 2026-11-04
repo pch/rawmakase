@@ -46,6 +46,8 @@ pub(crate) struct Editor {
     decode_cache: crate::decode_cache::DecodeCache,
     /// AI Denoise's queue, worker and cache, shared with exports.
     ai_denoise: ai_denoise::Service,
+    /// Loads the finished AI Denoise results the Library's Loupe shows.
+    ai_loupe: worker::Latest<ai_denoise::CachedLoad>,
     renderer: worker::Renderer,
     /// Develop's Reference View, and the worker developing its photo.
     reference: reference::ReferenceView,
@@ -271,6 +273,15 @@ impl Editor {
         let ai_cache = crate::ai_cache::AiCache::default();
         ai_cache.set_folder(session.decoded_cache_folder.as_deref());
         let ai_denoise = ai_denoise::Service::new(ai_cache);
+        let ai_loupe = ai_denoise::cached_loader(tx.clone(), ctx.clone());
+        let (stored_tx, stored_ctx) = (std::sync::Mutex::new(tx.clone()), ctx.clone());
+        ai_denoise.on_stored(std::sync::Arc::new(move |path| {
+            let _ = stored_tx
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .send(worker::Event::AiDenoiseStored(path.to_path_buf()));
+            stored_ctx.request_repaint();
+        }));
         let loader = worker::Loader::new(tx.clone(), ctx.clone(), decode_cache.clone());
         let renderer = worker::renderer_with_backend(tx.clone(), ctx.clone(), backend);
         let reference_loader =
@@ -314,6 +325,7 @@ impl Editor {
             loader,
             decode_cache,
             ai_denoise,
+            ai_loupe,
             renderer,
             reference: Default::default(),
             reference_loader,

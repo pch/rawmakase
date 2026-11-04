@@ -212,6 +212,11 @@ impl PreviewTextures {
         self.next_ticket += 1;
         self.next_ticket
     }
+    /// Asks for the photo's edited preview again the next time it is shown,
+    /// keeping the one shown until then.
+    pub(super) fn ask_again(&mut self, id: PhotoId) {
+        self.edited_requested.remove(&id);
+    }
     /// Forgets a removed photo's previews, so a later photo given its id
     /// starts afresh.
     pub(super) fn forget(&mut self, id: PhotoId) {
@@ -367,19 +372,18 @@ impl PreviewTextures {
         }
     }
     /// Shows Develop's latest render as the photo's thumbnail and caches it
-    /// under the edit it was rendered with, for the file as `stamp` gives it
-    /// when it was rendered (none: it is shown, not cached). Renders still in
-    /// flight are older.
+    /// under `tag`, the preview tag of the edit it was rendered with, for the
+    /// file as `stamp` gives it when it was rendered (none: it is shown, not
+    /// cached). Renders still in flight are older.
     pub(super) fn store_edited(
         &mut self,
         ctx: &egui::Context,
         id: PhotoId,
         path: PathBuf,
         stamp: Option<crate::catalog::preview_cache::Stamp>,
+        tag: String,
         image: image::RgbImage,
-        recipe_json: String,
     ) {
-        let tag = EditSource::Recipe(recipe_json).preview_tag();
         let ticket = self.ticket();
         self.edited_requested.insert(id, ticket);
         self.insert_edited(ctx, id, &image);

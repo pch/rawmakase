@@ -113,6 +113,7 @@ fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImpo
                 &ctx,
                 photo.id,
                 crate::storage::Identity::read(&photo.path).ok().as_ref(),
+                super::PreviewAi::Off,
                 image::RgbImage::from_pixel(4, 4, image::Rgb([30, 140, 250])),
                 serde_json::to_string(&recipe)?,
             );
@@ -1566,6 +1567,7 @@ fn an_edited_preview_from_develop_is_kept_for_the_file_it_was_rendered_from() ->
         &ctx,
         photo.id,
         None,
+        super::PreviewAi::Off,
         image::RgbImage::new(4, 4),
         "{}".into(),
     );
@@ -1577,6 +1579,7 @@ fn an_edited_preview_from_develop_is_kept_for_the_file_it_was_rendered_from() ->
         &ctx,
         photo.id,
         Some(&rendered),
+        super::PreviewAi::Off,
         image::RgbImage::new(4, 4),
         "{}".into(),
     );
@@ -1584,6 +1587,27 @@ fn an_edited_preview_from_develop_is_kept_for_the_file_it_was_rendered_from() ->
         Some(previews::EditJob::Store { stamp, .. }) => assert_eq!(stamp, rendered.stamp()),
         _ => panic!("not a store"),
     }
+    Ok(())
+}
+/// A photo shown without AI Denoise's result is asked for again once one is
+/// stored for its file, whichever job made it, so the Library can show it.
+#[test]
+fn a_stored_ai_denoise_result_asks_for_the_photos_preview_again() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF", "b.RAF"])?;
+    let sent = library.detach_edited_previews();
+    let [a, b] = [0, 1].map(|i| library.session.photos()[i].clone());
+    let requests = |library: &mut super::Library| {
+        for photo in [&a, &b] {
+            library
+                .cache
+                .request_edited(photo, || Some(EditSource::Recipe("{}".into())));
+        }
+        std::iter::from_fn(|| sent.try_recv()).count()
+    };
+    assert_eq!(requests(&mut library), 2);
+    assert_eq!(requests(&mut library), 0, "asked once");
+    library.ai_result_stored(&a.path);
+    assert_eq!(requests(&mut library), 1, "a's asked again, b's not");
     Ok(())
 }
 #[test]
@@ -1610,6 +1634,7 @@ fn an_edited_preview_from_develop_outranks_renders_in_flight() -> Result<()> {
         &ctx,
         id,
         Some(&rendered),
+        super::PreviewAi::Off,
         image::RgbImage::new(4, 4),
         "{}".into(),
     );
