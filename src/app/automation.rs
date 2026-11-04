@@ -7,9 +7,9 @@ mod midi;
 mod profiles;
 mod settings;
 mod socket;
-use super::Editor;
-use super::commands::{self, Command, Param};
+use crate::app::Editor;
 use crate::app::Module;
+use crate::app::commands::{self, Command, Param};
 use config::{Config, DeviceConfig, Encoder, Settings};
 use device::Device;
 use mapping::*;
@@ -37,7 +37,7 @@ enum Msg {
     Midi(Arc<Mutex<Status>>, u64, Box<Msg>),
 }
 
-pub(super) struct Hub {
+pub(in crate::app) struct Hub {
     rx: Receiver<Msg>,
     settings: Settings,
     devices: Vec<Device>,
@@ -103,13 +103,13 @@ impl Hub {
     /// Drops the control request queue at exit: requests in it, or waiting for a
     /// photo or an output, and any sent later are answered at once, so no connection
     /// waits for the interface.
-    pub(super) fn close_requests(&mut self) {
+    pub(in crate::app) fn close_requests(&mut self) {
         self.rx = mpsc::sync_channel(0).1;
         self.waits.clear();
         self.link = None;
     }
     /// Stops the MIDI listeners and the control socket, to wait for at exit.
-    pub(super) fn stop(&mut self) -> Vec<super::task::Stopping> {
+    pub(in crate::app) fn stop(&mut self) -> Vec<crate::app::task::Stopping> {
         let mut stopping: Vec<_> = self.devices.iter_mut().map(Device::stop).collect();
         stopping.extend(self.socket.as_mut().map(socket::Handle::stop));
         stopping
@@ -147,7 +147,7 @@ impl Hub {
     }
 }
 impl Editor {
-    pub(super) fn control_commands(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn control_commands(&mut self, ctx: &egui::Context) {
         for device in &mut self.controls.devices {
             device.sync_midi_epoch();
         }
@@ -296,7 +296,7 @@ impl Editor {
                         command.operation,
                         commands::Operation::Adjust(..) | commands::Operation::ControlValue(..)
                     )
-                    && self.view.is(super::state::Tool::Mask)
+                    && self.view.is(crate::app::state::Tool::Mask)
                 {
                     let index =
                         self.view.masking.selected.ok_or_else(|| {

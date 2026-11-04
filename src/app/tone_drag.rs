@@ -8,7 +8,7 @@ use eframe::egui::{self, CursorIcon, Rect, Sense};
 
 /// A histogram region and the Basic slider it drives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ToneRegion {
+pub(in crate::app) enum ToneRegion {
     Blacks,
     Shadows,
     Exposure,
@@ -16,7 +16,7 @@ pub(super) enum ToneRegion {
     Whites,
 }
 impl ToneRegion {
-    pub(super) const ALL: [Self; 5] = [
+    pub(in crate::app) const ALL: [Self; 5] = [
         Self::Blacks,
         Self::Shadows,
         Self::Exposure,
@@ -24,15 +24,15 @@ impl ToneRegion {
         Self::Whites,
     ];
     /// The region at `x`, a fraction of the histogram's width.
-    pub(super) fn at(x: f32) -> Self {
+    pub(in crate::app) fn at(x: f32) -> Self {
         Self::ALL[((x.clamp(0., 1.) * 5.) as usize).min(4)]
     }
     /// Left and right edges as fractions of the width.
-    pub(super) fn span(self) -> [f32; 2] {
+    pub(in crate::app) fn span(self) -> [f32; 2] {
         let i = Self::ALL.iter().position(|r| *r == self).unwrap_or(0) as f32;
         [i / 5., (i + 1.) / 5.]
     }
-    pub(super) fn label(self) -> &'static str {
+    pub(in crate::app) fn label(self) -> &'static str {
         match self {
             Self::Blacks => "Blacks",
             Self::Shadows => "Shadows",
@@ -41,7 +41,7 @@ impl ToneRegion {
             Self::Whites => "Whites",
         }
     }
-    pub(super) fn value(self, r: &Recipe) -> f32 {
+    pub(in crate::app) fn value(self, r: &Recipe) -> f32 {
         match self {
             Self::Blacks => r.blacks,
             Self::Shadows => r.shadows,
@@ -64,7 +64,7 @@ impl ToneRegion {
         if self == Self::Exposure { 5. } else { 1. }
     }
     /// The value as its slider shows it: "+0.35" EV, "+12".
-    pub(super) fn display(self, value: f32) -> String {
+    pub(in crate::app) fn display(self, value: f32) -> String {
         let text = if self == Self::Exposure {
             format!("{value:.2}")
         } else {
@@ -83,7 +83,7 @@ impl ToneRegion {
     /// the slider's drag does: 0.05 EV, or one unit. A value outside the
     /// slider's range (an imported Exposure of +7 EV) stays until the drag
     /// moves it back in, and one that does not reach the next step is kept.
-    pub(super) fn dragged(self, start: f32, dx: f32) -> f32 {
+    pub(in crate::app) fn dragged(self, start: f32, dx: f32) -> f32 {
         let limit = self.limit();
         let steps = if self == Self::Exposure { 20. } else { 100. };
         let round = |v: f32| (v * steps).round() / steps;
@@ -97,7 +97,7 @@ impl ToneRegion {
 
 /// A drag in progress: its region and the value when it started.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct ToneDrag {
+pub(in crate::app) struct ToneDrag {
     region: ToneRegion,
     start: f32,
 }
@@ -105,7 +105,7 @@ pub(super) struct ToneDrag {
 /// The histogram's drag handling over `rect`, except over `controls` (the
 /// clipping triangles), which keep their presses. Primary button only.
 /// Returns the region to show: the one dragged, or the one under the pointer.
-pub(super) fn tone_drag_ui(
+pub(in crate::app) fn tone_drag_ui(
     ui: &egui::Ui,
     step: &mut StepName,
     rect: Rect,

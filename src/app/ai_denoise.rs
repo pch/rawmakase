@@ -27,11 +27,11 @@ pub(crate) struct CachedLoad {
 /// first: a load asked for meanwhile replaces the one waiting. It hands each result
 /// over as Develop's final result is (`Event::AiDenoise`), and stops between loads at
 /// exit; a cancelled load stops between its stages and sends nothing.
-pub(super) fn cached_loader(
-    tx: std::sync::mpsc::Sender<super::worker::Event>,
+pub(in crate::app) fn cached_loader(
+    tx: std::sync::mpsc::Sender<crate::app::worker::Event>,
     ctx: eframe::egui::Context,
-) -> super::worker::Latest<CachedLoad> {
-    super::worker::Latest::new(move |job: CachedLoad| {
+) -> crate::app::worker::Latest<CachedLoad> {
+    crate::app::worker::Latest::new(move |job: CachedLoad| {
         let cancelled = || job.cancel.load(Ordering::Relaxed);
         if cancelled() {
             return;
@@ -53,7 +53,7 @@ pub(super) fn cached_loader(
         if let Ok(source) = source
             && !cancelled()
         {
-            let _ = tx.send(super::worker::Event::AiDenoise(Box::new(Update {
+            let _ = tx.send(crate::app::worker::Event::AiDenoise(Box::new(Update {
                 plain: Arc::downgrade(&job.plain),
                 state: State::Ready(source),
             })));
@@ -125,12 +125,12 @@ impl Photo {
     }
 }
 
-impl super::Editor {
+impl crate::app::Editor {
     /// Asks for the open photo's AI Denoise result when its edit renders AI Denoise and
     /// the full-size image is decoded; withdraws the request when it no longer does.
     /// `region` is the 100% view (in the render's pixels of `geometry`): its tiles run
     /// first.
-    pub(super) fn request_ai_denoise(
+    pub(in crate::app) fn request_ai_denoise(
         &mut self,
         image: &Arc<CameraImage>,
         geometry: &crate::develop::Geometry,
@@ -155,7 +155,7 @@ impl super::Editor {
         };
         // The Library's Loupe shows a finished result, as its previews do, and never
         // runs the model: without one, the photo shows plain.
-        if self.module == super::library::Module::Library {
+        if self.module == crate::app::library::Module::Library {
             self.load_finished_ai(image, &file);
             return;
         }
@@ -194,7 +194,7 @@ impl super::Editor {
                 let _ = tx
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .send(super::worker::Event::AiDenoise(Box::new(update)));
+                    .send(crate::app::worker::Event::AiDenoise(Box::new(update)));
                 ctx.request_repaint();
             }),
         });
@@ -225,11 +225,11 @@ impl super::Editor {
     }
     /// A result was stored for the file at `path`: the Library's Loupe showing it
     /// plain looks again.
-    pub(super) fn ai_result_stored(&mut self, path: &Path) {
+    pub(in crate::app) fn ai_result_stored(&mut self, path: &Path) {
         if let Some(library) = &mut self.library {
             library.ai_result_stored(path);
         }
-        if self.module == super::library::Module::Library
+        if self.module == crate::app::library::Module::Library
             && self.document.path.as_deref() == Some(path)
             && !self.document.ai.complete
         {
@@ -239,18 +239,18 @@ impl super::Editor {
     }
     /// The AI Denoise source a render of `image` with `setting` shows: Develop's latest
     /// result, partial or final; the Library's Loupe only a final one.
-    pub(super) fn shown_ai_source(
+    pub(in crate::app) fn shown_ai_source(
         &self,
         image: &Arc<CameraImage>,
         setting: &crate::model::ai_denoise::AiDenoise,
     ) -> Option<crate::develop::AiSource> {
-        self.document
-            .ai_source(image, setting)
-            .filter(|_| self.module != super::library::Module::Library || self.document.ai.complete)
+        self.document.ai_source(image, setting).filter(|_| {
+            self.module != crate::app::library::Module::Library || self.document.ai.complete
+        })
     }
     /// Removes AI Denoise's model: the service lets go of it first, off the UI thread,
     /// and the photo shown asks again (and is told to install it) when next rendered.
-    pub(super) fn remove_ai_denoise_model(&mut self) {
+    pub(in crate::app) fn remove_ai_denoise_model(&mut self) {
         let service = self.ai_denoise.clone();
         self.selection
             .models
@@ -265,18 +265,18 @@ impl super::Editor {
     }
     /// The service as exports reach it, with the installed model (or none, when every
     /// photo with AI Denoise on fails with the reason).
-    pub(super) fn ai_service(&self) -> rawmakase_decode::ai_denoise::AiService {
+    pub(in crate::app) fn ai_service(&self) -> rawmakase_decode::ai_denoise::AiService {
         self.ai_denoise
             .set_model(self.selection.models.denoise.path());
         rawmakase_decode::ai_denoise::AiService(Arc::new(self.ai_denoise.clone()))
     }
     /// The results' disk cache, which follows the decode cache's folder.
-    pub(super) fn ai_denoise_cache(&self) -> &AiCache {
+    pub(in crate::app) fn ai_denoise_cache(&self) -> &AiCache {
         self.ai_denoise.cache()
     }
     /// An update from the service: kept when it is for the image on screen, which is
     /// rendered again with a new result.
-    pub(super) fn ai_denoise_update(&mut self, update: Update) {
+    pub(in crate::app) fn ai_denoise_update(&mut self, update: Update) {
         let current = self
             .document
             .full()
@@ -318,7 +318,7 @@ impl super::Editor {
 
 /// The user's AI Denoise cache as the app keeps it: in the folder `session`'s
 /// Preferences chose for decoded images, or the default one.
-fn user_cache(session: &super::session::Session) -> AiCache {
+fn user_cache(session: &crate::app::session::Session) -> AiCache {
     let cache = AiCache::default();
     cache.set_folder(session.decoded_cache_folder.as_deref());
     cache
@@ -326,7 +326,7 @@ fn user_cache(session: &super::session::Session) -> AiCache {
 
 /// The user's AI Denoise cache, for the command line: where the app keeps it.
 pub fn user_ai_denoise_cache() -> AiCache {
-    user_cache(&super::session::load_session())
+    user_cache(&crate::app::session::load_session())
 }
 
 #[cfg(test)]

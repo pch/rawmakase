@@ -9,7 +9,7 @@ const MAX_CELLS: f32 = 240.;
 /// The outline of the area within `radius` of the path through `points` (screen
 /// space), as line segments about `step` points long or longer for large strokes.
 /// A brush too thin for the grid gets no outline; the caller draws its path instead.
-pub(super) fn outline(points: &[Pos2], radius: f32, step: f32) -> Vec<[Pos2; 2]> {
+pub(in crate::app) fn outline(points: &[Pos2], radius: f32, step: f32) -> Vec<[Pos2; 2]> {
     if points.is_empty() || radius <= 0. {
         return Vec::new();
     }

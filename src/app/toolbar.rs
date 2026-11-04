@@ -1,15 +1,15 @@
-use super::Editor;
-use super::before_after::{Compare, Transfer};
-use super::dialogs::FileDialog;
-use super::icons::Icon;
-use super::widgets::{menu_item, menu_separator, toolbar_action, toolbar_divider};
+use crate::app::Editor;
+use crate::app::before_after::{Compare, Transfer};
 use crate::app::design::{Tone, size, space, text};
+use crate::app::dialogs::FileDialog;
+use crate::app::icons::Icon;
 use crate::app::theme;
+use crate::app::widgets::{menu_item, menu_separator, toolbar_action, toolbar_divider};
 use crate::model::recipe::Recipe;
 use eframe::egui::{self, Stroke, Vec2};
 
 impl Editor {
-    pub(super) fn toolbar(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn toolbar(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
         let ctx = ui.ctx().clone();
         // The buttons follow the shared log, which also holds Library changes.
@@ -75,7 +75,7 @@ impl Editor {
                         let wide_menu = ui.available_width()
                             >= PHOTO_MENU_WIDTH
                                 + ZOOM_SLIDER.0
-                                + super::magnifier::CONTROLS_NARROW_WIDTH
+                                + crate::app::magnifier::CONTROLS_NARROW_WIDTH
                                 + space::L * 2.
                                 + space::M * 3.;
                         let settings = photo_menu_button(ui, wide_menu);
@@ -90,7 +90,9 @@ impl Editor {
                             let copy = format!("{cmd}{shift}C");
                             let paste = format!("{cmd}{shift}V");
                             if menu_item(ui, "Copy Settings…", &copy, true, false) {
-                                self.open_copy_dialog(super::settings_transfer::Transfer::Copy);
+                                self.open_copy_dialog(
+                                    crate::app::settings_transfer::Transfer::Copy,
+                                );
                                 ui.close();
                             }
                             if menu_item(
@@ -130,7 +132,9 @@ impl Editor {
                                 targets > 0 && !self.activity.is_busy(),
                                 false,
                             ) {
-                                self.open_copy_dialog(super::settings_transfer::Transfer::Sync);
+                                self.open_copy_dialog(
+                                    crate::app::settings_transfer::Transfer::Sync,
+                                );
                                 ui.close();
                             }
                             // Lightroom's Match Total Exposures, for the photos selected
@@ -141,7 +145,7 @@ impl Editor {
                                     .document
                                     .metadata
                                     .as_ref()
-                                    .and_then(super::sync::capture_stops)
+                                    .and_then(crate::app::sync::capture_stops)
                                     .is_some();
                             let match_keys = format!(
                                 "{cmd}{shift}{}M",
@@ -153,7 +157,7 @@ impl Editor {
                             );
                             if menu_item(ui, "Match Total Exposures", &match_keys, matchable, false)
                             {
-                                self.start_sync(super::sync::BatchChange::MatchTotalExposures);
+                                self.start_sync(crate::app::sync::BatchChange::MatchTotalExposures);
                                 ui.close();
                             }
                             let reset = format!("{cmd}{shift}R");
@@ -170,7 +174,7 @@ impl Editor {
                             let new_preset = format!("{cmd}{shift}N");
                             if menu_item(ui, "New Develop Preset…", &new_preset, true, false) {
                                 self.open_copy_dialog(
-                                    super::settings_transfer::Transfer::NewPreset,
+                                    crate::app::settings_transfer::Transfer::NewPreset,
                                 );
                                 ui.close();
                             }
@@ -217,7 +221,7 @@ impl Editor {
                             };
                             // Profiles, display and engine choices apply to every photo.
                             if menu_item(ui, "Preferences…", prefs, true, false) {
-                                self.open_preferences(super::preferences::Tab::General);
+                                self.open_preferences(crate::app::preferences::Tab::General);
                                 ui.close();
                             }
                         });
@@ -225,7 +229,7 @@ impl Editor {
                         self.zoom_controls(ui, 32.);
                         if self.load.is_running() || self.preview.task.is_running() {
                             ui.add_space(space::L);
-                            super::widgets::spinner(ui, 14.);
+                            crate::app::widgets::spinner(ui, 14.);
                         }
                     });
                 });
@@ -236,17 +240,17 @@ impl Editor {
     /// Navigator, and the magnifier. When room runs short the slider narrows to its
     /// least width, then the magnifier's menu shows a chevron without the level.
     /// `height` is the toolbar's buttons'.
-    pub(super) fn zoom_controls(&mut self, ui: &mut egui::Ui, height: f32) {
+    pub(in crate::app) fn zoom_controls(&mut self, ui: &mut egui::Ui, height: f32) {
         let room = ui.available_width() - space::L * 2. - space::M * 2.;
-        let full = super::magnifier::CONTROLS_WIDTH;
+        let full = crate::app::magnifier::CONTROLS_WIDTH;
         let (magnifier, width) = if room >= ZOOM_SLIDER.0 + full {
             (full, (room - full).min(ZOOM_SLIDER.1))
         } else {
-            (super::magnifier::CONTROLS_NARROW_WIDTH, ZOOM_SLIDER.0)
+            (crate::app::magnifier::CONTROLS_NARROW_WIDTH, ZOOM_SLIDER.0)
         };
         let fit = self.fit_level();
         let slider = ui.allocate_ui(Vec2::new(width, height), |ui| {
-            super::navigator::zoom_slider(ui, self.view.zoom, fit, width, height)
+            crate::app::navigator::zoom_slider(ui, self.view.zoom, fit, width, height)
         });
         if let Some(level) = slider.inner {
             self.set_zoom(level);
@@ -255,12 +259,16 @@ impl Editor {
             self.view.zoom_key = (self.view.zoom.on, self.view.zoom.level);
             self.view.zoom_anim = None;
         }
-        self.magnifier_controls(ui, magnifier == super::magnifier::CONTROLS_WIDTH, height);
+        self.magnifier_controls(
+            ui,
+            magnifier == crate::app::magnifier::CONTROLS_WIDTH,
+            height,
+        );
     }
     /// Reference View's button, and while it shows, its layout and lock, as in
     /// Lightroom's toolbar.
     fn reference_controls(&mut self, ui: &mut egui::Ui) {
-        use super::before_after::Axis;
+        use crate::app::before_after::Axis;
         let shown = self.reference_view();
         if toolbar_action(ui, "Reference", 84., shown, true, 0)
             .on_hover_text("Reference View · Shift+R")
@@ -304,12 +312,12 @@ impl Editor {
         egui::Popup::menu(&button).show(|ui| {
             ui.set_width(300.);
             ui.spacing_mut().item_spacing.y = 0.;
-            for (view, name) in super::before_after::VIEWS {
+            for (view, name) in crate::app::before_after::VIEWS {
                 let keys = match view {
                     Compare::BeforeOnly => "\\".to_string(),
-                    Compare::SideBySide(super::before_after::Axis::LeftRight) => "Y".into(),
+                    Compare::SideBySide(crate::app::before_after::Axis::LeftRight) => "Y".into(),
                     Compare::SideBySide(_) => format!("{alt}Y"),
-                    Compare::Split(super::before_after::Axis::LeftRight) => "Shift+Y".into(),
+                    Compare::Split(crate::app::before_after::Axis::LeftRight) => "Shift+Y".into(),
                     _ => String::new(),
                 };
                 if menu_item(ui, name, &keys, true, self.view.compare == view) {
@@ -341,10 +349,10 @@ impl Editor {
         });
     }
     /// Back to the raw defaults, like Lightroom's Reset.
-    pub(super) fn reset_settings(&mut self) {
+    pub(in crate::app) fn reset_settings(&mut self) {
         self.document
             .edit
-            .name_next_step(super::history::Step::new("Reset Settings", ""));
+            .name_next_step(crate::app::history::Step::new("Reset Settings", ""));
         let Some(defaults) = self.photo_defaults() else {
             self.document.edit.replace(Recipe::default());
             return;
@@ -361,12 +369,12 @@ impl Editor {
 /// The frame of a photo view's toolbar, Develop's and the Library Loupe's: on the
 /// photo's backdrop with no rule, the canvas's own margin spacing it from the
 /// photo.
-pub(super) fn photo_toolbar_frame(palette: &theme::Palette) -> egui::Frame {
+pub(in crate::app) fn photo_toolbar_frame(palette: &theme::Palette) -> egui::Frame {
     egui::Frame::new()
         .fill(palette.photo_backdrop())
         .inner_margin(egui::Margin {
-            left: super::workspace::PHOTO_MARGIN as i8,
-            right: super::workspace::PHOTO_MARGIN as i8,
+            left: crate::app::workspace::PHOTO_MARGIN as i8,
+            right: crate::app::workspace::PHOTO_MARGIN as i8,
             top: 0,
             bottom: space::L as i8,
         })
@@ -391,7 +399,7 @@ fn photo_menu_button(ui: &mut egui::Ui, wide: bool) -> egui::Response {
     });
     let rect = response.rect;
     if !wide {
-        super::icons::paint_at(ui.painter(), Icon::More, rect.center(), 15., color);
+        crate::app::icons::paint_at(ui.painter(), Icon::More, rect.center(), 15., color);
         return response;
     }
     ui.painter().text(
@@ -401,7 +409,7 @@ fn photo_menu_button(ui: &mut egui::Ui, wide: bool) -> egui::Response {
         egui::FontId::proportional(text::LABEL),
         color,
     );
-    super::icons::paint_at(
+    crate::app::icons::paint_at(
         ui.painter(),
         Icon::ChevronDown,
         rect.right_center() - Vec2::new(16., 0.),

@@ -8,8 +8,8 @@
 //! one for its neighbour, so preparing the neighbour never replaces or holds up
 //! the photo's own read. The last two neighbours prepared are kept, so moving
 //! on can show one in the first frame.
-use super::Editor;
-use super::worker::{Event, Latest};
+use crate::app::Editor;
+use crate::app::worker::{Event, Latest};
 use crate::catalog::PhotoId;
 use crate::catalog::preview_cache::{PreviewCache, PreviewKind};
 use eframe::egui;
@@ -41,7 +41,7 @@ pub(crate) struct StandIn {
     pub image: egui::ColorImage,
 }
 
-pub(super) struct StandIns {
+pub(in crate::app) struct StandIns {
     /// Reads the photo being opened.
     opening: Latest<Job>,
     /// Reads the neighbour, on its own thread so a read stalled on a network
@@ -91,7 +91,7 @@ fn reader(tx: Sender<Event>, ctx: egui::Context, cache_path: PathBuf) -> Latest<
 }
 
 impl StandIns {
-    pub(super) fn new(tx: Sender<Event>, ctx: egui::Context, cache_path: PathBuf) -> Self {
+    pub(in crate::app) fn new(tx: Sender<Event>, ctx: egui::Context, cache_path: PathBuf) -> Self {
         Self {
             opening: reader(tx.clone(), ctx.clone(), cache_path.clone()),
             ahead: reader(tx, ctx, cache_path),
@@ -101,7 +101,7 @@ impl StandIns {
         }
     }
     /// Stops both readers at exit; each ends after the read in hand.
-    pub(super) fn stop(&mut self) -> [super::task::Stopping; 2] {
+    pub(in crate::app) fn stop(&mut self) -> [crate::app::task::Stopping; 2] {
         [self.opening.stop(), self.ahead.stop()]
     }
     /// A neighbour already prepared, taken out to be shown.
@@ -127,13 +127,13 @@ impl Editor {
         let record = library.session.catalog().edit_record(photo).ok()?;
         // A JPEG, TIFF or PNG without an edit is shown as its file is, and never
         // stored (see `build_items`).
-        if !crate::storage::is_raw(&path) && !super::preview_build::has_edit(&record) {
+        if !crate::storage::is_raw(&path) && !crate::app::preview_build::has_edit(&record) {
             return None;
         }
         Some(Wanted {
             photo,
             path,
-            identity: super::preview_build::identity(
+            identity: crate::app::preview_build::identity(
                 &record,
                 &self.raw_defaults,
                 &self.profile_library,
@@ -144,7 +144,7 @@ impl Editor {
     }
     /// Asks for the stored preview of the photo load `load` opens, showing a
     /// prepared one at once, and prepares the neighbour's.
-    pub(super) fn request_stand_ins(
+    pub(in crate::app) fn request_stand_ins(
         &mut self,
         load: u64,
         photo: PhotoId,
@@ -179,7 +179,7 @@ impl Editor {
     }
     /// Whether the photo open, `photo`, is left with an edit other than the one
     /// it opened with.
-    pub(super) fn left_edited(&self, photo: PhotoId) -> bool {
+    pub(in crate::app) fn left_edited(&self, photo: PhotoId) -> bool {
         match &self.stand_ins.opened {
             Some((opened, identity)) if *opened == photo => self
                 .stand_in_for(photo)
@@ -189,7 +189,7 @@ impl Editor {
     }
     /// A stored preview read: shown when it is for the load under way and no live
     /// render has arrived; a neighbour's is kept for when it opens.
-    pub(super) fn stand_in_ready(&mut self, ctx: &egui::Context, stand_in: StandIn) {
+    pub(in crate::app) fn stand_in_ready(&mut self, ctx: &egui::Context, stand_in: StandIn) {
         match stand_in.load {
             Some(load) => {
                 if load == self.load.id()
@@ -208,14 +208,14 @@ impl Editor {
         }
     }
     fn show_stand_in(&mut self, ctx: &egui::Context, image: egui::ColorImage) {
-        super::state::Picture::upload(&mut self.preview.stand_in, ctx, "stand-in", image);
+        crate::app::state::Picture::upload(&mut self.preview.stand_in, ctx, "stand-in", image);
     }
 }
 
 impl Editor {
     /// An offline RAW in the Loupe shows its stored Standard preview: its
     /// identity, worked out once each time the Loupe comes to it.
-    pub(super) fn loupe_stored_preview(&mut self) {
+    pub(in crate::app) fn loupe_stored_preview(&mut self) {
         let Some(library) = &self.library else {
             return;
         };

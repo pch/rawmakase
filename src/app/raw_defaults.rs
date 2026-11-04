@@ -1,11 +1,11 @@
 //! Preferences > Raw Defaults (see `crate::raw_defaults`): choosing them, and keeping
 //! the open photo and the Library's previews in step when they change.
-use super::Editor;
-use super::preferences::{group, hint};
-use super::state::EditOrigin;
-use super::widgets::form_row;
+use crate::app::Editor;
 use crate::app::design::{Tone, radius, text};
+use crate::app::preferences::{group, hint};
+use crate::app::state::EditOrigin;
 use crate::app::theme;
+use crate::app::widgets::form_row;
 use crate::raw_defaults::{
     DefaultChoice, DevelopDefaults, RawDefaults, Resolved, camera_name, same_camera, same_name,
 };
@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 /// The camera rows of the Raw Defaults block, as chosen and not yet created.
 #[derive(Default)]
-pub(super) struct Form {
+pub(in crate::app) struct Form {
     /// Cameras to choose from: the catalog's and the open photo's.
     cameras: Vec<String>,
     camera: String,
@@ -24,7 +24,7 @@ pub(super) struct Form {
 
 impl Editor {
     /// The open photo's raw defaults: as last resolved, else resolved now.
-    pub(super) fn photo_defaults(&self) -> Option<Resolved> {
+    pub(in crate::app) fn photo_defaults(&self) -> Option<Resolved> {
         if let Some(defaults) = &self.document.defaults {
             return Some(defaults.clone());
         }
@@ -34,7 +34,7 @@ impl Editor {
     /// Resolves the open photo's raw defaults again (its profiles arrived, or
     /// the defaults changed). A photo without an edit follows them; an edit,
     /// saved, converted from Lightroom or begun since it opened, is kept.
-    pub(super) fn refresh_photo_defaults(&mut self) {
+    pub(in crate::app) fn refresh_photo_defaults(&mut self) {
         let Some(m) = &self.document.metadata else {
             self.document.defaults = None;
             return;
@@ -78,14 +78,14 @@ impl Editor {
     }
     /// Why the open photo shows Adobe Default instead of the raw default chosen
     /// for it, while it has no edit.
-    pub(super) fn defaults_note(&self) -> Option<String> {
+    pub(in crate::app) fn defaults_note(&self) -> Option<String> {
         let note = self.document.defaults.as_ref()?.note.clone()?;
         self.follows_defaults().then_some(note)
     }
     /// Makes `settings` the raw defaults, saved with the session, and shows
     /// photos without an edit with them. They apply even when the session
     /// cannot be saved, which is returned.
-    pub(super) fn set_raw_defaults(&mut self, settings: RawDefaults) -> anyhow::Result<()> {
+    pub(in crate::app) fn set_raw_defaults(&mut self, settings: RawDefaults) -> anyhow::Result<()> {
         let defaults = DevelopDefaults::load(settings);
         if defaults == *self.raw_defaults {
             return Ok(());
@@ -98,11 +98,11 @@ impl Editor {
     }
     /// Renders the Library's previews of photos without an edit again, e.g. as
     /// imported camera profiles change what the defaults resolve to.
-    pub(super) fn refresh_library_defaults(&mut self) {
+    pub(in crate::app) fn refresh_library_defaults(&mut self) {
         self.refresh_library_defaults_preserving(None);
     }
 
-    pub(super) fn refresh_library_defaults_preserving(
+    pub(in crate::app) fn refresh_library_defaults_preserving(
         &mut self,
         current: Option<crate::catalog::PhotoId>,
     ) {
@@ -115,7 +115,7 @@ impl Editor {
     /// The open photo whose Library thumbnail an import of profiles leaves
     /// valid: its Develop recipe is still `before`, so no render replaces the
     /// thumbnail, and it is still the catalog's photo at the open path.
-    pub(super) fn unchanged_current_photo(
+    pub(in crate::app) fn unchanged_current_photo(
         &self,
         before: &crate::model::recipe::Recipe,
     ) -> Option<crate::catalog::PhotoId> {
@@ -131,7 +131,7 @@ impl Editor {
         })
     }
     /// Lists the cameras to choose from, when Preferences opens.
-    pub(super) fn measure_raw_defaults(&mut self) {
+    pub(in crate::app) fn measure_raw_defaults(&mut self) {
         let mut cameras = self
             .library
             .as_ref()
@@ -166,7 +166,7 @@ impl Editor {
         form.cameras = cameras;
     }
     /// The Raw Defaults block of Preferences' Profiles & Presets page.
-    pub(super) fn raw_defaults_block(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn raw_defaults_block(&mut self, ui: &mut egui::Ui) {
         let mut settings = self.raw_defaults.settings().clone();
         let presets = self.presets.library.clone();
         let presets = &presets.presets;
@@ -303,9 +303,9 @@ fn remove_button(ui: &mut egui::Ui, enabled: bool) -> egui::Response {
         (true, false) => Tone::SECONDARY,
         (true, true) => Tone::STRONG,
     });
-    super::icons::paint_at(
+    crate::app::icons::paint_at(
         ui.painter(),
-        super::icons::Icon::Close,
+        crate::app::icons::Icon::Close,
         rect.center(),
         13.,
         tint,

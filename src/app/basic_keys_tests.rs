@@ -530,7 +530,7 @@ fn undo_in_the_same_frame_as_a_step_keeps_history_consistent() {
 fn a_label_click_selects_its_slider_and_lights_it() {
     let ctx = egui::Context::default();
     let mut value = 0.;
-    let mut event = super::super::widgets::SliderEvent::None;
+    let mut event = crate::app::widgets::SliderEvent::None;
     let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(300., 600.));
     let mut run = |events: Vec<egui::Event>, value: &mut f32| {
         let mut output = ctx.run_ui(
@@ -541,7 +541,7 @@ fn a_label_click_selects_its_slider_and_lights_it() {
             },
             |ui| {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-                    let e = super::super::widgets::keyed_setting_slider(
+                    let e = crate::app::widgets::keyed_setting_slider(
                         ui,
                         &mut Default::default(),
                         ParameterId::Exposure,
@@ -549,7 +549,7 @@ fn a_label_click_selects_its_slider_and_lights_it() {
                         0.,
                         false,
                     );
-                    if e != super::super::widgets::SliderEvent::None {
+                    if e != crate::app::widgets::SliderEvent::None {
                         event = e;
                     }
                 });
@@ -571,7 +571,7 @@ fn a_label_click_selects_its_slider_and_lights_it() {
         &mut value,
     );
     run(vec![button(false)], &mut value);
-    assert_eq!(event, super::super::widgets::SliderEvent::LabelClicked);
+    assert_eq!(event, crate::app::widgets::SliderEvent::LabelClicked);
     assert_eq!(value, 0., "a click on the label changes nothing");
 }
 

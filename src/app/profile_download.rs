@@ -37,7 +37,7 @@
 //! install cannot be reported as cancelled. Task generations reject cancelled,
 //! superseded and duplicate completions; a panicking worker reports a failure
 //! through the task wrapper, which clears the busy state.
-use super::{Editor, task, worker::Event};
+use crate::app::{Editor, task, worker::Event};
 use crate::camera_data::Metadata;
 use crate::camera_profiles::CameraProfile;
 use crate::camera_profiles::catalogue::{Entry, MAX_BYTES, Status, catalogue};
@@ -59,8 +59,8 @@ use std::{
 };
 
 #[derive(Default)]
-pub(super) struct Downloads {
-    pub(super) task: task::Task,
+pub(in crate::app) struct Downloads {
+    pub(in crate::app) task: task::Task,
     job: Option<Job>,
     progress: Arc<AtomicUsize>,
     /// 0 downloading, 1 publishing, 2 cancelled. Claiming publication and
@@ -171,7 +171,7 @@ fn camera_key(m: &Metadata) -> String {
 }
 
 impl Downloads {
-    pub(super) fn cancel(&mut self) {
+    pub(in crate::app) fn cancel(&mut self) {
         if self.task.is_running()
             && self
                 .publication
@@ -184,7 +184,7 @@ impl Downloads {
     }
 
     /// The profile being downloaded, if any.
-    pub(super) fn downloading(&self) -> Option<&'static str> {
+    pub(in crate::app) fn downloading(&self) -> Option<&'static str> {
         let job = self.job.as_ref().filter(|_| self.task.is_running())?;
         Some(job.entry.profile.name.as_str())
     }
@@ -194,19 +194,19 @@ impl Downloads {
     }
 
     /// The offer state the session keeps: the cameras whose offer was dismissed.
-    pub(super) fn with_dismissed(dismissed: BTreeSet<String>) -> Self {
+    pub(in crate::app) fn with_dismissed(dismissed: BTreeSet<String>) -> Self {
         Self {
             dismissed,
             ..Default::default()
         }
     }
 
-    pub(super) fn dismissed(&self) -> &BTreeSet<String> {
+    pub(in crate::app) fn dismissed(&self) -> &BTreeSet<String> {
         &self.dismissed
     }
 
     /// Shows the open camera's offer again, even where it would stay quiet.
-    pub(super) fn request(&mut self, m: &Metadata) {
+    pub(in crate::app) fn request(&mut self, m: &Metadata) {
         // An explicit search also rechecks files changed outside the app.
         self.measured = None;
         self.requested.insert(camera_key(m));
@@ -237,7 +237,7 @@ impl Downloads {
 impl Editor {
     /// Whether the open photo has catalogue profiles: a RAW of a camera the
     /// catalogue covers. Only then does the Profile menu offer them.
-    pub(super) fn has_catalogue_profiles(&mut self) -> bool {
+    pub(in crate::app) fn has_catalogue_profiles(&mut self) -> bool {
         let library = self.profile_library.clone();
         match &self.document.metadata {
             Some(m) => !self.profile_download.measure(m, &library).is_empty(),
@@ -252,7 +252,7 @@ impl Editor {
     /// photo uses one of the profiles, or Adobe's profiles for the camera are
     /// imported, which take precedence. Asking for it from the Profile menu shows
     /// it anyway.
-    pub(super) fn profile_offer(&mut self) -> Option<Offer> {
+    pub(in crate::app) fn profile_offer(&mut self) -> Option<Offer> {
         let m = self.document.metadata.clone()?;
         let library = self.profile_library.clone();
         let current = self.document.edit.recipe().profile.clone();
@@ -324,7 +324,11 @@ impl Editor {
 
     /// Does what the offer was asked. Called during Develop's edit frame, which
     /// records an Apply as one History step, as it does a choice in the Profile menu.
-    pub(super) fn profile_offer_action(&mut self, action: OfferAction, ctx: &egui::Context) {
+    pub(in crate::app) fn profile_offer_action(
+        &mut self,
+        action: OfferAction,
+        ctx: &egui::Context,
+    ) {
         let Some(m) = self.document.metadata.clone() else {
             return;
         };
@@ -372,7 +376,7 @@ impl Editor {
         }
     }
 
-    pub(super) fn download_profile(&mut self, entry: &'static Entry, ctx: &egui::Context) {
+    pub(in crate::app) fn download_profile(&mut self, entry: &'static Entry, ctx: &egui::Context) {
         self.download_profile_using(entry, ctx, fetch);
     }
 
@@ -451,7 +455,7 @@ impl Editor {
         );
     }
 
-    pub(super) fn profile_downloaded(&mut self, id: u64, result: Result<PathBuf, String>) {
+    pub(in crate::app) fn profile_downloaded(&mut self, id: u64, result: Result<PathBuf, String>) {
         // A cancellation, retry or duplicate completion cannot finish another job.
         if !self.profile_download.task.is_running() || id != self.profile_download.task.id() {
             return;
@@ -628,7 +632,7 @@ fn read_body(
 impl Editor {
     /// Starts downloading the open photo's first catalogue profile with a transport
     /// that delivers nothing and waits until cancelled: for tests of the offer.
-    pub(super) fn download_waiting_for_cancel(&mut self) {
+    pub(in crate::app) fn download_waiting_for_cancel(&mut self) {
         let m = self.document.metadata.clone().expect("a photo");
         let entry = catalogue().matching(&m)[0];
         let ctx = self.context.clone();
@@ -637,7 +641,7 @@ impl Editor {
 
     /// Measures the open photo's catalogue profiles as installed nowhere, so a test
     /// doesn't depend on this machine's profile library.
-    pub(super) fn assume_catalogue_profiles_available(&mut self) {
+    pub(in crate::app) fn assume_catalogue_profiles_available(&mut self) {
         let m = self.document.metadata.clone().expect("a photo");
         let profiles = catalogue()
             .matching(&m)
@@ -650,7 +654,10 @@ impl Editor {
     /// Measures the open photo's catalogue profiles as `profiles`, as found where
     /// each says: what the offer lists, without this machine's profile library.
     /// An installed one's file is read as measuring reads it.
-    pub(super) fn assume_catalogue_profiles(&mut self, profiles: Vec<(&'static Entry, Status)>) {
+    pub(in crate::app) fn assume_catalogue_profiles(
+        &mut self,
+        profiles: Vec<(&'static Entry, Status)>,
+    ) {
         let m = self.document.metadata.clone().expect("a photo");
         self.profile_download.measured = Some(Measured {
             key: measure_key(&m, &self.profile_library),

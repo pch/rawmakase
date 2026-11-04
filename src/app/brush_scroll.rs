@@ -1,8 +1,8 @@
 //! The mouse wheel over the photo sizes the tool under it, as in Lightroom: the Remove
 //! brush (and the selected spot), the mask brush shown and the Red Eye circle. With
 //! Shift it changes the feather; with Option/Alt it sizes the mask's Erase brush.
-use super::Editor;
-use super::state::Tool;
+use crate::app::Editor;
+use crate::app::state::Tool;
 use eframe::egui;
 use std::time::{Duration, Instant};
 
@@ -19,7 +19,7 @@ const GESTURE_PAUSE: Duration = Duration::from_millis(400);
 
 /// What a scroll changes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Adjust {
+pub(in crate::app) enum Adjust {
     Size,
     Feather,
 }
@@ -27,7 +27,7 @@ pub(super) enum Adjust {
 /// Which mask brush a scroll changes: the one in use, or Erase while Option/Alt is
 /// held, as the cursor shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum MaskBrush {
+pub(in crate::app) enum MaskBrush {
     Current,
     Erase,
 }
@@ -35,10 +35,10 @@ pub(super) enum MaskBrush {
 /// One wheel event over the photo: notches up (positive) or down, and what it changes,
 /// from the modifiers held when it happened.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Scroll {
-    pub(super) lines: f32,
-    pub(super) adjust: Adjust,
-    pub(super) brush: MaskBrush,
+pub(in crate::app) struct Scroll {
+    pub(in crate::app) lines: f32,
+    pub(in crate::app) adjust: Adjust,
+    pub(in crate::app) brush: MaskBrush,
 }
 impl Scroll {
     /// This frame's wheel events. A sideways scroll counts only with Shift, which macOS
@@ -46,7 +46,7 @@ impl Scroll {
     /// a button is held (a stroke, a moved spot or correction) or in a frame that also
     /// has a click or a key, the wheel is left alone, so it never mixes into another
     /// gesture or History step.
-    pub(super) fn read(i: &egui::InputState) -> Vec<Self> {
+    pub(in crate::app) fn read(i: &egui::InputState) -> Vec<Self> {
         let busy = i.pointer.any_down()
             || i.events.iter().any(|e| {
                 matches!(
@@ -105,14 +105,14 @@ impl Scroll {
 
 /// Whether a frame changed the edit.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Edit {
+pub(in crate::app) enum Edit {
     Unchanged,
     Changed,
 }
 
 /// When the wheel last changed a size, so a scroll is recorded as one History step.
 #[derive(Default)]
-pub(super) struct WheelGesture {
+pub(in crate::app) struct WheelGesture {
     last: Option<Instant>,
     /// Whether the wheel changed a size this frame; another edit ends the gesture.
     this_frame: bool,
@@ -125,7 +125,7 @@ impl WheelGesture {
     /// Called before a frame's edits are recorded. Returns whether a scroll ends here,
     /// to be recorded as its own step first: it paused, or this frame's edit came
     /// from something else (a slider, a click, a press that starts a drag).
-    pub(super) fn ends_before(&mut self, edit: Edit) -> bool {
+    pub(in crate::app) fn ends_before(&mut self, edit: Edit) -> bool {
         let ends =
             self.last.is_some() && !self.this_frame && (edit == Edit::Changed || !self.active());
         if ends {
@@ -135,15 +135,15 @@ impl WheelGesture {
         ends
     }
     /// Whether a scroll is still going on, and so not yet a History step.
-    pub(super) fn active(&self) -> bool {
+    pub(in crate::app) fn active(&self) -> bool {
         self.last.is_some_and(|at| at.elapsed() < GESTURE_PAUSE)
     }
     /// Whether a scroll's change may still be waiting to be recorded.
-    pub(super) fn pending(&self) -> bool {
+    pub(in crate::app) fn pending(&self) -> bool {
         self.last.is_some()
     }
     /// How long until the scroll counts as finished.
-    pub(super) fn remaining(&self) -> Option<Duration> {
+    pub(in crate::app) fn remaining(&self) -> Option<Duration> {
         self.last
             .map(|at| GESTURE_PAUSE.saturating_sub(at.elapsed()))
             .filter(|d| !d.is_zero())
@@ -153,7 +153,7 @@ impl WheelGesture {
 impl Editor {
     /// Records a scroll still being grouped as its own History step and hands it to
     /// Undo, before something that isn't an edit (a rating, a flag) is logged after it.
-    pub(super) fn finish_wheel_gesture(&mut self) {
+    pub(in crate::app) fn finish_wheel_gesture(&mut self) {
         if self.view.wheel.pending() {
             self.view.wheel = WheelGesture::default();
             self.document.edit.finish_gesture();
@@ -162,13 +162,13 @@ impl Editor {
     }
     /// Whether the open tool has a size, which the wheel over the photo and `[` `]`
     /// change.
-    pub(super) fn tool_has_size(&self) -> bool {
+    pub(in crate::app) fn tool_has_size(&self) -> bool {
         self.view.is(Tool::Remove) || self.view.is(Tool::Mask) || self.view.is(Tool::RedEye)
     }
     /// Sizes the open tool's brush or circle (or its feather) by `scroll`, with the
     /// limits `[` and `]` keep. The selected spot follows, as it does for the keys; the
     /// mask brush changes only while one is shown.
-    pub(super) fn scroll_tool_size(&mut self, scroll: Scroll) {
+    pub(in crate::app) fn scroll_tool_size(&mut self, scroll: Scroll) {
         if self.view.is(Tool::Remove) {
             // A spot being moved takes its size from where the drag began.
             if self.view.retouch.is_dragging() {

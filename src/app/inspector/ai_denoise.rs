@@ -53,7 +53,7 @@ pub(super) fn controls(
         }
     });
     ui.add_enabled_ui(r.ai_denoise.enabled, |ui| {
-        super::super::widgets::setting_slider(
+        crate::app::widgets::setting_slider(
             ui,
             step,
             ParameterId::AiDenoiseAmount,

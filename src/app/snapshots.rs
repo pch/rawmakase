@@ -1,15 +1,15 @@
 //! Lightroom's Snapshots panel: named states of the open photo's edit, listed
 //! alphabetically. + saves the current state and starts naming it; clicking one
 //! applies it as a History step; its menu updates, renames or deletes it.
-use super::{Editor, history::Step, theme};
 use crate::app::design::{Tone, radius, text};
+use crate::app::{Editor, history::Step, theme};
 use crate::catalog::{Snapshot, SnapshotSettings};
 use eframe::egui::{self, Sense, Vec2};
 
 /// The open photo's snapshots, and the one being named.
 #[derive(Default)]
-pub(super) struct Snapshots {
-    pub(super) list: Vec<Snapshot>,
+pub(in crate::app) struct Snapshots {
+    pub(in crate::app) list: Vec<Snapshot>,
     renaming: Option<Renaming>,
 }
 
@@ -43,7 +43,7 @@ enum SnapshotAction {
 
 impl Editor {
     /// Reads the open catalog photo's snapshots.
-    pub(super) fn load_snapshots(&mut self) {
+    pub(in crate::app) fn load_snapshots(&mut self) {
         let list = match (&self.library, self.document.catalog_photo) {
             (Some(l), Some(photo)) => l.session.catalog().snapshots(photo).unwrap_or_default(),
             _ => Vec::new(),
@@ -52,17 +52,17 @@ impl Editor {
     }
     /// The Snapshots panel, above History as in Lightroom. Only catalog photos keep
     /// snapshots.
-    pub(super) fn snapshots_section(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn snapshots_section(&mut self, ui: &mut egui::Ui) {
         if self.document.metadata.is_none() || self.document.catalog_photo.is_none() {
             return;
         }
         // A rename committed by clicking another snapshot comes first, then the click.
         let mut actions = Vec::new();
         let panel = &mut self.document.snapshots;
-        let add = super::widgets::section_with(
+        let add = crate::app::widgets::section_with(
             ui,
             "Snapshots",
-            super::widgets::HeaderButton::Add,
+            crate::app::widgets::HeaderButton::Add,
             |ui| {
                 ui.spacing_mut().item_spacing.y = 0.;
                 if panel.list.is_empty() {
@@ -97,10 +97,10 @@ impl Editor {
                     // a rename never applies a snapshot first.
                     let row = snapshot_row(ui, &snapshot.name);
                     // Control-click opens the menu on macOS, as a right-click does.
-                    if row.clicked() && !super::widgets::context_clicked(&row) {
+                    if row.clicked() && !crate::app::widgets::context_clicked(&row) {
                         actions.push(SnapshotAction::Apply(snapshot.id));
                     }
-                    super::widgets::context_menu(&row, |ui| {
+                    crate::app::widgets::context_menu(&row, |ui| {
                         if ui.button("Update with Current Settings").clicked() {
                             actions.push(SnapshotAction::Update(snapshot.id));
                         }
@@ -180,7 +180,7 @@ impl Editor {
         self.load_snapshots();
     }
     /// Saves a name still being typed, before the photo is left.
-    pub(super) fn commit_snapshot_rename(&mut self) {
+    pub(in crate::app) fn commit_snapshot_rename(&mut self) {
         if let Some(renaming) = self.document.snapshots.renaming.take() {
             self.snapshot_action(SnapshotAction::Rename(renaming.id, renaming.name));
         }

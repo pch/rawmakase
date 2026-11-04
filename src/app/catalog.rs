@@ -1,9 +1,9 @@
-use super::Editor;
-use super::dialogs::{CatalogDialog, FolderAction};
-use super::folder_locations::{FolderQuestion, folder_added, reopened};
-use super::widgets::confirm_modal;
-use super::worker::Event;
+use crate::app::Editor;
 use crate::app::Module;
+use crate::app::dialogs::{CatalogDialog, FolderAction};
+use crate::app::folder_locations::{FolderQuestion, folder_added, reopened};
+use crate::app::widgets::confirm_modal;
+use crate::app::worker::Event;
 use crate::catalog::{CatalogLocation, PhotoId};
 use eframe::egui;
 use std::path::PathBuf;
@@ -12,7 +12,7 @@ impl Editor {
     /// The catalog RAWmakase keeps in its data folder, beside the session:
     /// the one a first launch opens, and the setup view and an empty Library
     /// offer.
-    pub(super) fn default_catalog(&self) -> PathBuf {
+    pub(in crate::app) fn default_catalog(&self) -> PathBuf {
         self.session_file
             .as_deref()
             .and_then(std::path::Path::parent)
@@ -21,27 +21,31 @@ impl Editor {
     }
     /// Whether no work in progress stops a catalog change and the open edit
     /// is saved; it is saved only when nothing is in progress.
-    pub(super) fn ready_for_catalog(&mut self) -> bool {
+    pub(in crate::app) fn ready_for_catalog(&mut self) -> bool {
         !self.activity.is_busy() && self.flush()
     }
-    pub(super) fn load_catalog(&mut self, path: PathBuf, ctx: &egui::Context) {
+    pub(in crate::app) fn load_catalog(&mut self, path: PathBuf, ctx: &egui::Context) {
         self.open_catalog_file(path, false, ctx);
     }
     /// Opens the default catalog, making it first if there is none yet, so
     /// photos can be added without choosing where a catalog goes.
-    pub(super) fn open_default_catalog(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn open_default_catalog(&mut self, ctx: &egui::Context) {
         self.open_catalog_file(self.default_catalog(), true, ctx);
     }
     /// Imports Lightroom catalog `source`, or one the user picks, into a new
     /// catalog beside the default one without asking where, and opens it.
-    pub(super) fn import_lightroom_here(&mut self, source: Option<PathBuf>, ctx: &egui::Context) {
+    pub(in crate::app) fn import_lightroom_here(
+        &mut self,
+        source: Option<PathBuf>,
+        ctx: &egui::Context,
+    ) {
         if !self.ready_for_catalog() || !self.activity.begin_dialog() {
             return;
         }
         let place = self.default_catalog();
         let tx = self.tx.clone();
         let ctx = ctx.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             tx,
             ctx.clone(),
             move |tx| {
@@ -95,7 +99,7 @@ impl Editor {
         self.messages.note("Opening catalog…");
         let tx = self.tx.clone();
         let ctx = ctx.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             tx,
             ctx.clone(),
             move |tx| {
@@ -114,7 +118,7 @@ impl Editor {
             },
         );
     }
-    pub(super) fn catalog_dialog(&mut self, kind: CatalogDialog, ctx: &egui::Context) {
+    pub(in crate::app) fn catalog_dialog(&mut self, kind: CatalogDialog, ctx: &egui::Context) {
         if !self.ready_for_catalog() {
             return;
         }
@@ -127,7 +131,7 @@ impl Editor {
             .library
             .as_ref()
             .map(|l| l.session.catalog().location().clone());
-        super::task::spawn(
+        crate::app::task::spawn(
             tx,
             ctx.clone(),
             move |tx| {
@@ -279,7 +283,7 @@ impl Editor {
     /// What was dropped onto the window: one photo opens in Develop as
     /// [`Self::open`] does; several photos and folders have their folders
     /// added, all at once; a catalog among them is opened instead.
-    pub(super) fn dropped(&mut self, paths: Vec<PathBuf>) {
+    pub(in crate::app) fn dropped(&mut self, paths: Vec<PathBuf>) {
         let catalog = paths.iter().find(|p| {
             p.extension()
                 .is_some_and(|e| e == "rawmakase" || e == "lrcat")
@@ -323,7 +327,7 @@ impl Editor {
             .note(format!("Adding {} folders to the Library…", folders.len()));
         let tx = self.tx.clone();
         let ctx = self.context.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             tx,
             ctx.clone(),
             move |tx| {
@@ -393,7 +397,7 @@ impl Editor {
     /// Adds a photo from outside the Library (dropped on the window or passed
     /// on the command line) by adding its folder to the catalog, then opens it
     /// in Develop. A folder is added itself, and the Library shows it.
-    pub(super) fn add_to_library(&mut self, path: PathBuf) {
+    pub(in crate::app) fn add_to_library(&mut self, path: PathBuf) {
         let path = path.canonicalize().unwrap_or(path);
         let name = path
             .file_name()
@@ -413,7 +417,7 @@ impl Editor {
         else {
             if self.activity.is_dialog() {
                 // The catalog is still opening; add the photo once it is ready.
-                self.pending_photo = Some(super::PendingPhoto {
+                self.pending_photo = Some(crate::app::PendingPhoto {
                     path,
                     folder_added: false,
                 });
@@ -437,7 +441,7 @@ impl Editor {
         if is_folder {
             self.messages.note(format!("Adding {name} to the Library…"));
         } else {
-            self.pending_photo = Some(super::PendingPhoto {
+            self.pending_photo = Some(crate::app::PendingPhoto {
                 path,
                 folder_added: true,
             });
@@ -446,7 +450,7 @@ impl Editor {
         }
         let tx = self.tx.clone();
         let ctx = self.context.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             tx,
             ctx.clone(),
             move |tx| {
@@ -489,7 +493,7 @@ impl Editor {
     }
     /// The catalog photo stored at `path`, if any: its master rather than
     /// a virtual copy.
-    pub(super) fn catalog_photo_at(&self, path: &std::path::Path) -> Option<PhotoId> {
+    pub(in crate::app) fn catalog_photo_at(&self, path: &std::path::Path) -> Option<PhotoId> {
         self.library
             .as_ref()?
             .session
@@ -507,8 +511,9 @@ impl Editor {
     }
     /// Opens the photo waiting to be added once the catalog is ready, adding
     /// its folder first if that has not happened yet.
-    pub(super) fn open_pending_photo(&mut self) {
-        let Some(super::PendingPhoto { path, folder_added }) = self.pending_photo.take() else {
+    pub(in crate::app) fn open_pending_photo(&mut self) {
+        let Some(crate::app::PendingPhoto { path, folder_added }) = self.pending_photo.take()
+        else {
             return;
         };
         if let Some(id) = self.catalog_photo_at(&path) {
@@ -527,7 +532,7 @@ impl Editor {
             self.messages.fail(text);
         }
     }
-    pub(super) fn develop_catalog_photo(&mut self, id: PhotoId) {
+    pub(in crate::app) fn develop_catalog_photo(&mut self, id: PhotoId) {
         let Some(p) = self.library.as_ref().and_then(|l| l.photo(id)).cloned() else {
             return;
         };
@@ -553,8 +558,8 @@ impl Editor {
                 l.make_active(id)
             }
             // Zoomed in meanwhile (the zoom is shared): Crop cannot stay open.
-            if self.view.zoom.on && self.view.is(super::state::Tool::Crop) {
-                self.view.tool = super::state::Tool::None;
+            if self.view.zoom.on && self.view.is(crate::app::state::Tool::Crop) {
+                self.view.tool = crate::app::state::Tool::None;
             }
             self.module = Module::Develop;
             return;
@@ -569,7 +574,7 @@ impl Editor {
     }
     /// Starts the open photo from its Lightroom settings `text`, converted as every
     /// photo's Lightroom edit is (`crate::edits`).
-    pub(super) fn apply_lightroom_edits(&mut self, text: &str) {
+    pub(in crate::app) fn apply_lightroom_edits(&mut self, text: &str) {
         let Some(m) = &self.document.metadata else {
             return;
         };
@@ -604,11 +609,11 @@ impl Editor {
 impl Editor {
     /// Carries out a virtual copy command after saving the open edit, so a
     /// new copy starts from what is on screen. In Develop a new copy opens.
-    pub(super) fn virtual_copy(&mut self, action: crate::app::library::CopyAction) {
+    pub(in crate::app) fn virtual_copy(&mut self, action: crate::app::library::CopyAction) {
         use crate::app::library::CopyAction;
         let result = match action {
             CopyAction::Remove(id) => {
-                self.modal = Some(super::Modal::RemoveCopy(id));
+                self.modal = Some(crate::app::Modal::RemoveCopy(id));
                 return;
             }
             _ if self.activity.is_busy() => {
@@ -649,8 +654,8 @@ impl Editor {
     }
     /// Asks before removing a virtual copy, as Lightroom does; a copy shown
     /// in Develop gives way to its master.
-    pub(super) fn remove_copy_window(&mut self, ctx: &egui::Context) {
-        let Some(super::Modal::RemoveCopy(id)) = self.modal else {
+    pub(in crate::app) fn remove_copy_window(&mut self, ctx: &egui::Context) {
+        let Some(crate::app::Modal::RemoveCopy(id)) = self.modal else {
             return;
         };
         let Some(photo) = self.library.as_ref().and_then(|l| l.photo(id)).cloned() else {
@@ -677,8 +682,8 @@ impl Editor {
         }
     }
     /// Asks before removing a folder from the catalog, as Lightroom does.
-    pub(super) fn remove_folder_window(&mut self, ctx: &egui::Context) {
-        let Some(super::Modal::RemoveFolder(removal)) = &self.modal else {
+    pub(in crate::app) fn remove_folder_window(&mut self, ctx: &egui::Context) {
+        let Some(crate::app::Modal::RemoveFolder(removal)) = &self.modal else {
             return;
         };
         let removal = removal.clone();
@@ -720,7 +725,7 @@ impl Editor {
     }
     /// Removes a folder of the Folders panel from the catalog once confirmed;
     /// its files stay on disk.
-    pub(super) fn remove_folders(&mut self, removal: &crate::app::library::FolderRemoval) {
+    pub(in crate::app) fn remove_folders(&mut self, removal: &crate::app::library::FolderRemoval) {
         if !self.ready_for_catalog() {
             return;
         }
@@ -773,7 +778,7 @@ impl Editor {
     }
     /// Closes the open photo, removed from the catalog or its unsaved change
     /// discarded, and shows the Library.
-    pub(super) fn close_removed_document(&mut self) {
+    pub(in crate::app) fn close_removed_document(&mut self) {
         self.close_document();
         self.module = Module::Library;
     }
@@ -781,7 +786,7 @@ impl Editor {
     /// a load still under way bring it back, and its picture, preset previews,
     /// tools and selection go with it. Opening another photo instead goes through
     /// `load_raw`, whose new load supersedes this one's.
-    pub(super) fn close_document(&mut self) {
+    pub(in crate::app) fn close_document(&mut self) {
         self.messages.document_closed();
         self.load.invalidate();
         self.selection.clear_document();
@@ -792,8 +797,8 @@ impl Editor {
     }
     /// Asks before Read Metadata from Files, as Lightroom does: it replaces
     /// the catalog's values, edits included.
-    pub(super) fn read_metadata_window(&mut self, ctx: &egui::Context) {
-        let Some(super::Modal::ReadMetadata(ids)) = &self.modal else {
+    pub(in crate::app) fn read_metadata_window(&mut self, ctx: &egui::Context) {
+        let Some(crate::app::Modal::ReadMetadata(ids)) = &self.modal else {
             return;
         };
         let ids = ids.clone();
@@ -827,7 +832,7 @@ impl Editor {
         self.messages.absorb(&mut library.messages);
     }
     /// Removes virtual copy `id` once confirmed.
-    pub(super) fn remove_virtual_copy(&mut self, id: PhotoId) {
+    pub(in crate::app) fn remove_virtual_copy(&mut self, id: PhotoId) {
         if !self.ready_for_catalog() {
             return;
         }
@@ -864,7 +869,7 @@ impl Editor {
     }
 }
 /// A file dialog for RAWmakase catalogs.
-pub(super) fn catalog_file_dialog() -> rfd::FileDialog {
+pub(in crate::app) fn catalog_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("RAWmakase catalog", &["rawmakase"])
 }
 /// Where another computer has the root or folder of `action`, when that

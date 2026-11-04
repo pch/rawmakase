@@ -21,9 +21,9 @@
 //! The dialogs that come before a plan (Move to Folder…, New Folder
 //! Inside…) and the one for what a crash left unfinished, recovered when a
 //! catalog opens, are in `file_ops_dialogs.rs`.
-use super::messages::Level;
-use super::{Editor, widgets};
 use crate::app::design::{Tone, text};
+use crate::app::messages::Level;
+use crate::app::{Editor, widgets};
 #[cfg(test)]
 use crate::catalog::file_ops::Summary;
 #[cfg(test)]
@@ -54,7 +54,7 @@ use folders::ChoosingParent;
 /// A Trash that takes nothing, for tests whose operations have no file to
 /// trash.
 #[cfg(test)]
-pub(super) struct Unavailable;
+pub(in crate::app) struct Unavailable;
 
 #[cfg(test)]
 impl Trash for Unavailable {
@@ -65,7 +65,7 @@ impl Trash for Unavailable {
 
 /// What an operation does, for what is said about it.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum Verb {
+pub(in crate::app) enum Verb {
     Remove,
     /// Delete: Move to Trash, or Remove from Catalog for photos whose files
     /// can't go; of the rejected photos in the source (Delete Rejected
@@ -171,7 +171,7 @@ impl Verb {
 }
 
 /// Where the file operation is.
-pub(super) struct FileOps {
+pub(in crate::app) struct FileOps {
     state: State,
     /// The Trash runs put files in.
     trash: Arc<dyn Trash + Send + Sync>,
@@ -261,7 +261,7 @@ enum State {
 }
 
 /// How far a run is, read from its journal now and then.
-pub(super) struct Progress {
+pub(in crate::app) struct Progress {
     /// Its items, the folder it makes included.
     steps: usize,
     done: usize,
@@ -290,14 +290,14 @@ impl Default for FileOps {
 impl FileOps {
     /// Asks a running operation to stop after the photo under way (the
     /// top bar's Stop, closing the window). What it did by then stands.
-    pub(super) fn stop(&self) {
+    pub(in crate::app) fn stop(&self) {
         if let State::Running { cancel, .. } = &self.state {
             cancel.store(true, Ordering::Relaxed);
         }
     }
     /// Whether a dialog of a file operation with a field or a list is
     /// open: keys go to it, not to the photos behind.
-    pub(super) fn dialog_open(&self) -> bool {
+    pub(in crate::app) fn dialog_open(&self) -> bool {
         matches!(
             self.state,
             State::Choosing(_)
@@ -311,17 +311,17 @@ impl FileOps {
     }
     /// Whether a running operation was asked to stop.
     #[cfg(test)]
-    pub(super) fn stopping(&self) -> bool {
+    pub(in crate::app) fn stopping(&self) -> bool {
         matches!(&self.state, State::Running { cancel, .. } if cancel.load(Ordering::Relaxed))
     }
     /// Whether the confirmation is open.
     #[cfg(test)]
-    pub(super) fn confirming(&self) -> bool {
+    pub(in crate::app) fn confirming(&self) -> bool {
         matches!(self.state, State::Confirming { .. })
     }
     /// What the open confirmation counts.
     #[cfg(test)]
-    pub(super) fn summary(&self) -> Option<&Summary> {
+    pub(in crate::app) fn summary(&self) -> Option<&Summary> {
         match &self.state {
             State::Confirming { plan, .. } => Some(plan.summary()),
             _ => None,
@@ -329,7 +329,7 @@ impl FileOps {
     }
     /// The open confirmation's question, what it says and its action.
     #[cfg(test)]
-    pub(super) fn question(&self) -> Option<(String, Vec<String>, Vec<&'static str>)> {
+    pub(in crate::app) fn question(&self) -> Option<(String, Vec<String>, Vec<&'static str>)> {
         match &self.state {
             State::Confirming {
                 plan, trash, verb, ..
@@ -340,7 +340,7 @@ impl FileOps {
     /// The confirmed plan, as the dialog's action hands it to the worker,
     /// without starting one.
     #[cfg(test)]
-    pub(super) fn take_confirmed_for_tests(&mut self) -> (BatchId, file_ops::Confirmed) {
+    pub(in crate::app) fn take_confirmed_for_tests(&mut self) -> (BatchId, file_ops::Confirmed) {
         let State::Confirming {
             plan,
             catalog,
@@ -1024,7 +1024,7 @@ impl Editor {
     /// Remove from Catalog for `photos` (⌥Delete, the thumbnail menu):
     /// saves what is open, keeps the catalog quiet and plans it, then asks.
     /// Nothing is held when the save fails.
-    pub(super) fn request_photo_removal(&mut self, photos: Vec<PhotoId>) {
+    pub(in crate::app) fn request_photo_removal(&mut self, photos: Vec<PhotoId>) {
         if !photos.is_empty() {
             self.request_file_op(FileOp::RemoveFromCatalog { photos }, None, Verb::Remove);
         }
@@ -1034,7 +1034,7 @@ impl Editor {
     /// or just remove them from the catalog, both planned at once; the
     /// rejected photos of the source when `rejected` (Delete Rejected
     /// Photos).
-    pub(super) fn request_photo_delete(&mut self, photos: Vec<PhotoId>, rejected: bool) {
+    pub(in crate::app) fn request_photo_delete(&mut self, photos: Vec<PhotoId>, rejected: bool) {
         if !photos.is_empty() {
             let trash = FileOp::TrashPhotos {
                 photos: photos.clone(),
@@ -1050,7 +1050,11 @@ impl Editor {
     /// Move to Trash… for the folder of `root` at logical path `logical`
     /// (a folder's menu in the Folders panel): saves what is open, keeps
     /// the catalog quiet and plans it, then asks.
-    pub(super) fn request_folder_trash(&mut self, root: crate::catalog::RootId, logical: String) {
+    pub(in crate::app) fn request_folder_trash(
+        &mut self,
+        root: crate::catalog::RootId,
+        logical: String,
+    ) {
         let name = logical.rsplit('/').next().unwrap_or_default().to_string();
         let op = FileOp::TrashFolder {
             root,
@@ -1068,7 +1072,7 @@ impl Editor {
     }
 
     /// Move to Trash for `photos` (⌘⌥⇧Delete).
-    pub(super) fn request_photo_trash(&mut self, photos: Vec<PhotoId>) {
+    pub(in crate::app) fn request_photo_trash(&mut self, photos: Vec<PhotoId>) {
         if !photos.is_empty() {
             self.request_file_op(FileOp::TrashPhotos { photos }, None, Verb::Trash);
         }
@@ -1077,7 +1081,7 @@ impl Editor {
     /// Delete Rejected Photos (⌘Delete, the Library menu): Delete for the
     /// rejected photos of the source shown, whatever is selected or
     /// filtered.
-    pub(super) fn request_rejected_delete(&mut self) {
+    pub(in crate::app) fn request_rejected_delete(&mut self) {
         let Some(library) = &self.library else {
             return;
         };
@@ -1091,7 +1095,7 @@ impl Editor {
 
     /// Moves `photos` to catalog folder `to`, named `name` (dropped on it,
     /// or chosen in Move to Folder…), once confirmed.
-    pub(super) fn request_photo_move(
+    pub(in crate::app) fn request_photo_move(
         &mut self,
         photos: Vec<PhotoId>,
         root: crate::catalog::RootId,
@@ -1153,7 +1157,7 @@ impl Editor {
         };
         let ctx = self.context.clone();
         let system_trash = self.file_ops.trash.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             ctx,
             move |tx| {
@@ -1169,10 +1173,12 @@ impl Editor {
                             .transpose()?;
                         Ok((plan, trash))
                     });
-                let _ = tx.send(super::worker::Event::FileOpPlanned(Box::new(planned)));
+                let _ = tx.send(crate::app::worker::Event::FileOpPlanned(Box::new(planned)));
             },
             |tx, message| {
-                let _ = tx.send(super::worker::Event::FileOpPlanned(Box::new(Err(message))));
+                let _ = tx.send(crate::app::worker::Event::FileOpPlanned(Box::new(Err(
+                    message,
+                ))));
             },
         );
     }
@@ -1181,8 +1187,8 @@ impl Editor {
     /// filmstrip's selection when the open photo is in it, else the open
     /// photo. Not while a tool is open, as tools take Delete for their own
     /// spots, masks and guides, nor behind a menu or a dialog.
-    pub(super) fn develop_delete_key(&mut self, ctx: &egui::Context) {
-        if !self.view.is(super::state::Tool::None)
+    pub(in crate::app) fn develop_delete_key(&mut self, ctx: &egui::Context) {
+        if !self.view.is(crate::app::state::Tool::None)
             || egui::Popup::is_any_open(ctx)
             || self.command_modal()
         {
@@ -1218,7 +1224,10 @@ impl Editor {
     /// The plan came back: it is asked about, or nothing is to be done. A
     /// folder made with nothing moving into it was asked for already, by
     /// New Folder Inside…'s Create.
-    pub(super) fn file_op_planned(&mut self, planned: Result<(Plan, Option<Plan>), String>) {
+    pub(in crate::app) fn file_op_planned(
+        &mut self,
+        planned: Result<(Plan, Option<Plan>), String>,
+    ) {
         let State::Planning { catalog, verb } = std::mem::take(&mut self.file_ops.state) else {
             return;
         };
@@ -1262,7 +1271,7 @@ impl Editor {
     }
 
     /// The file operations' dialogs, while one is open.
-    pub(super) fn file_op_window(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn file_op_window(&mut self, ctx: &egui::Context) {
         match &self.file_ops.state {
             State::Choosing(_) => return self.choose_folder_window(ctx),
             State::Naming(_) => return self.new_folder_window(ctx),
@@ -1303,7 +1312,7 @@ impl Editor {
     }
 
     /// The confirmation's action: runs the plan on a worker.
-    pub(super) fn confirm_file_op(&mut self) {
+    pub(in crate::app) fn confirm_file_op(&mut self) {
         self.confirm_file_op_with(false);
     }
 
@@ -1355,7 +1364,7 @@ impl Editor {
         let confirmed = plan.confirm();
         let failed_batch = batch.clone();
         let system_trash = self.file_ops.trash.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
@@ -1370,10 +1379,10 @@ impl Editor {
                         )
                         .map_err(|e| e.to_string())
                     });
-                let _ = tx.send(super::worker::Event::FileOpDone(batch, Box::new(done)));
+                let _ = tx.send(crate::app::worker::Event::FileOpDone(batch, Box::new(done)));
             },
             move |tx, message| {
-                let _ = tx.send(super::worker::Event::FileOpDone(
+                let _ = tx.send(crate::app::worker::Event::FileOpDone(
                     failed_batch,
                     Box::new(Err(message)),
                 ));
@@ -1383,7 +1392,7 @@ impl Editor {
 
     /// The run finished, failed or its thread stopped: what it did is read
     /// from the journal and applied, and the catalog is let go.
-    pub(super) fn file_op_done(&mut self, batch: BatchId, done: Result<Outcome, String>) {
+    pub(in crate::app) fn file_op_done(&mut self, batch: BatchId, done: Result<Outcome, String>) {
         let State::Running {
             batch: running,
             catalog,
@@ -1602,7 +1611,7 @@ impl Editor {
     }
 
     /// The top bar's part while an operation runs: what it does, and Stop.
-    pub(super) fn file_op_progress(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn file_op_progress(&mut self, ui: &mut egui::Ui) {
         let text = match &mut self.file_ops.state {
             State::Recovering { .. } | State::Resolving { .. } => {
                 "Checking unfinished file operations…".to_string()
@@ -1667,7 +1676,7 @@ impl Editor {
             }
             _ => return,
         };
-        let palette = super::theme::palette(ui.ctx());
+        let palette = crate::app::theme::palette(ui.ctx());
         let stoppable = matches!(
             &self.file_ops.state,
             State::Running { cancel, .. } if !cancel.load(Ordering::Relaxed)

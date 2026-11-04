@@ -17,7 +17,7 @@ use std::{
 };
 
 /// An edit to write, as it was when the save started.
-pub(super) struct Job {
+pub(in crate::app) struct Job {
     /// The catalog the edit goes to, and the photo in it.
     pub catalog: CatalogLocation,
     pub photo: PhotoId,
@@ -32,7 +32,7 @@ pub(super) struct Job {
 }
 /// How a background save ended.
 #[derive(Debug)]
-pub(super) enum Completion {
+pub(in crate::app) enum Completion {
     /// Written to the catalog at this path.
     Saved(CatalogLocation),
     /// The save failed, or panicked; the saver keeps running.
@@ -62,7 +62,7 @@ struct Worker {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
-pub(super) struct Autosave {
+pub(in crate::app) struct Autosave {
     worker: Option<Worker>,
     in_flight: bool,
     saver: Saver,
@@ -110,10 +110,10 @@ impl Autosave {
     }
     /// Drops the saver's channels at exit: it ends once the save in flight, if any,
     /// is written, and is then waited for.
-    pub(super) fn close(&mut self) -> super::task::Stopping {
+    pub(in crate::app) fn close(&mut self) -> crate::app::task::Stopping {
         self.in_flight = false;
         let thread = self.worker.take().and_then(|worker| worker.thread);
-        super::task::Stopping::new(thread)
+        crate::app::task::Stopping::new(thread)
     }
     /// The finished save, if one finished.
     pub(crate) fn poll(&mut self) -> Option<Completion> {
@@ -203,7 +203,7 @@ fn save(catalog: &mut Option<Catalog>, job: &Job) -> anyhow::Result<CatalogLocat
 #[cfg(test)]
 impl Autosave {
     /// An autosave whose saves take a minute, as on a stalled network share.
-    pub(super) fn stalled() -> Self {
+    pub(in crate::app) fn stalled() -> Self {
         fn stall(_: &mut Option<Catalog>, job: &Job) -> anyhow::Result<CatalogLocation> {
             std::thread::sleep(std::time::Duration::from_secs(60));
             Ok(job.catalog.clone())

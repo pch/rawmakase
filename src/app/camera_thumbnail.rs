@@ -3,9 +3,9 @@
 //! Photo menu). It shows what Camera Look
 //! (fitted) and the Library's first preview start from: unedited, uncropped, fitted
 //! to the window. Read once per photo, off the UI thread, when first asked for.
-use super::{Editor, before_after::Compare, worker::Event};
 use crate::app::design::{Tone, text};
 use crate::app::theme;
+use crate::app::{Editor, before_after::Compare, worker::Event};
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use std::path::{Path, PathBuf};
 
@@ -17,7 +17,7 @@ const LABEL: &str = "Camera thumbnail: embedded JPEG, no edits";
 
 /// A read thumbnail. It keeps the sRGB image: the texture follows the monitor's
 /// profile, which can change while the view is open.
-pub(super) struct Thumbnail {
+pub(in crate::app) struct Thumbnail {
     srgb: image::RgbImage,
     look: Option<String>,
     monitor: Option<PathBuf>,
@@ -103,7 +103,7 @@ fn bounded(im: image::RgbImage) -> image::RgbImage {
 
 impl Editor {
     /// Reads the open photo's camera thumbnail unless it was, or is being, read.
-    pub(super) fn start_camera_thumbnail(&mut self) {
+    pub(in crate::app) fn start_camera_thumbnail(&mut self) {
         if self.document.camera_thumbnail.is_some()
             || self.document.camera_thumbnail_task.is_running()
         {
@@ -115,7 +115,7 @@ impl Editor {
         };
         let (generation, _) = self.document.camera_thumbnail_task.start();
         let id = self.load.id();
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
@@ -141,7 +141,7 @@ impl Editor {
         );
     }
 
-    pub(super) fn camera_thumbnail_ready(
+    pub(in crate::app) fn camera_thumbnail_ready(
         &mut self,
         ctx: &egui::Context,
         generation: u64,
@@ -157,7 +157,7 @@ impl Editor {
     }
 
     /// The view: the thumbnail, or that it is being read, or why there is none.
-    pub(super) fn camera_thumbnail_ui(&mut self, ui: &egui::Ui, area: Rect) {
+    pub(in crate::app) fn camera_thumbnail_ui(&mut self, ui: &egui::Ui, area: Rect) {
         let monitor = self.view.display_profile();
         let photo = self
             .document
@@ -189,11 +189,11 @@ impl Editor {
                 );
             }
         }
-        super::before_after::badge(ui, area, &label);
+        crate::app::before_after::badge(ui, area, &label);
     }
 
     /// The view on or off: what its key and menu items do.
-    pub(super) fn toggle_camera_thumbnail(&mut self) {
+    pub(in crate::app) fn toggle_camera_thumbnail(&mut self) {
         self.set_compare(self.view.compare.toggled(Compare::CameraThumbnail));
     }
 }

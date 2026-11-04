@@ -7,8 +7,8 @@
 //! Each key event (a press, or a held key's repeat) is one History step, applied
 //! after everything else in the frame, just before the frame's pending work (save,
 //! close): see [`Editor::develop_key_steps`].
-use super::Editor;
-use super::history::Step;
+use crate::app::Editor;
+use crate::app::history::Step;
 use crate::camera_data::Metadata;
 use crate::model::params::{KeyStep, ParameterId};
 use eframe::egui;
@@ -17,7 +17,7 @@ use eframe::egui;
 /// named as on a RAW file, and move a rendered file's relative ones
 /// ([`ParameterId::for_photo`]). Profile and its Amount are not among them, as in
 /// Lightroom.
-pub(super) const ORDER: [ParameterId; 13] = [
+pub(in crate::app) const ORDER: [ParameterId; 13] = [
     ParameterId::Temperature,
     ParameterId::Tint,
     ParameterId::Exposure,
@@ -36,7 +36,7 @@ pub(super) const ORDER: [ParameterId; 13] = [
 /// The name the selection keeps for a Basic slider: a rendered file's relative
 /// Temp and Tint are Temp and Tint, so the selection survives moving between a
 /// RAW file and a JPEG.
-pub(super) fn canonical(id: ParameterId) -> ParameterId {
+pub(in crate::app) fn canonical(id: ParameterId) -> ParameterId {
     match id {
         ParameterId::IncrementalTemperature => ParameterId::Temperature,
         ParameterId::IncrementalTint => ParameterId::Tint,
@@ -47,7 +47,7 @@ pub(super) fn canonical(id: ParameterId) -> ParameterId {
 /// Whether the Basic panel enables the slider for `id` on `photo`: a monochrome
 /// photo has no white balance, so Lightroom disables Temp and Tint. The keys skip
 /// and leave alone what the panel disables.
-pub(super) fn enabled(id: ParameterId, photo: Option<&Metadata>) -> bool {
+pub(in crate::app) fn enabled(id: ParameterId, photo: Option<&Metadata>) -> bool {
     let white_balance = matches!(canonical(id), ParameterId::Temperature | ParameterId::Tint);
     !(white_balance && photo.is_some_and(|m| m.monochrome))
 }
@@ -127,7 +127,7 @@ impl Editor {
     ///
     /// `typing` says whether a text field had the keys as the frame began: a field
     /// that took a `-` and gave up the keys on Return in this frame keeps that `-`.
-    pub(super) fn develop_key_steps(&mut self, ctx: &egui::Context, typing: bool) {
+    pub(in crate::app) fn develop_key_steps(&mut self, ctx: &egui::Context, typing: bool) {
         let actions: Vec<Action> = ctx.input(|i| i.events.iter().filter_map(decode).collect());
         if actions.is_empty() || typing || !self.basic_keys_ready(ctx) {
             return;

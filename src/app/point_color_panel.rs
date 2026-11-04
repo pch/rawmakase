@@ -1,11 +1,11 @@
 //! The Color Mixer's Point Color tab: the dropper, up to eight swatches, the selected
 //! swatch's shifts, Variance, Range and hue, saturation and luminance ranges, and
 //! Visualize Range. Each gesture is one History step.
-use super::state::{PointColorView, Tool, ViewState};
-use super::theme;
-use super::widgets::{set_edit_context, slider_with};
 use crate::app::design::{Tone, radius, text};
+use crate::app::state::{PointColorView, Tool, ViewState};
 use crate::app::step_name::StepName;
+use crate::app::theme;
+use crate::app::widgets::{set_edit_context, slider_with};
 use crate::model::point_color::{MAX_SWATCHES, PointColor};
 use crate::model::recipe::Recipe;
 use crate::{
@@ -15,23 +15,23 @@ use crate::{
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rawmakase_cancel::Cancel;
 
-impl super::Editor {
+impl crate::app::Editor {
     /// Whether Point Color's tab is where the photo is edited: Develop (not Before), a
     /// color photo with the current process, and the Color Mixer on its Point Color
     /// tab.
-    pub(super) fn point_color_tab_shown(&self) -> bool {
+    pub(in crate::app) fn point_color_tab_shown(&self) -> bool {
         let r = self.document.edit.recipe();
         self.module == Module::Develop
             && !self.view.compare.before_only()
-            && self.view.mixer_tab == super::state::MixerTab::PointColor
+            && self.view.mixer_tab == crate::app::state::MixerTab::PointColor
             && r.treatment() == crate::model::recipe::Treatment::Color
     }
     /// Point Color's dropper at (`u`, `v`) of the shown photo: samples the color there
     /// off the UI thread (the render it needs can take a while on a large photo); the
     /// sample arrives as [`Event::PointColorSample`]. Ignored while one is running.
     ///
-    /// [`Event::PointColorSample`]: super::worker::Event::PointColorSample
-    pub(super) fn start_point_color_sample(&mut self, u: f32, v: f32) {
+    /// [`Event::PointColorSample`]: crate::app::worker::Event::PointColorSample
+    pub(in crate::app) fn start_point_color_sample(&mut self, u: f32, v: f32) {
         let Some(im) = self.document.full().cloned() else {
             return;
         };
@@ -42,7 +42,7 @@ impl super::Editor {
         let id = self.load.id();
         let sampled = self.document.edit.recipe().clone();
         let on_panic = sampled.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
@@ -54,7 +54,7 @@ impl super::Editor {
                     Cancel::new(&cancel),
                 )
                 .map_err(|e| format!("Cannot sample a color: {e:#}"));
-                let _ = tx.send(super::worker::Event::PointColorSample {
+                let _ = tx.send(crate::app::worker::Event::PointColorSample {
                     id,
                     generation,
                     sampled: Box::new(sampled),
@@ -63,7 +63,7 @@ impl super::Editor {
             },
             // A panic still sends a result, so the dropper does not wait for it.
             move |tx, _| {
-                let _ = tx.send(super::worker::Event::PointColorSample {
+                let _ = tx.send(crate::app::worker::Event::PointColorSample {
                     id,
                     generation,
                     sampled: Box::new(on_panic),
@@ -75,7 +75,7 @@ impl super::Editor {
 
     /// Adds the sampled swatch as one History step, selects it and puts the dropper
     /// away; or says why not. A sample of a photo edited since is dropped.
-    pub(super) fn point_color_sample_ready(
+    pub(in crate::app) fn point_color_sample_ready(
         &mut self,
         sampled: &Recipe,
         result: Result<[f32; 3], String>,
@@ -108,7 +108,7 @@ impl super::Editor {
                 // scheduled: Visualize Range shows the new swatch.
                 self.view.point_color.selected = Some(i);
                 self.view.tool = Tool::None;
-                let step = super::history::Step::new("Point Color", "Add Swatch");
+                let step = crate::app::history::Step::new("Point Color", "Add Swatch");
                 self.change_edit(Some(step), |r| r.point_colors = swatches);
             }
             Err(refusal) => self.messages.warn(refusal.message()),
@@ -117,7 +117,7 @@ impl super::Editor {
 }
 
 /// The tab's contents. `list` is the photo's swatches.
-pub(super) fn point_color_panel(
+pub(in crate::app) fn point_color_panel(
     ui: &mut egui::Ui,
     step: &mut StepName,
     list: &mut Vec<PointColor>,
@@ -178,7 +178,7 @@ pub(super) fn point_color_panel(
             ranges(ui, step, swatch);
         }
         ui.horizontal(|ui| {
-            ui.add_space(super::widgets::label_column(ui));
+            ui.add_space(crate::app::widgets::label_column(ui));
             ui.checkbox(&mut pc.visualize, "Visualize Range")
                 .on_hover_text("Show the colors this swatch selects; everything else turns gray");
         });
@@ -212,9 +212,9 @@ fn swatch_row(
         );
     }
     let strong = picking || response.hovered();
-    super::icons::paint_at(
+    crate::app::icons::paint_at(
         ui.painter(),
-        super::icons::Icon::Eyedropper,
+        crate::app::icons::Icon::Eyedropper,
         dropper.center(),
         14.,
         palette.tone(if strong { Tone::STRONG } else { Tone::LABEL }),
@@ -452,7 +452,7 @@ fn move_point(points: &mut [f32; 4], k: usize, t: f32, hold: Hold) {
 /// A "Ranges" disclosure row.
 fn disclosure(ui: &mut egui::Ui, open: &mut bool) {
     ui.horizontal(|ui| {
-        ui.add_space(super::widgets::label_column(ui));
+        ui.add_space(crate::app::widgets::label_column(ui));
         let text = if *open { "▾ Ranges" } else { "▸ Ranges" };
         if ui
             .add(
@@ -473,7 +473,7 @@ fn disclosure(ui: &mut egui::Ui, open: &mut bool) {
 
 fn hint(ui: &mut egui::Ui, text: &str) {
     ui.horizontal(|ui| {
-        ui.add_space(super::widgets::control_left(ui));
+        ui.add_space(crate::app::widgets::control_left(ui));
         ui.label(
             egui::RichText::new(text)
                 .size(text::SMALL)

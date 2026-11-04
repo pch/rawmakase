@@ -7,9 +7,9 @@
 //! renderer: only a region a little larger than the circle, at full resolution, so
 //! small pointer moves need no new render. Until that render lands, the fitted
 //! preview is magnified in its place.
-use super::Editor;
-use super::state::Picture;
+use crate::app::Editor;
 use crate::app::design::text;
+use crate::app::state::Picture;
 use crate::rendered::ClipOverlay;
 use crate::{camera_data::CameraImage, develop::Geometry, model::recipe::Recipe};
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
@@ -23,8 +23,8 @@ const LEVELS: [(f32, &str); 3] = [(1., "100%"), (2., "200%"), (4., "400%")];
 const BUTTON_WIDTH: f32 = 32.;
 const LEVEL_WIDTH: f32 = 58.;
 const LEVEL_NARROW_WIDTH: f32 = 22.;
-pub(super) const CONTROLS_WIDTH: f32 = BUTTON_WIDTH + 1. + LEVEL_WIDTH;
-pub(super) const CONTROLS_NARROW_WIDTH: f32 = BUTTON_WIDTH + 1. + LEVEL_NARROW_WIDTH;
+pub(in crate::app) const CONTROLS_WIDTH: f32 = BUTTON_WIDTH + 1. + LEVEL_WIDTH;
+pub(in crate::app) const CONTROLS_NARROW_WIDTH: f32 = BUTTON_WIDTH + 1. + LEVEL_NARROW_WIDTH;
 /// The circle's diameter, in points.
 const DIAMETER: f32 = 240.;
 /// The rendered region is this much wider than the circle shows, so the pointer can
@@ -33,8 +33,8 @@ const MARGIN: f32 = 1.6;
 
 /// Whether the magnifier is shown, and at what level.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Magnifier {
-    pub(super) on: bool,
+pub(in crate::app) struct Magnifier {
+    pub(in crate::app) on: bool,
     /// Index into `LEVELS`.
     level: usize,
     /// Wheel notches scrolled towards the next level.
@@ -50,13 +50,13 @@ impl Default for Magnifier {
     }
 }
 impl Magnifier {
-    pub(super) fn level(&self) -> f32 {
+    pub(in crate::app) fn level(&self) -> f32 {
         LEVELS[self.level].0
     }
     /// The wheel over the photo this frame steps the level.
-    pub(super) fn read_wheel(&mut self, ui: &egui::Ui) {
+    pub(in crate::app) fn read_wheel(&mut self, ui: &egui::Ui) {
         let lines: f32 = ui
-            .input(super::brush_scroll::Scroll::read)
+            .input(crate::app::brush_scroll::Scroll::read)
             .iter()
             .map(|s| s.lines)
             .sum();
@@ -101,17 +101,17 @@ impl PartialEq for MagnifierJob {
 
 /// The magnifier's render: its own task and texture, like Before's.
 #[derive(Default)]
-pub(super) struct MagnifierPreview {
-    pub(super) task: super::task::Task,
+pub(in crate::app) struct MagnifierPreview {
+    pub(in crate::app) task: crate::app::task::Task,
     /// The last render, and the region of the photo it shows.
-    pub(super) texture: Option<Picture>,
+    pub(in crate::app) texture: Option<Picture>,
     shown: Option<[u32; 4]>,
     pending: Option<[u32; 4]>,
     submitted: Option<MagnifierJob>,
 }
 impl MagnifierPreview {
     /// Drops what the magnifier showed, e.g. when the photo changes.
-    pub(super) fn clear(&mut self) {
+    pub(in crate::app) fn clear(&mut self) {
         self.task.invalidate();
         self.texture = None;
         self.shown = None;
@@ -235,14 +235,20 @@ fn region_around(centre: [f32; 2], visible: f32, size: [u32; 2]) -> [u32; 4] {
 /// Where the lens looks: the image pixel under its centre, in a photo of `size`
 /// image pixels shown at `rect`, kept far enough in that the lens shows only the
 /// photo, and how many image pixels a point inside it spans (`k`).
-pub(super) struct Aim {
-    pub(super) centre: [f32; 2],
+pub(in crate::app) struct Aim {
+    pub(in crate::app) centre: [f32; 2],
     k: f32,
     visible: f32,
 }
 impl Aim {
     /// None when the photo is smaller than the lens at `level`.
-    pub(super) fn new(pos: Pos2, rect: Rect, size: [u32; 2], level: f32, ppp: f32) -> Option<Self> {
+    pub(in crate::app) fn new(
+        pos: Pos2,
+        rect: Rect,
+        size: [u32; 2],
+        level: f32,
+        ppp: f32,
+    ) -> Option<Self> {
         let k = ppp / level;
         let visible = DIAMETER * k;
         if visible >= size[0].min(size[1]) as f32 {
@@ -258,7 +264,7 @@ impl Aim {
         Some(Self { centre, k, visible })
     }
     /// The region to render or read for it; see `region_around`.
-    pub(super) fn region(&self, size: [u32; 2]) -> [u32; 4] {
+    pub(in crate::app) fn region(&self, size: [u32; 2]) -> [u32; 4] {
         region_around(self.centre, self.visible, size)
     }
     /// Whether region `[x, y, w, h]`, in image pixels, covers the whole lens.
@@ -274,7 +280,7 @@ impl Aim {
 /// Draws the lens at `pos`, aimed by `aim` at `level`: the `sharp` region (its
 /// texture and `[x, y, w, h]` in image pixels) when it covers the lens, the whole
 /// `fitted` preview of the photo of `size` image pixels meanwhile; then its bezel.
-pub(super) fn paint_lens(
+pub(in crate::app) fn paint_lens(
     ui: &egui::Ui,
     pos: Pos2,
     aim: &Aim,
@@ -288,7 +294,7 @@ pub(super) fn paint_lens(
         egui::Id::new("magnifier"),
     ));
     let radius = DIAMETER / 2.;
-    let palette = super::theme::palette(ui.ctx());
+    let palette = crate::app::theme::palette(ui.ctx());
     paint_body(&painter, pos, radius);
     painter.circle_filled(pos, radius, palette.photo_backdrop());
     let source = sharp
@@ -328,8 +334,13 @@ impl Editor {
     /// level, which it names when `wide`. Choosing a level shows the magnifier.
     /// Zoomed in it does nothing, as the photo is already magnified: both parts are
     /// disabled. Laid out right to left.
-    pub(super) fn magnifier_controls(&mut self, ui: &mut egui::Ui, wide: bool, height: f32) {
-        use super::widgets::{menu_item, toolbar_action_sized};
+    pub(in crate::app) fn magnifier_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        wide: bool,
+        height: f32,
+    ) {
+        use crate::app::widgets::{menu_item, toolbar_action_sized};
         let level = self.view.magnifier.level;
         let blocked = self.magnifier_blocked();
         let usable = blocked.is_none();
@@ -381,19 +392,19 @@ impl Editor {
     /// Why the magnifier can't be used now, if it can't: it works over the fitted
     /// photo, from full-resolution pixels (the edit's, or in the Library's Loupe the
     /// file's or an offline RAW's 1:1 preview).
-    pub(super) fn magnifier_blocked(&self) -> Option<&'static str> {
+    pub(in crate::app) fn magnifier_blocked(&self) -> Option<&'static str> {
         if self.view.zoom.on {
             return Some("Fit the photo to use the magnifier · Z or Cmd+1");
         }
         // The Loupe's own view magnifies the file, or an offline RAW's 1:1 preview.
-        let nothing = self.module == super::Module::Library
+        let nothing = self.module == crate::app::Module::Library
             && self.library.as_ref().is_some_and(|l| {
                 l.loupe_open() && l.loupe_develops().is_none() && !l.loupe_zoomable()
             });
         nothing.then_some("Offline, with no 1:1 preview to magnify")
     }
     /// Shift+Z: shows or hides the magnifier, while it can be used.
-    pub(super) fn toggle_magnifier(&mut self) {
+    pub(in crate::app) fn toggle_magnifier(&mut self) {
         if self.magnifier_blocked().is_some() {
             return;
         }
@@ -404,7 +415,7 @@ impl Editor {
     }
     /// Draws the magnifier over the fitted photo at `rect`, when it is on and the
     /// pointer is over the photo, and asks for its region.
-    pub(super) fn magnifier_ui(&mut self, ui: &egui::Ui, hover: Option<Pos2>, rect: Rect) {
+    pub(in crate::app) fn magnifier_ui(&mut self, ui: &egui::Ui, hover: Option<Pos2>, rect: Rect) {
         let Some(pos) = hover.filter(|p| rect.contains(*p)) else {
             return;
         };
@@ -463,9 +474,9 @@ impl Editor {
         let (id, cancel) = magnifier.task.start();
         magnifier.pending = Some(region);
         magnifier.submitted = Some(job.clone());
-        self.renderer.submit(super::worker::RenderJob {
+        self.renderer.submit(crate::app::worker::RenderJob {
             id,
-            pane: super::worker::Pane::Magnifier,
+            pane: crate::app::worker::Pane::Magnifier,
             image: job.image,
             max_edge,
             cancel,
@@ -476,40 +487,40 @@ impl Editor {
             navigator: false,
             thumbnail: false,
             samples: false,
-            overlay: super::worker::Overlay::None,
+            overlay: crate::app::worker::Overlay::None,
             ai: job.ai,
             drawn,
         });
     }
     /// A magnifier render arrived.
-    pub(super) fn magnifier_rendered(
+    pub(in crate::app) fn magnifier_rendered(
         &mut self,
         ctx: &egui::Context,
-        preview: super::worker::Preview,
-        stage: super::worker::RenderStage,
+        preview: crate::app::worker::Preview,
+        stage: crate::app::worker::RenderStage,
         task: u64,
     ) {
         let magnifier = &mut self.preview.magnifier;
         match preview {
-            super::worker::Preview::Pixels {
+            crate::app::worker::Preview::Pixels {
                 image, display_rgb, ..
             } => {
                 let size = [image.width as usize, image.height as usize];
                 let image = egui::ColorImage::from_rgb(size, &display_rgb);
                 Picture::upload(&mut magnifier.texture, ctx, "magnifier", image);
             }
-            super::worker::Preview::Texture { id, size, .. } => {
+            crate::app::worker::Preview::Texture { id, size, .. } => {
                 magnifier.texture = Some(Picture::presented(id, size));
             }
         }
         magnifier.shown = magnifier.pending;
-        if stage != super::worker::RenderStage::Draft {
+        if stage != crate::app::worker::RenderStage::Draft {
             magnifier.task.finish(task);
         }
     }
     /// An edit is about to render: a magnifier render still running would hold it up
     /// on the renderer's one thread, so it is cancelled and asked for again behind it.
-    pub(super) fn yield_magnifier(&mut self) {
+    pub(in crate::app) fn yield_magnifier(&mut self) {
         let magnifier = &mut self.preview.magnifier;
         if magnifier.task.is_running() {
             magnifier.task.invalidate();

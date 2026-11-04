@@ -2,12 +2,12 @@
 //! Color's sample) each run on a thread of their own. Should one panic, it still
 //! sends its result, as an error, so the editor stops waiting for it. A photo whose
 //! pixels are fewer than its size says makes each of them panic.
-use super::{Editor, worker::Event};
+use crate::app::{Editor, worker::Event};
 use crate::camera_data::{CameraImage, Metadata};
 use eframe::egui;
 use std::sync::Arc;
 
-pub(super) fn broken_photo() -> Arc<CameraImage> {
+pub(in crate::app) fn broken_photo() -> Arc<CameraImage> {
     let metadata = Metadata {
         width: 64,
         height: 64,
@@ -52,8 +52,8 @@ fn next<T>(e: &Editor, mut pick: impl FnMut(Event) -> Option<T>) -> T {
 fn a_panicking_auto_still_reports_and_stops_running() {
     let ctx = egui::Context::default();
     for kind in [
-        super::worker::AutoKind::Settings,
-        super::worker::AutoKind::WhiteBalance,
+        crate::app::worker::AutoKind::Settings,
+        crate::app::worker::AutoKind::WhiteBalance,
     ] {
         let mut e = editor(&ctx);
         e.start_auto(kind);

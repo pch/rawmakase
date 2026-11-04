@@ -1,15 +1,15 @@
 //! Bringing over a Lightroom library: its catalog, camera and lens profiles
 //! and presets, offered on a first launch where Lightroom's are found; and the
 //! Library's start while it has no photos.
-use super::Editor;
-use super::bulk_import::{ImportKind, Summary, find_files};
-use super::dialogs::{CatalogDialog, FileDialog, FolderAction};
-use super::task::Task;
-use super::widgets::pretty_path;
-use super::worker::Event;
+use crate::app::Editor;
 use crate::app::Module;
+use crate::app::bulk_import::{ImportKind, Summary, find_files};
 use crate::app::design::{self, Tone, radius, space, text};
+use crate::app::dialogs::{CatalogDialog, FileDialog, FolderAction};
+use crate::app::task::Task;
 use crate::app::theme;
+use crate::app::widgets::pretty_path;
+use crate::app::worker::Event;
 use crate::catalog::CatalogLocation;
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use rawmakase_cancel::Cancel;
@@ -42,8 +42,8 @@ fn user_camera_raw() -> Option<PathBuf> {
 }
 /// What the setup view shows and the scan it runs when it opens.
 #[derive(Default)]
-pub(super) struct Onboarding {
-    pub(super) visible: bool,
+pub(in crate::app) struct Onboarding {
+    pub(in crate::app) visible: bool,
     scanned: bool,
     scanned_for: Option<CatalogLocation>,
     /// How many times the catalog had saved photo info read from files when
@@ -58,7 +58,7 @@ pub(super) struct Onboarding {
     /// The kind of import this view started and is under way.
     importing: Option<ImportKind>,
     /// Why the last catalog open or import failed, until one succeeds.
-    pub(super) catalog_error: Option<String>,
+    pub(in crate::app) catalog_error: Option<String>,
     /// The Lightroom catalogs the open catalog was imported from, read when
     /// the view scans.
     imported_from: Vec<PathBuf>,
@@ -86,7 +86,7 @@ pub(crate) struct Found {
     catalogs: Vec<PathBuf>,
 }
 impl Onboarding {
-    pub(super) fn new(visible: bool) -> Self {
+    pub(in crate::app) fn new(visible: bool) -> Self {
         Self {
             visible,
             ..Default::default()
@@ -96,7 +96,7 @@ impl Onboarding {
         self.scan.is_running()
     }
     /// Keeps an import's result for its row.
-    pub(super) fn imported(&mut self, summary: Summary) {
+    pub(in crate::app) fn imported(&mut self, summary: Summary) {
         if self.importing == Some(summary.kind) {
             self.importing = None;
         }
@@ -138,7 +138,7 @@ fn lightroom_catalogs() -> Vec<PathBuf> {
 /// Whether this computer has something of Lightroom's to bring over: its
 /// catalog or Camera Raw's profiles and presets. A first launch opens the
 /// setup view only then.
-pub(super) fn lightroom_here() -> bool {
+pub(in crate::app) fn lightroom_here() -> bool {
     shared_camera_raw().is_some() || user_camera_raw().is_some() || !lightroom_catalogs().is_empty()
 }
 /// The full name `model` goes by among `names`, which spell out the maker:
@@ -307,7 +307,7 @@ impl Found {
 }
 
 impl Editor {
-    pub(super) fn onboarding_ui(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn onboarding_ui(&mut self, ui: &mut egui::Ui) {
         // Rescan when opened and whenever a different catalog is loaded.
         let catalog = self
             .library
@@ -625,7 +625,7 @@ impl Editor {
 
     /// The Library's view while its catalog has no photos, or no catalog is
     /// open: what to do first, in place of an empty grid.
-    pub(super) fn library_start(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn library_start(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let palette = theme::palette(&ctx);
         let busy = self.activity.is_busy();
@@ -662,9 +662,9 @@ impl Editor {
             let (rect, _) = ui.allocate_exact_size(Vec2::splat(64.), Sense::hover());
             ui.painter()
                 .circle_filled(rect.center(), 32., palette.tone(Tone::PANEL));
-            super::icons::paint_at(
+            crate::app::icons::paint_at(
                 ui.painter(),
-                super::icons::Icon::FolderPlus,
+                crate::app::icons::Icon::FolderPlus,
                 rect.center(),
                 28.,
                 palette.tone(Tone::SOFT),
@@ -685,7 +685,7 @@ impl Editor {
             ui.add_space(space::XXXL);
             ui.add_enabled_ui(!busy, |ui| {
                 if folders.is_some() {
-                    if icon_primary(ui, super::icons::Icon::FolderPlus, "Add photo folder…")
+                    if icon_primary(ui, crate::app::icons::Icon::FolderPlus, "Add photo folder…")
                         .clicked()
                     {
                         self.catalog_dialog(CatalogDialog::Folder(FolderAction::Add), &ctx);
@@ -724,7 +724,7 @@ impl Editor {
                     .unwrap_or_else(|| self.messages.line().to_string());
                 ui.horizontal(|ui| {
                     let (rect, _) = ui.allocate_exact_size(Vec2::splat(12.), egui::Sense::hover());
-                    super::widgets::paint_spinner(ui, rect, Some(palette.tone(Tone::LABEL)));
+                    crate::app::widgets::paint_spinner(ui, rect, Some(palette.tone(Tone::LABEL)));
                     hint(ui, &status);
                 });
             }
@@ -774,13 +774,13 @@ impl Editor {
         });
     }
     /// Takes a scan's result unless a later scan superseded it.
-    pub(super) fn onboarding_scanned(&mut self, generation: u64, found: Found) {
+    pub(in crate::app) fn onboarding_scanned(&mut self, generation: u64, found: Found) {
         if self.onboarding.scan.is_running() && self.onboarding.scan.id() == generation {
             self.onboarding.scan.finish(generation);
             self.onboarding.found = found;
         }
     }
-    pub(super) fn open_onboarding(&mut self) {
+    pub(in crate::app) fn open_onboarding(&mut self) {
         self.onboarding.visible = true;
         self.onboarding.scanned = false;
         self.onboarding.results.clear();
@@ -959,13 +959,13 @@ fn mark(ui: &mut egui::Ui, center: egui::Pos2, mark: Mark) {
         }
         Mark::Working => {
             let rect = egui::Rect::from_center_size(center, Vec2::splat(16.));
-            super::widgets::paint_spinner(ui, rect, Some(palette.tone(Tone::SOFT)));
+            crate::app::widgets::paint_spinner(ui, rect, Some(palette.tone(Tone::SOFT)));
         }
         Mark::Done => {
             painter.circle_filled(center, 10., Color32::from_rgb(64, 132, 90));
-            super::icons::paint_at(
+            crate::app::icons::paint_at(
                 painter,
-                super::icons::Icon::Check,
+                crate::app::icons::Icon::Check,
                 center,
                 13.,
                 Color32::WHITE,
@@ -973,9 +973,9 @@ fn mark(ui: &mut egui::Ui, center: egui::Pos2, mark: Mark) {
         }
         Mark::Failed => {
             painter.circle_filled(center, 10., Color32::from_rgb(150, 72, 52));
-            super::icons::paint_at(
+            crate::app::icons::paint_at(
                 painter,
-                super::icons::Icon::Close,
+                crate::app::icons::Icon::Close,
                 center,
                 12.,
                 Color32::WHITE,
@@ -1056,7 +1056,7 @@ fn primary(ui: &mut egui::Ui, label: &str) -> egui::Response {
     )
 }
 /// The primary button with an icon before its label.
-fn icon_primary(ui: &mut egui::Ui, icon: super::icons::Icon, label: &str) -> egui::Response {
+fn icon_primary(ui: &mut egui::Ui, icon: crate::app::icons::Icon, label: &str) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     ui.add(
         egui::Button::image_and_text(

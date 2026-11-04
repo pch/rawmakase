@@ -1,17 +1,17 @@
-use super::clipping::{self, ClipSide};
-use super::crop_tool::{Guide, GuideShow, Ruler};
-use super::dialogs::FileDialog;
-use super::state::Tool;
-use super::step_name::StepName;
-use super::tone_drag::tone_drag_ui;
-use super::widgets::{
+use crate::app::clipping::{self, ClipSide};
+use crate::app::crop_tool::{Guide, GuideShow, Ruler};
+use crate::app::design::{Tone, button, inset, radius, size, space, text};
+use crate::app::dialogs::FileDialog;
+use crate::app::icons::{self, Icon};
+use crate::app::state::Tool;
+use crate::app::step_name::StepName;
+use crate::app::theme;
+use crate::app::tone_drag::tone_drag_ui;
+use crate::app::widgets::{
     LABEL_GAP, SliderEvent, control_left, keyed_setting_slider, label_column, setting_slider,
     slider_with,
 };
-use super::{Editor, basic_keys};
-use crate::app::design::{Tone, button, inset, radius, size, space, text};
-use crate::app::icons::{self, Icon};
-use crate::app::theme;
+use crate::app::{Editor, basic_keys};
 use crate::model::panels::{Panel, PanelState};
 use crate::model::params::ParameterId;
 use crate::model::recipe::Recipe;
@@ -25,11 +25,11 @@ mod panels;
 mod profile_offer;
 /// What the community profile offer says when a profile can be downloaded, for tests.
 #[cfg(test)]
-pub(super) fn profile_offer_available() -> &'static str {
+pub(in crate::app) fn profile_offer_available() -> &'static str {
     profile_offer::AVAILABLE
 }
 /// Lensfun's terms, for Preferences.
-pub(super) use lensfun::terms as lensfun_terms;
+pub(in crate::app) use lensfun::terms as lensfun_terms;
 mod profile_menu;
 
 /// A histogram corner's clipping triangle: its corner point, which way it
@@ -58,7 +58,7 @@ impl Editor {
     /// Lightroom-style histogram: filled channels whose overlaps mix to
     /// cyan, magenta, yellow and gray, with clipping indicators in the corners.
     /// Dragging in it moves Blacks, Shadows, Exposure, Highlights or Whites.
-    pub(super) fn histogram_ui(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn histogram_ui(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
         let (rect, _) =
             ui.allocate_exact_size(Vec2::new(ui.available_width(), 96.), Sense::hover());
@@ -221,7 +221,7 @@ impl Editor {
     /// The open tool's drawer, in place of Develop's adjustments: Crop's
     /// settings, or Remove's, Red Eye's or Masking's. Its tools are on the
     /// rail.
-    pub(super) fn tool_drawer(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn tool_drawer(&mut self, ui: &mut egui::Ui) {
         let Some(name) = DRAWER_TOOLS
             .iter()
             .find(|(tool, ..)| *tool == self.view.tool)
@@ -229,7 +229,7 @@ impl Editor {
         else {
             return;
         };
-        super::widgets::panel_caption(ui, name);
+        crate::app::widgets::panel_caption(ui, name);
         let drawer = |ui: &mut egui::Ui, add: &mut dyn FnMut(&mut egui::Ui)| {
             drawer_frame().show(ui, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(space::XS, space::S);
@@ -434,7 +434,7 @@ impl Editor {
             None => {}
         }
     }
-    pub(super) fn controls(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn controls(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
         ui.spacing_mut().item_spacing = Vec2::new(space::XS, space::XS);
         ui.spacing_mut().button_padding = button::COMPACT;
@@ -716,7 +716,7 @@ impl Editor {
     /// this frame, so changing an unedited photo's recipe is not taken for an
     /// edit; the Library's previews follow them then, once it is known whether
     /// the open photo's recipe changed.
-    pub(super) fn list_imported_profiles(&mut self, m: &crate::camera_data::Metadata) {
+    pub(in crate::app) fn list_imported_profiles(&mut self, m: &crate::camera_data::Metadata) {
         self.profile_library = crate::camera_profiles::library_fingerprint();
         let crate::camera_profiles::Listed {
             profiles,
@@ -724,8 +724,8 @@ impl Editor {
             groups,
         } = crate::camera_profiles::listed(m);
         let profiles =
-            super::camera_look::keep_fitted_default(&self.document.profiles, m, profiles);
-        let _ = self.tx.send(super::worker::Event::Profiles {
+            crate::app::camera_look::keep_fitted_default(&self.document.profiles, m, profiles);
+        let _ = self.tx.send(crate::app::worker::Event::Profiles {
             id: self.load.id(),
             profiles,
             errors,
@@ -754,7 +754,7 @@ fn aspect_name(aspect: f32) -> &'static str {
 
 /// The crop's aspect presets, long side over short, with their menu and stable
 /// session names.
-pub(super) const ASPECTS: [(f32, &str, &str); 9] = [
+pub(in crate::app) const ASPECTS: [(f32, &str, &str); 9] = [
     (-1., "Original", "original"),
     (0., "Free", "free"),
     (1., "1 x 1", "1x1"),
@@ -766,20 +766,20 @@ pub(super) const ASPECTS: [(f32, &str, &str); 9] = [
     (65. / 24., "65 x 24 (XPan)", "65x24"),
 ];
 /// The session's name for a preset `aspect` from the menu.
-pub(super) fn aspect_key(aspect: f32) -> &'static str {
+pub(in crate::app) fn aspect_key(aspect: f32) -> &'static str {
     ASPECTS
         .iter()
         .find(|(a, ..)| *a == aspect)
         .map_or("original", |(.., key)| *key)
 }
 /// The preset the session names `key`; Original for a name this version does not know.
-pub(super) fn aspect_from_key(key: &str) -> f32 {
+pub(in crate::app) fn aspect_from_key(key: &str) -> f32 {
     ASPECTS
         .iter()
         .find(|(.., k)| *k == key)
         .map_or(-1., |(a, ..)| *a)
 }
-pub(super) const BANDS: [&str; 8] = [
+pub(in crate::app) const BANDS: [&str; 8] = [
     "Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta",
 ];
 fn band_color(i: usize) -> Color32 {
@@ -808,18 +808,18 @@ fn hsl_gradient(palette: &theme::Palette, band: usize, channel: usize) -> (Color
     }
 }
 /// A panel's switch while its section is drawn; a click on it is stored after.
-pub(super) struct PanelSwitch {
+pub(in crate::app) struct PanelSwitch {
     panel: Panel,
-    pub(super) state: PanelState,
+    pub(in crate::app) state: PanelState,
 }
 impl PanelSwitch {
-    pub(super) fn new(r: &Recipe, panel: Panel) -> Self {
+    pub(in crate::app) fn new(r: &Recipe, panel: Panel) -> Self {
         Self {
             panel,
             state: r.panels.state(panel),
         }
     }
-    pub(super) fn finish(self, r: &mut Recipe) {
+    pub(in crate::app) fn finish(self, r: &mut Recipe) {
         r.panels.set(self.panel, self.state);
     }
 }
@@ -853,7 +853,7 @@ fn targeted_shortcut(key: &str) -> String {
 }
 /// Group caption (Tone, Presence…) starting where the slider rails start.
 fn subheading(ui: &mut egui::Ui, text: &str) -> Rect {
-    super::widgets::set_edit_context(ui, text);
+    crate::app::widgets::set_edit_context(ui, text);
     ui.add_space(space::M);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 16.), Sense::hover());
     ui.painter().text(
@@ -897,7 +897,7 @@ fn control_row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui
 }
 /// Defringe's Amount and hue range for Purple, then Green. Double-clicking a hue
 /// resets it to that color's own default range.
-pub(super) fn defringe_sliders(
+pub(in crate::app) fn defringe_sliders(
     ui: &mut egui::Ui,
     step: &mut StepName,
     e: &mut crate::model::effects::Effects,
@@ -981,7 +981,7 @@ fn experimental(ui: &mut egui::Ui, note: &str) {
 /// The tools whose drawers open in place of Develop's adjustments, as the
 /// rail lists them, with their tooltips and the drawer's caption. Red Eye
 /// has no shortcut, as in Lightroom.
-pub(super) const DRAWER_TOOLS: [(Tool, &str, &str); 4] = [
+pub(in crate::app) const DRAWER_TOOLS: [(Tool, &str, &str); 4] = [
     (Tool::Crop, "Crop & Straighten · R", "Crop & Straighten"),
     (
         Tool::Remove,
@@ -993,7 +993,7 @@ pub(super) const DRAWER_TOOLS: [(Tool, &str, &str); 4] = [
 ];
 /// The slider grid's label column in the tool drawers, wide enough for
 /// their longest captions ("Orientation", "Range High").
-pub(super) const DRAWER_LABEL_COLUMN: f32 = 68.;
+pub(in crate::app) const DRAWER_LABEL_COLUMN: f32 = 68.;
 /// The height of the Crop drawer's controls, centred in their 26 pt rows.
 const CROP_CONTROL: f32 = 22.;
 /// A Crop drawer button showing `icon`, `width` wide.
@@ -1013,11 +1013,11 @@ fn drawer_frame() -> egui::Frame {
     })
 }
 /// Whether `tool` has a drawer in place of the adjustments.
-pub(super) fn has_drawer(tool: Tool) -> bool {
+pub(in crate::app) fn has_drawer(tool: Tool) -> bool {
     DRAWER_TOOLS.iter().any(|(t, ..)| *t == tool)
 }
 /// A drawer tool's icon on the rail, a Lucide outline as its tabs' are.
-pub(super) fn tool_icon(tool: Tool) -> Icon {
+pub(in crate::app) fn tool_icon(tool: Tool) -> Icon {
     match tool {
         Tool::Crop => Icon::Crop,
         Tool::Remove => Icon::Bandage,

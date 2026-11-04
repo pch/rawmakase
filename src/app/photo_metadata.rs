@@ -102,7 +102,7 @@ pub(crate) fn shortcut(ctx: &egui::Context) -> Option<(Edit, bool)> {
     })
 }
 
-pub(super) fn label_color(palette: &theme::Palette, label: &str) -> Option<Color32> {
+pub(in crate::app) fn label_color(palette: &theme::Palette, label: &str) -> Option<Color32> {
     Some(match label {
         "" => return None,
         "Red" => Color32::from_rgb(206, 86, 83),
@@ -248,7 +248,7 @@ pub(crate) fn controls(ui: &mut egui::Ui, photo: &Photo, labels: &[String]) -> O
     edit
 }
 /// Lightroom's pick and reject flags: a bright flag, or a struck-out one in red.
-pub(super) fn flag_icon(
+pub(in crate::app) fn flag_icon(
     painter: &egui::Painter,
     palette: &theme::Palette,
     at: egui::Pos2,

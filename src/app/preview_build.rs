@@ -10,7 +10,7 @@
 //! The build never makes the editor busy, so navigation is never blocked. It stops
 //! between photos and inside the decode and the render when cancelled, and is
 //! joined at exit within the shutdown deadline (docs/shutdown.md).
-use super::Editor;
+use crate::app::Editor;
 use crate::app::design::{Tone, radius, text};
 use crate::app::theme;
 use crate::app::widgets::plural;
@@ -36,17 +36,17 @@ use std::{
 };
 
 /// Preferences > Standard Preview Size: the long edges offered.
-pub(super) const STANDARD_SIZES: [u32; 3] = [1440, 2048, 2560];
-pub(super) const DEFAULT_STANDARD_SIZE: u32 = 2048;
+pub(in crate::app) const STANDARD_SIZES: [u32; 3] = [1440, 2048, 2560];
+pub(in crate::app) const DEFAULT_STANDARD_SIZE: u32 = 2048;
 /// Preferences > Automatically Discard 1:1 Previews: the choices, in days
 /// unused, as Lightroom offers them; `None` is Never.
-pub(super) const DISCARD_CHOICES: [(Option<u32>, &str); 4] = [
+pub(in crate::app) const DISCARD_CHOICES: [(Option<u32>, &str); 4] = [
     (Some(1), "After One Day"),
     (Some(7), "After One Week"),
     (Some(30), "After 30 Days"),
     (None, "Never"),
 ];
-pub(super) const DEFAULT_DISCARD_DAYS: Option<u32> = Some(30);
+pub(in crate::app) const DEFAULT_DISCARD_DAYS: Option<u32> = Some(30);
 /// The longest side a JPEG can hold.
 const JPEG_LIMIT: u32 = 65_535;
 /// The long edge of the Library thumbnail a build also gives the grid.
@@ -57,7 +57,7 @@ const THUMBNAIL_EDGE: u32 = 640;
 /// release that resolves them; the demosaic and the RAW decoder
 /// (`raw::developed`). The build and Develop's lookup both name rows by it.
 /// Whether the file changed is the row's `Stamp`'s to say.
-pub(super) fn identity(
+pub(in crate::app) fn identity(
     record: &EditRecord,
     defaults: &DevelopDefaults,
     library: &str,
@@ -82,13 +82,13 @@ pub(super) fn identity(
 
 /// Whether a photo has an edit of its own, saved or from Lightroom; the grid
 /// shows the embedded preview of a photo without one.
-pub(super) fn has_edit(record: &EditRecord) -> bool {
+pub(in crate::app) fn has_edit(record: &EditRecord) -> bool {
     record.recipe.is_some() || record.lightroom().is_some()
 }
 
 /// One photo to build, with everything the build reads captured when it was asked for.
 #[derive(Clone, Debug)]
-pub(super) struct Item {
+pub(in crate::app) struct Item {
     pub catalog: CatalogLocation,
     pub photo: PhotoId,
     /// As the progress report names it.
@@ -111,7 +111,7 @@ pub(super) struct Item {
 
 /// How building one photo ended.
 #[derive(Debug)]
-pub(super) enum Outcome {
+pub(in crate::app) enum Outcome {
     /// Stored, with a thumbnail for the grid when the item has a ticket.
     Built(Option<image::RgbImage>),
     /// A row for this edit and size was there already.
@@ -120,13 +120,13 @@ pub(super) enum Outcome {
     Cancelled,
 }
 
-pub(super) struct Finished {
+pub(in crate::app) struct Finished {
     pub item: Item,
     pub outcome: Outcome,
 }
 
 /// Renders `item` at its edge, giving up once the flag is set.
-pub(super) type Render = fn(&Item, Cancel<'_>) -> anyhow::Result<image::RgbImage>;
+pub(in crate::app) type Render = fn(&Item, Cancel<'_>) -> anyhow::Result<image::RgbImage>;
 
 /// Builds and stores one photo's preview, unless a fresh one is there.
 fn build_one(
@@ -198,7 +198,7 @@ fn thumbnail(image: &image::RgbImage) -> image::RgbImage {
 /// Renders a catalog photo as batch export does: its edit resolved through the
 /// identity-checked record (a protected or unreadable edit fails, never falling
 /// back to the defaults), Upright completed, then a cancellable render.
-pub(super) fn render(item: &Item, cancel: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+pub(in crate::app) fn render(item: &Item, cancel: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
     let opened = crate::photo::open_source(&item.path, cancel)
         .with_context(|| format!("{} can't be read", item.path.display()))?;
     let (profiles, _) = crate::camera_profiles::installed(opened.metadata());
@@ -249,7 +249,7 @@ fn develop(
 /// cropped and transformed as `recipe` says, falls short of it. Upright or a
 /// Straighten Auto still to be worked out always takes the full decode, which
 /// Develop measures on, and completing it can shrink the photo (Constrain Crop).
-pub(super) fn needs_full(recipe: &Recipe, m: &Metadata, edge: u32) -> bool {
+pub(in crate::app) fn needs_full(recipe: &Recipe, m: &Metadata, edge: u32) -> bool {
     if edge == 0 || recipe.upright.needs_analysis() || recipe.straighten_pending() {
         return true;
     }
@@ -259,14 +259,14 @@ pub(super) fn needs_full(recipe: &Recipe, m: &Metadata, edge: u32) -> bool {
 
 /// How far the builds asked for have got.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(super) struct Progress {
+pub(in crate::app) struct Progress {
     pub done: usize,
     pub total: usize,
     /// Photos that could not be built: their names and why.
     pub failed: Vec<(String, String)>,
 }
 impl Progress {
-    pub(super) fn running(&self) -> bool {
+    pub(in crate::app) fn running(&self) -> bool {
         self.done < self.total
     }
 }
@@ -314,7 +314,7 @@ struct Shared {
 }
 
 /// The build queue and the thread that works through it.
-pub(super) struct Builder {
+pub(in crate::app) struct Builder {
     shared: Arc<Shared>,
     results: Receiver<Finished>,
     thread: Option<std::thread::JoinHandle<()>>,
@@ -323,7 +323,7 @@ pub(super) struct Builder {
 impl Builder {
     /// Starts the worker on the cache at `cache_path`; `changed` is called after
     /// each photo.
-    pub(super) fn start(
+    pub(in crate::app) fn start(
         cache_path: PathBuf,
         render: Render,
         changed: impl Fn() + Send + 'static,
@@ -387,7 +387,7 @@ impl Builder {
     /// Queues `items`; a photo already waiting takes the newer request in its
     /// place, and one being built queues behind itself. Returns how many were
     /// added.
-    pub(super) fn submit(&self, items: Vec<Item>) -> usize {
+    pub(in crate::app) fn submit(&self, items: Vec<Item>) -> usize {
         let added = self
             .shared
             .state
@@ -432,7 +432,7 @@ impl Builder {
 
     /// Cancel: nothing waiting starts, and the photo being built stops without
     /// storing anything.
-    pub(super) fn cancel(&self) {
+    pub(in crate::app) fn cancel(&self) {
         let mut state = self.shared.state.lock().expect("preview builds");
         let dropped = state.waiting.len();
         state.waiting.clear();
@@ -464,7 +464,7 @@ impl Builder {
         }
     }
 
-    pub(super) fn progress(&self) -> Progress {
+    pub(in crate::app) fn progress(&self) -> Progress {
         self.shared
             .state
             .lock()
@@ -488,7 +488,7 @@ impl Builder {
 
     /// Stops the worker at exit: the photo being built is cancelled and nothing
     /// else starts. Returns the thread, to wait for.
-    pub(super) fn close(&mut self) -> Option<std::thread::JoinHandle<()>> {
+    pub(in crate::app) fn close(&mut self) -> Option<std::thread::JoinHandle<()>> {
         self.shared.close();
         self.thread.take()
     }
@@ -638,21 +638,21 @@ fn maintain(cache: &mut PreviewCache, op: Op) {
 }
 
 /// The editor's preview builds.
-pub(super) struct PreviewBuilds {
+pub(in crate::app) struct PreviewBuilds {
     builder: Option<Builder>,
     /// The catalog the queued builds are for; another one cancels them.
     catalog: Option<CatalogLocation>,
     /// Preferences > Standard Preview Size.
-    pub(super) standard_size: u32,
+    pub(in crate::app) standard_size: u32,
     /// Preferences > Automatically Discard 1:1 Previews, after this many days
     /// unused; `None` keeps them.
-    pub(super) discard_one_to_one_after: Option<u32>,
+    pub(in crate::app) discard_one_to_one_after: Option<u32>,
     render: Render,
     cache_path: PathBuf,
 }
 
 impl PreviewBuilds {
-    pub(super) fn new(standard_size: u32, discard_one_to_one_after: Option<u32>) -> Self {
+    pub(in crate::app) fn new(standard_size: u32, discard_one_to_one_after: Option<u32>) -> Self {
         Self {
             builder: None,
             catalog: None,
@@ -664,7 +664,7 @@ impl PreviewBuilds {
     }
     /// Builds in the cache at `cache_path`, rendered by `render`.
     #[cfg(test)]
-    pub(super) fn for_tests(cache_path: PathBuf, render: Render) -> Self {
+    pub(in crate::app) fn for_tests(cache_path: PathBuf, render: Render) -> Self {
         Self {
             render,
             cache_path,
@@ -676,14 +676,14 @@ impl PreviewBuilds {
         self.builder
             .get_or_insert_with(|| Builder::start(path, render, move || ctx.request_repaint()))
     }
-    pub(super) fn progress(&self) -> Option<Progress> {
+    pub(in crate::app) fn progress(&self) -> Option<Progress> {
         self.builder
             .as_ref()
             .map(Builder::progress)
             .filter(|p| p.total > 0 || !p.failed.is_empty())
     }
     /// Stops the worker at exit; its thread, to wait for.
-    pub(super) fn close(&mut self) -> Option<std::thread::JoinHandle<()>> {
+    pub(in crate::app) fn close(&mut self) -> Option<std::thread::JoinHandle<()>> {
         self.builder.as_mut().and_then(Builder::close)
     }
     /// Where previews go, and how large, for `kind`.
@@ -847,7 +847,7 @@ impl Editor {
 
     /// Edits of `ids` were saved: the photos whose previews were asked for, and
     /// are no longer fresh, are built again with their new edits.
-    pub(super) fn refresh_previews(&mut self, ids: &[PhotoId]) {
+    pub(in crate::app) fn refresh_previews(&mut self, ids: &[PhotoId]) {
         let Some(library) = &self.library else {
             return;
         };
@@ -870,7 +870,7 @@ impl Editor {
     pub(in crate::app) fn preview_command_scope(&self) -> Vec<PhotoId> {
         let open = self.document.catalog_photo;
         match &self.library {
-            Some(l) if self.module == super::Module::Library => l.selected_photos(),
+            Some(l) if self.module == crate::app::Module::Library => l.selected_photos(),
             Some(l) => match open {
                 Some(open) if l.is_selected(open) => l.selected_photos(),
                 Some(open) => vec![open],
@@ -881,7 +881,7 @@ impl Editor {
     }
 
     /// The thumbnail menu's Build Standard-Sized Previews.
-    pub(super) fn build_previews_from_menu(&mut self, ids: &[PhotoId], kind: PreviewKind) {
+    pub(in crate::app) fn build_previews_from_menu(&mut self, ids: &[PhotoId], kind: PreviewKind) {
         match self.build_previews(ids, kind) {
             Ok(queued) => self.messages.note(queued_message(queued)),
             Err(e) => self.messages.fail(format!("Previews not built: {e}")),
@@ -890,7 +890,7 @@ impl Editor {
 
     /// Discard 1:1 Previews, or Standard and 1:1: the files' built previews of
     /// `kinds` and the photos' requests go, and their builds not yet started.
-    pub(super) fn discard_previews(&mut self, ids: &[PhotoId], kinds: &[PreviewKind]) {
+    pub(in crate::app) fn discard_previews(&mut self, ids: &[PhotoId], kinds: &[PreviewKind]) {
         let Some(library) = &self.library else {
             return;
         };
@@ -921,7 +921,7 @@ impl Editor {
     /// given its id starts without any.
     /// Photos whose file was found moved: their queued builds of the old
     /// file are dropped, and their requests follow the file.
-    pub(super) fn move_preview_intents(
+    pub(in crate::app) fn move_preview_intents(
         &mut self,
         catalog: &CatalogLocation,
         moved: &[(PhotoId, PathBuf)],
@@ -938,7 +938,7 @@ impl Editor {
         }
         builder.maintain(Op::MoveIntent(catalog.clone(), moved.to_vec()));
     }
-    pub(super) fn forget_preview_intent(&mut self, id: PhotoId) {
+    pub(in crate::app) fn forget_preview_intent(&mut self, id: PhotoId) {
         let Some(library) = &self.library else {
             return;
         };
@@ -951,7 +951,7 @@ impl Editor {
 
     /// Preferences' Clear Standard Previews and Clear 1:1 Previews; the
     /// builds of that kind not started go too.
-    pub(super) fn clear_previews(&mut self, kind: PreviewKind) {
+    pub(in crate::app) fn clear_previews(&mut self, kind: PreviewKind) {
         let ctx = self.context.clone();
         let builder = self.preview_builds.builder(&ctx);
         builder.drop_waiting(None, &[kind]);
@@ -961,7 +961,7 @@ impl Editor {
 
     /// Automatically Discard 1:1 Previews, as Preferences sets it: run when the
     /// app starts and when the setting changes.
-    pub(super) fn expire_previews(&mut self) {
+    pub(in crate::app) fn expire_previews(&mut self) {
         let expire = self.preview_builds.discard_one_to_one_after.map(|days| {
             Op::Expire(
                 PreviewKind::OneToOne,
@@ -974,7 +974,7 @@ impl Editor {
 
     /// Takes finished builds, every frame. Another catalog cancels the builds of
     /// the last one, and their late results are dropped.
-    pub(super) fn poll_preview_builds(&mut self) {
+    pub(in crate::app) fn poll_preview_builds(&mut self) {
         let current = self
             .library
             .as_ref()
@@ -1042,7 +1042,7 @@ impl Editor {
 
     /// "Building previews 12 / 150" over a bar, with a button that cancels; after
     /// a build that could not do everything, what it could not do, until clicked.
-    pub(super) fn preview_build_progress(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn preview_build_progress(&mut self, ui: &mut egui::Ui) {
         let Some(progress) = self.preview_builds.progress() else {
             return;
         };
@@ -1123,7 +1123,7 @@ impl Editor {
 
 /// "Building 12 previews · 3 skipped (offline, not editable, or an unedited
 /// file that is its own preview)".
-pub(super) fn queued_message(queued: Queued) -> String {
+pub(in crate::app) fn queued_message(queued: Queued) -> String {
     let mut line = match queued.queued {
         0 => "No previews to build".to_string(),
         n => format!("Building {}", plural(n, "preview", "previews")),

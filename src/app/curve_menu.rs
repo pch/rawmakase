@@ -1,9 +1,9 @@
 //! The Tone Curve panel's Point Curve menu: Lightroom's Linear, Medium Contrast and
 //! Strong Contrast, the curves saved here, and Save… to save the photo's whole point
 //! curve under a name. Choosing a curve is one History step.
-use super::widgets::{modal_frame, primary_button};
-use super::{Editor, theme};
 use crate::app::design::{self, Tone, button, inset, space, text};
+use crate::app::widgets::{modal_frame, primary_button};
+use crate::app::{Editor, theme};
 use crate::model::panels::{Panel, PanelState};
 use crate::presets::curves::{BuiltinCurve, PointCurve, SavedCurve, SavedCurves};
 use eframe::egui::{self, Color32};
@@ -11,7 +11,7 @@ use eframe::egui::{self, Color32};
 /// The saved curves, read once when the menu is first shown, and the name being
 /// typed in the Save Point Curve window while it is open.
 #[derive(Default)]
-pub(super) struct CurveMenu {
+pub(in crate::app) struct CurveMenu {
     saved: Option<Vec<SavedCurve>>,
     saving: Option<CurveSave>,
 }
@@ -24,7 +24,7 @@ struct CurveSave {
 
 /// What was chosen in the menu.
 #[derive(Clone, Debug, PartialEq)]
-pub(super) enum CurveChoice {
+pub(in crate::app) enum CurveChoice {
     Builtin(BuiltinCurve),
     Saved(SavedCurve),
     Save,
@@ -39,7 +39,7 @@ enum SaveChoice {
 
 impl Editor {
     /// The saved curves, read from the Curves folder the first time.
-    pub(super) fn saved_curves(&mut self) -> Vec<SavedCurve> {
+    pub(in crate::app) fn saved_curves(&mut self) -> Vec<SavedCurve> {
         if self.curves.saved.is_none() {
             self.reload_saved_curves(&SavedCurves::default());
         }
@@ -53,7 +53,7 @@ impl Editor {
         self.curves.saved = Some(list.curves);
     }
     /// Carries out a choice from the Point Curve menu.
-    pub(super) fn choose_point_curve(&mut self, choice: CurveChoice) {
+    pub(in crate::app) fn choose_point_curve(&mut self, choice: CurveChoice) {
         let before = self.document.edit.recipe().clone();
         let r = self.document.edit.recipe_mut();
         let name = match choice {
@@ -84,11 +84,11 @@ impl Editor {
         }
     }
     /// Whether the Save Point Curve window is open.
-    pub(super) fn curve_save_open(&self) -> bool {
+    pub(in crate::app) fn curve_save_open(&self) -> bool {
         self.curves.saving.is_some()
     }
     /// The Save Point Curve window, while open.
-    pub(super) fn curve_save_window(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn curve_save_window(&mut self, ctx: &egui::Context) {
         let palette = theme::palette(ctx);
         let Some(saving) = &mut self.curves.saving else {
             return;

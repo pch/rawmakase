@@ -9,12 +9,12 @@
 //! belong to the dialog and are captured again each time it opens. The text
 //! is made from both whenever either changes, and that one string is shown
 //! and copied.
-use super::Editor;
-use super::shortcuts::icon_button;
-use super::widgets::{modal_frame, primary_button};
-use super::worker::Event;
+use crate::app::Editor;
 use crate::app::design::{self, Tone, button, inset, radius, space, text};
+use crate::app::shortcuts::icon_button;
 use crate::app::theme;
+use crate::app::widgets::{modal_frame, primary_button};
+use crate::app::worker::Event;
 use crate::diagnostics::{self, Build, System};
 use eframe::egui::{self, Color32};
 use std::sync::Arc;
@@ -26,7 +26,7 @@ type Probe = Arc<dyn Fn() -> System + Send + Sync>;
 /// Opens a web page; replaced in tests.
 type OpenUrl = Arc<dyn Fn(&str) -> anyhow::Result<()> + Send + Sync>;
 
-pub(super) struct ReportIssue {
+pub(in crate::app) struct ReportIssue {
     dialog: Option<Dialog>,
     build: Build,
     /// The window's GPU, from launch; None when it draws without one.
@@ -34,7 +34,7 @@ pub(super) struct ReportIssue {
     /// The system, once probed in this process.
     system: Option<Arc<System>>,
     /// The probe under way; its generation tells its answer from any other.
-    task: super::task::Task,
+    task: crate::app::task::Task,
     probe: Probe,
     open_url: OpenUrl,
 }
@@ -57,7 +57,7 @@ enum Note {
 }
 
 impl ReportIssue {
-    pub(super) fn new(adapter: Option<&wgpu::AdapterInfo>) -> Self {
+    pub(in crate::app) fn new(adapter: Option<&wgpu::AdapterInfo>) -> Self {
         Self {
             dialog: None,
             build: Build::current(),
@@ -69,7 +69,7 @@ impl ReportIssue {
         }
     }
 
-    pub(super) fn is_open(&self) -> bool {
+    pub(in crate::app) fn is_open(&self) -> bool {
         self.dialog.is_some()
     }
 
@@ -96,7 +96,7 @@ impl ReportIssue {
 impl Editor {
     /// Opens the dialog from any of its entry points, even while a
     /// background task keeps the rest of the window busy.
-    pub(super) fn open_report_issue(&mut self) {
+    pub(in crate::app) fn open_report_issue(&mut self) {
         if self.close_confirm {
             return;
         }
@@ -112,7 +112,7 @@ impl Editor {
         if report.system.is_none() && !report.collecting() {
             let (generation, _) = report.task.start();
             let probe = report.probe.clone();
-            super::task::spawn(
+            crate::app::task::spawn(
                 self.tx.clone(),
                 self.context.clone(),
                 move |events| {
@@ -127,13 +127,13 @@ impl Editor {
         }
     }
 
-    pub(super) fn close_report_issue(&mut self) {
+    pub(in crate::app) fn close_report_issue(&mut self) {
         self.report_issue.dialog = None;
     }
 
     /// A probe that answers at once, so tests never ask the package manager.
     #[cfg(test)]
-    pub(super) fn report_issue_test_probe(&mut self) {
+    pub(in crate::app) fn report_issue_test_probe(&mut self) {
         self.report_issue.probe = Arc::new(|| System::unavailable("test"));
     }
 
@@ -143,7 +143,7 @@ impl Editor {
         diagnostics::Window {
             gpu: self.report_issue.gpu.clone(),
             scale: self.context.pixels_per_point(),
-            monitor: super::monitor::report_mode(
+            monitor: crate::app::monitor::report_mode(
                 &self.view.monitor,
                 self.view.system_display.display(),
             ),
@@ -171,7 +171,7 @@ impl Editor {
     }
 
     /// The probe answered, or stopped: either way it no longer runs.
-    pub(super) fn system_probed(&mut self, generation: u64, system: System) {
+    pub(in crate::app) fn system_probed(&mut self, generation: u64, system: System) {
         let report = &mut self.report_issue;
         if !report.task.counts(generation) {
             return;
@@ -181,7 +181,7 @@ impl Editor {
         report.refresh();
     }
 
-    pub(super) fn report_issue_window(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn report_issue_window(&mut self, ctx: &egui::Context) {
         let Some(dialog) = &self.report_issue.dialog else {
             return;
         };
@@ -205,7 +205,8 @@ impl Editor {
                         // The cross, not its hover square, lines up with the
                         // table's right edge.
                         ui.add_space(-space::S);
-                        close = icon_button(ui, super::icons::Icon::Close, "Close · Esc").clicked();
+                        close = icon_button(ui, crate::app::icons::Icon::Close, "Close · Esc")
+                            .clicked();
                     });
                 });
                 ui.add_space(space::L);
@@ -334,7 +335,7 @@ fn system_info(
                     if collecting {
                         ui.add_space(space::M);
                         ui.horizontal(|ui| {
-                            super::widgets::spinner(ui, 12.);
+                            crate::app::widgets::spinner(ui, 12.);
                             ui.label(
                                 egui::RichText::new("Collecting system details…")
                                     .size(text::LABEL)
@@ -377,9 +378,9 @@ fn note_ui(ui: &mut egui::Ui, palette: &theme::Palette, note: &Note, version: &s
         ui.spacing_mut().item_spacing.x = space::M;
         if !matches!(note, Note::NotOpened(_)) {
             let (rect, _) = ui.allocate_exact_size(egui::vec2(14., 16.), egui::Sense::hover());
-            super::icons::paint_at(
+            crate::app::icons::paint_at(
                 ui.painter(),
-                super::icons::Icon::Check,
+                crate::app::icons::Icon::Check,
                 rect.center(),
                 14.,
                 palette.accent(),

@@ -8,11 +8,11 @@
 //! on the Active photo. It has its own zoom, Fit or 100%, as Lightroom's has. It is
 //! decoded on its own worker (half size first, for Fit, then in full for 100%) and
 //! rendered in Before's lane of the renderer, so it never holds up the edit.
-use super::Editor;
-use super::before_after::{Axis, Compare, Pane, Panes, badge};
-use super::navigator::Zoom;
-use super::worker::{ReferenceImage, ReferenceJob, Resolution};
+use crate::app::Editor;
+use crate::app::before_after::{Axis, Compare, Pane, Panes, badge};
 use crate::app::design::{Tone, text};
+use crate::app::navigator::Zoom;
+use crate::app::worker::{ReferenceImage, ReferenceJob, Resolution};
 use crate::model::recipe::Recipe;
 use crate::{
     app::{library::DraggedPhoto, theme},
@@ -25,22 +25,22 @@ use std::sync::Arc;
 
 /// Reference View's state: the reference photo, its lock, layout and zoom, and the
 /// photo as last developed.
-pub(super) struct ReferenceView {
+pub(in crate::app) struct ReferenceView {
     /// The catalog photo shown as the reference.
-    pub(super) photo: Option<PhotoId>,
+    pub(in crate::app) photo: Option<PhotoId>,
     /// Kept when leaving Develop, as Lightroom's lock in the toolbar.
-    pub(super) locked: bool,
+    pub(in crate::app) locked: bool,
     /// Where the reference sits: left or on top. Shift+R shows the last one used.
-    pub(super) layout: Axis,
+    pub(in crate::app) layout: Axis,
     /// The reference's own Fit or 100%, and where.
-    pub(super) zoom: Zoom,
+    pub(in crate::app) zoom: Zoom,
     /// The reference as developed, once it is.
     loaded: Option<Loaded>,
     /// The photo and edit being developed.
     pending: Option<(PhotoId, String)>,
-    load: super::task::Task,
+    load: crate::app::task::Task,
     /// Why the reference could not be shown.
-    pub(super) error: Option<String>,
+    pub(in crate::app) error: Option<String>,
 }
 impl Default for ReferenceView {
     fn default() -> Self {
@@ -65,14 +65,14 @@ struct Loaded {
     recipe: Recipe,
 }
 /// What the Reference side renders: the photo and its edit.
-pub(super) struct ReferenceSide {
-    pub(super) image: Arc<CameraImage>,
-    pub(super) recipe: Recipe,
+pub(in crate::app) struct ReferenceSide {
+    pub(in crate::app) image: Arc<CameraImage>,
+    pub(in crate::app) recipe: Recipe,
 }
 
 impl ReferenceView {
     /// Stops loading the reference photo.
-    pub(super) fn cancel_load(&mut self) {
+    pub(in crate::app) fn cancel_load(&mut self) {
         self.load.invalidate();
     }
     /// No reference: the side shows how to set one.
@@ -85,18 +85,18 @@ impl ReferenceView {
         self.zoom = Zoom::default();
     }
     /// Whether the reference is still being developed.
-    pub(super) fn loading(&self) -> bool {
+    pub(in crate::app) fn loading(&self) -> bool {
         self.load.is_running()
     }
 }
 
 impl Editor {
     /// Reference View is shown.
-    pub(super) fn reference_view(&self) -> bool {
+    pub(in crate::app) fn reference_view(&self) -> bool {
         self.view.compare.reference()
     }
     /// Shift+R: Reference View in its last layout, or back to the edit alone.
-    pub(super) fn toggle_reference_view(&mut self) {
+    pub(in crate::app) fn toggle_reference_view(&mut self) {
         let view = self
             .view
             .compare
@@ -104,13 +104,13 @@ impl Editor {
         self.set_compare(view);
     }
     /// Reference View with the reference left or on top.
-    pub(super) fn set_reference_layout(&mut self, layout: Axis) {
+    pub(in crate::app) fn set_reference_layout(&mut self, layout: Axis) {
         self.reference.layout = layout;
         self.set_compare(Compare::Reference(layout));
     }
     /// Makes catalog photo `id` the reference and shows Reference View, as dropping
     /// it on the Reference side or Set as Reference Photo does.
-    pub(super) fn set_reference(&mut self, id: PhotoId) {
+    pub(in crate::app) fn set_reference(&mut self, id: PhotoId) {
         let source = self
             .library
             .as_ref()
@@ -137,7 +137,7 @@ impl Editor {
     }
     /// Develops the reference photo when it is not, or its edit changed since; the
     /// photo being edited needs nothing, as it is already open.
-    pub(super) fn load_reference(&mut self) {
+    pub(in crate::app) fn load_reference(&mut self) {
         let Some(id) = self.reference.photo else {
             return;
         };
@@ -188,7 +188,7 @@ impl Editor {
     /// Develops the reference photo again even when its edit and file are as they
     /// were: what they resolve to changed, e.g. camera profiles were imported. It keeps
     /// showing until the new one arrives.
-    pub(super) fn reload_reference(&mut self) {
+    pub(in crate::app) fn reload_reference(&mut self) {
         if let Some(loaded) = &mut self.reference.loaded {
             loaded.tag.clear();
         }
@@ -196,7 +196,7 @@ impl Editor {
         self.load_reference();
     }
     /// The reference photo developed, or why not.
-    pub(super) fn reference_ready(
+    pub(in crate::app) fn reference_ready(
         &mut self,
         ticket: u64,
         result: Result<Box<ReferenceImage>, String>,
@@ -234,7 +234,7 @@ impl Editor {
     }
     /// What the Reference side shows: the reference as developed, or the photo being
     /// edited, live, when it is the reference.
-    pub(super) fn reference_side(&self) -> Option<ReferenceSide> {
+    pub(in crate::app) fn reference_side(&self) -> Option<ReferenceSide> {
         let id = self.reference.photo?;
         // The photo being edited, live, once it is decoded; until then, as it was
         // last developed as the reference.
@@ -253,13 +253,13 @@ impl Editor {
         })
     }
     /// No reference photo any more; Reference View, if shown, waits for another.
-    pub(super) fn clear_reference(&mut self) {
+    pub(in crate::app) fn clear_reference(&mut self) {
         self.reference.clear();
         self.preview.before.clear();
     }
     /// Leaving Develop: the reference goes unless locked, as in Lightroom, the edit
     /// shows alone on return, and the RGB readout stops.
-    pub(super) fn left_develop(&mut self) {
+    pub(in crate::app) fn left_develop(&mut self) {
         self.view.readout = Default::default();
         if self.reference_view() {
             self.view.compare = Compare::Off;
@@ -274,7 +274,7 @@ impl Editor {
 impl Editor {
     /// Draws the Reference side: the reference photo at its own zoom, a stand-in
     /// while it is developed, or how to set one. Returns where the photo is drawn.
-    pub(super) fn reference_pane_ui(
+    pub(in crate::app) fn reference_pane_ui(
         &self,
         ui: &egui::Ui,
         panes: &Panes,
@@ -332,14 +332,14 @@ impl Editor {
         }
         if self.reference.loading() {
             let at = Rect::from_center_size(pane.clip.center(), Vec2::splat(18.));
-            super::widgets::paint_spinner(ui, at, None);
+            crate::app::widgets::paint_spinner(ui, at, None);
         }
     }
     /// Clicks, drags and drops on the Reference side: a click zooms the reference
     /// alone between Fit and 100%, a drag pans it, and a photo dragged from the
     /// filmstrip becomes the reference. Returns whether the pointer is the
     /// reference's, so the Active side leaves it alone.
-    pub(super) fn reference_pointer(
+    pub(in crate::app) fn reference_pointer(
         &mut self,
         ui: &egui::Ui,
         response: &egui::Response,
@@ -483,11 +483,11 @@ mod tests {
         let mut fixture = fixture()?;
         let (open, other) = (fixture.open, fixture.other);
         let editor = &mut fixture.editor;
-        editor.view.tool = super::super::state::Tool::Mask;
+        editor.view.tool = crate::app::state::Tool::Mask;
         editor.set_reference(other);
         // Setting a reference shows Reference View, which closes tools.
         assert_eq!(editor.view.compare, Compare::Reference(Axis::LeftRight));
-        assert_eq!(editor.view.tool, super::super::state::Tool::None);
+        assert_eq!(editor.view.tool, crate::app::state::Tool::None);
         assert!(editor.reference.loading());
         wait_for_reference(editor);
         // Developed in full, for 100%.
@@ -537,7 +537,7 @@ mod tests {
         let editor = &mut fixture.editor;
         editor.set_reference(other);
         wait_for_reference(editor);
-        let shown = super::super::state::Picture::presented(egui::TextureId::Managed(1), [1, 1]);
+        let shown = crate::app::state::Picture::presented(egui::TextureId::Managed(1), [1, 1]);
         editor.preview.before.texture = Some(shown);
         // Left/Right moves the Active photo; the reference stays where it was.
         editor.reference.error = Some("was offline".into());
@@ -555,7 +555,7 @@ mod tests {
         assert_eq!(editor.view.compare, Compare::Reference(Axis::LeftRight));
         // Before beside the edit belongs to the photo, and goes with it.
         editor.set_compare(Compare::SideBySide(Axis::LeftRight));
-        let shown = super::super::state::Picture::presented(egui::TextureId::Managed(1), [1, 1]);
+        let shown = crate::app::state::Picture::presented(egui::TextureId::Managed(1), [1, 1]);
         editor.preview.before.texture = Some(shown);
         editor.develop_catalog_photo(open);
         assert!(editor.preview.before.texture.is_none());
@@ -752,10 +752,10 @@ mod tests {
         };
         press(egui::Modifiers::SHIFT, &mut e);
         assert_eq!(e.view.compare, Compare::Reference(Axis::LeftRight));
-        assert_eq!(e.view.tool, super::super::state::Tool::None);
+        assert_eq!(e.view.tool, crate::app::state::Tool::None);
         press(egui::Modifiers::SHIFT, &mut e);
         assert_eq!(e.view.compare, Compare::Off);
         press(egui::Modifiers::NONE, &mut e);
-        assert_eq!(e.view.tool, super::super::state::Tool::Crop);
+        assert_eq!(e.view.tool, crate::app::state::Tool::Crop);
     }
 }

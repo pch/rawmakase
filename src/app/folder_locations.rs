@@ -1,13 +1,13 @@
 //! Folder locations on this computer (see `catalog::locations`): their list
 //! in Preferences › Catalog, and the questions changing a root or adding a
 //! folder can raise.
-use super::Editor;
-use super::dialogs::{CatalogDialog, FolderAction};
-use super::preferences::{gap, group, hint};
-use super::theme;
-use super::widgets::{confirm_modal, form_row, pretty_path};
-use super::worker::Event;
+use crate::app::Editor;
 use crate::app::design::{Tone, inset, radius, space, text};
+use crate::app::dialogs::{CatalogDialog, FolderAction};
+use crate::app::preferences::{gap, group, hint};
+use crate::app::theme;
+use crate::app::widgets::{confirm_modal, form_row, pretty_path};
+use crate::app::worker::Event;
 use crate::catalog::{
     Ambiguity, Catalog, CatalogLocation, Choice, Conflict, Override, Overrides, RootId,
     RootLocations,
@@ -57,7 +57,7 @@ enum FolderJob {
 
 /// The Folder locations list, read when the Catalog page shows.
 #[derive(Default)]
-pub(super) struct LocationsView {
+pub(in crate::app) struct LocationsView {
     roots: Vec<RootLocations>,
     /// This computer's name, as typed.
     computer: String,
@@ -107,7 +107,7 @@ impl LocationsView {
 
 impl Editor {
     /// The Folder locations block of Preferences › Catalog.
-    pub(super) fn folder_locations_block(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn folder_locations_block(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
         let ctx = ui.ctx().clone();
         let Some(library) = &self.library else {
@@ -241,7 +241,7 @@ impl Editor {
     }
     /// Saves this computer's name still being typed, once its field or
     /// page is left.
-    pub(super) fn save_computer_name(&mut self) {
+    pub(in crate::app) fn save_computer_name(&mut self) {
         let (Some(view), Some(library)) = (&mut self.preferences.locations, &mut self.library)
         else {
             return;
@@ -277,8 +277,8 @@ impl Editor {
         );
     }
     /// Asks the pending folder question, then carries out the change.
-    pub(super) fn folder_question_window(&mut self, ctx: &egui::Context) {
-        let Some(super::Modal::FolderQuestion(question)) = &mut self.modal else {
+    pub(in crate::app) fn folder_question_window(&mut self, ctx: &egui::Context) {
+        let Some(crate::app::Modal::FolderQuestion(question)) = &mut self.modal else {
             return;
         };
         match question {
@@ -413,7 +413,7 @@ impl Editor {
         // A panic ends the folder change as a failure does, so closing never waits
         // for it.
         let opened = ctx.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             ctx.clone(),
             move |tx| {
@@ -537,7 +537,7 @@ fn entry(
 }
 /// The catalog at `location` opened again after a folder change, with what
 /// the change found.
-pub(super) fn reopened(
+pub(in crate::app) fn reopened(
     location: &CatalogLocation,
     relinked: bool,
     report: &crate::catalog::SidecarReport,
@@ -572,7 +572,7 @@ pub(super) fn reopened(
 }
 /// Reports what adding a folder skipped, if anything, on the Library's
 /// status line: sidecars that could not be read and folders found elsewhere.
-pub(super) fn folder_added(
+pub(in crate::app) fn folder_added(
     library: &mut crate::app::library::Library,
     report: &crate::catalog::SidecarReport,
     conflicts: &[Conflict],

@@ -7,11 +7,11 @@
 //! Find on Disk… (issue #693) runs through the same scan slot, review and
 //! apply: the user picks an offline photo's file, and the other offline
 //! photos of its folder found beside it are offered with it.
-use super::Editor;
-use super::icons::Icon;
-use super::theme;
-use super::worker::Event;
+use crate::app::Editor;
 use crate::app::design::{self, Tone, button, inset, radius, space, text};
+use crate::app::icons::Icon;
+use crate::app::theme;
+use crate::app::worker::Event;
 use crate::catalog::folder_sync::{
     Accepted, Applied, PlanKind, SyncPlan, SyncScope, find_on_disk, scan,
 };
@@ -25,7 +25,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// The synchronization under way or waiting for review.
 #[derive(Default)]
-pub(super) struct FolderSync {
+pub(in crate::app) struct FolderSync {
     scan: Option<Scan>,
     review: Option<Review>,
     /// The review dialog is showing.
@@ -37,12 +37,12 @@ pub(super) struct FolderSync {
 }
 
 impl FolderSync {
-    pub(super) fn is_scanning(&self) -> bool {
+    pub(in crate::app) fn is_scanning(&self) -> bool {
         self.scan.is_some()
     }
     /// Whether the review dialog or its confirmation is showing: keys and
     /// commands go to it, never to the photos behind it.
-    pub(super) fn is_reviewing(&self) -> bool {
+    pub(in crate::app) fn is_reviewing(&self) -> bool {
         self.showing || self.review.as_ref().is_some_and(|r| r.confirming)
     }
 }
@@ -67,7 +67,7 @@ struct Scan {
 }
 
 /// A finished scan waiting for the user, and what they ticked.
-pub(super) struct Review {
+pub(in crate::app) struct Review {
     name: String,
     catalog: CatalogLocation,
     generation: u64,
@@ -98,7 +98,7 @@ pub(crate) struct Scanned {
 /// What applying sends back: the catalog opened again, and what changed.
 pub(crate) struct Synced {
     /// The catalog opened again, or why it could not be.
-    library: Result<Box<super::library::Library>, String>,
+    library: Result<Box<crate::app::library::Library>, String>,
     applied: Applied,
     /// The photo open in Develop, still in the catalog, and its new file
     /// when it was found moved and verified: the open document stays,
@@ -108,7 +108,7 @@ pub(crate) struct Synced {
 
 impl Editor {
     /// Starts synchronizing `scope`, named `name`, in the background.
-    pub(super) fn start_folder_sync(&mut self, scope: SyncScope, name: String) {
+    pub(in crate::app) fn start_folder_sync(&mut self, scope: SyncScope, name: String) {
         if self.folder_sync.scan.is_some() {
             self.messages.warn("A synchronization is already running.");
             return;
@@ -147,7 +147,7 @@ impl Editor {
     }
     /// Find on Disk…: asks for the file of `photo`, offline, starting where
     /// it was last.
-    pub(super) fn choose_file_on_disk(&mut self, photo: PhotoId, ctx: &egui::Context) {
+    pub(in crate::app) fn choose_file_on_disk(&mut self, photo: PhotoId, ctx: &egui::Context) {
         let Some(path) = self
             .library
             .as_ref()
@@ -167,7 +167,7 @@ impl Editor {
         }
         let start = picker_start(&path);
         let title = format!("Find {}", file_name(&path));
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             ctx.clone(),
             move |tx| {
@@ -189,7 +189,7 @@ impl Editor {
     /// Starts Find on Disk for `photo` (a virtual copy stands for its
     /// master), whose file the user picked at `file`, in the background as a
     /// synchronization's scan: one runs at a time.
-    pub(super) fn start_find_on_disk(&mut self, photo: PhotoId, file: PathBuf) {
+    pub(in crate::app) fn start_find_on_disk(&mut self, photo: PhotoId, file: PathBuf) {
         if self.folder_sync.scan.is_some() {
             self.messages.warn("A synchronization is already running.");
             return;
@@ -281,7 +281,7 @@ impl Editor {
         });
     }
     /// A scan finished: its plan waits for review.
-    pub(super) fn folder_sync_scanned(&mut self, scanned: Scanned) {
+    pub(in crate::app) fn folder_sync_scanned(&mut self, scanned: Scanned) {
         let Some(scan) = self.folder_sync.scan.take_if(|s| s.id == scanned.id) else {
             return;
         };
@@ -349,7 +349,7 @@ impl Editor {
             // Asked only over no other dialog, whose state it would replace.
             if self.unsaved_on_missing_file() && self.modal.is_none() {
                 let badges = self.badges(&plan);
-                self.modal = Some(super::Modal::DiscardForFind(Box::new(Review::new(
+                self.modal = Some(crate::app::Modal::DiscardForFind(Box::new(Review::new(
                     scan, plan, badges,
                 ))));
                 return;
@@ -372,8 +372,8 @@ impl Editor {
     /// Asks before discarding the unsaved change of the photo open in
     /// Develop, so that Find on Disk's unverified file can be reviewed for
     /// it (see [`found_on_disk`](Self::found_on_disk)).
-    pub(super) fn discard_for_find_window(&mut self, ctx: &egui::Context) {
-        let Some(super::Modal::DiscardForFind(review)) = &self.modal else {
+    pub(in crate::app) fn discard_for_find_window(&mut self, ctx: &egui::Context) {
+        let Some(crate::app::Modal::DiscardForFind(review)) = &self.modal else {
             return;
         };
         let name = review
@@ -383,7 +383,7 @@ impl Editor {
             .unwrap_or_default();
         // Only a click or the focused button confirms: a stray Return must
         // never discard an edit.
-        let Some(discard) = super::widgets::confirm_modal(
+        let Some(discard) = crate::app::widgets::confirm_modal(
             ctx,
             "discard-for-find",
             &format!("Discard the unsaved change to {name}?"),
@@ -403,7 +403,7 @@ impl Editor {
         self.answer_discard_for_find(discard);
     }
     fn answer_discard_for_find(&mut self, discard: bool) {
-        let Some(super::Modal::DiscardForFind(review)) = self.modal.take() else {
+        let Some(crate::app::Modal::DiscardForFind(review)) = self.modal.take() else {
             return;
         };
         let Some((picked, name)) = review.plan.picked().map(|m| (m.photo, file_name(&m.from)))
@@ -456,7 +456,7 @@ impl Editor {
         Some(master.unwrap_or(id))
     }
     /// Notices a scan thread that ended without sending its result.
-    pub(super) fn poll_folder_sync(&mut self) {
+    pub(in crate::app) fn poll_folder_sync(&mut self) {
         let lost = self.folder_sync.scan.as_ref().is_some_and(|s| {
             s.thread.as_ref().is_some_and(|t| t.is_finished()) && !s.sent.load(Ordering::Acquire)
         });
@@ -489,14 +489,14 @@ impl Editor {
         }
     }
     /// Asks the scan to stop at its next check, for quitting.
-    pub(super) fn stop_folder_sync(&mut self) -> Option<super::task::Stopping> {
+    pub(in crate::app) fn stop_folder_sync(&mut self) -> Option<crate::app::task::Stopping> {
         let scan = self.folder_sync.scan.as_mut()?;
         scan.cancel.store(true, Ordering::Relaxed);
-        Some(super::task::Stopping::new(scan.thread.take()))
+        Some(crate::app::task::Stopping::new(scan.thread.take()))
     }
     /// The top bar's part: the scan's progress and stop button, or the
     /// button that opens a review waiting, as the export's progress shows.
-    pub(super) fn folder_sync_progress(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn folder_sync_progress(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
         if let Some(scan) = &self.folder_sync.scan {
             let files = scan.files.load(Ordering::Relaxed);
@@ -540,7 +540,7 @@ impl Editor {
             } else {
                 Tone::SECONDARY
             });
-            super::icons::paint_at(ui.painter(), Icon::Close, close.center(), 13., tint);
+            crate::app::icons::paint_at(ui.painter(), Icon::Close, close.center(), 13., tint);
             if stop.clicked() {
                 scan.cancel.store(true, Ordering::Relaxed);
             }
@@ -614,14 +614,14 @@ impl Editor {
                     parts.push("Keywords".into());
                 }
                 if collections > 0 {
-                    parts.push(super::widgets::plural(
+                    parts.push(crate::app::widgets::plural(
                         collections,
                         "collection",
                         "collections",
                     ));
                 }
                 if copies > 0 {
-                    parts.push(super::widgets::plural(
+                    parts.push(crate::app::widgets::plural(
                         copies,
                         "virtual copy",
                         "virtual copies",
@@ -633,7 +633,7 @@ impl Editor {
     }
     /// The review dialog: one card for each kind of change, each saying
     /// what it does, with its photos below.
-    pub(super) fn folder_sync_window(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn folder_sync_window(&mut self, ctx: &egui::Context) {
         if !self.folder_sync.showing {
             return;
         }
@@ -658,7 +658,7 @@ impl Editor {
         let mut answer: Option<bool> = None;
         let response = egui::Modal::new(egui::Id::new("folder-sync-review"))
             .backdrop_color(egui::Color32::from_black_alpha(140))
-            .frame(super::widgets::modal_frame(&palette))
+            .frame(crate::app::widgets::modal_frame(&palette))
             .show(ctx, |ui| {
                 ui.set_width(WIDTH);
                 ui.spacing_mut().item_spacing = egui::vec2(space::M, space::M);
@@ -720,7 +720,7 @@ impl Editor {
                                     let label = if review.finding() {
                                         format!(
                                             "Relink {}",
-                                            super::widgets::plural(
+                                            crate::app::widgets::plural(
                                                 review.ticked(),
                                                 "Photo",
                                                 "Photos"
@@ -732,7 +732,7 @@ impl Editor {
                                         "Synchronize".into()
                                     };
                                     let confirm = ui.add_enabled_ui(!nothing, |ui| {
-                                        super::widgets::primary_button(ui, &label)
+                                        crate::app::widgets::primary_button(ui, &label)
                                     });
                                     if confirm.inner.clicked() {
                                         answer = Some(true);
@@ -787,7 +787,7 @@ impl Editor {
             "These photos are removed from the catalog with what they hold:\n{}",
             losing.join("\n")
         );
-        match super::widgets::confirm_modal(
+        match crate::app::widgets::confirm_modal(
             ctx,
             "folder-sync-remove",
             "Remove missing photos?",
@@ -877,7 +877,7 @@ impl Editor {
         // master's family.
         let relink = open.map(|id| (id, open_master.unwrap_or(id), open_move));
         let ctx = ctx.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             ctx.clone(),
             move |tx| {
@@ -894,7 +894,7 @@ impl Editor {
                     // Applied: what follows must not lose it, nor where the
                     // open photo's file went.
                     let opened = crate::catalog_session::CatalogSession::open(&location)
-                        .map(|opened| super::library::Library::new(opened, ctx.clone()));
+                        .map(|opened| crate::app::library::Library::new(opened, ctx.clone()));
                     let library = match opened {
                         Ok(mut library) => {
                             synced_message(&mut library, &plan, &applied);
@@ -940,7 +940,7 @@ impl Editor {
             self.clear_reference();
         }
     }
-    pub(super) fn folder_synced(&mut self, result: Result<Box<Synced>, String>) {
+    pub(in crate::app) fn folder_synced(&mut self, result: Result<Box<Synced>, String>) {
         let synced = match result {
             Ok(synced) => synced,
             Err(e) => {
@@ -1038,11 +1038,11 @@ fn nothing_to_do(plan: &SyncPlan) -> bool {
 /// The top bar after applying: "Synchronized · 14 updated · 32 added ·
 /// 5 still missing", or Find on Disk's "Relinked 9 photos", with every
 /// detail on hover.
-fn synced_message(library: &mut super::library::Library, plan: &SyncPlan, applied: &Applied) {
+fn synced_message(library: &mut crate::app::library::Library, plan: &SyncPlan, applied: &Applied) {
     if matches!(plan.kind(), PlanKind::FindOnDisk { .. }) {
         let mut summary = format!(
             "Relinked {}",
-            super::widgets::plural(applied.moved.len(), "photo", "photos")
+            crate::app::widgets::plural(applied.moved.len(), "photo", "photos")
         );
         if !applied.skipped.is_empty() {
             summary.push_str(&format!(" \u{b7} {} skipped", applied.skipped.len()));
@@ -1055,7 +1055,7 @@ fn synced_message(library: &mut super::library::Library, plan: &SyncPlan, applie
         if !applied.protected.is_empty() {
             detail.push(format!(
                 "{} kept their edit protected: it was saved for another version of the file",
-                super::widgets::plural(applied.protected.len(), "photo", "photos")
+                crate::app::widgets::plural(applied.protected.len(), "photo", "photos")
             ));
         }
         if detail.is_empty() {
@@ -1093,7 +1093,7 @@ fn synced_message(library: &mut super::library::Library, plan: &SyncPlan, applie
     if !applied.protected.is_empty() {
         detail.push(format!(
             "{} kept their edit protected: it was saved for another version of the file",
-            super::widgets::plural(applied.protected.len(), "photo", "photos")
+            crate::app::widgets::plural(applied.protected.len(), "photo", "photos")
         ));
     }
     for n in &plan.not_checked {
@@ -1178,7 +1178,7 @@ impl Review {
             0 => format!("Relink \u{201c}{}\u{201d}", self.name),
             n => format!(
                 "Found {} in this folder",
-                super::widgets::plural(n, "other missing photo", "other missing photos")
+                crate::app::widgets::plural(n, "other missing photo", "other missing photos")
             ),
         }
     }
@@ -1269,7 +1269,7 @@ impl Review {
                 picked
                     .to
                     .parent()
-                    .map(super::widgets::pretty_path)
+                    .map(crate::app::widgets::pretty_path)
                     .unwrap_or_default()
             )];
             if let Some(root) = picked.new_root() {
@@ -1285,24 +1285,28 @@ impl Review {
         let mut parts = Vec::new();
         let moved = p.moves.len();
         if moved > 0 {
-            parts.push(super::widgets::plural(moved, "photo moved", "photos moved"));
+            parts.push(crate::app::widgets::plural(
+                moved,
+                "photo moved",
+                "photos moved",
+            ));
         }
         let new = p.additions.len();
         if new > 0 {
-            parts.push(super::widgets::plural(new, "new file", "new files"));
+            parts.push(crate::app::widgets::plural(new, "new file", "new files"));
         }
         if !p.missing.is_empty() {
             parts.push(format!("{} missing", p.missing.len()));
         }
         if !p.choices.is_empty() {
-            parts.push(super::widgets::plural(
+            parts.push(crate::app::widgets::plural(
                 p.choices.len(),
                 "needs a choice",
                 "need a choice",
             ));
         }
         if !p.gone_folders.is_empty() {
-            parts.push(super::widgets::plural(
+            parts.push(crate::app::widgets::plural(
                 p.gone_folders.len(),
                 "folder gone",
                 "folders gone",
@@ -1331,7 +1335,7 @@ impl Review {
             .and_then(|root| path.strip_prefix(root).ok())
         {
             Some(rest) => rest.display().to_string(),
-            None => super::widgets::pretty_path(path),
+            None => crate::app::widgets::pretty_path(path),
         }
     }
     /// The folder `dir` by name: its path from the folder synchronized, or
@@ -1367,7 +1371,7 @@ impl Review {
                     egui::RichText::new(format!(
                         "\u{26a0}  The old drive of {} isn't connected. The files found here match by checksum; \
                          the catalog uses them from now on, even if the old ones are still there.",
-                        super::widgets::plural(offline, "photo", "photos")
+                        crate::app::widgets::plural(offline, "photo", "photos")
                     ))
                     .size(text::LABEL)
                     .color(palette.tone(Tone::SOFT)),
@@ -1544,7 +1548,7 @@ impl Review {
                 ui.label(
                     egui::RichText::new(format!(
                         "\u{24d8}  {} no longer on disk {} removed from the catalog once {} no photos.",
-                        super::widgets::plural(n, "folder", "folders"),
+                        crate::app::widgets::plural(n, "folder", "folders"),
                         if n == 1 { "is" } else { "are" },
                         if n == 1 { "it holds" } else { "they hold" }
                     ))
@@ -1575,7 +1579,7 @@ impl Review {
                 ui.label(
                     egui::RichText::new(format!(
                         "\u{24d8}  {} could not be checked here, so nothing in {} counts as missing.",
-                        super::widgets::plural(not_checked, "place", "places"),
+                        crate::app::widgets::plural(not_checked, "place", "places"),
                         if not_checked == 1 { "it" } else { "them" }
                     ))
                     .size(text::LABEL)
@@ -1708,19 +1712,19 @@ impl Kind {
         match self {
             Self::Moved => format!(
                 "Update {} moved or renamed",
-                super::widgets::plural(n, "photo", "photos")
+                crate::app::widgets::plural(n, "photo", "photos")
             ),
             Self::Probable => format!(
                 "{} probably moved",
-                super::widgets::plural(n, "photo", "photos")
+                crate::app::widgets::plural(n, "photo", "photos")
             ),
             Self::New => format!(
                 "Add {}",
-                super::widgets::plural(n, "new photo", "new photos")
+                crate::app::widgets::plural(n, "new photo", "new photos")
             ),
             Self::Copies => format!(
                 "Add {}",
-                super::widgets::plural(
+                crate::app::widgets::plural(
                     n,
                     "copy of a photo already here",
                     "copies of photos already here"
@@ -1728,11 +1732,11 @@ impl Kind {
             ),
             Self::Missing => format!(
                 "Remove {} from the catalog",
-                super::widgets::plural(n, "missing photo", "missing photos")
+                crate::app::widgets::plural(n, "missing photo", "missing photos")
             ),
             Self::Choice => format!(
                 "{} found more than once",
-                super::widgets::plural(n, "photo", "photos")
+                crate::app::widgets::plural(n, "photo", "photos")
             ),
         }
     }
@@ -1815,7 +1819,7 @@ fn kind_icon(ui: &mut egui::Ui, palette: &theme::Palette, kind: Kind) {
             tint,
         );
     } else {
-        super::icons::paint_at(ui.painter(), kind.icon(), rect.center(), 13., tint);
+        crate::app::icons::paint_at(ui.painter(), kind.icon(), rect.center(), 13., tint);
     }
 }
 
@@ -2021,7 +2025,7 @@ fn check(
         );
     }
     if filled && on {
-        super::icons::paint_at(
+        crate::app::icons::paint_at(
             painter,
             Icon::Check,
             rect.center(),
@@ -2964,7 +2968,7 @@ mod tests {
             .expanded
             .extend(["verified", "new", "copies", "missing"]);
         let mut textures = Default::default();
-        let image = super::super::ui_snapshot::render(
+        let image = crate::app::ui_snapshot::render(
             &ctx,
             &mut textures,
             egui::vec2(1100., 1500.),
@@ -2980,7 +2984,7 @@ mod tests {
         let review = e.folder_sync.review.as_mut().expect("a review");
         review.plan.choices.clear();
         review.picks.clear();
-        let image = super::super::ui_snapshot::render(
+        let image = crate::app::ui_snapshot::render(
             &ctx,
             &mut textures,
             egui::vec2(1100., 1500.),

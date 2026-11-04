@@ -1,5 +1,5 @@
 //! Quitting, however it happens: the steps of docs/shutdown.md's exit sequence.
-use super::{Editor, task, workflow::Flushed};
+use crate::app::{Editor, task, workflow::Flushed};
 use std::{
     sync::atomic::Ordering,
     time::{Duration, Instant},
@@ -9,7 +9,7 @@ use std::{
 /// preview renderer can wait up to 10 s for one GPU submission, but a quit that
 /// hangs is worse than a render cut off; the loaders and exports write through
 /// temporary files.
-pub(super) const DEADLINE: Duration = Duration::from_secs(3);
+pub(in crate::app) const DEADLINE: Duration = Duration::from_secs(3);
 /// How long quitting then waits for the temporary files of cut-off exports to be
 /// deleted: they are on the folder an export stalled on, which can stall this too.
 const CLEANUP: Duration = Duration::from_millis(500);
@@ -28,7 +28,7 @@ impl Editor {
     /// nothing to do. Then the workers that write or hold the GPU are stopped and
     /// waited for, before eframe drops the device. A close the guard let through
     /// keeps the deadline it started with its save.
-    pub(super) fn exit(&mut self) -> task::Waited {
+    pub(in crate::app) fn exit(&mut self) -> task::Waited {
         let until = self
             .quit_by
             .take()
@@ -37,7 +37,7 @@ impl Editor {
     }
     /// The exit sequence, with `deadline` for all of it.
     #[cfg(test)]
-    pub(super) fn exit_within(&mut self, deadline: Duration) -> task::Waited {
+    pub(in crate::app) fn exit_within(&mut self, deadline: Duration) -> task::Waited {
         self.exit_by(Instant::now() + deadline)
     }
     /// The exit sequence, done by `until`. The workers wind down while the edit saves.
@@ -52,7 +52,7 @@ impl Editor {
             Flushed::Failed => eprintln!("{}", self.messages.line()),
             Flushed::Late => eprintln!("Edits not saved: the catalog did not answer in time"),
         }
-        self.remember_place(super::workspace::LayoutEdit::Settled);
+        self.remember_place(crate::app::workspace::LayoutEdit::Settled);
         // Only now: the save went through it.
         stopping.push(self.autosave.close());
         let waited = task::wait_for(stopping, until.saturating_duration_since(Instant::now()));

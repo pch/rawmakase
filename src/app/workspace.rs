@@ -1,20 +1,20 @@
-use super::Editor;
-use super::dialogs::{CatalogDialog, FolderAction};
-use super::messages::Topic;
-use super::panels::WorkspacePanel;
-use super::state::Tool;
-use super::widgets::{TOP_BAR_SEGMENTS, segment_bar};
-use super::work::{FILE_CHANGE, FOLDER_CHANGE, OUTPUT};
-use super::workflow::Flushed;
+use crate::app::Editor;
 use crate::app::Module;
 use crate::app::design::{self, Tone, inset, space, text};
+use crate::app::dialogs::{CatalogDialog, FolderAction};
+use crate::app::messages::Topic;
+use crate::app::panels::WorkspacePanel;
+use crate::app::state::Tool;
 use crate::app::theme;
+use crate::app::widgets::{TOP_BAR_SEGMENTS, segment_bar};
+use crate::app::work::{FILE_CHANGE, FOLDER_CHANGE, OUTPUT};
+use crate::app::workflow::Flushed;
 use crate::catalog::PhotoId;
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use std::time::{Duration, Instant};
 
 impl Editor {
-    pub(super) fn workspace_modal(&self) -> bool {
+    pub(in crate::app) fn workspace_modal(&self) -> bool {
         self.preferences.open
             || self.export_modal()
             || self.modal.is_some()
@@ -30,9 +30,9 @@ impl Editor {
     /// (`library::outbox`). A request that opens a window (Remove Copy, Remove Folder,
     /// Read Metadata, a file operation) while another is open, or one opened earlier
     /// this frame, is refused with a message rather than replacing it.
-    pub(super) fn library_requests(&mut self, ctx: &egui::Context) {
-        use super::library::{FileRequest, PreviewsRequest, outbox::Request};
+    pub(in crate::app) fn library_requests(&mut self, ctx: &egui::Context) {
         use crate::app::library::CopyAction;
+        use crate::app::library::{FileRequest, PreviewsRequest, outbox::Request};
         while let Some(request) = self.library.as_mut().and_then(|l| l.next_request()) {
             // Each of these opens a window: a confirmation, a folder to choose, a
             // name to type.
@@ -58,9 +58,11 @@ impl Editor {
                 }
                 Request::Sync(scope, name) => self.start_folder_sync(scope, name),
                 Request::Find(photo) => self.choose_file_on_disk(photo, ctx),
-                Request::Removal(removal) => self.modal = Some(super::Modal::RemoveFolder(removal)),
+                Request::Removal(removal) => {
+                    self.modal = Some(crate::app::Modal::RemoveFolder(removal))
+                }
                 Request::Export(request) => self.export_as_catalog(request),
-                Request::Read(ids) => self.modal = Some(super::Modal::ReadMetadata(ids)),
+                Request::Read(ids) => self.modal = Some(crate::app::Modal::ReadMetadata(ids)),
                 Request::File(FileRequest::Remove(ids)) => self.request_photo_removal(ids),
                 Request::File(FileRequest::Delete(ids)) => self.request_photo_delete(ids, false),
                 Request::File(FileRequest::Trash(ids)) => self.request_photo_trash(ids),
@@ -99,11 +101,11 @@ impl Editor {
         }
     }
     /// Whether the Library's Auto-Stack by Capture Time window is open.
-    pub(super) fn auto_stack_open(&self) -> bool {
+    pub(in crate::app) fn auto_stack_open(&self) -> bool {
         self.library.as_ref().is_some_and(|l| l.auto_stack_open())
     }
 
-    pub(super) fn metadata_shortcuts(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn metadata_shortcuts(&mut self, ctx: &egui::Context) {
         if self.activity.is_busy() {
             return;
         }
@@ -140,7 +142,7 @@ impl Editor {
     /// the Library in front and nothing else rendering, neither an export, a
     /// preview build, Develop's load, an output a command started, nor AI
     /// Denoise.
-    pub(super) fn preview_pace(&self) -> crate::app::library::Pace {
+    pub(in crate::app) fn preview_pace(&self) -> crate::app::library::Pace {
         if self.module == Module::Library && !self.work_slows_previews() {
             crate::app::library::Pace::Full
         } else {
@@ -151,13 +153,13 @@ impl Editor {
     /// drawn: control requests, worker results (a photo loading, an export
     /// finishing) and saving what they changed. Each only takes what is new,
     /// so running it twice in a pass changes nothing.
-    pub(super) fn background(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn background(&mut self, ctx: &egui::Context) {
         self.control_commands(ctx);
         self.events(ctx);
         self.finish_paused_turn(ctx);
         self.save_when_due(ctx);
     }
-    pub(super) fn draw(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         // Before any field takes this frame's keys, or gives them up.
         let typing = ctx.text_edit_focused();
@@ -311,10 +313,10 @@ impl Editor {
         self.pending_work(&ctx);
         #[cfg(target_os = "macos")]
         self.update_native_menu(&ctx);
-        super::panels::keep_resize_cursor(&ctx);
+        crate::app::panels::keep_resize_cursor(&ctx);
         let collapsed = ctx.data(|d| {
             d.get_temp::<std::collections::BTreeSet<String>>(
-                super::widgets::collapsed_sections_id(),
+                crate::app::widgets::collapsed_sections_id(),
             )
         });
         if let Some(collapsed) = collapsed
@@ -324,7 +326,9 @@ impl Editor {
             let _ = self.save_session();
         }
         let solo = ctx.data(|d| {
-            d.get_temp::<std::collections::BTreeSet<String>>(super::widgets::solo_sections_id())
+            d.get_temp::<std::collections::BTreeSet<String>>(
+                    crate::app::widgets::solo_sections_id(),
+                )
         });
         if let Some(solo) = solo
             && solo != self.solo
@@ -348,14 +352,14 @@ impl Editor {
         self.messages.show(&ctx);
     }
     /// What the Library said since last asked is said by the app.
-    pub(super) fn take_library_messages(&mut self) {
+    pub(in crate::app) fn take_library_messages(&mut self) {
         if let Some(library) = &mut self.library {
             self.messages.absorb(&mut library.messages);
         }
     }
     /// Saves the session when the window is maximized or restored. A minimized
     /// window keeps what it was: Windows reports it as not maximized.
-    pub(super) fn remember_maximized(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn remember_maximized(&mut self, ctx: &egui::Context) {
         if !KEEPS_MAXIMIZED {
             return;
         }
@@ -398,7 +402,7 @@ impl Editor {
         }
     }
     /// Saves the session when the place in the catalog, or a settled layout, changed.
-    pub(super) fn remember_place(&mut self, layout: LayoutEdit) {
+    pub(in crate::app) fn remember_place(&mut self, layout: LayoutEdit) {
         let place = self.current_place();
         let shown = self.library.as_ref().map(|l| l.layout());
         let layout_changed = layout == LayoutEdit::Settled
@@ -532,7 +536,7 @@ impl Editor {
     /// typed in it is saved first, as hiding the panel does; false, with the
     /// chrome still up, if it could not be. With no photo for the Library's
     /// next step, the chrome comes back.
-    pub(super) fn toggle_chrome(&mut self) -> bool {
+    pub(in crate::app) fn toggle_chrome(&mut self) -> bool {
         if self.chrome.shown(self.module)
             && self.module == Module::Library
             && !self.commit_library_drafts()
@@ -544,7 +548,7 @@ impl Editor {
         self.chrome_view(view);
         // No photo to give the window to, as a search matching none leaves
         // the grid: the press brings the chrome back instead.
-        if view == super::chrome::View::OpenLoupe
+        if view == crate::app::chrome::View::OpenLoupe
             && !self.library.as_ref().is_some_and(|l| l.loupe_open())
         {
             let shown = self.chrome.show();
@@ -554,21 +558,21 @@ impl Editor {
     }
     /// Applies what the whole-window mode did to the Library's view: the photo
     /// takes the window, or the grid takes it back.
-    pub(super) fn chrome_view(&mut self, view: super::chrome::View) {
+    pub(in crate::app) fn chrome_view(&mut self, view: crate::app::chrome::View) {
         let Some(library) = &mut self.library else {
             return;
         };
         match view {
-            super::chrome::View::Unchanged => {}
-            super::chrome::View::OpenLoupe => library.open_loupe(),
-            super::chrome::View::CloseLoupe => library.close_loupe(),
+            crate::app::chrome::View::Unchanged => {}
+            crate::app::chrome::View::OpenLoupe => library.open_loupe(),
+            crate::app::chrome::View::CloseLoupe => library.close_loupe(),
         }
     }
 
     /// The catalog menu under the catalog's name: where it is, adding photos,
     /// other catalogs, Lightroom, and its settings.
     fn catalog_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        use super::icons::Icon;
+        use crate::app::icons::Icon;
         let palette = theme::palette(ctx);
         ui.set_width(268.);
         ui.spacing_mut().item_spacing = Vec2::ZERO;
@@ -598,7 +602,7 @@ impl Editor {
                         .size(text::BODY)
                         .color(palette.tone(Tone::STRONG)),
                 )
-                .on_hover_text(super::widgets::pretty_path(path));
+                .on_hover_text(crate::app::widgets::pretty_path(path));
                 ui.add_space(space::XXS);
                 let photos = match library.session.photos().len() {
                     1 => "1 photo".to_string(),
@@ -761,9 +765,9 @@ impl Editor {
                 palette.tone(Tone::FAINT),
             );
         }
-        super::icons::paint_at(
+        crate::app::icons::paint_at(
             ui.painter(),
-            super::icons::Icon::ChevronDown,
+            crate::app::icons::Icon::ChevronDown,
             Pos2::new(chevron_x, rect.center().y),
             11.,
             palette.tone(if lit { Tone::TEXT } else { Tone::FAINT }),
@@ -776,14 +780,18 @@ impl Editor {
     fn shortcuts_button(&mut self, ui: &mut egui::Ui) {
         let hover = format!(
             "Keyboard shortcuts · {}",
-            super::shortcuts::keys_text("Cmd+/")
+            crate::app::shortcuts::keys_text("Cmd+/")
         );
-        if super::shortcuts::icon_button(ui, super::icons::Icon::Keyboard, &hover).clicked() {
+        if crate::app::shortcuts::icon_button(ui, crate::app::icons::Icon::Keyboard, &hover)
+            .clicked()
+        {
             self.view.shortcuts = !self.view.shortcuts;
         }
     }
     fn report_issue_button(&mut self, ui: &mut egui::Ui) {
-        if super::shortcuts::icon_button(ui, super::icons::Icon::Bug, "Report an issue").clicked() {
+        if crate::app::shortcuts::icon_button(ui, crate::app::icons::Icon::Bug, "Report an issue")
+            .clicked()
+        {
             self.open_report_issue();
         }
     }
@@ -793,11 +801,11 @@ impl Editor {
         } else {
             "Ctrl+,"
         };
-        if super::preferences::gear_button(ui)
+        if crate::app::preferences::gear_button(ui)
             .on_hover_text(format!("Preferences · {shortcut}"))
             .clicked()
         {
-            self.open_preferences(super::preferences::Tab::General);
+            self.open_preferences(crate::app::preferences::Tab::General);
         }
     }
     /// Lightroom's top panel: progress on the left, module picker on the
@@ -837,7 +845,7 @@ impl Editor {
                         ui.add_space(space::M);
                     }
                     if self.activity.is_busy() {
-                        super::widgets::spinner(ui, 14.);
+                        crate::app::widgets::spinner(ui, 14.);
                     }
                     let start = ui.cursor().left();
                     self.export_progress(ui);
@@ -933,7 +941,7 @@ impl Editor {
         // stay in Develop.
         if self.view.tool != Tool::None
             || self.view.compare.shows_before()
-            || self.view.compare == super::before_after::Compare::CameraThumbnail
+            || self.view.compare == crate::app::before_after::Compare::CameraThumbnail
             || self.view.clipping != Default::default()
             || self.presets.preview.is_some()
         {
@@ -1007,7 +1015,7 @@ impl Editor {
                 )
             });
             if sync && !self.sync_targets().is_empty() {
-                self.open_copy_dialog(super::settings_transfer::Transfer::Sync);
+                self.open_copy_dialog(crate::app::settings_transfer::Transfer::Sync);
             }
             // Lightroom's Auto Settings, here on each selected photo; in Develop it
             // stays the open photo's.
@@ -1018,7 +1026,7 @@ impl Editor {
                 )
             });
             if auto {
-                self.start_batch(super::sync::BatchChange::AutoSettings);
+                self.start_batch(crate::app::sync::BatchChange::AutoSettings);
             }
         }
         // The catalog's sidebar, drawn before the bar, asked for this.
@@ -1097,7 +1105,7 @@ impl Editor {
             )
             .show(ui, |ui| {
                 let busy = self.activity.is_busy();
-                let _side = super::widgets::SectionSide::enter(ui, super::widgets::SectionGroup::LibraryLeft);
+                let _side = crate::app::widgets::SectionSide::enter(ui, crate::app::widgets::SectionGroup::LibraryLeft);
                 // Preferences and the shortcuts at the foot, with the Library's
                 // Export… for the photos selected; Develop's toolbar has its own.
                 // First, so Report an Issue stays clickable while the rest of
@@ -1123,10 +1131,10 @@ impl Editor {
                                         if busy {
                                             ui.disable();
                                         }
-                                        export = super::widgets::action_button(
+                                        export = crate::app::widgets::action_button(
                                             ui,
                                             "Export…",
-                                            Some(super::icons::Icon::Export),
+                                            Some(crate::app::icons::Icon::Export),
                                             true,
                                         )
                                         .on_hover_text(if cfg!(target_os = "macos") {
@@ -1188,7 +1196,7 @@ impl Editor {
     /// The Library's view: the grid, the Loupe with its toolbar (unless the
     /// chrome is hidden) and minimap, Compare or Survey; the start screen without
     /// photos.
-    pub(super) fn library_view(
+    pub(in crate::app) fn library_view(
         &mut self,
         ui: &mut egui::Ui,
         chrome: bool,
@@ -1221,11 +1229,11 @@ impl Editor {
     }
     /// The Loupe's toolbar, under the photo: the Library's view buttons, then the
     /// magnifier and the zoom slider on the right, as Develop's toolbar has them.
-    pub(super) fn library_loupe_toolbar(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn library_loupe_toolbar(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
         // Framed and sized as Develop's toolbar, so both photo views' bars match.
         egui::Panel::bottom("library-loupe-toolbar")
-            .frame(super::toolbar::photo_toolbar_frame(&palette))
+            .frame(crate::app::toolbar::photo_toolbar_frame(&palette))
             .show_separator_line(false)
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.x = space::M;
@@ -1252,7 +1260,7 @@ impl Editor {
     }
     /// A point chosen on the minimap of a photo the Loupe shows itself: zoomed
     /// in there.
-    pub(super) fn library_inspect(&mut self, at: [f32; 2]) {
+    pub(in crate::app) fn library_inspect(&mut self, at: [f32; 2]) {
         self.view.zoom.pan = at;
         self.view.zoom.on = true;
     }
@@ -1269,9 +1277,9 @@ impl Editor {
             .max_size(420.)
             .frame(egui::Frame::side_top_panel(ui.style()).fill(fill))
             .show(ui, |ui| {
-                let _side = super::widgets::SectionSide::enter(
+                let _side = crate::app::widgets::SectionSide::enter(
                     ui,
-                    super::widgets::SectionGroup::LibraryRight,
+                    crate::app::widgets::SectionGroup::LibraryRight,
                 );
                 // Sync Settings at the foot, as in Lightroom: the active photo's
                 // settings onto the rest of the selection.
@@ -1284,7 +1292,7 @@ impl Editor {
                         .show(ui, |ui| {
                             let layout = egui::Layout::right_to_left(egui::Align::Center);
                             ui.with_layout(layout, |ui| {
-                                sync = super::widgets::action_button(
+                                sync = crate::app::widgets::action_button(
                                     ui,
                                     "Sync Settings…",
                                     None,
@@ -1296,7 +1304,7 @@ impl Editor {
                         });
                 }
                 if sync {
-                    self.open_copy_dialog(super::settings_transfer::Transfer::Sync);
+                    self.open_copy_dialog(crate::app::settings_transfer::Transfer::Sync);
                 }
                 // Quick Develop's Saved Preset and Auto Settings, on the selection.
                 let count = self.batch_target_count();
@@ -1304,7 +1312,7 @@ impl Editor {
                 let mut quick = None;
                 if let Some(library) = &mut self.library {
                     action.then(library.info_panel(ui, |ui| {
-                        quick = super::batch::quick_develop(ui, presets, count)
+                        quick = crate::app::batch::quick_develop(ui, presets, count)
                     }));
                 }
                 if let Some(request) = quick {
@@ -1356,7 +1364,7 @@ impl Editor {
     /// Develop's zoom keys, shared with the Library's Loupe: Cmd+= and Cmd+-
     /// step through the zoom levels, Z toggles Fit and the last zoom. F is not
     /// here: it hides the chrome (see `chrome`), as Lightroom's does.
-    pub(super) fn zoom_keys(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn zoom_keys(&mut self, ctx: &egui::Context) {
         use egui::Key;
         // Each key with the modifiers held for it, which a quick shortcut
         // can release in the same frame.
@@ -1397,7 +1405,7 @@ impl Editor {
             }
         }
     }
-    pub(super) fn develop_shortcuts(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn develop_shortcuts(&mut self, ctx: &egui::Context) {
         self.view.masking.expire_rename(ctx.cumulative_pass_nr());
         if !self.activity.is_busy() && !ctx.text_edit_focused() {
             self.zoom_keys(ctx);
@@ -1421,7 +1429,7 @@ impl Editor {
                 // After (→) and Swap (↑), with Cmd+Option+Shift.
                 let m = i.modifiers;
                 if m.command && m.alt && m.shift {
-                    use super::before_after::Transfer;
+                    use crate::app::before_after::Transfer;
                     transfer = [
                         (egui::Key::ArrowLeft, Transfer::AfterToBefore),
                         (egui::Key::ArrowRight, Transfer::BeforeToAfter),
@@ -1443,7 +1451,7 @@ impl Editor {
                         if *key == egui::Key::Y || *physical_key == Some(egui::Key::Y))
                 });
                 if y && !m.command {
-                    use super::before_after::{Axis, Compare};
+                    use crate::app::before_after::{Axis, Compare};
                     let view = if m.alt {
                         Compare::SideBySide(Axis::TopBottom)
                     } else if m.shift {
@@ -1607,7 +1615,7 @@ impl Editor {
                     let view = self
                         .view
                         .compare
-                        .toggled(super::before_after::Compare::BeforeOnly);
+                        .toggled(crate::app::before_after::Compare::BeforeOnly);
                     self.set_compare(view);
                 }
                 if i.key_pressed(egui::Key::Enter)
@@ -1649,7 +1657,7 @@ impl Editor {
                 }
                 // New masks: K brush, M linear, Shift+M radial, Shift+J colour range.
                 if !i.modifiers.command && !i.modifiers.alt {
-                    use super::mask_tool::Kind;
+                    use crate::app::mask_tool::Kind;
                     let kind = if i.key_pressed(egui::Key::K) && !i.modifiers.shift {
                         Some(Kind::Brush)
                     } else if i.key_pressed(egui::Key::M) {
@@ -1682,16 +1690,16 @@ impl Editor {
             // As in Lightroom, Shift+Cmd+C opens Copy Settings. Not while a folder is
             // being picked: the folder question that follows would replace it.
             if copy && !self.activity.is_busy() {
-                self.open_copy_dialog(super::settings_transfer::Transfer::Copy);
+                self.open_copy_dialog(crate::app::settings_transfer::Transfer::Copy);
             }
             if match_exposures && !self.sync_targets().is_empty() && !self.activity.is_busy() {
-                self.start_sync(super::sync::BatchChange::MatchTotalExposures);
+                self.start_sync(crate::app::sync::BatchChange::MatchTotalExposures);
             }
             if new_preset && !self.activity.is_busy() {
-                self.open_copy_dialog(super::settings_transfer::Transfer::NewPreset);
+                self.open_copy_dialog(crate::app::settings_transfer::Transfer::NewPreset);
             }
             if sync && !self.sync_targets().is_empty() && !self.activity.is_busy() {
-                self.open_copy_dialog(super::settings_transfer::Transfer::Sync);
+                self.open_copy_dialog(crate::app::settings_transfer::Transfer::Sync);
             }
             if reset {
                 self.reset_settings();
@@ -1700,7 +1708,7 @@ impl Editor {
                 self.toggle_targeted(target);
             }
             if auto && !self.auto_in_effect() {
-                self.start_auto(super::worker::AutoKind::Settings);
+                self.start_auto(crate::app::worker::AutoKind::Settings);
             }
             if treatment {
                 self.toggle_treatment();
@@ -1732,7 +1740,7 @@ impl Editor {
                 ui.horizontal_centered(|ui| {
                     let display = format!(
                         "Display: {}",
-                        super::monitor::describe(
+                        crate::app::monitor::describe(
                             &self.view.monitor,
                             self.view.system_display.display()
                         )
@@ -1849,7 +1857,7 @@ impl Editor {
             .rect;
         self.drop_area = Some(area);
     }
-    pub(super) fn develop_right_panel(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn develop_right_panel(&mut self, ui: &mut egui::Ui) {
         // Dark as the catalog's sidebar, around the lighter photo.
         let fill = theme::palette(ui.ctx()).tone(Tone::WINDOW);
         egui::Panel::right("adjustments")
@@ -1858,9 +1866,9 @@ impl Editor {
             .max_size(400.)
             .frame(egui::Frame::side_top_panel(ui.style()).fill(fill))
             .show(ui, |ui| {
-                let _side = super::widgets::SectionSide::enter(
+                let _side = crate::app::widgets::SectionSide::enter(
                     ui,
-                    super::widgets::SectionGroup::DevelopRight,
+                    crate::app::widgets::SectionGroup::DevelopRight,
                 );
                 let enabled = self.document.full().is_some() && !self.view.compare.before_only();
                 // The Histogram is always shown, above the panels that scroll;
@@ -1883,11 +1891,11 @@ impl Editor {
                     .show(ui, |ui| {
                         ui.add_enabled_ui(enabled, |ui| self.histogram_ui(ui));
                     });
-                if super::inspector::has_drawer(self.view.tool) {
+                if crate::app::inspector::has_drawer(self.view.tool) {
                     // The drawers' labels are short: their controls take the room.
-                    let _labels = super::widgets::LabelColumn::enter(
+                    let _labels = crate::app::widgets::LabelColumn::enter(
                         ui,
-                        super::inspector::DRAWER_LABEL_COLUMN,
+                        crate::app::inspector::DRAWER_LABEL_COLUMN,
                     );
                     egui::ScrollArea::vertical()
                         .id_salt("tool-drawer")
@@ -1908,7 +1916,7 @@ impl Editor {
     /// close guard doesn't see (the Dock, logging out) then closes the window
     /// instead, so the guard saves first and asks if that fails: an earlier save
     /// succeeding says nothing of the next.
-    pub(super) fn quitting_would_cut_off_work(&self) -> bool {
+    pub(in crate::app) fn quitting_would_cut_off_work(&self) -> bool {
         self.closing_waits_for().is_some()
             || self.document.edit.save_state().needs_save()
             || self.library.as_ref().is_some_and(|l| l.has_drafts())
@@ -1923,11 +1931,11 @@ impl Editor {
             ctx.request_repaint_after(due + Duration::from_millis(10));
         }
     }
-    pub(super) fn pending_work(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn pending_work(&mut self, ctx: &egui::Context) {
         // After this pass's edits, which `background` ran before.
         self.save_when_due(ctx);
         if ctx.input(|i| i.viewport().close_requested()) {
-            let until = Instant::now() + super::exit::DEADLINE;
+            let until = Instant::now() + crate::app::exit::DEADLINE;
             let anyway = std::mem::take(&mut self.close_anyway);
             // A file operation stops after the photo under way; closing
             // waits for it, or goes anyway, saving nothing while it holds
@@ -2026,7 +2034,7 @@ impl Editor {
 /// Shift+Cmd+V (Paste Settings) and Option+Cmd+V (Paste from Previous) never
 /// reach the shortcuts. Their keys go back in after the clipboard events, which
 /// text fields still take. A Paste with an empty clipboard is not sent at all.
-pub(super) fn clipboard_shortcut_keys(ctx: &egui::Context, input: &mut egui::RawInput) {
+pub(in crate::app) fn clipboard_shortcut_keys(ctx: &egui::Context, input: &mut egui::RawInput) {
     let mut modifiers = ctx.input(|i| i.modifiers);
     let mut events = Vec::with_capacity(input.events.len());
     for event in input.events.drain(..) {
@@ -2091,9 +2099,9 @@ fn drop_overlay(ctx: &egui::Context, area: egui::Rect, catalog: Option<&str>) {
         34.,
         palette.accent().gamma_multiply(0.18),
     );
-    super::icons::paint_at(
+    crate::app::icons::paint_at(
         &painter,
-        super::icons::Icon::FolderPlus,
+        crate::app::icons::Icon::FolderPlus,
         c - Vec2::new(0., 44.),
         30.,
         palette.accent(),
@@ -2118,7 +2126,7 @@ fn drop_overlay(ctx: &egui::Context, area: egui::Rect, catalog: Option<&str>) {
 /// highlights and takes the click.
 fn menu_row(
     ui: &mut egui::Ui,
-    icon: super::icons::Icon,
+    icon: crate::app::icons::Icon,
     label: &str,
     enabled: bool,
 ) -> egui::Response {
@@ -2143,7 +2151,7 @@ fn menu_row(
         (true, false) => palette.tone(Tone::SOFT),
     };
     let y = rect.center().y;
-    super::icons::paint_at(
+    crate::app::icons::paint_at(
         ui.painter(),
         icon,
         egui::pos2(rect.left() + 20., y),
@@ -2181,7 +2189,7 @@ fn menu_separator(ui: &mut egui::Ui) {
 }
 
 /// The photo's backdrop around it in Develop and the Library's views.
-pub(super) const PHOTO_MARGIN: f32 = inset::STAGE;
+pub(in crate::app) const PHOTO_MARGIN: f32 = inset::STAGE;
 
 /// The status line's height, its text centred in it.
 const STATUS_HEIGHT: f32 = 26.;
@@ -2195,16 +2203,16 @@ fn status_frame(ui: &egui::Ui) -> egui::Frame {
 /// panel dragged narrower is painted only that wide but laid out as wide as
 /// its contents, leaving a strip of the window's black between. The catalog's
 /// sidebar and Develop's Presets need 224 points.
-pub(super) const PRESETS_MIN: f32 = 224.;
-pub(super) const ADJUSTMENTS_MIN: f32 = 300.;
+pub(in crate::app) const PRESETS_MIN: f32 = 224.;
+pub(in crate::app) const ADJUSTMENTS_MIN: f32 = 300.;
 /// The adjustments' width until the user drags it; Develop's tab panel folds
 /// by itself when the photo would have too little room beside it.
-pub(super) const ADJUSTMENTS_DEFAULT: f32 = 330.;
-pub(super) const LIBRARY_SIDEBAR_MIN: f32 = 224.;
-pub(super) const LIBRARY_INFO_MIN: f32 = 224.;
+pub(in crate::app) const ADJUSTMENTS_DEFAULT: f32 = 330.;
+pub(in crate::app) const LIBRARY_SIDEBAR_MIN: f32 = 224.;
+pub(in crate::app) const LIBRARY_INFO_MIN: f32 = 224.;
 
 /// The workspace bar's height; on macOS the traffic lights sit on its centre.
-pub(super) const BAR_HEIGHT: f32 = 44.;
+pub(in crate::app) const BAR_HEIGHT: f32 = 44.;
 
 /// With the chrome hidden the window has no bar to drag by. This keeps a grab
 /// beside the traffic lights, the size of their inset, so the window still
@@ -2229,7 +2237,7 @@ fn status_text(ui: &mut egui::Ui, text: &str, detail: Option<&str>, hover: Optio
 
 /// Whether the Library's layout (thumbnail size, search) may still be changing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum LayoutEdit {
+pub(in crate::app) enum LayoutEdit {
     /// A drag or typing is under way: kept once it ends.
     Changing,
     Settled,
@@ -2238,7 +2246,7 @@ pub(super) enum LayoutEdit {
 /// Whether the window opens maximized when it was left so. Not on macOS, where egui
 /// reads the state only at launch (emilk/egui#3494), so a window zoomed back out
 /// would still open zoomed.
-pub(super) const KEEPS_MAXIMIZED: bool = !cfg!(target_os = "macos");
+pub(in crate::app) const KEEPS_MAXIMIZED: bool = !cfg!(target_os = "macos");
 
 /// How long a window reopened maximized waits for the window manager to maximize
 /// it before its state is saved again: until then it shows unmaximized on X11.
@@ -2246,7 +2254,7 @@ const MAXIMIZE_GRACE: f64 = 2.;
 
 /// Reopening the window maximized, as it was left.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) enum RestoreMaximized {
+pub(in crate::app) enum RestoreMaximized {
     /// The window manager is to be asked on the first frame.
     Pending,
     /// Asked; the window's state is kept until it is maximized or `until` (egui
@@ -2279,7 +2287,8 @@ fn sync_hover(targets: usize) -> String {
     if targets == 0 {
         return format!("Select the photos to sync with the active photo · {keys}");
     }
-    let photos = super::widgets::plural(targets, "other selected photo", "other selected photos");
+    let photos =
+        crate::app::widgets::plural(targets, "other selected photo", "other selected photos");
     format!("Sync the active photo's settings to {photos} · {keys}")
 }
 

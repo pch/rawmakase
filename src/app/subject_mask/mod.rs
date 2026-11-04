@@ -8,10 +8,10 @@ mod models;
 mod ui;
 mod worker;
 
-pub(super) use ui::paint_feature_icon;
+pub(in crate::app) use ui::paint_feature_icon;
 
-use super::Editor;
-use super::task::{Stopping, Task};
+use crate::app::Editor;
+use crate::app::task::{Stopping, Task};
 use crate::model::masks::{
     BITMAP_SAMPLING, BitmapMask, BitmapSource, FEATURE_SKY, FEATURE_SUBJECT, MAX_COMPONENTS,
     MAX_GROUPS, MaskComponent, MaskGroup, MaskOp, MaskShape,
@@ -21,18 +21,18 @@ use rawmakase_inference::{Point, Prompt as ModelPrompt};
 use std::hash::{Hash, Hasher};
 
 use crate::model_install::Pack;
-pub(super) use models::Models;
+pub(in crate::app) use models::Models;
 
 /// Which of the two selections a request makes. Background is the same coverage with
 /// the component inverted, so adding a brush to it still adds coverage.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Feature {
+pub(in crate::app) enum Feature {
     Subject,
     Sky,
     Background,
 }
 impl Feature {
-    pub(super) fn name(self) -> &'static str {
+    pub(in crate::app) fn name(self) -> &'static str {
         match self {
             Self::Subject => "Subject",
             Self::Sky => "Sky",
@@ -43,14 +43,14 @@ impl Feature {
         self == Self::Background
     }
     /// The models it needs.
-    pub(super) fn pack(self) -> Pack {
+    pub(in crate::app) fn pack(self) -> Pack {
         match self {
             Self::Sky => Pack::Sky,
             Self::Subject | Self::Background => Pack::Subject,
         }
     }
     /// What the raster is a selection of, as its provenance says.
-    pub(super) fn provenance(self) -> &'static str {
+    pub(in crate::app) fn provenance(self) -> &'static str {
         match self {
             Self::Sky => FEATURE_SKY,
             Self::Subject | Self::Background => FEATURE_SUBJECT,
@@ -59,7 +59,7 @@ impl Feature {
 }
 /// Which selection a generated component is, from where it came from and whether it
 /// is inverted (Background is an inverted subject).
-pub(super) fn feature_of(b: &BitmapMask, invert: bool) -> Feature {
+pub(in crate::app) fn feature_of(b: &BitmapMask, invert: bool) -> Feature {
     match b.source.as_ref().map(|s| s.feature.as_str()) {
         Some(FEATURE_SKY) => Feature::Sky,
         _ if invert => Feature::Background,
@@ -69,14 +69,14 @@ pub(super) fn feature_of(b: &BitmapMask, invert: bool) -> Feature {
 
 /// What a job does: finds the photo's subject or sky by itself, or answers clicks.
 #[derive(Clone, Debug)]
-pub(super) enum Action {
+pub(in crate::app) enum Action {
     Auto(Feature),
     Click(ModelPrompt),
 }
 
 /// What a finished selection does to the edit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Target {
+pub(in crate::app) enum Target {
     /// A new mask holding the selection.
     NewMask,
     /// A component of the selected mask, combined with `op`.
@@ -87,9 +87,9 @@ pub(super) enum Target {
 
 /// A request, as it was made.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Request {
-    pub(super) feature: Feature,
-    pub(super) target: Target,
+pub(in crate::app) struct Request {
+    pub(in crate::app) feature: Feature,
+    pub(in crate::app) target: Target,
 }
 
 /// Why a selection did not make a mask; the drawer says so with a way to try again.
@@ -247,7 +247,7 @@ struct Pending {
 
 /// What the drawer asks the user before a selection can run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Prompt {
+pub(in crate::app) enum Prompt {
     /// The models have to be downloaded.
     Model(Request),
     /// The catalog has to be upgraded to keep the result.
@@ -256,10 +256,10 @@ pub(super) enum Prompt {
 
 /// A selection being aimed: the clicks and box so far. The first one makes the mask;
 /// each further one refines that same mask until the user is done.
-pub(super) struct Prompting {
-    pub(super) request: Request,
-    pub(super) points: Vec<Point>,
-    pub(super) bounds: Option<[f32; 4]>,
+pub(in crate::app) struct Prompting {
+    pub(in crate::app) request: Request,
+    pub(in crate::app) points: Vec<Point>,
+    pub(in crate::app) bounds: Option<[f32; 4]>,
     /// The mask and component the first result made (or the one being regenerated).
     applied: Option<(usize, usize)>,
 }
@@ -272,11 +272,11 @@ impl Prompting {
 }
 
 #[derive(Default)]
-pub(super) struct Selection {
+pub(in crate::app) struct Selection {
     /// Waiting for clicks on the photo.
-    pub(super) prompting: Option<Prompting>,
+    pub(in crate::app) prompting: Option<Prompting>,
     /// Where a drag for a box began, in image space.
-    pub(super) drag_from: Option<[f32; 2]>,
+    pub(in crate::app) drag_from: Option<[f32; 2]>,
     /// The running selection's generation; a newer request or a new photo supersedes.
     task: Task,
     pending: Option<Pending>,
@@ -284,10 +284,10 @@ pub(super) struct Selection {
     failure: Option<(Request, Failure)>,
     prompt: Option<Prompt>,
     worker: worker::Worker,
-    pub(super) models: Models,
+    pub(in crate::app) models: Models,
     /// The remote worker to ask instead, when configured; `Default` reads
     /// nothing until the endpoint is asked for.
-    pub(super) remote: worker::RemoteConfig,
+    pub(in crate::app) remote: worker::RemoteConfig,
     /// A catalog upgrade under way, and the request it unblocks.
     upgrading: Option<(u64, Request)>,
     upgrade_task: Task,
@@ -300,23 +300,23 @@ pub(super) struct Selection {
 
 impl Selection {
     /// Whether a selection is running.
-    pub(super) fn running(&self) -> Option<Request> {
+    pub(in crate::app) fn running(&self) -> Option<Request> {
         self.pending.as_ref().map(|p| p.request)
     }
     /// Stops the running selection, whatever it is for (a new photo, Cancel).
-    pub(super) fn cancel(&mut self) {
+    pub(in crate::app) fn cancel(&mut self) {
         self.task.invalidate();
         self.pending = None;
     }
     /// Stops aiming (Done, Escape, a new photo).
-    pub(super) fn end_prompting(&mut self) {
+    pub(in crate::app) fn end_prompting(&mut self) {
         self.prompting = None;
         self.drag_from = None;
     }
     /// The photo changed: nothing asked for the previous one applies, an upgrade under
     /// way included; it finishes, but does not go on to select in this photo. Its
     /// thread is still waited for at exit.
-    pub(super) fn clear_document(&mut self) {
+    pub(in crate::app) fn clear_document(&mut self) {
         self.cancel();
         self.end_prompting();
         self.failure = None;
@@ -325,13 +325,13 @@ impl Selection {
         self.upgrade_task.invalidate();
     }
     /// The catalog changed.
-    pub(super) fn clear_catalog(&mut self) {
+    pub(in crate::app) fn clear_catalog(&mut self) {
         self.clear_document();
     }
     /// Workers to wait for when quitting: inference is asked to stop and handed to the
     /// shared deadline, never joined without one. An upgrade's backup copy is finished
     /// within that deadline too, rather than cut off.
-    pub(super) fn stop(&mut self) -> Vec<Stopping> {
+    pub(in crate::app) fn stop(&mut self) -> Vec<Stopping> {
         self.cancel();
         self.end_prompting();
         let mut stopping = vec![
@@ -347,7 +347,7 @@ impl Selection {
 
 impl Editor {
     /// Why Subject and Background cannot be made now, for the drawer to say.
-    pub(super) fn selection_unavailable(&self) -> Option<&'static str> {
+    pub(in crate::app) fn selection_unavailable(&self) -> Option<&'static str> {
         if self.library.is_none() || self.document.catalog_photo.is_none() {
             return Some("Add this photo to a catalog to use AI masks");
         }
@@ -361,7 +361,7 @@ impl Editor {
     }
     /// Starts a selection, or asks what it needs first: the model, an upgraded
     /// catalog.
-    pub(super) fn request_selection(&mut self, request: Request) {
+    pub(in crate::app) fn request_selection(&mut self, request: Request) {
         // The frame that shows what a click did comes after it: ask for one.
         self.context.request_repaint();
         // A second click on a tile while its selection runs is not another request.
@@ -407,7 +407,7 @@ impl Editor {
     }
     /// Aims at the subject by hand, for what the models do not know (a sign, a car, a
     /// rocket): the clicks make the mask, a new one or the one `request` names.
-    pub(super) fn begin_aiming(&mut self, request: Request) {
+    pub(in crate::app) fn begin_aiming(&mut self, request: Request) {
         self.context.request_repaint();
         let remote = self.selection.remote.endpoint().is_some();
         if self.selection_unavailable().is_some()
@@ -426,13 +426,13 @@ impl Editor {
                 _ => None,
             },
         });
-        self.view.tool = super::state::Tool::Mask;
+        self.view.tool = crate::app::state::Tool::Mask;
         self.messages
             .note("Click the subject on the photo, or drag a box around it");
     }
     /// Aims at a generated component: clicks on the photo add to it and leave things
     /// out of it, each one refining the same mask.
-    pub(super) fn begin_refining(&mut self, mask: usize, component: usize) {
+    pub(in crate::app) fn begin_refining(&mut self, mask: usize, component: usize) {
         self.context.request_repaint();
         let Some(MaskShape::Bitmap(b)) = self
             .document
@@ -464,13 +464,13 @@ impl Editor {
             bounds: None,
             applied: Some((mask, component)),
         });
-        self.view.tool = super::state::Tool::Mask;
+        self.view.tool = crate::app::state::Tool::Mask;
         self.messages
             .note("Click the part of the photo to add, Alt-click to leave out");
     }
     /// A click on the photo while aiming: a point on the object (or, with `positive`
     /// false, on something to leave out). Starts or refines the selection.
-    pub(super) fn prompt_click(&mut self, at: [f32; 2], positive: bool) {
+    pub(in crate::app) fn prompt_click(&mut self, at: [f32; 2], positive: bool) {
         self.context.request_repaint();
         let Some(p) = &mut self.selection.prompting else {
             return;
@@ -512,7 +512,7 @@ impl Editor {
         self.run_prompt();
     }
     /// A box dragged on the photo while aiming (image space corners).
-    pub(super) fn prompt_box(&mut self, a: [f32; 2], b: [f32; 2]) {
+    pub(in crate::app) fn prompt_box(&mut self, a: [f32; 2], b: [f32; 2]) {
         let Some(p) = &mut self.selection.prompting else {
             return;
         };
@@ -534,14 +534,14 @@ impl Editor {
     }
     /// Forgets the clicks and box, so the next click starts the selection over (the
     /// mask made so far is replaced by it).
-    pub(super) fn clear_prompt(&mut self) {
+    pub(in crate::app) fn clear_prompt(&mut self) {
         if let Some(p) = &mut self.selection.prompting {
             p.points.clear();
             p.bounds = None;
         }
     }
     /// Runs the model on the clicks and box so far.
-    pub(super) fn run_prompt(&mut self) {
+    pub(in crate::app) fn run_prompt(&mut self) {
         let Some(p) = &self.selection.prompting else {
             return;
         };
@@ -607,14 +607,14 @@ impl Editor {
             self.context.clone(),
         );
     }
-    pub(super) fn cancel_selection(&mut self) {
+    pub(in crate::app) fn cancel_selection(&mut self) {
         self.context.request_repaint();
         self.selection.cancel();
         self.messages.note("Selection cancelled");
     }
     /// A selection finished: apply it if it is still the one wanted and the edit it
     /// was made for still stands, else drop it.
-    pub(super) fn selection_done(&mut self, done: Done) {
+    pub(in crate::app) fn selection_done(&mut self, done: Done) {
         self.apply_done(done);
         // Results set aside while this one ran: let go of the ones nothing took.
         if self.selection.pending.is_none() {
@@ -680,34 +680,35 @@ impl Editor {
             Target::Regenerate { .. } => format!("Refine {}", request.feature.name()),
             _ => format!("Select {}", request.feature.name()),
         };
-        let selected = self.change_edit(
-            Some(super::history::Step::new(name, "")),
-            |r| match request.target {
-                Target::NewMask => {
-                    let mut component = MaskComponent::new(shape);
-                    component.invert = request.feature.invert();
-                    r.masks.push(MaskGroup {
-                        name: request.feature.name().into(),
-                        components: vec![component],
-                        ..Default::default()
-                    });
-                    Some((r.masks.len() - 1, 0))
-                }
-                Target::Component { mask, op } => {
-                    let group = r.masks.get_mut(mask)?;
-                    let mut component = MaskComponent::new(shape);
-                    component.op = op;
-                    component.invert = request.feature.invert();
-                    group.components.push(component);
-                    Some((mask, group.components.len() - 1))
-                }
-                Target::Regenerate { mask, component } => {
-                    let c = r.masks.get_mut(mask)?.components.get_mut(component)?;
-                    c.shape = shape;
-                    Some((mask, component))
-                }
-            },
-        );
+        let selected =
+            self.change_edit(
+                Some(crate::app::history::Step::new(name, "")),
+                |r| match request.target {
+                    Target::NewMask => {
+                        let mut component = MaskComponent::new(shape);
+                        component.invert = request.feature.invert();
+                        r.masks.push(MaskGroup {
+                            name: request.feature.name().into(),
+                            components: vec![component],
+                            ..Default::default()
+                        });
+                        Some((r.masks.len() - 1, 0))
+                    }
+                    Target::Component { mask, op } => {
+                        let group = r.masks.get_mut(mask)?;
+                        let mut component = MaskComponent::new(shape);
+                        component.op = op;
+                        component.invert = request.feature.invert();
+                        group.components.push(component);
+                        Some((mask, group.components.len() - 1))
+                    }
+                    Target::Regenerate { mask, component } => {
+                        let c = r.masks.get_mut(mask)?.components.get_mut(component)?;
+                        c.shape = shape;
+                        Some((mask, component))
+                    }
+                },
+            );
         debug_assert!(masks <= MAX_GROUPS);
         if selected.is_none() {
             // The mask it was for is gone: nothing refers to the raster.
@@ -760,7 +761,7 @@ impl Editor {
     }
     /// The installer finished or was cancelled; a request waiting for the model goes
     /// on.
-    pub(super) fn model_installed(
+    pub(in crate::app) fn model_installed(
         &mut self,
         pack: Pack,
         result: Result<(), crate::model_install::InstallError>,
@@ -786,7 +787,7 @@ impl Editor {
         }
     }
     /// Asks the installer to download the models (the setup card's Download).
-    pub(super) fn install_model(&mut self, pack: Pack) {
+    pub(in crate::app) fn install_model(&mut self, pack: Pack) {
         self.context.request_repaint();
         self.selection
             .models
@@ -796,7 +797,7 @@ impl Editor {
     /// Installs the models from a folder holding their files, each checked as a
     /// download is: for tests, which have no network.
     #[cfg(test)]
-    pub(super) fn install_model_from(&mut self, pack: Pack, folder: std::path::PathBuf) {
+    pub(in crate::app) fn install_model_from(&mut self, pack: Pack, folder: std::path::PathBuf) {
         self.selection.models.of_mut(pack).install(
             Some(folder),
             self.tx.clone(),
@@ -804,7 +805,7 @@ impl Editor {
         );
     }
     /// Upgrades the open catalog on a thread of its own, after the edit is saved.
-    pub(super) fn upgrade_catalog(&mut self, request: Request) {
+    pub(in crate::app) fn upgrade_catalog(&mut self, request: Request) {
         self.context.request_repaint();
         let running = self
             .selection
@@ -837,7 +838,7 @@ impl Editor {
                         .map_err(|e| format!("{e:#}"))
                 })
                 .unwrap_or_else(|_| Err("the upgrade stopped unexpectedly".into()));
-                let _ = tx.send(super::worker::Event::CatalogUpgraded { generation, result });
+                let _ = tx.send(crate::app::worker::Event::CatalogUpgraded { generation, result });
                 ctx.request_repaint();
             });
         match thread {
@@ -849,7 +850,7 @@ impl Editor {
             }
         }
     }
-    pub(super) fn catalog_upgraded(
+    pub(in crate::app) fn catalog_upgraded(
         &mut self,
         generation: u64,
         result: Result<Option<std::path::PathBuf>, String>,
@@ -878,7 +879,7 @@ impl Editor {
 }
 
 /// Where a mask's raster came from, for the component settings.
-pub(super) fn source_text(b: &BitmapMask) -> String {
+pub(in crate::app) fn source_text(b: &BitmapMask) -> String {
     match b.source.as_ref().map(|s| s.feature.as_str()) {
         Some(FEATURE_SUBJECT) => "Found by the subject models".into(),
         Some(FEATURE_SKY) => "Found by the sky detector".into(),

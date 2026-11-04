@@ -1,5 +1,5 @@
 //! The Basic panel's Auto, estimated off the UI thread.
-use super::{
+use crate::app::{
     Editor,
     history::Step,
     worker::{AutoKind, Event},
@@ -30,7 +30,7 @@ impl Editor {
     /// Whether the tone sliders, Vibrance and Saturation are as Auto last set them and
     /// nothing Auto measures has changed since, so running it again would change nothing. Adjustments Auto does not
     /// measure (curves, presence, color and the like) leave it in effect.
-    pub(super) fn auto_in_effect(&self) -> bool {
+    pub(in crate::app) fn auto_in_effect(&self) -> bool {
         let r = self.document.edit.recipe();
         if let Some((seen, in_effect)) = &*self.document.auto_effect.borrow()
             && seen == r
@@ -47,7 +47,7 @@ impl Editor {
 
     /// Starts Auto for the open photo; the estimate arrives as [`Event::Auto`]. Does
     /// nothing while the photo is still decoding or an estimate is already running.
-    pub(super) fn start_auto(&mut self, kind: AutoKind) {
+    pub(in crate::app) fn start_auto(&mut self, kind: AutoKind) {
         let Some(im) = self.document.full().cloned() else {
             return;
         };
@@ -58,7 +58,7 @@ impl Editor {
         let id = self.load.id();
         let base = self.document.edit.recipe().clone();
         self.document.auto_input = Some(inputs(kind, &base));
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
@@ -84,7 +84,11 @@ impl Editor {
 
     /// Applies an Auto estimate as one History step. Only the fields Auto sets are
     /// taken, so edits made while it ran are kept.
-    pub(super) fn auto_ready(&mut self, kind: AutoKind, result: Result<Box<Recipe>, String>) {
+    pub(in crate::app) fn auto_ready(
+        &mut self,
+        kind: AutoKind,
+        result: Result<Box<Recipe>, String>,
+    ) {
         self.document.auto.invalidate();
         // The estimate was fitted to the photo as it was when Auto started. If any other
         // setting changed since, it no longer fits, and neither does an error it hit:

@@ -3,23 +3,23 @@
 //! glowing) pupil found inside that circle gets a correction. Drag a correction to move
 //! it, and a pet eye's catchlight to place it; Pupil Size, Darken and Add Catchlight
 //! change the selected one; Delete removes it.
-use super::Editor;
-use super::retouch_tool::{hint, indented};
-use super::theme;
-use super::widgets::{segmented, slider_with};
+use crate::app::Editor;
 use crate::app::design::space;
+use crate::app::retouch_tool::{hint, indented};
+use crate::app::theme;
+use crate::app::widgets::{segmented, slider_with};
 use crate::develop::red_eye::PupilGlow;
 use crate::develop::{ViewMapping, red_eye};
 use crate::model::red_eye::{EyeKind, RedEyeOp};
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
-pub(super) struct RedEyeTool {
+pub(in crate::app) struct RedEyeTool {
     /// The Type menu: what a new correction corrects.
-    pub(super) pet: PupilType,
+    pub(in crate::app) pet: PupilType,
     /// Index into the recipe's red eye corrections.
-    pub(super) selected: Option<usize>,
+    pub(in crate::app) selected: Option<usize>,
     /// The last circle's radius, as a fraction of the long edge, for clicks.
-    pub(super) size: f32,
+    pub(in crate::app) size: f32,
     drag: Drag,
 }
 impl Default for RedEyeTool {
@@ -34,7 +34,7 @@ impl Default for RedEyeTool {
 }
 /// Lightroom's Type menu.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum PupilType {
+pub(in crate::app) enum PupilType {
     Red,
     Pet,
 }
@@ -82,10 +82,10 @@ impl RedEyeTool {
         });
     }
     /// The click circle scaled by `k`, within sizes a pupil can have.
-    pub(super) fn scale(&mut self, k: f32) {
+    pub(in crate::app) fn scale(&mut self, k: f32) {
         self.size = (self.size * k).clamp(0.002, 0.25);
     }
-    pub(super) fn clear_document(&mut self) {
+    pub(in crate::app) fn clear_document(&mut self) {
         self.selected = None;
         self.drag = Drag::None;
     }
@@ -93,7 +93,7 @@ impl RedEyeTool {
 impl Editor {
     /// Handles the pointer on the photo and draws the corrections. The tool owns the
     /// pointer.
-    pub(super) fn red_eye_overlay(
+    pub(in crate::app) fn red_eye_overlay(
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
@@ -230,7 +230,7 @@ impl Editor {
     }
     /// Corrects the pupil (red, or glowing for Pet Eye) found within `size` (long-edge
     /// fraction) of image position `center`, or says none was found.
-    pub(super) fn add_red_eye(&mut self, center: [f32; 2], size: f32) {
+    pub(in crate::app) fn add_red_eye(&mut self, center: [f32; 2], size: f32) {
         if self.document.edit.recipe().red_eye.len() >= crate::model::red_eye::MAX_OPS {
             self.messages
                 .warn("Too many red eye corrections on this photo");
@@ -292,7 +292,7 @@ impl Editor {
     }
     /// Selects correction `i`; its type becomes the one new corrections get, as the
     /// Type menu shows it.
-    pub(super) fn select_red_eye(&mut self, i: Option<usize>) {
+    pub(in crate::app) fn select_red_eye(&mut self, i: Option<usize>) {
         self.view.red_eye.selected = i;
         if let Some(op) = i.and_then(|i| self.document.edit.recipe().red_eye.get(i)) {
             self.view.red_eye.pet = PupilType::of(op.kind);
@@ -311,7 +311,7 @@ impl Editor {
     /// The Red Eye tool's keys: Delete removes the selected correction.
     /// Delete removes the selected correction; `[` and `]` resize the circle a click
     /// corrects within, as they size the Remove brush.
-    pub(super) fn red_eye_keys(&mut self, i: &egui::InputState) {
+    pub(in crate::app) fn red_eye_keys(&mut self, i: &egui::InputState) {
         use egui::Key;
         if i.modifiers.command || i.modifiers.alt {
             return;
@@ -327,7 +327,7 @@ impl Editor {
             self.view.red_eye.resize(SizeStep::Larger);
         }
     }
-    pub(super) fn delete_red_eye(&mut self) {
+    pub(in crate::app) fn delete_red_eye(&mut self) {
         if let Some(i) = self.view.red_eye.selected.take()
             && i < self.document.edit.recipe().red_eye.len()
         {
@@ -335,15 +335,15 @@ impl Editor {
         }
     }
     /// The Red Eye drawer below the tool strip.
-    pub(super) fn red_eye_panel(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn red_eye_panel(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
-        super::widgets::set_edit_context(ui, "Red Eye");
+        crate::app::widgets::set_edit_context(ui, "Red Eye");
         let selected = self
             .view
             .red_eye
             .selected
             .filter(|i| *i < self.document.edit.recipe().red_eye.len());
-        super::retouch_tool::control_label(ui, "Type", |ui| {
+        crate::app::retouch_tool::control_label(ui, "Type", |ui| {
             let mut pet = selected.map_or(self.view.red_eye.pet, |i| {
                 PupilType::of(self.document.edit.recipe().red_eye[i].kind)
             });
@@ -438,7 +438,7 @@ impl Editor {
                 .on_hover_text("Close the tool")
                 .clicked()
             {
-                self.view.tool = super::state::Tool::None;
+                self.view.tool = crate::app::state::Tool::None;
             }
         });
     }

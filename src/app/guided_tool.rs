@@ -2,8 +2,8 @@
 //! guides drawn along edges that should be vertical or horizontal, each end movable,
 //! with a loupe while an end is placed and an optional grid. Every gesture is one
 //! History step, and the correction is solved again after it (docs/transform.md).
-use super::{Editor, state::Tool};
 use crate::app::design::radius;
+use crate::app::{Editor, state::Tool};
 use crate::develop::{Geometry, guided};
 use crate::model::transform::{UprightGuide, UprightMode};
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
@@ -17,27 +17,27 @@ const LINE_REACH: f32 = 5.;
 
 /// Which end of a guide.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum End {
+pub(in crate::app) enum End {
     A,
     B,
 }
 
 /// A guide being drawn or one of its ends moved, in screen points.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) enum GuideDrag {
+pub(in crate::app) enum GuideDrag {
     New { from: Pos2, to: Pos2 },
     End { guide: usize, end: End, to: Pos2 },
 }
 
 /// The Guided tool's view state: what is selected and dragged, and its view options.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct GuidedTool {
-    pub(super) selected: Option<usize>,
-    pub(super) drag: Option<GuideDrag>,
+pub(in crate::app) struct GuidedTool {
+    pub(in crate::app) selected: Option<usize>,
+    pub(in crate::app) drag: Option<GuideDrag>,
     /// Lightroom's Show Loupe: a magnified view while an end is placed.
-    pub(super) loupe: bool,
+    pub(in crate::app) loupe: bool,
     /// A grid over the photo to judge the correction by.
-    pub(super) grid: bool,
+    pub(in crate::app) grid: bool,
 }
 impl Default for GuidedTool {
     fn default() -> Self {
@@ -50,7 +50,7 @@ impl Default for GuidedTool {
     }
 }
 impl GuidedTool {
-    pub(super) fn clear_document(&mut self) {
+    pub(in crate::app) fn clear_document(&mut self) {
         self.selected = None;
         self.drag = None;
     }
@@ -96,7 +96,7 @@ fn released(
 impl Editor {
     /// Opens or closes the Guided tool (Shift+T). Opening it chooses Guided Upright,
     /// as in Lightroom.
-    pub(super) fn toggle_guided_tool(&mut self) {
+    pub(in crate::app) fn toggle_guided_tool(&mut self) {
         self.view.toggle(Tool::Guided);
         if self.view.is(Tool::Guided) {
             self.choose_guided();
@@ -104,12 +104,12 @@ impl Editor {
     }
     /// Chooses Guided Upright, analysing the photo first if it hasn't been, so the
     /// guides drawn have their correction at once.
-    pub(super) fn choose_guided(&mut self) {
+    pub(in crate::app) fn choose_guided(&mut self) {
         if self.document.edit.recipe().upright.mode != UprightMode::Guided {
             self.document.edit.recipe_mut().upright.mode = UprightMode::Guided;
             self.document
                 .edit
-                .name_next_step(super::history::Step::new("Upright", "Guided"));
+                .name_next_step(crate::app::history::Step::new("Upright", "Guided"));
         }
         let u = &self.document.edit.recipe().upright;
         if u.guides.is_empty() {
@@ -121,7 +121,7 @@ impl Editor {
     }
     /// Sets the guides as one History step and solves them; says in the status line
     /// when they correct less than they might.
-    pub(super) fn set_guides(&mut self, guides: Vec<UprightGuide>, step: &str) {
+    pub(in crate::app) fn set_guides(&mut self, guides: Vec<UprightGuide>, step: &str) {
         let im = self.document.full().cloned();
         let r = self.document.edit.recipe_mut();
         r.upright.mode = UprightMode::Guided;
@@ -151,10 +151,10 @@ impl Editor {
         };
         self.document
             .edit
-            .name_next_step(super::history::Step::new(step, value));
+            .name_next_step(crate::app::history::Step::new(step, value));
     }
     /// Deletes the selected guide (Delete).
-    pub(super) fn delete_guide(&mut self) {
+    pub(in crate::app) fn delete_guide(&mut self) {
         let Some(i) = self.view.guided.selected.take() else {
             return;
         };
@@ -165,7 +165,7 @@ impl Editor {
         }
     }
     /// The Guided tool's keys: Delete and Backspace delete the selected guide.
-    pub(super) fn guided_keys(&mut self, i: &egui::InputState) {
+    pub(in crate::app) fn guided_keys(&mut self, i: &egui::InputState) {
         if !i.modifiers.command
             && !i.modifiers.alt
             && (i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
@@ -176,7 +176,7 @@ impl Editor {
 
     /// Draws the guides over the photo shown at `rect` and handles drawing, moving and
     /// selecting them.
-    pub(super) fn guided_overlay(
+    pub(in crate::app) fn guided_overlay(
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
@@ -338,8 +338,8 @@ fn guide_line(painter: &egui::Painter, a: Pos2, b: Pos2, selected: bool) {
 
 /// A square grid over `rect`, squares a twelfth of its long edge, as the Crop tool's.
 fn grid_lines(painter: &egui::Painter, rect: Rect) {
-    let guides = super::crop_tool::CropGuides {
-        guide: super::crop_tool::Guide::Grid,
+    let guides = crate::app::crop_tool::CropGuides {
+        guide: crate::app::crop_tool::Guide::Grid,
         ..Default::default()
     };
     for line in guides.lines(rect.size()) {
@@ -385,7 +385,11 @@ fn magnifier(ui: &egui::Ui, texture: egui::TextureId, photo: Rect, at: Pos2, are
         radius::CONTROL,
         Color32::from_black_alpha(200),
     );
-    painter.rect_filled(frame, 0., super::theme::palette(ui.ctx()).photo_backdrop());
+    painter.rect_filled(
+        frame,
+        0.,
+        crate::app::theme::palette(ui.ctx()).photo_backdrop(),
+    );
     painter.image(texture, frame, uv, Color32::WHITE);
     let c = frame.center();
     for d in [Vec2::new(8., 0.), Vec2::new(0., 8.)] {

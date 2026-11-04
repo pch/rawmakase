@@ -1,15 +1,15 @@
 //! Accept worker results at a single generation-checked boundary.
-use super::messages::Topic;
-use super::{
+use crate::app::Module;
+use crate::app::messages::Topic;
+use crate::app::{
     Editor,
     worker::{self, Event, LoadedHeader, Pane, RenderStage, TaskKind},
 };
-use crate::app::Module;
 use crate::export_settings::ExportOptions;
 use eframe::egui;
 
 impl Editor {
-    pub(super) fn events(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn events(&mut self, ctx: &egui::Context) {
         // A Point Color sample stops as soon as its tab is no longer where the photo is
         // edited (the Library, Before, another tab), whichever way that happened.
         if self.document.point_color_pick.is_running() && !self.point_color_tab_shown() {
@@ -69,7 +69,7 @@ impl Editor {
                 }
                 Event::CatalogExported(result) => self.catalog_exported(*result),
                 Event::FolderQuestion(question) => {
-                    self.modal = Some(super::Modal::FolderQuestion(*question))
+                    self.modal = Some(crate::app::Modal::FolderQuestion(*question))
                 }
 
                 Event::SystemProbed { generation, system } => {
@@ -77,7 +77,7 @@ impl Editor {
                 }
                 Event::Monitor(p) => {
                     self.activity.finish_dialog();
-                    self.view.monitor = super::monitor::MonitorProfile::Custom(p);
+                    self.view.monitor = crate::app::monitor::MonitorProfile::Custom(p);
                     let _ = self.save_session();
                     self.schedule();
                 }
@@ -265,7 +265,7 @@ impl Editor {
                         Some(navigator),
                     );
                     self.preview.embedded = true;
-                    self.preview.mode = super::state::TextureMode::Whole;
+                    self.preview.mode = crate::app::state::TextureMode::Whole;
                     // Uncropped, so it is placed by the photo's crop once that is known.
                     self.preview.crop = Some([0., 0., 1., 1.]);
                     self.preview.status = "Camera preview • developing RAW…".into();
@@ -324,7 +324,7 @@ impl Editor {
                         continue;
                     };
                     self.preview.showing(id);
-                    let region = matches!(request.mode, super::state::TextureMode::Region(_));
+                    let region = matches!(request.mode, crate::app::state::TextureMode::Region(_));
                     // A region's own histogram would describe only what is
                     // visible; the whole photo's follows as `Histogram`.
                     if !region {
@@ -440,7 +440,7 @@ impl Editor {
     }
     /// Whether the catalog `l`, opened again after a synchronization, still
     /// has the photo open in Develop: where its file was found moved, there.
-    fn keeps_open_photo(&self, l: &super::library::Library) -> bool {
+    fn keeps_open_photo(&self, l: &crate::app::library::Library) -> bool {
         let Some((id, path)) = &self.relink_open else {
             return false;
         };
@@ -451,7 +451,10 @@ impl Editor {
             && l.photo(*id)
                 .is_some_and(|p| path.as_ref().is_none_or(|path| &p.path == path))
     }
-    pub(super) fn catalog_ready(&mut self, result: Result<Box<super::library::Library>, String>) {
+    pub(in crate::app) fn catalog_ready(
+        &mut self,
+        result: Result<Box<crate::app::library::Library>, String>,
+    ) {
         self.activity.finish_dialog();
         // Folder locations may have changed with it.
         self.save_computer_name();
@@ -501,7 +504,7 @@ impl Editor {
                 });
                 if !reloaded {
                     // A folder chosen for removal belongs to the catalog left.
-                    if matches!(self.modal, Some(super::Modal::RemoveFolder(_))) {
+                    if matches!(self.modal, Some(crate::app::Modal::RemoveFolder(_))) {
                         self.modal = None;
                     }
                     self.undo_log.clear();
@@ -532,7 +535,7 @@ impl Editor {
                 }
                 // Develop reopens on its photo, even one the filters now hide.
                 if let Some(place) = restore
-                    && place.module == super::library::Module::Develop
+                    && place.module == crate::app::library::Module::Develop
                     && let Some(id) = place.photo.or_else(|| self.library.as_ref()?.selected())
                 {
                     self.develop_catalog_photo(id);
@@ -582,7 +585,7 @@ impl Editor {
                 .and_then(|r| r.saved(&p));
             match saved {
                 Ok(Some(saved)) => {
-                    self.document.origin = super::state::EditOrigin::Saved;
+                    self.document.origin = crate::app::state::EditOrigin::Saved;
                     self.document.edit.replace(saved.recipe);
                     self.document.export = saved.export;
                     // A History that cannot be read leaves the edit as it is.
@@ -614,12 +617,12 @@ impl Editor {
                     self.document.pending_lightroom =
                         record.ok().and_then(|r| r.lightroom().map(str::to_owned));
                     if self.document.pending_lightroom.is_some() {
-                        self.document.origin = super::state::EditOrigin::Lightroom;
+                        self.document.origin = crate::app::state::EditOrigin::Lightroom;
                     }
                 }
                 Err(e) => {
                     // Unreadable is not unedited: it must not follow the defaults.
-                    self.document.origin = super::state::EditOrigin::Saved;
+                    self.document.origin = crate::app::state::EditOrigin::Saved;
                     self.document.edit.save_state_mut().protect(e.to_string());
                     self.document.lightroom_notice = e.to_string();
                 }
@@ -633,13 +636,13 @@ impl Editor {
     /// After a finished whole-photo render of the current edit, show it as
     /// the photo's Library and filmstrip thumbnail.
     /// Whether the viewport shows the catalog photo's edit as the library would.
-    pub(super) fn shows_library_edit(&self) -> bool {
+    pub(in crate::app) fn shows_library_edit(&self) -> bool {
         self.library.is_some()
             && self.document.catalog_photo.is_some()
             && self.document.path.is_some()
             && !self.view.zoom.on
             && !self.view.compare.shows_before()
-            && !self.view.is(super::state::Tool::Crop)
+            && !self.view.is(crate::app::state::Tool::Crop)
             && self.presets.preview.is_none()
     }
     /// A render made with a partial AI Denoise result is not the photo's thumbnail:
@@ -648,11 +651,12 @@ impl Editor {
         &mut self,
         ctx: &egui::Context,
         small: image::RgbImage,
-        ai: super::state::RenderedAi,
+        ai: crate::app::state::RenderedAi,
     ) {
-        use super::library::PreviewAi;
-        use super::state::RenderedAi;
-        if self.preview.mode != super::state::TextureMode::Whole || !self.shows_library_edit() {
+        use crate::app::library::PreviewAi;
+        use crate::app::state::RenderedAi;
+        if self.preview.mode != crate::app::state::TextureMode::Whole || !self.shows_library_edit()
+        {
             return;
         }
         let shows = match ai {

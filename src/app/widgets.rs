@@ -7,7 +7,7 @@ use crate::model::panels::PanelState;
 use crate::model::params::{self, LocalParameterId, ParameterId, format_value};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
-pub(super) fn toolbar_divider(ui: &mut egui::Ui) {
+pub(in crate::app) fn toolbar_divider(ui: &mut egui::Ui) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(12., 32.), Sense::hover());
     ui.painter().line_segment(
         [
@@ -17,7 +17,7 @@ pub(super) fn toolbar_divider(ui: &mut egui::Ui) {
         Stroke::new(1., theme::palette(ui.ctx()).tone(Tone::OUTLINE)),
     );
 }
-pub(super) fn toolbar_action(
+pub(in crate::app) fn toolbar_action(
     ui: &mut egui::Ui,
     label: &str,
     width: f32,
@@ -29,7 +29,7 @@ pub(super) fn toolbar_action(
 }
 /// A toolbar button of `size`: Develop's are 32 points high, the Library's bars'
 /// 22.
-pub(super) fn toolbar_action_sized(
+pub(in crate::app) fn toolbar_action_sized(
     ui: &mut egui::Ui,
     label: &str,
     size: Vec2,
@@ -94,7 +94,7 @@ pub(super) fn toolbar_action_sized(
 }
 /// A resettable Develop panel; returns whether reset was clicked. A click names
 /// its History step in `step`, before the contents are drawn with it.
-pub(super) fn adjustment_section(
+pub(in crate::app) fn adjustment_section(
     ui: &mut egui::Ui,
     step: &mut StepName,
     title: &str,
@@ -104,12 +104,12 @@ pub(super) fn adjustment_section(
 }
 /// Where the set of collapsed section titles lives in egui memory; the editor
 /// seeds it from the session and saves it back when it changes.
-pub(super) fn collapsed_sections_id() -> egui::Id {
+pub(in crate::app) fn collapsed_sections_id() -> egui::Id {
     egui::Id::new("rawmakase-collapsed-sections")
 }
 /// The panel or sub-panel being drawn ("Detail", then "Sharpening"), so a
 /// slider's step reads "Sharpening Amount" rather than "Amount".
-pub(super) fn set_edit_context(ui: &egui::Ui, title: &str) {
+pub(in crate::app) fn set_edit_context(ui: &egui::Ui, title: &str) {
     ui.ctx()
         .data_mut(|d| d.insert_temp(egui::Id::new("rawmakase-edit-context"), title.to_string()));
 }
@@ -119,12 +119,16 @@ fn edit_context(ui: &egui::Ui) -> String {
         .unwrap_or_default()
 }
 /// Collapsible Lightroom-style panel with no header button.
-pub(super) fn section(ui: &mut egui::Ui, title: &str, contents: impl FnOnce(&mut egui::Ui)) {
+pub(in crate::app) fn section(
+    ui: &mut egui::Ui,
+    title: &str,
+    contents: impl FnOnce(&mut egui::Ui),
+) {
     section_with(ui, title, HeaderButton::None, contents);
 }
 /// The button at the right of a panel header.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum HeaderButton {
+pub(in crate::app) enum HeaderButton {
     None,
     /// Resets the panel (and names the History step).
     Reset,
@@ -133,7 +137,7 @@ pub(super) enum HeaderButton {
 }
 /// [`section`] with a header button other than Reset, which names a History
 /// step ([`adjustment_section`]); returns whether it was clicked.
-pub(super) fn section_with(
+pub(in crate::app) fn section_with(
     ui: &mut egui::Ui,
     title: &str,
     button: HeaderButton,
@@ -146,7 +150,7 @@ pub(super) fn section_with(
 }
 /// A resettable Develop panel with Lightroom's on/off switch in its header, over
 /// the photo's `Enable*` setting; returns whether reset was clicked.
-pub(super) fn switched_section(
+pub(in crate::app) fn switched_section(
     ui: &mut egui::Ui,
     step: &mut StepName,
     title: &str,
@@ -157,7 +161,7 @@ pub(super) fn switched_section(
 }
 /// The side of the window a panel is in. Solo Mode is per side, as in Lightroom.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum SectionGroup {
+pub(in crate::app) enum SectionGroup {
     DevelopLeft,
     DevelopRight,
     LibraryLeft,
@@ -165,7 +169,7 @@ pub(super) enum SectionGroup {
 }
 impl SectionGroup {
     /// A stable name, as saved in the session.
-    pub(super) fn key(self) -> &'static str {
+    pub(in crate::app) fn key(self) -> &'static str {
         match self {
             SectionGroup::DevelopLeft => "develop-left",
             SectionGroup::DevelopRight => "develop-right",
@@ -176,7 +180,7 @@ impl SectionGroup {
 }
 /// Where the sides in Solo Mode live in egui memory, by [`SectionGroup::key`]; the
 /// editor seeds it from the session and saves it back when it changes.
-pub(super) fn solo_sections_id() -> egui::Id {
+pub(in crate::app) fn solo_sections_id() -> egui::Id {
     egui::Id::new("rawmakase-solo-sections")
 }
 fn section_group_id() -> egui::Id {
@@ -188,11 +192,11 @@ fn section_titles_id() -> egui::Id {
 }
 type SectionTitles = std::collections::BTreeMap<String, std::collections::BTreeSet<String>>;
 /// While alive, the sections drawn belong to one side of the window.
-pub(super) struct SectionSide {
+pub(in crate::app) struct SectionSide {
     ctx: egui::Context,
 }
 impl SectionSide {
-    pub(super) fn enter(ui: &egui::Ui, group: SectionGroup) -> Self {
+    pub(in crate::app) fn enter(ui: &egui::Ui, group: SectionGroup) -> Self {
         ui.ctx()
             .data_mut(|d| d.insert_temp(section_group_id(), Some(group.key())));
         Self {
@@ -597,7 +601,7 @@ fn curve_readout(ui: &mut egui::Ui, value: Option<[f32; 2]>, hint: &str) {
 /// under the pointer, and the three handles below move the region splits.
 /// The parametric curve; `targeted` is the region a Targeted Adjustment Tool drag is
 /// moving, which shows as a hovered one does.
-pub(super) fn parametric_curve_ui(
+pub(in crate::app) fn parametric_curve_ui(
     ui: &mut egui::Ui,
     effects: &mut crate::model::effects::Effects,
     histogram: &[[u32; 256]; 3],
@@ -706,7 +710,7 @@ pub(super) fn parametric_curve_ui(
         ));
     }
 }
-pub(super) fn tone_curve_ui(
+pub(in crate::app) fn tone_curve_ui(
     ui: &mut egui::Ui,
     curve: &mut crate::color::curve::ToneCurve,
     histogram: &[[u32; 256]; 3],
@@ -881,7 +885,7 @@ pub(super) fn tone_curve_ui(
 const SLIDER_VALUE_WIDTH: f32 = 52.;
 /// Lightroom-style slider. Normalized ranges within ±1 display as integers
 /// (×100), matching Lightroom's numbers while the recipe keeps its units.
-pub(super) fn slider(
+pub(in crate::app) fn slider(
     ui: &mut egui::Ui,
     step: &mut StepName,
     label: &str,
@@ -893,7 +897,7 @@ pub(super) fn slider(
 }
 /// What happened to a slider this frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum SliderEvent {
+pub(in crate::app) enum SliderEvent {
     None,
     /// Double-clicked back to its default.
     Reset,
@@ -933,7 +937,7 @@ fn fill_origin(start: f32, default: f32, coloured: bool) -> FillOrigin {
 /// [`slider`] with its shown scale and a coloured rail; the parameters are
 /// those of a slider row, and `step` the edit's History name.
 #[expect(clippy::too_many_arguments)]
-pub(super) fn slider_with(
+pub(in crate::app) fn slider_with(
     ui: &mut egui::Ui,
     step: &mut StepName,
     label: &str,
@@ -952,7 +956,7 @@ pub(super) fn slider_with(
 }
 /// How a slider looks and moves beyond its label, range and default.
 #[derive(Clone, Copy, Debug, Default)]
-pub(super) struct SliderStyle {
+pub(in crate::app) struct SliderStyle {
     /// Shown scale and decimals, e.g. Sharpening's 0–150; picked from the range
     /// when `None`.
     pub display: Option<(f32, usize)>,
@@ -972,17 +976,17 @@ pub(super) struct SliderStyle {
     pub selected: bool,
 }
 /// The Temp slider's rail, blue to yellow.
-pub(super) const TEMPERATURE_GRADIENT: (Color32, Color32) = (
+pub(in crate::app) const TEMPERATURE_GRADIENT: (Color32, Color32) = (
     Color32::from_rgb(74, 123, 182),
     Color32::from_rgb(194, 169, 93),
 );
 /// The Tint slider's rail, green to magenta.
-pub(super) const TINT_GRADIENT: (Color32, Color32) = (
+pub(in crate::app) const TINT_GRADIENT: (Color32, Color32) = (
     Color32::from_rgb(91, 156, 112),
     Color32::from_rgb(165, 105, 158),
 );
 /// The slider for a develop setting, as its descriptor describes it.
-pub(super) fn setting_slider(
+pub(in crate::app) fn setting_slider(
     ui: &mut egui::Ui,
     step: &mut StepName,
     id: ParameterId,
@@ -993,7 +997,7 @@ pub(super) fn setting_slider(
 }
 /// [`setting_slider`] for a slider the Basic panel's keys step: its label stands
 /// out while `selected`, and a click on it selects it.
-pub(super) fn keyed_setting_slider(
+pub(in crate::app) fn keyed_setting_slider(
     ui: &mut egui::Ui,
     step: &mut StepName,
     id: ParameterId,
@@ -1021,7 +1025,7 @@ pub(super) fn keyed_setting_slider(
     )
 }
 /// The slider for a mask's adjustment, as its descriptor describes it.
-pub(super) fn local_setting_slider(
+pub(in crate::app) fn local_setting_slider(
     ui: &mut egui::Ui,
     step: &mut StepName,
     id: LocalParameterId,
@@ -1086,7 +1090,7 @@ fn number_input(
         NumberInput::Relative => params::nudged(before, entered - before, rail),
     }
 }
-pub(super) fn slider_styled(
+pub(in crate::app) fn slider_styled(
     ui: &mut egui::Ui,
     step: &mut StepName,
     label: &str,
@@ -1395,12 +1399,12 @@ fn hovered_nudge(ui: &egui::Ui, row: Rect) -> Option<f32> {
     (nudge != 0.).then_some(nudge)
 }
 /// Size of a segmented control: the track's height and the label size.
-pub(super) struct SegmentStyle {
+pub(in crate::app) struct SegmentStyle {
     height: f32,
     font: f32,
 }
 /// The Library/Develop switcher in the top bar.
-pub(super) const TOP_BAR_SEGMENTS: SegmentStyle = SegmentStyle {
+pub(in crate::app) const TOP_BAR_SEGMENTS: SegmentStyle = SegmentStyle {
     height: 26.,
     font: 13.,
 };
@@ -1411,7 +1415,7 @@ const TOOLBAR_SEGMENTS: SegmentStyle = SegmentStyle {
 };
 /// Height of compact segmented controls; fields beside them use it too so
 /// their edges line up.
-pub(super) const COMPACT_SEGMENT_HEIGHT: f32 = size::CONTROL;
+pub(in crate::app) const COMPACT_SEGMENT_HEIGHT: f32 = size::CONTROL;
 /// Panel and filter controls.
 const COMPACT_SEGMENTS: SegmentStyle = SegmentStyle {
     height: COMPACT_SEGMENT_HEIGHT,
@@ -1419,7 +1423,7 @@ const COMPACT_SEGMENTS: SegmentStyle = SegmentStyle {
 };
 /// Segmented control sized to its labels: equal-width segments, so switching
 /// never moves a label. `selected` None shows no active segment.
-pub(super) fn segment_bar<const N: usize>(
+pub(in crate::app) fn segment_bar<const N: usize>(
     ui: &mut egui::Ui,
     labels: [&str; N],
     selected: Option<usize>,
@@ -1632,7 +1636,7 @@ fn segment_track(
 /// A primary button sized to its content, in the accent colour: an optional
 /// icon and the label centred together, with the segmented controls' height
 /// and rounding.
-pub(super) fn action_button(
+pub(in crate::app) fn action_button(
     ui: &mut egui::Ui,
     label: &str,
     icon: Option<Icon>,
@@ -1706,7 +1710,7 @@ pub(super) fn action_button(
 /// with roomy segments, but never wider than the space left in the panel;
 /// there segments shrink to their labels, then the text a point, so labels
 /// stay whole with at least 8 px padding.
-pub(super) fn segmented<T: PartialEq + Copy>(
+pub(in crate::app) fn segmented<T: PartialEq + Copy>(
     ui: &mut egui::Ui,
     value: &mut T,
     options: &[(T, &str)],
@@ -1729,7 +1733,7 @@ pub(super) fn segmented<T: PartialEq + Copy>(
     false
 }
 /// A full-width menu row: optional check mark, label, right-aligned shortcut.
-pub(super) fn menu_item(
+pub(in crate::app) fn menu_item(
     ui: &mut egui::Ui,
     label: &str,
     shortcut: &str,
@@ -1781,7 +1785,7 @@ pub(super) fn menu_item(
     }
     enabled && response.clicked()
 }
-pub(super) fn menu_separator(ui: &mut egui::Ui) {
+pub(in crate::app) fn menu_separator(ui: &mut egui::Ui) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 9.), Sense::hover());
     ui.painter().line_segment(
         [rect.left_center(), rect.right_center()],
@@ -1789,14 +1793,14 @@ pub(super) fn menu_separator(ui: &mut egui::Ui) {
     );
 }
 /// True for a context-menu click: a right click, or Control-click on macOS.
-pub(super) fn context_clicked(response: &egui::Response) -> bool {
+pub(in crate::app) fn context_clicked(response: &egui::Response) -> bool {
     response.secondary_clicked()
         || (cfg!(target_os = "macos")
             && response.clicked()
             && response.ctx.input(|i| i.modifiers.ctrl))
 }
 /// Like `Response::context_menu`, but Control-click also opens it on macOS.
-pub(super) fn context_menu(response: &egui::Response, add: impl FnOnce(&mut egui::Ui)) {
+pub(in crate::app) fn context_menu(response: &egui::Response, add: impl FnOnce(&mut egui::Ui)) {
     let command = if context_clicked(response) {
         Some(egui::SetOpenCommand::Bool(true))
     } else if response.clicked() {
@@ -1811,7 +1815,7 @@ pub(super) fn context_menu(response: &egui::Response, add: impl FnOnce(&mut egui
 }
 /// Makes egui submenu buttons match `menu_item` rows: same height, text
 /// inset and hover color.
-pub(super) fn submenu_style(ui: &mut egui::Ui) {
+pub(in crate::app) fn submenu_style(ui: &mut egui::Ui) {
     let palette = theme::palette(ui.ctx());
     let spacing = ui.spacing_mut();
     spacing.item_spacing.y = 0.;
@@ -1831,14 +1835,14 @@ pub(super) fn submenu_style(ui: &mut egui::Ui) {
     visuals.widgets.inactive.fg_stroke = Stroke::new(1., palette.tone(Tone::TEXT));
 }
 /// The frame of a modal window such as Preferences or Export.
-pub(super) fn modal_frame(palette: &theme::Palette) -> egui::Frame {
+pub(in crate::app) fn modal_frame(palette: &theme::Palette) -> egui::Frame {
     egui::Frame::new()
         .fill(palette.tone(Tone::CARD))
         .stroke(Stroke::new(1., palette.tone(Tone::OUTLINE)))
         .corner_radius(radius::DIALOG)
 }
 /// The button that confirms a modal window ("Done", "Export").
-pub(super) fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
+pub(in crate::app) fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     ui.add(
         egui::Button::new(egui::RichText::new(text).color(palette.on_accent()))
@@ -1851,7 +1855,7 @@ pub(super) fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
 /// when the window is closed, or None while it is open. Return confirms
 /// nothing unless a button has focus. A `truncated` detail stays on one line,
 /// e.g. a path. Longer details scroll independently of the title and buttons.
-pub(super) fn confirm_modal<T: Copy>(
+pub(in crate::app) fn confirm_modal<T: Copy>(
     ctx: &egui::Context,
     id: &str,
     title: &str,
@@ -1916,7 +1920,7 @@ pub(super) fn confirm_modal<T: Copy>(
 /// released. Several actions may follow Cancel, the last the primary one:
 /// Some(Some(i)) for `actions[i]`, Some(None) for cancelling, None while it
 /// is open. Tab goes from Cancel to each in turn.
-pub(super) fn destructive_choice(
+pub(in crate::app) fn destructive_choice(
     ctx: &egui::Context,
     id: &str,
     title: &str,
@@ -2000,12 +2004,16 @@ pub(super) fn destructive_choice(
     choice
 }
 /// "1 photo", "2 photos": `n` with the word for its number.
-pub(super) fn plural(n: usize, one: &str, many: &str) -> String {
+pub(in crate::app) fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 /// A form row as in Lightroom's dialogs: a right-aligned label in a fixed
 /// column, then the controls.
-pub(super) fn form_row(ui: &mut egui::Ui, label: &str, contents: impl FnOnce(&mut egui::Ui)) {
+pub(in crate::app) fn form_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    contents: impl FnOnce(&mut egui::Ui),
+) {
     ui.horizontal(|ui| {
         let (rect, _) = ui.allocate_exact_size(Vec2::new(150., 28.), Sense::hover());
         ui.painter().text(
@@ -2019,7 +2027,7 @@ pub(super) fn form_row(ui: &mut egui::Ui, label: &str, contents: impl FnOnce(&mu
     });
 }
 /// A path for display, with the home folder as `~`.
-pub(super) fn pretty_path(path: &std::path::Path) -> String {
+pub(in crate::app) fn pretty_path(path: &std::path::Path) -> String {
     let text = path.display().to_string();
     match std::env::var("HOME") {
         Ok(home) if !home.is_empty() && text.starts_with(&home) => {
@@ -2514,13 +2522,13 @@ mod segment_tests {
 
 /// A spinner `size` points across with a hairline stroke: egui's draws three
 /// points thick at any size, heavy beside the interface's text.
-pub(super) fn spinner(ui: &mut egui::Ui, size: f32) -> egui::Response {
+pub(in crate::app) fn spinner(ui: &mut egui::Ui, size: f32) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
     paint_spinner(ui, rect, None);
     response
 }
 /// [`spinner`] painted into `rect`, in `color` or the interface's grey.
-pub(super) fn paint_spinner(ui: &egui::Ui, rect: Rect, color: Option<Color32>) {
+pub(in crate::app) fn paint_spinner(ui: &egui::Ui, rect: Rect, color: Option<Color32>) {
     if !ui.is_rect_visible(rect) {
         return;
     }
@@ -2550,26 +2558,26 @@ fn label_column_id() -> egui::Id {
 }
 /// The label column's width where `ui` draws: [`LABEL_COLUMN`], or a
 /// narrower one a [`LabelColumn`] set.
-pub(super) fn label_column(ui: &egui::Ui) -> f32 {
+pub(in crate::app) fn label_column(ui: &egui::Ui) -> f32 {
     ui.ctx()
         .data(|d| d.get_temp::<f32>(label_column_id()))
         .unwrap_or(LABEL_COLUMN)
 }
 /// Between the label column and what is beside it: captions end this far
 /// short of it, slider rails and controls start this far past it.
-pub(super) const LABEL_GAP: f32 = 5.;
+pub(in crate::app) const LABEL_GAP: f32 = 5.;
 /// Where a row's slider rail or control starts, from the row's left.
-pub(super) fn control_left(ui: &egui::Ui) -> f32 {
+pub(in crate::app) fn control_left(ui: &egui::Ui) -> f32 {
     label_column(ui) + LABEL_GAP
 }
 /// While alive, the slider grid's label column is `width` wide: Develop's
 /// tool drawers, whose labels are short, give the controls the room.
-pub(super) struct LabelColumn {
+pub(in crate::app) struct LabelColumn {
     ctx: egui::Context,
     before: Option<f32>,
 }
 impl LabelColumn {
-    pub(super) fn enter(ui: &egui::Ui, width: f32) -> Self {
+    pub(in crate::app) fn enter(ui: &egui::Ui, width: f32) -> Self {
         let ctx = ui.ctx().clone();
         let before = ctx.data_mut(|d| {
             let before = d.get_temp::<f32>(label_column_id());
@@ -2593,7 +2601,7 @@ impl Drop for LabelColumn {
 /// The caption band at the top of Develop's tab panel, naming what it shows
 /// as the panels' section headers do. Returns the band, for what its right
 /// end holds.
-pub(super) fn panel_caption(ui: &mut egui::Ui, name: &str) -> Rect {
+pub(in crate::app) fn panel_caption(ui: &mut egui::Ui, name: &str) -> Rect {
     let palette = theme::palette(ui.ctx());
     ui.add_space(inset::SECTION);
     let (rect, _) = ui.allocate_exact_size(
@@ -2613,7 +2621,11 @@ pub(super) fn panel_caption(ui: &mut egui::Ui, name: &str) -> Rect {
 }
 /// A search field: a rounded box with a magnifier, the text and a button that
 /// clears it. Returns the text field's response.
-pub(super) fn search_field(ui: &mut egui::Ui, text: &mut String, hint: &str) -> egui::Response {
+pub(in crate::app) fn search_field(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    hint: &str,
+) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 28.), Sense::hover());
     let field = rect

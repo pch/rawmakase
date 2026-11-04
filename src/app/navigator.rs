@@ -3,8 +3,8 @@
 //! `magnifier`'s). One `Zoom` is the view's zoom wherever the photo is shown, so
 //! Develop, the Loupe and its JPEG/TIFF/PNG view all keep the same level and
 //! place.
-use super::theme;
 use crate::app::design::{Tone, radius, text};
+use crate::app::theme;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 /// The closest zoom the slider and Cmd+= reach: 1600%, or twice Fit for a photo
@@ -25,7 +25,7 @@ const STEP: f32 = std::f32::consts::SQRT_2;
 /// reaches the fitted size fits, going either way. Zooming out never enlarges:
 /// from Fit or above it stops at Fit, and below Fit (a photo smaller than the
 /// view, at 100%) it goes on down, to `MIN_LEVEL`.
-pub(super) fn stepped(current: f32, fit: f32, up: bool) -> f32 {
+pub(in crate::app) fn stepped(current: f32, fit: f32, up: bool) -> f32 {
     const NEAR: f32 = 1e-3;
     let next = if up { current * STEP } else { current / STEP };
     if (current < 1. - NEAR && next > 1. + NEAR) || (current > 1. + NEAR && next < 1. - NEAR) {
@@ -45,7 +45,7 @@ pub(super) fn stepped(current: f32, fit: f32, up: bool) -> f32 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Zoom {
+pub(in crate::app) struct Zoom {
     /// Zoomed in rather than fitted.
     pub on: bool,
     /// Screen pixels per image pixel when zoomed in (1 = 100%).
@@ -142,13 +142,13 @@ impl Zoom {
 }
 
 /// A photo's texture and its size.
-pub(super) type Photo = (egui::TextureId, Vec2);
+pub(in crate::app) type Photo = (egui::TextureId, Vec2);
 
 /// The zoom slider, in a toolbar button's shape `height` high: `−`, a track from
 /// Fit to 1600% on a log scale, `+`, and the level shown. `zoom` is on a photo
 /// that fits at `fit` screen pixels per image pixel (a nominal level until the
 /// photo's size is known). Returns the level chosen, 0 for Fit.
-pub(super) fn zoom_slider(
+pub(in crate::app) fn zoom_slider(
     ui: &mut egui::Ui,
     zoom: Zoom,
     fit: Option<f32>,

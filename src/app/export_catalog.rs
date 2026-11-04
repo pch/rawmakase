@@ -9,10 +9,10 @@
 //! that waits for one starts meanwhile, and its end (success, failure or
 //! panic) always ends it. Quitting meanwhile leaves no catalog at the name
 //! chosen: at most a hidden folder beside it with the unfinished copy.
-use super::Editor;
-use super::library::{CatalogExportRequest, FolderRemoval};
-use super::widgets::confirm_modal;
-use super::worker::Event;
+use crate::app::Editor;
+use crate::app::library::{CatalogExportRequest, FolderRemoval};
+use crate::app::widgets::confirm_modal;
+use crate::app::worker::Event;
 use crate::catalog::CatalogExport;
 
 /// What Export as Catalog wrote.
@@ -34,7 +34,7 @@ enum Next {
 
 impl Editor {
     /// Saves the open edit, asks where to write the catalog and writes it.
-    pub(super) fn export_as_catalog(&mut self, request: CatalogExportRequest) {
+    pub(in crate::app) fn export_as_catalog(&mut self, request: CatalogExportRequest) {
         if !self.ready_for_catalog() || !self.activity.begin_dialog() {
             self.messages
                 .warn("Export as Catalog waits for the work in progress");
@@ -46,12 +46,12 @@ impl Editor {
         };
         let catalog = library.session.catalog().location().clone();
         let ctx = self.context.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             ctx.clone(),
             move |tx| {
                 let result = (|| -> anyhow::Result<Option<Exported>> {
-                    let Some(destination) = super::catalog::catalog_file_dialog()
+                    let Some(destination) = crate::app::catalog::catalog_file_dialog()
                         .set_title("Export as Catalog")
                         .set_file_name(format!("{}.rawmakase", request.name))
                         .save_file()
@@ -81,7 +81,7 @@ impl Editor {
     }
 
     /// Shows what an export wrote, or why it failed.
-    pub(super) fn catalog_exported(&mut self, result: Result<Option<Exported>, String>) {
+    pub(in crate::app) fn catalog_exported(&mut self, result: Result<Option<Exported>, String>) {
         self.catalog_work = None;
         self.activity.finish_dialog();
         match result {
@@ -91,7 +91,7 @@ impl Editor {
                     photos(exported.export.photos),
                     exported.export.path.display()
                 ));
-                self.modal = Some(super::Modal::CatalogExported(Box::new(exported)));
+                self.modal = Some(crate::app::Modal::CatalogExported(Box::new(exported)));
             }
             Ok(None) => {}
             Err(e) => self.messages.fail(format!("Export as Catalog failed: {e}")),
@@ -101,8 +101,8 @@ impl Editor {
     /// The dialog after an export: what it holds and what it could not
     /// carry, with opening it and, for a folder, removing it from this
     /// catalog.
-    pub(super) fn catalog_exported_window(&mut self, ctx: &eframe::egui::Context) {
-        let Some(super::Modal::CatalogExported(exported)) = &self.modal else {
+    pub(in crate::app) fn catalog_exported_window(&mut self, ctx: &eframe::egui::Context) {
+        let Some(crate::app::Modal::CatalogExported(exported)) = &self.modal else {
             return;
         };
         let export = &exported.export;
@@ -131,7 +131,7 @@ impl Editor {
         ) else {
             return;
         };
-        let Some(super::Modal::CatalogExported(exported)) = self.modal.take() else {
+        let Some(crate::app::Modal::CatalogExported(exported)) = self.modal.take() else {
             return;
         };
         match next {
@@ -139,7 +139,7 @@ impl Editor {
             Next::Open => self.load_catalog(exported.export.path, ctx),
             // Confirmed as any removal is; refused there if the catalog or
             // the folder changed since.
-            Next::Remove => self.modal = exported.removal.map(super::Modal::RemoveFolder),
+            Next::Remove => self.modal = exported.removal.map(crate::app::Modal::RemoveFolder),
         }
     }
 }

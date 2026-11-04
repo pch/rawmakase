@@ -1,10 +1,10 @@
 //! The Transform panel's Upright analysis, run off the UI thread.
-use super::{Editor, worker::Event};
+use crate::app::{Editor, worker::Event};
 use crate::model::recipe::Recipe;
 use crate::model::transform::UprightMode;
 
 /// What the analysis measures: the photo's orientation and lens correction.
-pub(super) fn inputs(r: &Recipe) -> (u8, bool, bool, crate::model::transform::LensInputs) {
+pub(in crate::app) fn inputs(r: &Recipe) -> (u8, bool, bool, crate::model::transform::LensInputs) {
     (
         r.rotation,
         r.flip_x,
@@ -16,7 +16,7 @@ pub(super) fn inputs(r: &Recipe) -> (u8, bool, bool, crate::model::transform::Le
 impl Editor {
     /// Analyses the open photo for Upright; the corrections arrive as
     /// [`Event::Upright`]. Does nothing while the photo is still decoding.
-    pub(super) fn start_upright(&mut self) {
+    pub(in crate::app) fn start_upright(&mut self) {
         let Some(im) = self.document.full().cloned() else {
             return;
         };
@@ -24,7 +24,7 @@ impl Editor {
         let id = self.load.id();
         let base = self.document.edit.recipe().clone();
         let analysed = base.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
@@ -50,7 +50,7 @@ impl Editor {
 
     /// Measures what the edit needs from the photo and lacks: a Straighten Auto copied
     /// from another photo, and Upright's corrections.
-    pub(super) fn ensure_analysis(&mut self) {
+    pub(in crate::app) fn ensure_analysis(&mut self) {
         self.ensure_straighten();
         self.ensure_upright();
     }
@@ -59,7 +59,7 @@ impl Editor {
     /// after undoing to a state from before an analysis, or opening such a photo.
     /// Guided's guides are solved once the other modes' corrections are there to sit
     /// beside its own.
-    pub(super) fn ensure_upright(&mut self) {
+    pub(in crate::app) fn ensure_upright(&mut self) {
         let u = &self.document.edit.recipe().upright;
         if !u.needs_analysis() || self.document.upright.is_running() {
             return;
@@ -78,7 +78,7 @@ impl Editor {
 
     /// Stores Upright's corrections for every mode. The mode was chosen when the analysis
     /// started, so the photo only changes if a mode is selected.
-    pub(super) fn upright_ready(
+    pub(in crate::app) fn upright_ready(
         &mut self,
         generation: u64,
         analysed: &Recipe,

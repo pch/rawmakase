@@ -1,11 +1,11 @@
-use super::Editor;
-use super::before_after;
-use super::crop_tool::{Attention, Guide, Ruler};
-use super::icons::{self, Icon};
-use super::navigator;
-use super::state::{TextureMode, Tool};
+use crate::app::Editor;
 use crate::app::Module;
+use crate::app::before_after;
+use crate::app::crop_tool::{Attention, Guide, Ruler};
 use crate::app::design::{Tone, radius, text};
+use crate::app::icons::{self, Icon};
+use crate::app::navigator;
+use crate::app::state::{TextureMode, Tool};
 use crate::app::theme;
 use crate::develop::{self, Geometry};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
@@ -13,7 +13,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 impl Editor {
     /// Constrains the crop to the chosen aspect: negative keeps the photo's
     /// own ratio, zero is free, and presets follow the photo's orientation.
-    pub(super) fn fit_aspect(&mut self) {
+    pub(in crate::app) fn fit_aspect(&mut self) {
         if let Some(crop) = self.fitted_crop() {
             self.document.edit.recipe_mut().crop = crop;
         }
@@ -61,7 +61,7 @@ impl Editor {
     /// aspect last chosen from the menu, and a preset crops it as an edit of its
     /// own, recorded before any frame or command that follows; not when the photo
     /// was loaded again with the tool open, which keeps the edit loaded.
-    pub(super) fn read_aspect(&mut self) {
+    pub(in crate::app) fn read_aspect(&mut self) {
         if !self.view.is(Tool::Crop) || self.view.aspect_read {
             return;
         }
@@ -99,7 +99,7 @@ impl Editor {
         self.view.aspect = if near(crop, photo) {
             -1.
         } else {
-            super::inspector::ASPECTS
+            crate::app::inspector::ASPECTS
                 .iter()
                 .map(|(a, ..)| *a)
                 .filter(|a| *a > 0.)
@@ -110,7 +110,7 @@ impl Editor {
     }
     /// What Develop's minimap shows: the photo, and the part in view, at any
     /// zoom (the 100% region the renderer draws exists only from 100% up).
-    pub(super) fn navigator_view(&self) -> (Option<navigator::Photo>, Option<[f32; 4]>) {
+    pub(in crate::app) fn navigator_view(&self) -> (Option<navigator::Photo>, Option<[f32; 4]>) {
         let shown = self.document.full().and_then(|im| {
             let g = Geometry::new(im, &self.effective_recipe(), 0);
             let size = Vec2::new(g.width as f32, g.height as f32);
@@ -133,7 +133,7 @@ impl Editor {
         (photo, shown)
     }
     /// A point of the edit chosen on the minimap: zoomed in there.
-    pub(super) fn inspect(&mut self, at: [f32; 2]) {
+    pub(in crate::app) fn inspect(&mut self, at: [f32; 2]) {
         self.view.zoom.pan = at;
         self.view.zoom.on = true;
         if self.view.is(Tool::Crop) {
@@ -208,7 +208,7 @@ impl Editor {
         }
         let spinner =
             Rect::from_center_size(badge.left_center() + Vec2::new(20., 0.), Vec2::splat(14.));
-        super::widgets::paint_spinner(ui, spinner, None);
+        crate::app::widgets::paint_spinner(ui, spinner, None);
         ui.painter().text(
             badge.left_center() + Vec2::new(36., 0.),
             egui::Align2::LEFT_CENTER,
@@ -218,7 +218,7 @@ impl Editor {
         );
     }
     /// Sets a zoom level; 0 means Fit.
-    pub(super) fn set_zoom(&mut self, level: f32) {
+    pub(in crate::app) fn set_zoom(&mut self, level: f32) {
         self.view.zoom.set(level);
         // A JPEG, TIFF or PNG in the Loupe zooms on its own; the document
         // behind it is not rendered again.
@@ -237,7 +237,7 @@ impl Editor {
     }
     /// The level the photo shown fits the view at: Develop's photo, or a JPEG,
     /// TIFF or PNG in the Library's Loupe. None until its size is known.
-    pub(super) fn fit_level(&self) -> Option<f32> {
+    pub(in crate::app) fn fit_level(&self) -> Option<f32> {
         let raster = self.module == Module::Library
             && self
                 .library
@@ -252,7 +252,7 @@ impl Editor {
     }
     /// Cmd/Ctrl = and −: zoom in or out by a constant factor, stopping at 100% and
     /// Fit (see `navigator::stepped`).
-    pub(super) fn step_zoom(&mut self, direction: i32) {
+    pub(in crate::app) fn step_zoom(&mut self, direction: i32) {
         // Not known until the image is decoded: no step until then.
         let Some(fit) = self.fit_level() else {
             return;
@@ -269,7 +269,7 @@ impl Editor {
         let size = Vec2::new(g.width as f32, g.height as f32);
         self.view.zoom.photo_rect(area, size, ppp)
     }
-    pub(super) fn viewport_ui(&mut self, ui: &mut egui::Ui) -> egui::Response {
+    pub(in crate::app) fn viewport_ui(&mut self, ui: &mut egui::Ui) -> egui::Response {
         let (whole, response) =
             ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
         ui.painter()
@@ -429,7 +429,7 @@ impl Editor {
             && ui.rect_contains_pointer(rect)
             && self.tool_has_size()
         {
-            let scrolls = ui.input(super::brush_scroll::Scroll::read);
+            let scrolls = ui.input(crate::app::brush_scroll::Scroll::read);
             for scroll in &scrolls {
                 self.scroll_tool_size(*scroll);
             }
@@ -724,7 +724,7 @@ impl Editor {
             Attention::Away
         };
         let guides = if drawing {
-            super::crop_tool::CropGuides {
+            crate::app::crop_tool::CropGuides {
                 guide: Guide::Grid,
                 ..self.view.crop_guides
             }
@@ -778,7 +778,7 @@ impl Editor {
         if response.drag_stopped() || !response.dragged() {
             self.view.ruler = Ruler::Off;
             let current = self.document.edit.recipe().straighten;
-            if let Some(angle) = super::crop_tool::ruler_angle(from, to, current)
+            if let Some(angle) = crate::app::crop_tool::ruler_angle(from, to, current)
                 && angle != current
             {
                 crate::model::edit::change_setting(
@@ -787,10 +787,12 @@ impl Editor {
                     None,
                     |r| r.straighten = angle,
                 );
-                self.document.edit.name_next_step(super::history::Step::new(
-                    "Straighten",
-                    format!("{angle:+.2}"),
-                ));
+                self.document
+                    .edit
+                    .name_next_step(crate::app::history::Step::new(
+                        "Straighten",
+                        format!("{angle:+.2}"),
+                    ));
             }
         }
         true
@@ -893,7 +895,7 @@ impl Editor {
         };
         // In the readout's Melissa RGB, as Lightroom's loupe.
         let text = pixel(cx, cy).map_or_else(String::new, |p| {
-            super::readout::text(super::readout::melissa_percent(
+            crate::app::readout::text(crate::app::readout::melissa_percent(
                 p.map(|v| f32::from(v) / 255.),
             ))
         });

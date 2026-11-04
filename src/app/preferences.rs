@@ -1,19 +1,19 @@
 //! Application preferences, apart from the photo's develop settings. Laid out
 //! like Lightroom's Preferences and Catalog Settings: tabs on the left, one
 //! fixed-size page on the right so switching tabs never moves the window.
-use super::Editor;
-use super::dialogs::{CatalogDialog, FileDialog};
-use super::icons::{self, Icon};
-use super::widgets::{form_row, modal_frame, plural, pretty_path, primary_button};
+use crate::app::Editor;
 use crate::app::design::{Tone, button, radius, size, space, text};
+use crate::app::dialogs::{CatalogDialog, FileDialog};
+use crate::app::icons::{self, Icon};
 use crate::app::theme;
+use crate::app::widgets::{form_row, modal_frame, plural, pretty_path, primary_button};
 use crate::catalog::CatalogLocation;
 use crate::catalog::preview_cache::{PreviewCache, PreviewKind};
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Default, PartialEq)]
-pub(super) enum Tab {
+pub(in crate::app) enum Tab {
     #[default]
     General,
     Catalog,
@@ -70,8 +70,8 @@ struct Usage {
 }
 
 #[derive(Default)]
-pub(super) struct Preferences {
-    pub(super) open: bool,
+pub(in crate::app) struct Preferences {
+    pub(in crate::app) open: bool,
     tab: Tab,
     usage: Usage,
     /// Measured with a file dialog open, so its import is counted on close.
@@ -91,9 +91,9 @@ pub(super) struct Preferences {
     /// saved as it is changed.
     import: crate::catalog::ImportOptions,
     /// Raw Defaults' camera rows.
-    pub(super) raw_defaults: super::raw_defaults::Form,
+    pub(in crate::app) raw_defaults: crate::app::raw_defaults::Form,
     /// Folder locations, read when the Catalog page first shows.
-    pub(super) locations: Option<super::folder_locations::LocationsView>,
+    pub(in crate::app) locations: Option<crate::app::folder_locations::LocationsView>,
 }
 
 const WIDTH: f32 = 860.;
@@ -156,7 +156,7 @@ fn bytes(n: u64) -> String {
 }
 
 impl Editor {
-    pub(super) fn open_preferences(&mut self, tab: Tab) {
+    pub(in crate::app) fn open_preferences(&mut self, tab: Tab) {
         self.preferences.open = true;
         self.preferences.tab = tab;
         self.preferences.status_at_open = self.messages.line().to_string();
@@ -190,7 +190,7 @@ impl Editor {
         self.preferences.locations = None;
     }
     /// ⌘, (Ctrl+, elsewhere) opens Preferences, as in Lightroom.
-    pub(super) fn preferences_shortcut(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn preferences_shortcut(&mut self, ctx: &egui::Context) {
         if !self.preferences.open
             && !self.activity.is_busy()
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Comma))
@@ -216,7 +216,7 @@ impl Editor {
             }
         }
     }
-    pub(super) fn preferences_window(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn preferences_window(&mut self, ctx: &egui::Context) {
         let palette = theme::palette(ctx);
         let closing = ctx.input(|i| i.viewport().close_requested());
         if !self.preferences.open || self.preferences.tab != Tab::Catalog || closing {
@@ -364,7 +364,7 @@ impl Editor {
             Vec2::splat(26.),
         );
         ui.scope_builder(egui::UiBuilder::new().max_rect(button), |ui| {
-            super::shortcuts::icon_button(ui, Icon::Close, "Close · Esc").clicked()
+            crate::app::shortcuts::icon_button(ui, Icon::Close, "Close · Esc").clicked()
         })
         .inner
     }
@@ -606,7 +606,7 @@ impl Editor {
             field = Some(
                 ui.add(
                     egui::DragValue::new(&mut cache_size)
-                        .range(super::session::DECODED_CACHE_SIZE_RANGE)
+                        .range(crate::app::session::DECODED_CACHE_SIZE_RANGE)
                         .suffix(" GiB")
                         .update_while_editing(false),
                 ),
@@ -700,7 +700,7 @@ impl Editor {
         gap(ui);
         group(ui, "Black & white");
         form_row(ui, "", |ui| {
-            let mut auto = self.first_conversion == super::treatment::FirstConversion::AutoMix;
+            let mut auto = self.first_conversion == crate::app::treatment::FirstConversion::AutoMix;
             if ui
                 .checkbox(
                     &mut auto,
@@ -709,9 +709,9 @@ impl Editor {
                 .changed()
             {
                 self.first_conversion = if auto {
-                    super::treatment::FirstConversion::AutoMix
+                    crate::app::treatment::FirstConversion::AutoMix
                 } else {
-                    super::treatment::FirstConversion::KeepMix
+                    crate::app::treatment::FirstConversion::KeepMix
                 };
                 let _ = self.save_session();
             }
@@ -977,7 +977,7 @@ impl Editor {
     /// Caches decoded images in `folder`, or the default directory for `None`,
     /// and removes those in the old location: moving is usually meant to free
     /// that drive. A folder that cannot be written keeps the cache where it is.
-    pub(super) fn move_decode_cache(&mut self, folder: Option<PathBuf>) {
+    pub(in crate::app) fn move_decode_cache(&mut self, folder: Option<PathBuf>) {
         let removed = match self.decode_cache.relocate(folder.as_deref()) {
             Ok(removed) => removed,
             Err(e) => {
@@ -1040,7 +1040,7 @@ impl Editor {
         });
         // On its own row: beside the picker it is wider than the page.
         form_row(ui, "", |ui| {
-            reveal_button(ui, &super::theme::Themes::folder())
+            reveal_button(ui, &crate::app::theme::Themes::folder())
         });
         form_row(ui, "", |ui| {
             hint(
@@ -1056,12 +1056,12 @@ impl Editor {
         }
         gap(ui);
         group(ui, "Monitor profile");
-        use super::monitor::MonitorProfile;
+        use crate::app::monitor::MonitorProfile;
         let monitor = self.view.monitor.clone();
         form_row(ui, "Profile", |ui| {
             value(
                 ui,
-                &super::monitor::describe(&monitor, self.view.system_display.display()),
+                &crate::app::monitor::describe(&monitor, self.view.system_display.display()),
             )
         });
         let mut choose = false;
@@ -1137,7 +1137,7 @@ fn cards(ui: &mut egui::Ui, page: impl FnOnce(&mut egui::Ui)) {
         });
 }
 /// A section's title, and the card its rows sit on.
-pub(super) fn group(ui: &mut egui::Ui, title: &str) {
+pub(in crate::app) fn group(ui: &mut egui::Ui, title: &str) {
     close_card(ui);
     // Over the card's edge, in line with the page's title.
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.), Sense::hover());
@@ -1160,7 +1160,7 @@ pub(super) fn group(ui: &mut egui::Ui, title: &str) {
     ui.add_space(space::S + CARD_PAD - ui.spacing().item_spacing.y);
 }
 /// The space between sections; it ends the open card.
-pub(super) fn gap(ui: &mut egui::Ui) {
+pub(in crate::app) fn gap(ui: &mut egui::Ui) {
     close_card(ui);
     ui.add_space(space::XL);
 }
@@ -1204,7 +1204,7 @@ fn path_value(ui: &mut egui::Ui, path: &Path) {
     )
     .on_hover_text(path.display().to_string());
 }
-pub(super) fn hint(ui: &mut egui::Ui, text: &str) {
+pub(in crate::app) fn hint(ui: &mut egui::Ui, text: &str) {
     ui.add(
         egui::Label::new(
             egui::RichText::new(text)
@@ -1224,7 +1224,7 @@ fn reveal_button(ui: &mut egui::Ui, path: &Path) {
     }
 }
 /// The workspace bar's Preferences button: a gear in a 28 px slot.
-pub(super) fn gear_button(ui: &mut egui::Ui) -> egui::Response {
+pub(in crate::app) fn gear_button(ui: &mut egui::Ui) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.), Sense::click());
     if response.hovered() {
@@ -1236,9 +1236,9 @@ pub(super) fn gear_button(ui: &mut egui::Ui) -> egui::Response {
     } else {
         Tone::LABEL
     });
-    super::icons::paint_at(
+    crate::app::icons::paint_at(
         ui.painter(),
-        super::icons::Icon::Settings,
+        crate::app::icons::Icon::Settings,
         rect.center(),
         15.,
         color,
@@ -1467,7 +1467,7 @@ mod tests {
 
 /// The models RAWmakase downloads on request that ask for credit wherever they are used,
 /// each with the manifest's credit text: listed in About.
-pub(super) fn third_party_models() -> [(&'static str, &'static str); 1] {
+pub(in crate::app) fn third_party_models() -> [(&'static str, &'static str); 1] {
     [("AI Denoise model", rawmakase_inference::RAWNIND.attribution)]
 }
 

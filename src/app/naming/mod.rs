@@ -4,7 +4,7 @@
 //! what names need from the photos' files (`read`).
 //! Export and Rename Photos each own an editor and a read for their dialog;
 //! none of these knows who opened it.
-pub(super) mod editor;
-pub(super) mod menu;
-pub(super) mod presets;
-pub(super) mod read;
+pub(in crate::app) mod editor;
+pub(in crate::app) mod menu;
+pub(in crate::app) mod presets;
+pub(in crate::app) mod read;

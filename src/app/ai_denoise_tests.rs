@@ -18,7 +18,7 @@ fn the_switch_is_an_edit_and_a_result_is_not() {
     // The Detail panel sits far down: a tall window keeps it on screen.
     fn controls_frame(
         ctx: &egui::Context,
-        editor: &mut super::super::Editor,
+        editor: &mut crate::app::Editor,
         events: Vec<egui::Event>,
     ) -> egui::accesskit::TreeUpdate {
         let mut output = ctx.run_ui(
@@ -42,7 +42,7 @@ fn the_switch_is_an_edit_and_a_result_is_not() {
             .accesskit_update
             .expect("accessibility is on")
     }
-    fn click(ctx: &egui::Context, editor: &mut super::super::Editor, node: &egui::accesskit::Node) {
+    fn click(ctx: &egui::Context, editor: &mut crate::app::Editor, node: &egui::accesskit::Node) {
         let b = node.bounds().expect("placed");
         let at = egui::pos2(((b.x0 + b.x1) / 2.) as f32, ((b.y0 + b.y1) / 2.) as f32);
         for pressed in [true, false] {
@@ -122,7 +122,7 @@ fn the_switch_is_an_edit_and_a_result_is_not() {
 /// A render of another photo (Reference View) never gets this photo's result.
 #[test]
 fn only_the_documents_own_image_gets_its_source() {
-    let mut doc = super::super::state::Document::default();
+    let mut doc = crate::app::state::Document::default();
     let plain = fixture(Provider::Cpu, Behaviour::default()).plain();
     doc.set_image(plain.clone());
     doc.ai.source = Some(AiSource::recover((*plain).clone(), Cancel::NEVER).unwrap());
@@ -182,7 +182,7 @@ fn a_failure_after_a_partial_result_drops_it() {
 /// between is refused, never denoised into the first file's image.
 #[test]
 fn the_decoded_images_file_is_the_loaders_reading() {
-    use super::super::worker::Event;
+    use crate::app::worker::Event;
     let ctx = eframe::egui::Context::default();
     let mut editor = crate::app::testing::community_editor(&ctx, "X-T20", false);
     let f = fixture(Provider::Cpu, Behaviour::default());
@@ -242,7 +242,7 @@ fn a_job_under_way_keeps_the_librarys_previews_in_the_background() {
     let mut editor = crate::app::testing::community_editor(&ctx, "X-T20", false);
     let f = fixture(Provider::Cpu, Behaviour::default());
     editor.ai_denoise = f.service.clone();
-    editor.module = super::super::Module::Library;
+    editor.module = crate::app::Module::Library;
     assert_eq!(editor.preview_pace(), Pace::Full);
     let plain = f.plain();
     let gate = f.behaviour.gate.lock().unwrap();
@@ -273,7 +273,7 @@ fn a_job_handing_over_its_result_keeps_the_librarys_previews_in_the_background()
     let mut editor = crate::app::testing::community_editor(&ctx, "X-T20", false);
     let f = fixture(Provider::Cpu, Behaviour::default());
     editor.ai_denoise = f.service.clone();
-    editor.module = super::super::Module::Library;
+    editor.module = crate::app::Module::Library;
     // The final result's sink waits here, inside the hand-over.
     let handing = Arc::new(Mutex::new(()));
     let held = handing.lock().unwrap();
@@ -314,12 +314,12 @@ fn a_job_handing_over_its_result_keeps_the_librarys_previews_in_the_background()
 #[test]
 fn command_line_renders_use_the_cache_folder_preferences_chose() {
     let chosen = tempfile::tempdir().unwrap();
-    let session = super::super::session::Session {
+    let session = crate::app::session::Session {
         decoded_cache_folder: Some(chosen.path().to_path_buf()),
         ..Default::default()
     };
     assert!(user_cache(&session).dir().starts_with(chosen.path()));
-    let default = super::super::session::Session::default();
+    let default = crate::app::session::Session::default();
     assert_eq!(user_cache(&default).dir(), AiCache::default().dir());
 }
 
@@ -337,7 +337,7 @@ fn the_loupe_loads_a_finished_result_of_any_provider_without_running_the_model()
     editor.document.set_image(plain);
     editor.document.opened_at(path.clone());
     editor.document.image_file = editor.document.file.clone();
-    editor.module = super::super::Module::Library;
+    editor.module = crate::app::Module::Library;
     crate::app::testing::in_edit_frame(&ctx, &mut editor, |e| {
         e.document.edit.recipe_mut().switch_ai_denoise(true)
     });

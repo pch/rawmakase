@@ -4,11 +4,11 @@
 //! first, and the next F gives it to the photo. F again, or Escape, brings the
 //! chrome back. The window itself is left alone: no display is filled and
 //! nothing about it changes, as Lightroom's screen modes do.
-use super::Module;
+use crate::app::Module;
 
 /// What the mode did to the Library's view, for the caller to apply.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum View {
+pub(in crate::app) enum View {
     /// The view is as it was.
     Unchanged,
     /// The photo has the window: open the Loupe.
@@ -20,7 +20,7 @@ pub(super) enum View {
 /// The module whose chrome F hid, and what it gave the window to; the normal
 /// window in `None`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct Chrome {
+pub(in crate::app) struct Chrome {
     hidden: Option<Module>,
     /// In the Library, whether the photo, rather than the grid, has the window.
     photo: bool,
@@ -31,11 +31,11 @@ pub(super) struct Chrome {
 
 impl Chrome {
     /// Whether `module`'s chrome is hidden, leaving only the photo or the grid.
-    pub(super) fn hidden(self, module: Module) -> bool {
+    pub(in crate::app) fn hidden(self, module: Module) -> bool {
         self.hidden == Some(module)
     }
     /// Whether `module`'s chrome is drawn.
-    pub(super) fn shown(self, module: Module) -> bool {
+    pub(in crate::app) fn shown(self, module: Module) -> bool {
         !self.hidden(module)
     }
     /// F: hide `module`'s chrome, or bring it back. The Library gives the window
@@ -43,7 +43,7 @@ impl Chrome {
     /// Loupe, unless the photo is already the one shown, opened from the grid
     /// too. Only what is drawn changes: the panels keep the layout they are
     /// saved with.
-    pub(super) fn toggle(&mut self, module: Module, loupe: bool) -> View {
+    pub(in crate::app) fn toggle(&mut self, module: Module, loupe: bool) -> View {
         if self.hidden != Some(module) {
             self.hidden = Some(module);
             self.photo = module == Module::Develop || loupe;
@@ -59,7 +59,7 @@ impl Chrome {
     }
     /// Shows the chrome again, closing a Loupe this mode opened; Escape, or the
     /// mode being left behind on a module switch.
-    pub(super) fn show(&mut self) -> View {
+    pub(in crate::app) fn show(&mut self) -> View {
         self.hidden = None;
         self.photo = false;
         if std::mem::take(&mut self.opened) {
@@ -73,7 +73,7 @@ impl Chrome {
     /// it was turned on in, so G and D always land on a window with its bars,
     /// not on a hidden one. A Loupe closed while the mode is on gives the
     /// window back to the grid, and one opened later is not the mode's.
-    pub(super) fn follow(&mut self, module: Module, loupe: bool) -> View {
+    pub(in crate::app) fn follow(&mut self, module: Module, loupe: bool) -> View {
         if self.hidden.is_some_and(|hidden| hidden != module) {
             return self.show();
         }

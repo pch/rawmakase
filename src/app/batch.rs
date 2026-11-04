@@ -2,11 +2,11 @@
 //! Settings, as in Lightroom's Library, and the window every batch edit (these, Sync
 //! Settings and Match Total Exposures) shows while it runs, with its Cancel. The
 //! batch itself runs on the Sync path (see `sync`).
-use super::Editor;
-use super::state::PresetBrowser;
-use super::sync::{BatchChange, BatchPreset, BatchStage};
-use super::theme;
+use crate::app::Editor;
 use crate::app::design::{self, Tone, inset, space, text};
+use crate::app::state::PresetBrowser;
+use crate::app::sync::{BatchChange, BatchPreset, BatchStage};
+use crate::app::theme;
 use eframe::egui::{self, Vec2};
 use std::time::Duration;
 
@@ -19,7 +19,7 @@ const REDRAW: Duration = Duration::from_millis(100);
 
 /// What Quick Develop asked for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum QuickRequest {
+pub(in crate::app) enum QuickRequest {
     AutoSettings,
     /// Preset `i` of the preset library.
     Preset(usize),
@@ -27,14 +27,14 @@ pub(super) enum QuickRequest {
 
 /// Quick Develop's batch controls, under Open in Develop: a Saved Preset chooser and
 /// Auto Settings, for the `count` photos selected.
-pub(super) fn quick_develop(
+pub(in crate::app) fn quick_develop(
     ui: &mut egui::Ui,
     presets: &mut PresetBrowser,
     count: usize,
 ) -> Option<QuickRequest> {
     let mut request = None;
     let width = ui.available_width();
-    let photos = super::widgets::plural(count, "selected photo", "selected photos");
+    let photos = crate::app::widgets::plural(count, "selected photo", "selected photos");
     ui.add_space(space::XS);
     let chooser = ui
         .add_enabled(
@@ -82,12 +82,13 @@ pub(super) fn quick_develop(
 /// panel orders them. Returns the preset clicked.
 fn preset_chooser(ui: &mut egui::Ui, presets: &mut PresetBrowser) -> Option<usize> {
     let palette = theme::palette(ui.ctx());
-    super::widgets::search_field(ui, &mut presets.chooser_filter, "Search presets");
+    crate::app::widgets::search_field(ui, &mut presets.chooser_filter, "Search presets");
     let library = presets.library.clone();
-    let favorites = super::presets::preset_groups(&library, &presets.chooser_filter, |_, p| {
-        presets.favorites.contains(&p.id)
-    });
-    let groups = super::presets::preset_groups(&library, &presets.chooser_filter, |_, _| true);
+    let favorites =
+        crate::app::presets::preset_groups(&library, &presets.chooser_filter, |_, p| {
+            presets.favorites.contains(&p.id)
+        });
+    let groups = crate::app::presets::preset_groups(&library, &presets.chooser_filter, |_, _| true);
     let favorites: Vec<(usize, String)> = favorites.into_iter().flat_map(|g| g.presets).collect();
     let mut clicked = None;
     egui::ScrollArea::vertical()
@@ -127,7 +128,7 @@ fn preset_chooser(ui: &mut egui::Ui, presets: &mut PresetBrowser) -> Option<usiz
 
 impl Editor {
     /// Starts what Quick Develop asked for on every selected photo.
-    pub(super) fn quick_develop_request(&mut self, request: QuickRequest) {
+    pub(in crate::app) fn quick_develop_request(&mut self, request: QuickRequest) {
         let change = match request {
             QuickRequest::AutoSettings => BatchChange::AutoSettings,
             QuickRequest::Preset(i) => {
@@ -147,7 +148,7 @@ impl Editor {
     /// The running batch's progress, and its Cancel, which stays usable while the
     /// rest of the window waits for the batch. Cancel is refused once the batch is
     /// saving; the batch ends when its worker reports back either way.
-    pub(super) fn batch_window(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn batch_window(&mut self, ctx: &egui::Context) {
         let Some(progress) = self.activity.batch() else {
             return;
         };
@@ -167,7 +168,7 @@ impl Editor {
         let mut cancel = false;
         egui::Modal::new(egui::Id::new("batch-progress"))
             .frame(
-                super::widgets::modal_frame(&palette)
+                crate::app::widgets::modal_frame(&palette)
                     .inner_margin(design::margin_same(inset::DIALOG)),
             )
             .show(ctx, |ui| {

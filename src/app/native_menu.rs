@@ -1,5 +1,5 @@
 //! Routes native menu choices through the same editor operations as the UI.
-use super::{
+use crate::app::{
     Editor, Module,
     dialogs::{CatalogDialog, FolderAction},
     panels::{PanelChange, WorkspacePanel},
@@ -8,7 +8,7 @@ use crate::platform::menu::Action;
 use eframe::egui;
 
 impl Editor {
-    pub(super) fn menu_state(&self, action: Action, ctx: &egui::Context) -> (bool, bool) {
+    pub(in crate::app) fn menu_state(&self, action: Action, ctx: &egui::Context) -> (bool, bool) {
         let free = !self.activity.is_busy() && !self.workspace_modal() && !self.close_confirm;
         let text = ctx.text_edit_focused();
         let library = self.library.is_some();
@@ -50,7 +50,7 @@ impl Editor {
         (enabled, checked)
     }
 
-    pub(super) fn menu_action(&mut self, action: Action, ctx: &egui::Context) {
+    pub(in crate::app) fn menu_action(&mut self, action: Action, ctx: &egui::Context) {
         // Revalidate when dispatched: a queued click may precede a modal or job.
         if !self.menu_state(action, ctx).0 {
             return;
@@ -78,7 +78,7 @@ impl Editor {
             return;
         }
         match action {
-            Action::Preferences => self.open_preferences(super::preferences::Tab::General),
+            Action::Preferences => self.open_preferences(crate::app::preferences::Tab::General),
             Action::NewCatalog => self.catalog_dialog(CatalogDialog::Create, ctx),
             Action::OpenCatalog => self.catalog_dialog(CatalogDialog::Open, ctx),
             Action::AddFolder => self.catalog_dialog(CatalogDialog::Folder(FolderAction::Add), ctx),
@@ -108,7 +108,7 @@ impl Editor {
             }
             Action::AutoStack => {
                 if let Some(library) = &mut self.library {
-                    library.stack_action(super::library::StackAction::AutoStack, Vec::new());
+                    library.stack_action(crate::app::library::StackAction::AutoStack, Vec::new());
                 }
             }
             Action::Develop => {
@@ -133,7 +133,7 @@ impl Editor {
     }
 
     #[cfg(target_os = "macos")]
-    pub(super) fn native_menu_actions(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn native_menu_actions(&mut self, ctx: &egui::Context) {
         if !self.native_menu {
             return;
         }
@@ -144,7 +144,7 @@ impl Editor {
     }
 
     #[cfg(target_os = "macos")]
-    pub(super) fn update_native_menu(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn update_native_menu(&mut self, ctx: &egui::Context) {
         if self.native_menu {
             self.sync_undo();
             crate::platform::menu::update(|action| self.menu_state(action, ctx));
