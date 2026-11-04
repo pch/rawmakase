@@ -454,12 +454,29 @@ fn display_axes(r: &Recipe, m: &Metadata) -> [[f32; 2]; 2] {
 }
 
 /// The source's settings in `selection` applied over `to`, with everything that depends
-/// on the photo worked out again for `target`.
+/// on the photo worked out again for `target`. A Lensfun lens takes the target's camera
+/// as the database installed now knows it.
 pub fn transfer(
     source: Source<'_>,
     to: &Recipe,
     selection: &GroupSelection,
     target: Target<'_>,
+) -> Transferred {
+    transfer_with_lensfun(
+        source,
+        to,
+        selection,
+        target,
+        &crate::lens::lensfun::installed::Handle::Installed,
+    )
+}
+/// [`transfer`], with a Lensfun lens taken to the target's camera against `lensfun`.
+pub(crate) fn transfer_with_lensfun(
+    source: Source<'_>,
+    to: &Recipe,
+    selection: &GroupSelection,
+    target: Target<'_>,
+    lensfun: &crate::lens::lensfun::installed::Handle,
 ) -> Transferred {
     let from = source.recipe;
     let mut recipe = to.clone();
@@ -480,7 +497,7 @@ pub fn transfer(
     }
     // A Lensfun lens takes the target's camera, which its correction is scaled for.
     if selection.contains(SettingGroup::LensProfileCorrections) {
-        recipe.lens_profile_choice.for_photo(m);
+        recipe.lens_profile_choice.for_photo(m, lensfun);
     }
     // RAW and rendered files keep white balance in different terms (Kelvin against
     // relative) and have profiles of their own: between them, the target keeps its

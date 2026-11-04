@@ -559,7 +559,6 @@ fn a_transfer_between_aspect_modes_takes_the_target_s_variant() {
         focal: 5.1,
         width: w,
         height: h,
-        lensfun: installed(db.clone()),
         ..Default::default()
     };
     let from = lx3(3648, 2736);
@@ -567,7 +566,7 @@ fn a_transfer_between_aspect_modes_takes_the_target_s_variant() {
     let chosen = LensfunChoice::of(lens, &db, choice::camera_for(&db, &from));
     assert_eq!(chosen.camera.as_ref().unwrap().crop, 4.7);
     let wide = lx3(3968, 2232);
-    let moved = chosen.for_photo(&wide);
+    let moved = chosen.for_photo(&wide, &installed(db.clone()));
     assert_eq!(moved.camera.as_ref().unwrap().crop, 4.45);
     assert_eq!(moved.frame(&wide).unwrap().crop, 4.45);
 }
@@ -646,20 +645,20 @@ fn without_a_database_another_aspect_mode_isn_t_guessed() {
         focal_35mm,
         width: w,
         height: h,
-        lensfun: installed::Handle::Given(None),
         ..Default::default()
     };
     let from = lx3(3648, 2736, 0.);
     let chosen = LensfunChoice::of(&db.lenses[0], &db, choice::camera_for(&db, &from));
     assert!(chosen.camera.as_ref().unwrap().per_aspect);
     let square = lx3(2736, 2736, 0.);
-    let moved = chosen.for_photo(&square);
+    let none = installed::Handle::Given(None);
+    let moved = chosen.for_photo(&square, &none);
     assert!(moved.camera.is_none() && moved.frame(&square).is_none());
     let with_exif = lx3(2736, 2736, 27.);
-    let moved = chosen.for_photo(&with_exif);
+    let moved = chosen.for_photo(&with_exif, &none);
     assert!((moved.frame(&with_exif).unwrap().crop - 27. / 5.1).abs() < 1e-4);
     // The same mode keeps its camera.
-    assert_eq!(chosen.for_photo(&from).camera, chosen.camera);
+    assert_eq!(chosen.for_photo(&from, &none).camera, chosen.camera);
     // A body with one entry still computes its readout (a G6's 1:1).
     let g6 = |w: u32, h: u32| Metadata {
         exif_make: "Panasonic".into(),
@@ -667,10 +666,18 @@ fn without_a_database_another_aspect_mode_isn_t_guessed() {
         focal: 19.,
         width: w,
         height: h,
-        lensfun: installed::Handle::Given(None),
         ..Default::default()
     };
     let chosen = LensfunChoice::of(&db.lenses[0], &db, choice::camera_for(&db, &g6(4608, 3456)));
     let square = g6(3456, 3456);
-    assert!((chosen.for_photo(&square).frame(&square).unwrap().crop - 2.357_022_6).abs() < 1e-4);
+    assert!(
+        (chosen
+            .for_photo(&square, &none)
+            .frame(&square)
+            .unwrap()
+            .crop
+            - 2.357_022_6)
+            .abs()
+            < 1e-4
+    );
 }

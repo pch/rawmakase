@@ -1,5 +1,6 @@
 use super::PhotoMeasures;
 use super::Preset;
+use crate::lens::lensfun::installed::Handle;
 use crate::model::camera_raw as crs;
 use crate::model::recipe::Recipe;
 use crate::{camera_data::Metadata, camera_profiles::CameraProfile};
@@ -131,13 +132,25 @@ const METADATA: &[&str] = &[
     "RAWmakaseWhiteBalanceModel",
 ];
 impl Preset {
-    /// Apply to a private recipe, publishing only after every stage validates.
+    /// Apply to a private recipe, publishing only after every stage validates. A
+    /// Lensfun lens the settings name resolves against the database installed now.
     pub fn apply(
         &self,
         base: &Recipe,
         m: &Metadata,
         profiles: &[Arc<CameraProfile>],
         image: Option<&dyn PhotoMeasures>,
+    ) -> Result<Recipe> {
+        self.apply_with_lensfun(base, m, profiles, image, &Handle::Installed)
+    }
+    /// [`apply`](Self::apply), resolving a Lensfun lens against `lensfun`.
+    pub(crate) fn apply_with_lensfun(
+        &self,
+        base: &Recipe,
+        m: &Metadata,
+        profiles: &[Arc<CameraProfile>],
+        image: Option<&dyn PhotoMeasures>,
+        lensfun: &Handle,
     ) -> Result<Recipe> {
         ensure!(self.blockers.is_empty(), "{}", self.blockers.join("; "));
         let mut settings = Settings {
@@ -148,7 +161,7 @@ impl Preset {
         self.apply_profile(&mut settings, &mut recipe, m, profiles)?;
         self.apply_basic(&mut settings, &mut recipe)?;
         // Auto white balance is measured on the crop, so geometry comes first.
-        self.apply_geometry(&mut settings, &mut recipe, m)?;
+        self.apply_geometry(&mut settings, &mut recipe, m, lensfun)?;
         // Before white balance: Auto measures the photo as Upright frames it.
         self.apply_upright(&mut settings, &mut recipe)?;
         self.apply_white_balance(&mut settings, &mut recipe, m, image)?;
@@ -179,7 +192,19 @@ impl Preset {
         profiles: &[Arc<CameraProfile>],
         image: Option<&dyn PhotoMeasures>,
     ) -> Result<(Recipe, Vec<String>)> {
-        if let Ok(recipe) = self.apply(base, m, profiles, image) {
+        self.apply_lenient_with_lensfun(base, m, profiles, image, &Handle::Installed)
+    }
+    /// [`apply_lenient`](Self::apply_lenient), resolving a Lensfun lens against
+    /// `lensfun`.
+    pub(crate) fn apply_lenient_with_lensfun(
+        &self,
+        base: &Recipe,
+        m: &Metadata,
+        profiles: &[Arc<CameraProfile>],
+        image: Option<&dyn PhotoMeasures>,
+        lensfun: &Handle,
+    ) -> Result<(Recipe, Vec<String>)> {
+        if let Ok(recipe) = self.apply_with_lensfun(base, m, profiles, image, lensfun) {
             return Ok((recipe, self.ignored_white_balance(m).into_iter().collect()));
         }
         let mut warnings = self.blockers.clone();
@@ -204,7 +229,7 @@ impl Preset {
             self.apply_basic(&mut settings.borrow_mut(), r)
         });
         stage(&mut recipe, &|r| {
-            self.apply_geometry(&mut settings.borrow_mut(), r, m)
+            self.apply_geometry(&mut settings.borrow_mut(), r, m, lensfun)
         });
         stage(&mut recipe, &|r| {
             self.apply_upright(&mut settings.borrow_mut(), r)
@@ -917,6 +942,7 @@ impl Preset {
         settings: &mut Settings<'_>,
         r: &mut Recipe,
         m: &Metadata,
+        lensfun: &Handle,
     ) -> Result<()> {
         let v = settings.values;
         settings.assign(crs::CROP_ANGLE, &mut r.straighten, -45., 45.)?;
@@ -964,8 +990,7 @@ impl Preset {
             settings.seen.insert(key.into());
         }
         if let Some(choice) = lensfun_choice(v)? {
-            let choice = m
-                .lensfun
+            let choice = lensfun
                 .get()
                 .and_then(|installed| choice.resolved(&installed.db, m))
                 .unwrap_or(choice);

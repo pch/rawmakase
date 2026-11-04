@@ -608,10 +608,8 @@ fn lensfun_renders_from_its_copy_and_never_as_adobe() {
     assert!(c.distortion.is_some() && c.chromatic.is_some() && c.vignetting.is_some());
     assert!(c.chromatic_at_source);
     assert_eq!(r.missing_lens_profile(&m), None);
-    // The same with no database installed, or another version of it.
-    assert!(m.lensfun.get().is_none());
-    m.lensfun = fixture::installed(-0.2, 1_900_000_000);
-    assert_eq!(*r.lens_correction(&m).unwrap(), c);
+    // Rendering takes no database, so neither none installed nor another version of
+    // it changes this: the choice carries its own calibration.
     // Switched off, nothing of it renders; Default never picks it.
     r.lens_profile = false;
     assert!(
@@ -673,12 +671,12 @@ fn an_unresolved_lensfun_choice_falls_back_to_built_in_only() {
             .ends_with("; using Canon built-in")
     );
     // Resolving copies the installed calibration.
-    m.lensfun = fixture::installed(-0.02, 1_793_180_205);
+    let installed = fixture::installed(-0.02, 1_793_180_205);
     let resolved = r
         .lens_profile_choice
         .lensfun()
         .unwrap()
-        .resolved(&m.lensfun.get().unwrap().db, &m)
+        .resolved(&installed.get().unwrap().db, &m)
         .unwrap();
     assert_eq!(resolved.calibration, fixture::choice().calibration);
 }
@@ -710,16 +708,16 @@ fn lensfun_recipes_save_in_a_format_earlier_releases_refuse() {
 fn a_transferred_lensfun_choice_takes_the_target_s_camera() {
     use crate::lens::lensfun::fixture;
     use crate::model::recipe::Recipe;
-    use crate::model::settings_groups::{GroupSelection, Source, Target, transfer};
+    use crate::model::settings_groups::{GroupSelection, Source, Target, transfer_with_lensfun};
     let source_photo = fixture::photo();
-    let mut target_photo = fixture::other_camera();
-    target_photo.lensfun = fixture::installed(-0.02, 1_793_180_205);
+    let target_photo = fixture::other_camera();
+    let installed = fixture::installed(-0.02, 1_793_180_205);
     let mut source = Recipe {
         lens_profile: true,
         ..Default::default()
     };
     source.lens_profile_choice.choose_lensfun(fixture::choice());
-    let out = transfer(
+    let out = transfer_with_lensfun(
         Source {
             recipe: &source,
             metadata: &source_photo,
@@ -730,6 +728,7 @@ fn a_transferred_lensfun_choice_takes_the_target_s_camera() {
             metadata: &target_photo,
             profiles: &[],
         },
+        &installed,
     );
     let moved = out.recipe.lens_profile_choice.lensfun().unwrap();
     assert_eq!(moved.camera.as_ref().unwrap().model, "Canon EOS 6D");
@@ -743,9 +742,8 @@ fn a_transferred_lensfun_choice_takes_the_target_s_camera() {
             .starts_with("Lensfun")
     );
     // Without a database, the copy keeps what the photo itself says: nothing here.
-    let mut alone = fixture::other_camera();
-    alone.lensfun = crate::lens::lensfun::installed::Handle::Given(None);
-    let out = transfer(
+    let alone = fixture::other_camera();
+    let out = transfer_with_lensfun(
         Source {
             recipe: &source,
             metadata: &source_photo,
@@ -756,6 +754,7 @@ fn a_transferred_lensfun_choice_takes_the_target_s_camera() {
             metadata: &alone,
             profiles: &[],
         },
+        &fixture::none(),
     );
     assert!(
         out.recipe

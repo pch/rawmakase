@@ -86,6 +86,20 @@ pub fn load_preset(path: &Path) -> Result<LoadedPreset> {
 /// replace the photo's only when it has any, as in Lightroom. Between a RAW and a
 /// rendered file the photo keeps its white balance and profile, as with Copy and Sync.
 pub fn applied_to(preset: LoadedPreset, photo: &Recipe, m: &Metadata) -> Recipe {
+    applied_to_with_lensfun(
+        preset,
+        photo,
+        m,
+        &crate::lens::lensfun::installed::Handle::Installed,
+    )
+}
+/// [`applied_to`], with a Lensfun lens taken to this photo's camera against `lensfun`.
+pub(crate) fn applied_to_with_lensfun(
+    preset: LoadedPreset,
+    photo: &Recipe,
+    m: &Metadata,
+    lensfun: &crate::lens::lensfun::installed::Handle,
+) -> Recipe {
     use crate::model::panels::Panel;
     let LoadedPreset {
         recipe: mut preset,
@@ -103,7 +117,7 @@ pub fn applied_to(preset: LoadedPreset, photo: &Recipe, m: &Metadata) -> Recipe 
         preset.keep_white_balance_and_profile(photo);
     }
     // A Lensfun lens takes this photo's camera.
-    preset.lens_profile_choice.for_photo(m);
+    preset.lens_profile_choice.for_photo(m, lensfun);
     preset
 }
 
@@ -116,15 +130,15 @@ mod tests {
         use crate::lens::lensfun::fixture;
         let mut r = Recipe::default();
         r.lens_profile_choice.choose_lensfun(fixture::choice());
-        let mut m = fixture::other_camera();
-        m.lensfun = fixture::installed(-0.02, 1_793_180_205);
-        let applied = applied_to(
+        let m = fixture::other_camera();
+        let applied = applied_to_with_lensfun(
             LoadedPreset {
                 recipe: r,
                 rendered: false,
             },
             &Recipe::default(),
             &m,
+            &fixture::installed(-0.02, 1_793_180_205),
         );
         let camera = applied
             .lens_profile_choice

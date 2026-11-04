@@ -187,10 +187,10 @@ impl LensProfileChoice {
         self.id = Some(LensProfileRef::Adobe(self.id_for(profile)));
     }
     /// The choice taken to photo `m`: a Lensfun lens gets `m`'s camera
-    /// (`LensfunChoice::for_photo`); an Adobe one is the same.
-    pub fn for_photo(&mut self, m: &Metadata) {
+    /// ([`LensfunChoice::for_photo`], against `lensfun`); an Adobe one is the same.
+    pub fn for_photo(&mut self, m: &Metadata, lensfun: &crate::lens::lensfun::installed::Handle) {
         if let Some(LensProfileRef::Lensfun(c)) = &mut self.id {
-            **c = c.for_photo(m);
+            **c = c.for_photo(m, lensfun);
         }
     }
     /// Picking a Lensfun lens: Custom, naming it.

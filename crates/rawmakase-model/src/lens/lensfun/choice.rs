@@ -269,15 +269,15 @@ pub fn camera_for(db: &super::Database, m: &Metadata) -> Option<LensfunCamera> {
 
 impl LensfunChoice {
     /// This choice taken to photo `m` (Copy Settings, Sync, a preset): the same lens,
-    /// calibration and provenance, with `m`'s camera, as Lensfun's database installed
+    /// calibration and provenance, with `m`'s camera, as the database `lensfun` gives
     /// now knows it, else as the photo's own EXIF tells. A photo of the camera it
     /// was chosen for keeps it as it is.
-    pub fn for_photo(&self, m: &Metadata) -> Self {
+    pub fn for_photo(&self, m: &Metadata, lensfun: &super::installed::Handle) -> Self {
         let frame = frame_size(m);
         let photo = photo_of(m, frame);
         // With a database, the entry for this photo's camera and frame (Lensfun's
         // aspect variants differ in crop factor), even of the same body.
-        let camera = match m.lensfun.get() {
+        let camera = match lensfun.get() {
             Some(installed) => camera_for(&installed.db, m),
             // Without one, the same body keeps its camera, unless it is one aspect
             // mode's and this frame is another's.

@@ -173,9 +173,11 @@ impl Cache {
     }
 }
 
-/// The database editing a photo resolves Lensfun lenses against
-/// (`Metadata::lensfun`): the one installed when it is asked for, so an install,
-/// update or removal since the photo opened counts; or one given (tests).
+/// The database editing a photo resolves Lensfun lenses against: the one installed
+/// when it is asked for, so an install, update or removal since the photo opened
+/// counts; or one given (tests). Copy Settings, Sync, presets and XMP pass
+/// [`Handle::Installed`]; rendering never reads it, since an edit keeps its lens's
+/// calibration.
 #[derive(Clone, Default)]
 pub enum Handle {
     #[default]

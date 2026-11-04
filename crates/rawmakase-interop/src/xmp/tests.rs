@@ -1556,7 +1556,7 @@ fn lens_profile_identity_round_trips() -> Result<()> {
 /// else keeps it named and unresolved, never Auto and never an Adobe profile.
 #[test]
 fn lensfun_lenses_travel_by_identity() -> Result<()> {
-    use crate::lens::lensfun::fixture;
+    use crate::lens::lensfun::{fixture, installed::Handle};
     let mut m = fixture::photo();
     m.wb = [1.; 3];
     m.daylight_wb = [1.; 3];
@@ -1606,10 +1606,16 @@ fn lensfun_lenses_travel_by_identity() -> Result<()> {
     );
     m.lens_profiles =
         crate::lens::lcp::Library::from_texts([("a.lcp", adobe.as_str())]).for_photo(&m);
-    let read = |m: &Metadata| {
-        parse(Path::new("IMG.xmp"), &packet)?.apply(&Recipe::default(), m, &[], None)
+    let read = |m: &Metadata, lensfun: &Handle| {
+        parse(Path::new("IMG.xmp"), &packet)?.apply_with_lensfun(
+            &Recipe::default(),
+            m,
+            &[],
+            None,
+            lensfun,
+        )
     };
-    let unresolved = read(&m)?;
+    let unresolved = read(&m, &fixture::none())?;
     let choice = unresolved.lens_profile_choice.lensfun().unwrap();
     assert!(!choice.is_resolved());
     assert_eq!(choice.lens, fixture::choice().lens);
@@ -1630,14 +1636,14 @@ fn lensfun_lenses_travel_by_identity() -> Result<()> {
     assert!(again.contains(r#"rawmakase:LensfunModel="Canon EF 70-200mm f/2.8L IS II USM""#));
     // With the database: resolved now, from the version installed, which may be newer
     // than the one the edit was written with.
-    m.lensfun = fixture::installed(-0.05, 1_900_000_000);
-    let resolved = read(&m)?;
+    let installed = fixture::installed(-0.05, 1_900_000_000);
+    let resolved = read(&m, &installed)?;
     let choice = resolved.lens_profile_choice.lensfun().unwrap();
     assert!(choice.is_resolved());
     assert_eq!(choice.provenance.database, 1_900_000_000);
     assert_eq!(
         choice.calibration.as_deref(),
-        Some(&m.lensfun.get().unwrap().db.lenses[0].calibration)
+        Some(&installed.get().unwrap().db.lenses[0].calibration)
     );
     assert!(
         resolved
@@ -1652,8 +1658,13 @@ fn lensfun_lenses_travel_by_identity() -> Result<()> {
         crate::xml::ns::RDF,
         crate::xml::ns::CRS
     );
-    let from_elements =
-        parse(Path::new("e.xmp"), &elements)?.apply(&Recipe::default(), &m, &[], None)?;
+    let from_elements = parse(Path::new("e.xmp"), &elements)?.apply_with_lensfun(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &installed,
+    )?;
     assert!(
         from_elements
             .lens_profile_choice
@@ -1668,7 +1679,13 @@ fn lensfun_lenses_travel_by_identity() -> Result<()> {
         crate::xml::ns::RDF,
         crate::xml::ns::CRS
     );
-    let from_split = parse(Path::new("s.xmp"), &split)?.apply(&Recipe::default(), &m, &[], None)?;
+    let from_split = parse(Path::new("s.xmp"), &split)?.apply_with_lensfun(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &installed,
+    )?;
     assert!(
         from_split
             .lens_profile_choice
@@ -1679,10 +1696,8 @@ fn lensfun_lenses_travel_by_identity() -> Result<()> {
     assert!(from_split.lens_profile_in_use(&m).used.is_none());
     // The database is the one installed when the XMP is applied: removed since, the
     // lens stays named.
-    let mut removed = m.clone();
-    removed.lensfun = crate::lens::lensfun::installed::Handle::Given(None);
     assert!(
-        !read(&removed)?
+        !read(&m, &fixture::none())?
             .lens_profile_choice
             .lensfun()
             .unwrap()
@@ -1705,8 +1720,13 @@ fn lensfun_lenses_travel_by_identity() -> Result<()> {
         "{preset}"
     );
     assert!(preset.contains("rawmakase:LensfunModel="), "{preset}");
-    let applied =
-        parse(Path::new("Lens.xmp"), &preset)?.apply(&Recipe::default(), &m, &[], None)?;
+    let applied = parse(Path::new("Lens.xmp"), &preset)?.apply_with_lensfun(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &installed,
+    )?;
     assert!(applied.lens_profile_choice.lensfun().unwrap().is_resolved());
     // A preset of other groups doesn't.
     let mut other = crate::model::settings_groups::GroupSelection::none();

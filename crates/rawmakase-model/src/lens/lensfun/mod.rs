@@ -452,7 +452,7 @@ pub mod fixture {
         db.timestamp = timestamp;
         db
     }
-    /// The database as if installed, for `Metadata::lensfun`.
+    /// The database as if installed, for what resolves a Lensfun lens against it.
     pub fn installed(k1: f32, timestamp: i64) -> installed::Handle {
         let db = database(k1, timestamp);
         installed::Handle::Given(Some(Arc::new(installed::Installed {
@@ -469,7 +469,8 @@ pub mod fixture {
         })))
     }
     /// A photo the lens fits, at 100 mm and f/4, with no 35 mm equivalent focal
-    /// length and no database (never the one installed on the computer).
+    /// length. Tests resolve it against [`none`], never the database installed on
+    /// the computer.
     pub fn photo() -> Metadata {
         Metadata {
             make: "Canon".into(),
@@ -481,9 +482,12 @@ pub mod fixture {
             aperture: 4.,
             width: 600,
             height: 400,
-            lensfun: installed::Handle::Given(None),
             ..Default::default()
         }
+    }
+    /// No database, as on a computer without Lensfun installed.
+    pub fn none() -> installed::Handle {
+        installed::Handle::Given(None)
     }
     /// The same lens on another body Lensfun knows.
     pub fn other_camera() -> Metadata {
