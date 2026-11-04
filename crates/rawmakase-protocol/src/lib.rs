@@ -8,6 +8,9 @@
 //!
 //! This crate depends on nothing of the app's, so a client builds without its
 //! GUI, GPU or native decoding libraries.
+// Every public item says what it is for: this crate is a contract other crates
+// and clients build on (#808 step 4.13).
+#![warn(missing_docs)]
 pub mod paths;
 pub mod request;
 
@@ -43,9 +46,13 @@ pub struct Target {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CurveChannel {
+    /// The composite curve, of the three channels together.
     Rgb,
+    /// The red channel's own curve.
     Red,
+    /// The green channel's own curve.
     Green,
+    /// The blue channel's own curve.
     Blue,
 }
 
@@ -60,6 +67,7 @@ pub mod curve {
 /// Where the running app listens, as `control.json` holds it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Endpoint {
+    /// The [`PROTOCOL`] the app speaks; a client refuses another.
     pub protocol: u32,
     /// A loopback TCP port.
     pub port: u16,

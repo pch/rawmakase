@@ -5,6 +5,9 @@
 //! src/app/shell/automation/socket.rs for the app's side). Each command here is one
 //! request; the app answers once a frame has handled it. The app's own
 //! `rawmakase control` and MCP server use this crate too.
+// Every public item says what it is for: this crate is a contract other crates
+// and clients build on (#808 step 4.13).
+#![warn(missing_docs)]
 use clap::{Parser, Subcommand};
 use rawmakase_protocol::request::{MAX_TICKS, Module, Press};
 use rawmakase_protocol::{Endpoint, PROTOCOL, Request, Target};
@@ -28,8 +31,9 @@ macro_rules! out {
 /// The device's dials and buttons, as mapped with probe.py.
 const CONTROLS: &str = include_str!("../../loupedeck/controls.json");
 
+/// The command line: the app's data folder, what to print, and one command.
 #[derive(Parser)]
-#[command(version, about)]
+#[command(version, about, long_about = None)]
 pub struct Cli {
     /// RAWmakase's data folder, where it leaves control.json
     /// [default: $RAWMAKASE_DATA_DIR, else the app's own default]
@@ -252,11 +256,14 @@ pub fn default_data_dir() -> PathBuf {
     rawmakase_protocol::paths::data_dir()
 }
 
+/// The running app's socket, as its `control.json` announces it.
 pub struct Connection {
     port: u16,
     token: String,
 }
 impl Connection {
+    /// The app's endpoint, read from `control.json` in its data folder `dir`; an
+    /// error saying how to start it when there is none.
     pub fn read(dir: &std::path::Path) -> Result<Self, String> {
         let path = Endpoint::path(dir);
         let text = std::fs::read_to_string(&path).map_err(|e| {
@@ -492,6 +499,8 @@ fn wait_loaded(connection: &Connection, id: Option<i64>, seconds: u64) -> Result
     }
 }
 
+/// Runs `cli`'s command against the running app and prints the answer; `controls`
+/// prints the device's mapping without asking the app.
 pub fn run(cli: Cli) -> Result<(), String> {
     if let Command::Controls = cli.command {
         for (title, section, key) in [
