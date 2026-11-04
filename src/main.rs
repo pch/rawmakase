@@ -2,6 +2,7 @@
 // Command output still attaches to the parent console when there is one.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 use anyhow::Result;
+use rawmakase_cancel::Cancel;
 mod mcp;
 use clap::{Parser, Subcommand};
 use rawmakase::model::recipe::Recipe;
@@ -480,7 +481,7 @@ fn main() -> Result<()> {
                         &edit.checked()?,
                         ai.as_ref(),
                         job.max_edge,
-                        &AtomicBool::new(false),
+                        Cancel::NEVER,
                     )?;
                     rawmakase::export::export_with(
                         &job.output,
@@ -581,7 +582,7 @@ fn main() -> Result<()> {
             }
             if auto_wb {
                 let t = Instant::now();
-                edit = develop::auto_white_balance(&im, &edit)?;
+                edit = develop::auto_white_balance(&im, &edit, Cancel::NEVER)?;
                 eprintln!(
                     "Auto white balance ({:?}): temperature {:.0} tint {:+.0}",
                     t.elapsed(),
@@ -591,7 +592,7 @@ fn main() -> Result<()> {
             }
             if auto {
                 let t = Instant::now();
-                edit = develop::auto_tone(&im, &edit)?;
+                edit = develop::auto_tone(&im, &edit, Cancel::NEVER)?;
                 eprintln!(
                     "Auto ({:?}): exposure {:+.2} contrast {:+.0} highlights {:+.0} shadows {:+.0} whites {:+.0} blacks {:+.0} vibrance {:+.0} saturation {:+.0}",
                     t.elapsed(),
@@ -620,8 +621,7 @@ fn main() -> Result<()> {
                     Tap::SceneInput => develop::quality::Stage::SceneInput,
                     Tap::SceneOutput => develop::quality::Stage::SceneOutput,
                 };
-                let out =
-                    develop::quality::render_stage(&im, &edit, stage, &AtomicBool::new(false))?;
+                let out = develop::quality::render_stage(&im, &edit, stage, Cancel::NEVER)?;
                 save_stage(&output, &input, out, overwrite)?;
                 return Ok(());
             }
@@ -634,7 +634,7 @@ fn main() -> Result<()> {
                 &edit.checked()?,
                 ai.as_ref(),
                 max_edge,
-                &AtomicBool::new(false),
+                Cancel::NEVER,
             )?;
             let rendered = t.elapsed() - developed;
             rawmakase::export::export_with(
@@ -786,7 +786,7 @@ fn main() -> Result<()> {
             for i in 0..iterations {
                 r.exposure = (i % 8) as f32 / 8.;
                 let t = Instant::now();
-                std::hint::black_box(develop::render(&small, &r.checked()?, 1600)?);
+                std::hint::black_box(develop::render(&small, &r.checked()?, 1600, Cancel::NEVER)?);
                 times.push(t.elapsed().as_secs_f64() * 1000.);
             }
             times.sort_by(f64::total_cmp);

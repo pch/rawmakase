@@ -18,8 +18,8 @@
 //! Detail and Smoothness 0–100).
 use crate::camera_data::CameraImage;
 use anyhow::{Result, ensure};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Pyramid levels with a threshold below the finest.
 const LEVELS: usize = 4;
@@ -110,7 +110,7 @@ impl ChromaDenoise {
         Some(Self { thresholds })
     }
     /// `im` with its colour noise reduced; stops with an error when `cancel` is set.
-    pub(crate) fn apply(&self, im: &CameraImage, cancel: &AtomicBool) -> Result<CameraImage> {
+    pub(crate) fn apply(&self, im: &CameraImage, cancel: Cancel<'_>) -> Result<CameraImage> {
         let (w, h) = (im.width as usize, im.height as usize);
         let wb = im.metadata.wb.map(|v| v.max(0.001));
         let (luma, data): (Vec<f32>, Vec<[f32; 2]>) = im
@@ -158,12 +158,12 @@ impl ChromaDenoise {
         finer_noise: f32,
         finest_noise: f32,
         level: usize,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Plane> {
         if level > LEVELS || plane.w < 4 || plane.h < 4 {
             return Ok(plane);
         }
-        ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
+        ensure!(!cancel.is_cancelled(), "Render superseded");
         let coarse = plane.down();
         let up = coarse.up(plane.w, plane.h);
         // A level too small or too clipped to measure has the finer level's noise, as
@@ -183,7 +183,7 @@ impl ChromaDenoise {
             level + 1,
             cancel,
         )?;
-        ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
+        ensure!(!cancel.is_cancelled(), "Render superseded");
         let coarse_up = coarse.up(plane.w, plane.h);
         let threshold = self.thresholds[level]
             * noise
@@ -423,6 +423,7 @@ fn mix(parts: &[([f32; 2], f32)]) -> [f32; 2] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     fn image(w: u32, h: u32, f: impl Fn(u32, u32) -> [f32; 3]) -> CameraImage {
         CameraImage {
@@ -459,7 +460,7 @@ mod tests {
             }
         });
         let d = ChromaDenoise::new(0.25, 0.5, 0.5).unwrap();
-        let out = d.apply(&im, &AtomicBool::new(false)).unwrap();
+        let out = d.apply(&im, Cancel::NEVER).unwrap();
         // Away from the edge colours are as they were; a strong colour edge stays sharp,
         // within a pixel of where it was.
         for (i, (a, b)) in im.pixels.iter().zip(&out.pixels).enumerate() {
@@ -496,7 +497,7 @@ mod tests {
             noise(
                 &ChromaDenoise::new(a, d, 0.5)
                     .unwrap()
-                    .apply(&im, &AtomicBool::new(false))
+                    .apply(&im, Cancel::NEVER)
                     .unwrap(),
             ) / before
         };
@@ -507,7 +508,7 @@ mod tests {
         // Luminance is left alone.
         let out = ChromaDenoise::new(1., 0.5, 0.5)
             .unwrap()
-            .apply(&im, &AtomicBool::new(false))
+            .apply(&im, Cancel::NEVER)
             .unwrap();
         for (a, b) in im.pixels.iter().zip(&out.pixels) {
             let luma = |p: &[f32; 3]| {
@@ -557,7 +558,7 @@ mod tests {
         // Without noise, or with next to none (a tiny threshold), nothing changes.
         for amplitude in [0., 1e-7] {
             let clean = noisy(256, 128, amplitude, |x, _| side(x));
-            let out = d.apply(&clean, &cancel).unwrap();
+            let out = d.apply(&clean, Cancel::new(&cancel)).unwrap();
             for (a, b) in clean.pixels.iter().zip(&out.pixels) {
                 for c in 0..3 {
                     assert!((a[c] - b[c]).abs() < 1e-4, "{amplitude}: {a:?} {b:?}");
@@ -567,7 +568,7 @@ mod tests {
         // With noise, the noise goes and the edge stays sharp: three pixels from it the
         // chroma is within 5% of the side's.
         let im = noisy(256, 128, 0.03, |x, _| side(x));
-        let out = d.apply(&im, &cancel).unwrap();
+        let out = d.apply(&im, Cancel::new(&cancel)).unwrap();
         assert!(chroma_noise(&out, 16, 112) < 0.2 * chroma_noise(&im, 16, 112));
         let mean = |x: u32| {
             let rows = (0..128).map(|y| chroma(out.pixels[(y * 256 + x) as usize]));
@@ -591,7 +592,7 @@ mod tests {
         });
         let out = ChromaDenoise::new(0.25, 0.5, 0.5)
             .unwrap()
-            .apply(&im, &cancel)
+            .apply(&im, Cancel::new(&cancel))
             .unwrap();
         let (before, after) = (chroma_noise(&im, 140, 240), chroma_noise(&out, 140, 240));
         assert!(after < 0.2 * before, "{before} {after}");
@@ -610,7 +611,7 @@ mod tests {
         assert!(clipped > im.pixels.len() / 20, "{clipped}");
         let out = ChromaDenoise::new(0.25, 0.5, 0.5)
             .unwrap()
-            .apply(&im, &cancel)
+            .apply(&im, Cancel::new(&cancel))
             .unwrap();
         let (before, after) = (chroma_noise(&im, 0, 256), chroma_noise(&out, 0, 256));
         assert!(after < 0.3 * before, "{before} {after}");
@@ -618,7 +619,7 @@ mod tests {
         let black = noisy(256, 256, 0.15, |_, _| [0.; 3]);
         let out = ChromaDenoise::new(1., 0.5, 0.5)
             .unwrap()
-            .apply(&black, &cancel)
+            .apply(&black, Cancel::new(&cancel))
             .unwrap();
         assert!(out.pixels.iter().all(|p| *p == [0.; 3]));
     }
@@ -634,7 +635,7 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let barely = ChromaDenoise::new(0.005, 0.5, 0.5)
             .unwrap()
-            .apply(&im, &cancel)
+            .apply(&im, Cancel::new(&cancel))
             .unwrap();
         for (a, b) in im.pixels.iter().zip(&barely.pixels) {
             for c in 0..3 {
@@ -645,7 +646,7 @@ mod tests {
         assert!(
             ChromaDenoise::new(0.25, 0.5, 0.5)
                 .unwrap()
-                .apply(&im, &cancel)
+                .apply(&im, Cancel::new(&cancel))
                 .is_err()
         );
     }

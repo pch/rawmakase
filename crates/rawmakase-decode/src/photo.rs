@@ -158,6 +158,7 @@ fn embedded_profile_status(
 }
 #[cfg(test)]
 mod tests {
+    use rawmakase_cancel::Cancel;
     #[test]
     fn an_embedded_profile_is_told_from_none_and_from_an_unreadable_one() {
         use rawmakase_model::camera_data::{EmbeddedProfileStatus as S, MatrixSource};
@@ -414,7 +415,9 @@ mod tests {
             let mut synced = start.clone();
             synced.wb = [1.5, 1., 0.6];
             for r in [start, warmer, picked, synced] {
-                let out = rawmakase_engine::develop::render(&im, &r.checked().unwrap(), 0).unwrap();
+                let out =
+                    rawmakase_engine::develop::render(&im, &r.checked().unwrap(), 0, Cancel::NEVER)
+                        .unwrap();
                 for p in &out.pixels {
                     assert!(
                         (p[0] - p[1]).abs() < 1e-3 && (p[2] - p[1]).abs() < 1e-3,

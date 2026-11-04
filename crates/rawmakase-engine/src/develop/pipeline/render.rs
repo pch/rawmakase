@@ -1,20 +1,18 @@
 //! The render entry points, from a whole photo to a region, and the samples the panels read.
 use super::*;
+use rawmakase_cancel::Cancel;
 
 /// Shared full/preview renderer. Geometry is sampled in rows; no full-sized intermediate color image.
-pub fn render(im: &CameraImage, r: &ValidRecipe, max_edge: u32) -> Result<Rendered> {
-    crate::develop::quality::render(im, r, max_edge, None)
-}
-/// [`render`](fn@render), stopping with an error once `cancel` is set.
-pub fn render_cancellable(
+/// Stops with an error once `cancel` is set.
+pub fn render(
     im: &CameraImage,
     r: &ValidRecipe,
     max_edge: u32,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Rendered> {
-    crate::develop::quality::render_cancellable(im, r, max_edge, None, cancel)
+    crate::develop::quality::render(im, r, max_edge, None, cancel)
 }
-/// [`render_cancellable`] of a photo with AI Denoise: `ai` is its source, resolved by
+/// [`render`](fn@render) of a photo with AI Denoise: `ai` is its source, resolved by
 /// the caller (`None` renders without AI Denoise whatever the recipe says, as a preview
 /// does before a result is ready; exports must not pass `None` for a recipe that has it).
 pub fn render_with_ai(
@@ -22,12 +20,12 @@ pub fn render_with_ai(
     r: &ValidRecipe,
     ai: Option<&crate::develop::AiSource>,
     max_edge: u32,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Rendered> {
     crate::develop::quality::render_with_ai(im, r, ai, max_edge, cancel)
 }
 pub fn render_region(im: &CameraImage, r: &ValidRecipe, region: [u32; 4]) -> Result<Rendered> {
-    crate::develop::quality::render(im, r, 0, Some(region))
+    crate::develop::quality::render(im, r, 0, Some(region), Cancel::NEVER)
 }
 /// Unsharpened render of `region` of the output described by `g`, and the mask weights
 /// the finishing stages need. A `spread` above zero averages each sample over a
@@ -42,7 +40,7 @@ pub(crate) fn render_base(
     g: &Geometry,
     region: [u32; 4],
     spread: f32,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
     stages: Option<&mut crate::develop::preview_renderer::Stages>,
 ) -> Result<(Rendered, Option<Arc<MaskWeights>>)> {
     let mut base = r.clone();
@@ -121,7 +119,7 @@ pub(crate) fn render_display(
     region: [u32; 4],
     spread: f32,
     finish: &crate::develop::gpu::Finish,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
     stages: &mut crate::develop::preview_renderer::Stages,
 ) -> Result<Option<crate::develop::gpu::Frame>> {
     let Some(display) = stages.display else {
@@ -184,7 +182,7 @@ pub(crate) fn mask_weights(
     spread: f32,
     samples: Option<&Arc<Samples>>,
     stages: Option<&mut crate::develop::preview_renderer::Stages>,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Option<Arc<MaskWeights>>> {
     use crate::develop::masks::{Selection, Weigher};
     if !r
@@ -239,10 +237,7 @@ pub(crate) fn mask_weights(
     } else {
         None
     };
-    ensure!(
-        !cancel.load(std::sync::atomic::Ordering::Relaxed),
-        "Render superseded"
-    );
+    ensure!(!cancel.is_cancelled(), "Render superseded");
     let weights = Arc::new(weigher.weights(&toned.image, r, g, region, global.as_ref()));
     if let Some(s) = stages {
         s.cache.masks.insert(key, weights.clone(), weights.bytes());
@@ -259,7 +254,7 @@ pub(super) fn detail(
     samples: Arc<Samples>,
     weights: Option<&MaskWeights>,
     cache: Option<&mut crate::develop::stage_cache::StageCache>,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Arc<Samples>> {
     let Some(weights) = weights.filter(|w| w.uses(&[slot::TEXTURE])) else {
         return Ok(samples);
@@ -309,7 +304,7 @@ fn sample_region(
     g: &Geometry,
     region: [u32; 4],
     spread: f32,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Samples> {
     let [x0, y0, w, h] = region;
     ensure!(
@@ -323,7 +318,7 @@ fn sample_region(
     let (pixels, positions) = (0..w as usize * h as usize)
         .into_par_iter()
         .map(|i| {
-            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 return ([0.; 3], [f32::NAN; 2]);
             }
             let x = x0 + i as u32 % w;
@@ -341,10 +336,7 @@ fn sample_region(
             }
         })
         .unzip();
-    ensure!(
-        !cancel.load(std::sync::atomic::Ordering::Relaxed),
-        "Render superseded"
-    );
+    ensure!(!cancel.is_cancelled(), "Render superseded");
     Ok(Samples {
         width: w,
         height: h,
@@ -358,7 +350,7 @@ pub(crate) fn develop_samples(
     im: Source,
     r: &Recipe,
     samples: &Samples,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
     weights: Option<&MaskWeights>,
 ) -> Result<Rendered> {
     develop_samples_to(im, r, samples, cancel, weights, PixelOutput::Display)
@@ -371,7 +363,7 @@ pub(crate) fn stage_samples(
     g: &Geometry,
     region: [u32; 4],
     output: PixelOutput,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Rendered> {
     let im = toned.source();
     let samples = Arc::new(sample_region(im, r, g, region, 0., cancel)?);
@@ -389,7 +381,7 @@ pub(crate) fn camera_samples(
     r: &Recipe,
     g: &Geometry,
     region: [u32; 4],
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Rendered> {
     let samples = sample_region(Source::new(im), r, g, region, 0., cancel)?;
     let pixels = samples
@@ -411,7 +403,7 @@ fn develop_samples_to(
     im: Source,
     r: &Recipe,
     samples: &Samples,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
     weights: Option<&MaskWeights>,
     output: PixelOutput,
 ) -> Result<Rendered> {
@@ -422,7 +414,7 @@ fn develop_samples_to(
     let math = weights.map(|_| LocalMath::new(&im.metadata, r));
     let mut pixels = vec![[0.; 3]; samples.pixels.len()];
     pixels.par_iter_mut().enumerate().for_each(|(i, out)| {
-        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return;
         }
         let pos = samples.positions[i];
@@ -437,10 +429,7 @@ fn develop_samples_to(
             process_pixel(samples.pixels[i], r, &lut, camera, pos, local)
         };
     });
-    ensure!(
-        !cancel.load(std::sync::atomic::Ordering::Relaxed),
-        "Render superseded"
-    );
+    ensure!(!cancel.is_cancelled(), "Render superseded");
     Ok(Rendered {
         width: samples.width,
         height: samples.height,
@@ -455,7 +444,7 @@ pub(super) fn render_region_inner(
     g: &Geometry,
     region: [u32; 4],
     spread: f32,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Rendered> {
     r.validate()?;
     let camera = camera_stage(&im.metadata, r);
@@ -485,7 +474,7 @@ pub(super) fn render_region_inner(
         process_pixel(p, r, &lut, camera, pos, None)
     };
     pixels.par_iter_mut().enumerate().for_each(|(i, p)| {
-        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return;
         }
         let x = x0 + i as u32 % w;
@@ -509,10 +498,7 @@ pub(super) fn render_region_inner(
             }
         }
     });
-    ensure!(
-        !cancel.load(std::sync::atomic::Ordering::Relaxed),
-        "Render superseded"
-    );
+    ensure!(!cancel.is_cancelled(), "Render superseded");
     Ok(Rendered {
         width: w,
         height: h,
@@ -575,7 +561,7 @@ mod sampling_tests {
             &g,
             [0, 0, g.width, g.height],
             0.,
-            &std::sync::atomic::AtomicBool::new(false),
+            Cancel::NEVER,
         )
         .unwrap();
         for (p, pos) in samples.pixels.iter().zip(&samples.positions) {
@@ -600,9 +586,9 @@ mod sampling_tests {
         r.shadows = 0.5;
         let cancel = std::sync::atomic::AtomicBool::new(false);
         let expected = crate::develop::PreviewRenderer::default()
-            .render(&im, &r, 0, None, &cancel)
+            .render(&im, &r, 0, None, Cancel::new(&cancel))
             .unwrap();
-        let actual = render(&im, &r.checked().unwrap(), 0).unwrap();
+        let actual = render(&im, &r.checked().unwrap(), 0, Cancel::NEVER).unwrap();
         let max = actual
             .pixels
             .iter()

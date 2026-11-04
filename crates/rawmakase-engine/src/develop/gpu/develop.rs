@@ -8,12 +8,9 @@ use crate::develop::pipeline::{
 };
 use crate::rendered::Rendered;
 use anyhow::{Context, Result, ensure};
+use rawmakase_cancel::Cancel;
 use std::ops::Range;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-    mpsc,
-};
+use std::sync::{Arc, mpsc};
 use wgpu::util::DeviceExt;
 
 /// Invocations per workgroup, as declared in `develop.wgsl`.
@@ -479,7 +476,7 @@ impl Processor {
         &mut self,
         samples: &Arc<Samples>,
         params: &PixelParams,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Rendered> {
         self.check_develop(Input::Cpu(samples), params, cancel)?;
         self.scoped(|gpu| gpu.develop_inner(samples, params, cancel))
@@ -489,9 +486,9 @@ impl Processor {
         &self,
         input: Input,
         params: &PixelParams,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<()> {
-        ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
+        ensure!(!cancel.is_cancelled(), "Render superseded");
         let (w, h) = input.size();
         ensure!(w as u64 * h as u64 > 0, "Empty develop region");
         ensure!(
@@ -535,11 +532,11 @@ impl Processor {
         &mut self,
         samples: &Arc<Samples>,
         params: &PixelParams,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Rendered> {
         let mut encoder = self.device.create_command_encoder(&Default::default());
         self.record_develop(Input::Cpu(samples), params, &mut encoder);
-        ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
+        ensure!(!cancel.is_cancelled(), "Render superseded");
         let device = &self.device;
         let n = samples.pixels.len() as u64;
         let uploaded = &self.developer.as_ref().unwrap().samples[0];
@@ -560,7 +557,7 @@ impl Processor {
         }
         rx.recv_timeout(std::time::Duration::from_secs(1))
             .context("GPU readback timed out")??;
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             uploaded.staging.unmap();
             anyhow::bail!("Render superseded");
         }

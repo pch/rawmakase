@@ -3,6 +3,7 @@ use super::*;
 use crate::model::masks::{BrushStroke, LocalAdjust, MaskComponent, MaskGroup, MaskOp, MaskShape};
 use crate::model::recipe::Recipe;
 use crate::{camera_data::CameraImage, develop::Geometry};
+use rawmakase_cancel::Cancel;
 use std::sync::Arc;
 
 fn image(width: u32, height: u32) -> CameraImage {
@@ -391,8 +392,8 @@ fn full_frame_mask_equals_the_global_slider() {
             }],
             ..base.clone()
         };
-        let a = crate::develop::render(&im, &masked.checked().unwrap(), 0).unwrap();
-        let b = crate::develop::render(&im, &global.checked().unwrap(), 0).unwrap();
+        let a = crate::develop::render(&im, &masked.checked().unwrap(), 0, Cancel::NEVER).unwrap();
+        let b = crate::develop::render(&im, &global.checked().unwrap(), 0, Cancel::NEVER).unwrap();
         let max = a
             .pixels
             .iter()
@@ -436,9 +437,10 @@ fn masked_shadows_adapts_black_locally_and_can_cancel_global_shadows() {
             shadows: global + local,
             ..base.clone()
         };
-        let a = crate::develop::render(&im, &masked.checked().unwrap(), 0).unwrap();
-        let b = crate::develop::render(&im, &recipe.checked().unwrap(), 0).unwrap();
-        let c = crate::develop::render(&im, &combined.checked().unwrap(), 0).unwrap();
+        let a = crate::develop::render(&im, &masked.checked().unwrap(), 0, Cancel::NEVER).unwrap();
+        let b = crate::develop::render(&im, &recipe.checked().unwrap(), 0, Cancel::NEVER).unwrap();
+        let c =
+            crate::develop::render(&im, &combined.checked().unwrap(), 0, Cancel::NEVER).unwrap();
         for y in 0..80 {
             for x in [10, 110] {
                 let i = y * 120 + x;
@@ -490,7 +492,7 @@ fn exposure_of_a_mask_scales_the_scene_as_the_global_slider_does() {
             &im,
             r,
             crate::develop::quality::Stage::SceneInput,
-            &std::sync::atomic::AtomicBool::new(false),
+            Cancel::NEVER,
         )
         .unwrap()
     };
@@ -528,7 +530,7 @@ fn partial_masks_blend_and_amount_scales() {
             &im,
             r,
             crate::develop::quality::Stage::SceneInput,
-            &std::sync::atomic::AtomicBool::new(false),
+            Cancel::NEVER,
         )
         .unwrap()
     };
@@ -644,7 +646,7 @@ fn rendering_a_mask_whose_raster_is_missing_is_an_error_not_an_empty_mask() {
         masks: vec![group(vec![MaskComponent::new(missing)])],
         ..Default::default()
     };
-    let error = crate::develop::render(&im, &r.checked().unwrap(), 60)
+    let error = crate::develop::render(&im, &r.checked().unwrap(), 60, Cancel::NEVER)
         .err()
         .unwrap();
     assert!(error.to_string().contains("missing"), "{error}");
@@ -656,18 +658,18 @@ fn rendering_a_mask_whose_raster_is_missing_is_an_error_not_an_empty_mask() {
     described.width = 2;
     described.height = 3;
     r.masks[0].components[0].shape = MaskShape::Bitmap(described);
-    let error = crate::develop::render(&im, &r.checked().unwrap(), 60)
+    let error = crate::develop::render(&im, &r.checked().unwrap(), 60, Cancel::NEVER)
         .err()
         .unwrap();
     assert!(error.to_string().contains("damaged"), "{error}");
     // Hidden, the mask is not rendered and needs nothing.
     r.masks[0].hidden = true;
-    assert!(crate::develop::render(&im, &r.checked().unwrap(), 60).is_ok());
+    assert!(crate::develop::render(&im, &r.checked().unwrap(), 60, Cancel::NEVER).is_ok());
     // And its raster, once provided, renders.
     let (_, shape) = register(2, 2, vec![255; 4]);
     r.masks[0].hidden = false;
     r.masks[0].components[0].shape = shape;
-    assert!(crate::develop::render(&im, &r.checked().unwrap(), 60).is_ok());
+    assert!(crate::develop::render(&im, &r.checked().unwrap(), 60, Cancel::NEVER).is_ok());
 }
 
 #[test]

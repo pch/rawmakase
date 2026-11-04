@@ -13,6 +13,7 @@ use crate::model::recipe::Recipe;
 use crate::storage::bitmaps::Bitmap;
 use crate::storage::{FNV_OFFSET, fnv1a, mask_assets};
 use eframe::egui;
+use rawmakase_cancel::Cancel;
 use rawmakase_inference::{
     Analysis, Coverage, InferenceError, LoadOptions, Prompt, RgbImage, SKY, SUBJECT, Session, Sky,
     SkySession, Subject,
@@ -163,15 +164,19 @@ fn select(job: &Job, state: &mut State) -> Result<Generated, Failure> {
     if cancelled() {
         return Err(Failure::Cancelled);
     }
-    let input =
-        crate::develop::masks::selection_input(&job.image, &job.recipe, INPUT_EDGE, &job.cancel)
-            .map_err(|e| {
-                if cancelled() {
-                    Failure::Cancelled
-                } else {
-                    Failure::Failed(format!("{e:#}"))
-                }
-            })?;
+    let input = crate::develop::masks::selection_input(
+        &job.image,
+        &job.recipe,
+        INPUT_EDGE,
+        Cancel::new(&job.cancel),
+    )
+    .map_err(|e| {
+        if cancelled() {
+            Failure::Cancelled
+        } else {
+            Failure::Failed(format!("{e:#}"))
+        }
+    })?;
     let rgb = RgbImage {
         width: input.width as usize,
         height: input.height as usize,

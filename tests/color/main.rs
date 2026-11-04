@@ -10,6 +10,7 @@
 //! against their last accepted renders.
 //!
 //! RAWMAKASE_BLESS=1 rewrites charts, snapshots and baselines instead of comparing.
+use rawmakase_cancel::Cancel;
 mod black_render;
 mod chart;
 mod dng;
@@ -236,7 +237,7 @@ pub fn render(
         profiles,
         Some(&rawmakase::develop::Measures(im)),
     )?;
-    rawmakase::develop::render(im, &recipe.checked()?, max_edge)
+    rawmakase::develop::render(im, &recipe.checked()?, max_edge, Cancel::NEVER)
 }
 
 /// The DNG's own embedded profile, and nothing from the user's library. A DNG

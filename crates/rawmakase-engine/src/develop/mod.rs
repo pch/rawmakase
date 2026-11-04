@@ -51,15 +51,10 @@ mod scene_tone;
 mod stage_cache;
 
 pub use crate::color::{mul, srgb_encode};
-pub use auto::{
-    AutoTone, Measures, auto_tone, auto_tone_basis, auto_tone_cancellable, auto_white_balance,
-    auto_white_balance_cancellable,
-};
+pub use auto::{AutoTone, Measures, auto_tone, auto_tone_basis, auto_white_balance};
 pub use black_white::{AutoMix, ColorSpread};
 pub use geometry::{Geometry, rendered_crop};
 pub use image_space::ViewMapping;
 pub use orientation::{Mirror, QuarterTurn, mirror, turn};
 pub(crate) use pipeline::{Camera, camera_stage, render_base};
-pub use pipeline::{
-    neutral_pick, pick_fringe, preview, render, render_cancellable, render_region, render_with_ai,
-};
+pub use pipeline::{neutral_pick, pick_fringe, preview, render, render_region, render_with_ai};

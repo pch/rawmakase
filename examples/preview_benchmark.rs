@@ -5,6 +5,7 @@
 use anyhow::{Context, Result};
 use rawmakase::model::recipe::Recipe;
 use rawmakase::{camera_data, develop};
+use rawmakase_cancel::Cancel;
 use std::{sync::atomic::AtomicBool, time::Instant};
 
 /// Fit size of a 1600-pixel viewport, the size used by earlier measurements.
@@ -70,7 +71,7 @@ fn main() -> Result<()> {
     // Decode cache: store with recovered highlights, then open from it, in a temporary
     // directory that is removed afterwards.
     let t = Instant::now();
-    develop::quality::recover_highlights(&image);
+    develop::quality::recover_highlights(&image, Cancel::NEVER)?;
     println!("Highlight recovery: {:.1} ms", ms(t));
     {
         let dir = tempfile::tempdir()?;
@@ -80,7 +81,8 @@ fn main() -> Result<()> {
             .recovered
             .set(std::sync::Arc::new(develop::quality::recover_highlights(
                 &image,
-            )));
+                Cancel::NEVER,
+            )?));
         let t = Instant::now();
         cache.store("benchmark", &cached)?;
         println!("Decode cache store: {:.1} ms", ms(t));
@@ -101,7 +103,7 @@ fn main() -> Result<()> {
     let image = std::sync::Arc::new(image);
     // First Fit after opening: highlight recovery and any per-photo preparation.
     let t = Instant::now();
-    gpu.render(&image, &recipe, FIT, None, &cancel)?;
+    gpu.render(&image, &recipe, FIT, None, Cancel::new(&cancel))?;
     println!("First Fit after open: {:.1} ms", ms(t));
     let g = develop::Geometry::new(&image, &recipe, 0);
     let (rw, rh) = (1600.min(g.width), 1000.min(g.height));
@@ -116,7 +118,7 @@ fn main() -> Result<()> {
         recipe.exposure = iterations as f32 * 0.1;
         let t = Instant::now();
         let full =
-            develop::quality::render_cancellable(&image, &recipe.checked()?, 0, None, &cancel)?;
+            develop::quality::render(&image, &recipe.checked()?, 0, None, Cancel::new(&cancel))?;
         println!("Export resolution, local={local}: {:.1} ms", ms(t));
         let reference = develop::quality::resize(full, FIT);
         let modes: &[&str] = if local {
@@ -166,7 +168,14 @@ fn main() -> Result<()> {
                 } else {
                     (0, Some(region))
                 };
-                gpu.render_to(&image, &recipe, edge, at, &cancel, Some(&display))?;
+                gpu.render_to(
+                    &image,
+                    &recipe,
+                    edge,
+                    at,
+                    Cancel::new(&cancel),
+                    Some(&display),
+                )?;
                 if i > 1 {
                     times.push(ms(t));
                 }
@@ -191,13 +200,15 @@ fn main() -> Result<()> {
                 }
                 let t = Instant::now();
                 let out = match mode {
-                    "cpu-fit" => cpu.render(&image, &recipe, FIT, None, &cancel)?,
-                    "gpu-fit" | "clarity-fit" => gpu.render(&image, &recipe, FIT, None, &cancel)?,
+                    "cpu-fit" => cpu.render(&image, &recipe, FIT, None, Cancel::new(&cancel))?,
+                    "gpu-fit" | "clarity-fit" => {
+                        gpu.render(&image, &recipe, FIT, None, Cancel::new(&cancel))?
+                    }
                     // The reduced 100% view shown while dragging, before the full region.
                     "region-preview" | "clarity-region-preview" => {
-                        gpu.render_region_preview(&image, &recipe, region, &cancel)?
+                        gpu.render_region_preview(&image, &recipe, region, Cancel::new(&cancel))?
                     }
-                    _ => gpu.render(&image, &recipe, 0, Some(region), &cancel)?,
+                    _ => gpu.render(&image, &recipe, 0, Some(region), Cancel::new(&cancel))?,
                 };
                 let rendered = ms(t);
                 std::hint::black_box(cpu_display(&out, !mode.contains("region")));
@@ -239,7 +250,7 @@ fn main() -> Result<()> {
                                 &image,
                                 &recipe,
                                 region,
-                                &cancel,
+                                Cancel::new(&cancel),
                                 Some(&display),
                             )?,
                         "gpu-region" | "clarity-region" => gpu.render_to(
@@ -247,10 +258,17 @@ fn main() -> Result<()> {
                             &recipe,
                             0,
                             Some(region),
-                            &cancel,
+                            Cancel::new(&cancel),
                             Some(&display),
                         )?,
-                        _ => gpu.render_to(&image, &recipe, FIT, None, &cancel, Some(&display))?,
+                        _ => gpu.render_to(
+                            &image,
+                            &recipe,
+                            FIT,
+                            None,
+                            Cancel::new(&cancel),
+                            Some(&display),
+                        )?,
                     };
                     if i > 0 {
                         presented.push(ms(t));

@@ -4,6 +4,7 @@ use crate::camera_data::{CameraImage, Metadata};
 use crate::storage::bitmaps::Bitmap;
 use crate::storage::mask_assets;
 use eframe::egui;
+use rawmakase_cancel::Cancel;
 use std::sync::Arc;
 
 /// An editor with a decoded photo in a catalog, as Develop has one, and a raster of
@@ -790,8 +791,15 @@ fn the_real_model_selects_through_the_worker_and_the_mask_changes_the_render() {
     // The mask selects part of the photo: lift it and compare the two regions.
     let mut recipe = e.document.edit.recipe().clone();
     recipe.masks[0].adjust.exposure = 2.;
-    let base = crate::develop::render(&image, &Recipe::default().checked().unwrap(), 400).unwrap();
-    let lit = crate::develop::render(&image, &recipe.checked().unwrap(), 400).unwrap();
+    let base = crate::develop::render(
+        &image,
+        &Recipe::default().checked().unwrap(),
+        400,
+        Cancel::NEVER,
+    )
+    .unwrap();
+    let lit =
+        crate::develop::render(&image, &recipe.checked().unwrap(), 400, Cancel::NEVER).unwrap();
     let mean = |r: &crate::rendered::Rendered| {
         r.pixels.iter().map(|p| p[1]).sum::<f32>() / r.pixels.len() as f32
     };

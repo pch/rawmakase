@@ -2,6 +2,7 @@
 //! color and luminance noise reduction it runs on the camera image. The recipe
 //! itself is [`crate::model::recipe`]'s.
 use crate::model::recipe::Recipe;
+use rawmakase_cancel::Cancel;
 
 /// What rendering makes of a recipe's settings, as it runs them on the camera image.
 pub(crate) trait RenderedRecipe {
@@ -65,17 +66,14 @@ impl Denoise {
     pub(crate) fn apply(
         &self,
         source: &std::sync::Arc<crate::camera_data::CameraImage>,
-        cancel: &std::sync::atomic::AtomicBool,
+        cancel: Cancel<'_>,
     ) -> anyhow::Result<std::sync::Arc<crate::camera_data::CameraImage>> {
         use std::sync::Arc;
         let base = match &self.ai {
             Some(ai) => ai.apply(source),
             None => source.clone(),
         };
-        anyhow::ensure!(
-            !cancel.load(std::sync::atomic::Ordering::Relaxed),
-            "Render superseded"
-        );
+        anyhow::ensure!(!cancel.is_cancelled(), "Render superseded");
         let chroma = self.chroma.map(|d| d.apply(&base, cancel)).transpose()?;
         if let Some(luminance) = self.luminance {
             Ok(Arc::new(
@@ -117,36 +115,54 @@ mod tests {
         };
         let mut cache = RetouchCache::default();
         let cancel = AtomicBool::new(false);
-        let first = cache.denoised(&source, r.denoise(), &cancel).unwrap();
+        let first = cache
+            .denoised(&source, r.denoise(), Cancel::new(&cancel))
+            .unwrap();
         assert!(Arc::ptr_eq(
             &first,
-            &cache.denoised(&source, r.denoise(), &cancel).unwrap()
+            &cache
+                .denoised(&source, r.denoise(), Cancel::new(&cancel))
+                .unwrap()
         ));
         r.noise_luma = 1.;
         cancel.store(true, Ordering::Relaxed);
-        assert!(cache.denoised(&source, r.denoise(), &cancel).is_err());
+        assert!(
+            cache
+                .denoised(&source, r.denoise(), Cancel::new(&cancel))
+                .is_err()
+        );
         cancel.store(false, Ordering::Relaxed);
-        let retried = cache.denoised(&source, r.denoise(), &cancel).unwrap();
+        let retried = cache
+            .denoised(&source, r.denoise(), Cancel::new(&cancel))
+            .unwrap();
         assert_eq!(
             retried.pixels,
-            r.denoise().unwrap().apply(&source, &cancel).unwrap().pixels
+            r.denoise()
+                .unwrap()
+                .apply(&source, Cancel::new(&cancel))
+                .unwrap()
+                .pixels
         );
         let mut replacement = (*source).clone();
         replacement.pixels.fill([0.3; 3]);
         let replacement = Arc::new(replacement);
-        let replaced = cache.denoised(&replacement, r.denoise(), &cancel).unwrap();
+        let replaced = cache
+            .denoised(&replacement, r.denoise(), Cancel::new(&cancel))
+            .unwrap();
         assert_eq!(
             replaced.pixels,
             r.denoise()
                 .unwrap()
-                .apply(&replacement, &cancel)
+                .apply(&replacement, Cancel::new(&cancel))
                 .unwrap()
                 .pixels
         );
         r.noise_luma = 0.;
         assert!(Arc::ptr_eq(
             &replacement,
-            &cache.denoised(&replacement, r.denoise(), &cancel).unwrap()
+            &cache
+                .denoised(&replacement, r.denoise(), Cancel::new(&cancel))
+                .unwrap()
         ));
     }
 }

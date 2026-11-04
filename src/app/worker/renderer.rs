@@ -7,6 +7,7 @@ use crate::{
     develop::{self, gpu, quality::Output},
 };
 use eframe::{egui, egui_wgpu};
+use rawmakase_cancel::Cancel;
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -540,7 +541,7 @@ fn render(
                             &job.image,
                             &job.recipe,
                             region,
-                            &job.cancel,
+                            Cancel::new(&job.cancel),
                             zoomed_display.as_ref(),
                         )?;
                         let gpu = processor.used_gpu();
@@ -552,7 +553,7 @@ fn render(
                         &job.recipe,
                         0,
                         Some(region),
-                        &job.cancel,
+                        Cancel::new(&job.cancel),
                         zoomed_display.as_ref(),
                     )?;
                     *quick_region = matches!(out, Output::Frame(_)) && started.elapsed() < QUICK;
@@ -588,7 +589,7 @@ fn render(
                     &job.recipe,
                     edge,
                     None,
-                    &job.cancel,
+                    Cancel::new(&job.cancel),
                     whole_draft.as_ref(),
                 )?;
                 let gpu = processor.used_gpu();
@@ -600,7 +601,7 @@ fn render(
                 &job.recipe,
                 job.max_edge,
                 None,
-                &job.cancel,
+                Cancel::new(&job.cancel),
                 whole.as_ref(),
             )?;
             *quick_fit = matches!(out, Output::Frame(_)) && started.elapsed() < QUICK;
@@ -666,7 +667,7 @@ fn whole_histogram(
                 &job.recipe,
                 job.max_edge,
                 None,
-                &job.cancel,
+                Cancel::new(&job.cancel),
                 None,
             )?;
             Box::new(out.pixels().histogram())
@@ -694,6 +695,7 @@ fn whole_histogram(
 mod tests {
     use super::*;
     use crate::camera_data::{CameraImage, Metadata};
+    use rawmakase_cancel::Cancel;
     use std::sync::{Arc, atomic::AtomicBool};
     fn image() -> Arc<CameraImage> {
         image_of(240, 160)
@@ -803,8 +805,7 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         let worker = renderer(tx, egui::Context::default());
         let image = image();
-        let ai = develop::AiSource::recover((*image_of(240, 160)).clone(), &AtomicBool::new(false))
-            .unwrap();
+        let ai = develop::AiSource::recover((*image_of(240, 160)).clone(), Cancel::NEVER).unwrap();
         let mut recipe = Recipe::default();
         recipe.ai_denoise.enabled = true;
         recipe.ai_denoise.amount = 0.5;
@@ -828,7 +829,7 @@ mod tests {
         assert_eq!(moved.len(), 1, "no reduced preview while Amount moves");
         assert_eq!(moved[0].0, RenderStage::Region);
         // A new result (the final one after a partial) is rendered at once too.
-        let next = develop::AiSource::recover((*image).clone(), &AtomicBool::new(false)).unwrap();
+        let next = develop::AiSource::recover((*image).clone(), Cancel::NEVER).unwrap();
         assert_eq!(run(3, &recipe, &next).len(), 1);
         // Any other edit still shows a reduced preview first.
         recipe.exposure = 0.5;
@@ -848,7 +849,7 @@ mod tests {
             pixels: image.pixels.iter().map(|p| p.map(|v| v * 2.)).collect(),
             ..(*image).clone()
         });
-        let ai = develop::AiSource::recover((*brighter).clone(), &AtomicBool::new(false)).unwrap();
+        let ai = develop::AiSource::recover((*brighter).clone(), Cancel::NEVER).unwrap();
         let mut recipe = Recipe::default();
         recipe.ai_denoise.enabled = true;
         recipe.ai_denoise.amount = 1.;

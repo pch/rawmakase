@@ -12,6 +12,7 @@
 //! Flat patches at every mix of clipped and unclipped channels under two white
 //! balances fit this within 0.005 of the level (RMS per channel over 136 patches).
 use super::*;
+use rawmakase_cancel::Cancel;
 
 /// The sensor fraction below which a channel is not pulled, and the exponent of
 /// the weight's rise from there to the white.
@@ -39,21 +40,16 @@ fn reconstruct(p: [f32; 3], sensor: [f32; 3]) -> [f32; 3] {
     x
 }
 
-/// Highlight reconstruction in camera space, before colour conversion.
-pub fn recover_highlights(im: &CameraImage) -> CameraImage {
-    recover_highlights_cancellable(im, &AtomicBool::new(false)).unwrap()
-}
-pub(super) fn recover_highlights_cancellable(
-    im: &CameraImage,
-    cancel: &AtomicBool,
-) -> Result<CameraImage> {
+/// Highlight reconstruction in camera space, before colour conversion. Stops with an
+/// error once `cancel` is set, and only then.
+pub fn recover_highlights(im: &CameraImage, cancel: Cancel<'_>) -> Result<CameraImage> {
     check_cancel(cancel)?;
     let mut out = im.clone();
     let wb = im.metadata.wb.map(|v| v.max(0.001));
     out.pixels
         .par_chunks_mut(im.width.max(1) as usize)
         .for_each(|row| {
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 return;
             }
             for p in row {
@@ -115,7 +111,7 @@ mod tests {
         // Green at the sensor's white: pulled to the mean of red and blue, which
         // sit at 0.8 and 0.9 of theirs (and blue follows red and green a little).
         im.pixels[40 * 96 + 40] = [1.6, 1., 1.35];
-        let recovered = recover_highlights(&im);
+        let recovered = recover_highlights(&im, Cancel::NEVER).unwrap();
         assert_eq!(recovered.pixels[0], [0.3, 0.1, 0.2]);
         let p = recovered.pixels[40 * 96 + 40];
         assert!(

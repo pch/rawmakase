@@ -2,6 +2,7 @@
 use crate::develop;
 use crate::model::recipe::Recipe;
 use anyhow::{Result, ensure};
+use rawmakase_cancel::Cancel;
 use std::{path::Path, sync::atomic::AtomicBool};
 pub fn compare(
     input: &Path,
@@ -27,7 +28,7 @@ pub fn compare(
         crate::camera_data::Decode::full(Default::default()),
         &AtomicBool::new(false),
     )?;
-    let render = develop::render(&image, &edit.checked()?, 0)?;
+    let render = develop::render(&image, &edit.checked()?, 0, Cancel::NEVER)?;
     let reference = image::open(reference)?.to_rgb32f();
     ensure!(
         (reference.width(), reference.height()) == (render.width, render.height),

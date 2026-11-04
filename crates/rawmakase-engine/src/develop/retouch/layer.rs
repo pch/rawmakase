@@ -13,12 +13,10 @@ use crate::{
     model::red_eye::RedEyeOp,
 };
 use anyhow::{Result, ensure};
+use rawmakase_cancel::Cancel;
 use std::{
     collections::BTreeSet,
-    sync::{
-        Arc, Weak,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Weak},
 };
 
 const TILE: i32 = 256;
@@ -188,7 +186,7 @@ impl RetouchCache {
         &mut self,
         base: &Arc<CameraImage>,
         ops: Retouching,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Arc<CameraImage>> {
         let same_base = self.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base));
         let previous = self.image.clone().unwrap_or_else(|| base.clone());
@@ -222,7 +220,7 @@ impl RetouchCache {
                 }
             }
             for step in ops.steps(&frame) {
-                ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
+                ensure!(!cancel.is_cancelled(), "Render superseded");
                 if step.reads().iter().any(|r| touches(&dirty, r)) {
                     step.apply(&mut out);
                 }
@@ -243,7 +241,7 @@ impl RetouchCache {
         &mut self,
         source: &Arc<CameraImage>,
         d: Option<Denoise>,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Arc<CameraImage>> {
         let Some(d) = d else {
             self.denoised = None;

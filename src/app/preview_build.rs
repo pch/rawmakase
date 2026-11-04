@@ -23,6 +23,7 @@ use crate::photo::Opened;
 use crate::raw_defaults::DevelopDefaults;
 use anyhow::{Context, ensure};
 use eframe::egui::{self, Color32, Sense, Vec2};
+use rawmakase_cancel::Cancel;
 use std::{
     collections::VecDeque,
     hash::{DefaultHasher, Hash, Hasher},
@@ -240,7 +241,7 @@ fn develop(
     cancel: &AtomicBool,
 ) -> anyhow::Result<image::RgbImage> {
     crate::develop::upright::complete(recipe, image);
-    let out = crate::develop::render_cancellable(image, &recipe.checked()?, edge, cancel)?;
+    let out = crate::develop::render(image, &recipe.checked()?, edge, Cancel::new(cancel))?;
     image::RgbImage::from_raw(out.width, out.height, out.rgb8()).context("Invalid preview size")
 }
 

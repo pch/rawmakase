@@ -1,5 +1,6 @@
 use rawmakase::model::recipe::Recipe;
 use rawmakase::{camera_data::Decode, develop, export, export_settings::ExportOptions, storage};
+use rawmakase_cancel::Cancel;
 use std::{path::PathBuf, sync::atomic::AtomicBool};
 #[test]
 #[ignore = "Set RAWMAKASE_FIXTURES to a folder containing private ARW and RAF fixtures"]
@@ -40,7 +41,7 @@ fn raw_development_and_export() -> anyhow::Result<()> {
         recipe.exposure = -1.;
         recipe.rotation = 1;
         recipe.crop = [0.1, 0.1, 0.9, 0.9];
-        let output = develop::render(&image, &recipe.checked()?, 320)?;
+        let output = develop::render(&image, &recipe.checked()?, 320, Cancel::NEVER)?;
         assert!(output.height > output.width);
         for extension in ["jpg", "tiff"] {
             let p = temp.path().join(format!("{index}.{extension}"));
@@ -126,7 +127,7 @@ fn navigation_memory_stress() -> anyhow::Result<()> {
                 .develop(Decode::full(Default::default()), &AtomicBool::new(false))?;
             let small = develop::preview(&im, 1600);
             let r = Recipe::for_metadata(&im.metadata);
-            let _ = develop::render(&small, &r.checked()?, 1600)?;
+            let _ = develop::render(&small, &r.checked()?, 1600, Cancel::NEVER)?;
         }
         let memory = rss();
         if i == 5 {

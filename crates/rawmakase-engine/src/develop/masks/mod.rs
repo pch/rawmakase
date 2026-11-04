@@ -5,6 +5,7 @@
 //! oriented photo before lens correction, Transform, crop and straightening, so masks
 //! stay on the photo when those change. Sizes are fractions of the long edge. The masks
 //! themselves are [`crate::model::masks`]'s; this module renders their weights.
+use rawmakase_cancel::Cancel;
 mod brush;
 mod eval;
 pub(crate) mod local;
@@ -78,13 +79,13 @@ pub fn selection_input(
     image: &crate::camera_data::CameraImage,
     user: &crate::model::recipe::Recipe,
     max_edge: u32,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
 ) -> anyhow::Result<crate::rendered::Rendered> {
     let recipe = selection_input_recipe(user);
     // The model looks at about a megapixel: reduce the sensor image first, as Fit
     // does, instead of developing every pixel only to throw most of them away.
     let reduced = crate::develop::preview(image, max_edge);
-    crate::develop::render_cancellable(&reduced, &recipe.checked()?, max_edge, cancel)
+    crate::develop::render(&reduced, &recipe.checked()?, max_edge, cancel)
 }
 
 #[cfg(test)]

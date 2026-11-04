@@ -16,6 +16,7 @@
 //! A look is used only when its full render beats the baseline on the held-out
 //! tiles ([`gate`]): a colour look, else one of the curve alone, else none. Fitting
 //! is deterministic; nothing here reads or writes the catalog or a cache.
+use rawmakase_cancel::Cancel;
 pub mod cache;
 mod gate;
 mod pairs;
@@ -161,7 +162,7 @@ fn full_render(
     cancel: &AtomicBool,
 ) -> Result<Vec<Rgb>, Refusal> {
     let valid = r.checked().map_err(|e| refuse(format!("{e:#}")))?;
-    let out = develop::render_cancellable(im, &valid, PROXY_EDGE * RENDER_FACTOR, cancel)
+    let out = develop::render(im, &valid, PROXY_EDGE * RENDER_FACTOR, Cancel::new(cancel))
         .map_err(|e| refuse(format!("{e:#}")))?;
     let linear: Vec<Rgb> = out.pixels.iter().map(|p| p.map(srgb_decode)).collect();
     let (w, h, reduced) = pairs::reduce(&linear, out.width, out.height);
@@ -223,8 +224,14 @@ fn stage(
     stage: develop::quality::Stage,
     cancel: &AtomicBool,
 ) -> Result<rawmakase_model::rendered::Rendered, Refusal> {
-    develop::quality::render_stage_sized(im, r, stage, PROXY_EDGE * RENDER_FACTOR, cancel)
-        .map_err(|e| refuse(format!("{e:#}")))
+    develop::quality::render_stage_sized(
+        im,
+        r,
+        stage,
+        PROXY_EDGE * RENDER_FACTOR,
+        Cancel::new(cancel),
+    )
+    .map_err(|e| refuse(format!("{e:#}")))
 }
 
 /// `profiles`, the photo's listed profiles, with Camera Look (fitted) added when
@@ -765,16 +772,20 @@ mod tests {
         let at = |stage: &rawmakase_model::rendered::Rendered, x: u32, y: u32| {
             stage.pixels[(y * stage.width + x) as usize]
         };
-        let camera =
-            develop::quality::render_stage(&im, &r, develop::quality::Stage::CameraInput, &cancel)
-                .unwrap();
+        let camera = develop::quality::render_stage(
+            &im,
+            &r,
+            develop::quality::Stage::CameraInput,
+            Cancel::new(&cancel),
+        )
+        .unwrap();
         // The corner is brighter than the white once the lens gain is in.
         assert!(at(&camera, 0, 0)[1] > 0.99, "{:?}", at(&camera, 0, 0));
         let clipped = develop::quality::render_stage(
             &clip_indicator(&im),
             &r,
             develop::quality::Stage::CameraInput,
-            &cancel,
+            Cancel::new(&cancel),
         )
         .unwrap();
         assert_eq!(at(&clipped, 0, 0), [0.; 3]);

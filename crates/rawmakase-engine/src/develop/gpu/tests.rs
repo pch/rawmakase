@@ -1,5 +1,6 @@
 use super::*;
 use crate::develop::masks::local::LocalDeltas;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[test]
 fn windows_leaves_vulkan_out_while_directx_works() {
@@ -134,8 +135,14 @@ fn gpu_clarity_reconstructs_fine_edges_like_the_cpu() -> Result<()> {
             if let Some(weights) = &weights {
                 assert!(params.set_masks(source, &recipe, Some(weights)));
             }
-            let expected = develop_samples(source, &recipe, &samples, &cancel, weights.as_ref())?;
-            let actual = gpu.develop(&samples, &params, &cancel)?;
+            let expected = develop_samples(
+                source,
+                &recipe,
+                &samples,
+                Cancel::new(&cancel),
+                weights.as_ref(),
+            )?;
+            let actual = gpu.develop(&samples, &params, Cancel::new(&cancel))?;
             let max = actual
                 .pixels
                 .iter()
@@ -259,8 +266,14 @@ fn gpu_measured_tails_match_cpu_globally_and_in_masks() -> Result<()> {
             if let Some(weights) = &weights {
                 assert!(params.set_masks(source, &recipe, Some(weights)));
             }
-            let expected = develop_samples(source, &recipe, &samples, &cancel, weights.as_ref())?;
-            let actual = gpu.develop(&samples, &params, &cancel)?;
+            let expected = develop_samples(
+                source,
+                &recipe,
+                &samples,
+                Cancel::new(&cancel),
+                weights.as_ref(),
+            )?;
+            let actual = gpu.develop(&samples, &params, Cancel::new(&cancel))?;
             let max = actual
                 .pixels
                 .iter()
@@ -303,10 +316,11 @@ fn gpu_matches_cpu_finishing_and_reuses_buffers() -> Result<()> {
                         ..Recipe::default()
                     };
                     let mut expected = image.clone();
-                    crate::develop::quality::sharpen(&mut expected, &recipe);
+                    crate::develop::quality::sharpen(&mut expected, &recipe, None, Cancel::NEVER)
+                        .unwrap();
                     let expected = crate::develop::quality::resize(expected, max_edge);
                     for _ in 0..2 {
-                        let actual = gpu.finish(&image, &recipe, max_edge, &cancel)?;
+                        let actual = gpu.finish(&image, &recipe, max_edge, Cancel::new(&cancel))?;
                         assert_eq!(
                             (actual.width, actual.height),
                             (expected.width, expected.height)
@@ -333,7 +347,10 @@ fn gpu_matches_cpu_finishing_and_reuses_buffers() -> Result<()> {
         height: 1,
         pixels: vec![[0.5; 3]],
     };
-    assert!(gpu.finish(&image, &Recipe::default(), 1, &cancel).is_err());
+    assert!(
+        gpu.finish(&image, &Recipe::default(), 1, Cancel::new(&cancel))
+            .is_err()
+    );
     Ok(())
 }
 
@@ -389,14 +406,14 @@ fn gpu_preview_preserves_regions_spatial_effects_and_falls_back() -> Result<()> 
             }
             // Reduced Fit sizes render from the pyramid on the CPU; full size and
             // regions use GPU finishing.
-            let expected = super::super::quality::render_cancellable(
+            let expected = super::super::quality::render(
                 &image,
                 &recipe.checked()?,
                 0,
                 region,
-                &cancel,
+                Cancel::new(&cancel),
             )?;
-            let actual = renderer.render(&image, &recipe, 0, region, &cancel)?;
+            let actual = renderer.render(&image, &recipe, 0, region, Cancel::new(&cancel))?;
             assert_eq!(renderer.used_gpu(), !spatial || region.is_none());
             assert_eq!(
                 (actual.width, actual.height),
@@ -423,14 +440,15 @@ fn gpu_preview_preserves_regions_spatial_effects_and_falls_back() -> Result<()> 
     };
     assert!(
         renderer
-            .finish(&invalid, &Recipe::default(), 0, &cancel)
+            .finish(&invalid, &Recipe::default(), 0, Cancel::new(&cancel))
             .is_none()
     );
     assert!(renderer.adapter_name().is_none());
     assert!(renderer.fallback_reason().is_some());
     let recipe = Recipe::default();
-    let expected = super::super::quality::render(&image, &recipe.checked()?, 0, None)?;
-    let actual = renderer.render(&image, &recipe, 0, None, &cancel)?;
+    let expected =
+        super::super::quality::render(&image, &recipe.checked()?, 0, None, Cancel::NEVER)?;
+    let actual = renderer.render(&image, &recipe, 0, None, Cancel::new(&cancel))?;
     assert_eq!(actual.pixels, expected.pixels);
     assert!(!renderer.used_gpu());
     Ok(())
@@ -623,8 +641,20 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     let cancel = AtomicBool::new(false);
     // The swatches select part of the test image (the same source for both).
     let source = Source::new(&image);
-    let without = develop_samples(source, &recipes[point_colors - 1], &samples, &cancel, None)?;
-    let with = develop_samples(source, &recipes[point_colors], &samples, &cancel, None)?;
+    let without = develop_samples(
+        source,
+        &recipes[point_colors - 1],
+        &samples,
+        Cancel::new(&cancel),
+        None,
+    )?;
+    let with = develop_samples(
+        source,
+        &recipes[point_colors],
+        &samples,
+        Cancel::new(&cancel),
+        None,
+    )?;
     let changed = (with.pixels.iter().zip(&without.pixels))
         .filter(|(a, b)| (0..3).any(|c| (a[c] - b[c]).abs() > 0.01))
         .count();
@@ -692,8 +722,8 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     for (i, (image, recipe, samples)) in cases.enumerate() {
         let source = Source::new(image);
         let params = pixel_params(source, recipe).expect("GPU port covers this recipe");
-        let expected = develop_samples(source, recipe, samples, &cancel, None)?;
-        let actual = gpu.develop(samples, &params, &cancel)?;
+        let expected = develop_samples(source, recipe, samples, Cancel::new(&cancel), None)?;
+        let actual = gpu.develop(samples, &params, Cancel::new(&cancel))?;
         // At a rendered file's defaults the GPU reproduces the file, as the CPU does.
         if std::ptr::eq(samples, &rendered_samples) && std::ptr::eq(recipe, &rendered_recipes[0]) {
             let off = |pixels: &[[f32; 3]]| -> Vec<_> {
@@ -975,9 +1005,15 @@ fn check_presented_previews(w: u32, h: u32, ca_only: bool) -> Result<()> {
                 samples: true,
                 drawn: Vec::new(),
             };
-            let expected = cpu.render(&image, &recipe, max_edge, region, &cancel)?;
-            let Output::Frame(frame) =
-                gpu.render_to(&image, &recipe, max_edge, region, &cancel, Some(&display))?
+            let expected = cpu.render(&image, &recipe, max_edge, region, Cancel::new(&cancel))?;
+            let Output::Frame(frame) = gpu.render_to(
+                &image,
+                &recipe,
+                max_edge,
+                region,
+                Cancel::new(&cancel),
+                Some(&display),
+            )?
             else {
                 panic!("{:?}", gpu.fallback_reason());
             };
@@ -1117,7 +1153,7 @@ fn panning_never_writes_the_drawn_region() -> Result<()> {
             &recipe,
             0,
             Some([x, 10, 60, 40]),
-            &cancel,
+            Cancel::new(&cancel),
             Some(&display),
         )?
         else {
@@ -1253,8 +1289,8 @@ fn gpu_masks_match_cpu_pixel_stage() -> Result<()> {
         r.effects.dehaze = dehaze;
         let mut params = pixel_params(source, &r).expect("GPU port covers this recipe");
         assert!(params.set_masks(source, &r, Some(&weights)));
-        let expected = develop_samples(source, &r, &samples, &cancel, Some(&weights))?;
-        let actual = gpu.develop(&samples, &params, &cancel)?;
+        let expected = develop_samples(source, &r, &samples, Cancel::new(&cancel), Some(&weights))?;
+        let actual = gpu.develop(&samples, &params, Cancel::new(&cancel))?;
         let d: Vec<f32> = actual
             .pixels
             .iter()
@@ -1439,7 +1475,7 @@ fn kept_stages_present_the_frames_of_a_fresh_renderer() -> Result<()> {
     ];
     let frame = |renderer: &mut PreviewRenderer, r: &Recipe| -> Result<Vec<u8>> {
         let Output::Frame(frame) =
-            renderer.render_to(&image, r, 90, None, &cancel, Some(&display))?
+            renderer.render_to(&image, r, 90, None, Cancel::new(&cancel), Some(&display))?
         else {
             panic!("{:?}", renderer.fallback_reason());
         };
@@ -1515,16 +1551,16 @@ fn an_unsubmitted_pass_leaves_its_kept_colour_unwritten() -> Result<()> {
     params.color = Some(color_recipe(&recipe));
     let mut gpu = Processor::new()?;
     let cancel = AtomicBool::new(false);
-    let expected = gpu.develop(&fit, &params, &cancel)?;
+    let expected = gpu.develop(&fit, &params, Cancel::new(&cancel))?;
     // The second render of the recipe would keep the colour, but is cancelled after
     // recording its pass.
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
     gpu.record_develop(Input::Cpu(&fit), &params, &mut encoder);
     drop(encoder);
     // Zoomed in, the region renders and submits.
-    gpu.develop(&region, &params, &cancel)?;
+    gpu.develop(&region, &params, Cancel::new(&cancel))?;
     // Back at Fit.
-    let actual = gpu.develop(&fit, &params, &cancel)?;
+    let actual = gpu.develop(&fit, &params, Cancel::new(&cancel))?;
     assert_eq!(actual.pixels, expected.pixels);
     Ok(())
 }
@@ -1721,7 +1757,7 @@ fn check_lens_render(
     let mut cpu = PreviewRenderer::default();
     let mut gpu = PreviewRenderer::with_gpu();
     for (max_edge, region) in [(75, None), (0, None), (0, Some([10, 10, 80, 60]))] {
-        let expected = cpu.render(&image, &recipe, max_edge, region, &cancel)?;
+        let expected = cpu.render(&image, &recipe, max_edge, region, Cancel::new(&cancel))?;
         if let Some(ref oracle) = oracle {
             // Recovery captures metadata with its pixels; use an independent
             // source for the oracle rather than mutating an already rendered image.
@@ -1738,7 +1774,7 @@ fn check_lens_render(
                 &oracle_recipe,
                 max_edge,
                 region,
-                &cancel,
+                Cancel::new(&cancel),
             )?;
             let worst = expected
                 .pixels
@@ -1762,8 +1798,14 @@ fn check_lens_render(
             samples: false,
             drawn: Vec::new(),
         };
-        let Output::Frame(frame) =
-            gpu.render_to(&image, &recipe, max_edge, region, &cancel, Some(&display))?
+        let Output::Frame(frame) = gpu.render_to(
+            &image,
+            &recipe,
+            max_edge,
+            region,
+            Cancel::new(&cancel),
+            Some(&display),
+        )?
         else {
             panic!("GPU fallback: {:?}", gpu.fallback_reason());
         };
