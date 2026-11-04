@@ -253,7 +253,9 @@ pub struct Metadata {
     #[serde(skip)]
     pub lens_profiles: crate::optics::lcp::PhotoProfiles,
     /// Lateral chromatic aberration measured from the decoded image, shared by every
-    /// image made from it (see `crate::lens::auto_ca::prime`).
+    /// image made from it (see [`crate::lens::auto_ca::prime`]). Each decode has its
+    /// own: an open, a decode-cache load. It is primed from the decoded image
+    /// before any reduced or recovered copy of it is rendered.
     #[serde(skip)]
     pub lateral_ca: std::sync::Arc<std::sync::OnceLock<Option<[crate::optics::Radial; 2]>>>,
     /// The camera profile a DNG embeds, in DCP form, when it reads and fits this

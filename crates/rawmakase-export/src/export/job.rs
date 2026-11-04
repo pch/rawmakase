@@ -563,4 +563,50 @@ mod tests {
         assert_eq!((image.width, image.height), (4, 3));
         Ok(())
     }
+
+    /// A full-size export read from the decode cache measures its own lateral
+    /// chromatic aberration (Auto CA), never the one the half-size image on screen
+    /// was measured with, as a decode of the file would (#868).
+    #[test]
+    fn a_cached_full_size_image_keeps_no_half_size_measurement() -> Result<()> {
+        let chart = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/corpus/charts/synthetic-d65.dng");
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let metadata = crate::photo::open(&chart)?.metadata;
+        let image = |width: u32, height: u32, fast: bool| {
+            let image = CameraImage {
+                width,
+                height,
+                recovered: Default::default(),
+                pixels: vec![[0.5; 3]; (width * height) as usize],
+                metadata: metadata.clone(),
+                fast,
+                scale_factor: 1.,
+                scale_clipped: 0,
+            };
+            let _ = image.recovered.set(Arc::new(image.clone()));
+            image
+        };
+        cache.store(
+            &DecodeCache::key(&chart, Demosaic::default())?,
+            &image(4, 3, false),
+        )?;
+        // The half-size image, measured by a preview render.
+        let half = Arc::new(image(2, 2, true));
+        let measured = rawmakase_model::optics::Radial::new(vec![0., 1.], vec![1., 1.001]).unwrap();
+        let _ = half
+            .metadata
+            .lateral_ca
+            .set(Some([measured.clone(), measured]));
+        let full = full_size(half, &chart, Demosaic::default(), &cache, Cancel::NEVER)?;
+        assert_eq!((full.width, full.height), (4, 3));
+        assert!(full.metadata.lateral_ca.get().is_none());
+        // Its recovered image is the same decode, with the same measurement.
+        assert!(std::sync::Arc::ptr_eq(
+            &full.metadata.lateral_ca,
+            &full.recovered.get().unwrap().metadata.lateral_ca
+        ));
+        Ok(())
+    }
 }
