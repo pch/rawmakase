@@ -227,10 +227,10 @@ impl Library {
                 .fail(format!("Metadata could not be saved: {e}"));
             return;
         }
-        let read = self.session.catalog.descriptive_of(&targets);
+        let read = self.session.catalog().descriptive_of(&targets);
         let keywords: anyhow::Result<Vec<Vec<Keyword>>> = targets
             .iter()
-            .map(|id| self.session.catalog.keywords(*id))
+            .map(|id| self.session.catalog().keywords(*id))
             .collect();
         let (read, keywords) = match (read, keywords) {
             (Ok(r), Ok(k)) => (r, k),

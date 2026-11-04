@@ -392,7 +392,7 @@ impl Library {
             ));
         }
         // Start with a selection, as Lightroom does, so the side panels are filled.
-        s.select(s.visible.first().map(|i| s.session.photos[*i].id));
+        s.select(s.visible.first().map(|i| s.session.photos()[*i].id));
         s
     }
     /// Opens the catalog at `path`, for tests.
@@ -409,7 +409,7 @@ impl Library {
     }
     /// Checks which files are online again, after the catalog was read.
     fn check_files(&mut self) {
-        self.availability.start(&self.session.photos, &self.ctx);
+        self.availability.start(self.session.photos(), &self.ctx);
         self.cache.failed.clear();
         self.screen.retry_failed();
         self.filter();
@@ -432,11 +432,7 @@ impl Library {
             Err(_) => {
                 // Neither photos nor folders: a folder removed may have
                 // given its id to a new one.
-                self.session.photos.clear();
-                self.session.folders.clear();
-                self.session.roots.clear();
-                self.session.collection_photos.clear();
-                self.session.previous_import.clear();
+                self.session.forget_lists();
                 self.filters.folder_scope = None;
                 self.selected_folders.clear();
                 self.reloaded();
@@ -456,13 +452,13 @@ impl Library {
         self.sort_keys = None;
         self.shown_version += 1;
         if self.filters.previous_import {
-            self.filters.members = self.session.previous_import.clone();
+            self.filters.members = self.session.previous_import().clone();
         }
         if let Some(id) = self.filters.collection {
-            if self.session.collections.iter().any(|c| c.id == id) {
+            if self.session.collections().iter().any(|c| c.id == id) {
                 self.filters.members = self
                     .session
-                    .collection_photos
+                    .collection_photos()
                     .get(&id)
                     .cloned()
                     .unwrap_or_default();
@@ -487,7 +483,7 @@ impl Library {
     }
     /// Waits for the online check, for callers that report on it.
     pub(crate) fn wait_for_availability(&mut self) {
-        if self.availability.poll(true, &self.session.photos) {
+        if self.availability.poll(true, self.session.photos()) {
             self.availability_known();
         }
     }
@@ -512,14 +508,14 @@ impl Library {
                 self.availability.checking()
                     || self
                         .session
-                        .photos
+                        .photos()
                         .iter()
                         .any(|p| !self.is_available(&p.path))
             }
         };
         self.attached = Some(attached);
         if returned {
-            self.availability.start(&self.session.photos, &self.ctx);
+            self.availability.start(self.session.photos(), &self.ctx);
         }
     }
     /// Checks again, in the background, which photos are online when one
@@ -527,7 +523,7 @@ impl Library {
     /// drive that stayed attached.
     pub(in crate::app) fn found(&mut self, path: &std::path::Path) {
         if !self.is_available(path) {
-            self.availability.start(&self.session.photos, &self.ctx);
+            self.availability.start(self.session.photos(), &self.ctx);
         }
     }
     /// Asks for a repaint, for a background read with something to show.
@@ -568,20 +564,20 @@ impl Library {
         }
     }
     pub(crate) fn available_count(&self) -> usize {
-        self.availability.count(&self.session.photos)
+        self.availability.count(self.session.photos())
     }
     fn filter(&mut self) {
         // What the order needs from the catalog, read once until it changes.
         let sort = self.filters.sort;
         if self.sort_keys.as_ref().is_none_or(|(of, _)| *of != sort) {
-            self.sort_keys = Some((sort, sort.keys(&self.session.catalog)));
+            self.sort_keys = Some((sort, sort.keys(self.session.catalog())));
         }
         let keys = &self.sort_keys.as_ref().unwrap().1;
         self.shown_version += 1;
         // Filtering follows every change to the photos, so the count does too.
         self.availability.forget_count();
         self.visible = self.filters.visible(
-            &self.session.photos,
+            self.session.photos(),
             |path| self.availability.is_available(path),
             keys,
         );
@@ -594,7 +590,7 @@ impl Library {
         let anchor = self.selected().and_then(|id| {
             self.visible
                 .iter()
-                .position(|i| self.session.photos[*i].id == id)
+                .position(|i| self.session.photos()[*i].id == id)
                 .map(|at| (id, at))
         });
         // A selected photo scrolled out of view is no anchor: the view stays.
@@ -607,7 +603,7 @@ impl Library {
         }
     }
     pub(crate) fn photo(&self, id: PhotoId) -> Option<&Photo> {
-        self.session.photos.iter().find(|p| p.id == id)
+        self.session.photos().iter().find(|p| p.id == id)
     }
     /// What photo `id` is developed from, as Develop would open it: its saved edit
     /// (checked as Develop checks it), else its Lightroom edit, else the defaults;
@@ -622,13 +618,13 @@ impl Library {
         if let Some(refusal) = develop_refusal(photo, photo.path.is_file()) {
             return Some(Err(refusal));
         }
-        let edit = match self.session.catalog.load_edit(id, &photo.path) {
+        let edit = match self.session.catalog().load_edit(id, &photo.path) {
             Ok(Some(saved)) => serde_json::to_string(&saved.recipe)
                 .ok()
                 .map(EditSource::Recipe),
             Ok(None) => self
                 .session
-                .catalog
+                .catalog()
                 .edit_texts(id)
                 .ok()
                 .and_then(|(_, lightroom)| lightroom)
@@ -650,9 +646,9 @@ impl Library {
         let at = self
             .visible
             .iter()
-            .position(|i| self.session.photos[*i].id == id)?;
+            .position(|i| self.session.photos()[*i].id == id)?;
         let n = (at as i32 + delta).clamp(0, self.visible.len().saturating_sub(1) as i32) as usize;
-        self.visible.get(n).map(|i| self.session.photos[*i].id)
+        self.visible.get(n).map(|i| self.session.photos()[*i].id)
     }
     fn labels(&self) -> Vec<String> {
         let mut labels: Vec<String> = crate::app::photo_metadata::LABELS
@@ -661,7 +657,7 @@ impl Library {
             .collect();
         let mut custom: Vec<_> = self
             .session
-            .photos
+            .photos()
             .iter()
             .map(|p| &p.label)
             .filter(|s| !s.is_empty() && !labels.contains(s))
@@ -685,7 +681,7 @@ impl Library {
     pub(in crate::app) fn shown(&self) -> Vec<PhotoId> {
         self.visible
             .iter()
-            .map(|i| self.session.photos[*i].id)
+            .map(|i| self.session.photos()[*i].id)
             .collect()
     }
     /// Edits written elsewhere (Sync, its Undo): their previews render again.
@@ -724,7 +720,7 @@ impl Library {
         if let Some(id) = self.filters.collection {
             self.filters.members = self
                 .session
-                .collection_photos
+                .collection_photos()
                 .get(&id)
                 .cloned()
                 .unwrap_or_default();
@@ -815,7 +811,7 @@ impl Library {
     /// Delete Rejected Photos'.
     pub(in crate::app) fn rejected_in_source(&self) -> Vec<PhotoId> {
         self.session
-            .photos
+            .photos()
             .iter()
             .filter(|p| {
                 p.flag == -1 && self.filters.source_holds(p, |path| self.is_available(path))
@@ -902,7 +898,7 @@ impl Library {
         // FAT, exFAT and SMB shares) once the catalog is read again.
         let folders = self
             .session
-            .folders
+            .folders()
             .iter()
             .filter(|f| f.root == root)
             .filter_map(|f| {
@@ -928,7 +924,7 @@ impl Library {
     fn follow_catalog_names(&mut self, to: &str, folders: &[(FolderId, String)]) {
         let now: HashMap<FolderId, String> = self
             .session
-            .folders
+            .folders()
             .iter()
             .map(|f| (f.id, folder_selection::tree_key(f.root, &f.relative)))
             .collect();
@@ -1048,7 +1044,7 @@ impl Library {
         if relative.is_empty() {
             let name = self
                 .session
-                .roots
+                .roots()
                 .iter()
                 .find(|(id, ..)| *id == root)
                 .map(|(_, original, _)| {
@@ -1063,7 +1059,7 @@ impl Library {
         }
         let folder = self
             .session
-            .folders
+            .folders()
             .iter()
             .find(|f| f.root == root && f.relative.trim_end_matches('/') == relative)?;
         let name = relative.rsplit('/').next().unwrap_or(relative).to_string();
@@ -1071,7 +1067,7 @@ impl Library {
     }
     /// The root and logical path of catalog folder `id`, as the Library has it.
     pub(in crate::app) fn folder_place(&self, id: FolderId) -> Option<(RootId, String)> {
-        let folder = self.session.folders.iter().find(|f| f.id == id)?;
+        let folder = self.session.folders().iter().find(|f| f.id == id)?;
         Some((folder.root, folder.relative.clone()))
     }
     pub(in crate::app) fn take_removal_request(&mut self) -> Option<FolderRemoval> {
@@ -1177,12 +1173,12 @@ impl Library {
         self.import_bursts = None;
         let going: Vec<PhotoId> = self
             .session
-            .photos
+            .photos()
             .iter()
             .filter(|p| folders.contains(&p.folder))
             .map(|p| p.id)
             .collect();
-        for photo in &self.session.photos {
+        for photo in self.session.photos() {
             if going.contains(&photo.id) || photo.master.is_some_and(|m| going.contains(&m)) {
                 self.cache.forget(photo.id);
                 self.screen.forget(photo.id);
@@ -1284,7 +1280,7 @@ impl Library {
         if !self
             .visible
             .iter()
-            .any(|i| self.session.photos[*i].id == id)
+            .any(|i| self.session.photos()[*i].id == id)
         {
             if !self.filters.members.contains(&id) {
                 self.filters.collection = None;
@@ -1300,7 +1296,7 @@ impl Library {
         if !self
             .visible
             .iter()
-            .any(|i| self.session.photos[*i].id == id)
+            .any(|i| self.session.photos()[*i].id == id)
         {
             self.filters.folder_scope = None;
             self.filters.collection = None;
@@ -1313,7 +1309,7 @@ impl Library {
     }
     /// Drain in every workspace so the bounded worker never waits for the grid.
     pub(super) fn poll_previews(&mut self, ctx: &egui::Context) {
-        if self.availability.poll(false, &self.session.photos) {
+        if self.availability.poll(false, self.session.photos()) {
             self.availability_known();
         }
         self.poll_capture_times();
@@ -1332,9 +1328,9 @@ impl Library {
     pub(super) fn publish_shown(&mut self) {
         self.cache.publish_shown();
         self.screen.publish_shown();
-        let catalog = &self.session.catalog;
+        let catalog = self.session.catalog();
         self.cache.request_ahead(
-            &self.session.photos,
+            self.session.photos(),
             (self.shown_version, &self.visible),
             self.grid_shown.end,
             |id| edit_source(catalog, id),
@@ -1351,7 +1347,7 @@ impl Library {
     }
     /// Queues the previews a shown photo needs; its edit comes from the catalog.
     fn request_previews(&mut self, photo: &Photo, ctx: &egui::Context) {
-        let catalog = &self.session.catalog;
+        let catalog = self.session.catalog();
         self.cache
             .request(photo, ctx, || edit_source(catalog, photo.id));
     }
@@ -1378,7 +1374,7 @@ impl Library {
     /// when switching to Develop.
     pub(super) fn selected_or_first(&mut self) -> Option<PhotoId> {
         if self.selection.active.is_none() {
-            self.select(self.visible.first().map(|i| self.session.photos[*i].id));
+            self.select(self.visible.first().map(|i| self.session.photos()[*i].id));
         }
         self.selection.active
     }
@@ -1405,7 +1401,7 @@ impl Library {
         let unedited: Vec<PhotoId> = self
             .cache
             .edited_ids()
-            .filter(|id| Some(*id) != current && edit_source(&self.session.catalog, *id).is_none())
+            .filter(|id| Some(*id) != current && edit_source(self.session.catalog(), *id).is_none())
             .collect();
         for id in unedited {
             self.cache.forget(id);
@@ -1442,7 +1438,7 @@ impl Library {
     }
     /// Whether a Copy Name or metadata field holds typing not saved yet.
     pub(super) fn has_drafts(&self) -> bool {
-        self.copy_names.is_unsaved(&self.session.photos) || self.has_unsaved_fields()
+        self.copy_names.is_unsaved(self.session.photos()) || self.has_unsaved_fields()
     }
     /// Drops a Copy Name or metadata field that could not be saved, e.g.
     /// closing without saving.

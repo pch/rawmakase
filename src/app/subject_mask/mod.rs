@@ -387,7 +387,7 @@ impl Editor {
         let upgraded = self
             .library
             .as_ref()
-            .and_then(|l| l.session.catalog.supports_raster_masks().ok())
+            .and_then(|l| l.session.catalog().supports_raster_masks().ok())
             .unwrap_or(false);
         if !upgraded {
             self.selection.prompt = Some(Prompt::Upgrade(request));
@@ -816,7 +816,7 @@ impl Editor {
         let Some(location) = self
             .library
             .as_ref()
-            .map(|l| l.session.catalog.location().clone())
+            .map(|l| l.session.catalog().location().clone())
         else {
             return;
         };

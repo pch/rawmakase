@@ -148,7 +148,7 @@ impl Library {
             && self.selection.active.is_some_and(|id| {
                 self.visible
                     .iter()
-                    .any(|i| self.session.photos[*i].id == id)
+                    .any(|i| self.session.photos()[*i].id == id)
             })
         {
             self.set_view(view);

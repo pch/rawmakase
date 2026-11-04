@@ -428,7 +428,7 @@ mod tests {
         let id = |name: &str| {
             library
                 .session
-                .photos
+                .photos()
                 .iter()
                 .find(|p| p.filename == name)
                 .unwrap()
@@ -439,7 +439,7 @@ mod tests {
             exposure: 1.5,
             ..Default::default()
         };
-        library.session.catalog.save_edit(
+        library.session.save_edit(
             other,
             &photos.join("b.dng"),
             &crate::storage::Identity::read(&photos.join("b.dng"))?,
@@ -516,7 +516,7 @@ mod tests {
             exposure: -1.,
             ..Default::default()
         };
-        library.session.catalog.save_edit(
+        library.session.save_edit(
             other,
             &path,
             &crate::storage::Identity::read(&path)?,

@@ -49,21 +49,30 @@ pub(crate) use descriptive::{Committed, DescriptiveChange, DescriptiveEdit};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+/// Its lists are read only from outside: they change only as the session reads
+/// the catalog again, or through its methods that keep them in step with the
+/// catalog and each other (and start a new generation when photos may have
+/// changed place, name, master or id). Writes through the session's catalog
+/// that leave the lists as they are (edits, History, snapshots, camera
+/// sequences, the computer's name) have methods of their own; nothing outside
+/// gets the catalog to change. Workflows that change the catalog through a
+/// connection of their own (adding folders, relinking, Synchronize, file
+/// operations) open it again or read it again after, as before.
 pub(crate) struct CatalogSession {
-    pub catalog: Catalog,
+    catalog: Catalog,
     /// The catalog's photos, without macOS "._" metadata files.
-    pub photos: Vec<Photo>,
+    photos: Vec<Photo>,
     /// Folders, each counting the photos in `photos` it holds.
-    pub folders: Vec<Folder>,
-    pub collections: Vec<Collection>,
+    folders: Vec<Folder>,
+    collections: Vec<Collection>,
     /// Each collection's photos, limited to the ones in `photos`.
-    pub collection_photos: HashMap<CollectionId, HashSet<PhotoId>>,
-    pub roots: Vec<(RootId, String, Option<String>)>,
+    collection_photos: HashMap<CollectionId, HashSet<PhotoId>>,
+    roots: Vec<(RootId, String, Option<String>)>,
     /// The folders located apart from their roots on this computer, by root.
-    pub overrides: HashMap<RootId, Vec<crate::catalog::Override>>,
+    overrides: HashMap<RootId, Vec<crate::catalog::Override>>,
     /// Previous Import: the photos the last Add Photo Folder or Synchronize
     /// added.
-    pub previous_import: HashSet<PhotoId>,
+    previous_import: HashSet<PhotoId>,
     backfill: backfill::Backfill,
     wake: Wake,
     /// Changes whenever photos may have changed place, name or master (see
@@ -84,6 +93,129 @@ pub(crate) struct Opened {
 }
 
 impl CatalogSession {
+    /// The catalog, to read. No method of [`Catalog`] that takes `&self` writes
+    /// it (`export_catalog` writes another catalog), except the test-support
+    /// ones (`db_for_tests`, `fail_metadata_writes`).
+    pub(crate) fn catalog(&self) -> &Catalog {
+        &self.catalog
+    }
+    /// The catalog's photos, without macOS "._" metadata files.
+    pub(crate) fn photos(&self) -> &[Photo] {
+        &self.photos
+    }
+    /// Folders, each counting the photos in [`Self::photos`] it holds.
+    pub(crate) fn folders(&self) -> &[Folder] {
+        &self.folders
+    }
+    pub(crate) fn collections(&self) -> &[Collection] {
+        &self.collections
+    }
+    /// Each collection's photos, limited to the ones in [`Self::photos`].
+    pub(crate) fn collection_photos(&self) -> &HashMap<CollectionId, HashSet<PhotoId>> {
+        &self.collection_photos
+    }
+    /// Each root: its id, the path it was added under and where it is found on
+    /// this computer, when elsewhere.
+    pub(crate) fn roots(&self) -> &[(RootId, String, Option<String>)] {
+        &self.roots
+    }
+    /// The folders located apart from their roots on this computer, by root.
+    pub(crate) fn overrides(&self) -> &HashMap<RootId, Vec<crate::catalog::Override>> {
+        &self.overrides
+    }
+    /// Previous Import: the photos the last Add Photo Folder or Synchronize
+    /// added.
+    pub(crate) fn previous_import(&self) -> &HashSet<PhotoId> {
+        &self.previous_import
+    }
+    /// Saves photo `id`'s edit ([`Catalog::save_edit`]). Changes no list.
+    pub(crate) fn save_edit(
+        &mut self,
+        id: PhotoId,
+        path: &Path,
+        source: &crate::storage::Identity,
+        recipe: &crate::model::recipe::Recipe,
+        export: &crate::export_settings::ExportOptions,
+        history: crate::catalog::HistoryUpdate<'_>,
+    ) -> Result<()> {
+        self.catalog
+            .save_edit(id, path, source, recipe, export, history)
+    }
+    /// Saves and clears edits in one transaction ([`Catalog::change_edits`]).
+    /// Changes no list.
+    pub(crate) fn change_edits(
+        &mut self,
+        changes: &[crate::catalog::EditChange<'_, '_>],
+    ) -> Result<()> {
+        self.catalog.change_edits(changes)
+    }
+    /// Adds a snapshot of `photo` ([`Catalog::add_snapshot`]). Changes no list.
+    pub(crate) fn add_snapshot(
+        &mut self,
+        photo: PhotoId,
+        name: &str,
+        recipe: &crate::model::recipe::Recipe,
+    ) -> Result<i64> {
+        self.catalog.add_snapshot(photo, name, recipe)
+    }
+    /// Changes no list.
+    pub(crate) fn update_snapshot(
+        &mut self,
+        id: i64,
+        recipe: &crate::model::recipe::Recipe,
+    ) -> Result<()> {
+        self.catalog.update_snapshot(id, recipe)
+    }
+    /// Changes no list.
+    pub(crate) fn rename_snapshot(&mut self, id: i64, name: &str) -> Result<()> {
+        self.catalog.rename_snapshot(id, name)
+    }
+    /// Changes no list.
+    pub(crate) fn delete_snapshot(&mut self, id: i64) -> Result<()> {
+        self.catalog.delete_snapshot(id)
+    }
+    /// Saves camera sequences read from the files ([`Catalog::save_sequences`]).
+    /// Changes no list.
+    pub(crate) fn save_sequences(
+        &mut self,
+        read: &[(PhotoId, crate::catalog::SavedSequence)],
+    ) -> Result<()> {
+        self.catalog.save_sequences(read)
+    }
+    /// Renames this computer for the folder locations
+    /// ([`Catalog::rename_computer`]). Changes no list.
+    pub(crate) fn rename_computer(&mut self, name: &str) -> Result<()> {
+        self.catalog.rename_computer(name)
+    }
+    /// Orders the photos by capture time, then file name and id, as the
+    /// catalog lists them, after capture times were filled in or read again.
+    pub(crate) fn sort_photos_by_capture_time(&mut self) {
+        self.photos.sort_by(|a, b| {
+            (&a.captured, &a.filename, a.id).cmp(&(&b.captured, &b.filename, b.id))
+        });
+    }
+    /// Forgets the photos, folders, roots, collection members and Previous
+    /// Import when the catalog could not be read again after a change made
+    /// through another connection: a folder removed may have given its id to a
+    /// new one, so none is offered to be changed. The collections and overrides
+    /// stay as listed; the failed read started a new generation already.
+    pub(crate) fn forget_lists(&mut self) {
+        self.photos.clear();
+        self.folders.clear();
+        self.roots.clear();
+        self.collection_photos.clear();
+        self.previous_import.clear();
+    }
+    /// The catalog, for a test to change before reading it again.
+    #[cfg(test)]
+    pub(crate) fn catalog_mut_for_tests(&mut self) -> &mut Catalog {
+        &mut self.catalog
+    }
+    /// The photos as listed, for a test to set up flags or capture times.
+    #[cfg(test)]
+    pub(crate) fn photos_mut_for_tests(&mut self) -> &mut Vec<Photo> {
+        &mut self.photos
+    }
     pub(crate) fn open(location: &CatalogLocation) -> Result<Opened> {
         crate::platform::network::prepare_filesystem_bridge();
         let mut catalog = Catalog::open(location)?;

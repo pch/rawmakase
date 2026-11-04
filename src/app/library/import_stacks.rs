@@ -69,13 +69,13 @@ impl Library {
             })
             .collect();
         if !save.is_empty()
-            && let Err(e) = self.session.catalog.save_sequences(&save)
+            && let Err(e) = self.session.save_sequences(&save)
         {
             // Used anyway; read again when Auto-Stack wants them.
             self.messages
                 .fail(format!("Camera bursts could not be saved: {e:#}"));
         }
-        let (batches, stacks) = plan(&read, &self.session.photos);
+        let (batches, stacks) = plan(&read, self.session.photos());
         if batches.is_empty() {
             return;
         }

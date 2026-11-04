@@ -121,7 +121,7 @@ impl Editor {
         }
         self.library
             .as_ref()
-            .map(|l| l.session.catalog.location().clone())
+            .map(|l| l.session.catalog().location().clone())
     }
 
     /// Move to Folder…'s window: the catalog's folders, filtered by name.
@@ -130,15 +130,15 @@ impl Editor {
             self.file_ops.state = State::Idle;
             return;
         };
-        if library.session.catalog.location() != &c.catalog {
+        if library.session.catalog().location() != &c.catalog {
             self.file_ops.state = State::Idle;
             return;
         }
         let palette = super::super::theme::palette(ctx);
-        let roots = &library.session.roots;
+        let roots = library.session.roots();
         let mut rows: Vec<(FolderId, String)> = library
             .session
-            .folders
+            .folders()
             .iter()
             .map(|f| (f.id, folder_label(roots, f.root, &f.relative)))
             .collect();
@@ -354,7 +354,7 @@ impl Editor {
         let unfinished = self
             .library
             .as_ref()
-            .map(|l| file_ops::unfinished_here(&l.session.catalog));
+            .map(|l| file_ops::unfinished_here(l.session.catalog()));
         match unfinished {
             Some(Ok(true)) => {}
             Some(Err(e)) => {

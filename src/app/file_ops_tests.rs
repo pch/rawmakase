@@ -74,7 +74,7 @@ pub(super) fn ids_left(e: &Editor) -> Vec<PhotoId> {
         .as_ref()
         .unwrap()
         .session
-        .photos
+        .photos()
         .iter()
         .map(|p| p.id)
         .collect()
@@ -85,7 +85,7 @@ fn quick_count(e: &Editor) -> usize {
     let session = &e.library.as_ref().unwrap().session;
     session
         .quick_collection()
-        .and_then(|q| session.collection_photos.get(&q))
+        .and_then(|q| session.collection_photos().get(&q))
         .map_or(0, |m| m.len())
 }
 
@@ -210,7 +210,7 @@ fn delete_in_the_quick_collection_takes_photos_out_of_it_only() -> anyhow::Resul
 fn delete_in_an_imported_collection_changes_nothing_and_says_so() -> anyhow::Result<()> {
     let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
     let library = e.library.as_mut().unwrap();
-    let id = library.session.catalog.db_for_tests().query_row(
+    let id = library.session.catalog().db_for_tests().query_row(
         "INSERT INTO collections(name, parent, kind) VALUES ('Trip', NULL, 'com.adobe.ag.library.collection') RETURNING id",
         [],
         |r| r.get::<_, i64>(0),
@@ -218,7 +218,7 @@ fn delete_in_an_imported_collection_changes_nothing_and_says_so() -> anyhow::Res
     let collection = crate::catalog::CollectionId(id);
     library
         .session
-        .catalog
+        .catalog_mut_for_tests()
         .change_collection(collection, &ids, &[])?;
     library.session.reload()?;
     library.select_collection(collection);
@@ -253,7 +253,7 @@ fn the_open_edit_is_saved_first_and_a_failed_save_asks_nothing() -> anyhow::Resu
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .db_for_tests()
         .execute_batch(
             "CREATE TEMP TRIGGER fail_save BEFORE UPDATE OF recipe ON photos
@@ -269,7 +269,7 @@ fn the_open_edit_is_saved_first_and_a_failed_save_asks_nothing() -> anyhow::Resu
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .db_for_tests()
         .execute_batch("DROP TRIGGER fail_save")?;
     e.request_photo_removal(vec![ids[0]]);
@@ -316,7 +316,7 @@ fn the_outcome_is_read_from_the_journal_even_when_the_worker_stopped() -> anyhow
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .location()
         .clone();
     let mut other = crate::catalog::Catalog::open(&location)?;
@@ -489,7 +489,7 @@ fn an_unreadable_outcome_forgets_every_photo_that_may_be_gone() -> anyhow::Resul
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .location()
         .clone();
     let mut other = crate::catalog::Catalog::open(&location)?;

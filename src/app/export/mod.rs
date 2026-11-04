@@ -316,7 +316,7 @@ impl Editor {
         if let Some(l) = &self.library
             && !ids.is_empty()
         {
-            match l.session.catalog.name_fields(&ids) {
+            match l.session.catalog().name_fields(&ids) {
                 Ok(fields) => {
                     let chosen = scope.photos.iter_mut().filter(|p| p.id.is_some());
                     for (chosen, fields) in chosen.zip(fields) {
@@ -536,10 +536,10 @@ impl Editor {
             (Some(p), Some(library)) => {
                 let read = library
                     .session
-                    .catalog
+                    .catalog()
                     .descriptive(p.id)
                     .and_then(|descriptive| {
-                        let keywords = library.session.catalog.keywords(p.id)?;
+                        let keywords = library.session.catalog().keywords(p.id)?;
                         Ok(Values {
                             descriptive,
                             keywords: keywords
@@ -631,7 +631,7 @@ impl Editor {
     fn batch_photos(&self, scope: &Scope, unsaved: bool) -> anyhow::Result<Vec<BatchPhoto>> {
         let ids: Vec<PhotoId> = scope.photos.iter().filter_map(|p| p.id).collect();
         let mut records = match &self.library {
-            Some(l) if !ids.is_empty() => l.session.catalog.photo_records(&ids)?.into_iter(),
+            Some(l) if !ids.is_empty() => l.session.catalog().photo_records(&ids)?.into_iter(),
             _ => Vec::new().into_iter(),
         };
         Ok(scope

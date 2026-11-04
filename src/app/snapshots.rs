@@ -45,7 +45,7 @@ impl Editor {
     /// Reads the open catalog photo's snapshots.
     pub(super) fn load_snapshots(&mut self) {
         let list = match (&self.library, self.document.catalog_photo) {
-            (Some(l), Some(photo)) => l.session.catalog.snapshots(photo).unwrap_or_default(),
+            (Some(l), Some(photo)) => l.session.catalog().snapshots(photo).unwrap_or_default(),
             _ => Vec::new(),
         };
         self.document.snapshots.list = list;
@@ -128,12 +128,12 @@ impl Editor {
         let (Some(library), Some(photo)) = (&mut self.library, self.document.catalog_photo) else {
             return;
         };
-        let catalog = &mut library.session.catalog;
+        let session = &mut library.session;
         let recipe = self.document.edit.recipe();
         let result = match &action {
             SnapshotAction::New => {
                 let name = format!("Snapshot {}", self.document.snapshots.list.len() + 1);
-                catalog.add_snapshot(photo, &name, recipe).map(|id| {
+                session.add_snapshot(photo, &name, recipe).map(|id| {
                     self.document.snapshots.renaming = Some(Renaming {
                         id,
                         name,
@@ -141,7 +141,7 @@ impl Editor {
                     });
                 })
             }
-            SnapshotAction::Update(id) => catalog.update_snapshot(*id, recipe),
+            SnapshotAction::Update(id) => session.update_snapshot(*id, recipe),
             SnapshotAction::StartRename(id) => {
                 let name = self
                     .snapshot(*id)
@@ -159,10 +159,10 @@ impl Editor {
                 // An emptied name keeps the old one.
                 match name.trim() {
                     "" => Ok(()),
-                    name => catalog.rename_snapshot(*id, name),
+                    name => session.rename_snapshot(*id, name),
                 }
             }
-            SnapshotAction::Delete(id) => catalog.delete_snapshot(*id),
+            SnapshotAction::Delete(id) => session.delete_snapshot(*id),
             SnapshotAction::ToBefore(id) => {
                 if let Some(recipe) = self.snapshot_settings(*id) {
                     self.set_before(recipe);
@@ -281,7 +281,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
         let library = crate::app::library::Library::load(&path, ctx.clone())?;
-        e.document.catalog_photo = Some(library.session.photos[0].id);
+        e.document.catalog_photo = Some(library.session.photos()[0].id);
         e.library = Some(Box::new(library));
         e.document.metadata = Some(Default::default());
         e.document.edit.setup_mut().exposure = 0.8;

@@ -24,7 +24,7 @@ pub(super) fn editor_with_folders(
     let ctx = egui::Context::default();
     let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     let library = crate::app::library::Library::load(&path, ctx)?;
-    let ids = library.session.photos.iter().map(|p| p.id).collect();
+    let ids = library.session.photos().iter().map(|p| p.id).collect();
     e.library = Some(Box::new(library));
     e.module = Module::Library;
     Ok((d, e, ids))
@@ -36,7 +36,7 @@ pub(super) fn photo(e: &Editor, d: &tempfile::TempDir, name: &str) -> PhotoId {
     let library = e.library.as_ref().unwrap();
     library
         .session
-        .photos
+        .photos()
         .iter()
         .find(|p| p.path == path || p.path.canonicalize().ok() == path.canonicalize().ok())
         .unwrap_or_else(|| panic!("no photo {name}"))
@@ -60,14 +60,14 @@ pub(super) fn folder(e: &Editor, relative: &str) -> Option<FolderId> {
     let library = e.library.as_ref().unwrap();
     library
         .session
-        .folders
+        .folders()
         .iter()
         .find(|f| f.relative == relative)
         .map(|f| f.id)
 }
 
 pub(super) fn root(e: &Editor) -> crate::catalog::RootId {
-    e.library.as_ref().unwrap().session.roots[0].0
+    e.library.as_ref().unwrap().session.roots()[0].0
 }
 
 #[test]
@@ -278,7 +278,7 @@ fn what_a_crash_left_unfinished_is_asked_about_when_the_catalog_opens() -> anyho
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .location()
         .clone();
     e.recover_files_later(catalog.clone());
@@ -332,7 +332,7 @@ fn an_open_edit_that_cant_be_saved_puts_off_the_check_once() -> anyhow::Result<(
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .location()
         .clone();
     e.recover_files_later(catalog);
@@ -360,7 +360,7 @@ fn unfinished_operations_are_not_asked_about_in_another_catalog() -> anyhow::Res
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .location()
         .clone();
     e.recover_files_later(catalog);
@@ -385,7 +385,7 @@ fn a_catalog_with_nothing_unfinished_is_not_held_when_it_opens() -> anyhow::Resu
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .location()
         .clone();
     e.recover_files_later(catalog);

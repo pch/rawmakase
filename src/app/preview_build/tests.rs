@@ -99,7 +99,7 @@ fn identity_of(e: &Editor, id: PhotoId) -> String {
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .edit_record(id)
         .unwrap();
     identity(&record, &e.raw_defaults, &e.profile_library, e.demosaic)
@@ -125,7 +125,6 @@ fn save_edit(e: &mut Editor, id: PhotoId, exposure: f32) {
         .as_mut()
         .unwrap()
         .session
-        .catalog
         .save_edit(
             id,
             &path,
@@ -349,7 +348,7 @@ fn a_removed_copy_takes_its_requests_and_waiting_builds_along() {
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .location()
         .clone();
     let path = path_of(&e, master);
@@ -395,7 +394,7 @@ fn discarding_drops_rows_and_requests_of_every_kind() {
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .location()
         .clone();
     e.build_previews(&ids, PreviewKind::Standard).unwrap();
@@ -651,7 +650,7 @@ fn upkeep_asked_for_before_exit_still_happens() {
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .location()
         .clone();
     let cache = PreviewCache::open(&cache).unwrap();
@@ -757,7 +756,7 @@ fn another_copy_or_catalog_of_the_same_file_does_not_inherit_requests() {
         .add_folder(path.parent().unwrap())
         .unwrap();
     let library = crate::app::library::Library::load(&other, e.context.clone()).unwrap();
-    let there = library.session.photos[0].id;
+    let there = library.session.photos()[0].id;
     e.document.reset(None);
     e.library = Some(Box::new(library));
     open(&mut e, there);
@@ -830,7 +829,7 @@ fn one_to_one_previews_build_at_full_size_and_discard_on_their_own() {
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .location()
         .clone();
     let cache = PreviewCache::open(&cache).unwrap();
@@ -967,7 +966,7 @@ fn a_build_keeps_its_request_through_an_expiry_while_it_waited() {
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .location()
         .clone();
     e.build_previews(&ids, PreviewKind::OneToOne).unwrap();

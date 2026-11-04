@@ -154,7 +154,7 @@ impl Editor {
             let empty = self
                 .library
                 .as_ref()
-                .is_none_or(|l| l.session.photos.is_empty());
+                .is_none_or(|l| l.session.photos().is_empty());
             ui.painter().text(
                 area.center(),
                 egui::Align2::CENTER_CENTER,

@@ -177,14 +177,14 @@ fn a_root_is_refused_and_an_emptied_root_can_be_removed() -> anyhow::Result<()> 
     settle(&mut e);
     assert!(!d.path().join("photos/2024").exists());
     // The root stays, with nothing in the catalog, and goes when asked.
-    assert_eq!(e.library.as_ref().unwrap().session.roots.len(), 1);
+    assert_eq!(e.library.as_ref().unwrap().session.roots().len(), 1);
     e.remove_folders(&crate::app::library::FolderRemoval {
         catalog: e
             .library
             .as_ref()
             .unwrap()
             .session
-            .catalog
+            .catalog()
             .location()
             .clone(),
         name: "photos".into(),
@@ -193,7 +193,7 @@ fn a_root_is_refused_and_an_emptied_root_can_be_removed() -> anyhow::Result<()> 
         empty_root: Some(r),
         exported: None,
     });
-    assert!(e.library.as_ref().unwrap().session.roots.is_empty());
+    assert!(e.library.as_ref().unwrap().session.roots().is_empty());
     assert!(d.path().join("photos").is_dir(), "its folder stays");
     assert!(
         e.messages

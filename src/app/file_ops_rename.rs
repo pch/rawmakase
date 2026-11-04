@@ -384,7 +384,7 @@ impl Editor {
         let Some(location) = self
             .library
             .as_ref()
-            .map(|l| l.session.catalog.location().clone())
+            .map(|l| l.session.catalog().location().clone())
         else {
             return;
         };
@@ -587,7 +587,7 @@ impl Editor {
             return None;
         };
         let (request, inputs) = r.planning.clone()?;
-        let catalog = &self.library.as_ref()?.session.catalog;
+        let catalog = &self.library.as_ref()?.session.catalog();
         Some(RenamePlanned {
             request,
             reader: None,
@@ -747,7 +747,7 @@ impl Editor {
         let (State::Renaming(r), Some(library)) = (&mut self.file_ops.state, &self.library) else {
             return;
         };
-        if library.session.catalog.location() != &r.catalog {
+        if library.session.catalog().location() != &r.catalog {
             self.file_ops.state = State::Idle;
             self.release_files();
             return;
@@ -1005,7 +1005,7 @@ impl Editor {
         let Some(catalog) = self
             .library
             .as_ref()
-            .map(|l| l.session.catalog.location().clone())
+            .map(|l| l.session.catalog().location().clone())
         else {
             return;
         };

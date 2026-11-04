@@ -44,7 +44,7 @@ impl Editor {
             self.activity.finish_dialog();
             return;
         };
-        let catalog = library.session.catalog.location().clone();
+        let catalog = library.session.catalog().location().clone();
         let ctx = self.context.clone();
         super::task::spawn(
             self.tx.clone(),
