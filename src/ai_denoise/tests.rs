@@ -891,3 +891,23 @@ fn a_request_while_the_dying_worker_reports_its_failures_starts_a_new_worker() {
     let states = until_final(&c);
     assert!(matches!(states.last(), Some(State::Ready(_))), "{states:?}");
 }
+
+/// A result is filed under the file's identity, the model and its assembly version,
+/// the provider and the build, in the form the results already on disk have.
+#[test]
+fn a_result_key_keeps_its_form() {
+    let id = crate::storage::Identity {
+        size: 12,
+        modified_ns: 34,
+        prefix_hash: "ab".into(),
+    };
+    assert_eq!(
+        key_of(&id, Provider::CoreML),
+        format!(
+            "ab-12-34-{}-a{}-CoreML-{}",
+            RAWNIND.model.sha256,
+            RAWNIND.version,
+            rawmakase_decode::decode_cache::build_identity()
+        )
+    );
+}
