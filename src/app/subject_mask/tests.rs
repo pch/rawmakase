@@ -730,7 +730,7 @@ fn the_real_model_selects_through_the_worker_and_the_mask_changes_the_render() {
             .unwrap()
             .develop(
                 crate::camera_data::Decode::full(Default::default()),
-                &cancel,
+                Cancel::new(&cancel),
             )
             .unwrap(),
     );

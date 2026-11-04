@@ -5,6 +5,7 @@ use crate::app::sync::{BatchChange, BatchProgress};
 use crate::app::{Editor, Modal, Module};
 use crate::catalog::PhotoId;
 use eframe::egui;
+use rawmakase_cancel::Cancel;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -322,7 +323,7 @@ fn batch_preset_matches_the_preset_clicked_in_develop() -> anyhow::Result<()> {
     });
     // Both photos of each pair start from the same edit, which a preset's zeros
     // must replace and whose Detail panel is off.
-    let m = crate::photo::open_source(&photos[0].1, &Default::default())?
+    let m = crate::photo::open_source(&photos[0].1, Cancel::NEVER)?
         .metadata()
         .clone();
     let mut start = crate::model::recipe::Recipe::with_profiles(&m, &[]);

@@ -5,13 +5,11 @@
 //! implements it with `rawmakase-inference` (docs/rendering-quality.md#ai-denoise).
 use crate::camera_data::CameraImage;
 use anyhow::{Result, ensure};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
 use std::{
     path::Path,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, atomic::AtomicBool},
 };
 
 /// Sensor pixels around a clipped sample where the AI source is the plain demosaic: the
@@ -208,7 +206,7 @@ fn plain_share(layout: &Layout, clipped: &[bool]) -> Vec<f32> {
 pub fn assemble(
     output: &ModelOutput<'_>,
     plain: &CameraImage,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<CameraImage> {
     let layout = output.layout;
     let (w, h) = (layout.width, layout.height);
@@ -255,7 +253,7 @@ pub fn assemble(
                 }
             }
         });
-    ensure!(!cancel.load(Ordering::Relaxed), "Development cancelled");
+    ensure!(!cancel.is_cancelled(), "Development cancelled");
     Ok(CameraImage {
         recovered: Default::default(),
         width: plain.width,
@@ -449,7 +447,7 @@ mod tests {
                     clipped: &clipped,
                 },
                 &plain,
-                &AtomicBool::new(false),
+                Cancel::NEVER,
             )
             .unwrap();
             assert_eq!((image.width, image.height), (width as u32, height as u32));
@@ -488,7 +486,7 @@ mod tests {
                 clipped: &clipped,
             },
             &plain,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
         )
         .unwrap();
         let at = |x: usize, y: usize| image.pixels[y * width + x][0];
@@ -519,7 +517,7 @@ mod tests {
                 clipped: &clipped,
             },
             &plain,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
         );
         assert!(result.is_err());
     }

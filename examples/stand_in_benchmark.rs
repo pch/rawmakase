@@ -47,9 +47,12 @@ fn main() -> Result<()> {
         && std::env::var_os("FULL").is_none_or(|v| v.is_empty());
     let t = Instant::now();
     let decoded = if half {
-        raw.develop(camera_data::Decode::Half, &cancel)?
+        raw.develop(camera_data::Decode::Half, Cancel::new(&cancel))?
     } else {
-        raw.develop(camera_data::Decode::full(Default::default()), &cancel)?
+        raw.develop(
+            camera_data::Decode::full(Default::default()),
+            Cancel::new(&cancel),
+        )?
     };
     let out = develop::render(&decoded, &recipe.checked()?, STANDARD, Cancel::new(&cancel))?;
     let standard =
@@ -89,8 +92,10 @@ fn main() -> Result<()> {
 
     // The first live Fit: from the decode cache, and from a decode.
     let t = Instant::now();
-    let full = rawmakase::photo::open(path)?
-        .develop(camera_data::Decode::full(Default::default()), &cancel)?;
+    let full = rawmakase::photo::open(path)?.develop(
+        camera_data::Decode::full(Default::default()),
+        Cancel::new(&cancel),
+    )?;
     let decode = ms(t);
     let recovered = develop::quality::recover_highlights(&full, Cancel::NEVER)?;
     let _ = full.recovered.set(std::sync::Arc::new(recovered));
@@ -115,7 +120,9 @@ fn main() -> Result<()> {
             while !stop.load(std::sync::atomic::Ordering::Relaxed) {
                 pool.install(|| {
                     let raw = rawmakase::photo::open(&path).unwrap();
-                    let im = raw.develop(camera_data::Decode::Half, &stop).ok()?;
+                    let im = raw
+                        .develop(camera_data::Decode::Half, Cancel::new(&stop))
+                        .ok()?;
                     develop::render(&im, &recipe.checked().ok()?, STANDARD, Cancel::new(&stop)).ok()
                 });
             }

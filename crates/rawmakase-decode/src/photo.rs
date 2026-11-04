@@ -8,9 +8,9 @@
 use crate::raster;
 use crate::raw::Raw;
 use anyhow::Result;
+use rawmakase_cancel::Cancel;
 use rawmakase_model::camera_data::{CameraImage, Metadata};
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 
 /// The imported lens profiles, shared by everything that opens photos (Develop's
 /// loaders, the Library's previews, exports, Sync Settings) so they are read once
@@ -35,7 +35,7 @@ impl Opened {
 /// Opens `path` as a RAW when its extension is a RAW's, otherwise as a
 /// JPEG, PNG or TIFF. A rendered file opens as the scene its default rendering is of
 /// (`develop::rendered`), which Develop renders as a raw scene.
-pub fn open_source(path: &Path, cancel: &AtomicBool) -> Result<Opened> {
+pub fn open_source(path: &Path, cancel: Cancel<'_>) -> Result<Opened> {
     if rawmakase_model::storage::is_raw(path) {
         open(path).map(Opened::Raw)
     } else {
@@ -387,10 +387,7 @@ mod tests {
         assert!(m.monochrome);
         assert_eq!((m.wb, m.daylight_wb), ([1.; 3], [1.; 3]));
         let im = raw
-            .develop(
-                rawmakase_model::camera_data::Decode::Half,
-                &std::sync::atomic::AtomicBool::new(false),
-            )
+            .develop(rawmakase_model::camera_data::Decode::Half, Cancel::NEVER)
             .unwrap();
         assert_eq!((im.width, im.height), (4, 2));
         for (p, v) in im
@@ -537,7 +534,7 @@ mod tests {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../tests/data/formats")
                 .join(name);
-            match super::open_source(&path, &cancel).unwrap() {
+            match super::open_source(&path, Cancel::new(&cancel)).unwrap() {
                 super::Opened::Rendered(image) => assert!(image.metadata.is_rendered(), "{name}"),
                 super::Opened::Raw(_) => panic!("{name} must open as rendered"),
             }
@@ -553,8 +550,10 @@ mod tests {
             .save(&path)
             .unwrap();
         let cancel = std::sync::atomic::AtomicBool::new(false);
-        let raw_pixel = crate::raster::open(&path, &cancel).unwrap().pixels[0];
-        match super::open_source(&path, &cancel).unwrap() {
+        let raw_pixel = crate::raster::open(&path, Cancel::new(&cancel))
+            .unwrap()
+            .pixels[0];
+        match super::open_source(&path, Cancel::new(&cancel)).unwrap() {
             super::Opened::Rendered(image) => {
                 assert!(image.metadata.is_rendered());
                 // The pixels are the pseudo-scene of the file's linear values.
@@ -576,7 +575,7 @@ mod tests {
         let raw = super::open(&path)
             .err()
             .expect("the decoder refuses garbage");
-        let opened = super::open_source(&path, &cancel)
+        let opened = super::open_source(&path, Cancel::new(&cancel))
             .err()
             .expect("the decoder refuses garbage");
         assert_eq!(opened.to_string(), raw.to_string());

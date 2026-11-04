@@ -5,10 +5,10 @@
 //! is not a mosaic (small RAWs, which are converted from YCbCr in floating
 //! point) can be written out whole for a per-pixel comparison.
 use crate::camera_data::{CameraImage, Decode, Demosaic};
+use rawmakase_cancel::Cancel;
 use serde::Serialize;
 use sha2::Digest;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 
 #[derive(Debug, Serialize)]
 pub struct Dump {
@@ -99,9 +99,8 @@ fn describe(path: &Path, floats: Option<&Path>, mut d: Dump) -> Dump {
             return d;
         }
     }
-    let decode = |mode: Decode| {
-        crate::photo::open(path).and_then(|raw| raw.develop(mode, &AtomicBool::new(false)))
-    };
+    let decode =
+        |mode: Decode| crate::photo::open(path).and_then(|raw| raw.develop(mode, Cancel::NEVER));
     let full = decode(Decode::Full(Demosaic::Rawmakase));
     if let (Some(dir), Ok(image), Some(false)) = (floats, &full, d.mosaic) {
         let file = dir.join(format!("{sha256}.full.f32"));

@@ -34,7 +34,7 @@ use rawmakase_model::{
 use serde::Serialize;
 use std::{
     path::Path,
-    sync::{Arc, Condvar, Mutex, atomic::AtomicBool},
+    sync::{Arc, Condvar, Mutex},
 };
 
 type Rgb = [f32; 3];
@@ -159,10 +159,10 @@ fn full_render(
     im: &rawmakase_model::camera_data::CameraImage,
     r: &Recipe,
     size: [u32; 2],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Vec<Rgb>, Refusal> {
     let valid = r.checked().map_err(|e| refuse(format!("{e:#}")))?;
-    let out = develop::render(im, &valid, PROXY_EDGE * RENDER_FACTOR, Cancel::new(cancel))
+    let out = develop::render(im, &valid, PROXY_EDGE * RENDER_FACTOR, cancel)
         .map_err(|e| refuse(format!("{e:#}")))?;
     let linear: Vec<Rgb> = out.pixels.iter().map(|p| p.map(srgb_decode)).collect();
     let (w, h, reduced) = pairs::reduce(&linear, out.width, out.height);
@@ -210,8 +210,8 @@ fn clip_indicator(
 }
 
 /// A refusal once `cancel` is set: the fit's caller no longer wants it.
-fn stopped(cancel: &AtomicBool) -> Result<(), Refusal> {
-    match cancel.load(std::sync::atomic::Ordering::Relaxed) {
+fn stopped(cancel: Cancel<'_>) -> Result<(), Refusal> {
+    match cancel.is_cancelled() {
         true => Err(refuse("Fitting cancelled")),
         false => Ok(()),
     }
@@ -222,16 +222,10 @@ fn stage(
     im: &rawmakase_model::camera_data::CameraImage,
     r: &Recipe,
     stage: develop::quality::Stage,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<rawmakase_model::rendered::Rendered, Refusal> {
-    develop::quality::render_stage_sized(
-        im,
-        r,
-        stage,
-        PROXY_EDGE * RENDER_FACTOR,
-        Cancel::new(cancel),
-    )
-    .map_err(|e| refuse(format!("{e:#}")))
+    develop::quality::render_stage_sized(im, r, stage, PROXY_EDGE * RENDER_FACTOR, cancel)
+        .map_err(|e| refuse(format!("{e:#}")))
 }
 
 /// `profiles`, the photo's listed profiles, with Camera Look (fitted) added when
@@ -247,7 +241,7 @@ pub fn with_default(
     path: &Path,
     m: &Metadata,
     mut profiles: Vec<Arc<CameraProfile>>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Vec<Arc<CameraProfile>> {
     if fitted::eligibility(m, &profiles) != fitted::Eligibility::Absent {
         return profiles;
@@ -263,7 +257,7 @@ fn default_profile(
     path: &Path,
     m: &Metadata,
     dir: &Path,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Option<CameraProfile> {
     let key = cache::FitKey::of(path).ok()?;
     if let Some(result) = cache::load(dir, &key, m) {
@@ -290,9 +284,7 @@ fn default_profile(
     let result = fitted.map(|f| f.profile).map_err(|e| e.reason);
     // A file replaced or changed while it was fitted: the result may be of either
     // file, so it is neither used nor stored.
-    if cancel.load(std::sync::atomic::Ordering::Relaxed)
-        || cache::FitKey::of(path).ok().as_ref() != Some(&key)
-    {
+    if cancel.is_cancelled() || cache::FitKey::of(path).ok().as_ref() != Some(&key) {
         return None;
     }
     if let Err(e) = cache::store(dir, &key, &result) {
@@ -332,11 +324,11 @@ impl Drop for Claim {
 /// and if that job waited for the fit, neither would end. Different files that
 /// read the same (hard links, copies) can't be told apart before the key, so no
 /// rule about which jobs run together could rule that out.
-fn claim(key: &cache::FitKey, cancel: &AtomicBool) -> Option<Turn> {
+fn claim(key: &cache::FitKey, cancel: Cancel<'_>) -> Option<Turn> {
     let may_wait = rayon::current_thread_index().is_none();
     let mut fitting = FITTING.0.lock().unwrap_or_else(|e| e.into_inner());
     loop {
-        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return None;
         }
         if !fitting.contains(key) {
@@ -386,7 +378,7 @@ pub fn preview_srgb(path: &Path) -> anyhow::Result<CameraPreview> {
 }
 
 /// Fits a camera look to the photo at `path`, or says why it can't.
-pub fn fit(path: &Path, inputs: &FitInputs, cancel: &AtomicBool) -> Result<Fitted, Refusal> {
+pub fn fit(path: &Path, inputs: &FitInputs, cancel: Cancel<'_>) -> Result<Fitted, Refusal> {
     let start = std::time::Instant::now();
     let mut raw = crate::photo::open(path).map_err(|e| refuse(format!("{e:#}")))?;
     let m = raw.metadata.clone();
@@ -426,7 +418,7 @@ fn fit_pairs(
     preview: pairs::Preview,
     known: Option<CameraProfile>,
     inputs: &FitInputs,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     report: &mut Report,
 ) -> Result<CameraProfile, Refusal> {
     use develop::quality::Stage;
@@ -548,7 +540,7 @@ fn fit_pairs(
             Kind::Colour => gate::colour_refusal(&scores, &report.baseline, report.coloured),
             Kind::ToneOnly | Kind::Monochrome => gate::tone_refusal(&scores, &report.baseline),
         };
-        if kind == Kind::Colour && !cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        if kind == Kind::Colour && !cancel.is_cancelled() {
             report.direct = Some(direct(
                 &profile,
                 &scene,
@@ -627,6 +619,7 @@ fn matrix_distance(a: &CameraProfile, b: &CameraProfile, camera: &[Rgb]) -> f32 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     fn chart(name: &str) -> std::path::PathBuf {
         std::path::PathBuf::from(format!(
@@ -645,7 +638,7 @@ mod tests {
         let (profiles, _) = rawmakase_model::camera_profiles::installed(&m);
         let cancel = AtomicBool::new(false);
         assert_eq!(
-            with_default(&named, &m, profiles.clone(), &cancel),
+            with_default(&named, &m, profiles.clone(), Cancel::new(&cancel)),
             profiles
         );
         // The chart with its colour tags renamed: no colour data at all.
@@ -665,7 +658,7 @@ mod tests {
         let m = crate::photo::open(&bare).unwrap().metadata;
         assert_eq!(fitted::eligibility(&m, &[]), fitted::Eligibility::Absent);
         let cache = dir.path().join("cache");
-        assert!(default_profile(&bare, &m, &cache, &cancel).is_none());
+        assert!(default_profile(&bare, &m, &cache, Cancel::new(&cancel)).is_none());
         let key = cache::FitKey::of(&bare).unwrap();
         assert!(
             matches!(cache::load(&cache, &key, &m), Some(Err(_))),
@@ -676,7 +669,7 @@ mod tests {
         let other = dir.path().join("other.dng");
         bytes.push(0);
         std::fs::write(&other, &bytes).unwrap();
-        assert!(default_profile(&other, &m, &cache, &AtomicBool::new(true)).is_none());
+        assert!(default_profile(&other, &m, &cache, Cancel::new(&AtomicBool::new(true))).is_none());
         assert!(cache::load(&cache, &cache::FitKey::of(&other).unwrap(), &m).is_none());
     }
 
@@ -688,12 +681,12 @@ mod tests {
         let path = dir.path().join("photo.dng");
         std::fs::write(&path, b"one file, fitted once").unwrap();
         let key = cache::FitKey::of(&path).unwrap();
-        let first = claim(&key, &AtomicBool::new(false)).unwrap();
+        let first = claim(&key, Cancel::NEVER).unwrap();
         // Cancelled while it waits.
-        assert!(claim(&key, &AtomicBool::new(true)).is_none());
+        assert!(claim(&key, Cancel::new(&AtomicBool::new(true))).is_none());
         let waiting = std::thread::spawn({
             let key = key.clone();
-            move || claim(&key, &AtomicBool::new(false)).is_some()
+            move || claim(&key, Cancel::NEVER).is_some()
         });
         std::thread::sleep(std::time::Duration::from_millis(150));
         assert!(
@@ -704,8 +697,8 @@ mod tests {
         assert!(waiting.join().unwrap());
         // Released again: the same file is free, but not to a cancelled job,
         // as when the holder and its waiter are cancelled at once.
-        assert!(claim(&key, &AtomicBool::new(true)).is_none());
-        assert!(claim(&key, &AtomicBool::new(false)).is_some());
+        assert!(claim(&key, Cancel::new(&AtomicBool::new(true))).is_none());
+        assert!(claim(&key, Cancel::NEVER).is_some());
     }
 
     /// A caller on a Rayon thread doesn't wait for another's fit of the file:
@@ -716,14 +709,14 @@ mod tests {
         let path = dir.path().join("linked.dng");
         std::fs::write(&path, b"one file, two names").unwrap();
         let key = cache::FitKey::of(&path).unwrap();
-        let held = claim(&key, &AtomicBool::new(false)).unwrap();
+        let held = claim(&key, Cancel::NEVER).unwrap();
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(1)
             .build()
             .unwrap();
         let (tx, rx) = std::sync::mpsc::channel();
         pool.spawn(move || {
-            let turn = claim(&key, &AtomicBool::new(false));
+            let turn = claim(&key, Cancel::NEVER);
             tx.send(matches!(turn, Some(Turn::Theirs))).unwrap();
         });
         let theirs = rx

@@ -4,10 +4,10 @@
 //! development reads.
 use super::{Cfa, Header, Sensor};
 use anyhow::{Result, ensure};
+use rawmakase_cancel::Cancel;
 use rawmakase_raw::RawInfo;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A developed image: width, height and pixels.
 pub(super) type Developed = (u32, u32, Vec<[f32; 3]>);
@@ -40,12 +40,8 @@ impl Own {
     pub(super) fn thumbnail_reaching(&self, edge: u32) -> Result<Vec<u8>> {
         Ok(rawmakase_raw::preview_reaching(&self.info, &self.bytes, edge)?.to_vec())
     }
-    fn decode(&self, cancel: &AtomicBool) -> Result<rawmakase_raw::Sensor> {
-        let s = rawmakase_raw::decode(
-            &self.info,
-            &self.bytes,
-            rawmakase_cancel::Cancel::new(cancel),
-        )?;
+    fn decode(&self, cancel: Cancel<'_>) -> Result<rawmakase_raw::Sensor> {
+        let s = rawmakase_raw::decode(&self.info, &self.bytes, cancel)?;
         let [left, top, w, h] = s.area;
         ensure!(
             s.channels > 0
@@ -62,7 +58,7 @@ impl Own {
     /// The sensor data as fingerprints describe it.
     pub(super) fn sensor(&self) -> Result<Sensor> {
         use sha2::Digest;
-        let s = self.decode(&AtomicBool::new(false))?;
+        let s = self.decode(Cancel::NEVER)?;
         let channels = s.channels as usize;
         let [left, top, w, h] = s.area.map(|v| v as usize);
         let pitch = s.width as usize * channels;
@@ -97,7 +93,7 @@ impl Own {
     /// balanced by `wb` unless the camera stored it balanced. A monochrome
     /// DNG's one sample is every channel's, not white balanced. `None` for a
     /// mosaic.
-    pub(super) fn rgb(&self, wb: [f32; 3], cancel: &AtomicBool) -> Result<Option<Developed>> {
+    pub(super) fn rgb(&self, wb: [f32; 3], cancel: Cancel<'_>) -> Result<Option<Developed>> {
         if self.info.cfa.is_some() {
             return Ok(None);
         }
@@ -176,7 +172,7 @@ impl Own {
     }
     /// The visible mosaic as development reads it: (raw − black) / (white −
     /// black), not white balanced; `None` when the file is not a mosaic.
-    pub(super) fn cfa(&self, cancel: &AtomicBool) -> Result<Option<Cfa>> {
+    pub(super) fn cfa(&self, cancel: Cancel<'_>) -> Result<Option<Cfa>> {
         let Some(cfa) = self.info.cfa.clone() else {
             return Ok(None);
         };
@@ -246,9 +242,9 @@ fn turned(
     cfa: &rawmakase_raw::Cfa,
     data: &[f32],
     [w, h]: [usize; 2],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Cfa> {
-    ensure!(!cancel.load(Ordering::Relaxed), "Development cancelled");
+    ensure!(!cancel.is_cancelled(), "Development cancelled");
     // Super CCD sensors are near square: the longer stored side at most
     // four times the shorter (the dataset's widest is three), so the turned
     // image is at most 2.25 times the stored area. Anything else is not a
@@ -271,7 +267,7 @@ fn turned(
     let mut period = [None; 4];
     for y in 0..h {
         if y % 256 == 0 {
-            ensure!(!cancel.load(Ordering::Relaxed), "Development cancelled");
+            ensure!(!cancel.is_cancelled(), "Development cancelled");
         }
         for x in 0..w {
             if let Some([tx, ty]) = turn.position(y as u32, x as u32) {
@@ -397,6 +393,7 @@ fn matrix_source(s: rawmakase_raw::MatrixSource) -> rawmakase_model::camera_data
 
 #[cfg(test)]
 mod tests {
+    use rawmakase_cancel::Cancel;
     use std::sync::atomic::AtomicBool;
 
     /// A tall Super CCD's 2 × 4 stored samples develop as a 4 × 3 diamond:
@@ -413,7 +410,7 @@ mod tests {
             colors: vec![0, 2, 1, 3, 2, 0, 3, 1],
         };
         let data: Vec<f32> = (1..=8).map(|v| v as f32 / 10.).collect();
-        let out = super::turned(turn, &cfa, &data, [2, 4], &AtomicBool::new(false)).unwrap();
+        let out = super::turned(turn, &cfa, &data, [2, 4], Cancel::NEVER).unwrap();
         assert_eq!([out.width, out.height], [4, 3]);
         // Row 0 runs up and right from (0, 1); row 1 one column on.
         let at = |x: usize, y: usize| out.data[y * 4 + x];
@@ -427,7 +424,7 @@ mod tests {
         period.sort();
         assert_eq!(period, [0, 1, 1, 2]);
         let cancelled = AtomicBool::new(true);
-        assert!(super::turned(turn, &cfa, &data, [2, 4], &cancelled).is_err());
+        assert!(super::turned(turn, &cfa, &data, [2, 4], Cancel::new(&cancelled)).is_err());
     }
 
     /// A RAF of the older layout: header, the records, then `data`.
@@ -552,7 +549,7 @@ mod tests {
         assert!(raw.metadata.xtrans);
         let wb = raw.metadata.wb;
         let own = &raw.own;
-        let mut cfa = own.cfa(&AtomicBool::new(false)).unwrap().unwrap();
+        let mut cfa = own.cfa(Cancel::NEVER).unwrap().unwrap();
         let n = crate::demosaic::PATTERN;
         for (i, v) in cfa.data.iter_mut().enumerate() {
             let (x, y) = (i % w as usize, i / w as usize);
@@ -567,11 +564,11 @@ mod tests {
         });
         let cancel = AtomicBool::new(false);
         let full = open()
-            .develop(Decode::Full(Demosaic::Rawmakase), &cancel)
+            .develop(Decode::Full(Demosaic::Rawmakase), Cancel::new(&cancel))
             .unwrap();
         assert_eq!([full.width, full.height], [w, h]);
         assert!(full.pixels == expected, "the full size is not X-Trans's");
-        let half = open().develop(Decode::Half, &cancel).unwrap();
+        let half = open().develop(Decode::Half, Cancel::new(&cancel)).unwrap();
         assert_eq!([half.width, half.height], [w / 2, h / 2]);
         for (k, got) in half.pixels.iter().enumerate() {
             let (i, j) = (k % (w as usize / 2), k / (w as usize / 2));
@@ -607,7 +604,7 @@ mod tests {
         assert_eq!([raw.metadata.width, raw.metadata.height], [32770, 32769]);
         let developed = raw.develop(
             crate::camera_data::Decode::Full(crate::camera_data::Demosaic::Rawmakase),
-            &AtomicBool::new(false),
+            Cancel::NEVER,
         );
         let error = format!("{:#}", developed.err().unwrap());
         assert!(error.contains("impossible shape"), "{error}");

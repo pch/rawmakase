@@ -32,8 +32,8 @@
 //! pixel (i, j) is the mean of the full decode's 2 × 2 block at (2i, 2j),
 //! reaching one pixel back where an odd side leaves one row or column.
 use crate::camera_data::{CameraImage, Decode, Demosaic};
+use rawmakase_cancel::Cancel;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 /// Side of the colour check's blocks, in half-size pixels.
@@ -173,7 +173,7 @@ fn develop(path: &Path, decode: Decode) -> anyhow::Result<(CameraImage, f64)> {
     let mut image = None;
     for _ in 0..RUNS {
         let t = Instant::now();
-        let im = crate::photo::open(path)?.develop(decode, &AtomicBool::new(false))?;
+        let im = crate::photo::open(path)?.develop(decode, Cancel::NEVER)?;
         best = best.min(t.elapsed().as_secs_f64());
         image = Some(im);
     }

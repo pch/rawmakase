@@ -199,11 +199,15 @@ fn thumbnail(image: &image::RgbImage) -> image::RgbImage {
 /// identity-checked record (a protected or unreadable edit fails, never falling
 /// back to the defaults), Upright completed, then a cancellable render.
 pub(super) fn render(item: &Item, cancel: &AtomicBool) -> anyhow::Result<image::RgbImage> {
-    let opened = crate::photo::open_source(&item.path, cancel)
+    let opened = crate::photo::open_source(&item.path, Cancel::new(cancel))
         .with_context(|| format!("{} can't be read", item.path.display()))?;
     let (profiles, _) = crate::camera_profiles::installed(opened.metadata());
-    let profiles =
-        crate::camera_look::with_default(&item.path, opened.metadata(), profiles, cancel);
+    let profiles = crate::camera_look::with_default(
+        &item.path,
+        opened.metadata(),
+        profiles,
+        Cancel::new(cancel),
+    );
     let mut recipe = item_recipe(item, opened.metadata(), &profiles)?;
     let image = match opened {
         Opened::Raw(raw) if needs_full(&recipe, &raw.metadata, item.edge) => {
@@ -215,7 +219,7 @@ pub(super) fn render(item: &Item, cancel: &AtomicBool) -> anyhow::Result<image::
                 cancel,
             )?
         }
-        Opened::Raw(raw) => raw.develop(Decode::Half, cancel)?,
+        Opened::Raw(raw) => raw.develop(Decode::Half, Cancel::new(cancel))?,
         // A JPEG, PNG or TIFF opens at full size: there is no smaller decode.
         Opened::Rendered(image) => image,
     };

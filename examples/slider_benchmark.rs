@@ -76,8 +76,10 @@ fn main() -> Result<()> {
     let fit: u32 = args.get(3).map_or(Ok(1402), |n| n.parse())?;
     anyhow::ensure!((2..=200).contains(&steps), "Use 2–200 steps");
     let cancel = AtomicBool::new(false);
-    let image = rawmakase::photo::open(std::path::Path::new(path))?
-        .develop(camera_data::Decode::full(Default::default()), &cancel)?;
+    let image = rawmakase::photo::open(std::path::Path::new(path))?.develop(
+        camera_data::Decode::full(Default::default()),
+        Cancel::new(&cancel),
+    )?;
     let (profiles, _) = rawmakase::camera_profiles::installed(&image.metadata);
     let mut recipe = Recipe::with_profiles(&image.metadata, &profiles);
     recipe.contrast = -0.76;

@@ -3,11 +3,11 @@
 //! from.
 use super::{PROXY_EDGE, RENDER_FACTOR, Refusal, Rgb, refuse};
 use crate::raster::PreviewSpace;
+use rawmakase_cancel::Cancel;
 use rawmakase_interop::exif::ColourFacts;
 use rawmakase_model::color::srgb_encode;
 use rayon::prelude::*;
 use serde::Serialize;
-use std::sync::atomic::AtomicBool;
 
 /// The largest camera-written JPEG preview, upright, as linear ProPhoto RGB.
 pub(super) struct Preview {
@@ -436,7 +436,7 @@ pub(super) fn align(
     p: &Preview,
     proxy: &Proxy,
     strict: bool,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<(Sampled, Alignment), Refusal> {
     let (w, h) = (proxy.width, proxy.height);
     let ratio = (p.width as f32 / p.height as f32) / (w as f32 / h as f32);
@@ -641,6 +641,7 @@ pub(super) fn monochrome(target: &[Rgb], usable: &[bool]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     fn preview(width: u32, height: u32, f: impl Fn(u32, u32) -> f32) -> Preview {
         Preview {
@@ -674,8 +675,8 @@ mod tests {
     fn a_shifted_and_scaled_preview_is_found_where_it_is() {
         let p = preview(960, 640, |x, y| scene(x as f32 / 5., y as f32 / 5.));
         let proxy = proxy_of(&p, 192, 128, 1.02, [1., -2.]);
-        let (_, a) = align(&p, &proxy, false, &AtomicBool::new(false))
-            .unwrap_or_else(|e| panic!("{}", e.reason));
+        let (_, a) =
+            align(&p, &proxy, false, Cancel::NEVER).unwrap_or_else(|e| panic!("{}", e.reason));
         assert_eq!((a.scale, a.shift), (1.02, [1., -2.]), "{a:?}");
         assert!(a.regions.iter().all(|r| *r > 0.99), "{a:?}");
     }
@@ -693,8 +694,8 @@ mod tests {
             sensor_clipped: vec![false; (w * h) as usize],
             camera: bent.pro,
         };
-        let (_, a) = align(&p, &proxy, false, &AtomicBool::new(false))
-            .unwrap_or_else(|e| panic!("{}", e.reason));
+        let (_, a) =
+            align(&p, &proxy, false, Cancel::NEVER).unwrap_or_else(|e| panic!("{}", e.reason));
         assert_ne!(a.radial, [0., 0.], "{a:?}");
         assert!(a.regions.iter().all(|r| *r >= MIN_CORRELATION), "{a:?}");
     }
@@ -713,22 +714,22 @@ mod tests {
                 *q = q.map(|v| v * gain);
             }
         }
-        let (_, a) = align(&p, &proxy, false, &AtomicBool::new(false))
-            .unwrap_or_else(|e| panic!("{}", e.reason));
+        let (_, a) =
+            align(&p, &proxy, false, Cancel::NEVER).unwrap_or_else(|e| panic!("{}", e.reason));
         assert!(a.regions[0] >= MIN_CORRELATION, "{a:?}");
         assert!(
             a.regions[1] < MIN_CORRELATION && a.regions[1] > MIN_QUADRANT,
             "{a:?}"
         );
         // Not where the matrix is fitted to these pairs too.
-        assert!(align(&p, &proxy, true, &AtomicBool::new(false)).is_err());
+        assert!(align(&p, &proxy, true, Cancel::NEVER).is_err());
     }
 
     #[test]
     fn a_cancelled_search_stops() {
         let p = preview(960, 640, |x, y| scene(x as f32 / 5., y as f32 / 5.));
         let proxy = proxy_of(&p, 192, 128, 1., [0., 0.]);
-        let refused = align(&p, &proxy, false, &AtomicBool::new(true))
+        let refused = align(&p, &proxy, false, Cancel::new(&AtomicBool::new(true)))
             .err()
             .expect("cancelled");
         assert!(refused.reason.contains("cancelled"), "{}", refused.reason);
@@ -767,10 +768,10 @@ mod tests {
         let p = preview(960, 640, |x, y| scene(x as f32 / 5., y as f32 / 5.));
         let other = preview(960, 640, |x, y| scene(y as f32 / 3. + 40., x as f32 / 7.));
         let proxy = proxy_of(&other, 192, 128, 1., [0., 0.]);
-        assert!(align(&p, &proxy, false, &AtomicBool::new(false)).is_err());
+        assert!(align(&p, &proxy, false, Cancel::NEVER).is_err());
         let cropped = preview(900, 640, |x, y| scene(x as f32 / 5., y as f32 / 5.));
         let proxy = proxy_of(&p, 192, 128, 1., [0., 0.]);
-        let refused = align(&cropped, &proxy, false, &AtomicBool::new(false))
+        let refused = align(&cropped, &proxy, false, Cancel::NEVER)
             .err()
             .expect("refused");
         assert!(refused.reason.contains("aspect"), "{}", refused.reason);
@@ -790,7 +791,7 @@ mod tests {
         assert!(was_cut);
         assert_eq!([cut.width, cut.height], [720, 720]);
         let proxy = proxy_of(&cut, 128, 128, 1., [0., 0.]);
-        assert!(align(&cut, &proxy, false, &AtomicBool::new(false)).is_ok());
+        assert!(align(&cut, &proxy, false, Cancel::NEVER).is_ok());
         // The same aspect ratio is left alone.
         let p = preview(960, 640, |x, y| scene(x as f32, y as f32));
         assert!(!to_aspect(p, 192, 128).1);

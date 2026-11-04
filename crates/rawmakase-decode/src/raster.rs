@@ -5,10 +5,10 @@ use image::{DynamicImage, ImageDecoder, RgbImage};
 use moxcms::{
     ColorProfile, DataColorSpace, Layout, ToneReprCurve, TransformExecutor, TransformOptions,
 };
+use rawmakase_cancel::Cancel;
 use rawmakase_model::camera_data::{CameraImage, Metadata, Source};
 use rayon::prelude::*;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 mod av1;
 mod avif;
@@ -164,7 +164,7 @@ pub fn decode(path: &Path) -> Result<RgbImage> {
         let mut image = DynamicImage::from_decoder(decoder).map_err(read_error(path))?;
         image.apply_orientation(orientation);
         let (width, height) = (image.width(), image.height());
-        let mut pixels = linear.apply(image, &AtomicBool::new(false))?;
+        let mut pixels = linear.apply(image, Cancel::NEVER)?;
         pixels
             .par_iter_mut()
             .for_each(|p| *p = tone_map(p.map(|v| v * white)));
@@ -189,7 +189,7 @@ pub fn decode(path: &Path) -> Result<RgbImage> {
 ///
 /// This is the file as decoded, not yet the pseudo-scene Develop renders: open it
 /// for Develop through [`crate::photo::open_source`], which converts it.
-pub(crate) fn open(path: &Path, cancel: &AtomicBool) -> Result<CameraImage> {
+pub(crate) fn open(path: &Path, cancel: Cancel<'_>) -> Result<CameraImage> {
     let Prepared {
         decoder,
         orientation,
@@ -438,7 +438,7 @@ fn to_linear(profile: &ColorProfile, color: image::ColorType) -> Result<ToLinear
 }
 impl ToLinear {
     /// `image`'s pixels as linear ProPhoto, a row at a time.
-    fn apply(&self, image: DynamicImage, cancel: &AtomicBool) -> Result<Vec<[f32; 3]>> {
+    fn apply(&self, image: DynamicImage, cancel: Cancel<'_>) -> Result<Vec<[f32; 3]>> {
         let (width, height) = (image.width() as usize, image.height() as usize);
         let mut out = vec![[0f32; 3]; width * height];
         if out.is_empty() {
@@ -453,7 +453,7 @@ impl ToLinear {
             .par_chunks(width * per_pixel)
             .zip(out.par_chunks_mut(width))
             .try_for_each(|(from, to)| {
-                anyhow::ensure!(!cancel.load(Ordering::Relaxed), "Opening cancelled");
+                anyhow::ensure!(!cancel.is_cancelled(), "Opening cancelled");
                 self.transform
                     .transform(from, bytemuck::cast_slice_mut(to))
                     .map_err(|e| anyhow!("Could not convert the image to ProPhoto: {e}"))
@@ -542,6 +542,7 @@ fn rows<T: Copy + Default + Send + Sync>(
 mod tests {
     use super::decode;
     use image::{ExtendedColorType, ImageEncoder};
+    use rawmakase_cancel::Cancel;
     use std::path::Path;
 
     fn fixture(name: &str) -> std::path::PathBuf {
@@ -605,7 +606,7 @@ mod tests {
 
     #[test]
     fn a_sixteen_bit_jxl_keeps_its_depth_for_develop() -> anyhow::Result<()> {
-        let im = super::open(&fixture("sixteen-bit.jxl"), &Default::default())?;
+        let im = super::open(&fixture("sixteen-bit.jxl"), Cancel::NEVER)?;
         assert_eq!((im.width, im.height), (16, 12));
         // Red corner, linear ProPhoto: a strong red, no green or blue left.
         let red = im.pixels[16 + 1];
@@ -638,7 +639,7 @@ mod tests {
         let path = fixture("animated.webp");
         assert_eq!(corners(&decode(&path).unwrap()), UPRIGHT);
         assert_eq!(super::probe(&path).unwrap_err().0, "animated");
-        let err = super::open(&path, &Default::default()).err().unwrap();
+        let err = super::open(&path, Cancel::NEVER).err().unwrap();
         assert_eq!(
             err.downcast_ref::<super::Unsupported>().unwrap().0,
             "animated"
@@ -647,7 +648,7 @@ mod tests {
 
     #[test]
     fn a_still_webp_opens_for_develop() -> anyhow::Result<()> {
-        let im = super::open(&fixture("metadata.webp"), &Default::default())?;
+        let im = super::open(&fixture("metadata.webp"), Cancel::NEVER)?;
         assert_eq!((im.width, im.height), (16, 12));
         Ok(())
     }
@@ -814,7 +815,7 @@ mod tests {
         // 4x1: black, mid grey, a saturated red, white; no ICC (taken as sRGB).
         let px: [[u8; 3]; 4] = [[0, 0, 0], [118, 118, 118], [200, 30, 40], [255, 255, 255]];
         image::RgbImage::from_fn(4, 1, |x, _| image::Rgb(px[x as usize])).save(&path)?;
-        let im = super::open(&path, &Default::default())?;
+        let im = super::open(&path, Cancel::NEVER)?;
         assert_eq!((im.width, im.height), (4, 1));
         assert!(im.metadata.is_rendered());
         for (got, want) in im.pixels.iter().zip(px) {
@@ -835,7 +836,7 @@ mod tests {
         e.set_icc_profile(moxcms::ColorProfile::new_adobe_rgb().encode()?)?;
         e.write_image(&[0, 255, 0], 1, 1, ExtendedColorType::Rgb8)?;
         std::fs::write(&path, bytes)?;
-        let im = super::open(&path, &Default::default())?;
+        let im = super::open(&path, Cancel::NEVER)?;
         // Adobe RGB green -> XYZ D65 -> Bradford D50 -> linear ProPhoto,
         // worked out from the published matrices.
         let want = [0.1133, 0.8330, 0.0738];
@@ -857,7 +858,7 @@ mod tests {
             image::Rgb([v, v, v])
         });
         ramp.save(&path)?;
-        let im = super::open(&path, &Default::default())?;
+        let im = super::open(&path, Cancel::NEVER)?;
         let distinct: std::collections::BTreeSet<u32> =
             im.pixels.iter().map(|p| p[1].to_bits()).collect();
         assert_eq!(distinct.len(), 1024);
@@ -873,8 +874,8 @@ mod tests {
         assert!(super::probe(&path).is_ok());
         let plain = dir.path().join("plain.png");
         png(&plain, &[128, 128, 128], ExtendedColorType::Rgb8, None);
-        let opened = super::open(&path, &Default::default())?;
-        let srgb = super::open(&plain, &Default::default())?;
+        let opened = super::open(&path, Cancel::NEVER)?;
+        let srgb = super::open(&plain, Cancel::NEVER)?;
         assert_eq!(opened.pixels, srgb.pixels);
         Ok(())
     }
@@ -1046,7 +1047,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("rotated.jpg");
         rotated_jpeg(&path);
-        let im = super::open(&path, &Default::default())?;
+        let im = super::open(&path, Cancel::NEVER)?;
         assert_eq!((im.width, im.height), (1, 2));
         assert_eq!((im.metadata.width, im.metadata.height), (1, 2));
         assert_eq!(im.metadata.flip, 0);
@@ -1060,7 +1061,7 @@ mod tests {
         let path = dir.path().join("a.png");
         image::RgbImage::new(4, 4).save(&path)?;
         let cancel = std::sync::atomic::AtomicBool::new(true);
-        assert!(super::open(&path, &cancel).is_err());
+        assert!(super::open(&path, Cancel::new(&cancel)).is_err());
         Ok(())
     }
 
@@ -1085,7 +1086,7 @@ mod tests {
     #[test]
     fn a_ten_bit_avif_keeps_its_depth_and_colours() -> anyhow::Result<()> {
         assert_eq!(corners(&decode(&fixture("ten-bit.avif"))?), UPRIGHT);
-        let im = super::open(&fixture("ten-bit.avif"), &Default::default())?;
+        let im = super::open(&fixture("ten-bit.avif"), Cancel::NEVER)?;
         let red = im.pixels[16 + 1];
         assert!(red[0] > 0.4 && red[1] < 0.1 && red[2] < 0.1, "{red:?}");
         Ok(())
@@ -1230,7 +1231,7 @@ mod tests {
             std::fs::write(&path, &bytes[..bytes.len() / 3]).unwrap();
             assert_eq!(format!("{:#}", decode(&path).unwrap_err()), message);
             let cancel = std::sync::atomic::AtomicBool::new(false);
-            let opened = super::open(&path, &cancel).err().unwrap();
+            let opened = super::open(&path, Cancel::new(&cancel)).err().unwrap();
             assert_eq!(format!("{opened:#}"), message);
         }
     }
@@ -1381,7 +1382,7 @@ mod tests {
         assert_corners_near(corners(&decode(&fixture("ten-bit.heic"))?), UPRIGHT, 1);
         let super::Prepared { decoder, .. } = super::prepare(&fixture("ten-bit.heic"))?;
         assert_eq!(decoder.color_type(), image::ColorType::Rgb16);
-        let im = super::open(&fixture("ten-bit.heic"), &Default::default())?;
+        let im = super::open(&fixture("ten-bit.heic"), Cancel::NEVER)?;
         assert_eq!((im.width, im.height), (16, 12));
         let red = im.pixels[16 + 1];
         assert!(red[0] > 0.4 && red[1] < 0.1 && red[2] < 0.1, "{red:?}");

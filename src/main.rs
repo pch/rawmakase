@@ -7,7 +7,7 @@ mod mcp;
 use clap::{Parser, Subcommand};
 use rawmakase::model::recipe::Recipe;
 use rawmakase::{camera_data, develop, export_settings::ExportOptions, raw};
-use std::{path::PathBuf, sync::atomic::AtomicBool, time::Instant};
+use std::{path::PathBuf, time::Instant};
 #[derive(Parser)]
 #[command(version, about = "A personal RAW photo editor")]
 struct Args {
@@ -453,10 +453,9 @@ fn main() -> Result<()> {
             // Read before decoding: AI Denoise's result must be of the same file.
             let file = rawmakase::storage::Identity::read(&input)?;
             let photo = rawmakase::photo::open(&input)?;
-            let im = std::sync::Arc::new(photo.develop(
-                camera_data::Decode::full(Default::default()),
-                &AtomicBool::new(false),
-            )?);
+            let im = std::sync::Arc::new(
+                photo.develop(camera_data::Decode::full(Default::default()), Cancel::NEVER)?,
+            );
             let (profiles, _) = rawmakase::camera_profiles::installed(&im.metadata);
             let base = Recipe::with_profiles(&im.metadata, &profiles);
             let camera = Some(
@@ -545,7 +544,7 @@ fn main() -> Result<()> {
                             &input,
                             &r.metadata,
                             rawmakase::camera_profiles::installed(&r.metadata).0,
-                            &AtomicBool::new(false),
+                            Cancel::NEVER,
                         );
                         Recipe::with_profiles(&r.metadata, &profiles)
                     })
@@ -566,7 +565,7 @@ fn main() -> Result<()> {
             } else {
                 camera_data::Decode::full(Default::default())
             };
-            let im = r.develop(decode, &AtomicBool::new(false))?;
+            let im = r.develop(decode, Cancel::NEVER)?;
             if let Some(path) = xmp {
                 let preset = rawmakase::xmp::parse(&path, &std::fs::read_to_string(&path)?)?;
                 let (profiles, _) = rawmakase::camera_profiles::installed(&im.metadata);
@@ -699,7 +698,7 @@ fn main() -> Result<()> {
             use rawmakase::camera_look::{FitInputs, fit};
             let inputs = FitInputs { drop_matrix };
             for path in &files {
-                let result = fit(path, &inputs, &AtomicBool::new(false));
+                let result = fit(path, &inputs, Cancel::NEVER);
                 let (measured, outcome) = match &result {
                     Ok(f) => (Some(&f.report), format!("{:?} look", f.report.kind)),
                     Err(e) => (e.report.as_deref(), format!("refused: {}", e.reason)),
@@ -775,10 +774,8 @@ fn main() -> Result<()> {
                 "Iterations must be 1–1000"
             );
             let t = Instant::now();
-            let im = rawmakase::photo::open(&input)?.develop(
-                camera_data::Decode::full(Default::default()),
-                &AtomicBool::new(false),
-            )?;
+            let im = rawmakase::photo::open(&input)?
+                .develop(camera_data::Decode::full(Default::default()), Cancel::NEVER)?;
             let decode = t.elapsed();
             let small = develop::preview(&im, 1600);
             let mut r = Recipe::for_metadata(&im.metadata);
