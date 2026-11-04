@@ -122,7 +122,7 @@ fn the_status_line_lists_the_running_analyses_and_catalog_work_in_order() {
 fn work_with_a_place_of_its_own_is_not_in_the_status_line_and_does_not_block_closing() {
     let mut e = editor();
     // Develop's load shows on the photo; it neither blocks closing nor shows here.
-    e.load.start();
+    e.document.start_load();
     assert!(e.running_work().is_empty());
     assert_eq!(e.closing_waits_for(), None);
     // An analysis blocks no close either.
@@ -135,9 +135,9 @@ fn edited_previews_slow_down_for_develops_load_and_a_commands_output_only() {
     let mut e = editor();
     e.module = Module::Library;
     assert_eq!(e.preview_pace(), Pace::Full);
-    e.load.start();
+    e.document.start_load();
     assert_eq!(e.preview_pace(), Pace::Background);
-    e.load.invalidate();
+    e.document.invalidate_load();
     assert_eq!(e.preview_pace(), Pace::Full);
     e.automation.hold_running_output();
     assert_eq!(e.preview_pace(), Pace::Background);

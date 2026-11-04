@@ -178,3 +178,72 @@ fn closing_with_an_unidentified_file_is_a_failed_save() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+/// The catalog photo `id`'s file, as the editor's catalog lists it.
+fn photo_path(e: &Editor, id: crate::catalog::PhotoId) -> std::path::PathBuf {
+    e.library.as_ref().unwrap().photo(id).unwrap().path.clone()
+}
+
+/// Opening a photo starts its load; opening another moves the load on once, so the first
+/// one's results no longer count, and the document is the new photo's.
+#[test]
+fn opening_another_photo_moves_the_load_on_once() -> anyhow::Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    assert!(e.load_raw(photo_path(&e, ids[0]), Some(ids[0])));
+    let first = e.document.load_id();
+    assert!(e.document.loading());
+    assert_eq!(e.document.catalog_photo, Some(ids[0]));
+    assert!(e.load_raw(photo_path(&e, ids[1]), Some(ids[1])));
+    assert_eq!(e.document.load_id(), first + 1);
+    assert!(!e.document.load_counts(first));
+    assert!(e.document.loading());
+    assert_eq!(e.document.catalog_photo, Some(ids[1]));
+    Ok(())
+}
+
+/// Closing the photo leaves no document and no load: the one under way no longer counts
+/// and nothing starts.
+#[test]
+fn closing_the_photo_ends_its_load_and_starts_none() -> anyhow::Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF"])?;
+    assert!(e.load_raw(photo_path(&e, ids[0]), Some(ids[0])));
+    let loading = e.document.load_id();
+    e.close_document();
+    assert_eq!(e.document.catalog_photo, None);
+    assert!(!e.document.loading());
+    assert!(!e.document.load_counts(loading));
+    assert_eq!(e.document.load_id(), loading + 1);
+    Ok(())
+}
+
+/// A load finishing that is not the latest leaves the latest running; the latest
+/// finishing keeps its id, so its full-size result still counts after the half-size one.
+#[test]
+fn only_the_latest_load_finishing_ends_it_and_its_results_still_count() -> anyhow::Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    assert!(e.load_raw(photo_path(&e, ids[0]), Some(ids[0])));
+    let stale = e.document.load_id();
+    assert!(e.load_raw(photo_path(&e, ids[1]), Some(ids[1])));
+    let latest = e.document.load_id();
+    e.document.finish_load(stale);
+    assert!(e.document.loading());
+    e.document.finish_load(latest);
+    assert!(!e.document.loading());
+    assert_eq!(e.document.load_id(), latest);
+    assert!(e.document.load_counts(latest));
+    Ok(())
+}
+
+/// An open refused (work in progress) leaves the photo open and its load as they were.
+#[test]
+fn a_refused_open_leaves_the_photo_and_its_load_as_they_were() -> anyhow::Result<()> {
+    let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    assert!(e.load_raw(photo_path(&e, ids[0]), Some(ids[0])));
+    let loading = e.document.load_id();
+    assert!(e.activity.begin_dialog());
+    assert!(!e.load_raw(photo_path(&e, ids[1]), Some(ids[1])));
+    assert_eq!(e.document.catalog_photo, Some(ids[0]));
+    assert_eq!(e.document.load_id(), loading);
+    assert!(e.document.loading());
+    Ok(())
+}

@@ -1465,7 +1465,7 @@ mod tests {
         assert!(!shows(&e));
         // A panic in the worker: `failed` reports it, and the event ends the task.
         e.document.auto.start();
-        let id = e.load.id();
+        let id = e.document.load_id();
         crate::app::task::spawn(
             e.tx.clone(),
             ctx.clone(),

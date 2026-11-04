@@ -729,7 +729,7 @@ impl Editor {
             profiles,
         );
         let _ = self.tx.send(crate::app::worker::Event::Profiles {
-            id: self.load.id(),
+            id: self.document.load_id(),
             profiles,
             errors,
             groups,

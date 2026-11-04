@@ -115,10 +115,10 @@ fn write(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
 /// Opens a photo of `m` as the loader does: a new load of a real file in `dir`,
 /// identified as it was opened, its profiles listed and its defaults resolved.
 fn open(e: &mut Editor, m: Metadata, dir: &Path) {
-    let path = dir.join(format!("photo-{}.RAF", e.load.id() + 1));
+    let path = dir.join(format!("photo-{}.RAF", e.document.load_id() + 1));
     std::fs::write(&path, format!("a RAW from {path:?}")).unwrap();
     e.document.reset(None);
-    e.load.start();
+    e.document.start_load();
     e.document.file = crate::storage::Identity::read(&path).ok();
     e.document.opened_at(path);
     e.document.profiles = crate::camera_profiles::listed_from(&[], &m).profiles;
@@ -207,7 +207,7 @@ fn a_download_finishing_after_the_user_moved_on_only_installs() {
         }),
         ("closed the photo", |e, _| {
             e.document.reset(None);
-            e.load.start();
+            e.document.start_load();
         }),
         // Outside RAWmakase, with no new load: another photo of the same camera
         // where the one asked for was.

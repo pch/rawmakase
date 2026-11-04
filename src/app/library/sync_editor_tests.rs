@@ -151,7 +151,7 @@ fn a_synced_photo_open_in_develop_opens_again() -> anyhow::Result<()> {
     e.autosave(&ctx);
     assert!(!e.autosave.busy(), "nothing saves while a Sync writes");
     e.synced(result(ids[1]));
-    assert!(!e.load.is_running());
+    assert!(!e.document.loading());
     assert!(e.document.edit.save_state().needs_save());
     // The open photo synced: what an analysis landing during the Sync changed on it
     // (as Upright's would) is not saved over the Sync, and it opens again.
@@ -170,7 +170,7 @@ fn a_synced_photo_open_in_develop_opens_again() -> anyhow::Result<()> {
     );
     assert!(!e.autosave.busy());
     e.synced(result(ids[0]));
-    assert!(e.load.is_running(), "the open photo opens again");
+    assert!(e.document.loading(), "the open photo opens again");
     assert!(!e.document.edit.save_state().needs_save());
     let library = e.library.as_ref().unwrap();
     assert!(

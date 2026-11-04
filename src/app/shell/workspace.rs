@@ -915,7 +915,7 @@ impl Editor {
         // time, not every frame.
         let failed = self.document.catalog_photo == Some(id)
             && self.document.full().is_none()
-            && !self.load.is_running();
+            && !self.document.loading();
         if (self.document.catalog_photo != Some(id) || failed) && self.loupe_tried != Some(id) {
             self.loupe_tried = Some(id);
             let Some(path) = self

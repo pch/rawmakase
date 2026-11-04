@@ -229,7 +229,7 @@ impl Editor {
                         });
                         toolbar_divider(ui);
                         self.zoom_controls(ui, 32.);
-                        if self.load.is_running() || self.preview.task.is_running() {
+                        if self.document.loading() || self.preview.task.is_running() {
                             ui.add_space(space::L);
                             crate::app::ui::widgets::spinner(ui, 14.);
                         }

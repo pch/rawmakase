@@ -422,7 +422,7 @@ mod tests {
         let adobe = Recipe::with_profiles(&m, &profiles(&m));
         let open = |editor: &mut Editor| {
             editor.document.reset(Some(id));
-            let (generation, _) = editor.load.start();
+            let (generation, _) = editor.document.start_load();
             for event in [
                 Event::Header(Box::new(LoadedHeader {
                     id: generation,
@@ -505,7 +505,7 @@ mod tests {
             ctx.clone(),
         )?));
         editor.document.reset(Some(id));
-        let (generation, _) = editor.load.start();
+        let (generation, _) = editor.document.start_load();
         editor
             .tx
             .send(Event::Header(Box::new(LoadedHeader {
@@ -550,7 +550,7 @@ mod tests {
         )?));
         editor.raw_defaults = Arc::new(crate::raw_defaults::brighter_defaults());
         editor.document.reset(Some(id));
-        let (generation, _) = editor.load.start();
+        let (generation, _) = editor.document.start_load();
         for event in [
             Event::Header(Box::new(LoadedHeader {
                 id: generation,
@@ -631,7 +631,7 @@ mod tests {
             |_| None,
         ));
         editor.refresh_photo_defaults();
-        let (generation, _) = editor.load.start();
+        let (generation, _) = editor.document.start_load();
         editor
             .tx
             .send(Event::Ready {

@@ -658,7 +658,7 @@ impl Editor {
         }
         // Already open, e.g. in the Loupe: Develop shows it as it is.
         if self.document.catalog_photo == Some(id)
-            && (self.document.full().is_some() || self.load.is_running())
+            && (self.document.full().is_some() || self.document.loading())
         {
             if let Some(l) = &mut self.library {
                 l.make_active(id)
@@ -894,9 +894,8 @@ impl Editor {
     /// `load_raw`, whose new load supersedes this one's.
     pub(in crate::app) fn close_document(&mut self) {
         self.messages.document_closed();
-        self.load.invalidate();
         self.selection.clear_document();
-        self.document.reset(None);
+        self.document.close();
         self.preview.clear_document();
         self.presets.clear_document();
         self.view.clear_document();

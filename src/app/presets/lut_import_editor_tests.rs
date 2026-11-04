@@ -32,7 +32,7 @@ fn import_cube_luts_asks_the_space_before_the_files() {
     // real looks would put the import action below the popup's scroll clip.
     let profiles = crate::camera_profiles::listed_from(&[], &m).profiles;
     editor.document.reset(None);
-    let (generation, _) = editor.load.start();
+    let (generation, _) = editor.document.start_load();
     for event in [
         Event::Header(Box::new(worker::LoadedHeader {
             id: generation,

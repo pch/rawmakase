@@ -410,7 +410,7 @@ fn a_load_under_way_when_its_photo_moves_never_brings_back_the_old_path() -> any
     let old = d.path().join("photos/a.RAF");
     // a is being opened: its header hasn't come yet.
     e.document.reset(Some(a));
-    let (opening, _) = e.load.start();
+    let (opening, _) = e.document.start_load();
     e.request_photo_move(vec![a], root(&e), "sub".into(), "sub".into());
     settle(&mut e);
     tap(&mut e, Key::Tab, Modifiers::NONE);
@@ -432,7 +432,7 @@ fn a_load_under_way_when_its_photo_moves_never_brings_back_the_old_path() -> any
     e.events(&ctx);
     assert_ne!(e.document.path.as_deref(), Some(old.as_path()));
     assert_eq!(e.document.catalog_photo, Some(a), "it is opened again");
-    assert_ne!(e.load.id(), opening, "from where it is now");
+    assert_ne!(e.document.load_id(), opening, "from where it is now");
     Ok(())
 }
 
@@ -447,7 +447,7 @@ fn a_photo_shown_at_half_size_when_it_moves_is_opened_again_from_its_new_file() 
     // still to come.
     e.document.reset(Some(a));
     e.document.opened_at(old.clone());
-    let (opening, _) = e.load.start();
+    let (opening, _) = e.document.start_load();
     e.tx.send(Event::Ready {
         id: opening,
         full: decoded(true),
@@ -472,7 +472,11 @@ fn a_photo_shown_at_half_size_when_it_moves_is_opened_again_from_its_new_file() 
     .unwrap();
     e.events(&ctx);
     assert_ne!(e.messages.line(), "a.RAF: no such file");
-    assert_ne!(e.load.id(), opening, "opened again where it is now");
+    assert_ne!(
+        e.document.load_id(),
+        opening,
+        "opened again where it is now"
+    );
     assert_eq!(e.document.catalog_photo, Some(a));
     assert_ne!(e.document.path.as_deref(), Some(old.as_path()));
     Ok(())
@@ -486,7 +490,7 @@ fn a_photo_whose_load_failed_before_it_moved_is_opened_again_from_its_new_file()
     let a = photo(&e, &d, "a.RAF");
     e.document.reset(Some(a));
     e.document.opened_at(d.path().join("photos/a.RAF"));
-    let (opening, _) = e.load.start();
+    let (opening, _) = e.document.start_load();
     e.tx.send(Event::Failed {
         id: opening,
         task: TaskKind::Load,
@@ -504,7 +508,11 @@ fn a_photo_whose_load_failed_before_it_moved_is_opened_again_from_its_new_file()
     assert_eq!(at(&e, &d, a), "sub/a.RAF");
     // Opened again (its fixture bytes then fail to decode, on their own
     // time).
-    assert_ne!(e.load.id(), opening, "opened again where it is now");
+    assert_ne!(
+        e.document.load_id(),
+        opening,
+        "opened again where it is now"
+    );
     Ok(())
 }
 

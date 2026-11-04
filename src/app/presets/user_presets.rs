@@ -66,7 +66,7 @@ impl Editor {
     /// A photo is open and loaded, so its settings are the ones shown, not the
     /// defaults a document holds while the next photo loads.
     fn settings_ready(&self) -> bool {
-        self.document.full().is_some() && !self.load.is_running()
+        self.document.full().is_some() && !self.document.loading()
     }
     fn create_preset_in(&mut self, user: &UserPresets, form: &PresetForm, groups: &GroupSelection) {
         let shown = self.document.full().map(|im| im.metadata.clone());

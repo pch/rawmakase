@@ -86,7 +86,7 @@ fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImpo
         let photos = library.session.photos().to_vec();
         let mut editor = crate::app::Editor::with_context(&ctx, None, Default::default(), None);
         editor.presets.next_scan();
-        editor.load.start();
+        editor.document.start_load();
         let metadata = crate::camera_data::Metadata {
             make: "Test".into(),
             model: "Import refresh".into(),
@@ -172,7 +172,7 @@ fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImpo
             ),
             ProfileImport::Shortcut => editor.events(&ctx),
             ProfileImport::StaleShortcut => {
-                editor.load.start();
+                editor.document.start_load();
                 editor.events(&ctx);
             }
         }
@@ -333,7 +333,7 @@ fn an_unsupported_jpeg_says_why_in_develop() -> Result<()> {
     editor.module = Module::Library;
     editor.develop_catalog_photo(photo.id);
     assert!(editor.module == Module::Library);
-    assert!(!editor.load.is_running());
+    assert!(!editor.document.loading());
     assert!(
         editor
             .messages

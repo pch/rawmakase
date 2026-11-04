@@ -466,12 +466,15 @@ fn a_load_of_the_open_photo_under_way_is_dropped_when_it_is_removed() -> anyhow:
     e.module = Module::Develop;
     e.document.catalog_photo = Some(ids[0]);
     e.document.opened_at(d.path().join("photos/a.RAF"));
-    let (loading, _) = e.load.start();
+    let (loading, _) = e.document.start_load();
     e.request_photo_removal(vec![ids[0]]);
     settle(&mut e);
     e.confirm_file_op();
     settle(&mut e);
-    assert!(!e.load.counts(loading), "its result must not bring it back");
+    assert!(
+        !e.document.load_counts(loading),
+        "its result must not bring it back"
+    );
     assert_eq!(e.document.path, None);
     Ok(())
 }

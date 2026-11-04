@@ -38,7 +38,7 @@ impl Editor {
     /// drawn after edits the new photo, in a frame of its own. The old photo's
     /// frame ends with its document.
     pub(in crate::app) fn follow_edit_frame(&mut self, frame: &mut EditFrame) {
-        if frame.generation != self.load.id() {
+        if frame.generation != self.document.load_id() {
             *frame = self.begin_edit_frame();
         }
     }
@@ -49,7 +49,7 @@ impl Editor {
         self.sync_command_revision();
         let frame = EditFrame {
             command_adjust: false,
-            generation: self.load.id(),
+            generation: self.document.load_id(),
             edit: self.document.edit.begin(),
             modes: self.render_modes(),
             overlay: self.overlay(),
@@ -84,7 +84,7 @@ impl Editor {
     }
     pub(in crate::app) fn finish_edit_frame(&mut self, frame: EditFrame, ctx: &egui::Context) {
         let step = self.step_name.take();
-        if frame.generation != self.load.id() {
+        if frame.generation != self.document.load_id() {
             return;
         }
         // Something other than the wheel changing the edit ends a scroll first, as its

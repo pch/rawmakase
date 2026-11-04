@@ -30,7 +30,7 @@ fn store(e: &Editor, cache: &Path, photo: PhotoId, color: u8) {
 fn open(e: &mut Editor, photo: PhotoId, neighbour: Option<PhotoId>) -> u64 {
     e.document.catalog_photo = Some(photo);
     e.preview.clear_document();
-    let (id, _) = e.load.start();
+    let (id, _) = e.document.start_load();
     e.request_stand_ins(id, photo, neighbour);
     id
 }
@@ -70,7 +70,7 @@ fn the_stored_preview_shows_before_or_after_the_embedded_one() {
     assert!(e.preview.texture.is_none());
     // The embedded JPEG first: the stored preview replaces it.
     e.preview.clear_document();
-    let (load, _) = e.load.start();
+    let (load, _) = e.document.start_load();
     embedded(&mut e, load);
     assert!(e.preview.texture.is_some() && e.preview.embedded);
     e.request_stand_ins(load, ids[0], None);

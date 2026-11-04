@@ -97,7 +97,7 @@ fn open(e: &mut Editor, photo: &Photo) {
 /// The open photo decoded in full, with nothing still to land on its edit.
 fn settled(e: &Editor) -> bool {
     let d = &e.document;
-    !e.load.is_running()
+    !e.document.loading()
         && d.full().is_some_and(|im| !im.fast)
         && d.pending_lightroom.is_none()
         && !d.auto.is_running()
@@ -405,12 +405,12 @@ fn the_open_photo_is_saved_first_and_opens_again() -> anyhow::Result<()> {
     );
     assert_eq!(saved(&e, &photos[0]).unwrap().exposure, 0.);
     assert!(saved(&e, &photos[1]).is_none());
-    assert!(!e.load.is_running());
+    assert!(!e.document.loading());
     assert_eq!(e.document.edit.recipe().effects.clarity, 0.4);
     // Applied: the open photo opens again with Auto, its clarity kept.
     e.start_batch(BatchChange::AutoSettings);
     finish_batch(&mut e);
-    assert!(e.load.is_running(), "the open photo opens again");
+    assert!(e.document.loading(), "the open photo opens again");
     wait(&mut e, "the photo to open again", settled);
     let written = saved(&e, &photos[0]).unwrap();
     assert_ne!(written.exposure, 0.);

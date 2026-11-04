@@ -465,7 +465,7 @@ fn worker_failures_are_scoped_and_render_stages_do_not_depend_on_status_text() {
         crate::app::preferences::session::Session::default(),
         None,
     );
-    let (load_id, _) = editor.load.start();
+    let (load_id, _) = editor.document.start_load();
     let (render_id, _) = editor.preview.task.start();
     editor
         .tx
@@ -476,7 +476,7 @@ fn worker_failures_are_scoped_and_render_stages_do_not_depend_on_status_text() {
         })
         .unwrap();
     editor.events(&ctx);
-    assert!(editor.load.is_running());
+    assert!(editor.document.loading());
     assert!(!editor.preview.task.is_running());
 
     let (current, _) = editor.preview.task.start();
@@ -497,7 +497,7 @@ fn worker_failures_are_scoped_and_render_stages_do_not_depend_on_status_text() {
         })
         .unwrap();
     editor.events(&ctx);
-    assert!(!editor.load.is_running());
+    assert!(!editor.document.loading());
     assert!(editor.preview.task.is_running());
     for (stage, status, running) in [
         (RenderStage::Draft, "localized preview text", true),
@@ -551,7 +551,7 @@ fn catalog_header_keeps_the_recipe_resolved_by_the_loader() -> anyhow::Result<()
     editor.document.catalog_photo = Some(id);
     let opened = crate::storage::Identity::read(&raw)?;
     std::fs::write(&raw, b"replaced before the header arrived")?;
-    let (generation, _) = editor.load.start();
+    let (generation, _) = editor.document.start_load();
     let recipe = Recipe {
         exposure: 0.75,
         ..Default::default()
@@ -603,7 +603,7 @@ fn a_photo_that_failed_to_open_is_not_shown_loading() {
     editor.onboarding.visible = false;
     editor.module = Module::Develop;
     editor.document.reset(Some(PhotoId(1)));
-    let (load_id, _) = editor.load.start();
+    let (load_id, _) = editor.document.start_load();
     assert!(painted_texts(&mut editor, &ctx).contains(&"Loading photo…".to_string()));
     editor
         .tx
@@ -622,6 +622,6 @@ fn a_photo_that_failed_to_open_is_not_shown_loading() {
     );
     // Opening it again shows it loading again.
     editor.document.reset(Some(PhotoId(1)));
-    editor.load.start();
+    editor.document.start_load();
     assert!(painted_texts(&mut editor, &ctx).contains(&"Loading photo…".to_string()));
 }

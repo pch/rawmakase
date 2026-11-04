@@ -10,6 +10,11 @@ use std::{path::PathBuf, sync::Arc, time::Instant};
 
 #[derive(Default)]
 pub(in crate::app) struct Document {
+    /// The photo's load: started when it opens, ended when it closes, and invalidated
+    /// alone when the photo stays but what its load would bring no longer counts
+    /// (quitting, or the file moving while it loads). Only [`Document::open`],
+    /// [`Document::close`] and [`Document::invalidate_load`] change it with the document.
+    load: crate::app::task::Task,
     /// The settings, their History and whether they still need saving.
     pub(in crate::app) edit: crate::edit_session::EditSession,
     pub(in crate::app) path: Option<PathBuf>,
@@ -488,11 +493,62 @@ impl Document {
         self.file = crate::storage::Identity::read(&path).ok();
         self.path = Some(path);
     }
-    pub(crate) fn reset(&mut self, catalog_photo: Option<PhotoId>) {
+    /// Opens the document of catalog photo `photo` (or of a file outside the catalog,
+    /// with none) and starts its load: what earlier loads bring no longer counts.
+    pub(in crate::app) fn open(
+        &mut self,
+        photo: Option<PhotoId>,
+    ) -> (u64, Arc<std::sync::atomic::AtomicBool>) {
+        self.replace(photo);
+        self.load.start()
+    }
+    /// Closes the document: its load no longer counts, and no photo is open.
+    pub(in crate::app) fn close(&mut self) {
+        self.load.invalidate();
+        self.replace(None);
+    }
+    /// What the load under way brings no longer counts; the document stays, its edit,
+    /// History and save state with it (to save it on quitting, or to open it again where
+    /// its file moved).
+    pub(in crate::app) fn invalidate_load(&mut self) {
+        self.load.invalidate();
+    }
+    /// The latest load's id, which its results carry.
+    pub(in crate::app) fn load_id(&self) -> u64 {
+        self.load.id()
+    }
+    /// Whether the latest load is still under way.
+    pub(in crate::app) fn loading(&self) -> bool {
+        self.load.is_running()
+    }
+    /// Whether a result of load `id` still counts.
+    #[cfg(test)]
+    pub(in crate::app) fn load_counts(&self, id: u64) -> bool {
+        self.load.counts(id)
+    }
+    /// Load `id` is done (its first image arrived, or it failed); a later one's results
+    /// still count.
+    pub(in crate::app) fn finish_load(&mut self, id: u64) {
+        self.load.finish(id);
+    }
+    /// A fresh document for `photo`, its load kept, so the next one's id follows on.
+    fn replace(&mut self, catalog_photo: Option<PhotoId>) {
+        let load = std::mem::take(&mut self.load);
         *self = Self {
             catalog_photo,
+            load,
             ..Default::default()
         };
+    }
+    /// For tests: a fresh document for `catalog_photo`, with no load started.
+    #[cfg(test)]
+    pub(crate) fn reset(&mut self, catalog_photo: Option<PhotoId>) {
+        self.replace(catalog_photo);
+    }
+    /// For tests: starts a load for the document as it is.
+    #[cfg(test)]
+    pub(in crate::app) fn start_load(&mut self) -> (u64, Arc<std::sync::atomic::AtomicBool>) {
+        self.load.start()
     }
 }
 impl PreviewState {

@@ -619,7 +619,7 @@ mod integration_tests {
         e.module = Module::Develop;
         let photo = crate::catalog::PhotoId(1);
         e.document.reset(Some(photo));
-        let (load, _) = e.load.start();
+        let (load, _) = e.document.start_load();
         let (pending, answer) = socket::test_request(vec![Msg::Command(Command::new(
             commands::Operation::Wait(commands::Until::Loaded(photo), Duration::from_secs(30)),
         ))]);
@@ -646,7 +646,7 @@ mod integration_tests {
             Some("Could not read the AVIF file")
         );
         e.document.reset(Some(photo));
-        e.load.start();
+        e.document.start_load();
         assert_eq!(e.command_state().open_failed, None);
         assert_eq!(e.command_state().open_error, None);
     }

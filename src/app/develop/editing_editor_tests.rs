@@ -18,7 +18,7 @@ fn develop_history_survives_reopening_the_photo() -> anyhow::Result<()> {
     let ctx = egui::Context::default();
     let open = |editor: &mut Editor| {
         editor.document.reset(Some(id));
-        let (generation, _) = editor.load.start();
+        let (generation, _) = editor.document.start_load();
         editor
             .tx
             .send(Event::Header(Box::new(LoadedHeader {
@@ -112,7 +112,7 @@ fn an_edited_jpeg_whose_file_changed_reopens_from_the_file() -> anyhow::Result<(
         editor.library = Some(Box::new(library::Library::load(&path, ctx.clone())?));
         let open = |editor: &mut Editor| {
             editor.document.reset(Some(id));
-            let (generation, _) = editor.load.start();
+            let (generation, _) = editor.document.start_load();
             editor
                 .tx
                 .send(Event::Header(Box::new(LoadedHeader {
@@ -172,7 +172,7 @@ fn a_first_save_after_the_file_was_replaced_is_refused() -> anyhow::Result<()> {
         );
         editor.library = Some(Box::new(library::Library::load(&path, ctx.clone())?));
         editor.document.reset(Some(id));
-        let (generation, _) = editor.load.start();
+        let (generation, _) = editor.document.start_load();
         editor
             .tx
             .send(Event::Header(Box::new(LoadedHeader {

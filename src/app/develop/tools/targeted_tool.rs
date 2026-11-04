@@ -177,7 +177,7 @@ impl Editor {
             return;
         };
         let (generation, cancel) = self.document.targeted_pick.start();
-        let id = self.load.id();
+        let id = self.document.load_id();
         let sampled = self.document.edit.recipe().clone();
         let on_panic = sampled.clone();
         crate::app::task::spawn(

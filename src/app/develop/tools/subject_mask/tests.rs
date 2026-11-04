@@ -92,7 +92,7 @@ fn begin(editor: &mut Editor, request: Request) -> u64 {
     generation
 }
 fn finish(editor: &mut Editor, generation: u64, result: Result<Generated, Failure>) {
-    let load = editor.load.id();
+    let load = editor.document.load_id();
     editor.selection_done(Done {
         load,
         generation,
@@ -246,7 +246,7 @@ fn an_obsolete_result_is_dropped_and_cannot_finish_a_newer_request() {
 
     // A result for another photo is dropped.
     let g = begin(e, SUBJECT);
-    let wrong_load = e.load.id() + 5;
+    let wrong_load = e.document.load_id() + 5;
     e.selection_done(Done {
         load: wrong_load,
         generation: g,
@@ -748,7 +748,7 @@ fn the_real_model_selects_through_the_worker_and_the_mask_changes_the_render() {
     });
     e.selection.worker.submit(
         worker::Job {
-            load: e.load.id(),
+            load: e.document.load_id(),
             generation,
             cancel,
             image: image.clone(),

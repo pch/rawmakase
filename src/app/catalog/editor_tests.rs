@@ -342,7 +342,7 @@ fn removing_a_folder_closes_its_photo_and_leaves_the_files() -> anyhow::Result<(
     editor.document.catalog_photo = Some(away);
     editor.module = Module::Develop;
     // Still loading, and the locked reference too.
-    let (loading, _) = editor.load.start();
+    let (loading, _) = editor.document.start_load();
     editor.reference.photo = Some(away);
     editor.reference.locked = true;
 
@@ -383,8 +383,8 @@ fn removing_a_folder_closes_its_photo_and_leaves_the_files() -> anyhow::Result<(
         editor.messages.line()
     );
     // The load's late results are no longer its.
-    assert!(!editor.load.is_running());
-    assert_ne!(editor.load.id(), loading);
+    assert!(!editor.document.loading());
+    assert_ne!(editor.document.load_id(), loading);
     assert_eq!(editor.reference.photo, None);
     assert!(photos.join("trip/away.ARW").is_file());
     Ok(())
@@ -560,14 +560,18 @@ fn removing_a_copy_still_loading_outside_develop_ends_its_load() -> anyhow::Resu
         .clone();
     assert!(editor.load_raw(path, Some(copy)));
     assert_eq!(editor.module, Module::Library);
-    let ticket = editor.load.id();
-    assert!(editor.load.is_running());
+    let ticket = editor.document.load_id();
+    assert!(editor.document.loading());
     editor.view.zoom.on = true;
     let presets = editor.presets.revision;
     editor.remove_virtual_copy(copy);
     assert_eq!(editor.document.catalog_photo, None);
-    assert_ne!(editor.load.id(), ticket, "the copy's load still counts");
-    assert!(!editor.load.is_running());
+    assert_ne!(
+        editor.document.load_id(),
+        ticket,
+        "the copy's load still counts"
+    );
+    assert!(!editor.document.loading());
     assert!(!editor.view.zoom.on);
     assert!(editor.presets.revision > presets);
     Ok(())

@@ -86,8 +86,7 @@ impl Editor {
         if another && let Some(settings) = self.current_settings() {
             self.previous_settings = Some(settings);
         }
-        self.document.reset(photo);
-        let (id, cancel) = self.load.start();
+        let (id, cancel) = self.document.open(photo);
         // The reference photo stays on screen from photo to photo; Before goes.
         let reference = self
             .reference_view()
