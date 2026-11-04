@@ -12,6 +12,7 @@ use super::tests::{
 use super::*;
 use crate::storage::fsops;
 use anyhow::Result;
+use rawmakase_cancel::Cancel;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -51,7 +52,7 @@ fn to_far(fx: &Fx) -> FileOp {
 }
 
 /// Plans `op` on `disk` and runs it, stopping when `cancel` is set.
-fn run(fx: &mut Fx, op: FileOp, trash: &dyn Trash, disk: &Faulty, cancel: &AtomicBool) -> Outcome {
+fn run(fx: &mut Fx, op: FileOp, trash: &dyn Trash, disk: &Faulty, cancel: Cancel<'_>) -> Outcome {
     let plan = fx.plan_on(op, disk).unwrap();
     execute::execute_with(&mut fx.cat, plan.confirm(), trash, cancel, disk).unwrap()
 }
@@ -128,13 +129,7 @@ fn a_folder_moves_to_another_drive_by_a_verified_copy_and_its_original_goes_to_t
         .map(|f| bytes(f).len() as u64)
         .sum();
     assert_eq!(across.bytes, bytes_planned);
-    let outcome = execute::execute_with(
-        &mut fx.cat,
-        plan.confirm(),
-        &trash,
-        &AtomicBool::new(false),
-        &disk,
-    )?;
+    let outcome = execute::execute_with(&mut fx.cat, plan.confirm(), &trash, Cancel::NEVER, &disk)?;
     assert_eq!(results(&outcome), [ItemResult::FolderMoved]);
     assert!(outcome.items[0].originals_kept.is_empty(), "{outcome:?}");
     assert_eq!(tree_of(&fx.root.join("far/day")), tree);
@@ -206,7 +201,7 @@ fn a_folders_extras_dates_and_permissions_go_with_it_to_another_drive() -> Resul
         let disk = far_as(&fx, kind);
         let trash = FakeTrash::new(&fx);
         let op = to_far(&fx);
-        let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+        let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
         assert_eq!(results(&outcome), [ItemResult::FolderMoved], "{kind:?}");
         assert!(outcome.items[0].originals_kept.is_empty(), "{outcome:?}");
         let copy = fx.root.join("far/day");
@@ -244,7 +239,7 @@ fn a_drive_that_can_t_keep_a_folders_extras_moves_nothing() -> Result<()> {
     };
     let trash = FakeTrash::new(&fx);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     let [ItemResult::Unchanged(Some(why))] = &results(&outcome)[..] else {
         panic!("{outcome:?}")
     };
@@ -266,7 +261,7 @@ fn a_folder_tagged_after_the_catalog_follows_stays_and_its_files_go() -> Result<
     };
     let trash = FakeTrash::new(&fx);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     assert_eq!(results(&outcome), [ItemResult::FolderMoved]);
     let kept = &outcome.items[0].originals_kept;
     let top = kept
@@ -292,7 +287,7 @@ fn a_file_tagged_after_the_catalog_follows_stays_with_its_folder() -> Result<()>
     };
     let trash = FakeTrash::new(&fx);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     assert_eq!(results(&outcome), [ItemResult::FolderMoved]);
     let kept = &outcome.items[0].originals_kept;
     assert_eq!(kept[0].path, a, "{kept:?}");
@@ -322,7 +317,7 @@ fn recovery_keeps_the_date_a_folders_copy_got_before_its_originals_went() -> Res
             &mut fx.cat,
             plan.confirm(),
             &trash,
-            &Default::default(),
+            Cancel::NEVER,
             &disk,
         ));
     }));
@@ -360,7 +355,7 @@ fn an_original_gone_before_recovery_keeps_only_its_own_folders_date_from_the_cop
             &mut fx.cat,
             plan.confirm(),
             &trash,
-            &Default::default(),
+            Cancel::NEVER,
             &disk,
         ));
     }));
@@ -428,14 +423,7 @@ fn scenario_as(fx: &mut Fx, trash: &dyn Trash, disk: &Faulty, kind: Far) -> (Bat
     let batch = plan.batch().clone();
     crashes(|| {
         drop(
-            execute::execute_with(
-                &mut fx.cat,
-                plan.confirm(),
-                trash,
-                &Default::default(),
-                disk,
-            )
-            .unwrap(),
+            execute::execute_with(&mut fx.cat, plan.confirm(), trash, Cancel::NEVER, disk).unwrap(),
         );
     });
     fx.reopen();
@@ -558,7 +546,7 @@ fn a_folder_moved_from_an_smb_share_stays_there_as_its_trash_can_t_take_it() -> 
     let mut trash = FakeTrash::new(&fx);
     trash.fail_from = Some(1);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     assert_eq!(results(&outcome), [ItemResult::FolderMoved], "{outcome:?}");
     assert_eq!(tree_of(&fx.root.join("far/day")), tree);
     assert_eq!(tree_of(&fx.root.join("day")), tree);
@@ -574,7 +562,7 @@ fn every_fault(kind: Far) -> usize {
     let counting = far_as(&clean, kind);
     let trash = trash_as(&clean, kind);
     let op = to_far(&clean);
-    let outcome = run(&mut clean, op, &trash, &counting, &AtomicBool::new(false));
+    let outcome = run(&mut clean, op, &trash, &counting, Cancel::NEVER);
     assert_eq!(results(&outcome), [ItemResult::FolderMoved], "{kind:?}");
     assert_eq!(counting.count(Op::Copy), 3);
     // And one undone once two files are whole: a full drive at the last.
@@ -585,7 +573,7 @@ fn every_fault(kind: Far) -> usize {
     };
     let trash = trash_as(&undone, kind);
     let op = to_far(&undone);
-    let _ = run(&mut undone, op, &trash, &failing, &AtomicBool::new(false));
+    let _ = run(&mut undone, op, &trash, &failing, Cancel::NEVER);
     let mut runs = 0;
     for op in [
         Op::CreateDir,
@@ -692,13 +680,7 @@ fn every_failed_journal_write_of_a_folder_copy_ends_proven() -> Result<()> {
         let trash = FakeTrash::new(&fx);
         let plan = fx.plan_on(to_far(&fx), &disk)?;
         let batch = plan.batch().clone();
-        let _ = execute::execute_with(
-            &mut fx.cat,
-            plan.confirm(),
-            &trash,
-            &Default::default(),
-            &disk,
-        );
+        let _ = execute::execute_with(&mut fx.cat, plan.confirm(), &trash, Cancel::NEVER, &disk);
         fx.reopen();
         let recovery = fx.recover_with(&far(&fx), &trash);
         assert!(recovery.unfinished.is_empty(), "{when}: {recovery:?}");
@@ -718,7 +700,7 @@ fn stop_stops_a_folder_copy_and_undoes_it() -> Result<()> {
         ..far(&fx)
     };
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &NoTrash, &disk, &stop);
+    let outcome = run(&mut fx, op, &NoTrash, &disk, Cancel::new(&stop));
     let [ItemResult::Unchanged(Some(why))] = &results(&outcome)[..] else {
         panic!("{outcome:?}")
     };
@@ -739,7 +721,7 @@ fn a_name_taken_just_before_the_folder_gets_it_is_never_replaced() -> Result<()>
         ..far(&fx)
     };
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &NoTrash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &NoTrash, &disk, Cancel::NEVER);
     assert!(
         matches!(&results(&outcome)[..], [ItemResult::Unchanged(Some(_))]),
         "{outcome:?}"
@@ -760,7 +742,7 @@ fn an_original_changed_while_copied_keeps_its_whole_copy_until_put_back() -> Res
     };
     let trash = FakeTrash::new(&fx);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     let [ItemResult::NeedsRecovery(_)] = &results(&outcome)[..] else {
         panic!("{outcome:?}")
     };
@@ -800,7 +782,7 @@ fn a_file_added_to_the_copy_before_recovery_keeps_it_for_the_user() -> Result<()
             &mut fx.cat,
             plan.confirm(),
             &trash,
-            &Default::default(),
+            Cancel::NEVER,
             &disk,
         ));
     }));
@@ -850,7 +832,7 @@ fn originals_changed_or_added_to_after_the_catalog_follows_stay_and_are_reported
             &mut fx.cat,
             plan.confirm(),
             &trash,
-            &Default::default(),
+            Cancel::NEVER,
             &disk,
         ));
     }));
@@ -896,13 +878,8 @@ fn a_photo_added_to_the_folder_since_planning_leaves_it_where_it_is() -> Result<
     let root = fx.root.clone();
     fx.cat.add_folder(&root)?;
     let c = fx.photo("day/c.NEF");
-    let outcome = execute::execute_with(
-        &mut fx.cat,
-        plan.confirm(),
-        &NoTrash,
-        &AtomicBool::new(false),
-        &disk,
-    )?;
+    let outcome =
+        execute::execute_with(&mut fx.cat, plan.confirm(), &NoTrash, Cancel::NEVER, &disk)?;
     assert!(
         matches!(&results(&outcome)[..], [ItemResult::Unchanged(Some(_))]),
         "{outcome:?}"
@@ -977,7 +954,7 @@ fn a_folder_moves_between_two_real_volumes() -> Result<()> {
     let plan = fx.plan(op);
     assert!(plan.summary().across.is_some());
     let trash = FakeTrash::new(&fx);
-    let outcome = execute::execute(&mut fx.cat, plan.confirm(), &trash, &AtomicBool::new(false))?;
+    let outcome = execute::execute(&mut fx.cat, plan.confirm(), &trash, Cancel::NEVER)?;
     assert_eq!(results(&outcome), [ItemResult::FolderMoved]);
     assert_eq!(as_seen(tree_of(&dir.join("day"))), tree);
     for (t, was) in &extras {
@@ -1064,7 +1041,7 @@ fn a_file_added_to_the_original_after_the_catalog_follows_stays_with_its_folder(
             &mut fx.cat,
             plan.confirm(),
             &trash,
-            &Default::default(),
+            Cancel::NEVER,
             &disk,
         ));
     }));
@@ -1139,7 +1116,7 @@ fn coarser_times_there_rekey_the_folders_saved_edits_and_checksums() -> Result<(
     disk.coarse = Some(2_000_000_000);
     let trash = FakeTrash::new(&fx);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     assert_eq!(results(&outcome), [ItemResult::FolderMoved]);
     let target = fx.root.join("far/day/sub/b.NEF");
     let now = crate::storage::Identity::read(&target)?;
@@ -1159,7 +1136,7 @@ fn an_earlier_releases_edit_file_and_coarser_times_leave_the_folder() -> Result<
     disk.coarse = Some(2_000_000_000);
     let trash = FakeTrash::new(&fx);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     let [ItemResult::Unchanged(Some(why))] = &results(&outcome)[..] else {
         panic!("{outcome:?}")
     };
@@ -1184,7 +1161,7 @@ fn a_crash_once_the_trash_took_the_folder_is_finished_without_keeping_anything()
             &mut fx.cat,
             plan.confirm(),
             &trash,
-            &Default::default(),
+            Cancel::NEVER,
             &disk,
         ));
     }));
@@ -1211,7 +1188,7 @@ fn a_move_refused_for_one_photo_leaves_every_other_photos_saved_edit_as_it_was()
     disk.coarse = Some(2_000_000_000);
     let trash = FakeTrash::new(&fx);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     let [ItemResult::Unchanged(Some(why))] = &results(&outcome)[..] else {
         panic!("{outcome:?}")
     };
@@ -1237,7 +1214,7 @@ fn the_catalog_follows_the_names_the_copies_have_on_disk() -> Result<()> {
     let disk = far(&fx);
     let trash = FakeTrash::new(&fx);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     assert_eq!(results(&outcome), [ItemResult::FolderMoved]);
     if ignores_case {
         assert_eq!(fx.rows()[&b], "far/day/sub/b.NEF");
@@ -1278,13 +1255,7 @@ fn a_file_another_app_saves_anew_keeps_only_its_own_copy_which_put_back_trashes(
     // Saved anew the usual way: a new file renamed over the old one.
     std::fs::write(fx.root.join("day/.a.xmp.tmp"), b"saved anew")?;
     std::fs::rename(fx.root.join("day/.a.xmp.tmp"), fx.root.join("day/a.xmp"))?;
-    let outcome = execute::execute_with(
-        &mut fx.cat,
-        plan.confirm(),
-        &trash,
-        &AtomicBool::new(false),
-        &disk,
-    )?;
+    let outcome = execute::execute_with(&mut fx.cat, plan.confirm(), &trash, Cancel::NEVER, &disk)?;
     let [ItemResult::NeedsRecovery(_)] = &results(&outcome)[..] else {
         panic!("{outcome:?}")
     };
@@ -1349,7 +1320,7 @@ fn a_missing_folder_below_one_spelled_otherwise_stays_below_it() -> Result<()> {
     let disk = far(&fx);
     let trash = FakeTrash::new(&fx);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     assert_eq!(results(&outcome), [ItemResult::FolderMoved]);
     // Below its folder, however the disk spells that.
     let (sub, gone) = (logical(&fx, sub), logical(&fx, gone));
@@ -1373,7 +1344,7 @@ fn a_missing_folder_never_takes_the_place_of_another_named_alike() -> Result<()>
     let disk = far(&fx);
     let trash = FakeTrash::new(&fx);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     assert_eq!(results(&outcome), [ItemResult::FolderMoved]);
     assert_eq!(logical(&fx, sub), "far/day/sub");
     assert_eq!(logical(&fx, upper), "far/day/SUB");
@@ -1405,13 +1376,8 @@ fn a_folder_moves_to_exfat_proven_by_names_and_journals_no_real_id() -> Result<(
         let trash = FakeTrash::new(&fx);
         let plan = fx.plan_on(to_far(&fx), &disk)?;
         let batch = plan.batch().clone();
-        let outcome = execute::execute_with(
-            &mut fx.cat,
-            plan.confirm(),
-            &trash,
-            &AtomicBool::new(false),
-            &disk,
-        )?;
+        let outcome =
+            execute::execute_with(&mut fx.cat, plan.confirm(), &trash, Cancel::NEVER, &disk)?;
         assert_eq!(results(&outcome), [ItemResult::FolderMoved], "{kind:?}");
         assert_eq!(tree_of(&fx.root.join("far/day")), tree, "{kind:?}");
         assert_eq!(fx.rows()[&b], "far/day/sub/b.NEF");
@@ -1438,7 +1404,7 @@ fn a_folder_name_taken_just_before_it_is_made_at_it_is_left_as_it_is() -> Result
     };
     let trash = FakeTrash::new(&fx);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     assert!(
         matches!(&results(&outcome)[..], [ItemResult::Unchanged(Some(_))]),
         "{outcome:?}"
@@ -1493,7 +1459,7 @@ fn accented_names_stored_either_way_move_with_a_folder_to_and_from_exfat() -> Re
             to_root: fx.root_id(),
             parent: "far".into(),
         };
-        let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+        let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
         assert_eq!(results(&outcome), [ItemResult::FolderMoved], "{kind:?}");
         let made = fx.root.join("far/Caf\u{e9}/R\u{fc}gen.NEF");
         assert!(super::tests::stored_spelling(&made), "{kind:?}");
@@ -1517,7 +1483,7 @@ fn accented_names_stored_either_way_move_with_a_folder_to_and_from_exfat() -> Re
             renumber_on_rename: false,
             ..far_as(&fx, kind)
         };
-        let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+        let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
         assert!(
             matches!(results(&outcome)[..], [ItemResult::FolderRenamed]),
             "{kind:?}: {outcome:?}"
@@ -1536,7 +1502,7 @@ fn accented_names_stored_either_way_move_with_a_folder_to_and_from_exfat() -> Re
         ..far_as(&fx, Far::Names)
     };
     let trash = FakeTrash::new(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     assert!(
         matches!(results(&outcome)[..], [ItemResult::FolderRenamed]),
         "{outcome:?}"
@@ -1564,7 +1530,7 @@ fn accented_names_stored_either_way_move_with_a_folder_to_and_from_exfat() -> Re
             to_root: fx.root_id(),
             parent: "far".into(),
         };
-        let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+        let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
         assert_eq!(results(&outcome), [ItemResult::FolderMoved], "{names:?}");
         assert!(
             outcome.items[0].originals_kept.is_empty(),
@@ -1588,7 +1554,7 @@ fn a_folder_named_as_an_apple_double_file_moves_with_its_folder() -> Result<()> 
     };
     let trash = FakeTrash::new(&fx);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     assert_eq!(results(&outcome), [ItemResult::FolderMoved]);
     assert_eq!(
         std::fs::read(fx.root.join("far/day/._a.NEF/only.txt"))?,
@@ -1663,7 +1629,7 @@ fn a_folder_move_onto_an_smb_share_that_fails_leaves_its_copies_there() -> Resul
     };
     let trash = trash_as(&fx, Far::Share);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     let theirs = disk.swapped.borrow().clone();
     assert_eq!(theirs.map(|p| std::fs::read(p).ok()), None, "{outcome:?}");
     assert_eq!(tree_of(&fx.root.join("day")), tree);
@@ -1726,7 +1692,7 @@ fn a_folder_copy_left_on_a_share_with_the_only_bytes_isnt_said_to_be_deletable()
     };
     let trash = trash_as(&fx, Far::Share);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     let [ItemResult::NeedsRecovery(why)] = &results(&outcome)[..] else {
         panic!("{outcome:?}")
     };
@@ -1750,7 +1716,7 @@ fn a_folder_left_on_a_share_with_another_file_in_it_isnt_said_to_be_deletable() 
     };
     let trash = trash_as(&fx, Far::Share);
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
     let operation = outcome.items[0].operation;
     // Another computer puts a file in it; the user deletes the copies.
     let theirs = fx.root.join("far/day/sub/peer-only.txt");
@@ -1781,7 +1747,7 @@ fn a_folder_left_on_a_share_is_deletable_however_its_names_are_listed() -> Resul
         };
         let trash = trash_as(&fx, Far::Share);
         let op = to_far(&fx);
-        let outcome = run(&mut fx, op, &trash, &disk, &AtomicBool::new(false));
+        let outcome = run(&mut fx, op, &trash, &disk, Cancel::NEVER);
         let why = match apple_double {
             false => super::copy::LEFT_ON_SHARE,
             true => super::recover::NOT_BACK,
@@ -1841,7 +1807,7 @@ fn a_folder_copy_left_on_an_unknown_volume_isnt_said_deletable_once_its_original
         ..far(&fx)
     };
     let op = to_far(&fx);
-    let outcome = run(&mut fx, op, &NoTrash, &disk, &AtomicBool::new(false));
+    let outcome = run(&mut fx, op, &NoTrash, &disk, Cancel::NEVER);
     assert!(
         fail.load(std::sync::atomic::Ordering::Relaxed),
         "{outcome:?}"

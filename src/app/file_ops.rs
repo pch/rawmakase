@@ -33,6 +33,7 @@ use crate::catalog::file_ops::{
 };
 use crate::catalog::{CatalogLocation, PhotoId};
 use eframe::egui;
+use rawmakase_cancel::Cancel;
 #[cfg(test)]
 use std::path::Path;
 use std::sync::Arc;
@@ -1361,8 +1362,13 @@ impl Editor {
                 let done = crate::catalog::Catalog::open(&catalog)
                     .map_err(|e| format!("{e:#}"))
                     .and_then(|mut catalog| {
-                        file_ops::execute(&mut catalog, confirmed, &*system_trash, &cancel)
-                            .map_err(|e| e.to_string())
+                        file_ops::execute(
+                            &mut catalog,
+                            confirmed,
+                            &*system_trash,
+                            Cancel::new(&cancel),
+                        )
+                        .map_err(|e| e.to_string())
                     });
                 let _ = tx.send(super::worker::Event::FileOpDone(batch, Box::new(done)));
             },

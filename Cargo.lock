@@ -3753,6 +3753,7 @@ dependencies = [
  "flate2",
  "getrandom 0.4.3",
  "image",
+ "rawmakase-cancel",
  "rawmakase-interop",
  "rawmakase-model",
  "rusqlite",

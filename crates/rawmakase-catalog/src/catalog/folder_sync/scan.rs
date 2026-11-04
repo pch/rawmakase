@@ -9,10 +9,10 @@ use crate::catalog::ingest::{Matched, Place};
 use crate::catalog::{FolderId, PhotoId, RootId};
 use crate::storage::{ChecksumRead, FileChecksum, Identity};
 use anyhow::{Result, bail};
+use rawmakase_cancel::Cancel;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// What listing one directory gave.
 pub(super) enum Listing {
@@ -71,10 +71,10 @@ enum Found {
 pub fn scan(
     inputs: &SyncInputs,
     online: &dyn Fn(&Path) -> bool,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     progress: &dyn Fn(usize),
 ) -> Result<SyncPlan> {
-    let cancelled = || cancel.load(Ordering::Relaxed);
+    let cancelled = || cancel.is_cancelled();
     let mut plan = SyncPlan::default();
     // Every master's file, so a file a photo names is never unknown.
     let known: HashSet<PathBuf> = inputs
@@ -476,7 +476,7 @@ pub(super) fn merge_choices(choices: Vec<Vec<Move>>) -> Vec<Choice> {
 struct Matching<'a> {
     inputs: &'a SyncInputs,
     online: &'a dyn Fn(&Path) -> bool,
-    cancel: &'a AtomicBool,
+    cancel: Cancel<'a>,
     states: HashMap<PhotoId, FileState>,
     /// The checksums on record, with those of present photos read now.
     checksums: HashMap<PhotoId, FileChecksum>,
@@ -505,7 +505,7 @@ impl Matching<'_> {
         state
     }
     fn go_on(&self) -> bool {
-        !self.cancel.load(Ordering::Relaxed)
+        !self.cancel.is_cancelled()
     }
     /// The full SHA-256 of `path`, if it can be read whole and unchanged.
     fn full(&self, path: &Path) -> Result<Option<String>> {

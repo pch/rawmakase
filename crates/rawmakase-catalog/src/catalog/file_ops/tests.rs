@@ -8,11 +8,11 @@ use crate::catalog::Catalog;
 use crate::storage::Identity;
 use crate::storage::fsops::{Entry, FsError};
 use anyhow::Result;
+use rawmakase_cancel::Cancel;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 
 /// Distinct synthetic bytes for a file, from its name.
 pub(super) fn bytes(name: &str) -> Vec<u8> {
@@ -210,14 +210,7 @@ impl Fx {
     /// Plans, confirms and executes `op` with `trash` on `disk`.
     pub fn run(&mut self, op: FileOp, trash: &dyn Trash, disk: &dyn Disk) -> Outcome {
         let plan = self.plan(op);
-        execute::execute_with(
-            &mut self.cat,
-            plan.confirm(),
-            trash,
-            &AtomicBool::new(false),
-            disk,
-        )
-        .unwrap()
+        execute::execute_with(&mut self.cat, plan.confirm(), trash, Cancel::NEVER, disk).unwrap()
     }
     /// Recovers on `disk`.
     pub fn recover(&mut self, disk: &dyn Disk) -> Recovery {

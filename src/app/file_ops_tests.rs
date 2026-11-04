@@ -320,7 +320,7 @@ fn the_outcome_is_read_from_the_journal_even_when_the_worker_stopped() -> anyhow
         .location()
         .clone();
     let mut other = crate::catalog::Catalog::open(&location)?;
-    let _ = crate::catalog::file_ops::execute(&mut other, plan, &Unavailable, &Default::default())?;
+    let _ = crate::catalog::file_ops::execute(&mut other, plan, &Unavailable, Cancel::NEVER)?;
     e.file_op_done(batch, Err("Stopped unexpectedly".into()));
     assert!(!e.activity.is_busy());
     assert_eq!(ids_left(&e), [ids[1]]);
@@ -493,7 +493,7 @@ fn an_unreadable_outcome_forgets_every_photo_that_may_be_gone() -> anyhow::Resul
         .location()
         .clone();
     let mut other = crate::catalog::Catalog::open(&location)?;
-    let _ = crate::catalog::file_ops::execute(&mut other, plan, &Unavailable, &Default::default())?;
+    let _ = crate::catalog::file_ops::execute(&mut other, plan, &Unavailable, Cancel::NEVER)?;
     // The journal can't be read back, and the worker said only that it
     // stopped: nothing may be taken for still there.
     other

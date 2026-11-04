@@ -7,6 +7,7 @@
 //! TMPDIR=~/.cache/throughput cargo test -p rawmakase-catalog --release \
 //!     --test file_ops_throughput -- --ignored --nocapture
 //! ```
+use rawmakase_cancel::Cancel;
 use rawmakase_catalog::catalog::Catalog;
 use rawmakase_catalog::catalog::file_ops::{
     self, FileOp, ItemResult, Trash, TrashError, TrashReceipt,
@@ -51,7 +52,7 @@ fn timed(cat: &mut Catalog, op: FileOp, what: &str) -> f64 {
     let plan = file_ops::plan(cat, op).unwrap();
     assert!(plan.skipped().is_empty(), "{what}: {:?}", plan.skipped());
     let start = Instant::now();
-    let outcome = file_ops::execute(cat, plan.confirm(), &NoTrash, &Default::default()).unwrap();
+    let outcome = file_ops::execute(cat, plan.confirm(), &NoTrash, Cancel::NEVER).unwrap();
     let ms = start.elapsed().as_secs_f64() * 1000.0 / PHOTOS as f64;
     assert!(outcome.stopped.is_none(), "{what}: {:?}", outcome.stopped);
     let done = outcome

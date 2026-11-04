@@ -3,6 +3,7 @@ use super::tests::{Faulty, NoTrash, fixture};
 use super::*;
 use crate::catalog::Catalog;
 use anyhow::Result;
+use rawmakase_cancel::Cancel;
 
 #[test]
 fn a_held_lock_keeps_another_window_from_changing_or_recovering_files() -> Result<()> {
@@ -20,7 +21,7 @@ fn a_held_lock_keeps_another_window_from_changing_or_recovering_files() -> Resul
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &Default::default(),
+        Cancel::NEVER,
         &Faulty::default(),
     );
     assert!(matches!(run, Err(FileOpError::Busy)));

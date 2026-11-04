@@ -831,7 +831,7 @@ fn sync_folder(
     let inputs = c.sync_inputs(scope)?;
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let online = |path: &std::path::Path| rawmakase::volume_mounted(path);
-    let plan = scan(&inputs, &online, &cancel, &|_| {})?;
+    let plan = scan(&inputs, &online, Cancel::new(&cancel), &|_| {})?;
     let shown = |p: &std::path::Path| p.display().to_string();
     for m in &plan.moves {
         let how = if m.verified {
@@ -913,7 +913,7 @@ fn find_photo(
     let inputs = c.find_inputs(photo, file)?;
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let online = |path: &std::path::Path| rawmakase::volume_mounted(path);
-    let plan = find_on_disk(&inputs, &online, &cancel, &|_| {})?;
+    let plan = find_on_disk(&inputs, &online, Cancel::new(&cancel), &|_| {})?;
     let shown = |p: &std::path::Path| p.display().to_string();
     let ticked = plan.default_accepted();
     for m in &plan.moves {

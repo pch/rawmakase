@@ -7,7 +7,7 @@ use super::recover_tests;
 use super::tests::*;
 use super::*;
 use crate::storage::fsops;
-use std::sync::atomic::AtomicBool;
+use rawmakase_cancel::Cancel;
 
 /// Photos `IMG_0000.NEF`… in one folder, every third with an XMP sidecar.
 fn many(n: usize) -> Vec<String> {
@@ -247,7 +247,7 @@ fn a_fault_in_either_batch_of_a_rename_ends_proven() {
                     &mut fx.cat,
                     plan.confirm(),
                     &NoTrash,
-                    &AtomicBool::new(false),
+                    Cancel::NEVER,
                     &disk,
                 ));
             });
@@ -282,7 +282,7 @@ fn a_failed_completion_in_a_batch_leaves_only_its_item_and_a_restart_finishes_it
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &AtomicBool::new(false),
+        Cancel::NEVER,
         &Faulty::default(),
     )
     .unwrap();
@@ -322,7 +322,7 @@ fn a_failed_journal_commit_in_the_second_batch_puts_only_that_batch_back() {
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &AtomicBool::new(false),
+        Cancel::NEVER,
         &Faulty::default(),
     )
     .unwrap();

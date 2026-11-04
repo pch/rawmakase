@@ -6,6 +6,7 @@ use super::recover_tests::{before, check};
 use super::tests::{FakeTrash, Fault, Faulty, Fx, NoTrash, Op, bytes, crashes, fixture, results};
 use super::*;
 use anyhow::Result;
+use rawmakase_cancel::Cancel;
 
 /// Whether the move of `outcome`'s first item added the catalog's folder.
 fn added(fx: &Fx, outcome: &Outcome) -> bool {
@@ -112,7 +113,7 @@ fn a_folder_the_catalog_gained_meanwhile_is_the_one_its_photos_join() -> Result<
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &Default::default(),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     // Its family is as planned, so it moves, into the folder there now.
@@ -168,7 +169,7 @@ fn every_fault_moving_into_a_new_catalog_folder_ends_proven() {
             &mut clean.cat,
             plan.confirm(),
             &trash,
-            &Default::default(),
+            Cancel::NEVER,
             &counting,
         )
         .unwrap();
@@ -197,7 +198,7 @@ fn every_fault_moving_into_a_new_catalog_folder_ends_proven() {
                                 &mut fx.cat,
                                 plan.confirm(),
                                 &trash,
-                                &Default::default(),
+                                Cancel::NEVER,
                                 &disk,
                             )
                             .unwrap(),

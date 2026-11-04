@@ -47,11 +47,11 @@ use super::tree::TreeMove;
 use super::{Confirmed, FileOpError, Outcome, Trash};
 use crate::storage::fsops::{EntryKind, FileId, FsError};
 use anyhow::{Context, Result};
+use rawmakase_cancel::Cancel;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Executes a confirmed plan in `catalog`, sending its files to `trash`
 /// when it trashes them, and stopping between items once `cancel` is set.
@@ -61,7 +61,7 @@ pub fn execute(
     catalog: &mut Catalog,
     confirmed: Confirmed,
     trash: &dyn Trash,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Outcome, FileOpError> {
     execute_with(catalog, confirmed, trash, cancel, &Real)
 }
@@ -71,7 +71,7 @@ pub(super) fn execute_with(
     catalog: &mut Catalog,
     Confirmed(plan): Confirmed,
     trash: &dyn Trash,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     disk: &dyn Disk,
 ) -> Result<Outcome, FileOpError> {
     if plan.location != catalog.location || plan.computer != catalog.computer.id {
@@ -150,7 +150,7 @@ pub(super) fn execute_with(
     }
     let mut items = items.into_iter().peekable();
     while let Some(item) = items.next() {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             break;
         }
         let result = if run.batches(&item) {
@@ -286,9 +286,9 @@ impl Run<'_> {
         &self,
         catalog: &mut Catalog,
         new: &NewFolder,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Option<Made>> {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return Ok(None);
         }
         let dir = parent(&new.path);
@@ -380,9 +380,9 @@ impl Run<'_> {
         catalog: &mut Catalog,
         tree: &TreeMove,
         busy: &HashSet<PhotoId>,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<()> {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return Ok(());
         }
         let involved = tree.state.photos.iter().any(|p| busy.contains(p));
@@ -518,7 +518,7 @@ impl Run<'_> {
     }
 
     /// An item that moves or trashes files.
-    fn files(&self, catalog: &mut Catalog, item: &Item, cancel: &AtomicBool) -> Result<()> {
+    fn files(&self, catalog: &mut Catalog, item: &Item, cancel: Cancel<'_>) -> Result<()> {
         // a. Checked again and journalled, in one transaction.
         let started = catalog.db.write_immediate(|w| {
             let reason = match item.preconditions.check(w, self.computer)? {

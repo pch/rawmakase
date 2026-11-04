@@ -17,6 +17,7 @@ use crate::catalog::folder_sync::{
 };
 use crate::catalog::{CatalogLocation, PhotoId};
 use eframe::egui;
+use rawmakase_cancel::Cancel;
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -141,7 +142,12 @@ impl Editor {
             SyncScope::All => None,
         };
         self.spawn_scan(name, root, false, move |stopped, progress| {
-            scan(&inputs, &crate::volume_mounted, stopped, progress)
+            scan(
+                &inputs,
+                &crate::volume_mounted,
+                Cancel::new(stopped),
+                progress,
+            )
         });
     }
     /// Find on Disk…: asks for the file of `photo`, offline, starting where
@@ -207,7 +213,12 @@ impl Editor {
             .unwrap_or_default();
         let root = file.parent().map(PathBuf::from);
         self.spawn_scan(name, root, true, move |stopped, progress| {
-            find_on_disk(&inputs, &crate::volume_mounted, stopped, progress)
+            find_on_disk(
+                &inputs,
+                &crate::volume_mounted,
+                Cancel::new(stopped),
+                progress,
+            )
         });
     }
     /// Runs `work`, a synchronization's scan or Find on Disk's (`finding`),
