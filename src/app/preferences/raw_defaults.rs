@@ -10,6 +10,12 @@ use crate::raw_defaults::{
     DefaultChoice, DevelopDefaults, RawDefaults, Resolved, camera_name, same_camera, same_name,
 };
 use crate::xmp::Preset;
+
+/// The raw defaults chosen in Preferences, as the app opens a photo with no edit,
+/// for the command line.
+pub fn user_raw_defaults() -> DevelopDefaults {
+    DevelopDefaults::load(crate::app::preferences::session::load_session().raw_defaults)
+}
 use eframe::egui;
 use std::sync::Arc;
 

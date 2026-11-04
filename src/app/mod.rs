@@ -872,6 +872,7 @@ fn survive_surface_errors(device: &wgpu::Device) {
 }
 
 pub use crate::app::develop::ai_denoise::user_ai_denoise_cache;
+pub use crate::app::preferences::raw_defaults::user_raw_defaults;
 pub use crate::app::presets::bulk_import::import_profiles;
 pub(crate) mod catalog;
 pub(crate) mod develop;

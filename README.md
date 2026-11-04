@@ -184,7 +184,7 @@ rawmakase fingerprint *.NEF        # decode facts per file as JSON lines, for re
 rawmakase help
 ```
 
-`render` starts from the photo's default look, or from an edit a release before 0.1.8 saved as a sidecar (`photo.dng.rawmakase.json` beside the photo, or in the data directory's `sidecars/` folder, whichever is newer). `--recipe` replaces that starting point with a saved RAWmakase preset; `--xmp` applies an XMP preset on top of it, so settings the XMP leaves out keep the starting point's values. For a render that depends on nothing saved, pass `--recipe`. It does not read edits from a catalog yet, so exporting Develop edits is done from the app. It needs `--overwrite` to replace an existing file.
+`render` starts where the app would. With `--catalog Photos.rawmakase` it uses the photo's edit in that catalog: its saved edit, else its Lightroom edit, else the raw defaults. A path names the master, not a virtual copy, and a photo the catalog doesn't have is an error. Without a catalog it uses an edit a release before 0.1.8 saved as a sidecar (`photo.dng.rawmakase.json` beside the photo, or in the data directory's `sidecars/` folder, whichever is newer), else the raw defaults chosen in Preferences. `--recipe` replaces that starting point with a saved RAWmakase preset; `--xmp` applies an XMP preset on top of it, so settings the XMP leaves out keep the starting point's values. For a render that depends on nothing saved, pass `--recipe`. The catalog's export settings don't apply: the output is what the command line asks for. It needs `--overwrite` to replace an existing file.
 
 ### Where data lives
 
