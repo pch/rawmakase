@@ -953,7 +953,10 @@ fn develop_with_ai(
     use rawmakase_decode::ai_denoise::{ModelOutput, assemble};
     let raw = crate::photo::open(path)?;
     let recipe = EditSource::recipe(Some(source), &raw.metadata, path, cancel)?;
-    let plain = raw.develop(crate::camera_data::Decode::Full(Default::default()), cancel)?;
+    let plain = raw.develop(
+        crate::camera_data::Decode::Full(Default::default()),
+        Cancel::new(cancel),
+    )?;
     let denoised = assemble(
         &ModelOutput {
             layout: entry.layout,
@@ -962,7 +965,7 @@ fn develop_with_ai(
             clipped: &entry.clipped,
         },
         &plain,
-        cancel,
+        Cancel::new(cancel),
     )?;
     let ai = crate::develop::AiSource::recover(denoised, Cancel::new(cancel))?;
     let mut renderer = crate::develop::PreviewRenderer::default();
@@ -1463,7 +1466,7 @@ pub(super) mod tests {
             &path,
         )?;
         let cancel = AtomicBool::new(false);
-        let packed = crate::photo::open(&path)?.packed_bayer(&cancel)?;
+        let packed = crate::photo::open(&path)?.packed_bayer(Cancel::new(&cancel))?;
         let layout = packed.layout;
         // A flat result: the preview shows it, not the chart.
         let entry = rawmakase_decode::ai_cache::AiEntry {

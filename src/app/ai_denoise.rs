@@ -152,7 +152,7 @@ pub(super) fn cached_loader(
             done: None,
             clipped: &entry.clipped,
         };
-        let source = assemble(&output, &job.plain, &job.cancel)
+        let source = assemble(&output, &job.plain, Cancel::new(&job.cancel))
             .and_then(|image| AiSource::recover(image, Cancel::new(&job.cancel)));
         if let Ok(source) = source
             && !cancelled()
