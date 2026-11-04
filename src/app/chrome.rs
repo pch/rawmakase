@@ -84,3 +84,7 @@ impl Chrome {
         View::Unchanged
     }
 }
+
+#[cfg(test)]
+#[path = "chrome_editor_tests.rs"]
+mod editor_tests;

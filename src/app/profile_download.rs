@@ -673,3 +673,7 @@ impl Editor {
 #[cfg(test)]
 #[path = "profile_download_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "profile_download_editor_tests.rs"]
+mod editor_tests;

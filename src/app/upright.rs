@@ -137,3 +137,7 @@ impl Editor {
         self.schedule();
     }
 }
+
+#[cfg(test)]
+#[path = "upright_editor_tests.rs"]
+mod editor_tests;

@@ -2062,3 +2062,7 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "sync_editor_tests.rs"]
+mod editor_tests;

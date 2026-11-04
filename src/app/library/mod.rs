@@ -1619,3 +1619,6 @@ fn wake(ctx: &egui::Context) -> crate::catalog_session::Wake {
     let ctx = ctx.clone();
     std::sync::Arc::new(move || ctx.request_repaint())
 }
+
+#[cfg(test)]
+mod editor_tests;

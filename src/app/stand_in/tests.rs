@@ -1,5 +1,5 @@
 use super::*;
-use crate::app::tests::editor_with_catalog;
+use crate::app::testing::editor_with_catalog;
 use crate::catalog::preview_cache::Stamp;
 use std::path::Path;
 use std::time::{Duration, Instant};

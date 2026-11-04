@@ -133,3 +133,7 @@ impl Editor {
         self.change_edit(Some(step), |r| *r = applied);
     }
 }
+
+#[cfg(test)]
+#[path = "auto_editor_tests.rs"]
+mod editor_tests;

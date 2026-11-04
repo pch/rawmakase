@@ -731,3 +731,7 @@ mod tests {
         assert_eq!(cap_label("Option"), expected);
     }
 }
+
+#[cfg(test)]
+#[path = "shortcuts_editor_tests.rs"]
+mod editor_tests;

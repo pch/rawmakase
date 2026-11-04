@@ -880,3 +880,7 @@ mod tests {
         assert!(matches!(none_fit.action, EmptyAction::ShowAll));
     }
 }
+
+#[cfg(test)]
+#[path = "presets_editor_tests.rs"]
+mod editor_tests;

@@ -85,3 +85,7 @@ impl Editor {
         choice
     }
 }
+
+#[cfg(test)]
+#[path = "lut_import_editor_tests.rs"]
+mod editor_tests;

@@ -212,3 +212,7 @@ impl Editor {
         self.document.pending_treatment = None;
     }
 }
+
+#[cfg(test)]
+#[path = "editing_editor_tests.rs"]
+mod editor_tests;

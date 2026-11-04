@@ -517,3 +517,7 @@ mod tests {
         assert_eq!(nearest(&stacked, 0.7), 2);
     }
 }
+
+#[cfg(test)]
+#[path = "point_color_panel_editor_tests.rs"]
+mod editor_tests;

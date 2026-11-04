@@ -154,3 +154,7 @@ impl Editor {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "treatment_editor_tests.rs"]
+mod editor_tests;

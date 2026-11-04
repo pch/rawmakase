@@ -918,3 +918,6 @@ fn watermark_for(name: &str) -> Option<crate::watermark::Watermark> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod editor_tests;

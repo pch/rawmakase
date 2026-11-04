@@ -1,5 +1,5 @@
 use super::*;
-use crate::app::tests::editor_with_catalog;
+use crate::app::testing::editor_with_catalog;
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::{Duration, Instant};

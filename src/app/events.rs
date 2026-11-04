@@ -677,3 +677,7 @@ impl Editor {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "events_editor_tests.rs"]
+mod editor_tests;

@@ -476,3 +476,7 @@ impl Editor {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "undo_editor_tests.rs"]
+mod editor_tests;

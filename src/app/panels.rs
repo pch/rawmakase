@@ -579,3 +579,7 @@ mod tests {
         assert!(odd.develop.shown(WorkspacePanel::Presets));
     }
 }
+
+#[cfg(test)]
+#[path = "panels_editor_tests.rs"]
+mod editor_tests;

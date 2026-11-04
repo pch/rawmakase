@@ -155,7 +155,7 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::tests::editor_with_catalog;
+    use crate::app::testing::editor_with_catalog;
 
     #[test]
     fn menu_commands_recheck_busy_and_modal_state() -> anyhow::Result<()> {

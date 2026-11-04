@@ -439,3 +439,7 @@ pub(super) fn stopped() -> Vec<Kind> {
         .map(|row| row.kind)
         .collect()
 }
+
+#[cfg(test)]
+#[path = "work_editor_tests.rs"]
+mod editor_tests;

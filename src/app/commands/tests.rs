@@ -199,7 +199,7 @@ fn explicit_mask_has_local_units_and_rejects_stale_index() {
 fn black_white_action_matches_existing_treatment_workflow() {
     let (mut e, ctx) = editor();
     let (mut reference, reference_ctx) = editor();
-    crate::app::tests::in_edit_frame(&reference_ctx, &mut reference, |r| r.toggle_treatment());
+    crate::app::testing::in_edit_frame(&reference_ctx, &mut reference, |r| r.toggle_treatment());
     e.execute_command(Command::new(Operation::Action(Action::ToggleMono)), &ctx)
         .unwrap();
     assert_eq!(e.document.edit.recipe(), reference.document.edit.recipe());
@@ -451,7 +451,7 @@ fn save_success_means_the_catalog_contains_the_current_edit() -> anyhow::Result<
 #[test]
 fn curve_save_is_modal_for_commands_and_state() {
     let (mut e, ctx) = editor();
-    crate::app::tests::in_edit_frame(&ctx, &mut e, |e| {
+    crate::app::testing::in_edit_frame(&ctx, &mut e, |e| {
         e.choose_point_curve(super::super::curve_menu::CurveChoice::Save)
     });
     assert_eq!(json(e.command_state())["modal"], true);

@@ -1724,3 +1724,7 @@ mod tests {
         assert_eq!(names(&e), ["Old"]);
     }
 }
+
+#[cfg(test)]
+#[path = "mask_tool_editor_tests.rs"]
+mod editor_tests;

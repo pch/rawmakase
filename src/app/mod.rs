@@ -992,6 +992,8 @@ mod stroke_outline;
 mod subject_mask;
 mod targeted_tool;
 #[cfg(test)]
+mod testing;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod ui_snapshot;

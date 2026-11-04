@@ -477,3 +477,7 @@ fn crosshair(painter: &egui::Painter, at: Pos2) {
         painter.line_segment([at + a, at + b], Stroke::new(1., Color32::WHITE));
     }
 }
+
+#[cfg(test)]
+#[path = "red_eye_tool_editor_tests.rs"]
+mod editor_tests;
