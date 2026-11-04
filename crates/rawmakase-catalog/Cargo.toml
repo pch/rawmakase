@@ -8,11 +8,12 @@ license.workspace = true
 publish = false
 
 [features]
-# The model's and file formats' fixtures, for tests that share them.
-test-support = ["rawmakase-model/test-support", "rawmakase-interop/test-support"]
+# The file system's, model's and file formats' fixtures, for tests that share them.
+test-support = ["rawmakase-fs/test-support", "rawmakase-model/test-support", "rawmakase-interop/test-support"]
 
 [dependencies]
 rawmakase-cancel = { path = "../rawmakase-cancel", version = "0.1.0" }
+rawmakase-fs = { path = "../rawmakase-fs", version = "0.1.0" }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0" }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
 anyhow.workspace = true
@@ -29,6 +30,7 @@ tempfile.workspace = true
 [dev-dependencies]
 # Counting commits, for the throughput tests.
 rusqlite = { version = "0.41.0", features = ["bundled", "hooks"] }
+rawmakase-fs = { path = "../rawmakase-fs", version = "0.1.0", features = ["test-support"] }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0", features = ["test-support"] }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }
 

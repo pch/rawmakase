@@ -39,7 +39,7 @@ fn editor(names: &[&str]) -> anyhow::Result<(tempfile::TempDir, Editor, PathBuf)
 /// refused as any such drive is. The engine's tests cover that refusal and
 /// every step on a test disk; these real-disk tests say so and end there.
 fn ids_proven(d: &tempfile::TempDir) -> bool {
-    let proven = crate::storage::fsops::volume_facts(d.path()).is_ok_and(|f| f.stable_ids);
+    let proven = rawmakase_fs::volume_facts(d.path()).is_ok_and(|f| f.stable_ids);
     if !proven {
         eprintln!("{}: file ids not proven here", d.path().display());
     }

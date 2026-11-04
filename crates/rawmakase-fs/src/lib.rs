@@ -18,6 +18,12 @@
 //!
 //! Each system's calls are in a file of their own (`unix.rs`, `windows.rs`);
 //! a system with neither answers [`FsError::Unsupported`].
+//!
+//! It depends on no workspace crate: the catalog's file operations and the app's
+//! Trash use it, and the values an edit is made of build without it.
+// Every unsafe operation here crosses into a system API: each one says why it is
+// sound, and an unsafe function's body is no unsafe block of its own.
+#![deny(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 use std::{fmt, io};

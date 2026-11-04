@@ -7,8 +7,8 @@ use super::tests::{Fault, Faulty, Fx, NoTrash, Op, crashes, fixture, results};
 use super::*;
 use crate::catalog::{Catalog, HistoryUpdate};
 use crate::export_settings::ExportOptions;
+use crate::fsops;
 use crate::model::recipe::Recipe;
-use crate::storage::fsops;
 use anyhow::Result;
 use rawmakase_cancel::Cancel;
 

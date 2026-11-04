@@ -18,7 +18,7 @@ use super::journal::{Kind, NewMember};
 use super::preconditions::Preconditions;
 use super::tree::TreeMove;
 use super::{BatchId, FileOp, FileOpError, Plan, Refusal, Skip, Skipped, Summary};
-use crate::storage::fsops::{self, Containment, EntryKind, FileId, FsError, VolumeId};
+use crate::fsops::{self, Containment, EntryKind, FileId, FsError, VolumeId};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};

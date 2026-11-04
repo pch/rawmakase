@@ -7,7 +7,7 @@
 //! step.
 use super::super::sidecar::caseless;
 use super::disk::Disk;
-use crate::storage::fsops::{Folding, FsError, NameRules};
+use crate::fsops::{Folding, FsError, NameRules};
 use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
 use std::path::Path;

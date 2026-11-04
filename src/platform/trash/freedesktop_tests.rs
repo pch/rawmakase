@@ -4,7 +4,7 @@ use super::{
     Fs, Home, Places, candidate, deletion_date, encoded, mount_top, supports, trash, trash_with,
 };
 use crate::catalog::file_ops::{TrashError, TrashSupport};
-use crate::storage::fsops::FsError;
+use rawmakase_fs::FsError;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
@@ -385,7 +385,7 @@ fn the_trash_is_on_disk_before_its_receipt() {
     let log = std::cell::RefCell::new(Vec::<(&str, PathBuf)>::new());
     let rename = |from: &Path, to: &Path| {
         log.borrow_mut().push(("rename", from.to_path_buf()));
-        crate::storage::fsops::rename_exclusive(from, to)
+        rawmakase_fs::rename_exclusive(from, to)
     };
     let sync = |dir: &Path| {
         log.borrow_mut().push(("sync", canonical(dir)));

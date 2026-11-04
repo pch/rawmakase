@@ -25,7 +25,7 @@ use super::names::{FileName, Stem};
 use super::plan::{Family, Files, Item, PhotoRow, refuse_twice};
 use super::{FileOp, FileOpError, Plan, Refusal, Skip, Skipped};
 use crate::export_settings::{NameContext, NameFields, NameTemplate};
-use crate::storage::fsops::{self, FileId, FsError};
+use crate::fsops::{self, FileId, FsError};
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};

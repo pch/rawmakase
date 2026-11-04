@@ -15,7 +15,7 @@
 //! rename on the server, which can take a file another computer put at the
 //! name since it was checked, so it isn't used, as on Linux.
 use crate::catalog::file_ops::{TrashError, TrashReceipt, TrashSupport};
-use crate::storage::fsops;
+use rawmakase_fs as fsops;
 use std::cell::RefCell;
 use std::ffi::OsString;
 use std::os::windows::ffi::{OsStrExt as _, OsStringExt as _};

@@ -35,7 +35,7 @@ use super::folder::{folder_name_problem, in_catalog};
 use super::journal::{self, Item, ItemState, Subject};
 use super::plan::protected;
 use super::preconditions::{CHANGED, RELOCATED};
-use crate::storage::fsops::{self, Containment, EntryKind, FileId, FsError};
+use crate::fsops::{self, Containment, EntryKind, FileId, FsError};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;

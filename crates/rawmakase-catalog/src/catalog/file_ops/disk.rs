@@ -2,8 +2,8 @@
 //! [`fsops`] calls they make, behind one trait, so tests inject failures
 //! and crashes at any step and record which folders were synced. The real
 //! one is [`Real`]; nothing else implements it outside tests.
+use crate::fsops::{self, ContentHash, CopyError, Entry, FileId, FsError};
 use crate::storage::Identity;
-use crate::storage::fsops::{self, ContentHash, CopyError, Entry, FileId, FsError};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::OsString;

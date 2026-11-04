@@ -8,7 +8,7 @@ use super::recover_tests::{Before, before, check};
 use super::tests::{FakeTrash, Fault, Faulty, Fx, NoTrash, Op, bytes, crashes, fixture, results};
 use super::*;
 use crate::catalog::{Catalog, RootId};
-use crate::storage::fsops;
+use crate::fsops;
 use anyhow::Result;
 use rawmakase_cancel::Cancel;
 use std::collections::BTreeMap;

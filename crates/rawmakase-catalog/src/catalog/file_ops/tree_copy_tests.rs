@@ -10,7 +10,7 @@ use super::tests::{
     FakeTrash, Fault, Faulty, Fx, NoTrash, Op, bytes, crashes, fixture, results, tagged,
 };
 use super::*;
-use crate::storage::fsops;
+use crate::fsops;
 use anyhow::Result;
 use rawmakase_cancel::Cancel;
 use std::collections::BTreeMap;

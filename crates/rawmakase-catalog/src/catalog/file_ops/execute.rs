@@ -45,7 +45,7 @@ use super::plan::{Folders, Item, occupied, shared};
 use super::proof::Proof;
 use super::tree::TreeMove;
 use super::{Confirmed, FileOpError, Outcome, Trash};
-use crate::storage::fsops::{EntryKind, FileId, FsError};
+use crate::fsops::{EntryKind, FileId, FsError};
 use anyhow::{Context, Result};
 use rawmakase_cancel::Cancel;
 use std::collections::hash_map::Entry;

@@ -22,7 +22,7 @@
 //! goes to the Trash. A listed name is a journalled one when they are the
 //! same composed, case and all.
 use super::disk::{Disk, Presence, parent};
-use crate::storage::fsops::{ContentHash, FsError, VolumeKind};
+use crate::fsops::{ContentHash, FsError, VolumeKind};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -91,7 +91,7 @@ impl Proofs {
 /// so they prove nothing either. GVFS's FUSE mounts keep no
 /// birth time, no permissions and no extended attributes, and number files
 /// per mount.
-pub(super) fn of(facts: &crate::storage::fsops::VolumeFacts) -> Option<Proof> {
+pub(super) fn of(facts: &crate::fsops::VolumeFacts) -> Option<Proof> {
     match facts.kind {
         _ if facts.stable_ids => Some(Proof::Ids),
         VolumeKind::Fat | VolumeKind::Exfat if facts.local => Some(Proof::Names),
@@ -108,7 +108,7 @@ pub(super) fn of(facts: &crate::storage::fsops::VolumeFacts) -> Option<Proof> {
 /// by a rename that can replace a file another computer put at its name
 /// (measured on CIFS), so neither is used. Nothing is deleted instead. What
 /// a move's question says; the Trash decides when it runs.
-pub(super) fn no_trash(facts: &crate::storage::fsops::VolumeFacts) -> bool {
+pub(super) fn no_trash(facts: &crate::fsops::VolumeFacts) -> bool {
     facts.kind == VolumeKind::Smb
 }
 

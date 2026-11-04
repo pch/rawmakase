@@ -39,7 +39,7 @@
 //!   copy, which has the same bytes.
 //!
 //! Policy (which photos and files an operation takes, what it refuses) is
-//! here; the file system calls are `storage::fsops`, reached through the
+//! here; the file system calls are `rawmakase_fs`'s, reached through the
 //! [`disk`] seam, and the Trash is the app's, passed in as a [`Trash`].
 mod companions;
 mod conflicts;

@@ -28,16 +28,8 @@ tempfile.workspace = true
 toml.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-# ENOTSUP, which exFAT on macOS answers an exclusive rename with, and
-# pathconf(_PC_CASE_SENSITIVE), which rustix doesn't reach.
+# ENOTSUP, which exFAT on macOS answers an exclusive rename with.
 libc.workspace = true
-# `storage::fsops`: the exclusive rename (renameat2, renameatx_np) and the
-# volume queries, without hand-written FFI.
-rustix = { version = "1.1.6", features = ["fs"] }
-
-[target.'cfg(windows)'.dependencies]
-# `storage::fsops`: MoveFileExW without replacing, file ids and volume facts.
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Storage_InstallableFileSystems", "Win32_System_SystemServices", "Win32_System_WindowsProgramming"] }
 
 [lints]
 workspace = true
