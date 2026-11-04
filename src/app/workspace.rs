@@ -1914,7 +1914,7 @@ impl Editor {
     }
     /// The work closing waits for, as the close guard names it: closing would cut
     /// it off, and nothing can be saved in its place.
-    fn closing_waits_for(&self) -> Option<std::borrow::Cow<'static, str>> {
+    pub(super) fn closing_waits_for(&self) -> Option<std::borrow::Cow<'static, str>> {
         if self.exporting() {
             Some("the export".into())
         } else if let Some(batch) = self.activity.batch() {
@@ -2209,10 +2209,10 @@ fn status_frame(ui: &egui::Ui) -> egui::Frame {
 }
 
 /// What the close guard calls an export or preview a control command started.
-const OUTPUT: &str = "the output the control socket asked for";
+pub(super) const OUTPUT: &str = "the output the control socket asked for";
 /// What the close guard calls a folder change.
-const FOLDER_CHANGE: &str = "the folder change";
-const FILE_CHANGE: &str = "the file operation";
+pub(super) const FOLDER_CHANGE: &str = "the folder change";
+pub(super) const FILE_CHANGE: &str = "the file operation";
 
 /// The side panels' narrowest widths, no less than their contents need: a
 /// panel dragged narrower is painted only that wide but laid out as wide as

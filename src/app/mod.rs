@@ -989,6 +989,8 @@ mod undo;
 mod upright;
 mod viewport;
 mod widgets;
+#[cfg(test)]
+mod work_policy_tests;
 pub(crate) mod worker;
 mod workflow;
 mod workspace;
