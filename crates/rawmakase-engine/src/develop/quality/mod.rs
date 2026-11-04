@@ -82,11 +82,13 @@ pub fn resize(image: Rendered, max_edge: u32) -> Rendered {
 mod detail;
 mod highlights;
 mod local;
+mod prepare;
 mod render;
 mod samples;
 pub(crate) use detail::*;
 pub use highlights::*;
 pub(crate) use local::*;
+pub(crate) use prepare::{Resolved, resolve};
 pub use render::*;
 pub use samples::*;
 

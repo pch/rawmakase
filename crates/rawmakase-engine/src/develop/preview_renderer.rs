@@ -1,15 +1,12 @@
 //! Stateful desktop preview backend. Export remains on the reference CPU path.
 use super::{
-    Geometry, gpu,
+    gpu,
     pyramid::Pyramid,
     quality::{self, Output},
     stage_cache::StageCache,
 };
 use crate::rendered::Rendered;
-use crate::{
-    camera_data::CameraImage,
-    model::{recipe::Recipe, valid::ValidRecipe},
-};
+use crate::{camera_data::CameraImage, model::recipe::Recipe};
 use anyhow::Result;
 use rawmakase_cancel::Cancel;
 use std::sync::Arc;
@@ -157,17 +154,18 @@ impl PreviewRenderer {
         self.backend.used_gpu = false;
         anyhow::ensure!(!cancel.is_cancelled(), "Render superseded");
         let recipe = &recipe.checked()?;
+        let resolved = quality::resolve(image, recipe);
         if region.is_none()
             && max_edge > 0
-            && let Some(out) = self.render_fit(image, recipe, max_edge, cancel, display)?
+            && let Some(out) = self.render_fit(image, &resolved, max_edge, cancel, display)?
         {
             return Ok(out);
         }
         let ai = self.ai.clone();
-        self.release_replaced(image, recipe, ai.as_ref(), cancel)?;
+        self.release_replaced(image, &resolved.recipe, ai.as_ref(), cancel)?;
         quality::render_preview(
             image,
-            recipe,
+            &resolved,
             ai.as_ref(),
             max_edge,
             region,
@@ -188,21 +186,22 @@ impl PreviewRenderer {
     fn render_fit(
         &mut self,
         image: &CameraImage,
-        recipe: &ValidRecipe,
+        resolved: &quality::Resolved,
         max_edge: u32,
         cancel: Cancel<'_>,
         display: Option<&gpu::Display>,
     ) -> Result<Option<Output>> {
-        let full = Geometry::new(image, recipe, 0);
+        let full = resolved.geometry;
         let long = full.width.max(full.height);
         if long <= max_edge {
             return Ok(None);
         }
         let size = quality::output_size(full.width, full.height, max_edge);
         let needed = size.0.max(size.1) as f32 * image.width.max(image.height) as f32 / long as f32;
-        let (level, source) = self.level(image, recipe, needed, cancel)?;
+        let (level, source) = self.level(image, resolved, needed, cancel)?;
         let region = [0, 0, size.0, size.1];
         let mut stages = self.stages(display);
+        let recipe = &resolved.recipe;
         quality::render_level(&level, &source, recipe, size, region, cancel, &mut stages).map(Some)
     }
     /// A 100% `region` at half resolution or less, from the pyramid: immediate
@@ -231,7 +230,8 @@ impl PreviewRenderer {
         let recipe = shown.as_ref();
         self.backend.used_gpu = false;
         let recipe = &recipe.checked()?;
-        let full = Geometry::new(image, recipe, 0);
+        let resolved = quality::resolve(image, recipe);
+        let full = resolved.geometry;
         let [x, y, w, h] = region;
         anyhow::ensure!(
             w > 0
@@ -250,9 +250,10 @@ impl PreviewRenderer {
         let (px, py) = (x >> k, y >> k);
         let (pw, ph) = (div(w).min(size.0 - px), div(h).min(size.1 - py));
         let needed = image.width.max(image.height).div_ceil(1 << k) as f32;
-        let (level, source) = self.level(image, recipe, needed, cancel)?;
+        let (level, source) = self.level(image, &resolved, needed, cancel)?;
         let region = [px, py, pw, ph];
         let mut stages = self.stages(display);
+        let recipe = &resolved.recipe;
         quality::render_level(&level, &source, recipe, size, region, cancel, &mut stages)
     }
     /// The pyramid level for `needed` source pixels on the long edge, and the level-0
@@ -261,17 +262,13 @@ impl PreviewRenderer {
     fn level(
         &mut self,
         image: &CameraImage,
-        recipe: &Recipe,
+        resolved: &quality::Resolved,
         needed: f32,
         cancel: Cancel<'_>,
     ) -> Result<(Arc<CameraImage>, quality::Retouched)> {
-        if recipe.lens_ca {
-            crate::lens::auto_ca::prime(image);
-        }
         let ai = self.ai.clone();
-        self.release_replaced(image, recipe, ai.as_ref(), cancel)?;
-        let source =
-            quality::retouched(image, recipe, ai.as_ref(), cancel, Some(&mut self.retouch))?;
+        self.release_replaced(image, &resolved.recipe, ai.as_ref(), cancel)?;
+        let source = resolved.source(image, ai.as_ref(), cancel, Some(&mut self.retouch))?;
         match &mut self.pyramid {
             Some(p) if Arc::ptr_eq(p.source(), &source.image) => {}
             Some(p) if self.retouch.changed_from(p.source()).is_some() => {
