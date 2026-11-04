@@ -200,7 +200,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: true,
         pauses_checksums: false,
-        stop: Some(|e| vec![e.ai_denoise.stop()]),
+        stop: Some(|e| vec![task::Stopping::new(e.ai_denoise.stop())]),
     },
     // The Loupe's load of a finished AI Denoise result. Nothing shows while it
     // runs: the photo stays plain until the result arrives.

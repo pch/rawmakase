@@ -45,7 +45,7 @@ pub(crate) struct Editor {
     /// Shared size policy for Develop, neighbour prefetch and Reference View.
     decode_cache: crate::decode_cache::DecodeCache,
     /// AI Denoise's queue, worker and cache, shared with exports.
-    ai_denoise: ai_denoise::Service,
+    ai_denoise: crate::ai_denoise::Service,
     /// Loads the finished AI Denoise results the Library's Loupe shows.
     ai_loupe: worker::Latest<ai_denoise::CachedLoad>,
     renderer: worker::Renderer,
@@ -272,7 +272,7 @@ impl Editor {
         decode_cache.set_folder(session.decoded_cache_folder.as_deref());
         let ai_cache = crate::ai_cache::AiCache::default();
         ai_cache.set_folder(session.decoded_cache_folder.as_deref());
-        let ai_denoise = ai_denoise::Service::new(ai_cache);
+        let ai_denoise = crate::ai_denoise::Service::new(ai_cache);
         let ai_loupe = ai_denoise::cached_loader(tx.clone(), ctx.clone());
         let (stored_tx, stored_ctx) = (std::sync::Mutex::new(tx.clone()), ctx.clone());
         ai_denoise.on_stored(std::sync::Arc::new(move |path| {
@@ -922,9 +922,7 @@ fn survive_surface_errors(device: &wgpu::Device) {
 }
 
 pub(crate) mod ai_denoise;
-pub use ai_denoise::{
-    Command as DenoiseCommand, CommandLine as AiDenoiseCommandLine, command as denoise_command,
-};
+pub use ai_denoise::user_ai_denoise_cache;
 mod auto;
 mod automation;
 mod basic_keys;

@@ -12,6 +12,8 @@
 //! and exports ([`export`], crates/rawmakase-export).
 //!
 //! This crate's own modules compose those APIs: [`app`] is the desktop editor,
+//! [`ai_denoise`] is AI Denoise's service, shared by the app and the command line,
+//! `model_install` installs the models it and the selection tools run,
 //! `edit_session` keeps an open photo's edits, history and saved state together,
 //! `catalog_session` holds the open catalog, [`comparison`] provides
 //! reference-image validation and `platform` isolates OS integration.
@@ -27,10 +29,11 @@ pub use rawmakase_engine::develop;
 // Developing and writing exports, with their watermarks (crates/rawmakase-export).
 pub use rawmakase_export::{export, watermark};
 // RAW decoding, colour management, demosaicing, opening and decoding a photo
-// (crates/rawmakase-decode).
+// (crates/rawmakase-decode). Its `ai_denoise` is reached by its crate path: this
+// crate's own `ai_denoise` is the service.
 pub use rawmakase_decode::{
-    ai_cache, ai_denoise, camera_look, color_management, decode_cache, decode_dump, fingerprint,
-    half_check, photo, raw,
+    ai_cache, camera_look, color_management, decode_cache, decode_dump, fingerprint, half_check,
+    photo, raw,
 };
 pub(crate) use rawmakase_decode::{decode, raster};
 // File formats and presets over the model, and which edit a photo develops with
@@ -43,12 +46,14 @@ pub use rawmakase_model::{
     camera_data, camera_profiles, cameras, color, dng, ids, lens, metadata, model, optics,
     rendered, storage, tiff, xml,
 };
+pub mod ai_denoise;
 pub mod app;
 pub(crate) mod catalog_session;
 pub mod comparison;
 pub mod diagnostics;
 pub(crate) mod edit_session;
 pub mod lensfun_install;
+pub(crate) mod model_install;
 pub(crate) mod platform;
 /// For headless commands: whether a path's volume is mounted.
 pub use platform::volume::mounted as volume_mounted;

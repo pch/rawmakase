@@ -393,7 +393,7 @@ fn load(model: &std::path::Path) -> Result<Session, Failure> {
 }
 
 fn load_options() -> LoadOptions {
-    let bundled = super::models::runtime_dir();
+    let bundled = crate::model_install::runtime_dir();
     let runtime_library = rawmakase_inference::runtime::runtime_file_names()
         .iter()
         .map(|name| bundled.join(name))
@@ -475,7 +475,7 @@ fn input_key(rgb: &RgbImage, model: ModelId) -> String {
 pub(super) fn runtime_present() -> bool {
     let names = rawmakase_inference::runtime::runtime_file_names();
     let mut dirs = rawmakase_inference::runtime::runtime_search_dirs();
-    dirs.push(super::models::runtime_dir());
+    dirs.push(crate::model_install::runtime_dir());
     dirs.iter()
         .any(|dir| names.iter().any(|name| dir.join(name).is_file()))
         || std::env::var_os(rawmakase_inference::RUNTIME_ENV).is_some_and(|v| !v.is_empty())

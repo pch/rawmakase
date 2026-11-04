@@ -174,7 +174,7 @@ impl EditSource {
     /// another way are made again rather than shown beside new ones, and, for an
     /// edit with AI Denoise, whether it shows the installed model's result.
     pub(crate) fn preview_tag(&self, ai: PreviewAi) -> String {
-        self.preview_tag_of(ai, &crate::app::ai_denoise::model_tag())
+        self.preview_tag_of(ai, &crate::ai_denoise::model_tag())
     }
     /// [`preview_tag`](Self::preview_tag) with AI Denoise's result from `model`.
     fn preview_tag_of(&self, ai: PreviewAi, model: &str) -> String {
@@ -914,7 +914,7 @@ fn preview_tags(path: &Path, source: &EditSource, ai: Option<&AiCache>) -> Vec<S
 /// for it in `cache`, if there is one.
 fn finished_ai(path: &Path, ai: Option<&AiCache>) -> Option<(crate::storage::Identity, String)> {
     let file = crate::storage::Identity::read(path).ok()?;
-    let key = crate::app::ai_denoise::finished(ai?, &file)?;
+    let key = crate::ai_denoise::finished(ai?, &file)?;
     Some((file, key))
 }
 /// `path` developed with `source` within `edge` pixels for a preview, and what it
@@ -1384,7 +1384,7 @@ pub(super) mod tests {
             rgb: vec![0.5; 3 * layout.output_pixels()],
             clipped: vec![false; layout.packed_width * layout.packed_height],
         };
-        let key = crate::app::ai_denoise::key(path, rawmakase_inference::Provider::Cpu)?;
+        let key = crate::ai_denoise::key(path, rawmakase_inference::Provider::Cpu)?;
         cache.store(&key, &entry)
     }
     /// What photo 1's preview, asked for with `ticket`, comes back as: whether it
@@ -1476,7 +1476,7 @@ pub(super) mod tests {
             clipped: packed.clipped,
         };
         let ai = AiCache::new(directory.path().join("ai"), u64::MAX);
-        let key = crate::app::ai_denoise::key(&path, rawmakase_inference::Provider::Cpu)?;
+        let key = crate::ai_denoise::key(&path, rawmakase_inference::Provider::Cpu)?;
         ai.store(&key, &entry)?;
         let mut recipe = Recipe::default();
         recipe.switch_ai_denoise(true);

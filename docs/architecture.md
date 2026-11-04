@@ -82,7 +82,7 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `dng`, `tiff` | A DNG's rendering hints (embedded profile, baseline exposure, crop, opcodes) and the bounded TIFF reader behind them (`crates/rawmakase-tiff`, a leaf crate with no RAW knowledge, re-exported as `model::tiff`) | `dng.rs`, `rawmakase-tiff/src/lib.rs` |
 | `decode` | A photo's full-size image, made one way for Develop, prefetch, Reference View and export: the cache's copy, else a decode with highlights recovered and stored, as a `DecodePolicy` asks | `decode.rs` |
 | `decode_cache` | Disk cache of developed camera images, keyed by file identity, demosaic setting and build; the app shares one live size limit and folder across Develop, prefetch, Reference View, export and preview builds, persisted in its session | `decode_cache.rs` |
-| `ai_denoise` | AI Denoise's side of decoding, with no model knowledge: the visible mosaic packed as the model takes it (`PackedBayer`, RGGB; X-Trans rebuilt as RGGB by `Raw::packed_bayer`), the camera image assembled from the model's output (`assemble`), and `AiBase`, the trait export and the app ask for a photo's complete AI source through (`AiService`; `Refusing` for callers without one) | `ai_denoise.rs` |
+| `rawmakase_decode::ai_denoise` | AI Denoise's side of decoding, with no model knowledge: the visible mosaic packed as the model takes it (`PackedBayer`, RGGB; X-Trans rebuilt as RGGB by `Raw::packed_bayer`), the camera image assembled from the model's output (`assemble`), and `AiBase`, the trait export and the app ask for a photo's complete AI source through (`AiService`; `Refusing` for callers without one) | `ai_denoise.rs` |
 | `ai_cache` | Disk cache of AI Denoise results: its own subfolder, extension and size cap (10 GB by default) over the decode cache's trim, purge and relocation (`decode_cache::Namespace`); half-precision payload with the gain applied, checked finite when stored and loaded | `ai_cache.rs` |
 | `camera_profiles` | DCP parsing and validation, camera transforms, RAWmakase's own profiles, profile library and camera matching, the community profile catalogue (`data/camera-profiles`: parsing, validation, matching, byte and identity verification, and its generator), `.cube` LUTs imported as look profiles, fitted camera looks as profiles (built only; fitting is `camera_look`'s), DNG temperature/tint | `dcp.rs`, `library.rs`, `catalogue.rs`, `open.rs`, `cube_look.rs`, `fitted.rs`, `reference.rs` |
 | `camera_look` | Fitting Camera Look (fitted) to a RAW's embedded JPEG: preview choice, pairing with the photo's render, solvers and acceptance on held-out tiles, and the default fit of photos without colour data through its fit cache. In `rawmakase-decode`, as it opens RAWs and decodes their previews; the model only builds and checks what it finds, and the catalog, `xmp` and presets never fit (the app and export pass the default in with the photo's profiles) | `camera_look/` |
@@ -111,6 +111,8 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `platform` | OS integration: the Linux GVFS filesystem bridge, drives, the file manager, the browser, the system Trash file operations get (`trash::SystemTrash`, failing closed, and whether a drive has one; no policy), and the display's color management (macOS surface tagging, the Windows display profile) | `network.rs`, `volume.rs`, `reveal.rs`, `web.rs`, `trash.rs`, `display.rs` |
 | `diagnostics` | The system report a bug report asks for (Report an Issue…, `rawmakase system-info`): this build, the system probed once per process and what the window knew, as plain snapshots, with no path, user, file, catalog or profile name | `diagnostics.rs` |
 | `updates` | Release checks and self-update through fastframe-update; the notice itself is in `app` | `updates.rs` |
+| `ai_denoise` | AI Denoise's service, shared by the desktop app and the command line: the queue, the worker and its ONNX session, job keys, the finished-result lookup, `AiBase` for export; `CommandLine` for `render` and `render-batch`, and the `rawmakase denoise` development command. No egui and no `app`: the open photo's result and the Loupe's loader are `app::ai_denoise`'s, and the app passes the user's cache in | `mod.rs`, `command_line.rs`, `bench.rs` |
+| `model_install` | Installing the model packs (Select Subject's, Sky's, AI Denoise's): their folders, the receipt of checked files, downloads that resume, the lock across instances, and the runtime folder; the threads and the drawer are `app`'s | `mod.rs` |
 | `lensfun_install` | Downloading, checking, publishing and removing Lensfun's lens database on request (never bundled, never fetched unasked); reading it is `lens::lensfun::installed`'s, the panels and the job thread are `app`'s | `lensfun_install.rs` |
 | `comparison` | Reproducible reference-image comparisons using the same develop APIs | `comparison.rs` |
 
@@ -151,7 +153,7 @@ metadata field being typed, and the session file ([shutdown](shutdown.md#where-t
   View, stand-ins, the Loupe and its zoom. A single-slot mailbox replaces pending
   work with the newest request; a panicking job does not end the thread.
 - **Owned services with their own queue**: autosave (its own thread and catalog
-  connection), AI Denoise (`app::ai_denoise::Service`: one queue and one worker for
+  connection), AI Denoise (`ai_denoise::Service`: one queue and one worker for
   Develop, export and the CLI), the Library's edited-preview scheduler and thumbnail
   workers, and the catalog session's background reads (capture times, photo info,
   checksums).
@@ -236,7 +238,7 @@ full-quality CPU stages check cancellation within pixel, row and column work.
 
 ### AI Denoise
 
-AI Denoise ([rendering quality](rendering-quality.md#ai-denoise)) has one service, `app::ai_denoise::Service`: one
+AI Denoise ([rendering quality](rendering-quality.md#ai-denoise)) has one service, `ai_denoise::Service` (a root module, so the command line uses it without the app): one
 queue and one worker thread for Develop, export and the CLI (one service per
 command, so `render-batch` loads the model once, with the user's cache in the folder
 Preferences chose, as the app keeps it). A job's
@@ -261,7 +263,7 @@ it held and every queued one fail, so no Develop request or export waits for it,
 the next request starts a new worker. The Detail panel's switch and Amount are ordinary edits (one
 History step each); a result arriving is not one. `app::inspector::ai_denoise` draws
 the panel's controls, credit and install offer; the model installs as
-`subject_mask::Pack::Denoise` with the selection models' installer.
+`model_install::Pack::Denoise`, as the selection models do.
 
 ## Data flow
 
@@ -430,8 +432,8 @@ Some features span several owners; each module's docs describe its part:
 - AI Denoise keeps the crate direction: `rawmakase-inference` runs the model and
   knows no workspace crate but the cancellation token; `rawmakase-decode` packs the mosaic and assembles the
   result without knowing the model and defines `AiBase`; the app implements
-  `AiBase` with inference (`app::ai_denoise::Service`) and owns the queue, the model
-  install and the cache. **The engine never sees `AiBase`:** it receives a resolved,
+  `AiBase` with inference (`ai_denoise::Service`) and owns the queue, the model
+  install (`model_install`) and the cache. **The engine never sees `AiBase`:** it receives a resolved,
   immutable `develop::AiSource` (highlights recovered on its own, equal only to
   itself) inside the captured `Denoise`, from the Develop session
   (`PreviewRenderer::set_ai`) or from export (`render_with_ai`). An export of a

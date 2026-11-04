@@ -706,7 +706,7 @@ fn only_the_latest_render_becomes_the_library_thumbnail() -> anyhow::Result<()> 
 /// (no result cached for the Library) never gets it, nor a partial result.
 #[test]
 fn develop_renders_with_ai_denoise_are_kept_apart_from_plain_previews() -> anyhow::Result<()> {
-    use crate::app::ai_denoise::{State, Update};
+    use crate::ai_denoise::{State, Update};
     let d = tempfile::tempdir()?;
     let photos = d.path().join("photos");
     std::fs::create_dir(&photos)?;
@@ -787,7 +787,7 @@ fn develop_renders_with_ai_denoise_are_kept_apart_from_plain_previews() -> anyho
 /// partial one plain.
 #[test]
 fn the_loupe_shows_only_a_finished_ai_denoise_result() -> anyhow::Result<()> {
-    use crate::app::ai_denoise::{State, Update};
+    use crate::ai_denoise::{State, Update};
     let d = tempfile::tempdir()?;
     let raw = d.path().join("a.RAF");
     std::fs::write(&raw, b"fixture")?;
@@ -6981,7 +6981,7 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
                 watermark: None,
                 demosaic: Default::default(),
                 cache: editor.decode_cache.clone(),
-                ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
+                ai: rawmakase_decode::ai_denoise::AiService::refusing("no AI Denoise in tests"),
             },
             Cancel::NEVER,
             |_| {},
