@@ -3,7 +3,7 @@
 //! [`crate::model_install`].
 use super::super::task::Stopping;
 use super::super::worker::Event;
-use crate::model_install::{Pack, Progress};
+use crate::model_install::{InstallError, Pack, Progress};
 use eframe::egui;
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc::Sender};
@@ -103,10 +103,13 @@ impl Installer {
         self.failed.as_deref()
     }
     /// Called when the install's event arrives.
-    pub(in crate::app) fn finished(&mut self, result: &Result<(), String>) {
+    pub(in crate::app) fn finished(&mut self, result: &Result<(), InstallError>) {
         self.progress = None;
         self.thread = None;
-        self.failed = result.clone().err().filter(|e| e != "Cancelled");
+        self.failed = match result {
+            Ok(()) | Err(InstallError::Cancelled) => None,
+            Err(e) => Some(e.to_string()),
+        };
         self.forget();
     }
     /// Starts fetching the model, or copying `import`; one install at a time.
@@ -129,7 +132,11 @@ impl Installer {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     crate::model_install::install(pack, import.as_deref(), &progress)
                 }))
-                .unwrap_or_else(|_| Err("the install stopped unexpectedly".into()));
+                .unwrap_or_else(|_| {
+                    Err(InstallError::Failed(
+                        "the install stopped unexpectedly".into(),
+                    ))
+                });
                 let _ = tx.send(Event::ModelInstalled(pack, result));
                 ctx.request_repaint();
             });
@@ -187,12 +194,14 @@ mod tests {
     #[test]
     fn a_failed_install_says_why_until_the_next_one() {
         let mut installer = Installer::default();
-        installer.finished(&Err("could not download the model: timed out".into()));
+        installer.finished(&Err(InstallError::Failed(
+            "could not download the model: timed out".into(),
+        )));
         assert_eq!(
             installer.failure(),
             Some("could not download the model: timed out")
         );
-        installer.finished(&Err("Cancelled".into()));
+        installer.finished(&Err(InstallError::Cancelled));
         assert_eq!(installer.failure(), None);
     }
 }

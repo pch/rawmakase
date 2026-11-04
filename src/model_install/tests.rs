@@ -24,7 +24,31 @@ fn copying_checks_size_and_digest_and_stops_when_asked() {
     // Cancelled before the first chunk.
     progress.cancel.store(true, Ordering::Relaxed);
     let error = copy_checked(&b"abc"[..], &mut Vec::new(), &progress, &FILE, 0).unwrap_err();
-    assert_eq!(error, "Cancelled");
+    assert_eq!(error, InstallError::Cancelled);
+}
+
+/// A full disk stops the copy with its own error, shown as before; a cancel and a
+/// full disk are not worth another request, any other failure is.
+#[test]
+fn a_full_disk_and_a_cancel_are_final_and_other_failures_retry() {
+    struct Full;
+    impl Write for Full {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::StorageFull.into())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let error = copy_checked(&b"abc"[..], &mut Full, &Progress::default(), &FILE, 0).unwrap_err();
+    assert_eq!(error, InstallError::DiskFull);
+    assert_eq!(error.to_string(), "the disk is full");
+    assert_eq!(InstallError::Cancelled.to_string(), "Cancelled");
+    for stop in [InstallError::Cancelled, InstallError::DiskFull] {
+        assert!(matches!(Failed::from(stop.clone()), Failed::Final(e) if e == stop));
+    }
+    let other = InstallError::Failed("timed out".into());
+    assert!(matches!(Failed::from(other), Failed::Retry(why) if why == "timed out"));
 }
 
 /// How the test host answers one request.
@@ -284,7 +308,7 @@ fn a_cancelled_download_keeps_what_arrived() {
     progress.cancel.store(true, Ordering::Relaxed);
     assert_eq!(
         download(&part, &progress, &file, 0, BODY_BUDGET),
-        Err("Cancelled".into())
+        Err(InstallError::Cancelled)
     );
     assert_eq!(std::fs::read(&part).unwrap(), &body()[..60_000]);
     // Nothing is asked of the host once cancelled.
@@ -299,8 +323,8 @@ fn reading_kept_bytes_back_stops_at_a_cancel_and_keeps_them() {
     let progress = Progress::default();
     progress.cancel.store(true, Ordering::Relaxed);
     assert_eq!(
-        Partial::open(&part, &file, &progress, 0).err().as_deref(),
-        Some("Cancelled")
+        Partial::open(&part, &file, &progress, 0).err(),
+        Some(InstallError::Cancelled)
     );
     assert_eq!(std::fs::read(&part).unwrap(), &body()[..60_000]);
 }
@@ -347,8 +371,8 @@ fn an_install_waits_for_another_windows_install() {
     let cancelled = Progress::default();
     cancelled.cancel.store(true, Ordering::Relaxed);
     assert_eq!(
-        lock(dir.path(), &cancelled).err().as_deref(),
-        Some("Cancelled")
+        lock(dir.path(), &cancelled).err(),
+        Some(InstallError::Cancelled)
     );
     // And once the other install ends, this one goes on.
     let path = dir.path().to_owned();

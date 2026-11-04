@@ -163,7 +163,7 @@ impl Editor {
                 Event::AiDenoiseStored(path) => self.ai_result_stored(&path),
                 Event::ModelInstalled(pack, result) => {
                     self.selection.models.of_mut(pack).finished(&result);
-                    if result.as_ref().err().is_some_and(|e| e == "Cancelled") {
+                    if matches!(result, Err(crate::model_install::InstallError::Cancelled)) {
                         self.messages.note("Model download cancelled");
                     } else {
                         self.model_installed(pack, result);

@@ -12,6 +12,32 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
+/// Why an install stopped. Shown as text, as it always was: a cancel is
+/// "Cancelled", a full disk "the disk is full", anything else its reason. A cancel or
+/// a full disk stops a download at once; other failures may be retried.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum InstallError {
+    Cancelled,
+    DiskFull,
+    Failed(String),
+}
+
+impl std::fmt::Display for InstallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cancelled => f.write_str("Cancelled"),
+            Self::DiskFull => f.write_str("the disk is full"),
+            Self::Failed(why) => f.write_str(why),
+        }
+    }
+}
+
+impl From<String> for InstallError {
+    fn from(why: String) -> Self {
+        Self::Failed(why)
+    }
+}
+
 /// How much of the model has been fetched, and whether to stop.
 #[derive(Default)]
 pub(crate) struct Progress {
@@ -133,7 +159,7 @@ pub(crate) fn install(
     pack: Pack,
     import: Option<&Path>,
     progress: &Progress,
-) -> Result<(), String> {
+) -> Result<(), InstallError> {
     let dir = pack.dir();
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
@@ -147,7 +173,7 @@ pub(crate) fn install(
         let kept =
             has(&dir, file) && digest_of(&dir.join(file.name)).as_deref() == Some(file.sha256);
         if progress.cancel.load(Ordering::Relaxed) {
-            return Err("Cancelled".into());
+            return Err(InstallError::Cancelled);
         }
         if kept {
             finished += file.size_bytes;
@@ -168,7 +194,10 @@ pub(crate) fn install(
                     let source = std::fs::File::open(&path)
                         .map_err(|e| format!("could not read {}: {e}", path.display()))?;
                     if copy_checked(source, &mut out, progress, file, finished)? != file.sha256 {
-                        return Err(format!("{} is not the file this release uses", file.name));
+                        return Err(InstallError::Failed(format!(
+                            "{} is not the file this release uses",
+                            file.name
+                        )));
                     }
                     out.sync_all().map_err(|e| e.to_string())?;
                 }
@@ -177,12 +206,12 @@ pub(crate) fn install(
             }
             // Cancelled while the last bytes were written out: not published.
             if progress.cancel.load(Ordering::Relaxed) {
-                return Err("Cancelled".to_string());
+                return Err(InstallError::Cancelled);
             }
             let target = dir.join(file.name);
             // Windows will not rename over a file; only a damaged one can be there.
             let _ = std::fs::remove_file(&target);
-            std::fs::rename(&part, &target).map_err(|e| e.to_string())
+            std::fs::rename(&part, &target).map_err(|e| InstallError::Failed(e.to_string()))
         })();
         if result.is_err() && import.is_some() {
             let _ = std::fs::remove_file(&part);
@@ -192,7 +221,7 @@ pub(crate) fn install(
         progress.done.store(finished, Ordering::Relaxed);
     }
     if progress.cancel.load(Ordering::Relaxed) {
-        return Err("Cancelled".into());
+        return Err(InstallError::Cancelled);
     }
     crate::storage::write_atomic(
         &dir.join(RECEIPT),
@@ -210,7 +239,7 @@ pub(crate) fn install(
 /// Locks the folder's lock file for one install, waiting while another window's
 /// install holds it, noticing a cancel meanwhile. That install's files are then checked
 /// like any others, so this one finishes once they are there. Unlocked when dropped.
-fn lock(dir: &Path, progress: &Progress) -> Result<std::fs::File, String> {
+fn lock(dir: &Path, progress: &Progress) -> Result<std::fs::File, InstallError> {
     let lock = std::fs::File::options()
         .write(true)
         .create(true)
@@ -222,11 +251,13 @@ fn lock(dir: &Path, progress: &Progress) -> Result<std::fs::File, String> {
             Ok(()) => return Ok(lock),
             Err(std::fs::TryLockError::WouldBlock) => {
                 if progress.cancel.load(Ordering::Relaxed) {
-                    return Err("Cancelled".into());
+                    return Err(InstallError::Cancelled);
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
-            Err(std::fs::TryLockError::Error(e)) => return Err(e.to_string()),
+            Err(std::fs::TryLockError::Error(e)) => {
+                return Err(InstallError::Failed(e.to_string()));
+            }
         }
     }
 }
@@ -261,12 +292,15 @@ fn copy_checked(
     progress: &Progress,
     file: &ModelFile,
     before: u64,
-) -> Result<String, String> {
+) -> Result<String, InstallError> {
     let mut sha = Sha256::new();
     let mut total = 0u64;
     append(source, out, &mut sha, &mut total, progress, file, before)?;
     if total != file.size_bytes {
-        return Err(format!("{} is smaller than expected", file.name));
+        return Err(InstallError::Failed(format!(
+            "{} is smaller than expected",
+            file.name
+        )));
     }
     Ok(hex(sha))
 }
@@ -281,22 +315,25 @@ fn append(
     progress: &Progress,
     file: &ModelFile,
     before: u64,
-) -> Result<(), String> {
+) -> Result<(), InstallError> {
     let mut buffer = vec![0u8; 256 << 10];
     loop {
         if progress.cancel.load(Ordering::Relaxed) {
-            return Err("Cancelled".into());
+            return Err(InstallError::Cancelled);
         }
         let n = source.read(&mut buffer).map_err(|e| e.to_string())?;
         if n == 0 {
             break;
         }
         if *total + n as u64 > file.size_bytes {
-            return Err(format!("{} is larger than expected", file.name));
+            return Err(InstallError::Failed(format!(
+                "{} is larger than expected",
+                file.name
+            )));
         }
         out.write_all(&buffer[..n]).map_err(|e| match e.kind() {
-            std::io::ErrorKind::StorageFull => "the disk is full".to_string(),
-            _ => e.to_string(),
+            std::io::ErrorKind::StorageFull => InstallError::DiskFull,
+            _ => InstallError::Failed(e.to_string()),
         })?;
         sha.update(&buffer[..n]);
         *total += n as u64;
@@ -324,7 +361,7 @@ impl Partial {
         file: &ModelFile,
         progress: &Progress,
         before: u64,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, InstallError> {
         let mut out = std::fs::File::options()
             .read(true)
             .write(true)
@@ -350,7 +387,7 @@ impl Partial {
                 before,
             ) {
                 Ok(()) => {}
-                Err(e) if e == "Cancelled" => return Err(e),
+                Err(InstallError::Cancelled) => return Err(InstallError::Cancelled),
                 Err(_) => partial.len = 0,
             }
         }
@@ -359,7 +396,7 @@ impl Partial {
     }
     /// Cuts the file back to the bytes counted, which are the only ones written in
     /// full, and goes on from there: a write that failed part way may have left more.
-    fn rewind(&mut self) -> Result<(), String> {
+    fn rewind(&mut self) -> Result<(), InstallError> {
         use std::io::{Seek, SeekFrom};
         if self.len == 0 {
             self.sha = Sha256::new();
@@ -371,7 +408,7 @@ impl Partial {
         Ok(())
     }
     /// Empties the file to fetch it from the start.
-    fn restart(&mut self) -> Result<(), String> {
+    fn restart(&mut self) -> Result<(), InstallError> {
         self.len = 0;
         self.rewind()
     }
@@ -392,7 +429,7 @@ fn download(
     file: &ModelFile,
     before: u64,
     body: Duration,
-) -> Result<(), String> {
+) -> Result<(), InstallError> {
     let agent = agent(body);
     let mut partial = Partial::open(part, file, progress, before)?;
     let mut last = String::new();
@@ -401,7 +438,10 @@ fn download(
         let resumed = partial.len > 0;
         match fetch(&agent, url, &mut partial, progress, file, before) {
             Ok(()) if hex(partial.sha.clone()) == file.sha256 => {
-                return partial.out.sync_all().map_err(|e| e.to_string());
+                return partial
+                    .out
+                    .sync_all()
+                    .map_err(|e| InstallError::Failed(e.to_string()));
             }
             Ok(()) => {
                 last = format!("the download of {} does not match its checksum", file.name);
@@ -412,12 +452,14 @@ fn download(
                     continue;
                 }
             }
-            Err(e) if e == "Cancelled" || e.contains("disk is full") => return Err(e),
-            Err(e) => last = e,
+            Err(e @ (InstallError::Cancelled | InstallError::DiskFull)) => return Err(e),
+            Err(e) => last = e.to_string(),
         }
         sources.next();
     }
-    Err(format!("could not download the model: {last}"))
+    Err(InstallError::Failed(format!(
+        "could not download the model: {last}"
+    )))
 }
 
 fn agent(body: Duration) -> ureq::Agent {
@@ -443,25 +485,25 @@ fn fetch(
     progress: &Progress,
     file: &ModelFile,
     before: u64,
-) -> Result<(), String> {
+) -> Result<(), InstallError> {
     let mut last = format!("the download of {} stopped", file.name);
     let mut failures = 0u32;
     let mut furthest = partial.len;
     while partial.len < file.size_bytes {
         if failures == 3 {
-            return Err(last);
+            return Err(InstallError::Failed(last));
         }
         if failures > 0 {
             // Back off, a second more each time, noticing a cancel meanwhile.
             for _ in 0..(10 * failures) {
                 if progress.cancel.load(Ordering::Relaxed) {
-                    return Err("Cancelled".into());
+                    return Err(InstallError::Cancelled);
                 }
                 std::thread::sleep(BACKOFF_TICK);
             }
         }
         if progress.cancel.load(Ordering::Relaxed) {
-            return Err("Cancelled".into());
+            return Err(InstallError::Cancelled);
         }
         match request(agent, url, partial, progress, file, before) {
             Ok(()) => {}
@@ -481,16 +523,21 @@ fn fetch(
 /// Why a request failed: worth another, or not (a cancel, a full disk, a client error).
 enum Failed {
     Retry(String),
-    Final(String),
+    Final(InstallError),
+}
+
+impl From<InstallError> for Failed {
+    fn from(why: InstallError) -> Self {
+        match why {
+            InstallError::Failed(why) => Self::Retry(why),
+            stop => Self::Final(stop),
+        }
+    }
 }
 
 impl From<String> for Failed {
     fn from(why: String) -> Self {
-        if why == "Cancelled" || why.contains("disk is full") {
-            Self::Final(why)
-        } else {
-            Self::Retry(why)
-        }
+        InstallError::Failed(why).into()
     }
 }
 
@@ -512,10 +559,10 @@ fn request(
     let mut response = match get.call() {
         Ok(response) => response,
         Err(ureq::Error::StatusCode(code)) if (400..500).contains(&code) && code != 429 => {
-            return Err(Failed::Final(format!(
+            return Err(Failed::Final(InstallError::Failed(format!(
                 "the host answered {code} for {}",
                 file.name
-            )));
+            ))));
         }
         Err(e) => return Err(e.to_string().into()),
     };
@@ -531,11 +578,21 @@ fn request(
                 });
             if !rest {
                 partial.restart()?;
-                return Err(format!("the host sent the wrong part of {}", file.name).into());
+                return Err(InstallError::Failed(format!(
+                    "the host sent the wrong part of {}",
+                    file.name
+                ))
+                .into());
             }
         }
         200 => partial.restart()?,
-        code => return Err(format!("the host answered {code} for {}", file.name).into()),
+        code => {
+            return Err(InstallError::Failed(format!(
+                "the host answered {code} for {}",
+                file.name
+            ))
+            .into());
+        }
     }
     let reader = response.body_mut().as_reader();
     let Partial { out, len, sha } = partial;

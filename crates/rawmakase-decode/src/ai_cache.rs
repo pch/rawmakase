@@ -62,6 +62,17 @@ struct Header {
     gain: f32,
 }
 
+/// A result with values a half-precision float cannot hold: it is not a result, and
+/// the job that made it fails rather than renders or caches it.
+#[derive(Debug)]
+pub struct BeyondHalfPrecision;
+impl std::fmt::Display for BeyondHalfPrecision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("The AI Denoise result has values beyond half precision")
+    }
+}
+impl std::error::Error for BeyondHalfPrecision {}
+
 #[derive(Clone, Debug)]
 pub struct AiCache {
     dir: Arc<RwLock<Dir>>,
@@ -149,10 +160,9 @@ impl AiCache {
             .par_iter()
             .map(|v| f16::from_f32(*v).to_bits())
             .collect();
-        ensure!(
-            half.par_iter().all(|b| f16::from_bits(*b).is_finite()),
-            "The AI Denoise result has values beyond half precision"
-        );
+        if !half.par_iter().all(|b| f16::from_bits(*b).is_finite()) {
+            return Err(BeyondHalfPrecision.into());
+        }
         let header = serde_json::to_vec(&Header {
             format: FORMAT,
             key: key.into(),
@@ -292,7 +302,13 @@ mod tests {
         let cache = AiCache::new(dir.path().join("ai"), DEFAULT_LIMIT);
         // The model's raw scale (medians of 10⁵) cannot be stored: the gain goes first.
         let raw = entry(8, 8, [0, 0], 1.3e5);
-        assert!(cache.store("raw", &raw).is_err());
+        let error = cache.store("raw", &raw).unwrap_err();
+        // Typed, for the service that fails the job on it, and worded as before.
+        assert!(error.is::<BeyondHalfPrecision>());
+        assert_eq!(
+            error.to_string(),
+            "The AI Denoise result has values beyond half precision"
+        );
         let mut nan = entry(8, 8, [0, 0], 1.);
         nan.rgb[3] = f32::NAN;
         assert!(cache.store("nan", &nan).is_err());
