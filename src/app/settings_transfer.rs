@@ -1,8 +1,8 @@
 //! Copy Settings, Paste Settings and Paste from Previous: settings moving from one
 //! photo to another by group (see `model::settings_groups`).
-use super::widgets::{modal_frame, primary_button};
-use super::{Editor, theme};
 use crate::app::design::{self, Tone, button, inset, space, text};
+use crate::app::widgets::{modal_frame, primary_button};
+use crate::app::{Editor, theme};
 use crate::model::recipe::Recipe;
 use crate::{
     camera_data::Metadata,
@@ -12,32 +12,32 @@ use eframe::egui::{self, Color32, Vec2};
 
 /// A photo's settings with its camera, as Copy or leaving a photo keeps them.
 #[derive(Clone, Debug)]
-pub(super) struct Settings {
-    pub(super) recipe: Recipe,
-    pub(super) metadata: Metadata,
+pub(in crate::app) struct Settings {
+    pub(in crate::app) recipe: Recipe,
+    pub(in crate::app) metadata: Metadata,
 }
 
 /// Settings copied from a photo, and the groups Paste applies.
 #[derive(Clone, Debug)]
-pub(super) struct Clipboard {
-    pub(super) settings: Settings,
-    pub(super) groups: GroupSelection,
+pub(in crate::app) struct Clipboard {
+    pub(in crate::app) settings: Settings,
+    pub(in crate::app) groups: GroupSelection,
 }
 
 /// Copy Settings or Synchronize Settings while it is open: the groups being chosen.
 #[derive(Clone, Debug)]
-pub(super) struct CopyDialog {
-    pub(super) purpose: Transfer,
-    pub(super) groups: GroupSelection,
+pub(in crate::app) struct CopyDialog {
+    pub(in crate::app) purpose: Transfer,
+    pub(in crate::app) groups: GroupSelection,
     /// New Develop Preset's name and group.
-    pub(super) preset: PresetForm,
+    pub(in crate::app) preset: PresetForm,
 }
 
 /// What New Develop Preset asks for beside the settings.
 #[derive(Clone, Debug)]
-pub(super) struct PresetForm {
-    pub(super) name: String,
-    pub(super) group: String,
+pub(in crate::app) struct PresetForm {
+    pub(in crate::app) name: String,
+    pub(in crate::app) group: String,
 }
 impl Default for PresetForm {
     fn default() -> Self {
@@ -50,7 +50,7 @@ impl Default for PresetForm {
 
 /// Where the chosen groups go: the clipboard, or the other selected photos.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Transfer {
+pub(in crate::app) enum Transfer {
     Copy,
     Sync,
     /// New Develop Preset: the chosen groups as a preset in the user library.
@@ -75,14 +75,14 @@ impl Transfer {
 
 /// What the user did in the dialog.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum CopyChoice {
+pub(in crate::app) enum CopyChoice {
     Confirm,
     Cancel,
 }
 
 impl Editor {
     /// The open photo's settings, once its camera is known.
-    pub(super) fn current_settings(&self) -> Option<Settings> {
+    pub(in crate::app) fn current_settings(&self) -> Option<Settings> {
         Some(Settings {
             recipe: self.document.edit.recipe().clone(),
             metadata: self.document_metadata()?,
@@ -96,7 +96,7 @@ impl Editor {
             .or_else(|| self.document.full().map(|im| im.metadata.clone()))
     }
     /// Copies the open photo's settings for Paste, which applies only `groups`.
-    pub(super) fn copy_settings(&mut self, groups: GroupSelection) {
+    pub(in crate::app) fn copy_settings(&mut self, groups: GroupSelection) {
         let Some(settings) = self.current_settings() else {
             return;
         };
@@ -104,17 +104,17 @@ impl Editor {
         self.messages.note("Settings copied");
     }
     /// Opens Copy Settings, or Synchronize Settings, with the groups chosen last time.
-    pub(super) fn open_copy_dialog(&mut self, purpose: Transfer) {
-        self.modal = Some(super::Modal::CopySettings(CopyDialog {
+    pub(in crate::app) fn open_copy_dialog(&mut self, purpose: Transfer) {
+        self.modal = Some(crate::app::Modal::CopySettings(CopyDialog {
             purpose,
             groups: self.copy_groups.clone(),
             preset: PresetForm::default(),
         }));
     }
     /// Lightroom's Copy Settings: a checkbox per group, under its section.
-    pub(super) fn copy_dialog_window(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn copy_dialog_window(&mut self, ctx: &egui::Context) {
         let palette = theme::palette(ctx);
-        let Some(super::Modal::CopySettings(dialog)) = &mut self.modal else {
+        let Some(crate::app::Modal::CopySettings(dialog)) = &mut self.modal else {
             return;
         };
         // Return is the primary button, as in Lightroom; it is taken before the
@@ -194,10 +194,10 @@ impl Editor {
     /// Copy keeps the groups chosen for Paste, and Synchronize applies them to the
     /// other selected photos; both start the next dialog from that choice. A new
     /// preset's groups are its own and leave that choice as it was.
-    pub(super) fn close_copy_dialog(&mut self, choice: CopyChoice) {
-        let Some(super::Modal::CopySettings(dialog)) = self
+    pub(in crate::app) fn close_copy_dialog(&mut self, choice: CopyChoice) {
+        let Some(crate::app::Modal::CopySettings(dialog)) = self
             .modal
-            .take_if(|m| matches!(m, super::Modal::CopySettings(_)))
+            .take_if(|m| matches!(m, crate::app::Modal::CopySettings(_)))
         else {
             return;
         };
@@ -210,20 +210,22 @@ impl Editor {
         }
         match dialog.purpose {
             Transfer::Copy => self.copy_settings(dialog.groups),
-            Transfer::Sync => self.start_sync(super::sync::BatchChange::Settings(dialog.groups)),
+            Transfer::Sync => {
+                self.start_sync(crate::app::sync::BatchChange::Settings(dialog.groups))
+            }
             Transfer::NewPreset => self.create_preset(&dialog.preset, &dialog.groups),
         }
     }
     /// Pastes the copied settings. Spot removal and masks belong to their photo and
     /// stay as they were, as with Lightroom's default Paste Settings.
-    pub(super) fn paste_settings(&mut self) {
+    pub(in crate::app) fn paste_settings(&mut self) {
         if let Some(Clipboard { settings, groups }) = self.clipboard.clone() {
             self.apply_settings(&settings, &groups, "Paste Settings");
         }
     }
     /// Lightroom's Paste Settings from Previous: the settings of the photo open before
     /// this one, with the groups Paste uses by default.
-    pub(super) fn paste_previous(&mut self) {
+    pub(in crate::app) fn paste_previous(&mut self) {
         if let Some(previous) = self.previous_settings.clone() {
             self.apply_settings(&previous, &GroupSelection::default(), "Paste from Previous");
         }
@@ -247,7 +249,7 @@ impl Editor {
         );
         self.document
             .edit
-            .name_next_step(super::history::Step::new(step, ""));
+            .name_next_step(crate::app::history::Step::new(step, ""));
         self.document.edit.replace(out.recipe);
         self.ensure_analysis();
         if out.notes.is_empty() {
@@ -321,10 +323,10 @@ fn section_checkboxes(
 /// New Develop Preset's name and group, as form rows; the group can be typed or picked
 /// from the groups presets already use.
 fn preset_fields(ui: &mut egui::Ui, form: &mut PresetForm, library: &crate::presets::Library) {
-    super::widgets::form_row(ui, "Preset Name", |ui| {
+    crate::app::widgets::form_row(ui, "Preset Name", |ui| {
         ui.add(egui::TextEdit::singleline(&mut form.name).desired_width(260.));
     });
-    super::widgets::form_row(ui, "Group", |ui| {
+    crate::app::widgets::form_row(ui, "Group", |ui| {
         ui.add(egui::TextEdit::singleline(&mut form.group).desired_width(220.));
         let mut groups: Vec<&str> = library
             .presets

@@ -374,7 +374,7 @@ impl Editor {
         ui.add_space(space::S);
         if upgrading {
             ui.horizontal(|ui| {
-                super::super::widgets::spinner(ui, 14.);
+                crate::app::widgets::spinner(ui, 14.);
                 ui.label("Backing up and upgrading the catalog…");
             });
             return;
@@ -404,7 +404,7 @@ impl Editor {
         }
         if installing {
             ui.horizontal(|ui| {
-                super::super::widgets::spinner(ui, 14.);
+                crate::app::widgets::spinner(ui, 14.);
                 ui.label("Working…");
             });
             return;
@@ -479,7 +479,7 @@ impl Editor {
     }
     fn selection_progress(&mut self, ui: &mut egui::Ui, request: Request) {
         control_label(ui, "Select", |ui| {
-            super::super::widgets::spinner(ui, 14.);
+            crate::app::widgets::spinner(ui, 14.);
             // No percentage: the runtime reports none for a run.
             let where_at = self
                 .selection

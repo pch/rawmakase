@@ -1,6 +1,6 @@
-use super::messages::Topic;
-use super::worker::{LoadJob, RenderJob};
-use super::{Editor, state::Picture};
+use crate::app::messages::Topic;
+use crate::app::worker::{LoadJob, RenderJob};
+use crate::app::{Editor, state::Picture};
 use crate::model::recipe::Recipe;
 use crate::{
     app::Module,
@@ -12,7 +12,7 @@ use std::{path::PathBuf, sync::Arc, time::Instant};
 
 /// How saving the edit before closing ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Flushed {
+pub(in crate::app) enum Flushed {
     Saved,
     /// Not saved: the error is on the top bar.
     Failed,
@@ -25,7 +25,7 @@ pub(super) enum Flushed {
 const UNIDENTIFIED: &str = "the photo's file could not be read when it was opened";
 
 impl Editor {
-    pub(super) fn open(&mut self, path: PathBuf) {
+    pub(in crate::app) fn open(&mut self, path: PathBuf) {
         let catalog = path
             .extension()
             .is_some_and(|e| e == "rawmakase" || e == "lrcat");
@@ -46,7 +46,7 @@ impl Editor {
             self.module = Module::Library;
         }
     }
-    pub(super) fn open_raw(&mut self, path: PathBuf, photo: Option<PhotoId>) {
+    pub(in crate::app) fn open_raw(&mut self, path: PathBuf, photo: Option<PhotoId>) {
         if self.load_raw(path, photo) {
             self.module = Module::Develop;
         }
@@ -54,7 +54,7 @@ impl Editor {
     /// Starts loading a RAW as the document, staying in the module shown:
     /// the Library's Loupe shows it through the same pipeline as Develop.
     /// False when work in progress or an unsaved edit prevents it.
-    pub(super) fn load_raw(&mut self, path: PathBuf, photo: Option<PhotoId>) -> bool {
+    pub(in crate::app) fn load_raw(&mut self, path: PathBuf, photo: Option<PhotoId>) -> bool {
         if self.activity.is_busy() {
             return false;
         }
@@ -74,7 +74,7 @@ impl Editor {
         let neighbour = photo.and_then(|id| self.neighbour_of(id));
         let prefetch = photo
             .and_then(|id| self.prefetch_neighbour(id))
-            .map(|path| super::worker::Prefetch {
+            .map(|path| crate::app::worker::Prefetch {
                 path,
                 cancel: self.prefetch_cancel.clone(),
                 demosaic: self.demosaic,
@@ -126,7 +126,7 @@ impl Editor {
     }
     /// The photo to decode ahead of time while `id` is shown: the next one in
     /// the filmstrip, or the previous one after stepping back.
-    pub(super) fn prefetch_neighbour(&self, id: PhotoId) -> Option<PathBuf> {
+    pub(in crate::app) fn prefetch_neighbour(&self, id: PhotoId) -> Option<PathBuf> {
         let photo = self.library.as_ref()?.photo(self.neighbour_of(id)?)?;
         photo.path.is_file().then(|| photo.path.clone())
     }
@@ -141,7 +141,7 @@ impl Editor {
     }
     /// Saves a Copy Name or metadata field still being typed in the Library;
     /// false, with the error on the top bar, if it could not be saved.
-    pub(super) fn commit_library_drafts(&mut self) -> bool {
+    pub(in crate::app) fn commit_library_drafts(&mut self) -> bool {
         if let Some(library) = &mut self.library
             && let Err(e) = library.commit_drafts()
         {
@@ -152,7 +152,7 @@ impl Editor {
     }
     /// Saves the edit now, after any background save in flight; false if
     /// it could not be saved.
-    pub(super) fn flush(&mut self) -> bool {
+    pub(in crate::app) fn flush(&mut self) -> bool {
         // A Sync may be writing the open photo: nothing is saved over it until it is
         // done (see `autosave`).
         if self.activity.holds_catalog_writes() {
@@ -221,7 +221,7 @@ impl Editor {
     }
     /// Autosave: collects a finished background save and, once the edit
     /// has settled, starts the next.
-    pub(super) fn autosave(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn autosave(&mut self, ctx: &egui::Context) {
         if let Some(completion) = self.autosave.poll() {
             self.background_saved(completion);
         }
@@ -258,7 +258,7 @@ impl Editor {
     /// The edit as it stands, to save to the catalog photo it belongs to; `None`
     /// when it belongs to none. A file that could not be identified when it
     /// opened gets none: the edit can't be checked against it.
-    fn save_job(&self) -> Option<Result<super::autosave::Job, &'static str>> {
+    fn save_job(&self) -> Option<Result<crate::app::autosave::Job, &'static str>> {
         let raw = self.document.path.clone()?;
         let (Some(l), Some(photo)) = (&self.library, self.document.catalog_photo) else {
             return None;
@@ -266,7 +266,7 @@ impl Editor {
         let Some(source) = self.document.file.clone() else {
             return Some(Err(UNIDENTIFIED));
         };
-        Some(Ok(super::autosave::Job {
+        Some(Ok(crate::app::autosave::Job {
             catalog: l.session.catalog().location().clone(),
             photo,
             raw,
@@ -283,7 +283,7 @@ impl Editor {
     /// Saves the edit as [`flush`](Self::flush) does, but on the autosave thread,
     /// giving up at `until`: a catalog on a stalled network share must not hold up
     /// closing. A save still running then goes on, and the edit stays unsaved.
-    pub(super) fn flush_by(&mut self, until: Instant) -> Flushed {
+    pub(in crate::app) fn flush_by(&mut self, until: Instant) -> Flushed {
         // Saved once a Sync, which may be writing the open photo, is done.
         if self.activity.holds_catalog_writes() {
             return Flushed::Late;
@@ -344,7 +344,7 @@ impl Editor {
         self.finish_saved_gesture();
         Flushed::Saved
     }
-    fn background_saved(&mut self, completion: super::autosave::Completion) {
+    fn background_saved(&mut self, completion: crate::app::autosave::Completion) {
         let saved = completion.into_result();
         let result = saved.as_ref().map(|_| ()).map_err(Clone::clone);
         if !self.document.edit.save_state_mut().finished(result) {
@@ -365,7 +365,7 @@ impl Editor {
             path.file_name().unwrap_or_default().to_string_lossy()
         ));
     }
-    pub(super) fn effective_recipe(&self) -> Recipe {
+    pub(in crate::app) fn effective_recipe(&self) -> Recipe {
         let mut r = if self.view.compare.renders_before_alone() {
             self.before_settings()
         } else {
@@ -375,7 +375,7 @@ impl Editor {
                 .unwrap_or(self.document.edit.recipe())
                 .clone()
         };
-        if self.view.is(super::state::Tool::Crop) {
+        if self.view.is(crate::app::state::Tool::Crop) {
             // The whole photo, white areas included, around the crop being drawn.
             r.crop = [0., 0., 1., 1.];
             r.constrain_crop = false;
@@ -390,7 +390,7 @@ impl Editor {
     /// photo in Develop.
     /// Not while an eyedropper is out, which samples the photo as it renders, nor in
     /// Before, which shows the photo's defaults.
-    pub(super) fn visualized_swatch(&self) -> Option<usize> {
+    pub(in crate::app) fn visualized_swatch(&self) -> Option<usize> {
         let pc = &self.view.point_color;
         let shown = pc.visualize
             && self.point_color_tab_shown()
@@ -400,8 +400,8 @@ impl Editor {
             .filter(|i| shown && *i < self.document.edit.recipe().point_colors.len())
     }
     /// What the active tool draws into the rendered preview.
-    pub(super) fn overlay(&self) -> super::worker::Overlay {
-        use super::{state::Tool, worker::Overlay};
+    pub(in crate::app) fn overlay(&self) -> crate::app::worker::Overlay {
+        use crate::app::{state::Tool, worker::Overlay};
         match self.view.tool {
             Tool::Remove if self.view.retouch.visualize => {
                 Overlay::Spots(self.view.retouch.threshold)
@@ -424,22 +424,22 @@ impl Editor {
     }
     /// The 1:1 region to render when zoomed to 100% or more; below 100% the
     /// whole photo is rendered at the zoomed size instead.
-    pub(super) fn region(&self) -> Option<[u32; 4]> {
+    pub(in crate::app) fn region(&self) -> Option<[u32; 4]> {
         let im = self.document.full()?;
         self.region_in(&Geometry::new(im, &self.effective_recipe(), 0))
     }
     /// The 1:1 region of a photo with geometry `g` that the view shows, as `region`.
-    pub(super) fn region_in(&self, g: &Geometry) -> Option<[u32; 4]> {
+    pub(in crate::app) fn region_in(&self, g: &Geometry) -> Option<[u32; 4]> {
         self.view.zoom.region(self.view.viewport, g.width, g.height)
     }
-    pub(super) fn schedule(&mut self) {
+    pub(in crate::app) fn schedule(&mut self) {
         self.schedule_render(false);
     }
     /// Renders an edit. While a slider moves, each change starts a render; one of
     /// the same view already running finishes and shows on the way instead of being
     /// cancelled, or a GPU slower than the changes would show nothing until the
     /// slider stops.
-    pub(super) fn schedule_edit(&mut self) {
+    pub(in crate::app) fn schedule_edit(&mut self) {
         self.schedule_render(true);
     }
     fn schedule_render(&mut self, edit: bool) {
@@ -462,7 +462,7 @@ impl Editor {
             if let Some(list) = visualize {
                 recipe.point_colors = list;
             }
-            let view = super::state::RenderView {
+            let view = crate::app::state::RenderView {
                 image: Arc::downgrade(&image),
                 path: self.document.path.clone(),
                 photo: self.document.catalog_photo,
@@ -477,17 +477,19 @@ impl Editor {
             self.preview.last_view = Some(view);
             let ai = self.shown_ai_source(&image, &recipe.ai_denoise);
             let rendered_ai = match &ai {
-                None => super::state::RenderedAi::None,
-                Some(_) if self.document.ai.is_complete() => super::state::RenderedAi::Complete,
-                Some(_) => super::state::RenderedAi::Partial,
+                None => crate::app::state::RenderedAi::None,
+                Some(_) if self.document.ai.is_complete() => {
+                    crate::app::state::RenderedAi::Complete
+                }
+                Some(_) => crate::app::state::RenderedAi::Partial,
             };
             let (id, cancel) = self.preview.start(
                 edit && same_view,
-                super::state::Pending {
+                crate::app::state::Pending {
                     recipe: Some(recipe.clone()),
                     mode: region.map_or(
-                        super::state::TextureMode::Whole,
-                        super::state::TextureMode::Region,
+                        crate::app::state::TextureMode::Whole,
+                        crate::app::state::TextureMode::Region,
                     ),
                     crop: geometry.crop(),
                     ai: rendered_ai,
@@ -495,7 +497,7 @@ impl Editor {
             );
             self.request_ai_denoise(&image, &geometry, region);
             let replaced = self.renderer.submit(RenderJob {
-                pane: super::worker::Pane::After,
+                pane: crate::app::worker::Pane::After,
                 max_edge,
                 cancel,
                 id,
@@ -519,11 +521,11 @@ impl Editor {
     }
     /// The long edge a Fit render of a photo with geometry `g` needs in the view,
     /// and the one to render at the current zoom.
-    pub(super) fn render_edges(&self, g: &Geometry) -> RenderEdges {
+    pub(in crate::app) fn render_edges(&self, g: &Geometry) -> RenderEdges {
         render_edges(&self.view.zoom, self.view.viewport, g)
     }
     /// A CPU render: the whole photo, or a 100% region drawn over it.
-    pub(super) fn set_pixels(
+    pub(in crate::app) fn set_pixels(
         &mut self,
         ctx: &egui::Context,
         region: bool,
@@ -556,7 +558,7 @@ impl Editor {
         self.preview.stand_in = None;
     }
     /// A GPU render, presented into textures the renderer registered.
-    pub(super) fn set_presented(
+    pub(in crate::app) fn set_presented(
         &mut self,
         region: bool,
         (id, size): (egui::TextureId, [usize; 2]),
@@ -577,7 +579,7 @@ impl Editor {
         self.preview.embedded = false;
         self.preview.stand_in = None;
     }
-    pub(super) fn navigate(&mut self, delta: isize) {
+    pub(in crate::app) fn navigate(&mut self, delta: isize) {
         if let Some(id) = self.document.catalog_photo
             && let Some(next) = self.develop_step(id, delta as i32)
         {
@@ -589,7 +591,7 @@ impl Editor {
     /// stopping on them would leave every photo beyond out of reach of the
     /// arrow keys. With none in that direction, the first one, so opening it
     /// says why it can't be.
-    pub(super) fn develop_step(&self, id: PhotoId, step: i32) -> Option<PhotoId> {
+    pub(in crate::app) fn develop_step(&self, id: PhotoId, step: i32) -> Option<PhotoId> {
         let library = self.library.as_ref()?;
         let first = library.navigate(id, step)?;
         let mut at = first;
@@ -610,8 +612,8 @@ impl Editor {
 
 /// The long edges a render of a photo with geometry `g` needs in a view of
 /// `viewport` pixels at `zoom`.
-pub(super) fn render_edges(
-    zoom: &super::navigator::Zoom,
+pub(in crate::app) fn render_edges(
+    zoom: &crate::app::navigator::Zoom,
     viewport: Vec2,
     g: &Geometry,
 ) -> RenderEdges {
@@ -628,11 +630,11 @@ pub(super) fn render_edges(
     RenderEdges { fit, max_edge }
 }
 /// The long edges of a render, from `Editor::render_edges`.
-pub(super) struct RenderEdges {
+pub(in crate::app) struct RenderEdges {
     /// The view's Fit size.
-    pub(super) fit: u32,
+    pub(in crate::app) fit: u32,
     /// What to render at the current zoom: Fit, or smaller zoomed out.
-    pub(super) max_edge: u32,
+    pub(in crate::app) max_edge: u32,
 }
 
 #[cfg(test)]

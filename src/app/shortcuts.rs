@@ -1,12 +1,12 @@
 //! A reference card of every shortcut, grouped like Lightroom's: Cmd+/ (as in
 //! Lightroom) or the keyboard
 //! button in the top bar. Each shortcut's keys are drawn as key caps.
-use super::Editor;
-use super::icons::{self, Icon};
-use super::theme;
-use super::widgets::{modal_frame, search_field};
+use crate::app::Editor;
 use crate::app::Module;
 use crate::app::design::{self, Tone, inset, radius, space, text};
+use crate::app::icons::{self, Icon};
+use crate::app::theme;
+use crate::app::widgets::{modal_frame, search_field};
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};
 
 /// A shortcut: its keys and what it does. Keys are written "Cmd+Shift+Z";
@@ -192,7 +192,7 @@ fn query_id() -> egui::Id {
 }
 
 impl Editor {
-    pub(super) fn shortcuts_window(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn shortcuts_window(&mut self, ctx: &egui::Context) {
         let palette = theme::palette(ctx);
         if !self.view.shortcuts {
             ctx.data_mut(|d| d.remove::<String>(query_id()));
@@ -603,7 +603,7 @@ fn key_cap(ui: &egui::Ui, cap: &str, right: Pos2, paint: bool) -> f32 {
 }
 
 /// A small borderless icon button, as in the top bar.
-pub(super) fn icon_button(ui: &mut egui::Ui, icon: Icon, hover: &str) -> egui::Response {
+pub(in crate::app) fn icon_button(ui: &mut egui::Ui, icon: Icon, hover: &str) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(26.), Sense::click());
     if response.hovered() {
@@ -644,7 +644,7 @@ fn cap_label(cap: &str) -> String {
 }
 
 /// Keys as text, e.g. for a hover: "⌘/".
-pub(super) fn keys_text(keys: &str) -> String {
+pub(in crate::app) fn keys_text(keys: &str) -> String {
     keys.split('+').map(cap_label).collect()
 }
 

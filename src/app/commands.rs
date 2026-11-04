@@ -9,10 +9,10 @@ use crate::app::panels::{PanelChange, WorkspacePanel};
 use reply::{
     Capabilities, CurveCapabilities, Curves, MaskState, PhotoIdentity, PhotoSummary, State,
 };
-pub(super) use reply::{Outcome, Reply};
+pub(in crate::app) use reply::{Outcome, Reply};
 
 #[derive(Default)]
-pub(super) struct Automation {
+pub(in crate::app) struct Automation {
     pub revision: u64,
     observed: Option<(u64, crate::model::recipe::Recipe)>,
     outputs: output::Outputs,
@@ -20,33 +20,33 @@ pub(super) struct Automation {
 }
 impl Automation {
     /// Whether output job `id` has finished, or does not exist.
-    pub(super) fn job_finished(&self, id: u64) -> bool {
+    pub(in crate::app) fn job_finished(&self, id: u64) -> bool {
         self.outputs.finished(id)
     }
     /// Whether an export or preview job a command started is still running, and
     /// not cancelled.
-    pub(super) fn outputs_running(&self) -> bool {
+    pub(in crate::app) fn outputs_running(&self) -> bool {
         self.outputs.any_running()
     }
     /// An output job that runs until cancelled, for tests.
     #[cfg(test)]
-    pub(super) fn hold_running_output(&mut self) {
+    pub(in crate::app) fn hold_running_output(&mut self) {
         self.outputs.hold_running();
     }
     /// Cancels the export and preview jobs commands started.
-    pub(super) fn cancel_outputs(&self) {
+    pub(in crate::app) fn cancel_outputs(&self) {
         self.outputs.cancel_all();
     }
     /// The export and preview jobs commands started, cancelled, to wait for at exit.
-    pub(super) fn stop_outputs(&mut self) -> Vec<super::task::Stopping> {
+    pub(in crate::app) fn stop_outputs(&mut self) -> Vec<crate::app::task::Stopping> {
         self.outputs.stop()
     }
 }
-pub(super) use parameter::Param;
-pub(super) use preset::PresetTarget;
+pub(in crate::app) use parameter::Param;
+pub(in crate::app) use preset::PresetTarget;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Source {
+pub(in crate::app) enum Source {
     Socket,
     #[cfg(any(test, target_os = "macos", target_os = "windows"))]
     Midi(u64, u64),
@@ -54,28 +54,28 @@ pub(super) enum Source {
 #[derive(Clone, Copy, PartialEq)]
 struct TurnScope(Source, Param, Option<usize>, u64, usize);
 impl Automation {
-    pub(super) fn turning(&self) -> bool {
+    pub(in crate::app) fn turning(&self) -> bool {
         self.turn
             .is_some_and(|(at, _)| at.elapsed() < std::time::Duration::from_millis(400))
     }
-    pub(super) fn has_turn(&self) -> bool {
+    pub(in crate::app) fn has_turn(&self) -> bool {
         self.turn.is_some()
     }
-    pub(super) fn end_turn(&mut self) {
+    pub(in crate::app) fn end_turn(&mut self) {
         self.turn = None;
     }
 }
 
-use super::{Editor, state::Tool};
+use crate::app::{Editor, state::Tool};
 use crate::catalog::{Photo, PhotoId};
 use eframe::egui;
 use serde::Serialize;
 
-pub(super) use rawmakase_protocol::PROTOCOL;
+pub(in crate::app) use rawmakase_protocol::PROTOCOL;
 
 /// A command's [`rawmakase_protocol::Target`], its photo id typed.
 #[derive(Clone, Debug, Default)]
-pub(super) struct Target {
+pub(in crate::app) struct Target {
     pub photo_id: Option<PhotoId>,
     pub generation: Option<u64>,
     pub revision: Option<u64>,
@@ -94,10 +94,10 @@ impl From<rawmakase_protocol::Target> for Target {
         }
     }
 }
-pub(super) use rawmakase_protocol::CurveChannel;
+pub(in crate::app) use rawmakase_protocol::CurveChannel;
 
 #[derive(Clone, Debug)]
-pub(super) struct Command {
+pub(in crate::app) struct Command {
     pub operation: Operation,
     pub target: Target,
 }
@@ -111,7 +111,7 @@ impl Command {
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum Operation {
+pub(in crate::app) enum Operation {
     State,
     Capabilities,
     Photos {
@@ -130,7 +130,7 @@ pub(super) enum Operation {
     ControlValue(Param, u8),
     Action(Action),
     Metadata {
-        edit: super::photo_metadata::Edit,
+        edit: crate::app::photo_metadata::Edit,
         advance: bool,
     },
     Open(PhotoTarget),
@@ -153,7 +153,7 @@ pub(super) enum Operation {
 
 /// What a `wait` command waits for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Until {
+pub(in crate::app) enum Until {
     /// The photo is loaded, or no longer the one opened (another replaced it).
     Loaded(PhotoId),
     /// The output job has finished, or does not exist.
@@ -161,13 +161,13 @@ pub(super) enum Until {
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum PhotoTarget {
+pub(in crate::app) enum PhotoTarget {
     Name(String),
     Id(PhotoId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Action {
+pub(in crate::app) enum Action {
     Undo,
     Redo,
     Rating(u8),
@@ -284,8 +284,8 @@ impl Action {
         ),
         ("chrome", Self::Chrome),
     ];
-    pub(super) fn metadata(self) -> Option<super::photo_metadata::Edit> {
-        use super::photo_metadata::{Edit, LABELS};
+    pub(in crate::app) fn metadata(self) -> Option<crate::app::photo_metadata::Edit> {
+        use crate::app::photo_metadata::{Edit, LABELS};
         Some(match self {
             Self::Rating(n) => Edit::Rating(i32::from(n)),
             Self::Flag(n) => Edit::Flag(i32::from(n)),
@@ -315,7 +315,7 @@ impl Action {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub(super) struct Error {
+pub(in crate::app) struct Error {
     pub code: &'static str,
     pub message: String,
 }
@@ -327,12 +327,12 @@ impl Error {
         }
     }
 }
-pub(super) type Result<T> = std::result::Result<T, Error>;
+pub(in crate::app) type Result<T> = std::result::Result<T, Error>;
 
 impl Editor {
     /// Reconcile at command/frame boundaries as worker results and undo can edit
     /// the recipe outside an edit frame. Revisions identify observed recipe states.
-    pub(super) fn sync_command_revision(&mut self) {
+    pub(in crate::app) fn sync_command_revision(&mut self) {
         let generation = self.load.id();
         if let Some((seen_generation, recipe)) = &self.automation.observed
             && *seen_generation == generation
@@ -345,7 +345,7 @@ impl Editor {
         }
         self.automation.observed = Some((generation, self.document.edit.recipe().clone()));
     }
-    pub(super) fn command_state(&mut self) -> State {
+    pub(in crate::app) fn command_state(&mut self) -> State {
         self.sync_command_revision();
         let develop = self.module == Module::Develop && self.document.metadata.is_some();
         let mut recipe = self.document.edit.recipe().clone();
@@ -424,8 +424,8 @@ impl Editor {
             building_previews: self
                 .preview_builds
                 .progress()
-                .filter(super::preview_build::Progress::running)
-                .map(|p| super::commands::reply::BuildProgress {
+                .filter(crate::app::preview_build::Progress::running)
+                .map(|p| crate::app::commands::reply::BuildProgress {
                     done: p.done,
                     total: p.total,
                 }),
@@ -438,23 +438,23 @@ impl Editor {
                 "shown"
             },
             save_state: match self.document.edit.save_state() {
-                super::save_state::SaveState::Clean => "saved",
-                super::save_state::SaveState::Pending(_) => "pending",
-                super::save_state::SaveState::Saving { .. } => "saving",
-                super::save_state::SaveState::Failed { .. } => "failed",
-                super::save_state::SaveState::Protected(_) => "protected",
+                crate::app::save_state::SaveState::Clean => "saved",
+                crate::app::save_state::SaveState::Pending(_) => "pending",
+                crate::app::save_state::SaveState::Saving { .. } => "saving",
+                crate::app::save_state::SaveState::Failed { .. } => "failed",
+                crate::app::save_state::SaveState::Protected(_) => "protected",
             },
         }
     }
     /// The photo Develop shows as one it could not open.
-    pub(super) fn open_failed(&self) -> Option<crate::catalog::PhotoId> {
+    pub(in crate::app) fn open_failed(&self) -> Option<crate::catalog::PhotoId> {
         (self.module == Module::Develop
             && self.document.failed.is_some()
             && !self.load.is_running())
         .then_some(self.document.catalog_photo)
         .flatten()
     }
-    pub(super) fn command_modal(&self) -> bool {
+    pub(in crate::app) fn command_modal(&self) -> bool {
         self.preferences.open
             || self.export_modal()
             || self.modal.is_some()
@@ -495,7 +495,7 @@ impl Editor {
         }
         Ok(())
     }
-    pub(super) fn require_develop(&self) -> Result<()> {
+    pub(in crate::app) fn require_develop(&self) -> Result<()> {
         if self.module == Module::Library || self.document.metadata.is_none() {
             return Err(Error::new("no_document", "Open a photo in Develop first"));
         }
@@ -507,14 +507,14 @@ impl Editor {
     /// Each command is a complete edit transaction. The reply is built only
     /// afterward, including history and rendering invalidation, on the UI thread.
     #[cfg(test)]
-    pub(super) fn execute_command(
+    pub(in crate::app) fn execute_command(
         &mut self,
         command: Command,
         ctx: &egui::Context,
     ) -> Result<Outcome> {
         self.execute_command_from(command, Source::Socket, ctx)
     }
-    pub(super) fn execute_command_from(
+    pub(in crate::app) fn execute_command_from(
         &mut self,
         command: Command,
         source: Source,
@@ -611,7 +611,7 @@ impl Editor {
                     .build_previews(&ids, kind)
                     .map_err(|e| Error::new("not_queued", e))?;
                 self.messages
-                    .note(super::preview_build::queued_message(queued));
+                    .note(crate::app::preview_build::queued_message(queued));
                 return Ok(Outcome::Previews {
                     queued: queued.queued,
                     skipped: queued.skipped,
@@ -888,7 +888,7 @@ impl Editor {
         }
         Ok(())
     }
-    pub(super) fn execute_action(
+    pub(in crate::app) fn execute_action(
         &mut self,
         action: Action,
         photo: Option<PhotoId>,
@@ -936,7 +936,7 @@ impl Editor {
             _ => {
                 self.require_develop()?;
                 match action {
-                    Copy => self.open_copy_dialog(super::settings_transfer::Transfer::Copy),
+                    Copy => self.open_copy_dialog(crate::app::settings_transfer::Transfer::Copy),
                     Paste => {
                         if self.clipboard.is_none() {
                             return Err(Error::new(
@@ -962,7 +962,7 @@ impl Editor {
                                 "Select destination photos to synchronize",
                             ));
                         }
-                        self.open_copy_dialog(super::settings_transfer::Transfer::Sync);
+                        self.open_copy_dialog(crate::app::settings_transfer::Transfer::Sync);
                     }
                     Reset => self.reset_settings(),
                     AutoTone | AutoWhiteBalance => {
@@ -973,9 +973,9 @@ impl Editor {
                             ));
                         }
                         let kind = if action == AutoTone {
-                            super::worker::AutoKind::Settings
+                            crate::app::worker::AutoKind::Settings
                         } else {
-                            super::worker::AutoKind::WhiteBalance
+                            crate::app::worker::AutoKind::WhiteBalance
                         };
                         self.start_auto(kind);
                     }
@@ -986,7 +986,9 @@ impl Editor {
                             CurveMedium => BuiltinCurve::MediumContrast,
                             _ => BuiltinCurve::StrongContrast,
                         };
-                        self.choose_point_curve(super::curve_menu::CurveChoice::Builtin(curve));
+                        self.choose_point_curve(crate::app::curve_menu::CurveChoice::Builtin(
+                            curve,
+                        ));
                     }
                     ExportDialog => self.open_export_dialog(),
                     ExportPrevious => self.export_with_previous(),
@@ -999,7 +1001,7 @@ impl Editor {
                     Compare => self.set_compare(
                         self.view
                             .compare
-                            .toggled(super::before_after::Compare::BeforeOnly),
+                            .toggled(crate::app::before_after::Compare::BeforeOnly),
                     ),
                     CameraThumbnail => self.toggle_camera_thumbnail(),
                     Clipping => self.view.clipping.toggle_both(),
@@ -1019,9 +1021,9 @@ impl Editor {
         }
         Ok(Outcome::Empty)
     }
-    pub(super) fn command_metadata(
+    pub(in crate::app) fn command_metadata(
         &mut self,
-        edit: super::photo_metadata::Edit,
+        edit: crate::app::photo_metadata::Edit,
         photo: Option<PhotoId>,
         advance: bool,
     ) -> Result<()> {
@@ -1132,7 +1134,7 @@ impl Editor {
             .photo(id)
             .cloned()
             .ok_or_else(|| Error::new("not_found", "No photo has this ID"))?;
-        if let Some(refusal) = super::library::develop_refusal(&photo, photo.path.is_file()) {
+        if let Some(refusal) = crate::app::library::develop_refusal(&photo, photo.path.is_file()) {
             return Err(Error::new("not_editable", refusal.detail()));
         }
         if !self.flush() {

@@ -1,15 +1,15 @@
 //! A frame edits exactly one document generation, even when navigation happens mid-frame.
-use super::Editor;
+use crate::app::Editor;
 use crate::edit_session::FrameOutcome;
 use crate::model::recipe::Recipe;
 use eframe::egui;
 
-pub(super) struct EditFrame {
-    pub(super) command_adjust: bool,
+pub(in crate::app) struct EditFrame {
+    pub(in crate::app) command_adjust: bool,
     generation: u64,
     edit: crate::edit_session::Frame,
     modes: RenderModes,
-    overlay: super::worker::Overlay,
+    overlay: crate::app::worker::Overlay,
     aspect: f32,
     export: (u8, u32),
 }
@@ -18,7 +18,7 @@ pub(super) struct EditFrame {
 struct RenderModes {
     crop: bool,
     clipping: crate::rendered::ClipOverlay,
-    compare: super::before_after::Compare,
+    compare: crate::app::before_after::Compare,
     zoom: bool,
     /// The swatch Point Color's Visualize Range shows.
     visualized: Option<usize>,
@@ -26,7 +26,7 @@ struct RenderModes {
 impl Editor {
     fn render_modes(&self) -> RenderModes {
         RenderModes {
-            crop: self.view.is(super::state::Tool::Crop),
+            crop: self.view.is(crate::app::state::Tool::Crop),
             clipping: self.view.clipping.overlay(),
             compare: self.view.compare,
             zoom: self.view.zoom.on,
@@ -37,12 +37,12 @@ impl Editor {
     /// another (a shortcut or the filmstrip moved to the next photo): what is
     /// drawn after edits the new photo, in a frame of its own. The old photo's
     /// frame ends with its document.
-    pub(super) fn follow_edit_frame(&mut self, frame: &mut EditFrame) {
+    pub(in crate::app) fn follow_edit_frame(&mut self, frame: &mut EditFrame) {
         if frame.generation != self.load.id() {
             *frame = self.begin_edit_frame();
         }
     }
-    pub(super) fn begin_edit_frame(&mut self) -> EditFrame {
+    pub(in crate::app) fn begin_edit_frame(&mut self) -> EditFrame {
         // Before the frame and any command look at the settings: an uncropped photo
         // taking the chosen aspect is an edit of its own, not part of what follows.
         self.read_aspect();
@@ -64,7 +64,7 @@ impl Editor {
     /// [`Self::begin_edit_frame`] for a frame that draws Develop: a mask's pin or row
     /// is found hovered again as it is drawn, after the frame took the overlay it
     /// showed. A command's frame, which draws nothing, keeps the hover.
-    pub(super) fn begin_develop_frame(&mut self) -> EditFrame {
+    pub(in crate::app) fn begin_develop_frame(&mut self) -> EditFrame {
         let frame = self.begin_edit_frame();
         self.view.masking.leave();
         frame
@@ -72,7 +72,7 @@ impl Editor {
     /// A dial turned on a control surface is one History step once it pauses. A
     /// drawn frame ends it in [`Self::finish_edit_frame`]; this ends it where no
     /// frame is drawn (the window hidden), so the step is taken and saved.
-    pub(super) fn finish_paused_turn(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn finish_paused_turn(&mut self, ctx: &egui::Context) {
         // A hidden window keeps the pointer of its last drawn frame: a press then
         // holds nothing once the window lost focus.
         let held =
@@ -82,7 +82,7 @@ impl Editor {
             self.finish_gesture();
         }
     }
-    pub(super) fn finish_edit_frame(&mut self, frame: EditFrame, ctx: &egui::Context) {
+    pub(in crate::app) fn finish_edit_frame(&mut self, frame: EditFrame, ctx: &egui::Context) {
         let step = self.step_name.take();
         if frame.generation != self.load.id() {
             return;
@@ -96,9 +96,9 @@ impl Editor {
                 .any(|e| matches!(e, egui::Event::PointerButton { .. }))
         });
         let edit = if *self.document.edit.recipe() == *frame.edit.before() && !clicked {
-            super::brush_scroll::Edit::Unchanged
+            crate::app::brush_scroll::Edit::Unchanged
         } else {
-            super::brush_scroll::Edit::Changed
+            crate::app::brush_scroll::Edit::Changed
         };
         if self.view.wheel.ends_before(edit) {
             self.document.edit.finish_gesture_before(&frame.edit);
@@ -119,21 +119,21 @@ impl Editor {
         }
         // The Guided tool goes with the mode, however it was left: a reset, an undo, a
         // preset, with the Transform panel open or not.
-        if self.view.is(super::state::Tool::Guided)
+        if self.view.is(crate::app::state::Tool::Guided)
             && self.document.edit.recipe().upright.mode
                 != crate::model::transform::UprightMode::Guided
         {
-            self.view.tool = super::state::Tool::None;
+            self.view.tool = crate::app::state::Tool::None;
         }
         // Point Color's dropper goes with its tab: another tab, black & white, an older
         // process or the Library put it away, so a click never adds a hidden swatch.
-        if self.view.is(super::state::Tool::PointColor) && !self.point_color_tab_shown() {
-            self.view.tool = super::state::Tool::None;
+        if self.view.is(crate::app::state::Tool::PointColor) && !self.point_color_tab_shown() {
+            self.view.tool = crate::app::state::Tool::None;
         }
         // The Targeted Adjustment Tool goes with its panel's treatment.
         self.keep_targeted_tool();
         // A sample still being taken is dropped with the dropper.
-        if !self.view.is(super::state::Tool::PointColor)
+        if !self.view.is(crate::app::state::Tool::PointColor)
             && self.document.point_color_pick.is_running()
         {
             self.document.point_color_pick.invalidate();
@@ -180,7 +180,11 @@ impl Editor {
     /// Records an edit made outside an edit frame (a preset loaded from a file, a
     /// result computed off the UI thread) as one History step, `step` or one named
     /// for what changed, with what an edit frame does after a slider moves.
-    pub(super) fn commit_edit(&mut self, before: Recipe, step: Option<super::history::Step>) {
+    pub(in crate::app) fn commit_edit(
+        &mut self,
+        before: Recipe,
+        step: Option<crate::app::history::Step>,
+    ) {
         if self.document.edit.commit(before, step) {
             self.edited();
         }
@@ -190,9 +194,9 @@ impl Editor {
     /// Changes the settings outside an edit frame (a result computed off the UI
     /// thread, say) as one History step, `step` or one named for what changed, with
     /// what an edit frame does after a slider moves. A change of nothing is no step.
-    pub(super) fn change_edit<T>(
+    pub(in crate::app) fn change_edit<T>(
         &mut self,
-        step: Option<super::history::Step>,
+        step: Option<crate::app::history::Step>,
         edit: impl FnOnce(&mut Recipe) -> T,
     ) -> T {
         let before = self.document.edit.recipe().clone();

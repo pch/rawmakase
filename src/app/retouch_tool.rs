@@ -5,28 +5,28 @@
 //! area, whose source is chosen when the stroke ends; Cmd/Ctrl-drag places a spot and
 //! drags its source by hand. Dragging a spot's pin or circle moves it, dragging its
 //! source circle moves the source.
-use super::Editor;
-use super::overlay;
-use super::theme;
-use super::widgets::{segmented, slider_with};
+use crate::app::Editor;
 use crate::app::design::{Tone, space, text};
+use crate::app::overlay;
+use crate::app::theme;
+use crate::app::widgets::{segmented, slider_with};
 use crate::develop::{ViewMapping, retouch};
 use crate::model::retouch::{RetouchMode, RetouchOp, RetouchShape};
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 
-pub(super) struct RetouchTool {
-    pub(super) mode: RetouchMode,
+pub(in crate::app) struct RetouchTool {
+    pub(in crate::app) mode: RetouchMode,
     /// Brush size for new spots, as a fraction of the long edge.
-    pub(super) size: f32,
-    pub(super) feather: f32,
-    pub(super) opacity: f32,
+    pub(in crate::app) size: f32,
+    pub(in crate::app) feather: f32,
+    pub(in crate::app) opacity: f32,
     /// Index into the recipe's retouch operations.
-    pub(super) selected: Option<usize>,
+    pub(in crate::app) selected: Option<usize>,
     /// Hide the pins (H).
-    pub(super) hide_pins: bool,
+    pub(in crate::app) hide_pins: bool,
     /// Visualize Spots (A) and its threshold.
-    pub(super) visualize: bool,
-    pub(super) threshold: f32,
+    pub(in crate::app) visualize: bool,
+    pub(in crate::app) threshold: f32,
     drag: Drag,
     /// Sources already offered for the selected spot, so `/` moves on to new ones.
     tried: Vec<[f32; 2]>,
@@ -61,10 +61,10 @@ enum Drag {
 }
 impl RetouchTool {
     /// Whether a spot, its source or a brush stroke is being dragged.
-    pub(super) fn is_dragging(&self) -> bool {
+    pub(in crate::app) fn is_dragging(&self) -> bool {
         !matches!(self.drag, Drag::None)
     }
-    pub(super) fn clear_document(&mut self) {
+    pub(in crate::app) fn clear_document(&mut self) {
         self.selected = None;
         self.drag = Drag::None;
         self.tried.clear();
@@ -85,7 +85,7 @@ enum Hit {
 
 impl Editor {
     /// Handles the pointer on the photo and draws the spots. The tool owns the pointer.
-    pub(super) fn retouch_overlay(
+    pub(in crate::app) fn retouch_overlay(
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
@@ -306,7 +306,7 @@ impl Editor {
     }
     /// The Remove tool's keys: `[` `]` size, with Shift feather, `/` next source,
     /// Delete, H pins and A Visualize Spots.
-    pub(super) fn retouch_keys(&mut self, i: &egui::InputState) {
+    pub(in crate::app) fn retouch_keys(&mut self, i: &egui::InputState) {
         use egui::Key;
         let plain = !i.modifiers.command && !i.modifiers.alt;
         if !plain {
@@ -339,7 +339,7 @@ impl Editor {
         }
     }
     /// `/`: the next best source for the selected spot.
-    pub(super) fn next_source(&mut self) {
+    pub(in crate::app) fn next_source(&mut self) {
         let Some(i) = self.view.retouch.selected else {
             return;
         };
@@ -355,7 +355,7 @@ impl Editor {
             self.document.edit.recipe_mut().retouch[i].offset = offset;
         }
     }
-    pub(super) fn delete_spot(&mut self) {
+    pub(in crate::app) fn delete_spot(&mut self) {
         if let Some(i) = self.view.retouch.selected.take()
             && i < self.document.edit.recipe().retouch.len()
         {
@@ -363,7 +363,7 @@ impl Editor {
         }
     }
     /// `[` and `]`: brush size, or the selected spot's; with Shift, feather.
-    pub(super) fn step_retouch_size(&mut self, grow: bool, feather: bool) {
+    pub(in crate::app) fn step_retouch_size(&mut self, grow: bool, feather: bool) {
         let tool = &mut self.view.retouch;
         let op = tool
             .selected
@@ -383,7 +383,7 @@ impl Editor {
         }
     }
     /// The Remove panel's drawer below the tool strip.
-    pub(super) fn retouch_panel(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn retouch_panel(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
         let long = self.document.full().map_or(1000., |im| {
             crate::model::image_frame::ImageFrame::new(im).long_edge()
@@ -393,7 +393,7 @@ impl Editor {
             .retouch
             .selected
             .filter(|i| *i < self.document.edit.recipe().retouch.len());
-        super::widgets::set_edit_context(ui, "Spot");
+        crate::app::widgets::set_edit_context(ui, "Spot");
         control_label(ui, "Mode", |ui| {
             let mut mode = selected.map_or(self.view.retouch.mode, |i| {
                 self.document.edit.recipe().retouch[i].mode
@@ -510,7 +510,7 @@ impl Editor {
                 .on_hover_text("Close the tool · Q")
                 .clicked()
             {
-                self.view.tool = super::state::Tool::None;
+                self.view.tool = crate::app::state::Tool::None;
             }
         });
     }
@@ -558,10 +558,14 @@ fn draw_shape(
     }
 }
 /// A row with a right-aligned label in the sliders' label column.
-pub(super) fn control_label(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
+pub(in crate::app) fn control_label(
+    ui: &mut egui::Ui,
+    label: &str,
+    add: impl FnOnce(&mut egui::Ui),
+) {
     ui.horizontal(|ui| {
         // To the label column, less the gap the row puts after it.
-        let width = super::widgets::label_column(ui) - ui.spacing().item_spacing.x;
+        let width = crate::app::widgets::label_column(ui) - ui.spacing().item_spacing.x;
         let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 22.), egui::Sense::hover());
         ui.painter().text(
             rect.right_center(),
@@ -574,13 +578,13 @@ pub(super) fn control_label(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mu
     });
 }
 /// A row starting where slider rails start.
-pub(super) fn indented(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+pub(in crate::app) fn indented(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {
-        ui.add_space(super::widgets::label_column(ui));
+        ui.add_space(crate::app::widgets::label_column(ui));
         add(ui);
     });
 }
-pub(super) fn hint(ui: &mut egui::Ui, text: &str) {
+pub(in crate::app) fn hint(ui: &mut egui::Ui, text: &str) {
     indented(ui, |ui| {
         ui.add(
             egui::Label::new(

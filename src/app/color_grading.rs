@@ -7,10 +7,12 @@
 //!
 //! The wheels edit the values the sliders before them did (hue 0–1, saturation 0–1,
 //! luminance −1 to 1), so a grade renders the same however it was set.
-use super::step_name::StepName;
-use super::theme;
-use super::widgets::{SliderStyle, set_edit_context, setting_slider, slider_styled, slider_with};
 use crate::app::design::{Tone, radius, size, space, text};
+use crate::app::step_name::StepName;
+use crate::app::theme;
+use crate::app::widgets::{
+    SliderStyle, set_edit_context, setting_slider, slider_styled, slider_with,
+};
 use crate::model::params::ParameterId;
 use crate::model::recipe::Recipe;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
@@ -18,7 +20,7 @@ use std::f32::consts::TAU;
 
 /// What the panel shows: the three tonal wheels, or one wheel large.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum GradingView {
+pub(in crate::app) enum GradingView {
     #[default]
     ThreeWay,
     Single(Region),
@@ -26,7 +28,7 @@ pub(super) enum GradingView {
 
 /// The tonal range a wheel grades.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) enum Region {
+pub(in crate::app) enum Region {
     Shadows,
     Midtones,
     Highlights,
@@ -85,7 +87,7 @@ const CAPTION: f32 = 16.;
 const ROW: f32 = size::CONTROL;
 
 /// The Color Grading panel's contents.
-pub(super) fn color_grading_ui(
+pub(in crate::app) fn color_grading_ui(
     ui: &mut egui::Ui,
     step: &mut StepName,
     r: &mut Recipe,
@@ -1106,7 +1108,7 @@ mod tests {
     #[test]
     fn double_click_reset_undo_restores_the_grade_before_either_click() {
         let mut h = Harness::new();
-        let mut history = super::super::history::History::default();
+        let mut history = crate::app::history::History::default();
         let mut recipe = Recipe::default();
         recipe.grading[0] = [0.25, 0.4, 0.2];
         let original = recipe.clone();
@@ -1145,7 +1147,7 @@ mod tests {
     fn luminance_double_click_is_one_undoable_reset() {
         let mut h = Harness::new();
         h.luminance = true;
-        let mut history = super::super::history::History::default();
+        let mut history = crate::app::history::History::default();
         let mut recipe = Recipe::default();
         recipe.grading[0] = [0.25, 0.4, -0.3];
         let original = recipe.clone();

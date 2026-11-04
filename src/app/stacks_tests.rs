@@ -1,7 +1,7 @@
 //! Folder stacks in the app, by key as a person works: Cmd+G, S, Shift+S
 //! and Cmd+Shift+G in the grid, S and Shift+S in the Loupe, and Undo and
 //! Redo of each change.
-use super::Editor;
+use crate::app::Editor;
 use crate::app::testing::editor_with_catalog;
 use crate::catalog::PhotoId;
 use eframe::egui::{self, Key, Modifiers, Pos2, Rect, Vec2};

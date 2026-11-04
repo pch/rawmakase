@@ -5,7 +5,7 @@ use eframe::egui::{self, Pos2, Vec2};
 
 /// Lightroom's crop guide overlays, in the order O cycles them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum Guide {
+pub(in crate::app) enum Guide {
     Grid,
     #[default]
     Thirds,
@@ -15,7 +15,7 @@ pub(super) enum Guide {
     GoldenSpiral,
 }
 impl Guide {
-    pub(super) const ALL: [Guide; 6] = [
+    pub(in crate::app) const ALL: [Guide; 6] = [
         Guide::Grid,
         Guide::Thirds,
         Guide::Diagonal,
@@ -23,7 +23,7 @@ impl Guide {
         Guide::GoldenRatio,
         Guide::GoldenSpiral,
     ];
-    pub(super) fn name(self) -> &'static str {
+    pub(in crate::app) fn name(self) -> &'static str {
         match self {
             Guide::Grid => "Grid",
             Guide::Thirds => "Thirds",
@@ -46,7 +46,7 @@ impl Guide {
     }
     /// How many ways round Shift+O can turn it: the triangle's diagonal runs either way,
     /// and the spiral can close on any corner.
-    pub(super) fn orientations(self) -> u8 {
+    pub(in crate::app) fn orientations(self) -> u8 {
         match self {
             Guide::Triangle => 2,
             Guide::GoldenSpiral => 4,
@@ -57,7 +57,7 @@ impl Guide {
 
 /// When the guides show on the crop: Lightroom's Tools > Crop Guide Overlay.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum GuideShow {
+pub(in crate::app) enum GuideShow {
     Always,
     /// With the pointer over the photo, while the crop or the Straighten ruler is
     /// dragged, and for a moment after an overlay is picked.
@@ -66,8 +66,9 @@ pub(super) enum GuideShow {
     Never,
 }
 impl GuideShow {
-    pub(super) const ALL: [GuideShow; 3] = [GuideShow::Always, GuideShow::Auto, GuideShow::Never];
-    pub(super) fn name(self) -> &'static str {
+    pub(in crate::app) const ALL: [GuideShow; 3] =
+        [GuideShow::Always, GuideShow::Auto, GuideShow::Never];
+    pub(in crate::app) fn name(self) -> &'static str {
         match self {
             GuideShow::Always => "Always",
             GuideShow::Auto => "Auto",
@@ -85,7 +86,7 @@ impl GuideShow {
 
 /// What draws attention to the crop's guides.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Attention {
+pub(in crate::app) enum Attention {
     Away,
     /// The pointer is over the photo, as Lightroom's Auto Show needs.
     Hovered,
@@ -97,15 +98,15 @@ pub(super) enum Attention {
 
 /// The crop guide overlay chosen, a view preference saved in the session.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct CropGuides {
-    pub(super) guide: Guide,
+pub(in crate::app) struct CropGuides {
+    pub(in crate::app) guide: Guide,
     /// Which way round it is, below `guide.orientations()`.
-    pub(super) orientation: u8,
-    pub(super) show: GuideShow,
+    pub(in crate::app) orientation: u8,
+    pub(in crate::app) show: GuideShow,
 }
 impl CropGuides {
     /// O: the next overlay, the right way round.
-    pub(super) fn cycle(&mut self) {
+    pub(in crate::app) fn cycle(&mut self) {
         let at = Guide::ALL
             .iter()
             .position(|g| *g == self.guide)
@@ -114,17 +115,17 @@ impl CropGuides {
         self.orientation = 0;
     }
     /// Shift+O: the overlay's next orientation.
-    pub(super) fn turn(&mut self) {
+    pub(in crate::app) fn turn(&mut self) {
         self.orientation = (self.orientation + 1) % self.guide.orientations();
     }
-    pub(super) fn visible(&self, attention: Attention) -> bool {
+    pub(in crate::app) fn visible(&self, attention: Attention) -> bool {
         match self.show {
             GuideShow::Always => true,
             GuideShow::Auto => attention != Attention::Away,
             GuideShow::Never => false,
         }
     }
-    pub(super) fn from_session(s: &crate::app::session::CropGuideLayout) -> Self {
+    pub(in crate::app) fn from_session(s: &crate::app::session::CropGuideLayout) -> Self {
         let guide = Guide::ALL
             .into_iter()
             .find(|g| g.key() == s.guide)
@@ -139,7 +140,7 @@ impl CropGuides {
             show,
         }
     }
-    pub(super) fn to_session(self) -> crate::app::session::CropGuideLayout {
+    pub(in crate::app) fn to_session(self) -> crate::app::session::CropGuideLayout {
         crate::app::session::CropGuideLayout {
             guide: self.guide.key().into(),
             orientation: self.orientation.into(),
@@ -148,7 +149,7 @@ impl CropGuides {
     }
     /// The overlay's lines over a crop `size` points across, from its top-left corner:
     /// each a polyline.
-    pub(super) fn lines(&self, size: Vec2) -> Vec<Vec<Pos2>> {
+    pub(in crate::app) fn lines(&self, size: Vec2) -> Vec<Vec<Pos2>> {
         let (w, h) = (size.x, size.y);
         let p = Pos2::new;
         let across = |t: f32| vec![p(w * t, 0.), p(w * t, h)];
@@ -284,7 +285,7 @@ fn golden_spiral(size: Vec2) -> Vec<Vec<Pos2>> {
 /// The Straighten ruler: off, picked in the Crop panel and waiting for a drag, or being
 /// drawn on the photo (from the panel, or with Cmd held), in screen points.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(super) enum Ruler {
+pub(in crate::app) enum Ruler {
     #[default]
     Off,
     Armed,
@@ -296,12 +297,12 @@ pub(super) enum Ruler {
 
 /// Shortest Straighten ruler, in points, that sets an angle: a click or a slip of the
 /// pointer is not a line.
-pub(super) const MIN_RULER: f32 = 10.;
+pub(in crate::app) const MIN_RULER: f32 = 10.;
 
 /// The Straighten angle that makes the ruler drawn from `from` to `to` on the photo as
 /// shown level or, when it is nearer upright, plumb; `current` is the angle the photo is
 /// shown at. None for a ruler too short to go by. Positions are in screen points, y down.
-pub(super) fn ruler_angle(from: Pos2, to: Pos2, current: f32) -> Option<f32> {
+pub(in crate::app) fn ruler_angle(from: Pos2, to: Pos2, current: f32) -> Option<f32> {
     let d = to - from;
     if d.length() < MIN_RULER {
         return None;
@@ -316,7 +317,7 @@ pub(super) fn ruler_angle(from: Pos2, to: Pos2, current: f32) -> Option<f32> {
 /// The crop with its width and height swapped (X), as large as fits on the photo and
 /// centred where it was. `photo` is the straightened photo's width and height, which
 /// the crop's 0–1 coordinates span.
-pub(super) fn swap_orientation(crop: [f32; 4], photo: Vec2) -> [f32; 4] {
+pub(in crate::app) fn swap_orientation(crop: [f32; 4], photo: Vec2) -> [f32; 4] {
     let (cx, cy) = ((crop[0] + crop[2]) / 2., (crop[1] + crop[3]) / 2.);
     // Width and height in pixels, swapped, then shrunk to fit the photo.
     let (w, h) = ((crop[3] - crop[1]) * photo.y, (crop[2] - crop[0]) * photo.x);
@@ -330,7 +331,7 @@ pub(super) fn swap_orientation(crop: [f32; 4], photo: Vec2) -> [f32; 4] {
 /// The aspect preset value after X: presets are long side over short in the photo's
 /// own orientation, and their reciprocal stands for the other one. The photo's own
 /// ratio (negative) becomes the ratio of the swapped photo; Free stays Free.
-pub(super) fn swapped_aspect(aspect: f32, photo: Vec2) -> f32 {
+pub(in crate::app) fn swapped_aspect(aspect: f32, photo: Vec2) -> f32 {
     if aspect > 0. {
         1. / aspect
     } else if aspect < 0. {
@@ -342,7 +343,7 @@ pub(super) fn swapped_aspect(aspect: f32, photo: Vec2) -> f32 {
     }
 }
 
-impl super::Editor {
+impl crate::app::Editor {
     /// The straightened photo's width and height, which the crop's 0–1 coordinates span.
     fn crop_frame(&self) -> Option<Vec2> {
         let im = self.document.full()?;
@@ -355,7 +356,7 @@ impl super::Editor {
         Some(Vec2::new(g.oriented_width, g.oriented_height))
     }
     /// X: swaps the crop between portrait and landscape, keeping its aspect.
-    pub(super) fn swap_crop_orientation(&mut self) {
+    pub(in crate::app) fn swap_crop_orientation(&mut self) {
         let Some(photo) = self.crop_frame() else {
             return;
         };
@@ -365,7 +366,7 @@ impl super::Editor {
     }
     /// The Crop tool's keys: X swaps the crop's orientation, O cycles the guide overlay
     /// and Shift+O turns it. The caller leaves them alone while a text field has focus.
-    pub(super) fn crop_keys(&mut self, i: &egui::InputState) {
+    pub(in crate::app) fn crop_keys(&mut self, i: &egui::InputState) {
         // The modifiers held with each key press, which a quick release of Shift
         // before the frame does not change.
         for event in &i.events {
@@ -399,7 +400,7 @@ impl super::Editor {
     /// Picks `aspect` from the Crop tool's menu: the crop takes it now, even when an
     /// uncropped photo already opened with it, and uncropped photos open with it, here
     /// and after a relaunch.
-    pub(super) fn choose_aspect(&mut self, aspect: f32) {
+    pub(in crate::app) fn choose_aspect(&mut self, aspect: f32) {
         self.view.aspect = aspect;
         self.fit_aspect();
         if aspect != self.view.chosen_aspect {
@@ -408,7 +409,7 @@ impl super::Editor {
         }
     }
     /// Changes the guide overlay, saved in the session as a view preference.
-    pub(super) fn set_crop_guides(&mut self, guides: CropGuides) {
+    pub(in crate::app) fn set_crop_guides(&mut self, guides: CropGuides) {
         if guides != self.view.crop_guides {
             self.view.crop_guides = guides;
             self.view.crop_guides_changed = Some(std::time::Instant::now());
@@ -420,8 +421,8 @@ impl super::Editor {
     /// off the UI thread; it arrives as [`Event::Straighten`]. Upright's mode is left as
     /// it is.
     ///
-    /// [`Event::Straighten`]: super::worker::Event::Straighten
-    pub(super) fn start_auto_straighten(&mut self) {
+    /// [`Event::Straighten`]: crate::app::worker::Event::Straighten
+    pub(in crate::app) fn start_auto_straighten(&mut self) {
         let Some(im) = self.document.full().cloned() else {
             return;
         };
@@ -429,12 +430,12 @@ impl super::Editor {
         let id = self.load.id();
         let base = self.document.edit.recipe().clone();
         let analysed = base.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
                 let result = Ok(crate::develop::upright::straighten_angle(&im, &base));
-                let _ = tx.send(super::worker::Event::Straighten {
+                let _ = tx.send(crate::app::worker::Event::Straighten {
                     id,
                     generation,
                     analysed: Box::new(base),
@@ -443,7 +444,7 @@ impl super::Editor {
             },
             // A panic still sends a result, so Auto does not stay disabled.
             move |tx, _| {
-                let _ = tx.send(super::worker::Event::Straighten {
+                let _ = tx.send(crate::app::worker::Event::Straighten {
                     id,
                     generation,
                     analysed: Box::new(analysed),
@@ -454,7 +455,7 @@ impl super::Editor {
     }
     /// Measures the photo when its Straighten waits for Auto, as after pasting or
     /// undoing to the Crop of a photo whose angle was Auto.
-    pub(super) fn ensure_straighten(&mut self) {
+    pub(in crate::app) fn ensure_straighten(&mut self) {
         if self.document.edit.recipe().straighten_pending()
             && !self.document.straighten.is_running()
         {
@@ -464,7 +465,7 @@ impl super::Editor {
     /// Sets the angle Auto straighten found as one History step. One measured before the
     /// photo was turned, flipped or its lens corrections changed no longer fits it, so the
     /// photo is measured again.
-    pub(super) fn auto_straighten_ready(
+    pub(in crate::app) fn auto_straighten_ready(
         &mut self,
         generation: u64,
         analysed: &Recipe,
@@ -478,7 +479,9 @@ impl super::Editor {
             self.pending_straighten_measured(analysed, result);
             return;
         }
-        if super::upright::inputs(analysed) != super::upright::inputs(self.document.edit.recipe()) {
+        if crate::app::upright::inputs(analysed)
+            != crate::app::upright::inputs(self.document.edit.recipe())
+        {
             self.start_auto_straighten();
             return;
         }
@@ -498,9 +501,12 @@ impl super::Editor {
         if self.document.edit.history().in_gesture() {
             self.document.edit.finish_gesture();
         }
-        self.change_edit(Some(super::history::Step::new("Straighten", "Auto")), |r| {
-            r.set_auto_straighten(Some(angle));
-        });
+        self.change_edit(
+            Some(crate::app::history::Step::new("Straighten", "Auto")),
+            |r| {
+                r.set_auto_straighten(Some(angle));
+            },
+        );
     }
     /// A Straighten Auto copied from another photo, measured on this one. As Upright's
     /// analysis, it is part of the photo rather than an edit: every state in History
@@ -516,7 +522,8 @@ impl super::Editor {
             Err(e) => (None, Some(e)),
         };
         let fits = |r: &Recipe| {
-            r.straighten_pending() && super::upright::inputs(r) == super::upright::inputs(analysed)
+            r.straighten_pending()
+                && crate::app::upright::inputs(r) == crate::app::upright::inputs(analysed)
         };
         let mut shown = false;
         for (i, r) in self

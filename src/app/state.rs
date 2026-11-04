@@ -9,80 +9,81 @@ use eframe::egui::{self, Vec2};
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
 #[derive(Default)]
-pub(super) struct Document {
+pub(in crate::app) struct Document {
     /// The settings, their History and whether they still need saving.
-    pub(super) edit: crate::edit_session::EditSession,
-    pub(super) path: Option<PathBuf>,
-    pub(super) metadata: Option<Metadata>,
+    pub(in crate::app) edit: crate::edit_session::EditSession,
+    pub(in crate::app) path: Option<PathBuf>,
+    pub(in crate::app) metadata: Option<Metadata>,
     image: Option<Arc<CameraImage>>,
     /// How the decoded photo's colors spread, for Auto black & white; measured on
     /// first use.
     color_spread: std::cell::OnceCell<crate::develop::ColorSpread>,
     /// A conversion to black & white waiting for the photo to decode, for its
     /// Auto mix.
-    pub(super) pending_treatment: Option<PendingTreatment>,
-    pub(super) export: ExportOptions,
-    pub(super) catalog_photo: Option<PhotoId>,
+    pub(in crate::app) pending_treatment: Option<PendingTreatment>,
+    pub(in crate::app) export: ExportOptions,
+    pub(in crate::app) catalog_photo: Option<PhotoId>,
     /// Why opening the photo failed: no image is coming.
-    pub(super) failed: Option<String>,
-    pub(super) lightroom_notice: String,
+    pub(in crate::app) failed: Option<String>,
+    pub(in crate::app) lightroom_notice: String,
     /// Lightroom's history for the open catalog photo, oldest first.
-    pub(super) lightroom_history: Vec<crate::catalog::HistoryStep>,
+    pub(in crate::app) lightroom_history: Vec<crate::catalog::HistoryStep>,
     /// What Before shows when not the photo's starting settings: a History step,
     /// snapshot or the edit copied to it. Not saved, as in Lightroom.
-    pub(super) before: Option<Recipe>,
+    pub(in crate::app) before: Option<Recipe>,
     /// The open catalog photo's Snapshots.
-    pub(super) snapshots: super::snapshots::Snapshots,
+    pub(in crate::app) snapshots: crate::app::snapshots::Snapshots,
     /// The photo's Lightroom settings, as read with its edit, to apply once its
     /// profiles arrive.
-    pub(super) pending_lightroom: Option<String>,
+    pub(in crate::app) pending_lightroom: Option<String>,
     /// The photo's file as it was when it was opened: what an export of the edit
     /// shown checks it still has.
-    pub(super) file: Option<crate::storage::Identity>,
+    pub(in crate::app) file: Option<crate::storage::Identity>,
     /// Where the edit on screen started from.
-    pub(super) origin: EditOrigin,
+    pub(in crate::app) origin: EditOrigin,
     /// The raw defaults for this photo, once its profiles are known: what Reset
     /// returns to and Before shows.
-    pub(super) defaults: Option<crate::raw_defaults::Resolved>,
-    pub(super) profiles: Vec<Arc<crate::camera_profiles::CameraProfile>>,
-    pub(super) profile_errors: Vec<String>,
+    pub(in crate::app) defaults: Option<crate::raw_defaults::Resolved>,
+    pub(in crate::app) profiles: Vec<Arc<crate::camera_profiles::CameraProfile>>,
+    pub(in crate::app) profile_errors: Vec<String>,
     /// Where the Profile menu lists each of `profiles`.
-    pub(super) profile_groups: crate::camera_profiles::Groups,
+    pub(in crate::app) profile_groups: crate::camera_profiles::Groups,
     /// The file as it was before the decoded image was made from it (the loader's
     /// reading, not the header's): what AI Denoise's result and an export of it must be
     /// made from. `None` when not known.
-    pub(super) image_file: Option<crate::storage::Identity>,
+    pub(in crate::app) image_file: Option<crate::storage::Identity>,
     /// AI Denoise's result for the decoded image and what the Detail panel says of it.
-    pub(super) ai: super::ai_denoise::Photo,
+    pub(in crate::app) ai: crate::app::ai_denoise::Photo,
     /// The Auto estimate for this photo; dropping it with the document cancels it.
-    pub(super) auto: super::task::Task,
+    pub(in crate::app) auto: crate::app::task::Task,
     /// Point Color's dropper sampling the photo, off the UI thread.
-    pub(super) point_color_pick: super::task::Task,
+    pub(in crate::app) point_color_pick: crate::app::task::Task,
     /// The Targeted Adjustment Tool sampling the photo where a drag started.
-    pub(super) targeted_pick: super::task::Task,
+    pub(in crate::app) targeted_pick: crate::app::task::Task,
     /// What the running estimate measures: the recipe without the settings Auto sets.
-    pub(super) auto_input: Option<Recipe>,
+    pub(in crate::app) auto_input: Option<Recipe>,
     /// The recipe as Auto last left it; while it is unchanged, Auto has nothing to do.
-    pub(super) auto_applied: Option<Recipe>,
+    pub(in crate::app) auto_applied: Option<Recipe>,
     /// The recipe [`Editor::auto_in_effect`] last answered for, and its answer, so the
     /// Basic panel does not rebuild what Auto measures on every frame.
     ///
-    /// [`Editor::auto_in_effect`]: super::Editor::auto_in_effect
-    pub(super) auto_effect: std::cell::RefCell<Option<(Recipe, bool)>>,
+    /// [`Editor::auto_in_effect`]: crate::app::Editor::auto_in_effect
+    pub(in crate::app) auto_effect: std::cell::RefCell<Option<(Recipe, bool)>>,
     /// The Transform panel's Upright analysis for this photo.
-    pub(super) upright: super::task::Task,
+    pub(in crate::app) upright: crate::app::task::Task,
     /// The Crop panel's Auto straighten analysis for this photo.
-    pub(super) straighten: super::task::Task,
+    pub(in crate::app) straighten: crate::app::task::Task,
     /// Profile → Fit Camera Look for this photo.
-    pub(super) camera_look: super::task::Task,
+    pub(in crate::app) camera_look: crate::app::task::Task,
     /// The camera thumbnail view's image for this photo, or why there is none, once read.
-    pub(super) camera_thumbnail: Option<Result<super::camera_thumbnail::Thumbnail, String>>,
-    pub(super) camera_thumbnail_task: super::task::Task,
+    pub(in crate::app) camera_thumbnail:
+        Option<Result<crate::app::camera_thumbnail::Thumbnail, String>>,
+    pub(in crate::app) camera_thumbnail_task: crate::app::task::Task,
 }
 
 /// Where a photo's edit in Develop started from.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum EditOrigin {
+pub(in crate::app) enum EditOrigin {
     /// No edit: the raw defaults, which follow Preferences until it is edited.
     #[default]
     Defaults,
@@ -94,7 +95,7 @@ pub(super) enum EditOrigin {
 
 /// What the latest render showed: the whole photo, or a 1:1 region of it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(super) enum TextureMode {
+pub(in crate::app) enum TextureMode {
     #[default]
     Whole,
     Region([u32; 4]),
@@ -102,32 +103,32 @@ pub(super) enum TextureMode {
 /// A texture the viewport draws: uploaded through egui, or presented by the GPU
 /// renderer into a texture it registered.
 #[derive(Clone)]
-pub(super) struct Picture {
+pub(in crate::app) struct Picture {
     id: egui::TextureId,
     size: [usize; 2],
     /// Keeps an uploaded texture alive; presented ones belong to the renderer.
     handle: Option<egui::TextureHandle>,
 }
 impl Picture {
-    pub(super) fn presented(id: egui::TextureId, size: [usize; 2]) -> Self {
+    pub(in crate::app) fn presented(id: egui::TextureId, size: [usize; 2]) -> Self {
         Self {
             id,
             size,
             handle: None,
         }
     }
-    pub(super) fn id(&self) -> egui::TextureId {
+    pub(in crate::app) fn id(&self) -> egui::TextureId {
         self.id
     }
     /// Presented into a texture the renderer registered, rather than uploaded.
     fn is_presented(&self) -> bool {
         self.handle.is_none()
     }
-    pub(super) fn size_vec2(&self) -> Vec2 {
+    pub(in crate::app) fn size_vec2(&self) -> Vec2 {
         Vec2::new(self.size[0] as f32, self.size[1] as f32)
     }
     /// Shows `image` in `slot`, reusing its uploaded texture when it has one.
-    pub(super) fn upload(
+    pub(in crate::app) fn upload(
         slot: &mut Option<Picture>,
         ctx: &egui::Context,
         name: &str,
@@ -160,14 +161,14 @@ impl From<egui::TextureHandle> for Picture {
 }
 /// What a render was asked for, which its result is shown with.
 #[derive(Clone)]
-pub(super) struct Pending {
+pub(in crate::app) struct Pending {
     /// What the pixels are rendered with, Visualize Range included, so a picker
     /// never takes a gray preview for the photo.
-    pub(super) recipe: Option<Recipe>,
-    pub(super) mode: TextureMode,
-    pub(super) crop: [f32; 4],
+    pub(in crate::app) recipe: Option<Recipe>,
+    pub(in crate::app) mode: TextureMode,
+    pub(in crate::app) crop: [f32; 4],
     /// The AI Denoise result the render was given.
-    pub(super) ai: RenderedAi,
+    pub(in crate::app) ai: RenderedAi,
 }
 impl Default for Pending {
     fn default() -> Self {
@@ -182,21 +183,21 @@ impl Default for Pending {
 /// The AI Denoise result a render was given: none, the tiles done so far, or the
 /// final one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum RenderedAi {
+pub(in crate::app) enum RenderedAi {
     None,
     Partial,
     Complete,
 }
 /// The document, photo, region and size a render shows.
-pub(super) struct RenderView {
-    pub(super) image: std::sync::Weak<CameraImage>,
-    pub(super) path: Option<PathBuf>,
-    pub(super) photo: Option<PhotoId>,
-    pub(super) region: Option<[u32; 4]>,
-    pub(super) max_edge: u32,
+pub(in crate::app) struct RenderView {
+    pub(in crate::app) image: std::sync::Weak<CameraImage>,
+    pub(in crate::app) path: Option<PathBuf>,
+    pub(in crate::app) photo: Option<PhotoId>,
+    pub(in crate::app) region: Option<[u32; 4]>,
+    pub(in crate::app) max_edge: u32,
 }
 impl RenderView {
-    pub(super) fn same(&self, other: &Self) -> bool {
+    pub(in crate::app) fn same(&self, other: &Self) -> bool {
         self.image.ptr_eq(&other.image)
             && self.path == other.path
             && self.photo == other.photo
@@ -204,50 +205,50 @@ impl RenderView {
             && self.max_edge == other.max_edge
     }
 }
-pub(super) struct PreviewState {
-    pub(super) task: super::task::Task,
+pub(in crate::app) struct PreviewState {
+    pub(in crate::app) task: crate::app::task::Task,
     /// The last whole-photo render, always drawn so zooming never shows a gap.
-    pub(super) texture: Option<Picture>,
+    pub(in crate::app) texture: Option<Picture>,
     /// The last 100% region render, drawn over `texture` while `mode` is a region.
-    pub(super) region: Option<Picture>,
+    pub(in crate::app) region: Option<Picture>,
     /// Small copy of the last whole-photo render for the minimap.
-    pub(super) navigator: Option<Picture>,
-    pub(super) histogram: crate::rendered::Histogram,
+    pub(in crate::app) navigator: Option<Picture>,
+    pub(in crate::app) histogram: crate::rendered::Histogram,
     /// The shown pixels of `texture` and `region` while the white balance selector
     /// is active, for its loupe.
-    pub(super) samples: Option<image::RgbImage>,
-    pub(super) region_samples: Option<image::RgbImage>,
+    pub(in crate::app) samples: Option<image::RgbImage>,
+    pub(in crate::app) region_samples: Option<image::RgbImage>,
     /// Whether renders keep their samples: while a loupe or the readout reads them.
-    pub(super) samples_requested: bool,
+    pub(in crate::app) samples_requested: bool,
     /// The recipe the shown samples were rendered with.
-    pub(super) samples_recipe: Option<Recipe>,
+    pub(in crate::app) samples_recipe: Option<Recipe>,
     /// What the latest render was asked for, applied to its result when it lands.
-    pub(super) pending: Pending,
+    pub(in crate::app) pending: Pending,
     /// Earlier renders an edit let finish (see `Task::supersede`), oldest first: those
     /// the renderer took, as one it replaced before taking it never reports
     /// (`replaced`).
-    pub(super) overtaken: std::collections::VecDeque<(u64, Pending)>,
+    pub(in crate::app) overtaken: std::collections::VecDeque<(u64, Pending)>,
     /// The render whose result is shown, so an earlier one landing late is not.
-    pub(super) shown: u64,
+    pub(in crate::app) shown: u64,
     /// What the latest render shows: an edit lets the running render finish only
     /// when it is still the same.
-    pub(super) last_view: Option<RenderView>,
-    pub(super) status: String,
-    pub(super) last_fit_edge: u32,
-    pub(super) last_region: Option<[u32; 4]>,
-    pub(super) mode: TextureMode,
+    pub(in crate::app) last_view: Option<RenderView>,
+    pub(in crate::app) status: String,
+    pub(in crate::app) last_fit_edge: u32,
+    pub(in crate::app) last_region: Option<[u32; 4]>,
+    pub(in crate::app) mode: TextureMode,
     /// The crop `texture` was rendered with, when known: until a render for a new
     /// crop lands, the old one is placed where its crop sits instead of stretched.
-    pub(super) crop: Option<[f32; 4]>,
+    pub(in crate::app) crop: Option<[f32; 4]>,
     /// Before's render, while it shows beside the edit.
-    pub(super) before: super::before_after::BeforePreview,
+    pub(in crate::app) before: crate::app::before_after::BeforePreview,
     /// The magnifier's render, while it is shown.
-    pub(super) magnifier: super::magnifier::MagnifierPreview,
+    pub(in crate::app) magnifier: crate::app::magnifier::MagnifierPreview,
     /// The photo's stored Standard preview, shown while it opens until the
     /// first live render; nothing else reads it.
-    pub(super) stand_in: Option<Picture>,
+    pub(in crate::app) stand_in: Option<Picture>,
     /// `texture` is the camera's embedded JPEG, not a render.
-    pub(super) embedded: bool,
+    pub(in crate::app) embedded: bool,
 }
 impl Default for PreviewState {
     fn default() -> Self {
@@ -281,7 +282,7 @@ impl Default for PreviewState {
 /// The tool that owns clicks and drags on the photo, as in Lightroom's tool strip.
 /// Only one is active; activating one closes the others.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum Tool {
+pub(in crate::app) enum Tool {
     #[default]
     None,
     Crop,
@@ -302,88 +303,88 @@ pub(super) enum Tool {
 }
 /// The Color Mixer's tabs, as in Lightroom.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum MixerTab {
+pub(in crate::app) enum MixerTab {
     #[default]
     Mixer,
     PointColor,
 }
 /// Point Color's panel: the selected swatch and the view options.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct PointColorView {
-    pub(super) selected: Option<usize>,
+pub(in crate::app) struct PointColorView {
+    pub(in crate::app) selected: Option<usize>,
     /// Visualize Range: the selected swatch's selection in color, the rest gray.
-    pub(super) visualize: bool,
+    pub(in crate::app) visualize: bool,
     /// The Hue, Saturation and Luminance range controls are shown.
-    pub(super) ranges: bool,
+    pub(in crate::app) ranges: bool,
 }
-pub(super) struct ViewState {
+pub(in crate::app) struct ViewState {
     /// Fit or a zoom level, and where; Develop's and the Library's.
-    pub(super) zoom: super::navigator::Zoom,
+    pub(in crate::app) zoom: crate::app::navigator::Zoom,
     /// Aperture's Loupe over the fitted photo in Develop.
-    pub(super) magnifier: super::magnifier::Magnifier,
+    pub(in crate::app) magnifier: crate::app::magnifier::Magnifier,
     /// The corner the minimap sits in while zoomed in.
-    pub(super) minimap: super::minimap::Minimap,
+    pub(in crate::app) minimap: crate::app::minimap::Minimap,
     /// The size, in pixels, of the area the edit is shown in: the viewport, or its
     /// half beside Before.
-    pub(super) viewport: Vec2,
+    pub(in crate::app) viewport: Vec2,
     /// Before alone or beside the edit.
-    pub(super) compare: super::before_after::Compare,
+    pub(in crate::app) compare: crate::app::before_after::Compare,
     /// The histogram's clipping warnings.
-    pub(super) clipping: super::clipping::ClippingView,
+    pub(in crate::app) clipping: crate::app::clipping::ClippingView,
     /// The RGB values under the pointer, shown under the histogram.
-    pub(super) readout: super::readout::Readout,
+    pub(in crate::app) readout: crate::app::readout::Readout,
     /// A drag in the histogram in progress.
-    pub(super) tone_drag: Option<super::tone_drag::ToneDrag>,
-    pub(super) tool: Tool,
-    pub(super) crop_drag: Option<([f32; 4], usize)>,
-    pub(super) aspect: f32,
+    pub(in crate::app) tone_drag: Option<crate::app::tone_drag::ToneDrag>,
+    pub(in crate::app) tool: Tool,
+    pub(in crate::app) crop_drag: Option<([f32; 4], usize)>,
+    pub(in crate::app) aspect: f32,
     /// Whether `aspect` was read from this photo's crop since the Crop tool opened.
-    pub(super) aspect_read: bool,
+    pub(in crate::app) aspect_read: bool,
     /// The photo was loaded again with the Crop tool open: its aspect is read from
     /// the edit loaded, which an uncropped photo keeps rather than taking the
     /// chosen aspect.
-    pub(super) aspect_reloaded: bool,
+    pub(in crate::app) aspect_reloaded: bool,
     /// The aspect last chosen from the Crop tool's menu, which an uncropped photo
     /// opens with; saved in the session.
-    pub(super) chosen_aspect: f32,
+    pub(in crate::app) chosen_aspect: f32,
     /// The crop guide overlay; saved in the session.
-    pub(super) crop_guides: super::crop_tool::CropGuides,
+    pub(in crate::app) crop_guides: crate::app::crop_tool::CropGuides,
     /// When the overlay was last changed; it shows for a moment after, even in Auto.
-    pub(super) crop_guides_changed: Option<std::time::Instant>,
+    pub(in crate::app) crop_guides_changed: Option<std::time::Instant>,
     /// The Crop tool's Straighten ruler.
-    pub(super) ruler: super::crop_tool::Ruler,
+    pub(in crate::app) ruler: crate::app::crop_tool::Ruler,
     /// Spot removal settings, selection and drag in progress.
-    pub(super) retouch: super::retouch_tool::RetouchTool,
+    pub(in crate::app) retouch: crate::app::retouch_tool::RetouchTool,
     /// Red Eye Correction's selection, last size and drag in progress.
-    pub(super) red_eye: super::red_eye_tool::RedEyeTool,
+    pub(in crate::app) red_eye: crate::app::red_eye_tool::RedEyeTool,
     /// A wheel scroll sizing a brush, recorded as one History step when it pauses.
-    pub(super) wheel: super::brush_scroll::WheelGesture,
+    pub(in crate::app) wheel: crate::app::brush_scroll::WheelGesture,
     /// Masking panel state.
-    pub(super) masking: super::mask_tool::MaskTool,
+    pub(in crate::app) masking: crate::app::mask_tool::MaskTool,
     /// The Guided Upright tool's selection, drag and view options.
-    pub(super) guided: super::guided_tool::GuidedTool,
-    pub(super) monitor: super::monitor::MonitorProfile,
+    pub(in crate::app) guided: crate::app::guided_tool::GuidedTool,
+    pub(in crate::app) monitor: crate::app::monitor::MonitorProfile,
     /// The display profile the system assigns to the window's display.
-    pub(super) system_display: super::monitor::SystemProbe,
-    pub(super) selected_band: usize,
+    pub(in crate::app) system_display: crate::app::monitor::SystemProbe,
+    pub(in crate::app) selected_band: usize,
     /// The Color Grading panel's view: 3-Way or one wheel.
-    pub(super) grading: super::color_grading::GradingView,
-    pub(super) selected_curve: usize,
-    pub(super) parametric_curve: bool,
-    pub(super) mixer_color: bool,
-    pub(super) mixer_adjust: usize,
+    pub(in crate::app) grading: crate::app::color_grading::GradingView,
+    pub(in crate::app) selected_curve: usize,
+    pub(in crate::app) parametric_curve: bool,
+    pub(in crate::app) mixer_color: bool,
+    pub(in crate::app) mixer_adjust: usize,
     /// The Color Mixer's tab: the mixer or Point Color.
-    pub(super) mixer_tab: MixerTab,
-    pub(super) point_color: PointColorView,
+    pub(in crate::app) mixer_tab: MixerTab,
+    pub(in crate::app) point_color: PointColorView,
     /// A Targeted Adjustment Tool drag in progress.
-    pub(super) targeted: Option<super::targeted_tool::TargetDrag>,
-    pub(super) shortcuts: bool,
+    pub(in crate::app) targeted: Option<crate::app::targeted_tool::TargetDrag>,
+    pub(in crate::app) shortcuts: bool,
     /// The Basic slider the `.` and `,` keys selected for `+` and `-`, named as on
     /// a RAW file (see `basic_keys`); kept across photos and modules.
-    pub(super) selected_setting: Option<crate::model::params::ParameterId>,
-    pub(super) zoom_key: (bool, f32),
-    pub(super) zoom_anim: Option<(f64, egui::Rect)>,
-    pub(super) shown_rect: Option<egui::Rect>,
+    pub(in crate::app) selected_setting: Option<crate::model::params::ParameterId>,
+    pub(in crate::app) zoom_key: (bool, f32),
+    pub(in crate::app) zoom_anim: Option<(f64, egui::Rect)>,
+    pub(in crate::app) shown_rect: Option<egui::Rect>,
 }
 impl Default for ViewState {
     fn default() -> Self {
@@ -431,41 +432,41 @@ impl Default for ViewState {
 }
 
 #[derive(Default)]
-pub(super) struct PresetBrowser {
-    pub(super) library: Arc<crate::presets::Library>,
-    pub(super) issues: Vec<Option<String>>,
+pub(in crate::app) struct PresetBrowser {
+    pub(in crate::app) library: Arc<crate::presets::Library>,
+    pub(in crate::app) issues: Vec<Option<String>>,
     /// Per preset: the profile it names and the one it renders with instead.
-    pub(super) substitutes: Vec<Option<(String, String)>>,
-    pub(super) filter: String,
+    pub(in crate::app) substitutes: Vec<Option<(String, String)>>,
+    pub(in crate::app) filter: String,
     /// The search in the Library's Saved Preset chooser.
-    pub(super) chooser_filter: String,
-    pub(super) favorites: std::collections::BTreeSet<String>,
-    pub(super) compatible_only: bool,
-    pub(super) favorites_only: bool,
-    pub(super) selected: String,
-    pub(super) preview: Option<Recipe>,
-    pub(super) hover: Option<(usize, Instant)>,
+    pub(in crate::app) chooser_filter: String,
+    pub(in crate::app) favorites: std::collections::BTreeSet<String>,
+    pub(in crate::app) compatible_only: bool,
+    pub(in crate::app) favorites_only: bool,
+    pub(in crate::app) selected: String,
+    pub(in crate::app) preview: Option<Recipe>,
+    pub(in crate::app) hover: Option<(usize, Instant)>,
     /// The list as last shown, kept until what it is built from changes.
-    pub(super) list: Option<super::presets::PresetList>,
+    pub(in crate::app) list: Option<crate::app::presets::PresetList>,
     /// Counts changes to `favorites` and `issues`, which the list depends on.
-    pub(super) revision: u64,
+    pub(in crate::app) revision: u64,
     /// Numbers library scans, so only the latest one is shown.
-    pub(super) scans: u64,
+    pub(in crate::app) scans: u64,
     /// Whether a scan has finished since the app started, so `library` lists
     /// every preset rather than none yet.
-    pub(super) scanned: bool,
+    pub(in crate::app) scanned: bool,
     /// The Amount of the preset just applied, while nothing else has changed.
-    pub(super) amount: Option<super::presets::AmountSession>,
+    pub(in crate::app) amount: Option<crate::app::presets::AmountSession>,
 }
 
 impl PresetBrowser {
     /// Starts counting a new library scan.
-    pub(super) fn next_scan(&mut self) -> u64 {
+    pub(in crate::app) fn next_scan(&mut self) -> u64 {
         self.scans += 1;
         self.scans
     }
     /// Whether `scan` is the latest one started.
-    pub(super) fn is_latest(&self, scan: u64) -> bool {
+    pub(in crate::app) fn is_latest(&self, scan: u64) -> bool {
         scan == self.scans
     }
 }
@@ -475,7 +476,7 @@ impl Document {
     /// found it moved and verified, keeping the edit, its History and
     /// whether it still needs saving; a save that failed on the old path is
     /// tried again on the new one.
-    pub(super) fn relink(&mut self, path: PathBuf) {
+    pub(in crate::app) fn relink(&mut self, path: PathBuf) {
         self.file = crate::storage::Identity::read(&path).ok();
         self.path = Some(path);
         self.edit.save_state_mut().retry_now();
@@ -483,7 +484,7 @@ impl Document {
     /// Stands in for opening the file at `path`: its path and its identity as
     /// read now, which saves are checked against.
     #[cfg(test)]
-    pub(super) fn opened_at(&mut self, path: PathBuf) {
+    pub(in crate::app) fn opened_at(&mut self, path: PathBuf) {
         self.file = crate::storage::Identity::read(&path).ok();
         self.path = Some(path);
     }
@@ -497,7 +498,7 @@ impl Document {
 impl PreviewState {
     /// Starts the render of a change, cancelling the running one; with `edit`, an
     /// edit of the same view, lets it finish and show on the way.
-    pub(super) fn start(
+    pub(in crate::app) fn start(
         &mut self,
         edit: bool,
         pending: Pending,
@@ -514,7 +515,7 @@ impl PreviewState {
     }
     /// What render `id` was asked for, if its result is still to show: the latest
     /// render's, or an earlier one an edit let finish and not older than the shown.
-    pub(super) fn request(&self, id: u64) -> Option<Pending> {
+    pub(in crate::app) fn request(&self, id: u64) -> Option<Pending> {
         if !self.task.counts(id) || id < self.shown {
             None
         } else if id == self.task.id() {
@@ -527,11 +528,11 @@ impl PreviewState {
         }
     }
     /// Forgets render `id`, which the renderer replaced before taking it.
-    pub(super) fn replaced(&mut self, id: u64) {
+    pub(in crate::app) fn replaced(&mut self, id: u64) {
         self.overtaken.retain(|(i, _)| *i != id);
     }
     /// Notes that render `id`'s result is shown: earlier ones no longer are.
-    pub(super) fn showing(&mut self, id: u64) {
+    pub(in crate::app) fn showing(&mut self, id: u64) {
         self.shown = id;
         self.overtaken.retain(|(i, _)| *i >= id);
     }
@@ -559,7 +560,7 @@ impl PreviewState {
     /// Starts keeping the shown pixels, and whether a render must be asked for
     /// them: not when those kept from an earlier hover still match what is shown,
     /// with no render landed or on its way since.
-    pub(super) fn ask_for_samples(&mut self) -> bool {
+    pub(in crate::app) fn ask_for_samples(&mut self) -> bool {
         if self.samples_requested {
             return false;
         }
@@ -573,12 +574,12 @@ impl PreviewState {
     }
     /// Stops keeping the pixels of later renders. Those shown stay until one lands,
     /// so pointing back at an unchanged photo needs no render.
-    pub(super) fn stop_asking_for_samples(&mut self) {
+    pub(in crate::app) fn stop_asking_for_samples(&mut self) {
         self.samples_requested = false;
     }
     /// Keeps a landed render's pixels while they are asked for. Otherwise drops
     /// all kept ones, the photo's and its region's, which no longer match it.
-    pub(super) fn keep_samples(&mut self, region: bool, samples: Option<image::RgbImage>) {
+    pub(in crate::app) fn keep_samples(&mut self, region: bool, samples: Option<image::RgbImage>) {
         if !self.samples_requested {
             self.samples = None;
             self.region_samples = None;
@@ -632,7 +633,7 @@ impl PreviewState {
 }
 impl ViewState {
     /// The ICC profile renders convert to for the monitor, captured by each job.
-    pub(super) fn display_profile(&self) -> Option<PathBuf> {
+    pub(in crate::app) fn display_profile(&self) -> Option<PathBuf> {
         self.monitor
             .transform(self.system_display.display())
             .map(Into::into)
@@ -747,12 +748,12 @@ impl Document {
             .flatten()
     }
     /// How the decoded photo's colors spread, once it is decoded.
-    pub(super) fn color_spread(&self) -> Option<crate::develop::ColorSpread> {
+    pub(in crate::app) fn color_spread(&self) -> Option<crate::develop::ColorSpread> {
         self.colors().spread()
     }
     /// The recipe to edit, and what the photo's colors are measured from, borrowed
     /// apart so a panel can measure them only when it needs them.
-    pub(super) fn recipe_and_colors(&mut self) -> (&mut Recipe, PhotoColorSource<'_>) {
+    pub(in crate::app) fn recipe_and_colors(&mut self) -> (&mut Recipe, PhotoColorSource<'_>) {
         (
             self.edit.recipe_mut(),
             PhotoColorSource {
@@ -774,21 +775,21 @@ impl Document {
 /// A Treatment asked for while the photo decodes, and the recipe it was asked for:
 /// once the recipe changes otherwise (Reset, Undo, a preset), the request lapses.
 #[derive(Clone)]
-pub(super) struct PendingTreatment {
-    pub(super) treatment: crate::model::recipe::Treatment,
-    pub(super) recipe: Recipe,
+pub(in crate::app) struct PendingTreatment {
+    pub(in crate::app) treatment: crate::model::recipe::Treatment,
+    pub(in crate::app) recipe: Recipe,
 }
 
 /// The decoded photo and its measured colors, for Auto black & white.
 #[derive(Clone, Copy)]
-pub(super) struct PhotoColorSource<'a> {
+pub(in crate::app) struct PhotoColorSource<'a> {
     image: Option<&'a Arc<CameraImage>>,
     spread: &'a std::cell::OnceCell<crate::develop::ColorSpread>,
-    pub(super) metadata: Option<&'a Metadata>,
+    pub(in crate::app) metadata: Option<&'a Metadata>,
 }
 impl PhotoColorSource<'_> {
     /// How the photo's colors spread, measured on first use once it is decoded.
-    pub(super) fn spread(&self) -> Option<crate::develop::ColorSpread> {
+    pub(in crate::app) fn spread(&self) -> Option<crate::develop::ColorSpread> {
         let im = self.image?;
         Some(
             *self

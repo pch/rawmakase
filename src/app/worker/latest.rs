@@ -49,9 +49,9 @@ impl<T: Send + 'static> Latest<T> {
         }
     }
     /// Stops the worker once its current job is done; pending jobs never run.
-    pub(in crate::app) fn stop(&mut self) -> super::super::task::Stopping {
+    pub(in crate::app) fn stop(&mut self) -> crate::app::task::Stopping {
         self.signal_stop();
-        super::super::task::Stopping::new(self.thread.take())
+        crate::app::task::Stopping::new(self.thread.take())
     }
 
     pub(crate) fn submit(&self, job: T) {

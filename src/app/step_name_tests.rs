@@ -2,8 +2,8 @@
 //! is drawn, the edit frame passes that name on to History as it ends, and
 //! History gives it to the next step it records. These pin down when a name is
 //! kept, replaced or dropped, through the editor's frames.
-use super::Editor;
-use super::history::Step;
+use crate::app::Editor;
+use crate::app::history::Step;
 use eframe::egui::{self, Pos2};
 
 fn editor(ctx: &egui::Context) -> Editor {
@@ -269,7 +269,10 @@ fn the_preset_amount_drops_its_name_when_it_changes_nothing() {
     frame(&mut e, &ctx, Vec::new(), |e, ctx| {
         // The Amount it is at already: the photo stays as it is.
         name(e, ctx, "Preset Amount", "100");
-        assert_eq!(e.set_preset_amount(1.), super::presets::AmountChange::Same);
+        assert_eq!(
+            e.set_preset_amount(1.),
+            crate::app::presets::AmountChange::Same
+        );
         assert_eq!(pending(e, ctx), None);
     });
     assert_eq!(steps(&e), before);

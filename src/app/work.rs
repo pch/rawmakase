@@ -10,13 +10,13 @@
 //!
 //! Changing a row's policy (AI Denoise blocking close, say) changes what the
 //! app does: it is a change of behaviour of its own, not a refactor.
-use super::messages::Work;
-use super::{Editor, task};
+use crate::app::messages::Work;
+use crate::app::{Editor, task};
 use std::borrow::Cow;
 
 /// A kind of work, for the table's order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Kind {
+pub(in crate::app) enum Kind {
     Loader,
     Renderer,
     ReferenceLoader,
@@ -54,11 +54,11 @@ enum Label {
 
 /// What the close guard calls an export or preview a control command started.
 /// `pending_work` matches on these names to offer what can be done instead.
-pub(super) const OUTPUT: &str = "the output the control socket asked for";
+pub(in crate::app) const OUTPUT: &str = "the output the control socket asked for";
 /// What the close guard calls a folder change.
-pub(super) const FOLDER_CHANGE: &str = "the folder change";
+pub(in crate::app) const FOLDER_CHANGE: &str = "the folder change";
 /// What the close guard calls a file operation.
-pub(super) const FILE_CHANGE: &str = "the file operation";
+pub(in crate::app) const FILE_CHANGE: &str = "the file operation";
 
 /// One kind of work and its policy.
 struct Row {
@@ -391,7 +391,7 @@ fn running(e: &Editor, row: &Row) -> bool {
 impl Editor {
     /// The work closing waits for, as the close guard names it: closing would cut
     /// it off, and nothing can be saved in its place.
-    pub(super) fn closing_waits_for(&self) -> Option<Cow<'static, str>> {
+    pub(in crate::app) fn closing_waits_for(&self) -> Option<Cow<'static, str>> {
         WORK.iter()
             .filter(|row| row.closing.is_some() && running(self, row))
             .find_map(|row| match row.closing? {
@@ -401,26 +401,26 @@ impl Editor {
     }
     /// What the user started that is still running and has no place of its own
     /// that says so, in the table's order.
-    pub(super) fn running_work(&self) -> Vec<Work> {
+    pub(in crate::app) fn running_work(&self) -> Vec<Work> {
         WORK.iter()
             .filter_map(|row| row.status.and_then(|status| status(self)))
             .collect()
     }
     /// Whether work that renders or reads photos runs, which edited previews
     /// make way for.
-    pub(super) fn work_slows_previews(&self) -> bool {
+    pub(in crate::app) fn work_slows_previews(&self) -> bool {
         WORK.iter()
             .any(|row| row.slows_previews && running(self, row))
     }
     /// Whether heavier file reading runs, which the checksum reader pauses for.
-    pub(super) fn work_pauses_checksums(&self) -> bool {
+    pub(in crate::app) fn work_pauses_checksums(&self) -> bool {
         WORK.iter()
             .any(|row| row.pauses_checksums && running(self, row))
     }
     /// The workers the exit sequence waits for, asked to stop in the table's
     /// order, whether or not they are running (stopping cancelled some already);
     /// none is waited for here.
-    pub(super) fn stop_workers(&mut self) -> Vec<task::Stopping> {
+    pub(in crate::app) fn stop_workers(&mut self) -> Vec<task::Stopping> {
         let mut stopping = Vec::new();
         for row in WORK {
             if let Some(stop) = row.stop {
@@ -433,7 +433,7 @@ impl Editor {
 
 /// The kinds of work quitting stops, in order.
 #[cfg(test)]
-pub(super) fn stopped() -> Vec<Kind> {
+pub(in crate::app) fn stopped() -> Vec<Kind> {
     WORK.iter()
         .filter(|row| row.stop.is_some())
         .map(|row| row.kind)

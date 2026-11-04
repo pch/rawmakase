@@ -1,9 +1,9 @@
 //! Presets made here: New Develop Preset, and Update, Rename and Delete in a preset's
 //! menu, for presets in the user library's "User Presets" folder and those imported
 //! into it; and Reveal in Finder for any preset file.
-use super::widgets::{modal_frame, primary_button};
-use super::{Editor, settings_transfer::PresetForm, theme};
 use crate::app::design::{self, Tone, button, inset, space, text};
+use crate::app::widgets::{modal_frame, primary_button};
+use crate::app::{Editor, settings_transfer::PresetForm, theme};
 use crate::model::settings_groups::GroupSelection;
 use crate::presets::user::UserPresets;
 use crate::xmp::preset_write::PresetInfo;
@@ -11,7 +11,7 @@ use eframe::egui::{self, Color32};
 
 /// A change asked for in a preset's menu.
 #[derive(Clone, Debug, PartialEq)]
-pub(super) enum PresetAction {
+pub(in crate::app) enum PresetAction {
     Update(usize),
     StartRename(usize),
     Delete(usize),
@@ -19,7 +19,7 @@ pub(super) enum PresetAction {
 }
 
 /// The menu of preset `i`, `p`, and what was chosen in it: only what `p` allows.
-pub(super) fn preset_menu(
+pub(in crate::app) fn preset_menu(
     ui: &mut egui::Ui,
     user: &UserPresets,
     p: &crate::xmp::Preset,
@@ -46,7 +46,7 @@ pub(super) fn preset_menu(
 
 /// A preset being renamed: its file, which stays put while the library reloads,
 /// and the name being typed.
-pub(super) struct PresetRename {
+pub(in crate::app) struct PresetRename {
     path: std::path::PathBuf,
     name: String,
 }
@@ -60,7 +60,7 @@ enum RenameChoice {
 
 impl Editor {
     /// Saves the open photo's `groups` as a new preset in the user library.
-    pub(super) fn create_preset(&mut self, form: &PresetForm, groups: &GroupSelection) {
+    pub(in crate::app) fn create_preset(&mut self, form: &PresetForm, groups: &GroupSelection) {
         self.create_preset_in(&UserPresets::default(), form, groups);
     }
     /// A photo is open and loaded, so its settings are the ones shown, not the
@@ -96,7 +96,7 @@ impl Editor {
         }
     }
     /// Carries out a preset menu's choice.
-    pub(super) fn preset_action(&mut self, action: PresetAction) {
+    pub(in crate::app) fn preset_action(&mut self, action: PresetAction) {
         let library = self.presets.library.clone();
         let user = UserPresets::default();
         let result = match action {
@@ -144,7 +144,7 @@ impl Editor {
             }
             PresetAction::StartRename(i) => {
                 if let Some(p) = library.presets.get(i) {
-                    self.modal = Some(super::Modal::RenamePreset(PresetRename {
+                    self.modal = Some(crate::app::Modal::RenamePreset(PresetRename {
                         path: p.path.clone(),
                         name: p.name.clone(),
                     }));
@@ -162,9 +162,9 @@ impl Editor {
         }
     }
     /// The Rename Preset window, while one is being renamed.
-    pub(super) fn preset_rename_window(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn preset_rename_window(&mut self, ctx: &egui::Context) {
         let palette = theme::palette(ctx);
-        let Some(super::Modal::RenamePreset(rename)) = &mut self.modal else {
+        let Some(crate::app::Modal::RenamePreset(rename)) = &mut self.modal else {
             return;
         };
         let mut choice = None;
@@ -203,7 +203,7 @@ impl Editor {
         let Some(choice) = choice else {
             return;
         };
-        let Some(super::Modal::RenamePreset(rename)) = self.modal.take() else {
+        let Some(crate::app::Modal::RenamePreset(rename)) = self.modal.take() else {
             unreachable!("open above");
         };
         if choice == RenameChoice::Cancel {
@@ -318,14 +318,14 @@ mod tests {
         let ctx = egui::Context::default();
         let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
         let before = e.copy_groups.clone();
-        e.open_copy_dialog(super::super::settings_transfer::Transfer::NewPreset);
+        e.open_copy_dialog(crate::app::settings_transfer::Transfer::NewPreset);
         let mut narrow = GroupSelection::none();
         narrow.set(SettingGroup::Exposure, GroupInclusion::Included);
-        let Some(super::super::Modal::CopySettings(dialog)) = &mut e.modal else {
+        let Some(crate::app::Modal::CopySettings(dialog)) = &mut e.modal else {
             panic!("Copy Settings is open");
         };
         dialog.groups = narrow;
-        e.close_copy_dialog(super::super::settings_transfer::CopyChoice::Confirm);
+        e.close_copy_dialog(crate::app::settings_transfer::CopyChoice::Confirm);
         assert_eq!(e.copy_groups, before);
     }
 

@@ -4,10 +4,10 @@
 //! the UI thread as the drag starts; what is dragged before it arrives is applied
 //! when it does. Each drag is one History step; Esc or the panel's target button puts
 //! the tool away.
-use super::state::Tool;
-use super::{Editor, history::Step, theme};
 use crate::app::Module;
 use crate::app::design::{Tone, radius};
+use crate::app::state::Tool;
+use crate::app::{Editor, history::Step, theme};
 use crate::develop::targeted::{DRAG_RATE, HslChannel, Target, TargetSample, TargetWeights};
 use crate::model::recipe::Recipe;
 use crate::model::recipe::Treatment;
@@ -17,7 +17,7 @@ use rawmakase_cancel::Cancel;
 /// A drag with the tool, from the press to the sample's arrival or the release,
 /// whichever comes last.
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct TargetDrag {
+pub(in crate::app) struct TargetDrag {
     target: Target,
     /// Where it started, in the photo's screen rectangle (0–1).
     at: [f32; 2],
@@ -41,7 +41,7 @@ enum Pointer {
 
 impl TargetDrag {
     /// The sliders the drag moves, for the panel to highlight, once known.
-    pub(super) fn weights(&self) -> Option<&TargetWeights> {
+    pub(in crate::app) fn weights(&self) -> Option<&TargetWeights> {
         self.weights.as_ref().filter(|w| !w.is_empty())
     }
 }
@@ -49,7 +49,7 @@ impl TargetDrag {
 impl Editor {
     /// Opens the tool for `target`, or puts it away when it is open, and shows the
     /// sliders it moves.
-    pub(super) fn toggle_targeted(&mut self, target: Target) {
+    pub(in crate::app) fn toggle_targeted(&mut self, target: Target) {
         if !self.targeted_available(target) {
             let text: String = match target {
                 Target::BlackWhite => "The B&W mix adjusts black & white photos".into(),
@@ -62,7 +62,7 @@ impl Editor {
         match target {
             Target::ToneCurve => self.view.parametric_curve = true,
             Target::Hsl(channel) => {
-                self.view.mixer_tab = super::state::MixerTab::Mixer;
+                self.view.mixer_tab = crate::app::state::MixerTab::Mixer;
                 self.view.mixer_color = false;
                 // All shows every channel already.
                 if self.view.mixer_adjust != 3 {
@@ -73,7 +73,7 @@ impl Editor {
         }
     }
     /// Whether the panel `target` adjusts is the one this photo shows.
-    pub(super) fn targeted_available(&self, target: Target) -> bool {
+    pub(in crate::app) fn targeted_available(&self, target: Target) -> bool {
         let r = self.document.edit.recipe();
         let black_white = r.treatment() == Treatment::BlackWhite;
         match target {
@@ -89,7 +89,7 @@ impl Editor {
         match target {
             Target::ToneCurve => v.parametric_curve,
             Target::Hsl(channel) => {
-                v.mixer_tab == super::state::MixerTab::Mixer
+                v.mixer_tab == crate::app::state::MixerTab::Mixer
                     && !v.mixer_color
                     && (v.mixer_adjust == 3 || v.mixer_adjust == channel.index())
             }
@@ -99,7 +99,7 @@ impl Editor {
     /// Puts the tool away when its sliders are no longer shown (the Library, a
     /// conversion to or from black & white, another view of the panel), and drops a
     /// drag it leaves behind, or one for another target.
-    pub(super) fn keep_targeted_tool(&mut self) {
+    pub(in crate::app) fn keep_targeted_tool(&mut self) {
         // Before shown: a drag still waiting for its sample is dropped.
         if self.view.compare.shows_before() && self.view.targeted.is_some() {
             self.view.targeted = None;
@@ -128,7 +128,7 @@ impl Editor {
     }
     /// The tool over the photo in `rect`: a press starts a drag and samples the color
     /// there; dragging moves the sliders.
-    pub(super) fn targeted_overlay(
+    pub(in crate::app) fn targeted_overlay(
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
@@ -180,7 +180,7 @@ impl Editor {
         let id = self.load.id();
         let sampled = self.document.edit.recipe().clone();
         let on_panic = sampled.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
@@ -193,7 +193,7 @@ impl Editor {
                     Cancel::new(&cancel),
                 )
                 .map_err(|e| format!("Cannot sample the photo: {e:#}"));
-                let _ = tx.send(super::worker::Event::TargetedSample {
+                let _ = tx.send(crate::app::worker::Event::TargetedSample {
                     id,
                     generation,
                     sampled: Box::new(sampled),
@@ -202,7 +202,7 @@ impl Editor {
             },
             // A panic still sends a result, so the drag does not wait for it.
             move |tx, _| {
-                let _ = tx.send(super::worker::Event::TargetedSample {
+                let _ = tx.send(crate::app::worker::Event::TargetedSample {
                     id,
                     generation,
                     sampled: Box::new(on_panic),
@@ -240,7 +240,7 @@ impl Editor {
         }
     }
     /// Ends a drag whose button came up elsewhere (Space or Before took over).
-    pub(super) fn end_targeted_drag(&mut self) {
+    pub(in crate::app) fn end_targeted_drag(&mut self) {
         self.drag_targeted(0.);
         self.release_targeted();
     }
@@ -254,7 +254,7 @@ impl Editor {
     }
     /// The sample for the drag under way: it now moves the sliders, or, when the
     /// button is already up, its whole travel is applied as one History step.
-    pub(super) fn targeted_sample_ready(
+    pub(in crate::app) fn targeted_sample_ready(
         &mut self,
         sampled: &Recipe,
         result: Result<TargetSample, String>,
@@ -302,7 +302,7 @@ impl Editor {
         }
     }
     /// The sliders a drag is moving, for the panel to highlight.
-    pub(super) fn targeted_weights(&self) -> Option<TargetWeights> {
+    pub(in crate::app) fn targeted_weights(&self) -> Option<TargetWeights> {
         self.view
             .targeted
             .as_ref()
@@ -313,7 +313,12 @@ impl Editor {
 
 /// The tool's button in a panel: a target, lit while the tool is open. Returns
 /// whether it was clicked.
-pub(super) fn target_button(ui: &mut egui::Ui, rect: Rect, active: bool, tip: &str) -> bool {
+pub(in crate::app) fn target_button(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    active: bool,
+    tip: &str,
+) -> bool {
     let palette = theme::palette(ui.ctx());
     let response = ui
         .interact(rect, ui.id().with(("targeted", tip)), Sense::click())
@@ -358,7 +363,7 @@ fn target_icon(painter: &egui::Painter, c: Pos2, radius: f32, ink: Color32) {
 
 /// What the HSL target button adjusts for the Adjust tab `index` (0 Hue, 1
 /// Saturation, 2 Luminance).
-pub(super) fn hsl_target(index: usize) -> Target {
+pub(in crate::app) fn hsl_target(index: usize) -> Target {
     Target::Hsl(HslChannel::ALL[index.min(2)])
 }
 

@@ -250,7 +250,7 @@ impl Session {
     }
 }
 
-pub(super) const DECODED_CACHE_SIZE_RANGE: std::ops::RangeInclusive<u32> = 1..=1_048_576;
+pub(in crate::app) const DECODED_CACHE_SIZE_RANGE: std::ops::RangeInclusive<u32> = 1..=1_048_576;
 
 /// The Crop tool's guide overlay, which way round it is and when it shows, by stable
 /// names as [`LibraryLayout`]; a name this version does not know reads as the default.

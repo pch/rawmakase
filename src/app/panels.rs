@@ -1,7 +1,7 @@
 //! Which of a module's panels show, as Lightroom's Tab, Shift+Tab and F6–F8
 //! hide them: each module keeps its own, and the session keeps both across
 //! launches. Hiding a panel changes only whether it is drawn, never what it holds.
-use super::Editor;
+use crate::app::Editor;
 use crate::app::Module;
 use crate::app::design::{Tone, radius};
 use eframe::egui::{self, Key, Modifiers};
@@ -9,7 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 /// A panel the user can hide.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum WorkspacePanel {
+pub(in crate::app) enum WorkspacePanel {
     /// The catalog, folders and collections, in both modules.
     Left,
     /// Develop's Histogram and adjustments, or the Library's photo info and
@@ -43,7 +43,7 @@ impl WorkspacePanel {
 
 /// How a request changes a module's panels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum PanelChange {
+pub(in crate::app) enum PanelChange {
     /// One panel (F7, F8, F6, Shift+F8, its bar button, or Develop's tab rail).
     Toggle(WorkspacePanel),
     /// Both side panels (Tab).
@@ -92,7 +92,7 @@ pub(crate) struct PanelLayout {
     pub adjustments: Visibility,
 }
 impl PanelLayout {
-    pub(super) fn shown(self, panel: WorkspacePanel) -> bool {
+    pub(in crate::app) fn shown(self, panel: WorkspacePanel) -> bool {
         self.visibility(panel) == Visibility::Shown
     }
     fn visibility(self, panel: WorkspacePanel) -> Visibility {
@@ -115,7 +115,7 @@ impl PanelLayout {
     }
     /// `module`'s layout after `change`. A group hides when any of it shows,
     /// and shows again only once all of it is hidden, as Lightroom's Tab does.
-    pub(super) fn changed(self, change: PanelChange, module: Module) -> Self {
+    pub(in crate::app) fn changed(self, change: PanelChange, module: Module) -> Self {
         let sides = WorkspacePanel::sides(module);
         let group: Vec<WorkspacePanel> = match change {
             PanelChange::Toggle(panel) => {
@@ -140,7 +140,7 @@ impl PanelLayout {
     /// The layout after `change`, and what it hid for the next Tab or
     /// Shift+Tab to bring back. Given what the last one hid, the same key
     /// again brings that layout back, unless the panels changed since.
-    pub(super) fn changed_from(
+    pub(in crate::app) fn changed_from(
         self,
         change: PanelChange,
         last: Option<Tabbed>,
@@ -165,7 +165,7 @@ impl PanelLayout {
         )
     }
     /// The panels shown here and hidden in `next`.
-    pub(super) fn hidden_by(self, next: Self) -> impl Iterator<Item = WorkspacePanel> {
+    pub(in crate::app) fn hidden_by(self, next: Self) -> impl Iterator<Item = WorkspacePanel> {
         WorkspacePanel::ALL
             .into_iter()
             .filter(move |panel| self.shown(*panel) && !next.shown(*panel))
@@ -175,7 +175,7 @@ impl PanelLayout {
 /// What a Tab or Shift+Tab hid: the layout before, to bring back, and the
 /// layout it left, which must still stand for that.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Tabbed {
+pub(in crate::app) struct Tabbed {
     change: PanelChange,
     before: PanelLayout,
     after: PanelLayout,
@@ -210,13 +210,13 @@ pub(crate) struct WorkspacePanels {
     pub develop_tab: DevelopTab,
 }
 impl WorkspacePanels {
-    pub(super) fn of(self, module: Module) -> PanelLayout {
+    pub(in crate::app) fn of(self, module: Module) -> PanelLayout {
         match module {
             Module::Develop => self.develop,
             Module::Library => self.library,
         }
     }
-    pub(super) fn set(&mut self, module: Module, layout: PanelLayout) {
+    pub(in crate::app) fn set(&mut self, module: Module, layout: PanelLayout) {
         match module {
             Module::Develop => self.develop = layout,
             Module::Library => self.library = layout,
@@ -227,12 +227,12 @@ impl WorkspacePanels {
 impl Editor {
     /// Whether the module open shows `panel`. The whole-window mode (see
     /// `chrome`) hides every panel without changing the layout kept for it.
-    pub(super) fn panel_shown(&self, panel: WorkspacePanel) -> bool {
+    pub(in crate::app) fn panel_shown(&self, panel: WorkspacePanel) -> bool {
         self.chrome.shown(self.module) && self.panels.of(self.module).shown(panel)
     }
     /// The open module's panels as drawn: all hidden while the whole-window
     /// mode is on, whatever the layout kept for them.
-    pub(super) fn shown_panels(&self) -> PanelLayout {
+    pub(in crate::app) fn shown_panels(&self) -> PanelLayout {
         if self.chrome.hidden(self.module) {
             let hidden = Visibility::Hidden;
             return PanelLayout {
@@ -250,7 +250,7 @@ impl Editor {
     /// typed, and stays if that fails (the top bar says why); Develop's
     /// presets panel ends a hover preview and keeps a snapshot name being typed.
     /// Returns whether the panels changed.
-    pub(super) fn change_panels(&mut self, change: PanelChange) -> bool {
+    pub(in crate::app) fn change_panels(&mut self, change: PanelChange) -> bool {
         let layout = self.panels.of(self.module);
         let last = self
             .tabbed
@@ -282,7 +282,7 @@ impl Editor {
     /// mode hides every panel (see `chrome`), the change brings the chrome
     /// back with the layout as it was, rather than changing a layout no one
     /// sees. Returns false if a change could not be made.
-    pub(super) fn request_panels(&mut self, change: PanelChange) -> bool {
+    pub(in crate::app) fn request_panels(&mut self, change: PanelChange) -> bool {
         if self.chrome.hidden(self.module) {
             let view = self.chrome.show();
             self.chrome_view(view);
@@ -302,7 +302,7 @@ impl Editor {
     }
     /// Switches Develop's tab panel to `tab`. The tab left first lets go of
     /// what it was doing, as hiding the panel does.
-    pub(super) fn set_develop_tab(&mut self, tab: DevelopTab) {
+    pub(in crate::app) fn set_develop_tab(&mut self, tab: DevelopTab) {
         if self.panels.develop_tab == tab {
             return;
         }
@@ -321,7 +321,7 @@ impl Editor {
     /// Tab, Shift+Tab, F6–F8 and Shift+F8 (Develop's tab panel), unless a field or control has the keyboard
     /// focus (Tab then moves it on) or a menu is open. Run before any panel is
     /// drawn, so the Tab taken here does not also focus the first slider.
-    pub(super) fn panel_keys(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn panel_keys(&mut self, ctx: &egui::Context) {
         if ctx.memory(|m| m.focused().is_some()) || egui::Popup::is_any_open(ctx) {
             return;
         }
@@ -354,8 +354,8 @@ impl Editor {
 impl Editor {
     /// The workspace bar's button that hides or shows `panel`: the panel's
     /// icon while it shows, its "open" icon while hidden.
-    pub(super) fn panel_toggle(&mut self, ui: &mut egui::Ui, panel: WorkspacePanel) {
-        use super::icons::Icon;
+    pub(in crate::app) fn panel_toggle(&mut self, ui: &mut egui::Ui, panel: WorkspacePanel) {
+        use crate::app::icons::Icon;
         let shown = self.panel_shown(panel);
         let (icon, name, key) = match (panel, shown) {
             (WorkspacePanel::Left, true) => (Icon::PanelLeft, "the left panel", " · F7"),
@@ -370,7 +370,7 @@ impl Editor {
             (WorkspacePanel::Adjustments, false) => (Icon::PanelRightOpen, "the adjustments", ""),
         };
         let verb = if shown { "Hide" } else { "Show" };
-        let palette = super::theme::palette(ui.ctx());
+        let palette = crate::app::theme::palette(ui.ctx());
         let (rect, _) = ui.allocate_exact_size(egui::Vec2::splat(26.), egui::Sense::hover());
         let response = ui.interact(rect, toggle_id(panel), egui::Sense::click());
         if response.hovered() {
@@ -382,7 +382,7 @@ impl Editor {
         } else {
             Tone::SECONDARY
         });
-        super::icons::paint_at(ui.painter(), icon, rect.center(), 15., color);
+        crate::app::icons::paint_at(ui.painter(), icon, rect.center(), 15., color);
         if response
             .on_hover_text(format!("{verb} {name}{key}"))
             .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -398,7 +398,7 @@ const RESIZABLE: [&str; 4] = ["library-sidebar", "library-info", "presets", "adj
 /// The edge's grab area reaches over the Library's grid, whose cells are
 /// drawn after the panel and so take the hover: egui then never shows its
 /// cursor, though a drag there still resizes the panel.
-pub(super) fn keep_resize_cursor(ctx: &egui::Context) {
+pub(in crate::app) fn keep_resize_cursor(ctx: &egui::Context) {
     let dragged = ctx.dragged_id();
     let on_edge = RESIZABLE.iter().any(|panel| {
         ctx.read_response(egui::Id::new(*panel).with("__resize"))
@@ -412,7 +412,7 @@ pub(super) fn keep_resize_cursor(ctx: &egui::Context) {
     }
 }
 /// The workspace bar's toggle for `panel`, by a fixed id.
-pub(super) fn toggle_id(panel: WorkspacePanel) -> egui::Id {
+pub(in crate::app) fn toggle_id(panel: WorkspacePanel) -> egui::Id {
     egui::Id::new(("panel-toggle", panel as u8))
 }
 

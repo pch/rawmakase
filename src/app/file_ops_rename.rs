@@ -25,13 +25,13 @@
 //! given: one made before the files were read is replaced once they are,
 //! and Rename waits for that read. The choice is remembered for the next
 //! Rename Photos (`RenameSettings`) when Rename is asked for.
-use super::super::{Editor, widgets};
 use super::{State, Verb};
 use crate::app::design::{self, Tone, button, inset, space, text};
 use crate::app::naming::editor::{NameEditor, Outcome};
 use crate::app::naming::menu::{self, Choice};
 use crate::app::naming::presets::{Library, Preset};
 use crate::app::naming::read::{self as name_read, NameRead, Reads, Status, ToRead};
+use crate::app::{Editor, widgets};
 use crate::catalog::file_ops::{self, FileOp, Plan, RenameOrder, Skip};
 use crate::catalog::{CatalogLocation, PhotoId, RootId};
 use crate::export_settings::{NameContext, NameTemplate, RenameSettings};
@@ -189,7 +189,7 @@ impl Renaming {
     fn names_wait(
         &mut self,
         template: &NameTemplate,
-        events: &std::sync::mpsc::Sender<super::super::worker::Event>,
+        events: &std::sync::mpsc::Sender<crate::app::worker::Event>,
         ctx: &egui::Context,
     ) -> bool {
         if !self.needs_files(template) {
@@ -405,7 +405,7 @@ impl Editor {
             cancel: cancel.clone(),
         };
         let failed = (location.clone(), cancel.clone());
-        super::super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
@@ -414,14 +414,14 @@ impl Editor {
                     .and_then(|catalog| {
                         file_ops::rename_order(&catalog, &photos).map_err(|e| e.to_string())
                     });
-                let _ = tx.send(super::super::worker::Event::RenameOrdered(
+                let _ = tx.send(crate::app::worker::Event::RenameOrdered(
                     location,
                     cancel,
                     Box::new(ordered),
                 ));
             },
             move |tx, message| {
-                let _ = tx.send(super::super::worker::Event::RenameOrdered(
+                let _ = tx.send(crate::app::worker::Event::RenameOrdered(
                     failed.0,
                     failed.1,
                     Box::new(Err(message)),
@@ -525,7 +525,7 @@ impl Editor {
             return;
         }
         let reader = r.reader.take();
-        super::super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
@@ -545,7 +545,7 @@ impl Editor {
                         reader: None,
                     },
                 };
-                let _ = tx.send(super::super::worker::Event::RenamePlanned(Box::new(done)));
+                let _ = tx.send(crate::app::worker::Event::RenamePlanned(Box::new(done)));
             },
             move |tx, message| {
                 let failed = RenamePlanned {
@@ -553,7 +553,7 @@ impl Editor {
                     planned: Err(message),
                     reader: None,
                 };
-                let _ = tx.send(super::super::worker::Event::RenamePlanned(Box::new(failed)));
+                let _ = tx.send(crate::app::worker::Event::RenamePlanned(Box::new(failed)));
             },
         );
     }
@@ -711,7 +711,7 @@ impl Editor {
     /// While the photos' order is read: Cancel (or Escape) stops it and
     /// lets the catalog go.
     pub(super) fn ordering_window(&mut self, ctx: &egui::Context) {
-        let palette = super::super::theme::palette(ctx);
+        let palette = crate::app::theme::palette(ctx);
         let mut cancel = false;
         let response = egui::Modal::new(egui::Id::new("rename-ordering"))
             .frame(widgets::modal_frame(&palette).inner_margin(design::margin_same(inset::DIALOG)))
@@ -752,7 +752,7 @@ impl Editor {
             self.release_files();
             return;
         }
-        let palette = super::super::theme::palette(ctx);
+        let palette = crate::app::theme::palette(ctx);
         let mut rename = false;
         let mut cancel = false;
         let mut edit = false;
@@ -1025,7 +1025,7 @@ impl Editor {
         let State::RenamingFolder(f) = &mut self.file_ops.state else {
             return;
         };
-        let palette = super::super::theme::palette(ctx);
+        let palette = crate::app::theme::palette(ctx);
         let problem = file_ops::folder_name_problem(&f.name);
         let valid = problem.is_none() && f.name != f.old;
         let mut rename = false;

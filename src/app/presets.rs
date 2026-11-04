@@ -1,10 +1,10 @@
-use super::Editor;
-use super::bulk_import::ImportKind;
-use super::dialogs::FileDialog;
-use super::widgets::segmented;
-use super::worker::Event;
+use crate::app::Editor;
+use crate::app::bulk_import::ImportKind;
 use crate::app::design::{Tone, radius, space, text};
+use crate::app::dialogs::FileDialog;
 use crate::app::theme;
+use crate::app::widgets::segmented;
+use crate::app::worker::Event;
 use crate::model::recipe::Recipe;
 use anyhow::Context as _;
 use eframe::egui::{self, Sense, Vec2};
@@ -15,11 +15,11 @@ use std::time::{Duration, Instant};
 const HOVER_PREVIEW: Duration = Duration::from_millis(300);
 
 impl Editor {
-    pub(super) fn reload_presets(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn reload_presets(&mut self, ctx: &egui::Context) {
         let tx = self.tx.clone();
         let ctx = ctx.clone();
         let scan = self.presets.next_scan();
-        super::task::spawn(
+        crate::app::task::spawn(
             tx,
             ctx,
             move |tx| {
@@ -32,7 +32,7 @@ impl Editor {
         );
     }
     /// A scan that failed: the presets read before stay, and commands stop waiting.
-    pub(super) fn preset_scan_failed(&mut self, scan: u64, error: String) {
+    pub(in crate::app) fn preset_scan_failed(&mut self, scan: u64, error: String) {
         if self.presets.is_latest(scan) {
             self.presets.scanned = true;
             self.messages.fail(format!("Presets not read: {error}"));
@@ -40,7 +40,11 @@ impl Editor {
     }
     /// A finished library scan, unless a later one has started since: scans run in
     /// parallel and may finish in any order.
-    pub(super) fn presets_scanned(&mut self, scan: u64, library: Arc<crate::presets::Library>) {
+    pub(in crate::app) fn presets_scanned(
+        &mut self,
+        scan: u64,
+        library: Arc<crate::presets::Library>,
+    ) {
         if self.presets.is_latest(scan) {
             self.presets.library = library;
             self.presets.scanned = true;
@@ -51,7 +55,7 @@ impl Editor {
             self.refresh_preset_support();
         }
     }
-    pub(super) fn refresh_preset_support(&mut self) {
+    pub(in crate::app) fn refresh_preset_support(&mut self) {
         let had_preview = self.presets.preview.take().is_some();
         self.presets.hover = None;
         if had_preview {
@@ -84,7 +88,7 @@ impl Editor {
             .map(|p| p.profile_substitute(m, &self.document.profiles))
             .collect();
     }
-    pub(super) fn presets_ui(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn presets_ui(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
         let library = self.presets.library.clone();
         let mut clicked = None;
@@ -101,7 +105,7 @@ impl Editor {
                     ui.spacing_mut().item_spacing = Vec2::new(space::XS, space::M);
                     // The caption names the tab, with how many presets fit
                     // this camera and the import menu at its right.
-                    let caption = super::widgets::panel_caption(ui, "Presets");
+                    let caption = crate::app::widgets::panel_caption(ui, "Presets");
                     let add = egui::Rect::from_center_size(
                         egui::pos2(caption.right() - 14., caption.center().y),
                         Vec2::splat(22.),
@@ -145,7 +149,11 @@ impl Editor {
                             ui.close();
                         }
                     });
-                    super::widgets::search_field(ui, &mut self.presets.filter, "Search presets");
+                    crate::app::widgets::search_field(
+                        ui,
+                        &mut self.presets.filter,
+                        "Search presets",
+                    );
                     let mut show = match (self.presets.favorites_only, self.presets.compatible_only)
                     {
                         (true, _) => 1,
@@ -293,7 +301,7 @@ impl Editor {
                             // Control-click opens the menu on macOS, as a right-click does.
                             if enabled
                                 && response.clicked()
-                                && !super::widgets::context_clicked(&response)
+                                && !crate::app::widgets::context_clicked(&response)
                             {
                                 clicked = Some(i);
                             }
@@ -301,9 +309,9 @@ impl Editor {
                             // imported ones renamed or deleted, and any preset file
                             // shown where it is.
                             if !p.builtin {
-                                super::widgets::context_menu(&response, |ui| {
+                                crate::app::widgets::context_menu(&response, |ui| {
                                     if let Some(action) =
-                                        super::user_presets::preset_menu(ui, &user, p, i)
+                                        crate::app::user_presets::preset_menu(ui, &user, p, i)
                                     {
                                         user_action = Some(action);
                                     }
@@ -373,7 +381,7 @@ impl Editor {
         }
     }
     /// Ends a hover over a preset, rendering the edit again if it was previewed.
-    pub(super) fn end_preset_hover(&mut self) {
+    pub(in crate::app) fn end_preset_hover(&mut self) {
         self.presets.hover = None;
         if self.presets.preview.take().is_some() {
             self.schedule();
@@ -383,7 +391,7 @@ impl Editor {
 
 /// A preset applied to the open photo, as the status bar and the control API report it.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
-pub(super) struct AppliedPreset {
+pub(in crate::app) struct AppliedPreset {
     pub name: String,
     /// The profile used in place of one the preset names but this camera lacks.
     pub substitute: Option<String>,
@@ -406,14 +414,14 @@ impl std::fmt::Display for AppliedPreset {
 
 /// Whether an Amount change changed the photo.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum AmountChange {
+pub(in crate::app) enum AmountChange {
     Same,
     Changed,
 }
 
 /// Lightroom's preset Amount while it shows: after a preset that supports one is
 /// applied, until anything else changes the photo.
-pub(super) struct AmountSession {
+pub(in crate::app) struct AmountSession {
     name: String,
     amount: f32,
     scale: crate::presets::amount::PresetAmount,
@@ -441,7 +449,7 @@ impl AmountSession {
 impl Editor {
     /// Applies preset `i` of the library to the open photo, as a click does, and
     /// says so in the top bar either way.
-    pub(super) fn apply_preset(&mut self, i: usize) -> anyhow::Result<AppliedPreset> {
+    pub(in crate::app) fn apply_preset(&mut self, i: usize) -> anyhow::Result<AppliedPreset> {
         let applied = self.apply_library_preset(i);
         match &applied {
             Ok(applied) => self.messages.note(applied.to_string()),
@@ -497,7 +505,7 @@ impl Editor {
     }
     /// Sets the Amount of the preset just applied (0–2, 1 = 100%), and whether that
     /// changed the photo.
-    pub(super) fn set_preset_amount(&mut self, amount: f32) -> AmountChange {
+    pub(in crate::app) fn set_preset_amount(&mut self, amount: f32) -> AmountChange {
         // An edit earlier in this frame (a mask's name kept as the slider was clicked)
         // ends the Amount now: the settings it holds would take that edit back.
         if self.presets.amount.is_some() {
@@ -526,14 +534,16 @@ impl Editor {
             return AmountChange::Same;
         }
         self.document.edit.replace(session.shown.clone());
-        self.document.edit.name_next_step(super::history::Step::new(
-            "Preset Amount",
-            format!("{:.0}", amount * 100.),
-        ));
+        self.document
+            .edit
+            .name_next_step(crate::app::history::Step::new(
+                "Preset Amount",
+                format!("{:.0}", amount * 100.),
+            ));
         AmountChange::Changed
     }
     /// Ends the Amount once anything else has changed the photo, as Lightroom hides it.
-    pub(super) fn end_stale_preset_amount(&mut self) {
+    pub(in crate::app) fn end_stale_preset_amount(&mut self) {
         if self
             .presets
             .amount
@@ -560,9 +570,9 @@ impl Editor {
             )
             .truncate(),
         );
-        super::widgets::set_edit_context(ui, "Preset");
+        crate::app::widgets::set_edit_context(ui, "Preset");
         ui.push_id("preset-amount", |ui| {
-            super::widgets::slider_with(
+            crate::app::widgets::slider_with(
                 ui,
                 &mut self.step_name,
                 "Amount",
@@ -573,7 +583,7 @@ impl Editor {
                 None,
             )
         });
-        super::widgets::set_edit_context(ui, "");
+        crate::app::widgets::set_edit_context(ui, "");
         if amount != session.amount {
             self.set_preset_amount(amount);
         }
@@ -584,7 +594,7 @@ impl Editor {
 /// indices and display names. Building it means formatting and matching
 /// every preset, so it is kept until the search, the filters, the library,
 /// the favorites or the photo's compatibility change.
-pub(super) struct PresetList {
+pub(in crate::app) struct PresetList {
     library: Arc<crate::presets::Library>,
     filter: String,
     favorites_only: bool,
@@ -592,23 +602,23 @@ pub(super) struct PresetList {
     revision: u64,
     groups: Arc<Vec<PresetGroup>>,
 }
-pub(super) struct PresetGroup {
+pub(in crate::app) struct PresetGroup {
     imported: bool,
-    pub(super) name: String,
-    pub(super) presets: Vec<(usize, String)>,
+    pub(in crate::app) name: String,
+    pub(in crate::app) presets: Vec<(usize, String)>,
 }
 
 impl PresetList {
     /// Whether this list is still the one to show; compares without
     /// allocating, as it runs every frame.
-    fn shows(&self, browser: &super::state::PresetBrowser) -> bool {
+    fn shows(&self, browser: &crate::app::state::PresetBrowser) -> bool {
         Arc::ptr_eq(&self.library, &browser.library)
             && self.filter == browser.filter
             && self.favorites_only == browser.favorites_only
             && self.compatible_only == browser.compatible_only
             && self.revision == browser.revision
     }
-    fn build(browser: &super::state::PresetBrowser) -> Self {
+    fn build(browser: &crate::app::state::PresetBrowser) -> Self {
         let groups = preset_groups(&browser.library, &browser.filter, |i, p| {
             let issue = browser.issues.get(i).and_then(Option::as_ref);
             !(browser.compatible_only && issue.is_some())
@@ -629,7 +639,7 @@ impl PresetList {
 /// `filter`, in their groups: built-in groups first, in Lightroom's order, then
 /// imported groups by name. A built-in and an imported group of the same name stay
 /// apart.
-pub(super) fn preset_groups(
+pub(in crate::app) fn preset_groups(
     library: &crate::presets::Library,
     filter: &str,
     keep: impl Fn(usize, &crate::xmp::Preset) -> bool,
@@ -667,7 +677,7 @@ pub(super) fn preset_groups(
 
 impl Editor {
     /// The preset list for the current search and filters; see `PresetList`.
-    pub(super) fn preset_list(&mut self) -> Arc<Vec<PresetGroup>> {
+    pub(in crate::app) fn preset_list(&mut self) -> Arc<Vec<PresetGroup>> {
         let list = match self.presets.list.take() {
             Some(list) if list.shows(&self.presets) => list,
             _ => PresetList::build(&self.presets),
@@ -718,7 +728,7 @@ enum EmptyAction {
 impl EmptyList {
     /// For a list emptied by the browser's search and filters; `favorites`
     /// is how many favorites there are.
-    fn of(browser: &super::state::PresetBrowser, favorites: usize) -> Self {
+    fn of(browser: &crate::app::state::PresetBrowser, favorites: usize) -> Self {
         let query = browser.filter.trim();
         if browser.favorites_only && favorites == 0 {
             Self {

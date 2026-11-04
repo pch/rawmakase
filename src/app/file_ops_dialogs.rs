@@ -6,9 +6,9 @@
 //! unfinished, holding the catalog as an operation does; what it can't
 //! decide waits in "Unfinished file operations" for the user to put back,
 //! keep as it is, or add (a folder made).
-use super::super::{Editor, widgets};
 use super::{State, Verb};
 use crate::app::design::{self, Tone, button, inset, space, text};
+use crate::app::{Editor, widgets};
 use crate::catalog::file_ops::{
     self, FileOp, ItemOutcome, ItemResult, OperationId, Outcome, Recovery, Resolution, Unfinished,
 };
@@ -134,7 +134,7 @@ impl Editor {
             self.file_ops.state = State::Idle;
             return;
         }
-        let palette = super::super::theme::palette(ctx);
+        let palette = crate::app::theme::palette(ctx);
         let roots = library.session.roots();
         let mut rows: Vec<(FolderId, String)> = library
             .session
@@ -227,7 +227,7 @@ impl Editor {
         let State::Naming(n) = &mut self.file_ops.state else {
             return;
         };
-        let palette = super::super::theme::palette(ctx);
+        let palette = crate::app::theme::palette(ctx);
         let problem = (!n.name.is_empty())
             .then(|| file_ops::folder_name_problem(&n.name))
             .flatten();
@@ -383,7 +383,7 @@ impl Editor {
         };
         let failed = catalog.clone();
         let trash = self.file_ops.trash.clone();
-        super::super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
@@ -398,13 +398,13 @@ impl Editor {
                         ) => Ok(None),
                         Err(e) => Err(e.to_string()),
                     });
-                let _ = tx.send(super::super::worker::Event::FileOpsRecovered(
+                let _ = tx.send(crate::app::worker::Event::FileOpsRecovered(
                     catalog,
                     Box::new(recovered),
                 ));
             },
             move |tx, message| {
-                let _ = tx.send(super::super::worker::Event::FileOpsRecovered(
+                let _ = tx.send(crate::app::worker::Event::FileOpsRecovered(
                     failed,
                     Box::new(Err(message)),
                 ));
@@ -472,7 +472,7 @@ impl Editor {
             self.file_ops.state = State::Idle;
             return;
         }
-        let palette = super::super::theme::palette(ctx);
+        let palette = crate::app::theme::palette(ctx);
         let library = self.library.as_deref();
         let name_of = |item: &Unfinished| -> String {
             match item.photos.first() {
@@ -626,7 +626,7 @@ impl Editor {
         };
         let failed = catalog.clone();
         let trash = self.file_ops.trash.clone();
-        super::super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
@@ -636,14 +636,14 @@ impl Editor {
                         file_ops::resolve(&mut opened, operation, resolution, &*trash)
                             .map_err(|e| e.to_string())
                     });
-                let _ = tx.send(super::super::worker::Event::FileOpResolved(
+                let _ = tx.send(crate::app::worker::Event::FileOpResolved(
                     catalog,
                     operation,
                     Box::new(resolved),
                 ));
             },
             move |tx, message| {
-                let _ = tx.send(super::super::worker::Event::FileOpResolved(
+                let _ = tx.send(crate::app::worker::Event::FileOpResolved(
                     failed,
                     operation,
                     Box::new(Err(message)),

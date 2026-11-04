@@ -1,8 +1,8 @@
 //! What each view of the work going on makes of it: what closing waits for, the
 //! status line's work, and how fast the Library renders edited previews. These
 //! read the state that owns each kind of work; set here as the work sets it.
-use super::{Editor, Module, sync::BatchProgress};
 use crate::app::library::Pace;
+use crate::app::{Editor, Module, sync::BatchProgress};
 use eframe::egui;
 use std::sync::Arc;
 
@@ -36,17 +36,20 @@ fn closing_waits_for_each_blocking_kind_of_work_by_its_name() {
     assert!(e.activity.begin_folder_change());
     assert_eq!(
         e.closing_waits_for().as_deref(),
-        Some(super::work::FOLDER_CHANGE)
+        Some(crate::app::work::FOLDER_CHANGE)
     );
     e.activity.finish_dialog();
     assert!(e.activity.begin_file_change());
     assert_eq!(
         e.closing_waits_for().as_deref(),
-        Some(super::work::FILE_CHANGE)
+        Some(crate::app::work::FILE_CHANGE)
     );
     e.activity.finish_file_change();
     e.automation.hold_running_output();
-    assert_eq!(e.closing_waits_for().as_deref(), Some(super::work::OUTPUT));
+    assert_eq!(
+        e.closing_waits_for().as_deref(),
+        Some(crate::app::work::OUTPUT)
+    );
     e.automation.cancel_outputs();
     assert_eq!(e.closing_waits_for(), None);
 }
@@ -64,16 +67,19 @@ fn a_foreground_operation_is_named_before_a_commands_output() {
     assert!(e.activity.begin_folder_change());
     assert_eq!(
         e.closing_waits_for().as_deref(),
-        Some(super::work::FOLDER_CHANGE)
+        Some(crate::app::work::FOLDER_CHANGE)
     );
     e.activity.finish_dialog();
     assert!(e.activity.begin_file_change());
     assert_eq!(
         e.closing_waits_for().as_deref(),
-        Some(super::work::FILE_CHANGE)
+        Some(crate::app::work::FILE_CHANGE)
     );
     e.activity.finish_file_change();
-    assert_eq!(e.closing_waits_for().as_deref(), Some(super::work::OUTPUT));
+    assert_eq!(
+        e.closing_waits_for().as_deref(),
+        Some(crate::app::work::OUTPUT)
+    );
 }
 
 #[test]
@@ -149,9 +155,9 @@ fn edited_previews_slow_down_for_develops_load_and_a_commands_output_only() {
 /// the order `stop_workers` kept by hand before the table.
 #[test]
 fn quitting_stops_the_workers_in_order() {
-    use super::work::Kind::*;
+    use crate::app::work::Kind::*;
     assert_eq!(
-        super::work::stopped(),
+        crate::app::work::stopped(),
         [
             Loader,
             Renderer,

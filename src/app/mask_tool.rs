@@ -1,13 +1,13 @@
 //! Lightroom's Masking panel (Shift+W): creating masks, the mask list with Add,
 //! Subtract and Intersect, brushes and gradients on the photo, range sampling and
 //! each mask's adjustment sliders.
-use super::Editor;
-use super::icons::{self, Icon};
-use super::overlay;
-use super::retouch_tool::{control_label, hint, indented};
-use super::theme;
-use super::widgets::{local_setting_slider, segmented, set_edit_context, slider_with};
+use crate::app::Editor;
 use crate::app::design::{Tone, space, text};
+use crate::app::icons::{self, Icon};
+use crate::app::overlay;
+use crate::app::retouch_tool::{control_label, hint, indented};
+use crate::app::theme;
+use crate::app::widgets::{local_setting_slider, segmented, set_edit_context, slider_with};
 use crate::develop::{
     ViewMapping,
     masks::{self, Space},
@@ -21,7 +21,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 /// What a new mask or component is made of.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Kind {
+pub(in crate::app) enum Kind {
     Brush,
     Linear,
     Radial,
@@ -43,12 +43,12 @@ impl Kind {
 }
 /// Brush settings; Lightroom keeps two sets, A and B, and one for erasing.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Brush {
-    pub(super) size: f32,
-    pub(super) feather: f32,
-    pub(super) flow: f32,
-    pub(super) density: f32,
-    pub(super) auto_mask: bool,
+pub(in crate::app) struct Brush {
+    pub(in crate::app) size: f32,
+    pub(in crate::app) feather: f32,
+    pub(in crate::app) flow: f32,
+    pub(in crate::app) density: f32,
+    pub(in crate::app) auto_mask: bool,
 }
 impl Default for Brush {
     fn default() -> Self {
@@ -102,16 +102,16 @@ enum Handle {
     Radius(usize),
 }
 
-pub(super) struct MaskTool {
+pub(in crate::app) struct MaskTool {
     /// Index into the recipe's masks.
-    pub(super) selected: Option<usize>,
+    pub(in crate::app) selected: Option<usize>,
     /// Index into the selected mask's components.
-    pub(super) component: Option<usize>,
+    pub(in crate::app) component: Option<usize>,
     /// Show the selected mask as a red overlay (O).
-    pub(super) overlay: bool,
-    pub(super) brushes: [Brush; 3],
+    pub(in crate::app) overlay: bool,
+    pub(in crate::app) brushes: [Brush; 3],
     /// A, B, or 2 for the erase brush.
-    pub(super) brush: usize,
+    pub(in crate::app) brush: usize,
     pending: Option<Pending>,
     drag: Drag,
     renaming: Option<Renaming>,
@@ -154,16 +154,16 @@ impl Default for MaskTool {
 }
 impl MaskTool {
     /// A mask's name field is open, and the keyboard is its own.
-    pub(super) fn is_renaming(&self) -> bool {
+    pub(in crate::app) fn is_renaming(&self) -> bool {
         self.renaming.is_some()
     }
     /// Ends a rename whose field the last pass did not draw, keeping the old name.
-    pub(super) fn expire_rename(&mut self, pass: u64) {
+    pub(in crate::app) fn expire_rename(&mut self, pass: u64) {
         if self.renaming.as_ref().is_some_and(|r| r.shown + 1 < pass) {
             self.renaming = None;
         }
     }
-    pub(super) fn clear_document(&mut self) {
+    pub(in crate::app) fn clear_document(&mut self) {
         self.selected = None;
         self.component = None;
         self.pending = None;
@@ -172,21 +172,21 @@ impl MaskTool {
         self.leave();
     }
     /// Ends a drag on the photo where it is: what was painted or moved stays.
-    pub(super) fn end_drag(&mut self) {
+    pub(in crate::app) fn end_drag(&mut self) {
         self.drag = Drag::None;
     }
     /// The mask whose overlay shows while the pointer is over its pin or its row in
     /// the mask list, as in Lightroom, whether or not Show Overlay is on.
-    pub(super) fn hovered(&self) -> Option<usize> {
+    pub(in crate::app) fn hovered(&self) -> Option<usize> {
         self.hovered_pin.or(self.hovered_row)
     }
     /// Forgets what the pointer was over.
-    pub(super) fn leave(&mut self) {
+    pub(in crate::app) fn leave(&mut self) {
         self.hovered_pin = None;
         self.hovered_row = None;
     }
     /// Shows a mask a selection just made, with its overlay.
-    pub(super) fn select_after_selection(&mut self, mask: usize, component: usize) {
+    pub(in crate::app) fn select_after_selection(&mut self, mask: usize, component: usize) {
         self.select(Some(mask), Some(component));
         self.pending = None;
         self.overlay = true;
@@ -207,7 +207,7 @@ impl Editor {
     }
     /// Whether the brush is in use: a brush component is selected and no new shape is
     /// waiting to be drawn. Only then does the cursor show it, and the wheel size it.
-    pub(super) fn mask_brush_shown(&self) -> bool {
+    pub(in crate::app) fn mask_brush_shown(&self) -> bool {
         self.view.masking.pending.is_none()
             && self.selected_component().is_some_and(|(m, c)| {
                 matches!(
@@ -227,8 +227,8 @@ impl Editor {
     }
     /// Starts a new mask of `kind` (the Create buttons and K, M, Shift+M, Shift+J), or
     /// adds `kind` to the selected mask with `op`.
-    pub(super) fn create_mask(&mut self, kind: Kind, op: Option<MaskOp>) {
-        self.view.tool = super::state::Tool::Mask;
+    pub(in crate::app) fn create_mask(&mut self, kind: Kind, op: Option<MaskOp>) {
+        self.view.tool = crate::app::state::Tool::Mask;
         let op = op.filter(|_| self.selected_mask().is_some());
         match kind {
             Kind::Brush | Kind::Luminance => {
@@ -277,7 +277,7 @@ impl Editor {
     }
     /// The Masking tool's keys: `[` `]` brush size (Shift: feather), O overlay, Delete
     /// removes the selected mask, `/` switches between brushes A and B.
-    pub(super) fn mask_keys(&mut self, i: &egui::InputState) {
+    pub(in crate::app) fn mask_keys(&mut self, i: &egui::InputState) {
         use egui::Key;
         if i.modifiers.command || i.modifiers.alt || self.view.masking.renaming.is_some() {
             return;
@@ -325,7 +325,7 @@ impl Editor {
     }
     /// Pointer handling and drawing on the photo; returns whether the tool owns the
     /// pointer (it does unless nothing would respond to it).
-    pub(super) fn mask_overlay(
+    pub(in crate::app) fn mask_overlay(
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
@@ -703,7 +703,7 @@ impl Editor {
         Some(masks::oklab(mean))
     }
     /// The Masking panel's drawer.
-    pub(super) fn mask_panel(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn mask_panel(&mut self, ui: &mut egui::Ui) {
         self.selection_actions(ui);
         ui.add_space(space::XS);
         self.create_row(ui);
@@ -738,12 +738,12 @@ impl Editor {
             }
         });
     }
-    pub(super) fn close_masking(&mut self) {
+    pub(in crate::app) fn close_masking(&mut self) {
         self.selection.end_prompting();
         self.view.masking.pending = None;
         self.view.masking.end_drag();
         self.view.masking.leave();
-        self.view.tool = super::state::Tool::None;
+        self.view.tool = crate::app::state::Tool::None;
     }
     fn create_row(&mut self, ui: &mut egui::Ui) {
         let pending = self.view.masking.pending;
@@ -1081,8 +1081,8 @@ impl Editor {
                 invert,
                 ..
             } => Some((
-                super::subject_mask::source_text(b),
-                super::subject_mask::feature_of(b, *invert),
+                crate::app::subject_mask::source_text(b),
+                crate::app::subject_mask::feature_of(b, *invert),
             )),
             _ => None,
         };
@@ -1259,10 +1259,10 @@ fn kind_of(component: &MaskComponent) -> Kind {
         MaskShape::Radial { .. } => Kind::Radial,
         MaskShape::ColorRange { .. } => Kind::Color,
         MaskShape::LuminanceRange { .. } => Kind::Luminance,
-        MaskShape::Bitmap(b) => match super::subject_mask::feature_of(b, component.invert) {
-            super::subject_mask::Feature::Sky => Kind::Sky,
-            super::subject_mask::Feature::Background => Kind::Background,
-            super::subject_mask::Feature::Subject => Kind::Subject,
+        MaskShape::Bitmap(b) => match crate::app::subject_mask::feature_of(b, component.invert) {
+            crate::app::subject_mask::Feature::Sky => Kind::Sky,
+            crate::app::subject_mask::Feature::Background => Kind::Background,
+            crate::app::subject_mask::Feature::Subject => Kind::Subject,
         },
     }
 }
@@ -1488,11 +1488,11 @@ fn kind_icon(painter: &egui::Painter, c: Pos2, kind: Kind, strong: bool) {
         }
         Kind::Subject | Kind::Sky | Kind::Background => {
             let feature = match kind {
-                Kind::Sky => super::subject_mask::Feature::Sky,
-                Kind::Background => super::subject_mask::Feature::Background,
-                _ => super::subject_mask::Feature::Subject,
+                Kind::Sky => crate::app::subject_mask::Feature::Sky,
+                Kind::Background => crate::app::subject_mask::Feature::Background,
+                _ => crate::app::subject_mask::Feature::Subject,
             };
-            super::subject_mask::paint_feature_icon(painter, c, feature, color);
+            crate::app::subject_mask::paint_feature_icon(painter, c, feature, color);
         }
         Kind::Luminance => {
             painter.circle_filled(c, 5.5, palette.tone(Tone::HOVER));

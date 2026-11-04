@@ -528,7 +528,7 @@ impl Library {
     /// Why Develop cannot open `photo`, for the Library to show: as
     /// [`develop_refusal`] finds, with a file's header read once while it stays
     /// selected and online.
-    pub(super) fn shown_refusal(&mut self, photo: &Photo) -> Option<Refusal> {
+    pub(in crate::app) fn shown_refusal(&mut self, photo: &Photo) -> Option<Refusal> {
         let available = self.is_available(&photo.path);
         let key = (photo.id, photo.path.clone(), available);
         match &self.refusal_shown {
@@ -818,7 +818,7 @@ impl Library {
     /// Moves `photos` into the folder of `root` at logical path `to`
     /// (dropped on it), for the editor to confirm; a drop where they all
     /// are already does nothing.
-    pub(super) fn request_move(
+    pub(in crate::app) fn request_move(
         &mut self,
         photos: Vec<PhotoId>,
         root: RootId,
@@ -841,7 +841,7 @@ impl Library {
     }
     /// New Folder Inside… folder `parent` of `root` (catalog folder
     /// `folder`, if it is one), offering to move the selection into it.
-    pub(super) fn request_new_folder(
+    pub(in crate::app) fn request_new_folder(
         &mut self,
         root: crate::catalog::RootId,
         parent: String,
@@ -1045,7 +1045,10 @@ impl Library {
         Some((folder.root, folder.relative.clone()))
     }
     /// Creates a virtual copy of `id` and selects it.
-    pub(super) fn create_virtual_copy(&mut self, id: PhotoId) -> Result<Committed<PhotoId>> {
+    pub(in crate::app) fn create_virtual_copy(
+        &mut self,
+        id: PhotoId,
+    ) -> Result<Committed<PhotoId>> {
         let made = self.session.create_virtual_copy(id)?;
         if self.listed_after(&made.listed, "Copy made") {
             self.show(made.value);
@@ -1056,7 +1059,7 @@ impl Library {
         }
         Ok(made)
     }
-    pub(super) fn set_copy_as_master(&mut self, id: PhotoId) -> Result<Committed<()>> {
+    pub(in crate::app) fn set_copy_as_master(&mut self, id: PhotoId) -> Result<Committed<()>> {
         // What the background reads read of the masters before is dropped; read
         // again after.
         self.stop_background_reads();
@@ -1201,7 +1204,7 @@ impl Library {
     }
     /// Removes virtual copy `id`; returns its master, which is selected. An
     /// error means the copy is still there.
-    pub(super) fn remove_virtual_copy(
+    pub(in crate::app) fn remove_virtual_copy(
         &mut self,
         id: PhotoId,
     ) -> Result<Committed<Option<PhotoId>>> {
@@ -1276,7 +1279,7 @@ impl Library {
         self.select(Some(id));
     }
     /// Drain in every workspace so the bounded worker never waits for the grid.
-    pub(super) fn poll_previews(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn poll_previews(&mut self, ctx: &egui::Context) {
         if self.availability.poll(false, self.session.photos()) {
             self.availability_known();
         }
@@ -1293,7 +1296,7 @@ impl Library {
     }
     /// Hands the worker the photos shown last frame, and at full pace asks
     /// for the edited previews of the ones after them. Call once per frame.
-    pub(super) fn publish_shown(&mut self) {
+    pub(in crate::app) fn publish_shown(&mut self) {
         self.cache.publish_shown();
         self.screen.publish_shown();
         let catalog = self.session.catalog();
@@ -1331,7 +1334,7 @@ impl Library {
     /// under the edit it was rendered with, and what it shows of AI Denoise
     /// (`ai`), for the file `rendered` names (the one its pixels were decoded
     /// from); without one it is not cached.
-    pub(super) fn update_edited(
+    pub(in crate::app) fn update_edited(
         &mut self,
         ctx: &egui::Context,
         id: PhotoId,
@@ -1371,7 +1374,7 @@ impl Library {
     /// The selected photo, or else the first one shown in the current
     /// folder or filter (which then becomes selected), as Lightroom does
     /// when switching to Develop.
-    pub(super) fn selected_or_first(&mut self) -> Option<PhotoId> {
+    pub(in crate::app) fn selected_or_first(&mut self) -> Option<PhotoId> {
         if self.selection.active.is_none() {
             self.select(self.visible.first().map(|i| self.session.photos()[*i].id));
         }
@@ -1407,17 +1410,17 @@ impl Library {
         }
     }
     /// Whether the photo's thumbnail already shows its edit (crop included).
-    pub(super) fn has_edited_thumbnail(&self, id: PhotoId) -> bool {
+    pub(in crate::app) fn has_edited_thumbnail(&self, id: PhotoId) -> bool {
         self.cache.has_edited(id)
     }
     /// The Library's cached preview for a photo, if one is loaded.
-    pub(super) fn thumbnail(&self, id: PhotoId) -> Option<&egui::TextureHandle> {
+    pub(in crate::app) fn thumbnail(&self, id: PhotoId) -> Option<&egui::TextureHandle> {
         self.texture(self.photo(id)?)
     }
-    pub(super) fn preview_progress_active(&self) -> bool {
+    pub(in crate::app) fn preview_progress_active(&self) -> bool {
         self.cache.progress_active()
     }
-    pub(super) fn preview_progress(&self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn preview_progress(&self, ui: &mut egui::Ui) {
         self.cache.show_progress(ui);
     }
 }
@@ -1425,23 +1428,23 @@ impl Library {
     /// Saves a Copy Name or metadata field still being typed, e.g. when the
     /// Library panel goes away before the field loses focus. On failure it
     /// stays pending, to be saved again or discarded.
-    pub(super) fn commit_drafts(&mut self) -> Result<()> {
+    pub(in crate::app) fn commit_drafts(&mut self) -> Result<()> {
         if self.copy_names.commit(&mut self.session)? {
             self.filter();
         }
         self.commit_fields()
     }
     #[cfg(test)]
-    pub(super) fn set_copy_name_draft(&mut self, id: PhotoId, name: &str) {
+    pub(in crate::app) fn set_copy_name_draft(&mut self, id: PhotoId, name: &str) {
         self.copy_names.draft = Some((id, name.into()));
     }
     /// Whether a Copy Name or metadata field holds typing not saved yet.
-    pub(super) fn has_drafts(&self) -> bool {
+    pub(in crate::app) fn has_drafts(&self) -> bool {
         self.copy_names.is_unsaved(self.session.photos()) || self.has_unsaved_fields()
     }
     /// Drops a Copy Name or metadata field that could not be saved, e.g.
     /// closing without saving.
-    pub(super) fn discard_drafts(&mut self) {
+    pub(in crate::app) fn discard_drafts(&mut self) {
         self.copy_names.clear();
         self.fields.clear();
     }

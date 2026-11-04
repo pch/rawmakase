@@ -8,7 +8,7 @@
 //! pixel of the photo. They are shown in Lightroom's Melissa RGB: ProPhoto
 //! primaries with the sRGB tone curve. Renders keep their pixels for it only while
 //! the pointer is over the photo, so dragging sliders costs nothing extra.
-use super::Editor;
+use crate::app::Editor;
 use crate::camera_profiles::RGB_TO_PRO;
 use crate::color::{mul, srgb_decode, srgb_encode};
 use eframe::egui::{Pos2, Rect};
@@ -16,33 +16,37 @@ use eframe::egui::{Pos2, Rect};
 /// The readout's state: whether the pointer is over the photo, and the values
 /// under it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(super) struct Readout {
+pub(in crate::app) struct Readout {
     /// The pointer is over the photo being edited, so renders keep their pixels.
-    pub(super) hovering: bool,
+    pub(in crate::app) hovering: bool,
     /// Melissa RGB percentages under the pointer, once the pixels are there.
-    pub(super) values: Option<[f32; 3]>,
+    pub(in crate::app) values: Option<[f32; 3]>,
 }
 impl Readout {
     /// The line shown under the histogram, as Lightroom's.
-    pub(super) fn text(&self) -> Option<String> {
+    pub(in crate::app) fn text(&self) -> Option<String> {
         self.values.map(text)
     }
 }
 /// Melissa RGB percentages as Lightroom writes them.
-pub(super) fn text([r, g, b]: [f32; 3]) -> String {
+pub(in crate::app) fn text([r, g, b]: [f32; 3]) -> String {
     format!("R {r:.1}   G {g:.1}   B {b:.1} %")
 }
 
 /// An encoded sRGB colour (0–1) as Melissa RGB percentages: ProPhoto primaries
 /// (adapted to D50) with the sRGB tone curve, Lightroom's readout space.
-pub(super) fn melissa_percent(srgb: [f32; 3]) -> [f32; 3] {
+pub(in crate::app) fn melissa_percent(srgb: [f32; 3]) -> [f32; 3] {
     let linear = srgb.map(|v| srgb_decode(v.clamp(0., 1.)));
     mul(RGB_TO_PRO, linear).map(|v| srgb_encode(v.clamp(0., 1.)) * 100.)
 }
 
 /// The pixel of `samples` under `pos`, where they are drawn at `shown`; None
 /// off them.
-pub(super) fn pixel_at(samples: &image::RgbImage, shown: Rect, pos: Pos2) -> Option<[f32; 3]> {
+pub(in crate::app) fn pixel_at(
+    samples: &image::RgbImage,
+    shown: Rect,
+    pos: Pos2,
+) -> Option<[f32; 3]> {
     if !shown.contains(pos) {
         return None;
     }
@@ -57,12 +61,12 @@ pub(super) fn pixel_at(samples: &image::RgbImage, shown: Rect, pos: Pos2) -> Opt
 
 impl Editor {
     /// Renders keep the shown pixels: for an eyedropper's loupe, or the readout.
-    pub(super) fn wants_samples(&self) -> bool {
+    pub(in crate::app) fn wants_samples(&self) -> bool {
         self.view.picks_color() || self.view.readout.hovering
     }
     /// The processed colour at `pos` on the photo drawn at `rect`, with the 100%
     /// region over it at `region`: from the region where it covers `pos`.
-    pub(super) fn shown_pixel(
+    pub(in crate::app) fn shown_pixel(
         &self,
         pos: Pos2,
         rect: Rect,
@@ -78,7 +82,12 @@ impl Editor {
     /// Follows the pointer over the photo being edited (`hover`, on the photo drawn
     /// at `rect`): renders keep their pixels while it is there (the viewport asks for
     /// one when they start to), and reads the values under it.
-    pub(super) fn update_readout(&mut self, hover: Option<Pos2>, rect: Rect, region: Option<Rect>) {
+    pub(in crate::app) fn update_readout(
+        &mut self,
+        hover: Option<Pos2>,
+        rect: Rect,
+        region: Option<Rect>,
+    ) {
         let hover = hover.filter(|p| rect.contains(*p));
         self.view.readout.hovering = hover.is_some();
         let values = hover

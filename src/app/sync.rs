@@ -10,7 +10,7 @@
 //!
 //! Every batch runs off the UI thread, reports its progress and can be cancelled
 //! until it starts saving (see [`BatchProgress`]).
-use super::{
+use crate::app::{
     Editor,
     history::{History, Step},
     settings_transfer::Settings,
@@ -36,7 +36,7 @@ use std::sync::{
 
 /// A photo settings are synchronized to.
 #[derive(Clone, Debug)]
-pub(super) struct SyncTarget {
+pub(in crate::app) struct SyncTarget {
     pub id: PhotoId,
     pub path: PathBuf,
     pub name: String,
@@ -44,7 +44,7 @@ pub(super) struct SyncTarget {
 
 /// Where a Sync's settings come from.
 #[derive(Clone, Debug)]
-pub(super) enum SyncSource {
+pub(in crate::app) enum SyncSource {
     /// The open photo's settings, as Develop shows them.
     Open(Box<Settings>),
     /// A photo not open in Develop: its edit as Develop would open it with, worked
@@ -114,7 +114,7 @@ pub(crate) struct SyncResult {
 
 /// A Sync for the shared undo log: every photo's edit before and after it.
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct SyncCommand {
+pub(in crate::app) struct SyncCommand {
     pub sequence: u64,
     pub change: BatchChange,
     pub edits: Vec<Synced>,
@@ -172,7 +172,7 @@ impl BatchChange {
 /// uses, from the decode cache when it has the photo (which a batch never fills),
 /// so each photo is measured on the image Develop measures.
 #[derive(Clone, Default)]
-pub(super) struct Decoding {
+pub(in crate::app) struct Decoding {
     pub demosaic: crate::camera_data::Demosaic,
     pub cache: Option<crate::decode_cache::DecodeCache>,
 }
@@ -281,7 +281,7 @@ impl BatchProgress {
 
 /// Which edits an undo or redo of a Sync writes back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum SyncSide {
+pub(in crate::app) enum SyncSide {
     Before,
     After,
 }
@@ -292,7 +292,7 @@ pub(super) enum SyncSide {
 /// can't be read changes nothing, nor does a batch cancelled before it saves.
 /// `source` is the photo a change that has one ([`BatchChange::has_source`]) takes
 /// its settings from.
-pub(super) fn synchronize(
+pub(in crate::app) fn synchronize(
     catalog: &mut Catalog,
     source: Option<&SyncSource>,
     change: &BatchChange,
@@ -675,7 +675,7 @@ fn starting_warnings(origin: Origin, warnings: Vec<String>) -> Vec<String> {
 
 /// How much light a photo's camera settings let in, in stops from f/1, 1 s, ISO 100:
 /// what Match Total Exposures evens out. `None` without all three.
-pub(super) fn capture_stops(m: &crate::camera_data::Metadata) -> Option<f32> {
+pub(in crate::app) fn capture_stops(m: &crate::camera_data::Metadata) -> Option<f32> {
     (m.aperture > 0. && m.shutter > 0. && m.iso > 0.)
         .then(|| m.shutter.log2() - 2. * m.aperture.log2() + (m.iso / 100.).log2())
 }
@@ -694,7 +694,7 @@ fn matched_exposure(source: &Settings, target: &crate::camera_data::Metadata) ->
 /// which notices the change when the photo opens. A photo that had no edit before
 /// goes back to having none. `path` gives each photo's current location, which a
 /// relink may have changed since.
-pub(super) fn restore(
+pub(in crate::app) fn restore(
     session: &mut crate::catalog_session::CatalogSession,
     edits: &[Synced],
     side: SyncSide,
@@ -761,7 +761,7 @@ pub(super) fn restore(
 
 /// Why a Sync could not be undone or redone.
 #[derive(Debug)]
-pub(super) enum SyncRestoreError {
+pub(in crate::app) enum SyncRestoreError {
     /// One of its photos was removed from the catalog since.
     PhotoRemoved,
     Write(anyhow::Error),
@@ -783,8 +783,8 @@ impl Editor {
     /// Library the active one of the selection.
     fn sync_source_id(&self) -> Option<PhotoId> {
         match self.module {
-            super::Module::Develop => self.document.catalog_photo,
-            super::Module::Library => self.library.as_ref()?.selected(),
+            crate::app::Module::Develop => self.document.catalog_photo,
+            crate::app::Module::Library => self.library.as_ref()?.selected(),
         }
     }
     /// The source photo, when its settings can be synchronized now.
@@ -804,7 +804,7 @@ impl Editor {
         Some(source)
     }
     /// The other photos selected with the source photo, which Sync applies to.
-    pub(super) fn sync_targets(&self) -> Vec<SyncTarget> {
+    pub(in crate::app) fn sync_targets(&self) -> Vec<SyncTarget> {
         let (Some(library), Some(source)) = (&self.library, self.sync_ready_source()) else {
             return Vec::new();
         };
@@ -826,7 +826,7 @@ impl Editor {
             .collect()
     }
     /// How many photos Sync would apply to, for a control drawn every frame.
-    pub(super) fn sync_target_count(&self) -> usize {
+    pub(in crate::app) fn sync_target_count(&self) -> usize {
         let (Some(library), Some(source)) = (&self.library, self.sync_ready_source()) else {
             return 0;
         };
@@ -847,7 +847,7 @@ impl Editor {
     }
     /// Synchronizes the source photo's `groups` to the other selected photos, in the
     /// background; the result arrives as [`Event::Synced`].
-    pub(super) fn start_sync(&mut self, change: BatchChange) {
+    pub(in crate::app) fn start_sync(&mut self, change: BatchChange) {
         debug_assert!(change.has_source());
         // Matching to a photo without aperture, shutter speed and ISO means nothing.
         if change == BatchChange::MatchTotalExposures
@@ -895,7 +895,7 @@ impl Editor {
     }
     /// Every selected photo, the active and the open one included, which Auto
     /// Settings and a preset from the Library apply to.
-    pub(super) fn batch_targets(&self) -> Vec<SyncTarget> {
+    pub(in crate::app) fn batch_targets(&self) -> Vec<SyncTarget> {
         let Some(library) = self.library.as_ref().filter(|_| self.batch_ready()) else {
             return Vec::new();
         };
@@ -916,7 +916,7 @@ impl Editor {
             .collect()
     }
     /// How many photos a batch would apply to, for a control drawn every frame.
-    pub(super) fn batch_target_count(&self) -> usize {
+    pub(in crate::app) fn batch_target_count(&self) -> usize {
         match &self.library {
             Some(library) if self.batch_ready() => library.selected_photos().len(),
             _ => 0,
@@ -925,7 +925,7 @@ impl Editor {
     /// Applies `change`, which has no source photo (Auto Settings, a preset), to
     /// every selected photo, in the background; the result arrives as
     /// [`Event::Synced`]. The open photo, when selected, is saved first.
-    pub(super) fn start_batch(&mut self, change: BatchChange) {
+    pub(in crate::app) fn start_batch(&mut self, change: BatchChange) {
         debug_assert!(!change.has_source());
         let targets = self.batch_targets();
         if targets.is_empty() || self.activity.is_busy() || !self.flush() {
@@ -960,7 +960,7 @@ impl Editor {
         self.messages.note(format!(
             "{} on {}…",
             change.name(),
-            super::widgets::plural(targets.len(), "photo", "photos")
+            crate::app::widgets::plural(targets.len(), "photo", "photos")
         ));
         std::thread::spawn(move || {
             // A panic (in Upright's analysis, say) still finishes the batch.
@@ -987,7 +987,7 @@ impl Editor {
     }
     /// The open photo, when a Sync or its Undo wrote `ids`' edits, opens again with
     /// what was written, so nothing stale is saved over it.
-    pub(super) fn reopen_synced(&mut self, ids: &[PhotoId]) {
+    pub(in crate::app) fn reopen_synced(&mut self, ids: &[PhotoId]) {
         if let Some(open) = self.document.catalog_photo
             && ids.contains(&open)
             && let Some(path) = self.document.path.clone()
@@ -997,7 +997,7 @@ impl Editor {
         }
     }
     /// A finished Sync: one command for Undo, and the top bar naming what failed.
-    pub(super) fn synced(&mut self, result: SyncResult) {
+    pub(in crate::app) fn synced(&mut self, result: SyncResult) {
         self.activity.finish_sync();
         // A result for a catalog no longer open must not reach this one's undo log.
         if self
@@ -1027,7 +1027,7 @@ impl Editor {
         self.load_reference();
         if done > 0 {
             self.undo_log
-                .push(super::undo::Command::Sync(Box::new(SyncCommand {
+                .push(crate::app::undo::Command::Sync(Box::new(SyncCommand {
                     sequence: crate::edit_session::sequence(),
                     change: result.change.clone(),
                     edits: result.synced,
@@ -1036,7 +1036,7 @@ impl Editor {
         let mut status = format!(
             "{}: {} changed",
             result.change.name(),
-            super::widgets::plural(done, "photo", "photos")
+            crate::app::widgets::plural(done, "photo", "photos")
         );
         for failure in &result.failed {
             status.push_str(&format!(

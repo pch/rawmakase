@@ -1,6 +1,6 @@
 //! Profile → Fit Camera Look: Camera Look (fitted) for the open photo, fitted to its
 //! embedded JPEG off the UI thread (`camera_look::fit`, a few seconds).
-use super::{Editor, history::Step, worker::Event};
+use crate::app::{Editor, history::Step, worker::Event};
 use crate::camera_profiles::CameraProfile;
 use crate::develop::black_white::TreatmentChoice;
 use rawmakase_cancel::Cancel;
@@ -9,7 +9,7 @@ use std::sync::Arc;
 /// `listed`, a photo's profiles listed again (after an import), with the fitted
 /// default it had (`had`, as the loader listed them) while the photo still has no
 /// colour data: listing again never fits, and the defaults stay what they were.
-pub(super) fn keep_fitted_default(
+pub(in crate::app) fn keep_fitted_default(
     had: &[Arc<CameraProfile>],
     m: &crate::camera_data::Metadata,
     mut listed: Vec<Arc<CameraProfile>>,
@@ -24,7 +24,7 @@ pub(super) fn keep_fitted_default(
 impl Editor {
     /// Fits the open photo's camera look; it arrives as [`Event::CameraLook`]. A fit
     /// already running for the photo is cancelled for this one.
-    pub(super) fn start_camera_look(&mut self) {
+    pub(in crate::app) fn start_camera_look(&mut self) {
         let Some(path) = self.document.path.clone() else {
             return;
         };
@@ -32,7 +32,7 @@ impl Editor {
         let id = self.load.id();
         let profile = self.document.edit.recipe().profile.clone();
         let sent = profile.clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
@@ -72,7 +72,7 @@ impl Editor {
     /// Uses a fitted look as the photo's profile, at 100%, as one History step,
     /// unless the profile changed while it was fitted (a later choice wins) or a
     /// newer fit was asked for. A refusal says why, as a failure that stays until dismissed.
-    pub(super) fn camera_look_ready(
+    pub(in crate::app) fn camera_look_ready(
         &mut self,
         generation: u64,
         fitted_over: Option<Arc<CameraProfile>>,
@@ -113,7 +113,7 @@ impl Editor {
 
     /// Whether Profile → Fit Camera Look can run for the open photo: a RAW, decoded
     /// far enough to know it is one, with no fit already running.
-    pub(super) fn can_fit_camera_look(&self) -> bool {
+    pub(in crate::app) fn can_fit_camera_look(&self) -> bool {
         self.document.path.is_some()
             && self
                 .document

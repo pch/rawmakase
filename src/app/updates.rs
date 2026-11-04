@@ -1,10 +1,10 @@
 //! The update notice: a small card under the toolbar when a newer release
 //! is out, and the About rows in Preferences. fastframe-update does the
 //! work on a thread of its own (`crate::updates`); this is what the user sees.
-use super::Editor;
-use super::widgets::{modal_frame, primary_button};
+use crate::app::Editor;
 use crate::app::design::{self, Tone, radius, space, text};
 use crate::app::theme;
+use crate::app::widgets::{modal_frame, primary_button};
 use crate::updates::{INTERVAL, Launch, Prepared, Release, Unsupported, Updater};
 use eframe::egui::{self, Color32, Sense, Vec2};
 use std::sync::Arc;
@@ -44,13 +44,13 @@ enum Download {
 }
 
 #[derive(Default)]
-pub(super) struct Updates {
+pub(in crate::app) struct Updates {
     /// None in isolated tests, which never reach the network.
     requests: Option<Sender<Request>>,
     replies: Option<Receiver<Reply>>,
     automatic_flag: Arc<AtomicBool>,
-    pub(super) automatic: bool,
-    pub(super) skipped: Option<String>,
+    pub(in crate::app) automatic: bool,
+    pub(in crate::app) skipped: Option<String>,
     available: Option<Release>,
     /// Why this copy cannot replace itself, e.g. a package manager owns it.
     unsupported: Option<Unsupported>,
@@ -63,7 +63,10 @@ pub(super) struct Updates {
     receipt: Option<fastframe_update::Receipt>,
 }
 impl Updates {
-    pub(super) fn new(session: &crate::app::session::Session, ctx: Option<&egui::Context>) -> Self {
+    pub(in crate::app) fn new(
+        session: &crate::app::session::Session,
+        ctx: Option<&egui::Context>,
+    ) -> Self {
         let automatic = !session.no_update_checks;
         let mut updates = Self {
             automatic,
@@ -87,7 +90,11 @@ impl Updates {
     }
     /// Takes what the update helper left for this launch: a receipt to
     /// acknowledge, or why it restored the previous version.
-    pub(super) fn launched(&mut self, launch: Launch, messages: &mut super::messages::Messages) {
+    pub(in crate::app) fn launched(
+        &mut self,
+        launch: Launch,
+        messages: &mut crate::app::messages::Messages,
+    ) {
         self.receipt = launch.receipt;
         if let Some(error) = launch.error {
             messages.fail(error);
@@ -95,7 +102,7 @@ impl Updates {
     }
     /// Drops the update checker's channels at exit. It ends after the request it is
     /// working on; a download cannot be cancelled, so it is not waited for.
-    pub(super) fn close(&mut self) {
+    pub(in crate::app) fn close(&mut self) {
         self.requests = None;
         self.replies = None;
     }
@@ -170,7 +177,7 @@ enum Action {
 }
 
 impl Editor {
-    pub(super) fn poll_updates(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn poll_updates(&mut self, ctx: &egui::Context) {
         if let Some(receipt) = self.updates.receipt.take() {
             // The window is up, so the helper keeps the new version.
             std::thread::spawn(move || {
@@ -229,7 +236,7 @@ impl Editor {
     /// Lightroom-style notice under the toolbar on the right, over the panels
     /// so the layout never moves. Hidden behind modal windows and first-run
     /// setup.
-    pub(super) fn update_notice(&mut self, ctx: &egui::Context, modal: bool) {
+    pub(in crate::app) fn update_notice(&mut self, ctx: &egui::Context, modal: bool) {
         let palette = theme::palette(ctx);
         let updates = &self.updates;
         let Some(release) = updates.available.clone() else {
@@ -307,7 +314,7 @@ impl Editor {
 
     /// The version row's controls in Preferences > General: Check Now and
     /// what it found, or the update itself.
-    pub(super) fn update_status(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn update_status(&mut self, ui: &mut egui::Ui) {
         if self.updates.requests.is_none() {
             return;
         }
@@ -341,7 +348,7 @@ impl Editor {
         }
         match &updates.manual {
             Some(None) => {
-                super::widgets::spinner(ui, 12.);
+                crate::app::widgets::spinner(ui, 12.);
                 note(ui, "Checking…");
             }
             Some(Some(Ok(()))) => {
@@ -354,7 +361,7 @@ impl Editor {
         }
     }
 
-    pub(super) fn automatic_updates_checkbox(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn automatic_updates_checkbox(&mut self, ui: &mut egui::Ui) {
         let updates = &mut self.updates;
         if ui
             .checkbox(&mut updates.automatic, "Check for updates automatically")
@@ -419,7 +426,7 @@ fn notice_contents(ui: &mut egui::Ui, updates: &Updates, release: &Release) -> O
         }
         Download::Installing => {
             ui.horizontal(|ui| {
-                super::widgets::spinner(ui, 12.);
+                crate::app::widgets::spinner(ui, 12.);
                 note(ui, "Preparing to restart…");
             });
         }
@@ -478,9 +485,9 @@ fn close_button(ui: &mut egui::Ui) -> egui::Response {
     } else {
         Tone::SECONDARY
     });
-    super::icons::paint_at(
+    crate::app::icons::paint_at(
         ui.painter(),
-        super::icons::Icon::Close,
+        crate::app::icons::Icon::Close,
         rect.center(),
         14.,
         color,

@@ -7,34 +7,34 @@ use eframe::egui::Color32;
 
 /// One end of the histogram.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ClipSide {
+pub(in crate::app) enum ClipSide {
     Shadows,
     Highlights,
 }
 impl ClipSide {
-    pub(super) const BOTH: [Self; 2] = [Self::Shadows, Self::Highlights];
+    pub(in crate::app) const BOTH: [Self; 2] = [Self::Shadows, Self::Highlights];
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct ClippingView {
+pub(in crate::app) struct ClippingView {
     /// Turned on by a triangle's click or by J.
     on: ClipOverlay,
     /// The triangle under the pointer, shown only while it stays there.
     hover: Option<ClipSide>,
 }
 impl ClippingView {
-    pub(super) fn is_on(&self, side: ClipSide) -> bool {
+    pub(in crate::app) fn is_on(&self, side: ClipSide) -> bool {
         match side {
             ClipSide::Shadows => self.on.shadows,
             ClipSide::Highlights => self.on.highlights,
         }
     }
     /// Both warnings are on, as the toolbar's Clipping button shows.
-    pub(super) fn both_on(&self) -> bool {
+    pub(in crate::app) fn both_on(&self) -> bool {
         self.on.shadows && self.on.highlights
     }
     /// A triangle's click.
-    pub(super) fn toggle(&mut self, side: ClipSide) {
+    pub(in crate::app) fn toggle(&mut self, side: ClipSide) {
         let on = !self.is_on(side);
         match side {
             ClipSide::Shadows => self.on.shadows = on,
@@ -42,22 +42,22 @@ impl ClippingView {
         }
     }
     /// J: both on when either is off, otherwise both off, as in Lightroom.
-    pub(super) fn toggle_both(&mut self) {
+    pub(in crate::app) fn toggle_both(&mut self) {
         let on = !self.both_on();
         self.on = ClipOverlay {
             shadows: on,
             highlights: on,
         };
     }
-    pub(super) fn set_hover(&mut self, side: Option<ClipSide>) {
+    pub(in crate::app) fn set_hover(&mut self, side: Option<ClipSide>) {
         self.hover = side;
     }
     /// Off, as leaving Develop leaves it.
-    pub(super) fn clear(&mut self) {
+    pub(in crate::app) fn clear(&mut self) {
         *self = Self::default();
     }
     /// The warnings painted over the photo: those turned on and the hovered one.
-    pub(super) fn overlay(&self) -> ClipOverlay {
+    pub(in crate::app) fn overlay(&self) -> ClipOverlay {
         let hovered = |side| self.hover == Some(side);
         ClipOverlay {
             shadows: self.on.shadows || hovered(ClipSide::Shadows),
@@ -67,10 +67,10 @@ impl ClippingView {
 }
 
 /// A channel clips visibly when more than this share of the pixels does.
-pub(super) const CLIPPED_SHARE: f32 = 0.001;
+pub(in crate::app) const CLIPPED_SHARE: f32 = 0.001;
 
 /// Which channels clip at `side`: red, green, blue.
-pub(super) fn clipped_channels(histogram: &Histogram, side: ClipSide) -> [bool; 3] {
+pub(in crate::app) fn clipped_channels(histogram: &Histogram, side: ClipSide) -> [bool; 3] {
     let counts = match side {
         ClipSide::Shadows => histogram.clipped.shadows,
         ClipSide::Highlights => histogram.clipped.highlights,
@@ -80,7 +80,7 @@ pub(super) fn clipped_channels(histogram: &Histogram, side: ClipSide) -> [bool; 
 }
 /// The triangle's colour: the clipping channels mixed, white when all three
 /// clip, as Lightroom's; `None` when none clips.
-pub(super) fn indicator_color(channels: [bool; 3]) -> Option<Color32> {
+pub(in crate::app) fn indicator_color(channels: [bool; 3]) -> Option<Color32> {
     let [r, g, b] = channels.map(|on| if on { 235 } else { 60 });
     channels.contains(&true).then(|| Color32::from_rgb(r, g, b))
 }

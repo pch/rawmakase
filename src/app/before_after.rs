@@ -11,9 +11,9 @@
 //!
 //! Reference View (see `reference`) is laid out as a side-by-side view, with the
 //! reference photo in Before's place, rendered in the same lane.
-use super::state::{Picture, TextureMode};
-use super::{Editor, history::Step};
 use crate::app::design::{radius, space, text};
+use crate::app::state::{Picture, TextureMode};
+use crate::app::{Editor, history::Step};
 use crate::rendered::ClipOverlay;
 use crate::{camera_data::CameraImage, develop::Geometry, model::recipe::Recipe};
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
@@ -21,7 +21,7 @@ use std::{path::PathBuf, sync::Arc};
 
 /// How Develop shows Before.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum Compare {
+pub(in crate::app) enum Compare {
     /// The edit alone (Lightroom's Loupe).
     #[default]
     Off,
@@ -38,13 +38,13 @@ pub(super) enum Compare {
 }
 /// Which way the two sides are laid out: Before left or on top.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Axis {
+pub(in crate::app) enum Axis {
     LeftRight,
     TopBottom,
 }
 
 /// The views the Before/After menu lists, with their names.
-pub(super) const VIEWS: [(Compare, &str); 5] = [
+pub(in crate::app) const VIEWS: [(Compare, &str); 5] = [
     (Compare::BeforeOnly, "Before Only"),
     (Compare::SideBySide(Axis::LeftRight), "Left / Right"),
     (Compare::SideBySide(Axis::TopBottom), "Top / Bottom"),
@@ -54,27 +54,27 @@ pub(super) const VIEWS: [(Compare, &str); 5] = [
 
 impl Compare {
     /// Before is on screen, alone or with the edit.
-    pub(super) fn shows_before(self) -> bool {
+    pub(in crate::app) fn shows_before(self) -> bool {
         matches!(
             self,
             Self::BeforeOnly | Self::SideBySide(_) | Self::Split(_)
         )
     }
     /// Reference View.
-    pub(super) fn reference(self) -> bool {
+    pub(in crate::app) fn reference(self) -> bool {
         matches!(self, Self::Reference(_))
     }
     /// Before alone: the panels are disabled, as nothing they change is shown.
-    pub(super) fn before_only(self) -> bool {
+    pub(in crate::app) fn before_only(self) -> bool {
         matches!(self, Self::BeforeOnly | Self::CameraThumbnail)
     }
     /// The photo is rendered with Before's settings, alone. Not the camera thumbnail,
     /// which shows no render: under it, and outside Develop, the photo is the edit.
-    pub(super) fn renders_before_alone(self) -> bool {
+    pub(in crate::app) fn renders_before_alone(self) -> bool {
         self == Self::BeforeOnly
     }
     /// Before, or the reference photo, beside the edit, rendered separately.
-    pub(super) fn two_up(self) -> bool {
+    pub(in crate::app) fn two_up(self) -> bool {
         matches!(
             self,
             Self::SideBySide(_) | Self::Split(_) | Self::Reference(_)
@@ -82,7 +82,7 @@ impl Compare {
     }
     /// `view`, or back to the edit alone when `view` is already shown: what its key
     /// does, as Y, Alt+Y, Shift+Y and \ do in Lightroom.
-    pub(super) fn toggled(self, view: Self) -> Self {
+    pub(in crate::app) fn toggled(self, view: Self) -> Self {
         if self == view { Self::Off } else { view }
     }
 }
@@ -91,21 +91,21 @@ impl Compare {
 /// part of the screen it shows in (`clip`): the same in side-by-side views, half of
 /// the area in split ones.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Pane {
-    pub(super) area: Rect,
-    pub(super) clip: Rect,
+pub(in crate::app) struct Pane {
+    pub(in crate::app) area: Rect,
+    pub(in crate::app) clip: Rect,
 }
 /// The viewport's panes for a view: After always, Before when it shows beside it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Panes {
-    pub(super) after: Pane,
-    pub(super) before: Option<Pane>,
+pub(in crate::app) struct Panes {
+    pub(in crate::app) after: Pane,
+    pub(in crate::app) before: Option<Pane>,
 }
 /// Space between the two sides of a side-by-side view.
 const GAP: f32 = space::S;
 
 /// Lays out `area` for `compare`.
-pub(super) fn panes(compare: Compare, area: Rect) -> Panes {
+pub(in crate::app) fn panes(compare: Compare, area: Rect) -> Panes {
     let halves = |axis: Axis, gap: f32| {
         let c = area.center();
         match axis {
@@ -146,13 +146,13 @@ pub(super) fn panes(compare: Compare, area: Rect) -> Panes {
 /// Where Before's photo sits, given where After's does: moved with its pane, so the
 /// same part of the photo is under the same place in each. A Before of another size
 /// (its own Transform) is placed in its pane on its own.
-pub(super) fn before_rect(after: Rect, panes: &Panes, same_size: bool) -> Option<Rect> {
+pub(in crate::app) fn before_rect(after: Rect, panes: &Panes, same_size: bool) -> Option<Rect> {
     let before = panes.before?;
     same_size.then(|| after.translate(before.area.min - panes.after.area.min))
 }
 /// The point on After's photo that `pos` on Before's shows, so a click on either side
 /// zooms to the same place.
-pub(super) fn to_after(pos: Pos2, before: Rect, after: Rect) -> Pos2 {
+pub(in crate::app) fn to_after(pos: Pos2, before: Rect, after: Rect) -> Pos2 {
     after.min + (pos - before.min) / before.size() * after.size()
 }
 
@@ -182,19 +182,19 @@ impl PartialEq for BeforeJob {
 
 /// Before's render beside the edit: its own task and textures, like the edit's.
 #[derive(Default)]
-pub(super) struct BeforePreview {
-    pub(super) task: super::task::Task,
+pub(in crate::app) struct BeforePreview {
+    pub(in crate::app) task: crate::app::task::Task,
     /// The last whole-photo render, and a 100% region drawn over it.
-    pub(super) texture: Option<Picture>,
-    pub(super) region: Option<Picture>,
-    pub(super) mode: TextureMode,
+    pub(in crate::app) texture: Option<Picture>,
+    pub(in crate::app) region: Option<Picture>,
+    pub(in crate::app) mode: TextureMode,
     pending_mode: TextureMode,
     /// The job asked for last, rendered or on its way.
     submitted: Option<BeforeJob>,
 }
 impl BeforePreview {
     /// Drops what Before showed, e.g. when it leaves the screen or the photo changes.
-    pub(super) fn clear(&mut self) {
+    pub(in crate::app) fn clear(&mut self) {
         self.task.invalidate();
         self.texture = None;
         self.region = None;
@@ -203,22 +203,22 @@ impl BeforePreview {
     }
     /// The render asked for last is a 100% region.
     #[cfg(test)]
-    pub(super) fn zoomed(&self) -> bool {
+    pub(in crate::app) fn zoomed(&self) -> bool {
         matches!(self.pending_mode, TextureMode::Region(_))
     }
     /// Asks for its job again on the next schedule, e.g. after its textures were lost.
-    pub(super) fn forget_job(&mut self) {
+    pub(in crate::app) fn forget_job(&mut self) {
         self.submitted = None;
     }
     /// The textures it draws.
-    pub(super) fn pictures(&mut self) -> [&mut Option<Picture>; 2] {
+    pub(in crate::app) fn pictures(&mut self) -> [&mut Option<Picture>; 2] {
         [&mut self.texture, &mut self.region]
     }
 }
 
 /// What a Before/After command does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Transfer {
+pub(in crate::app) enum Transfer {
     /// Before's settings become the edit's, as one History step.
     BeforeToAfter,
     /// The edit's settings become Before's.
@@ -244,7 +244,7 @@ impl Editor {
     /// The settings Before shows: those copied to it, else the photo's starting
     /// settings (its raw defaults), framed as the edit on screen is (a hovered
     /// preset's crop included).
-    pub(super) fn before_settings(&self) -> Recipe {
+    pub(in crate::app) fn before_settings(&self) -> Recipe {
         let shown = self
             .presets
             .preview
@@ -263,9 +263,9 @@ impl Editor {
     }
     /// Shows `view`, closing any tool when Before goes beside the edit: tools work on
     /// the edit alone, as in Lightroom.
-    pub(super) fn set_compare(&mut self, view: Compare) {
+    pub(in crate::app) fn set_compare(&mut self, view: Compare) {
         if view.two_up() {
-            self.view.tool = super::state::Tool::None;
+            self.view.tool = crate::app::state::Tool::None;
         }
         // Before and the reference share a lane: neither shows the other's render.
         if view.reference() != self.view.compare.reference() {
@@ -280,13 +280,13 @@ impl Editor {
         }
     }
     /// A tool opened while Before is beside the edit goes back to the edit alone.
-    pub(super) fn leave_compare_for_tools(&mut self) {
-        if self.view.compare.two_up() && self.view.tool != super::state::Tool::None {
+    pub(in crate::app) fn leave_compare_for_tools(&mut self) {
+        if self.view.compare.two_up() && self.view.tool != crate::app::state::Tool::None {
             self.view.compare = Compare::Off;
         }
     }
     /// Copy or swap settings between Before and After.
-    pub(super) fn transfer(&mut self, transfer: Transfer) {
+    pub(in crate::app) fn transfer(&mut self, transfer: Transfer) {
         // Framed as the edit itself, never by a preset only hovered.
         let before = self.before_framed_by(self.document.edit.recipe());
         let after = self.document.edit.recipe().clone();
@@ -309,7 +309,7 @@ impl Editor {
         self.schedule();
     }
     /// History's Copy History Step Settings to Before: the state with `applied` steps.
-    pub(super) fn before_from_history(&mut self, applied: usize) {
+    pub(in crate::app) fn before_from_history(&mut self, applied: usize) {
         if let Some(state) = self
             .document
             .edit
@@ -320,7 +320,7 @@ impl Editor {
         }
     }
     /// Before shows `settings` from now on, for this photo.
-    pub(super) fn set_before(&mut self, settings: Recipe) {
+    pub(in crate::app) fn set_before(&mut self, settings: Recipe) {
         self.document.before = Some(settings);
         self.schedule();
     }
@@ -335,7 +335,7 @@ impl Editor {
     }
     /// What the side beside the edit renders: Before, or the reference photo, with
     /// the zoom it is shown at.
-    fn second_side(&self) -> Option<(Arc<CameraImage>, Recipe, super::navigator::Zoom)> {
+    fn second_side(&self) -> Option<(Arc<CameraImage>, Recipe, crate::app::navigator::Zoom)> {
         if !self.view.compare.two_up() {
             return None;
         }
@@ -357,7 +357,7 @@ impl Editor {
     /// Renders Before (or the reference) beside the edit when its view changed;
     /// edits to After alone do not render it again. Leaving the side-by-side views
     /// frees its textures.
-    pub(super) fn schedule_before(&mut self) {
+    pub(in crate::app) fn schedule_before(&mut self) {
         let Some((image, recipe, zoom)) = self.second_side() else {
             let before = &self.preview.before;
             if !self.view.compare.reference()
@@ -373,7 +373,7 @@ impl Editor {
         let viewport = self.view.viewport;
         let job = BeforeJob {
             region: zoom.region(viewport, geometry.width, geometry.height),
-            max_edge: super::workflow::render_edges(&zoom, viewport, &geometry).max_edge,
+            max_edge: crate::app::workflow::render_edges(&zoom, viewport, &geometry).max_edge,
             ai: self.document.ai_source(&image, &recipe.ai_denoise),
             image,
             recipe,
@@ -388,9 +388,9 @@ impl Editor {
         before.pending_mode = job.region.map_or(TextureMode::Whole, TextureMode::Region);
         before.submitted = Some(job.clone());
         let drawn = self.preview.presented();
-        self.renderer.submit(super::worker::RenderJob {
+        self.renderer.submit(crate::app::worker::RenderJob {
             id,
-            pane: super::worker::Pane::Before,
+            pane: crate::app::worker::Pane::Before,
             image: job.image,
             max_edge: job.max_edge,
             cancel,
@@ -401,17 +401,17 @@ impl Editor {
             navigator: false,
             thumbnail: false,
             samples: false,
-            overlay: super::worker::Overlay::None,
+            overlay: crate::app::worker::Overlay::None,
             ai: job.ai,
             drawn,
         });
     }
     /// A Before render arrived.
-    pub(super) fn before_rendered(
+    pub(in crate::app) fn before_rendered(
         &mut self,
         ctx: &egui::Context,
-        preview: super::worker::Preview,
-        stage: super::worker::RenderStage,
+        preview: crate::app::worker::Preview,
+        stage: crate::app::worker::RenderStage,
         task: u64,
     ) {
         let before = &mut self.preview.before;
@@ -422,25 +422,30 @@ impl Editor {
             &mut before.texture
         };
         match preview {
-            super::worker::Preview::Pixels {
+            crate::app::worker::Preview::Pixels {
                 image, display_rgb, ..
             } => {
                 let size = [image.width as usize, image.height as usize];
                 let image = egui::ColorImage::from_rgb(size, &display_rgb);
                 Picture::upload(slot, ctx, "before", image);
             }
-            super::worker::Preview::Texture { id, size, .. } => {
+            crate::app::worker::Preview::Texture { id, size, .. } => {
                 *slot = Some(Picture::presented(id, size));
             }
         }
         before.mode = before.pending_mode;
-        if stage != super::worker::RenderStage::Draft {
+        if stage != crate::app::worker::RenderStage::Draft {
             before.task.finish(task);
         }
     }
     /// Draws Before in its pane beside the edit, whose photo sits at `after` in
     /// `panes.after`, and labels both sides. Returns where Before's photo is drawn.
-    pub(super) fn before_pane_ui(&self, ui: &egui::Ui, panes: &Panes, after: Rect) -> Option<Rect> {
+    pub(in crate::app) fn before_pane_ui(
+        &self,
+        ui: &egui::Ui,
+        panes: &Panes,
+        after: Rect,
+    ) -> Option<Rect> {
         let pane = panes.before?;
         if self.view.compare.reference() {
             return self.reference_pane_ui(ui, panes, pane);
@@ -481,7 +486,13 @@ impl Editor {
     }
     /// Draws the render of the side beside the edit, the whole photo at `rect` and a
     /// 100% region over it, or a spinner while it has none.
-    pub(super) fn paint_second_side(&self, ui: &egui::Ui, pane: Pane, rect: Rect, g: &Geometry) {
+    pub(in crate::app) fn paint_second_side(
+        &self,
+        ui: &egui::Ui,
+        pane: Pane,
+        rect: Rect,
+        g: &Geometry,
+    ) {
         let painter = ui.painter().with_clip_rect(pane.clip);
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
         let before = &self.preview.before;
@@ -492,7 +503,7 @@ impl Editor {
             // Waiting for its first render; a 100% region alone is drawn below.
             None if before.region.is_none() => {
                 let at = Rect::from_center_size(pane.clip.center(), Vec2::splat(18.));
-                super::widgets::paint_spinner(ui, at, None);
+                crate::app::widgets::paint_spinner(ui, at, None);
             }
             None => {}
         }
@@ -502,7 +513,7 @@ impl Editor {
     }
     /// An edit is about to render: a Before render still running would hold it up
     /// on the renderer's one thread, so it is cancelled and asked for again behind it.
-    pub(super) fn yield_before(&mut self) {
+    pub(in crate::app) fn yield_before(&mut self) {
         let before = &mut self.preview.before;
         if before.task.is_running() {
             before.task.invalidate();
@@ -513,7 +524,7 @@ impl Editor {
 
 /// Where the 100% region `[x, y, w, h]` of a photo with geometry `g` sits on screen,
 /// with the whole photo at `rect`.
-pub(super) fn region_on(rect: Rect, g: &Geometry, [x, y, w, h]: [u32; 4]) -> Rect {
+pub(in crate::app) fn region_on(rect: Rect, g: &Geometry, [x, y, w, h]: [u32; 4]) -> Rect {
     let at = |px: u32, py: u32| {
         Pos2::new(
             rect.left() + px as f32 / g.width as f32 * rect.width(),
@@ -524,7 +535,7 @@ pub(super) fn region_on(rect: Rect, g: &Geometry, [x, y, w, h]: [u32; 4]) -> Rec
 }
 
 /// "Before" or "After" in the top-left corner of a side, as Lightroom labels them.
-pub(super) fn badge(ui: &egui::Ui, side: Rect, text: &str) {
+pub(in crate::app) fn badge(ui: &egui::Ui, side: Rect, text: &str) {
     let painter = ui.painter().with_clip_rect(side);
     let galley = painter.layout_no_wrap(
         text.to_owned(),
@@ -804,7 +815,7 @@ mod tests {
 
     #[test]
     fn tools_work_on_the_edit_alone() {
-        use super::super::state::Tool;
+        use crate::app::state::Tool;
         let mut e = editor();
         e.view.tool = Tool::Mask;
         e.set_compare(Compare::Split(Axis::LeftRight));

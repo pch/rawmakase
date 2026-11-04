@@ -1,7 +1,7 @@
 //! Apply the native surface color declaration after wgpu's reconfiguration.
 
 #[cfg(target_os = "macos")]
-pub(super) fn paint(ui: &eframe::egui::Ui, frame: &eframe::Frame, device_rgb: bool) {
+pub(in crate::app) fn paint(ui: &eframe::egui::Ui, frame: &eframe::Frame, device_rgb: bool) {
     use crate::platform::display::Surface;
     use eframe::{egui, egui_wgpu};
 
@@ -31,4 +31,4 @@ pub(super) fn paint(ui: &eframe::egui::Ui, frame: &eframe::Frame, device_rgb: bo
 }
 
 #[cfg(not(target_os = "macos"))]
-pub(super) fn paint(_ui: &eframe::egui::Ui, _frame: &eframe::Frame, _device_rgb: bool) {}
+pub(in crate::app) fn paint(_ui: &eframe::egui::Ui, _frame: &eframe::Frame, _device_rgb: bool) {}

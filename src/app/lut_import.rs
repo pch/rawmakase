@@ -1,32 +1,32 @@
 //! The Import .cube LUTs window: the colour space the LUTs expect, chosen for the
 //! batch before the files, as Camera Raw's Create Profile asks for it. It opens at
 //! sRGB every time, so a space chosen for one pack never applies to the next.
-use super::bulk_import::ImportKind;
-use super::dialogs::FileDialog;
-use super::widgets::{modal_frame, primary_button};
-use super::{Editor, theme};
+use crate::app::bulk_import::ImportKind;
 use crate::app::design::{self, Tone, button, inset, space, text};
+use crate::app::dialogs::FileDialog;
+use crate::app::widgets::{modal_frame, primary_button};
+use crate::app::{Editor, theme};
 use crate::camera_profiles::LutSpace;
 use eframe::egui::{self, Color32};
 
 impl Editor {
     /// Opens the Import .cube LUTs window at sRGB.
-    pub(super) fn open_lut_import(&mut self) {
+    pub(in crate::app) fn open_lut_import(&mut self) {
         self.lut_import = Some(LutSpace::Srgb);
     }
     /// Whether the Import .cube LUTs window is open.
-    pub(super) fn lut_import_open(&self) -> bool {
+    pub(in crate::app) fn lut_import_open(&self) -> bool {
         self.lut_import.is_some()
     }
     /// The Import .cube LUTs window, while open; its choice opens the file chooser.
-    pub(super) fn lut_import_window(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn lut_import_window(&mut self, ctx: &egui::Context) {
         if let Some(dialog) = self.lut_import_ui(ctx) {
             self.dialog(dialog, ctx);
         }
     }
     /// The window itself, and the chooser it asks for: files or a folder of LUTs for
     /// the space chosen, or none, when cancelled or still open.
-    pub(super) fn lut_import_ui(&mut self, ctx: &egui::Context) -> Option<FileDialog> {
+    pub(in crate::app) fn lut_import_ui(&mut self, ctx: &egui::Context) -> Option<FileDialog> {
         let palette = theme::palette(ctx);
         let space = self.lut_import.as_mut()?;
         let mut choice = None;

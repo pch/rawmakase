@@ -3,7 +3,7 @@
 //! where a click or drag moves the view. Its grip, shown while the pointer is on
 //! it, drags it to another corner of the view. The toolbar's zoom slider
 //! (`navigator::zoom_slider`) does the Navigator's other work.
-use super::Editor;
+use crate::app::Editor;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 /// The minimap's grip, over the top of its photo, and its distance from the view's
@@ -13,7 +13,7 @@ const MAP_MARGIN: f32 = 16.;
 
 /// The corner of the view the minimap sits in.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum Corner {
+pub(in crate::app) enum Corner {
     TopLeft,
     TopRight,
     BottomLeft,
@@ -51,8 +51,8 @@ impl Corner {
 }
 /// Where the minimap is, and while its grip is dragged, where the pointer holds it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(super) struct Minimap {
-    pub(super) corner: Corner,
+pub(in crate::app) struct Minimap {
+    pub(in crate::app) corner: Corner,
     held: Option<Vec2>,
 }
 
@@ -60,7 +60,7 @@ impl Editor {
     /// Zoomed in on the edit (Develop, or a photo developed in the Library's
     /// Loupe), its minimap; see [`Self::minimap_ui`]. Returns whether the pointer
     /// is on it.
-    pub(super) fn develop_minimap(&mut self, ui: &egui::Ui, area: Rect) -> bool {
+    pub(in crate::app) fn develop_minimap(&mut self, ui: &egui::Ui, area: Rect) -> bool {
         let (Some(photo), Some(shown)) = self.navigator_view() else {
             return false;
         };
@@ -75,11 +75,11 @@ impl Editor {
     /// look at that point. Its grip, shown while the pointer is on it, moves it to
     /// another corner. Returns whether the pointer is on it, and the point asked
     /// for.
-    pub(super) fn minimap_ui(
+    pub(in crate::app) fn minimap_ui(
         &mut self,
         ui: &egui::Ui,
         area: Rect,
-        (texture, size): super::navigator::Photo,
+        (texture, size): crate::app::navigator::Photo,
         shown: [f32; 4],
     ) -> (bool, Option<[f32; 2]>) {
         const EDGE: f32 = 180.;

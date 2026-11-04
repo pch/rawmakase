@@ -17,12 +17,12 @@ use std::{
 const LIMIT: u64 = 1 << 20;
 
 /// `crash.log` in this computer's own data folder, never a synced one.
-pub(super) fn path() -> PathBuf {
+pub(in crate::app) fn path() -> PathBuf {
     crate::storage::local_data_dir().join("crash.log")
 }
 
 /// Records every panic in [`path`], after the default hook prints it.
-pub(super) fn install() {
+pub(in crate::app) fn install() {
     let printed = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
         printed(info);
@@ -43,11 +43,13 @@ pub(super) fn install() {
 
 /// Runs `app`, turning a panic that unwinds out of it into an error that names
 /// the crash log.
-pub(super) fn run_catching<T>(app: impl FnOnce() -> anyhow::Result<T>) -> anyhow::Result<T> {
+pub(in crate::app) fn run_catching<T>(
+    app: impl FnOnce() -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
     panic::catch_unwind(AssertUnwindSafe(app)).unwrap_or_else(|panic| {
         Err(anyhow::anyhow!(
             "It stopped unexpectedly: {}\n\nDetails are in {}; please attach it to a bug report.",
-            super::worker::panic_message(&*panic),
+            crate::app::worker::panic_message(&*panic),
             path().display()
         ))
     })

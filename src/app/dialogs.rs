@@ -1,9 +1,9 @@
 //! File chooser intent, independent of menu order and numeric UI identifiers.
-use super::{Editor, bulk_import::ImportKind, worker::Event};
+use crate::app::{Editor, bulk_import::ImportKind, worker::Event};
 use eframe::egui;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum FileDialog {
+pub(in crate::app) enum FileDialog {
     MonitorProfile,
     LoadPreset,
     SavePreset,
@@ -19,7 +19,7 @@ pub(super) enum FileDialog {
 }
 
 #[derive(Clone)]
-pub(super) enum CatalogDialog {
+pub(in crate::app) enum CatalogDialog {
     Create,
     Open,
     ImportLightroom,
@@ -27,7 +27,7 @@ pub(super) enum CatalogDialog {
 }
 
 #[derive(Clone)]
-pub(super) enum FolderAction {
+pub(in crate::app) enum FolderAction {
     Add,
     RelinkRoot(crate::catalog::RootId),
     /// The folder of a root at a logical path, with or without a catalog
@@ -36,11 +36,11 @@ pub(super) enum FolderAction {
 }
 
 impl Editor {
-    pub(super) fn dialog(&mut self, kind: FileDialog, ctx: &egui::Context) {
+    pub(in crate::app) fn dialog(&mut self, kind: FileDialog, ctx: &egui::Context) {
         if !self.activity.begin_dialog() {
             return;
         }
-        super::task::spawn(
+        crate::app::task::spawn(
             self.tx.clone(),
             ctx.clone(),
             move |tx| {

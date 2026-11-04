@@ -7,13 +7,13 @@
 //! applied to the egui context ([`palette`]), between the palette's own
 //! colours. The photo's backdrop is the palette's panel colour, so it
 //! follows the theme like the rest of the window.
-use super::design::Tone;
+use crate::app::design::Tone;
 use eframe::egui::{self, Color32, Stroke};
 use std::collections::BTreeSet;
 
 /// fastframe-theme's sixteen interface colours.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Palette {
+pub(in crate::app) struct Palette {
     light: bool,
     window: Color32,
     panel: Color32,
@@ -39,7 +39,7 @@ const LEVELS: [u8; 9] = [22, 35, 43, 52, 59, 67, 125, 160, 225];
 
 impl Palette {
     /// Lightroom's dark greys, which the interface was drawn in.
-    pub(super) const DEFAULT: Palette = Palette {
+    pub(in crate::app) const DEFAULT: Palette = Palette {
         light: false,
         window: Color32::from_gray(22),
         panel: Color32::from_gray(35),
@@ -142,14 +142,14 @@ fn palette_id() -> egui::Id {
 /// The palette applied to `ctx`, or the default one if none was. This reads
 /// the context's memory under its lock: read it once per function or
 /// widget, not per row or pixel.
-pub(super) fn palette(ctx: &egui::Context) -> Palette {
+pub(in crate::app) fn palette(ctx: &egui::Context) -> Palette {
     ctx.data(|d| d.get_temp(palette_id()))
         .unwrap_or(Palette::DEFAULT)
 }
 
 impl Palette {
     /// `tone` in this palette: see [`Tone`] for the interface's greys.
-    pub(super) fn tone(&self, tone: Tone) -> Color32 {
+    pub(in crate::app) fn tone(&self, tone: Tone) -> Color32 {
         self.gray(tone.level())
     }
 
@@ -166,21 +166,21 @@ impl Palette {
     /// Behind the photo and the minimap: the palette's panel colour,
     /// lighter than the side panels around it (Lightroom's grey in the
     /// default palette).
-    pub(super) fn photo_backdrop(&self) -> Color32 {
+    pub(in crate::app) fn photo_backdrop(&self) -> Color32 {
         self.panel
     }
 
     /// A selected row in the folder tree and preset list: Lightroom's slate
     /// blue-grey, or the palette's surface tinted towards its accent so the
     /// row's text stays readable.
-    pub(super) fn selected_row(&self) -> Color32 {
+    pub(in crate::app) fn selected_row(&self) -> Color32 {
         if *self == Palette::DEFAULT {
             return Color32::from_rgb(47, 58, 66);
         }
         lerp(self.surface_active, self.accent, 0.3)
     }
     /// The bar beside a selected folder.
-    pub(super) fn selected_marker(&self) -> Color32 {
+    pub(in crate::app) fn selected_marker(&self) -> Color32 {
         if *self == Palette::DEFAULT {
             return Color32::from_rgb(135, 160, 176);
         }
@@ -188,28 +188,28 @@ impl Palette {
     }
 
     /// The selection and primary-button colour.
-    pub(super) fn accent(&self) -> Color32 {
+    pub(in crate::app) fn accent(&self) -> Color32 {
         self.accent
     }
     /// The primary-button colour under the pointer.
-    pub(super) fn accent_hover(&self) -> Color32 {
+    pub(in crate::app) fn accent_hover(&self) -> Color32 {
         self.accent_hover
     }
     /// Text on a selected row or hovered menu item, which the accent fills.
-    pub(super) fn on_accent_text(&self, tone: Tone) -> Color32 {
+    pub(in crate::app) fn on_accent_text(&self, tone: Tone) -> Color32 {
         if *self == Palette::DEFAULT {
             return Color32::from_gray(tone.level());
         }
         self.on_accent
     }
     /// Text on the accent colour.
-    pub(super) fn on_accent(&self) -> Color32 {
+    pub(in crate::app) fn on_accent(&self) -> Color32 {
         self.on_accent
     }
-    pub(super) fn danger(&self) -> Color32 {
+    pub(in crate::app) fn danger(&self) -> Color32 {
         self.danger
     }
-    pub(super) fn warning(&self) -> Color32 {
+    pub(in crate::app) fn warning(&self) -> Color32 {
         self.warning
     }
 }
@@ -256,7 +256,11 @@ fn luma(c: Color32) -> f32 {
 
 /// Keeps `palette` in `ctx`, where [`palette`] reads it, and styles egui's
 /// own widgets with it.
-pub(super) fn apply(ctx: &egui::Context, palette: Palette, text: &fastframe_text::TextRendering) {
+pub(in crate::app) fn apply(
+    ctx: &egui::Context,
+    palette: Palette,
+    text: &fastframe_text::TextRendering,
+) {
     ctx.data_mut(|d| d.insert_temp(palette_id(), palette));
     let gray = |tone| palette.tone(tone);
     let mut visuals = if palette.light {
@@ -334,19 +338,19 @@ pub(super) fn apply(ctx: &egui::Context, palette: Palette, text: &fastframe_text
 }
 
 /// The palettes the Display preferences offer, and the one chosen.
-pub(super) struct Themes {
-    pub(super) catalog: fastframe_theme::Catalog<Palette>,
+pub(in crate::app) struct Themes {
+    pub(in crate::app) catalog: fastframe_theme::Catalog<Palette>,
     /// The user's pick: a palette file's name, or None for RAWmakase's own
     /// greys. Not picked yet (the outer None), Omarchy's theme is followed
     /// on an Omarchy desktop, like the desktop's other apps.
     chosen: Option<Option<String>>,
     applied: Palette,
-    pub(super) text: fastframe_text::TextRendering,
+    pub(in crate::app) text: fastframe_text::TextRendering,
     waker: fastframe_theme::Waker,
     started: bool,
 }
 impl Themes {
-    pub(super) fn new(
+    pub(in crate::app) fn new(
         ctx: &egui::Context,
         chosen: Option<Option<String>>,
         text: fastframe_text::TextRendering,
@@ -366,7 +370,7 @@ impl Themes {
     }
     /// Lists the palettes in the background: the presets, the user's files
     /// and, on Linux, Omarchy's current theme.
-    pub(super) fn start(&mut self) {
+    pub(in crate::app) fn start(&mut self) {
         self.catalog
             .enable_desktop_themes(fastframe_theme::DesktopThemes {
                 slug: "rawmakase",
@@ -380,7 +384,7 @@ impl Themes {
     }
     /// Rescans on a change to the themes folder or Omarchy's theme, and
     /// applies the chosen palette once it is read or when it changes.
-    pub(super) fn poll(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn poll(&mut self, ctx: &egui::Context) {
         if !self.started {
             return;
         }
@@ -396,16 +400,16 @@ impl Themes {
         }
     }
     /// The palette last applied, for drawing that has no egui context.
-    pub(super) fn applied(&self) -> Palette {
+    pub(in crate::app) fn applied(&self) -> Palette {
         self.applied
     }
     /// The user's pick, if they made one.
-    pub(super) fn chosen(&self) -> Option<Option<String>> {
+    pub(in crate::app) fn chosen(&self) -> Option<Option<String>> {
         self.chosen.clone()
     }
     /// The palette in use: the user's pick, or else Omarchy's theme where
     /// the desktop is Omarchy and RAWmakase's greys elsewhere.
-    pub(super) fn selected(&self) -> Option<String> {
+    pub(in crate::app) fn selected(&self) -> Option<String> {
         match &self.chosen {
             Some(chosen) => chosen.clone(),
             None => self
@@ -414,7 +418,7 @@ impl Themes {
                 .then(|| fastframe_theme::omarchy::FILENAME.to_string()),
         }
     }
-    pub(super) fn choose(&mut self, theme: Option<String>) {
+    pub(in crate::app) fn choose(&mut self, theme: Option<String>) {
         self.chosen = Some(theme);
     }
     /// The chosen palette, or the last one applied while it is being read.
@@ -428,7 +432,7 @@ impl Themes {
         }
     }
     /// Choices for the theme menu: file name and display name.
-    pub(super) fn choices(&self) -> Vec<(String, String)> {
+    pub(in crate::app) fn choices(&self) -> Vec<(String, String)> {
         self.catalog
             .picker_themes()
             .map(|t| {
@@ -438,7 +442,7 @@ impl Themes {
             .collect()
     }
     /// What to say under the setting, if anything.
-    pub(super) fn status(&self) -> Option<String> {
+    pub(in crate::app) fn status(&self) -> Option<String> {
         use fastframe_theme::{Problem, Status};
         Some(match self.catalog.status(self.selected().as_deref())? {
             Status::Loading => "Loading themes…".into(),
@@ -454,7 +458,7 @@ impl Themes {
             },
         })
     }
-    pub(super) fn folder() -> std::path::PathBuf {
+    pub(in crate::app) fn folder() -> std::path::PathBuf {
         Self::directory()
     }
 }

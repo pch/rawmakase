@@ -4,14 +4,14 @@
 //! and Masking drawers, then, under them, switches the tab; the open tab's
 //! button folds the panel and any brings it back. A window too narrow for it
 //! and the photo shows it folded until a tab is asked for.
-use super::Editor;
-use super::icons::{self, Icon};
-use super::inspector::{DRAWER_TOOLS, has_drawer, tool_icon};
-use super::panels::{DevelopTab, PanelChange, WorkspacePanel};
-use super::state::Tool;
-use super::theme;
-use super::widgets::{SectionGroup, SectionSide};
+use crate::app::Editor;
 use crate::app::design::{Tone, radius, space, text};
+use crate::app::icons::{self, Icon};
+use crate::app::inspector::{DRAWER_TOOLS, has_drawer, tool_icon};
+use crate::app::panels::{DevelopTab, PanelChange, WorkspacePanel};
+use crate::app::state::Tool;
+use crate::app::theme;
+use crate::app::widgets::{SectionGroup, SectionSide};
 use eframe::egui::{self, Pos2, Rect, Sense, Vec2};
 
 /// The rail's width.
@@ -38,15 +38,15 @@ enum TabClick {
 }
 
 /// A rail button's id, fixed so tests can find it.
-pub(super) fn rail_id(tab: DevelopTab) -> egui::Id {
+pub(in crate::app) fn rail_id(tab: DevelopTab) -> egui::Id {
     egui::Id::new(("develop-rail", tab))
 }
 /// The rail's Edit button's id.
-pub(super) fn edit_id() -> egui::Id {
+pub(in crate::app) fn edit_id() -> egui::Id {
     egui::Id::new("develop-rail-edit")
 }
 /// A tool's rail button's id.
-pub(super) fn tool_id(tool: Tool) -> egui::Id {
+pub(in crate::app) fn tool_id(tool: Tool) -> egui::Id {
     egui::Id::new(("develop-rail-tool", format!("{tool:?}")))
 }
 /// Whether a tab was asked for while the window had no room for the panel.
@@ -65,7 +65,7 @@ impl Editor {
     /// tab panel alone.
     /// Returns whether the tab panel opens, for [`Self::develop_tab_panel`]
     /// to draw once the adjustments are.
-    pub(super) fn develop_rail_edge(&mut self, ui: &mut egui::Ui) -> bool {
+    pub(in crate::app) fn develop_rail_edge(&mut self, ui: &mut egui::Ui) -> bool {
         let ctx = ui.ctx().clone();
         if !self.panel_shown(WorkspacePanel::Right) {
             return false;
@@ -75,7 +75,7 @@ impl Editor {
                 .map_or(default, |state| state.outer_rect.width())
         };
         let adjustments = if self.develop_adjustments_shown() {
-            width("adjustments", super::workspace::ADJUSTMENTS_DEFAULT)
+            width("adjustments", crate::app::workspace::ADJUSTMENTS_DEFAULT)
         } else {
             0.
         };
@@ -109,7 +109,7 @@ impl Editor {
     }
     /// Whether the adjustments panel shows, under a shown right panel: the
     /// adjustments unless Edit folded them, or the open tool's drawer.
-    pub(super) fn develop_adjustments_shown(&self) -> bool {
+    pub(in crate::app) fn develop_adjustments_shown(&self) -> bool {
         self.panel_shown(WorkspacePanel::Adjustments) || has_drawer(self.view.tool)
     }
     /// Whether the tab panel shows its tab: not folded, and with room beside
@@ -154,7 +154,7 @@ impl Editor {
     /// Folds the tab panel if its tab shows, or opens it, as its open tab's
     /// rail button and the others do: for `panels:presets`. False if the
     /// layout could not be saved.
-    pub(super) fn toggle_develop_tabs(&mut self) -> bool {
+    pub(in crate::app) fn toggle_develop_tabs(&mut self) -> bool {
         if self.develop_tabs_open() {
             self.fold_develop_tabs()
         } else {
@@ -162,7 +162,7 @@ impl Editor {
         }
     }
     /// The tab panel between the adjustments and the photo, if `open`.
-    pub(super) fn develop_tab_panel(&mut self, ui: &mut egui::Ui, open: bool) {
+    pub(in crate::app) fn develop_tab_panel(&mut self, ui: &mut egui::Ui, open: bool) {
         // A tab not drawn this frame (folded or too narrow) lets go of what
         // it was doing: Presets ends a preview it was showing, History saves
         // a snapshot name being typed.
@@ -181,7 +181,7 @@ impl Editor {
         let fill = theme::palette(ui.ctx()).tone(Tone::WINDOW);
         egui::Panel::right("presets")
             .default_size(PANEL_WIDTH)
-            .min_size(super::workspace::PRESETS_MIN)
+            .min_size(crate::app::workspace::PRESETS_MIN)
             .max_size(400.)
             .frame(egui::Frame::side_top_panel(ui.style()).fill(fill))
             .show(ui, |ui| {

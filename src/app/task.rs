@@ -1,6 +1,6 @@
 //! Generation and cancellation belong to the operation that owns them; [`spawn`]
 //! runs one-off background work so that a panic still reaches the UI.
-use super::worker::{Event, panic_message};
+use crate::app::worker::{Event, panic_message};
 use eframe::egui;
 use std::{
     panic::{self, AssertUnwindSafe},
@@ -14,7 +14,7 @@ use std::{
 /// Runs `work` on a thread of its own; it reports through the events it sends.
 /// Should it panic, `failed` sends whatever the UI needs to stop waiting for it,
 /// given the panic's message. Either way the UI repaints afterwards to read them.
-pub(super) fn spawn(
+pub(in crate::app) fn spawn(
     events: Sender<Event>,
     ctx: egui::Context,
     work: impl FnOnce(&Sender<Event>) + Send + 'static,
@@ -37,7 +37,7 @@ enum Phase {
 }
 
 /// A worker asked to stop, to wait for at exit (see docs/shutdown.md).
-pub(super) struct Stopping(Option<std::thread::JoinHandle<()>>);
+pub(in crate::app) struct Stopping(Option<std::thread::JoinHandle<()>>);
 impl Stopping {
     pub(crate) fn new(thread: Option<std::thread::JoinHandle<()>>) -> Self {
         Self(thread)
@@ -50,7 +50,7 @@ impl Stopping {
 }
 /// How waiting for stopping workers ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Waited {
+pub(in crate::app) struct Waited {
     pub finished: usize,
     /// Still running at the deadline, and left to end with the process.
     pub detached: usize,
@@ -58,7 +58,7 @@ pub(super) struct Waited {
 /// Waits until every worker has finished, or `deadline` passes. A worker blocked
 /// on a stalled network share must not hold up quitting, so none is joined
 /// without one.
-pub(super) fn wait_for(workers: Vec<Stopping>, deadline: std::time::Duration) -> Waited {
+pub(in crate::app) fn wait_for(workers: Vec<Stopping>, deadline: std::time::Duration) -> Waited {
     let until = std::time::Instant::now() + deadline;
     while !workers.iter().all(Stopping::finished) && std::time::Instant::now() < until {
         std::thread::sleep(std::time::Duration::from_millis(5));
@@ -71,7 +71,7 @@ pub(super) fn wait_for(workers: Vec<Stopping>, deadline: std::time::Duration) ->
 }
 
 #[derive(Default)]
-pub(super) struct Task {
+pub(in crate::app) struct Task {
     generation: u64,
     /// The oldest generation whose results still count: the last `start`. Jobs
     /// `supersede` started after it share its cancel flag and may still report.

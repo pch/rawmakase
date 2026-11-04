@@ -1,6 +1,6 @@
-use super::export_catalog::Exported;
-use super::library::{self, FolderRemoval};
-use super::{Editor, Modal};
+use crate::app::export_catalog::Exported;
+use crate::app::library::{self, FolderRemoval};
+use crate::app::{Editor, Modal};
 use crate::catalog::{Catalog, ExportScope};
 use eframe::egui;
 
@@ -16,7 +16,8 @@ fn exported_trip() -> anyhow::Result<(tempfile::TempDir, Editor, FolderRemoval)>
     std::fs::write(photos.join("trip/away.ARW"), b"identity fixture 2")?;
     Catalog::create(&path)?.add_folder(&photos)?;
     let ctx = egui::Context::default();
-    let mut editor = Editor::with_context(&ctx, None, super::session::Session::default(), None);
+    let mut editor =
+        Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(library::Library::load(&path, ctx)?));
     let session = &editor.library.as_ref().unwrap().session;
     let trip: std::collections::HashSet<_> = session

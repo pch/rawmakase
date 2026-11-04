@@ -2,9 +2,9 @@
 //! Corrections, or Preferences), checking for and installing a newer one, and removing
 //! it (Preferences). The work is `lensfun_install`'s, on a thread of its own, one job
 //! at a time; this keeps its progress and outcome for the panels.
-use super::messages::Level;
-use super::task::Stopping;
-use super::worker::Event;
+use crate::app::messages::Level;
+use crate::app::task::Stopping;
+use crate::app::worker::Event;
 use crate::lens::lensfun::installed::{self, Manifest};
 use crate::lensfun_install::{self as install, Installed, Progress, Source};
 use eframe::egui;

@@ -6,16 +6,16 @@
 mod dialog;
 mod watermark_editor;
 
-use super::naming::editor::{self, NameEditor};
-use super::naming::read::{self as name_read, NameRead, Reads, Status, ToRead};
 use crate::app::design::{self, Tone, inset, radius, space, text};
+use crate::app::naming::editor::{self, NameEditor};
+use crate::app::naming::read::{self as name_read, NameRead, Reads, Status, ToRead};
 
 use crate::app::Module;
 use crate::catalog::PhotoId;
 
-use super::{Editor, worker::Event};
 use crate::app::theme;
 use crate::app::widgets::plural;
+use crate::app::{Editor, worker::Event};
 use crate::export::{
     assemble::Values,
     batch::{self, BatchPhoto, Edit, Outcome, Unplanned},
@@ -85,7 +85,7 @@ struct Queued {
 
 /// What finished exports could not do, kept until it is dismissed.
 #[derive(Clone, Debug, Default)]
-pub(super) struct Summary {
+pub(in crate::app) struct Summary {
     exported: usize,
     total: usize,
     /// Photos exported with something to say.
@@ -130,7 +130,7 @@ impl Summary {
 }
 
 #[derive(Default)]
-pub(super) struct Exports {
+pub(in crate::app) struct Exports {
     /// The dialog is open, editing `draft` for `scope`.
     dialog: bool,
     draft: ExportSettings,
@@ -154,7 +154,7 @@ pub(super) struct Exports {
     /// The Filename Template Editor, over the dialog.
     name_editor: Option<NameEditor>,
     /// The saved file-name templates, read when the dialog opens.
-    saved: super::naming::presets::Library,
+    saved: crate::app::naming::presets::Library,
     /// Tests: an export doesn't save its settings as the last export's.
     unsaved_settings: bool,
 }
@@ -162,7 +162,7 @@ pub(super) struct Exports {
 impl Exports {
     /// Stops the export queue at exit, cancelling the running batch; its thread,
     /// to wait for.
-    pub(super) fn close(&mut self) -> Option<std::thread::JoinHandle<()>> {
+    pub(in crate::app) fn close(&mut self) -> Option<std::thread::JoinHandle<()>> {
         self.queue.as_mut().and_then(Queue::close)
     }
 }
@@ -170,7 +170,7 @@ impl Exports {
 impl Editor {
     /// Export…: the dialog for the photos chosen now, starting from the last
     /// export's choices.
-    pub(super) fn open_export_dialog(&mut self) {
+    pub(in crate::app) fn open_export_dialog(&mut self) {
         let Some(scope) = self.export_scope() else {
             return;
         };
@@ -178,11 +178,11 @@ impl Editor {
         self.exports.scope = scope;
         self.exports.draft = ExportSettings::load().unwrap_or_default();
         self.exports.watermarks = crate::watermark::presets();
-        self.exports.saved = super::naming::presets::Library::load();
+        self.exports.saved = crate::app::naming::presets::Library::load();
         self.exports.dialog = true;
     }
     /// Export with Previous: the last export's choices, without the dialog.
-    pub(super) fn export_with_previous(&mut self) {
+    pub(in crate::app) fn export_with_previous(&mut self) {
         self.export_previous(ExportSettings::load());
     }
     /// Export with Previous with the last export's settings, if any.
@@ -205,7 +205,7 @@ impl Editor {
         }
     }
     /// The Export dialog or its existing-file question is showing.
-    pub(super) fn export_modal(&self) -> bool {
+    pub(in crate::app) fn export_modal(&self) -> bool {
         self.exports.dialog
             || self.exports.pending.is_some()
             || self.exports.watermark_editor.is_some()
@@ -213,7 +213,7 @@ impl Editor {
             || self.exports.waiting.is_some()
     }
     /// An export is running or waiting.
-    pub(super) fn exporting(&self) -> bool {
+    pub(in crate::app) fn exporting(&self) -> bool {
         self.exports.queue.as_ref().is_some_and(Queue::busy)
     }
 
@@ -392,7 +392,7 @@ impl Editor {
     /// The scope's files were read: their fields go in its photos, and Export
     /// with Previous goes on, or (when they could not be read) opens the
     /// dialog to say so. A read of another scope is dropped.
-    pub(super) fn names_read(&mut self, request: u64, read: Result<Reads, String>) {
+    pub(in crate::app) fn names_read(&mut self, request: u64, read: Result<Reads, String>) {
         let Some((read, failed)) = self.exports.read.finished(request, read) else {
             return;
         };
@@ -482,7 +482,7 @@ impl Editor {
         let mut cancel = false;
         let response = egui::Modal::new(egui::Id::new("export-names-reading"))
             .frame(
-                super::widgets::modal_frame(&palette)
+                crate::app::widgets::modal_frame(&palette)
                     .inner_margin(design::margin_same(inset::DIALOG)),
             )
             .show(ctx, |ui| {
@@ -527,7 +527,7 @@ impl Editor {
     }
 
     /// The open photo as it is now, with its catalog rating, label and keywords.
-    pub(super) fn export_photo(&mut self) -> Option<Photo> {
+    pub(in crate::app) fn export_photo(&mut self) -> Option<Photo> {
         let catalog = self
             .document
             .catalog_photo
@@ -740,7 +740,7 @@ impl Editor {
 
     /// A finished batch: the top bar says how it went, and what could not be
     /// exported stays in the top bar until it is read.
-    pub(super) fn batch_exported(&mut self, ticket: u64, outcomes: Vec<Outcome>) {
+    pub(in crate::app) fn batch_exported(&mut self, ticket: u64, outcomes: Vec<Outcome>) {
         let Some(queued) = self.exports.queued.remove(&ticket) else {
             return;
         };
@@ -773,7 +773,7 @@ impl Editor {
     /// over a bar, with a button that cancels the running one and a menu of those
     /// waiting; after one that could not export everything, what it could not do,
     /// until it is read.
-    pub(super) fn export_progress(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn export_progress(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
         let status = self.exports.queue.as_ref().map(Queue::status);
         let Some((ticket, progress)) = status.as_ref().and_then(|s| s.running) else {

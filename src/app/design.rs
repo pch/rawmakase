@@ -3,7 +3,7 @@
 //! changes everywhere; drawing code names a token rather than a number.
 //!
 //! Colours go through [`Tone`]: a step on the default palette's grey ramp,
-//! which [`theme::Palette::tone`](super::theme::Palette::tone) maps onto the
+//! which [`theme::Palette::tone`](crate::app::theme::Palette::tone) maps onto the
 //! palette in use. Accent, danger and warning stay the palette's own.
 use eframe::egui;
 

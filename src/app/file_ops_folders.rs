@@ -3,9 +3,9 @@
 //! panel, or Move Folder… in its menu, which lists where it can go. Either
 //! is confirmed as moving photos is, Cancel focused; the catalog's folder
 //! stays the same folder, its photos follow.
-use super::super::{Editor, widgets};
 use super::{State, Verb};
 use crate::app::design::{self, Tone, button, inset, space, text};
+use crate::app::{Editor, widgets};
 use crate::catalog::file_ops::FileOp;
 use crate::catalog::{CatalogLocation, RootId};
 use eframe::egui;
@@ -62,7 +62,7 @@ fn located_name(roots: &[(RootId, String, Option<String>)], root: RootId) -> Str
 /// the folders in it; for a root, every other root and its folders alone.
 /// Whether another root is on its drive the plan checks.
 fn parent_rows(
-    library: &super::super::library::Library,
+    library: &crate::app::library::Library,
     c: &ChoosingParent,
 ) -> Vec<((RootId, String), String, std::path::PathBuf)> {
     let parent = c.from.rsplit_once('/').map_or("", |(p, _)| p);
@@ -244,7 +244,7 @@ impl Editor {
             self.file_ops.state = State::Idle;
             return;
         }
-        let palette = super::super::theme::palette(ctx);
+        let palette = crate::app::theme::palette(ctx);
         let mut rows = parent_rows(library, c);
         let filter = c.filter.to_lowercase();
         rows.retain(|(_, label, _)| label.to_lowercase().contains(&filter));

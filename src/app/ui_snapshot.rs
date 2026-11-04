@@ -8,11 +8,11 @@ use std::collections::HashMap;
 
 /// The textures egui uploaded, kept from one render to the next as egui
 /// sends only what changed.
-pub(super) type Textures = HashMap<egui::TextureId, RgbaImage>;
+pub(in crate::app) type Textures = HashMap<egui::TextureId, RgbaImage>;
 
 /// Runs `frames` frames of `draw` at `size` points and `scale` pixels per
 /// point, and paints the last.
-pub(super) fn render(
+pub(in crate::app) fn render(
     ctx: &egui::Context,
     textures: &mut Textures,
     size: egui::Vec2,

@@ -3,7 +3,7 @@
 //! where its progress was; [`Messages::warn`], for a refusal or a partial result,
 //! for longer; [`Messages::fail`], for what
 //! the user asked for and did not happen, stays there until dismissed. Running work
-//! ([`Editor::running_work`](super::Editor::running_work)) shows beside them, in the same slot as an export's
+//! ([`Editor::running_work`](crate::app::Editor::running_work)) shows beside them, in the same slot as an export's
 //! progress.
 //!
 //! Each thing is said once and nothing is drawn over the photo. A problem tints
@@ -19,18 +19,18 @@
 //! neither repeats a dismissed message nor leaves a stale one.
 //!
 //! Work the user started shows in the same slot as a label over a sweeping line,
-//! once it has run for a moment. [`Editor::running_work`](super::Editor::running_work) reads it each frame from
+//! once it has run for a moment. [`Editor::running_work`](crate::app::Editor::running_work) reads it each frame from
 //! the state that owns the work (a `Task` and the like), so no call starts or ends
 //! it: it goes when the work ends, however it ends. New long work adds one line
 //! there. Work with a place of its own (an export's or scan's progress, a batch's
 //! window, a selection's tile, opening a photo's badge) is not said again.
-use super::design::{Tone, radius, space, text};
-use super::theme;
+use crate::app::design::{Tone, radius, space, text};
+use crate::app::theme;
 use eframe::egui::{self, Color32, Rect, Stroke, Vec2};
 
 /// How much a message matters, least first.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum Level {
+pub(in crate::app) enum Level {
     /// Progress and small confirmations: the status line only.
     #[default]
     Note,
@@ -45,7 +45,7 @@ pub(super) enum Level {
 /// What a failure is about, when a later event ends it: a save that went
 /// through on retry leaves no entry saying it did not.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Topic {
+pub(in crate::app) enum Topic {
     Save,
     Load,
     Render,
@@ -53,7 +53,7 @@ pub(super) enum Topic {
 
 /// The status line's text.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(super) struct Line {
+pub(in crate::app) struct Line {
     text: String,
     level: Level,
     detail: Option<String>,
@@ -75,13 +75,13 @@ struct Entry {
 }
 
 /// Something the user started that is still running. It is asked for afresh
-/// each frame from the state that owns the work ([`Editor::running_work`](super::Editor::running_work)), so a
+/// each frame from the state that owns the work ([`Editor::running_work`](crate::app::Editor::running_work)), so a
 /// row can't outlive it: there is nothing to finish, whichever way it ends.
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct Work {
+pub(in crate::app) struct Work {
     /// Which work this is, whatever its text says now.
-    pub(super) key: &'static str,
-    pub(super) text: String,
+    pub(in crate::app) key: &'static str,
+    pub(in crate::app) text: String,
 }
 
 /// Work done sooner than this never shows: a flicker tells nothing.
@@ -112,7 +112,7 @@ const FADE: f64 = 0.3;
 /// See the module documentation. Other than the status line and entries, it
 /// holds no state of what it reports.
 #[derive(Debug, Default)]
-pub(super) struct Messages {
+pub(in crate::app) struct Messages {
     line: Line,
     /// What the status line shows: the last that belongs there. A problem is
     /// said in the bar instead.
@@ -143,55 +143,55 @@ pub(super) struct Messages {
 
 impl Messages {
     /// Messages whose status line says `text`, as the app starts.
-    pub(super) fn starting_with(text: &str) -> Self {
+    pub(in crate::app) fn starting_with(text: &str) -> Self {
         let mut messages = Self::default();
         messages.note(text);
         messages
     }
     /// Says `text` at a level decided elsewhere.
-    pub(super) fn say(&mut self, level: Level, text: impl Into<String>) {
+    pub(in crate::app) fn say(&mut self, level: Level, text: impl Into<String>) {
         self.post(level, text.into(), None, None);
     }
     /// Progress or a small confirmation, in the status line alone.
-    pub(super) fn note(&mut self, text: impl Into<String>) {
+    pub(in crate::app) fn note(&mut self, text: impl Into<String>) {
         self.post(Level::Note, text.into(), None, None);
     }
     /// A result: the top bar, briefly.
-    pub(super) fn done(&mut self, text: impl Into<String>) {
+    pub(in crate::app) fn done(&mut self, text: impl Into<String>) {
         self.post(Level::Done, text.into(), None, None);
     }
     /// A result with more to say, one item per line, when it is opened.
-    pub(super) fn done_with_detail(&mut self, text: impl Into<String>, detail: String) {
+    pub(in crate::app) fn done_with_detail(&mut self, text: impl Into<String>, detail: String) {
         self.post(Level::Done, text.into(), Some(detail), None);
     }
     /// A refusal or a result only partly as asked: the top bar, for a while.
-    pub(super) fn warn(&mut self, text: impl Into<String>) {
+    pub(in crate::app) fn warn(&mut self, text: impl Into<String>) {
         self.post(Level::Warning, text.into(), None, None);
     }
     /// A warning with more to say, one item per line, when it is opened.
-    pub(super) fn warn_with_detail(&mut self, text: impl Into<String>, detail: String) {
+    pub(in crate::app) fn warn_with_detail(&mut self, text: impl Into<String>, detail: String) {
         self.post(Level::Warning, text.into(), Some(detail), None);
     }
     /// What the user asked for did not happen: the top bar, until dismissed.
-    pub(super) fn fail(&mut self, text: impl Into<String>) {
+    pub(in crate::app) fn fail(&mut self, text: impl Into<String>) {
         self.post(Level::Failure, text.into(), None, None);
     }
     /// A failure with more to say, one item per line, when it is opened.
-    pub(super) fn fail_with_detail(&mut self, text: impl Into<String>, detail: String) {
+    pub(in crate::app) fn fail_with_detail(&mut self, text: impl Into<String>, detail: String) {
         self.post(Level::Failure, text.into(), Some(detail), None);
     }
     /// A failure [`Messages::settle`] ends once `topic` has moved on.
-    pub(super) fn fail_on(&mut self, topic: Topic, text: impl Into<String>) {
+    pub(in crate::app) fn fail_on(&mut self, topic: Topic, text: impl Into<String>) {
         self.post(Level::Failure, text.into(), None, Some(topic));
     }
     /// `topic` is over: its failures are no longer true.
-    pub(super) fn settle(&mut self, topic: Topic) {
+    pub(in crate::app) fn settle(&mut self, topic: Topic) {
         self.entries.retain(|c| c.topic != Some(topic));
         self.dismissed.retain(|(t, _)| *t != topic);
     }
 
     /// The open photo is gone: nothing that failed for it is still true.
-    pub(super) fn document_closed(&mut self) {
+    pub(in crate::app) fn document_closed(&mut self) {
         self.settle(Topic::Save);
         self.settle(Topic::Load);
         self.settle(Topic::Render);
@@ -248,7 +248,7 @@ impl Messages {
 
     /// Takes what is running, for this frame: what has run for a moment shows.
     /// Work that stopped forgets when it started.
-    pub(super) fn set_work(&mut self, ctx: &egui::Context, work: Vec<Work>) {
+    pub(in crate::app) fn set_work(&mut self, ctx: &egui::Context, work: Vec<Work>) {
         let now = ctx.input(|i| i.time);
         self.working
             .retain(|(key, _)| work.iter().any(|w| w.key == *key));
@@ -274,7 +274,7 @@ impl Messages {
 
     /// Takes on what `other`, the Library's own messages, has said since last
     /// asked. Its line stays readable there.
-    pub(super) fn absorb(&mut self, other: &mut Messages) {
+    pub(in crate::app) fn absorb(&mut self, other: &mut Messages) {
         if other.unread {
             self.line = other.line.clone();
             if other.line.level == Level::Note {
@@ -293,38 +293,38 @@ impl Messages {
 
     /// The last thing said, whatever its level: for what reads it back, as the
     /// control socket and a failed save's caller.
-    pub(super) fn line(&self) -> &str {
+    pub(in crate::app) fn line(&self) -> &str {
         &self.line.text
     }
     #[cfg(test)]
-    pub(super) fn level(&self) -> Level {
+    pub(in crate::app) fn level(&self) -> Level {
         self.line.level
     }
     /// What the status line shows.
-    pub(super) fn quiet_line(&self) -> &str {
+    pub(in crate::app) fn quiet_line(&self) -> &str {
         &self.quiet.text
     }
     /// What the status line sums up, one item per line.
-    pub(super) fn quiet_detail(&self) -> Option<&str> {
+    pub(in crate::app) fn quiet_detail(&self) -> Option<&str> {
         self.quiet.detail.as_deref()
     }
     /// Whether the last thing said has the detail, for tests.
     #[cfg(test)]
-    pub(super) fn detail(&self) -> Option<&str> {
+    pub(in crate::app) fn detail(&self) -> Option<&str> {
         self.line.detail.as_deref()
     }
     /// Whether the bar is saying something about `topic`.
-    pub(super) fn says(&self, topic: Topic) -> bool {
+    pub(in crate::app) fn says(&self, topic: Topic) -> bool {
         self.entries.iter().any(|c| c.topic == Some(topic))
     }
     /// Whether a message says `text` in the bar.
     #[cfg(test)]
-    pub(super) fn has_entry(&self, text: &str) -> bool {
+    pub(in crate::app) fn has_entry(&self, text: &str) -> bool {
         self.entries.iter().any(|c| c.text == text)
     }
     /// What the message saying `text` in the bar has to say in full.
     #[cfg(test)]
-    pub(super) fn entry_detail(&self, text: &str) -> Option<&str> {
+    pub(in crate::app) fn entry_detail(&self, text: &str) -> Option<&str> {
         self.entries
             .iter()
             .find(|c| c.text == text)?
@@ -333,25 +333,25 @@ impl Messages {
     }
     /// Whether a message in the bar says something containing `text`.
     #[cfg(test)]
-    pub(super) fn has_entry_with(&self, text: &str) -> bool {
+    pub(in crate::app) fn has_entry_with(&self, text: &str) -> bool {
         self.entries.iter().any(|c| c.text.contains(text))
     }
     /// How many messages the bar holds.
     #[cfg(test)]
-    pub(super) fn entry_count(&self) -> usize {
+    pub(in crate::app) fn entry_count(&self) -> usize {
         self.entries.len()
     }
     /// Empties the status line. The bar's messages stay.
-    pub(super) fn clear_line(&mut self) {
+    pub(in crate::app) fn clear_line(&mut self) {
         self.line = Line::default();
         self.quiet = Line::default();
     }
     /// The lines as they are, for [`Messages::restore_line`] after work whose
     /// progress would replace them.
-    pub(super) fn saved_line(&self) -> (Line, Line) {
+    pub(in crate::app) fn saved_line(&self) -> (Line, Line) {
         (self.line.clone(), self.quiet.clone())
     }
-    pub(super) fn restore_line(&mut self, (line, quiet): (Line, Line)) {
+    pub(in crate::app) fn restore_line(&mut self, (line, quiet): (Line, Line)) {
         self.line = line;
         self.quiet = quiet;
     }
@@ -394,7 +394,7 @@ impl Messages {
     }
 
     /// The top bar's left: running work, beside the other progress.
-    pub(super) fn work_ui(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn work_ui(&mut self, ui: &mut egui::Ui) {
         let palette = theme::palette(ui.ctx());
         let now = ui.input(|i| i.time);
         for work in &self.work {
@@ -405,7 +405,7 @@ impl Messages {
 
     /// The message that matters most, after the progress in the top bar: past a
     /// hairline when `after_progress`, so the two aren't taken for one.
-    pub(super) fn line_ui(&mut self, ui: &mut egui::Ui, after_progress: bool) {
+    pub(in crate::app) fn line_ui(&mut self, ui: &mut egui::Ui, after_progress: bool) {
         self.bar_drawn = true;
         let palette = theme::palette(ui.ctx());
         let now = ui.input(|i| i.time);
@@ -435,7 +435,7 @@ impl Messages {
     /// Shift+Esc dismisses every message, as the bar's cross does. Only taken when
     /// there is one, and before anything else reads Esc: some of it ignores modifiers, and
     /// a tool should not close with it. Free in Lightroom, unlike Cmd+.
-    pub(super) fn dismiss_key(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn dismiss_key(&mut self, ctx: &egui::Context) {
         if !self.entries.is_empty()
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, egui::Key::Escape))
         {
@@ -455,7 +455,7 @@ impl Messages {
     /// Ends the frame's messages: their time, the whole messages when open, and
     /// the bar's part in a corner of its own when no bar was drawn (the chrome
     /// hidden, so a problem still shows). Call once a frame, after the bar.
-    pub(super) fn show(&mut self, ctx: &egui::Context) {
+    pub(in crate::app) fn show(&mut self, ctx: &egui::Context) {
         let (now, focused, pointer) = ctx.input(|i| (i.time, i.focused, i.pointer.hover_pos()));
         let rects = [self.line_rect, self.open_rect];
         let over = pointer.is_some_and(|at| rects.iter().flatten().any(|r| r.contains(at)));
@@ -855,9 +855,9 @@ fn cross_ui(
     if !visible {
         return response.clicked();
     }
-    super::icons::paint_at(
+    crate::app::icons::paint_at(
         ui.painter(),
-        super::icons::Icon::Close,
+        crate::app::icons::Icon::Close,
         rect.center(),
         13.,
         palette.tone(tone),

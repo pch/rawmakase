@@ -3,12 +3,12 @@
 //! place it was made in. The History panel keeps its own steps and imported
 //! Lightroom history; this log only decides what Cmd+Z and Cmd+Shift+Z do.
 //! It lives in memory and is cleared when another catalog opens.
-use super::Editor;
-use super::history::{Recorded, Step};
-use super::library::{
+use crate::app::Editor;
+use crate::app::Module;
+use crate::app::history::{Recorded, Step};
+use crate::app::library::{
     CollectionCommand, DescriptiveCommand, Library, MetadataCommand, Place, StackCommand,
 };
-use crate::app::Module;
 use crate::catalog::PhotoId;
 use anyhow::Result;
 use std::collections::VecDeque;
@@ -17,7 +17,7 @@ use std::collections::VecDeque;
 const LIMIT: usize = 100;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) enum Command {
+pub(in crate::app) enum Command {
     /// Rating, flag or label of one or more photos. `develop` is the photo
     /// open in Develop when it was made there; it is undone there.
     Metadata {
@@ -40,7 +40,7 @@ pub(super) enum Command {
         change: Box<Recorded>,
     },
     /// Settings synchronized to several photos at once; undone and redone together.
-    Sync(Box<super::sync::SyncCommand>),
+    Sync(Box<crate::app::sync::SyncCommand>),
     /// Photos grouped into, taken out of or moved in stacks; undone in the
     /// Library.
     Stack(Box<StackCommand>),
@@ -88,12 +88,12 @@ impl Command {
 }
 
 #[derive(Default)]
-pub(super) struct UndoLog {
+pub(in crate::app) struct UndoLog {
     undo: VecDeque<Command>,
     redo: Vec<Command>,
 }
 impl UndoLog {
-    pub(super) fn push(&mut self, command: Command) {
+    pub(in crate::app) fn push(&mut self, command: Command) {
         if self.undo.len() == LIMIT {
             self.undo.pop_front();
         }
@@ -104,22 +104,22 @@ impl UndoLog {
     /// catalog can give its id to the next photo added, which no command made
     /// before may then write. A command with nothing else left is dropped; one that
     /// also changed other photos keeps undoing and redoing those.
-    pub(super) fn forget_photo(&mut self, id: PhotoId) {
+    pub(in crate::app) fn forget_photo(&mut self, id: PhotoId) {
         self.undo.retain_mut(|c| c.forget_photo(id));
         self.redo.retain_mut(|c| c.forget_photo(id));
     }
-    pub(super) fn clear(&mut self) {
+    pub(in crate::app) fn clear(&mut self) {
         self.undo.clear();
         self.redo.clear();
     }
-    pub(super) fn can_undo(&self) -> bool {
+    pub(in crate::app) fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
-    pub(super) fn can_redo(&self) -> bool {
+    pub(in crate::app) fn can_redo(&self) -> bool {
         !self.redo.is_empty()
     }
     #[cfg(test)]
-    pub(super) fn len(&self) -> (usize, usize) {
+    pub(in crate::app) fn len(&self) -> (usize, usize) {
         (self.undo.len(), self.redo.len())
     }
 }
@@ -133,7 +133,7 @@ enum Direction {
 impl Editor {
     /// Moves the changes Library and Develop made into the log, in the order
     /// they were made.
-    pub(super) fn sync_undo(&mut self) {
+    pub(in crate::app) fn sync_undo(&mut self) {
         let photo = self.document.catalog_photo;
         let history = self.document.edit.history().id();
         let mut commands: Vec<(u64, Command)> = self
@@ -194,24 +194,24 @@ impl Editor {
     }
     /// Records a drag still in progress as a step, in the log, so it is undone in
     /// its place; the rest of the drag becomes a step of its own.
-    pub(super) fn finish_gesture(&mut self) {
+    pub(in crate::app) fn finish_gesture(&mut self) {
         self.document.edit.finish_gesture();
         self.sync_undo();
     }
     /// [`Self::finish_gesture`] for a gesture whose state was just saved.
-    pub(super) fn finish_saved_gesture(&mut self) {
+    pub(in crate::app) fn finish_saved_gesture(&mut self) {
         self.document.edit.finish_saved_gesture();
         self.sync_undo();
     }
     /// Waits while Sync writes edits, which Undo could otherwise race.
-    pub(super) fn undo(&mut self) {
+    pub(in crate::app) fn undo(&mut self) {
         self.command_history(false);
     }
-    pub(super) fn redo(&mut self) {
+    pub(in crate::app) fn redo(&mut self) {
         self.command_history(true);
     }
     /// Shared by UI shortcuts and external commands; false preserves a failed step.
-    pub(super) fn command_history(&mut self, redo: bool) -> bool {
+    pub(in crate::app) fn command_history(&mut self, redo: bool) -> bool {
         if self.activity.holds_catalog_writes() {
             return false;
         }
@@ -307,8 +307,8 @@ impl Editor {
                     return false;
                 };
                 let side = match direction {
-                    Direction::Undo => super::sync::SyncSide::Before,
-                    Direction::Redo => super::sync::SyncSide::After,
+                    Direction::Undo => crate::app::sync::SyncSide::Before,
+                    Direction::Redo => crate::app::sync::SyncSide::After,
                 };
                 // Each photo where it is now, after any relink since the Sync.
                 let paths: std::collections::HashMap<PhotoId, std::path::PathBuf> = sync
@@ -317,10 +317,10 @@ impl Editor {
                     .filter_map(|e| Some((e.id, library.photo(e.id)?.path.clone())))
                     .collect();
                 let path = |id: PhotoId| paths.get(&id).cloned();
-                match super::sync::restore(&mut library.session, &sync.edits, side, path) {
+                match crate::app::sync::restore(&mut library.session, &sync.edits, side, path) {
                     Ok(()) => {}
                     // Nothing to return to: the command is used up, not retried.
-                    Err(e @ super::sync::SyncRestoreError::PhotoRemoved) => {
+                    Err(e @ crate::app::sync::SyncRestoreError::PhotoRemoved) => {
                         self.messages.fail(format!("{verb} Sync Settings: {e}"));
                         return true;
                     }
@@ -339,7 +339,7 @@ impl Editor {
                 self.messages.note(format!(
                     "{verb} {} ({})",
                     sync.change.name(),
-                    super::widgets::plural(sync.edits.len(), "photo", "photos")
+                    crate::app::widgets::plural(sync.edits.len(), "photo", "photos")
                 ));
                 true
             }

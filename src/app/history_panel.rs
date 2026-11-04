@@ -1,16 +1,16 @@
 //! Develop's History panel: this session's steps over the photo's imported
 //! Lightroom steps, drawn under Snapshots in the History tab.
-use super::Editor;
-use super::widgets::section;
+use crate::app::Editor;
 use crate::app::design::{Tone, radius, space, text};
 use crate::app::theme;
+use crate::app::widgets::section;
 use eframe::egui::{self, Sense, Vec2};
 
 impl Editor {
     /// Lightroom's History panel: this session's steps, newest first, over
     /// the photo's imported Lightroom steps. Clicking a step of this session
     /// goes back (or forward) to it; later steps stay until the next edit.
-    pub(super) fn history_section(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn history_section(&mut self, ui: &mut egui::Ui) {
         if self.document.metadata.is_none() {
             return;
         }
@@ -21,12 +21,12 @@ impl Editor {
         // A click goes to the step; its menu copies it to Before, as in Lightroom.
         let mut row = |ui: &mut egui::Ui, n: usize, name: &str, value: &str| {
             let response = history_row(ui, name, value, n == applied, n > applied);
-            if response.clicked() && !super::widgets::context_clicked(&response) {
+            if response.clicked() && !crate::app::widgets::context_clicked(&response) {
                 go_to = Some(n);
             }
-            super::widgets::context_menu(&response, |ui| {
+            crate::app::widgets::context_menu(&response, |ui| {
                 ui.set_width(270.);
-                if super::widgets::menu_item(
+                if crate::app::widgets::menu_item(
                     ui,
                     "Copy History Step Settings to Before",
                     "",
@@ -72,12 +72,12 @@ impl Editor {
                         .on_hover_text(format!("{} UTC", format_unix(s as i64 + 978_307_200))),
                     None => response,
                 };
-                if response.clicked() && !super::widgets::context_clicked(&response) {
+                if response.clicked() && !crate::app::widgets::context_clicked(&response) {
                     lightroom = Some((i, LightroomStep::Apply));
                 }
-                super::widgets::context_menu(&response, |ui| {
+                crate::app::widgets::context_menu(&response, |ui| {
                     ui.set_width(270.);
-                    if super::widgets::menu_item(
+                    if crate::app::widgets::menu_item(
                         ui,
                         "Copy History Step Settings to Before",
                         "",
@@ -130,7 +130,7 @@ impl Editor {
                     }
                     self.document
                         .edit
-                        .name_next_step(super::history::Step::new(name, ""));
+                        .name_next_step(crate::app::history::Step::new(name, ""));
                     self.document.edit.replace(recipe);
                 }
                 Err(e) => self

@@ -252,7 +252,7 @@ fn refused_open_does_not_claim_another_photo_opened() -> anyhow::Result<()> {
     let mut catalog = crate::catalog::Catalog::create(&db)?;
     catalog.add_folder(&photos)?;
     drop(catalog);
-    e.library = Some(Box::new(super::super::library::Library::load(
+    e.library = Some(Box::new(crate::app::library::Library::load(
         &db,
         ctx.clone(),
     )?));
@@ -276,7 +276,7 @@ fn a_jpeg_opens_in_develop_by_command() -> anyhow::Result<()> {
     image::RgbImage::new(8, 8).save(photos.join("a.jpg"))?;
     let db = dir.path().join("catalog.rawmakase");
     crate::catalog::Catalog::create(&db)?.add_folder(&photos)?;
-    e.library = Some(Box::new(super::super::library::Library::load(
+    e.library = Some(Box::new(crate::app::library::Library::load(
         &db,
         ctx.clone(),
     )?));
@@ -307,7 +307,7 @@ fn navigating_develop_by_command_steps_past_a_photo_it_cannot_edit() -> anyhow::
     image::RgbImage::new(8, 8).save(photos.join("c.jpg"))?;
     let db = dir.path().join("catalog.rawmakase");
     crate::catalog::Catalog::create(&db)?.add_folder(&photos)?;
-    e.library = Some(Box::new(super::super::library::Library::load(
+    e.library = Some(Box::new(crate::app::library::Library::load(
         &db,
         ctx.clone(),
     )?));
@@ -420,7 +420,7 @@ fn save_success_means_the_catalog_contains_the_current_edit() -> anyhow::Result<
     let mut catalog = crate::catalog::Catalog::create(&db)?;
     catalog.add_folder(&photos)?;
     drop(catalog);
-    e.library = Some(Box::new(super::super::library::Library::load(
+    e.library = Some(Box::new(crate::app::library::Library::load(
         &db,
         ctx.clone(),
     )?));
@@ -452,7 +452,7 @@ fn save_success_means_the_catalog_contains_the_current_edit() -> anyhow::Result<
 fn curve_save_is_modal_for_commands_and_state() {
     let (mut e, ctx) = editor();
     crate::app::testing::in_edit_frame(&ctx, &mut e, |e| {
-        e.choose_point_curve(super::super::curve_menu::CurveChoice::Save)
+        e.choose_point_curve(crate::app::curve_menu::CurveChoice::Save)
     });
     assert_eq!(json(e.command_state())["modal"], true);
     assert_eq!(set(&mut e, &ctx, 1.).unwrap_err().code, "busy");
@@ -474,7 +474,7 @@ fn asynchronous_edits_and_out_of_frame_undo_invalidate_guards() {
     let initial = json(e.command_state())["revision"].as_u64().unwrap();
     let mut auto = e.document.edit.recipe().clone();
     auto.exposure = 1.25;
-    e.auto_ready(super::super::worker::AutoKind::Settings, Ok(Box::new(auto)));
+    e.auto_ready(crate::app::worker::AutoKind::Settings, Ok(Box::new(auto)));
     let mut command = Command::new(Operation::Set(Param::Setting(ParameterId::Contrast), 10.));
     command.target.revision = Some(initial);
     assert_eq!(
@@ -694,7 +694,7 @@ fn library_metadata_requires_stable_id_despite_selection_changes() -> anyhow::Re
     let mut catalog = crate::catalog::Catalog::create(&db)?;
     catalog.add_folder(&photos)?;
     drop(catalog);
-    e.library = Some(Box::new(super::super::library::Library::load(
+    e.library = Some(Box::new(crate::app::library::Library::load(
         &db,
         ctx.clone(),
     )?));
@@ -926,7 +926,7 @@ fn a_cmyk_jpeg_is_not_editable_by_command() -> anyhow::Result<()> {
     encoder.write_image(&[10; 8 * 8 * 3], 8, 8, image::ExtendedColorType::Rgb8)?;
     let db = dir.path().join("catalog.rawmakase");
     crate::catalog::Catalog::create(&db)?.add_folder(&photos)?;
-    e.library = Some(Box::new(super::super::library::Library::load(
+    e.library = Some(Box::new(crate::app::library::Library::load(
         &db,
         ctx.clone(),
     )?));

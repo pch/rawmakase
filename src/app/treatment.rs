@@ -1,6 +1,6 @@
 //! The Basic panel's Treatment and the B&W panel's Auto. Each runs during an edit
 //! frame, which records it as one History step under the name it gives.
-use super::{Editor, history::Step};
+use crate::app::{Editor, history::Step};
 use crate::develop::black_white::TreatmentChoice;
 use crate::model::recipe::Treatment;
 use crate::{
@@ -12,20 +12,20 @@ use crate::{
 /// "Apply auto mix when first converting to black and white" preference, on by
 /// default.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum FirstConversion {
+pub(in crate::app) enum FirstConversion {
     #[default]
     AutoMix,
     KeepMix,
 }
 
 /// What Auto black & white measures for the open photo: its colors and camera.
-pub(super) struct PhotoColors {
+pub(in crate::app) struct PhotoColors {
     spread: ColorSpread,
     metadata: Metadata,
 }
 
 impl PhotoColors {
-    pub(super) fn auto_mix(&self) -> AutoMix<'_> {
+    pub(in crate::app) fn auto_mix(&self) -> AutoMix<'_> {
         AutoMix {
             spread: &self.spread,
             metadata: &self.metadata,
@@ -35,7 +35,7 @@ impl PhotoColors {
 
 impl Editor {
     /// The open photo's colors, once it is decoded.
-    pub(super) fn photo_colors(&self) -> Option<PhotoColors> {
+    pub(in crate::app) fn photo_colors(&self) -> Option<PhotoColors> {
         Some(PhotoColors {
             spread: self.document.color_spread()?,
             metadata: self.document.metadata.clone()?,
@@ -43,7 +43,7 @@ impl Editor {
     }
 
     /// The Auto mix a first conversion applies: none while the preference is off.
-    pub(super) fn first_conversion_colors(&self) -> Option<PhotoColors> {
+    pub(in crate::app) fn first_conversion_colors(&self) -> Option<PhotoColors> {
         match self.first_conversion {
             FirstConversion::AutoMix => self.photo_colors(),
             FirstConversion::KeepMix => None,
@@ -55,7 +55,7 @@ impl Editor {
     /// edit frame, which records the change as one History step under this name.
     /// While the photo is still decoding, a conversion that needs the Auto mix waits
     /// for it ([`Editor::finish_pending_treatment`]).
-    pub(super) fn set_treatment(&mut self, treatment: Treatment) {
+    pub(in crate::app) fn set_treatment(&mut self, treatment: Treatment) {
         self.document.pending_treatment = None;
         if self.document.edit.recipe().treatment() == treatment {
             return;
@@ -66,7 +66,7 @@ impl Editor {
         // Measured only when the conversion uses it.
         let colors = needs_auto.then(|| self.photo_colors()).flatten();
         if needs_auto && colors.is_none() {
-            self.document.pending_treatment = Some(super::state::PendingTreatment {
+            self.document.pending_treatment = Some(crate::app::state::PendingTreatment {
                 treatment,
                 recipe: self.document.edit.recipe().clone(),
             });
@@ -95,7 +95,7 @@ impl Editor {
 
     /// Converts as asked while the photo was decoding, once it is decoded. Called
     /// during an edit frame.
-    pub(super) fn finish_pending_treatment(&mut self) {
+    pub(in crate::app) fn finish_pending_treatment(&mut self) {
         if self.document.full().is_some()
             && let Some(pending) = self.document.pending_treatment.take()
             && pending.recipe == *self.document.edit.recipe()
@@ -107,7 +107,7 @@ impl Editor {
     /// Keeps the Treatment with a newly chosen profile (see
     /// [`TreatmentChoice::follow_profile_treatment`]). Called during the edit frame that
     /// changed the profile, so it is part of that step.
-    pub(super) fn follow_profile_treatment(
+    pub(in crate::app) fn follow_profile_treatment(
         &mut self,
         old: Option<&crate::camera_profiles::CameraProfile>,
     ) {
@@ -126,7 +126,7 @@ impl Editor {
     }
 
     /// V: switches between Color and Black & White.
-    pub(super) fn toggle_treatment(&mut self) {
+    pub(in crate::app) fn toggle_treatment(&mut self) {
         // A conversion still waiting for the photo counts as done: V again cancels it.
         let shown = self
             .document
@@ -141,7 +141,7 @@ impl Editor {
 
     /// The B&W panel's Auto: sets the black & white mix from the photo's colors.
     /// Called during an edit frame, which records it as one History step.
-    pub(super) fn auto_black_white_mix(&mut self) {
+    pub(in crate::app) fn auto_black_white_mix(&mut self) {
         let Some(colors) = self.photo_colors() else {
             return;
         };

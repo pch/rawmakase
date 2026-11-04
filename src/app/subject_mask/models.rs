@@ -1,8 +1,8 @@
 //! Installing and removing the model packs (Select Subject's and Sky's, AI Denoise's)
 //! on their own threads, only on the user's choice. What an install does is in
 //! [`crate::model_install`].
-use super::super::task::Stopping;
-use super::super::worker::Event;
+use crate::app::task::Stopping;
+use crate::app::worker::Event;
 use crate::model_install::{InstallError, Pack, Progress};
 use eframe::egui;
 use std::path::PathBuf;

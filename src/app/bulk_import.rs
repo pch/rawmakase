@@ -3,7 +3,7 @@
 //! imported are skipped quietly, and what can't be imported is reported
 //! instead of failing the rest. A preset import also takes the look profiles
 //! among its files, as packs ship them beside the presets that use them.
-use super::{Editor, worker::Event};
+use crate::app::{Editor, worker::Event};
 use crate::camera_profiles::LutSpace;
 use eframe::egui;
 use std::collections::{BTreeMap, HashSet};
@@ -30,7 +30,7 @@ impl ImportKind {
             Self::Presets => &["xmp"],
         }
     }
-    pub(super) fn noun(self, count: usize) -> &'static str {
+    pub(in crate::app) fn noun(self, count: usize) -> &'static str {
         match (self, count == 1) {
             (Self::CameraProfiles, true) => "profile",
             (Self::CameraProfiles, false) => "profiles",
@@ -43,7 +43,7 @@ impl ImportKind {
         }
     }
     /// Label for the multi-file chooser's filter.
-    pub(super) fn filter(self) -> (&'static str, &'static [&'static str]) {
+    pub(in crate::app) fn filter(self) -> (&'static str, &'static [&'static str]) {
         match self {
             Self::CameraProfiles => ("Camera profiles and .cube LUTs", &["dcp", "xmp", "cube"]),
             Self::Luts(_) => ("LUTs (.cube)", &["cube"]),
@@ -56,7 +56,7 @@ impl ImportKind {
 /// Files with one of `extensions` under `dir`, in sorted order. Skips hidden
 /// folders, macOS archive leftovers and, when `skip` names them, other
 /// folders such as Camera Raw's Defaults.
-pub(super) fn find_files(dir: &Path, extensions: &[&str], skip: &[&str]) -> Vec<PathBuf> {
+pub(in crate::app) fn find_files(dir: &Path, extensions: &[&str], skip: &[&str]) -> Vec<PathBuf> {
     fn walk(dir: &Path, extensions: &[&str], skip: &[&str], depth: usize, out: &mut Vec<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -138,22 +138,22 @@ fn gather(kind: ImportKind, picks: &[PathBuf]) -> Vec<Found> {
 /// What an import did.
 #[derive(Debug)]
 pub struct Summary {
-    pub(super) kind: ImportKind,
-    pub(super) imported: usize,
+    pub(in crate::app) kind: ImportKind,
+    pub(in crate::app) imported: usize,
     /// Look profiles a preset import took from among its files.
-    pub(super) profiles: usize,
+    pub(in crate::app) profiles: usize,
     /// Identical to one already imported, or repeated within this import.
-    pub(super) already: usize,
+    pub(in crate::app) already: usize,
     /// Profile looks found in a folder for cameras without a base profile.
-    pub(super) without_base: usize,
+    pub(in crate::app) without_base: usize,
     /// Files that couldn't be imported, with the reason.
-    pub(super) failed: Vec<(PathBuf, String)>,
+    pub(in crate::app) failed: Vec<(PathBuf, String)>,
     /// What became of each `.cube`: its look's name and how faithfully it holds
     /// the cube.
-    pub(super) cubes: Vec<(PathBuf, crate::camera_profiles::CubeImport)>,
+    pub(in crate::app) cubes: Vec<(PathBuf, crate::camera_profiles::CubeImport)>,
 }
 impl Summary {
-    pub(super) fn new(kind: ImportKind) -> Self {
+    pub(in crate::app) fn new(kind: ImportKind) -> Self {
         Self {
             kind,
             imported: 0,
@@ -217,7 +217,7 @@ impl Summary {
     }
     /// The skipped files, then the `.cube` files approximated or renamed, one per
     /// line, at most `limit` of them.
-    pub(super) fn details(&self, limit: usize) -> String {
+    pub(in crate::app) fn details(&self, limit: usize) -> String {
         let noted = self.cubes.iter().filter(|(_, c)| {
             !c.already && (c.renamed() || c.fidelity != crate::camera_profiles::Fidelity::Exact)
         });
@@ -234,7 +234,7 @@ impl Summary {
         lines.join("\n")
     }
     /// Whether [`Self::details`] has anything to say.
-    pub(super) fn has_details(&self) -> bool {
+    pub(in crate::app) fn has_details(&self) -> bool {
         !self.details(1).is_empty()
     }
     /// Every `.cube` and every file that couldn't be imported, one line each.
@@ -273,7 +273,7 @@ fn is_look(text: &str) -> bool {
 /// What an import is doing, for the status line. Setting it wakes the interface,
 /// so the status line follows without polling.
 #[derive(Default)]
-pub(super) struct ImportProgress {
+pub(in crate::app) struct ImportProgress {
     text: Mutex<String>,
     ctx: Option<egui::Context>,
 }
@@ -293,7 +293,7 @@ impl ImportProgress {
             ctx.request_repaint();
         }
     }
-    pub(super) fn text(&self) -> String {
+    pub(in crate::app) fn text(&self) -> String {
         self.text
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -661,7 +661,12 @@ pub fn import_profiles(picks: &[PathBuf], space: LutSpace) -> Summary {
 
 impl Editor {
     /// Starts importing `picks` in the background; the status line follows it.
-    pub(super) fn import(&mut self, kind: ImportKind, picks: Vec<PathBuf>, ctx: &egui::Context) {
+    pub(in crate::app) fn import(
+        &mut self,
+        kind: ImportKind,
+        picks: Vec<PathBuf>,
+        ctx: &egui::Context,
+    ) {
         if self.importing.is_some() || picks.is_empty() {
             return;
         }
@@ -680,7 +685,7 @@ impl Editor {
         self.importing = Some(progress.clone());
         let (tx, ctx) = (self.tx.clone(), ctx.clone());
         let first = picks[0].clone();
-        super::task::spawn(
+        crate::app::task::spawn(
             tx,
             ctx,
             move |tx| {
@@ -696,7 +701,7 @@ impl Editor {
             },
         );
     }
-    pub(super) fn imported(&mut self, summary: Summary, ctx: &egui::Context) {
+    pub(in crate::app) fn imported(&mut self, summary: Summary, ctx: &egui::Context) {
         self.importing = None;
         // A preset import takes the looks among its files too.
         let profiles = match summary.kind {
@@ -737,12 +742,12 @@ impl Editor {
         self.onboarding.imported(summary);
     }
     /// Lists the open photo's profiles again once an import has added some.
-    pub(super) fn list_profiles_after_import(&mut self) {
+    pub(in crate::app) fn list_profiles_after_import(&mut self) {
         self.profile_library = crate::camera_profiles::library_fingerprint();
         let before = self.document.edit.recipe().clone();
         if let Some(m) = &self.document.metadata {
             let listed = crate::camera_profiles::listed(m);
-            self.document.profiles = super::camera_look::keep_fitted_default(
+            self.document.profiles = crate::app::camera_look::keep_fitted_default(
                 &self.document.profiles,
                 m,
                 listed.profiles,

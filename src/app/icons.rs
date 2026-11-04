@@ -5,7 +5,7 @@ use eframe::egui::{self, Color32, Rect};
 
 fastframe_icons::icons! {
     /// Every icon the interface draws.
-    pub(super) enum Icon {
+    pub(in crate::app) enum Icon {
         prefix: "rawmakase-icon-",
         directory: "../../assets/icons/",
         Undo => "undo-2",
@@ -60,14 +60,14 @@ fastframe_icons::icons! {
 }
 
 /// Registers the icons with egui, after its SVG loader.
-pub(super) fn install(ctx: &egui::Context) {
+pub(in crate::app) fn install(ctx: &egui::Context) {
     egui_extras::install_image_loaders(ctx);
     fastframe_icons::install::<Icon>(ctx);
 }
 
 /// Paints `icon` into `rect`, tinted. Nothing is drawn until the SVG is
 /// rasterized, which happens on first use at each size.
-pub(super) fn paint(painter: &egui::Painter, icon: Icon, rect: Rect, tint: Color32) {
+pub(in crate::app) fn paint(painter: &egui::Painter, icon: Icon, rect: Rect, tint: Color32) {
     let ctx = painter.ctx();
     let ppp = ctx.pixels_per_point();
     let rect = pixel_aligned(rect, ppp);
@@ -81,7 +81,7 @@ pub(super) fn paint(painter: &egui::Painter, icon: Icon, rect: Rect, tint: Color
 }
 
 /// Paints `icon` `size` points square, centred on `center`.
-pub(super) fn paint_at(
+pub(in crate::app) fn paint_at(
     painter: &egui::Painter,
     icon: Icon,
     center: egui::Pos2,
