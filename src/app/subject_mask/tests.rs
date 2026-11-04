@@ -557,7 +557,7 @@ impl Remote {
                 fn analyze(
                     &mut self,
                     _photo: &rawmakase_inference::RgbImage,
-                    _cancel: &std::sync::atomic::AtomicBool,
+                    _cancel: rawmakase_cancel::Cancel<'_>,
                 ) -> Result<Outcome, EngineError> {
                     Ok(Outcome {
                         key: "k".into(),
@@ -567,7 +567,7 @@ impl Remote {
                 fn sky(
                     &mut self,
                     _photo: &rawmakase_inference::RgbImage,
-                    _cancel: &std::sync::atomic::AtomicBool,
+                    _cancel: rawmakase_cancel::Cancel<'_>,
                 ) -> Result<rawmakase_inference::Coverage, EngineError> {
                     Ok(self.sky.clone())
                 }
@@ -575,7 +575,7 @@ impl Remote {
                     &mut self,
                     key: &str,
                     _prompt: &rawmakase_inference::Prompt,
-                    _cancel: &std::sync::atomic::AtomicBool,
+                    _cancel: rawmakase_cancel::Cancel<'_>,
                 ) -> Result<rawmakase_inference::Coverage, EngineError> {
                     if key == "k" {
                         Ok(self.subject.clone())

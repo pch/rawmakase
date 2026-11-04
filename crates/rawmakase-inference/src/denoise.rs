@@ -7,7 +7,7 @@
 //! [`fit_gain`] matches that scale to the mosaic's. Where the photo comes from, how the
 //! result is assembled into a camera image, cached and scheduled belongs to the callers.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 use crate::error::InferenceError;
 use crate::manifest::{DenoiseSpec, RAWNIND};
@@ -123,7 +123,7 @@ impl Grid {
 /// Runs one tile: `[1, 4, tile, tile]` in, `[1, 3, 2 × tile, 2 × tile]` out. The ONNX
 /// model ([`crate::runtime::Denoiser`]) in the app, a stand-in in tests.
 pub trait TileModel {
-    fn run(&mut self, input: &[f32], cancel: &AtomicBool) -> Result<Vec<f32>, InferenceError>;
+    fn run(&mut self, input: &[f32], cancel: Cancel<'_>) -> Result<Vec<f32>, InferenceError>;
 }
 
 /// The model's output at sensor resolution (twice the packed size), three planes (red,
@@ -202,7 +202,7 @@ pub fn run(
     tiles: &[Tile],
     model: &mut dyn TileModel,
     out: &mut Output,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     mut after: impl FnMut(usize, &Output),
 ) -> Result<(), InferenceError> {
     if planes.width != grid.width
@@ -218,7 +218,7 @@ pub fn run(
     let side = grid.tile;
     let (w, h) = (out.width, out.height);
     for (index, &tile) in tiles.iter().enumerate() {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return Err(InferenceError::Cancelled);
         }
         let input = tile_input(planes, grid, tile);
@@ -438,6 +438,7 @@ pub fn correct_dark(rgb: &mut [f32], reference: &GainReference<'_>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     /// A stand-in for the network: each packed pixel's four samples placed at sensor
     /// resolution as camera RGB (R; the mean of the greens; B), scaled by `scale`. It
@@ -449,8 +450,8 @@ mod tests {
         poison_after: Option<usize>,
     }
     impl TileModel for Nearest {
-        fn run(&mut self, input: &[f32], cancel: &AtomicBool) -> Result<Vec<f32>, InferenceError> {
-            if cancel.load(Ordering::Relaxed) {
+        fn run(&mut self, input: &[f32], cancel: Cancel<'_>) -> Result<Vec<f32>, InferenceError> {
+            if cancel.is_cancelled() {
                 return Err(InferenceError::Cancelled);
             }
             self.runs += 1;
@@ -529,7 +530,7 @@ mod tests {
             &grid.tiles(),
             &mut big,
             &mut out,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
             |_, _| {},
         )
         .unwrap();
@@ -564,7 +565,7 @@ mod tests {
                     &tiles,
                     &mut model,
                     &mut out,
-                    &AtomicBool::new(false),
+                    Cancel::NEVER,
                     |done, out| calls.push((done, out.is_complete())),
                 )
                 .unwrap();
@@ -649,7 +650,7 @@ mod tests {
             &grid.tiles(),
             &mut model,
             &mut out,
-            &cancel,
+            Cancel::new(&cancel),
             |done, _| {
                 if done == 2 {
                     cancel.store(true, Ordering::Relaxed);
@@ -673,7 +674,7 @@ mod tests {
             &grid.tiles(),
             &mut poisoned,
             &mut out,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
             |_, _| {},
         );
         assert!(matches!(result, Err(InferenceError::OutputInvalid(_))));
@@ -726,7 +727,7 @@ mod tests {
             &tiles,
             &mut model,
             &mut out,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
             |done, out| {
                 if done == total * 3 / 4 {
                     provisional = Some(fit_gain(out, &reference));
@@ -780,7 +781,7 @@ mod tests {
             &grid.tiles(),
             &mut model,
             &mut out,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
             |_, _| {},
         )
         .unwrap();
@@ -809,7 +810,7 @@ mod tests {
             &grid.tiles(),
             &mut model,
             &mut out,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
             |_, _| {},
         )
         .unwrap();
@@ -910,7 +911,7 @@ mod tests {
             &tiles,
             &mut model,
             &mut out,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
             |_, _| {},
         )
         .unwrap();

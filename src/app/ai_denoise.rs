@@ -706,7 +706,7 @@ impl Service {
             &tiles,
             model.as_mut(),
             &mut out,
-            cancel,
+            Cancel::new(cancel),
             |done, out| {
                 if first > 0 && done == first && done < total {
                     // The 100% view's tiles: one partial result, at a provisional gain.

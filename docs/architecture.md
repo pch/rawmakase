@@ -428,7 +428,7 @@ Some features span several owners; each module's docs describe its part:
   the default black follows comes from the same copy without red eye corrections
   and spot removal (`Toned::unretouched`, the same copy when there are none).
 - AI Denoise keeps the crate direction: `rawmakase-inference` runs the model and
-  knows no workspace crate; `rawmakase-decode` packs the mosaic and assembles the
+  knows no workspace crate but the cancellation token; `rawmakase-decode` packs the mosaic and assembles the
   result without knowing the model and defines `AiBase`; the app implements
   `AiBase` with inference (`app::ai_denoise::Service`) and owns the queue, the model
   install and the cache. **The engine never sees `AiBase`:** it receives a resolved,

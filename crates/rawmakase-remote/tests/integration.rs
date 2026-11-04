@@ -1,6 +1,7 @@
 //! The client and the server, talking for real over a loopback socket, with a
 //! fake engine standing in for the models: what the app sees when a selection
 //! succeeds, fails, is cancelled, arrives stale, or the worker is fed nonsense.
+use rawmakase_cancel::Cancel;
 
 use rawmakase_inference::{Coverage, Prompt, RgbImage};
 use rawmakase_remote::client::{ClientError, RemoteOptions, RemoteSession};
@@ -68,16 +69,16 @@ impl Fake {
 }
 
 impl Engine for Fake {
-    fn analyze(&mut self, _photo: &RgbImage, cancel: &AtomicBool) -> Result<Outcome, EngineError> {
+    fn analyze(&mut self, _photo: &RgbImage, cancel: Cancel<'_>) -> Result<Outcome, EngineError> {
         self.runs.fetch_add(1, Ordering::SeqCst);
         if let Some(holding) = &self.holding {
             // Hold until the test says go, so a cancel can arrive mid-run.
-            while holding.load(Ordering::SeqCst) && !cancel.load(Ordering::SeqCst) {
+            while holding.load(Ordering::SeqCst) && !cancel.is_cancelled() {
                 std::thread::sleep(Duration::from_millis(5));
             }
         }
         std::thread::sleep(self.delay);
-        if cancel.load(Ordering::SeqCst) {
+        if cancel.is_cancelled() {
             self.cancelled.store(true, Ordering::SeqCst);
             return Err(EngineError::Cancelled);
         }
@@ -94,11 +95,11 @@ impl Engine for Fake {
         &mut self,
         key: &str,
         _prompt: &Prompt,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Coverage, EngineError> {
         self.runs.fetch_add(1, Ordering::SeqCst);
         std::thread::sleep(self.delay);
-        if cancel.load(Ordering::SeqCst) {
+        if cancel.is_cancelled() {
             return Err(EngineError::Cancelled);
         }
         if key != self.photo.key {
@@ -110,14 +111,14 @@ impl Engine for Fake {
         Ok(self.photo.subject.clone())
     }
 
-    fn sky(&mut self, _photo: &RgbImage, cancel: &AtomicBool) -> Result<Coverage, EngineError> {
+    fn sky(&mut self, _photo: &RgbImage, cancel: Cancel<'_>) -> Result<Coverage, EngineError> {
         self.runs.fetch_add(1, Ordering::SeqCst);
         if let Some(holding) = &self.holding {
-            while holding.load(Ordering::SeqCst) && !cancel.load(Ordering::SeqCst) {
+            while holding.load(Ordering::SeqCst) && !cancel.is_cancelled() {
                 std::thread::sleep(Duration::from_millis(5));
             }
         }
-        if cancel.load(Ordering::SeqCst) {
+        if cancel.is_cancelled() {
             return Err(EngineError::Cancelled);
         }
         if let Some(fail) = self.fail.clone() {
@@ -177,16 +178,19 @@ fn a_selection_round_trips_and_a_second_one_reuses_the_analysis() {
     assert_eq!(info.provider, "CPU");
 
     let cancel = AtomicBool::new(false);
-    let analysis = session.analyze(&photo(4, 3), &cancel).unwrap();
+    let analysis = session.analyze(&photo(4, 3), Cancel::new(&cancel)).unwrap();
     assert_eq!(&analysis.key, "k1");
     assert_eq!(analysis.subject.data, vec![200; 12]);
     assert_eq!(
-        session.sky(&photo(4, 3), &cancel).unwrap().data,
+        session
+            .sky(&photo(4, 3), Cancel::new(&cancel))
+            .unwrap()
+            .data,
         vec![201; 12]
     );
 
     let mask = session
-        .segment(&analysis, &click(0.5, 0.5), &cancel)
+        .segment(&analysis, &click(0.5, 0.5), Cancel::new(&cancel))
         .unwrap();
     assert_eq!(mask, analysis.subject);
     assert_eq!(
@@ -214,7 +218,9 @@ fn a_cancelled_selection_says_so_and_stops_the_worker() {
         })
     };
     let started = std::time::Instant::now();
-    let error = session.analyze(&photo(2, 2), &cancel).unwrap_err();
+    let error = session
+        .analyze(&photo(2, 2), Cancel::new(&cancel))
+        .unwrap_err();
     watcher.join().unwrap();
     assert_eq!(error, ClientError::Cancelled);
     assert!(
@@ -241,7 +247,9 @@ fn a_worker_that_fails_is_an_error_the_app_can_show() {
     let (endpoint, _, _) = worker(fake);
     let session = RemoteSession::new(&endpoint);
     let cancel = AtomicBool::new(false);
-    let error = session.analyze(&photo(2, 2), &cancel).unwrap_err();
+    let error = session
+        .analyze(&photo(2, 2), Cancel::new(&cancel))
+        .unwrap_err();
     assert!(
         matches!(&error, ClientError::Failed(why) if why.contains("the model is broken")),
         "{error:?}"
@@ -254,13 +262,13 @@ fn a_stale_click_after_the_worker_forgot_the_photo_asks_for_it_again() {
     let (endpoint, _, _) = worker(fake);
     let session = RemoteSession::new(&endpoint);
     let cancel = AtomicBool::new(false);
-    let analysis = session.analyze(&photo(2, 2), &cancel).unwrap();
+    let analysis = session.analyze(&photo(2, 2), Cancel::new(&cancel)).unwrap();
     let stale = rawmakase_remote::RemoteAnalysis {
         key: "gone".into(),
         subject: analysis.subject,
     };
     assert_eq!(
-        session.segment(&stale, &click(0.5, 0.5), &cancel),
+        session.segment(&stale, &click(0.5, 0.5), Cancel::new(&cancel)),
         Err(ClientError::Expired)
     );
     // And a cancel for a request that no longer runs is acknowledged, not an error.
@@ -308,12 +316,12 @@ fn two_sessions_never_confuse_each_others_requests_or_cancels() {
         fn analyze(
             &mut self,
             _photo: &RgbImage,
-            cancel: &AtomicBool,
+            cancel: Cancel<'_>,
         ) -> Result<Outcome, EngineError> {
-            while !self.gate.load(Ordering::SeqCst) && !cancel.load(Ordering::SeqCst) {
+            while !self.gate.load(Ordering::SeqCst) && !cancel.is_cancelled() {
                 std::thread::sleep(Duration::from_millis(5));
             }
-            if cancel.load(Ordering::SeqCst) {
+            if cancel.is_cancelled() {
                 return Err(EngineError::Cancelled);
             }
             Ok(Outcome {
@@ -329,15 +337,11 @@ fn two_sessions_never_confuse_each_others_requests_or_cancels() {
             &mut self,
             _key: &str,
             _prompt: &Prompt,
-            _cancel: &AtomicBool,
+            _cancel: Cancel<'_>,
         ) -> Result<Coverage, EngineError> {
             Err(EngineError::UnknownKey)
         }
-        fn sky(
-            &mut self,
-            _photo: &RgbImage,
-            _cancel: &AtomicBool,
-        ) -> Result<Coverage, EngineError> {
+        fn sky(&mut self, _photo: &RgbImage, _cancel: Cancel<'_>) -> Result<Coverage, EngineError> {
             Err(EngineError::UnknownKey)
         }
         fn describe(&self) -> rawmakase_remote::server::Info {
@@ -362,8 +366,12 @@ fn two_sessions_never_confuse_each_others_requests_or_cancels() {
     let first_cancel = Arc::new(AtomicBool::new(false));
     let second_cancel = Arc::new(AtomicBool::new(false));
     let first = std::thread::scope(|scope| {
-        let a = scope.spawn(|| RemoteSession::new(&endpoint).analyze(&photo(2, 2), &first_cancel));
-        let b = scope.spawn(|| RemoteSession::new(&endpoint).analyze(&photo(2, 2), &second_cancel));
+        let a = scope.spawn(|| {
+            RemoteSession::new(&endpoint).analyze(&photo(2, 2), Cancel::new(&first_cancel))
+        });
+        let b = scope.spawn(|| {
+            RemoteSession::new(&endpoint).analyze(&photo(2, 2), Cancel::new(&second_cancel))
+        });
         // The engine is gated shut: cancel the first while it runs.
         std::thread::sleep(Duration::from_millis(150));
         first_cancel.store(true, Ordering::SeqCst);
@@ -415,7 +423,9 @@ fn a_silent_worker_is_bounded_and_a_cancel_is_prompt() {
     );
     let cancel = AtomicBool::new(false);
     let started = std::time::Instant::now();
-    let error = session.analyze(&photo(2, 2), &cancel).unwrap_err();
+    let error = session
+        .analyze(&photo(2, 2), Cancel::new(&cancel))
+        .unwrap_err();
     let elapsed = started.elapsed();
     assert!(
         matches!(&error, ClientError::Failed(why) if why.contains("in time")),
@@ -436,7 +446,9 @@ fn a_silent_worker_is_bounded_and_a_cancel_is_prompt() {
         })
     };
     let started = std::time::Instant::now();
-    let error = session.analyze(&photo(2, 2), &cancel).unwrap_err();
+    let error = session
+        .analyze(&photo(2, 2), Cancel::new(&cancel))
+        .unwrap_err();
     watcher.join().unwrap();
     assert_eq!(error, ClientError::Cancelled);
     assert!(
@@ -476,7 +488,9 @@ fn a_trickling_worker_cannot_outlast_the_budget() {
     );
     let cancel = AtomicBool::new(false);
     let started = std::time::Instant::now();
-    let error = session.analyze(&photo(2, 2), &cancel).unwrap_err();
+    let error = session
+        .analyze(&photo(2, 2), Cancel::new(&cancel))
+        .unwrap_err();
     assert!(
         matches!(&error, ClientError::Failed(why) if why.contains("in time")),
         "{error:?}"
@@ -513,7 +527,9 @@ fn a_trickling_body_cannot_outlast_the_budget() {
     );
     let cancel = AtomicBool::new(false);
     let started = std::time::Instant::now();
-    let error = session.analyze(&photo(2, 2), &cancel).unwrap_err();
+    let error = session
+        .analyze(&photo(2, 2), Cancel::new(&cancel))
+        .unwrap_err();
     assert!(
         matches!(&error, ClientError::Failed(why) if why.contains("in time")),
         "{error:?}"
@@ -547,7 +563,9 @@ fn a_worker_hanging_up_mid_body_is_an_error() {
     );
     let cancel = AtomicBool::new(false);
     let started = std::time::Instant::now();
-    let error = session.analyze(&photo(2, 2), &cancel).unwrap_err();
+    let error = session
+        .analyze(&photo(2, 2), Cancel::new(&cancel))
+        .unwrap_err();
     assert!(
         matches!(&error, ClientError::Failed(why) if why.contains("closed the connection")),
         "{error:?}"
@@ -572,12 +590,12 @@ fn a_duplicate_live_id_is_refused() {
         fn analyze(
             &mut self,
             _photo: &RgbImage,
-            cancel: &AtomicBool,
+            cancel: Cancel<'_>,
         ) -> Result<Outcome, EngineError> {
-            while !self.gate.load(Ordering::SeqCst) && !cancel.load(Ordering::SeqCst) {
+            while !self.gate.load(Ordering::SeqCst) && !cancel.is_cancelled() {
                 std::thread::sleep(Duration::from_millis(5));
             }
-            if cancel.load(Ordering::SeqCst) {
+            if cancel.is_cancelled() {
                 return Err(EngineError::Cancelled);
             }
             Ok(Outcome {
@@ -593,15 +611,11 @@ fn a_duplicate_live_id_is_refused() {
             &mut self,
             _key: &str,
             _prompt: &Prompt,
-            _cancel: &AtomicBool,
+            _cancel: Cancel<'_>,
         ) -> Result<Coverage, EngineError> {
             Err(EngineError::UnknownKey)
         }
-        fn sky(
-            &mut self,
-            _photo: &RgbImage,
-            _cancel: &AtomicBool,
-        ) -> Result<Coverage, EngineError> {
+        fn sky(&mut self, _photo: &RgbImage, _cancel: Cancel<'_>) -> Result<Coverage, EngineError> {
             Err(EngineError::UnknownKey)
         }
         fn describe(&self) -> rawmakase_remote::server::Info {
@@ -676,7 +690,9 @@ fn a_worker_that_takes_too_long_is_an_error_not_a_hang() {
         },
     );
     let cancel = AtomicBool::new(false);
-    let error = session.analyze(&photo(2, 2), &cancel).unwrap_err();
+    let error = session
+        .analyze(&photo(2, 2), Cancel::new(&cancel))
+        .unwrap_err();
     assert!(
         matches!(&error, ClientError::Failed(why) if why.contains("in time")),
         "{error:?}"
@@ -891,7 +907,7 @@ fn a_cancel_is_forwarded_even_when_the_request_notices_it_first() {
     // Raised before the request starts: the request loop sees it at once.
     let cancel = AtomicBool::new(true);
     assert_eq!(
-        session.analyze(&photo(2, 2), &cancel),
+        session.analyze(&photo(2, 2), Cancel::new(&cancel)),
         Err(ClientError::Cancelled)
     );
     let target = cancels
@@ -907,7 +923,10 @@ fn sky_runs_by_itself_with_no_analysis_before_it() {
     let cancel = AtomicBool::new(false);
     // Sky by itself: one model run, nothing kept for it to depend on.
     assert_eq!(
-        session.sky(&photo(2, 2), &cancel).unwrap().data,
+        session
+            .sky(&photo(2, 2), Cancel::new(&cancel))
+            .unwrap()
+            .data,
         vec![51; 4]
     );
     assert_eq!(runs.load(Ordering::SeqCst), 1);
@@ -927,7 +946,7 @@ fn a_cancelled_sky_is_cancelled_and_a_worker_without_the_model_says_why() {
         raised.store(true, Ordering::SeqCst);
     });
     assert_eq!(
-        RemoteSession::new(&endpoint).sky(&photo(2, 2), &cancel),
+        RemoteSession::new(&endpoint).sky(&photo(2, 2), Cancel::new(&cancel)),
         Err(ClientError::Cancelled)
     );
     holding.store(false, Ordering::SeqCst);
@@ -939,7 +958,7 @@ fn a_cancelled_sky_is_cancelled_and_a_worker_without_the_model_says_why() {
         ),
     ));
     let (endpoint, _, _) = worker(fake);
-    match RemoteSession::new(&endpoint).sky(&photo(2, 2), &AtomicBool::new(false)) {
+    match RemoteSession::new(&endpoint).sky(&photo(2, 2), Cancel::NEVER) {
         Err(ClientError::Failed(why)) => assert!(why.contains("--sky-model"), "{why}"),
         other => panic!("{other:?}"),
     }

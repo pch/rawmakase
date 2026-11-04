@@ -8,6 +8,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+rawmakase-cancel = { path = "../rawmakase-cancel", version = "0.1.0" }
 # `load-dynamic` links no ONNX Runtime at build time: the library is opened at
 # run time from a path we choose (see `runtime`), so a missing runtime is an
 # error value, not a startup failure. Default features would pull in

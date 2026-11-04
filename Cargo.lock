@@ -3850,6 +3850,7 @@ name = "rawmakase-inference"
 version = "0.1.0"
 dependencies = [
  "ort",
+ "rawmakase-cancel",
  "sha2",
 ]
 
@@ -3916,6 +3917,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "image",
+ "rawmakase-cancel",
  "rawmakase-inference",
  "serde",
  "serde_json",

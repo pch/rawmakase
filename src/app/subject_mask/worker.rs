@@ -236,7 +236,7 @@ fn select_sky(
         state.sky = None;
         let coverage = match endpoint {
             Some(endpoint) => RemoteSession::new(endpoint)
-                .sky(rgb, cancel)
+                .sky(rgb, Cancel::new(cancel))
                 .map_err(remote_failure)?,
             None => {
                 let Some(model) = model else {
@@ -247,7 +247,7 @@ fn select_sky(
                         Some(Sky::load_with(model, &load_options()).map_err(failure)?);
                 }
                 let session = state.sky_session.as_mut().expect("loaded above");
-                session.select(rgb, cancel).map_err(failure)?
+                session.select(rgb, Cancel::new(cancel)).map_err(failure)?
             }
         };
         state.sky = Some((key.to_string(), coverage));
@@ -277,7 +277,9 @@ fn select_locally(
     let session = state.session.as_mut().expect("loaded above");
     if state.analysis.as_ref().is_none_or(|(k, _)| *k != key) {
         state.analysis = None;
-        let analysis = session.analyze(rgb, &job.cancel).map_err(failure)?;
+        let analysis = session
+            .analyze(rgb, Cancel::new(&job.cancel))
+            .map_err(failure)?;
         state.analysis = Some((key.to_string(), analysis));
     }
     let (_, analysis) = state.analysis.as_ref().expect("analysed above");
@@ -290,7 +292,7 @@ fn select_locally(
         ),
         Action::Click(prompt) => (
             session
-                .segment(analysis.embedding(), prompt, &job.cancel)
+                .segment(analysis.embedding(), prompt, Cancel::new(&job.cancel))
                 .map_err(failure)?,
             Feature::Subject,
             Failure::NothingThere,
@@ -319,7 +321,9 @@ fn select_remotely(
             .is_none_or(|(k, _)| *k != key)
         {
             state.remote_analysis = None;
-            let analysis = session.analyze(rgb, &job.cancel).map_err(remote_failure)?;
+            let analysis = session
+                .analyze(rgb, Cancel::new(&job.cancel))
+                .map_err(remote_failure)?;
             state.remote_analysis = Some((key.to_string(), analysis));
         }
         Ok(state
@@ -340,14 +344,14 @@ fn select_remotely(
         }
         Action::Click(prompt) => {
             let analysis = analysed(state)?;
-            let coverage = match session.segment(&analysis, prompt, &job.cancel) {
+            let coverage = match session.segment(&analysis, prompt, Cancel::new(&job.cancel)) {
                 Ok(coverage) => coverage,
                 Err(ClientError::Expired) => {
                     // The worker keeps only the last photos: ask once more.
                     state.remote_analysis = None;
                     let analysis = analysed(state)?;
                     session
-                        .segment(&analysis, prompt, &job.cancel)
+                        .segment(&analysis, prompt, Cancel::new(&job.cancel))
                         .map_err(remote_failure)?
                 }
                 Err(e) => return Err(remote_failure(e)),
