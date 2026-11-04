@@ -8,6 +8,7 @@ use super::*;
 use crate::catalog::RootId;
 use crate::storage::fsops;
 use anyhow::Result;
+use rawmakase_cancel::Cancel;
 
 fn root(fx: &Fx) -> RootId {
     fx.cat.roots().unwrap()[0].0
@@ -133,7 +134,7 @@ fn a_folder_made_meanwhile_is_not_adopted_and_nothing_moves() -> Result<()> {
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &Default::default(),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert!(
@@ -176,7 +177,7 @@ fn a_parent_located_elsewhere_since_planning_is_left() -> Result<()> {
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &Default::default(),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert!(
@@ -268,7 +269,7 @@ fn every_fault_at_every_step_of_making_a_folder_ends_proven() {
                             &mut fx.cat,
                             plan.confirm(),
                             &NoTrash,
-                            &Default::default(),
+                            Cancel::NEVER,
                             &disk,
                         )
                         .unwrap(),
@@ -311,13 +312,7 @@ fn a_folder_made_before_its_id_was_journalled_is_never_adopted() -> Result<()> {
     let plan = fx.plan(op);
     let disk = Faulty::at(Op::CreateDir, 0, Fault::CrashAfter);
     assert!(crashes(|| {
-        let _ = execute::execute_with(
-            &mut fx.cat,
-            plan.confirm(),
-            &NoTrash,
-            &Default::default(),
-            &disk,
-        );
+        let _ = execute::execute_with(&mut fx.cat, plan.confirm(), &NoTrash, Cancel::NEVER, &disk);
     }));
     fx.reopen();
     let recovery = fx.recover(&disk::Real);
@@ -371,7 +366,7 @@ fn made_but_not_added() -> (Fx, BatchId) {
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &Default::default(),
+        Cancel::NEVER,
         &Faulty::default(),
     )
     .unwrap();
@@ -456,7 +451,7 @@ fn a_photo_named_so_there_since_planning_keeps_the_folder_from_being_made() -> R
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &Default::default(),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert!(

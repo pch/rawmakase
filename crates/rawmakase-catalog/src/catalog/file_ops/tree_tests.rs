@@ -10,7 +10,7 @@ use crate::export_settings::ExportOptions;
 use crate::model::recipe::Recipe;
 use crate::storage::fsops;
 use anyhow::Result;
-use std::sync::atomic::AtomicBool;
+use rawmakase_cancel::Cancel;
 
 fn rename_folder(fx: &Fx, relative: &str, name: &str) -> FileOp {
     FileOp::RenameFolder {
@@ -276,7 +276,7 @@ fn a_name_taken_between_plan_and_execute_is_left_alone() -> Result<()> {
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &AtomicBool::new(false),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert!(
@@ -348,7 +348,7 @@ fn a_subtree_changed_in_the_catalog_after_planning_is_left_alone() -> Result<()>
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &AtomicBool::new(false),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert_eq!(
@@ -392,14 +392,8 @@ fn scenario(fx: &mut Fx, op: FileOp, disk: &Faulty) -> (BatchId, Recovery) {
     let batch = plan.batch().clone();
     crashes(|| {
         drop(
-            execute::execute_with(
-                &mut fx.cat,
-                plan.confirm(),
-                &NoTrash,
-                &AtomicBool::new(false),
-                disk,
-            )
-            .unwrap(),
+            execute::execute_with(&mut fx.cat, plan.confirm(), &NoTrash, Cancel::NEVER, disk)
+                .unwrap(),
         );
     });
     fx.reopen();
@@ -481,7 +475,7 @@ fn every_failed_commit_of_a_folder_rename_ends_proven_and_a_restart_finishes_it(
             &mut fx.cat,
             plan.confirm(),
             &NoTrash,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
             &Faulty::default(),
         )?;
         let first = outcome.items.first().map(|i| i.result.clone());
@@ -554,7 +548,7 @@ fn a_root_added_inside_since_planning_keeps_the_folder_where_it_is() -> Result<(
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &AtomicBool::new(false),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert!(

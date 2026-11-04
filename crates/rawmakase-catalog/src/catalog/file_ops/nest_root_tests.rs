@@ -10,9 +10,9 @@ use super::*;
 use crate::catalog::{Catalog, RootId};
 use crate::storage::fsops;
 use anyhow::Result;
+use rawmakase_cancel::Cancel;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 
 /// The fixture's root `trip/` (a photo in it, a folder with a sidecar, a
 /// hidden file and a folder in it), and a second root `elsewhere/` beside
@@ -168,7 +168,7 @@ fn a_root_moves_into_a_folder_of_another_root_and_leaves_the_roots() -> Result<(
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &AtomicBool::new(false),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert_eq!(results(&outcome), [ItemResult::FolderMoved]);
@@ -409,7 +409,7 @@ fn the_journal_kind_is_one_older_releases_fail_closed_on() -> Result<()> {
             &mut fx.cat,
             plan.confirm(),
             &NoTrash,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
             &disk,
         ));
     });
@@ -439,14 +439,8 @@ fn scenario(fx: &mut Fx, op: FileOp, disk: &Faulty) -> (BatchId, Recovery) {
     let batch = plan.batch().clone();
     crashes(|| {
         drop(
-            execute::execute_with(
-                &mut fx.cat,
-                plan.confirm(),
-                &NoTrash,
-                &AtomicBool::new(false),
-                disk,
-            )
-            .unwrap(),
+            execute::execute_with(&mut fx.cat, plan.confirm(), &NoTrash, Cancel::NEVER, disk)
+                .unwrap(),
         );
     });
     fx.reopen();
@@ -528,7 +522,7 @@ fn every_failed_commit_of_a_root_move_is_finished_by_a_restart() -> Result<()> {
             &mut fx.cat,
             plan.confirm(),
             &NoTrash,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
             &Faulty::default(),
         )?;
         assert!(
@@ -572,7 +566,7 @@ fn a_root_or_destination_changed_since_planning_is_left_alone() -> Result<()> {
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &AtomicBool::new(false),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert!(
@@ -593,7 +587,7 @@ fn a_root_or_destination_changed_since_planning_is_left_alone() -> Result<()> {
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &AtomicBool::new(false),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert!(
@@ -667,13 +661,7 @@ fn a_root_moves_to_another_drive_by_a_verified_copy_and_its_original_goes_to_the
     let across = plan.summary().across.clone().expect("it copies");
     assert_eq!(across.files, 5);
     let batch = plan.batch().clone();
-    let outcome = execute::execute_with(
-        &mut fx.cat,
-        plan.confirm(),
-        &trash,
-        &AtomicBool::new(false),
-        &disk,
-    )?;
+    let outcome = execute::execute_with(&mut fx.cat, plan.confirm(), &trash, Cancel::NEVER, &disk)?;
     assert_eq!(results(&outcome), [ItemResult::FolderMoved], "{outcome:?}");
     assert!(outcome.items[0].originals_kept.is_empty(), "{outcome:?}");
     assert_eq!(stored_kind(&fx, &batch), "move_root");
@@ -726,14 +714,7 @@ fn scenario_far(
     let batch = plan.batch().clone();
     crashes(|| {
         drop(
-            execute::execute_with(
-                &mut fx.cat,
-                plan.confirm(),
-                trash,
-                &Default::default(),
-                disk,
-            )
-            .unwrap(),
+            execute::execute_with(&mut fx.cat, plan.confirm(), trash, Cancel::NEVER, disk).unwrap(),
         );
     });
     fx.reopen();
@@ -839,7 +820,7 @@ fn every_fault(kind: Far) -> usize {
         &mut clean.cat,
         plan.confirm(),
         &trash,
-        &Default::default(),
+        Cancel::NEVER,
         &counting,
     )
     .unwrap();
@@ -859,7 +840,7 @@ fn every_fault(kind: Far) -> usize {
         &mut undone.cat,
         plan.confirm(),
         &trash,
-        &Default::default(),
+        Cancel::NEVER,
         &failing,
     );
     let mut runs = 0;
@@ -984,13 +965,7 @@ fn every_failed_journal_write_of_a_root_copy_ends_proven() -> Result<()> {
         let trash = FakeTrash::new(&fx);
         let plan = fx.plan_on(nest(&fx, other, "trips"), &disk)?;
         let batch = plan.batch().clone();
-        let _ = execute::execute_with(
-            &mut fx.cat,
-            plan.confirm(),
-            &trash,
-            &Default::default(),
-            &disk,
-        );
+        let _ = execute::execute_with(&mut fx.cat, plan.confirm(), &trash, Cancel::NEVER, &disk);
         fx.reopen();
         let recovery = fx.recover_with(&far(&there, Far::Ids), &trash);
         proven(
@@ -1041,7 +1016,7 @@ fn a_root_moves_between_two_real_volumes() -> Result<()> {
     let plan = fx.plan(nest(&fx, other, "trips"));
     assert!(plan.summary().across.is_some());
     let trash = FakeTrash::new(&fx);
-    let outcome = execute::execute(&mut fx.cat, plan.confirm(), &trash, &AtomicBool::new(false))?;
+    let outcome = execute::execute(&mut fx.cat, plan.confirm(), &trash, Cancel::NEVER)?;
     assert_eq!(results(&outcome), [ItemResult::FolderMoved], "{outcome:?}");
     let moved = there.join("trips/trip");
     assert_eq!(tree_of(&moved), tree);
@@ -1093,7 +1068,7 @@ fn a_root_moves_between_two_real_volumes() -> Result<()> {
     assert!(plan.summary().across.is_some());
     // A Trash on its drive, as the system's is.
     let trash = FakeTrash::at(&away_scratch.path().join("trash"));
-    let outcome = execute::execute(&mut fx.cat, plan.confirm(), &trash, &AtomicBool::new(false))?;
+    let outcome = execute::execute(&mut fx.cat, plan.confirm(), &trash, Cancel::NEVER)?;
     assert_eq!(results(&outcome), [ItemResult::FolderMoved], "{outcome:?}");
     assert!(outcome.items[0].originals_kept.is_empty(), "{outcome:?}");
     assert_eq!(tree_of(&home.join("away")), tree);

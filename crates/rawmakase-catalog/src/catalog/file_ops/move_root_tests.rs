@@ -8,8 +8,8 @@ use super::*;
 use crate::catalog::{Catalog, RootId};
 use crate::storage::fsops;
 use anyhow::Result;
+use rawmakase_cancel::Cancel;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 
 /// The fixture's root, and a second root `elsewhere/` beside it holding
 /// `files` (a name ending in `/` a folder with a photo `keep.dng`).
@@ -223,14 +223,8 @@ fn scenario(fx: &mut Fx, op: FileOp, disk: &Faulty) -> (BatchId, Recovery) {
     let batch = plan.batch().clone();
     crashes(|| {
         drop(
-            execute::execute_with(
-                &mut fx.cat,
-                plan.confirm(),
-                &NoTrash,
-                &AtomicBool::new(false),
-                disk,
-            )
-            .unwrap(),
+            execute::execute_with(&mut fx.cat, plan.confirm(), &NoTrash, Cancel::NEVER, disk)
+                .unwrap(),
         );
     });
     fx.reopen();
@@ -301,7 +295,7 @@ fn every_failed_commit_of_a_move_into_another_root_is_finished_by_a_restart() ->
             &mut fx.cat,
             plan.confirm(),
             &NoTrash,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
             &Faulty::default(),
         )?;
         assert!(
@@ -339,7 +333,7 @@ fn a_destination_root_relocated_since_planning_is_left_alone() -> Result<()> {
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &AtomicBool::new(false),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert!(

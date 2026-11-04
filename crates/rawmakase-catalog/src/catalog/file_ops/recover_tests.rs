@@ -14,6 +14,7 @@ use crate::catalog::Catalog;
 use crate::storage::Identity;
 use crate::storage::fsops;
 use anyhow::Result;
+use rawmakase_cancel::Cancel;
 use std::collections::{BTreeMap, HashSet};
 
 /// The files and rows a scenario starts from.
@@ -155,14 +156,7 @@ fn scenario(fx: &mut Fx, op: FileOp, trash: &dyn Trash, disk: &Faulty) -> (Batch
     // The outcome is read from the journal after the restart.
     crashes(|| {
         drop(
-            execute::execute_with(
-                &mut fx.cat,
-                plan.confirm(),
-                trash,
-                &Default::default(),
-                disk,
-            )
-            .unwrap(),
+            execute::execute_with(&mut fx.cat, plan.confirm(), trash, Cancel::NEVER, disk).unwrap(),
         );
     });
     fx.reopen();
@@ -183,14 +177,7 @@ fn scenario_on(
     let batch = plan.batch().clone();
     crashes(|| {
         drop(
-            execute::execute_with(
-                &mut fx.cat,
-                plan.confirm(),
-                trash,
-                &Default::default(),
-                disk,
-            )
-            .unwrap(),
+            execute::execute_with(&mut fx.cat, plan.confirm(), trash, Cancel::NEVER, disk).unwrap(),
         );
     });
     fx.reopen();
@@ -407,7 +394,7 @@ fn every_failed_commit_ends_proven_and_a_restart_finishes_it() -> Result<()> {
             &mut fx.cat,
             plan.confirm(),
             &NoTrash,
-            &Default::default(),
+            Cancel::NEVER,
             &Faulty::default(),
         )?;
         let first = outcome.items.first().map(|i| i.result.clone());
@@ -446,13 +433,7 @@ fn the_journal_moves_past_a_step_only_once_its_folders_are_synced() -> Result<()
     let plan = fx.plan(op);
     let batch = plan.batch().clone();
     assert!(crashes(|| {
-        let _ = execute::execute_with(
-            &mut fx.cat,
-            plan.confirm(),
-            &NoTrash,
-            &Default::default(),
-            &disk,
-        );
+        let _ = execute::execute_with(&mut fx.cat, plan.confirm(), &NoTrash, Cancel::NEVER, &disk);
     }));
     fx.reopen();
     let items = journal::of_batch(&fx.cat.db, &batch.0)?;
@@ -483,7 +464,7 @@ fn the_journal_moves_past_a_step_only_once_its_folders_are_synced() -> Result<()
                     &mut fx.cat,
                     plan.confirm(),
                     &NoTrash,
-                    &Default::default(),
+                    Cancel::NEVER,
                     &disk,
                 );
             });
@@ -532,7 +513,7 @@ fn moved_but_unfinished() -> (Fx, BatchId) {
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &Default::default(),
+        Cancel::NEVER,
         &Faulty::default(),
     )
     .unwrap();
@@ -634,13 +615,8 @@ fn a_put_back_resumes_after_a_crash_and_never_completes_forward() -> Result<()> 
         });
         let batch = plan.batch().clone();
         assert!(crashes(|| {
-            let _ = execute::execute_with(
-                &mut fx.cat,
-                plan.confirm(),
-                &NoTrash,
-                &Default::default(),
-                &disk,
-            );
+            let _ =
+                execute::execute_with(&mut fx.cat, plan.confirm(), &NoTrash, Cancel::NEVER, &disk);
         }));
         fx.reopen();
         let items = journal::of_batch(&fx.cat.db, &batch.0)?;
@@ -672,13 +648,7 @@ fn a_put_back_after_another_release_synchronized_the_photo_renames_nothing() -> 
         to: fx.logical(sub),
     });
     assert!(crashes(|| {
-        let _ = execute::execute_with(
-            &mut fx.cat,
-            plan.confirm(),
-            &NoTrash,
-            &Default::default(),
-            &disk,
-        );
+        let _ = execute::execute_with(&mut fx.cat, plan.confirm(), &NoTrash, Cancel::NEVER, &disk);
     }));
     fx.reopen();
     // An older release's Synchronize Folder found the photo in sub.
@@ -706,7 +676,7 @@ fn trashed_but_unfinished() -> (Fx, BatchId) {
         &mut fx.cat,
         plan.confirm(),
         &trash,
-        &Default::default(),
+        Cancel::NEVER,
         &Faulty::default(),
     )
     .unwrap();
@@ -1057,7 +1027,7 @@ fn a_file_the_catalog_spells_otherwise_is_journalled_by_its_own_name() -> Result
         &mut fx.cat,
         plan.confirm(),
         &trash,
-        &Default::default(),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert!(matches!(
@@ -1116,7 +1086,7 @@ fn a_file_back_from_the_trash_under_an_alias_keeps_its_rows() -> Result<()> {
         &mut fx.cat,
         plan.confirm(),
         &trash,
-        &Default::default(),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert!(matches!(
@@ -1148,14 +1118,8 @@ fn only_a_crash_leaves_something_to_recover_when_a_catalog_opens() {
     let disk = Faulty::at(Op::Rename, 1, Fault::CrashAfter);
     crashes(|| {
         drop(
-            execute::execute_with(
-                &mut fx.cat,
-                plan.confirm(),
-                &NoTrash,
-                &Default::default(),
-                &disk,
-            )
-            .unwrap(),
+            execute::execute_with(&mut fx.cat, plan.confirm(), &NoTrash, Cancel::NEVER, &disk)
+                .unwrap(),
         );
     });
     fx.reopen();
@@ -1181,7 +1145,7 @@ fn running_an_operation_forgets_finished_ones_older_than_30_days() {
             &mut fx.cat,
             old.confirm(),
             &NoTrash,
-            &Default::default(),
+            Cancel::NEVER,
             &disk::Real,
         )
         .unwrap(),

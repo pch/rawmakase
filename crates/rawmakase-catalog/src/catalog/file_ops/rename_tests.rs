@@ -10,7 +10,7 @@ use crate::model::recipe::Recipe;
 use crate::storage::Identity;
 use crate::storage::fsops;
 use anyhow::Result;
-use std::sync::atomic::AtomicBool;
+use rawmakase_cancel::Cancel;
 
 /// Renames each photo (its path below the root) to its stem.
 fn rename(fx: &Fx, renames: &[(&str, &str)]) -> FileOp {
@@ -458,7 +458,7 @@ fn a_name_taken_between_plan_and_execute_is_left_alone() -> Result<()> {
             &mut fx.cat,
             plan.confirm(),
             &NoTrash,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
             &Faulty::default(),
         )?;
         assert!(
@@ -583,7 +583,7 @@ fn a_photo_changed_by_another_connection_after_planning_is_left_alone() -> Resul
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &AtomicBool::new(false),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert_eq!(
@@ -629,14 +629,8 @@ fn scenario(fx: &mut Fx, op: FileOp, disk: &Faulty) -> (BatchId, Recovery) {
     let batch = plan.batch().clone();
     crashes(|| {
         drop(
-            execute::execute_with(
-                &mut fx.cat,
-                plan.confirm(),
-                &NoTrash,
-                &AtomicBool::new(false),
-                disk,
-            )
-            .unwrap(),
+            execute::execute_with(&mut fx.cat, plan.confirm(), &NoTrash, Cancel::NEVER, disk)
+                .unwrap(),
         );
     });
     fx.reopen();
@@ -706,7 +700,7 @@ fn every_failed_commit_of_a_rename_ends_proven_and_a_restart_finishes_it() -> Re
             &mut fx.cat,
             plan.confirm(),
             &NoTrash,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
             &Faulty::default(),
         )?;
         let first = outcome.items.first().map(|i| i.result.clone());
@@ -740,7 +734,7 @@ fn renamed_but_unfinished() -> (Fx, BatchId) {
         &mut fx.cat,
         plan.confirm(),
         &NoTrash,
-        &AtomicBool::new(false),
+        Cancel::NEVER,
         &Faulty::default(),
     )
     .unwrap();
@@ -964,7 +958,7 @@ fn a_preview_names_the_batch_in_order_and_plans_exactly_that() -> Result<()> {
         &mut fx.cat,
         preview.plan.confirm(),
         &NoTrash,
-        &AtomicBool::new(false),
+        Cancel::NEVER,
         &Faulty::default(),
     )?;
     assert_eq!(outcome.items.len(), 3);
@@ -1079,13 +1073,8 @@ fn a_photo_on_an_smb_share_is_not_renamed() -> Result<()> {
         ..Faulty::default()
     };
     let plan = fx.plan_on(rename(&fx, &[("a.NEF", "b")]), &disk)?;
-    let outcome = execute::execute_with(
-        &mut fx.cat,
-        plan.confirm(),
-        &NoTrash,
-        &AtomicBool::new(false),
-        &disk,
-    )?;
+    let outcome =
+        execute::execute_with(&mut fx.cat, plan.confirm(), &NoTrash, Cancel::NEVER, &disk)?;
     assert!(
         matches!(results(&outcome)[..], [ItemResult::Unchanged(_)]),
         "{outcome:?}"

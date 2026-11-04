@@ -147,6 +147,7 @@ mod scenarios {
     use crate::storage::{ChecksumRead, FileChecksum};
     use crate::{export_settings::ExportOptions, model::recipe::Recipe};
     use anyhow::Result;
+    use rawmakase_cancel::Cancel;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::AtomicBool;
 
@@ -233,7 +234,7 @@ mod scenarios {
         }
         fn plan_with(&self, scope: SyncScope, online: &dyn Fn(&Path) -> bool) -> Result<SyncPlan> {
             let inputs = self.cat.sync_inputs(scope)?;
-            scan(&inputs, online, &AtomicBool::new(false), &|_| {})
+            scan(&inputs, online, Cancel::NEVER, &|_| {})
         }
         fn apply(&mut self, plan: &SyncPlan, accepted: &Accepted) -> Result<Applied> {
             self.cat
@@ -802,7 +803,7 @@ mod scenarios {
         std::fs::write(f.root.join("Lisbon/new.dng"), bytes(81))?;
         let inputs = f.cat.sync_inputs(SyncScope::All)?;
         let cancel = AtomicBool::new(false);
-        let stopped = scan(&inputs, &|_| true, &cancel, &|_| {
+        let stopped = scan(&inputs, &|_| true, Cancel::new(&cancel), &|_| {
             cancel.store(true, std::sync::atomic::Ordering::Relaxed)
         });
         assert!(stopped.is_err());

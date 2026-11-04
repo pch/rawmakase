@@ -6,8 +6,8 @@ use crate::catalog::{Catalog, PhotoId, ReadChecksum};
 use crate::storage::{ChecksumRead, FileChecksum, Identity};
 use crate::{export_settings::ExportOptions, model::recipe::Recipe};
 use anyhow::Result;
+use rawmakase_cancel::Cancel;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 
 /// Distinct synthetic bytes, larger than the quick hash's three blocks.
 fn bytes(seed: u8) -> Vec<u8> {
@@ -106,7 +106,7 @@ impl Fixture {
         online: &dyn Fn(&Path) -> bool,
     ) -> Result<SyncPlan> {
         let inputs = self.cat.find_inputs(id, file)?;
-        find_on_disk(&inputs, online, &AtomicBool::new(false), &|_| {})
+        find_on_disk(&inputs, online, Cancel::NEVER, &|_| {})
     }
     fn apply(&mut self, plan: &SyncPlan, accepted: &Accepted) -> Result<Applied> {
         self.cat

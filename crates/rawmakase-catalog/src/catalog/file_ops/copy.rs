@@ -49,9 +49,9 @@ use super::{Trash, TrashError};
 use crate::storage::Identity;
 use crate::storage::fsops::{ContentHash, CopyError, EntryKind, FileId, FsError};
 use anyhow::{Context, Result};
+use rawmakase_cancel::Cancel;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// What copying needs of a run or a recovery.
 pub(super) struct Cx<'a> {
@@ -185,7 +185,7 @@ pub(super) fn run(
     catalog: &mut Catalog,
     item: &plan::Item,
     id: OperationId,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     let temps = item.copy.as_ref().map_or(&[][..], |c| &c.temps[..]);
     for (ordinal, m) in item.members.iter().enumerate() {
@@ -231,7 +231,7 @@ fn copy_one(
     m: &journal::NewMember,
     (temp, to): (&Path, &Path),
     proofs: Proofs,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<(), Failed> {
     let disk = cx.disk;
     let (temp, made) = write(
@@ -283,13 +283,13 @@ pub(super) fn write(
     (source, source_id, identity): (&Path, FileId, &Identity),
     temp: &Path,
     proofs: Proofs,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<(PathBuf, FileId), Failed> {
     let disk = cx.disk;
     let journal = |catalog: &mut Catalog, f: &dyn Fn(&mut Write<'_>) -> Result<()>| {
         catalog.db.write(|w| f(w)).map_err(Failed::Journal)
     };
-    if cancel.load(Ordering::Relaxed) {
+    if cancel.is_cancelled() {
         return Err(Problem::Stopped.into());
     }
     // 1. Made where nothing is; what a crash leaves before it is journalled
@@ -333,9 +333,7 @@ pub(super) fn write(
     })?;
     // 2. Copied, durable, with the original's time.
     let content = disk
-        .copy_into(source, &temp, &mut into, &mut |_| {
-            !cancel.load(Ordering::Relaxed)
-        })
+        .copy_into(source, &temp, &mut into, &mut |_| !cancel.is_cancelled())
         .map_err(|e| match e {
             CopyError::Stopped => Problem::Stopped,
             CopyError::NotTheFile => Problem::Disk(e.to_string()),
