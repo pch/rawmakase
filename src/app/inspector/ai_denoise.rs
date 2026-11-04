@@ -4,7 +4,7 @@
 //! being computed, ready, or why there is none. The result arriving is not an edit.
 use super::lensfun::{accent_button, band, note, progress, small, title, warning};
 use super::{control_row, subheading};
-use crate::app::ai_denoise::State;
+use crate::ai_denoise::State;
 use crate::app::design::text;
 use crate::app::step_name::StepName;
 use crate::model::params::ParameterId;

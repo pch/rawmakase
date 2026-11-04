@@ -463,7 +463,8 @@ fn main() -> Result<()> {
                     .unwrap_or_else(|| rawmakase::export::job::stand_in(&input, &im.metadata)),
             );
             // One AI Denoise service for every job: the model loads once.
-            let ai_denoise = rawmakase::app::AiDenoiseCommandLine::new();
+            let ai_denoise =
+                rawmakase::ai_denoise::CommandLine::new(rawmakase::app::user_ai_denoise_cache());
             for job in jobs.iter().filter(|j| !j.output.exists()) {
                 let rendered = (|| -> Result<()> {
                     let preset =
@@ -627,7 +628,8 @@ fn main() -> Result<()> {
             let developed = t.elapsed();
             let im = std::sync::Arc::new(im);
             let ai =
-                rawmakase::app::AiDenoiseCommandLine::new().source(&input, &file, &im, &edit)?;
+                rawmakase::ai_denoise::CommandLine::new(rawmakase::app::user_ai_denoise_cache())
+                    .source(&input, &file, &im, &edit)?;
             let out = develop::render_with_ai(
                 &im,
                 &edit.checked()?,
@@ -751,7 +753,7 @@ fn main() -> Result<()> {
                 "coreml" => rawmakase_inference::Provider::CoreML,
                 other => anyhow::bail!("Unknown provider {other}"),
             };
-            rawmakase::app::denoise_command(rawmakase::app::DenoiseCommand {
+            rawmakase::ai_denoise::command(rawmakase::ai_denoise::Command {
                 input,
                 model,
                 provider,
@@ -760,7 +762,7 @@ fn main() -> Result<()> {
                 plain_output,
                 max_edge,
                 dump,
-                cache,
+                cache: cache.then(rawmakase::app::user_ai_denoise_cache),
                 bench_fit,
                 bench_plain,
                 camera_dump,
