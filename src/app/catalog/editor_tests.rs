@@ -22,7 +22,7 @@ fn a_photo_from_outside_the_library_is_added_and_opened() -> anyhow::Result<()> 
     // As if dropped on the window.
     editor.open(raw.clone());
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while editor.pending_photo.is_some() && std::time::Instant::now() < deadline {
+    while editor.waiting.photo_waits() && std::time::Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(20));
         editor.events(&ctx);
     }
@@ -71,7 +71,7 @@ fn a_dropped_folder_is_added_itself_not_its_parent() -> anyhow::Result<()> {
         })
         .unwrap_or_default();
     assert_eq!(names, ["in.ARW"]);
-    assert!(editor.pending_photo.is_none());
+    assert!(!editor.waiting.photo_waits());
     assert!(editor.module == Module::Library);
     Ok(())
 }
@@ -628,5 +628,151 @@ fn opening_a_file_picks_its_master_after_a_copy_is_promoted() -> anyhow::Result<
     );
     editor.library = Some(Box::new(l));
     assert_eq!(editor.catalog_photo_at(&path), Some(copy));
+    Ok(())
+}
+
+/// The catalog the editor works on, read again from where `editor_with_catalog` made it.
+fn reread(d: &tempfile::TempDir) -> Box<library::Library> {
+    Box::new(
+        library::Library::load(&d.path().join("test.rawmakase"), egui::Context::default()).unwrap(),
+    )
+}
+
+/// A failed catalog operation gives up the outside photo waiting for it and the open photo
+/// it was to follow, but keeps the launch place: the next catalog still restores it.
+#[test]
+fn a_failed_catalog_keeps_the_launch_place_and_drops_what_waited_for_it() -> anyhow::Result<()> {
+    let (d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    e.waiting = crate::app::catalog::Waiting::restoring(CatalogPlace {
+        source: String::new(),
+        photo: Some(ids[1]),
+        module: Module::Library,
+    });
+    e.waiting.open_once_ready(d.path().join("outside.ARW"));
+    e.catalog_arrived(
+        Err("the catalog could not be read".into()),
+        Some((ids[0], None)),
+    );
+    assert!(!e.waiting.photo_waits());
+    assert!(e.waiting.restores());
+    e.catalog_ready(Ok(reread(&d)));
+    assert!(!e.waiting.restores());
+    assert_eq!(e.library.as_ref().unwrap().selected(), Some(ids[1]));
+    Ok(())
+}
+
+/// The launch place is restored once: a catalog arriving later does not go back to it.
+#[test]
+fn the_launch_place_is_restored_once() -> anyhow::Result<()> {
+    let (d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    e.waiting = crate::app::catalog::Waiting::restoring(CatalogPlace {
+        source: String::new(),
+        photo: Some(ids[1]),
+        module: Module::Library,
+    });
+    e.catalog_ready(Ok(reread(&d)));
+    assert_eq!(e.library.as_ref().unwrap().selected(), Some(ids[1]));
+    e.catalog_ready(Ok(reread(&d)));
+    assert_ne!(e.library.as_ref().unwrap().selected(), Some(ids[1]));
+    Ok(())
+}
+
+/// What a catalog operation says while it runs goes once its result arrives, whether the
+/// catalog opened, folders were added or it failed.
+#[test]
+fn the_catalog_status_goes_when_its_result_arrives() -> anyhow::Result<()> {
+    let (d, mut e, _) = editor_with_catalog(&["a.RAF"])?;
+    let ctx = e.context.clone();
+    for result in [
+        Event::CatalogReady(Err("broken".into())),
+        Event::CatalogReady(Ok(reread(&d))),
+        Event::FoldersAdded {
+            result: Err("broken".into()),
+            source: Vec::new(),
+        },
+        Event::FolderSyncApplied(Err("broken".into())),
+    ] {
+        e.tx.send(Event::CatalogWorking("Opening the catalog…".into()))
+            .unwrap();
+        e.events(&ctx);
+        assert_eq!(e.catalog_work.as_deref(), Some("Opening the catalog…"));
+        e.tx.send(result).unwrap();
+        e.events(&ctx);
+        assert!(e.catalog_work.is_none());
+    }
+    Ok(())
+}
+
+/// A photo opened while the catalog is still opening waits for it, then has its folder
+/// added (a second catalog arriving) and opens.
+#[test]
+fn a_photo_opened_while_the_catalog_opens_waits_then_is_added_and_opened() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("photos.rawmakase");
+    crate::catalog::Catalog::create(&path)?;
+    let outside = dir.path().join("outside");
+    std::fs::create_dir(&outside)?;
+    let raw = outside.join("photo.ARW");
+    std::fs::write(&raw, b"identity fixture")?;
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    // The catalog is opening (its dialog), and the photo comes meanwhile.
+    assert!(editor.activity.begin_dialog());
+    editor.open(raw.clone());
+    assert!(editor.waiting.photo_waits());
+    editor.catalog_ready(Ok(Box::new(library::Library::load(&path, ctx.clone())?)));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while editor.waiting.photo_waits() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        editor.events(&ctx);
+    }
+    let raw = raw.canonicalize()?;
+    let id = editor
+        .library
+        .as_ref()
+        .and_then(|l| l.session.photos().iter().find(|p| p.path == raw))
+        .map(|p| p.id);
+    assert!(id.is_some());
+    assert_eq!(editor.document.catalog_photo, id);
+    Ok(())
+}
+
+/// A photo whose folder was added but which is still not in the catalog is given up,
+/// with a message, without adding the folder again.
+#[test]
+fn a_photo_still_missing_once_its_folder_is_added_is_given_up() -> anyhow::Result<()> {
+    let (d, mut e, _) = editor_with_catalog(&["a.RAF"])?;
+    e.waiting
+        .open_once_added(d.path().join("photos/missing.RAF"));
+    e.catalog_ready(Ok(reread(&d)));
+    assert!(!e.waiting.photo_waits());
+    assert!(!e.activity.is_busy());
+    assert!(
+        e.messages.line().contains("could not be added"),
+        "{}",
+        e.messages.line()
+    );
+    Ok(())
+}
+
+/// After a synchronization the open photo stays open when the catalog read again still
+/// lists it where its file was found; listed somewhere else, it closes.
+#[test]
+fn the_open_photo_stays_after_a_sync_only_where_its_file_was_found() -> anyhow::Result<()> {
+    let (d, mut e, ids) = editor_with_catalog(&["a.RAF"])?;
+    e.module = Module::Develop;
+    e.document.catalog_photo = Some(ids[0]);
+    e.catalog_arrived(Ok(reread(&d)), Some((ids[0], None)));
+    assert_eq!(e.document.catalog_photo, Some(ids[0]));
+    e.catalog_arrived(
+        Ok(reread(&d)),
+        Some((ids[0], Some(d.path().join("elsewhere/a.RAF")))),
+    );
+    assert_eq!(e.document.catalog_photo, None);
     Ok(())
 }

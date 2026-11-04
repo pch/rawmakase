@@ -441,33 +441,41 @@ impl Editor {
             }
         }
     }
-    /// Whether the catalog `l`, opened again after a synchronization, still
-    /// has the photo open in Develop: where its file was found moved, there.
-    fn keeps_open_photo(&self, l: &crate::app::library::Library) -> bool {
-        let Some((id, path)) = &self.relink_open else {
-            return false;
-        };
-        self.document.catalog_photo == Some(*id)
-            && self.library.as_ref().is_some_and(|old| {
-                old.session.catalog().location() == l.session.catalog().location()
-            })
-            && l.photo(*id)
-                .is_some_and(|p| path.as_ref().is_none_or(|path| &p.path == path))
-    }
+    /// A catalog arrived (opened, or read again after adding or relinking a folder), or
+    /// failed to.
     pub(in crate::app) fn catalog_ready(
         &mut self,
         result: Result<Box<crate::app::library::Library>, String>,
+    ) {
+        self.catalog_arrived(result, None);
+    }
+    /// The catalog read again after a synchronization, `follow` naming the photo open in
+    /// Develop and where its file was found moved: it stays open where the catalog still
+    /// lists it there (see [`crate::app::catalog::keeps_open_photo`]).
+    pub(in crate::app) fn catalog_arrived(
+        &mut self,
+        result: Result<Box<crate::app::library::Library>, String>,
+        follow: Option<crate::app::catalog::Follow>,
     ) {
         self.activity.finish_dialog();
         // Folder locations may have changed with it.
         self.save_computer_name();
         self.preferences.locations = None;
         match result {
-            Ok(mut l) if self.keeps_open_photo(&l) => {
+            Ok(mut l)
+                if crate::app::catalog::keeps_open_photo(
+                    follow.as_ref(),
+                    self.document.catalog_photo,
+                    self.library.as_ref().is_some_and(|old| {
+                        old.session.catalog().location() == l.session.catalog().location()
+                    }),
+                    |id| l.photo(id).map(|p| p.path.clone()),
+                ) =>
+            {
                 // After a synchronization the open photo stays open, its
                 // edit, History and pending save kept; where its file was
                 // found moved, the document follows it.
-                let (_, path) = self.relink_open.take().expect("kept");
+                let (_, path) = follow.expect("kept");
                 if let Some(path) = path {
                     self.document.relink(path);
                 }
@@ -484,7 +492,6 @@ impl Editor {
                 let _ = self.save_session();
             }
             Ok(mut l) => {
-                self.relink_open = None;
                 self.onboarding.catalog_error = None;
                 // The photo being left is Previous, as when moving between photos.
                 if let Some(settings) = self.current_settings() {
@@ -524,7 +531,7 @@ impl Editor {
                 self.library = Some(l);
                 self.module = Module::Library;
                 // On launch, return to the folder, photo and module of last time.
-                let restore = self.restore.take();
+                let restore = self.waiting.take_restore();
                 if let Some(library) = &mut self.library {
                     if let Some(place) = &restore {
                         library.restore_source(&place.source, place.photo);
@@ -547,8 +554,7 @@ impl Editor {
                 let _ = self.save_session();
             }
             Err(e) => {
-                self.relink_open = None;
-                self.pending_photo = None;
+                self.waiting.failed();
                 self.onboarding.catalog_error = Some(e.clone());
                 self.messages.fail(format!("Catalog operation failed: {e}"));
             }

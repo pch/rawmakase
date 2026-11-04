@@ -1001,8 +1001,7 @@ impl Editor {
         self.forget_removed(&applied.removed);
         let moved = moved_files(library.session.photos(), &applied);
         self.move_preview_intents(library.session.catalog().location(), &moved);
-        self.relink_open = relink;
-        self.catalog_ready(Ok(library));
+        self.catalog_arrived(Ok(library), relink);
     }
 }
 
