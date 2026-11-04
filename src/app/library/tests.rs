@@ -1559,7 +1559,7 @@ fn preview_textures_keep_the_newest_192() -> Result<()> {
 fn an_edited_preview_from_develop_is_kept_for_the_file_it_was_rendered_from() -> Result<()> {
     let (_directory, mut library) = library_of(&["a.RAF"])?;
     let ctx = library.ctx.clone();
-    let photo = library.session.photos[0].clone();
+    let photo = library.session.photos()[0].clone();
     let (job_tx, jobs) = previews::EditQueue::detached();
     library.cache.edit_tx = job_tx;
     library.update_edited(
