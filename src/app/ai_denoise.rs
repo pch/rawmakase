@@ -14,6 +14,7 @@
 use crate::camera_data::CameraImage;
 use crate::develop::AiSource;
 use anyhow::{Result, anyhow, bail};
+use rawmakase_cancel::Cancel;
 use rawmakase_decode::ai_cache::{AiCache, AiEntry};
 use rawmakase_decode::ai_denoise::{AiBase, ModelOutput, PackedBayer, Unsupported, assemble};
 use rawmakase_inference::denoise::{GainReference, Grid, Output, TileModel, fit_gain, run};
@@ -654,7 +655,9 @@ impl Service {
                                 cancel,
                             )
                             .ok()?;
-                            AiSource::recover(image, cancel).ok().map(State::Partial)
+                            AiSource::recover(image, Cancel::new(cancel))
+                                .ok()
+                                .map(State::Partial)
                         });
                     }
                 }
@@ -814,7 +817,7 @@ impl Service {
                     plain,
                     &AtomicBool::new(false),
                 );
-                match image.and_then(|i| AiSource::recover(i, &AtomicBool::new(false))) {
+                match image.and_then(|i| AiSource::recover(i, Cancel::NEVER)) {
                     Ok(source) => State::Ready(source),
                     Err(e) => State::Failed(format!("{e:#}")),
                 }
@@ -1309,7 +1312,7 @@ impl CommandLine {
         let cancel = AtomicBool::new(false);
         self.service
             .get(path, file, image, &cancel)
-            .and_then(|ai| AiSource::recover(Arc::unwrap_or_clone(ai), &cancel))
+            .and_then(|ai| AiSource::recover(Arc::unwrap_or_clone(ai), Cancel::new(&cancel)))
             .map_err(|e| anyhow!("AI Denoise: {e:#}"))
     }
 }
@@ -1455,7 +1458,7 @@ pub fn command(c: Command) -> Result<()> {
         &plain,
         &AtomicBool::new(false),
     )?;
-    let source = AiSource::recover(image, &AtomicBool::new(false))?;
+    let source = AiSource::recover(image, Cancel::NEVER)?;
     let assembled = t.elapsed();
     // The worker and its ONNX session gone, so what remains is what Develop keeps.
     super::task::wait_for(vec![service.stop()], Duration::from_secs(10));
@@ -1510,7 +1513,7 @@ pub fn command(c: Command) -> Result<()> {
                 &recipe.checked()?,
                 ai,
                 c.max_edge,
-                &AtomicBool::new(false),
+                Cancel::NEVER,
             )?;
             image::RgbImage::from_raw(out.width, out.height, out.rgb8())
                 .ok_or_else(|| anyhow!("bad render"))?
@@ -1574,7 +1577,7 @@ fn camera_dump(
     off.noise_chroma = 0.;
     write(
         "plain",
-        &*crate::develop::quality::denoised_camera(plain, &off, None, &cancel)?,
+        &*crate::develop::quality::denoised_camera(plain, &off, None, Cancel::new(&cancel))?,
     )?;
     let mut ai = off;
     ai.ai_denoise = crate::model::ai_denoise::AiDenoise {
@@ -1583,14 +1586,14 @@ fn camera_dump(
     };
     write(
         "ai",
-        &*crate::develop::quality::denoised_camera(plain, &ai, Some(source), &cancel)?,
+        &*crate::develop::quality::denoised_camera(plain, &ai, Some(source), Cancel::new(&cancel))?,
     )?;
     for luma in nr_luma {
         let mut nr = recipe.clone();
         nr.noise_luma = *luma;
         write(
             &format!("nr{:.0}", luma * 100.),
-            &*crate::develop::quality::denoised_camera(plain, &nr, None, &cancel)?,
+            &*crate::develop::quality::denoised_camera(plain, &nr, None, Cancel::new(&cancel))?,
         )?;
     }
     std::fs::write(
@@ -1640,7 +1643,7 @@ fn bench(
                 None => recipe.exposure = amount - 0.5,
             }
             let t = Instant::now();
-            let _ = renderer.render(plain, &recipe, edge, region, &cancel)?;
+            let _ = renderer.render(plain, &recipe, edge, region, Cancel::new(&cancel))?;
             if i > 0 {
                 times.push(t.elapsed().as_secs_f64() * 1000.);
             }

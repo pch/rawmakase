@@ -3,6 +3,7 @@ use rawmakase::{
     camera_data::{CameraImage, Metadata},
     camera_profiles, develop,
 };
+use rawmakase_cancel::Cancel;
 #[test]
 #[ignore = "User-provided private DCP files; set RAWMAKASE_PROFILES"]
 fn imported_profiles_render_and_roundtrip() -> anyhow::Result<()> {
@@ -47,7 +48,7 @@ fn imported_profiles_render_and_roundtrip() -> anyhow::Result<()> {
             scale_clipped: 0,
             recovered: Default::default(),
         };
-        let out = develop::render(&im, &recipe.checked()?, 0)?;
+        let out = develop::render(&im, &recipe.checked()?, 0, Cancel::NEVER)?;
         assert!(
             out.pixels
                 .iter()
@@ -113,7 +114,7 @@ fn imported_enhanced_profiles_match_camera_and_resolve_xmp() -> anyhow::Result<(
             scale_clipped: 0,
             recovered: Default::default(),
         };
-        let full = develop::render(&image, &recipe.checked()?, 0)?;
+        let full = develop::render(&image, &recipe.checked()?, 0, Cancel::NEVER)?;
         let tile = develop::render_region(&image, &recipe.checked()?, [4, 4, 8, 8])?;
         for y in 0..8 {
             for x in 0..8 {

@@ -6,6 +6,7 @@ use super::{
 };
 use crate::develop::AutoTone;
 use crate::model::recipe::Recipe;
+use rawmakase_cancel::Cancel;
 
 /// Everything an estimate of `kind` was fitted against: `r` without the settings it
 /// chooses. Auto tone measures the photo before its adjustments, as its profile, white
@@ -63,10 +64,10 @@ impl Editor {
             move |tx| {
                 let result = match kind {
                     AutoKind::Settings => {
-                        crate::develop::auto_tone_cancellable(&im, &base, &cancel)
+                        crate::develop::auto_tone(&im, &base, Cancel::new(&cancel))
                     }
                     AutoKind::WhiteBalance => {
-                        crate::develop::auto_white_balance_cancellable(&im, &base, &cancel)
+                        crate::develop::auto_white_balance(&im, &base, Cancel::new(&cancel))
                     }
                 }
                 .map(Box::new)

@@ -1,13 +1,14 @@
 //! The stage before the per-pixel one: the measured Texture's image, and the photo's
 //! copies for the Shadows/Highlights map and for measuring it.
 use super::*;
+use rawmakase_cancel::Cancel;
 
 /// The measured Texture's detail of `im` at `scale`, through the stage cache when there
 /// is one.
 pub(crate) fn texture_detail(
     im: &Arc<CameraImage>,
     scale: f32,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     cache: Option<&mut StageCache>,
 ) -> Result<Arc<develop::texture::TextureDetail>> {
     match cache {
@@ -27,7 +28,7 @@ pub(super) fn textured(
     im: &Arc<CameraImage>,
     amount: f32,
     scale: f32,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     cache: Option<&mut StageCache>,
 ) -> Result<Arc<CameraImage>> {
     let Some(cache) = cache else {
@@ -51,7 +52,7 @@ pub(super) fn textured(
 fn measurement_copy(
     full: &Arc<CameraImage>,
     cache: Option<&mut StageCache>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Arc<CameraImage>> {
     let make = || {
         check_cancel(cancel)?;
@@ -74,7 +75,7 @@ fn measurement_copy(
 pub(super) fn measurement_copies(
     full: &Retouched,
     mut cache: Option<&mut StageCache>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<(Arc<CameraImage>, Arc<CameraImage>)> {
     let measured = measurement_copy(&full.image, cache.as_deref_mut(), cancel)?;
     let unretouched = if Arc::ptr_eq(&full.image, &full.unretouched) {
@@ -92,7 +93,7 @@ pub(super) fn local_stage(
     full: &Retouched,
     r: &Recipe,
     scale: f32,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     cache: Option<&mut StageCache>,
 ) -> Result<(Toned, Recipe)> {
     // Shadows, Highlights and Clarity render in the pixel pipeline, from the photo's

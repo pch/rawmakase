@@ -12,6 +12,7 @@ use crate::develop::targeted::{DRAG_RATE, HslChannel, Target, TargetSample, Targ
 use crate::model::recipe::Recipe;
 use crate::model::recipe::Treatment;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use rawmakase_cancel::Cancel;
 
 /// A drag with the tool, from the press to the sample's arrival or the release,
 /// whichever comes last.
@@ -184,8 +185,14 @@ impl Editor {
             self.context.clone(),
             move |tx| {
                 let [u, v] = at;
-                let result = crate::develop::quality::targeted_sample(&im, &sampled, u, v, &cancel)
-                    .map_err(|e| format!("Cannot sample the photo: {e:#}"));
+                let result = crate::develop::quality::targeted_sample(
+                    &im,
+                    &sampled,
+                    u,
+                    v,
+                    Cancel::new(&cancel),
+                )
+                .map_err(|e| format!("Cannot sample the photo: {e:#}"));
                 let _ = tx.send(super::worker::Event::TargetedSample {
                     id,
                     generation,

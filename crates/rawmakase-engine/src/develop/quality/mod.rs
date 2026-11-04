@@ -13,14 +13,12 @@ use crate::{
     model::{recipe::Recipe, valid::ValidRecipe},
 };
 use anyhow::{Result, ensure};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::Arc;
 
-fn check_cancel(cancel: &AtomicBool) -> Result<()> {
-    ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
+fn check_cancel(cancel: Cancel<'_>) -> Result<()> {
+    ensure!(!cancel.is_cancelled(), "Render superseded");
     Ok(())
 }
 
@@ -95,11 +93,12 @@ pub use samples::*;
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
     #[test]
     fn cancelled_highlight_recovery_keeps_nothing() {
         let cancel = AtomicBool::new(true);
         let image = fixture();
-        assert!(recover_highlights_cancellable(&image, &cancel).is_err());
+        assert!(recover_highlights(&image, Cancel::new(&cancel)).is_err());
         assert!(image.recovered.get().is_none());
     }
     pub(super) fn fixture() -> CameraImage {
@@ -139,8 +138,8 @@ pub(super) mod tests {
         let saved = serde_json::to_vec(&r)?;
         let restored: Recipe = serde_json::from_slice(&saved)?;
         assert_eq!(r, restored);
-        let full = render(&im, &r.checked()?, 0, None)?;
-        let tile = render(&im, &r.checked()?, 0, Some([30, 25, 40, 40]))?;
+        let full = render(&im, &r.checked()?, 0, None, Cancel::NEVER)?;
+        let tile = render(&im, &r.checked()?, 0, Some([30, 25, 40, 40]), Cancel::NEVER)?;
         for y in 0..40 {
             for x in 0..40 {
                 let a = tile.pixels[y * 40 + x];
@@ -150,10 +149,13 @@ pub(super) mod tests {
                 }
             }
         }
-        assert_eq!(full.pixels, render(&im, &r.checked()?, 0, None)?.pixels);
+        assert_eq!(
+            full.pixels,
+            render(&im, &r.checked()?, 0, None, Cancel::NEVER)?.pixels
+        );
         assert_ne!(
             full.pixels,
-            render(&im, &Recipe::default().checked()?, 0, None)?.pixels
+            render(&im, &Recipe::default().checked()?, 0, None, Cancel::NEVER)?.pixels
         );
         Ok(())
     }
@@ -175,9 +177,9 @@ pub(super) mod tests {
         // Negative Dehaze from its tables, positive from the photo's haze.
         for dehaze in [-0.3, 0.6] {
             r.effects.dehaze = dehaze;
-            let full = render(&im, &r.checked()?, 0, None)?;
+            let full = render(&im, &r.checked()?, 0, None, Cancel::NEVER)?;
             for [x, y, w, h] in [[0, 0, 20, 30], [30, 25, 40, 40], [80, 60, 16, 20]] {
-                let tile = render(&im, &r.checked()?, 0, Some([x, y, w, h]))?;
+                let tile = render(&im, &r.checked()?, 0, Some([x, y, w, h]), Cancel::NEVER)?;
                 for yy in 0..h {
                     for xx in 0..w {
                         let a = tile.pixels[(yy * w + xx) as usize];
@@ -198,9 +200,9 @@ pub(super) mod tests {
             sharpening: 0.8,
             ..Default::default()
         };
-        let full = render(&im, &r.checked()?, 0, None)?;
+        let full = render(&im, &r.checked()?, 0, None, Cancel::NEVER)?;
         let expected = resize(full, 48);
-        let fit = render(&im, &r.checked()?, 48, None)?;
+        let fit = render(&im, &r.checked()?, 48, None, Cancel::NEVER)?;
         assert_eq!(fit.pixels, expected.pixels);
         Ok(())
     }
@@ -208,12 +210,12 @@ pub(super) mod tests {
     fn cancellation_does_not_publish_partial_frame() {
         let im = fixture();
         assert!(
-            render_cancellable(
+            render(
                 &im,
                 &Recipe::default().checked().unwrap(),
                 0,
                 None,
-                &std::sync::atomic::AtomicBool::new(true)
+                Cancel::new(&std::sync::atomic::AtomicBool::new(true))
             )
             .is_err()
         );
@@ -227,7 +229,7 @@ pub(super) mod tests {
                 .map(|i| [if i % 32 < 16 { 0.3 } else { 0.6 }; 3])
                 .collect(),
         };
-        sharpen(&mut im, &Recipe::default());
+        sharpen(&mut im, &Recipe::default(), None, Cancel::NEVER).unwrap();
         assert!(im.pixels[15][0] < 0.3);
         assert!(im.pixels[16][0] > 0.6);
         assert!(im.pixels.iter().all(|p| p[0] == p[1] && p[1] == p[2]));
@@ -245,7 +247,7 @@ pub(super) mod tests {
             pixels: vec![[0.4, 0.3, 0.2]; 400],
         };
         let before = im.pixels.clone();
-        sharpen(&mut im, &Recipe::default());
+        sharpen(&mut im, &Recipe::default(), None, Cancel::NEVER).unwrap();
         for (a, b) in im.pixels.iter().zip(before) {
             for c in 0..3 {
                 assert!((a[c] - b[c]).abs() < 1e-6);

@@ -12,6 +12,7 @@ use rawmakase::{
     },
     model::{recipe::Recipe, red_eye::RedEyeOp},
 };
+use rawmakase_cancel::Cancel;
 
 const PUPIL: f32 = 14.;
 
@@ -53,7 +54,7 @@ fn red_pupil_turns_dark_and_neutral_and_the_iris_stays() {
         sharpening: 0.,
         ..Recipe::with_profiles(&im.metadata, &embedded_profiles(&im))
     };
-    let base = render(&im, &recipe.checked().unwrap(), 0).unwrap();
+    let base = render(&im, &recipe.checked().unwrap(), 0, Cancel::NEVER).unwrap();
     let at = |r: &rawmakase::rendered::Rendered, d: f32, t: f32| {
         let [u, v] = ViewMapping::new(&im, &recipe)
             .to_view(frame.to_image(c[0] + d * t.cos(), c[1] + d * t.sin()));
@@ -74,7 +75,7 @@ fn red_pupil_turns_dark_and_neutral_and_the_iris_stays() {
             darken,
         }]
         .into();
-        render(&im, &r.checked().unwrap(), 0).unwrap()
+        render(&im, &r.checked().unwrap(), 0, Cancel::NEVER).unwrap()
     };
     let half = corrected(0.5);
     let (before, after) = (at(&base, 0., 0.), at(&half, 0., 0.));

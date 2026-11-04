@@ -83,12 +83,9 @@
 use crate::model::recipe::Recipe;
 use crate::rendered::Rendered;
 use anyhow::{Context, Result, ensure};
+use rawmakase_cancel::Cancel;
 use std::{
-    sync::{
-        PoisonError, RwLock, RwLockWriteGuard,
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
+    sync::{PoisonError, RwLock, RwLockWriteGuard, mpsc},
     time::Duration,
 };
 use wgpu::util::DeviceExt;
@@ -375,9 +372,9 @@ impl Processor {
         image: &Rendered,
         recipe: &Recipe,
         max_edge: u32,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Rendered> {
-        ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
+        ensure!(!cancel.is_cancelled(), "Render superseded");
         recipe.validate()?;
         ensure!(
             image.width > 0
@@ -438,7 +435,7 @@ impl Processor {
         recipe: &Recipe,
         dimensions: [u32; 4],
         sizes: [u64; 3],
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Rendered> {
         let [w, h, ow, oh] = dimensions;
         let resize = w != ow || h != oh;
@@ -536,7 +533,7 @@ impl Processor {
         });
         self.queue
             .write_buffer(&b.source, 0, bytemuck::cast_slice(&image.pixels));
-        ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
+        ensure!(!cancel.is_cancelled(), "Render superseded");
         let mut encoder = self.device.create_command_encoder(&Default::default());
         let mut dispatch = |pipeline: usize, width: u32, height: u32| {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -576,7 +573,7 @@ impl Processor {
         }
         rx.recv_timeout(Duration::from_secs(1))
             .context("GPU readback timed out")??;
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             b.staging.unmap();
             anyhow::bail!("Render superseded");
         }

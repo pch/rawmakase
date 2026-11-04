@@ -9,6 +9,7 @@ use crate::{
     raw::Raw,
 };
 use anyhow::Result;
+use rawmakase_cancel::Cancel;
 use std::{
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
@@ -83,7 +84,7 @@ impl FullSize {
     ) -> Result<CameraImage> {
         let image = raw.develop(Decode::Full(self.demosaic), cancel)?;
         if policy != DecodePolicy::Export {
-            crate::develop::quality::recovered(&image, cancel)?;
+            crate::develop::quality::recovered(&image, Cancel::new(cancel))?;
         }
         Ok(image)
     }

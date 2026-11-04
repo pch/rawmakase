@@ -13,6 +13,7 @@ use crate::{
     develop::point_color::{PointColors, add_sample},
 };
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use rawmakase_cancel::Cancel;
 
 impl super::Editor {
     /// Whether Point Color's tab is where the photo is edited: Develop (not Before), a
@@ -45,9 +46,14 @@ impl super::Editor {
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
-                let result =
-                    crate::develop::quality::point_color_pick(&im, &sampled, u, v, &cancel)
-                        .map_err(|e| format!("Cannot sample a color: {e:#}"));
+                let result = crate::develop::quality::point_color_pick(
+                    &im,
+                    &sampled,
+                    u,
+                    v,
+                    Cancel::new(&cancel),
+                )
+                .map_err(|e| format!("Cannot sample a color: {e:#}"));
                 let _ = tx.send(super::worker::Event::PointColorSample {
                     id,
                     generation,

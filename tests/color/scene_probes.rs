@@ -11,13 +11,10 @@ use crate::{Case, bless, cases, corpus, develop, dng, embedded_profiles};
 use rawmakase::{
     camera_data::CameraImage, camera_profiles::CameraProfile, develop::quality, rendered::Rendered,
 };
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeMap,
-    path::Path,
-    sync::{Arc, atomic::AtomicBool},
-};
+use std::{collections::BTreeMap, path::Path, sync::Arc};
 
 /// ProPhoto luminance.
 const Y: [f64; 3] = [0.2880402, 0.7118741, 0.0000857];
@@ -568,13 +565,7 @@ fn scene_output(im: &CameraImage, profiles: &[Arc<CameraProfile>], xmp: &str) ->
             Some(&rawmakase::develop::Measures(im)),
         )
         .unwrap();
-    quality::render_stage(
-        im,
-        &recipe,
-        quality::Stage::SceneOutput,
-        &AtomicBool::new(false),
-    )
-    .unwrap()
+    quality::render_stage(im, &recipe, quality::Stage::SceneOutput, Cancel::NEVER).unwrap()
 }
 
 /// A clipped plateau with a smooth bright edge, surrounded by a dark scene. The

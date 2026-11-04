@@ -1,5 +1,6 @@
 //! The render entry points: the resident GPU render, a level of the preview, and full-resolution output.
 use super::*;
+use rawmakase_cancel::Cancel;
 
 /// The GPU path for everything before the per-pixel stage, with the photo (or pyramid
 /// level) `source` kept on the device: the region's samples are made there, then
@@ -16,7 +17,7 @@ fn render_resident(
     region: [u32; 4],
     spread: f32,
     finish: &develop::gpu::Finish,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     stages: &mut Stages,
 ) -> Result<Option<develop::gpu::Frame>> {
     let Some(display) = stages.display else {
@@ -138,7 +139,7 @@ pub(crate) fn render_level(
     r: &ValidRecipe,
     size: (u32, u32),
     region: [u32; 4],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     stages: &mut Stages,
 ) -> Result<Output> {
     check_cancel(cancel)?;
@@ -254,31 +255,17 @@ pub fn render(
     r: &ValidRecipe,
     max_edge: u32,
     region: Option<[u32; 4]>,
-) -> Result<Rendered> {
-    render_cancellable(
-        im,
-        r,
-        max_edge,
-        region,
-        &std::sync::atomic::AtomicBool::new(false),
-    )
-}
-pub fn render_cancellable(
-    im: &CameraImage,
-    r: &ValidRecipe,
-    max_edge: u32,
-    region: Option<[u32; 4]>,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Rendered> {
     render_preview(im, r, None, max_edge, region, cancel, None).map(Output::pixels)
 }
-/// [`render_cancellable`] of a photo whose AI Denoise source is `ai`.
+/// [`render`](fn@render) of a photo whose AI Denoise source is `ai`.
 pub fn render_with_ai(
     im: &CameraImage,
     r: &ValidRecipe,
     ai: Option<&crate::develop::AiSource>,
     max_edge: u32,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Rendered> {
     render_preview(im, r, ai, max_edge, None, cancel, None).map(Output::pixels)
 }
@@ -288,13 +275,10 @@ pub(crate) fn render_preview(
     ai: Option<&crate::develop::AiSource>,
     max_edge: u32,
     region: Option<[u32; 4]>,
-    cancel: &std::sync::atomic::AtomicBool,
+    cancel: Cancel<'_>,
     mut stages: Option<&mut Stages>,
 ) -> Result<Output> {
-    ensure!(
-        !cancel.load(std::sync::atomic::Ordering::Relaxed),
-        "Render superseded"
-    );
+    ensure!(!cancel.is_cancelled(), "Render superseded");
     let effective = r.resolved(&im.metadata);
     let r = effective.as_ref();
     if let Some(p) = &r.profile {
@@ -323,10 +307,7 @@ pub(crate) fn render_preview(
     let right = (x + w + halo).min(g.width);
     let bottom = (y + h + halo).min(g.height);
     // Highlight recovery is prepared once per decoded image by the caller; see CameraImage.
-    ensure!(
-        !cancel.load(std::sync::atomic::Ordering::Relaxed),
-        "Render superseded"
-    );
+    ensure!(!cancel.is_cancelled(), "Render superseded");
     let base = [left, top, right - left, bottom - top];
     // A display shows the render unresized; a Fit smaller than the photo comes from
     // the pyramid instead (`PreviewRenderer::render_fit`).
@@ -413,19 +394,13 @@ pub(crate) fn render_preview(
         out = finished;
         gpu_sharpened = true;
     }
-    ensure!(
-        !cancel.load(std::sync::atomic::Ordering::Relaxed),
-        "Render superseded"
-    );
+    ensure!(!cancel.is_cancelled(), "Render superseded");
     if !gpu_sharpened {
-        sharpen_cancellable(&mut out, r, weights.as_deref(), cancel)?;
+        sharpen(&mut out, r, weights.as_deref(), cancel)?;
         local_noise(&mut out, weights.as_deref());
     }
     crate::develop::effects::spatial_finish(&mut out, r, [left, top], [g.width, g.height]);
-    ensure!(
-        !cancel.load(std::sync::atomic::Ordering::Relaxed),
-        "Render superseded"
-    );
+    ensure!(!cancel.is_cancelled(), "Render superseded");
     if region.is_some() {
         Ok(Output::Pixels(crop(out, [x - left, y - top, w, h])))
     } else {
@@ -440,10 +415,7 @@ pub(crate) fn render_preview(
             if let Some(finished) = finished {
                 return Ok(Output::Pixels(finished));
             }
-            ensure!(
-                !cancel.load(std::sync::atomic::Ordering::Relaxed),
-                "Render superseded"
-            );
+            ensure!(!cancel.is_cancelled(), "Render superseded");
         }
         Ok(Output::Pixels(resize(out, max_edge)))
     }

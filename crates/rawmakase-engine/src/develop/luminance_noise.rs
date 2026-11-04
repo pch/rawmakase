@@ -5,8 +5,8 @@
 use super::laplacian::{Plane, mirror};
 use crate::camera_data::CameraImage;
 use anyhow::{Result, ensure};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 const LEVELS: usize = 5;
 
@@ -25,7 +25,7 @@ impl LuminanceDenoise {
         })
     }
 
-    pub(crate) fn apply(&self, im: &CameraImage, cancel: &AtomicBool) -> Result<CameraImage> {
+    pub(crate) fn apply(&self, im: &CameraImage, cancel: Cancel<'_>) -> Result<CameraImage> {
         check(cancel)?;
         let plane = Plane {
             w: im.width as usize,
@@ -42,7 +42,7 @@ impl LuminanceDenoise {
             .par_chunks_mut(1024)
             .enumerate()
             .for_each(|(chunk, pixels)| {
-                if cancel.load(Ordering::Relaxed) {
+                if cancel.is_cancelled() {
                     return;
                 }
                 for (j, p) in pixels.iter_mut().enumerate() {
@@ -65,7 +65,7 @@ impl LuminanceDenoise {
         level: usize,
         finer_noise: f32,
         white: f32,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Plane> {
         check(cancel)?;
         if level == LEVELS || plane.w < 4 || plane.h < 4 {
@@ -95,7 +95,7 @@ impl LuminanceDenoise {
             .par_chunks_mut(1024)
             .enumerate()
             .for_each(|(chunk, pixels)| {
-                if cancel.load(Ordering::Relaxed) {
+                if cancel.is_cancelled() {
                     return;
                 }
                 for (j, p) in pixels.iter_mut().enumerate() {
@@ -131,21 +131,21 @@ fn luma(p: [f32; 3]) -> f32 {
     let [r, g, b] = p.map(|v| v.max(0.).sqrt());
     (r + 2. * g + b) * 0.25
 }
-fn check(cancel: &AtomicBool) -> Result<()> {
-    ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
+fn check(cancel: Cancel<'_>) -> Result<()> {
+    ensure!(!cancel.is_cancelled(), "Render superseded");
     Ok(())
 }
 /// `plane` blurred and halved; an error once `cancel` is set.
-fn down(plane: &Plane, cancel: &AtomicBool) -> Result<Plane> {
+fn down(plane: &Plane, cancel: Cancel<'_>) -> Result<Plane> {
     check(cancel)?;
-    let out = plane.down(Some(cancel));
+    let out = plane.down(cancel);
     check(cancel)?;
     Ok(out)
 }
 /// `plane` doubled to `w` × `h` and blurred; an error once `cancel` is set.
-fn up(plane: &Plane, w: usize, h: usize, cancel: &AtomicBool) -> Result<Plane> {
+fn up(plane: &Plane, w: usize, h: usize, cancel: Cancel<'_>) -> Result<Plane> {
     check(cancel)?;
-    let out = plane.up(w, h, Some(cancel));
+    let out = plane.up(w, h, cancel);
     check(cancel)?;
     Ok(out)
 }
@@ -154,12 +154,12 @@ fn up(plane: &Plane, w: usize, h: usize, cancel: &AtomicBool) -> Result<Plane> {
 /// Fewer than sixteen measurable blocks fall back to the finer level's estimate.
 /// A scene without smooth regions can still overestimate noise; Detail protects
 /// structure but this estimator is not a substitute for a calibrated noise profile.
-fn band_noise(plane: &Plane, band: &Plane, white: f32, cancel: &AtomicBool) -> Result<Option<f32>> {
+fn band_noise(plane: &Plane, band: &Plane, white: f32, cancel: Cancel<'_>) -> Result<Option<f32>> {
     let (bw, bh) = (plane.w / 8, plane.h / 8);
     let mut energies: Vec<f32> = (0..bw * bh)
         .into_par_iter()
         .filter_map(|i| {
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 return None;
             }
             let (x, y) = (i % bw * 8, i / bw * 8);
@@ -191,6 +191,7 @@ fn band_noise(plane: &Plane, band: &Plane, white: f32, cancel: &AtomicBool) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     fn image(w: u32, h: u32, f: impl Fn(u32, u32) -> [f32; 3]) -> CameraImage {
         CameraImage {
@@ -230,7 +231,7 @@ mod tests {
                 let im = image(w, h, |_, _| color);
                 let out = LuminanceDenoise::new(1., 0.5, 0.)
                     .unwrap()
-                    .apply(&im, &cancel)
+                    .apply(&im, Cancel::new(&cancel))
                     .unwrap();
                 for p in out.pixels {
                     for (v, expected) in p.into_iter().zip(color) {
@@ -254,7 +255,7 @@ mod tests {
                 let run = |amount, detail| {
                     let out = LuminanceDenoise::new(amount, detail, 0.)
                         .unwrap()
-                        .apply(&im, &cancel)
+                        .apply(&im, Cancel::new(&cancel))
                         .unwrap();
                     energy(&out, base)
                 };
@@ -276,7 +277,7 @@ mod tests {
         });
         let out = LuminanceDenoise::new(0.5, 0.5, 0.)
             .unwrap()
-            .apply(&im, &AtomicBool::new(false))
+            .apply(&im, Cancel::NEVER)
             .unwrap();
         for row in 16..112 {
             let a = luma(out.pixels[row * 256 + 127]);
@@ -299,7 +300,7 @@ mod tests {
         });
         let out = LuminanceDenoise::new(0.5, 0.5, 0.)
             .unwrap()
-            .apply(&im, &AtomicBool::new(false))
+            .apply(&im, Cancel::NEVER)
             .unwrap();
         let values: Vec<f32> = out.pixels.iter().map(|p| luma(*p)).collect();
         let mean = values.iter().sum::<f32>() / values.len() as f32;
@@ -317,8 +318,8 @@ mod tests {
         let im = image(65, 67, |x, y| [0.1 + 0.01 * hash(x, y); 3]);
         let cancel = AtomicBool::new(true);
         let d = LuminanceDenoise::new(0.5, 0.5, 0.).unwrap();
-        assert!(d.apply(&im, &cancel).is_err());
+        assert!(d.apply(&im, Cancel::new(&cancel)).is_err());
         cancel.store(false, Ordering::Relaxed);
-        assert!(d.apply(&im, &cancel).is_ok());
+        assert!(d.apply(&im, Cancel::new(&cancel)).is_ok());
     }
 }

@@ -16,8 +16,8 @@
 use super::laplacian::Plane;
 use crate::camera_data::CameraImage;
 use anyhow::{Result, ensure};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The Texture this recipe renders with the measured operator.
 pub(crate) fn measured(r: &crate::model::recipe::Recipe) -> f32 {
@@ -54,7 +54,7 @@ const DETAIL_STEP: f32 = 1. / 8192.;
 impl TextureDetail {
     /// The detail of `im`, an image `scale` times the full-resolution photo's size;
     /// stops with an error when `cancel` is set.
-    pub(crate) fn of(im: &CameraImage, scale: f32, cancel: &AtomicBool) -> Result<Self> {
+    pub(crate) fn of(im: &CameraImage, scale: f32, cancel: Cancel<'_>) -> Result<Self> {
         // The image's size against the full-resolution photo's, also for a half-size
         // draft decode, which renders at scale 1.
         let full = im.metadata.width.max(im.metadata.height);
@@ -118,7 +118,7 @@ impl TextureDetail {
 /// The compressed, weighted detail of `plane` as pyramid level `level` and coarser,
 /// expanded to its size. Only the level's plane, its blurred copy and the result are
 /// full size at once.
-fn detail(plane: &Plane, level: usize, cancel: &AtomicBool) -> Result<Plane> {
+fn detail(plane: &Plane, level: usize, cancel: Cancel<'_>) -> Result<Plane> {
     if level >= LEVELS || plane.w < 4 || plane.h < 4 {
         return Ok(Plane {
             w: plane.w,
@@ -126,12 +126,12 @@ fn detail(plane: &Plane, level: usize, cancel: &AtomicBool) -> Result<Plane> {
             data: vec![0.; plane.w * plane.h],
         });
     }
-    ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
-    let coarse = plane.down(None);
-    let mut out = detail(&coarse, level + 1, cancel)?.up(plane.w, plane.h, None);
-    let blurred = coarse.up(plane.w, plane.h, None);
+    ensure!(!cancel.is_cancelled(), "Render superseded");
+    let coarse = plane.down(Cancel::NEVER);
+    let mut out = detail(&coarse, level + 1, cancel)?.up(plane.w, plane.h, Cancel::NEVER);
+    let blurred = coarse.up(plane.w, plane.h, Cancel::NEVER);
     drop(coarse);
-    ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
+    ensure!(!cancel.is_cancelled(), "Render superseded");
     let (w, t) = (WEIGHTS[level], THRESHOLDS[level]);
     out.data
         .par_iter_mut()
@@ -147,6 +147,7 @@ fn detail(plane: &Plane, level: usize, cancel: &AtomicBool) -> Result<Plane> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     /// The gain Texture `amount` gives a vertical sine grating of `f` cycles per pixel
     /// and `amplitude` EV, on a full-resolution image.
@@ -167,7 +168,7 @@ mod tests {
             scale_factor: 1.,
             scale_clipped: 0,
         };
-        let out = TextureDetail::of(&im, 1., &AtomicBool::new(false))
+        let out = TextureDetail::of(&im, 1., Cancel::NEVER)
             .unwrap()
             .apply(&im, amount);
         let amp = |im: &CameraImage| {
@@ -225,9 +226,9 @@ mod tests {
             scale_clipped: 0,
         };
         let cancel = AtomicBool::new(false);
-        let draft = TextureDetail::of(&image(2 * w), 1., &cancel).unwrap();
-        let reduced = TextureDetail::of(&image(0), 0.5, &cancel).unwrap();
-        let full = TextureDetail::of(&image(0), 1., &cancel).unwrap();
+        let draft = TextureDetail::of(&image(2 * w), 1., Cancel::new(&cancel)).unwrap();
+        let reduced = TextureDetail::of(&image(0), 0.5, Cancel::new(&cancel)).unwrap();
+        let full = TextureDetail::of(&image(0), 1., Cancel::new(&cancel)).unwrap();
         assert_eq!(draft.channels, reduced.channels);
         assert_ne!(draft.channels, full.channels);
     }

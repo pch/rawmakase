@@ -8,6 +8,7 @@
 use anyhow::{Context, Result};
 use rawmakase::model::recipe::Recipe;
 use rawmakase::{camera_data, develop};
+use rawmakase_cancel::Cancel;
 use std::{sync::atomic::AtomicBool, time::Instant};
 
 fn ms(t: Instant) -> f64 {
@@ -104,7 +105,14 @@ fn main() -> Result<()> {
     };
     // Opening the photo: pyramid, device copy, caches.
     let t = Instant::now();
-    gpu.render_to(&image, &recipe, fit, None, &cancel, Some(&display))?;
+    gpu.render_to(
+        &image,
+        &recipe,
+        fit,
+        None,
+        Cancel::new(&cancel),
+        Some(&display),
+    )?;
     println!("First Fit: {:.1} ms", ms(t));
     let draft = fit / 2;
     println!(
@@ -119,10 +127,17 @@ fn main() -> Result<()> {
             let v = slider.from + (slider.to - slider.from) * i as f32 / steps as f32;
             (slider.set)(&mut r, v);
             let t = Instant::now();
-            gpu.render_to(&image, &r, draft, None, &cancel, Some(&display))?;
+            gpu.render_to(
+                &image,
+                &r,
+                draft,
+                None,
+                Cancel::new(&cancel),
+                Some(&display),
+            )?;
             let d = ms(t);
             let t = Instant::now();
-            let out = gpu.render_to(&image, &r, fit, None, &cancel, Some(&display))?;
+            let out = gpu.render_to(&image, &r, fit, None, Cancel::new(&cancel), Some(&display))?;
             let f = ms(t);
             anyhow::ensure!(
                 matches!(out, develop::quality::Output::Frame(_)),

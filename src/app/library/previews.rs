@@ -4,6 +4,7 @@ use crate::catalog::PhotoId;
 use crate::catalog::preview_cache::{PreviewCache, Stamp};
 use crate::model::recipe::Recipe;
 use eframe::egui;
+use rawmakase_cancel::Cancel;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -765,7 +766,12 @@ fn render_edited(
     cancel: &AtomicBool,
 ) -> anyhow::Result<image::RgbImage> {
     let (image, recipe) = open_quickly(path, Some(source), cancel)?;
-    rgb(crate::develop::render_fitted(&image, &recipe, 640, cancel)?)
+    rgb(crate::develop::render_fitted(
+        &image,
+        &recipe,
+        640,
+        Cancel::new(cancel),
+    )?)
 }
 /// `path` developed with `edit` (see [`EditSource::recipe`]) within `edge` pixels:
 /// a RAW from the fast half-size decode, a JPEG, PNG or TIFF from the file.
@@ -807,11 +813,11 @@ fn finish_quickly(
     edge: u32,
     cancel: &AtomicBool,
 ) -> anyhow::Result<image::RgbImage> {
-    rgb(crate::develop::render_cancellable(
+    rgb(crate::develop::render(
         image,
         &recipe.checked()?,
         edge,
-        cancel,
+        Cancel::new(cancel),
     )?)
 }
 
@@ -895,6 +901,7 @@ impl Progress {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    use rawmakase_cancel::Cancel;
     use std::time::Duration;
 
     /// A grey JPEG at `path`, and a saved edit of it one stop brighter.
@@ -954,7 +961,10 @@ pub(super) mod tests {
         let preview = render_edited(&path, &edit, &cancel)?;
         let (image, recipe) = open_quickly(&path, Some(&edit), &cancel)?;
         let fitted = rgb(crate::develop::render_fitted(
-            &image, &recipe, 640, &cancel,
+            &image,
+            &recipe,
+            640,
+            Cancel::new(&cancel),
         )?)?;
         assert_eq!(preview, fitted);
         // Close to the photo rendered whole and reduced, as before.

@@ -12,6 +12,7 @@ publish = false
 test-support = ["rawmakase-model/test-support"]
 
 [dependencies]
+rawmakase-cancel = { path = "../rawmakase-cancel", version = "0.1.0" }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
 anyhow.workspace = true
 bytemuck.workspace = true

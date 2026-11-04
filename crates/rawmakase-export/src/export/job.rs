@@ -14,6 +14,7 @@ use crate::{
     raw::Raw,
 };
 use anyhow::{Result, ensure};
+use rawmakase_cancel::Cancel;
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -138,7 +139,7 @@ pub fn prepare(
         &photo.recipe.checked()?,
         ai.as_ref(),
         options.max_edge,
-        cancel,
+        Cancel::new(cancel),
     )?;
     if let Some(w) = &watermark
         && !w.apply(&mut rendered)
@@ -218,7 +219,7 @@ fn ai_source(
         .get(&photo.source, &file, image, cancel)
         .map_err(|e| anyhow::anyhow!("AI Denoise: {e:#}"))?;
     let ai = Arc::try_unwrap(ai).unwrap_or_else(|shared| (*shared).clone());
-    crate::develop::AiSource::recover(ai, cancel).map(Some)
+    crate::develop::AiSource::recover(ai, Cancel::new(cancel)).map(Some)
 }
 
 /// The full-resolution image: the open one, the decode cache's, or a new decode.

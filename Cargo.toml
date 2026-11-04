@@ -56,6 +56,7 @@ unicode-normalization = "0.1"
 wgpu = { version = "30", default-features = false, features = ["wgsl"] }
 
 [dependencies]
+rawmakase-cancel = { path = "crates/rawmakase-cancel", version = "0.1.0" }
 rawmakase-catalog = { path = "crates/rawmakase-catalog", version = "0.1.0" }
 rawmakase-decode = { path = "crates/rawmakase-decode", version = "0.1.0" }
 rawmakase-engine = { path = "crates/rawmakase-engine", version = "0.1.0" }

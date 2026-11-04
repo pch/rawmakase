@@ -1,4 +1,5 @@
 use super::*;
+use rawmakase_cancel::Cancel;
 use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc;
 
@@ -525,7 +526,7 @@ fn the_switch_is_an_edit_and_a_result_is_not() {
     );
 
     // A result for the image shown: kept, rendered, no History step.
-    let source = AiSource::recover((*plain).clone(), &AtomicBool::new(false)).unwrap();
+    let source = AiSource::recover((*plain).clone(), Cancel::NEVER).unwrap();
     editor.ai_denoise_update(Update {
         plain: Arc::downgrade(&plain),
         state: State::Ready(source.clone()),
@@ -647,7 +648,7 @@ fn only_the_documents_own_image_gets_its_source() {
     let mut doc = super::super::state::Document::default();
     let plain = fixture(Provider::Cpu, Behaviour::default()).plain();
     doc.set_image(plain.clone());
-    doc.ai.source = Some(AiSource::recover((*plain).clone(), &AtomicBool::new(false)).unwrap());
+    doc.ai.source = Some(AiSource::recover((*plain).clone(), Cancel::NEVER).unwrap());
     let on = crate::model::ai_denoise::AiDenoise {
         enabled: true,
         amount: 1.,
@@ -663,7 +664,7 @@ fn only_the_documents_own_image_gets_its_source() {
 fn a_partial_result_asks_again_a_final_or_failed_one_does_not() {
     let plain = fixture(Provider::Cpu, Behaviour::default()).plain();
     let mut photo = Photo::default();
-    photo.source = Some(AiSource::recover((*plain).clone(), &AtomicBool::new(false)).unwrap());
+    photo.source = Some(AiSource::recover((*plain).clone(), Cancel::NEVER).unwrap());
     assert!(photo.needs_request(&plain));
     photo.complete = true;
     assert!(!photo.needs_request(&plain));
@@ -762,7 +763,7 @@ fn a_failure_after_a_partial_result_drops_it() {
     let plain = fixture(Provider::Cpu, Behaviour::default()).plain();
     editor.document.set_image(plain.clone());
     editor.document.edit.setup_mut().ai_denoise.enabled = true;
-    let partial = AiSource::recover((*plain).clone(), &AtomicBool::new(false)).unwrap();
+    let partial = AiSource::recover((*plain).clone(), Cancel::NEVER).unwrap();
     editor.ai_denoise_update(Update {
         plain: Arc::downgrade(&plain),
         state: State::Partial(partial),

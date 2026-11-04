@@ -5,10 +5,8 @@ use super::sampling;
 use super::{Processor, develop::DeviceSamples};
 use crate::{camera_data::CameraImage, develop::stage_cache::SampleKey};
 use anyhow::{Result, ensure};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use rawmakase_cancel::Cancel;
+use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
 /// Device samples kept, as the stage cache keeps CPU samples.
@@ -216,7 +214,7 @@ impl Processor {
         mut params: Vec<f32>,
         (width, height): (u32, u32),
         key: SampleKey,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Arc<DeviceSamples>> {
         ensure!(self.fits_resident(image), "Photo exceeds GPU buffer limits");
         let n = width as u64 * height as u64;
@@ -263,7 +261,7 @@ impl Processor {
             ],
         );
         dispatch(&mut encoder, pipeline, &[&group], (gx, gy));
-        ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
+        ensure!(!cancel.is_cancelled(), "Render superseded");
         super::submit(&self.queue, encoder);
         let samples = Arc::new(samples);
         let resident = self.resident();

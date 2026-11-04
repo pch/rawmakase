@@ -12,6 +12,7 @@ publish = false
 test-support = ["rawmakase-model/test-support", "rawmakase-interop/test-support", "rawmakase-engine/test-support", "rawmakase-decode/test-support"]
 
 [dependencies]
+rawmakase-cancel = { path = "../rawmakase-cancel", version = "0.1.0" }
 rawmakase-engine = { path = "../rawmakase-engine", version = "0.1.0" }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0" }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }

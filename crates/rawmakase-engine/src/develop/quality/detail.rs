@@ -1,15 +1,12 @@
 //! Detail: sharpening and the noise reduction masks apply.
 use super::*;
+use rawmakase_cancel::Cancel;
 
-#[cfg(test)]
-pub(in crate::develop) fn sharpen(im: &mut Rendered, r: &Recipe) {
-    sharpen_cancellable(im, r, None, &AtomicBool::new(false)).unwrap();
-}
-pub(super) fn sharpen_cancellable(
+pub(in crate::develop) fn sharpen(
     im: &mut Rendered,
     r: &Recipe,
     local: Option<&MaskWeights>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     sharpen_with_radius(im, r, Sharpener::new(r).sigma, local, cancel)
 }
@@ -34,7 +31,7 @@ pub(super) fn sharpen_with_radius(
     r: &Recipe,
     sigma: f32,
     local: Option<&MaskWeights>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     check_cancel(cancel)?;
     let local = local.filter(|w| w.uses(&[slot::SHARPNESS]));
@@ -48,7 +45,7 @@ pub(super) fn sharpen_with_radius(
     let h = im.height as usize;
     let mut horizontal = vec![0.; lum.len()];
     horizontal.par_iter_mut().enumerate().for_each(|(i, p)| {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return;
         }
         let x = i % w;
@@ -59,7 +56,7 @@ pub(super) fn sharpen_with_radius(
         }
     });
     im.pixels.par_iter_mut().enumerate().for_each(|(i, p)| {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return;
         }
         let x = i % w;

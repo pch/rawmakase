@@ -27,6 +27,7 @@ use crate::{
     raw_defaults::DevelopDefaults,
 };
 use anyhow::{Context, Result, ensure};
+use rawmakase_cancel::Cancel;
 use std::path::PathBuf;
 use std::sync::{
     Arc, Mutex,
@@ -544,10 +545,10 @@ fn prepare(
         },
         // Develop's Auto: the same estimate on the same image.
         BatchChange::AutoSettings => settings_groups::Transferred {
-            recipe: crate::develop::auto_tone_cancellable(
+            recipe: crate::develop::auto_tone(
                 photo.image(decoding, cancel)?,
                 &start,
-                cancel,
+                Cancel::new(cancel),
             )?,
             notes: Vec::new(),
         },
@@ -1094,6 +1095,7 @@ fn sync_target(p: &crate::catalog::Photo) -> SyncTarget {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rawmakase_cancel::Cancel;
     use std::path::Path;
 
     /// A catalog of copies of the synthetic chart DNG, and one file that isn't a photo.
@@ -1441,7 +1443,7 @@ mod tests {
                 crate::photo::Opened::Rendered(image) => image,
             };
             let starting = defaults.resolve(&metadata, &profiles).recipe;
-            let expected = crate::develop::auto_tone(&image, &starting)?;
+            let expected = crate::develop::auto_tone(&image, &starting, Cancel::NEVER)?;
             let saved = f.catalog.load_edit(*id, path)?.unwrap().recipe;
             assert_eq!(saved, expected, "{}", path.display());
             let history = f.catalog.load_history(*id)?.unwrap();
@@ -1539,7 +1541,7 @@ mod tests {
         // Develop: the analysis lands, then Auto measures the photo as levelled.
         let mut analysed = start.clone();
         crate::develop::upright::complete(&mut analysed, &image);
-        let expected = crate::develop::auto_tone(&image, &analysed)?;
+        let expected = crate::develop::auto_tone(&image, &analysed, Cancel::NEVER)?;
         assert_eq!(f.catalog.load_edit(id, &png)?.unwrap().recipe, expected);
         // Undo goes back to the edit as it was saved.
         assert_eq!(
@@ -1553,7 +1555,7 @@ mod tests {
         settled.panels.set(Panel::Transform, PanelState::Off);
         let mut analysed = settled.clone();
         crate::develop::upright::complete(&mut analysed, &image);
-        let auto = crate::develop::auto_tone(&image, &analysed)?;
+        let auto = crate::develop::auto_tone(&image, &analysed, Cancel::NEVER)?;
         crate::develop::AutoTone::of(&auto).apply(&mut settled);
         f.catalog.save_edit(
             id,

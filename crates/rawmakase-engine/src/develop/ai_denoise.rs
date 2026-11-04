@@ -4,8 +4,9 @@
 //! the source: the Develop session or the export hands it over.
 use crate::camera_data::CameraImage;
 use anyhow::Result;
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::Arc;
 
 /// A photo's AI Denoise source, highlights recovered on its own (never with the plain
 /// image's recovery: recovery depends on each pixel's own values). Each result the
@@ -16,7 +17,7 @@ pub struct AiSource(Arc<CameraImage>);
 impl AiSource {
     /// Recovers the highlights of `image`, the assembled AI source
     /// (`rawmakase_decode::ai_denoise::assemble`); its unrecovered pixels are let go.
-    pub fn recover(image: CameraImage, cancel: &AtomicBool) -> Result<Self> {
+    pub fn recover(image: CameraImage, cancel: Cancel<'_>) -> Result<Self> {
         Ok(Self(super::quality::recovered(&image, cancel)?))
     }
     /// The recovered image.
@@ -108,6 +109,7 @@ mod tests {
     use crate::develop::recipe::RenderedRecipe;
     use crate::develop::retouch::RetouchCache;
     use crate::model::{ai_denoise::AiDenoise, recipe::Recipe};
+    use std::sync::atomic::AtomicBool;
 
     fn image(pixel: [f32; 3]) -> CameraImage {
         CameraImage {
@@ -137,10 +139,11 @@ mod tests {
     fn the_ai_source_is_recovered_on_its_own() {
         let plain = image([0.8, 0.5, 0.3]);
         let ai = image([0.78, 0.48, 0.32]);
-        let expected = crate::develop::quality::recover_highlights(&ai);
-        let source = AiSource::recover(ai, &AtomicBool::new(false)).unwrap();
+        let expected = crate::develop::quality::recover_highlights(&ai, Cancel::NEVER).unwrap();
+        let source = AiSource::recover(ai, Cancel::NEVER).unwrap();
         assert_eq!(source.image().pixels, expected.pixels);
-        let plain_recovered = crate::develop::quality::recover_highlights(&plain);
+        let plain_recovered =
+            crate::develop::quality::recover_highlights(&plain, Cancel::NEVER).unwrap();
         assert_ne!(source.image().pixels, plain_recovered.pixels);
     }
 
@@ -149,7 +152,7 @@ mod tests {
     #[test]
     fn amount_zero_is_off_and_a_new_source_replaces_the_cached_base() {
         let plain = Arc::new(image([0.2, 0.3, 0.4]));
-        let ai = AiSource::recover(image([0.25, 0.3, 0.35]), &AtomicBool::new(false)).unwrap();
+        let ai = AiSource::recover(image([0.25, 0.3, 0.35]), Cancel::NEVER).unwrap();
         let mut r = Recipe::default();
         assert!(r.denoise_with(Some(&ai)).is_none());
         r.ai_denoise = AiDenoise {
@@ -161,12 +164,12 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let mut cache = RetouchCache::default();
         let full = cache
-            .denoised(&plain, r.denoise_with(Some(&ai)), &cancel)
+            .denoised(&plain, r.denoise_with(Some(&ai)), Cancel::new(&cancel))
             .unwrap();
         assert!(Arc::ptr_eq(&full, ai.image()));
         r.ai_denoise.amount = 0.5;
         let half = cache
-            .denoised(&plain, r.denoise_with(Some(&ai)), &cancel)
+            .denoised(&plain, r.denoise_with(Some(&ai)), Cancel::new(&cancel))
             .unwrap();
         for ((h, p), a) in half
             .pixels
@@ -183,15 +186,15 @@ mod tests {
             }
         }
         // The same Amount with a new source (equal pixels, another result): rebuilt.
-        let next = AiSource::recover(image([0.25, 0.3, 0.35]), &AtomicBool::new(false)).unwrap();
+        let next = AiSource::recover(image([0.25, 0.3, 0.35]), Cancel::NEVER).unwrap();
         assert!(next != ai);
         let rebuilt = cache
-            .denoised(&plain, r.denoise_with(Some(&next)), &cancel)
+            .denoised(&plain, r.denoise_with(Some(&next)), Cancel::new(&cancel))
             .unwrap();
         assert!(!Arc::ptr_eq(&rebuilt, &half));
         // Reused while nothing changes.
         let again = cache
-            .denoised(&plain, r.denoise_with(Some(&next)), &cancel)
+            .denoised(&plain, r.denoise_with(Some(&next)), Cancel::new(&cancel))
             .unwrap();
         assert!(Arc::ptr_eq(&rebuilt, &again));
     }
@@ -201,22 +204,38 @@ mod tests {
     #[test]
     fn off_or_without_a_source_renders_as_today() {
         let plain = image([0.2, 0.3, 0.4]);
-        let ai = AiSource::recover(image([0.25, 0.3, 0.35]), &AtomicBool::new(false)).unwrap();
+        let ai = AiSource::recover(image([0.25, 0.3, 0.35]), Cancel::NEVER).unwrap();
         let mut r = Recipe::default();
         let cancel = AtomicBool::new(false);
-        let today = crate::develop::render(&plain, &r.checked().unwrap(), 0).unwrap();
-        let off =
-            crate::develop::render_with_ai(&plain, &r.checked().unwrap(), Some(&ai), 0, &cancel)
-                .unwrap();
+        let today =
+            crate::develop::render(&plain, &r.checked().unwrap(), 0, Cancel::NEVER).unwrap();
+        let off = crate::develop::render_with_ai(
+            &plain,
+            &r.checked().unwrap(),
+            Some(&ai),
+            0,
+            Cancel::new(&cancel),
+        )
+        .unwrap();
         assert_eq!(off.pixels, today.pixels);
         r.ai_denoise.enabled = true;
-        let waiting =
-            crate::develop::render_with_ai(&plain, &r.checked().unwrap(), None, 0, &cancel)
-                .unwrap();
+        let waiting = crate::develop::render_with_ai(
+            &plain,
+            &r.checked().unwrap(),
+            None,
+            0,
+            Cancel::new(&cancel),
+        )
+        .unwrap();
         assert_eq!(waiting.pixels, today.pixels);
-        let on =
-            crate::develop::render_with_ai(&plain, &r.checked().unwrap(), Some(&ai), 0, &cancel)
-                .unwrap();
+        let on = crate::develop::render_with_ai(
+            &plain,
+            &r.checked().unwrap(),
+            Some(&ai),
+            0,
+            Cancel::new(&cancel),
+        )
+        .unwrap();
         assert_ne!(on.pixels, today.pixels);
     }
 

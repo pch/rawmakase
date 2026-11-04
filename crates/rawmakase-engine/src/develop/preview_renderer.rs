@@ -11,7 +11,8 @@ use crate::{
     model::{recipe::Recipe, valid::ValidRecipe},
 };
 use anyhow::Result;
-use std::sync::{Arc, atomic::AtomicBool};
+use rawmakase_cancel::Cancel;
+use std::sync::Arc;
 
 #[derive(Default)]
 pub struct PreviewRenderer {
@@ -54,7 +55,7 @@ pub fn render_fitted(
     image: &CameraImage,
     recipe: &Recipe,
     max_edge: u32,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Rendered> {
     PreviewRenderer::default().render(image, recipe, max_edge, None, cancel)
 }
@@ -88,7 +89,7 @@ impl PreviewRenderer {
         image: &CameraImage,
         recipe: &Recipe,
         ai: Option<&super::AiSource>,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<()> {
         use super::recipe::RenderedRecipe;
         let recovered = quality::recovered(image, cancel)?;
@@ -135,7 +136,7 @@ impl PreviewRenderer {
         recipe: &Recipe,
         max_edge: u32,
         region: Option<[u32; 4]>,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Rendered> {
         self.render_to(image, recipe, max_edge, region, cancel, None)
             .map(Output::pixels)
@@ -148,16 +149,13 @@ impl PreviewRenderer {
         recipe: &Recipe,
         max_edge: u32,
         region: Option<[u32; 4]>,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
         display: Option<&gpu::Display>,
     ) -> Result<Output> {
         let shown = recipe.as_rendered();
         let recipe = shown.as_ref();
         self.backend.used_gpu = false;
-        anyhow::ensure!(
-            !cancel.load(std::sync::atomic::Ordering::Relaxed),
-            "Render superseded"
-        );
+        anyhow::ensure!(!cancel.is_cancelled(), "Render superseded");
         let recipe = &recipe.checked()?;
         if region.is_none()
             && max_edge > 0
@@ -192,7 +190,7 @@ impl PreviewRenderer {
         image: &CameraImage,
         recipe: &ValidRecipe,
         max_edge: u32,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
         display: Option<&gpu::Display>,
     ) -> Result<Option<Output>> {
         let full = Geometry::new(image, recipe, 0);
@@ -215,7 +213,7 @@ impl PreviewRenderer {
         image: &CameraImage,
         recipe: &Recipe,
         region: [u32; 4],
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Rendered> {
         self.render_region_preview_to(image, recipe, region, cancel, None)
             .map(Output::pixels)
@@ -226,7 +224,7 @@ impl PreviewRenderer {
         image: &CameraImage,
         recipe: &Recipe,
         region: [u32; 4],
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
         display: Option<&gpu::Display>,
     ) -> Result<Output> {
         let shown = recipe.as_rendered();
@@ -265,7 +263,7 @@ impl PreviewRenderer {
         image: &CameraImage,
         recipe: &Recipe,
         needed: f32,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<(Arc<CameraImage>, quality::Retouched)> {
         if recipe.lens_ca {
             crate::lens::auto_ca::prime(image);
@@ -295,7 +293,7 @@ impl PreviewRenderer {
         image: &Rendered,
         recipe: &Recipe,
         max_edge: u32,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Option<Rendered> {
         self.backend.finish(image, recipe, max_edge, cancel)
     }
@@ -310,7 +308,7 @@ impl Backend {
     /// other than cancellation turns that path off, not the GPU.
     pub(crate) fn run_resident<T>(
         &mut self,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
         stage: impl FnOnce(&mut gpu::Processor) -> Result<T>,
     ) -> Option<T> {
         if self.resident_fallback.is_some() {
@@ -320,7 +318,7 @@ impl Backend {
         match stage(gpu) {
             Ok(out) => Some(out),
             Err(error) => {
-                if !cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                if !cancel.is_cancelled() {
                     self.resident_fallback = Some(error.to_string());
                 }
                 None
@@ -329,7 +327,7 @@ impl Backend {
     }
     pub(crate) fn run<T>(
         &mut self,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
         stage: impl FnOnce(&mut gpu::Processor) -> Result<T>,
     ) -> Option<T> {
         let gpu = self.gpu.as_mut()?;
@@ -339,7 +337,7 @@ impl Backend {
                 Some(out)
             }
             Err(error) => {
-                if !cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                if !cancel.is_cancelled() {
                     self.fallback = Some(error.to_string());
                     self.gpu = None;
                 }
@@ -352,7 +350,7 @@ impl Backend {
         image: &Rendered,
         recipe: &Recipe,
         max_edge: u32,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Option<Rendered> {
         self.run(cancel, |gpu| gpu.finish(image, recipe, max_edge, cancel))
     }
@@ -372,7 +370,7 @@ impl Backend {
         &mut self,
         samples: &Arc<super::pipeline::Samples>,
         params: &super::pipeline::pixel_params::PixelParams,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Option<Rendered> {
         if !self.fits(samples, params) {
             return None;
@@ -386,7 +384,7 @@ impl Backend {
         recipe: &Recipe,
         finish: &gpu::Finish,
         display: &gpu::Display,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Option<gpu::Frame> {
         if !self.fits(samples, params) {
             return None;
@@ -407,6 +405,7 @@ impl Backend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
     fn image(width: u32, height: u32, value: f32) -> CameraImage {
         CameraImage {
             recovered: Default::default(),
@@ -434,22 +433,24 @@ mod tests {
         let r = Recipe::default();
         let cancel = AtomicBool::new(false);
         let a = image(400, 300, 0.2);
-        let fit = p.render(&a, &r, 60, None, &cancel).unwrap();
+        let fit = p.render(&a, &r, 60, None, Cancel::new(&cancel)).unwrap();
         assert_eq!((fit.width, fit.height), (60, 45));
         let source = p.pyramid.as_ref().unwrap().source().clone();
         assert!(Arc::ptr_eq(&source, a.recovered.get().unwrap()));
         assert_eq!(p.pyramid.as_mut().unwrap().level_for(60.).width, 100);
         let b = image(400, 300, 0.6);
-        let other = p.render(&b, &r, 60, None, &cancel).unwrap();
+        let other = p.render(&b, &r, 60, None, Cancel::new(&cancel)).unwrap();
         assert_ne!(fit.pixels, other.pixels);
         assert!(!Arc::ptr_eq(p.pyramid.as_ref().unwrap().source(), &source));
         // Regions and full-size views always use the full image.
-        let region = p.render(&a, &r, 0, Some([0, 0, 10, 10]), &cancel).unwrap();
+        let region = p
+            .render(&a, &r, 0, Some([0, 0, 10, 10]), Cancel::new(&cancel))
+            .unwrap();
         assert_eq!(region.width, 10);
-        let full = p.render(&a, &r, 400, None, &cancel).unwrap();
+        let full = p.render(&a, &r, 400, None, Cancel::new(&cancel)).unwrap();
         assert_eq!(
             full.pixels,
-            quality::render(&a, &r.checked().unwrap(), 400, None)
+            quality::render(&a, &r.checked().unwrap(), 400, None, Cancel::NEVER)
                 .unwrap()
                 .pixels
         );
@@ -480,9 +481,10 @@ mod tests {
         // each size is `effects::grain`'s).
         let cancel = AtomicBool::new(false);
         for edge in [100, 180, 300] {
-            let expected = quality::render(&im, &r.checked().unwrap(), edge, None).unwrap();
+            let expected =
+                quality::render(&im, &r.checked().unwrap(), edge, None, Cancel::NEVER).unwrap();
             let fit = PreviewRenderer::default()
-                .render(&im, &r, edge, None, &cancel)
+                .render(&im, &r, edge, None, Cancel::new(&cancel))
                 .unwrap();
             assert_eq!((fit.width, fit.height), (expected.width, expected.height));
             let error = fit
@@ -555,9 +557,11 @@ mod tests {
         for edit in edits {
             edit(&mut r);
             for (edge, region) in [(80, None), (0, Some([20, 30, 50, 40])), (150, None)] {
-                let cached = warm.render(&im, &r, edge, region, &cancel).unwrap();
+                let cached = warm
+                    .render(&im, &r, edge, region, Cancel::new(&cancel))
+                    .unwrap();
                 let fresh = PreviewRenderer::default()
-                    .render(&im, &r, edge, region, &cancel)
+                    .render(&im, &r, edge, region, Cancel::new(&cancel))
                     .unwrap();
                 assert_eq!(cached.pixels, fresh.pixels, "{r:?} {edge} {region:?}");
             }
@@ -649,9 +653,11 @@ mod tests {
             let mut r = base.clone();
             let check = |warm: &mut PreviewRenderer, r: &Recipe| {
                 for (edge, region) in [(80, None), (0, Some([20, 30, 50, 40])), (150, None)] {
-                    let cached = warm.render(&im, r, edge, region, &cancel).unwrap();
+                    let cached = warm
+                        .render(&im, r, edge, region, Cancel::new(&cancel))
+                        .unwrap();
                     let fresh = PreviewRenderer::default()
-                        .render(&im, r, edge, region, &cancel)
+                        .render(&im, r, edge, region, Cancel::new(&cancel))
                         .unwrap();
                     assert_eq!(cached.pixels, fresh.pixels, "{name} {edge} {region:?}");
                 }
@@ -754,9 +760,11 @@ mod tests {
             let mut r = base.clone();
             let check = |warm: &mut PreviewRenderer, r: &Recipe| {
                 for (edge, region) in [(80, None), (0, Some([20, 30, 50, 40])), (150, None)] {
-                    let cached = warm.render(&im, r, edge, region, &cancel).unwrap();
+                    let cached = warm
+                        .render(&im, r, edge, region, Cancel::new(&cancel))
+                        .unwrap();
                     let fresh = PreviewRenderer::default()
-                        .render(&im, r, edge, region, &cancel)
+                        .render(&im, r, edge, region, Cancel::new(&cancel))
                         .unwrap();
                     assert_eq!(cached.pixels, fresh.pixels, "{name} {edge} {region:?}");
                 }
@@ -795,9 +803,11 @@ mod tests {
         r.masks.push(mask);
         for exposure in [0., 0.3] {
             r.exposure = exposure;
-            let cached = warm.render(&im, &r, 150, None, &cancel).unwrap();
+            let cached = warm
+                .render(&im, &r, 150, None, Cancel::new(&cancel))
+                .unwrap();
             let fresh = PreviewRenderer::default()
-                .render(&im, &r, 150, None, &cancel)
+                .render(&im, &r, 150, None, Cancel::new(&cancel))
                 .unwrap();
             assert_eq!(cached.pixels, fresh.pixels);
         }
@@ -854,10 +864,13 @@ mod tests {
                 }
                 _ => {}
             }
-            let expected = quality::render(&im, &r.checked().unwrap(), 200, None).unwrap();
-            let fit = warm.render(&im, &r, 200, None, &cancel).unwrap();
+            let expected =
+                quality::render(&im, &r.checked().unwrap(), 200, None, Cancel::NEVER).unwrap();
+            let fit = warm
+                .render(&im, &r, 200, None, Cancel::new(&cancel))
+                .unwrap();
             let fresh = PreviewRenderer::default()
-                .render(&im, &r, 200, None, &cancel)
+                .render(&im, &r, 200, None, Cancel::new(&cancel))
                 .unwrap();
             assert_eq!(fit.pixels, fresh.pixels, "edit {edit}: stale pyramid");
             let error = fit
@@ -870,8 +883,11 @@ mod tests {
                 / (fit.pixels.len() * 3) as f32;
             assert!(error < 0.01, "edit {edit}: mean error {error}");
             let region = [260, 160, 90, 80];
-            let tile = warm.render(&im, &r, 0, Some(region), &cancel).unwrap();
-            let full = quality::render(&im, &r.checked().unwrap(), 0, Some(region)).unwrap();
+            let tile = warm
+                .render(&im, &r, 0, Some(region), Cancel::new(&cancel))
+                .unwrap();
+            let full = quality::render(&im, &r.checked().unwrap(), 0, Some(region), Cancel::NEVER)
+                .unwrap();
             assert_eq!(tile.pixels, full.pixels);
         }
         // The healed dust is gone from the export.
@@ -881,13 +897,20 @@ mod tests {
             [0.08, 0.02],
         )];
         r.straighten = 0.;
-        let healed =
-            quality::render(&im, &r.checked().unwrap(), 0, Some([300, 200, 1, 1])).unwrap();
+        let healed = quality::render(
+            &im,
+            &r.checked().unwrap(),
+            0,
+            Some([300, 200, 1, 1]),
+            Cancel::NEVER,
+        )
+        .unwrap();
         let dusty = quality::render(
             &im,
             &Recipe::default().checked().unwrap(),
             0,
             Some([300, 200, 1, 1]),
+            Cancel::NEVER,
         )
         .unwrap();
         assert!(healed.pixels[0][1] > dusty.pixels[0][1] + 0.2);
@@ -921,8 +944,8 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let measures = |im: &CameraImage, r: &Recipe| {
             let mut warm = PreviewRenderer::default();
-            warm.render(im, r, 150, None, &cancel).unwrap();
-            warm.render(im, r, 0, Some([40, 30, 60, 50]), &cancel)
+            warm.render(im, r, 150, None, Cancel::new(&cancel)).unwrap();
+            warm.render(im, r, 0, Some([40, 30, 60, 50]), Cancel::new(&cancel))
                 .unwrap();
             let cached = warm.cache.measures.lock().unwrap();
             assert_eq!(cached.len(), 1, "Fit and regions share the measures");
@@ -1007,7 +1030,8 @@ mod tests {
                 ..Default::default()
             };
             let at = |r: &Recipe| {
-                let full = quality::render(&im, &r.checked().unwrap(), 0, None).unwrap();
+                let full =
+                    quality::render(&im, &r.checked().unwrap(), 0, None, Cancel::NEVER).unwrap();
                 let [u, v] = ViewMapping::new(&im, r).to_view(op.center);
                 let (x, y) = (
                     (u * full.width as f32) as usize,
@@ -1023,14 +1047,19 @@ mod tests {
                 fixed[0] < 1.3 * fixed[1] && fixed[0] < 0.5 * red[0],
                 "{rotation}: {fixed:?} from {red:?}"
             );
-            let fit = warm.render(&im, &r, 150, None, &cancel).unwrap();
+            let fit = warm
+                .render(&im, &r, 150, None, Cancel::new(&cancel))
+                .unwrap();
             let fresh = PreviewRenderer::default()
-                .render(&im, &r, 150, None, &cancel)
+                .render(&im, &r, 150, None, Cancel::new(&cancel))
                 .unwrap();
             assert_eq!(fit.pixels, fresh.pixels, "{rotation}: stale pyramid");
             let region = [40, 30, 60, 50];
-            let tile = warm.render(&im, &r, 0, Some(region), &cancel).unwrap();
-            let full = quality::render(&im, &r.checked().unwrap(), 0, Some(region)).unwrap();
+            let tile = warm
+                .render(&im, &r, 0, Some(region), Cancel::new(&cancel))
+                .unwrap();
+            let full = quality::render(&im, &r.checked().unwrap(), 0, Some(region), Cancel::NEVER)
+                .unwrap();
             assert_eq!(tile.pixels, full.pixels);
         }
     }
@@ -1087,9 +1116,11 @@ mod tests {
         for edit in edits {
             edit(&mut r);
             for (edge, region) in [(80, None), (0, Some([20, 30, 50, 40]))] {
-                let cached = warm.render(&im, &r, edge, region, &cancel).unwrap();
+                let cached = warm
+                    .render(&im, &r, edge, region, Cancel::new(&cancel))
+                    .unwrap();
                 let fresh = PreviewRenderer::default()
-                    .render(&im, &r, edge, region, &cancel)
+                    .render(&im, &r, edge, region, Cancel::new(&cancel))
                     .unwrap();
                 assert_eq!(cached.pixels, fresh.pixels, "{:?} {edge}", r.masks);
             }
@@ -1109,9 +1140,13 @@ mod tests {
         r.effects.clarity = 0.3;
         let mut p = PreviewRenderer::default();
         let region = [101, 80, 120, 90];
-        let preview = p.render_region_preview(&im, &r, region, &cancel).unwrap();
+        let preview = p
+            .render_region_preview(&im, &r, region, Cancel::new(&cancel))
+            .unwrap();
         assert_eq!((preview.width, preview.height), (60, 45));
-        let full = p.render(&im, &r, 0, Some(region), &cancel).unwrap();
+        let full = p
+            .render(&im, &r, 0, Some(region), Cancel::new(&cancel))
+            .unwrap();
         let mut error = 0.;
         for y in 0..45 {
             for x in 0..60 {
@@ -1146,12 +1181,22 @@ mod tests {
                 pixels: Vec::new(),
                 positions: Vec::new(),
             });
-            assert!(p.backend.develop(&samples, &params, &cancel).is_none());
+            assert!(
+                p.backend
+                    .develop(&samples, &params, Cancel::new(&cancel))
+                    .is_none()
+            );
             assert!(p.gpu().is_some(), "{edge}: {:?}", p.fallback_reason());
         }
         // The next, smaller render still uses the GPU (finishing, at full size).
-        p.render(&image(400, 300, 0.2), &Recipe::default(), 0, None, &cancel)
-            .unwrap();
+        p.render(
+            &image(400, 300, 0.2),
+            &Recipe::default(),
+            0,
+            None,
+            Cancel::new(&cancel),
+        )
+        .unwrap();
         assert!(p.used_gpu());
     }
 }

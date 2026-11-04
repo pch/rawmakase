@@ -3,6 +3,7 @@ use super::*;
 use crate::camera_data::CameraImage;
 use crate::model::red_eye::RedEyeOp;
 use crate::model::retouch::{RetouchMode, RetouchShape};
+use rawmakase_cancel::Cancel;
 use std::sync::atomic::AtomicBool;
 
 fn image(width: u32, height: u32, f: impl Fn(f32, f32) -> [f32; 3]) -> CameraImage {
@@ -227,7 +228,7 @@ fn incremental_tiles_match_a_full_rebuild() {
     let cancel = AtomicBool::new(false);
     let mut cache = RetouchCache::default();
     let check = |cache: &mut RetouchCache, ops: &[RetouchOp]| {
-        let incremental = cache.get(&base, heals(ops), &cancel).unwrap();
+        let incremental = cache.get(&base, heals(ops), Cancel::new(&cancel)).unwrap();
         let full = apply(&base, heals(ops));
         assert_eq!(incremental.pixels, full.pixels);
     };
@@ -238,9 +239,9 @@ fn incremental_tiles_match_a_full_rebuild() {
     check(&mut cache, &ops);
     ops[2].translate([0.01, 0.02]);
     check(&mut cache, &ops);
-    let before = cache.get(&base, heals(&ops), &cancel).unwrap();
+    let before = cache.get(&base, heals(&ops), Cancel::new(&cancel)).unwrap();
     ops.push(spot(RetouchMode::Clone, &im, [650., 60.], 10., [-40., 0.]));
-    let after = cache.get(&base, heals(&ops), &cancel).unwrap();
+    let after = cache.get(&base, heals(&ops), Cancel::new(&cancel)).unwrap();
     // Only tiles near the new spot changed.
     let rects = cache.changed_from(&before).unwrap();
     assert!(rects.iter().all(|r| r[0] >= 512 && r[3] <= 256));
@@ -273,7 +274,7 @@ fn incremental_tiles_match_a_full_rebuild() {
             red_eye: eyes,
             retouch: ops,
         };
-        let incremental = cache.get(&base, ops, &cancel).unwrap();
+        let incremental = cache.get(&base, ops, Cancel::new(&cancel)).unwrap();
         assert_eq!(incremental.pixels, apply(&base, ops).pixels);
     };
     both(&mut cache, &eyes, &heal_ops);

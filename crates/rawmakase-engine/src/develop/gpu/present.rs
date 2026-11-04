@@ -11,12 +11,9 @@ use crate::develop::{
 use crate::model::recipe::Recipe;
 use crate::rendered::{ClipOverlay, Histogram};
 use anyhow::{Context, Result, ensure};
+use rawmakase_cancel::Cancel;
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
+    sync::{Arc, mpsc},
     time::Duration,
 };
 use wgpu::util::DeviceExt;
@@ -339,7 +336,7 @@ impl Processor {
         recipe: &Recipe,
         finish: &Finish,
         display: &Display,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Frame> {
         self.check_develop(input, params, cancel)?;
         let (width, height) = input.size();
@@ -381,7 +378,7 @@ impl Processor {
         recipe: &Recipe,
         finish: &Finish,
         display: &Display,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Frame> {
         let device = self.device.clone();
         let mut encoder = device.create_command_encoder(&Default::default());
@@ -619,7 +616,7 @@ impl Processor {
             0,
             HISTOGRAM_WORDS * 4,
         );
-        ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
+        ensure!(!cancel.is_cancelled(), "Render superseded");
         let submission = super::submit(&self.queue, encoder);
         super::develop::submitted(&mut self.kept);
         let (tx, rx) = mpsc::channel();
@@ -681,7 +678,7 @@ impl Processor {
         let shown = samples.as_ref().map(rgb).transpose();
         unmap(presenter);
         let (small, shown) = (small?, shown?);
-        ensure!(!cancel.load(Ordering::Relaxed), "Render superseded");
+        ensure!(!cancel.is_cancelled(), "Render superseded");
         Ok(Frame {
             #[cfg(test)]
             width: cw,
