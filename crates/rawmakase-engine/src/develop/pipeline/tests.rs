@@ -2349,7 +2349,6 @@ fn stripe_ca_guard_keeps_isolated_edges_resolved_colour_and_noise() {
 fn a_lensfun_choice_reaches_the_warp_and_the_gpu() {
     use crate::lens::lensfun::fixture;
     let metadata = fixture::photo();
-    assert!(metadata.lensfun.get().is_none());
     let im = CameraImage {
         width: metadata.width,
         height: metadata.height,

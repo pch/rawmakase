@@ -362,7 +362,6 @@ impl Raw {
             dng_matrix_profile_signature: None,
             source: Source::Raw,
             lens_profiles: Default::default(),
-            lensfun: Default::default(),
             lateral_ca: Default::default(),
             embedded_dcp: None,
             levels: h.levels,

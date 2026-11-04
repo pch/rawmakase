@@ -252,10 +252,6 @@ pub struct Metadata {
     /// choices; rebuilt on open.
     #[serde(skip)]
     pub lens_profiles: crate::optics::lcp::PhotoProfiles,
-    /// The Lensfun database for choosing a Lensfun lens and resolving one an edit
-    /// names while editing: the one installed when asked for. Rendering never reads it.
-    #[serde(skip)]
-    pub lensfun: crate::lens::lensfun::installed::Handle,
     /// Lateral chromatic aberration measured from the decoded image, shared by every
     /// image made from it (see `crate::lens::auto_ca::prime`).
     #[serde(skip)]
