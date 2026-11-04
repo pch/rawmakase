@@ -80,28 +80,28 @@ pub const HUE_WINDOW: f32 = fit::HUE_WINDOW;
 /// Fitted constants (docs/color-mixer.md#point-color).
 mod fit {
     /// Half the hue window at Range 50, in radians.
-    pub const HUE_WINDOW: f32 = 0.7236;
+    pub(super) const HUE_WINDOW: f32 = 0.7236;
     /// How Range scales the distance from the swatch, per dimension (hue, saturation,
     /// luminance): 2^(k · (0.5 − Range)), with k below and above Range 50.
-    pub const RANGE_BELOW: [f32; 3] = [0.767, 1.7637, 0.5482];
-    pub const RANGE_ABOVE: [f32; 3] = [0.1186, 0.3886, 0.0598];
+    pub(super) const RANGE_BELOW: [f32; 3] = [0.767, 1.7637, 0.5482];
+    pub(super) const RANGE_ABOVE: [f32; 3] = [0.1186, 0.3886, 0.0598];
     /// Exponents of the smoothed ramps: hue, then saturation and luminance rising and
     /// falling.
-    pub const HUE_RAMP: f32 = 1.0282;
-    pub const SATURATION_RAMP: [f32; 2] = [1.8348, 0.9897];
-    pub const LUMINANCE_RAMP: [f32; 2] = [2.7765, 1.1354];
+    pub(super) const HUE_RAMP: f32 = 1.0282;
+    pub(super) const SATURATION_RAMP: [f32; 2] = [1.8348, 0.9897];
+    pub(super) const LUMINANCE_RAMP: [f32; 2] = [2.7765, 1.1354];
     /// Saturation below which pixels fade out of every selection.
-    pub const NEUTRAL: f32 = 0.0578;
+    pub(super) const NEUTRAL: f32 = 0.0578;
     /// Hue turn at Hue ±100, radians (35°).
-    pub const HUE_SHIFT: f32 = 0.6109;
+    pub(super) const HUE_SHIFT: f32 = 0.6109;
     /// Saturation ±100 multiplies or divides saturation by 1.9.
-    pub const SATURATION_SHIFT: f32 = 0.9;
+    pub(super) const SATURATION_SHIFT: f32 = 0.9;
     /// Luminance: log2 of the value factor is k1·|x| + k2·x².
-    pub const LUMINANCE_SHIFT: [f32; 2] = [1.3932, -0.2366];
+    pub(super) const LUMINANCE_SHIFT: [f32; 2] = [1.3932, -0.2366];
     /// Variance ±100 scales distances from the swatch in saturation and encoded value
     /// by 2^±k (hue distances by 1 ± Variance).
-    pub const VARIANCE_SATURATION: f32 = 0.7904;
-    pub const VARIANCE_LUMINANCE: f32 = 0.2123;
+    pub(super) const VARIANCE_SATURATION: f32 = 0.7904;
+    pub(super) const VARIANCE_LUMINANCE: f32 = 0.2123;
 }
 
 /// A swatch prepared for rendering. `params` is the flattened form the GPU port reads.

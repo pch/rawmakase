@@ -35,13 +35,13 @@ const TABLE: [[f64; 4]; 31] = [
     [600.0, 0.33724, 0.36051, -116.45],
 ];
 
-pub fn xy(temperature: f32, tint: f32) -> [f32; 2] {
+pub(crate) fn xy(temperature: f32, tint: f32) -> [f32; 2] {
     xy_at(1e6 / f64::from(temperature.clamp(2000., 50000.)), tint)
 }
 
 /// [`xy`] at reciprocal temperature `mired` (0–600; 0 is infinitely hot), without
 /// [`xy`]'s temperature clamp: a rendered file's Temp reaches past 50 000 K.
-pub fn xy_reciprocal(mired: f32, tint: f32) -> [f32; 2] {
+pub(crate) fn xy_reciprocal(mired: f32, tint: f32) -> [f32; 2] {
     xy_at(f64::from(mired.clamp(0., 600.)), tint)
 }
 
@@ -68,7 +68,7 @@ fn xy_at(reciprocal: f64, tint: f32) -> [f32; 2] {
     [(1.5 * u / denominator) as f32, (v / denominator) as f32]
 }
 
-pub fn from_xy(xy: [f32; 2]) -> [f32; 2] {
+pub(crate) fn from_xy(xy: [f32; 2]) -> [f32; 2] {
     let [x, y] = xy.map(f64::from);
     let u = 2. * x / (1.5 - x + 6. * y);
     let v = 3. * y / (1.5 - x + 6. * y);

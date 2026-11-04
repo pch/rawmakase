@@ -51,7 +51,7 @@ pub(crate) enum Block {
 
 impl Block {
     /// Samples per block.
-    pub fn per(self) -> usize {
+    pub(crate) fn per(self) -> usize {
         match self {
             Block::Packed { bits } => (128 / bits.clamp(1, 16)) as usize,
             Block::Delta => 14,

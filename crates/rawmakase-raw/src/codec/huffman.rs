@@ -12,7 +12,7 @@ pub(crate) struct Huffman {
 
 impl Huffman {
     /// From the number of codes of each length 1 to 16 and the symbols.
-    pub fn new(counts: &[u8; 16], symbols: &[u8]) -> Result<Self> {
+    pub(crate) fn new(counts: &[u8; 16], symbols: &[u8]) -> Result<Self> {
         let total: usize = counts.iter().map(|&n| usize::from(n)).sum();
         if total > symbols.len() || total == 0 {
             return Err(corrupt("Huffman table"));
@@ -40,7 +40,7 @@ impl Huffman {
     /// The code the next 16 bits start with: its length and symbol, for
     /// pumps other than [`Msb`].
     #[inline]
-    pub fn lookup(&self, next16: u32) -> Result<(u32, u8)> {
+    pub(crate) fn lookup(&self, next16: u32) -> Result<(u32, u8)> {
         match self.table.get(next16 as usize) {
             Some(&(len, symbol)) if len > 0 => Ok((u32::from(len), symbol)),
             _ => Err(corrupt("invalid Huffman code")),
@@ -48,7 +48,7 @@ impl Huffman {
     }
     /// The next symbol.
     #[inline]
-    pub fn symbol(&self, bits: &mut Msb) -> Result<u8> {
+    pub(crate) fn symbol(&self, bits: &mut Msb) -> Result<u8> {
         let (len, symbol) = self.table[bits.peek(16) as usize];
         if len == 0 {
             return Err(corrupt("invalid Huffman code"));
@@ -61,7 +61,7 @@ impl Huffman {
     /// with no bits following; with `sixteen`, the 16 bits some encoders
     /// write after it hold the difference.
     #[inline]
-    pub fn difference(&self, bits: &mut Msb, sixteen: bool) -> Result<i32> {
+    pub(crate) fn difference(&self, bits: &mut Msb, sixteen: bool) -> Result<i32> {
         let len = u32::from(self.symbol(bits)?);
         Ok(match len {
             0 => 0,

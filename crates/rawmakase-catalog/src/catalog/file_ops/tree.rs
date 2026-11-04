@@ -159,13 +159,13 @@ pub(super) fn inside(path: &Path, dir: &Path) -> bool {
 
 impl TreeState {
     /// The root it goes into: its own, or the other it is moved into.
-    pub fn to_root(&self) -> RootId {
+    pub(super) fn to_root(&self) -> RootId {
         self.into.unwrap_or(self.root)
     }
 
     /// Whether it moves a whole root into another (#586): the root's own
     /// logical path, which only a root move journals.
-    pub fn moves_root(&self) -> bool {
+    pub(super) fn moves_root(&self) -> bool {
         self.from.is_empty()
     }
 
@@ -179,7 +179,7 @@ impl TreeState {
     /// subtree changed in the catalog, it or its destination resolves
     /// elsewhere, a folder in it has a location of its own, or the catalog
     /// has a folder where it goes. `None` when everything holds.
-    pub fn check(&self, db: &impl Reads, computer: &str) -> Result<Option<String>> {
+    pub(super) fn check(&self, db: &impl Reads, computer: &str) -> Result<Option<String>> {
         if subtree(db, self.root, &self.from)? != self.folders {
             return Ok(Some(CHANGED.into()));
         }

@@ -88,7 +88,7 @@ pub(crate) struct Codes {
 
 impl Codes {
     /// From (length, code) per category 0 to 16; length 0 is no code.
-    pub fn new(pairs: &[(u32, u32)]) -> Result<Self> {
+    pub(crate) fn new(pairs: &[(u32, u32)]) -> Result<Self> {
         if pairs.len() != 17 {
             return Err(corrupt("Panasonic code table size"));
         }

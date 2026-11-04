@@ -21,9 +21,13 @@ license = "MIT"
 
 # Lints beyond the defaults. CI denies warnings, so each one listed here holds
 # at zero in every crate that adopts them with `[lints] workspace = true`. More
-# join as the refactor in issue #216 clears them: unreachable_pub with the
-# narrowing of `pub` (184 today), struct_excessive_bools with the state structs
-# (10).
+# join as the refactor in issue #216 clears them: struct_excessive_bools with
+# the state structs (10).
+[workspace.lints.rust]
+# An item marked `pub` is reachable from outside its crate; one that isn't says
+# `pub(crate)` or narrower (#808 step 4.13).
+unreachable_pub = "warn"
+
 [workspace.lints.clippy]
 fn_params_excessive_bools = "warn"
 large_enum_variant = "warn"

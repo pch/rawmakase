@@ -19,7 +19,7 @@ use std::{
 };
 
 #[derive(clap::Args)]
-pub struct Cli {
+pub(crate) struct Cli {
     /// Data folder of the running app; defaults to RAWMAKASE_DATA_DIR or the platform default.
     #[arg(long)]
     data_dir: Option<PathBuf>,
@@ -525,7 +525,7 @@ impl ServerHandler for Server {
     }
 }
 
-pub fn run(cli: Cli) -> anyhow::Result<()> {
+pub(crate) fn run(cli: Cli) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()

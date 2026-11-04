@@ -33,7 +33,7 @@ pub(crate) struct Codes {
 impl Codes {
     /// From each symbol's code (left-aligned in 12 bits) and length; the
     /// symbol is its index.
-    pub fn new(codes: &[(u16, u8)]) -> Result<Self> {
+    pub(crate) fn new(codes: &[(u16, u8)]) -> Result<Self> {
         let mut table = vec![(0u8, 0u8); 4096];
         for (symbol, &(code, len)) in codes.iter().enumerate() {
             if !(1..=12).contains(&len) {
@@ -68,7 +68,7 @@ impl Codes {
     /// length) in code order, written from prior general knowledge of the
     /// format (no decoder source consulted) and verified by an exact match
     /// with LibRaw's output on our files.
-    pub fn samsung() -> Self {
+    pub(crate) fn samsung() -> Self {
         const LIST: [(u8, u8); 14] = [
             (3, 4),
             (3, 7),
@@ -92,7 +92,7 @@ impl Codes {
     }
     /// The table in a Pentax maker note's HuffmanTable value, in the note's
     /// byte order.
-    pub fn from_note(b: &[u8], order: Order) -> Result<Self> {
+    pub(crate) fn from_note(b: &[u8], order: Order) -> Result<Self> {
         let u16_at = |i: usize| {
             b.get(i..i + 2).map(|s| match order {
                 Order::Little => u16::from_le_bytes([s[0], s[1]]),

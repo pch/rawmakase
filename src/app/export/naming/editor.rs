@@ -42,7 +42,7 @@ pub(in crate::app) struct NameEditor {
 
 impl NameEditor {
     /// Editing `tokens`, Lightroom's form, which are `preset`'s.
-    pub fn new(tokens: &str, preset: Preset) -> Self {
+    pub(crate) fn new(tokens: &str, preset: Preset) -> Self {
         Self {
             text: TokenTemplate::parse(tokens).to_display(),
             chosen: [0; MENUS.len()],
@@ -94,7 +94,9 @@ fn insert(ctx: &egui::Context, text: &mut String, label: &str) {
 
 impl NameEditor {
     /// The template as typed: what it is, or what is wrong with it.
-    pub fn parsed(&self) -> Result<TokenTemplate, Vec<crate::export_settings::DisplayError>> {
+    pub(crate) fn parsed(
+        &self,
+    ) -> Result<TokenTemplate, Vec<crate::export_settings::DisplayError>> {
         TokenTemplate::from_display(&self.text)
     }
 
@@ -102,7 +104,7 @@ impl NameEditor {
     /// name by the template typed and what it has to say, and `library`,
     /// the saved templates its Preset menu lists and changes; how the frame
     /// ended.
-    pub fn show(
+    pub(crate) fn show(
         &mut self,
         ctx: &egui::Context,
         example: &(String, Vec<String>),

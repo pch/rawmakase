@@ -61,7 +61,7 @@ pub(crate) struct Records<'a>(Vec<(u16, &'a [u8])>);
 impl<'a> Records<'a> {
     /// The records of the directory `dir`: a count, then per record its tag,
     /// its length and its bytes.
-    pub fn parse(dir: &'a [u8]) -> Self {
+    pub(crate) fn parse(dir: &'a [u8]) -> Self {
         let b = Bytes::new(dir, Order::Big);
         let count = b.u32(0).unwrap_or(0).min(4096);
         let mut at = 4u64;
@@ -78,11 +78,11 @@ impl<'a> Records<'a> {
         }
         Self(out)
     }
-    pub fn get(&self, tag: u16) -> Option<&'a [u8]> {
+    pub(crate) fn get(&self, tag: u16) -> Option<&'a [u8]> {
         self.0.iter().find(|r| r.0 == tag).map(|r| r.1)
     }
     /// A record of two 16-bit values.
-    pub fn pair(&self, tag: u16) -> Option<[u32; 2]> {
+    pub(crate) fn pair(&self, tag: u16) -> Option<[u32; 2]> {
         let v = self.get(tag).filter(|v| v.len() == 4)?;
         Some([
             u32::from(u16::from_be_bytes([v[0], v[1]])),

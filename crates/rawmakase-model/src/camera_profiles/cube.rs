@@ -19,7 +19,7 @@ use anyhow::{Result, bail, ensure};
 /// A `.cube` 3D lookup table: a regular grid of `size` divisions per side over
 /// `domain_min` to `domain_max`, tetrahedrally interpolated.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Lut3d {
+pub(super) struct Lut3d {
     size: usize,
     domain_min: [f32; 3],
     domain_max: [f32; 3],
@@ -61,7 +61,7 @@ impl Shaper {
 
 /// What a `.cube` file holds: a 3D table, or a 1D one alone.
 #[derive(Clone, Debug, PartialEq)]
-pub enum Cube {
+pub(super) enum Cube {
     Three(Lut3d),
     One(Lut1d),
 }
@@ -69,7 +69,7 @@ pub enum Cube {
 /// A 1D `.cube`: a curve per channel, `size` entries over `domain_min` to
 /// `domain_max`, interpolated linearly.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Lut1d {
+pub(super) struct Lut1d {
     domain_min: [f32; 3],
     domain_max: [f32; 3],
     /// One triple per entry; each of its three channels is that channel's curve.
@@ -78,22 +78,22 @@ pub struct Lut1d {
 
 impl Lut1d {
     /// The curve's entries.
-    pub fn size(&self) -> usize {
+    pub(super) fn size(&self) -> usize {
         self.table.len()
     }
 
     /// The domain the input is read over.
-    pub fn domain(&self) -> ([f32; 3], [f32; 3]) {
+    pub(super) fn domain(&self) -> ([f32; 3], [f32; 3]) {
         (self.domain_min, self.domain_max)
     }
 
     /// The entry at `i`, one value per channel.
-    pub fn entry(&self, i: usize) -> [f32; 3] {
+    pub(super) fn entry(&self, i: usize) -> [f32; 3] {
         self.table[i]
     }
 
     /// Each channel of `rgb` through its curve, clamped into the domain.
-    pub fn lookup(&self, rgb: [f32; 3]) -> [f32; 3] {
+    pub(super) fn lookup(&self, rgb: [f32; 3]) -> [f32; 3] {
         let last = self.table.len() - 1;
         std::array::from_fn(|c| {
             let unit = ((rgb[c] - self.domain_min[c]) / (self.domain_max[c] - self.domain_min[c]))
@@ -128,7 +128,7 @@ fn finite(value: f32, line: usize) -> Result<f32> {
 }
 
 /// The `TITLE` a cube names itself with, kept for a browser to show.
-pub fn title_of(text: &str) -> Option<String> {
+pub(super) fn title_of(text: &str) -> Option<String> {
     text.lines().find_map(|line| {
         let (keyword, rest) = split_keyword(strip_comment(line).trim());
         (keyword == "TITLE").then(|| unquote(rest))
@@ -137,7 +137,7 @@ pub fn title_of(text: &str) -> Option<String> {
 
 impl Cube {
     /// Reads a cube. Comments start at `#` and run to the end of the line.
-    pub fn parse(text: &str) -> Result<Self> {
+    pub(super) fn parse(text: &str) -> Result<Self> {
         // A file written on Windows often starts with a UTF-8 byte order mark, which
         // would otherwise land on the first keyword and be read as a data line.
         let text = text.strip_prefix('\u{feff}').unwrap_or(text);
@@ -327,22 +327,22 @@ fn one_dimensional(
 
 impl Lut3d {
     /// The cube's divisions per side.
-    pub fn size(&self) -> usize {
+    pub(super) fn size(&self) -> usize {
         self.size
     }
 
     /// The cube's domain, which its input colours are read over.
-    pub fn domain(&self) -> ([f32; 3], [f32; 3]) {
+    pub(super) fn domain(&self) -> ([f32; 3], [f32; 3]) {
         (self.domain_min, self.domain_max)
     }
 
     /// Whether a 1D shaper table goes in front of the 3D one.
-    pub fn has_shaper(&self) -> bool {
+    pub(super) fn has_shaper(&self) -> bool {
         self.shaper.is_some()
     }
 
     /// The input range the shaper reads (`LUT_1D_INPUT_RANGE`), if there is one.
-    pub fn shaper_input_range(&self) -> Option<[f32; 2]> {
+    pub(super) fn shaper_input_range(&self) -> Option<[f32; 2]> {
         self.shaper.as_ref().map(|s| s.input_range)
     }
 
@@ -351,13 +351,13 @@ impl Lut3d {
     }
 
     /// The colour at a grid node, red index fastest.
-    pub fn node(&self, r: usize, g: usize, b: usize) -> [f32; 3] {
+    pub(super) fn node(&self, r: usize, g: usize, b: usize) -> [f32; 3] {
         self.data[r + g * self.size + b * self.size * self.size]
     }
 
     /// The looked-up colour, without a strength: `rgb` mapped through the domain,
     /// clamped into it, and interpolated tetrahedrally.
-    pub fn lookup(&self, rgb: [f32; 3]) -> [f32; 3] {
+    pub(super) fn lookup(&self, rgb: [f32; 3]) -> [f32; 3] {
         let rgb = self.shaper.as_ref().map_or(rgb, |s| s.apply(rgb));
         let n = self.size;
         let last = n - 1;

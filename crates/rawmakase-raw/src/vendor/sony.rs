@@ -83,7 +83,7 @@ pub(crate) struct Sr2 {
 impl Sr2 {
     /// The file's SR2SubIFD, decrypted; `None` when it has none or it is not
     /// inside the file.
-    pub fn read(t: &TiffFile) -> Option<Self> {
+    pub(crate) fn read(t: &TiffFile) -> Option<Self> {
         let private = t.bytes_of(&t.ifds[0], DNG_PRIVATE_DATA)?;
         let at = u64::from(t.u32(private.get(..4)?));
         let ifd = t.ifd_at(at)?;
@@ -142,7 +142,7 @@ impl Sr2 {
         Some((kind, value))
     }
     /// The values of a SHORT or SSHORT tag, as stored.
-    pub fn shorts(&self, tag: u16) -> Option<Vec<u16>> {
+    pub(crate) fn shorts(&self, tag: u16) -> Option<Vec<u16>> {
         let (k, v) = self.entry(tag)?;
         matches!(k, kind::SHORT | kind::SSHORT)
             .then(|| v.as_chunks::<2>().0.iter().map(|c| self.u16(c)).collect())
@@ -295,7 +295,7 @@ pub(crate) struct Mrw {
 }
 
 impl Mrw {
-    pub fn read(t: &TiffFile) -> Option<Self> {
+    pub(crate) fn read(t: &TiffFile) -> Option<Self> {
         let private = t.bytes_of(&t.ifds[0], DNG_PRIVATE_DATA)?;
         let at = u64::from(t.u32(private.get(..4)?));
         let head = t.bytes.slice(at, 8).ok()?;

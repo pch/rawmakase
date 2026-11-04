@@ -1312,7 +1312,7 @@ pub(super) fn restore(
 pub(super) struct DeletionEvidence(());
 
 impl DeletionEvidence {
-    pub fn of(disk: &dyn Disk, members: &[Member]) -> Option<Self> {
+    pub(super) fn of(disk: &dyn Disk, members: &[Member]) -> Option<Self> {
         let gone = members.iter().all(|m| {
             m.state == MemberState::Trashed
                 && m.receipt.is_some()

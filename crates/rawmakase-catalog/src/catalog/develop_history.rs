@@ -109,7 +109,7 @@ impl<'a> HistoryUpdate<'a> {
 }
 
 /// `history` as stored.
-pub fn encode(history: &SavedHistory) -> Result<Vec<u8>> {
+pub(super) fn encode(history: &SavedHistory) -> Result<Vec<u8>> {
     ensure!(
         history.applied <= history.steps.len(),
         "Invalid History position"
@@ -262,7 +262,7 @@ fn has_duplicate_keys(text: &[u8]) -> bool {
 }
 
 /// The History in `data`; `None` for a format from a newer release.
-pub fn decode(data: &[u8]) -> Result<Option<SavedHistory>> {
+pub(super) fn decode(data: &[u8]) -> Result<Option<SavedHistory>> {
     let Some(stored) = stored(data)? else {
         return Ok(None);
     };

@@ -18,7 +18,7 @@ pub(super) struct Names(pub NameRules);
 
 impl Names {
     /// `name` as the folder compares it.
-    pub fn key(&self, name: &OsStr) -> String {
+    pub(super) fn key(&self, name: &OsStr) -> String {
         use unicode_normalization::UnicodeNormalization;
         let text = name.to_string_lossy();
         let text: String = if self.0.normalization == Folding::Exact {
@@ -55,7 +55,7 @@ pub(super) enum Taken {
 
 impl Destination<'_> {
     /// Whether `name` is taken there, before anything arrives.
-    pub fn taken(&self, disk: &dyn Disk, name: &OsStr) -> Option<Taken> {
+    pub(super) fn taken(&self, disk: &dyn Disk, name: &OsStr) -> Option<Taken> {
         let key = self.rules.key(name);
         if self
             .names

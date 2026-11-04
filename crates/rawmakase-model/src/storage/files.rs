@@ -191,7 +191,7 @@ pub fn list_raws(path: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 /// Camera RAW extensions RAWmakase opens as RAW files, lower case.
-pub const RAW_EXTENSIONS: [&str; 28] = [
+pub(super) const RAW_EXTENSIONS: [&str; 28] = [
     "3fr", "arw", "cr2", "cr3", "crw", "dcr", "dng", "erf", "fff", "gpr", "iiq", "k25", "kdc",
     "mef", "mos", "mrw", "nef", "nrw", "orf", "pef", "raf", "raw", "rw2", "rwl", "sr2", "srf",
     "srw", "x3f",

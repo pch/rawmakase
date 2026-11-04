@@ -55,7 +55,7 @@ impl std::fmt::Debug for Huffman {
 
 impl Header {
     /// Samples per MCU: the sum of every component's `h × v`.
-    pub fn samples_per_mcu(&self) -> usize {
+    pub(crate) fn samples_per_mcu(&self) -> usize {
         self.components
             .iter()
             .map(|c| usize::from(c.h) * usize::from(c.v))
@@ -63,7 +63,7 @@ impl Header {
     }
     /// MCUs across and down: the frame's width and height are in samples of
     /// the most finely sampled component (T.81 A.1.1).
-    pub fn mcus(&self) -> (usize, usize) {
+    pub(crate) fn mcus(&self) -> (usize, usize) {
         let h = self.components.iter().map(|c| c.h).max().unwrap_or(1);
         let v = self.components.iter().map(|c| c.v).max().unwrap_or(1);
         (

@@ -73,7 +73,7 @@ use std::{
 
 /// The lens correction a RAW stores.
 #[derive(Debug, Default)]
-pub struct Builtin {
+pub(crate) struct Builtin {
     /// What Lightroom applies from the file whatever Enable Profile Corrections says
     /// (or, for a correction that is not `default_on`, when it is on).
     pub lens: Option<LensCorrection>,
@@ -92,7 +92,7 @@ fn read(path: &Path, m: &Metadata) -> Option<LensCorrection> {
 }
 
 /// What `path` stores of the camera's lens correction ([`Builtin`]).
-pub fn read_builtin(path: &Path, m: &Metadata) -> Builtin {
+pub(crate) fn read_builtin(path: &Path, m: &Metadata) -> Builtin {
     let valid = |c: Option<LensCorrection>| c.filter(|c| !c.is_empty() && c.validate());
     let b = read_any(path, m).unwrap_or_default();
     Builtin {

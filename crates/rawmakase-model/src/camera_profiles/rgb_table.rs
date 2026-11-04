@@ -492,7 +492,7 @@ impl<'de> Deserialize<'de> for RgbTable {
 
 #[cfg(any(test, feature = "test-support"))]
 #[cfg_attr(not(test), allow(dead_code))]
-pub mod tests {
+pub(super) mod tests {
     use super::*;
 
     /// A table's bytes in Adobe's encoding (base 85 over zlib).

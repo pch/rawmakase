@@ -2,7 +2,7 @@
 use super::chart::{Patch, SRGB_TO_XYZ, apply, srgb_to_linear};
 
 /// Mean encoded-sRGB value of each patch area, as 16-bit integers.
-pub fn patches(width: u32, pixels: &[[f32; 3]], patches: &[Patch]) -> Vec<[u16; 3]> {
+pub(crate) fn patches(width: u32, pixels: &[[f32; 3]], patches: &[Patch]) -> Vec<[u16; 3]> {
     patches
         .iter()
         .map(|p| {
@@ -22,7 +22,7 @@ pub fn patches(width: u32, pixels: &[[f32; 3]], patches: &[Patch]) -> Vec<[u16; 
 }
 
 /// CIELAB relative to D65, from encoded sRGB.
-pub fn lab(rgb: [u16; 3]) -> [f64; 3] {
+pub(crate) fn lab(rgb: [u16; 3]) -> [f64; 3] {
     let lin = rgb.map(|v| srgb_to_linear(v as f64 / 65535.));
     let xyz = apply(&SRGB_TO_XYZ, lin);
     let white = [0.950_47, 1., 1.088_83];
@@ -37,18 +37,18 @@ pub fn lab(rgb: [u16; 3]) -> [f64; 3] {
     [116. * fy - 16., 500. * (fx - fy), 200. * (fy - fz)]
 }
 
-pub fn chroma(lab: [f64; 3]) -> f64 {
+pub(crate) fn chroma(lab: [f64; 3]) -> f64 {
     lab[1].hypot(lab[2])
 }
 
 /// Hue angle difference in degrees, in −180..180.
-pub fn hue_difference(a: [f64; 3], b: [f64; 3]) -> f64 {
+pub(crate) fn hue_difference(a: [f64; 3], b: [f64; 3]) -> f64 {
     let d = b[2].atan2(b[1]).to_degrees() - a[2].atan2(a[1]).to_degrees();
     (d + 540.) % 360. - 180.
 }
 
 /// CIEDE2000 colour difference (Sharma, Wu and Dalal 2005).
-pub fn delta_e2000(lab1: [f64; 3], lab2: [f64; 3]) -> f64 {
+pub(crate) fn delta_e2000(lab1: [f64; 3], lab2: [f64; 3]) -> f64 {
     let [l1, a1, b1] = lab1;
     let [l2, a2, b2] = lab2;
     let c_bar = (a1.hypot(b1) + a2.hypot(b2)) / 2.;

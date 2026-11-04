@@ -216,7 +216,7 @@ impl<'de> Deserialize<'de> for Unknown {
 impl Session {
     /// The Copy Settings groups saved last time, with AI Denoise's (saved apart), which
     /// a session from before it includes, as it is by default.
-    pub fn copy_groups(&self) -> Option<crate::model::settings_groups::GroupSelection> {
+    pub(crate) fn copy_groups(&self) -> Option<crate::model::settings_groups::GroupSelection> {
         use crate::model::settings_groups::{GroupInclusion, SettingGroup};
         let mut groups = self.copy_groups.clone()?;
         let inclusion = if self.copy_ai_denoise.unwrap_or(true) {

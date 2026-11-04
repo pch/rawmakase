@@ -10,7 +10,7 @@ pub(crate) const SETTING: &str = "RAWmakaseLookAmount";
 pub(crate) struct LookAmount(pub f32);
 
 impl LookAmount {
-    pub fn parse(text: &str) -> Result<Self> {
+    pub(crate) fn parse(text: &str) -> Result<Self> {
         let amount: f32 = text
             .trim()
             .trim_matches('"')
