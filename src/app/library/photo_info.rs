@@ -13,7 +13,7 @@ impl Library {
     pub(super) fn active_info(&mut self) -> Option<PhotoInfo> {
         let id = self.selection.active?;
         if self.info.as_ref().is_none_or(|(at, _)| *at != id) {
-            let info = self.session.catalog.photo_info(id).ok().flatten();
+            let info = self.session.catalog().photo_info(id).ok().flatten();
             self.info = Some((id, info));
         }
         self.info.as_ref().and_then(|(_, info)| info.clone())
@@ -26,7 +26,7 @@ impl Library {
             .as_ref()
             .is_none_or(|(id, _)| *id != photo.id)
         {
-            let info = self.session.catalog.photo_info(photo.id).ok().flatten();
+            let info = self.session.catalog().photo_info(photo.id).ok().flatten();
             self.hover_info = Some((photo.id, info));
         }
         let info = self.hover_info.as_ref().and_then(|(_, info)| info.as_ref());
@@ -47,7 +47,7 @@ impl Library {
     /// An expanded grid cell's details: dimensions and capture date, e.g.
     /// "6000 × 4000 · 29/06/2016". The info is read once per photo.
     pub(super) fn cell_details(&mut self, photo: &crate::catalog::Photo) -> String {
-        let catalog = &self.session.catalog;
+        let catalog = self.session.catalog();
         let info = self
             .cell_info
             .entry(photo.id)

@@ -68,11 +68,11 @@ fn parent_rows(
     let parent = c.from.rsplit_once('/').map_or("", |(p, _)| p);
     let inside = format!("{}/", c.from);
     let mut rows = Vec::new();
-    for (root, original, location) in &library.session.roots {
-        let name = root_name(&library.session.roots, *root);
+    for (root, original, location) in library.session.roots() {
+        let name = root_name(library.session.roots(), *root);
         let top = std::path::PathBuf::from(location.as_deref().unwrap_or(original));
         let mut logical: Vec<String> = vec![String::new()];
-        for f in library.session.folders.iter().filter(|f| f.root == *root) {
+        for f in library.session.folders().iter().filter(|f| f.root == *root) {
             let mut at = String::new();
             for name in f.relative.split('/').filter(|n| !n.is_empty()) {
                 at = join(&at, name);
@@ -86,7 +86,7 @@ fn parent_rows(
         // the one above it. Sorted, a folder comes after the one above it.
         let mut paths: std::collections::HashMap<String, std::path::PathBuf> = library
             .session
-            .folders
+            .folders()
             .iter()
             .filter(|f| f.root == *root)
             .map(|f| (f.relative.clone(), f.path.clone()))
@@ -166,7 +166,7 @@ impl Editor {
         let roots = self
             .library
             .as_ref()
-            .map(|l| l.session.roots.as_slice())
+            .map(|l| l.session.roots())
             .unwrap_or_default();
         let into = match last(&to) {
             "" => root_name(roots, to_root),
@@ -215,10 +215,10 @@ impl Editor {
         }
         let Some((catalog, name)) = self.library.as_ref().map(|l| {
             let name = match last(&from) {
-                "" => located_name(&l.session.roots, root),
+                "" => located_name(l.session.roots(), root),
                 name => name.to_string(),
             };
-            (l.session.catalog.location().clone(), name)
+            (l.session.catalog().location().clone(), name)
         }) else {
             return;
         };
@@ -240,7 +240,7 @@ impl Editor {
             self.file_ops.state = State::Idle;
             return;
         };
-        if library.session.catalog.location() != &c.catalog {
+        if library.session.catalog().location() != &c.catalog {
             self.file_ops.state = State::Idle;
             return;
         }

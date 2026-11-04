@@ -3,7 +3,7 @@ name = "rawmakase-interop"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "RAWmakase's file formats and presets over its model: XMP, Lightroom Develop settings, presets, raw defaults, EXIF, watermarks, without the RAW decoders, the renderer or the GUI"
+description = "RAWmakase's file formats and presets over its model: XMP, Lightroom Develop settings, presets, raw defaults, EXIF, watermarks, and which edit a photo develops with, without the RAW decoders, the renderer or the GUI"
 license.workspace = true
 publish = false
 

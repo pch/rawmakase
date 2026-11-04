@@ -1127,7 +1127,7 @@ impl Editor {
         let Some(location) = self
             .library
             .as_ref()
-            .map(|l| l.session.catalog.location().clone())
+            .map(|l| l.session.catalog().location().clone())
         else {
             return;
         };
@@ -1407,7 +1407,7 @@ impl Editor {
         let read = self
             .library
             .as_ref()
-            .map(|l| file_ops::outcome(&l.session.catalog, &batch));
+            .map(|l| file_ops::outcome(l.session.catalog(), &batch));
         let outcome = match (read, done) {
             (Some(Ok(mut outcome)), done) => {
                 outcome.stopped = match done {
@@ -1564,12 +1564,12 @@ impl Editor {
         // Each moved photo, its copies included, at its file now.
         let files: Vec<(PhotoId, std::path::PathBuf)> = library
             .session
-            .photos
+            .photos()
             .iter()
             .filter(|p| moved.contains(&p.id) || p.master.is_some_and(|m| moved.contains(&m)))
             .map(|p| (p.id, p.path.clone()))
             .collect();
-        let catalog = library.session.catalog.location().clone();
+        let catalog = library.session.catalog().location().clone();
         // The open photo's file is where the catalog says now: its edit
         // saves there.
         let open = self
@@ -1618,7 +1618,7 @@ impl Editor {
                         .is_none_or(|at| at.elapsed() >= Duration::from_millis(250));
                     if due && let Some(library) = &self.library {
                         progress.read = Some(Instant::now());
-                        if let Ok(outcome) = file_ops::outcome(&library.session.catalog, batch) {
+                        if let Ok(outcome) = file_ops::outcome(library.session.catalog(), batch) {
                             progress.done = outcome
                                 .items
                                 .iter()
@@ -1687,7 +1687,7 @@ impl Editor {
     fn showing_catalog(&self, location: &CatalogLocation) -> bool {
         self.library
             .as_ref()
-            .is_some_and(|l| l.session.catalog.location() == location)
+            .is_some_and(|l| l.session.catalog().location() == location)
     }
 
     /// Lets the catalog go: what waited may write again, and the

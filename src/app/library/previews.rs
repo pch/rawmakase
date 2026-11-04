@@ -189,10 +189,12 @@ pub(super) enum EditJob {
         /// [`EditResult::Kept`] unless the photo is shown by then.
         ahead: bool,
     },
-    /// Keep an already rendered preview, e.g. from Develop.
+    /// Keep an already rendered preview, e.g. from Develop, of the file as
+    /// `stamp` gives it when it was rendered: not kept once the file differs.
     Store {
         path: PathBuf,
         tag: String,
+        stamp: Stamp,
         image: image::RgbImage,
     },
 }
@@ -388,7 +390,7 @@ fn renders_at(pace: Pace, full_renders: usize) -> usize {
 }
 /// What the worker does next.
 enum Step {
-    Store(PathBuf, String, image::RgbImage),
+    Store(PathBuf, String, Stamp, image::RgbImage),
     /// Answer without rendering: the photo is out of view, or was asked for
     /// ahead and the pace dropped.
     Skip(PhotoId, u64),
@@ -442,7 +444,7 @@ fn spawn_edited_with(
             match next_step(&renders.results.shared, &renders.wanted, full_renders) {
                 Step::Exit => break,
                 Step::Skip(id, ticket) => renders.results.send(EditResult::Skipped(id, ticket)),
-                Step::Store(path, tag, image) => renders.store(&path, &tag, &image),
+                Step::Store(path, tag, stamp, image) => renders.store(&path, &tag, &stamp, &image),
                 Step::Look(index, render) => renders.look(index, render),
                 Step::Render(index) => renders.start(index),
             }
@@ -487,11 +489,14 @@ fn reopen(at: &Mutex<Option<PreviewCache>>, path: &Path) {
     *cache(at) = PreviewCache::open(path).ok();
 }
 impl Renders {
-    fn store(&self, path: &Path, tag: &str, image: &image::RgbImage) {
+    /// Keeps `image`, rendered from the file at `path` as `stamp` gives it,
+    /// as its preview under `tag`; a file changed since gets none of it, and
+    /// that is not a cache failure.
+    fn store(&self, path: &Path, tag: &str, stamp: &Stamp, image: &image::RgbImage) {
         let stored = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            match (&mut *cache(&self.cache), Stamp::read(path)) {
-                (Some(cache), Ok(stamp)) => cache
-                    .store_tagged(path, tag, &stamp, image)
+            match &mut *cache(&self.cache) {
+                Some(cache) if Stamp::read(path).ok().as_ref() == Some(stamp) => cache
+                    .store_tagged(path, tag, stamp, image)
                     .err()
                     .map(|error| error.to_string()),
                 _ => None,
@@ -689,10 +694,16 @@ fn next_step(shared: &Shared, wanted: &Wanted, full_renders: usize) -> Step {
             .iter()
             .position(|q| matches!(q.job, EditJob::Store { .. }))
         {
-            let EditJob::Store { path, tag, image } = state.jobs.remove(index).job else {
+            let EditJob::Store {
+                path,
+                tag,
+                stamp,
+                image,
+            } = state.jobs.remove(index).job
+            else {
                 unreachable!()
             };
-            return Step::Store(path, tag, image);
+            return Step::Store(path, tag, stamp, image);
         }
         let shown = wanted.lock().unwrap().clone();
         let full = state.pace == Pace::Full;
@@ -1073,6 +1084,45 @@ pub(super) mod tests {
         Ok(())
     }
 
+    /// Develop's render of a file replaced since is not kept as the new file's
+    /// preview: it is stored under the file as it was rendered, or not at all.
+    #[test]
+    fn a_stored_render_of_a_file_replaced_since_is_not_kept() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let source = directory.path().join("photo.png");
+        image::RgbImage::new(16, 16).save(&source)?;
+        let rendered = Stamp::read(&source)?;
+        image::RgbImage::new(24, 24).save(&source)?;
+        let cache = directory.path().join("previews.sqlite3");
+        let (tx, rx, _) = spawn_edited(cache.clone(), Wanted::default(), egui::Context::default());
+        tx.send(EditJob::Store {
+            path: source.clone(),
+            tag: "edit".into(),
+            stamp: rendered,
+            image: image::RgbImage::new(4, 4),
+        })?;
+        // Stores go first: once a later job is answered, the store is done.
+        tx.send(EditJob::Render {
+            id: PhotoId(1),
+            ticket: 0,
+            path: source.clone(),
+            source: EditSource::Recipe("{}".into()),
+            ahead: false,
+        })?;
+        match rx.recv_timeout(Duration::from_secs(10))? {
+            EditResult::Skipped(PhotoId(1), 0) => {}
+            EditResult::CacheError(error) => panic!("reported as a failure: {error}"),
+            _ => panic!("unexpected result"),
+        }
+        assert!(
+            PreviewCache::open(&cache)?
+                .load_tagged(&source, "edit")?
+                .is_none(),
+            "kept as the replaced file's preview"
+        );
+        Ok(())
+    }
+
     #[test]
     fn edited_preview_cache_failures_are_reported() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
@@ -1085,6 +1135,7 @@ pub(super) mod tests {
         );
         // Larger than the cache keeps.
         tx.send(EditJob::Store {
+            stamp: Stamp::read(&source)?,
             path: source,
             tag: "edit".into(),
             image: image::RgbImage::new(2048, 8),

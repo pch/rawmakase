@@ -42,7 +42,7 @@ fn id(e: &Editor, name: &str) -> PhotoId {
         .as_ref()
         .unwrap()
         .session
-        .photos
+        .photos()
         .iter()
         .find(|p| p.filename == name)
         .unwrap_or_else(|| panic!("no photo {name}"))
@@ -167,7 +167,7 @@ fn edits_are_said_to_be_lost_with_a_trashed_photo() -> anyhow::Result<()> {
         ..Default::default()
     };
     let path = library.photo(a).unwrap().path.clone();
-    library.session.catalog.save_edit(
+    library.session.save_edit(
         a,
         &path,
         &crate::storage::Identity::read(&path)?,
@@ -280,7 +280,7 @@ fn delete_says_what_each_choice_takes_when_some_files_cant_go() -> anyhow::Resul
         ..Default::default()
     };
     let path = library.photo(b).unwrap().path.clone();
-    library.session.catalog.save_edit(
+    library.session.save_edit(
         b,
         &path,
         &crate::storage::Identity::read(&path)?,

@@ -20,7 +20,7 @@ fn exported_trip() -> anyhow::Result<(tempfile::TempDir, Editor, FolderRemoval)>
     editor.library = Some(Box::new(library::Library::load(&path, ctx)?));
     let session = &editor.library.as_ref().unwrap().session;
     let trip: std::collections::HashSet<_> = session
-        .folders
+        .folders()
         .iter()
         .filter(|f| f.relative.trim_end_matches('/') == "trip")
         .map(|f| f.id)
@@ -30,7 +30,7 @@ fn exported_trip() -> anyhow::Result<(tempfile::TempDir, Editor, FolderRemoval)>
         &dir.path().join("trip.rawmakase"),
     )?;
     let removal = FolderRemoval {
-        catalog: session.catalog.location().clone(),
+        catalog: session.catalog().location().clone(),
         name: "trip".into(),
         folders: trip,
         photos: 1,
@@ -78,7 +78,7 @@ fn an_exported_folder_changed_since_is_not_removed() -> anyhow::Result<()> {
     let away = {
         let session = &editor.library.as_ref().unwrap().session;
         session
-            .photos
+            .photos()
             .iter()
             .find(|p| p.filename == "away.ARW")
             .unwrap()
@@ -90,7 +90,7 @@ fn an_exported_folder_changed_since_is_not_removed() -> anyhow::Result<()> {
         .set_ratings(&[(away, 5, 0, String::new())])?;
     editor.remove_folders(&removal);
     let session = &editor.library.as_ref().unwrap().session;
-    assert_eq!(session.photos.len(), 2);
+    assert_eq!(session.photos().len(), 2);
     assert!(
         editor
             .messages
@@ -110,7 +110,7 @@ fn an_exported_folder_changed_since_is_not_removed() -> anyhow::Result<()> {
         .as_ref()
         .unwrap()
         .session
-        .photos
+        .photos()
         .iter()
         .map(|p| p.filename.clone())
         .collect();

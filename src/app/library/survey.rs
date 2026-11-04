@@ -30,7 +30,7 @@ impl Library {
     /// the only one.
     pub(crate) fn open_survey(&mut self) {
         if self.selection.active.is_none() {
-            self.select(self.visible.first().map(|i| self.session.photos[*i].id));
+            self.select(self.visible.first().map(|i| self.session.photos()[*i].id));
         }
         if self.selection.active.is_none() {
             return;
@@ -99,7 +99,7 @@ impl Library {
             library
                 .visible
                 .iter()
-                .any(|i| library.session.photos[*i].id == *id)
+                .any(|i| library.session.photos()[*i].id == *id)
         };
         let at = surveyed.iter().position(|i| *i == id).unwrap_or(0);
         let active = surveyed[at..]

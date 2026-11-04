@@ -60,7 +60,7 @@ impl Library {
         let Some(select) = self
             .selection
             .active
-            .or_else(|| self.visible.first().map(|i| self.session.photos[*i].id))
+            .or_else(|| self.visible.first().map(|i| self.session.photos()[*i].id))
         else {
             return;
         };
@@ -83,12 +83,12 @@ impl Library {
         let at = self
             .visible
             .iter()
-            .position(|i| self.session.photos[*i].id == select);
+            .position(|i| self.session.photos()[*i].id == select);
         let after = |id: &PhotoId| {
             let position = self
                 .visible
                 .iter()
-                .position(|i| self.session.photos[*i].id == *id);
+                .position(|i| self.session.photos()[*i].id == *id);
             position > at
         };
         let candidate = others
@@ -116,7 +116,7 @@ impl Library {
         let ids: Vec<PhotoId> = self
             .visible
             .iter()
-            .map(|i| self.session.photos[*i].id)
+            .map(|i| self.session.photos()[*i].id)
             .collect();
         let from = from.filter(|id| ids.contains(id)).unwrap_or(select);
         let mut at = ids.iter().position(|id| *id == from)? as isize;
@@ -226,7 +226,7 @@ impl Library {
     fn is_shown(&self, id: PhotoId) -> bool {
         self.visible
             .iter()
-            .any(|i| self.session.photos[*i].id == id)
+            .any(|i| self.session.photos()[*i].id == id)
     }
     /// Keeps Compare to the selection and the photos shown. A selection
     /// another command changed (undo, a menu, a new virtual copy) is
@@ -261,7 +261,7 @@ impl Library {
             self.compare.select = self.compare.candidate.take();
         }
         if self.compare.select.is_none() {
-            self.compare.select = self.visible.first().map(|i| self.session.photos[*i].id);
+            self.compare.select = self.visible.first().map(|i| self.session.photos()[*i].id);
         }
         let select = self.compare.select?;
         if self.compare.candidate.is_none() {

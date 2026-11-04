@@ -21,13 +21,13 @@ impl Library {
                     ui.add_space(space::L);
                     self.cell_style_menu(ui);
                     ui.add_space(space::L);
-                    ui.small(if self.visible.len() == self.session.photos.len() {
-                        format!("{} photos", self.session.photos.len())
+                    ui.small(if self.visible.len() == self.session.photos().len() {
+                        format!("{} photos", self.session.photos().len())
                     } else {
                         format!(
                             "{} of {} photos",
                             self.visible.len(),
-                            self.session.photos.len()
+                            self.session.photos().len()
                         )
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -120,7 +120,7 @@ impl Library {
             && let Some(after) = self
                 .visible
                 .iter()
-                .position(|i| self.session.photos[*i].id == id)
+                .position(|i| self.session.photos()[*i].id == id)
         {
             let rows = (after / columns) as f32 - (before / columns) as f32;
             self.grid_kinetic.stop();
@@ -135,7 +135,7 @@ impl Library {
                     && let Some(at) = self.selection.active.and_then(|id| {
                         self.visible
                             .iter()
-                            .position(|i| self.session.photos[*i].id == id)
+                            .position(|i| self.session.photos()[*i].id == id)
                     })
                 {
                     self.grid_kinetic.stop();
@@ -160,7 +160,7 @@ impl Library {
                                     let Some(&index) = self.visible.get(row * columns + col) else {
                                         break;
                                     };
-                                    let p = self.session.photos[index].clone();
+                                    let p = self.session.photos()[index].clone();
                                     let exists = self.is_available(&p.path);
                                     self.request_previews(&p, ui.ctx());
                                     let shown = cell::Shown {

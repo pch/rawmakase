@@ -28,7 +28,7 @@ from, and what Reset returns to. A master choice (Adobe Default, Camera Settings
 RAWmakase Default or a preset), with per-camera overrides. Only photos without a
 RAWmakase or Lightroom edit follow them.
 
-**Starting edit** (`edits::resolve`, crates/rawmakase-catalog). The edit a photo
+**Starting edit** (`edits::resolve`, crates/rawmakase-interop). The edit a photo
 develops with: its saved RAWmakase edit, else its Lightroom edit, else the raw
 defaults. Develop, Sync Settings and Export resolve it here.
 
@@ -69,8 +69,8 @@ read). Because every render measures the same copy, a preview, a 100% region and
 export of the same recipe agree.
 
 **Photo measures**. Two things. In the engine, `scene_tone::PhotoMeasures`: what the
-scene tone stage measures on the measurement copy. In interop,
-`xmp::PhotoMeasures`: the trait through which applying settings that ask for Auto
+scene tone stage measures on the measurement copy. In the model,
+`model::measures::PhotoMeasures` (re-exported as `xmp::PhotoMeasures`): the trait through which applying settings that ask for Auto
 (Auto Tone, Auto white balance, Auto black & white mix) measures the photo;
 `develop::Measures` implements it, so XMP needs no rendering code.
 

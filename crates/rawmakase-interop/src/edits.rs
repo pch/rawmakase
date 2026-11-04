@@ -2,7 +2,7 @@
 //! needed: its saved RAWmakase edit, else its Lightroom edit, else the raw
 //! defaults. Develop, Sync Settings and Export all start from here.
 //!
-//! The catalog reads the stored edit ([`Catalog::edit_record`](crate::catalog::Catalog::edit_record))
+//! The catalog reads the stored edit (`Catalog::edit_record` in `rawmakase_catalog`)
 //! and [`resolve`] works it out after, so a caller can read many photos at once
 //! and resolve them later, off the UI thread. Upright's analysis needs the
 //! developed photo, so it is a step of its own: `rawmakase_engine::develop::upright::complete`.
@@ -142,8 +142,9 @@ pub fn resolve(
     })
 }
 
-/// Spots and masks from their stored text; none when there is none.
-pub(crate) fn local_edits(text: Option<&str>) -> Result<crate::model::recipe::LocalEdits> {
+/// Spots and masks from their stored text; none when there is none. The catalog reads
+/// them with this too.
+pub fn local_edits(text: Option<&str>) -> Result<crate::model::recipe::LocalEdits> {
     let local: crate::model::recipe::LocalEdits = match text {
         Some(d) => serde_json::from_str(d)?,
         None => Default::default(),

@@ -89,12 +89,15 @@ impl Ahead {
             });
         }
     }
-    /// What was prefetched, if it is `path` as the file is now. Empties the slot
-    /// either way, so a prefetch is never held past the next load.
-    fn take(&self, path: &Path) -> Option<CameraImage> {
+    /// What was prefetched, if it is `path` as `file` (read by the load) names
+    /// it and as the file is now. Empties the slot either way, so a prefetch is
+    /// never held past the next load.
+    fn take(&self, path: &Path, file: Option<&crate::storage::Identity>) -> Option<CameraImage> {
         let held = self.held().take()?;
-        (held.path == path && crate::storage::Identity::read(path).ok() == Some(held.identity))
-            .then_some(held.image)
+        (held.path == path
+            && file == Some(&held.identity)
+            && crate::storage::Identity::read(path).ok() == Some(held.identity))
+        .then_some(held.image)
     }
 }
 /// Develops a neighbour on two threads, leaving the other cores to rendering the
@@ -249,7 +252,7 @@ fn opener(
             // if it is replaced meanwhile, of one that no longer matches (AI Denoise then
             // refuses rather than mixing the two).
             let file = crate::storage::Identity::read(&path).ok();
-            let prefetched = ahead.take(&path);
+            let prefetched = ahead.take(&path, file.as_ref());
             let was_ahead = prefetched.is_some();
             let opened = match prefetched {
                 Some(image) => Opened::Rendered(image),
@@ -307,7 +310,7 @@ fn opener(
                         Event::Ready {
                             id: job.id,
                             full: Arc::new(image),
-                            file: if was_ahead { None } else { file },
+                            file,
                             status: if was_ahead {
                                 "Opened ahead of time".into()
                             } else {
@@ -677,7 +680,18 @@ pub(in crate::app) mod tests {
         let (full, status) = ready(&events);
         assert_eq!((full.width, full.height), (40, 30));
         assert!(status.starts_with("Opened ahead of time"), "{status}");
-        assert!(ahead.take(&path).is_none(), "taken, not held twice");
+        // The file it was opened from, as for any other load: what its saves, and
+        // its thumbnail in the Library, are kept for.
+        let Some(Event::Ready { file, .. }) = events.last() else {
+            unreachable!()
+        };
+        assert_eq!(file.as_ref(), Some(&crate::storage::Identity::read(&path)?));
+        assert!(
+            ahead
+                .take(&path, crate::storage::Identity::read(&path).ok().as_ref())
+                .is_none(),
+            "taken, not held twice"
+        );
         Ok(())
     }
 
@@ -723,7 +737,11 @@ pub(in crate::app) mod tests {
             "same size and time"
         );
 
-        assert!(ahead.take(&path).is_none());
+        assert!(
+            ahead
+                .take(&path, crate::storage::Identity::read(&path).ok().as_ref())
+                .is_none()
+        );
         Ok(())
     }
 
@@ -736,7 +754,11 @@ pub(in crate::app) mod tests {
 
         ahead.prefetch(&path, &AtomicBool::new(true));
 
-        assert!(ahead.take(&path).is_none());
+        assert!(
+            ahead
+                .take(&path, crate::storage::Identity::read(&path).ok().as_ref())
+                .is_none()
+        );
         Ok(())
     }
 

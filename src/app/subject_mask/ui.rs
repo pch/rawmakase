@@ -276,7 +276,7 @@ impl Editor {
         let upgraded = self
             .library
             .as_ref()
-            .and_then(|l| l.session.catalog.supports_raster_masks().ok())
+            .and_then(|l| l.session.catalog().supports_raster_masks().ok())
             .unwrap_or(false);
         let pack = request.feature.pack();
         let model = self.selection.models.of(pack).installed();

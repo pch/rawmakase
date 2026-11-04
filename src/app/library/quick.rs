@@ -32,13 +32,13 @@ impl Library {
     }
     pub(super) fn in_quick(&self, id: PhotoId) -> bool {
         self.quick()
-            .and_then(|q| self.session.collection_photos.get(&q))
+            .and_then(|q| self.session.collection_photos().get(&q))
             .is_some_and(|members| members.contains(&id))
     }
     /// The Quick Collection's photo count, for the Catalog panel.
     pub(super) fn quick_count(&self) -> usize {
         self.quick()
-            .and_then(|q| self.session.collection_photos.get(&q))
+            .and_then(|q| self.session.collection_photos().get(&q))
             .map_or(0, |members| members.len())
     }
     pub(super) fn showing_quick(&self) -> bool {
@@ -76,7 +76,7 @@ impl Library {
         };
         let removed: Vec<PhotoId> = self
             .session
-            .collection_photos
+            .collection_photos()
             .get(&quick)
             .map(|m| m.iter().copied().collect())
             .unwrap_or_default();

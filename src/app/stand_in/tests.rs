@@ -134,7 +134,6 @@ fn a_preview_stored_for_another_edit_is_not_shown() {
         .as_mut()
         .unwrap()
         .session
-        .catalog
         .save_edit(
             ids[0],
             &path,
@@ -194,7 +193,6 @@ fn an_edited_jpeg_has_a_stored_preview_and_an_unedited_one_does_not() {
     let path = library.photo(ids[0]).unwrap().path.clone();
     library
         .session
-        .catalog
         .save_edit(
             ids[0],
             &path,

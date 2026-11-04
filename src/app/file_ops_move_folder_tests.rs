@@ -309,7 +309,7 @@ fn a_root_moves_into_another_roots_folder_once_confirmed() -> anyhow::Result<()>
         .as_ref()
         .unwrap()
         .session
-        .roots
+        .roots()
         .iter()
         .map(|r| r.0)
         .collect();

@@ -311,7 +311,7 @@ impl Editor {
         let catalog = self
             .library
             .as_ref()
-            .map(|l| l.session.catalog.location().clone());
+            .map(|l| l.session.catalog().location().clone());
         // And once the catalog has read cameras from new photos' files, when
         // the reader is done rather than at each of its saves.
         let read = self.library.as_ref().is_some_and(|l| {
@@ -506,7 +506,7 @@ impl Editor {
             row.mark = Mark::Done;
             row.status = format!(
                 "Imported as {}, open now",
-                library.session.catalog.location().name()
+                library.session.catalog().location().name()
             );
         } else if let Some(source) = found {
             row.status = format!(
@@ -630,7 +630,7 @@ impl Editor {
         let busy = self.activity.is_busy();
         let default = self.default_catalog();
         // Folders added that held no photos still show in the Folders panel.
-        let folders = self.library.as_ref().map(|l| l.session.roots.len());
+        let folders = self.library.as_ref().map(|l| l.session.roots().len());
         let (title, detail) = match folders {
             Some(0) => (
                 "Add your photos".to_string(),
@@ -747,13 +747,13 @@ impl Editor {
         let models = self
             .library
             .as_ref()
-            .and_then(|l| l.session.catalog.raw_cameras().ok())
+            .and_then(|l| l.session.catalog().raw_cameras().ok())
             .unwrap_or_default();
         self.onboarding.info_saves = self.library.as_ref().map_or(0, |l| l.photo_info_saves());
         self.onboarding.imported_from = self
             .library
             .as_ref()
-            .and_then(|l| l.session.catalog.lightroom_sources().ok())
+            .and_then(|l| l.session.catalog().lightroom_sources().ok())
             .unwrap_or_default();
         let (generation, cancel) = self.onboarding.scan.start();
         self.onboarding.scanned = true;

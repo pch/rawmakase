@@ -116,7 +116,7 @@ impl Editor {
         let view = self
             .preferences
             .locations
-            .get_or_insert_with(|| LocationsView::load(&library.session.catalog, &ctx));
+            .get_or_insert_with(|| LocationsView::load(library.session.catalog(), &ctx));
         group(ui, "Folder locations");
         if let Some(error) = &view.error {
             form_row(ui, "", |ui| hint(ui, error));
@@ -249,7 +249,7 @@ impl Editor {
         if !std::mem::take(&mut view.computer_dirty) {
             return;
         }
-        if let Err(e) = library.session.catalog.rename_computer(&view.computer) {
+        if let Err(e) = library.session.rename_computer(&view.computer) {
             self.messages.fail(format!("Computer not renamed: {e:#}"));
         }
     }
@@ -262,7 +262,7 @@ impl Editor {
         let Some(catalog) = self
             .library
             .as_ref()
-            .map(|l| l.session.catalog.location().clone())
+            .map(|l| l.session.catalog().location().clone())
         else {
             return;
         };
@@ -553,7 +553,7 @@ pub(super) fn reopened(
                     let available = l.available_count();
                     let said = format!(
                         "Folder location changed. {available} of {} photos are available.",
-                        l.session.photos.len()
+                        l.session.photos().len()
                     );
                     if available == 0 {
                         l.messages.warn(format!(

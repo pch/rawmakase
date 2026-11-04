@@ -36,7 +36,7 @@ fn stack_of(e: &Editor, id: PhotoId) -> Vec<PhotoId> {
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .stack_of(id)
         .unwrap()
 }

@@ -574,7 +574,7 @@ impl Editor {
         let location = self
             .library
             .as_ref()
-            .map(|l| l.session.catalog.location().clone());
+            .map(|l| l.session.catalog().location().clone());
         // Which catalog this is and how many photos it holds; where it lives
         // is in its hover.
         ui.add_space(space::XS);
@@ -590,7 +590,7 @@ impl Editor {
                     );
                     return;
                 };
-                let location = library.session.catalog.location();
+                let location = library.session.catalog().location();
                 let crate::catalog::CatalogLocation::File(path) = location;
                 ui.label(
                     egui::RichText::new(location.name())
@@ -599,7 +599,7 @@ impl Editor {
                 )
                 .on_hover_text(super::widgets::pretty_path(path));
                 ui.add_space(space::XXS);
-                let photos = match library.session.photos.len() {
+                let photos = match library.session.photos().len() {
                     1 => "1 photo".to_string(),
                     n => format!("{n} photos"),
                 };
@@ -698,7 +698,7 @@ impl Editor {
         let catalog = self
             .library
             .as_ref()
-            .map(|library| library.session.catalog.location().name())
+            .map(|library| library.session.catalog().location().name())
             .unwrap_or_else(|| "No catalog".into());
         let name = ui.painter().layout_no_wrap(
             catalog,
@@ -1195,14 +1195,14 @@ impl Editor {
         let loupe = self
             .library
             .as_ref()
-            .is_some_and(|l| !l.session.photos.is_empty() && l.loupe_open());
+            .is_some_and(|l| !l.session.photos().is_empty() && l.loupe_open());
         if loupe && chrome {
             self.library_loupe_toolbar(ui);
         }
         let photo_area = ui.available_rect_before_wrap().shrink(PHOTO_MARGIN);
         let magnify = self.view.magnifier.on && self.magnifier_blocked().is_none();
         match &mut self.library {
-            Some(l) if !l.session.photos.is_empty() => {
+            Some(l) if !l.session.photos().is_empty() => {
                 let magnifier = magnify.then_some(&mut self.view.magnifier);
                 let action = l.grid(ui, &mut self.view.zoom, chrome, magnifier);
                 if let Some(id) = l.loupe_develops() {
@@ -2018,7 +2018,7 @@ impl Editor {
             let catalog = self
                 .library
                 .as_ref()
-                .map(|l| l.session.catalog.location().name());
+                .map(|l| l.session.catalog().location().name());
             let area = self.drop_area.unwrap_or_else(|| ctx.content_rect());
             drop_overlay(ctx, area, catalog.as_deref());
         }

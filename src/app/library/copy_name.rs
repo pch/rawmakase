@@ -41,7 +41,7 @@ impl CopyNames {
         let (id, name) = (*id, text.trim().to_string());
         let mut renamed = false;
         if session
-            .photos
+            .photos()
             .iter()
             .any(|p| p.id == id && p.master.is_some() && p.copy_name != name)
         {

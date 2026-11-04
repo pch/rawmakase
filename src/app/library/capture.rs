@@ -28,12 +28,12 @@ impl Library {
         }
         // One pass over the photos: whether each folder has one online.
         let mut online: HashMap<FolderId, bool> = HashMap::new();
-        for p in &self.session.photos {
+        for p in self.session.photos() {
             *online.entry(p.folder).or_default() |= self.is_available(&p.path);
         }
         let missing = self
             .session
-            .folders
+            .folders()
             .iter()
             .filter(|f| online.get(&f.id) == Some(&false))
             .count();
@@ -75,10 +75,6 @@ impl Library {
     /// was on screen.
     pub(super) fn resort_by_capture_time(&mut self) {
         self.sort_keys = None;
-        self.resort_in_place(|library| {
-            library.session.photos.sort_by(|a, b| {
-                (&a.captured, &a.filename, a.id).cmp(&(&b.captured, &b.filename, b.id))
-            });
-        });
+        self.resort_in_place(|library| library.session.sort_photos_by_capture_time());
     }
 }

@@ -26,7 +26,7 @@ fn autosave_writes_the_catalog_in_the_background() -> anyhow::Result<()> {
     drop(c);
     let ctx = egui::Context::default();
     let l = crate::app::library::Library::load(&catalog, ctx.clone())?;
-    let id = l.session.photos[0].id;
+    let id = l.session.photos()[0].id;
     let mut editor =
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(l));
@@ -63,7 +63,7 @@ fn autosave_writes_the_catalog_in_the_background() -> anyhow::Result<()> {
         let library = editor.library.as_ref().unwrap();
         Ok(library
             .session
-            .catalog
+            .catalog()
             .load_edit(id, &photo)?
             .unwrap()
             .recipe
@@ -94,7 +94,7 @@ fn catalog_edits_save_to_database_and_library_renders() -> anyhow::Result<()> {
     drop(c);
     let ctx = egui::Context::default();
     let l = crate::app::library::Library::load(&catalog, ctx.clone())?;
-    let id = l.session.photos[0].id;
+    let id = l.session.photos()[0].id;
     let mut editor =
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(l));
@@ -110,7 +110,7 @@ fn catalog_edits_save_to_database_and_library_renders() -> anyhow::Result<()> {
             .as_ref()
             .unwrap()
             .session
-            .catalog
+            .catalog()
             .load_edit(id, &photo)?
             .unwrap()
             .recipe
@@ -188,7 +188,7 @@ fn catalog_metadata_keys_work_in_both_modules_without_zoom_or_dialog_edits() -> 
     let ctx = egui::Context::default();
     let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     let mut library = crate::app::library::Library::load(&path, ctx.clone())?;
-    let ids: Vec<_> = library.session.photos.iter().map(|p| p.id).collect();
+    let ids: Vec<_> = library.session.photos().iter().map(|p| p.id).collect();
     library.select(Some(ids[0]));
     e.library = Some(Box::new(library));
     for (library_mode, key, expected_rating, expected_flag) in [
@@ -657,7 +657,7 @@ fn only_the_latest_render_becomes_the_library_thumbnail() -> anyhow::Result<()> 
     let (_release, release) = std::sync::mpsc::channel();
     e.renderer = worker::holding(taken_tx, release);
     let library = library::Library::load(&path, ctx.clone())?;
-    let photo = library.session.photos[0].id;
+    let photo = library.session.photos()[0].id;
     e.library = Some(Box::new(library));
     e.document.catalog_photo = Some(photo);
     e.document.opened_at(photos.join("a.RAF"));
@@ -1152,7 +1152,7 @@ fn a_first_save_after_the_file_was_replaced_is_refused() -> anyhow::Result<()> {
         } else {
             assert!(!editor.flush(), "autosave {autosave}");
         }
-        let catalog = &editor.library.as_ref().unwrap().session.catalog;
+        let catalog = editor.library.as_ref().unwrap().session.catalog();
         assert!(
             catalog.edit_record(id)?.saved(&raw)?.is_none(),
             "autosave {autosave}: the replaced file got the edit"
@@ -2303,7 +2303,7 @@ fn a_photo_from_outside_the_library_is_added_and_opened() -> anyhow::Result<()> 
     let id = editor
         .library
         .as_ref()
-        .and_then(|l| l.session.photos.iter().find(|p| p.path == raw))
+        .and_then(|l| l.session.photos().iter().find(|p| p.path == raw))
         .map(|p| p.id);
     assert!(id.is_some(), "the photo's folder was added to the catalog");
     assert_eq!(editor.document.catalog_photo, id);
@@ -2346,7 +2346,7 @@ fn a_dropped_folder_is_added_itself_not_its_parent() -> anyhow::Result<()> {
         .as_ref()
         .map(|l| {
             l.session
-                .photos
+                .photos()
                 .iter()
                 .map(|p| p.filename.clone())
                 .collect()
@@ -2369,7 +2369,7 @@ fn dropping_a_folder_shows_it_instead_of_unrelated_catalog_photos() -> anyhow::R
     editor.dropped(vec![folder.clone()]);
     settle_catalog(&mut editor, &ctx);
     let library = editor.library.as_ref().unwrap();
-    assert_eq!(library.session.photos.len(), 3);
+    assert_eq!(library.session.photos().len(), 3);
     let mut shown: Vec<_> = library
         .shown()
         .iter()
@@ -2429,8 +2429,8 @@ fn dropping_a_relocated_folders_parent_does_not_select_its_logical_siblings() ->
         ["inside.ARW"],
         "source={} roots={:?} folders={:?} status={}",
         library.source_key(),
-        library.session.roots,
-        library.session.folders,
+        library.session.roots(),
+        library.session.folders(),
         editor.messages.line()
     );
     Ok(())
@@ -2447,17 +2447,20 @@ fn dropping_a_folder_mapped_through_a_symlink_selects_it_and_clears_old_filters(
     std::fs::write(real.join("inside.ARW"), b"inside")?;
     std::os::unix::fs::symlink(&real, &alias)?;
     let library = editor.library.as_mut().unwrap();
-    let old_root = library.session.roots[0].0;
-    library.session.catalog.add_folder(&real)?;
+    let old_root = library.session.roots()[0].0;
+    library.session.catalog_mut_for_tests().add_folder(&real)?;
     let root = library
         .session
-        .catalog
+        .catalog()
         .folders()?
         .into_iter()
         .find(|f| f.path == real.canonicalize().unwrap())
         .unwrap()
         .root;
-    library.session.catalog.relink_root(root, &alias)?;
+    library
+        .session
+        .catalog_mut_for_tests()
+        .relink_root(root, &alias)?;
     library.refresh()?;
     library.click_folder_for_tests(&format!("root:{old_root}"));
     editor.saved_layout.query = "outside".into();
@@ -2502,7 +2505,7 @@ fn dropping_several_folders_adds_each_of_them() -> anyhow::Result<()> {
             .as_ref()
             .map(|l| {
                 l.session
-                    .photos
+                    .photos()
                     .iter()
                     .map(|p| p.filename.clone())
                     .collect()
@@ -2562,7 +2565,12 @@ fn a_dropped_folder_that_fails_leaves_the_others_added() -> anyhow::Result<()> {
     settle_catalog(&mut editor, &ctx);
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755))?;
     let library = editor.library.as_ref().unwrap();
-    let names: Vec<_> = library.session.photos.iter().map(|p| &p.filename).collect();
+    let names: Vec<_> = library
+        .session
+        .photos()
+        .iter()
+        .map(|p| &p.filename)
+        .collect();
     assert_eq!(names, ["g.ARW"]);
     assert!(
         editor.messages.line().contains("Not added: locked"),
@@ -2588,14 +2596,14 @@ fn removing_a_folder_closes_its_photo_and_leaves_the_files() -> anyhow::Result<(
     let library = editor.library.as_ref().unwrap();
     let away = library
         .session
-        .photos
+        .photos()
         .iter()
         .find(|p| p.filename == "away.ARW")
         .unwrap()
         .id;
     let trip: std::collections::HashSet<_> = library
         .session
-        .folders
+        .folders()
         .iter()
         .filter(|f| f.relative.trim_end_matches('/') == "trip")
         .map(|f| f.id)
@@ -2619,7 +2627,7 @@ fn removing_a_folder_closes_its_photo_and_leaves_the_files() -> anyhow::Result<(
     };
     let other = crate::catalog::CatalogLocation::File(dir.path().join("other.rawmakase"));
     editor.remove_folders(&removal(other));
-    assert_eq!(editor.library.as_ref().unwrap().session.photos.len(), 2);
+    assert_eq!(editor.library.as_ref().unwrap().session.photos().len(), 2);
     assert!(
         editor.messages.line().contains("another catalog"),
         "{}",
@@ -2632,7 +2640,7 @@ fn removing_a_folder_closes_its_photo_and_leaves_the_files() -> anyhow::Result<(
         .as_ref()
         .unwrap()
         .session
-        .photos
+        .photos()
         .iter()
         .map(|p| p.filename.clone())
         .collect();
@@ -2669,7 +2677,7 @@ fn a_first_launch_opens_a_new_catalog_beside_the_session() -> anyhow::Result<()>
         editor
             .library
             .as_ref()
-            .map(|l| l.session.catalog.location()),
+            .map(|l| l.session.catalog().location()),
         Some(&crate::catalog::CatalogLocation::File(catalog.clone()))
     );
     // The next launch opens it as the last catalog, not as a new one.
@@ -2719,7 +2727,7 @@ fn the_prefetched_neighbour_follows_the_direction_of_travel() -> anyhow::Result<
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     let library = library::Library::load(&path, ctx)?;
     // The filmstrip order, first to last.
-    let mut order = vec![library.session.photos[0].id];
+    let mut order = vec![library.session.photos()[0].id];
     while let Some(previous) = library.navigate(order[0], -1).filter(|p| *p != order[0]) {
         order.insert(0, previous);
     }
@@ -2759,7 +2767,7 @@ fn a_rendered_neighbour_is_prefetched_too() -> anyhow::Result<()> {
     let mut editor =
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     let library = library::Library::load(&path, ctx)?;
-    let photos: Vec<_> = library.session.photos.iter().map(|p| p.id).collect();
+    let photos: Vec<_> = library.session.photos().iter().map(|p| p.id).collect();
     let first = *photos
         .iter()
         .find(|p| library.navigate(**p, -1).is_none_or(|q| q == **p))
@@ -3026,7 +3034,7 @@ fn a_synced_photo_open_in_develop_opens_again() -> anyhow::Result<()> {
     let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
     let library = e.library.as_ref().unwrap();
     let path = library.photo(ids[0]).unwrap().path.clone();
-    let catalog = library.session.catalog.location().clone();
+    let catalog = library.session.catalog().location().clone();
     e.document.catalog_photo = Some(ids[0]);
     e.document.opened_at(path.clone());
     let synced = |id| sync::Synced {
@@ -3093,7 +3101,13 @@ fn a_synced_photo_open_in_develop_opens_again() -> anyhow::Result<()> {
     assert!(e.load.is_running(), "the open photo opens again");
     assert!(!e.document.edit.save_state().needs_save());
     let library = e.library.as_ref().unwrap();
-    assert!(library.session.catalog.load_edit(ids[0], &path)?.is_none());
+    assert!(
+        library
+            .session
+            .catalog()
+            .load_edit(ids[0], &path)?
+            .is_none()
+    );
     Ok(())
 }
 #[test]
@@ -3759,7 +3773,7 @@ fn a_virtual_copy_made_in_develop_keeps_the_unsaved_edit_and_opens() -> anyhow::
     crate::catalog::Catalog::create(&catalog)?.add_folder(&photos)?;
     let ctx = egui::Context::default();
     let l = library::Library::load(&catalog, ctx.clone())?;
-    let id = l.session.photos[0].id;
+    let id = l.session.photos()[0].id;
     let mut editor =
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(l));
@@ -3770,14 +3784,19 @@ fn a_virtual_copy_made_in_develop_keeps_the_unsaved_edit_and_opens() -> anyhow::
     editor.document.edit.save_state_mut().mark_changed();
     editor.virtual_copy(library::CopyAction::Create(id));
     let library = editor.library.as_ref().unwrap();
-    let copy = library.session.photos.iter().find(|p| p.id != id).unwrap();
+    let copy = library
+        .session
+        .photos()
+        .iter()
+        .find(|p| p.id != id)
+        .unwrap();
     assert_eq!((copy.master, copy.copy_name.as_str()), (Some(id), "Copy 1"));
     assert_eq!(library.selected(), Some(copy.id));
     assert_eq!(editor.document.catalog_photo, Some(copy.id));
     for photo_id in [id, copy.id] {
         let saved = library
             .session
-            .catalog
+            .catalog()
             .load_edit(photo_id, &photo)?
             .unwrap();
         assert_eq!(saved.recipe.exposure, 0.7);
@@ -3794,7 +3813,7 @@ fn removing_a_copy_from_the_library_stays_in_the_library() -> anyhow::Result<()>
     crate::catalog::Catalog::create(&catalog)?.add_folder(&photos)?;
     let ctx = egui::Context::default();
     let mut l = library::Library::load(&catalog, ctx.clone())?;
-    let master = l.session.photos[0].id;
+    let master = l.session.photos()[0].id;
     let copy = l.create_virtual_copy(master)?.value;
     let mut editor =
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
@@ -3871,9 +3890,11 @@ fn a_copy_name_that_cannot_be_saved_keeps_the_app_from_moving_on() -> anyhow::Re
     crate::catalog::Catalog::create(&catalog)?.add_folder(&photos)?;
     let ctx = egui::Context::default();
     let mut l = library::Library::load(&catalog, ctx.clone())?;
-    let copy = l.create_virtual_copy(l.session.photos[0].id)?.value;
+    let copy = l.create_virtual_copy(l.session.photos()[0].id)?.value;
     // A copy that is gone from the catalog cannot be renamed.
-    l.session.catalog.remove_virtual_copy(copy)?;
+    l.session
+        .catalog_mut_for_tests()
+        .remove_virtual_copy(copy)?;
     let mut editor =
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(l));
@@ -3898,7 +3919,7 @@ fn opening_a_file_picks_its_master_after_a_copy_is_promoted() -> anyhow::Result<
     crate::catalog::Catalog::create(&catalog)?.add_folder(&photos)?;
     let ctx = egui::Context::default();
     let mut l = library::Library::load(&catalog, ctx.clone())?;
-    let copy = l.create_virtual_copy(l.session.photos[0].id)?.value;
+    let copy = l.create_virtual_copy(l.session.photos()[0].id)?.value;
     l.set_copy_as_master(copy)?;
     let path = l.photo(copy).unwrap().path.clone();
     let mut editor =
@@ -3922,7 +3943,7 @@ pub(in crate::app) fn editor_with_catalog(
     let ctx = egui::Context::default();
     let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     let library = crate::app::library::Library::load(&path, ctx)?;
-    let ids = library.session.photos.iter().map(|p| p.id).collect();
+    let ids = library.session.photos().iter().map(|p| p.id).collect();
     e.library = Some(Box::new(library));
     e.module = Module::Library;
     Ok((d, e, ids))
@@ -3942,7 +3963,7 @@ fn undo_brings_back_a_range_rejected_under_the_unflagged_filter() -> anyhow::Res
     assert_eq!(library.shown().len(), 5);
     assert_eq!(library.selected(), Some(ids[3]));
     assert_eq!(library.selected_photos(), ids[1..4]);
-    assert!(library.session.photos.iter().all(|p| p.flag == 0));
+    assert!(library.session.photos().iter().all(|p| p.flag == 0));
     assert!(e.messages.line().starts_with("Undo 3 photos"));
     e.redo();
     let library = e.library.as_ref().unwrap();
@@ -3950,7 +3971,7 @@ fn undo_brings_back_a_range_rejected_under_the_unflagged_filter() -> anyhow::Res
     assert_eq!(
         library
             .session
-            .photos
+            .photos()
             .iter()
             .filter(|p| p.flag == -1)
             .count(),
@@ -4017,8 +4038,9 @@ fn undo_on_a_closed_photo_follows_a_verified_move_of_its_file() -> anyhow::Resul
         .open(&a)?
         .set_modified(std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1))?;
     let library = e.library.as_mut().unwrap();
-    assert!(library.session.catalog.load_edit(ids[0], &a).is_err());
-    let crate::catalog::CatalogLocation::File(catalog) = library.session.catalog.location().clone();
+    assert!(library.session.catalog().load_edit(ids[0], &a).is_err());
+    let crate::catalog::CatalogLocation::File(catalog) =
+        library.session.catalog().location().clone();
     rusqlite::Connection::open(catalog)?.execute(
         "UPDATE photos SET identity=? WHERE id=?",
         rusqlite::params![
@@ -4028,7 +4050,7 @@ fn undo_on_a_closed_photo_follows_a_verified_move_of_its_file() -> anyhow::Resul
     )?;
     e.undo();
     let library = e.library.as_ref().unwrap();
-    let saved = library.session.catalog.load_edit(ids[0], &a)?.unwrap();
+    let saved = library.session.catalog().load_edit(ids[0], &a)?.unwrap();
     assert_eq!(saved.recipe.exposure, 0.);
     Ok(())
 }
@@ -4054,7 +4076,7 @@ fn closing_with_an_unidentified_file_is_a_failed_save() -> anyhow::Result<()> {
     assert!(
         library
             .session
-            .catalog
+            .catalog()
             .edit_record(ids[0])?
             .saved(&d.path().join("photos/a.RAF"))?
             .is_none()
@@ -4302,7 +4324,7 @@ fn quick_collection_toggles_shows_clears_and_undoes() -> anyhow::Result<()> {
     assert_eq!(e.library.as_ref().unwrap().shown(), ids[..2]);
     // Kept in the catalog.
     let reopened =
-        crate::catalog::Catalog::open(e.library.as_ref().unwrap().session.catalog.location())?;
+        crate::catalog::Catalog::open(e.library.as_ref().unwrap().session.catalog().location())?;
     let quick = reopened
         .collections()?
         .into_iter()
@@ -4991,7 +5013,7 @@ fn render_the_library_loupe_toolbar() -> anyhow::Result<()> {
     super::icons::install(&ctx);
     let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     let mut library = library::Library::load(&path, ctx.clone())?;
-    library.select(Some(library.session.photos[0].id));
+    library.select(Some(library.session.photos()[0].id));
     library.open_loupe();
     e.library = Some(Box::new(library));
     e.module = Module::Library;
@@ -5115,7 +5137,7 @@ fn leaving_a_photo_mid_drag_saves_the_drag_as_a_history_step() -> anyhow::Result
     crate::catalog::Catalog::create(&catalog)?.add_folder(&photos)?;
     let ctx = egui::Context::default();
     let l = crate::app::library::Library::load(&catalog, ctx.clone())?;
-    let id = l.session.photos[0].id;
+    let id = l.session.photos()[0].id;
     let mut editor =
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(l));
@@ -5131,7 +5153,7 @@ fn leaving_a_photo_mid_drag_saves_the_drag_as_a_history_step() -> anyhow::Result
     assert!(editor.flush());
     assert!(!editor.document.edit.history().in_gesture());
     let library = editor.library.as_ref().unwrap();
-    let history = library.session.catalog.load_history(id)?.unwrap();
+    let history = library.session.catalog().load_history(id)?.unwrap();
     assert_eq!(history.applied, 1);
     assert_eq!(history.steps.len(), 1);
     assert_eq!(history.steps[0].recipe.exposure, 0.6);
@@ -5827,7 +5849,7 @@ fn brackets_size_the_red_eye_circle_without_rating_the_photo() -> anyhow::Result
     crate::catalog::Catalog::create(&catalog)?.add_folder(&photos)?;
     let ctx = egui::Context::default();
     let l = crate::app::library::Library::load(&catalog, ctx.clone())?;
-    let id = l.session.photos[0].id;
+    let id = l.session.photos()[0].id;
     let mut editor =
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(l));
@@ -5852,7 +5874,7 @@ fn brackets_size_the_red_eye_circle_without_rating_the_photo() -> anyhow::Result
     assert_eq!(
         library
             .session
-            .photos
+            .photos()
             .iter()
             .find(|p| p.id == id)
             .unwrap()
@@ -6639,7 +6661,7 @@ fn develop_opens_photos_with_the_edit_the_catalog_resolves() -> anyhow::Result<(
             .as_ref()
             .unwrap()
             .session
-            .catalog
+            .catalog()
             .edit_record(*id)?;
         let resolved = edits::resolve(
             &record,
@@ -7055,7 +7077,7 @@ fn quitting_saves_an_edit_still_waiting_for_autosave() -> anyhow::Result<()> {
     eframe::App::on_exit(&mut e, None);
     assert!(!e.document.edit.save_state().needs_save());
     let library = e.library.as_ref().unwrap();
-    let saved = library.session.catalog.load_edit(ids[0], &path)?.unwrap();
+    let saved = library.session.catalog().load_edit(ids[0], &path)?.unwrap();
     assert_eq!(saved.recipe.exposure, 0.7);
     Ok(())
 }
@@ -7194,7 +7216,7 @@ fn two_photo_editor() -> anyhow::Result<(tempfile::TempDir, egui::Context, Edito
     let mut l = library::Library::load(&catalog, ctx.clone())?;
     let id = |name: &str, l: &library::Library| {
         l.session
-            .photos
+            .photos()
             .iter()
             .find(|p| p.filename.ends_with(name))
             .unwrap()
@@ -7253,11 +7275,11 @@ fn a_copy_removed_when_the_catalog_cannot_be_read_again_still_leaves_undo() -> a
         .as_mut()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .db_for_tests()
         .execute_batch("ALTER TABLE collections RENAME TO collections_gone")?;
     editor.remove_virtual_copy(copy);
-    let catalog = &editor.library.as_ref().unwrap().session.catalog;
+    let catalog = editor.library.as_ref().unwrap().session.catalog();
     assert!(
         catalog.photos()?.iter().all(|p| p.id != copy),
         "the copy is removed"
@@ -7268,7 +7290,7 @@ fn a_copy_removed_when_the_catalog_cannot_be_read_again_still_leaves_undo() -> a
         .as_mut()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .db_for_tests()
         .execute_batch("ALTER TABLE collections_gone RENAME TO collections")?;
     // The next copy, of B rated 2, is given the removed copy's id.
@@ -7414,7 +7436,7 @@ fn a_quit_with_an_edit_whose_next_save_fails_keeps_the_window_open() -> anyhow::
     crate::catalog::Catalog::create(&catalog)?.add_folder(&photos)?;
     let ctx = egui::Context::default();
     let l = crate::app::library::Library::load(&catalog, ctx.clone())?;
-    let id = l.session.photos[0].id;
+    let id = l.session.photos()[0].id;
     let mut editor =
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(l));
@@ -7443,7 +7465,7 @@ fn a_quit_with_an_edit_whose_next_save_fails_keeps_the_window_open() -> anyhow::
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .db_for_tests()
         .execute_batch(
             "CREATE TRIGGER no_edits BEFORE UPDATE OF recipe ON photos
@@ -7466,7 +7488,7 @@ fn a_quit_with_an_edit_whose_next_save_fails_keeps_the_window_open() -> anyhow::
         .as_ref()
         .unwrap()
         .session
-        .catalog
+        .catalog()
         .load_edit(id, &photo)?
         .unwrap();
     assert_eq!(saved.recipe.exposure, 0.);
@@ -7932,7 +7954,10 @@ fn hiding_the_chrome_saves_a_library_field_being_typed_first() -> anyhow::Result
     e.chrome_view(view);
     // A field that cannot be saved keeps the panel, and the command says why.
     let library = e.library.as_mut().unwrap();
-    library.session.catalog.remove_virtual_copy(copy)?;
+    library
+        .session
+        .catalog_mut_for_tests()
+        .remove_virtual_copy(copy)?;
     library.set_copy_name_draft(copy, "Unsaved name");
     let refused = e.execute_action(Action::Chrome, None).unwrap_err();
     assert_eq!(refused.code, "save_failed");
@@ -8242,7 +8267,10 @@ fn the_library_info_panel_stays_while_a_field_in_it_cannot_be_saved() -> anyhow:
     let (_d, mut e, ids) = editor_with_catalog(&["a.ARW"])?;
     let library = e.library.as_mut().unwrap();
     let copy = library.create_virtual_copy(ids[0])?.value;
-    library.session.catalog.remove_virtual_copy(copy)?;
+    library
+        .session
+        .catalog_mut_for_tests()
+        .remove_virtual_copy(copy)?;
     library.set_copy_name_draft(copy, "B&W");
     assert!(!e.change_panels(PanelChange::Toggle(WorkspacePanel::Right)));
     assert!(e.panel_shown(WorkspacePanel::Right));
@@ -8456,7 +8484,7 @@ fn the_chrome_hidden_gives_the_loupe_its_toolbar_row() -> anyhow::Result<()> {
     let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     let mut library = library::Library::load(&path, ctx.clone())?;
     library.wait_for_availability();
-    library.select(Some(library.session.photos[0].id));
+    library.select(Some(library.session.photos()[0].id));
     library.open_loupe();
     e.library = Some(Box::new(library));
     e.module = Module::Library;
@@ -8620,8 +8648,8 @@ fn a_change_still_waiting_for_the_undo_log_forgets_a_removed_folders_photos() ->
         Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
     editor.library = Some(Box::new(library::Library::load(&path, ctx)?));
     let library = editor.library.as_mut().unwrap();
-    let a = library.session.photos[0].id;
-    let folders = library.session.folders.iter().map(|f| f.id).collect();
+    let a = library.session.photos()[0].id;
+    let folders = library.session.folders().iter().map(|f| f.id).collect();
     // A change made, its command not yet in the undo log, when the folder goes:
     // the flush before removing puts it there, to be purged with the photos.
     library.edit_descriptive(

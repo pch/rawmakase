@@ -422,7 +422,7 @@ mod integration_tests {
             ctx.clone(),
         )?));
         let library = e.library.as_mut().unwrap();
-        let first = library.session.photos[0].id;
+        let first = library.session.photos()[0].id;
         library.make_active(first);
         let second = library.navigate(first, 1).unwrap();
         e.module = Module::Library;
