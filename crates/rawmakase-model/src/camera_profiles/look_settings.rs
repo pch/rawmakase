@@ -3,9 +3,11 @@
 //! the colour mixer, the parametric curve, split toning and a post-crop vignette.
 //! They render with the user's settings without moving the user's sliders (see
 //! `Recipe::with_profile_adjustments`).
+use crate::model::camera_raw as crs;
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
 const BANDS: [&str; 8] = [
     "Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta",
 ];
@@ -61,39 +63,33 @@ impl Default for LookSettings {
 impl LookSettings {
     /// Whether `key` is one of the settings this reads.
     pub(super) fn reads(key: &str) -> bool {
-        const KEYS: &[&str] = &[
-            "Exposure2012",
-            "Saturation",
-            "ParametricShadows",
-            "ParametricDarks",
-            "ParametricLights",
-            "ParametricHighlights",
-            "ParametricShadowSplit",
-            "ParametricMidtoneSplit",
-            "ParametricHighlightSplit",
-            "SplitToningShadowHue",
-            "SplitToningShadowSaturation",
-            "SplitToningHighlightHue",
-            "SplitToningHighlightSaturation",
-            "SplitToningBalance",
-            "PostCropVignetteAmount",
-            "PostCropVignetteMidpoint",
-            "PostCropVignetteFeather",
-            "PostCropVignetteRoundness",
-            "PostCropVignetteStyle",
-            "PostCropVignetteHighlightContrast",
+        // A look's own subset of Camera Raw's settings; others in a look are refused.
+        let named = [
+            crs::EXPOSURE,
+            crs::SATURATION,
+            crs::SPLIT_TONING_BALANCE,
+            crs::POST_CROP_VIGNETTE_AMOUNT,
+            crs::POST_CROP_VIGNETTE_MIDPOINT,
+            crs::POST_CROP_VIGNETTE_FEATHER,
+            crs::POST_CROP_VIGNETTE_ROUNDNESS,
+            crs::POST_CROP_VIGNETTE_HIGHLIGHT_CONTRAST,
         ];
-        KEYS.contains(&key)
-            || ["Hue", "Saturation", "Luminance"].iter().any(|control| {
-                key.strip_prefix(control)
-                    .and_then(|k| k.strip_prefix("Adjustment"))
-                    .is_some_and(|band| BANDS.contains(&band))
-            })
+        key == "PostCropVignetteStyle"
+            || named
+                .into_iter()
+                .chain(crs::PARAMETRIC)
+                .chain(crs::PARAMETRIC_SPLITS)
+                .chain(crs::SPLIT_TONING_HUE)
+                .chain(crs::SPLIT_TONING_SATURATION)
+                .chain(crs::HSL.into_iter().flatten())
+                .any(|s| s.key == key)
     }
     /// The settings among a look's attributes (`attr` gives "" when absent).
     pub(super) fn parse<'a>(attr: impl Fn(&str) -> &'a str) -> Result<Self> {
-        // Lightroom's units per recipe unit: 100 for sliders, 360 for hues.
-        let number = |key: &str, units: f32, range: [f32; 2]| -> Result<Option<f32>> {
+        // In recipe units: Lightroom's divided by the slider's units, and checked
+        // against the look's own range.
+        let number = |slider: crs::Slider, range: [f32; 2]| -> Result<Option<f32>> {
+            let key = slider.key;
             let text = attr(key);
             if text.is_empty() {
                 return Ok(None);
@@ -102,52 +98,48 @@ impl LookSettings {
                 .trim_start_matches('+')
                 .parse::<f32>()
                 .with_context(|| format!("Invalid profile setting {key}"))?
-                / units;
+                / slider.units;
             ensure!(
                 v.is_finite() && (range[0]..=range[1]).contains(&v),
                 "Profile setting {key} is out of range"
             );
             Ok(Some(v))
         };
-        let slider = |key: &str| number(key, 100., [-1., 1.]).map(Option::unwrap_or_default);
+        let slider = |s: crs::Slider| number(s, [-1., 1.]).map(Option::unwrap_or_default);
         let mut s = Self {
-            exposure: number("Exposure2012", 1., [-5., 5.])?.unwrap_or_default(),
-            saturation: slider("Saturation")?,
+            exposure: number(crs::EXPOSURE, [-5., 5.])?.unwrap_or_default(),
+            saturation: slider(crs::SATURATION)?,
             ..Self::default()
         };
-        for (i, band) in BANDS.iter().enumerate() {
-            for (j, control) in ["Hue", "Saturation", "Luminance"].iter().enumerate() {
-                s.hsl[i][j] = slider(&format!("{control}Adjustment{band}"))?;
+        for (i, band) in crs::HSL.into_iter().enumerate() {
+            for (j, control) in band.into_iter().enumerate() {
+                s.hsl[i][j] = slider(control)?;
             }
         }
-        for (i, name) in ["Shadows", "Darks", "Lights", "Highlights"]
-            .iter()
-            .enumerate()
-        {
-            s.parametric[i] = slider(&format!("Parametric{name}"))?;
+        for (i, region) in crs::PARAMETRIC.into_iter().enumerate() {
+            s.parametric[i] = slider(region)?;
         }
-        for (i, name) in ["Shadow", "Midtone", "Highlight"].iter().enumerate() {
-            if let Some(v) = number(&format!("Parametric{name}Split"), 100., [0., 1.])? {
+        for (i, split) in crs::PARAMETRIC_SPLITS.into_iter().enumerate() {
+            if let Some(v) = number(split, [0., 1.])? {
                 s.splits[i] = v;
             }
         }
-        let hue = |key: &str| number(key, 360., [0., 1.]);
-        let saturation = |key: &str| number(key, 100., [0., 1.]);
+        let part = |s: crs::Slider| number(s, [0., 1.]).map(Option::unwrap_or_default);
         let toning = Toning {
             shadows: [
-                hue("SplitToningShadowHue")?.unwrap_or_default(),
-                saturation("SplitToningShadowSaturation")?.unwrap_or_default(),
+                part(crs::SPLIT_TONING_HUE[0])?,
+                part(crs::SPLIT_TONING_SATURATION[0])?,
             ],
             highlights: [
-                hue("SplitToningHighlightHue")?.unwrap_or_default(),
-                saturation("SplitToningHighlightSaturation")?.unwrap_or_default(),
+                part(crs::SPLIT_TONING_HUE[1])?,
+                part(crs::SPLIT_TONING_SATURATION[1])?,
             ],
-            balance: slider("SplitToningBalance")?,
+            balance: slider(crs::SPLIT_TONING_BALANCE)?,
         };
         if toning.shadows[1] != 0. || toning.highlights[1] != 0. {
             s.toning = Some(toning);
         }
-        if let Some(amount) = number("PostCropVignetteAmount", 100., [-1., 1.])?
+        if let Some(amount) = number(crs::POST_CROP_VIGNETTE_AMOUNT, [-1., 1.])?
             && amount != 0.
         {
             let style = match attr("PostCropVignetteStyle") {
@@ -160,11 +152,11 @@ impl LookSettings {
             let or = |v: Option<f32>, default: f32| v.unwrap_or(default);
             s.vignette = Some(Vignette {
                 amount,
-                midpoint: or(number("PostCropVignetteMidpoint", 100., [0., 1.])?, 0.5),
-                feather: or(number("PostCropVignetteFeather", 100., [0., 1.])?, 0.5),
-                roundness: or(number("PostCropVignetteRoundness", 100., [-1., 1.])?, 0.),
+                midpoint: or(number(crs::POST_CROP_VIGNETTE_MIDPOINT, [0., 1.])?, 0.5),
+                feather: or(number(crs::POST_CROP_VIGNETTE_FEATHER, [0., 1.])?, 0.5),
+                roundness: or(number(crs::POST_CROP_VIGNETTE_ROUNDNESS, [-1., 1.])?, 0.),
                 highlights: or(
-                    number("PostCropVignetteHighlightContrast", 100., [0., 1.])?,
+                    number(crs::POST_CROP_VIGNETTE_HIGHLIGHT_CONTRAST, [0., 1.])?,
                     0.,
                 ),
                 style,

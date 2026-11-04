@@ -191,46 +191,27 @@ pub fn point_curve(rgb: &ToneCurve, channels: &[ToneCurve; 3]) -> String {
 pub(crate) fn group_of_key(key: &str) -> Option<SettingGroup> {
     use SettingGroup::*;
     let starts = |prefix: &str| key.starts_with(prefix);
+    // A slider's group is the table's; the rest by key, then by family prefix.
+    if let Some(slider) = crate::model::camera_raw::slider(key) {
+        return Some(slider.group);
+    }
     Some(match key {
-        "WhiteBalance" | "Temperature" | "Tint" | "IncrementalTemperature" | "IncrementalTint" => {
-            WhiteBalance
-        }
-        "Exposure2012" => Exposure,
-        "Contrast2012" => Contrast,
-        "Highlights2012" => Highlights,
-        "Shadows2012" => Shadows,
-        "Whites2012" => Whites,
-        "Blacks2012" => Blacks,
-        "Texture" => Texture,
-        "Clarity2012" => Clarity,
-        "Dehaze" => Dehaze,
-        "Vibrance" => Vibrance,
-        "Saturation" => Saturation,
+        "WhiteBalance" => WhiteBalance,
         "CameraProfile" | "ConvertToGrayscale" | super::FITTED_PROFILE_KEY => TreatmentAndProfile,
         "ProcessVersion" => ProcessVersion,
-        "Sharpness" | "EnableDetail" => Sharpening,
-        "LuminanceSmoothing" => LuminanceNoiseReduction,
-        "ColorNoiseReduction" => ColorNoiseReduction,
+        "EnableDetail" => Sharpening,
         "AutoLateralCA" => ChromaticAberration,
-        "VignetteAmount" | "VignetteMidpoint" => LensVignetting,
         "PerspectiveUpright" => UprightMode,
-        "EnableToneCurve" | "CurveRefineSaturation" => ToneCurve,
-        "LensManualDistortionAmount" => LensProfileCorrections,
+        "EnableToneCurve" => ToneCurve,
         "EnableColorAdjustments" | "PointColors" | "ColorVariance" => ColorAdjustments,
         "EnableGrayscaleMix" => BlackWhiteMix,
         "EnableSplitToning" => ColorGrading,
         "EnableLensCorrections" => LensProfileCorrections,
         "EnableTransform" => TransformAdjustments,
         "EnableEffects" => PostCropVignetting,
-        "EnableCalibration" | "ShadowTint" => Calibration,
+        "EnableCalibration" => Calibration,
         "EnableRetouch" => SpotRemoval,
-        "CropLeft"
-        | "CropTop"
-        | "CropRight"
-        | "CropBottom"
-        | "CropAngle"
-        | "HasCrop"
-        | "CropConstrainToWarp" => Crop,
+        "HasCrop" | "CropConstrainToWarp" => Crop,
         _ if starts("Parametric") || starts("ToneCurve") => ToneCurve,
         _ if starts("HueAdjustment")
             || starts("SaturationAdjustment")
@@ -251,18 +232,6 @@ pub(crate) fn group_of_key(key: &str) -> Option<SettingGroup> {
         _ if starts("Perspective") => TransformAdjustments,
         _ if starts("PostCropVignette") => PostCropVignetting,
         _ if starts("Grain") => Grain,
-        _ if matches!(
-            key,
-            "RedHue"
-                | "RedSaturation"
-                | "GreenHue"
-                | "GreenSaturation"
-                | "BlueHue"
-                | "BlueSaturation"
-        ) =>
-        {
-            Calibration
-        }
         _ if key.starts_with("Enable") && key.ends_with("Corrections") => Masking,
         _ => return None,
     })
