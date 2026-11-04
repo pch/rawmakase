@@ -47,7 +47,7 @@ split and catalog-only editing:
 | `crates/rawmakase-catalog/src/catalog/edits.rs` | Bitmap insertion; retrieval is test-only | Production batch retrieval and asset-aware saves |
 | `crates/rawmakase-catalog/src/catalog/edit_rows.rs` | Authoritative edit/history writes | Save raster dependencies with references in one transaction |
 | `src/edit_session/mod.rs` | Edits, history and dirty state coordinated by session operations | Atomic installation of generated masks and their in-memory assets |
-| `src/app/mask_tool.rs` | Creation, composition, corrections, sliders, overlay | Generation controls and result application |
+| `src/app/develop/tools/mask_tool.rs` | Creation, composition, corrections, sliders, overlay | Generation controls and result application |
 | `src/app/task.rs`, `src/app/worker/latest.rs` | Cancellation, generations and bounded worker patterns | Dedicated inference lifecycle using these patterns |
 | `crates/rawmakase-export/src/export/job.rs` | Captured image and recipe for export | Capture referenced asset IDs and unsaved leases; resolve before rendering |
 
@@ -144,10 +144,10 @@ asset-aware job source is necessary for Library workers:
 | Develop After/Before, fit/regions, overlay and Reference View | Resolve the particular displayed recipe, including historical Before states |
 | Library thumbnails and edited previews (`src/app/library/previews/`) | Carry catalog identity and captured IDs; never substitute Defaults on an asset error |
 | Library Loupe (`src/app/library/stage.rs`, `src/app/library/screen.rs`) | Preserve typed asset errors through source selection and rendering |
-| Build Standard/1:1 Previews (`src/app/preview_build.rs`) | Resolve captured saved assets and report per-photo failure without publishing an incomplete preview |
+| Build Standard/1:1 Previews (`src/app/library/preview_build.rs`) | Resolve captured saved assets and report per-photo failure without publishing an incomplete preview |
 | Snapshot/history restore | Install recipe/IDs and history synchronously; resolve render assets asynchronously under the new revision |
 | Foreground/queued export, command outputs and headless CLI | Capture recipe/IDs together, lease unsaved assets and fail before output publication on missing assets |
-| Masking color sampler (`src/app/mask_tool.rs::developed_lab`) | Continue clearing masks deliberately; pass an empty asset set and test absence of local-mask feedback |
+| Masking color sampler (`src/app/develop/tools/mask_tool.rs::developed_lab`) | Continue clearing masks deliberately; pass an empty asset set and test absence of local-mask feedback |
 
 An asset-free render entry point must reject a recipe with unresolved bitmap
 references. Share decoded bytes using budgeted `Arc` leases, not per-worker copies.

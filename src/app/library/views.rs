@@ -3,10 +3,10 @@
 //! is a click away with its key shown on hover; rating, flag and label keys
 //! go where the view shows them.
 use super::Library;
-use crate::app::design::{Tone, radius, space};
-use crate::app::icons::{self, Icon};
-use crate::app::shortcuts::keys_text;
-use crate::app::theme;
+use crate::app::shell::shortcuts::keys_text;
+use crate::app::ui::design::{Tone, radius, space};
+use crate::app::ui::icons::{self, Icon};
+use crate::app::ui::theme;
 use eframe::egui::{self, Vec2};
 
 /// How the Library shows its photos.
@@ -75,7 +75,7 @@ impl Library {
     /// `advance` (Shift), the view moves on to the next photo.
     pub(crate) fn edit_shown(
         &mut self,
-        edit: crate::app::photo_metadata::Edit,
+        edit: crate::app::library::photo_metadata::Edit,
         advance: bool,
     ) -> anyhow::Result<()> {
         match (self.view(), self.selection.active) {

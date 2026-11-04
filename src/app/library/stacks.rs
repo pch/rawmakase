@@ -11,8 +11,8 @@
 //! Each change of stacks is one undoable command; collapsing and expanding
 //! are a view, saved with the catalog, which Undo leaves alone.
 use super::{Library, Place};
-use crate::app::design::{self, Tone, button, inset, space, text};
-use crate::app::widgets::{self, plural};
+use crate::app::ui::design::{self, Tone, button, inset, space, text};
+use crate::app::ui::widgets::{self, plural};
 use crate::catalog::{
     BurstCandidate, Photo, PhotoId, SavedSequence, StackChange, StackId, StackState, StacksChanged,
 };
@@ -532,7 +532,7 @@ impl Library {
         let Some(mut dialog) = self.auto_stack.take() else {
             return;
         };
-        let palette = crate::app::theme::palette(ctx);
+        let palette = crate::app::ui::theme::palette(ctx);
         self.read_sequences(&mut dialog);
         let stacks = self.auto_stacks_of(&dialog);
         let photos: usize = stacks.iter().map(Vec::len).sum();

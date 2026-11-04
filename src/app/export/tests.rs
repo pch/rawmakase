@@ -1,7 +1,7 @@
 use super::*;
 use crate::app::Module;
-use crate::app::naming::editor as name_editor;
-use crate::app::naming::presets::Preset;
+use crate::app::export::naming::editor as name_editor;
+use crate::app::export::naming::presets::Preset;
 use crate::catalog::PhotoId;
 use crate::export_settings::NameContext;
 use crate::export_settings::{Destination, Format};
@@ -21,7 +21,12 @@ fn editor() -> anyhow::Result<(tempfile::TempDir, Editor, Vec<PhotoId>, egui::Co
     let catalog = dir.path().join("test.rawmakase");
     crate::catalog::Catalog::create(&catalog)?.add_folder(&photos)?;
     let ctx = egui::Context::default();
-    let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
     e.raw_defaults = Arc::new(crate::raw_defaults::DevelopDefaults::with_presets(
         Default::default(),
         |_| None,
@@ -198,7 +203,12 @@ fn a_photo_opened_without_a_catalog_is_exported_only_while_its_file_is_there() -
         &path,
     )?;
     let ctx = egui::Context::default();
-    let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
     e.document.opened_at(path.clone());
     e.document.metadata = Some(Default::default());
     e.document
@@ -1070,7 +1080,7 @@ fn a_file_that_cant_be_read_fails_the_read_and_keeps_the_others() -> anyhow::Res
 /// What the dialog chose keeps its tokens whatever happens to the preset.
 #[test]
 fn templates_are_saved_updated_and_deleted_from_the_editor() -> anyhow::Result<()> {
-    use crate::app::naming::presets::{Action, Library};
+    use crate::app::export::naming::presets::{Action, Library};
     use crate::export_settings::SavedTemplates;
     let (dir, mut e, ids, ctx) = editor()?;
     let file = dir.path().join("filename_templates.json");
@@ -1142,7 +1152,7 @@ fn templates_are_saved_updated_and_deleted_from_the_editor() -> anyhow::Result<(
 /// editor, then the dialog.
 #[test]
 fn escape_closes_the_presets_question_then_the_editor() -> anyhow::Result<()> {
-    use crate::app::naming::presets::{Action, Library};
+    use crate::app::export::naming::presets::{Action, Library};
     use crate::export_settings::SavedTemplates;
     let (dir, mut e, ids, ctx) = editor()?;
     let file = dir.path().join("filename_templates.json");

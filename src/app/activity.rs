@@ -10,7 +10,7 @@ pub(in crate::app) enum Activity {
     /// A batch edit (Sync Settings, Auto Settings or a preset on the selection) is
     /// preparing or writing photos' edits: moving to another photo or catalog waits
     /// for it. It ends when its worker reports back, cancelled or not.
-    Syncing(std::sync::Arc<crate::app::sync::BatchProgress>),
+    Syncing(std::sync::Arc<crate::app::library::sync::BatchProgress>),
     /// A file operation (Remove from Catalog, and later moving and trashing
     /// photos) is planned, confirmed or running: from just after the open
     /// edit was saved until its outcome is applied, nothing else writes the
@@ -44,7 +44,7 @@ impl Activity {
     }
     pub(crate) fn begin_sync(
         &mut self,
-        progress: std::sync::Arc<crate::app::sync::BatchProgress>,
+        progress: std::sync::Arc<crate::app::library::sync::BatchProgress>,
     ) -> bool {
         if self.is_busy() {
             return false;
@@ -56,7 +56,7 @@ impl Activity {
         matches!(self, Self::Syncing(_))
     }
     /// The running batch's progress and Cancel.
-    pub(crate) fn batch(&self) -> Option<&crate::app::sync::BatchProgress> {
+    pub(crate) fn batch(&self) -> Option<&crate::app::library::sync::BatchProgress> {
         match self {
             Self::Syncing(progress) => Some(progress),
             _ => None,
@@ -97,8 +97,8 @@ impl Activity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn batch() -> std::sync::Arc<crate::app::sync::BatchProgress> {
-        std::sync::Arc::new(crate::app::sync::BatchProgress::new("Sync", 2))
+    fn batch() -> std::sync::Arc<crate::app::library::sync::BatchProgress> {
+        std::sync::Arc::new(crate::app::library::sync::BatchProgress::new("Sync", 2))
     }
     #[test]
     fn a_file_dialog_blocks_another_until_it_closes() {

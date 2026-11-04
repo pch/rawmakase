@@ -1,8 +1,8 @@
 //! Which drive each root folder is on, whether each drive is attached and
 //! its free space, checked off the UI thread so a hung network mount can't
 //! stall drawing; and Lightroom's volume header row that shows it.
-use crate::app::design::{Tone, radius, text};
-use crate::app::theme;
+use crate::app::ui::design::{Tone, radius, text};
+use crate::app::ui::theme;
 use crate::platform::volume::Volume;
 use eframe::egui::{self, Color32, Vec2};
 use std::{
@@ -303,11 +303,11 @@ pub(super) fn volume_row(
         painter.circle_stroke(dot, 3., egui::Stroke::new(1., ring));
     }
     let chevron = if open {
-        crate::app::icons::Icon::ChevronDown
+        crate::app::ui::icons::Icon::ChevronDown
     } else {
-        crate::app::icons::Icon::ChevronRight
+        crate::app::ui::icons::Icon::ChevronRight
     };
-    crate::app::icons::paint_at(
+    crate::app::ui::icons::paint_at(
         painter,
         chevron,
         egui::pos2(rect.right() - 15.5, y),

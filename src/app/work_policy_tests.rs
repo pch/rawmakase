@@ -2,13 +2,18 @@
 //! status line's work, and how fast the Library renders edited previews. These
 //! read the state that owns each kind of work; set here as the work sets it.
 use crate::app::library::Pace;
-use crate::app::{Editor, Module, sync::BatchProgress};
+use crate::app::{Editor, Module, library::sync::BatchProgress};
 use eframe::egui;
 use std::sync::Arc;
 
 fn editor() -> Editor {
     let ctx = egui::Context::default();
-    let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
     e.onboarding.visible = false;
     e
 }

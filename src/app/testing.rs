@@ -32,7 +32,12 @@ pub(in crate::app) fn editor_with_catalog(
     let path = d.path().join("test.rawmakase");
     crate::catalog::Catalog::create(&path)?.add_folder(&photos)?;
     let ctx = egui::Context::default();
-    let mut e = Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
     let library = crate::app::library::Library::load(&path, ctx)?;
     let ids = library.session.photos().iter().map(|p| p.id).collect();
     e.library = Some(Box::new(library));
@@ -67,7 +72,7 @@ pub(in crate::app) fn press(e: &mut Editor, key: egui::Key, modifiers: egui::Mod
 /// `decoded` is false.
 pub(in crate::app) fn editor_with_blue_photo(
     ctx: &egui::Context,
-    session: crate::app::session::Session,
+    session: crate::app::preferences::session::Session,
     decoded: bool,
 ) -> (Editor, Arc<CameraImage>) {
     let mut editor = Editor::with_context(ctx, None, session, None);
@@ -136,10 +141,18 @@ pub(in crate::app) fn two_photo_editor()
             .id
     };
     let (a, b) = (id("a.ARW", &l), id("b.ARW", &l));
-    l.edit_metadata(b, crate::app::photo_metadata::Edit::Rating(2), false)?;
+    l.edit_metadata(
+        b,
+        crate::app::library::photo_metadata::Edit::Rating(2),
+        false,
+    )?;
     l.take_done();
-    let mut editor =
-        Editor::with_context(&ctx, None, crate::app::session::Session::default(), None);
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
     editor.library = Some(Box::new(l));
     editor.module = Module::Library;
     Ok((dir, ctx, editor, [a, b]))

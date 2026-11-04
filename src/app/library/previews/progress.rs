@@ -1,6 +1,6 @@
 //! The Library's progress line for preview work.
 use super::thumbnails::PreviewResult;
-use crate::app::widgets::plural;
+use crate::app::ui::widgets::plural;
 use eframe::egui;
 
 #[derive(Default)]
@@ -42,7 +42,7 @@ impl Progress {
     pub(crate) fn show(&self, ui: &mut egui::Ui, edits_pending: usize, ahead: bool) {
         let building = self.completed < self.total || edits_pending > 0 || ahead;
         if building {
-            crate::app::widgets::spinner(ui, 11.);
+            crate::app::ui::widgets::spinner(ui, 11.);
         }
         if edits_pending > 0 {
             ui.small(format!(

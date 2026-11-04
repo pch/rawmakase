@@ -94,14 +94,14 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `xmp` | Namespace-aware Adobe settings parsing and application to recipes. Settings that ask for Auto measure the photo through the model's `PhotoMeasures` (`model::measures`), which `develop::Measures` provides, and packets take the crop as rendered from the caller, so XMP needs no rendering code | `parse.rs`, `apply.rs` |
 | `raw_defaults` | Lightroom's Raw Defaults: the master and per-camera choices and a photo's starting settings. Above `presets`, whose library it reads | `raw_defaults.rs` |
 | `presets` | Native JSON recipe presets, installed XMP collections, favorites and preset import, and a preset's application to one photo, which Develop and the Library's batch share | `native.rs`, `library.rs`, `photo.rs` |
-| `storage` | RAW identity checks, which files are photos and the rendered formats' facts (`RasterFormat`: extensions, MIME types, names; the codecs are `raster`'s and `export`'s), application paths and atomic JSON writes, and the file system primitives moving a user's files needs (`fsops`: exclusive rename, file ids, exact listings, name comparison, containment, volume facts and free space, and a copy's steps; policy-free, one file per OS). Saved-recipe versions are `model::saved_format`, the desktop session is `app::session` and legacy sidecar import is `catalog::legacy_sidecar` | `identity.rs`, `files.rs`, `formats.rs`, `fsops/` |
+| `storage` | RAW identity checks, which files are photos and the rendered formats' facts (`RasterFormat`: extensions, MIME types, names; the codecs are `raster`'s and `export`'s), application paths and atomic JSON writes, and the file system primitives moving a user's files needs (`fsops`: exclusive rename, file ids, exact listings, name comparison, containment, volume facts and free space, and a copy's steps; policy-free, one file per OS). Saved-recipe versions are `model::saved_format`, the desktop session is `app::preferences::session` and legacy sidecar import is `catalog::legacy_sidecar` | `identity.rs`, `files.rs`, `formats.rs`, `fsops/` |
 | `export_settings` | Export choices as values: the Export dialog's settings, Rename Photos' remembered choices (`RenameSettings`), the user's saved file-name templates (`SavedTemplates`), a photo's saved `ExportOptions`, and the naming templates (`NameTemplate`: Lightroom's presets and Filename Template Editor templates, `TokenTemplate`) exports and renames name files by, from the `NameFields` taken once per export | `export_settings.rs`, `export_settings/tokens.rs`, `export_settings/rename.rs`, `export_settings/saved.rs` |
 | `export` | JPEG, 16-bit TIFF and PNG encoding, selected EXIF, sRGB ICC embedding, atomic output publication | `mod.rs`, `metadata.rs` |
 | `ids` | Typed catalog row ids (`PhotoId`, `FolderId`, `RootId`, `CollectionId`), stored and serialized as their integers; a leaf, so edit resolution and export use them below the catalog | `ids.rs` |
 | `metadata` | Photo metadata as values: descriptive fields (title, caption, copyright, creator, capture, location), keywords and camera settings; depends on nothing else | `metadata.rs` |
 | `edit_session` | The edit of the photo open in Develop apart from the window: its bounded History (named steps, one per gesture, saved with the edit) and save state; no egui | `history.rs`, `save_state.rs` |
 | `edits` | Which edit a photo develops with (saved, Lightroom or raw defaults), shared by Develop, Sync and Export; the catalog only reads the stored records. In `rawmakase-interop`, so export resolves edits without the catalog | `edits.rs` |
-| `catalog` | RAWmakase SQLite database, schema, photo/folder/collection models, edits, relinking, the default Creator and Copyright of photos added from folders (below the camera's own, which the app's reader finds, as the catalog can't reach the RAW decoders), Synchronize Folder's and Find on Disk's engine (`folder_sync`: scan, matching, apply, family digest; named apart from `app/sync.rs`, which is Sync Settings) and disposable preview cache | `schema.sql`, `models.rs`, `mod.rs`, `folder_sync.rs`, `preview_cache.rs` |
+| `catalog` | RAWmakase SQLite database, schema, photo/folder/collection models, edits, relinking, the default Creator and Copyright of photos added from folders (below the camera's own, which the app's reader finds, as the catalog can't reach the RAW decoders), Synchronize Folder's and Find on Disk's engine (`folder_sync`: scan, matching, apply, family digest; named apart from `app/library/sync.rs`, which is Sync Settings) and disposable preview cache | `schema.sql`, `models.rs`, `mod.rs`, `folder_sync.rs`, `preview_cache.rs` |
 | `catalog::db` | The catalog's one connection boundary: an opaque `Db` with checked reads, `snapshot` for consistent reads, `write` as the only way to write, and `with_lightroom` for import; statements are `Sql` (portable) or `SqliteSql` (Lightroom), shape-checked at compile time; values go through the catalog's own `ToValue`/`FromRow` (`catalog::value`) | `mod.rs`, `sql.rs` |
 | `catalog::lightroom` | Read-only Lightroom snapshot import | `mod.rs`, `history.rs` |
 | `catalog::file_ops` | The one owner of changing where a photo or folder is or what it is named, on disk and in the catalog (#370, #556): planning against a snapshot, the refusals, destination conflicts, names, which companion files go with a photo (by `catalog::sidecar`'s candidate rule), the journal, the operation lock, execution and recovery. Names photos from `interop::export_settings::NameTemplate`, the one owner of naming templates. Reaches the file system through its `Disk` seam over `storage::fsops`, the Trash through a `Trash` the app passes in | `plan.rs`, `execute.rs`, `recover.rs`, `journal.rs`, `rename.rs`, `tree.rs` |
@@ -111,7 +111,7 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `platform` | OS integration: the Linux GVFS filesystem bridge, drives, the file manager, the browser, the system Trash file operations get (`trash::SystemTrash`, failing closed, and whether a drive has one; no policy), and the display's color management (macOS surface tagging, the Windows display profile) | `network.rs`, `volume.rs`, `reveal.rs`, `web.rs`, `trash.rs`, `display.rs` |
 | `diagnostics` | The system report a bug report asks for (Report an Issue…, `rawmakase system-info`): this build, the system probed once per process and what the window knew, as plain snapshots, with no path, user, file, catalog or profile name | `diagnostics.rs` |
 | `updates` | Release checks and self-update through fastframe-update; the notice itself is in `app` | `updates.rs` |
-| `ai_denoise` | AI Denoise's service, shared by the desktop app and the command line: the queue, the worker and its ONNX session, job keys, the finished-result lookup, `AiBase` for export; `CommandLine` for `render` and `render-batch`, and the `rawmakase denoise` development command. No egui and no `app`: the open photo's result and the Loupe's loader are `app::ai_denoise`'s, and the app passes the user's cache in | `mod.rs`, `command_line.rs`, `bench.rs` |
+| `ai_denoise` | AI Denoise's service, shared by the desktop app and the command line: the queue, the worker and its ONNX session, job keys, the finished-result lookup, `AiBase` for export; `CommandLine` for `render` and `render-batch`, and the `rawmakase denoise` development command. No egui and no `app`: the open photo's result and the Loupe's loader are `app::develop::ai_denoise`'s, and the app passes the user's cache in | `mod.rs`, `command_line.rs`, `bench.rs` |
 | `model_install` | Installing the model packs (Select Subject's, Sky's, AI Denoise's): their folders, the receipt of checked files, downloads that resume, the lock across instances, and the runtime folder; the threads and the drawer are `app`'s | `mod.rs` |
 | `lensfun_install` | Downloading, checking, publishing and removing Lensfun's lens database on request (never bundled, never fetched unasked); reading it is `lens::lensfun::installed`'s, the panels and the job thread are `app`'s | `lensfun_install.rs` |
 | `comparison` | Reproducible reference-image comparisons using the same develop APIs | `comparison.rs` |
@@ -261,7 +261,7 @@ photo's is dropped. A panic in a job's run fails that job; one while handing a r
 to a listener fails that listener alone; and if the worker thread dies anyway, the job
 it held and every queued one fail, so no Develop request or export waits for it, and
 the next request starts a new worker. The Detail panel's switch and Amount are ordinary edits (one
-History step each); a result arriving is not one. `app::inspector::ai_denoise` draws
+History step each); a result arriving is not one. `app::develop::panels::inspector::ai_denoise` draws
 the panel's controls, credit and install offer; the model installs as
 `model_install::Pack::Denoise`, as the selection models do.
 
@@ -325,18 +325,18 @@ Develop's Fit path on the CPU, keeping nothing between photos.
 Some features span several owners; each module's docs describe its part:
 
 - `platform::menu` owns the macOS menu objects and queues typed actions, waking the
-  UI without reaching editor state; `app::native_menu` owns availability and
+  UI without reaching editor state; `app::shell::native_menu` owns availability and
   revalidates each action before calling the existing editor operations. Close and
   Quit keep the normal save guard. `platform::titlebar` owns the macOS header's
   drag area and double-click.
 - The community camera-profile catalogue: the model's `camera_profiles::catalogue`
   owns the data, its validation, matching and verification and never reaches the
-  network; `app::profile_download` owns the request, the task and the offer, and
-  `app::inspector::profile_offer` draws it.
-- `app::messages` owns what the app says to the user, and the running-work line
+  network; `app::develop::profile_download` owns the request, the task and the offer, and
+  `app::develop::panels::inspector::profile_offer` draws it.
+- `app::shell::messages` owns what the app says to the user, and the running-work line
   is read each frame from the state that owns the work, so nothing starts or ends it
   by hand.
-- `app::monitor` resolves the Monitor profile into the profile each render job
+- `app::preferences::monitor` resolves the Monitor profile into the profile each render job
   captures; `platform::display` owns the OS queries. No choice changes the
   renderer's output colour space or export profiles.
 
@@ -511,7 +511,7 @@ Some features span several owners; each module's docs describe its part:
   completion), it still has the profile it had and no camera-look fit was asked for
   since, as one History step; otherwise the profile is only installed. What applies
   is the installed file read once and verified as the download was. Cancellation
-  and publication claim one atomic state ([`app::profile_download`](../src/app/profile_download.rs)).
+  and publication claim one atomic state ([`app::develop::profile_download`](../src/app/develop/profile_download.rs)).
 
 ## Compatibility
 
@@ -540,10 +540,10 @@ Photographic checks and measured results live in the per-stage pages and in date
 
 ## Live application control
 
-`app::commands` defines transport-independent application operations, target
+`app::shell::commands` defines transport-independent application operations, target
 checks, parameter units and explicit results. `Editor` executes each mutation
 inside its generation-bound edit transaction, then answers that request.
-`app::automation` owns the input queue and adapter lifecycles. Its MIDI device
+`app::shell::automation` owns the input queue and adapter lifecycles. Its MIDI device
 adapter translates controls, while its independent socket adapter authenticates,
 bounds and expires requests, each with a separate reply channel. These adapters never write catalog edits or render pixels themselves.
 Headless test editors do not start listeners or touch connection/configuration

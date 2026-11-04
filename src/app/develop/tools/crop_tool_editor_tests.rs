@@ -1,0 +1,521 @@
+//! Editor tests of `crop_tool`: the whole editor driven through its frames.
+use crate::app::testing::*;
+use crate::app::*;
+use crate::camera_data::{CameraImage, Metadata};
+use std::sync::Arc;
+
+#[test]
+fn crop_tool_reads_each_photos_own_aspect() {
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    let image = Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 300,
+        height: 200,
+        pixels: vec![[0.1; 3]; 60000],
+        metadata: Metadata {
+            width: 300,
+            height: 200,
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+    });
+    editor.document.set_image(image);
+    let open = |editor: &mut Editor, crop: [f32; 4]| {
+        editor.view.tool = crate::app::develop::state::Tool::None;
+        editor.document.edit.setup_mut().crop = crop;
+        editor.view.toggle(crate::app::develop::state::Tool::Crop);
+        let frame = editor.begin_edit_frame();
+        editor.finish_edit_frame(frame, &ctx);
+        assert_eq!(
+            editor.document.edit.recipe().crop,
+            crop,
+            "reading changes no crop"
+        );
+        editor.view.aspect
+    };
+    // The last photo's XPan crop does not carry over to an uncropped photo.
+    editor.view.aspect = 65. / 24.;
+    assert_eq!(open(&mut editor, [0., 0., 1., 1.]), -1.);
+    // 300 × 111 is 65 x 24 to within rounding.
+    let xpan = [0., 0.223, 1., 0.777];
+    assert_eq!(open(&mut editor, xpan), 65. / 24.);
+    let custom = open(&mut editor, [0., 0., 0.5, 1.]);
+    assert!((custom - 0.75).abs() < 1e-6);
+    assert_eq!(open(&mut editor, [0.1, 0.1, 0.9, 0.9]), -1.);
+}
+
+#[test]
+fn crop_tool_stays_open_from_photo_to_photo() {
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session {
+            crop_aspect: "1x1".into(),
+            ..Default::default()
+        },
+        None,
+    );
+    editor.module = Module::Develop;
+    let image = Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 300,
+        height: 200,
+        pixels: vec![[0.1; 3]; 60000],
+        metadata: Metadata {
+            width: 300,
+            height: 200,
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+    });
+    // Another photo, opened while Crop is: the tool stays and reads it as if
+    // opened on it.
+    let next = |editor: &mut Editor, crop: [f32; 4]| {
+        editor.open_raw("missing-crop-fixture.ARW".into(), None);
+        assert!(editor.view.is(crate::app::develop::state::Tool::Crop));
+        editor.document.set_image(image.clone());
+        editor.document.edit.setup_mut().crop = crop;
+        let frame = editor.begin_edit_frame();
+        editor.finish_edit_frame(frame, &ctx);
+        editor.view.aspect
+    };
+    let crop = |editor: &Editor| editor.document.edit.recipe().crop;
+    let steps = |editor: &Editor| editor.document.edit.history().steps().0.len();
+    editor.document.set_image(image.clone());
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    // A cropped photo keeps its crop and shows its own aspect: 300 × 111 is
+    // 65 x 24 to within rounding.
+    let xpan = [0., 0.223, 1., 0.777];
+    assert_eq!(next(&mut editor, xpan), 65. / 24.);
+    assert_eq!(crop(&editor), xpan);
+    assert!(!editor.document.edit.save_state().needs_save());
+    // An uncropped photo takes the chosen 1 x 1 as one undoable step.
+    let full = [0., 0., 1., 1.];
+    let before = steps(&editor);
+    assert_eq!(next(&mut editor, full), 1.);
+    let c = crop(&editor);
+    assert!(((c[2] - c[0]) * 300. / ((c[3] - c[1]) * 200.) - 1.).abs() < 1e-3);
+    assert_eq!(steps(&editor), before + 1);
+    assert!(editor.document.edit.save_state().needs_save());
+    assert!(editor.document.edit.undo());
+    assert_eq!(crop(&editor), full);
+    // The same photo loaded again (after a Sync's Undo, say) reads the edit it
+    // loads: its own crop's aspect, and an uncropped one stays uncropped.
+    let path = std::path::PathBuf::from("missing-crop-fixture.ARW");
+    let reload = |editor: &mut Editor, crop: [f32; 4]| {
+        editor.document.opened_at(path.clone());
+        editor.open_raw(path.clone(), None);
+        assert!(editor.view.is(crate::app::develop::state::Tool::Crop));
+        editor.document.set_image(image.clone());
+        editor.document.edit.setup_mut().crop = crop;
+        let frame = editor.begin_edit_frame();
+        editor.finish_edit_frame(frame, &ctx);
+        assert_eq!(editor.document.edit.recipe().crop, crop);
+        assert_eq!(editor.document.edit.history().steps().0.len(), 0);
+        assert!(!editor.document.edit.save_state().needs_save());
+        editor.view.aspect
+    };
+    assert_eq!(reload(&mut editor, xpan), 65. / 24.);
+    assert_eq!(reload(&mut editor, full), -1.);
+    // Removing the photo closes it.
+    editor.close_removed_document();
+    assert!(editor.view.is(crate::app::develop::state::Tool::None));
+}
+
+#[test]
+fn choosing_the_photos_own_aspect_leaves_an_uncropped_photo_alone() {
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    // 100 × 99: the photo's ratio over itself is not exactly 1 in f32.
+    editor.document.set_image(Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 100,
+        height: 99,
+        pixels: vec![[0.1; 3]; 9900],
+        metadata: Metadata {
+            width: 100,
+            height: 99,
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+    }));
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    let frame = editor.begin_edit_frame();
+    editor.finish_edit_frame(frame, &ctx);
+    let steps = editor.document.edit.history().steps().0.len();
+    let frame = editor.begin_edit_frame();
+    editor.choose_aspect(-1.);
+    editor.finish_edit_frame(frame, &ctx);
+    assert_eq!(editor.document.edit.recipe().crop, [0., 0., 1., 1.]);
+    assert_eq!(editor.document.edit.history().steps().0.len(), steps);
+}
+
+#[test]
+fn fitting_a_crop_dragged_to_its_smallest_keeps_it_valid() {
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    editor.document.set_image(Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 300,
+        height: 200,
+        pixels: vec![[0.1; 3]; 60000],
+        metadata: Metadata {
+            width: 300,
+            height: 200,
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+    }));
+    editor.view.tool = crate::app::develop::state::Tool::Crop;
+    editor.view.aspect = -1.;
+    // A handle dragged to the smallest crop: 0.11 - 0.1 is just under 0.01 in f32,
+    // though the crop is already at the photo's aspect.
+    let frame = editor.begin_edit_frame();
+    editor.document.edit.recipe_mut().crop = [0.1, 0.1, 0.1 + 0.01, 0.1 + 0.01];
+    editor.fit_aspect();
+    editor.finish_edit_frame(frame, &ctx);
+    editor.document.edit.recipe().validate().unwrap();
+}
+
+#[test]
+fn the_chosen_aspect_is_its_own_edit_before_the_next_operation() {
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session {
+            crop_aspect: "1x1".into(),
+            ..Default::default()
+        },
+        None,
+    );
+    editor.document.set_image(Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 300,
+        height: 200,
+        pixels: vec![[0.1; 3]; 60000],
+        metadata: Metadata {
+            width: 300,
+            height: 200,
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+    }));
+    editor.document.edit.change(None, |r| r.exposure = 1.25);
+    editor.sync_command_revision();
+    let revision = editor.automation.revision;
+    let steps = editor.document.edit.history().steps().0.len();
+    // A queued command opens Crop; the next command's frame (a Navigate, say, which
+    // drops its frame with the photo) finds the photo uncropped.
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    let frame = editor.begin_edit_frame();
+    drop(frame);
+    // The crop is already recorded and to be saved, and an Undo takes back the crop
+    // rather than the edit before it.
+    let c = editor.document.edit.recipe().crop;
+    assert!(((c[2] - c[0]) * 300. / ((c[3] - c[1]) * 200.) - 1.).abs() < 1e-3);
+    assert_eq!(editor.document.edit.history().steps().0.len(), steps + 1);
+    assert!(editor.document.edit.save_state().needs_save());
+    // Commands see the cropped settings as a revision of their own, before the
+    // frame's command reads them.
+    assert_eq!(editor.automation.revision, revision + 1);
+    editor.sync_command_revision();
+    assert_eq!(editor.automation.revision, revision + 1);
+    assert!(editor.document.edit.undo());
+    assert_eq!(editor.document.edit.recipe().crop, [0., 0., 1., 1.]);
+    assert_eq!(editor.document.edit.recipe().exposure, 1.25);
+}
+
+#[test]
+fn the_chosen_aspect_ends_a_held_slider_drag_first() {
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session {
+            crop_aspect: "1x1".into(),
+            ..Default::default()
+        },
+        None,
+    );
+    editor.document.set_image(Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 300,
+        height: 200,
+        pixels: vec![[0.1; 3]; 60000],
+        metadata: Metadata {
+            width: 300,
+            height: 200,
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+    }));
+    // Exposure dragged to +1.25, the button still held as R opens Crop.
+    let frame = editor.document.edit.begin();
+    editor.document.edit.recipe_mut().exposure = 1.25;
+    editor
+        .document
+        .edit
+        .finish(frame, crate::edit_session::Gesture::Held);
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    let frame = editor.begin_edit_frame();
+    editor.finish_edit_frame(frame, &ctx);
+    editor.document.edit.finish_gesture();
+    // The drag and the crop are a step each: Undo takes back the crop alone, then
+    // the exposure.
+    assert!(editor.document.edit.undo());
+    assert_eq!(editor.document.edit.recipe().crop, [0., 0., 1., 1.]);
+    assert_eq!(editor.document.edit.recipe().exposure, 1.25);
+    assert!(editor.document.edit.undo());
+    assert_eq!(editor.document.edit.recipe().exposure, 0.);
+}
+
+#[test]
+fn crop_tool_keeps_the_chosen_aspect_for_uncropped_photos() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let session = dir.path().join("session.json");
+    let ctx = egui::Context::default();
+    let image = Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 300,
+        height: 200,
+        pixels: vec![[0.1; 3]; 60000],
+        metadata: Metadata {
+            width: 300,
+            height: 200,
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+    });
+    let new_editor = |s: crate::app::preferences::session::Session| {
+        let mut editor = Editor::with_context(&ctx, None, s, None);
+        editor.session_file = Some(session.clone());
+        editor.document.set_image(image.clone());
+        editor
+    };
+    let open = |editor: &mut Editor, crop: [f32; 4]| {
+        editor.view.tool = crate::app::develop::state::Tool::None;
+        editor.document.edit.setup_mut().crop = crop;
+        editor.view.toggle(crate::app::develop::state::Tool::Crop);
+        let frame = editor.begin_edit_frame();
+        editor.finish_edit_frame(frame, &ctx);
+        editor.view.aspect
+    };
+    let crop = |editor: &Editor| editor.document.edit.recipe().crop;
+    // The crop's width over its height on the 300 × 200 photo.
+    let ratio = |editor: &Editor| {
+        let c = crop(editor);
+        (c[2] - c[0]) * 300. / ((c[3] - c[1]) * 200.)
+    };
+    let steps = |editor: &Editor| editor.document.edit.history().steps().0.len();
+    let mut editor = new_editor(Default::default());
+    let full = [0., 0., 1., 1.];
+    // Until one is chosen an uncropped photo shows Original, and stays uncropped.
+    let before = steps(&editor);
+    assert_eq!(open(&mut editor, full), -1.);
+    assert_eq!(crop(&editor), full);
+    assert_eq!(steps(&editor), before);
+    // 4 x 5 chosen from the menu constrains this photo's crop...
+    let frame = editor.begin_edit_frame();
+    editor.choose_aspect(1.25);
+    editor.finish_edit_frame(frame, &ctx);
+    assert!((ratio(&editor) - 1.25).abs() < 1e-3);
+    // ...and the next uncropped photo takes it as the tool opens, as one undoable step.
+    let before = steps(&editor);
+    assert_eq!(open(&mut editor, full), 1.25);
+    assert!((ratio(&editor) - 1.25).abs() < 1e-3);
+    assert_eq!(steps(&editor), before + 1);
+    assert!(editor.document.edit.undo());
+    assert_eq!(crop(&editor), full);
+    // Choosing it again from the menu crops that photo again.
+    let frame = editor.begin_edit_frame();
+    editor.choose_aspect(1.25);
+    editor.finish_edit_frame(frame, &ctx);
+    assert!((ratio(&editor) - 1.25).abs() < 1e-3);
+    // A cropped photo keeps its crop and shows its own aspect, and does not replace
+    // the choice.
+    let xpan = [0., 0.223, 1., 0.777];
+    assert_eq!(open(&mut editor, xpan), 65. / 24.);
+    assert_eq!(crop(&editor), xpan);
+    assert_eq!(open(&mut editor, full), 1.25);
+    // Swapping a photo's crop to portrait leaves the choice following each photo.
+    let frame = editor.begin_edit_frame();
+    editor.swap_crop_orientation();
+    editor.finish_edit_frame(frame, &ctx);
+    assert_eq!(open(&mut editor, full), 1.25);
+    assert!((ratio(&editor) - 1.25).abs() < 1e-3);
+    // Free is a choice too, and leaves an uncropped photo uncropped.
+    let frame = editor.begin_edit_frame();
+    editor.choose_aspect(0.);
+    editor.finish_edit_frame(frame, &ctx);
+    assert_eq!(open(&mut editor, full), 0.);
+    assert_eq!(crop(&editor), full);
+    // The choice is kept in the session for the next launch.
+    let frame = editor.begin_edit_frame();
+    editor.choose_aspect(16. / 9.);
+    editor.finish_edit_frame(frame, &ctx);
+    let saved: crate::app::preferences::session::Session =
+        serde_json::from_slice(&std::fs::read(&session)?)?;
+    assert_eq!(saved.crop_aspect, "16x9");
+    let mut relaunched = new_editor(saved);
+    assert_eq!(open(&mut relaunched, full), 16. / 9.);
+    assert!((ratio(&relaunched) - 16. / 9.).abs() < 1e-3);
+    // A name this version does not know reads as Original.
+    let mut unknown = new_editor(crate::app::preferences::session::Session {
+        crop_aspect: "golden".into(),
+        ..Default::default()
+    });
+    assert_eq!(open(&mut unknown, full), -1.);
+    Ok(())
+}
+
+#[test]
+fn crop_keys_swap_and_cycle_the_overlay_but_not_while_typing() -> anyhow::Result<()> {
+    let (d, mut e, ids) = editor_with_catalog(&["a.RAF"])?;
+    let session = d.path().join("session.json");
+    e.session_file = Some(session.clone());
+    e.module = Module::Develop;
+    e.document.catalog_photo = Some(ids[0]);
+    e.document.set_image(Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 300,
+        height: 200,
+        pixels: vec![[0.1; 3]; 60000],
+        metadata: Metadata {
+            width: 300,
+            height: 200,
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+    }));
+    let crop = [0.1, 0.2, 0.5, 0.6];
+    e.document.edit.setup_mut().crop = crop;
+    e.view.toggle(crate::app::develop::state::Tool::Crop);
+    let ctx = e.context.clone();
+    let press = |e: &mut Editor, key: egui::Key, shift: bool, typing: bool| {
+        let modifiers = egui::Modifiers {
+            shift,
+            ..Default::default()
+        };
+        let mut text = String::new();
+        // A text field takes focus in one frame and has it for the keys in the next.
+        for events in [vec![], vec![true, false]] {
+            let input = egui::RawInput {
+                events: std::iter::once(egui::Event::ModifiersChanged(modifiers))
+                    .chain(events.into_iter().map(|pressed| egui::Event::Key {
+                        key,
+                        physical_key: Some(key),
+                        pressed,
+                        repeat: false,
+                        modifiers,
+                    }))
+                    .collect(),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                if typing {
+                    ui.text_edit_singleline(&mut text).request_focus();
+                }
+                e.metadata_shortcuts(&ctx);
+                let frame = e.begin_edit_frame();
+                e.develop_shortcuts(&ctx);
+                e.finish_edit_frame(frame, &ctx);
+            });
+            output.textures_delta.clear();
+        }
+    };
+    // Typing an X or an O in a field changes nothing.
+    press(&mut e, egui::Key::X, false, true);
+    press(&mut e, egui::Key::O, false, true);
+    assert_eq!(e.document.edit.recipe().crop, crop);
+    assert_eq!(e.view.crop_guides, Default::default());
+    // X swaps the 120 × 80 crop to 80 × 120 about its centre, and rejects nothing.
+    press(&mut e, egui::Key::X, false, false);
+    let c = e.document.edit.recipe().crop;
+    assert!(
+        ((c[2] - c[0]) * 300. - 80.).abs() < 1e-3 && ((c[3] - c[1]) * 200. - 120.).abs() < 1e-3,
+        "{c:?}"
+    );
+    assert!(((c[0] + c[2]) / 2. - 0.3).abs() < 1e-6 && ((c[1] + c[3]) / 2. - 0.4).abs() < 1e-6);
+    assert_eq!(e.library.as_ref().unwrap().photo(ids[0]).unwrap().flag, 0);
+    // O cycles the overlay and Shift+O turns it; both are kept in the session.
+    use crate::app::develop::tools::crop_tool::Guide;
+    press(&mut e, egui::Key::O, false, false);
+    assert_eq!(e.view.crop_guides.guide, Guide::Diagonal);
+    press(&mut e, egui::Key::O, false, false);
+    press(&mut e, egui::Key::O, true, false);
+    assert_eq!(
+        (e.view.crop_guides.guide, e.view.crop_guides.orientation),
+        (Guide::Triangle, 1)
+    );
+    // Shift released before the frame is drawn: the press still had it.
+    let shifted = egui::Modifiers {
+        shift: true,
+        ..Default::default()
+    };
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            events: vec![
+                egui::Event::ModifiersChanged(shifted),
+                egui::Event::Key {
+                    key: egui::Key::O,
+                    physical_key: Some(egui::Key::O),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: shifted,
+                },
+                egui::Event::ModifiersChanged(egui::Modifiers::NONE),
+            ],
+            ..Default::default()
+        },
+        |_| e.develop_shortcuts(&ctx),
+    );
+    output.textures_delta.clear();
+    assert_eq!(
+        (e.view.crop_guides.guide, e.view.crop_guides.orientation),
+        (Guide::Triangle, 0)
+    );
+    press(&mut e, egui::Key::O, true, false);
+    let saved: crate::app::preferences::session::Session =
+        serde_json::from_slice(&std::fs::read(&session)?)?;
+    assert_eq!(saved.crop_guides.guide, "triangle");
+    assert_eq!(saved.crop_guides.orientation, 1);
+    // Outside the Crop tool X rejects as before.
+    e.view.tool = crate::app::develop::state::Tool::None;
+    press(&mut e, egui::Key::X, false, false);
+    assert_eq!(e.library.as_ref().unwrap().photo(ids[0]).unwrap().flag, -1);
+    Ok(())
+}

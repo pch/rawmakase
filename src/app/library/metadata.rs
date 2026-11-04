@@ -2,7 +2,7 @@
 //! Develop and the filmstrip, every selected photo from the grid. Each is one
 //! transaction and is handed to the shared undo log once saved.
 use super::{Library, Place};
-use crate::app::photo_metadata::Edit;
+use crate::app::library::photo_metadata::Edit;
 use crate::catalog::{Photo, PhotoId};
 use anyhow::Result;
 

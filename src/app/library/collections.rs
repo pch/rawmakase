@@ -1,9 +1,9 @@
 //! The Collections panel: imported Lightroom collection sets and collections,
 //! read-only. Smart collections stay hidden until their rules are evaluated,
 //! and Lightroom's own (the Quick Collection, unsaved creations) never show.
-use crate::app::design::{Tone, text};
-use crate::app::icons::{self, Icon};
-use crate::app::theme;
+use crate::app::ui::design::{Tone, text};
+use crate::app::ui::icons::{self, Icon};
+use crate::app::ui::theme;
 use crate::catalog::{Collection, CollectionId, CollectionKind, PhotoId};
 use eframe::egui::{self, Vec2};
 use std::collections::{HashMap, HashSet};

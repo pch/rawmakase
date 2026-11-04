@@ -1,5 +1,5 @@
 //! Catalog browsing; thumbnail work is bounded and independent of RAW development.
-use crate::app::widgets::plural;
+use crate::app::ui::widgets::plural;
 use crate::catalog::{Catalog, FolderId, Photo, PhotoId, RootId};
 use crate::catalog_session::{CatalogSession, Committed, Opened};
 use anyhow::Result;
@@ -267,7 +267,7 @@ pub(crate) struct Library {
     /// External volumes attached at the last check, to notice one returning;
     /// None before the first check.
     attached: Option<HashSet<std::path::PathBuf>>,
-    pub(in crate::app) messages: crate::app::messages::Messages,
+    pub(in crate::app) messages: crate::app::shell::messages::Messages,
     /// Background reads are held off while a file operation holds the
     /// catalog: nothing starts them until it lets go.
     reads_suspended: bool,
@@ -628,7 +628,7 @@ impl Library {
         self.visible.get(n).map(|i| self.session.photos()[*i].id)
     }
     fn labels(&self) -> Vec<String> {
-        let mut labels: Vec<String> = crate::app::photo_metadata::LABELS
+        let mut labels: Vec<String> = crate::app::library::photo_metadata::LABELS
             .iter()
             .map(|s| (*s).into())
             .collect();
@@ -1594,3 +1594,10 @@ fn wake(ctx: &egui::Context) -> crate::catalog_session::Wake {
 
 #[cfg(test)]
 mod editor_tests;
+
+pub(in crate::app) mod batch;
+pub(in crate::app) mod photo_metadata;
+pub(in crate::app) mod preview_build;
+#[cfg(test)]
+pub(in crate::app) mod stacks_tests;
+pub(in crate::app) mod sync;

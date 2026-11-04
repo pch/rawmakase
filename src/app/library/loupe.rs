@@ -6,9 +6,9 @@
 //! and kept, within a budget, until it is shown. An offline photo shows its
 //! cached preview.
 use super::{Action, Library, thumbnails};
-use crate::app::design::{Tone, text};
-use crate::app::navigator::Zoom;
-use crate::app::theme;
+use crate::app::ui::design::{Tone, text};
+use crate::app::ui::theme;
+use crate::app::view::navigator::Zoom;
 use crate::app::worker::Latest;
 use crate::catalog::{Photo, PhotoId};
 use eframe::egui::{self, Color32, Vec2};
@@ -389,7 +389,7 @@ impl Library {
     /// preview, and the part in view when zoomed.
     pub(in crate::app) fn loupe_minimap(
         &self,
-    ) -> Option<(crate::app::navigator::Photo, Option<[f32; 4]>)> {
+    ) -> Option<(crate::app::view::navigator::Photo, Option<[f32; 4]>)> {
         let photo = self.selection.active.and_then(|id| self.photo(id))?;
         // The Loupe's own preview once it is this photo's; until then the
         // grid's.
@@ -452,7 +452,7 @@ impl Library {
         &mut self,
         ui: &mut egui::Ui,
         zoom: &mut Zoom,
-        magnifier: Option<&mut crate::app::magnifier::Magnifier>,
+        magnifier: Option<&mut crate::app::view::magnifier::Magnifier>,
     ) -> Action {
         let palette = theme::palette(ui.ctx());
         self.loupe.poll(ui.ctx());
@@ -473,7 +473,10 @@ impl Library {
         ui.painter().rect_filled(rect, 0., palette.photo_backdrop());
         let ppp = ui.ctx().pixels_per_point();
         // The photo fits within the margin, as drawn below.
-        self.loupe.view = rect.shrink(crate::app::workspace::PHOTO_MARGIN).size() * ppp;
+        self.loupe.view = rect
+            .shrink(crate::app::shell::workspace::PHOTO_MARGIN)
+            .size()
+            * ppp;
         let available = self.is_available(&photo.path);
         let edge = (rect.width().max(rect.height()) * ppp) as u32;
         // An offline RAW with a stored Standard preview shows it.
@@ -507,7 +510,7 @@ impl Library {
             self.messages.warn(format!("Preview unavailable: {e}"));
         }
         self.request_previews(&photo, ui.ctx());
-        let inset = rect.shrink(crate::app::workspace::PHOTO_MARGIN);
+        let inset = rect.shrink(crate::app::shell::workspace::PHOTO_MARGIN);
         // Until its own preview is in, the grid's stands in, enlarged.
         let own = available
             || stored.is_some()
@@ -632,7 +635,8 @@ impl Library {
                 .filter(|_| regions.photo == Some(photo.id))
                 .or(self.loupe.full.map(|(w, h)| [w, h]));
             if let Some(size) = size
-                && let Some(aim) = crate::app::magnifier::Aim::new(pos, fitted, size, level, ppp)
+                && let Some(aim) =
+                    crate::app::view::magnifier::Aim::new(pos, fitted, size, level, ppp)
             {
                 let [x, y, w, h] = aim.region(size);
                 let centre = [
@@ -648,7 +652,7 @@ impl Library {
                     .filter(|_| regions.photo == Some(photo.id))
                     .map(|(t, [rx, ry, rw, rh])| (t.id(), [rx * fw, ry * fh, rw * fw, rh * fh]));
                 let preview = texture.as_ref().map(|t| t.id());
-                crate::app::magnifier::paint_lens(ui, pos, &aim, level, sharp, preview, size);
+                crate::app::view::magnifier::paint_lens(ui, pos, &aim, level, sharp, preview, size);
             }
         }
         if zoom.on && zoomable {

@@ -2,7 +2,7 @@
 //! catalog in capture order; another order sorts them by its key, stably,
 //! so photos alike in it stay in capture order. Edit time and aspect ratio
 //! are not on `Photo` and are read from the catalog as they are needed.
-use crate::app::photo_metadata::LABELS;
+use crate::app::library::photo_metadata::LABELS;
 use crate::catalog::{Catalog, Photo, PhotoId};
 use std::cmp::Ordering;
 use std::collections::HashMap;

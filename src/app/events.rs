@@ -1,6 +1,6 @@
 //! Accept worker results at a single generation-checked boundary.
 use crate::app::Module;
-use crate::app::messages::Topic;
+use crate::app::shell::messages::Topic;
 use crate::app::{
     Editor,
     worker::{self, Event, LoadedHeader, Pane, RenderStage, TaskKind},
@@ -77,7 +77,7 @@ impl Editor {
                 }
                 Event::Monitor(p) => {
                     self.activity.finish_dialog();
-                    self.view.monitor = crate::app::monitor::MonitorProfile::Custom(p);
+                    self.view.monitor = crate::app::preferences::monitor::MonitorProfile::Custom(p);
                     let _ = self.save_session();
                     self.schedule();
                 }
@@ -265,7 +265,7 @@ impl Editor {
                         Some(navigator),
                     );
                     self.preview.embedded = true;
-                    self.preview.mode = crate::app::state::TextureMode::Whole;
+                    self.preview.mode = crate::app::develop::state::TextureMode::Whole;
                     // Uncropped, so it is placed by the photo's crop once that is known.
                     self.preview.crop = Some([0., 0., 1., 1.]);
                     self.preview.status = "Camera preview • developing RAW…".into();
@@ -324,7 +324,10 @@ impl Editor {
                         continue;
                     };
                     self.preview.showing(id);
-                    let region = matches!(request.mode, crate::app::state::TextureMode::Region(_));
+                    let region = matches!(
+                        request.mode,
+                        crate::app::develop::state::TextureMode::Region(_)
+                    );
                     // A region's own histogram would describe only what is
                     // visible; the whole photo's follows as `Histogram`.
                     if !region {
@@ -585,7 +588,7 @@ impl Editor {
                 .and_then(|r| r.saved(&p));
             match saved {
                 Ok(Some(saved)) => {
-                    self.document.origin = crate::app::state::EditOrigin::Saved;
+                    self.document.origin = crate::app::develop::state::EditOrigin::Saved;
                     self.document.edit.replace(saved.recipe);
                     self.document.export = saved.export;
                     // A History that cannot be read leaves the edit as it is.
@@ -617,12 +620,12 @@ impl Editor {
                     self.document.pending_lightroom =
                         record.ok().and_then(|r| r.lightroom().map(str::to_owned));
                     if self.document.pending_lightroom.is_some() {
-                        self.document.origin = crate::app::state::EditOrigin::Lightroom;
+                        self.document.origin = crate::app::develop::state::EditOrigin::Lightroom;
                     }
                 }
                 Err(e) => {
                     // Unreadable is not unedited: it must not follow the defaults.
-                    self.document.origin = crate::app::state::EditOrigin::Saved;
+                    self.document.origin = crate::app::develop::state::EditOrigin::Saved;
                     self.document.edit.save_state_mut().protect(e.to_string());
                     self.document.lightroom_notice = e.to_string();
                 }
@@ -642,7 +645,7 @@ impl Editor {
             && self.document.path.is_some()
             && !self.view.zoom.on
             && !self.view.compare.shows_before()
-            && !self.view.is(crate::app::state::Tool::Crop)
+            && !self.view.is(crate::app::develop::state::Tool::Crop)
             && self.presets.preview.is_none()
     }
     /// A render made with a partial AI Denoise result is not the photo's thumbnail:
@@ -651,11 +654,12 @@ impl Editor {
         &mut self,
         ctx: &egui::Context,
         small: image::RgbImage,
-        ai: crate::app::state::RenderedAi,
+        ai: crate::app::develop::state::RenderedAi,
     ) {
+        use crate::app::develop::state::RenderedAi;
         use crate::app::library::PreviewAi;
-        use crate::app::state::RenderedAi;
-        if self.preview.mode != crate::app::state::TextureMode::Whole || !self.shows_library_edit()
+        if self.preview.mode != crate::app::develop::state::TextureMode::Whole
+            || !self.shows_library_edit()
         {
             return;
         }

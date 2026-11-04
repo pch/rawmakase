@@ -1,7 +1,7 @@
 //! Updates from GitHub releases, through fastframe-update: the check, whether
 //! this copy may replace itself, the signed download and the helper that
 //! installs it with rollback. RAWmakase keeps its configuration, its HTTP
-//! client and the notice (`app::updates`).
+//! client and the notice (`app::shell::updates`).
 //!
 //! The Apple Silicon disk image and the Windows installer update themselves.
 //! Intel Macs, the Linux tarball (which bundles libraries beside the

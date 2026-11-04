@@ -109,7 +109,7 @@ Photos without colour data get one by default.
 
 **Stand-in**. Something shown in place of the real thing until it is ready.
 Mostly: the stored Standard preview Develop shows while a photo opens, until its
-first live render (`app::stand_in`); nothing that reads the photo (samples, the
+first live render (`app::develop::stand_in`); nothing that reads the photo (samples, the
 readout, white balance picking, the histogram, tools, export) ever reads it. The
 Library's 640-pixel previews and the camera's embedded JPEG stand in the same way.
 Also: the camera's lens data used in place of a missing Adobe lens profile

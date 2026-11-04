@@ -3,7 +3,7 @@
 //! Lightroom's Attribute filter: any combination of flags, a rating compared
 //! with ≥, ≤ or =, any set of color labels, and masters or virtual copies.
 //! Cmd+L turns the bar off and on without losing what is set in it.
-use crate::app::photo_metadata::LABELS;
+use crate::app::library::photo_metadata::LABELS;
 use crate::catalog::{Photo, PhotoId};
 use std::{
     collections::{BTreeSet, HashMap, HashSet},

@@ -6,8 +6,8 @@
 use super::descriptive::{DescriptiveEdit, parse_keywords};
 use super::rows::{ROW, VALUE_GRAY, caption_at, field_rect, paint_truncated, panel_edit, value_at};
 use super::{Library, Place};
-use crate::app::design::{space, text};
-use crate::app::theme;
+use crate::app::ui::design::{space, text};
+use crate::app::ui::theme;
 use crate::catalog::PhotoId;
 use crate::metadata::{Descriptive, Keyword, Location, TextField, Value};
 use eframe::egui::{self, Vec2};

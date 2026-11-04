@@ -68,14 +68,14 @@ pub(crate) enum Event {
         result: Result<PathBuf, String>,
     },
     DialogClosed,
-    /// The system report's probe answered, or stopped (see `app::report_issue`).
+    /// The system report's probe answered, or stopped (see `app::shell::report_issue`).
     SystemProbed {
         generation: u64,
         system: Box<crate::diagnostics::System>,
     },
     /// A Subject or Background selection finished (or failed).
-    Selection(Box<crate::app::subject_mask::Done>),
-    /// News of AI Denoise for a photo Develop asked for (`app::ai_denoise`).
+    Selection(Box<crate::app::develop::tools::subject_mask::Done>),
+    /// News of AI Denoise for a photo Develop asked for (`app::develop::ai_denoise`).
     AiDenoise(Box<crate::ai_denoise::Update>),
     /// An AI Denoise result was stored for the photo at this path, by any job.
     AiDenoiseStored(std::path::PathBuf),
@@ -85,11 +85,11 @@ pub(crate) enum Event {
         Result<(), crate::model_install::InstallError>,
     ),
     ModelRemoved(crate::model_install::Pack, Result<(), String>),
-    /// A Lensfun database job finished (`app::lensfun`).
+    /// A Lensfun database job finished (`app::develop::lensfun`).
     Lensfun {
         generation: u64,
-        job: crate::app::lensfun::Job,
-        result: Result<crate::app::lensfun::Done, crate::app::lensfun::Failure>,
+        job: crate::app::develop::lensfun::Job,
+        result: Result<crate::app::develop::lensfun::Done, crate::app::develop::lensfun::Failure>,
     },
     /// A catalog upgrade for raster masks finished: the backup it made, or why not.
     CatalogUpgraded {
@@ -105,22 +105,22 @@ pub(crate) enum Event {
         source: Vec<String>,
     },
     /// A Synchronize Folder scan finished, or failed.
-    FolderSyncScanned(Box<crate::app::folder_sync::Scanned>),
+    FolderSyncScanned(Box<crate::app::catalog::folder_sync::Scanned>),
     /// Find on Disk's file picked for a photo.
     FileOnDiskPicked(crate::catalog::PhotoId, PathBuf),
     /// Applying a synchronization finished: the catalog opened again.
-    FolderSyncApplied(Result<Box<crate::app::folder_sync::Synced>, String>),
+    FolderSyncApplied(Result<Box<crate::app::catalog::folder_sync::Synced>, String>),
     /// A folder change waiting for the user's answer.
-    FolderQuestion(Box<crate::app::folder_locations::FolderQuestion>),
+    FolderQuestion(Box<crate::app::catalog::folder_locations::FolderQuestion>),
     /// Export as Catalog finished: what it wrote, nothing when the user
     /// chose no file, or why it failed.
-    CatalogExported(Box<Result<Option<crate::app::export_catalog::Exported>, String>>),
+    CatalogExported(Box<Result<Option<crate::app::catalog::export_catalog::Exported>, String>>),
     /// A file operation was planned (see `app::file_ops`).
     /// What export file names need from the photos' files, for the read
-    /// `request` (see `app::naming::read`).
+    /// `request` (see `app::export::naming::read`).
     NamesRead {
         request: u64,
-        read: Result<crate::app::naming::read::Reads, String>,
+        read: Result<crate::app::export::naming::read::Reads, String>,
     },
     /// Rename Photo(s)' photos in the order they are numbered in, for the
     /// catalog they were read from.
@@ -165,10 +165,10 @@ pub(crate) enum Event {
     /// The folder chosen for decoded images.
     DecodeCacheFolder(PathBuf),
     /// Files and folders chosen to import profiles or presets from.
-    Import(crate::app::bulk_import::ImportKind, Vec<PathBuf>),
-    Imported(Box<crate::app::bulk_import::Summary>),
+    Import(crate::app::presets::bulk_import::ImportKind, Vec<PathBuf>),
+    Imported(Box<crate::app::presets::bulk_import::Summary>),
     /// A Sync Settings finished.
-    Synced(Box<crate::app::sync::SyncResult>),
+    Synced(Box<crate::app::library::sync::SyncResult>),
     Profiles {
         id: u64,
         profiles: Vec<Arc<crate::camera_profiles::CameraProfile>>,
@@ -236,7 +236,7 @@ pub(crate) enum Event {
     /// The setup assistant's scan for cameras, profiles and presets.
     OnboardingScanned {
         generation: u64,
-        found: Box<crate::app::onboarding::Found>,
+        found: Box<crate::app::catalog::onboarding::Found>,
     },
     XmpLibrary {
         scan: u64,
@@ -253,7 +253,7 @@ pub(crate) enum Event {
         image: image::RgbImage,
     },
     /// A stored Standard preview, read for a load or a neighbour.
-    StandIn(Box<crate::app::stand_in::StandIn>),
+    StandIn(Box<crate::app::develop::stand_in::StandIn>),
     Ready {
         id: u64,
         full: Arc<CameraImage>,

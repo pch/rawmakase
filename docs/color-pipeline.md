@@ -72,7 +72,7 @@ profile yet and shows sRGB as it is. "Use sRGB" shows sRGB pixels as device RGB
 on every platform, for a display set to sRGB; it is saved as `monitor_srgb`
 beside no profile, which versions before it read as their own "Use sRGB". A
 session from before it with no profile follows the system.
-`app::display` schedules this declaration in the paint callback, after wgpu can
+`app::shell::display` schedules this declaration in the paint callback, after wgpu can
 reconfigure the surface; `platform::display` finds the current Metal layer and
 sets its color space. This works around wgpu-hal 30.0.1 leaving sRGB surfaces
 untagged ([upstream fix](https://github.com/gfx-rs/wgpu/pull/10286)). No additional

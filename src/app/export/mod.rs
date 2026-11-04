@@ -6,15 +6,15 @@
 mod dialog;
 mod watermark_editor;
 
-use crate::app::design::{self, Tone, inset, radius, space, text};
-use crate::app::naming::editor::{self, NameEditor};
-use crate::app::naming::read::{self as name_read, NameRead, Reads, Status, ToRead};
+use crate::app::export::naming::editor::{self, NameEditor};
+use crate::app::export::naming::read::{self as name_read, NameRead, Reads, Status, ToRead};
+use crate::app::ui::design::{self, Tone, inset, radius, space, text};
 
 use crate::app::Module;
 use crate::catalog::PhotoId;
 
-use crate::app::theme;
-use crate::app::widgets::plural;
+use crate::app::ui::theme;
+use crate::app::ui::widgets::plural;
 use crate::app::{Editor, worker::Event};
 use crate::export::{
     assemble::Values,
@@ -154,7 +154,7 @@ pub(in crate::app) struct Exports {
     /// The Filename Template Editor, over the dialog.
     name_editor: Option<NameEditor>,
     /// The saved file-name templates, read when the dialog opens.
-    saved: crate::app::naming::presets::Library,
+    saved: crate::app::export::naming::presets::Library,
     /// Tests: an export doesn't save its settings as the last export's.
     unsaved_settings: bool,
 }
@@ -178,7 +178,7 @@ impl Editor {
         self.exports.scope = scope;
         self.exports.draft = ExportSettings::load().unwrap_or_default();
         self.exports.watermarks = crate::watermark::presets();
-        self.exports.saved = crate::app::naming::presets::Library::load();
+        self.exports.saved = crate::app::export::naming::presets::Library::load();
         self.exports.dialog = true;
     }
     /// Export with Previous: the last export's choices, without the dialog.
@@ -482,7 +482,7 @@ impl Editor {
         let mut cancel = false;
         let response = egui::Modal::new(egui::Id::new("export-names-reading"))
             .frame(
-                crate::app::widgets::modal_frame(&palette)
+                crate::app::ui::widgets::modal_frame(&palette)
                     .inner_margin(design::margin_same(inset::DIALOG)),
             )
             .show(ctx, |ui| {
@@ -832,9 +832,9 @@ impl Editor {
         } else {
             Tone::SECONDARY
         });
-        crate::app::icons::paint_at(
+        crate::app::ui::icons::paint_at(
             ui.painter(),
-            crate::app::icons::Icon::Close,
+            crate::app::ui::icons::Icon::Close,
             close.center(),
             13.,
             color,
@@ -921,3 +921,5 @@ mod tests;
 
 #[cfg(test)]
 mod editor_tests;
+
+pub(in crate::app) mod naming;

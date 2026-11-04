@@ -26,7 +26,7 @@ If it is a slider, give it a `ParameterId` and a `Descriptor` in
 `crates/rawmakase-model/src/model/params.rs`: label, slider range, valid range, step
 and formatting. Sliders, the control socket, MIDI and History all read it there. A
 control the socket and MIDI address by name is listed in `NAMED` in
-`src/app/commands/parameter.rs`.
+`src/app/shell/commands/parameter.rs`.
 
 If a panel switch covers it, reset it in that panel's `bypass` in
 `crates/rawmakase-model/src/model/panels.rs`.
@@ -117,8 +117,8 @@ cargo test --locked -p rawmakase-engine --lib gpu -- --ignored
 
 ## 7. The inspector
 
-Each Develop panel has its own file in `src/app/inspector/panels/` (Refine
-Saturation is in `tone_curve.rs`); `src/app/inspector.rs` draws them in order and
+Each Develop panel has its own file in `src/app/develop/panels/inspector/panels/` (Refine
+Saturation is in `tone_curve.rs`); `src/app/develop/panels/inspector.rs` draws them in order and
 carries out the actions they return. Draw the slider with
 `setting_slider(ui, ParameterId::…, &mut value, default)` in its panel, at
 Lightroom's place, and reset it with the panel's reset. A panel edits the recipe it

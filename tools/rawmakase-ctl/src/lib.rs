@@ -2,7 +2,7 @@
 //!
 //! RAWmakase listens on a loopback socket and announces it in `control.json` in
 //! its data folder (see `rawmakase_protocol::Endpoint`, and
-//! src/app/automation/socket.rs for the app's side). Each command here is one
+//! src/app/shell/automation/socket.rs for the app's side). Each command here is one
 //! request; the app answers once a frame has handled it. The app's own
 //! `rawmakase control` and MCP server use this crate too.
 use clap::{Parser, Subcommand};

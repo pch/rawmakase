@@ -3,8 +3,8 @@
 //! photos added from folders it is read from the files in the background and
 //! kept in the catalog, a row of nothing for a file without any.
 use super::Library;
-use crate::app::design::Tone;
-use crate::app::theme;
+use crate::app::ui::design::Tone;
+use crate::app::ui::theme;
 use crate::metadata::PhotoInfo;
 use eframe::egui;
 

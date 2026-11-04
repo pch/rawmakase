@@ -4,7 +4,7 @@
 //! command for the shared undo log, which puts back each photo's rows as they
 //! were, absent ones included.
 use super::{Library, Place};
-use crate::app::widgets::plural;
+use crate::app::ui::widgets::plural;
 use crate::catalog::{MetadataSnapshot, PhotoId};
 use crate::metadata::TextField;
 use anyhow::{Result, ensure};
