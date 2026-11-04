@@ -8,6 +8,117 @@ use crate::catalog::{CatalogLocation, PhotoId};
 use eframe::egui;
 use std::path::PathBuf;
 
+/// What waits for the next catalog: the place the session left the Library in, to go back
+/// to once the session's catalog opens, and a photo from outside the Library, to open once
+/// its catalog is ready, adding its folder first. Each is used up by the catalog that
+/// arrives as the rules below say, not by whoever comes next.
+#[derive(Default)]
+pub(in crate::app) struct Waiting {
+    restore: Option<crate::app::CatalogPlace>,
+    photo: Option<PendingPhoto>,
+}
+
+/// A photo from outside the Library, to open once the catalog is ready.
+struct PendingPhoto {
+    path: PathBuf,
+    /// Its folder has been added to the catalog already; if the photo is still
+    /// not there, it could not be added.
+    folder_added: bool,
+}
+
+/// What to do with the photo waiting for its catalog, now that one is here.
+#[derive(Debug, PartialEq)]
+pub(in crate::app) enum NextPhoto {
+    /// Nothing was waiting.
+    Nothing,
+    /// It is in the catalog: open it.
+    Open(PhotoId),
+    /// Not yet: add its folder, then look again.
+    AddFolder(PathBuf),
+    /// Its folder was added and it is still not there: give up, saying so.
+    CouldNotAdd(PathBuf),
+}
+
+impl Waiting {
+    /// Waiting to go back to `place` once the session's catalog opens.
+    pub(in crate::app) fn restoring(place: crate::app::CatalogPlace) -> Self {
+        Self {
+            restore: Some(place),
+            photo: None,
+        }
+    }
+    /// `path` opens once the catalog opening now is ready, its folder added first.
+    pub(in crate::app) fn open_once_ready(&mut self, path: PathBuf) {
+        self.photo = Some(PendingPhoto {
+            path,
+            folder_added: false,
+        });
+    }
+    /// `path` opens once its folder, being added now, is in the catalog.
+    pub(in crate::app) fn open_once_added(&mut self, path: PathBuf) {
+        self.photo = Some(PendingPhoto {
+            path,
+            folder_added: true,
+        });
+    }
+    /// Whether a photo waits for its catalog.
+    #[cfg(test)]
+    pub(in crate::app) fn photo_waits(&self) -> bool {
+        self.photo.is_some()
+    }
+    /// Whether the place to go back to still waits.
+    #[cfg(test)]
+    pub(in crate::app) fn restores(&self) -> bool {
+        self.restore.is_some()
+    }
+    /// For a catalog that opened (not one read again keeping the open photo): the place
+    /// to go back to, once.
+    pub(in crate::app) fn take_restore(&mut self) -> Option<crate::app::CatalogPlace> {
+        self.restore.take()
+    }
+    /// For the catalog that arrived: what the waiting photo needs, `listed` saying where
+    /// the catalog has a photo's file. It no longer waits, unless its folder is to be added.
+    pub(in crate::app) fn next_photo(
+        &mut self,
+        listed: impl Fn(&std::path::Path) -> Option<PhotoId>,
+    ) -> NextPhoto {
+        let Some(PendingPhoto { path, folder_added }) = self.photo.take() else {
+            return NextPhoto::Nothing;
+        };
+        match listed(&path) {
+            Some(id) => NextPhoto::Open(id),
+            None if !folder_added => NextPhoto::AddFolder(path),
+            None => NextPhoto::CouldNotAdd(path),
+        }
+    }
+    /// A catalog operation failed: the photo waiting for it no longer does; the place to
+    /// go back to still waits for the next catalog.
+    pub(in crate::app) fn failed(&mut self) {
+        self.photo = None;
+    }
+}
+
+/// After a synchronization, the photo open in Develop and where its file was found moved,
+/// if it was; the catalog read again keeps it open there.
+pub(in crate::app) type Follow = (PhotoId, Option<PathBuf>);
+
+/// Whether the catalog read again after a synchronization keeps the photo open: it is the
+/// one `follow` names, the catalog is the `same` one, and it lists the photo `listed_at`
+/// where its file was found (anywhere, when it was not found moved).
+pub(in crate::app) fn keeps_open_photo(
+    follow: Option<&Follow>,
+    open: Option<PhotoId>,
+    same: bool,
+    listed_at: impl Fn(PhotoId) -> Option<PathBuf>,
+) -> bool {
+    let Some((id, path)) = follow else {
+        return false;
+    };
+    open == Some(*id)
+        && same
+        && listed_at(*id).is_some_and(|at| path.as_ref().is_none_or(|path| &at == path))
+}
+
 impl Editor {
     /// The catalog RAWmakase keeps in its data folder, beside the session:
     /// the one a first launch opens, and the setup view and an empty Library
@@ -417,10 +528,7 @@ impl Editor {
         else {
             if self.activity.is_dialog() {
                 // The catalog is still opening; add the photo once it is ready.
-                self.pending_photo = Some(crate::app::PendingPhoto {
-                    path,
-                    folder_added: false,
-                });
+                self.waiting.open_once_ready(path);
             } else {
                 self.messages
                     .warn(format!("Open or create a catalog to edit {name}"));
@@ -441,10 +549,7 @@ impl Editor {
         if is_folder {
             self.messages.note(format!("Adding {name} to the Library…"));
         } else {
-            self.pending_photo = Some(crate::app::PendingPhoto {
-                path,
-                folder_added: true,
-            });
+            self.waiting.open_once_added(path);
             self.messages
                 .note(format!("Adding {name}'s folder to the Library…"));
         }
@@ -512,24 +617,25 @@ impl Editor {
     /// Opens the photo waiting to be added once the catalog is ready, adding
     /// its folder first if that has not happened yet.
     pub(in crate::app) fn open_pending_photo(&mut self) {
-        let Some(crate::app::PendingPhoto { path, folder_added }) = self.pending_photo.take()
-        else {
-            return;
-        };
-        if let Some(id) = self.catalog_photo_at(&path) {
-            self.develop_catalog_photo(id);
-        } else if !folder_added {
-            self.add_to_library(path);
-        } else {
-            let name = path.file_name().unwrap_or_default().to_string_lossy();
-            // Adding its folder may have said why (linked elsewhere).
-            let text: String = match self.library.as_ref().map(|l| l.messages.line()) {
-                Some(why) if !why.is_empty() => {
-                    format!("{name} could not be added to the Library · {why}")
-                }
-                _ => format!("{name} could not be added to the Library"),
-            };
-            self.messages.fail(text);
+        // Looked up against the catalog while `waiting` is out, and back before acting.
+        let mut waiting = std::mem::take(&mut self.waiting);
+        let next = waiting.next_photo(|path| self.catalog_photo_at(path));
+        self.waiting = waiting;
+        match next {
+            NextPhoto::Nothing => {}
+            NextPhoto::Open(id) => self.develop_catalog_photo(id),
+            NextPhoto::AddFolder(path) => self.add_to_library(path),
+            NextPhoto::CouldNotAdd(path) => {
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                // Adding its folder may have said why (linked elsewhere).
+                let text: String = match self.library.as_ref().map(|l| l.messages.line()) {
+                    Some(why) if !why.is_empty() => {
+                        format!("{name} could not be added to the Library · {why}")
+                    }
+                    _ => format!("{name} could not be added to the Library"),
+                };
+                self.messages.fail(text);
+            }
         }
     }
     pub(in crate::app) fn develop_catalog_photo(&mut self, id: PhotoId) {

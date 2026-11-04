@@ -32,6 +32,8 @@ pub(crate) struct Editor {
     context: egui::Context,
     /// The session: the preferences it holds, the place it remembers, and its file.
     session: crate::app::preferences::session::SessionState,
+    /// What waits for the next catalog: the launch place, a photo from outside.
+    waiting: crate::app::catalog::Waiting,
     library: Option<Box<crate::app::library::Library>>,
     /// The module shown: the Library grid, or Develop.
     module: Module,
@@ -76,10 +78,6 @@ pub(crate) struct Editor {
     /// Stored Standard previews read for the photo opening and its neighbour.
     stand_ins: crate::app::develop::stand_in::StandIns,
     autosave: crate::app::develop::autosave::Autosave,
-    /// Library/Develop position to restore once the session's catalog opens.
-    restore: Option<CatalogPlace>,
-    /// A photo from outside the Library to open once the catalog is ready.
-    pending_photo: Option<PendingPhoto>,
     /// The window's main area this frame (grid, photo or setup), which files
     /// dragged over the window are dropped into.
     drop_area: Option<egui::Rect>,
@@ -116,11 +114,6 @@ pub(crate) struct Editor {
     folder_sync: crate::app::catalog::folder_sync::FolderSync,
     /// The file operation under way, from its plan to its outcome.
     file_ops: file_ops::FileOps,
-    /// The photo open in Develop when a synchronization was applied, and its
-    /// file's new path if it was found moved: the reload that follows keeps
-    /// the document, unsaved edit included, following the file (see
-    /// `catalog_ready`).
-    relink_open: Option<(crate::catalog::PhotoId, Option<PathBuf>)>,
     /// The RAW the Loupe last started loading, so one that fails is not
     /// loaded again every frame.
     loupe_tried: Option<PhotoId>,
@@ -348,8 +341,7 @@ impl Editor {
             ),
             stand_ins,
             autosave: Default::default(),
-            restore: Some(place),
-            pending_photo: None,
+            waiting: crate::app::catalog::Waiting::restoring(place),
             drop_area: None,
             prefetch_cancel: Default::default(),
             messages: crate::app::shell::messages::Messages::starting_with(
@@ -372,7 +364,6 @@ impl Editor {
             ),
             folder_sync: Default::default(),
             file_ops: Default::default(),
-            relink_open: None,
             loupe_tried: None,
             raw_defaults: std::sync::Arc::new(crate::raw_defaults::DevelopDefaults::load(
                 session.raw_defaults.clone(),
@@ -489,13 +480,6 @@ impl CatalogPlace {
             },
         }
     }
-}
-/// A photo from outside the Library, to open once the catalog is ready.
-struct PendingPhoto {
-    path: PathBuf,
-    /// Its folder has been added to the catalog already; if the photo is still
-    /// not there, it could not be added.
-    folder_added: bool,
 }
 /// The dialog that blocks the editor, one at a time, kept in `Editor::modal`.
 /// Dialogs owned by a subsystem (Preferences, Export, Shortcuts, onboarding,
