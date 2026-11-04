@@ -13,6 +13,7 @@ use std::path::Path;
 mod av1;
 mod avif;
 mod heic;
+mod heif;
 mod hevc;
 mod jxl;
 

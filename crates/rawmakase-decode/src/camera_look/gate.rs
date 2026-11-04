@@ -1,7 +1,7 @@
 //! Whether a fitted look may be used: scored on the held-out tiles against the
 //! render it replaces.
 use super::Rgb;
-use crate::half_check::{delta_e2000, lab};
+use crate::color_difference::{delta_e2000, lab};
 use serde::Serialize;
 
 /// How a render compares with the preview on a set of pixels, in linear sRGB

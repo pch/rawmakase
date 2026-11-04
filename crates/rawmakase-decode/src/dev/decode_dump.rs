@@ -63,11 +63,11 @@ pub fn dump(path: &Path, floats: Option<&Path>) -> Dump {
         full: None,
         half: None,
     };
-    let before = crate::fingerprint::identity(path);
+    let before = crate::dev::fingerprint::identity(path);
     let mut d = describe(path, floats, d);
     // The file is read several times (hashed, then decoded per mode): a file
     // replaced in between would pair one file's hash with another's images.
-    if before.is_none() || crate::fingerprint::identity(path) != before {
+    if before.is_none() || crate::dev::fingerprint::identity(path) != before {
         if let (Some(dir), Some(sha256)) = (floats, &d.sha256) {
             let _ = std::fs::remove_file(dir.join(format!("{sha256}.full.f32")));
         }
@@ -135,7 +135,8 @@ fn mode(image: anyhow::Result<CameraImage>) -> Mode {
     // Everything the renderer reads: the saved fields and those saving leaves out.
     let mut metadata = serde_json::to_vec(&image.metadata).unwrap_or_default();
     metadata.extend(
-        serde_json::to_vec(&crate::fingerprint::Unsaved::of(&image.metadata)).unwrap_or_default(),
+        serde_json::to_vec(&crate::dev::fingerprint::Unsaved::of(&image.metadata))
+            .unwrap_or_default(),
     );
     Mode {
         error: None,

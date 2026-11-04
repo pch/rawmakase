@@ -23,7 +23,7 @@
 // Every unsafe operation here crosses into a C API: each one says why it is
 // sound, and an unsafe function's body is no unsafe block of its own.
 #![deny(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
-use super::avif::{self, Nclx};
+use super::heif::{self, Nclx};
 use super::{Unsupported, hevc};
 use anyhow::{Result, anyhow, bail, ensure};
 use image::ImageDecoder;
@@ -182,8 +182,8 @@ impl HeicFile {
             .collect();
         let props = heif.properties(heif.primary);
         let crop = crop(&props, layout.width, layout.height)?;
-        let (icc, nclx) = avif::colour(&props);
-        let (tile_icc, tile_nclx) = avif::colour(&heif.properties(layout.tiles[0].0));
+        let (icc, nclx) = heif::colour(&props);
+        let (tile_icc, tile_nclx) = heif::colour(&heif.properties(layout.tiles[0].0));
         let (icc, nclx) = (icc.or(tile_icc), nclx.or(tile_nclx));
         let (depth, chroma) = (layout.tiles[0].1.depth, layout.tiles[0].1.chroma);
         ensure!(
@@ -207,7 +207,7 @@ impl HeicFile {
             crop,
             deep: depth > 8,
             file,
-            orientation: avif::transforms(&props),
+            orientation: heif::transforms(&props),
             heif,
             layout,
             pictures,
@@ -504,7 +504,7 @@ impl ImageDecoder for HeicFile {
         }
     }
     fn icc_profile(&mut self) -> image::ImageResult<Option<Vec<u8>>> {
-        Ok(avif::profile(self.icc.as_ref(), self.nclx))
+        Ok(heif::profile(self.icc.as_ref(), self.nclx))
     }
     fn orientation(&mut self) -> image::ImageResult<Orientation> {
         Ok(self.orientation)
