@@ -90,7 +90,7 @@ camera image the renderer develops in place of the plain one. Each result the
 service publishes, partial (the tiles covering the 100% view) or final, is a new
 source equal only to itself, so caches keyed by it see the change.
 
-**AI Denoise key** (`app::ai_denoise`). A job's inputs captured once: the file's
+**AI Denoise key** (`ai_denoise`). A job's inputs captured once: the file's
 identity, the model's digest, the adapter version, the provider and the build. It
 names the result's cache entry too.
 

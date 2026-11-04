@@ -1,10 +1,13 @@
 # Allowed dependencies between top-level modules, checked by scripts/deps.py.
 # Delete a line when the code stops needing it. A new line needs a reason that
 # fits the layering in docs/architecture.md.
+ai_denoise -> model_install
+app -> ai_denoise
 app -> catalog_session
 app -> diagnostics
 app -> edit_session
 app -> lensfun_install
+app -> model_install
 app -> platform
 app -> updates
 catalog_session -> platform
