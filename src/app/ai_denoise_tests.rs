@@ -184,7 +184,7 @@ fn export(
         photo,
         &crate::storage::Identity::read(photo)?,
         plain,
-        cancel,
+        Cancel::new(cancel),
     )
 }
 
@@ -335,7 +335,7 @@ fn failures_and_panics_are_reported_and_the_worker_carries_on() {
             &xtrans,
             &crate::storage::Identity::read(&xtrans).unwrap(),
             &plain,
-            &AtomicBool::new(false),
+            Cancel::NEVER,
         )
         .err()
         .unwrap();
@@ -426,7 +426,7 @@ fn a_run_that_never_returns_does_not_hold_quitting_past_the_deadline() {
                 &f.photo("b.raw"),
                 &crate::storage::Identity::read(&f.photo("b.raw")).unwrap(),
                 &plain,
-                &AtomicBool::new(false),
+                Cancel::NEVER,
             )
             .is_err()
     );
@@ -697,7 +697,7 @@ fn a_file_changed_since_it_was_decoded_is_refused() {
     assert!(matches!(until_final(&rx).last(), Some(State::Failed(why)) if why.contains("changed")));
     let error = f
         .service
-        .get(&photo, &decoded, &plain, &AtomicBool::new(false))
+        .get(&photo, &decoded, &plain, Cancel::NEVER)
         .err()
         .unwrap();
     assert!(error.to_string().contains("changed"), "{error}");

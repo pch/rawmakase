@@ -3,6 +3,7 @@
 //! photo's images are in memory. A waiting batch holds edits, not images, and can
 //! be removed before it starts.
 use super::batch::{self, Batch, Outcome, Progress};
+use rawmakase_cancel::Cancel;
 use std::{
     collections::VecDeque,
     sync::{
@@ -64,7 +65,7 @@ impl Queue {
                 (worker.changed)();
                 // Each photo's panic is caught by the batch, which keeps the others'
                 // outcomes.
-                let outcomes = batch::run(&batch, &cancel, |progress| {
+                let outcomes = batch::run(&batch, Cancel::new(&cancel), |progress| {
                     if let Ok(mut state) = worker.state.lock()
                         && let Some(running) = &mut state.running
                     {

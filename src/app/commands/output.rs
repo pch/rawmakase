@@ -3,6 +3,7 @@
 use super::{Error, Result};
 use crate::export::{Replace, job};
 use crate::export_settings::{ExportSettings, Format};
+use rawmakase_cancel::Cancel;
 use serde::Serialize;
 use std::{
     collections::BTreeMap,
@@ -201,12 +202,19 @@ impl Outputs {
                     ..Default::default()
                 };
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    job::run(photo, &settings, &path, Replace::NoClobber, &stop, |p| {
-                        report
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .progress = p;
-                    })
+                    job::run(
+                        photo,
+                        &settings,
+                        &path,
+                        Replace::NoClobber,
+                        Cancel::new(&stop),
+                        |p| {
+                            report
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .progress = p;
+                        },
+                    )
                 }))
                 .unwrap_or_else(|_| Err(anyhow::anyhow!("Output rendering failed unexpectedly")));
                 let mut report = report

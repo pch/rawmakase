@@ -19,10 +19,7 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
 };
 
 /// One photo of a batch, as it was when Export was pressed.
@@ -372,7 +369,7 @@ pub struct Progress {
 /// photo's outcome. Cancel stops between stages: a cancel observed before a file
 /// is committed discards it; a commit already under way may finish, and that photo
 /// counts as exported.
-pub fn run(batch: &Batch, cancel: &AtomicBool, progress: impl Fn(Progress)) -> Vec<Outcome> {
+pub fn run(batch: &Batch, cancel: Cancel<'_>, progress: impl Fn(Progress)) -> Vec<Outcome> {
     let total = batch.photos.len();
     // A preset's image or font, read once: every photo gets the same watermark,
     // however long the batch runs. The Simple Copyright Watermark takes each
@@ -386,7 +383,7 @@ pub fn run(batch: &Batch, cancel: &AtomicBool, progress: impl Fn(Progress)) -> V
     let mut reserved = batch.plan.reserved.clone();
     let mut outcomes = Vec::with_capacity(total);
     for (done, (photo, planned)) in batch.photos.iter().zip(&batch.plan.entries).enumerate() {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             outcomes.push(Outcome::NotStarted);
             continue;
         }
@@ -446,7 +443,7 @@ fn export(
     planned: &Planned,
     preset: Option<&crate::watermark::Ready>,
     reserved: &mut Reservations,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     progress: &impl Fn(f32),
 ) -> Outcome {
     let result = (|| -> Result<(PathBuf, Vec<String>), Stop> {
@@ -479,7 +476,7 @@ fn export(
         Ok((path, notes)) => Outcome::Exported { path, notes },
         Err(Stop::Skipped(reason)) => Outcome::Skipped(reason),
         // Whatever stopped it, a cancel seen is a cancel, not a failure.
-        Err(_) if cancel.load(Ordering::Relaxed) => Outcome::Cancelled,
+        Err(_) if cancel.is_cancelled() => Outcome::Cancelled,
         Err(Stop::Cancelled) => Outcome::Cancelled,
         Err(Stop::Failed(e)) => Outcome::Failed(format!("{e:#}")),
     }
@@ -490,12 +487,12 @@ fn render(
     batch: &Batch,
     photo: &BatchPhoto,
     preset: Option<&crate::watermark::Ready>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     progress: &impl Fn(f32),
 ) -> Result<(job::Prepared, Vec<String>)> {
     // The file as it is before it is decoded: AI Denoise's result must be of the same.
     let file = crate::storage::Identity::read(&photo.source).ok();
-    let opened = crate::photo::open_source(&photo.source, Cancel::new(cancel))
+    let opened = crate::photo::open_source(&photo.source, cancel)
         .with_context(|| format!("{} can't be read", photo.source.display()))?;
     let (mut recipe, mut notes) = match &photo.edit {
         Edit::Catalog(record) => {
@@ -504,7 +501,7 @@ fn render(
                 &photo.source,
                 opened.metadata(),
                 profiles,
-                Cancel::new(cancel),
+                cancel,
             );
             let resolved = edits::resolve(
                 record,
@@ -543,7 +540,7 @@ fn render(
             )
         }
     };
-    ensure!(!cancel.load(Ordering::Relaxed), "Cancelled");
+    ensure!(!cancel.is_cancelled(), "Cancelled");
     let image = Arc::new(match opened {
         Opened::Raw(raw) => {
             job::decode_full(raw, &photo.source, batch.demosaic, &batch.cache, cancel)?
@@ -590,10 +587,10 @@ fn commit(
     planned: &Planned,
     late: Existing,
     reserved: &mut Reservations,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<(PathBuf, Option<String>), Stop> {
     // The last moment to stop: dropping the staged file leaves nothing behind.
-    if cancel.load(Ordering::Relaxed) {
+    if cancel.is_cancelled() {
         return Err(Stop::Cancelled);
     }
     let mut target = planned.target.clone();

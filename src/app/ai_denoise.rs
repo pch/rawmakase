@@ -961,7 +961,7 @@ impl Service {
         &self,
         path: &Path,
         file: &crate::storage::Identity,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Arc<AiEntry>> {
         // Read without the queue's lock: a stalled drive must not hold up quitting.
         if crate::storage::Identity::read(path)? != *file {
@@ -1018,7 +1018,7 @@ impl Service {
         let mut queue = self.queue();
         loop {
             ensure_running(&queue)?;
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 bail!("Export cancelled");
             }
             match queue.outcomes.get(&key).cloned() {
@@ -1142,7 +1142,7 @@ impl AiBase for Service {
         path: &Path,
         file: &crate::storage::Identity,
         plain: &Arc<CameraImage>,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Arc<CameraImage>> {
         let entry = self.entry(path, file, cancel)?;
         assemble(
@@ -1153,7 +1153,7 @@ impl AiBase for Service {
                 clipped: &entry.clipped,
             },
             plain,
-            Cancel::new(cancel),
+            cancel,
         )
         .map(Arc::new)
     }
@@ -1468,7 +1468,7 @@ impl CommandLine {
     ) -> Result<AiSource> {
         let cancel = AtomicBool::new(false);
         self.service
-            .get(path, file, image, &cancel)
+            .get(path, file, image, Cancel::new(&cancel))
             .and_then(|ai| AiSource::recover(Arc::unwrap_or_clone(ai), Cancel::new(&cancel)))
             .map_err(|e| anyhow!("AI Denoise: {e:#}"))
     }
@@ -1602,7 +1602,7 @@ pub fn command(c: Command) -> Result<()> {
         .unwrap_or_else(|| super::subject_mask::Pack::Denoise.installed_dir());
     service.set_model(Some(model));
     let t = Instant::now();
-    let entry = service.entry(&c.input, &file, &AtomicBool::new(false))?;
+    let entry = service.entry(&c.input, &file, Cancel::NEVER)?;
     let inferred = t.elapsed();
     let t = Instant::now();
     let image = assemble(

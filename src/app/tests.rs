@@ -1,3 +1,4 @@
+use rawmakase_cancel::Cancel;
 #[cfg(windows)]
 #[test]
 fn windows_icon_file_contains_the_256_png() {
@@ -6957,7 +6958,7 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
             &settings("develop"),
             &develop,
             Replace::NoClobber,
-            &Default::default(),
+            Cancel::NEVER,
             |_| {},
         )?;
         let name = path.file_name().unwrap().to_string_lossy().to_string();
@@ -6982,7 +6983,7 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
                 cache: editor.decode_cache.clone(),
                 ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
             },
-            &Default::default(),
+            Cancel::NEVER,
             |_| {},
         );
         let batch::Outcome::Exported { path: exported, .. } = &outcomes[0] else {
