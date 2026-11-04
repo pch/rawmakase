@@ -69,6 +69,16 @@ pub fn build_identity() -> String {
         .unwrap_or_default()
 }
 
+/// The key of a result this build made from file version `id`: the file's identity
+/// ([`Identity::key`](crate::storage::Identity::key)), then `own`, what the cache's
+/// result depends on beyond the file (a decode's demosaic, AI Denoise's model,
+/// assembly and provider, a Camera Look fit's version), then [`build_identity`].
+/// Each cache keeps its own part and reads the file's identity once, when its job
+/// is captured; Library previews keep their cheap stamps instead.
+pub fn source_key(id: &crate::storage::Identity, own: impl std::fmt::Display) -> String {
+    format!("{}-{own}-{}", id.key(), build_identity())
+}
+
 #[derive(Clone, Debug)]
 pub struct DecodeCache {
     dir: Arc<RwLock<Dir>>,
@@ -205,14 +215,7 @@ impl DecodeCache {
     }
     /// The key of the file version `id`, as [`key`](Self::key) names it.
     pub fn key_of(id: &crate::storage::Identity, demosaic: Demosaic) -> String {
-        format!(
-            "{}-{}-{}-{:?}-{}",
-            id.prefix_hash,
-            id.size,
-            id.modified_ns,
-            demosaic,
-            build_identity()
-        )
+        source_key(id, format_args!("{demosaic:?}"))
     }
     fn file(&self, key: &str) -> PathBuf {
         file_in(&self.dir(), key)
@@ -442,6 +445,20 @@ unsafe impl bytemuck::Pod for Change {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// A decode is filed under the file's identity, the demosaic and the build, in
+    /// the form the entries already on disk have.
+    #[test]
+    fn a_decode_key_keeps_its_form() {
+        let id = crate::storage::Identity {
+            size: 12,
+            modified_ns: 34,
+            prefix_hash: "ab".into(),
+        };
+        assert_eq!(
+            DecodeCache::key_of(&id, Demosaic::Rawmakase),
+            format!("ab-12-34-Rawmakase-{}", build_identity())
+        );
+    }
     #[test]
     fn changed_limit_reaches_existing_workers_and_controls_eviction() -> Result<()> {
         let dir = tempfile::tempdir()?;

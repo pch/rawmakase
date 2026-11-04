@@ -92,15 +92,14 @@ pub(crate) fn key(path: &Path, provider: Provider) -> Result<String> {
 }
 /// The key of a file whose identity is `id`, run on `provider`.
 fn key_of(id: &crate::storage::Identity, provider: Provider) -> String {
-    format!(
-        "{}-{}-{}-{}-a{}-{}-{}",
-        id.prefix_hash,
-        id.size,
-        id.modified_ns,
-        RAWNIND.model.sha256,
-        RAWNIND.version,
-        provider.name(),
-        rawmakase_decode::decode_cache::build_identity(),
+    rawmakase_decode::decode_cache::source_key(
+        id,
+        format_args!(
+            "{}-a{}-{}",
+            RAWNIND.model.sha256,
+            RAWNIND.version,
+            provider.name()
+        ),
     )
 }
 

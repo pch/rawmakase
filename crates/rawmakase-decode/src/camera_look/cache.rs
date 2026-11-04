@@ -20,12 +20,9 @@ pub struct FitKey(String);
 impl FitKey {
     pub fn of(path: &Path) -> anyhow::Result<Self> {
         let id = crate::storage::Identity::read(path)?;
-        Ok(Self(format!(
-            "{}-{}-{}-v{FIT_VERSION}-{}",
-            id.prefix_hash,
-            id.size,
-            id.modified_ns,
-            crate::decode_cache::build_identity()
+        Ok(Self(crate::decode_cache::source_key(
+            &id,
+            format_args!("v{FIT_VERSION}"),
         )))
     }
     fn file(&self, dir: &Path) -> PathBuf {
@@ -94,6 +91,26 @@ pub(super) fn store(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fit is filed under the file's identity, the fit's version and the build, in
+    /// the form the fits already on disk have.
+    #[test]
+    fn a_fit_key_keeps_its_form() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = dir.path().join("a.raw");
+        std::fs::write(&photo, b"one").unwrap();
+        let id = crate::storage::Identity::read(&photo).unwrap();
+        assert_eq!(
+            FitKey::of(&photo).unwrap().0,
+            format!(
+                "{}-{}-{}-v{FIT_VERSION}-{}",
+                id.prefix_hash,
+                id.size,
+                id.modified_ns,
+                crate::decode_cache::build_identity()
+            )
+        );
+    }
 
     #[test]
     fn a_stored_fit_is_found_only_under_its_key() {
