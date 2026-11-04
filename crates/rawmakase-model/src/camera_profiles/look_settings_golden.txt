@@ -1,0 +1,1771 @@
+# Exposure2012 read true
+Exposure2012="" alone ok
+Exposure2012="0" alone ok
+Exposure2012="-0" alone ok .exposure=-0.0
+Exposure2012="+0.5" alone ok .exposure=0.5
+Exposure2012="-0.5" alone ok .exposure=-0.5
+Exposure2012="1" alone ok .exposure=1.0
+Exposure2012="2.4" alone ok .exposure=2.4
+Exposure2012="4.99" alone ok .exposure=4.99
+Exposure2012="5" alone ok .exposure=5.0
+Exposure2012="5.01" alone error Profile setting Exposure2012 is out of range
+Exposure2012="-5" alone ok .exposure=-5.0
+Exposure2012="-5.01" alone error Profile setting Exposure2012 is out of range
+Exposure2012="5.5" alone error Profile setting Exposure2012 is out of range
+Exposure2012="-12.5" alone error Profile setting Exposure2012 is out of range
+Exposure2012="33.3" alone error Profile setting Exposure2012 is out of range
+Exposure2012="50" alone error Profile setting Exposure2012 is out of range
+Exposure2012="99.99" alone error Profile setting Exposure2012 is out of range
+Exposure2012="-100" alone error Profile setting Exposure2012 is out of range
+Exposure2012="100" alone error Profile setting Exposure2012 is out of range
+Exposure2012="100.01" alone error Profile setting Exposure2012 is out of range
+Exposure2012="101" alone error Profile setting Exposure2012 is out of range
+Exposure2012="180" alone error Profile setting Exposure2012 is out of range
+Exposure2012="359" alone error Profile setting Exposure2012 is out of range
+Exposure2012="360" alone error Profile setting Exposure2012 is out of range
+Exposure2012="361" alone error Profile setting Exposure2012 is out of range
+Exposure2012="1e-7" alone ok .exposure=1e-7
+Exposure2012="-1e-7" alone ok .exposure=-1e-7
+Exposure2012="inf" alone error Profile setting Exposure2012 is out of range
+Exposure2012="x" alone error Invalid profile setting Exposure2012: invalid float literal
+Exposure2012="NaN" alone error Profile setting Exposure2012 is out of range
+# Saturation read true
+Saturation="" alone ok
+Saturation="0" alone ok
+Saturation="-0" alone ok .saturation=-0.0
+Saturation="+0.5" alone ok .saturation=0.005
+Saturation="-0.5" alone ok .saturation=-0.005
+Saturation="1" alone ok .saturation=0.01
+Saturation="2.4" alone ok .saturation=0.024
+Saturation="4.99" alone ok .saturation=0.0499
+Saturation="5" alone ok .saturation=0.05
+Saturation="5.01" alone ok .saturation=0.050100002
+Saturation="-5" alone ok .saturation=-0.05
+Saturation="-5.01" alone ok .saturation=-0.050100002
+Saturation="5.5" alone ok .saturation=0.055
+Saturation="-12.5" alone ok .saturation=-0.125
+Saturation="33.3" alone ok .saturation=0.333
+Saturation="50" alone ok .saturation=0.5
+Saturation="99.99" alone ok .saturation=0.9999
+Saturation="-100" alone ok .saturation=-1.0
+Saturation="100" alone ok .saturation=1.0
+Saturation="100.01" alone error Profile setting Saturation is out of range
+Saturation="101" alone error Profile setting Saturation is out of range
+Saturation="180" alone error Profile setting Saturation is out of range
+Saturation="359" alone error Profile setting Saturation is out of range
+Saturation="360" alone error Profile setting Saturation is out of range
+Saturation="361" alone error Profile setting Saturation is out of range
+Saturation="1e-7" alone ok .saturation=1e-9
+Saturation="-1e-7" alone ok .saturation=-1e-9
+Saturation="inf" alone error Profile setting Saturation is out of range
+Saturation="x" alone error Invalid profile setting Saturation: invalid float literal
+Saturation="NaN" alone error Profile setting Saturation is out of range
+# ParametricShadows read true
+ParametricShadows="" alone ok
+ParametricShadows="0" alone ok
+ParametricShadows="-0" alone ok .parametric[0]=-0.0
+ParametricShadows="+0.5" alone ok .parametric[0]=0.005
+ParametricShadows="-0.5" alone ok .parametric[0]=-0.005
+ParametricShadows="1" alone ok .parametric[0]=0.01
+ParametricShadows="2.4" alone ok .parametric[0]=0.024
+ParametricShadows="4.99" alone ok .parametric[0]=0.0499
+ParametricShadows="5" alone ok .parametric[0]=0.05
+ParametricShadows="5.01" alone ok .parametric[0]=0.050100002
+ParametricShadows="-5" alone ok .parametric[0]=-0.05
+ParametricShadows="-5.01" alone ok .parametric[0]=-0.050100002
+ParametricShadows="5.5" alone ok .parametric[0]=0.055
+ParametricShadows="-12.5" alone ok .parametric[0]=-0.125
+ParametricShadows="33.3" alone ok .parametric[0]=0.333
+ParametricShadows="50" alone ok .parametric[0]=0.5
+ParametricShadows="99.99" alone ok .parametric[0]=0.9999
+ParametricShadows="-100" alone ok .parametric[0]=-1.0
+ParametricShadows="100" alone ok .parametric[0]=1.0
+ParametricShadows="100.01" alone error Profile setting ParametricShadows is out of range
+ParametricShadows="101" alone error Profile setting ParametricShadows is out of range
+ParametricShadows="180" alone error Profile setting ParametricShadows is out of range
+ParametricShadows="359" alone error Profile setting ParametricShadows is out of range
+ParametricShadows="360" alone error Profile setting ParametricShadows is out of range
+ParametricShadows="361" alone error Profile setting ParametricShadows is out of range
+ParametricShadows="1e-7" alone ok .parametric[0]=1e-9
+ParametricShadows="-1e-7" alone ok .parametric[0]=-1e-9
+ParametricShadows="inf" alone error Profile setting ParametricShadows is out of range
+ParametricShadows="x" alone error Invalid profile setting ParametricShadows: invalid float literal
+ParametricShadows="NaN" alone error Profile setting ParametricShadows is out of range
+# ParametricDarks read true
+ParametricDarks="" alone ok
+ParametricDarks="0" alone ok
+ParametricDarks="-0" alone ok .parametric[1]=-0.0
+ParametricDarks="+0.5" alone ok .parametric[1]=0.005
+ParametricDarks="-0.5" alone ok .parametric[1]=-0.005
+ParametricDarks="1" alone ok .parametric[1]=0.01
+ParametricDarks="2.4" alone ok .parametric[1]=0.024
+ParametricDarks="4.99" alone ok .parametric[1]=0.0499
+ParametricDarks="5" alone ok .parametric[1]=0.05
+ParametricDarks="5.01" alone ok .parametric[1]=0.050100002
+ParametricDarks="-5" alone ok .parametric[1]=-0.05
+ParametricDarks="-5.01" alone ok .parametric[1]=-0.050100002
+ParametricDarks="5.5" alone ok .parametric[1]=0.055
+ParametricDarks="-12.5" alone ok .parametric[1]=-0.125
+ParametricDarks="33.3" alone ok .parametric[1]=0.333
+ParametricDarks="50" alone ok .parametric[1]=0.5
+ParametricDarks="99.99" alone ok .parametric[1]=0.9999
+ParametricDarks="-100" alone ok .parametric[1]=-1.0
+ParametricDarks="100" alone ok .parametric[1]=1.0
+ParametricDarks="100.01" alone error Profile setting ParametricDarks is out of range
+ParametricDarks="101" alone error Profile setting ParametricDarks is out of range
+ParametricDarks="180" alone error Profile setting ParametricDarks is out of range
+ParametricDarks="359" alone error Profile setting ParametricDarks is out of range
+ParametricDarks="360" alone error Profile setting ParametricDarks is out of range
+ParametricDarks="361" alone error Profile setting ParametricDarks is out of range
+ParametricDarks="1e-7" alone ok .parametric[1]=1e-9
+ParametricDarks="-1e-7" alone ok .parametric[1]=-1e-9
+ParametricDarks="inf" alone error Profile setting ParametricDarks is out of range
+ParametricDarks="x" alone error Invalid profile setting ParametricDarks: invalid float literal
+ParametricDarks="NaN" alone error Profile setting ParametricDarks is out of range
+# ParametricLights read true
+ParametricLights="" alone ok
+ParametricLights="0" alone ok
+ParametricLights="-0" alone ok .parametric[2]=-0.0
+ParametricLights="+0.5" alone ok .parametric[2]=0.005
+ParametricLights="-0.5" alone ok .parametric[2]=-0.005
+ParametricLights="1" alone ok .parametric[2]=0.01
+ParametricLights="2.4" alone ok .parametric[2]=0.024
+ParametricLights="4.99" alone ok .parametric[2]=0.0499
+ParametricLights="5" alone ok .parametric[2]=0.05
+ParametricLights="5.01" alone ok .parametric[2]=0.050100002
+ParametricLights="-5" alone ok .parametric[2]=-0.05
+ParametricLights="-5.01" alone ok .parametric[2]=-0.050100002
+ParametricLights="5.5" alone ok .parametric[2]=0.055
+ParametricLights="-12.5" alone ok .parametric[2]=-0.125
+ParametricLights="33.3" alone ok .parametric[2]=0.333
+ParametricLights="50" alone ok .parametric[2]=0.5
+ParametricLights="99.99" alone ok .parametric[2]=0.9999
+ParametricLights="-100" alone ok .parametric[2]=-1.0
+ParametricLights="100" alone ok .parametric[2]=1.0
+ParametricLights="100.01" alone error Profile setting ParametricLights is out of range
+ParametricLights="101" alone error Profile setting ParametricLights is out of range
+ParametricLights="180" alone error Profile setting ParametricLights is out of range
+ParametricLights="359" alone error Profile setting ParametricLights is out of range
+ParametricLights="360" alone error Profile setting ParametricLights is out of range
+ParametricLights="361" alone error Profile setting ParametricLights is out of range
+ParametricLights="1e-7" alone ok .parametric[2]=1e-9
+ParametricLights="-1e-7" alone ok .parametric[2]=-1e-9
+ParametricLights="inf" alone error Profile setting ParametricLights is out of range
+ParametricLights="x" alone error Invalid profile setting ParametricLights: invalid float literal
+ParametricLights="NaN" alone error Profile setting ParametricLights is out of range
+# ParametricHighlights read true
+ParametricHighlights="" alone ok
+ParametricHighlights="0" alone ok
+ParametricHighlights="-0" alone ok .parametric[3]=-0.0
+ParametricHighlights="+0.5" alone ok .parametric[3]=0.005
+ParametricHighlights="-0.5" alone ok .parametric[3]=-0.005
+ParametricHighlights="1" alone ok .parametric[3]=0.01
+ParametricHighlights="2.4" alone ok .parametric[3]=0.024
+ParametricHighlights="4.99" alone ok .parametric[3]=0.0499
+ParametricHighlights="5" alone ok .parametric[3]=0.05
+ParametricHighlights="5.01" alone ok .parametric[3]=0.050100002
+ParametricHighlights="-5" alone ok .parametric[3]=-0.05
+ParametricHighlights="-5.01" alone ok .parametric[3]=-0.050100002
+ParametricHighlights="5.5" alone ok .parametric[3]=0.055
+ParametricHighlights="-12.5" alone ok .parametric[3]=-0.125
+ParametricHighlights="33.3" alone ok .parametric[3]=0.333
+ParametricHighlights="50" alone ok .parametric[3]=0.5
+ParametricHighlights="99.99" alone ok .parametric[3]=0.9999
+ParametricHighlights="-100" alone ok .parametric[3]=-1.0
+ParametricHighlights="100" alone ok .parametric[3]=1.0
+ParametricHighlights="100.01" alone error Profile setting ParametricHighlights is out of range
+ParametricHighlights="101" alone error Profile setting ParametricHighlights is out of range
+ParametricHighlights="180" alone error Profile setting ParametricHighlights is out of range
+ParametricHighlights="359" alone error Profile setting ParametricHighlights is out of range
+ParametricHighlights="360" alone error Profile setting ParametricHighlights is out of range
+ParametricHighlights="361" alone error Profile setting ParametricHighlights is out of range
+ParametricHighlights="1e-7" alone ok .parametric[3]=1e-9
+ParametricHighlights="-1e-7" alone ok .parametric[3]=-1e-9
+ParametricHighlights="inf" alone error Profile setting ParametricHighlights is out of range
+ParametricHighlights="x" alone error Invalid profile setting ParametricHighlights: invalid float literal
+ParametricHighlights="NaN" alone error Profile setting ParametricHighlights is out of range
+# ParametricShadowSplit read true
+ParametricShadowSplit="" alone ok
+ParametricShadowSplit="0" alone error Invalid profile parametric splits
+ParametricShadowSplit="-0" alone error Invalid profile parametric splits
+ParametricShadowSplit="+0.5" alone ok .splits[0]=0.005
+ParametricShadowSplit="-0.5" alone error Profile setting ParametricShadowSplit is out of range
+ParametricShadowSplit="1" alone ok .splits[0]=0.01
+ParametricShadowSplit="2.4" alone ok .splits[0]=0.024
+ParametricShadowSplit="4.99" alone ok .splits[0]=0.0499
+ParametricShadowSplit="5" alone ok .splits[0]=0.05
+ParametricShadowSplit="5.01" alone ok .splits[0]=0.050100002
+ParametricShadowSplit="-5" alone error Profile setting ParametricShadowSplit is out of range
+ParametricShadowSplit="-5.01" alone error Profile setting ParametricShadowSplit is out of range
+ParametricShadowSplit="5.5" alone ok .splits[0]=0.055
+ParametricShadowSplit="-12.5" alone error Profile setting ParametricShadowSplit is out of range
+ParametricShadowSplit="33.3" alone ok .splits[0]=0.333
+ParametricShadowSplit="50" alone error Invalid profile parametric splits
+ParametricShadowSplit="99.99" alone error Invalid profile parametric splits
+ParametricShadowSplit="-100" alone error Profile setting ParametricShadowSplit is out of range
+ParametricShadowSplit="100" alone error Invalid profile parametric splits
+ParametricShadowSplit="100.01" alone error Profile setting ParametricShadowSplit is out of range
+ParametricShadowSplit="101" alone error Profile setting ParametricShadowSplit is out of range
+ParametricShadowSplit="180" alone error Profile setting ParametricShadowSplit is out of range
+ParametricShadowSplit="359" alone error Profile setting ParametricShadowSplit is out of range
+ParametricShadowSplit="360" alone error Profile setting ParametricShadowSplit is out of range
+ParametricShadowSplit="361" alone error Profile setting ParametricShadowSplit is out of range
+ParametricShadowSplit="1e-7" alone ok .splits[0]=1e-9
+ParametricShadowSplit="-1e-7" alone error Profile setting ParametricShadowSplit is out of range
+ParametricShadowSplit="inf" alone error Profile setting ParametricShadowSplit is out of range
+ParametricShadowSplit="x" alone error Invalid profile setting ParametricShadowSplit: invalid float literal
+ParametricShadowSplit="NaN" alone error Profile setting ParametricShadowSplit is out of range
+# ParametricMidtoneSplit read true
+ParametricMidtoneSplit="" alone ok
+ParametricMidtoneSplit="0" alone error Invalid profile parametric splits
+ParametricMidtoneSplit="-0" alone error Invalid profile parametric splits
+ParametricMidtoneSplit="+0.5" alone error Invalid profile parametric splits
+ParametricMidtoneSplit="-0.5" alone error Profile setting ParametricMidtoneSplit is out of range
+ParametricMidtoneSplit="1" alone error Invalid profile parametric splits
+ParametricMidtoneSplit="2.4" alone error Invalid profile parametric splits
+ParametricMidtoneSplit="4.99" alone error Invalid profile parametric splits
+ParametricMidtoneSplit="5" alone error Invalid profile parametric splits
+ParametricMidtoneSplit="5.01" alone error Invalid profile parametric splits
+ParametricMidtoneSplit="-5" alone error Profile setting ParametricMidtoneSplit is out of range
+ParametricMidtoneSplit="-5.01" alone error Profile setting ParametricMidtoneSplit is out of range
+ParametricMidtoneSplit="5.5" alone error Invalid profile parametric splits
+ParametricMidtoneSplit="-12.5" alone error Profile setting ParametricMidtoneSplit is out of range
+ParametricMidtoneSplit="33.3" alone ok .splits[1]=0.333
+ParametricMidtoneSplit="50" alone ok
+ParametricMidtoneSplit="99.99" alone error Invalid profile parametric splits
+ParametricMidtoneSplit="-100" alone error Profile setting ParametricMidtoneSplit is out of range
+ParametricMidtoneSplit="100" alone error Invalid profile parametric splits
+ParametricMidtoneSplit="100.01" alone error Profile setting ParametricMidtoneSplit is out of range
+ParametricMidtoneSplit="101" alone error Profile setting ParametricMidtoneSplit is out of range
+ParametricMidtoneSplit="180" alone error Profile setting ParametricMidtoneSplit is out of range
+ParametricMidtoneSplit="359" alone error Profile setting ParametricMidtoneSplit is out of range
+ParametricMidtoneSplit="360" alone error Profile setting ParametricMidtoneSplit is out of range
+ParametricMidtoneSplit="361" alone error Profile setting ParametricMidtoneSplit is out of range
+ParametricMidtoneSplit="1e-7" alone error Invalid profile parametric splits
+ParametricMidtoneSplit="-1e-7" alone error Profile setting ParametricMidtoneSplit is out of range
+ParametricMidtoneSplit="inf" alone error Profile setting ParametricMidtoneSplit is out of range
+ParametricMidtoneSplit="x" alone error Invalid profile setting ParametricMidtoneSplit: invalid float literal
+ParametricMidtoneSplit="NaN" alone error Profile setting ParametricMidtoneSplit is out of range
+# ParametricHighlightSplit read true
+ParametricHighlightSplit="" alone ok
+ParametricHighlightSplit="0" alone error Invalid profile parametric splits
+ParametricHighlightSplit="-0" alone error Invalid profile parametric splits
+ParametricHighlightSplit="+0.5" alone error Invalid profile parametric splits
+ParametricHighlightSplit="-0.5" alone error Profile setting ParametricHighlightSplit is out of range
+ParametricHighlightSplit="1" alone error Invalid profile parametric splits
+ParametricHighlightSplit="2.4" alone error Invalid profile parametric splits
+ParametricHighlightSplit="4.99" alone error Invalid profile parametric splits
+ParametricHighlightSplit="5" alone error Invalid profile parametric splits
+ParametricHighlightSplit="5.01" alone error Invalid profile parametric splits
+ParametricHighlightSplit="-5" alone error Profile setting ParametricHighlightSplit is out of range
+ParametricHighlightSplit="-5.01" alone error Profile setting ParametricHighlightSplit is out of range
+ParametricHighlightSplit="5.5" alone error Invalid profile parametric splits
+ParametricHighlightSplit="-12.5" alone error Profile setting ParametricHighlightSplit is out of range
+ParametricHighlightSplit="33.3" alone error Invalid profile parametric splits
+ParametricHighlightSplit="50" alone error Invalid profile parametric splits
+ParametricHighlightSplit="99.99" alone ok .splits[2]=0.9999
+ParametricHighlightSplit="-100" alone error Profile setting ParametricHighlightSplit is out of range
+ParametricHighlightSplit="100" alone error Invalid profile parametric splits
+ParametricHighlightSplit="100.01" alone error Profile setting ParametricHighlightSplit is out of range
+ParametricHighlightSplit="101" alone error Profile setting ParametricHighlightSplit is out of range
+ParametricHighlightSplit="180" alone error Profile setting ParametricHighlightSplit is out of range
+ParametricHighlightSplit="359" alone error Profile setting ParametricHighlightSplit is out of range
+ParametricHighlightSplit="360" alone error Profile setting ParametricHighlightSplit is out of range
+ParametricHighlightSplit="361" alone error Profile setting ParametricHighlightSplit is out of range
+ParametricHighlightSplit="1e-7" alone error Invalid profile parametric splits
+ParametricHighlightSplit="-1e-7" alone error Profile setting ParametricHighlightSplit is out of range
+ParametricHighlightSplit="inf" alone error Profile setting ParametricHighlightSplit is out of range
+ParametricHighlightSplit="x" alone error Invalid profile setting ParametricHighlightSplit: invalid float literal
+ParametricHighlightSplit="NaN" alone error Profile setting ParametricHighlightSplit is out of range
+# SplitToningShadowHue read true
+SplitToningShadowHue="" alone ok
+SplitToningShadowHue="0" alone ok
+SplitToningShadowHue="-0" alone ok
+SplitToningShadowHue="+0.5" alone ok
+SplitToningShadowHue="-0.5" alone error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="1" alone ok
+SplitToningShadowHue="2.4" alone ok
+SplitToningShadowHue="4.99" alone ok
+SplitToningShadowHue="5" alone ok
+SplitToningShadowHue="5.01" alone ok
+SplitToningShadowHue="-5" alone error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="-5.01" alone error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="5.5" alone ok
+SplitToningShadowHue="-12.5" alone error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="33.3" alone ok
+SplitToningShadowHue="50" alone ok
+SplitToningShadowHue="99.99" alone ok
+SplitToningShadowHue="-100" alone error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="100" alone ok
+SplitToningShadowHue="100.01" alone ok
+SplitToningShadowHue="101" alone ok
+SplitToningShadowHue="180" alone ok
+SplitToningShadowHue="359" alone ok
+SplitToningShadowHue="360" alone ok
+SplitToningShadowHue="361" alone error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="1e-7" alone ok
+SplitToningShadowHue="-1e-7" alone error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="inf" alone error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="x" alone error Invalid profile setting SplitToningShadowHue: invalid float literal
+SplitToningShadowHue="NaN" alone error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningShadowHue="0" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningShadowHue="-0" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[-0.0,0.20000000298023224]}
+SplitToningShadowHue="+0.5" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.0013888889225199819,0.20000000298023224]}
+SplitToningShadowHue="-0.5" with error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="1" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.0027777778450399637,0.20000000298023224]}
+SplitToningShadowHue="2.4" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.006666666828095913,0.20000000298023224]}
+SplitToningShadowHue="4.99" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.013861110433936119,0.20000000298023224]}
+SplitToningShadowHue="5" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.013888888992369175,0.20000000298023224]}
+SplitToningShadowHue="5.01" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.01391666755080223,0.20000000298023224]}
+SplitToningShadowHue="-5" with error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="-5.01" with error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="5.5" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.015277777798473835,0.20000000298023224]}
+SplitToningShadowHue="-12.5" with error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="33.3" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.0925000011920929,0.20000000298023224]}
+SplitToningShadowHue="50" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.1388888955116272,0.20000000298023224]}
+SplitToningShadowHue="99.99" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.2777499854564667,0.20000000298023224]}
+SplitToningShadowHue="-100" with error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="100" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.2777777910232544,0.20000000298023224]}
+SplitToningShadowHue="100.01" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.2778055667877197,0.20000000298023224]}
+SplitToningShadowHue="101" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.2805555462837219,0.20000000298023224]}
+SplitToningShadowHue="180" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.5,0.20000000298023224]}
+SplitToningShadowHue="359" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.9972222447395325,0.20000000298023224]}
+SplitToningShadowHue="360" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[1.0,0.20000000298023224]}
+SplitToningShadowHue="361" with error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="1e-7" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[2.7777777300563855e-10,0.20000000298023224]}
+SplitToningShadowHue="-1e-7" with error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="inf" with error Profile setting SplitToningShadowHue is out of range
+SplitToningShadowHue="x" with error Invalid profile setting SplitToningShadowHue: invalid float literal
+SplitToningShadowHue="NaN" with error Profile setting SplitToningShadowHue is out of range
+# SplitToningShadowSaturation read true
+SplitToningShadowSaturation="" alone ok
+SplitToningShadowSaturation="0" alone ok
+SplitToningShadowSaturation="-0" alone ok
+SplitToningShadowSaturation="+0.5" alone ok .toning={"balance":0.0,"highlights":[0.0,0.0],"shadows":[0.0,0.004999999888241291]}
+SplitToningShadowSaturation="-0.5" alone error Profile setting SplitToningShadowSaturation is out of range
+SplitToningShadowSaturation="1" alone ok .toning={"balance":0.0,"highlights":[0.0,0.0],"shadows":[0.0,0.009999999776482582]}
+SplitToningShadowSaturation="2.4" alone ok .toning={"balance":0.0,"highlights":[0.0,0.0],"shadows":[0.0,0.024000000208616257]}
+SplitToningShadowSaturation="4.99" alone ok .toning={"balance":0.0,"highlights":[0.0,0.0],"shadows":[0.0,0.04989999905228615]}
+SplitToningShadowSaturation="5" alone ok .toning={"balance":0.0,"highlights":[0.0,0.0],"shadows":[0.0,0.05000000074505806]}
+SplitToningShadowSaturation="5.01" alone ok .toning={"balance":0.0,"highlights":[0.0,0.0],"shadows":[0.0,0.05010000243782997]}
+SplitToningShadowSaturation="-5" alone error Profile setting SplitToningShadowSaturation is out of range
+SplitToningShadowSaturation="-5.01" alone error Profile setting SplitToningShadowSaturation is out of range
+SplitToningShadowSaturation="5.5" alone ok .toning={"balance":0.0,"highlights":[0.0,0.0],"shadows":[0.0,0.054999999701976776]}
+SplitToningShadowSaturation="-12.5" alone error Profile setting SplitToningShadowSaturation is out of range
+SplitToningShadowSaturation="33.3" alone ok .toning={"balance":0.0,"highlights":[0.0,0.0],"shadows":[0.0,0.3330000042915344]}
+SplitToningShadowSaturation="50" alone ok .toning={"balance":0.0,"highlights":[0.0,0.0],"shadows":[0.0,0.5]}
+SplitToningShadowSaturation="99.99" alone ok .toning={"balance":0.0,"highlights":[0.0,0.0],"shadows":[0.0,0.9998999834060669]}
+SplitToningShadowSaturation="-100" alone error Profile setting SplitToningShadowSaturation is out of range
+SplitToningShadowSaturation="100" alone ok .toning={"balance":0.0,"highlights":[0.0,0.0],"shadows":[0.0,1.0]}
+SplitToningShadowSaturation="100.01" alone error Profile setting SplitToningShadowSaturation is out of range
+SplitToningShadowSaturation="101" alone error Profile setting SplitToningShadowSaturation is out of range
+SplitToningShadowSaturation="180" alone error Profile setting SplitToningShadowSaturation is out of range
+SplitToningShadowSaturation="359" alone error Profile setting SplitToningShadowSaturation is out of range
+SplitToningShadowSaturation="360" alone error Profile setting SplitToningShadowSaturation is out of range
+SplitToningShadowSaturation="361" alone error Profile setting SplitToningShadowSaturation is out of range
+SplitToningShadowSaturation="1e-7" alone ok .toning={"balance":0.0,"highlights":[0.0,0.0],"shadows":[0.0,9.999999717180685e-10]}
+SplitToningShadowSaturation="-1e-7" alone error Profile setting SplitToningShadowSaturation is out of range
+SplitToningShadowSaturation="inf" alone error Profile setting SplitToningShadowSaturation is out of range
+SplitToningShadowSaturation="x" alone error Invalid profile setting SplitToningShadowSaturation: invalid float literal
+SplitToningShadowSaturation="NaN" alone error Profile setting SplitToningShadowSaturation is out of range
+# SplitToningHighlightHue read true
+SplitToningHighlightHue="" alone ok
+SplitToningHighlightHue="0" alone ok
+SplitToningHighlightHue="-0" alone ok
+SplitToningHighlightHue="+0.5" alone ok
+SplitToningHighlightHue="-0.5" alone error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="1" alone ok
+SplitToningHighlightHue="2.4" alone ok
+SplitToningHighlightHue="4.99" alone ok
+SplitToningHighlightHue="5" alone ok
+SplitToningHighlightHue="5.01" alone ok
+SplitToningHighlightHue="-5" alone error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="-5.01" alone error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="5.5" alone ok
+SplitToningHighlightHue="-12.5" alone error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="33.3" alone ok
+SplitToningHighlightHue="50" alone ok
+SplitToningHighlightHue="99.99" alone ok
+SplitToningHighlightHue="-100" alone error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="100" alone ok
+SplitToningHighlightHue="100.01" alone ok
+SplitToningHighlightHue="101" alone ok
+SplitToningHighlightHue="180" alone ok
+SplitToningHighlightHue="359" alone ok
+SplitToningHighlightHue="360" alone ok
+SplitToningHighlightHue="361" alone error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="1e-7" alone ok
+SplitToningHighlightHue="-1e-7" alone error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="inf" alone error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="x" alone error Invalid profile setting SplitToningHighlightHue: invalid float literal
+SplitToningHighlightHue="NaN" alone error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="0" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="-0" with ok .toning={"balance":0.0,"highlights":[-0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="+0.5" with ok .toning={"balance":0.0,"highlights":[0.0013888889225199819,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="-0.5" with error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="1" with ok .toning={"balance":0.0,"highlights":[0.0027777778450399637,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="2.4" with ok .toning={"balance":0.0,"highlights":[0.006666666828095913,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="4.99" with ok .toning={"balance":0.0,"highlights":[0.013861110433936119,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="5" with ok .toning={"balance":0.0,"highlights":[0.013888888992369175,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="5.01" with ok .toning={"balance":0.0,"highlights":[0.01391666755080223,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="-5" with error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="-5.01" with error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="5.5" with ok .toning={"balance":0.0,"highlights":[0.015277777798473835,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="-12.5" with error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="33.3" with ok .toning={"balance":0.0,"highlights":[0.0925000011920929,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="50" with ok .toning={"balance":0.0,"highlights":[0.1388888955116272,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="99.99" with ok .toning={"balance":0.0,"highlights":[0.2777499854564667,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="-100" with error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="100" with ok .toning={"balance":0.0,"highlights":[0.2777777910232544,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="100.01" with ok .toning={"balance":0.0,"highlights":[0.2778055667877197,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="101" with ok .toning={"balance":0.0,"highlights":[0.2805555462837219,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="180" with ok .toning={"balance":0.0,"highlights":[0.5,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="359" with ok .toning={"balance":0.0,"highlights":[0.9972222447395325,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="360" with ok .toning={"balance":0.0,"highlights":[1.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="361" with error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="1e-7" with ok .toning={"balance":0.0,"highlights":[2.7777777300563855e-10,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningHighlightHue="-1e-7" with error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="inf" with error Profile setting SplitToningHighlightHue is out of range
+SplitToningHighlightHue="x" with error Invalid profile setting SplitToningHighlightHue: invalid float literal
+SplitToningHighlightHue="NaN" with error Profile setting SplitToningHighlightHue is out of range
+# SplitToningHighlightSaturation read true
+SplitToningHighlightSaturation="" alone ok
+SplitToningHighlightSaturation="0" alone ok
+SplitToningHighlightSaturation="-0" alone ok
+SplitToningHighlightSaturation="+0.5" alone ok .toning={"balance":0.0,"highlights":[0.0,0.004999999888241291],"shadows":[0.0,0.0]}
+SplitToningHighlightSaturation="-0.5" alone error Profile setting SplitToningHighlightSaturation is out of range
+SplitToningHighlightSaturation="1" alone ok .toning={"balance":0.0,"highlights":[0.0,0.009999999776482582],"shadows":[0.0,0.0]}
+SplitToningHighlightSaturation="2.4" alone ok .toning={"balance":0.0,"highlights":[0.0,0.024000000208616257],"shadows":[0.0,0.0]}
+SplitToningHighlightSaturation="4.99" alone ok .toning={"balance":0.0,"highlights":[0.0,0.04989999905228615],"shadows":[0.0,0.0]}
+SplitToningHighlightSaturation="5" alone ok .toning={"balance":0.0,"highlights":[0.0,0.05000000074505806],"shadows":[0.0,0.0]}
+SplitToningHighlightSaturation="5.01" alone ok .toning={"balance":0.0,"highlights":[0.0,0.05010000243782997],"shadows":[0.0,0.0]}
+SplitToningHighlightSaturation="-5" alone error Profile setting SplitToningHighlightSaturation is out of range
+SplitToningHighlightSaturation="-5.01" alone error Profile setting SplitToningHighlightSaturation is out of range
+SplitToningHighlightSaturation="5.5" alone ok .toning={"balance":0.0,"highlights":[0.0,0.054999999701976776],"shadows":[0.0,0.0]}
+SplitToningHighlightSaturation="-12.5" alone error Profile setting SplitToningHighlightSaturation is out of range
+SplitToningHighlightSaturation="33.3" alone ok .toning={"balance":0.0,"highlights":[0.0,0.3330000042915344],"shadows":[0.0,0.0]}
+SplitToningHighlightSaturation="50" alone ok .toning={"balance":0.0,"highlights":[0.0,0.5],"shadows":[0.0,0.0]}
+SplitToningHighlightSaturation="99.99" alone ok .toning={"balance":0.0,"highlights":[0.0,0.9998999834060669],"shadows":[0.0,0.0]}
+SplitToningHighlightSaturation="-100" alone error Profile setting SplitToningHighlightSaturation is out of range
+SplitToningHighlightSaturation="100" alone ok .toning={"balance":0.0,"highlights":[0.0,1.0],"shadows":[0.0,0.0]}
+SplitToningHighlightSaturation="100.01" alone error Profile setting SplitToningHighlightSaturation is out of range
+SplitToningHighlightSaturation="101" alone error Profile setting SplitToningHighlightSaturation is out of range
+SplitToningHighlightSaturation="180" alone error Profile setting SplitToningHighlightSaturation is out of range
+SplitToningHighlightSaturation="359" alone error Profile setting SplitToningHighlightSaturation is out of range
+SplitToningHighlightSaturation="360" alone error Profile setting SplitToningHighlightSaturation is out of range
+SplitToningHighlightSaturation="361" alone error Profile setting SplitToningHighlightSaturation is out of range
+SplitToningHighlightSaturation="1e-7" alone ok .toning={"balance":0.0,"highlights":[0.0,9.999999717180685e-10],"shadows":[0.0,0.0]}
+SplitToningHighlightSaturation="-1e-7" alone error Profile setting SplitToningHighlightSaturation is out of range
+SplitToningHighlightSaturation="inf" alone error Profile setting SplitToningHighlightSaturation is out of range
+SplitToningHighlightSaturation="x" alone error Invalid profile setting SplitToningHighlightSaturation: invalid float literal
+SplitToningHighlightSaturation="NaN" alone error Profile setting SplitToningHighlightSaturation is out of range
+# SplitToningBalance read true
+SplitToningBalance="" alone ok
+SplitToningBalance="0" alone ok
+SplitToningBalance="-0" alone ok
+SplitToningBalance="+0.5" alone ok
+SplitToningBalance="-0.5" alone ok
+SplitToningBalance="1" alone ok
+SplitToningBalance="2.4" alone ok
+SplitToningBalance="4.99" alone ok
+SplitToningBalance="5" alone ok
+SplitToningBalance="5.01" alone ok
+SplitToningBalance="-5" alone ok
+SplitToningBalance="-5.01" alone ok
+SplitToningBalance="5.5" alone ok
+SplitToningBalance="-12.5" alone ok
+SplitToningBalance="33.3" alone ok
+SplitToningBalance="50" alone ok
+SplitToningBalance="99.99" alone ok
+SplitToningBalance="-100" alone ok
+SplitToningBalance="100" alone ok
+SplitToningBalance="100.01" alone error Profile setting SplitToningBalance is out of range
+SplitToningBalance="101" alone error Profile setting SplitToningBalance is out of range
+SplitToningBalance="180" alone error Profile setting SplitToningBalance is out of range
+SplitToningBalance="359" alone error Profile setting SplitToningBalance is out of range
+SplitToningBalance="360" alone error Profile setting SplitToningBalance is out of range
+SplitToningBalance="361" alone error Profile setting SplitToningBalance is out of range
+SplitToningBalance="1e-7" alone ok
+SplitToningBalance="-1e-7" alone ok
+SplitToningBalance="inf" alone error Profile setting SplitToningBalance is out of range
+SplitToningBalance="x" alone error Invalid profile setting SplitToningBalance: invalid float literal
+SplitToningBalance="NaN" alone error Profile setting SplitToningBalance is out of range
+SplitToningBalance="" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="0" with ok .toning={"balance":0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="-0" with ok .toning={"balance":-0.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="+0.5" with ok .toning={"balance":0.004999999888241291,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="-0.5" with ok .toning={"balance":-0.004999999888241291,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="1" with ok .toning={"balance":0.009999999776482582,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="2.4" with ok .toning={"balance":0.024000000208616257,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="4.99" with ok .toning={"balance":0.04989999905228615,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="5" with ok .toning={"balance":0.05000000074505806,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="5.01" with ok .toning={"balance":0.05010000243782997,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="-5" with ok .toning={"balance":-0.05000000074505806,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="-5.01" with ok .toning={"balance":-0.05010000243782997,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="5.5" with ok .toning={"balance":0.054999999701976776,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="-12.5" with ok .toning={"balance":-0.125,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="33.3" with ok .toning={"balance":0.3330000042915344,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="50" with ok .toning={"balance":0.5,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="99.99" with ok .toning={"balance":0.9998999834060669,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="-100" with ok .toning={"balance":-1.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="100" with ok .toning={"balance":1.0,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="100.01" with error Profile setting SplitToningBalance is out of range
+SplitToningBalance="101" with error Profile setting SplitToningBalance is out of range
+SplitToningBalance="180" with error Profile setting SplitToningBalance is out of range
+SplitToningBalance="359" with error Profile setting SplitToningBalance is out of range
+SplitToningBalance="360" with error Profile setting SplitToningBalance is out of range
+SplitToningBalance="361" with error Profile setting SplitToningBalance is out of range
+SplitToningBalance="1e-7" with ok .toning={"balance":9.999999717180685e-10,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="-1e-7" with ok .toning={"balance":-9.999999717180685e-10,"highlights":[0.0,0.30000001192092896],"shadows":[0.0,0.20000000298023224]}
+SplitToningBalance="inf" with error Profile setting SplitToningBalance is out of range
+SplitToningBalance="x" with error Invalid profile setting SplitToningBalance: invalid float literal
+SplitToningBalance="NaN" with error Profile setting SplitToningBalance is out of range
+# PostCropVignetteAmount read true
+PostCropVignetteAmount="" alone ok
+PostCropVignetteAmount="0" alone ok
+PostCropVignetteAmount="-0" alone ok
+PostCropVignetteAmount="+0.5" alone ok .vignette={"amount":0.004999999888241291,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="-0.5" alone ok .vignette={"amount":-0.004999999888241291,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="1" alone ok .vignette={"amount":0.009999999776482582,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="2.4" alone ok .vignette={"amount":0.024000000208616257,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="4.99" alone ok .vignette={"amount":0.04989999905228615,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="5" alone ok .vignette={"amount":0.05000000074505806,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="5.01" alone ok .vignette={"amount":0.05010000243782997,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="-5" alone ok .vignette={"amount":-0.05000000074505806,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="-5.01" alone ok .vignette={"amount":-0.05010000243782997,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="5.5" alone ok .vignette={"amount":0.054999999701976776,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="-12.5" alone ok .vignette={"amount":-0.125,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="33.3" alone ok .vignette={"amount":0.3330000042915344,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="50" alone ok .vignette={"amount":0.5,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="99.99" alone ok .vignette={"amount":0.9998999834060669,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="-100" alone ok .vignette={"amount":-1.0,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="100" alone ok .vignette={"amount":1.0,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="100.01" alone error Profile setting PostCropVignetteAmount is out of range
+PostCropVignetteAmount="101" alone error Profile setting PostCropVignetteAmount is out of range
+PostCropVignetteAmount="180" alone error Profile setting PostCropVignetteAmount is out of range
+PostCropVignetteAmount="359" alone error Profile setting PostCropVignetteAmount is out of range
+PostCropVignetteAmount="360" alone error Profile setting PostCropVignetteAmount is out of range
+PostCropVignetteAmount="361" alone error Profile setting PostCropVignetteAmount is out of range
+PostCropVignetteAmount="1e-7" alone ok .vignette={"amount":9.999999717180685e-10,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="-1e-7" alone ok .vignette={"amount":-9.999999717180685e-10,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteAmount="inf" alone error Profile setting PostCropVignetteAmount is out of range
+PostCropVignetteAmount="x" alone error Invalid profile setting PostCropVignetteAmount: invalid float literal
+PostCropVignetteAmount="NaN" alone error Profile setting PostCropVignetteAmount is out of range
+# PostCropVignetteMidpoint read true
+PostCropVignetteMidpoint="" alone ok
+PostCropVignetteMidpoint="0" alone ok
+PostCropVignetteMidpoint="-0" alone ok
+PostCropVignetteMidpoint="+0.5" alone ok
+PostCropVignetteMidpoint="-0.5" alone ok
+PostCropVignetteMidpoint="1" alone ok
+PostCropVignetteMidpoint="2.4" alone ok
+PostCropVignetteMidpoint="4.99" alone ok
+PostCropVignetteMidpoint="5" alone ok
+PostCropVignetteMidpoint="5.01" alone ok
+PostCropVignetteMidpoint="-5" alone ok
+PostCropVignetteMidpoint="-5.01" alone ok
+PostCropVignetteMidpoint="5.5" alone ok
+PostCropVignetteMidpoint="-12.5" alone ok
+PostCropVignetteMidpoint="33.3" alone ok
+PostCropVignetteMidpoint="50" alone ok
+PostCropVignetteMidpoint="99.99" alone ok
+PostCropVignetteMidpoint="-100" alone ok
+PostCropVignetteMidpoint="100" alone ok
+PostCropVignetteMidpoint="100.01" alone ok
+PostCropVignetteMidpoint="101" alone ok
+PostCropVignetteMidpoint="180" alone ok
+PostCropVignetteMidpoint="359" alone ok
+PostCropVignetteMidpoint="360" alone ok
+PostCropVignetteMidpoint="361" alone ok
+PostCropVignetteMidpoint="1e-7" alone ok
+PostCropVignetteMidpoint="-1e-7" alone ok
+PostCropVignetteMidpoint="inf" alone ok
+PostCropVignetteMidpoint="x" alone ok
+PostCropVignetteMidpoint="NaN" alone ok
+PostCropVignetteMidpoint="" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="0" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.0,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="-0" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":-0.0,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="+0.5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.004999999888241291,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="-0.5" with error Profile setting PostCropVignetteMidpoint is out of range
+PostCropVignetteMidpoint="1" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.009999999776482582,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="2.4" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.024000000208616257,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="4.99" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.04989999905228615,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.05000000074505806,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="5.01" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.05010000243782997,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="-5" with error Profile setting PostCropVignetteMidpoint is out of range
+PostCropVignetteMidpoint="-5.01" with error Profile setting PostCropVignetteMidpoint is out of range
+PostCropVignetteMidpoint="5.5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.054999999701976776,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="-12.5" with error Profile setting PostCropVignetteMidpoint is out of range
+PostCropVignetteMidpoint="33.3" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.3330000042915344,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="50" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="99.99" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.9998999834060669,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="-100" with error Profile setting PostCropVignetteMidpoint is out of range
+PostCropVignetteMidpoint="100" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":1.0,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="100.01" with error Profile setting PostCropVignetteMidpoint is out of range
+PostCropVignetteMidpoint="101" with error Profile setting PostCropVignetteMidpoint is out of range
+PostCropVignetteMidpoint="180" with error Profile setting PostCropVignetteMidpoint is out of range
+PostCropVignetteMidpoint="359" with error Profile setting PostCropVignetteMidpoint is out of range
+PostCropVignetteMidpoint="360" with error Profile setting PostCropVignetteMidpoint is out of range
+PostCropVignetteMidpoint="361" with error Profile setting PostCropVignetteMidpoint is out of range
+PostCropVignetteMidpoint="1e-7" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":9.999999717180685e-10,"roundness":0.0,"style":1}
+PostCropVignetteMidpoint="-1e-7" with error Profile setting PostCropVignetteMidpoint is out of range
+PostCropVignetteMidpoint="inf" with error Profile setting PostCropVignetteMidpoint is out of range
+PostCropVignetteMidpoint="x" with error Invalid profile setting PostCropVignetteMidpoint: invalid float literal
+PostCropVignetteMidpoint="NaN" with error Profile setting PostCropVignetteMidpoint is out of range
+# PostCropVignetteFeather read true
+PostCropVignetteFeather="" alone ok
+PostCropVignetteFeather="0" alone ok
+PostCropVignetteFeather="-0" alone ok
+PostCropVignetteFeather="+0.5" alone ok
+PostCropVignetteFeather="-0.5" alone ok
+PostCropVignetteFeather="1" alone ok
+PostCropVignetteFeather="2.4" alone ok
+PostCropVignetteFeather="4.99" alone ok
+PostCropVignetteFeather="5" alone ok
+PostCropVignetteFeather="5.01" alone ok
+PostCropVignetteFeather="-5" alone ok
+PostCropVignetteFeather="-5.01" alone ok
+PostCropVignetteFeather="5.5" alone ok
+PostCropVignetteFeather="-12.5" alone ok
+PostCropVignetteFeather="33.3" alone ok
+PostCropVignetteFeather="50" alone ok
+PostCropVignetteFeather="99.99" alone ok
+PostCropVignetteFeather="-100" alone ok
+PostCropVignetteFeather="100" alone ok
+PostCropVignetteFeather="100.01" alone ok
+PostCropVignetteFeather="101" alone ok
+PostCropVignetteFeather="180" alone ok
+PostCropVignetteFeather="359" alone ok
+PostCropVignetteFeather="360" alone ok
+PostCropVignetteFeather="361" alone ok
+PostCropVignetteFeather="1e-7" alone ok
+PostCropVignetteFeather="-1e-7" alone ok
+PostCropVignetteFeather="inf" alone ok
+PostCropVignetteFeather="x" alone ok
+PostCropVignetteFeather="NaN" alone ok
+PostCropVignetteFeather="" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="0" with ok .vignette={"amount":-0.20000000298023224,"feather":0.0,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="-0" with ok .vignette={"amount":-0.20000000298023224,"feather":-0.0,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="+0.5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.004999999888241291,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="-0.5" with error Profile setting PostCropVignetteFeather is out of range
+PostCropVignetteFeather="1" with ok .vignette={"amount":-0.20000000298023224,"feather":0.009999999776482582,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="2.4" with ok .vignette={"amount":-0.20000000298023224,"feather":0.024000000208616257,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="4.99" with ok .vignette={"amount":-0.20000000298023224,"feather":0.04989999905228615,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.05000000074505806,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="5.01" with ok .vignette={"amount":-0.20000000298023224,"feather":0.05010000243782997,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="-5" with error Profile setting PostCropVignetteFeather is out of range
+PostCropVignetteFeather="-5.01" with error Profile setting PostCropVignetteFeather is out of range
+PostCropVignetteFeather="5.5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.054999999701976776,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="-12.5" with error Profile setting PostCropVignetteFeather is out of range
+PostCropVignetteFeather="33.3" with ok .vignette={"amount":-0.20000000298023224,"feather":0.3330000042915344,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="50" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="99.99" with ok .vignette={"amount":-0.20000000298023224,"feather":0.9998999834060669,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="-100" with error Profile setting PostCropVignetteFeather is out of range
+PostCropVignetteFeather="100" with ok .vignette={"amount":-0.20000000298023224,"feather":1.0,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="100.01" with error Profile setting PostCropVignetteFeather is out of range
+PostCropVignetteFeather="101" with error Profile setting PostCropVignetteFeather is out of range
+PostCropVignetteFeather="180" with error Profile setting PostCropVignetteFeather is out of range
+PostCropVignetteFeather="359" with error Profile setting PostCropVignetteFeather is out of range
+PostCropVignetteFeather="360" with error Profile setting PostCropVignetteFeather is out of range
+PostCropVignetteFeather="361" with error Profile setting PostCropVignetteFeather is out of range
+PostCropVignetteFeather="1e-7" with ok .vignette={"amount":-0.20000000298023224,"feather":9.999999717180685e-10,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteFeather="-1e-7" with error Profile setting PostCropVignetteFeather is out of range
+PostCropVignetteFeather="inf" with error Profile setting PostCropVignetteFeather is out of range
+PostCropVignetteFeather="x" with error Invalid profile setting PostCropVignetteFeather: invalid float literal
+PostCropVignetteFeather="NaN" with error Profile setting PostCropVignetteFeather is out of range
+# PostCropVignetteRoundness read true
+PostCropVignetteRoundness="" alone ok
+PostCropVignetteRoundness="0" alone ok
+PostCropVignetteRoundness="-0" alone ok
+PostCropVignetteRoundness="+0.5" alone ok
+PostCropVignetteRoundness="-0.5" alone ok
+PostCropVignetteRoundness="1" alone ok
+PostCropVignetteRoundness="2.4" alone ok
+PostCropVignetteRoundness="4.99" alone ok
+PostCropVignetteRoundness="5" alone ok
+PostCropVignetteRoundness="5.01" alone ok
+PostCropVignetteRoundness="-5" alone ok
+PostCropVignetteRoundness="-5.01" alone ok
+PostCropVignetteRoundness="5.5" alone ok
+PostCropVignetteRoundness="-12.5" alone ok
+PostCropVignetteRoundness="33.3" alone ok
+PostCropVignetteRoundness="50" alone ok
+PostCropVignetteRoundness="99.99" alone ok
+PostCropVignetteRoundness="-100" alone ok
+PostCropVignetteRoundness="100" alone ok
+PostCropVignetteRoundness="100.01" alone ok
+PostCropVignetteRoundness="101" alone ok
+PostCropVignetteRoundness="180" alone ok
+PostCropVignetteRoundness="359" alone ok
+PostCropVignetteRoundness="360" alone ok
+PostCropVignetteRoundness="361" alone ok
+PostCropVignetteRoundness="1e-7" alone ok
+PostCropVignetteRoundness="-1e-7" alone ok
+PostCropVignetteRoundness="inf" alone ok
+PostCropVignetteRoundness="x" alone ok
+PostCropVignetteRoundness="NaN" alone ok
+PostCropVignetteRoundness="" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteRoundness="0" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteRoundness="-0" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":-0.0,"style":1}
+PostCropVignetteRoundness="+0.5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.004999999888241291,"style":1}
+PostCropVignetteRoundness="-0.5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":-0.004999999888241291,"style":1}
+PostCropVignetteRoundness="1" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.009999999776482582,"style":1}
+PostCropVignetteRoundness="2.4" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.024000000208616257,"style":1}
+PostCropVignetteRoundness="4.99" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.04989999905228615,"style":1}
+PostCropVignetteRoundness="5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.05000000074505806,"style":1}
+PostCropVignetteRoundness="5.01" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.05010000243782997,"style":1}
+PostCropVignetteRoundness="-5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":-0.05000000074505806,"style":1}
+PostCropVignetteRoundness="-5.01" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":-0.05010000243782997,"style":1}
+PostCropVignetteRoundness="5.5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.054999999701976776,"style":1}
+PostCropVignetteRoundness="-12.5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":-0.125,"style":1}
+PostCropVignetteRoundness="33.3" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.3330000042915344,"style":1}
+PostCropVignetteRoundness="50" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.5,"style":1}
+PostCropVignetteRoundness="99.99" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.9998999834060669,"style":1}
+PostCropVignetteRoundness="-100" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":-1.0,"style":1}
+PostCropVignetteRoundness="100" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":1.0,"style":1}
+PostCropVignetteRoundness="100.01" with error Profile setting PostCropVignetteRoundness is out of range
+PostCropVignetteRoundness="101" with error Profile setting PostCropVignetteRoundness is out of range
+PostCropVignetteRoundness="180" with error Profile setting PostCropVignetteRoundness is out of range
+PostCropVignetteRoundness="359" with error Profile setting PostCropVignetteRoundness is out of range
+PostCropVignetteRoundness="360" with error Profile setting PostCropVignetteRoundness is out of range
+PostCropVignetteRoundness="361" with error Profile setting PostCropVignetteRoundness is out of range
+PostCropVignetteRoundness="1e-7" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":9.999999717180685e-10,"style":1}
+PostCropVignetteRoundness="-1e-7" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":-9.999999717180685e-10,"style":1}
+PostCropVignetteRoundness="inf" with error Profile setting PostCropVignetteRoundness is out of range
+PostCropVignetteRoundness="x" with error Invalid profile setting PostCropVignetteRoundness: invalid float literal
+PostCropVignetteRoundness="NaN" with error Profile setting PostCropVignetteRoundness is out of range
+# PostCropVignetteStyle read true
+PostCropVignetteStyle="" alone ok
+PostCropVignetteStyle="0" alone ok
+PostCropVignetteStyle="-0" alone ok
+PostCropVignetteStyle="+0.5" alone ok
+PostCropVignetteStyle="-0.5" alone ok
+PostCropVignetteStyle="1" alone ok
+PostCropVignetteStyle="2.4" alone ok
+PostCropVignetteStyle="4.99" alone ok
+PostCropVignetteStyle="5" alone ok
+PostCropVignetteStyle="5.01" alone ok
+PostCropVignetteStyle="-5" alone ok
+PostCropVignetteStyle="-5.01" alone ok
+PostCropVignetteStyle="5.5" alone ok
+PostCropVignetteStyle="-12.5" alone ok
+PostCropVignetteStyle="33.3" alone ok
+PostCropVignetteStyle="50" alone ok
+PostCropVignetteStyle="99.99" alone ok
+PostCropVignetteStyle="-100" alone ok
+PostCropVignetteStyle="100" alone ok
+PostCropVignetteStyle="100.01" alone ok
+PostCropVignetteStyle="101" alone ok
+PostCropVignetteStyle="180" alone ok
+PostCropVignetteStyle="359" alone ok
+PostCropVignetteStyle="360" alone ok
+PostCropVignetteStyle="361" alone ok
+PostCropVignetteStyle="1e-7" alone ok
+PostCropVignetteStyle="-1e-7" alone ok
+PostCropVignetteStyle="inf" alone ok
+PostCropVignetteStyle="x" alone ok
+PostCropVignetteStyle="NaN" alone ok
+PostCropVignetteStyle="" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteStyle="0" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteStyle="-0" with error Unsupported profile vignette style -0
+PostCropVignetteStyle="+0.5" with error Unsupported profile vignette style +0.5
+PostCropVignetteStyle="-0.5" with error Unsupported profile vignette style -0.5
+PostCropVignetteStyle="1" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteStyle="2.4" with error Unsupported profile vignette style 2.4
+PostCropVignetteStyle="4.99" with error Unsupported profile vignette style 4.99
+PostCropVignetteStyle="5" with error Unsupported profile vignette style 5
+PostCropVignetteStyle="5.01" with error Unsupported profile vignette style 5.01
+PostCropVignetteStyle="-5" with error Unsupported profile vignette style -5
+PostCropVignetteStyle="-5.01" with error Unsupported profile vignette style -5.01
+PostCropVignetteStyle="5.5" with error Unsupported profile vignette style 5.5
+PostCropVignetteStyle="-12.5" with error Unsupported profile vignette style -12.5
+PostCropVignetteStyle="33.3" with error Unsupported profile vignette style 33.3
+PostCropVignetteStyle="50" with error Unsupported profile vignette style 50
+PostCropVignetteStyle="99.99" with error Unsupported profile vignette style 99.99
+PostCropVignetteStyle="-100" with error Unsupported profile vignette style -100
+PostCropVignetteStyle="100" with error Unsupported profile vignette style 100
+PostCropVignetteStyle="100.01" with error Unsupported profile vignette style 100.01
+PostCropVignetteStyle="101" with error Unsupported profile vignette style 101
+PostCropVignetteStyle="180" with error Unsupported profile vignette style 180
+PostCropVignetteStyle="359" with error Unsupported profile vignette style 359
+PostCropVignetteStyle="360" with error Unsupported profile vignette style 360
+PostCropVignetteStyle="361" with error Unsupported profile vignette style 361
+PostCropVignetteStyle="1e-7" with error Unsupported profile vignette style 1e-7
+PostCropVignetteStyle="-1e-7" with error Unsupported profile vignette style -1e-7
+PostCropVignetteStyle="inf" with error Unsupported profile vignette style inf
+PostCropVignetteStyle="x" with error Unsupported profile vignette style x
+PostCropVignetteStyle="NaN" with error Unsupported profile vignette style NaN
+# PostCropVignetteHighlightContrast read true
+PostCropVignetteHighlightContrast="" alone ok
+PostCropVignetteHighlightContrast="0" alone ok
+PostCropVignetteHighlightContrast="-0" alone ok
+PostCropVignetteHighlightContrast="+0.5" alone ok
+PostCropVignetteHighlightContrast="-0.5" alone ok
+PostCropVignetteHighlightContrast="1" alone ok
+PostCropVignetteHighlightContrast="2.4" alone ok
+PostCropVignetteHighlightContrast="4.99" alone ok
+PostCropVignetteHighlightContrast="5" alone ok
+PostCropVignetteHighlightContrast="5.01" alone ok
+PostCropVignetteHighlightContrast="-5" alone ok
+PostCropVignetteHighlightContrast="-5.01" alone ok
+PostCropVignetteHighlightContrast="5.5" alone ok
+PostCropVignetteHighlightContrast="-12.5" alone ok
+PostCropVignetteHighlightContrast="33.3" alone ok
+PostCropVignetteHighlightContrast="50" alone ok
+PostCropVignetteHighlightContrast="99.99" alone ok
+PostCropVignetteHighlightContrast="-100" alone ok
+PostCropVignetteHighlightContrast="100" alone ok
+PostCropVignetteHighlightContrast="100.01" alone ok
+PostCropVignetteHighlightContrast="101" alone ok
+PostCropVignetteHighlightContrast="180" alone ok
+PostCropVignetteHighlightContrast="359" alone ok
+PostCropVignetteHighlightContrast="360" alone ok
+PostCropVignetteHighlightContrast="361" alone ok
+PostCropVignetteHighlightContrast="1e-7" alone ok
+PostCropVignetteHighlightContrast="-1e-7" alone ok
+PostCropVignetteHighlightContrast="inf" alone ok
+PostCropVignetteHighlightContrast="x" alone ok
+PostCropVignetteHighlightContrast="NaN" alone ok
+PostCropVignetteHighlightContrast="" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="0" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="-0" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":-0.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="+0.5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.004999999888241291,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="-0.5" with error Profile setting PostCropVignetteHighlightContrast is out of range
+PostCropVignetteHighlightContrast="1" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.009999999776482582,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="2.4" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.024000000208616257,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="4.99" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.04989999905228615,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.05000000074505806,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="5.01" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.05010000243782997,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="-5" with error Profile setting PostCropVignetteHighlightContrast is out of range
+PostCropVignetteHighlightContrast="-5.01" with error Profile setting PostCropVignetteHighlightContrast is out of range
+PostCropVignetteHighlightContrast="5.5" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.054999999701976776,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="-12.5" with error Profile setting PostCropVignetteHighlightContrast is out of range
+PostCropVignetteHighlightContrast="33.3" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.3330000042915344,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="50" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.5,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="99.99" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.9998999834060669,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="-100" with error Profile setting PostCropVignetteHighlightContrast is out of range
+PostCropVignetteHighlightContrast="100" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":1.0,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="100.01" with error Profile setting PostCropVignetteHighlightContrast is out of range
+PostCropVignetteHighlightContrast="101" with error Profile setting PostCropVignetteHighlightContrast is out of range
+PostCropVignetteHighlightContrast="180" with error Profile setting PostCropVignetteHighlightContrast is out of range
+PostCropVignetteHighlightContrast="359" with error Profile setting PostCropVignetteHighlightContrast is out of range
+PostCropVignetteHighlightContrast="360" with error Profile setting PostCropVignetteHighlightContrast is out of range
+PostCropVignetteHighlightContrast="361" with error Profile setting PostCropVignetteHighlightContrast is out of range
+PostCropVignetteHighlightContrast="1e-7" with ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":9.999999717180685e-10,"midpoint":0.5,"roundness":0.0,"style":1}
+PostCropVignetteHighlightContrast="-1e-7" with error Profile setting PostCropVignetteHighlightContrast is out of range
+PostCropVignetteHighlightContrast="inf" with error Profile setting PostCropVignetteHighlightContrast is out of range
+PostCropVignetteHighlightContrast="x" with error Invalid profile setting PostCropVignetteHighlightContrast: invalid float literal
+PostCropVignetteHighlightContrast="NaN" with error Profile setting PostCropVignetteHighlightContrast is out of range
+# Dehaze read false
+Dehaze="" alone ok
+Dehaze="0" alone ok
+Dehaze="-0" alone ok
+Dehaze="+0.5" alone ok
+Dehaze="-0.5" alone ok
+Dehaze="1" alone ok
+Dehaze="2.4" alone ok
+Dehaze="4.99" alone ok
+Dehaze="5" alone ok
+Dehaze="5.01" alone ok
+Dehaze="-5" alone ok
+Dehaze="-5.01" alone ok
+Dehaze="5.5" alone ok
+Dehaze="-12.5" alone ok
+Dehaze="33.3" alone ok
+Dehaze="50" alone ok
+Dehaze="99.99" alone ok
+Dehaze="-100" alone ok
+Dehaze="100" alone ok
+Dehaze="100.01" alone ok
+Dehaze="101" alone ok
+Dehaze="180" alone ok
+Dehaze="359" alone ok
+Dehaze="360" alone ok
+Dehaze="361" alone ok
+Dehaze="1e-7" alone ok
+Dehaze="-1e-7" alone ok
+Dehaze="inf" alone ok
+Dehaze="x" alone ok
+Dehaze="NaN" alone ok
+# Contrast2012 read false
+Contrast2012="" alone ok
+Contrast2012="0" alone ok
+Contrast2012="-0" alone ok
+Contrast2012="+0.5" alone ok
+Contrast2012="-0.5" alone ok
+Contrast2012="1" alone ok
+Contrast2012="2.4" alone ok
+Contrast2012="4.99" alone ok
+Contrast2012="5" alone ok
+Contrast2012="5.01" alone ok
+Contrast2012="-5" alone ok
+Contrast2012="-5.01" alone ok
+Contrast2012="5.5" alone ok
+Contrast2012="-12.5" alone ok
+Contrast2012="33.3" alone ok
+Contrast2012="50" alone ok
+Contrast2012="99.99" alone ok
+Contrast2012="-100" alone ok
+Contrast2012="100" alone ok
+Contrast2012="100.01" alone ok
+Contrast2012="101" alone ok
+Contrast2012="180" alone ok
+Contrast2012="359" alone ok
+Contrast2012="360" alone ok
+Contrast2012="361" alone ok
+Contrast2012="1e-7" alone ok
+Contrast2012="-1e-7" alone ok
+Contrast2012="inf" alone ok
+Contrast2012="x" alone ok
+Contrast2012="NaN" alone ok
+# Exposure read false
+Exposure="" alone ok
+Exposure="0" alone ok
+Exposure="-0" alone ok
+Exposure="+0.5" alone ok
+Exposure="-0.5" alone ok
+Exposure="1" alone ok
+Exposure="2.4" alone ok
+Exposure="4.99" alone ok
+Exposure="5" alone ok
+Exposure="5.01" alone ok
+Exposure="-5" alone ok
+Exposure="-5.01" alone ok
+Exposure="5.5" alone ok
+Exposure="-12.5" alone ok
+Exposure="33.3" alone ok
+Exposure="50" alone ok
+Exposure="99.99" alone ok
+Exposure="-100" alone ok
+Exposure="100" alone ok
+Exposure="100.01" alone ok
+Exposure="101" alone ok
+Exposure="180" alone ok
+Exposure="359" alone ok
+Exposure="360" alone ok
+Exposure="361" alone ok
+Exposure="1e-7" alone ok
+Exposure="-1e-7" alone ok
+Exposure="inf" alone ok
+Exposure="x" alone ok
+Exposure="NaN" alone ok
+# HueAdjustment read false
+HueAdjustment="" alone ok
+HueAdjustment="0" alone ok
+HueAdjustment="-0" alone ok
+HueAdjustment="+0.5" alone ok
+HueAdjustment="-0.5" alone ok
+HueAdjustment="1" alone ok
+HueAdjustment="2.4" alone ok
+HueAdjustment="4.99" alone ok
+HueAdjustment="5" alone ok
+HueAdjustment="5.01" alone ok
+HueAdjustment="-5" alone ok
+HueAdjustment="-5.01" alone ok
+HueAdjustment="5.5" alone ok
+HueAdjustment="-12.5" alone ok
+HueAdjustment="33.3" alone ok
+HueAdjustment="50" alone ok
+HueAdjustment="99.99" alone ok
+HueAdjustment="-100" alone ok
+HueAdjustment="100" alone ok
+HueAdjustment="100.01" alone ok
+HueAdjustment="101" alone ok
+HueAdjustment="180" alone ok
+HueAdjustment="359" alone ok
+HueAdjustment="360" alone ok
+HueAdjustment="361" alone ok
+HueAdjustment="1e-7" alone ok
+HueAdjustment="-1e-7" alone ok
+HueAdjustment="inf" alone ok
+HueAdjustment="x" alone ok
+HueAdjustment="NaN" alone ok
+# HueAdjustmentTeal read false
+HueAdjustmentTeal="" alone ok
+HueAdjustmentTeal="0" alone ok
+HueAdjustmentTeal="-0" alone ok
+HueAdjustmentTeal="+0.5" alone ok
+HueAdjustmentTeal="-0.5" alone ok
+HueAdjustmentTeal="1" alone ok
+HueAdjustmentTeal="2.4" alone ok
+HueAdjustmentTeal="4.99" alone ok
+HueAdjustmentTeal="5" alone ok
+HueAdjustmentTeal="5.01" alone ok
+HueAdjustmentTeal="-5" alone ok
+HueAdjustmentTeal="-5.01" alone ok
+HueAdjustmentTeal="5.5" alone ok
+HueAdjustmentTeal="-12.5" alone ok
+HueAdjustmentTeal="33.3" alone ok
+HueAdjustmentTeal="50" alone ok
+HueAdjustmentTeal="99.99" alone ok
+HueAdjustmentTeal="-100" alone ok
+HueAdjustmentTeal="100" alone ok
+HueAdjustmentTeal="100.01" alone ok
+HueAdjustmentTeal="101" alone ok
+HueAdjustmentTeal="180" alone ok
+HueAdjustmentTeal="359" alone ok
+HueAdjustmentTeal="360" alone ok
+HueAdjustmentTeal="361" alone ok
+HueAdjustmentTeal="1e-7" alone ok
+HueAdjustmentTeal="-1e-7" alone ok
+HueAdjustmentTeal="inf" alone ok
+HueAdjustmentTeal="x" alone ok
+HueAdjustmentTeal="NaN" alone ok
+# HueAdjustmentRed read true
+HueAdjustmentRed="" alone ok
+HueAdjustmentRed="0" alone ok
+HueAdjustmentRed="-0" alone ok .hsl[0][0]=-0.0
+HueAdjustmentRed="+0.5" alone ok .hsl[0][0]=0.005
+HueAdjustmentRed="-0.5" alone ok .hsl[0][0]=-0.005
+HueAdjustmentRed="1" alone ok .hsl[0][0]=0.01
+HueAdjustmentRed="2.4" alone ok .hsl[0][0]=0.024
+HueAdjustmentRed="4.99" alone ok .hsl[0][0]=0.0499
+HueAdjustmentRed="5" alone ok .hsl[0][0]=0.05
+HueAdjustmentRed="5.01" alone ok .hsl[0][0]=0.050100002
+HueAdjustmentRed="-5" alone ok .hsl[0][0]=-0.05
+HueAdjustmentRed="-5.01" alone ok .hsl[0][0]=-0.050100002
+HueAdjustmentRed="5.5" alone ok .hsl[0][0]=0.055
+HueAdjustmentRed="-12.5" alone ok .hsl[0][0]=-0.125
+HueAdjustmentRed="33.3" alone ok .hsl[0][0]=0.333
+HueAdjustmentRed="50" alone ok .hsl[0][0]=0.5
+HueAdjustmentRed="99.99" alone ok .hsl[0][0]=0.9999
+HueAdjustmentRed="-100" alone ok .hsl[0][0]=-1.0
+HueAdjustmentRed="100" alone ok .hsl[0][0]=1.0
+HueAdjustmentRed="100.01" alone error Profile setting HueAdjustmentRed is out of range
+HueAdjustmentRed="101" alone error Profile setting HueAdjustmentRed is out of range
+HueAdjustmentRed="180" alone error Profile setting HueAdjustmentRed is out of range
+HueAdjustmentRed="359" alone error Profile setting HueAdjustmentRed is out of range
+HueAdjustmentRed="360" alone error Profile setting HueAdjustmentRed is out of range
+HueAdjustmentRed="361" alone error Profile setting HueAdjustmentRed is out of range
+HueAdjustmentRed="1e-7" alone ok .hsl[0][0]=1e-9
+HueAdjustmentRed="-1e-7" alone ok .hsl[0][0]=-1e-9
+HueAdjustmentRed="inf" alone error Profile setting HueAdjustmentRed is out of range
+HueAdjustmentRed="x" alone error Invalid profile setting HueAdjustmentRed: invalid float literal
+HueAdjustmentRed="NaN" alone error Profile setting HueAdjustmentRed is out of range
+# SaturationAdjustmentRed read true
+SaturationAdjustmentRed="" alone ok
+SaturationAdjustmentRed="0" alone ok
+SaturationAdjustmentRed="-0" alone ok .hsl[0][1]=-0.0
+SaturationAdjustmentRed="+0.5" alone ok .hsl[0][1]=0.005
+SaturationAdjustmentRed="-0.5" alone ok .hsl[0][1]=-0.005
+SaturationAdjustmentRed="1" alone ok .hsl[0][1]=0.01
+SaturationAdjustmentRed="2.4" alone ok .hsl[0][1]=0.024
+SaturationAdjustmentRed="4.99" alone ok .hsl[0][1]=0.0499
+SaturationAdjustmentRed="5" alone ok .hsl[0][1]=0.05
+SaturationAdjustmentRed="5.01" alone ok .hsl[0][1]=0.050100002
+SaturationAdjustmentRed="-5" alone ok .hsl[0][1]=-0.05
+SaturationAdjustmentRed="-5.01" alone ok .hsl[0][1]=-0.050100002
+SaturationAdjustmentRed="5.5" alone ok .hsl[0][1]=0.055
+SaturationAdjustmentRed="-12.5" alone ok .hsl[0][1]=-0.125
+SaturationAdjustmentRed="33.3" alone ok .hsl[0][1]=0.333
+SaturationAdjustmentRed="50" alone ok .hsl[0][1]=0.5
+SaturationAdjustmentRed="99.99" alone ok .hsl[0][1]=0.9999
+SaturationAdjustmentRed="-100" alone ok .hsl[0][1]=-1.0
+SaturationAdjustmentRed="100" alone ok .hsl[0][1]=1.0
+SaturationAdjustmentRed="100.01" alone error Profile setting SaturationAdjustmentRed is out of range
+SaturationAdjustmentRed="101" alone error Profile setting SaturationAdjustmentRed is out of range
+SaturationAdjustmentRed="180" alone error Profile setting SaturationAdjustmentRed is out of range
+SaturationAdjustmentRed="359" alone error Profile setting SaturationAdjustmentRed is out of range
+SaturationAdjustmentRed="360" alone error Profile setting SaturationAdjustmentRed is out of range
+SaturationAdjustmentRed="361" alone error Profile setting SaturationAdjustmentRed is out of range
+SaturationAdjustmentRed="1e-7" alone ok .hsl[0][1]=1e-9
+SaturationAdjustmentRed="-1e-7" alone ok .hsl[0][1]=-1e-9
+SaturationAdjustmentRed="inf" alone error Profile setting SaturationAdjustmentRed is out of range
+SaturationAdjustmentRed="x" alone error Invalid profile setting SaturationAdjustmentRed: invalid float literal
+SaturationAdjustmentRed="NaN" alone error Profile setting SaturationAdjustmentRed is out of range
+# LuminanceAdjustmentRed read true
+LuminanceAdjustmentRed="" alone ok
+LuminanceAdjustmentRed="0" alone ok
+LuminanceAdjustmentRed="-0" alone ok .hsl[0][2]=-0.0
+LuminanceAdjustmentRed="+0.5" alone ok .hsl[0][2]=0.005
+LuminanceAdjustmentRed="-0.5" alone ok .hsl[0][2]=-0.005
+LuminanceAdjustmentRed="1" alone ok .hsl[0][2]=0.01
+LuminanceAdjustmentRed="2.4" alone ok .hsl[0][2]=0.024
+LuminanceAdjustmentRed="4.99" alone ok .hsl[0][2]=0.0499
+LuminanceAdjustmentRed="5" alone ok .hsl[0][2]=0.05
+LuminanceAdjustmentRed="5.01" alone ok .hsl[0][2]=0.050100002
+LuminanceAdjustmentRed="-5" alone ok .hsl[0][2]=-0.05
+LuminanceAdjustmentRed="-5.01" alone ok .hsl[0][2]=-0.050100002
+LuminanceAdjustmentRed="5.5" alone ok .hsl[0][2]=0.055
+LuminanceAdjustmentRed="-12.5" alone ok .hsl[0][2]=-0.125
+LuminanceAdjustmentRed="33.3" alone ok .hsl[0][2]=0.333
+LuminanceAdjustmentRed="50" alone ok .hsl[0][2]=0.5
+LuminanceAdjustmentRed="99.99" alone ok .hsl[0][2]=0.9999
+LuminanceAdjustmentRed="-100" alone ok .hsl[0][2]=-1.0
+LuminanceAdjustmentRed="100" alone ok .hsl[0][2]=1.0
+LuminanceAdjustmentRed="100.01" alone error Profile setting LuminanceAdjustmentRed is out of range
+LuminanceAdjustmentRed="101" alone error Profile setting LuminanceAdjustmentRed is out of range
+LuminanceAdjustmentRed="180" alone error Profile setting LuminanceAdjustmentRed is out of range
+LuminanceAdjustmentRed="359" alone error Profile setting LuminanceAdjustmentRed is out of range
+LuminanceAdjustmentRed="360" alone error Profile setting LuminanceAdjustmentRed is out of range
+LuminanceAdjustmentRed="361" alone error Profile setting LuminanceAdjustmentRed is out of range
+LuminanceAdjustmentRed="1e-7" alone ok .hsl[0][2]=1e-9
+LuminanceAdjustmentRed="-1e-7" alone ok .hsl[0][2]=-1e-9
+LuminanceAdjustmentRed="inf" alone error Profile setting LuminanceAdjustmentRed is out of range
+LuminanceAdjustmentRed="x" alone error Invalid profile setting LuminanceAdjustmentRed: invalid float literal
+LuminanceAdjustmentRed="NaN" alone error Profile setting LuminanceAdjustmentRed is out of range
+# HueAdjustmentOrange read true
+HueAdjustmentOrange="" alone ok
+HueAdjustmentOrange="0" alone ok
+HueAdjustmentOrange="-0" alone ok .hsl[1][0]=-0.0
+HueAdjustmentOrange="+0.5" alone ok .hsl[1][0]=0.005
+HueAdjustmentOrange="-0.5" alone ok .hsl[1][0]=-0.005
+HueAdjustmentOrange="1" alone ok .hsl[1][0]=0.01
+HueAdjustmentOrange="2.4" alone ok .hsl[1][0]=0.024
+HueAdjustmentOrange="4.99" alone ok .hsl[1][0]=0.0499
+HueAdjustmentOrange="5" alone ok .hsl[1][0]=0.05
+HueAdjustmentOrange="5.01" alone ok .hsl[1][0]=0.050100002
+HueAdjustmentOrange="-5" alone ok .hsl[1][0]=-0.05
+HueAdjustmentOrange="-5.01" alone ok .hsl[1][0]=-0.050100002
+HueAdjustmentOrange="5.5" alone ok .hsl[1][0]=0.055
+HueAdjustmentOrange="-12.5" alone ok .hsl[1][0]=-0.125
+HueAdjustmentOrange="33.3" alone ok .hsl[1][0]=0.333
+HueAdjustmentOrange="50" alone ok .hsl[1][0]=0.5
+HueAdjustmentOrange="99.99" alone ok .hsl[1][0]=0.9999
+HueAdjustmentOrange="-100" alone ok .hsl[1][0]=-1.0
+HueAdjustmentOrange="100" alone ok .hsl[1][0]=1.0
+HueAdjustmentOrange="100.01" alone error Profile setting HueAdjustmentOrange is out of range
+HueAdjustmentOrange="101" alone error Profile setting HueAdjustmentOrange is out of range
+HueAdjustmentOrange="180" alone error Profile setting HueAdjustmentOrange is out of range
+HueAdjustmentOrange="359" alone error Profile setting HueAdjustmentOrange is out of range
+HueAdjustmentOrange="360" alone error Profile setting HueAdjustmentOrange is out of range
+HueAdjustmentOrange="361" alone error Profile setting HueAdjustmentOrange is out of range
+HueAdjustmentOrange="1e-7" alone ok .hsl[1][0]=1e-9
+HueAdjustmentOrange="-1e-7" alone ok .hsl[1][0]=-1e-9
+HueAdjustmentOrange="inf" alone error Profile setting HueAdjustmentOrange is out of range
+HueAdjustmentOrange="x" alone error Invalid profile setting HueAdjustmentOrange: invalid float literal
+HueAdjustmentOrange="NaN" alone error Profile setting HueAdjustmentOrange is out of range
+# SaturationAdjustmentOrange read true
+SaturationAdjustmentOrange="" alone ok
+SaturationAdjustmentOrange="0" alone ok
+SaturationAdjustmentOrange="-0" alone ok .hsl[1][1]=-0.0
+SaturationAdjustmentOrange="+0.5" alone ok .hsl[1][1]=0.005
+SaturationAdjustmentOrange="-0.5" alone ok .hsl[1][1]=-0.005
+SaturationAdjustmentOrange="1" alone ok .hsl[1][1]=0.01
+SaturationAdjustmentOrange="2.4" alone ok .hsl[1][1]=0.024
+SaturationAdjustmentOrange="4.99" alone ok .hsl[1][1]=0.0499
+SaturationAdjustmentOrange="5" alone ok .hsl[1][1]=0.05
+SaturationAdjustmentOrange="5.01" alone ok .hsl[1][1]=0.050100002
+SaturationAdjustmentOrange="-5" alone ok .hsl[1][1]=-0.05
+SaturationAdjustmentOrange="-5.01" alone ok .hsl[1][1]=-0.050100002
+SaturationAdjustmentOrange="5.5" alone ok .hsl[1][1]=0.055
+SaturationAdjustmentOrange="-12.5" alone ok .hsl[1][1]=-0.125
+SaturationAdjustmentOrange="33.3" alone ok .hsl[1][1]=0.333
+SaturationAdjustmentOrange="50" alone ok .hsl[1][1]=0.5
+SaturationAdjustmentOrange="99.99" alone ok .hsl[1][1]=0.9999
+SaturationAdjustmentOrange="-100" alone ok .hsl[1][1]=-1.0
+SaturationAdjustmentOrange="100" alone ok .hsl[1][1]=1.0
+SaturationAdjustmentOrange="100.01" alone error Profile setting SaturationAdjustmentOrange is out of range
+SaturationAdjustmentOrange="101" alone error Profile setting SaturationAdjustmentOrange is out of range
+SaturationAdjustmentOrange="180" alone error Profile setting SaturationAdjustmentOrange is out of range
+SaturationAdjustmentOrange="359" alone error Profile setting SaturationAdjustmentOrange is out of range
+SaturationAdjustmentOrange="360" alone error Profile setting SaturationAdjustmentOrange is out of range
+SaturationAdjustmentOrange="361" alone error Profile setting SaturationAdjustmentOrange is out of range
+SaturationAdjustmentOrange="1e-7" alone ok .hsl[1][1]=1e-9
+SaturationAdjustmentOrange="-1e-7" alone ok .hsl[1][1]=-1e-9
+SaturationAdjustmentOrange="inf" alone error Profile setting SaturationAdjustmentOrange is out of range
+SaturationAdjustmentOrange="x" alone error Invalid profile setting SaturationAdjustmentOrange: invalid float literal
+SaturationAdjustmentOrange="NaN" alone error Profile setting SaturationAdjustmentOrange is out of range
+# LuminanceAdjustmentOrange read true
+LuminanceAdjustmentOrange="" alone ok
+LuminanceAdjustmentOrange="0" alone ok
+LuminanceAdjustmentOrange="-0" alone ok .hsl[1][2]=-0.0
+LuminanceAdjustmentOrange="+0.5" alone ok .hsl[1][2]=0.005
+LuminanceAdjustmentOrange="-0.5" alone ok .hsl[1][2]=-0.005
+LuminanceAdjustmentOrange="1" alone ok .hsl[1][2]=0.01
+LuminanceAdjustmentOrange="2.4" alone ok .hsl[1][2]=0.024
+LuminanceAdjustmentOrange="4.99" alone ok .hsl[1][2]=0.0499
+LuminanceAdjustmentOrange="5" alone ok .hsl[1][2]=0.05
+LuminanceAdjustmentOrange="5.01" alone ok .hsl[1][2]=0.050100002
+LuminanceAdjustmentOrange="-5" alone ok .hsl[1][2]=-0.05
+LuminanceAdjustmentOrange="-5.01" alone ok .hsl[1][2]=-0.050100002
+LuminanceAdjustmentOrange="5.5" alone ok .hsl[1][2]=0.055
+LuminanceAdjustmentOrange="-12.5" alone ok .hsl[1][2]=-0.125
+LuminanceAdjustmentOrange="33.3" alone ok .hsl[1][2]=0.333
+LuminanceAdjustmentOrange="50" alone ok .hsl[1][2]=0.5
+LuminanceAdjustmentOrange="99.99" alone ok .hsl[1][2]=0.9999
+LuminanceAdjustmentOrange="-100" alone ok .hsl[1][2]=-1.0
+LuminanceAdjustmentOrange="100" alone ok .hsl[1][2]=1.0
+LuminanceAdjustmentOrange="100.01" alone error Profile setting LuminanceAdjustmentOrange is out of range
+LuminanceAdjustmentOrange="101" alone error Profile setting LuminanceAdjustmentOrange is out of range
+LuminanceAdjustmentOrange="180" alone error Profile setting LuminanceAdjustmentOrange is out of range
+LuminanceAdjustmentOrange="359" alone error Profile setting LuminanceAdjustmentOrange is out of range
+LuminanceAdjustmentOrange="360" alone error Profile setting LuminanceAdjustmentOrange is out of range
+LuminanceAdjustmentOrange="361" alone error Profile setting LuminanceAdjustmentOrange is out of range
+LuminanceAdjustmentOrange="1e-7" alone ok .hsl[1][2]=1e-9
+LuminanceAdjustmentOrange="-1e-7" alone ok .hsl[1][2]=-1e-9
+LuminanceAdjustmentOrange="inf" alone error Profile setting LuminanceAdjustmentOrange is out of range
+LuminanceAdjustmentOrange="x" alone error Invalid profile setting LuminanceAdjustmentOrange: invalid float literal
+LuminanceAdjustmentOrange="NaN" alone error Profile setting LuminanceAdjustmentOrange is out of range
+# HueAdjustmentYellow read true
+HueAdjustmentYellow="" alone ok
+HueAdjustmentYellow="0" alone ok
+HueAdjustmentYellow="-0" alone ok .hsl[2][0]=-0.0
+HueAdjustmentYellow="+0.5" alone ok .hsl[2][0]=0.005
+HueAdjustmentYellow="-0.5" alone ok .hsl[2][0]=-0.005
+HueAdjustmentYellow="1" alone ok .hsl[2][0]=0.01
+HueAdjustmentYellow="2.4" alone ok .hsl[2][0]=0.024
+HueAdjustmentYellow="4.99" alone ok .hsl[2][0]=0.0499
+HueAdjustmentYellow="5" alone ok .hsl[2][0]=0.05
+HueAdjustmentYellow="5.01" alone ok .hsl[2][0]=0.050100002
+HueAdjustmentYellow="-5" alone ok .hsl[2][0]=-0.05
+HueAdjustmentYellow="-5.01" alone ok .hsl[2][0]=-0.050100002
+HueAdjustmentYellow="5.5" alone ok .hsl[2][0]=0.055
+HueAdjustmentYellow="-12.5" alone ok .hsl[2][0]=-0.125
+HueAdjustmentYellow="33.3" alone ok .hsl[2][0]=0.333
+HueAdjustmentYellow="50" alone ok .hsl[2][0]=0.5
+HueAdjustmentYellow="99.99" alone ok .hsl[2][0]=0.9999
+HueAdjustmentYellow="-100" alone ok .hsl[2][0]=-1.0
+HueAdjustmentYellow="100" alone ok .hsl[2][0]=1.0
+HueAdjustmentYellow="100.01" alone error Profile setting HueAdjustmentYellow is out of range
+HueAdjustmentYellow="101" alone error Profile setting HueAdjustmentYellow is out of range
+HueAdjustmentYellow="180" alone error Profile setting HueAdjustmentYellow is out of range
+HueAdjustmentYellow="359" alone error Profile setting HueAdjustmentYellow is out of range
+HueAdjustmentYellow="360" alone error Profile setting HueAdjustmentYellow is out of range
+HueAdjustmentYellow="361" alone error Profile setting HueAdjustmentYellow is out of range
+HueAdjustmentYellow="1e-7" alone ok .hsl[2][0]=1e-9
+HueAdjustmentYellow="-1e-7" alone ok .hsl[2][0]=-1e-9
+HueAdjustmentYellow="inf" alone error Profile setting HueAdjustmentYellow is out of range
+HueAdjustmentYellow="x" alone error Invalid profile setting HueAdjustmentYellow: invalid float literal
+HueAdjustmentYellow="NaN" alone error Profile setting HueAdjustmentYellow is out of range
+# SaturationAdjustmentYellow read true
+SaturationAdjustmentYellow="" alone ok
+SaturationAdjustmentYellow="0" alone ok
+SaturationAdjustmentYellow="-0" alone ok .hsl[2][1]=-0.0
+SaturationAdjustmentYellow="+0.5" alone ok .hsl[2][1]=0.005
+SaturationAdjustmentYellow="-0.5" alone ok .hsl[2][1]=-0.005
+SaturationAdjustmentYellow="1" alone ok .hsl[2][1]=0.01
+SaturationAdjustmentYellow="2.4" alone ok .hsl[2][1]=0.024
+SaturationAdjustmentYellow="4.99" alone ok .hsl[2][1]=0.0499
+SaturationAdjustmentYellow="5" alone ok .hsl[2][1]=0.05
+SaturationAdjustmentYellow="5.01" alone ok .hsl[2][1]=0.050100002
+SaturationAdjustmentYellow="-5" alone ok .hsl[2][1]=-0.05
+SaturationAdjustmentYellow="-5.01" alone ok .hsl[2][1]=-0.050100002
+SaturationAdjustmentYellow="5.5" alone ok .hsl[2][1]=0.055
+SaturationAdjustmentYellow="-12.5" alone ok .hsl[2][1]=-0.125
+SaturationAdjustmentYellow="33.3" alone ok .hsl[2][1]=0.333
+SaturationAdjustmentYellow="50" alone ok .hsl[2][1]=0.5
+SaturationAdjustmentYellow="99.99" alone ok .hsl[2][1]=0.9999
+SaturationAdjustmentYellow="-100" alone ok .hsl[2][1]=-1.0
+SaturationAdjustmentYellow="100" alone ok .hsl[2][1]=1.0
+SaturationAdjustmentYellow="100.01" alone error Profile setting SaturationAdjustmentYellow is out of range
+SaturationAdjustmentYellow="101" alone error Profile setting SaturationAdjustmentYellow is out of range
+SaturationAdjustmentYellow="180" alone error Profile setting SaturationAdjustmentYellow is out of range
+SaturationAdjustmentYellow="359" alone error Profile setting SaturationAdjustmentYellow is out of range
+SaturationAdjustmentYellow="360" alone error Profile setting SaturationAdjustmentYellow is out of range
+SaturationAdjustmentYellow="361" alone error Profile setting SaturationAdjustmentYellow is out of range
+SaturationAdjustmentYellow="1e-7" alone ok .hsl[2][1]=1e-9
+SaturationAdjustmentYellow="-1e-7" alone ok .hsl[2][1]=-1e-9
+SaturationAdjustmentYellow="inf" alone error Profile setting SaturationAdjustmentYellow is out of range
+SaturationAdjustmentYellow="x" alone error Invalid profile setting SaturationAdjustmentYellow: invalid float literal
+SaturationAdjustmentYellow="NaN" alone error Profile setting SaturationAdjustmentYellow is out of range
+# LuminanceAdjustmentYellow read true
+LuminanceAdjustmentYellow="" alone ok
+LuminanceAdjustmentYellow="0" alone ok
+LuminanceAdjustmentYellow="-0" alone ok .hsl[2][2]=-0.0
+LuminanceAdjustmentYellow="+0.5" alone ok .hsl[2][2]=0.005
+LuminanceAdjustmentYellow="-0.5" alone ok .hsl[2][2]=-0.005
+LuminanceAdjustmentYellow="1" alone ok .hsl[2][2]=0.01
+LuminanceAdjustmentYellow="2.4" alone ok .hsl[2][2]=0.024
+LuminanceAdjustmentYellow="4.99" alone ok .hsl[2][2]=0.0499
+LuminanceAdjustmentYellow="5" alone ok .hsl[2][2]=0.05
+LuminanceAdjustmentYellow="5.01" alone ok .hsl[2][2]=0.050100002
+LuminanceAdjustmentYellow="-5" alone ok .hsl[2][2]=-0.05
+LuminanceAdjustmentYellow="-5.01" alone ok .hsl[2][2]=-0.050100002
+LuminanceAdjustmentYellow="5.5" alone ok .hsl[2][2]=0.055
+LuminanceAdjustmentYellow="-12.5" alone ok .hsl[2][2]=-0.125
+LuminanceAdjustmentYellow="33.3" alone ok .hsl[2][2]=0.333
+LuminanceAdjustmentYellow="50" alone ok .hsl[2][2]=0.5
+LuminanceAdjustmentYellow="99.99" alone ok .hsl[2][2]=0.9999
+LuminanceAdjustmentYellow="-100" alone ok .hsl[2][2]=-1.0
+LuminanceAdjustmentYellow="100" alone ok .hsl[2][2]=1.0
+LuminanceAdjustmentYellow="100.01" alone error Profile setting LuminanceAdjustmentYellow is out of range
+LuminanceAdjustmentYellow="101" alone error Profile setting LuminanceAdjustmentYellow is out of range
+LuminanceAdjustmentYellow="180" alone error Profile setting LuminanceAdjustmentYellow is out of range
+LuminanceAdjustmentYellow="359" alone error Profile setting LuminanceAdjustmentYellow is out of range
+LuminanceAdjustmentYellow="360" alone error Profile setting LuminanceAdjustmentYellow is out of range
+LuminanceAdjustmentYellow="361" alone error Profile setting LuminanceAdjustmentYellow is out of range
+LuminanceAdjustmentYellow="1e-7" alone ok .hsl[2][2]=1e-9
+LuminanceAdjustmentYellow="-1e-7" alone ok .hsl[2][2]=-1e-9
+LuminanceAdjustmentYellow="inf" alone error Profile setting LuminanceAdjustmentYellow is out of range
+LuminanceAdjustmentYellow="x" alone error Invalid profile setting LuminanceAdjustmentYellow: invalid float literal
+LuminanceAdjustmentYellow="NaN" alone error Profile setting LuminanceAdjustmentYellow is out of range
+# HueAdjustmentGreen read true
+HueAdjustmentGreen="" alone ok
+HueAdjustmentGreen="0" alone ok
+HueAdjustmentGreen="-0" alone ok .hsl[3][0]=-0.0
+HueAdjustmentGreen="+0.5" alone ok .hsl[3][0]=0.005
+HueAdjustmentGreen="-0.5" alone ok .hsl[3][0]=-0.005
+HueAdjustmentGreen="1" alone ok .hsl[3][0]=0.01
+HueAdjustmentGreen="2.4" alone ok .hsl[3][0]=0.024
+HueAdjustmentGreen="4.99" alone ok .hsl[3][0]=0.0499
+HueAdjustmentGreen="5" alone ok .hsl[3][0]=0.05
+HueAdjustmentGreen="5.01" alone ok .hsl[3][0]=0.050100002
+HueAdjustmentGreen="-5" alone ok .hsl[3][0]=-0.05
+HueAdjustmentGreen="-5.01" alone ok .hsl[3][0]=-0.050100002
+HueAdjustmentGreen="5.5" alone ok .hsl[3][0]=0.055
+HueAdjustmentGreen="-12.5" alone ok .hsl[3][0]=-0.125
+HueAdjustmentGreen="33.3" alone ok .hsl[3][0]=0.333
+HueAdjustmentGreen="50" alone ok .hsl[3][0]=0.5
+HueAdjustmentGreen="99.99" alone ok .hsl[3][0]=0.9999
+HueAdjustmentGreen="-100" alone ok .hsl[3][0]=-1.0
+HueAdjustmentGreen="100" alone ok .hsl[3][0]=1.0
+HueAdjustmentGreen="100.01" alone error Profile setting HueAdjustmentGreen is out of range
+HueAdjustmentGreen="101" alone error Profile setting HueAdjustmentGreen is out of range
+HueAdjustmentGreen="180" alone error Profile setting HueAdjustmentGreen is out of range
+HueAdjustmentGreen="359" alone error Profile setting HueAdjustmentGreen is out of range
+HueAdjustmentGreen="360" alone error Profile setting HueAdjustmentGreen is out of range
+HueAdjustmentGreen="361" alone error Profile setting HueAdjustmentGreen is out of range
+HueAdjustmentGreen="1e-7" alone ok .hsl[3][0]=1e-9
+HueAdjustmentGreen="-1e-7" alone ok .hsl[3][0]=-1e-9
+HueAdjustmentGreen="inf" alone error Profile setting HueAdjustmentGreen is out of range
+HueAdjustmentGreen="x" alone error Invalid profile setting HueAdjustmentGreen: invalid float literal
+HueAdjustmentGreen="NaN" alone error Profile setting HueAdjustmentGreen is out of range
+# SaturationAdjustmentGreen read true
+SaturationAdjustmentGreen="" alone ok
+SaturationAdjustmentGreen="0" alone ok
+SaturationAdjustmentGreen="-0" alone ok .hsl[3][1]=-0.0
+SaturationAdjustmentGreen="+0.5" alone ok .hsl[3][1]=0.005
+SaturationAdjustmentGreen="-0.5" alone ok .hsl[3][1]=-0.005
+SaturationAdjustmentGreen="1" alone ok .hsl[3][1]=0.01
+SaturationAdjustmentGreen="2.4" alone ok .hsl[3][1]=0.024
+SaturationAdjustmentGreen="4.99" alone ok .hsl[3][1]=0.0499
+SaturationAdjustmentGreen="5" alone ok .hsl[3][1]=0.05
+SaturationAdjustmentGreen="5.01" alone ok .hsl[3][1]=0.050100002
+SaturationAdjustmentGreen="-5" alone ok .hsl[3][1]=-0.05
+SaturationAdjustmentGreen="-5.01" alone ok .hsl[3][1]=-0.050100002
+SaturationAdjustmentGreen="5.5" alone ok .hsl[3][1]=0.055
+SaturationAdjustmentGreen="-12.5" alone ok .hsl[3][1]=-0.125
+SaturationAdjustmentGreen="33.3" alone ok .hsl[3][1]=0.333
+SaturationAdjustmentGreen="50" alone ok .hsl[3][1]=0.5
+SaturationAdjustmentGreen="99.99" alone ok .hsl[3][1]=0.9999
+SaturationAdjustmentGreen="-100" alone ok .hsl[3][1]=-1.0
+SaturationAdjustmentGreen="100" alone ok .hsl[3][1]=1.0
+SaturationAdjustmentGreen="100.01" alone error Profile setting SaturationAdjustmentGreen is out of range
+SaturationAdjustmentGreen="101" alone error Profile setting SaturationAdjustmentGreen is out of range
+SaturationAdjustmentGreen="180" alone error Profile setting SaturationAdjustmentGreen is out of range
+SaturationAdjustmentGreen="359" alone error Profile setting SaturationAdjustmentGreen is out of range
+SaturationAdjustmentGreen="360" alone error Profile setting SaturationAdjustmentGreen is out of range
+SaturationAdjustmentGreen="361" alone error Profile setting SaturationAdjustmentGreen is out of range
+SaturationAdjustmentGreen="1e-7" alone ok .hsl[3][1]=1e-9
+SaturationAdjustmentGreen="-1e-7" alone ok .hsl[3][1]=-1e-9
+SaturationAdjustmentGreen="inf" alone error Profile setting SaturationAdjustmentGreen is out of range
+SaturationAdjustmentGreen="x" alone error Invalid profile setting SaturationAdjustmentGreen: invalid float literal
+SaturationAdjustmentGreen="NaN" alone error Profile setting SaturationAdjustmentGreen is out of range
+# LuminanceAdjustmentGreen read true
+LuminanceAdjustmentGreen="" alone ok
+LuminanceAdjustmentGreen="0" alone ok
+LuminanceAdjustmentGreen="-0" alone ok .hsl[3][2]=-0.0
+LuminanceAdjustmentGreen="+0.5" alone ok .hsl[3][2]=0.005
+LuminanceAdjustmentGreen="-0.5" alone ok .hsl[3][2]=-0.005
+LuminanceAdjustmentGreen="1" alone ok .hsl[3][2]=0.01
+LuminanceAdjustmentGreen="2.4" alone ok .hsl[3][2]=0.024
+LuminanceAdjustmentGreen="4.99" alone ok .hsl[3][2]=0.0499
+LuminanceAdjustmentGreen="5" alone ok .hsl[3][2]=0.05
+LuminanceAdjustmentGreen="5.01" alone ok .hsl[3][2]=0.050100002
+LuminanceAdjustmentGreen="-5" alone ok .hsl[3][2]=-0.05
+LuminanceAdjustmentGreen="-5.01" alone ok .hsl[3][2]=-0.050100002
+LuminanceAdjustmentGreen="5.5" alone ok .hsl[3][2]=0.055
+LuminanceAdjustmentGreen="-12.5" alone ok .hsl[3][2]=-0.125
+LuminanceAdjustmentGreen="33.3" alone ok .hsl[3][2]=0.333
+LuminanceAdjustmentGreen="50" alone ok .hsl[3][2]=0.5
+LuminanceAdjustmentGreen="99.99" alone ok .hsl[3][2]=0.9999
+LuminanceAdjustmentGreen="-100" alone ok .hsl[3][2]=-1.0
+LuminanceAdjustmentGreen="100" alone ok .hsl[3][2]=1.0
+LuminanceAdjustmentGreen="100.01" alone error Profile setting LuminanceAdjustmentGreen is out of range
+LuminanceAdjustmentGreen="101" alone error Profile setting LuminanceAdjustmentGreen is out of range
+LuminanceAdjustmentGreen="180" alone error Profile setting LuminanceAdjustmentGreen is out of range
+LuminanceAdjustmentGreen="359" alone error Profile setting LuminanceAdjustmentGreen is out of range
+LuminanceAdjustmentGreen="360" alone error Profile setting LuminanceAdjustmentGreen is out of range
+LuminanceAdjustmentGreen="361" alone error Profile setting LuminanceAdjustmentGreen is out of range
+LuminanceAdjustmentGreen="1e-7" alone ok .hsl[3][2]=1e-9
+LuminanceAdjustmentGreen="-1e-7" alone ok .hsl[3][2]=-1e-9
+LuminanceAdjustmentGreen="inf" alone error Profile setting LuminanceAdjustmentGreen is out of range
+LuminanceAdjustmentGreen="x" alone error Invalid profile setting LuminanceAdjustmentGreen: invalid float literal
+LuminanceAdjustmentGreen="NaN" alone error Profile setting LuminanceAdjustmentGreen is out of range
+# HueAdjustmentAqua read true
+HueAdjustmentAqua="" alone ok
+HueAdjustmentAqua="0" alone ok
+HueAdjustmentAqua="-0" alone ok .hsl[4][0]=-0.0
+HueAdjustmentAqua="+0.5" alone ok .hsl[4][0]=0.005
+HueAdjustmentAqua="-0.5" alone ok .hsl[4][0]=-0.005
+HueAdjustmentAqua="1" alone ok .hsl[4][0]=0.01
+HueAdjustmentAqua="2.4" alone ok .hsl[4][0]=0.024
+HueAdjustmentAqua="4.99" alone ok .hsl[4][0]=0.0499
+HueAdjustmentAqua="5" alone ok .hsl[4][0]=0.05
+HueAdjustmentAqua="5.01" alone ok .hsl[4][0]=0.050100002
+HueAdjustmentAqua="-5" alone ok .hsl[4][0]=-0.05
+HueAdjustmentAqua="-5.01" alone ok .hsl[4][0]=-0.050100002
+HueAdjustmentAqua="5.5" alone ok .hsl[4][0]=0.055
+HueAdjustmentAqua="-12.5" alone ok .hsl[4][0]=-0.125
+HueAdjustmentAqua="33.3" alone ok .hsl[4][0]=0.333
+HueAdjustmentAqua="50" alone ok .hsl[4][0]=0.5
+HueAdjustmentAqua="99.99" alone ok .hsl[4][0]=0.9999
+HueAdjustmentAqua="-100" alone ok .hsl[4][0]=-1.0
+HueAdjustmentAqua="100" alone ok .hsl[4][0]=1.0
+HueAdjustmentAqua="100.01" alone error Profile setting HueAdjustmentAqua is out of range
+HueAdjustmentAqua="101" alone error Profile setting HueAdjustmentAqua is out of range
+HueAdjustmentAqua="180" alone error Profile setting HueAdjustmentAqua is out of range
+HueAdjustmentAqua="359" alone error Profile setting HueAdjustmentAqua is out of range
+HueAdjustmentAqua="360" alone error Profile setting HueAdjustmentAqua is out of range
+HueAdjustmentAqua="361" alone error Profile setting HueAdjustmentAqua is out of range
+HueAdjustmentAqua="1e-7" alone ok .hsl[4][0]=1e-9
+HueAdjustmentAqua="-1e-7" alone ok .hsl[4][0]=-1e-9
+HueAdjustmentAqua="inf" alone error Profile setting HueAdjustmentAqua is out of range
+HueAdjustmentAqua="x" alone error Invalid profile setting HueAdjustmentAqua: invalid float literal
+HueAdjustmentAqua="NaN" alone error Profile setting HueAdjustmentAqua is out of range
+# SaturationAdjustmentAqua read true
+SaturationAdjustmentAqua="" alone ok
+SaturationAdjustmentAqua="0" alone ok
+SaturationAdjustmentAqua="-0" alone ok .hsl[4][1]=-0.0
+SaturationAdjustmentAqua="+0.5" alone ok .hsl[4][1]=0.005
+SaturationAdjustmentAqua="-0.5" alone ok .hsl[4][1]=-0.005
+SaturationAdjustmentAqua="1" alone ok .hsl[4][1]=0.01
+SaturationAdjustmentAqua="2.4" alone ok .hsl[4][1]=0.024
+SaturationAdjustmentAqua="4.99" alone ok .hsl[4][1]=0.0499
+SaturationAdjustmentAqua="5" alone ok .hsl[4][1]=0.05
+SaturationAdjustmentAqua="5.01" alone ok .hsl[4][1]=0.050100002
+SaturationAdjustmentAqua="-5" alone ok .hsl[4][1]=-0.05
+SaturationAdjustmentAqua="-5.01" alone ok .hsl[4][1]=-0.050100002
+SaturationAdjustmentAqua="5.5" alone ok .hsl[4][1]=0.055
+SaturationAdjustmentAqua="-12.5" alone ok .hsl[4][1]=-0.125
+SaturationAdjustmentAqua="33.3" alone ok .hsl[4][1]=0.333
+SaturationAdjustmentAqua="50" alone ok .hsl[4][1]=0.5
+SaturationAdjustmentAqua="99.99" alone ok .hsl[4][1]=0.9999
+SaturationAdjustmentAqua="-100" alone ok .hsl[4][1]=-1.0
+SaturationAdjustmentAqua="100" alone ok .hsl[4][1]=1.0
+SaturationAdjustmentAqua="100.01" alone error Profile setting SaturationAdjustmentAqua is out of range
+SaturationAdjustmentAqua="101" alone error Profile setting SaturationAdjustmentAqua is out of range
+SaturationAdjustmentAqua="180" alone error Profile setting SaturationAdjustmentAqua is out of range
+SaturationAdjustmentAqua="359" alone error Profile setting SaturationAdjustmentAqua is out of range
+SaturationAdjustmentAqua="360" alone error Profile setting SaturationAdjustmentAqua is out of range
+SaturationAdjustmentAqua="361" alone error Profile setting SaturationAdjustmentAqua is out of range
+SaturationAdjustmentAqua="1e-7" alone ok .hsl[4][1]=1e-9
+SaturationAdjustmentAqua="-1e-7" alone ok .hsl[4][1]=-1e-9
+SaturationAdjustmentAqua="inf" alone error Profile setting SaturationAdjustmentAqua is out of range
+SaturationAdjustmentAqua="x" alone error Invalid profile setting SaturationAdjustmentAqua: invalid float literal
+SaturationAdjustmentAqua="NaN" alone error Profile setting SaturationAdjustmentAqua is out of range
+# LuminanceAdjustmentAqua read true
+LuminanceAdjustmentAqua="" alone ok
+LuminanceAdjustmentAqua="0" alone ok
+LuminanceAdjustmentAqua="-0" alone ok .hsl[4][2]=-0.0
+LuminanceAdjustmentAqua="+0.5" alone ok .hsl[4][2]=0.005
+LuminanceAdjustmentAqua="-0.5" alone ok .hsl[4][2]=-0.005
+LuminanceAdjustmentAqua="1" alone ok .hsl[4][2]=0.01
+LuminanceAdjustmentAqua="2.4" alone ok .hsl[4][2]=0.024
+LuminanceAdjustmentAqua="4.99" alone ok .hsl[4][2]=0.0499
+LuminanceAdjustmentAqua="5" alone ok .hsl[4][2]=0.05
+LuminanceAdjustmentAqua="5.01" alone ok .hsl[4][2]=0.050100002
+LuminanceAdjustmentAqua="-5" alone ok .hsl[4][2]=-0.05
+LuminanceAdjustmentAqua="-5.01" alone ok .hsl[4][2]=-0.050100002
+LuminanceAdjustmentAqua="5.5" alone ok .hsl[4][2]=0.055
+LuminanceAdjustmentAqua="-12.5" alone ok .hsl[4][2]=-0.125
+LuminanceAdjustmentAqua="33.3" alone ok .hsl[4][2]=0.333
+LuminanceAdjustmentAqua="50" alone ok .hsl[4][2]=0.5
+LuminanceAdjustmentAqua="99.99" alone ok .hsl[4][2]=0.9999
+LuminanceAdjustmentAqua="-100" alone ok .hsl[4][2]=-1.0
+LuminanceAdjustmentAqua="100" alone ok .hsl[4][2]=1.0
+LuminanceAdjustmentAqua="100.01" alone error Profile setting LuminanceAdjustmentAqua is out of range
+LuminanceAdjustmentAqua="101" alone error Profile setting LuminanceAdjustmentAqua is out of range
+LuminanceAdjustmentAqua="180" alone error Profile setting LuminanceAdjustmentAqua is out of range
+LuminanceAdjustmentAqua="359" alone error Profile setting LuminanceAdjustmentAqua is out of range
+LuminanceAdjustmentAqua="360" alone error Profile setting LuminanceAdjustmentAqua is out of range
+LuminanceAdjustmentAqua="361" alone error Profile setting LuminanceAdjustmentAqua is out of range
+LuminanceAdjustmentAqua="1e-7" alone ok .hsl[4][2]=1e-9
+LuminanceAdjustmentAqua="-1e-7" alone ok .hsl[4][2]=-1e-9
+LuminanceAdjustmentAqua="inf" alone error Profile setting LuminanceAdjustmentAqua is out of range
+LuminanceAdjustmentAqua="x" alone error Invalid profile setting LuminanceAdjustmentAqua: invalid float literal
+LuminanceAdjustmentAqua="NaN" alone error Profile setting LuminanceAdjustmentAqua is out of range
+# HueAdjustmentBlue read true
+HueAdjustmentBlue="" alone ok
+HueAdjustmentBlue="0" alone ok
+HueAdjustmentBlue="-0" alone ok .hsl[5][0]=-0.0
+HueAdjustmentBlue="+0.5" alone ok .hsl[5][0]=0.005
+HueAdjustmentBlue="-0.5" alone ok .hsl[5][0]=-0.005
+HueAdjustmentBlue="1" alone ok .hsl[5][0]=0.01
+HueAdjustmentBlue="2.4" alone ok .hsl[5][0]=0.024
+HueAdjustmentBlue="4.99" alone ok .hsl[5][0]=0.0499
+HueAdjustmentBlue="5" alone ok .hsl[5][0]=0.05
+HueAdjustmentBlue="5.01" alone ok .hsl[5][0]=0.050100002
+HueAdjustmentBlue="-5" alone ok .hsl[5][0]=-0.05
+HueAdjustmentBlue="-5.01" alone ok .hsl[5][0]=-0.050100002
+HueAdjustmentBlue="5.5" alone ok .hsl[5][0]=0.055
+HueAdjustmentBlue="-12.5" alone ok .hsl[5][0]=-0.125
+HueAdjustmentBlue="33.3" alone ok .hsl[5][0]=0.333
+HueAdjustmentBlue="50" alone ok .hsl[5][0]=0.5
+HueAdjustmentBlue="99.99" alone ok .hsl[5][0]=0.9999
+HueAdjustmentBlue="-100" alone ok .hsl[5][0]=-1.0
+HueAdjustmentBlue="100" alone ok .hsl[5][0]=1.0
+HueAdjustmentBlue="100.01" alone error Profile setting HueAdjustmentBlue is out of range
+HueAdjustmentBlue="101" alone error Profile setting HueAdjustmentBlue is out of range
+HueAdjustmentBlue="180" alone error Profile setting HueAdjustmentBlue is out of range
+HueAdjustmentBlue="359" alone error Profile setting HueAdjustmentBlue is out of range
+HueAdjustmentBlue="360" alone error Profile setting HueAdjustmentBlue is out of range
+HueAdjustmentBlue="361" alone error Profile setting HueAdjustmentBlue is out of range
+HueAdjustmentBlue="1e-7" alone ok .hsl[5][0]=1e-9
+HueAdjustmentBlue="-1e-7" alone ok .hsl[5][0]=-1e-9
+HueAdjustmentBlue="inf" alone error Profile setting HueAdjustmentBlue is out of range
+HueAdjustmentBlue="x" alone error Invalid profile setting HueAdjustmentBlue: invalid float literal
+HueAdjustmentBlue="NaN" alone error Profile setting HueAdjustmentBlue is out of range
+# SaturationAdjustmentBlue read true
+SaturationAdjustmentBlue="" alone ok
+SaturationAdjustmentBlue="0" alone ok
+SaturationAdjustmentBlue="-0" alone ok .hsl[5][1]=-0.0
+SaturationAdjustmentBlue="+0.5" alone ok .hsl[5][1]=0.005
+SaturationAdjustmentBlue="-0.5" alone ok .hsl[5][1]=-0.005
+SaturationAdjustmentBlue="1" alone ok .hsl[5][1]=0.01
+SaturationAdjustmentBlue="2.4" alone ok .hsl[5][1]=0.024
+SaturationAdjustmentBlue="4.99" alone ok .hsl[5][1]=0.0499
+SaturationAdjustmentBlue="5" alone ok .hsl[5][1]=0.05
+SaturationAdjustmentBlue="5.01" alone ok .hsl[5][1]=0.050100002
+SaturationAdjustmentBlue="-5" alone ok .hsl[5][1]=-0.05
+SaturationAdjustmentBlue="-5.01" alone ok .hsl[5][1]=-0.050100002
+SaturationAdjustmentBlue="5.5" alone ok .hsl[5][1]=0.055
+SaturationAdjustmentBlue="-12.5" alone ok .hsl[5][1]=-0.125
+SaturationAdjustmentBlue="33.3" alone ok .hsl[5][1]=0.333
+SaturationAdjustmentBlue="50" alone ok .hsl[5][1]=0.5
+SaturationAdjustmentBlue="99.99" alone ok .hsl[5][1]=0.9999
+SaturationAdjustmentBlue="-100" alone ok .hsl[5][1]=-1.0
+SaturationAdjustmentBlue="100" alone ok .hsl[5][1]=1.0
+SaturationAdjustmentBlue="100.01" alone error Profile setting SaturationAdjustmentBlue is out of range
+SaturationAdjustmentBlue="101" alone error Profile setting SaturationAdjustmentBlue is out of range
+SaturationAdjustmentBlue="180" alone error Profile setting SaturationAdjustmentBlue is out of range
+SaturationAdjustmentBlue="359" alone error Profile setting SaturationAdjustmentBlue is out of range
+SaturationAdjustmentBlue="360" alone error Profile setting SaturationAdjustmentBlue is out of range
+SaturationAdjustmentBlue="361" alone error Profile setting SaturationAdjustmentBlue is out of range
+SaturationAdjustmentBlue="1e-7" alone ok .hsl[5][1]=1e-9
+SaturationAdjustmentBlue="-1e-7" alone ok .hsl[5][1]=-1e-9
+SaturationAdjustmentBlue="inf" alone error Profile setting SaturationAdjustmentBlue is out of range
+SaturationAdjustmentBlue="x" alone error Invalid profile setting SaturationAdjustmentBlue: invalid float literal
+SaturationAdjustmentBlue="NaN" alone error Profile setting SaturationAdjustmentBlue is out of range
+# LuminanceAdjustmentBlue read true
+LuminanceAdjustmentBlue="" alone ok
+LuminanceAdjustmentBlue="0" alone ok
+LuminanceAdjustmentBlue="-0" alone ok .hsl[5][2]=-0.0
+LuminanceAdjustmentBlue="+0.5" alone ok .hsl[5][2]=0.005
+LuminanceAdjustmentBlue="-0.5" alone ok .hsl[5][2]=-0.005
+LuminanceAdjustmentBlue="1" alone ok .hsl[5][2]=0.01
+LuminanceAdjustmentBlue="2.4" alone ok .hsl[5][2]=0.024
+LuminanceAdjustmentBlue="4.99" alone ok .hsl[5][2]=0.0499
+LuminanceAdjustmentBlue="5" alone ok .hsl[5][2]=0.05
+LuminanceAdjustmentBlue="5.01" alone ok .hsl[5][2]=0.050100002
+LuminanceAdjustmentBlue="-5" alone ok .hsl[5][2]=-0.05
+LuminanceAdjustmentBlue="-5.01" alone ok .hsl[5][2]=-0.050100002
+LuminanceAdjustmentBlue="5.5" alone ok .hsl[5][2]=0.055
+LuminanceAdjustmentBlue="-12.5" alone ok .hsl[5][2]=-0.125
+LuminanceAdjustmentBlue="33.3" alone ok .hsl[5][2]=0.333
+LuminanceAdjustmentBlue="50" alone ok .hsl[5][2]=0.5
+LuminanceAdjustmentBlue="99.99" alone ok .hsl[5][2]=0.9999
+LuminanceAdjustmentBlue="-100" alone ok .hsl[5][2]=-1.0
+LuminanceAdjustmentBlue="100" alone ok .hsl[5][2]=1.0
+LuminanceAdjustmentBlue="100.01" alone error Profile setting LuminanceAdjustmentBlue is out of range
+LuminanceAdjustmentBlue="101" alone error Profile setting LuminanceAdjustmentBlue is out of range
+LuminanceAdjustmentBlue="180" alone error Profile setting LuminanceAdjustmentBlue is out of range
+LuminanceAdjustmentBlue="359" alone error Profile setting LuminanceAdjustmentBlue is out of range
+LuminanceAdjustmentBlue="360" alone error Profile setting LuminanceAdjustmentBlue is out of range
+LuminanceAdjustmentBlue="361" alone error Profile setting LuminanceAdjustmentBlue is out of range
+LuminanceAdjustmentBlue="1e-7" alone ok .hsl[5][2]=1e-9
+LuminanceAdjustmentBlue="-1e-7" alone ok .hsl[5][2]=-1e-9
+LuminanceAdjustmentBlue="inf" alone error Profile setting LuminanceAdjustmentBlue is out of range
+LuminanceAdjustmentBlue="x" alone error Invalid profile setting LuminanceAdjustmentBlue: invalid float literal
+LuminanceAdjustmentBlue="NaN" alone error Profile setting LuminanceAdjustmentBlue is out of range
+# HueAdjustmentPurple read true
+HueAdjustmentPurple="" alone ok
+HueAdjustmentPurple="0" alone ok
+HueAdjustmentPurple="-0" alone ok .hsl[6][0]=-0.0
+HueAdjustmentPurple="+0.5" alone ok .hsl[6][0]=0.005
+HueAdjustmentPurple="-0.5" alone ok .hsl[6][0]=-0.005
+HueAdjustmentPurple="1" alone ok .hsl[6][0]=0.01
+HueAdjustmentPurple="2.4" alone ok .hsl[6][0]=0.024
+HueAdjustmentPurple="4.99" alone ok .hsl[6][0]=0.0499
+HueAdjustmentPurple="5" alone ok .hsl[6][0]=0.05
+HueAdjustmentPurple="5.01" alone ok .hsl[6][0]=0.050100002
+HueAdjustmentPurple="-5" alone ok .hsl[6][0]=-0.05
+HueAdjustmentPurple="-5.01" alone ok .hsl[6][0]=-0.050100002
+HueAdjustmentPurple="5.5" alone ok .hsl[6][0]=0.055
+HueAdjustmentPurple="-12.5" alone ok .hsl[6][0]=-0.125
+HueAdjustmentPurple="33.3" alone ok .hsl[6][0]=0.333
+HueAdjustmentPurple="50" alone ok .hsl[6][0]=0.5
+HueAdjustmentPurple="99.99" alone ok .hsl[6][0]=0.9999
+HueAdjustmentPurple="-100" alone ok .hsl[6][0]=-1.0
+HueAdjustmentPurple="100" alone ok .hsl[6][0]=1.0
+HueAdjustmentPurple="100.01" alone error Profile setting HueAdjustmentPurple is out of range
+HueAdjustmentPurple="101" alone error Profile setting HueAdjustmentPurple is out of range
+HueAdjustmentPurple="180" alone error Profile setting HueAdjustmentPurple is out of range
+HueAdjustmentPurple="359" alone error Profile setting HueAdjustmentPurple is out of range
+HueAdjustmentPurple="360" alone error Profile setting HueAdjustmentPurple is out of range
+HueAdjustmentPurple="361" alone error Profile setting HueAdjustmentPurple is out of range
+HueAdjustmentPurple="1e-7" alone ok .hsl[6][0]=1e-9
+HueAdjustmentPurple="-1e-7" alone ok .hsl[6][0]=-1e-9
+HueAdjustmentPurple="inf" alone error Profile setting HueAdjustmentPurple is out of range
+HueAdjustmentPurple="x" alone error Invalid profile setting HueAdjustmentPurple: invalid float literal
+HueAdjustmentPurple="NaN" alone error Profile setting HueAdjustmentPurple is out of range
+# SaturationAdjustmentPurple read true
+SaturationAdjustmentPurple="" alone ok
+SaturationAdjustmentPurple="0" alone ok
+SaturationAdjustmentPurple="-0" alone ok .hsl[6][1]=-0.0
+SaturationAdjustmentPurple="+0.5" alone ok .hsl[6][1]=0.005
+SaturationAdjustmentPurple="-0.5" alone ok .hsl[6][1]=-0.005
+SaturationAdjustmentPurple="1" alone ok .hsl[6][1]=0.01
+SaturationAdjustmentPurple="2.4" alone ok .hsl[6][1]=0.024
+SaturationAdjustmentPurple="4.99" alone ok .hsl[6][1]=0.0499
+SaturationAdjustmentPurple="5" alone ok .hsl[6][1]=0.05
+SaturationAdjustmentPurple="5.01" alone ok .hsl[6][1]=0.050100002
+SaturationAdjustmentPurple="-5" alone ok .hsl[6][1]=-0.05
+SaturationAdjustmentPurple="-5.01" alone ok .hsl[6][1]=-0.050100002
+SaturationAdjustmentPurple="5.5" alone ok .hsl[6][1]=0.055
+SaturationAdjustmentPurple="-12.5" alone ok .hsl[6][1]=-0.125
+SaturationAdjustmentPurple="33.3" alone ok .hsl[6][1]=0.333
+SaturationAdjustmentPurple="50" alone ok .hsl[6][1]=0.5
+SaturationAdjustmentPurple="99.99" alone ok .hsl[6][1]=0.9999
+SaturationAdjustmentPurple="-100" alone ok .hsl[6][1]=-1.0
+SaturationAdjustmentPurple="100" alone ok .hsl[6][1]=1.0
+SaturationAdjustmentPurple="100.01" alone error Profile setting SaturationAdjustmentPurple is out of range
+SaturationAdjustmentPurple="101" alone error Profile setting SaturationAdjustmentPurple is out of range
+SaturationAdjustmentPurple="180" alone error Profile setting SaturationAdjustmentPurple is out of range
+SaturationAdjustmentPurple="359" alone error Profile setting SaturationAdjustmentPurple is out of range
+SaturationAdjustmentPurple="360" alone error Profile setting SaturationAdjustmentPurple is out of range
+SaturationAdjustmentPurple="361" alone error Profile setting SaturationAdjustmentPurple is out of range
+SaturationAdjustmentPurple="1e-7" alone ok .hsl[6][1]=1e-9
+SaturationAdjustmentPurple="-1e-7" alone ok .hsl[6][1]=-1e-9
+SaturationAdjustmentPurple="inf" alone error Profile setting SaturationAdjustmentPurple is out of range
+SaturationAdjustmentPurple="x" alone error Invalid profile setting SaturationAdjustmentPurple: invalid float literal
+SaturationAdjustmentPurple="NaN" alone error Profile setting SaturationAdjustmentPurple is out of range
+# LuminanceAdjustmentPurple read true
+LuminanceAdjustmentPurple="" alone ok
+LuminanceAdjustmentPurple="0" alone ok
+LuminanceAdjustmentPurple="-0" alone ok .hsl[6][2]=-0.0
+LuminanceAdjustmentPurple="+0.5" alone ok .hsl[6][2]=0.005
+LuminanceAdjustmentPurple="-0.5" alone ok .hsl[6][2]=-0.005
+LuminanceAdjustmentPurple="1" alone ok .hsl[6][2]=0.01
+LuminanceAdjustmentPurple="2.4" alone ok .hsl[6][2]=0.024
+LuminanceAdjustmentPurple="4.99" alone ok .hsl[6][2]=0.0499
+LuminanceAdjustmentPurple="5" alone ok .hsl[6][2]=0.05
+LuminanceAdjustmentPurple="5.01" alone ok .hsl[6][2]=0.050100002
+LuminanceAdjustmentPurple="-5" alone ok .hsl[6][2]=-0.05
+LuminanceAdjustmentPurple="-5.01" alone ok .hsl[6][2]=-0.050100002
+LuminanceAdjustmentPurple="5.5" alone ok .hsl[6][2]=0.055
+LuminanceAdjustmentPurple="-12.5" alone ok .hsl[6][2]=-0.125
+LuminanceAdjustmentPurple="33.3" alone ok .hsl[6][2]=0.333
+LuminanceAdjustmentPurple="50" alone ok .hsl[6][2]=0.5
+LuminanceAdjustmentPurple="99.99" alone ok .hsl[6][2]=0.9999
+LuminanceAdjustmentPurple="-100" alone ok .hsl[6][2]=-1.0
+LuminanceAdjustmentPurple="100" alone ok .hsl[6][2]=1.0
+LuminanceAdjustmentPurple="100.01" alone error Profile setting LuminanceAdjustmentPurple is out of range
+LuminanceAdjustmentPurple="101" alone error Profile setting LuminanceAdjustmentPurple is out of range
+LuminanceAdjustmentPurple="180" alone error Profile setting LuminanceAdjustmentPurple is out of range
+LuminanceAdjustmentPurple="359" alone error Profile setting LuminanceAdjustmentPurple is out of range
+LuminanceAdjustmentPurple="360" alone error Profile setting LuminanceAdjustmentPurple is out of range
+LuminanceAdjustmentPurple="361" alone error Profile setting LuminanceAdjustmentPurple is out of range
+LuminanceAdjustmentPurple="1e-7" alone ok .hsl[6][2]=1e-9
+LuminanceAdjustmentPurple="-1e-7" alone ok .hsl[6][2]=-1e-9
+LuminanceAdjustmentPurple="inf" alone error Profile setting LuminanceAdjustmentPurple is out of range
+LuminanceAdjustmentPurple="x" alone error Invalid profile setting LuminanceAdjustmentPurple: invalid float literal
+LuminanceAdjustmentPurple="NaN" alone error Profile setting LuminanceAdjustmentPurple is out of range
+# HueAdjustmentMagenta read true
+HueAdjustmentMagenta="" alone ok
+HueAdjustmentMagenta="0" alone ok
+HueAdjustmentMagenta="-0" alone ok .hsl[7][0]=-0.0
+HueAdjustmentMagenta="+0.5" alone ok .hsl[7][0]=0.005
+HueAdjustmentMagenta="-0.5" alone ok .hsl[7][0]=-0.005
+HueAdjustmentMagenta="1" alone ok .hsl[7][0]=0.01
+HueAdjustmentMagenta="2.4" alone ok .hsl[7][0]=0.024
+HueAdjustmentMagenta="4.99" alone ok .hsl[7][0]=0.0499
+HueAdjustmentMagenta="5" alone ok .hsl[7][0]=0.05
+HueAdjustmentMagenta="5.01" alone ok .hsl[7][0]=0.050100002
+HueAdjustmentMagenta="-5" alone ok .hsl[7][0]=-0.05
+HueAdjustmentMagenta="-5.01" alone ok .hsl[7][0]=-0.050100002
+HueAdjustmentMagenta="5.5" alone ok .hsl[7][0]=0.055
+HueAdjustmentMagenta="-12.5" alone ok .hsl[7][0]=-0.125
+HueAdjustmentMagenta="33.3" alone ok .hsl[7][0]=0.333
+HueAdjustmentMagenta="50" alone ok .hsl[7][0]=0.5
+HueAdjustmentMagenta="99.99" alone ok .hsl[7][0]=0.9999
+HueAdjustmentMagenta="-100" alone ok .hsl[7][0]=-1.0
+HueAdjustmentMagenta="100" alone ok .hsl[7][0]=1.0
+HueAdjustmentMagenta="100.01" alone error Profile setting HueAdjustmentMagenta is out of range
+HueAdjustmentMagenta="101" alone error Profile setting HueAdjustmentMagenta is out of range
+HueAdjustmentMagenta="180" alone error Profile setting HueAdjustmentMagenta is out of range
+HueAdjustmentMagenta="359" alone error Profile setting HueAdjustmentMagenta is out of range
+HueAdjustmentMagenta="360" alone error Profile setting HueAdjustmentMagenta is out of range
+HueAdjustmentMagenta="361" alone error Profile setting HueAdjustmentMagenta is out of range
+HueAdjustmentMagenta="1e-7" alone ok .hsl[7][0]=1e-9
+HueAdjustmentMagenta="-1e-7" alone ok .hsl[7][0]=-1e-9
+HueAdjustmentMagenta="inf" alone error Profile setting HueAdjustmentMagenta is out of range
+HueAdjustmentMagenta="x" alone error Invalid profile setting HueAdjustmentMagenta: invalid float literal
+HueAdjustmentMagenta="NaN" alone error Profile setting HueAdjustmentMagenta is out of range
+# SaturationAdjustmentMagenta read true
+SaturationAdjustmentMagenta="" alone ok
+SaturationAdjustmentMagenta="0" alone ok
+SaturationAdjustmentMagenta="-0" alone ok .hsl[7][1]=-0.0
+SaturationAdjustmentMagenta="+0.5" alone ok .hsl[7][1]=0.005
+SaturationAdjustmentMagenta="-0.5" alone ok .hsl[7][1]=-0.005
+SaturationAdjustmentMagenta="1" alone ok .hsl[7][1]=0.01
+SaturationAdjustmentMagenta="2.4" alone ok .hsl[7][1]=0.024
+SaturationAdjustmentMagenta="4.99" alone ok .hsl[7][1]=0.0499
+SaturationAdjustmentMagenta="5" alone ok .hsl[7][1]=0.05
+SaturationAdjustmentMagenta="5.01" alone ok .hsl[7][1]=0.050100002
+SaturationAdjustmentMagenta="-5" alone ok .hsl[7][1]=-0.05
+SaturationAdjustmentMagenta="-5.01" alone ok .hsl[7][1]=-0.050100002
+SaturationAdjustmentMagenta="5.5" alone ok .hsl[7][1]=0.055
+SaturationAdjustmentMagenta="-12.5" alone ok .hsl[7][1]=-0.125
+SaturationAdjustmentMagenta="33.3" alone ok .hsl[7][1]=0.333
+SaturationAdjustmentMagenta="50" alone ok .hsl[7][1]=0.5
+SaturationAdjustmentMagenta="99.99" alone ok .hsl[7][1]=0.9999
+SaturationAdjustmentMagenta="-100" alone ok .hsl[7][1]=-1.0
+SaturationAdjustmentMagenta="100" alone ok .hsl[7][1]=1.0
+SaturationAdjustmentMagenta="100.01" alone error Profile setting SaturationAdjustmentMagenta is out of range
+SaturationAdjustmentMagenta="101" alone error Profile setting SaturationAdjustmentMagenta is out of range
+SaturationAdjustmentMagenta="180" alone error Profile setting SaturationAdjustmentMagenta is out of range
+SaturationAdjustmentMagenta="359" alone error Profile setting SaturationAdjustmentMagenta is out of range
+SaturationAdjustmentMagenta="360" alone error Profile setting SaturationAdjustmentMagenta is out of range
+SaturationAdjustmentMagenta="361" alone error Profile setting SaturationAdjustmentMagenta is out of range
+SaturationAdjustmentMagenta="1e-7" alone ok .hsl[7][1]=1e-9
+SaturationAdjustmentMagenta="-1e-7" alone ok .hsl[7][1]=-1e-9
+SaturationAdjustmentMagenta="inf" alone error Profile setting SaturationAdjustmentMagenta is out of range
+SaturationAdjustmentMagenta="x" alone error Invalid profile setting SaturationAdjustmentMagenta: invalid float literal
+SaturationAdjustmentMagenta="NaN" alone error Profile setting SaturationAdjustmentMagenta is out of range
+# LuminanceAdjustmentMagenta read true
+LuminanceAdjustmentMagenta="" alone ok
+LuminanceAdjustmentMagenta="0" alone ok
+LuminanceAdjustmentMagenta="-0" alone ok .hsl[7][2]=-0.0
+LuminanceAdjustmentMagenta="+0.5" alone ok .hsl[7][2]=0.005
+LuminanceAdjustmentMagenta="-0.5" alone ok .hsl[7][2]=-0.005
+LuminanceAdjustmentMagenta="1" alone ok .hsl[7][2]=0.01
+LuminanceAdjustmentMagenta="2.4" alone ok .hsl[7][2]=0.024
+LuminanceAdjustmentMagenta="4.99" alone ok .hsl[7][2]=0.0499
+LuminanceAdjustmentMagenta="5" alone ok .hsl[7][2]=0.05
+LuminanceAdjustmentMagenta="5.01" alone ok .hsl[7][2]=0.050100002
+LuminanceAdjustmentMagenta="-5" alone ok .hsl[7][2]=-0.05
+LuminanceAdjustmentMagenta="-5.01" alone ok .hsl[7][2]=-0.050100002
+LuminanceAdjustmentMagenta="5.5" alone ok .hsl[7][2]=0.055
+LuminanceAdjustmentMagenta="-12.5" alone ok .hsl[7][2]=-0.125
+LuminanceAdjustmentMagenta="33.3" alone ok .hsl[7][2]=0.333
+LuminanceAdjustmentMagenta="50" alone ok .hsl[7][2]=0.5
+LuminanceAdjustmentMagenta="99.99" alone ok .hsl[7][2]=0.9999
+LuminanceAdjustmentMagenta="-100" alone ok .hsl[7][2]=-1.0
+LuminanceAdjustmentMagenta="100" alone ok .hsl[7][2]=1.0
+LuminanceAdjustmentMagenta="100.01" alone error Profile setting LuminanceAdjustmentMagenta is out of range
+LuminanceAdjustmentMagenta="101" alone error Profile setting LuminanceAdjustmentMagenta is out of range
+LuminanceAdjustmentMagenta="180" alone error Profile setting LuminanceAdjustmentMagenta is out of range
+LuminanceAdjustmentMagenta="359" alone error Profile setting LuminanceAdjustmentMagenta is out of range
+LuminanceAdjustmentMagenta="360" alone error Profile setting LuminanceAdjustmentMagenta is out of range
+LuminanceAdjustmentMagenta="361" alone error Profile setting LuminanceAdjustmentMagenta is out of range
+LuminanceAdjustmentMagenta="1e-7" alone ok .hsl[7][2]=1e-9
+LuminanceAdjustmentMagenta="-1e-7" alone ok .hsl[7][2]=-1e-9
+LuminanceAdjustmentMagenta="inf" alone error Profile setting LuminanceAdjustmentMagenta is out of range
+LuminanceAdjustmentMagenta="x" alone error Invalid profile setting LuminanceAdjustmentMagenta: invalid float literal
+LuminanceAdjustmentMagenta="NaN" alone error Profile setting LuminanceAdjustmentMagenta is out of range
+amount "" PostCropVignetteStyle="x" ok
+amount "" PostCropVignetteStyle="3" ok
+amount "" PostCropVignetteMidpoint="150" ok
+amount "" PostCropVignetteFeather="-1" ok
+amount "0" PostCropVignetteStyle="x" ok
+amount "0" PostCropVignetteStyle="3" ok
+amount "0" PostCropVignetteMidpoint="150" ok
+amount "0" PostCropVignetteFeather="-1" ok
+amount "-20" PostCropVignetteStyle="x" error Unsupported profile vignette style x
+amount "-20" PostCropVignetteStyle="3" ok .vignette={"amount":-0.20000000298023224,"feather":0.5,"highlights":0.0,"midpoint":0.5,"roundness":0.0,"style":3}
+amount "-20" PostCropVignetteMidpoint="150" error Profile setting PostCropVignetteMidpoint is out of range
+amount "-20" PostCropVignetteFeather="-1" error Profile setting PostCropVignetteFeather is out of range
