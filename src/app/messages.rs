@@ -865,66 +865,6 @@ fn cross_ui(
     response.clicked()
 }
 
-impl super::Editor {
-    /// What the user started that is still running and has no place of its own
-    /// that says so, read from the state that owns each: a `Task`, cleared by its
-    /// result (a panic included, see `task::spawn`) or by the document it belongs
-    /// to going. Add long work here, in a line. An export, a file operation and a
-    /// scan have their own progress in the bar, a batch its window, a selection
-    /// its tile and opening a photo its badge: they are not said again.
-    pub(super) fn running_work(&self) -> Vec<Work> {
-        let mut work = Vec::new();
-        let mut add = |running: bool, key, text: &str| {
-            if running {
-                work.push(Work {
-                    key,
-                    text: text.to_string(),
-                });
-            }
-        };
-        let document = &self.document;
-        add(
-            document.auto.is_running(),
-            "auto",
-            "Working out Auto settings…",
-        );
-        add(
-            document.camera_look.is_running(),
-            "camera look",
-            "Fitting the camera's look to its JPEG preview…",
-        );
-        add(
-            document.upright.is_running(),
-            "upright",
-            "Analysing for Upright…",
-        );
-        add(
-            document.straighten.is_running(),
-            "straighten",
-            "Looking for a horizon…",
-        );
-        if let Some(job) = self.lensfun.running() {
-            add(true, "lensfun", job.running_text());
-        }
-        add(
-            self.library.as_ref().is_some_and(|l| l.rereading()),
-            "metadata",
-            "Reading metadata from files…",
-        );
-        if let Some(text) = &self.catalog_work {
-            add(true, "catalog", text);
-        }
-        if let Some(progress) = &self.importing {
-            add(true, "import", &progress.text());
-        }
-        // A library operation: shown wherever the user is, not only in its offer.
-        if let Some(name) = self.profile_download.downloading() {
-            add(true, "profile download", &format!("Downloading {name}…"));
-        }
-        work
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

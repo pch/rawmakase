@@ -5,6 +5,7 @@ use super::messages::Topic;
 use super::panels::WorkspacePanel;
 use super::state::Tool;
 use super::widgets::{TOP_BAR_SEGMENTS, segment_bar};
+use super::work::{FILE_CHANGE, FOLDER_CHANGE, OUTPUT};
 use super::workflow::Flushed;
 use crate::app::Module;
 use crate::app::design::{self, Tone, inset, space, text};
@@ -69,13 +70,7 @@ impl Editor {
     /// preview build, Develop's load, an output a command started, nor AI
     /// Denoise.
     pub(super) fn preview_pace(&self) -> crate::app::library::Pace {
-        if self.module == Module::Library
-            && !self.exporting()
-            && !self.load.is_running()
-            && !self.preview_builds.progress().is_some_and(|p| p.running())
-            && !self.automation.outputs_running()
-            && !self.ai_denoise.busy()
-        {
+        if self.module == Module::Library && !self.work_slows_previews() {
             crate::app::library::Pace::Full
         } else {
             crate::app::library::Pace::Background
@@ -104,10 +99,7 @@ impl Editor {
         self.poll_updates(&ctx);
         self.themes.poll(&ctx);
         // Checksums are read only while nothing heavier reads files.
-        let busy = self.checksums_paused
-            || self.exporting()
-            || self.load.is_running()
-            || self.preview_builds.progress().is_some_and(|p| p.running());
+        let busy = self.checksums_paused || self.work_pauses_checksums();
         // Bursts of photos added are stacked in the Library alone, with
         // nothing over it and nothing else changing the catalog.
         let stack_bursts = self.module == Module::Library
@@ -1912,24 +1904,6 @@ impl Editor {
             || self.document.edit.save_state().needs_save()
             || self.library.as_ref().is_some_and(|l| l.has_drafts())
     }
-    /// The work closing waits for, as the close guard names it: closing would cut
-    /// it off, and nothing can be saved in its place.
-    pub(super) fn closing_waits_for(&self) -> Option<std::borrow::Cow<'static, str>> {
-        if self.exporting() {
-            Some("the export".into())
-        } else if let Some(batch) = self.activity.batch() {
-            // Sync Settings, Auto Settings or a preset on the selection.
-            Some(batch.name().to_string().into())
-        } else if self.activity.is_changing_folder() {
-            Some(FOLDER_CHANGE.into())
-        } else if self.activity.is_changing_files() {
-            Some(FILE_CHANGE.into())
-        } else if self.automation.outputs_running() {
-            Some(OUTPUT.into())
-        } else {
-            None
-        }
-    }
     /// Saves the open edit once due, or wakes the app when it will be.
     fn save_when_due(&mut self, ctx: &egui::Context) {
         self.autosave(ctx);
@@ -2207,12 +2181,6 @@ const STATUS_HEIGHT: f32 = 26.;
 fn status_frame(ui: &egui::Ui) -> egui::Frame {
     egui::Frame::side_top_panel(ui.style()).inner_margin(design::margin(inset::STAGE, 0.))
 }
-
-/// What the close guard calls an export or preview a control command started.
-pub(super) const OUTPUT: &str = "the output the control socket asked for";
-/// What the close guard calls a folder change.
-pub(super) const FOLDER_CHANGE: &str = "the folder change";
-pub(super) const FILE_CHANGE: &str = "the file operation";
 
 /// The side panels' narrowest widths, no less than their contents need: a
 /// panel dragged narrower is painted only that wide but laid out as wide as

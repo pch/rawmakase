@@ -183,7 +183,9 @@ operation began, and nothing may be written while it holds the catalog.
 
 ## Where the code stands
 
-The exit hook (`app/exit.rs`) runs the sequence above (#269, #270, #330). Two
+The exit hook (`app/exit.rs`) runs the sequence above (#269, #270, #330). The
+workers it stops, and their order, are the stop steps of the work-policy table in
+`app/work.rs`, which also says what closing waits for. Two
 writes still happen on the UI thread without a deadline: a Copy Name or metadata
 field being typed in the Library, which the close guard and the exit hook save
 through the catalog session before the edit, and the session file. Neither is
