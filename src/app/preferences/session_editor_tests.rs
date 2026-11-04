@@ -67,8 +67,8 @@ fn window_frame(
         .commands
         .contains(&egui::ViewportCommand::Maximized(true));
     let saved: crate::app::preferences::session::Session = e
-        .session_file
-        .as_ref()
+        .session
+        .file()
         .and_then(|file| std::fs::read(file).ok())
         .map_or_else(Default::default, |json| {
             serde_json::from_slice(&json).unwrap()
@@ -156,9 +156,9 @@ fn the_session_saves_the_catalog_then_the_photo_then_the_path_it_opened_with() -
 {
     let (d, mut e, _) = crate::app::testing::editor_with_catalog(&["a.RAF"])?;
     let session = d.path().join("session.json");
-    e.session_file = Some(session.clone());
+    e.session.set_file(Some(session.clone()));
     let fallback = d.path().join("before.rawmakase");
-    e.last_path = Some(fallback.clone());
+    e.session.set_fallback_path(Some(fallback.clone()));
     e.document.opened_at(d.path().join("photos/a.RAF"));
     e.save_session()?;
     assert_eq!(
@@ -190,12 +190,12 @@ fn every_write_holds_the_other_owners_settings_and_the_unknown_fields() -> anyho
     let mut e = Editor::with_context(&ctx, None, loaded, Some(path.clone()));
     e.updates.automatic = false;
     e.save_session()?;
-    e.auto_advance = !e.auto_advance;
+    e.session.auto_advance = !e.session.auto_advance;
     e.save_session()?;
     let json: serde_json::Value = serde_json::from_slice(&std::fs::read(&path)?)?;
     assert_eq!(json["a_newer_field"]["kept"], true);
     assert_eq!(json["no_update_checks"], true);
-    assert_eq!(saved(&path).auto_advance, e.auto_advance);
+    assert_eq!(saved(&path).auto_advance, e.session.auto_advance);
     Ok(())
 }
 
@@ -212,9 +212,9 @@ fn a_failed_write_is_an_error_and_keeps_the_setting() {
         crate::app::preferences::session::Session::default(),
         Some(dir.path().join("blocked/session.json")),
     );
-    e.collapsed.insert("Tone Curve".into());
+    e.session.collapsed.insert("Tone Curve".into());
     assert!(e.save_session().is_err());
-    assert!(e.collapsed.contains("Tone Curve"));
+    assert!(e.session.collapsed.contains("Tone Curve"));
 }
 
 /// Confirming Copy Settings saves its groups even when they are the ones already kept.

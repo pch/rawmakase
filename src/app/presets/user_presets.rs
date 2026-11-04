@@ -327,7 +327,7 @@ mod tests {
             crate::app::preferences::session::Session::default(),
             None,
         );
-        let before = e.copy_groups.clone();
+        let before = e.session.copy_groups.clone();
         e.open_copy_dialog(crate::app::develop::settings_transfer::Transfer::NewPreset);
         let mut narrow = GroupSelection::none();
         narrow.set(SettingGroup::Exposure, GroupInclusion::Included);
@@ -336,7 +336,7 @@ mod tests {
         };
         dialog.groups = narrow;
         e.close_copy_dialog(crate::app::develop::settings_transfer::CopyChoice::Confirm);
-        assert_eq!(e.copy_groups, before);
+        assert_eq!(e.session.copy_groups, before);
     }
 
     #[test]

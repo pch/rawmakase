@@ -58,7 +58,7 @@ fn the_place_is_remembered_at_once_and_a_layout_alone_once_it_settles() -> anyho
     use crate::app::shell::workspace::LayoutEdit;
     let (d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
     let session = d.path().join("session.json");
-    e.session_file = Some(session.clone());
+    e.session.set_file(Some(session.clone()));
     e.library.as_mut().unwrap().select(Some(ids[0]));
     e.remember_place(LayoutEdit::Settled);
     assert_eq!(saved_session(&session).selected_photo, Some(ids[0]));

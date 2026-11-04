@@ -570,7 +570,7 @@ impl Editor {
             recipe: self.document.edit.recipe().clone(),
             values,
             watermark: None,
-            demosaic: self.demosaic,
+            demosaic: self.session.demosaic,
             cache: self.decode_cache.clone(),
             ai: self.ai_service(),
             file: self.document.image_file.clone(),
@@ -680,7 +680,7 @@ impl Editor {
                     settings: pending.settings,
                     defaults: self.raw_defaults.clone(),
                     watermark: pending.watermark,
-                    demosaic: self.demosaic,
+                    demosaic: self.session.demosaic,
                     cache: self.decode_cache.clone(),
                     ai: self.ai_service(),
                 };

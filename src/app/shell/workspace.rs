@@ -113,7 +113,7 @@ impl Editor {
         let brushing = self.module == Module::Develop && self.tool_has_size();
         // With the Crop tool open, X swaps the crop's orientation instead of rejecting.
         let cropping = self.module == Module::Develop && self.view.is(Tool::Crop);
-        let auto_advance = self.auto_advance;
+        let auto_advance = self.session.auto_advance;
         let shortcut = crate::app::library::photo_metadata::shortcut(ctx)
             .filter(|(e, _)| {
                 !(brushing
@@ -174,7 +174,7 @@ impl Editor {
         self.poll_updates(&ctx);
         self.themes.poll(&ctx);
         // Checksums are read only while nothing heavier reads files.
-        let busy = self.checksums_paused || self.work_pauses_checksums();
+        let busy = self.session.checksums_paused || self.work_pauses_checksums();
         // Bursts of photos added are stacked in the Library alone, with
         // nothing over it and nothing else changing the catalog.
         let stack_bursts = self.module == Module::Library
@@ -322,9 +322,9 @@ impl Editor {
             )
         });
         if let Some(collapsed) = collapsed
-            && collapsed != self.collapsed
+            && collapsed != self.session.collapsed
         {
-            self.collapsed = collapsed;
+            self.session.collapsed = collapsed;
             let _ = self.save_session();
         }
         let solo = ctx.data(|d| {
@@ -333,9 +333,9 @@ impl Editor {
             )
         });
         if let Some(solo) = solo
-            && solo != self.solo
+            && solo != self.session.solo
         {
-            self.solo = solo;
+            self.session.solo = solo;
             let _ = self.save_session();
         }
         self.remember_maximized(&ctx);
@@ -397,9 +397,9 @@ impl Editor {
             RestoreMaximized::Done => {}
         }
         if let Some(maximized) = maximized
-            && maximized != self.maximized
+            && maximized != self.session.maximized
         {
-            self.maximized = maximized;
+            self.session.maximized = maximized;
             let _ = self.save_session();
         }
     }
@@ -407,13 +407,10 @@ impl Editor {
     pub(in crate::app) fn remember_place(&mut self, layout: LayoutEdit) {
         let place = self.current_place();
         let shown = self.library.as_ref().map(|l| l.layout());
-        let layout_changed = layout == LayoutEdit::Settled
-            && shown.as_ref().is_some_and(|l| *l != self.saved_layout);
-        if self.library.is_some() && (place != self.saved_place || layout_changed) {
-            self.saved_place = place;
-            if let Some(shown) = shown {
-                self.saved_layout = shown;
-            }
+        if self
+            .session
+            .remember_place(place, shown, layout == LayoutEdit::Changing)
+        {
             let _ = self.save_session();
         }
     }
@@ -1352,7 +1349,7 @@ impl Editor {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let toggle = ui
                         .checkbox(
-                            &mut self.auto_advance,
+                            &mut self.session.auto_advance,
                             egui::RichText::new("Auto Advance").small(),
                         )
                         .on_hover_text(

@@ -30,9 +30,8 @@ pub(crate) struct Editor {
     preview: PreviewState,
     document: Document,
     context: egui::Context,
-    session_file: Option<PathBuf>,
-    /// The session's fields this release does not know, written back as read.
-    session_unknown: crate::app::preferences::session::Unknown,
+    /// The session: the preferences it holds, the place it remembers, and its file.
+    session: crate::app::preferences::session::SessionState,
     library: Option<Box<crate::app::library::Library>>,
     /// The module shown: the Library grid, or Develop.
     module: Module,
@@ -55,18 +54,10 @@ pub(crate) struct Editor {
     clipboard: Option<crate::app::develop::settings_transfer::Clipboard>,
     /// The settings of the photo open before this one, for Paste from Previous.
     previous_settings: Option<crate::app::develop::settings_transfer::Settings>,
-    /// The groups Copy Settings last copied.
-    copy_groups: crate::model::settings_groups::GroupSelection,
     /// The Point Curve menu's saved curves and its Save window.
     curves: crate::app::develop::panels::curve_menu::CurveMenu,
     /// The Import .cube LUTs window's colour space, while it is open.
     lut_import: Option<crate::camera_profiles::LutSpace>,
-    /// Collapsed panel sections as last saved to the session.
-    collapsed: std::collections::BTreeSet<String>,
-    /// The sides in Solo Mode as last saved to the session.
-    solo: std::collections::BTreeSet<String>,
-    /// Whether the window is maximized, as last saved to the session.
-    maximized: bool,
     /// Reopening it maximized, until the window manager has done so.
     restoring_maximized: crate::app::shell::workspace::RestoreMaximized,
     /// The panels each module shows (Tab, Shift+Tab, F6–F8).
@@ -74,7 +65,6 @@ pub(crate) struct Editor {
     /// What the last Tab or Shift+Tab hid, and in which module.
     tabbed: Option<(Module, crate::app::shell::panels::Tabbed)>,
     onboarding: crate::app::catalog::onboarding::Onboarding,
-    onboarding_done: bool,
     preferences: preferences::Preferences,
     updates: crate::app::shell::updates::Updates,
     /// Report an Issue…: its dialog and the system probe.
@@ -93,19 +83,8 @@ pub(crate) struct Editor {
     /// The window's main area this frame (grid, photo or setup), which files
     /// dragged over the window are dropped into.
     drop_area: Option<egui::Rect>,
-    /// The catalog or photo the session last named, kept there while it
-    /// can't be opened (a catalog on an unplugged drive): saving the session
-    /// meanwhile must not make the next launch a first one.
-    last_path: Option<PathBuf>,
     /// Cancels the prefetch started for the photo on screen.
     prefetch_cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    /// Preferences > Performance's demosaic, for every full-size decode.
-    demosaic: crate::camera_data::Demosaic,
-    /// That position as last written to the session.
-    saved_place: CatalogPlace,
-    /// How the Library showed its photos, as last written to the session;
-    /// returned to whenever the catalog is loaded.
-    saved_layout: crate::app::preferences::session::LibraryLayout,
     /// What the status line and the top bar say.
     messages: crate::app::shell::messages::Messages,
     /// What a running catalog import or open is doing.
@@ -133,8 +112,6 @@ pub(crate) struct Editor {
     selection: crate::app::develop::tools::subject_mask::Selection,
     /// Lensfun's lens database: installing, updating and removing it.
     lensfun: crate::app::develop::lensfun::Lensfun,
-    /// Photo > Auto Advance, saved in the session.
-    auto_advance: bool,
     /// Synchronize Folder: the scan under way or the plan waiting for review.
     folder_sync: crate::app::catalog::folder_sync::FolderSync,
     /// The file operation under way, from its plan to its outcome.
@@ -144,12 +121,6 @@ pub(crate) struct Editor {
     /// the document, unsaved edit included, following the file (see
     /// `catalog_ready`).
     relink_open: Option<(crate::catalog::PhotoId, Option<PathBuf>)>,
-    /// Preferences > Catalog: the user paused reading checksums, saved in
-    /// the session.
-    checksums_paused: bool,
-    /// Preferences: whether converting to black & white applies the Auto mix to a
-    /// mix never set, as Lightroom's preference of that name (on by default).
-    first_conversion: crate::app::develop::treatment::FirstConversion,
     /// The RAW the Loupe last started loading, so one that fails is not
     /// loaded again every frame.
     loupe_tried: Option<PhotoId>,
@@ -303,6 +274,13 @@ impl Editor {
             ctx.clone(),
             crate::catalog::preview_cache::PreviewCache::path(),
         );
+        let session_state = crate::app::preferences::session::SessionState::new(
+            &session,
+            session_file,
+            place.clone(),
+            onboarding_done,
+            copy_groups.unwrap_or_default(),
+        );
         let mut app = Self {
             #[cfg(target_os = "macos")]
             native_menu: false,
@@ -329,8 +307,7 @@ impl Editor {
             preview: Default::default(),
             document: Default::default(),
             context: ctx.clone(),
-            session_file,
-            session_unknown: session.unknown.clone(),
+            session: session_state,
             library: None,
             module: Module::Develop,
             chrome: Default::default(),
@@ -347,10 +324,6 @@ impl Editor {
             previous_settings: None,
             curves: Default::default(),
             lut_import: None,
-            copy_groups: copy_groups.unwrap_or_default(),
-            collapsed: session.collapsed.clone(),
-            solo: session.solo.clone(),
-            maximized: session.maximized,
             restoring_maximized: if session.maximized {
                 crate::app::shell::workspace::RestoreMaximized::Pending
             } else {
@@ -359,7 +332,6 @@ impl Editor {
             panels: session.panels,
             tabbed: None,
             onboarding: crate::app::catalog::onboarding::Onboarding::new(show_onboarding),
-            onboarding_done,
             preferences: Default::default(),
             updates,
             report_issue,
@@ -376,14 +348,10 @@ impl Editor {
             ),
             stand_ins,
             autosave: Default::default(),
-            restore: Some(place.clone()),
-            saved_place: place,
-            saved_layout: session.library_layout.clone(),
+            restore: Some(place),
             pending_photo: None,
             drop_area: None,
-            last_path: session.last_path.clone(),
             prefetch_cancel: Default::default(),
-            demosaic: session.demosaic,
             messages: crate::app::shell::messages::Messages::starting_with(
                 "Pick a photo in the Library to begin",
             ),
@@ -402,16 +370,9 @@ impl Editor {
             lensfun: crate::app::develop::lensfun::Lensfun::suggesting(
                 !session.no_lensfun_suggestions,
             ),
-            auto_advance: session.auto_advance,
             folder_sync: Default::default(),
             file_ops: Default::default(),
             relink_open: None,
-            checksums_paused: session.pause_checksums,
-            first_conversion: if session.no_auto_black_white_mix {
-                crate::app::develop::treatment::FirstConversion::KeepMix
-            } else {
-                crate::app::develop::treatment::FirstConversion::AutoMix
-            },
             loupe_tried: None,
             raw_defaults: std::sync::Arc::new(crate::raw_defaults::DevelopDefaults::load(
                 session.raw_defaults.clone(),
@@ -440,55 +401,33 @@ impl Editor {
     }
     // A caller may disable preference persistence, e.g. in an isolated UI test.
     fn save_session(&self) -> anyhow::Result<()> {
-        if let Some(path) = &self.session_file {
-            crate::storage::atomic_json(
-                path,
-                &crate::app::preferences::session::Session {
-                    last_path: self.session_path(),
-                    monitor: self.view.monitor.session_path(),
-                    monitor_srgb: self.view.monitor.session_srgb(),
-                    maximized: self.maximized,
-                    collapsed: self.collapsed.clone(),
-                    solo: self.solo.clone(),
-                    panels: self.panels,
-                    onboarding_done: self.onboarding_done,
-                    library_source: self.saved_place.source.clone(),
-                    selected_photo: self.saved_place.photo,
-                    develop: self.saved_place.module == Module::Develop,
-                    demosaic: self.demosaic,
-                    no_update_checks: !self.updates.automatic,
-                    skipped_version: self.updates.skipped.clone(),
-                    theme: self.themes.chosen().flatten(),
-                    theme_chosen: self.themes.chosen().is_some(),
-                    auto_advance: self.auto_advance,
-                    no_auto_black_white_mix: self.first_conversion
-                        == crate::app::develop::treatment::FirstConversion::KeepMix,
-                    no_lensfun_suggestions: !self.lensfun.suggest,
-                    dismissed_community_profiles: self.profile_download.dismissed().clone(),
-                    pause_checksums: self.checksums_paused,
-                    library_layout: self.saved_layout.clone(),
-                    copy_groups: Some(self.copy_groups.clone()),
-                    copy_ai_denoise: Some(
-                        self.copy_groups
-                            .contains(crate::model::settings_groups::SettingGroup::AiDenoise),
-                    ),
-                    crop_guides: self.view.crop_guides.to_session(),
-                    crop_aspect: crate::app::develop::panels::inspector::aspect_key(
-                        self.view.chosen_aspect,
-                    )
-                    .into(),
-                    raw_defaults: self.raw_defaults.settings().clone(),
-                    standard_preview_size: Some(self.preview_builds.standard_size),
-                    decoded_cache_size_gib: Some((self.decode_cache.limit() >> 30) as u32),
-                    decoded_cache_folder: self.decode_cache.folder(),
-                    one_to_one_discard_days: Some(
-                        self.preview_builds.discard_one_to_one_after.unwrap_or(0),
-                    ),
-                    unknown: self.session_unknown.clone(),
-                },
-            )?;
-        }
-        Ok(())
+        self.session.write(
+            crate::app::preferences::session::Session {
+                monitor: self.view.monitor.session_path(),
+                monitor_srgb: self.view.monitor.session_srgb(),
+                panels: self.panels,
+                no_update_checks: !self.updates.automatic,
+                skipped_version: self.updates.skipped.clone(),
+                theme: self.themes.chosen().flatten(),
+                theme_chosen: self.themes.chosen().is_some(),
+                no_lensfun_suggestions: !self.lensfun.suggest,
+                dismissed_community_profiles: self.profile_download.dismissed().clone(),
+                crop_guides: self.view.crop_guides.to_session(),
+                crop_aspect: crate::app::develop::panels::inspector::aspect_key(
+                    self.view.chosen_aspect,
+                )
+                .into(),
+                raw_defaults: self.raw_defaults.settings().clone(),
+                standard_preview_size: Some(self.preview_builds.standard_size),
+                decoded_cache_size_gib: Some((self.decode_cache.limit() >> 30) as u32),
+                decoded_cache_folder: self.decode_cache.folder(),
+                one_to_one_discard_days: Some(
+                    self.preview_builds.discard_one_to_one_after.unwrap_or(0),
+                ),
+                ..Default::default()
+            },
+            self.session_path(),
+        )
     }
     /// The Library folder, selected photo and module, as saved in the session.
     fn current_place(&self) -> CatalogPlace {
@@ -519,7 +458,6 @@ impl Editor {
                 path.clone()
             })
             .or_else(|| self.document.path.clone())
-            .or_else(|| self.last_path.clone())
     }
 }
 /// Where the Library was: its folder or collection, the photo selected (or open

@@ -312,7 +312,7 @@ impl Editor {
                 if device
                     && let commands::Operation::Metadata { advance, .. } = &mut command.operation
                 {
-                    *advance |= self.auto_advance;
+                    *advance |= self.session.auto_advance;
                 }
                 result = self.execute_command_from(command, source, ctx)?;
             }
