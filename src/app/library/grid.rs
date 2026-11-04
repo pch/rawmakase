@@ -243,7 +243,7 @@ impl Library {
                         .fail(format!("Could not show {}: {e}", photo.filename));
                 }
             }
-            PhotoAction::FindOnDisk => self.find_request = Some(photo.id),
+            PhotoAction::FindOnDisk => self.ask(super::outbox::Request::Find(photo.id)),
             PhotoAction::CopyPath => {
                 ctx.copy_text(photo.path.display().to_string());
                 self.messages
@@ -260,7 +260,7 @@ impl Library {
                         .fail(format!("Metadata could not be saved: {e}"));
                 }
             }
-            PhotoAction::Copy(copy) => self.copy_request = Some(copy),
+            PhotoAction::Copy(copy) => self.ask(super::outbox::Request::Copy(copy)),
             PhotoAction::Stack(stack) => {
                 let ids = if whole_selection && self.selection.selected.contains(&photo.id) {
                     self.selected_ids()
@@ -275,15 +275,13 @@ impl Library {
             // The selection when the photo is in it, in the grid and the
             // filmstrip alike, as Export.
             PhotoAction::BuildPreviews(kind) => {
-                self.previews_request = Some(super::PreviewsRequest::Build(
-                    self.menu_scope(photo.id),
-                    kind,
+                self.ask(super::outbox::Request::Previews(
+                    super::PreviewsRequest::Build(self.menu_scope(photo.id), kind),
                 ));
             }
             PhotoAction::DiscardPreviews(kinds) => {
-                self.previews_request = Some(super::PreviewsRequest::Discard(
-                    self.menu_scope(photo.id),
-                    kinds,
+                self.ask(super::outbox::Request::Previews(
+                    super::PreviewsRequest::Discard(self.menu_scope(photo.id), kinds),
                 ));
             }
             PhotoAction::Remove => {
@@ -316,7 +314,7 @@ impl Library {
                 } else {
                     vec![photo.id]
                 };
-                self.read_request = Some(ids);
+                self.ask(super::outbox::Request::Read(ids));
             }
             PhotoAction::MoveToFolder => {
                 let ids = if whole_selection && self.selection.selected.contains(&photo.id) {
@@ -324,7 +322,9 @@ impl Library {
                 } else {
                     vec![photo.id]
                 };
-                self.file_request = Some(super::FileRequest::ChooseFolder(ids));
+                self.ask(super::outbox::Request::File(
+                    super::FileRequest::ChooseFolder(ids),
+                ));
             }
             PhotoAction::ExportCatalog => {
                 let ids = if whole_selection && self.selection.selected.contains(&photo.id) {
@@ -338,11 +338,13 @@ impl Library {
                         .map_or_else(String::new, |s| s.to_string_lossy().into_owned()),
                     _ => "Selected Photos".into(),
                 };
-                self.export_request = Some(super::CatalogExportRequest {
-                    name,
-                    scope: crate::catalog::ExportScope::Photos(ids),
-                    removal: None,
-                });
+                self.ask(super::outbox::Request::Export(
+                    super::CatalogExportRequest {
+                        name,
+                        scope: crate::catalog::ExportScope::Photos(ids),
+                        removal: None,
+                    },
+                ));
             }
         }
         None

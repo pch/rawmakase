@@ -611,7 +611,17 @@ impl Editor {
                 self.modal = Some(super::Modal::RemoveCopy(id));
                 return;
             }
-            _ if !self.ready_for_catalog() => return,
+            _ if self.activity.is_busy() => {
+                self.messages
+                    .warn("Virtual copy not made: wait for the work in progress to finish.");
+                return;
+            }
+            // Flushing says why the edit was not saved.
+            _ if !self.flush() => {
+                self.messages
+                    .fail("Virtual copy not made: unsaved changes could not be saved first.");
+                return;
+            }
             CopyAction::Create(id) => self.library.as_mut().map(|l| {
                 l.create_virtual_copy(id)
                     .map(|made| made.listed.is_ok().then_some(made.value))

@@ -218,17 +218,8 @@ pub(crate) struct Library {
     availability: availability::Availability,
     ctx: egui::Context,
     cache: textures::PreviewTextures,
-    /// A virtual copy command from a thumbnail menu, for the editor.
-    copy_request: Option<CopyAction>,
-    /// A folder chosen in the Folders panel to be removed, for the editor
-    /// to confirm.
-    removal_request: Option<FolderRemoval>,
-    /// Export as Catalog chosen in the Folders panel or a photo's menu.
-    export_request: Option<CatalogExportRequest>,
-    /// Synchronize Folder chosen in the Folders panel, for the editor.
-    sync_request: Option<(crate::catalog::folder_sync::SyncScope, String)>,
-    /// Find on Disk… chosen in a photo's menu, for the editor.
-    find_request: Option<PhotoId>,
+    /// What the Library asked the editor to do, in order ([`outbox`]).
+    outbox: outbox::Outbox,
     /// After a synchronization added photos, the status bar offers to show
     /// them.
     pub(in crate::app) offer_previous_import: bool,
@@ -277,16 +268,9 @@ pub(crate) struct Library {
     /// None before the first check.
     attached: Option<HashSet<std::path::PathBuf>>,
     pub(in crate::app) messages: crate::app::messages::Messages,
-    /// Photos to Read Metadata from Files for, once confirmed.
-    read_request: Option<Vec<PhotoId>>,
-    /// A file operation asked for (Delete, the thumbnail menu), for the
-    /// editor to confirm.
-    file_request: Option<FileRequest>,
     /// Background reads are held off while a file operation holds the
     /// catalog: nothing starts them until it lets go.
     reads_suspended: bool,
-    /// A thumbnail menu's Build or Discard Previews, for the editor to carry out.
-    previews_request: Option<PreviewsRequest>,
     /// The offline RAW in the Loupe and its stored preview's identity, as the
     /// editor works it out.
     loupe_stored: Option<(PhotoId, String)>,
@@ -343,11 +327,6 @@ impl Library {
             availability: Default::default(),
             cache: textures::PreviewTextures::new(&ctx),
             ctx,
-            copy_request: None,
-            removal_request: None,
-            export_request: None,
-            sync_request: None,
-            find_request: None,
             offer_previous_import: false,
             copy_names: Default::default(),
             fields: Default::default(),
@@ -373,11 +352,9 @@ impl Library {
             grid_kinetic: Default::default(),
             grid_shown: 0..usize::MAX,
             attached: None,
+            outbox: Default::default(),
             messages: Default::default(),
-            read_request: None,
-            file_request: None,
             reads_suspended: false,
-            previews_request: None,
             loupe_stored: None,
             refusal_shown: None,
             reread: None,
@@ -739,14 +716,26 @@ impl Library {
     pub(in crate::app) fn take_reread_finished(&mut self) -> bool {
         std::mem::take(&mut self.reread_finished)
     }
-    /// Photos Read Metadata from Files was chosen for, for the editor to
-    /// confirm.
-    pub(in crate::app) fn take_read_request(&mut self) -> Option<Vec<PhotoId>> {
-        self.read_request.take()
+    /// Asks the editor for `request`, as of the catalog shown now.
+    fn ask(&mut self, request: outbox::Request) {
+        let generation = self.session.generation();
+        self.outbox.push(request, generation);
     }
-    /// The file operation asked for, for the editor to confirm.
-    pub(in crate::app) fn take_file_request(&mut self) -> Option<FileRequest> {
-        self.file_request.take()
+    /// The oldest request not yet handed over, its photos checked again when the
+    /// lists changed since it was made ([`outbox`]). One the change left with no
+    /// photo is not handed over: it says so and the next comes instead.
+    pub(in crate::app) fn next_request(&mut self) -> Option<outbox::Request> {
+        while let Some((request, generation)) = self.outbox.pop() {
+            if generation == self.session.generation() {
+                return Some(request);
+            }
+            if let Some(request) = request.revalidated(|id| self.photo(id).is_some()) {
+                return Some(request);
+            }
+            self.messages
+                .warn("The photos chosen are no longer in the catalog; nothing was done.");
+        }
+        None
     }
     /// Delete and Backspace (with Option too): in the Quick Collection, takes
     /// `ids` out of it, as one undoable step; in an imported collection, which
@@ -771,7 +760,7 @@ impl Library {
         } else if self.filters.collection.is_some() {
             self.messages.warn("Imported collections can't be changed");
         } else {
-            self.file_request = Some(FileRequest::Delete(ids));
+            self.ask(outbox::Request::File(FileRequest::Delete(ids)));
         }
     }
     /// Delete and Backspace with `modifiers`, for `ids`: alone, as
@@ -781,7 +770,7 @@ impl Library {
     pub(in crate::app) fn delete_press(&mut self, modifiers: egui::Modifiers, ids: Vec<PhotoId>) {
         match (modifiers.command, modifiers.alt, modifiers.shift) {
             (true, true, true) => self.request_trash(ids),
-            (true, false, false) => self.file_request = Some(FileRequest::DeleteRejected),
+            (true, false, false) => self.ask(outbox::Request::File(FileRequest::DeleteRejected)),
             (false, alt, false) if !modifiers.ctrl => {
                 if alt {
                     self.request_removal(ids)
@@ -796,14 +785,14 @@ impl Library {
     /// for the editor to ask.
     pub(in crate::app) fn request_rename(&mut self, ids: Vec<PhotoId>) {
         if !ids.is_empty() {
-            self.file_request = Some(FileRequest::Rename(ids));
+            self.ask(outbox::Request::File(FileRequest::Rename(ids)));
         }
     }
     /// Move to Trash for `ids` (⌘⌥⇧Delete, the thumbnail menu), whatever is
     /// shown, for the editor to confirm.
     pub(in crate::app) fn request_trash(&mut self, ids: Vec<PhotoId>) {
         if !ids.is_empty() {
-            self.file_request = Some(FileRequest::Trash(ids));
+            self.ask(outbox::Request::File(FileRequest::Trash(ids)));
         }
     }
     /// The rejected photos of the source shown (its folders, collection,
@@ -823,7 +812,7 @@ impl Library {
     /// is shown, for the editor to confirm.
     pub(in crate::app) fn request_removal(&mut self, ids: Vec<PhotoId>) {
         if !ids.is_empty() {
-            self.file_request = Some(FileRequest::Remove(ids));
+            self.ask(outbox::Request::File(FileRequest::Remove(ids)));
         }
     }
     /// Moves `photos` into the folder of `root` at logical path `to`
@@ -842,12 +831,12 @@ impl Library {
                 .is_some_and(|p| self.folder_place(p.folder) == place)
         });
         if !photos.is_empty() && !there {
-            self.file_request = Some(FileRequest::Move {
+            self.ask(outbox::Request::File(FileRequest::Move {
                 photos,
                 root,
                 to,
                 name,
-            });
+            }));
         }
     }
     /// New Folder Inside… folder `parent` of `root` (catalog folder
@@ -864,13 +853,13 @@ impl Library {
             && photos
                 .iter()
                 .all(|id| self.photo(*id).is_some_and(|p| Some(p.folder) == folder));
-        self.file_request = Some(FileRequest::NewFolder {
+        self.ask(outbox::Request::File(FileRequest::NewFolder {
             root,
             parent,
             name,
             photos,
             inside,
-        });
+        }));
     }
     /// Notes that New Folder Inside asks for a folder in logical folder
     /// `parent` of `root`, to unfold it once the folder is made.
@@ -1002,10 +991,6 @@ impl Library {
         self.start_import_stacks();
         self.start_checksums();
     }
-    /// A virtual copy command chosen from a thumbnail menu since last asked.
-    pub(in crate::app) fn take_previews_request(&mut self) -> Option<PreviewsRequest> {
-        self.previews_request.take()
-    }
     /// The grid's latest request for the photo's edited thumbnail, if any.
     pub(in crate::app) fn edited_ticket(&self, id: PhotoId) -> Option<u64> {
         self.cache.edited_ticket(id)
@@ -1019,17 +1004,6 @@ impl Library {
         image: &image::RgbImage,
     ) {
         self.cache.insert_edited(ctx, id, image);
-    }
-    pub(super) fn take_copy_request(&mut self) -> Option<CopyAction> {
-        self.copy_request.take()
-    }
-    pub(in crate::app) fn take_find_request(&mut self) -> Option<PhotoId> {
-        self.find_request.take()
-    }
-    pub(in crate::app) fn take_sync_request(
-        &mut self,
-    ) -> Option<(crate::catalog::folder_sync::SyncScope, String)> {
-        self.sync_request.take()
     }
     /// What Synchronize Folder covers for the folder selected in the
     /// Folders panel, and its name; none for All Photographs, a collection
@@ -1069,12 +1043,6 @@ impl Library {
     pub(in crate::app) fn folder_place(&self, id: FolderId) -> Option<(RootId, String)> {
         let folder = self.session.folders().iter().find(|f| f.id == id)?;
         Some((folder.root, folder.relative.clone()))
-    }
-    pub(in crate::app) fn take_removal_request(&mut self) -> Option<FolderRemoval> {
-        self.removal_request.take()
-    }
-    pub(in crate::app) fn take_export_request(&mut self) -> Option<CatalogExportRequest> {
-        self.export_request.take()
     }
     /// Creates a virtual copy of `id` and selects it.
     pub(super) fn create_virtual_copy(&mut self, id: PhotoId) -> Result<Committed<PhotoId>> {
@@ -1590,6 +1558,7 @@ mod layout;
 mod loupe;
 mod metadata;
 mod metadata_fields;
+pub(in crate::app) mod outbox;
 mod photo_info;
 mod previews;
 mod quick;
