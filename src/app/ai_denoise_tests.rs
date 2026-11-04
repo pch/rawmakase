@@ -35,9 +35,9 @@ impl Drop for Fake {
     }
 }
 impl TileModel for Fake {
-    fn run(&mut self, input: &[f32], cancel: &AtomicBool) -> Result<Vec<f32>, InferenceError> {
+    fn run(&mut self, input: &[f32], cancel: Cancel<'_>) -> Result<Vec<f32>, InferenceError> {
         let _gate = self.behaviour.gate.lock().unwrap();
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return Err(InferenceError::Cancelled);
         }
         let n = self.behaviour.runs.fetch_add(1, Ordering::SeqCst) + 1;

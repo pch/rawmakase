@@ -7,6 +7,7 @@
 //! `ort` allows per process, are kept for the life of the process (ONNX Runtime
 //! cannot be unloaded safely).
 
+use rawmakase_cancel::Cancel;
 use std::env;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
@@ -232,7 +233,7 @@ impl SkySession {
     pub fn select(
         &mut self,
         image: &RgbImage,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Coverage, InferenceError> {
         cancelled(cancel)?;
         process::check_image(image)?;
@@ -316,7 +317,7 @@ impl Denoiser {
 }
 
 impl TileModel for Denoiser {
-    fn run(&mut self, input: &[f32], cancel: &AtomicBool) -> Result<Vec<f32>, InferenceError> {
+    fn run(&mut self, input: &[f32], cancel: Cancel<'_>) -> Result<Vec<f32>, InferenceError> {
         cancelled(cancel)?;
         let side = RAWNIND.tile;
         if input.len() != 4 * side * side {
@@ -447,7 +448,7 @@ impl Session {
     pub fn embed(
         &mut self,
         image: &RgbImage,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Embedding, InferenceError> {
         embed_with(&mut self.encoder, &self.spec, image, cancel)
     }
@@ -459,7 +460,7 @@ impl Session {
         &mut self,
         embedding: &Embedding,
         prompt: &Prompt,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Coverage, InferenceError> {
         let decoded = self.decode(embedding, prompt, cancel)?;
         let (width, height) = process::output_size(&embedding.image);
@@ -487,7 +488,7 @@ impl Session {
     pub fn analyze(
         &mut self,
         image: &RgbImage,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Analysis, InferenceError> {
         // The two networks do not depend on each other: run them together.
         let (embedding, labels) = {
@@ -557,7 +558,7 @@ impl Session {
         &mut self,
         embedding: &Embedding,
         prompt: &Prompt,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Decoded, InferenceError> {
         cancelled(cancel)?;
         prompt.validate()?;
@@ -628,7 +629,7 @@ fn embed_with(
     encoder: &mut OrtSession,
     spec: &ModelSpec,
     image: &RgbImage,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Embedding, InferenceError> {
     cancelled(cancel)?;
     let tensor = process::preprocess(image, spec.input_size, spec.mean, spec.std)?;
@@ -686,7 +687,7 @@ fn embed_with(
 fn panoptic_with(
     network: &mut OrtSession,
     image: &RgbImage,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Labels, InferenceError> {
     cancelled(cancel)?;
     process::check_image(image)?;
@@ -742,8 +743,8 @@ fn view(f: &([usize; 4], Vec<f32>)) -> Result<TensorRef<'_, f32>, InferenceError
     TensorRef::from_array_view((f.0, &f.1[..])).map_err(failed)
 }
 
-fn cancelled(cancel: &AtomicBool) -> Result<(), InferenceError> {
-    if cancel.load(Ordering::Relaxed) {
+fn cancelled(cancel: Cancel<'_>) -> Result<(), InferenceError> {
+    if cancel.is_cancelled() {
         Err(InferenceError::Cancelled)
     } else {
         Ok(())
@@ -753,7 +754,7 @@ fn cancelled(cancel: &AtomicBool) -> Result<(), InferenceError> {
 /// Runs `work` with a watcher that terminates the run when `cancel` is raised, and a
 /// panic in the runtime turned into an error.
 fn guarded<T>(
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     work: impl FnOnce(&RunOptions) -> Result<T, InferenceError>,
 ) -> Result<T, InferenceError> {
     let options = RunOptions::new().map_err(failed)?;
@@ -761,7 +762,7 @@ fn guarded<T>(
     let result = std::thread::scope(|scope| {
         scope.spawn(|| {
             while !done.load(Ordering::Acquire) {
-                if cancel.load(Ordering::Relaxed) {
+                if cancel.is_cancelled() {
                     let _ = options.terminate();
                     return;
                 }
@@ -772,7 +773,7 @@ fn guarded<T>(
         done.store(true, Ordering::Release);
         result
     });
-    if cancel.load(Ordering::Relaxed) {
+    if cancel.is_cancelled() {
         return Err(InferenceError::Cancelled);
     }
     match result {

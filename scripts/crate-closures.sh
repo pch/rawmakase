@@ -72,9 +72,9 @@ if [ -n "$asm" ]; then
 fi
 check rawmakase-export "rawmakase|eframe|winit|egui-wgpu|egui-winit|egui_extras|$c_imaging|$inference"
 # Inference itself is a leaf: it takes pixels and returns coverage, and knows no
-# workspace crate, window, GPU or imaging library.
+# workspace crate but the cancellation token, and no window, GPU or imaging library.
 check rawmakase-inference "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-interop|rawmakase-decode|rawmakase-protocol|wgpu.*|naga|$gui|$native"
-# The remote worker and its client sit on top of inference alone: the protocol
+# The remote worker and its client sit on top of inference (and the cancellation token) alone: the protocol
 # and the worker know no catalog, renderer, GUI or native library, and only the
 # app composes the client.
 check rawmakase-remote "rawmakase|rawmakase-model|rawmakase-catalog|rawmakase-engine|rawmakase-export|rawmakase-interop|rawmakase-decode|rawmakase-protocol|wgpu.*|naga|$gui|$native"

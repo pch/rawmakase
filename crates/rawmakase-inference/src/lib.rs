@@ -3,7 +3,8 @@
 //! This crate owns the pinned model contracts ([`manifest`]), the pure image
 //! to tensor and matte to coverage mappings ([`process`]), AI Denoise's tiler and
 //! gain fit on packed mosaic planes ([`denoise`]) and the lazily loaded
-//! ONNX Runtime sessions ([`runtime`]). It depends on no other workspace crate:
+//! ONNX Runtime sessions ([`runtime`]). The only other workspace crate it
+//! depends on is the cancellation token (`rawmakase-cancel`):
 //! callers pass an 8-bit sRGB [`RgbImage`] and get 8-bit [`Coverage`] back in
 //! the same frame. Where the model file lives, how it is downloaded and
 //! verified, job scheduling and cache identity belong to the callers.

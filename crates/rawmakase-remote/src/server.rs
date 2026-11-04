@@ -6,6 +6,7 @@
 //! oversized frame is an error reply, never a model run on nonsense or an
 //! unbounded allocation.
 
+use rawmakase_cancel::Cancel;
 use rawmakase_inference::{
     Analysis, Coverage, InferenceError, LoadOptions, Prompt, RgbImage, SKY, Session, Sky,
     SkySession, Subject,
@@ -37,16 +38,16 @@ pub const MAX_CACHED_BYTES: usize = 512 << 20;
 /// whole surface.
 pub trait Engine: Send {
     /// Runs the models on `photo`, or answers from the analysis it kept.
-    fn analyze(&mut self, photo: &RgbImage, cancel: &AtomicBool) -> Result<Outcome, EngineError>;
+    fn analyze(&mut self, photo: &RgbImage, cancel: Cancel<'_>) -> Result<Outcome, EngineError>;
     /// The mask for `prompt` on the analysis `key` names.
     fn segment(
         &mut self,
         key: &str,
         prompt: &Prompt,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Coverage, EngineError>;
     /// The photo's sky, from its own model.
-    fn sky(&mut self, photo: &RgbImage, cancel: &AtomicBool) -> Result<Coverage, EngineError>;
+    fn sky(&mut self, photo: &RgbImage, cancel: Cancel<'_>) -> Result<Coverage, EngineError>;
     /// What a `ping` says about this worker, as the runtime reported it.
     fn describe(&self) -> Info;
 }
@@ -126,7 +127,7 @@ impl Model {
 }
 
 impl Engine for Model {
-    fn analyze(&mut self, photo: &RgbImage, cancel: &AtomicBool) -> Result<Outcome, EngineError> {
+    fn analyze(&mut self, photo: &RgbImage, cancel: Cancel<'_>) -> Result<Outcome, EngineError> {
         let key = protocol::analysis_key(photo);
         if let Some(entry) = self.cache.get(&key) {
             return Ok(Outcome {
@@ -152,7 +153,7 @@ impl Engine for Model {
         &mut self,
         key: &str,
         prompt: &Prompt,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Coverage, EngineError> {
         let entry = match self.cache.get(key) {
             Some(entry) => entry,
@@ -165,7 +166,7 @@ impl Engine for Model {
             .map_err(engine_error)
     }
 
-    fn sky(&mut self, photo: &RgbImage, cancel: &AtomicBool) -> Result<Coverage, EngineError> {
+    fn sky(&mut self, photo: &RgbImage, cancel: Cancel<'_>) -> Result<Coverage, EngineError> {
         let Some(sky) = &mut self.sky else {
             return Err(EngineError::Failed(InferenceError::ModelInvalid(
                 "this worker has no sky model; start it with --sky-model".into(),
@@ -335,7 +336,7 @@ impl<E: Engine + 'static> Server<E> {
                         .engine
                         .lock()
                         .expect("engine lock")
-                        .analyze(&photo, &running);
+                        .analyze(&photo, Cancel::new(&running));
                     self.cancels
                         .lock()
                         .expect("cancel registry")
@@ -379,7 +380,7 @@ impl<E: Engine + 'static> Server<E> {
                         .engine
                         .lock()
                         .expect("engine lock")
-                        .sky(&photo, &running);
+                        .sky(&photo, Cancel::new(&running));
                     self.cancels
                         .lock()
                         .expect("cancel registry")
@@ -423,11 +424,11 @@ impl<E: Engine + 'static> Server<E> {
                         self.refuse(&mut stream, &request_id, Code::Invalid, why)?;
                         return Ok(());
                     }
-                    let coverage = self
-                        .engine
-                        .lock()
-                        .expect("engine lock")
-                        .segment(&key, &prompt, &running);
+                    let coverage = self.engine.lock().expect("engine lock").segment(
+                        &key,
+                        &prompt,
+                        Cancel::new(&running),
+                    );
                     self.cancels
                         .lock()
                         .expect("cancel registry")

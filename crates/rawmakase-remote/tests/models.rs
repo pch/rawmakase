@@ -11,6 +11,7 @@
 //! RAWMAKASE_ORT_LIB=/path/to/libonnxruntime.so \
 //! cargo test -p rawmakase-remote --test models -- --ignored
 //! ```
+use rawmakase_cancel::Cancel;
 
 use rawmakase_inference::{Coverage, LoadOptions, Point, Prompt, Provider, RgbImage, Sky, Subject};
 use rawmakase_remote::client::RemoteSession;
@@ -73,10 +74,12 @@ fn the_remote_worker_returns_what_the_local_session_computed() {
 
     // Local, as the app runs it.
     let mut session = Subject::load_with(&dir, &options).expect("the models load");
-    let analysis = session.analyze(&image, &cancel).expect("analyze");
+    let analysis = session
+        .analyze(&image, Cancel::new(&cancel))
+        .expect("analyze");
     let subject = analysis.subject().expect("subject");
     let clicked = session
-        .segment(analysis.embedding(), &click(), &cancel)
+        .segment(analysis.embedding(), &click(), Cancel::new(&cancel))
         .expect("segment");
 
     // Remote: the same sessions behind the worker protocol.
@@ -87,10 +90,12 @@ fn the_remote_worker_returns_what_the_local_session_computed() {
     let remote = RemoteSession::new(&endpoint);
     let info = remote.ping().expect("ping");
     assert_eq!(info.provider, "CPU");
-    let analysis = remote.analyze(&image, &cancel).expect("remote analyze");
+    let analysis = remote
+        .analyze(&image, Cancel::new(&cancel))
+        .expect("remote analyze");
     same(&analysis.subject, &subject, "automatic subject");
     let remote_click = remote
-        .segment(&analysis, &click(), &cancel)
+        .segment(&analysis, &click(), Cancel::new(&cancel))
         .expect("remote segment");
     same(&remote_click, &clicked, "clicked selection");
 }
@@ -129,12 +134,14 @@ fn a_real_photo_selects_the_same_through_the_worker_process() {
 
     // Local, as the app runs it.
     let mut session = Subject::load_with(&dir, &options).expect("the models load");
-    let analysis = session.analyze(&image, &cancel).expect("analyze");
+    let analysis = session
+        .analyze(&image, Cancel::new(&cancel))
+        .expect("analyze");
     let subject = analysis.subject().expect("subject");
     let sky_dir = std::env::var("RAWMAKASE_TEST_SKY_MODEL").unwrap();
     let sky = Sky::load_with(std::path::Path::new(&sky_dir), &options)
         .expect("the sky model loads")
-        .select(&image, &cancel)
+        .select(&image, Cancel::new(&cancel))
         .expect("sky");
     let chosen = |what: &str, coverage: &Coverage| {
         let share =
@@ -171,7 +178,7 @@ fn a_real_photo_selects_the_same_through_the_worker_process() {
         }
     };
     let clicked = session
-        .segment(analysis.embedding(), &click, &cancel)
+        .segment(analysis.embedding(), &click, Cancel::new(&cancel))
         .expect("segment");
     assert!(
         chosen("clicked", &clicked) > 0.005,
@@ -210,15 +217,19 @@ fn a_real_photo_selects_the_same_through_the_worker_process() {
     let remote = RemoteSession::new(&endpoint);
     let info = remote.ping().expect("ping");
     assert_eq!(info.provider, "CPU", "{info:?}");
-    let analysis = remote.analyze(&image, &cancel).expect("remote analyze");
+    let analysis = remote
+        .analyze(&image, Cancel::new(&cancel))
+        .expect("remote analyze");
     same(&analysis.subject, &subject, "automatic subject");
     same(
-        &remote.sky(&image, &cancel).expect("remote sky"),
+        &remote
+            .sky(&image, Cancel::new(&cancel))
+            .expect("remote sky"),
         &sky,
         "automatic sky",
     );
     let remote_click = remote
-        .segment(&analysis, &click, &cancel)
+        .segment(&analysis, &click, Cancel::new(&cancel))
         .expect("remote segment");
     same(&remote_click, &clicked, "clicked selection");
     // Stopping is part of the test: nothing is left holding the port.

@@ -3,6 +3,7 @@
 //! `RAWMAKASE_TEST_DENOISE_TILES` names a folder of `inputN.f32` / `outputN.f32` pairs
 //! (little-endian, `[1, 4, 512, 512]` in, `[1, 3, 1024, 1024]` out) written by the Python
 //! reference with the same ONNX Runtime release, for the contract's tolerance check.
+use rawmakase_cancel::Cancel;
 use rawmakase_inference::denoise::TileModel;
 use rawmakase_inference::{Denoiser, InferenceError, LoadOptions, Provider};
 use std::path::PathBuf;
@@ -45,7 +46,7 @@ fn check(provider: Provider) {
             assert!(i > 0, "no tiles in {}", dir.display());
             break;
         }
-        let ours = denoiser.run(&read(&input), &cancel).unwrap();
+        let ours = denoiser.run(&read(&input), Cancel::new(&cancel)).unwrap();
         let theirs = read(&dir.join(format!("output{i}.f32")));
         assert_eq!(ours.len(), theirs.len());
         let peak = theirs.iter().fold(0f32, |m, v| m.max(v.abs()));
@@ -92,7 +93,7 @@ fn a_raised_cancel_flag_stops_a_running_tile() {
             cancel.store(true, Ordering::Relaxed);
         });
         let started = std::time::Instant::now();
-        let result = denoiser.run(&input, &cancel);
+        let result = denoiser.run(&input, Cancel::new(&cancel));
         eprintln!("cancelled after {:?}", started.elapsed());
         assert_eq!(result.err(), Some(InferenceError::Cancelled));
     });
