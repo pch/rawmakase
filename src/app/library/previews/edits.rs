@@ -7,7 +7,7 @@ use crate::catalog::PhotoId;
 use crate::catalog::preview_cache::{PreviewCache, Stamp};
 use eframe::egui;
 use rawmakase_cancel::Cancel;
-use rawmakase_decode::ai_cache::AiCache;
+use rawmakase_decode::ai::cache::AiCache;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -78,7 +78,7 @@ type RenderWithAi = fn(
     &Path,
     &crate::storage::Identity,
     &EditSource,
-    &rawmakase_decode::ai_cache::AiEntry,
+    &rawmakase_decode::ai::cache::AiEntry,
     Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage>;
 /// Where edited preview jobs go, and how fast they are rendered. Dropping it

@@ -3,7 +3,7 @@
 use super::source::{EditSource, PreviewAi};
 use crate::model::recipe::Recipe;
 use rawmakase_cancel::Cancel;
-use rawmakase_decode::ai_cache::AiCache;
+use rawmakase_decode::ai::cache::AiCache;
 use std::path::Path;
 
 /// A 640 px preview of `path` developed with `source`, as Develop's Fit draws it
@@ -22,7 +22,7 @@ pub(super) fn render_edited_with_ai(
     path: &Path,
     file: &crate::storage::Identity,
     source: &EditSource,
-    entry: &rawmakase_decode::ai_cache::AiEntry,
+    entry: &rawmakase_decode::ai::cache::AiEntry,
     cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
     develop_with_ai(path, file, source, entry, 640, cancel)
@@ -43,7 +43,7 @@ pub(super) fn finished_entry(
     ai: Option<&AiCache>,
 ) -> Option<(
     crate::storage::Identity,
-    rawmakase_decode::ai_cache::AiEntry,
+    rawmakase_decode::ai::cache::AiEntry,
 )> {
     if !source.renders_ai() {
         return None;
@@ -100,11 +100,11 @@ fn develop_with_ai(
     path: &Path,
     file: &crate::storage::Identity,
     source: &EditSource,
-    entry: &rawmakase_decode::ai_cache::AiEntry,
+    entry: &rawmakase_decode::ai::cache::AiEntry,
     edge: u32,
     cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
-    use rawmakase_decode::ai_denoise::{ModelOutput, assemble};
+    use rawmakase_decode::ai::denoise::{ModelOutput, assemble};
     let raw = crate::photo::open(path)?;
     let recipe = EditSource::recipe(Some(source), &raw.metadata, path, cancel)?;
     let plain = raw.develop(crate::camera_data::Decode::Full(Default::default()), cancel)?;

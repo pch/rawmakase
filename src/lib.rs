@@ -29,12 +29,11 @@ pub use rawmakase_engine::develop;
 // Developing and writing exports, with their watermarks (crates/rawmakase-export).
 pub use rawmakase_export::{export, watermark};
 // RAW decoding, colour management, demosaicing, opening and decoding a photo
-// (crates/rawmakase-decode). Its `ai_denoise` is reached by its crate path: this
-// crate's own `ai_denoise` is the service.
-pub use rawmakase_decode::{
-    ai_cache, camera_look, color_management, decode_cache, decode_dump, fingerprint, half_check,
-    photo, raw,
-};
+// (crates/rawmakase-decode), and its development tools. Its `ai::denoise` is
+// reached by its crate path: this crate's own `ai_denoise` is the service.
+pub use rawmakase_decode::ai::cache as ai_cache;
+pub use rawmakase_decode::dev::{decode_dump, fingerprint, half_check};
+pub use rawmakase_decode::{camera_look, color_management, decode_cache, photo, raw};
 pub(crate) use rawmakase_decode::{decode, raster};
 // File formats and presets over the model, and which edit a photo develops with
 // (crates/rawmakase-interop).
