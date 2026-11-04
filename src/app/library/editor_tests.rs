@@ -43,3 +43,46 @@ fn unflagging_the_photo_open_in_develop_with_picked_shown_opens_one_still_shown(
     assert_eq!(editor.document.catalog_photo, Some(a));
     Ok(())
 }
+
+/// What the session file says, as last written.
+fn saved_session(path: &std::path::Path) -> crate::app::preferences::session::Session {
+    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+}
+
+/// The Library's place is remembered as soon as it changes, with the layout shown then
+/// even while a drag or typing is still changing it; a change of layout alone waits
+/// until it settles; without a Library nothing is remembered.
+#[test]
+fn the_place_is_remembered_at_once_and_a_layout_alone_once_it_settles() -> anyhow::Result<()> {
+    use crate::app::library::views::View;
+    use crate::app::shell::workspace::LayoutEdit;
+    let (d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+    let session = d.path().join("session.json");
+    e.session_file = Some(session.clone());
+    e.library.as_mut().unwrap().select(Some(ids[0]));
+    e.remember_place(LayoutEdit::Settled);
+    assert_eq!(saved_session(&session).selected_photo, Some(ids[0]));
+
+    // A new place while the layout changes: both are kept, the layout as shown.
+    let library = e.library.as_mut().unwrap();
+    library.set_view(View::Loupe);
+    library.select(Some(ids[1]));
+    e.remember_place(LayoutEdit::Changing);
+    let saved = saved_session(&session);
+    assert_eq!(saved.selected_photo, Some(ids[1]));
+    assert_eq!(saved.library_layout.view, "loupe");
+
+    // The layout alone: not while it changes, then once it settles.
+    e.library.as_mut().unwrap().set_view(View::Grid);
+    e.remember_place(LayoutEdit::Changing);
+    assert_eq!(saved_session(&session).library_layout.view, "loupe");
+    e.remember_place(LayoutEdit::Settled);
+    assert_eq!(saved_session(&session).library_layout.view, "grid");
+
+    // Without a Library, what was remembered stays.
+    std::fs::remove_file(&session)?;
+    e.library = None;
+    e.remember_place(LayoutEdit::Settled);
+    assert!(!session.exists());
+    Ok(())
+}
