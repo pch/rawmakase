@@ -106,7 +106,7 @@ fn stale_auto_results_are_ignored_after_moving_on() {
     editor
         .tx
         .send(worker::Event::Auto {
-            id: editor.load.id() + 1,
+            id: editor.document.load_id() + 1,
             kind: worker::AutoKind::Settings,
             result: Ok(Box::new(auto)),
         })

@@ -1598,9 +1598,9 @@ impl Editor {
             // opened again where it is now. Its edit was saved before the
             // move, so nothing is lost.
             let unfinished =
-                self.load.is_running() || self.document.full().is_none_or(|image| image.fast);
+                self.document.loading() || self.document.full().is_none_or(|image| image.fast);
             if unfinished && let Some(id) = self.document.catalog_photo {
-                self.load.invalidate();
+                self.document.invalidate_load();
                 self.file_ops.reopen = Some((id, path.clone()));
             }
             self.document.relink(path);

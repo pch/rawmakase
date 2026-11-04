@@ -114,7 +114,7 @@ impl Editor {
             return;
         };
         let (generation, _) = self.document.camera_thumbnail_task.start();
-        let id = self.load.id();
+        let id = self.document.load_id();
         crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),

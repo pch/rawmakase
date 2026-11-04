@@ -421,7 +421,7 @@ impl Editor {
         self.profile_download.job = Some(Job {
             entry,
             origin: Origin {
-                load: self.load.id(),
+                load: self.document.load_id(),
                 file,
                 profile: self.document.edit.recipe().profile.clone(),
                 fits: self.document.camera_look.id(),
@@ -496,7 +496,7 @@ impl Editor {
     /// camera-look fit asked for since.
     fn still_asked_for(&self, job: &Job) -> bool {
         let origin = &job.origin;
-        origin.load == self.load.id()
+        origin.load == self.document.load_id()
             && self.document.edit.recipe().profile == origin.profile
             && self.document.camera_look.id() == origin.fits
             && self

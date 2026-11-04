@@ -55,7 +55,7 @@ impl Editor {
             return;
         }
         let (_, cancel) = self.document.auto.start();
-        let id = self.load.id();
+        let id = self.document.load_id();
         let base = self.document.edit.recipe().clone();
         self.document.auto_input = Some(inputs(kind, &base));
         crate::app::task::spawn(

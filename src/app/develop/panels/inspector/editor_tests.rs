@@ -116,7 +116,7 @@ fn the_basic_panel_offers_relative_white_balance_for_a_jpeg() {
     };
     let (profiles, _) = crate::camera_profiles::installed(&m);
     editor.document.reset(None);
-    let (generation, _) = editor.load.start();
+    let (generation, _) = editor.document.start_load();
     for event in [
         Event::Header(Box::new(worker::LoadedHeader {
             id: generation,

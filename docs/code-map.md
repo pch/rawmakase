@@ -297,7 +297,7 @@ above rather than implementing SQL, file formats or pixel processing.
 | --- | --- |
 | [app/mod.rs](../src/app/mod.rs) | `Editor`, initialization, lifecycle, worker connections and explicit session-write destination. |
 | [app/shell/crash_log.rs](../src/app/shell/crash_log.rs) | Every panic appended to `crash.log` in the local data folder (moved to `crash.old.log` past 1 MB), and a panic that ends the desktop app returned as an error, which Windows shows in a dialog (#623). |
-| [state.rs](../src/app/develop/state.rs) | Separate document, decoded-image pair, preview, viewport and preset-browser state; centralized document reset. |
+| [state.rs](../src/app/develop/state.rs) | Separate document, decoded-image pair, preview, viewport and preset-browser state. The `Document` (the open photo, its edit session, decoded images) owns its load: `open` starts a fresh document and its load together, `close` ends both, `invalidate_load` ends only the load (quitting before the final save, a file moving while it loads), so no document is replaced without its load following. Not yet a headless session: the editor still coordinates its renders, catalog and views. |
 | [edit_session/history.rs](../src/edit_session/history.rs) | Bounded undo/redo, redo-branch invalidation, one transaction per editing gesture, and saving and restoring History with the edit. |
 | [editing.rs](../src/app/develop/editing.rs) | Before/after frame snapshots bound to a document generation so navigation cannot mix histories. |
 | [step_name.rs](../src/app/develop/step_name.rs) | The name the controls drawn in a frame give the History step they make: owned by the editor, passed explicitly to the sliders and resettable sections, handed to History as the edit frame finishes. |

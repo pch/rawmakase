@@ -190,13 +190,13 @@ fn photo_path(e: &Editor, id: crate::catalog::PhotoId) -> std::path::PathBuf {
 fn opening_another_photo_moves_the_load_on_once() -> anyhow::Result<()> {
     let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
     assert!(e.load_raw(photo_path(&e, ids[0]), Some(ids[0])));
-    let first = e.load.id();
-    assert!(e.load.is_running());
+    let first = e.document.load_id();
+    assert!(e.document.loading());
     assert_eq!(e.document.catalog_photo, Some(ids[0]));
     assert!(e.load_raw(photo_path(&e, ids[1]), Some(ids[1])));
-    assert_eq!(e.load.id(), first + 1);
-    assert!(!e.load.counts(first));
-    assert!(e.load.is_running());
+    assert_eq!(e.document.load_id(), first + 1);
+    assert!(!e.document.load_counts(first));
+    assert!(e.document.loading());
     assert_eq!(e.document.catalog_photo, Some(ids[1]));
     Ok(())
 }
@@ -207,12 +207,12 @@ fn opening_another_photo_moves_the_load_on_once() -> anyhow::Result<()> {
 fn closing_the_photo_ends_its_load_and_starts_none() -> anyhow::Result<()> {
     let (_d, mut e, ids) = editor_with_catalog(&["a.RAF"])?;
     assert!(e.load_raw(photo_path(&e, ids[0]), Some(ids[0])));
-    let loading = e.load.id();
+    let loading = e.document.load_id();
     e.close_document();
     assert_eq!(e.document.catalog_photo, None);
-    assert!(!e.load.is_running());
-    assert!(!e.load.counts(loading));
-    assert_eq!(e.load.id(), loading + 1);
+    assert!(!e.document.loading());
+    assert!(!e.document.load_counts(loading));
+    assert_eq!(e.document.load_id(), loading + 1);
     Ok(())
 }
 
@@ -222,15 +222,15 @@ fn closing_the_photo_ends_its_load_and_starts_none() -> anyhow::Result<()> {
 fn only_the_latest_load_finishing_ends_it_and_its_results_still_count() -> anyhow::Result<()> {
     let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
     assert!(e.load_raw(photo_path(&e, ids[0]), Some(ids[0])));
-    let stale = e.load.id();
+    let stale = e.document.load_id();
     assert!(e.load_raw(photo_path(&e, ids[1]), Some(ids[1])));
-    let latest = e.load.id();
-    e.load.finish(stale);
-    assert!(e.load.is_running());
-    e.load.finish(latest);
-    assert!(!e.load.is_running());
-    assert_eq!(e.load.id(), latest);
-    assert!(e.load.counts(latest));
+    let latest = e.document.load_id();
+    e.document.finish_load(stale);
+    assert!(e.document.loading());
+    e.document.finish_load(latest);
+    assert!(!e.document.loading());
+    assert_eq!(e.document.load_id(), latest);
+    assert!(e.document.load_counts(latest));
     Ok(())
 }
 
@@ -239,11 +239,11 @@ fn only_the_latest_load_finishing_ends_it_and_its_results_still_count() -> anyho
 fn a_refused_open_leaves_the_photo_and_its_load_as_they_were() -> anyhow::Result<()> {
     let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
     assert!(e.load_raw(photo_path(&e, ids[0]), Some(ids[0])));
-    let loading = e.load.id();
+    let loading = e.document.load_id();
     assert!(e.activity.begin_dialog());
     assert!(!e.load_raw(photo_path(&e, ids[1]), Some(ids[1])));
     assert_eq!(e.document.catalog_photo, Some(ids[0]));
-    assert_eq!(e.load.id(), loading);
-    assert!(e.load.is_running());
+    assert_eq!(e.document.load_id(), loading);
+    assert!(e.document.loading());
     Ok(())
 }

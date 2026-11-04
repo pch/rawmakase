@@ -594,7 +594,7 @@ impl Editor {
         });
         self.selection.worker.submit(
             worker::Job {
-                load: self.load.id(),
+                load: self.document.load_id(),
                 generation,
                 cancel,
                 image,
@@ -625,7 +625,7 @@ impl Editor {
     }
     fn apply_done(&mut self, done: Done) {
         let result = done.result;
-        if done.load != self.load.id() || done.generation != self.selection.task.id() {
+        if done.load != self.document.load_id() || done.generation != self.selection.task.id() {
             self.discard_generated(result.ok());
             return;
         }

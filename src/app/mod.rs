@@ -22,7 +22,6 @@ pub(crate) struct Editor {
     #[cfg(target_os = "macos")]
     native_menu: bool,
     activity: activity::Activity,
-    load: task::Task,
     presets: PresetBrowser,
     view: ViewState,
     /// The name the controls drawn this frame gave the History step they make.
@@ -278,7 +277,6 @@ impl Editor {
             #[cfg(target_os = "macos")]
             native_menu: false,
             activity: Default::default(),
-            load: Default::default(),
             presets: PresetBrowser {
                 favorites: crate::presets::load_favorites(),
                 ..Default::default()

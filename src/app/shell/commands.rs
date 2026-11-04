@@ -333,7 +333,7 @@ impl Editor {
     /// Reconcile at command/frame boundaries as worker results and undo can edit
     /// the recipe outside an edit frame. Revisions identify observed recipe states.
     pub(in crate::app) fn sync_command_revision(&mut self) {
-        let generation = self.load.id();
+        let generation = self.document.load_id();
         if let Some((seen_generation, recipe)) = &self.automation.observed
             && *seen_generation == generation
             && *recipe == *self.document.edit.recipe()
@@ -389,9 +389,9 @@ impl Editor {
                 .then(|| self.document.path.as_ref().map(|p| p.display().to_string()))
                 .flatten(),
             photo_id: develop.then_some(self.document.catalog_photo).flatten(),
-            generation: self.load.id(),
+            generation: self.document.load_id(),
             revision: self.automation.revision,
-            loaded: develop && self.document.full().is_some() && !self.load.is_running(),
+            loaded: develop && self.document.full().is_some() && !self.document.loading(),
             open_failed: self.open_failed(),
             open_error: self
                 .open_failed()
@@ -450,7 +450,7 @@ impl Editor {
     pub(in crate::app) fn open_failed(&self) -> Option<crate::catalog::PhotoId> {
         (self.module == Module::Develop
             && self.document.failed.is_some()
-            && !self.load.is_running())
+            && !self.document.loading())
         .then_some(self.document.catalog_photo)
         .flatten()
     }
@@ -471,7 +471,9 @@ impl Editor {
         if target
             .photo_id
             .is_some_and(|id| self.document.catalog_photo != Some(id))
-            || target.generation.is_some_and(|n| n != self.load.id())
+            || target
+                .generation
+                .is_some_and(|n| n != self.document.load_id())
             || target
                 .revision
                 .is_some_and(|n| n != self.automation.revision)
@@ -499,7 +501,7 @@ impl Editor {
         if self.module == Module::Library || self.document.metadata.is_none() {
             return Err(Error::new("no_document", "Open a photo in Develop first"));
         }
-        if self.load.is_running() || self.document.full().is_none() {
+        if self.document.loading() || self.document.full().is_none() {
             return Err(Error::new("not_ready", "The photo is still loading"));
         }
         Ok(())
@@ -668,7 +670,7 @@ impl Editor {
                 source,
                 param,
                 target.mask,
-                self.load.id(),
+                self.document.load_id(),
                 self.view.mixer_adjust.min(2),
             )),
             _ => None,
@@ -797,7 +799,7 @@ impl Editor {
                         photo,
                         path,
                         max_edge,
-                        self.load.id(),
+                        self.document.load_id(),
                         self.automation.revision,
                         ctx.clone(),
                     )

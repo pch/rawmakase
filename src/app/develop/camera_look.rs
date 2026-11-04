@@ -29,7 +29,7 @@ impl Editor {
             return;
         };
         let (generation, cancel) = self.document.camera_look.start();
-        let id = self.load.id();
+        let id = self.document.load_id();
         let profile = self.document.edit.recipe().profile.clone();
         let sent = profile.clone();
         crate::app::task::spawn(

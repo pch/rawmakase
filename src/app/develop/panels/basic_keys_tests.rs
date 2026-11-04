@@ -354,7 +354,8 @@ fn the_selection_stays_across_photos_and_modules_and_keys_rest_in_the_library() 
     tap(&mut e, Key::Equals, Modifiers::NONE);
     assert_eq!(e.document.edit.recipe().shadows, 0.);
     open(&mut e, raw());
-    e.load = Default::default();
+    let loaded = e.document.load_id();
+    e.document.finish_load(loaded);
     tap(&mut e, Key::Equals, Modifiers::NONE);
     assert!(close(e.document.edit.recipe().shadows, 0.05));
 }

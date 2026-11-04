@@ -94,7 +94,7 @@ const WORK: &[Row] = &[
     // Shows on the photo (its badge) and the Develop toolbar's spinner.
     Row {
         kind: Kind::Loader,
-        running: Some(|e| e.load.is_running()),
+        running: Some(|e| e.document.loading()),
         closing: None,
         status: None,
         slows_previews: true,

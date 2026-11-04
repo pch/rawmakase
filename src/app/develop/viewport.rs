@@ -147,7 +147,7 @@ impl Editor {
         let palette = theme::palette(ui.ctx());
         // A photo counts as opening until its first render arrives, even after
         // the decode has finished; only an empty document shows the hint.
-        let opening = self.load.is_running()
+        let opening = self.document.loading()
             || self.document.catalog_photo.is_some()
             || self.document.path.is_some();
         if !opening {

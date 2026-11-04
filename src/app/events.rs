@@ -108,7 +108,7 @@ impl Editor {
                         Err(e) => self.messages.fail(e.to_string()),
                     }
                 }
-                Event::Auto { id, kind, result } if id == self.load.id() => {
+                Event::Auto { id, kind, result } if id == self.document.load_id() => {
                     self.auto_ready(kind, result)
                 }
                 Event::PointColorSample {
@@ -116,7 +116,7 @@ impl Editor {
                     generation,
                     sampled,
                     result,
-                } if id == self.load.id()
+                } if id == self.document.load_id()
                     && self.document.point_color_pick.is_running()
                     && self.document.point_color_pick.id() == generation =>
                 {
@@ -127,7 +127,7 @@ impl Editor {
                     generation,
                     sampled,
                     result,
-                } if id == self.load.id()
+                } if id == self.document.load_id()
                     && self.document.targeted_pick.is_running()
                     && self.document.targeted_pick.id() == generation =>
                 {
@@ -138,24 +138,30 @@ impl Editor {
                     generation,
                     analysed,
                     result,
-                } if id == self.load.id() => self.upright_ready(generation, &analysed, result),
+                } if id == self.document.load_id() => {
+                    self.upright_ready(generation, &analysed, result)
+                }
                 Event::CameraLook {
                     id,
                     generation,
                     profile,
                     result,
-                } if id == self.load.id() => self.camera_look_ready(generation, profile, result),
+                } if id == self.document.load_id() => {
+                    self.camera_look_ready(generation, profile, result)
+                }
                 Event::CameraThumbnail {
                     id,
                     generation,
                     result,
-                } if id == self.load.id() => self.camera_thumbnail_ready(ctx, generation, result),
+                } if id == self.document.load_id() => {
+                    self.camera_thumbnail_ready(ctx, generation, result)
+                }
                 Event::Straighten {
                     id,
                     generation,
                     analysed,
                     result,
-                } if id == self.load.id() => {
+                } if id == self.document.load_id() => {
                     self.auto_straighten_ready(generation, &analysed, result)
                 }
                 Event::Selection(done) => self.selection_done(*done),
@@ -196,7 +202,7 @@ impl Editor {
                     errors,
                     groups,
                     imported,
-                } if id == self.load.id() => {
+                } if id == self.document.load_id() => {
                     let before = self.document.edit.recipe().clone();
                     self.document.profiles = profiles;
                     self.document.profile_errors = errors;
@@ -232,9 +238,11 @@ impl Editor {
                         Err(e) => self.messages.fail(e.to_string()),
                     }
                 }
-                Event::Header(header) if header.id == self.load.id() => self.header_ready(*header),
+                Event::Header(header) if header.id == self.document.load_id() => {
+                    self.header_ready(*header)
+                }
                 Event::StandIn(stand_in) => self.stand_in_ready(ctx, *stand_in),
-                Event::Embedded { id, image: im } if id == self.load.id() => {
+                Event::Embedded { id, image: im } if id == self.document.load_id() => {
                     // The stored preview, which shows the edit, stays until the
                     // first render.
                     if self.preview.stand_in.is_some() {
@@ -275,10 +283,10 @@ impl Editor {
                     full,
                     file,
                     status,
-                } if id == self.load.id() => {
+                } if id == self.document.load_id() => {
                     self.document.set_image(full);
                     self.document.image_file = file;
-                    self.load.finish(id);
+                    self.document.finish_load(id);
                     // An Upright mode chosen before the photo decoded still needs analysing.
                     self.ensure_analysis();
                     if !self.document.edit.save_state().is_protected() {
@@ -379,10 +387,10 @@ impl Editor {
                     id,
                     task: TaskKind::Load,
                     error,
-                } if id == self.load.id() => {
+                } if id == self.document.load_id() => {
                     self.document.failed = Some(error.clone());
                     self.messages.fail_on(Topic::Load, error);
-                    self.load.finish(id);
+                    self.document.finish_load(id);
                     // No render is coming to take over from the stored preview.
                     self.preview.stand_in = None;
                 }

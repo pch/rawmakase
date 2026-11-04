@@ -223,7 +223,7 @@ impl Editor {
             commands::Until::Loaded(id) => {
                 let develop = self.module == Module::Develop && self.document.metadata.is_some();
                 let photo = develop.then_some(self.document.catalog_photo).flatten();
-                let loaded = develop && self.document.full().is_some() && !self.load.is_running();
+                let loaded = develop && self.document.full().is_some() && !self.document.loading();
                 // So does its opening failing: it won't load, and the state
                 // says it isn't loaded.
                 let failed = self.open_failed() == Some(id);
@@ -304,7 +304,7 @@ impl Editor {
                         })?;
                     command.target = commands::Target {
                         mask: Some(index),
-                        generation: Some(self.load.id()),
+                        generation: Some(self.document.load_id()),
                         revision: Some(self.automation.revision),
                         ..Default::default()
                     };

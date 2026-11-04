@@ -188,7 +188,7 @@ fn the_decoded_images_file_is_the_loaders_reading() {
     let f = fixture(Provider::Cpu, Behaviour::default());
     let photo = f.photo("a.raw");
     let before = crate::storage::Identity::read(&photo).unwrap();
-    let (generation, _) = editor.load.start();
+    let (generation, _) = editor.document.start_load();
     editor
         .tx
         .send(Event::Ready {

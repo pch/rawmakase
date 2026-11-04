@@ -148,9 +148,9 @@ fn edits_reject_library_loading_modal_and_stale_targets() {
     e.preferences.open = true;
     assert_eq!(set(&mut e, &ctx, 1.).unwrap_err().code, "busy");
     e.preferences.open = false;
-    let (generation, _) = e.load.start();
+    let (generation, _) = e.document.start_load();
     assert_eq!(set(&mut e, &ctx, 1.).unwrap_err().code, "not_ready");
-    e.load.finish(generation);
+    e.document.finish_load(generation);
     let mut command = Command::new(Operation::Set(Param::Setting(ParameterId::Exposure), 1.));
     command.target.generation = Some(generation + 1);
     assert_eq!(
@@ -165,7 +165,7 @@ fn explicit_mask_has_local_units_and_rejects_stale_index() {
     e.document.edit.setup_mut().masks.push(Default::default());
     let target = Target {
         mask: Some(0),
-        generation: Some(e.load.id()),
+        generation: Some(e.document.load_id()),
         revision: Some(e.automation.revision),
         ..Default::default()
     };
@@ -561,7 +561,7 @@ fn turns_group_only_the_same_parameter_and_scope() {
     let mut command = Command::new(Operation::Adjust(Param::Setting(ParameterId::Exposure), 1));
     command.target = Target {
         mask: Some(0),
-        generation: Some(e.load.id()),
+        generation: Some(e.document.load_id()),
         revision: Some(e.automation.revision),
         ..Default::default()
     };

@@ -21,7 +21,7 @@ impl Editor {
             return;
         };
         let (generation, _) = self.document.upright.start();
-        let id = self.load.id();
+        let id = self.document.load_id();
         let base = self.document.edit.recipe().clone();
         let analysed = base.clone();
         crate::app::task::spawn(

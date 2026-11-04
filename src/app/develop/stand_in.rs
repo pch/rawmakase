@@ -193,7 +193,7 @@ impl Editor {
     pub(in crate::app) fn stand_in_ready(&mut self, ctx: &egui::Context, stand_in: StandIn) {
         match stand_in.load {
             Some(load) => {
-                if load == self.load.id()
+                if load == self.document.load_id()
                     && self.document.catalog_photo == Some(stand_in.wanted.photo)
                     && !self.preview.live()
                 {
