@@ -53,15 +53,22 @@ must keep meaning what they meant: never reinterpret an existing field's scale.
 
 ## 3. XMP and Lightroom settings
 
-In `crates/rawmakase-interop/src/xmp/`:
+Name the setting's Camera Raw key once, in
+`crates/rawmakase-model/src/model/camera_raw.rs`: its key, Lightroom's units per
+recipe unit (100 for most sliders) and the preset group Lightroom files it under
+(`CURVE_REFINE_SATURATION`). Then, in `crates/rawmakase-interop/src/xmp/`:
 
-- `apply.rs` reads the Camera Raw key into the recipe, with its scale and the range
-  it accepts (`settings.assign("CurveRefineSaturation", …, 0.01, 0., 2.)`). Lightroom
-  catalogs' develop settings go through the same code (`lr_develop`), so imported
-  catalogs get the setting too.
-- `write.rs` writes it back for exports' embedded XMP, with the same key and scale, so
-  reading the packet back reproduces the edit.
-- `preset_write.rs` names the setting group its key belongs to, for Lightroom presets.
+- `apply.rs` reads it into the recipe with the range it accepts
+  (`settings.assign(crs::CURVE_REFINE_SATURATION, …, 0., 2.)`). Lightroom catalogs'
+  develop settings go through the same code (`lr_develop`), so imported catalogs get
+  the setting too.
+- `write.rs` writes it back for exports' embedded XMP, with its decimals and sign
+  (`s.put(crs::CURVE_REFINE_SATURATION, …, 0, false)`), so reading the packet back
+  reproduces the edit.
+- `preset_write.rs`'s `group_of_key` finds its group in the table.
+
+`xmp/key_table_tests.rs` freezes what every key reads and writes; a new key shows up
+in its golden file, which you re-record with `RAWMAKASE_BLESS=1` and review.
 
 Check the key, the scale and the default against Lightroom or Camera Raw, not
 against another program. If the setting asks for Auto, it is measured through

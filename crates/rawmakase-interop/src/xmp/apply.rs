@@ -1,5 +1,6 @@
 use super::PhotoMeasures;
 use super::Preset;
+use crate::model::camera_raw as crs;
 use crate::model::recipe::Recipe;
 use crate::{camera_data::Metadata, camera_profiles::CameraProfile};
 use anyhow::{Context, Result, ensure};
@@ -34,14 +35,14 @@ fn boolean(values: &BTreeMap<String, String>, key: &str) -> Result<Option<bool>>
 }
 /// The settings Lightroom's Auto Settings sets.
 pub(crate) const AUTO_TONE_KEYS: [&str; 8] = [
-    "Exposure2012",
-    "Contrast2012",
-    "Highlights2012",
-    "Shadows2012",
-    "Whites2012",
-    "Blacks2012",
-    "Vibrance",
-    "Saturation",
+    crs::EXPOSURE.key,
+    crs::CONTRAST.key,
+    crs::HIGHLIGHTS.key,
+    crs::SHADOWS.key,
+    crs::WHITES.key,
+    crs::BLACKS.key,
+    crs::VIBRANCE.key,
+    crs::SATURATION.key,
 ];
 /// The value Lightroom's catalog holds in each of [`AUTO_TONE_KEYS`] while an Auto
 /// Settings is still to be measured.
@@ -62,18 +63,21 @@ struct Settings<'a> {
 impl Settings<'_> {
     /// [`Self::assign`], leaving `out` as it is for an Auto Settings still to be
     /// measured (see [`unmeasured`]).
-    fn assign_tone(&mut self, key: &str, out: &mut f32, scale: f32) -> Result<()> {
-        if unmeasured(self.values, key)? {
-            self.seen.insert(key.to_string());
+    fn assign_tone(&mut self, slider: crs::Slider, out: &mut f32) -> Result<()> {
+        if unmeasured(self.values, slider.key)? {
+            self.seen.insert(slider.key.to_string());
             return Ok(());
         }
-        let limit = if key == "Exposure2012" { 8. } else { 1. };
-        self.assign(key, out, scale, -limit, limit)
+        let limit = if slider == crs::EXPOSURE { 8. } else { 1. };
+        self.assign(slider, out, -limit, limit)
     }
-    fn assign(&mut self, key: &str, out: &mut f32, scale: f32, lo: f32, hi: f32) -> Result<()> {
+    /// `slider`'s value in recipe units into `out`, when it is set; an error outside
+    /// `lo..=hi` (in recipe units).
+    fn assign(&mut self, slider: crs::Slider, out: &mut f32, lo: f32, hi: f32) -> Result<()> {
+        let key = slider.key;
         self.seen.insert(key.to_string());
         if let Some(value) = number(self.values, key)? {
-            let value = value * scale;
+            let value = value * slider.scale();
             ensure!(
                 (lo..=hi).contains(&value),
                 "{key} is outside supported range"
@@ -439,26 +443,20 @@ impl Preset {
     }
 
     fn apply_basic(&self, settings: &mut Settings<'_>, r: &mut Recipe) -> Result<()> {
-        settings.assign_tone("Exposure2012", &mut r.exposure, 1.)?;
-        settings.assign_tone("Contrast2012", &mut r.contrast, 0.01)?;
-        settings.assign_tone("Highlights2012", &mut r.highlights, 0.01)?;
-        settings.assign_tone("Shadows2012", &mut r.shadows, 0.01)?;
-        settings.assign_tone("Whites2012", &mut r.whites, 0.01)?;
-        settings.assign_tone("Blacks2012", &mut r.blacks, 0.01)?;
-        settings.assign_tone("Saturation", &mut r.saturation, 0.01)?;
-        settings.assign_tone("Vibrance", &mut r.vibrance, 0.01)?;
-        settings.assign("Sharpness", &mut r.sharpening, 1. / 150., 0., 1.)?;
-        settings.assign("SharpenRadius", &mut r.sharpening_radius, 1., 0.5, 3.)?;
-        settings.assign("SharpenDetail", &mut r.sharpening_detail, 0.01, 0., 1.)?;
-        settings.assign(
-            "SharpenEdgeMasking",
-            &mut r.sharpening_masking,
-            0.01,
-            0.,
-            1.,
-        )?;
-        settings.assign("LuminanceSmoothing", &mut r.noise_luma, 0.01, 0., 1.)?;
-        settings.assign("ColorNoiseReduction", &mut r.noise_chroma, 0.01, 0., 1.)?;
+        settings.assign_tone(crs::EXPOSURE, &mut r.exposure)?;
+        settings.assign_tone(crs::CONTRAST, &mut r.contrast)?;
+        settings.assign_tone(crs::HIGHLIGHTS, &mut r.highlights)?;
+        settings.assign_tone(crs::SHADOWS, &mut r.shadows)?;
+        settings.assign_tone(crs::WHITES, &mut r.whites)?;
+        settings.assign_tone(crs::BLACKS, &mut r.blacks)?;
+        settings.assign_tone(crs::SATURATION, &mut r.saturation)?;
+        settings.assign_tone(crs::VIBRANCE, &mut r.vibrance)?;
+        settings.assign(crs::SHARPNESS, &mut r.sharpening, 0., 1.)?;
+        settings.assign(crs::SHARPEN_RADIUS, &mut r.sharpening_radius, 0.5, 3.)?;
+        settings.assign(crs::SHARPEN_DETAIL, &mut r.sharpening_detail, 0., 1.)?;
+        settings.assign(crs::SHARPEN_EDGE_MASKING, &mut r.sharpening_masking, 0., 1.)?;
+        settings.assign(crs::LUMINANCE_SMOOTHING, &mut r.noise_luma, 0., 1.)?;
+        settings.assign(crs::COLOR_NOISE_REDUCTION, &mut r.noise_chroma, 0., 1.)?;
         // Lightroom's Denoise, from the Enhance filter (`filter_list`): AI Denoise at its
         // Amount. Without one, the photo's own setting stays.
         let key = super::filter_list::AI_DENOISE;
@@ -579,13 +577,12 @@ impl Preset {
             Some(other) => anyhow::bail!("Unsupported white balance mode: {other}"),
         }
         settings.assign(
-            "IncrementalTemperature",
+            crs::INCREMENTAL_TEMPERATURE,
             &mut r.incremental_temperature,
-            1.,
             -100.,
             100.,
         )?;
-        settings.assign("IncrementalTint", &mut r.incremental_tint, 1., -100., 100.)?;
+        settings.assign(crs::INCREMENTAL_TINT, &mut r.incremental_tint, -100., 100.)?;
         if given {
             r.update_wb(m);
             r.auto_white_balance = None;
@@ -617,73 +614,45 @@ impl Preset {
                 v.get("ColorVariance").map(String::as_str),
             )?;
         }
-        let bands = [
-            "Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta",
-        ];
-        for (i, band) in bands.iter().enumerate() {
-            for (j, control) in ["Hue", "Saturation", "Luminance"].iter().enumerate() {
-                settings.assign(
-                    &format!("{control}Adjustment{band}"),
-                    &mut r.hsl[i][j],
-                    0.01,
-                    -1.,
-                    1.,
-                )?;
+        for i in 0..8 {
+            for j in 0..3 {
+                settings.assign(crs::HSL[i][j], &mut r.hsl[i][j], -1., 1.)?;
             }
-            settings.assign(
-                &format!("GrayMixer{band}"),
-                &mut r.effects.gray_mix[i],
-                0.01,
-                -1.,
-                1.,
-            )?;
+            settings.assign(crs::GRAY_MIXER[i], &mut r.effects.gray_mix[i], -1., 1.)?;
         }
-        for (i, band) in ["Red", "Green", "Blue"].iter().enumerate() {
+        for i in 0..3 {
             settings.assign(
-                &format!("{band}Hue"),
+                crs::CALIBRATION[i][0],
                 &mut r.effects.calibration[i][0],
-                0.01,
                 -1.,
                 1.,
             )?;
             settings.assign(
-                &format!("{band}Saturation"),
+                crs::CALIBRATION[i][1],
                 &mut r.effects.calibration[i][1],
-                0.01,
                 -1.,
                 1.,
             )?;
         }
-        settings.assign("ShadowTint", &mut r.effects.shadow_tint, 0.01, -1., 1.)?;
+        settings.assign(crs::SHADOW_TINT, &mut r.effects.shadow_tint, -1., 1.)?;
         Ok(())
     }
 
     fn apply_curves(&self, settings: &mut Settings<'_>, r: &mut Recipe) -> Result<()> {
         let v = settings.values;
-        for (i, name) in ["Shadows", "Darks", "Lights", "Highlights"]
-            .iter()
-            .enumerate()
-        {
-            settings.assign(
-                &format!("Parametric{name}"),
-                &mut r.effects.parametric[i],
-                0.01,
-                -1.,
-                1.,
-            )?;
+        for i in 0..4 {
+            settings.assign(crs::PARAMETRIC[i], &mut r.effects.parametric[i], -1., 1.)?;
         }
         settings.assign(
-            "CurveRefineSaturation",
+            crs::CURVE_REFINE_SATURATION,
             &mut r.curve_saturation,
-            0.01,
             0.,
             2.,
         )?;
-        for (i, name) in ["Shadow", "Midtone", "Highlight"].iter().enumerate() {
+        for i in 0..3 {
             settings.assign(
-                &format!("Parametric{name}Split"),
+                crs::PARAMETRIC_SPLITS[i],
                 &mut r.effects.splits[i],
-                0.01,
                 0.01,
                 0.99,
             )?;
@@ -745,39 +714,21 @@ impl Preset {
 
     fn apply_grading(&self, settings: &mut Settings<'_>, r: &mut Recipe) -> Result<()> {
         let v = settings.values;
-        for (i, name) in [(0, "Shadow"), (2, "Highlight")] {
+        // The shadows are grading[0], the highlights grading[2].
+        for (n, i) in [0, 2].into_iter().enumerate() {
+            settings.assign(crs::SPLIT_TONING_HUE[n], &mut r.grading[i][0], 0., 1.)?;
             settings.assign(
-                &format!("SplitToning{name}Hue"),
-                &mut r.grading[i][0],
-                1. / 360.,
-                0.,
-                1.,
-            )?;
-            settings.assign(
-                &format!("SplitToning{name}Saturation"),
+                crs::SPLIT_TONING_SATURATION[n],
                 &mut r.grading[i][1],
-                0.01,
                 0.,
                 1.,
             )?;
-            settings.assign(
-                &format!("ColorGrade{name}Lum"),
-                &mut r.grading[i][2],
-                0.01,
-                -1.,
-                1.,
-            )?;
+            settings.assign(crs::COLOR_GRADE_LUM[n], &mut r.grading[i][2], -1., 1.)?;
         }
-        settings.assign(
-            "ColorGradeMidtoneHue",
-            &mut r.grading[1][0],
-            1. / 360.,
-            0.,
-            1.,
-        )?;
-        settings.assign("ColorGradeMidtoneSat", &mut r.grading[1][1], 0.01, 0., 1.)?;
-        settings.assign("ColorGradeMidtoneLum", &mut r.grading[1][2], 0.01, -1., 1.)?;
-        settings.assign("SplitToningBalance", &mut r.effects.balance, 0.01, -1., 1.)?;
+        settings.assign(crs::COLOR_GRADE_MIDTONE_HUE, &mut r.grading[1][0], 0., 1.)?;
+        settings.assign(crs::COLOR_GRADE_MIDTONE_SAT, &mut r.grading[1][1], 0., 1.)?;
+        settings.assign(crs::COLOR_GRADE_MIDTONE_LUM, &mut r.grading[1][2], -1., 1.)?;
+        settings.assign(crs::SPLIT_TONING_BALANCE, &mut r.effects.balance, -1., 1.)?;
         // Adobe's pre-Color-Grading split toning used full tonal overlap.
         // Only split-tone records without any modern grading keys imply that mode.
         if v.keys().any(|key| key.starts_with("SplitToning"))
@@ -789,15 +740,11 @@ impl Preset {
             r.grading[2][2] = 0.;
             r.effects.global_grade = [0.; 3];
         }
-        settings.assign("ColorGradeBlending", &mut r.effects.blending, 0.01, 0., 1.)?;
-        for (i, (name, scale)) in [("Hue", 1. / 360.), ("Sat", 0.01), ("Lum", 0.01)]
-            .iter()
-            .enumerate()
-        {
+        settings.assign(crs::COLOR_GRADE_BLENDING, &mut r.effects.blending, 0., 1.)?;
+        for i in 0..3 {
             settings.assign(
-                &format!("ColorGradeGlobal{name}"),
+                crs::COLOR_GRADE_GLOBAL[i],
                 &mut r.effects.global_grade[i],
-                *scale,
                 if i == 2 { -1. } else { 0. },
                 1.,
             )?;
@@ -807,54 +754,43 @@ impl Preset {
 
     fn apply_effects(&self, settings: &mut Settings<'_>, r: &mut Recipe) -> Result<()> {
         let v = settings.values;
-        settings.assign("Clarity2012", &mut r.effects.clarity, 0.01, -1., 1.)?;
-        settings.assign("Texture", &mut r.effects.texture, 0.01, -1., 1.)?;
-        settings.assign("Dehaze", &mut r.effects.dehaze, 0.01, -1., 1.)?;
-        settings.assign("GrainAmount", &mut r.effects.grain, 0.01, 0., 1.)?;
-        settings.assign("GrainSize", &mut r.effects.grain_size, 0.01, 0., 1.)?;
-        settings.assign(
-            "GrainFrequency",
-            &mut r.effects.grain_roughness,
-            0.01,
-            0.,
-            1.,
-        )?;
+        settings.assign(crs::CLARITY, &mut r.effects.clarity, -1., 1.)?;
+        settings.assign(crs::TEXTURE, &mut r.effects.texture, -1., 1.)?;
+        settings.assign(crs::DEHAZE, &mut r.effects.dehaze, -1., 1.)?;
+        settings.assign(crs::GRAIN_AMOUNT, &mut r.effects.grain, 0., 1.)?;
+        settings.assign(crs::GRAIN_SIZE, &mut r.effects.grain_size, 0., 1.)?;
+        settings.assign(crs::GRAIN_FREQUENCY, &mut r.effects.grain_roughness, 0., 1.)?;
         settings.seen.insert("GrainSeed".into());
         if let Some(seed) = v.get("GrainSeed") {
             r.effects.grain_seed = seed.parse().context("Invalid grain seed")?;
         }
         settings.assign(
-            "PostCropVignetteAmount",
+            crs::POST_CROP_VIGNETTE_AMOUNT,
             &mut r.effects.vignette,
-            0.01,
             -1.,
             1.,
         )?;
         settings.assign(
-            "PostCropVignetteMidpoint",
+            crs::POST_CROP_VIGNETTE_MIDPOINT,
             &mut r.effects.vignette_midpoint,
-            0.01,
             0.,
             1.,
         )?;
         settings.assign(
-            "PostCropVignetteRoundness",
+            crs::POST_CROP_VIGNETTE_ROUNDNESS,
             &mut r.effects.vignette_roundness,
-            0.01,
             -1.,
             1.,
         )?;
         settings.assign(
-            "PostCropVignetteFeather",
+            crs::POST_CROP_VIGNETTE_FEATHER,
             &mut r.effects.vignette_feather,
-            0.01,
             0.,
             1.,
         )?;
         settings.assign(
-            "PostCropVignetteHighlightContrast",
+            crs::POST_CROP_VIGNETTE_HIGHLIGHT_CONTRAST,
             &mut r.effects.vignette_highlights,
-            0.01,
             0.,
             1.,
         )?;
@@ -866,68 +802,49 @@ impl Preset {
                 .and_then(|code| code.try_into().ok())
                 .with_context(|| format!("Unsupported PostCropVignetteStyle {style}"))?;
         }
+        settings.assign(crs::VIGNETTE_AMOUNT, &mut r.effects.lens_vignette, -1., 1.)?;
         settings.assign(
-            "VignetteAmount",
-            &mut r.effects.lens_vignette,
-            0.01,
-            -1.,
-            1.,
-        )?;
-        settings.assign(
-            "VignetteMidpoint",
+            crs::VIGNETTE_MIDPOINT,
             &mut r.effects.lens_vignette_midpoint,
-            0.01,
             0.,
             1.,
         )?;
-        for (i, name) in ["Purple", "Green"].iter().enumerate() {
+        for i in 0..2 {
+            settings.assign(crs::DEFRINGE_AMOUNT[i], &mut r.effects.defringe[i], 0., 1.)?;
             settings.assign(
-                &format!("Defringe{name}Amount"),
-                &mut r.effects.defringe[i],
-                0.05,
-                0.,
-                1.,
-            )?;
-            settings.assign(
-                &format!("Defringe{name}HueLo"),
+                crs::DEFRINGE_HUE_LO[i],
                 &mut r.effects.defringe_ranges[i][0],
-                0.01,
                 0.,
                 1.,
             )?;
             settings.assign(
-                &format!("Defringe{name}HueHi"),
+                crs::DEFRINGE_HUE_HI[i],
                 &mut r.effects.defringe_ranges[i][1],
-                0.01,
                 0.,
                 1.,
             )?;
         }
         settings.assign(
-            "LuminanceNoiseReductionDetail",
+            crs::LUMINANCE_NOISE_REDUCTION_DETAIL,
             &mut r.effects.luma_detail,
-            0.01,
             0.,
             1.,
         )?;
         settings.assign(
-            "LuminanceNoiseReductionContrast",
+            crs::LUMINANCE_NOISE_REDUCTION_CONTRAST,
             &mut r.effects.luma_contrast,
-            0.01,
             0.,
             1.,
         )?;
         settings.assign(
-            "ColorNoiseReductionDetail",
+            crs::COLOR_NOISE_REDUCTION_DETAIL,
             &mut r.effects.chroma_detail,
-            0.01,
             0.,
             1.,
         )?;
         settings.assign(
-            "ColorNoiseReductionSmoothness",
+            crs::COLOR_NOISE_REDUCTION_SMOOTHNESS,
             &mut r.effects.chroma_smoothness,
-            0.01,
             0.,
             1.,
         )?;
@@ -1002,7 +919,7 @@ impl Preset {
         m: &Metadata,
     ) -> Result<()> {
         let v = settings.values;
-        settings.assign("CropAngle", &mut r.straighten, 1., -45., 45.)?;
+        settings.assign(crs::CROP_ANGLE, &mut r.straighten, -45., 45.)?;
         // An angle the settings give is theirs, not Auto's, even Auto's own number.
         if v.contains_key("CropAngle") {
             r.straighten_auto = None;
@@ -1055,16 +972,14 @@ impl Preset {
             r.lens_profile_choice.choose_lensfun(choice);
         }
         settings.assign(
-            "LensProfileDistortionScale",
+            crs::LENS_PROFILE_DISTORTION_SCALE,
             &mut r.lens_distortion,
-            0.01,
             0.,
             2.,
         )?;
         settings.assign(
-            "LensProfileVignettingScale",
+            crs::LENS_PROFILE_VIGNETTING_SCALE,
             &mut r.lens_vignetting,
-            0.01,
             0.,
             2.,
         )?;
@@ -1077,9 +992,8 @@ impl Preset {
             r.set_profile_corrections(m, state);
         }
         settings.assign(
-            "LensManualDistortionAmount",
+            crs::LENS_MANUAL_DISTORTION_AMOUNT,
             &mut r.lens_manual_distortion,
-            0.01,
             -1.,
             1.,
         )?;
@@ -1088,13 +1002,13 @@ impl Preset {
             r.lens_ca = ca != 0.;
         }
         let t = &mut r.transform;
-        settings.assign("PerspectiveVertical", &mut t.vertical, 0.01, -1., 1.)?;
-        settings.assign("PerspectiveHorizontal", &mut t.horizontal, 0.01, -1., 1.)?;
-        settings.assign("PerspectiveRotate", &mut t.rotate, 1., -10., 10.)?;
-        settings.assign("PerspectiveAspect", &mut t.aspect, 0.01, -1., 1.)?;
-        settings.assign("PerspectiveScale", &mut t.scale, 0.01, 0.5, 1.5)?;
-        settings.assign("PerspectiveX", &mut t.offset_x, 0.01, -1., 1.)?;
-        settings.assign("PerspectiveY", &mut t.offset_y, 0.01, -1., 1.)?;
+        settings.assign(crs::PERSPECTIVE_VERTICAL, &mut t.vertical, -1., 1.)?;
+        settings.assign(crs::PERSPECTIVE_HORIZONTAL, &mut t.horizontal, -1., 1.)?;
+        settings.assign(crs::PERSPECTIVE_ROTATE, &mut t.rotate, -10., 10.)?;
+        settings.assign(crs::PERSPECTIVE_ASPECT, &mut t.aspect, -1., 1.)?;
+        settings.assign(crs::PERSPECTIVE_SCALE, &mut t.scale, 0.5, 1.5)?;
+        settings.assign(crs::PERSPECTIVE_X, &mut t.offset_x, -1., 1.)?;
+        settings.assign(crs::PERSPECTIVE_Y, &mut t.offset_y, -1., 1.)?;
         // Camera Raw crops only with HasCrop: without it the photo is uncropped, even
         // one the camera cropped to another aspect ratio, which Camera Raw records as
         // a crop. Without HasCrop or crop values the photo keeps its starting crop.
@@ -1114,8 +1028,8 @@ impl Preset {
             }
             let start = frame.rect_to_unrotated(r.crop);
             let mut crop = start;
-            for (i, name) in ["Left", "Top", "Right", "Bottom"].iter().enumerate() {
-                settings.assign(&format!("Crop{name}"), &mut crop[i], 1., 0., 1.)?;
+            for (edge, out) in crs::CROP.into_iter().zip(&mut crop) {
+                settings.assign(edge, out, 0., 1.)?;
             }
             if crop != start {
                 // Turning sorts the edges, so a reversed crop is refused before it is.

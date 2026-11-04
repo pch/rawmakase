@@ -1,6 +1,7 @@
 //! Writes a recipe back out as Camera Raw settings (`crs:`), the XMP Lightroom
 //! embeds in its exports. The keys and scales mirror `apply`, so reading the
 //! packet back reproduces the edit.
+use crate::model::camera_raw as crs;
 use crate::xml::{
     self, escape_text,
     ns::{AUX, CRS, DC, LR, PHOTOSHOP, XMP, XMP_MM},
@@ -86,9 +87,13 @@ fn number(value: f32, decimals: usize, signed: bool) -> String {
 pub(super) struct Settings(pub(super) Vec<(String, String)>);
 impl Settings {
     /// `value` in recipe units, written as `value / scale`.
-    fn put(&mut self, key: &str, value: f32, scale: f32, decimals: usize, signed: bool) {
-        self.0
-            .push((key.into(), number(value / scale, decimals, signed)));
+    /// `slider` at `value` (in recipe units) in Lightroom's units, with `decimals`
+    /// decimals and, when `signed`, a `+` on positive values.
+    fn put(&mut self, slider: crs::Slider, value: f32, decimals: usize, signed: bool) {
+        self.0.push((
+            slider.key.into(),
+            number(value / slider.scale(), decimals, signed),
+        ));
     }
     fn text(&mut self, key: &str, value: impl Into<String>) {
         self.0.push((key.into(), value.into()));
@@ -212,101 +217,72 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
         let as_shot = r.incremental_temperature.round() == 0. && r.incremental_tint.round() == 0.;
         s.text("WhiteBalance", if as_shot { "As Shot" } else { "Custom" });
         s.put(
-            "IncrementalTemperature",
+            crs::INCREMENTAL_TEMPERATURE,
             r.incremental_temperature,
-            1.,
             0,
             true,
         );
-        s.put("IncrementalTint", r.incremental_tint, 1., 0, true);
+        s.put(crs::INCREMENTAL_TINT, r.incremental_tint, 0, true);
     } else {
         s.text("WhiteBalance", "Custom");
-        s.put("Temperature", r.temperature, 1., 0, false);
-        s.put("Tint", r.tint, 1., 0, true);
+        s.put(crs::TEMPERATURE, r.temperature, 0, false);
+        s.put(crs::TINT, r.tint, 0, true);
     }
-    s.put("Exposure2012", r.exposure, 1., 2, true);
-    for (key, value) in [
-        ("Contrast2012", r.contrast),
-        ("Highlights2012", r.highlights),
-        ("Shadows2012", r.shadows),
-        ("Whites2012", r.whites),
-        ("Blacks2012", r.blacks),
-        ("Texture", r.effects.texture),
-        ("Clarity2012", r.effects.clarity),
-        ("Dehaze", r.effects.dehaze),
-        ("Vibrance", r.vibrance),
-        ("Saturation", r.saturation),
+    s.put(crs::EXPOSURE, r.exposure, 2, true);
+    for (slider, value) in [
+        (crs::CONTRAST, r.contrast),
+        (crs::HIGHLIGHTS, r.highlights),
+        (crs::SHADOWS, r.shadows),
+        (crs::WHITES, r.whites),
+        (crs::BLACKS, r.blacks),
+        (crs::TEXTURE, r.effects.texture),
+        (crs::CLARITY, r.effects.clarity),
+        (crs::DEHAZE, r.effects.dehaze),
+        (crs::VIBRANCE, r.vibrance),
+        (crs::SATURATION, r.saturation),
     ] {
-        s.put(key, value, 0.01, 0, true);
+        s.put(slider, value, 0, true);
     }
-    for (i, name) in ["Shadows", "Darks", "Lights", "Highlights"]
-        .iter()
-        .enumerate()
-    {
-        s.put(
-            &format!("Parametric{name}"),
-            r.effects.parametric[i],
-            0.01,
-            0,
-            true,
-        );
+    for i in 0..4 {
+        s.put(crs::PARAMETRIC[i], r.effects.parametric[i], 0, true);
     }
-    s.put("CurveRefineSaturation", r.curve_saturation, 0.01, 0, false);
-    for (i, name) in ["Shadow", "Midtone", "Highlight"].iter().enumerate() {
-        s.put(
-            &format!("Parametric{name}Split"),
-            r.effects.splits[i],
-            0.01,
-            0,
-            false,
-        );
+    s.put(crs::CURVE_REFINE_SATURATION, r.curve_saturation, 0, false);
+    for i in 0..3 {
+        s.put(crs::PARAMETRIC_SPLITS[i], r.effects.splits[i], 0, false);
     }
-    s.put("Sharpness", r.sharpening, 1. / 150., 0, false);
-    s.put("SharpenRadius", r.sharpening_radius, 1., 1, true);
-    s.put("SharpenDetail", r.sharpening_detail, 0.01, 0, false);
-    s.put("SharpenEdgeMasking", r.sharpening_masking, 0.01, 0, false);
-    s.put("LuminanceSmoothing", r.noise_luma, 0.01, 0, false);
+    s.put(crs::SHARPNESS, r.sharpening, 0, false);
+    s.put(crs::SHARPEN_RADIUS, r.sharpening_radius, 1, true);
+    s.put(crs::SHARPEN_DETAIL, r.sharpening_detail, 0, false);
+    s.put(crs::SHARPEN_EDGE_MASKING, r.sharpening_masking, 0, false);
+    s.put(crs::LUMINANCE_SMOOTHING, r.noise_luma, 0, false);
     s.put(
-        "LuminanceNoiseReductionDetail",
+        crs::LUMINANCE_NOISE_REDUCTION_DETAIL,
         r.effects.luma_detail,
-        0.01,
         0,
         false,
     );
     s.put(
-        "LuminanceNoiseReductionContrast",
+        crs::LUMINANCE_NOISE_REDUCTION_CONTRAST,
         r.effects.luma_contrast,
-        0.01,
         0,
         false,
     );
-    s.put("ColorNoiseReduction", r.noise_chroma, 0.01, 0, false);
+    s.put(crs::COLOR_NOISE_REDUCTION, r.noise_chroma, 0, false);
     s.put(
-        "ColorNoiseReductionDetail",
+        crs::COLOR_NOISE_REDUCTION_DETAIL,
         r.effects.chroma_detail,
-        0.01,
         0,
         false,
     );
     s.put(
-        "ColorNoiseReductionSmoothness",
+        crs::COLOR_NOISE_REDUCTION_SMOOTHNESS,
         r.effects.chroma_smoothness,
-        0.01,
         0,
         false,
     );
-    let bands = [
-        "Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta",
-    ];
-    for (j, control) in ["Hue", "Saturation", "Luminance"].iter().enumerate() {
-        for (i, band) in bands.iter().enumerate() {
-            s.put(
-                &format!("{control}Adjustment{band}"),
-                r.hsl[i][j],
-                0.01,
-                0,
-                true,
-            );
+    for j in 0..3 {
+        for i in 0..8 {
+            s.put(crs::HSL[i][j], r.hsl[i][j], 0, true);
         }
     }
     // Black & white by Treatment or by a black & white profile, as Lightroom writes it.
@@ -316,115 +292,73 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
         if black_white { "True" } else { "False" },
     );
     if black_white {
-        for (i, band) in bands.iter().enumerate() {
-            s.put(
-                &format!("GrayMixer{band}"),
-                r.effects.gray_mix[i],
-                0.01,
-                0,
-                true,
-            );
+        for i in 0..8 {
+            s.put(crs::GRAY_MIXER[i], r.effects.gray_mix[i], 0, true);
         }
     }
-    for (i, name) in [(0, "Shadow"), (2, "Highlight")] {
-        s.put(
-            &format!("SplitToning{name}Hue"),
-            r.grading[i][0],
-            1. / 360.,
-            0,
-            false,
-        );
-        s.put(
-            &format!("SplitToning{name}Saturation"),
-            r.grading[i][1],
-            0.01,
-            0,
-            false,
-        );
-        s.put(
-            &format!("ColorGrade{name}Lum"),
-            r.grading[i][2],
-            0.01,
-            0,
-            true,
-        );
+    // The shadows are grading[0], the highlights grading[2].
+    for (n, i) in [0, 2].into_iter().enumerate() {
+        s.put(crs::SPLIT_TONING_HUE[n], r.grading[i][0], 0, false);
+        s.put(crs::SPLIT_TONING_SATURATION[n], r.grading[i][1], 0, false);
+        s.put(crs::COLOR_GRADE_LUM[n], r.grading[i][2], 0, true);
     }
-    s.put("SplitToningBalance", r.effects.balance, 0.01, 0, true);
-    s.put("ColorGradeMidtoneHue", r.grading[1][0], 1. / 360., 0, false);
-    s.put("ColorGradeMidtoneSat", r.grading[1][1], 0.01, 0, false);
-    s.put("ColorGradeMidtoneLum", r.grading[1][2], 0.01, 0, true);
-    s.put("ColorGradeBlending", r.effects.blending, 0.01, 0, false);
+    s.put(crs::SPLIT_TONING_BALANCE, r.effects.balance, 0, true);
+    s.put(crs::COLOR_GRADE_MIDTONE_HUE, r.grading[1][0], 0, false);
+    s.put(crs::COLOR_GRADE_MIDTONE_SAT, r.grading[1][1], 0, false);
+    s.put(crs::COLOR_GRADE_MIDTONE_LUM, r.grading[1][2], 0, true);
+    s.put(crs::COLOR_GRADE_BLENDING, r.effects.blending, 0, false);
     s.put(
-        "ColorGradeGlobalHue",
+        crs::COLOR_GRADE_GLOBAL[0],
         r.effects.global_grade[0],
-        1. / 360.,
         0,
         false,
     );
     s.put(
-        "ColorGradeGlobalSat",
+        crs::COLOR_GRADE_GLOBAL[1],
         r.effects.global_grade[1],
-        0.01,
         0,
         false,
     );
     s.put(
-        "ColorGradeGlobalLum",
+        crs::COLOR_GRADE_GLOBAL[2],
         r.effects.global_grade[2],
-        0.01,
         0,
         true,
     );
-    for (i, band) in ["Red", "Green", "Blue"].iter().enumerate() {
-        s.put(
-            &format!("{band}Hue"),
-            r.effects.calibration[i][0],
-            0.01,
-            0,
-            true,
-        );
-        s.put(
-            &format!("{band}Saturation"),
-            r.effects.calibration[i][1],
-            0.01,
-            0,
-            true,
-        );
+    for i in 0..3 {
+        s.put(crs::CALIBRATION[i][0], r.effects.calibration[i][0], 0, true);
+        s.put(crs::CALIBRATION[i][1], r.effects.calibration[i][1], 0, true);
     }
-    s.put("ShadowTint", r.effects.shadow_tint, 0.01, 0, true);
-    s.put("GrainAmount", r.effects.grain, 0.01, 0, false);
+    s.put(crs::SHADOW_TINT, r.effects.shadow_tint, 0, true);
+    s.put(crs::GRAIN_AMOUNT, r.effects.grain, 0, false);
     if r.effects.grain > 0. {
-        s.put("GrainSize", r.effects.grain_size, 0.01, 0, false);
-        s.put("GrainFrequency", r.effects.grain_roughness, 0.01, 0, false);
+        s.put(crs::GRAIN_SIZE, r.effects.grain_size, 0, false);
+        s.put(crs::GRAIN_FREQUENCY, r.effects.grain_roughness, 0, false);
         s.text("GrainSeed", r.effects.grain_seed.to_string());
     }
-    s.put("PostCropVignetteAmount", r.effects.vignette, 0.01, 0, true);
+    s.put(crs::POST_CROP_VIGNETTE_AMOUNT, r.effects.vignette, 0, true);
     if r.effects.vignette != 0. {
         s.put(
-            "PostCropVignetteMidpoint",
+            crs::POST_CROP_VIGNETTE_MIDPOINT,
             r.effects.vignette_midpoint,
-            0.01,
             0,
             false,
         );
         s.put(
-            "PostCropVignetteRoundness",
+            crs::POST_CROP_VIGNETTE_ROUNDNESS,
             r.effects.vignette_roundness,
-            0.01,
             0,
             true,
         );
         s.put(
-            "PostCropVignetteFeather",
+            crs::POST_CROP_VIGNETTE_FEATHER,
             r.effects.vignette_feather,
-            0.01,
             0,
             false,
         );
         s.put(
-            "PostCropVignetteHighlightContrast",
+            crs::POST_CROP_VIGNETTE_HIGHLIGHT_CONTRAST,
             r.effects.vignette_highlights,
-            0.01,
             0,
             false,
         );
@@ -433,33 +367,24 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
             r.effects.vignette_style.code().to_string(),
         );
     }
-    s.put("VignetteAmount", r.effects.lens_vignette, 0.01, 0, true);
+    s.put(crs::VIGNETTE_AMOUNT, r.effects.lens_vignette, 0, true);
     s.put(
-        "VignetteMidpoint",
+        crs::VIGNETTE_MIDPOINT,
         r.effects.lens_vignette_midpoint,
-        0.01,
         0,
         false,
     );
-    for (i, name) in ["Purple", "Green"].iter().enumerate() {
+    for i in 0..2 {
+        s.put(crs::DEFRINGE_AMOUNT[i], r.effects.defringe[i], 0, false);
         s.put(
-            &format!("Defringe{name}Amount"),
-            r.effects.defringe[i],
-            0.05,
-            0,
-            false,
-        );
-        s.put(
-            &format!("Defringe{name}HueLo"),
+            crs::DEFRINGE_HUE_LO[i],
             r.effects.defringe_ranges[i][0],
-            0.01,
             0,
             false,
         );
         s.put(
-            &format!("Defringe{name}HueHi"),
+            crs::DEFRINGE_HUE_HI[i],
             r.effects.defringe_ranges[i][1],
-            0.01,
             0,
             false,
         );
@@ -468,23 +393,20 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
     lens_profile(&mut s, r, m);
     s.text("AutoLateralCA", if r.lens_ca { "1" } else { "0" });
     s.put(
-        "LensProfileDistortionScale",
+        crs::LENS_PROFILE_DISTORTION_SCALE,
         r.lens_distortion,
-        0.01,
         0,
         false,
     );
     s.put(
-        "LensProfileVignettingScale",
+        crs::LENS_PROFILE_VIGNETTING_SCALE,
         r.lens_vignetting,
-        0.01,
         0,
         false,
     );
     s.put(
-        "LensManualDistortionAmount",
+        crs::LENS_MANUAL_DISTORTION_AMOUNT,
         r.lens_manual_distortion,
-        0.01,
         0,
         true,
     );
@@ -495,13 +417,13 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
         }
     }
     let t = &r.transform;
-    s.put("PerspectiveVertical", t.vertical, 0.01, 0, true);
-    s.put("PerspectiveHorizontal", t.horizontal, 0.01, 0, true);
-    s.put("PerspectiveRotate", t.rotate, 1., 1, true);
-    s.put("PerspectiveAspect", t.aspect, 0.01, 0, true);
-    s.put("PerspectiveScale", t.scale, 0.01, 0, false);
-    s.put("PerspectiveX", t.offset_x, 0.01, 2, true);
-    s.put("PerspectiveY", t.offset_y, 0.01, 2, true);
+    s.put(crs::PERSPECTIVE_VERTICAL, t.vertical, 0, true);
+    s.put(crs::PERSPECTIVE_HORIZONTAL, t.horizontal, 0, true);
+    s.put(crs::PERSPECTIVE_ROTATE, t.rotate, 1, true);
+    s.put(crs::PERSPECTIVE_ASPECT, t.aspect, 0, true);
+    s.put(crs::PERSPECTIVE_SCALE, t.scale, 0, false);
+    s.put(crs::PERSPECTIVE_X, t.offset_x, 2, true);
+    s.put(crs::PERSPECTIVE_Y, t.offset_y, 2, true);
     let u = &r.upright;
     s.text("PerspectiveUpright", u.mode.code().to_string());
     if !u.corrections.is_empty() {
@@ -530,10 +452,10 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
     // the crop as drawn, which the photo it is applied to constrains again.
     let crop = ImageFrame::for_metadata(shown)
         .rect_to_unrotated(photo.and_then(|p| p.crop).unwrap_or(r.crop));
-    for (i, name) in ["Left", "Top", "Right", "Bottom"].iter().enumerate() {
-        s.put(&format!("Crop{name}"), crop[i], 1., 6, false);
+    for (edge, value) in crs::CROP.into_iter().zip(crop) {
+        s.put(edge, value, 6, false);
     }
-    s.put("CropAngle", r.straighten, 1., 2, true);
+    s.put(crs::CROP_ANGLE, r.straighten, 2, true);
     s.text(
         "CropConstrainToWarp",
         if r.constrain_crop { "1" } else { "0" },
