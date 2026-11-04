@@ -948,7 +948,7 @@ impl Editor {
         let (tx, ctx) = (self.tx.clone(), self.context.clone());
         let defaults = self.raw_defaults.clone();
         let decoding = Decoding {
-            demosaic: self.demosaic,
+            demosaic: self.session.demosaic,
             cache: Some(self.decode_cache.clone()),
         };
         let progress = Arc::new(BatchProgress::new(change.name(), targets.len()));

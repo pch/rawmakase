@@ -320,7 +320,7 @@ fn crop_tool_keeps_the_chosen_aspect_for_uncropped_photos() -> anyhow::Result<()
     });
     let new_editor = |s: crate::app::preferences::session::Session| {
         let mut editor = Editor::with_context(&ctx, None, s, None);
-        editor.session_file = Some(session.clone());
+        editor.session.set_file(Some(session.clone()));
         editor.document.set_image(image.clone());
         editor
     };
@@ -404,7 +404,7 @@ fn crop_tool_keeps_the_chosen_aspect_for_uncropped_photos() -> anyhow::Result<()
 fn crop_keys_swap_and_cycle_the_overlay_but_not_while_typing() -> anyhow::Result<()> {
     let (d, mut e, ids) = editor_with_catalog(&["a.RAF"])?;
     let session = d.path().join("session.json");
-    e.session_file = Some(session.clone());
+    e.session.set_file(Some(session.clone()));
     e.module = Module::Develop;
     e.document.catalog_photo = Some(ids[0]);
     e.document.set_image(Arc::new(CameraImage {

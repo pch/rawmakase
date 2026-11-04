@@ -13,8 +13,8 @@ impl Editor {
     /// the one a first launch opens, and the setup view and an empty Library
     /// offer.
     pub(in crate::app) fn default_catalog(&self) -> PathBuf {
-        self.session_file
-            .as_deref()
+        self.session
+            .file()
             .and_then(std::path::Path::parent)
             .map_or_else(crate::storage::data_dir, std::path::Path::to_path_buf)
             .join("Photos.rawmakase")

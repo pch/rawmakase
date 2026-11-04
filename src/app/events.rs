@@ -478,7 +478,7 @@ impl Editor {
                 let selected = self.document.catalog_photo;
                 self.library = Some(l);
                 if let (Some(library), Some(id)) = (&mut self.library, selected) {
-                    library.apply_layout(&self.saved_layout);
+                    library.apply_layout(self.session.layout());
                     library.select(Some(id));
                 }
                 let _ = self.save_session();
@@ -533,7 +533,7 @@ impl Editor {
                     // catalog is loaded again (a folder added or relinked);
                     // another catalog starts with every photo shown.
                     if restore.is_some() || reloaded {
-                        library.apply_layout(&self.saved_layout);
+                        library.apply_layout(self.session.layout());
                     }
                 }
                 // Develop reopens on its photo, even one the filters now hide.

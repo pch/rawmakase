@@ -181,7 +181,7 @@ fn dropping_a_folder_mapped_through_a_symlink_selects_it_and_clears_old_filters(
         .relink_root(root, &alias)?;
     library.refresh()?;
     library.click_folder_for_tests(&format!("root:{old_root}"));
-    editor.saved_layout.query = "outside".into();
+    editor.session.layout_mut().query = "outside".into();
     let ctx = editor.context.clone();
     editor.dropped(vec![alias]);
     settle_catalog(&mut editor, &ctx);

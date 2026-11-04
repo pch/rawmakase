@@ -44,7 +44,7 @@ impl Editor {
 
     /// The Auto mix a first conversion applies: none while the preference is off.
     pub(in crate::app) fn first_conversion_colors(&self) -> Option<PhotoColors> {
-        match self.first_conversion {
+        match self.session.first_conversion {
             FirstConversion::AutoMix => self.photo_colors(),
             FirstConversion::KeepMix => None,
         }
@@ -61,7 +61,7 @@ impl Editor {
             return;
         }
         let needs_auto = treatment == Treatment::BlackWhite
-            && self.first_conversion == FirstConversion::AutoMix
+            && self.session.first_conversion == FirstConversion::AutoMix
             && self.document.edit.recipe().effects.gray_mix == [0.; 8];
         // Measured only when the conversion uses it.
         let colors = needs_auto.then(|| self.photo_colors()).flatten();

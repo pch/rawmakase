@@ -830,13 +830,13 @@ impl Editor {
                     &record.edit,
                     &self.raw_defaults,
                     &self.profile_library,
-                    self.demosaic,
+                    self.session.demosaic,
                 ),
                 ticket: edited.then(|| library.edited_ticket(photo)).flatten(),
                 record: record.edit,
                 path,
                 defaults: self.raw_defaults.clone(),
-                demosaic: self.demosaic,
+                demosaic: self.session.demosaic,
                 decode_cache: self.decode_cache.clone(),
                 kind,
                 edge,
@@ -1033,7 +1033,7 @@ impl Editor {
             &record,
             &self.raw_defaults,
             &self.profile_library,
-            self.demosaic,
+            self.session.demosaic,
         ) == item.identity
         {
             library.show_built_preview(&self.context, item.photo, thumbnail);

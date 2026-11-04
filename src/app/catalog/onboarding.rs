@@ -742,7 +742,7 @@ impl Editor {
     /// Hides the view; `done` records that setup is complete so it stays hidden.
     fn finish_onboarding(&mut self, done: bool) {
         self.onboarding.visible = false;
-        self.onboarding_done = done;
+        self.session.onboarding_done = done;
         self.module = if self.library.is_some() {
             Module::Library
         } else {

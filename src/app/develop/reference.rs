@@ -114,7 +114,7 @@ impl Editor {
         let source = self
             .library
             .as_ref()
-            .and_then(|l| l.develop_source(id, self.demosaic));
+            .and_then(|l| l.develop_source(id, self.session.demosaic));
         let Some(source) = source else {
             return;
         };
@@ -153,7 +153,7 @@ impl Editor {
         let source = self
             .library
             .as_ref()
-            .and_then(|l| l.develop_source(id, self.demosaic));
+            .and_then(|l| l.develop_source(id, self.session.demosaic));
         let source = match source {
             // No longer in the catalog, e.g. a virtual copy removed.
             None => return self.clear_reference(),
@@ -182,7 +182,7 @@ impl Editor {
             path: source.path,
             edit: source.edit,
             cancel,
-            demosaic: self.demosaic,
+            demosaic: self.session.demosaic,
         });
     }
     /// Develops the reference photo again even when its edit and file are as they

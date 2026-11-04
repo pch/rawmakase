@@ -107,7 +107,7 @@ impl Editor {
     pub(in crate::app) fn open_copy_dialog(&mut self, purpose: Transfer) {
         self.modal = Some(crate::app::Modal::CopySettings(CopyDialog {
             purpose,
-            groups: self.copy_groups.clone(),
+            groups: self.session.copy_groups.clone(),
             preset: PresetForm::default(),
         }));
     }
@@ -205,7 +205,7 @@ impl Editor {
             return;
         }
         if dialog.purpose != Transfer::NewPreset {
-            self.copy_groups = dialog.groups.clone();
+            self.session.copy_groups = dialog.groups.clone();
             let _ = self.save_session();
         }
         match dialog.purpose {

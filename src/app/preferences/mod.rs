@@ -452,7 +452,7 @@ impl Editor {
     fn catalog_page(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let usage = &self.preferences.usage;
-        let (mut paused, mut pause_changed) = (self.checksums_paused, false);
+        let (mut paused, mut pause_changed) = (self.session.checksums_paused, false);
         if let Some(library) = &self.library {
             let location = library.session.catalog().location().clone();
             group(ui, "Current catalog");
@@ -491,7 +491,7 @@ impl Editor {
             });
         }
         if pause_changed {
-            self.checksums_paused = paused;
+            self.session.checksums_paused = paused;
             let _ = self.save_session();
         }
         gap(ui);
@@ -700,8 +700,8 @@ impl Editor {
         gap(ui);
         group(ui, "Black & white");
         form_row(ui, "", |ui| {
-            let mut auto =
-                self.first_conversion == crate::app::develop::treatment::FirstConversion::AutoMix;
+            let mut auto = self.session.first_conversion
+                == crate::app::develop::treatment::FirstConversion::AutoMix;
             if ui
                 .checkbox(
                     &mut auto,
@@ -709,7 +709,7 @@ impl Editor {
                 )
                 .changed()
             {
-                self.first_conversion = if auto {
+                self.session.first_conversion = if auto {
                     crate::app::develop::treatment::FirstConversion::AutoMix
                 } else {
                     crate::app::develop::treatment::FirstConversion::KeepMix
@@ -1267,7 +1267,7 @@ mod tests {
             ..Default::default()
         };
         let mut e = Editor::with_context(&egui::Context::default(), None, session, None);
-        e.session_file = Some(path.clone());
+        e.session.set_file(Some(path.clone()));
         assert_eq!(e.decode_cache.limit(), 32 << 30);
         e.decode_cache.set_limit(1 << 50);
         e.save_session().unwrap();
@@ -1290,7 +1290,7 @@ mod tests {
             crate::app::preferences::session::Session::default(),
             None,
         );
-        e.session_file = Some(path.clone());
+        e.session.set_file(Some(path.clone()));
         // Set, not relocated: relocating would purge the user's real cache.
         let old = dir.path().join("old");
         e.decode_cache.set_folder(Some(&old));
@@ -1358,7 +1358,7 @@ mod tests {
             crate::app::preferences::session::Session::default(),
             None,
         );
-        e.session_file = Some(path.clone());
+        e.session.set_file(Some(path.clone()));
         e.onboarding.visible = false;
         e.preferences.open = true;
         e.preferences.tab = Tab::Catalog;

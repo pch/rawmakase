@@ -138,7 +138,7 @@ impl Editor {
                 &record,
                 &self.raw_defaults,
                 &self.profile_library,
-                self.demosaic,
+                self.session.demosaic,
             ),
             monitor: self.view.display_profile(),
         })

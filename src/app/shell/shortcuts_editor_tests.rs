@@ -108,7 +108,7 @@ fn loupe_keys_change_only_the_photo_shown_and_auto_advance_moves_on() -> anyhow:
     press(&mut e, egui::Key::Escape, egui::Modifiers::NONE);
     assert!(!e.library.as_ref().unwrap().loupe_open());
     // With Auto Advance a key moves on as Shift would.
-    e.auto_advance = true;
+    e.session.auto_advance = true;
     e.library.as_mut().unwrap().select(Some(ids[0]));
     press(&mut e, egui::Key::Num3, egui::Modifiers::NONE);
     let library = e.library.as_ref().unwrap();

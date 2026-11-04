@@ -77,7 +77,7 @@ impl Editor {
             .map(|path| crate::app::worker::Prefetch {
                 path,
                 cancel: self.prefetch_cancel.clone(),
-                demosaic: self.demosaic,
+                demosaic: self.session.demosaic,
             });
         // The photo being left is Paste from Previous's source; opening the same photo
         // again (as a new demosaic setting does) leaves Previous as it was.
@@ -118,7 +118,7 @@ impl Editor {
             cancel,
             prefetch,
             defaults: self.raw_defaults.clone(),
-            demosaic: self.demosaic,
+            demosaic: self.session.demosaic,
         });
         // The photo left may be the reference, or its edit may have changed.
         self.load_reference();

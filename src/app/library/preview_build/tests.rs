@@ -103,7 +103,12 @@ fn identity_of(e: &Editor, id: PhotoId) -> String {
         .catalog()
         .edit_record(id)
         .unwrap();
-    identity(&record, &e.raw_defaults, &e.profile_library, e.demosaic)
+    identity(
+        &record,
+        &e.raw_defaults,
+        &e.profile_library,
+        e.session.demosaic,
+    )
 }
 fn fresh(cache: &Path, e: &Editor, id: PhotoId) -> bool {
     PreviewCache::open(cache)

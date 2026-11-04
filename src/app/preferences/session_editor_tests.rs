@@ -67,8 +67,8 @@ fn window_frame(
         .commands
         .contains(&egui::ViewportCommand::Maximized(true));
     let saved: crate::app::preferences::session::Session = e
-        .session_file
-        .as_ref()
+        .session
+        .file()
         .and_then(|file| std::fs::read(file).ok())
         .map_or_else(Default::default, |json| {
             serde_json::from_slice(&json).unwrap()
@@ -141,5 +141,98 @@ fn a_window_reopened_maximized_keeps_that_until_the_window_manager_maximizes_it(
         );
         assert_eq!(window_frame(&mut e, &ctx, 0.1, true, false), (true, false));
     }
+    Ok(())
+}
+
+/// What the session file says, as last written.
+fn saved(path: &std::path::Path) -> crate::app::preferences::session::Session {
+    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+}
+
+/// The path saved is the catalog open, else the photo open, else the one the session
+/// was opened with.
+#[test]
+fn the_session_saves_the_catalog_then_the_photo_then_the_path_it_opened_with() -> anyhow::Result<()>
+{
+    let (d, mut e, _) = crate::app::testing::editor_with_catalog(&["a.RAF"])?;
+    let session = d.path().join("session.json");
+    e.session.set_file(Some(session.clone()));
+    let fallback = d.path().join("before.rawmakase");
+    e.session.set_fallback_path(Some(fallback.clone()));
+    e.document.opened_at(d.path().join("photos/a.RAF"));
+    e.save_session()?;
+    assert_eq!(
+        saved(&session).last_path,
+        Some(d.path().join("test.rawmakase"))
+    );
+    e.library = None;
+    e.save_session()?;
+    assert_eq!(
+        saved(&session).last_path,
+        Some(d.path().join("photos/a.RAF"))
+    );
+    e.document = Default::default();
+    e.save_session()?;
+    assert_eq!(saved(&session).last_path, Some(fallback));
+    Ok(())
+}
+
+/// A setting another part of the app keeps reaches the file with the next write, and
+/// fields a newer release wrote survive every write.
+#[test]
+fn every_write_holds_the_other_owners_settings_and_the_unknown_fields() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("session.json");
+    std::fs::write(&path, r#"{"a_newer_field": {"kept": true}}"#)?;
+    let loaded: crate::app::preferences::session::Session =
+        serde_json::from_slice(&std::fs::read(&path)?)?;
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(&ctx, None, loaded, Some(path.clone()));
+    e.updates.automatic = false;
+    e.save_session()?;
+    e.session.auto_advance = !e.session.auto_advance;
+    e.save_session()?;
+    let json: serde_json::Value = serde_json::from_slice(&std::fs::read(&path)?)?;
+    assert_eq!(json["a_newer_field"]["kept"], true);
+    assert_eq!(json["no_update_checks"], true);
+    assert_eq!(saved(&path).auto_advance, e.session.auto_advance);
+    Ok(())
+}
+
+/// A write that fails says so, and the setting changed stays changed for the next one.
+#[test]
+fn a_failed_write_is_an_error_and_keeps_the_setting() {
+    let dir = tempfile::tempdir().unwrap();
+    // A file where the session's folder would be: the write cannot make it.
+    std::fs::write(dir.path().join("blocked"), b"").unwrap();
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        Some(dir.path().join("blocked/session.json")),
+    );
+    e.session.collapsed.insert("Tone Curve".into());
+    assert!(e.save_session().is_err());
+    assert!(e.session.collapsed.contains("Tone Curve"));
+}
+
+/// Confirming Copy Settings saves its groups even when they are the ones already kept.
+#[test]
+fn confirming_copy_settings_saves_its_groups_even_unchanged() -> anyhow::Result<()> {
+    use crate::app::develop::settings_transfer::{CopyChoice, Transfer};
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("session.json");
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        Some(path.clone()),
+    );
+    e.open_copy_dialog(Transfer::Copy);
+    assert!(!path.exists());
+    e.close_copy_dialog(CopyChoice::Confirm);
+    assert!(path.exists());
     Ok(())
 }

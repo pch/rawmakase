@@ -264,6 +264,149 @@ pub(crate) struct CropGuideLayout {
     pub show: String,
 }
 
+/// The session as the editor keeps it while it runs: the preferences it holds, the
+/// place and layout it last remembered, and how to write it all to `session.json`.
+///
+/// It is the only writer of the file: [`SessionState::write`] takes what other owners
+/// keep (the monitor, updates, themes, caches…) as a [`Session`] and adds its own
+/// fields and the ones a newer release wrote ([`Unknown`]), which every write carries.
+/// Without a file (tests, isolated UI checks) nothing is written.
+pub(in crate::app) struct SessionState {
+    /// Where the session is written; none writes nothing.
+    file: Option<PathBuf>,
+    /// Fields a newer release wrote, carried to every write.
+    unknown: Unknown,
+    /// The path the session opened with, saved while no catalog or photo is open.
+    fallback_path: Option<PathBuf>,
+    /// The Library's place and layout, as last remembered.
+    place: crate::app::CatalogPlace,
+    layout: LibraryLayout,
+    /// Whether the window is maximized, as last saved.
+    pub(in crate::app) maximized: bool,
+    /// The panel sections folded, and the ones in solo mode.
+    pub(in crate::app) collapsed: std::collections::BTreeSet<String>,
+    pub(in crate::app) solo: std::collections::BTreeSet<String>,
+    pub(in crate::app) onboarding_done: bool,
+    /// Preferences > Performance's demosaic, for every full-size decode.
+    pub(in crate::app) demosaic: crate::camera_data::Demosaic,
+    pub(in crate::app) auto_advance: bool,
+    pub(in crate::app) checksums_paused: bool,
+    /// The groups Copy Settings and Synchronize start from.
+    pub(in crate::app) copy_groups: crate::model::settings_groups::GroupSelection,
+    pub(in crate::app) first_conversion: crate::app::develop::treatment::FirstConversion,
+}
+
+impl SessionState {
+    /// The state `session` was loaded as, written to `file`, with the editor's own
+    /// starting values for the ones it works out at launch.
+    pub(in crate::app) fn new(
+        session: &Session,
+        file: Option<PathBuf>,
+        place: crate::app::CatalogPlace,
+        onboarding_done: bool,
+        copy_groups: crate::model::settings_groups::GroupSelection,
+    ) -> Self {
+        Self {
+            file,
+            unknown: session.unknown.clone(),
+            fallback_path: session.last_path.clone(),
+            place,
+            layout: session.library_layout.clone(),
+            maximized: session.maximized,
+            collapsed: session.collapsed.clone(),
+            solo: session.solo.clone(),
+            onboarding_done,
+            demosaic: session.demosaic,
+            auto_advance: session.auto_advance,
+            checksums_paused: session.pause_checksums,
+            copy_groups,
+            first_conversion: if session.no_auto_black_white_mix {
+                crate::app::develop::treatment::FirstConversion::KeepMix
+            } else {
+                crate::app::develop::treatment::FirstConversion::AutoMix
+            },
+        }
+    }
+    /// Where the session is written, if anywhere.
+    pub(in crate::app) fn file(&self) -> Option<&std::path::Path> {
+        self.file.as_deref()
+    }
+    /// The Library layout last remembered.
+    pub(in crate::app) fn layout(&self) -> &LibraryLayout {
+        &self.layout
+    }
+    /// Remembers the Library's `place` and, when it is `shown`, its layout: a new place
+    /// at once, with the layout shown then even while it is still `changing`; a layout
+    /// alone once it has settled. Whether anything changed, for the caller to write.
+    pub(in crate::app) fn remember_place(
+        &mut self,
+        place: crate::app::CatalogPlace,
+        shown: Option<LibraryLayout>,
+        changing: bool,
+    ) -> bool {
+        let layout_changed = !changing && shown.as_ref().is_some_and(|l| *l != self.layout);
+        if shown.is_none() || (place == self.place && !layout_changed) {
+            return false;
+        }
+        self.place = place;
+        if let Some(shown) = shown {
+            self.layout = shown;
+        }
+        true
+    }
+    /// Writes the session: `owned`, what the other owners keep, with this state's
+    /// fields, the unknown ones, and `path` (the catalog or photo open) or else the path
+    /// the session opened with. Nothing without a file.
+    pub(in crate::app) fn write(
+        &self,
+        owned: Session,
+        path: Option<PathBuf>,
+    ) -> anyhow::Result<()> {
+        let Some(file) = &self.file else {
+            return Ok(());
+        };
+        crate::storage::atomic_json(
+            file,
+            &Session {
+                last_path: path.or_else(|| self.fallback_path.clone()),
+                maximized: self.maximized,
+                collapsed: self.collapsed.clone(),
+                solo: self.solo.clone(),
+                onboarding_done: self.onboarding_done,
+                library_source: self.place.source.clone(),
+                selected_photo: self.place.photo,
+                develop: self.place.module == crate::app::Module::Develop,
+                demosaic: self.demosaic,
+                auto_advance: self.auto_advance,
+                no_auto_black_white_mix: self.first_conversion
+                    == crate::app::develop::treatment::FirstConversion::KeepMix,
+                pause_checksums: self.checksums_paused,
+                library_layout: self.layout.clone(),
+                copy_groups: Some(self.copy_groups.clone()),
+                copy_ai_denoise: Some(
+                    self.copy_groups
+                        .contains(crate::model::settings_groups::SettingGroup::AiDenoise),
+                ),
+                unknown: self.unknown.clone(),
+                ..owned
+            },
+        )
+    }
+    #[cfg(test)]
+    pub(in crate::app) fn set_file(&mut self, file: Option<PathBuf>) {
+        self.file = file;
+    }
+    #[cfg(test)]
+    pub(in crate::app) fn set_fallback_path(&mut self, path: Option<PathBuf>) {
+        self.fallback_path = path;
+    }
+    /// Only the symlink test (Unix) changes the remembered layout directly.
+    #[cfg(all(test, unix))]
+    pub(in crate::app) fn layout_mut(&mut self) -> &mut LibraryLayout {
+        &mut self.layout
+    }
+}
+
 /// How the Library shows its photos: its view, filter bar, sort and grid,
 /// kept across launches. Names are stable keys, so a layout from another
 /// version reads as far as it is understood and the rest is the default.
@@ -588,7 +731,7 @@ mod compatibility_tests {
         std::fs::write(&path, serde_json::to_vec(&session).unwrap()).unwrap();
         let session: Session = crate::storage::read_json_or_default(&path);
         let mut e = Editor::with_context(&eframe::egui::Context::default(), None, session, None);
-        e.session_file = Some(path.clone());
+        e.session.set_file(Some(path.clone()));
         e.save_session().unwrap();
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap()
     }
@@ -655,12 +798,15 @@ mod compatibility_tests {
             let session: Session = crate::storage::read_json_or_default(&path);
             let mut e =
                 Editor::with_context(&eframe::egui::Context::default(), None, session, None);
-            e.session_file = Some(path.clone());
-            e.copy_groups.set(SettingGroup::AiDenoise, ai_denoise);
-            e.copy_groups
+            e.session.set_file(Some(path.clone()));
+            e.session
+                .copy_groups
+                .set(SettingGroup::AiDenoise, ai_denoise);
+            e.session
+                .copy_groups
                 .set(SettingGroup::ColorNoiseReduction, GroupInclusion::Included);
-            e.maximized = true;
-            e.auto_advance = true;
+            e.session.maximized = true;
+            e.session.auto_advance = true;
             e.save_session().unwrap();
             let bytes = std::fs::read(&path).unwrap();
             let old: SessionV0_4_10 = serde_json::from_slice(&bytes).unwrap();
@@ -668,7 +814,7 @@ mod compatibility_tests {
             assert!(old.copy_groups.is_some_and(|g| !g.is_empty()));
             // And this release reads it back as it was.
             let back: Session = serde_json::from_slice(&bytes).unwrap();
-            assert_eq!(back.copy_groups(), Some(e.copy_groups.clone()));
+            assert_eq!(back.copy_groups(), Some(e.session.copy_groups.clone()));
         }
     }
 
