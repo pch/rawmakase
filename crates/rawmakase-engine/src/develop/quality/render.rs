@@ -133,21 +133,19 @@ fn render_resident(
 /// full-resolution render resized to `size` at a fraction of the cost. `full` is the
 /// full-resolution image the level was reduced from; `region` is a rectangle of the
 /// `size` output.
+///
+/// `r` is the recipe resolved for the photo ([`Resolved::recipe`]); the level's own
+/// geometry, footprint and keys are its.
 pub(crate) fn render_level(
     level: &Arc<CameraImage>,
     full: &Retouched,
-    r: &ValidRecipe,
+    r: &Recipe,
     size: (u32, u32),
     region: [u32; 4],
     cancel: Cancel<'_>,
     stages: &mut Stages,
 ) -> Result<Output> {
     check_cancel(cancel)?;
-    let effective = r.resolved(&level.metadata);
-    let r = effective.as_ref();
-    if let Some(p) = &r.profile {
-        p.ensure_camera(&level.metadata)?;
-    }
     let level_scale =
         level.width.max(level.height) as f32 / full.image.width.max(full.image.height) as f32;
     let mut g = Geometry::new(level, r, 0);
@@ -257,7 +255,7 @@ pub fn render(
     region: Option<[u32; 4]>,
     cancel: Cancel<'_>,
 ) -> Result<Rendered> {
-    render_preview(im, r, None, max_edge, region, cancel, None).map(Output::pixels)
+    render_preview(im, &resolve(im, r), None, max_edge, region, cancel, None).map(Output::pixels)
 }
 /// [`render`](fn@render) of a photo whose AI Denoise source is `ai`.
 pub fn render_with_ai(
@@ -267,11 +265,13 @@ pub fn render_with_ai(
     max_edge: u32,
     cancel: Cancel<'_>,
 ) -> Result<Rendered> {
-    render_preview(im, r, ai, max_edge, None, cancel, None).map(Output::pixels)
+    render_preview(im, &resolve(im, r), ai, max_edge, None, cancel, None).map(Output::pixels)
 }
+/// `im` rendered with `resolved` (from [`resolve`] of `im`): the whole photo within
+/// `max_edge`, or `region` at 100%.
 pub(crate) fn render_preview(
     im: &CameraImage,
-    r: &ValidRecipe,
+    resolved: &Resolved,
     ai: Option<&crate::develop::AiSource>,
     max_edge: u32,
     region: Option<[u32; 4]>,
@@ -279,16 +279,9 @@ pub(crate) fn render_preview(
     mut stages: Option<&mut Stages>,
 ) -> Result<Output> {
     ensure!(!cancel.is_cancelled(), "Render superseded");
-    let effective = r.resolved(&im.metadata);
-    let r = effective.as_ref();
-    if let Some(p) = &r.profile {
-        p.ensure_camera(&im.metadata)?;
-    }
-    if r.lens_ca {
-        crate::lens::auto_ca::prime(im);
-    }
-    let source = retouched(im, r, ai, cancel, stages.as_mut().map(|s| &mut *s.retouch))?;
-    let g = Geometry::new(&source.image, r, 0);
+    let source = resolved.source(im, ai, cancel, stages.as_mut().map(|s| &mut *s.retouch))?;
+    let r = resolved.recipe.as_ref();
+    let g = resolved.geometry;
     let [x, y, w, h] = region.unwrap_or([0, 0, g.width, g.height]);
     ensure!(
         w > 0
