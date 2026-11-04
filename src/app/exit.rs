@@ -80,25 +80,4 @@ impl Editor {
         self.updates.close();
         self.controls.close_requests();
     }
-    /// The workers the exit sequence waits for, asked to stop.
-    fn stop_workers(&mut self) -> Vec<task::Stopping> {
-        let mut stopping = Vec::from(self.loader.stop());
-        stopping.extend([
-            self.renderer.stop(),
-            self.reference_loader.stop(),
-            task::Stopping::new(self.exports.close()),
-            task::Stopping::new(self.preview_builds.close()),
-        ]);
-        stopping.extend(self.stand_ins.stop());
-        stopping.extend(self.selection.stop());
-        stopping.push(self.ai_denoise.stop());
-        stopping.extend(self.lensfun.stop());
-        stopping.extend(self.automation.stop_outputs());
-        stopping.extend(self.controls.stop());
-        stopping.extend(self.stop_folder_sync());
-        if let Some(library) = &mut self.library {
-            stopping.extend(library.close_previews());
-        }
-        stopping
-    }
 }

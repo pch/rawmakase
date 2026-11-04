@@ -134,7 +134,7 @@ background readers found (`catalog_session::backfill`). Closing and quitting sav
 the Develop edit on the autosave thread instead and wait only until a deadline
 (`Editor::flush_by`), so a stalled catalog cannot hold up closing on it. Two writes
 before it still run on the UI thread without a deadline: a Library Copy Name or
-metadata field being typed, and the session file ([shutdown](shutdown.md#where-the-code-stands)). Four kinds of worker exist:
+metadata field being typed, and the session file ([shutdown](shutdown.md#where-the-code-stands)). One table, `app::work`, says for each kind of work whether closing waits for it, whether the status line lists it (and where its progress shows otherwise), whether it slows the Library's edited previews or pauses the checksum reader, and its step of the exit sequence; the close guard, the status line, preview pacing and quitting read it, each from the state that owns the work. Four kinds of worker exist:
 
 - **One-off tasks** (`app::task::spawn`): opening a catalog, an import, a file
   operation, a fit, and Develop's analyses of the open photo (Auto, Upright, Auto
