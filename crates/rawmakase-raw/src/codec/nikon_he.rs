@@ -932,6 +932,7 @@ fn decode_precinct(
     Ok(())
 }
 
+/// Synthetic High Efficiency codestreams, for tests here and in other crates.
 #[cfg(any(test, feature = "test-support"))]
 pub mod tests {
     #[cfg(test)]

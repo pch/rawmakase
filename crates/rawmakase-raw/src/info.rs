@@ -9,7 +9,9 @@ pub const UNSET: u32 = 0xffff;
 /// may not.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PreviewSpace {
+    /// The camera's sRGB setting.
     Srgb,
+    /// The camera's Adobe RGB (1998) setting.
     AdobeRgb,
 }
 
@@ -39,23 +41,31 @@ pub enum MatrixSource {
 /// has always read them with, so saved edits keep their geometry and scale.
 #[derive(Clone, Debug)]
 pub struct RawInfo {
+    /// How the sensor data is stored, which says how it decodes.
     pub variant: Variant,
+    /// RAWmakase's name for the camera's maker ("Canon").
     pub make: String,
+    /// RAWmakase's name for the model ("EOS R6 Mark II").
     pub model: String,
     /// The make and model as the file writes them, trimmed, before any of
     /// RAWmakase's naming (`names::apply`): what export file names use.
     pub file_make: String,
+    /// The model, as the file writes it.
     pub file_model: String,
     /// The canonical name of a body sold under several names (empty make
     /// when there is none).
     pub normalized_make: String,
+    /// The canonical model name, with [`RawInfo::normalized_make`].
     pub normalized_model: String,
     /// The stored sensor data's size.
     pub raw_width: u32,
+    /// The stored sensor data's height.
     pub raw_height: u32,
     /// The visible area, `margins` (left, top) into the sensor data.
     pub width: u32,
+    /// The visible area's height.
     pub height: u32,
+    /// Where the visible area starts in the sensor data: left, top.
     pub margins: [u32; 2],
     /// A Fujifilm Super CCD's stored rows, which develop turned by 45° (the
     /// visible area is the stored one); `None` for other sensors.
@@ -64,6 +74,7 @@ pub struct RawInfo {
     /// width, height]` in sensor coordinates ([`UNSET`] positions when only a
     /// size is known; all [`UNSET`] and zero sizes when there is none).
     pub frame: [u32; 4],
+    /// The camera's aspect-ratio crop, as [`RawInfo::frame`] gives the default.
     pub aspect: [u32; 4],
     /// How much smaller than the sensor's the frame's diagonal is, when the camera
     /// recorded only part of its sensor in a crop mode (Canon's APS-C and APS-H
@@ -100,19 +111,27 @@ pub struct RawInfo {
     /// scanners): its one sample is every channel's, and its colour neutral
     /// (`color::apply`).
     pub monochrome: bool,
+    /// Fujifilm's DevelopmentDynamicRange in percent (400 for DR400), 0xffff when
+    /// there is none.
     pub fuji_dynamic_range: u32,
     /// Fujifilm's exposure midpoint shift in EV, -999 when there is none.
     pub fuji_exposure_shift: f32,
+    /// ISO speed, 0 when unknown.
     pub iso: f32,
+    /// Exposure time in seconds, 0 when unknown.
     pub shutter: f32,
+    /// The f-number, 0 when unknown.
     pub aperture: f32,
+    /// Focal length in millimetres, 0 when unknown.
     pub focal: f32,
+    /// Focal length in 35 mm equivalent, 0 when unknown.
     pub focal_35mm: f32,
     /// As-shot white balance multipliers (red, green, blue, second green);
     /// zero when the file has none.
     pub cam_mul: [f32; 4],
     /// Daylight multipliers derived from the colour matrix.
     pub pre_mul: [f32; 4],
+    /// The white balance presets the camera stored.
     pub presets: Presets,
     /// XYZ (D65) to camera, rows red, green, blue; zero when unknown.
     pub cam_xyz: [[f32; 3]; 3],
@@ -126,6 +145,7 @@ pub struct RawInfo {
     pub camera_look: Option<String>,
     /// Camera to sRGB primaries (rows sum to one).
     pub rgb_cam: [[f32; 3]; 3],
+    /// The lens model as the file records it, empty when it records none.
     pub lens: String,
     /// The maker's numeric lens ID (Nikon's LensIDNumber, Pentax's LensType).
     pub lens_id: u32,
@@ -197,7 +217,8 @@ impl SuperCcd {
 }
 
 /// White balance presets the camera stored (red, green, blue), zero when
-/// absent.
+/// absent. Each field is the preset of its name.
+#[allow(missing_docs)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Presets {
     pub daylight: [f32; 3],
@@ -211,8 +232,11 @@ pub struct Presets {
 /// green, 2 blue, 3 the second green of a Bayer pattern).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cfa {
+    /// The pattern's period in rows.
     pub rows: usize,
+    /// The pattern's period in columns.
     pub cols: usize,
+    /// `rows × cols` filters, row by row.
     pub colors: Vec<u8>,
 }
 
@@ -303,6 +327,7 @@ impl Cfa {
             colors,
         }
     }
+    /// The filter at visible row `row`, column `col`.
     pub fn color(&self, row: usize, col: usize) -> u8 {
         self.colors[(row % self.rows) * self.cols + col % self.cols]
     }

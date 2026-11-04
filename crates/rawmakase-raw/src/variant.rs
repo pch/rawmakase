@@ -162,6 +162,7 @@ pub enum Variant {
 }
 
 impl Variant {
+    /// A short name for the variant ("dng-ljpeg"), for messages.
     pub fn name(self) -> &'static str {
         match self {
             Variant::DngUncompressed => "dng-uncompressed",

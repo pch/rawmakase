@@ -11,7 +11,9 @@ use crate::io::{Pieces, ReadSeek};
 /// digits ("12" for .12 s), each where the file has it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Stamp {
+    /// The date and time, `YYYY:MM:DD HH:MM:SS`.
     pub date: Option<String>,
+    /// The digits after the second's point.
     pub subseconds: Option<String>,
 }
 
@@ -20,8 +22,11 @@ pub struct Stamp {
 /// (CIFF's TimeStamp, X3F's TIME) is the original.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CaptureDates {
+    /// When the photo was taken: DateTimeOriginal, or the container's own time.
     pub original: Stamp,
+    /// DateTimeDigitized.
     pub digitized: Stamp,
+    /// DateTime: when the file was last changed, by the camera or software.
     pub modified: Stamp,
 }
 

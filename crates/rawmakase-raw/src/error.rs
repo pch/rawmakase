@@ -1,6 +1,7 @@
 //! What can go wrong reading a RAW file.
 use std::fmt;
 
+/// Why a RAW file can't be opened or decoded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     /// Not a RAW file this crate recognises.
@@ -16,6 +17,7 @@ pub enum Error {
     Cancelled,
 }
 
+/// A result whose error is [`Error`].
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl fmt::Display for Error {

@@ -12,6 +12,9 @@
 //! whose EXIF is not a TIFF at the file's start; [`embedded_xmp`] the XMP a
 //! CR3 keeps in a box of its own.
 #![forbid(unsafe_code)]
+// Every public item says what it is for: the decoders' boundary is a contract
+// the decoding crate builds on (#808 step 4.13).
+#![warn(missing_docs)]
 use rawmakase_cancel::Cancel;
 mod captured;
 mod codec;
@@ -55,7 +58,9 @@ pub fn open(bytes: &[u8]) -> Result<RawInfo> {
 /// "EOS R6 Mark II".
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FileNames {
+    /// The maker, as the file writes it.
     pub make: String,
+    /// The model, as the file writes it.
     pub model: String,
 }
 
@@ -111,6 +116,7 @@ pub struct X3fMetadata {
     /// The preview's EXIF, a TIFF of its own, as [`exif_tiffs`](fn@exif_tiffs) finds it;
     /// none on the SD9 and SD10.
     pub exif: Option<Vec<u8>>,
+    /// What its property list says.
     pub properties: X3fProperties,
 }
 
@@ -121,10 +127,13 @@ pub struct X3fMetadata {
 pub struct X3fProperties {
     /// CAMMANUF and CAMMODEL, as the file writes them.
     pub make: String,
+    /// CAMMODEL.
     pub model: String,
     /// In seconds.
     pub exposure: Option<f64>,
+    /// The f-number.
     pub aperture: Option<f64>,
+    /// ISO speed.
     pub iso: Option<f64>,
     /// In millimetres.
     pub focal: Option<f64>,
