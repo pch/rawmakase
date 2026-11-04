@@ -83,7 +83,7 @@ pub fn find_preset(id: &str) -> Option<Preset> {
     }
     parse(path, &std::fs::read_to_string(path).ok()?).ok()
 }
-pub fn favorite_path() -> PathBuf {
+pub(super) fn favorite_path() -> PathBuf {
     crate::storage::data_dir().join("preset-favorites.json")
 }
 pub fn load_favorites() -> BTreeSet<String> {

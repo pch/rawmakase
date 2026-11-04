@@ -267,7 +267,7 @@ pub(super) struct Listed<'a> {
 }
 
 impl<'a> Listed<'a> {
-    pub fn new(disk: &'a dyn Disk) -> Self {
+    pub(super) fn new(disk: &'a dyn Disk) -> Self {
         Self {
             disk,
             listings: RefCell::default(),

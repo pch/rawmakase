@@ -114,7 +114,7 @@ impl Default for NameRead {
 }
 
 impl NameRead {
-    pub fn status(&self) -> Status {
+    pub(crate) fn status(&self) -> Status {
         match &self.state {
             State::Idle => Status::Idle,
             State::Reading { done, total, .. } => Status::Reading {
@@ -126,13 +126,13 @@ impl NameRead {
         }
     }
     #[cfg(test)]
-    pub fn set_reader(&mut self, reader: Reader) {
+    pub(crate) fn set_reader(&mut self, reader: Reader) {
         self.reader = reader;
     }
 
     /// Reads `photos` on a worker, which sends [`Event::NamesRead`] with this
     /// read's request id; any read under way is cancelled.
-    pub fn start(&mut self, photos: Vec<ToRead>, events: Sender<Event>, ctx: egui::Context) {
+    pub(crate) fn start(&mut self, photos: Vec<ToRead>, events: Sender<Event>, ctx: egui::Context) {
         self.cancel();
         let request = READS.fetch_add(1, Ordering::Relaxed);
         let cancel = Arc::new(AtomicBool::new(false));
@@ -175,7 +175,7 @@ impl NameRead {
 
     /// Stops the read under way, or forgets the one done: the scope is
     /// replaced, or the dialog closed.
-    pub fn cancel(&mut self) {
+    pub(crate) fn cancel(&mut self) {
         if let State::Reading { cancel, .. } = &self.state {
             cancel.store(true, Ordering::Relaxed);
         }
@@ -186,7 +186,7 @@ impl NameRead {
     /// for one that couldn't be read) and why some couldn't, after which the
     /// read is Ready or Failed; `None` for any other read (cancelled,
     /// replaced).
-    pub fn finished(
+    pub(crate) fn finished(
         &mut self,
         request: u64,
         read: Result<Reads, String>,

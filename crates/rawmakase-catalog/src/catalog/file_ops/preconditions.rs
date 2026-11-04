@@ -88,7 +88,11 @@ impl Preconditions {
     /// The family of `master` as `db` has it now, with no folders: what a
     /// plan records before adding the folders its change needs. `None`
     /// when `master` is no photo.
-    pub fn read(db: &impl Reads, master: PhotoId, rows: Vec<PhotoId>) -> Result<Option<Self>> {
+    pub(super) fn read(
+        db: &impl Reads,
+        master: PhotoId,
+        rows: Vec<PhotoId>,
+    ) -> Result<Option<Self>> {
         let (Some(place), Some(user)) = (placement(db, master)?, user_state(db, master)?) else {
             return Ok(None);
         };
@@ -112,7 +116,7 @@ impl Preconditions {
     /// Why the item can't go on, read in `db` on `computer`: its family
     /// changed in the catalog, or a folder it moves from or to resolves
     /// elsewhere now. `None` when everything holds.
-    pub fn check(&self, db: &impl Reads, computer: &str) -> Result<Option<&'static str>> {
+    pub(super) fn check(&self, db: &impl Reads, computer: &str) -> Result<Option<&'static str>> {
         if placement(db, self.master)? != Some(self.placement.0)
             || user_state(db, self.master)? != Some(self.user_state.0)
         {

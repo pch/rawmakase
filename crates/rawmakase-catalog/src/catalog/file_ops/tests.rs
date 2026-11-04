@@ -60,7 +60,7 @@ pub(super) fn fixture(files: &[&str]) -> Fx {
 
 impl Fx {
     /// The master named `name` (its path below the root).
-    pub fn photo(&self, name: &str) -> PhotoId {
+    pub(super) fn photo(&self, name: &str) -> PhotoId {
         let path = self.root.join(name);
         self.cat
             .photos()
@@ -72,7 +72,7 @@ impl Fx {
     }
     /// The root, as the catalog has it: the one added at `root`, whatever
     /// others a test adds.
-    pub fn root_id(&self) -> crate::catalog::RootId {
+    pub(super) fn root_id(&self) -> crate::catalog::RootId {
         self.cat
             .roots()
             .unwrap()
@@ -82,11 +82,11 @@ impl Fx {
             .0
     }
     /// The root of catalog folder `folder`.
-    pub fn root_of(&self, folder: FolderId) -> crate::catalog::RootId {
+    pub(super) fn root_of(&self, folder: FolderId) -> crate::catalog::RootId {
         self.place(folder).0
     }
     /// The logical path of catalog folder `folder` in its root.
-    pub fn logical(&self, folder: FolderId) -> String {
+    pub(super) fn logical(&self, folder: FolderId) -> String {
         self.place(folder).1
     }
     fn place(&self, folder: FolderId) -> (crate::catalog::RootId, String) {
@@ -101,7 +101,7 @@ impl Fx {
             .unwrap()
     }
     /// The catalog folder at `relative` below the root ("" is the root).
-    pub fn folder(&self, relative: &str) -> FolderId {
+    pub(super) fn folder(&self, relative: &str) -> FolderId {
         let path = if relative.is_empty() {
             self.root.clone()
         } else {
@@ -116,7 +116,7 @@ impl Fx {
             .id
     }
     /// The catalog folder at `path`, of whichever root.
-    pub fn folder_at(&self, path: &Path) -> FolderId {
+    pub(super) fn folder_at(&self, path: &Path) -> FolderId {
         self.cat
             .folders()
             .unwrap()
@@ -127,7 +127,7 @@ impl Fx {
     }
     /// Every file below the folder the fixture is in, by path relative to
     /// it, with its bytes: where every original is.
-    pub fn files(&self) -> BTreeMap<String, Vec<u8>> {
+    pub(super) fn files(&self) -> BTreeMap<String, Vec<u8>> {
         let mut out = BTreeMap::new();
         let base = self.dir.path().canonicalize().unwrap();
         fn walk(dir: &Path, base: &Path, out: &mut BTreeMap<String, Vec<u8>>) {
@@ -152,7 +152,7 @@ impl Fx {
         out
     }
     /// Where each photo row says its file is, relative to the root.
-    pub fn rows(&self) -> BTreeMap<PhotoId, String> {
+    pub(super) fn rows(&self) -> BTreeMap<PhotoId, String> {
         self.cat
             .photos()
             .unwrap()
@@ -166,7 +166,7 @@ impl Fx {
     /// A photo row `filename` in folder `logical` of the root added at
     /// `root` (a new root when there is none), written as an older release
     /// or another tool might have: no checks, no file read.
-    pub fn add_row(&mut self, root: &Path, logical: &str, filename: &str) -> PhotoId {
+    pub(super) fn add_row(&mut self, root: &Path, logical: &str, filename: &str) -> PhotoId {
         use crate::catalog::db::{Reads, sql};
         let original = root.to_str().unwrap().to_string();
         let path = root.join(logical).join(filename);
@@ -197,32 +197,32 @@ impl Fx {
             .unwrap()
     }
     /// Opens the catalog again, as a restart does.
-    pub fn reopen(&mut self) {
+    pub(super) fn reopen(&mut self) {
         self.cat = Catalog::open(&self.catalog).unwrap();
     }
-    pub fn plan(&self, op: FileOp) -> Plan {
+    pub(super) fn plan(&self, op: FileOp) -> Plan {
         plan(&self.cat, op).unwrap()
     }
     /// Plans `op` with the volumes and folders as `disk` sees them.
-    pub fn plan_on(&self, op: FileOp, disk: &dyn Disk) -> Result<Plan, FileOpError> {
+    pub(super) fn plan_on(&self, op: FileOp, disk: &dyn Disk) -> Result<Plan, FileOpError> {
         plan::plan_with(&self.cat, op, disk)
     }
     /// Plans, confirms and executes `op` with `trash` on `disk`.
-    pub fn run(&mut self, op: FileOp, trash: &dyn Trash, disk: &dyn Disk) -> Outcome {
+    pub(super) fn run(&mut self, op: FileOp, trash: &dyn Trash, disk: &dyn Disk) -> Outcome {
         let plan = self.plan(op);
         execute::execute_with(&mut self.cat, plan.confirm(), trash, Cancel::NEVER, disk).unwrap()
     }
     /// Recovers on `disk`.
-    pub fn recover(&mut self, disk: &dyn Disk) -> Recovery {
+    pub(super) fn recover(&mut self, disk: &dyn Disk) -> Recovery {
         self.recover_with(disk, &NoTrash)
     }
     /// Recovers on `disk`, with `trash`.
-    pub fn recover_with(&mut self, disk: &dyn Disk, trash: &dyn Trash) -> Recovery {
+    pub(super) fn recover_with(&mut self, disk: &dyn Disk, trash: &dyn Trash) -> Recovery {
         let _lock = lock::acquire(&self.cat).unwrap();
         recover::run(&mut self.cat, disk, trash).unwrap()
     }
     /// Installs trigger `body` (after its name) for the connection's life.
-    pub fn fail_journal_with(&self, body: &str) {
+    pub(super) fn fail_journal_with(&self, body: &str) {
         self.cat
             .db_for_tests()
             .execute_batch(&format!("CREATE TEMP TRIGGER injected {body}"))
@@ -230,7 +230,7 @@ impl Fx {
     }
     /// Installs a trigger making `when` fail, as a full disk would: for
     /// the connection's life, so a reopen clears it.
-    pub fn fail_journal(&self, when: &str) {
+    pub(super) fn fail_journal(&self, when: &str) {
         self.cat
             .db_for_tests()
             .execute_batch(&format!(
@@ -314,11 +314,11 @@ pub(super) struct FakeTrash {
 }
 
 impl FakeTrash {
-    pub fn new(fx: &Fx) -> Self {
+    pub(super) fn new(fx: &Fx) -> Self {
         Self::at(&fx.dir.path().canonicalize().unwrap().join("trash"))
     }
     /// A Trash keeping what it takes in folder `dir`.
-    pub fn at(dir: &Path) -> Self {
+    pub(super) fn at(dir: &Path) -> Self {
         std::fs::create_dir_all(dir).unwrap();
         Self {
             dir: dir.to_path_buf(),
@@ -549,7 +549,7 @@ pub(super) enum Op {
 
 impl Op {
     /// The steps of a copy to another volume.
-    pub const COPYING: [Op; 9] = [
+    pub(super) const COPYING: [Op; 9] = [
         Op::CreateFile,
         Op::Copy,
         Op::SyncFile,
@@ -681,22 +681,22 @@ pub(super) struct Faulty {
 }
 
 impl Faulty {
-    pub fn at(op: Op, nth: usize, fault: Fault) -> Self {
+    pub(super) fn at(op: Op, nth: usize, fault: Fault) -> Self {
         Self::with(&[(op, nth, fault)])
     }
-    pub fn with(faults: &[(Op, usize, Fault)]) -> Self {
+    pub(super) fn with(faults: &[(Op, usize, Fault)]) -> Self {
         Self {
             faults: faults.to_vec(),
             ..Self::default()
         }
     }
     /// This disk with `dir` taken for another volume.
-    pub fn elsewhere(mut self, dir: &Path) -> Self {
+    pub(super) fn elsewhere(mut self, dir: &Path) -> Self {
         self.elsewhere = Some(dir.to_path_buf());
         self
     }
     /// How many calls of `op` it saw.
-    pub fn count(&self, op: Op) -> usize {
+    pub(super) fn count(&self, op: Op) -> usize {
         self.seen
             .borrow()
             .get(&format!("{op:?}"))
@@ -842,7 +842,7 @@ impl Faulty {
     }
     /// A remount of `elsewhere`: each of `files` gets a new number, and the
     /// file at `reuse.1` the number the file at `reuse.0` had before.
-    pub fn remount(&self, files: &[&Path], reuse: Option<(&Path, &Path)>) {
+    pub(super) fn remount(&self, files: &[&Path], reuse: Option<(&Path, &Path)>) {
         let before = reuse.map(|(a, _)| self.number(Real.entry(a).unwrap().id));
         for f in files {
             self.renumber(f);
@@ -859,7 +859,7 @@ impl Faulty {
         }
         self.calls.borrow_mut().push(call);
     }
-    pub fn renames(&self) -> Vec<(PathBuf, PathBuf)> {
+    pub(super) fn renames(&self) -> Vec<(PathBuf, PathBuf)> {
         self.calls
             .borrow()
             .iter()
@@ -870,7 +870,7 @@ impl Faulty {
             .collect()
     }
     /// How many chunks its copies wrote.
-    pub fn chunks(&self) -> usize {
+    pub(super) fn chunks(&self) -> usize {
         self.calls
             .borrow()
             .iter()

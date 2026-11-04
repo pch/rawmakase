@@ -85,7 +85,7 @@ pub fn photo_name_problem(stem: &str) -> Option<NameProblem> {
 pub(super) struct Stem(String);
 
 impl Stem {
-    pub fn parse(text: &str) -> Result<Self, NameProblem> {
+    pub(super) fn parse(text: &str) -> Result<Self, NameProblem> {
         match problem(text) {
             Some(p) => Err(p),
             None => Ok(Self(text.to_string())),
@@ -101,7 +101,7 @@ pub(super) struct FileName(String);
 impl FileName {
     /// The name of the file now named `current` given `stem`: its
     /// extension is kept.
-    pub fn with_stem(current: &str, stem: &Stem) -> Result<Self, NameProblem> {
+    pub(super) fn with_stem(current: &str, stem: &Stem) -> Result<Self, NameProblem> {
         let name = match Path::new(current).extension().and_then(|e| e.to_str()) {
             Some(extension) => format!("{}.{extension}", stem.0),
             None => stem.0.clone(),
@@ -111,7 +111,7 @@ impl FileName {
             None => Ok(Self(name)),
         }
     }
-    pub fn as_str(&self) -> &str {
+    pub(super) fn as_str(&self) -> &str {
         &self.0
     }
 }

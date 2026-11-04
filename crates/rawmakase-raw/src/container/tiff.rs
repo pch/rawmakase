@@ -12,7 +12,7 @@ pub(crate) struct Ifd {
 }
 
 impl Ifd {
-    pub fn has(&self, tag: u16) -> bool {
+    pub(crate) fn has(&self, tag: u16) -> bool {
         self.entries.contains_key(&tag)
     }
 }
@@ -50,7 +50,7 @@ fn collect<T>(values: impl ExactSizeIterator<Item = T>) -> Option<Vec<T>> {
 
 impl<'a> TiffFile<'a> {
     /// The TIFF whose header is at `base` in `file`.
-    pub fn parse(file: &'a [u8], base: u64) -> Option<Self> {
+    pub(crate) fn parse(file: &'a [u8], base: u64) -> Option<Self> {
         let mut t = Tiff::open(Cursor::new(file), base)?;
         let mut ifds = Vec::new();
         let mut seen = Vec::new();
@@ -87,12 +87,12 @@ impl<'a> TiffFile<'a> {
             exif,
         })
     }
-    pub fn little(&self) -> bool {
+    pub(crate) fn little(&self) -> bool {
         self.bytes.order == Order::Little
     }
     /// The directory at `offset` (from the TIFF header) alone, read with this
     /// TIFF's byte order and offsets: a maker note's or a preview's.
-    pub fn directory_at(&self, offset: u64) -> Option<TiffFile<'a>> {
+    pub(crate) fn directory_at(&self, offset: u64) -> Option<TiffFile<'a>> {
         Some(Self {
             bytes: self.bytes,
             base: self.base,
@@ -102,17 +102,17 @@ impl<'a> TiffFile<'a> {
     }
     /// Where an entry's value is, from the TIFF header, when it is not in the
     /// entry itself.
-    pub fn offset_of(&self, e: &Entry) -> Option<u64> {
+    pub(crate) fn offset_of(&self, e: &Entry) -> Option<u64> {
         let len = u64::from(e.count).checked_mul(e.type_size()? as u64)?;
         (len > 4).then(|| u64::from(self.u32(&e.value)))
     }
-    pub fn u32(&self, b: &[u8]) -> u32 {
+    pub(crate) fn u32(&self, b: &[u8]) -> u32 {
         match self.bytes.order {
             Order::Little => u32::from_le_bytes([b[0], b[1], b[2], b[3]]),
             Order::Big => u32::from_be_bytes([b[0], b[1], b[2], b[3]]),
         }
     }
-    pub fn u16(&self, b: &[u8]) -> u16 {
+    pub(crate) fn u16(&self, b: &[u8]) -> u16 {
         match self.bytes.order {
             Order::Little => u16::from_le_bytes([b[0], b[1]]),
             Order::Big => u16::from_be_bytes([b[0], b[1]]),
@@ -120,14 +120,14 @@ impl<'a> TiffFile<'a> {
     }
     /// The directory at `offset` (from the TIFF header), outside the chain:
     /// a maker note's or a private one.
-    pub fn ifd_at(&self, offset: u64) -> Option<Ifd> {
+    pub(crate) fn ifd_at(&self, offset: u64) -> Option<Ifd> {
         let mut t = Tiff::headless(Cursor::new(self.bytes.data), 0, self.little());
         t.ifd(offset).map(|entries| Ifd { entries })
     }
     /// A maker note whose offsets count from `base` in `file`, in `order`:
     /// it has no directories of its own (`ifds` is empty); read them with
     /// [`TiffFile::ifd_at`].
-    pub fn view(file: &'a [u8], base: u64, order: Order) -> Option<Self> {
+    pub(crate) fn view(file: &'a [u8], base: u64, order: Order) -> Option<Self> {
         Some(Self {
             bytes: Bytes::new(file.get(usize::try_from(base).ok()?..)?, order),
             base,
@@ -151,18 +151,18 @@ impl<'a> TiffFile<'a> {
     }
     /// A tag's bytes where they are, borrowed: a record read in place
     /// costs nothing however long the file says it is.
-    pub fn bytes_of<'s>(&'s self, ifd: &'s Ifd, tag: u16) -> Option<&'s [u8]> {
+    pub(crate) fn bytes_of<'s>(&'s self, ifd: &'s Ifd, tag: u16) -> Option<&'s [u8]> {
         self.slice_upto(ifd.entries.get(&tag)?, usize::MAX)
     }
     /// A tag's type and count of values, when the directory has it: whether
     /// it is there, apart from whether its value reads.
-    pub fn shape(&self, ifd: &Ifd, tag: u16) -> Option<(u16, u32)> {
+    pub(crate) fn shape(&self, ifd: &Ifd, tag: u16) -> Option<(u16, u32)> {
         ifd.entries.get(&tag).map(|e| (e.kind, e.count))
     }
     /// A copy of a tag's first `max` bytes at most: a value is as long as
     /// the file says, so a reader that needs a record's leading fields
     /// copies only those.
-    pub fn raw_upto(&self, ifd: &Ifd, tag: u16, max: usize) -> Option<Vec<u8>> {
+    pub(crate) fn raw_upto(&self, ifd: &Ifd, tag: u16, max: usize) -> Option<Vec<u8>> {
         let b = self.slice_upto(ifd.entries.get(&tag)?, max)?;
         let mut out = Vec::new();
         out.try_reserve_exact(b.len()).ok()?;
@@ -171,14 +171,14 @@ impl<'a> TiffFile<'a> {
     }
     /// The values of an unsigned integer tag (BYTE, SHORT, LONG, IFD) of
     /// at most `max` values; a longer one is none (malformed or hostile).
-    pub fn ints(&self, ifd: &Ifd, tag: u16, max: usize) -> Option<Vec<u32>> {
+    pub(crate) fn ints(&self, ifd: &Ifd, tag: u16, max: usize) -> Option<Vec<u32>> {
         let e = ifd.entries.get(&tag)?;
         (usize::try_from(e.count).ok()? <= max)
             .then(|| self.ints_upto(ifd, tag, max))
             .flatten()
     }
     /// The first `n` values at most of an unsigned integer tag.
-    pub fn ints_upto(&self, ifd: &Ifd, tag: u16, n: usize) -> Option<Vec<u32>> {
+    pub(crate) fn ints_upto(&self, ifd: &Ifd, tag: u16, n: usize) -> Option<Vec<u32>> {
         let e = ifd.entries.get(&tag)?;
         if !matches!(
             e.kind,
@@ -200,20 +200,20 @@ impl<'a> TiffFile<'a> {
             _ => self.u32(c),
         }))
     }
-    pub fn int(&self, ifd: &Ifd, tag: u16) -> Option<u32> {
+    pub(crate) fn int(&self, ifd: &Ifd, tag: u16) -> Option<u32> {
         self.ints_upto(ifd, tag, 1)?.first().copied()
     }
     /// The values of a numeric tag of at most `max` values (a longer one is
     /// none) in double precision: rationals as their quotient, floats
     /// widened.
-    pub fn reals(&self, ifd: &Ifd, tag: u16, max: usize) -> Option<Vec<f64>> {
+    pub(crate) fn reals(&self, ifd: &Ifd, tag: u16, max: usize) -> Option<Vec<f64>> {
         let e = ifd.entries.get(&tag)?;
         (usize::try_from(e.count).ok()? <= max)
             .then(|| self.reals_upto(ifd, tag, max))
             .flatten()
     }
     /// The first `n` values at most of a numeric tag, as [`TiffFile::reals`].
-    pub fn reals_upto(&self, ifd: &Ifd, tag: u16, n: usize) -> Option<Vec<f64>> {
+    pub(crate) fn reals_upto(&self, ifd: &Ifd, tag: u16, n: usize) -> Option<Vec<f64>> {
         let e = ifd.entries.get(&tag)?;
         let size = e.type_size()?;
         if matches!(e.kind, kind::ASCII | kind::UNDEFINED) {
@@ -243,11 +243,11 @@ impl<'a> TiffFile<'a> {
         }))
     }
     /// A numeric tag's first value.
-    pub fn real(&self, ifd: &Ifd, tag: u16) -> Option<f64> {
+    pub(crate) fn real(&self, ifd: &Ifd, tag: u16) -> Option<f64> {
         self.reals_upto(ifd, tag, 1)?.first().copied()
     }
     /// A text tag's first `max` bytes at most, up to its first NUL.
-    pub fn text_upto(&self, ifd: &Ifd, tag: u16, max: usize) -> Option<String> {
+    pub(crate) fn text_upto(&self, ifd: &Ifd, tag: u16, max: usize) -> Option<String> {
         let e = ifd.entries.get(&tag)?;
         if !matches!(e.kind, kind::ASCII | kind::BYTE | kind::UNDEFINED) {
             return None;
@@ -262,7 +262,7 @@ impl<'a> TiffFile<'a> {
     /// tiles cover the image, once per sample plane when planar; its sides
     /// at most `io::MAX_SIDE`); more is none. The values are in the file,
     /// so no more are read than it holds.
-    pub fn pieces(&self, ifd: &Ifd, tag: u16) -> Option<Vec<u32>> {
+    pub(crate) fn pieces(&self, ifd: &Ifd, tag: u16) -> Option<Vec<u32>> {
         let side = |tag| {
             self.int(ifd, tag)
                 .map(|v| v.min(crate::io::MAX_SIDE) as usize)
@@ -310,7 +310,7 @@ impl TiffFile<'_> {
     /// The previews the directories list: JPEGInterchangeFormat (513, 514)
     /// and JPEG or JPEG XL-compressed (52546, Lightroom's DNG previews) strips
     /// of images that are not raw data.
-    pub fn previews(&self) -> Vec<crate::preview::Candidate> {
+    pub(crate) fn previews(&self) -> Vec<crate::preview::Candidate> {
         let mut out = Vec::new();
         for ifd in self.ifds.iter().chain(&self.exif) {
             let pixels = u64::from(self.int(ifd, 256).unwrap_or(0))
@@ -342,7 +342,7 @@ impl TiffFile<'_> {
     /// Whether a directory other than the raw image holds an uncompressed
     /// RGB or YCbCr image whose first samples are 8-bit (a thumbnail; others,
     /// as a phone's 12-bit one or one whose bits are garbage, are none).
-    pub fn has_uncompressed_thumbnail(&self) -> bool {
+    pub(crate) fn has_uncompressed_thumbnail(&self) -> bool {
         self.ifds.iter().any(|ifd| {
             self.int(ifd, 259).unwrap_or(1) == 1
                 && matches!(self.int(ifd, 262), Some(2 | 6))

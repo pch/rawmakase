@@ -38,7 +38,7 @@ pub(in crate::catalog) struct FolderState {
 impl FolderState {
     /// Why the folder can't be made or added: its parent resolves elsewhere
     /// now. `None` when it still resolves where it was planned.
-    pub fn check(&self, db: &impl Reads, computer: &str) -> Result<Option<&'static str>> {
+    pub(super) fn check(&self, db: &impl Reads, computer: &str) -> Result<Option<&'static str>> {
         let now = logical_location(db, computer, self.root, &self.parent)?;
         Ok((now.as_ref() != Some(&self.parent_path)).then_some(RELOCATED))
     }

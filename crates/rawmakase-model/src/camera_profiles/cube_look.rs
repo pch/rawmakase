@@ -323,25 +323,25 @@ pub(super) enum Placement {
 }
 impl Names {
     /// `name` taken by a profile that is not a look.
-    pub fn profile(&mut self, name: &str) {
+    pub(super) fn profile(&mut self, name: &str) {
         self.taken.entry(name.into()).or_default().push(None);
     }
     /// `name` taken by the look `uuid` in `file`.
-    pub fn look(&mut self, name: &str, uuid: &str, file: &Path) {
+    pub(super) fn look(&mut self, name: &str, uuid: &str, file: &Path) {
         self.taken
             .entry(name.into())
             .or_default()
             .push(Some((uuid.into(), file.into())));
     }
     /// A file name the library holds.
-    pub fn file(&mut self, file: &str) {
+    pub(super) fn file(&mut self, file: &str) {
         self.files.push(file.to_lowercase());
     }
     /// The name a cube from `stem` in `group` lists under: its stem, or when a
     /// different profile has that name, "stem (group)", then "stem (group 2)" and so
     /// on. A name of the stem's already holding this cube's look, whichever folder
     /// named it, means it is imported already.
-    pub fn place(&self, stem: &str, group: &str, uuid: &str) -> Result<Placement> {
+    pub(super) fn place(&self, stem: &str, group: &str, uuid: &str) -> Result<Placement> {
         let family = format!("{stem} (");
         let imported = self
             .taken
@@ -373,7 +373,7 @@ impl Names {
         bail!("too many profiles named {stem}")
     }
     /// A file name for the look `name` that the library does not hold yet.
-    pub fn file_for(&self, name: &str) -> String {
+    pub(super) fn file_for(&self, name: &str) -> String {
         // Characters some file systems refuse, and a leading dot, which hides it.
         let safe: String = name
             .chars()

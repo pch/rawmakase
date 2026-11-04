@@ -49,11 +49,11 @@ pub(crate) struct Bytes<'a> {
 }
 
 impl<'a> Bytes<'a> {
-    pub fn new(data: &'a [u8], order: Order) -> Self {
+    pub(crate) fn new(data: &'a [u8], order: Order) -> Self {
         Self { data, order }
     }
     /// `len` bytes at `at`.
-    pub fn slice(&self, at: u64, len: u64) -> Result<&'a [u8]> {
+    pub(crate) fn slice(&self, at: u64, len: u64) -> Result<&'a [u8]> {
         let start = usize::try_from(at).map_err(|_| corrupt("offset"))?;
         let len = usize::try_from(len).map_err(|_| corrupt("length"))?;
         start
@@ -62,7 +62,7 @@ impl<'a> Bytes<'a> {
             .ok_or_else(|| corrupt(format!("{len} bytes at {at} past the end of the file")))
     }
     /// The 16-bit value at `at`.
-    pub fn u16(&self, at: u64) -> Result<u16> {
+    pub(crate) fn u16(&self, at: u64) -> Result<u16> {
         let b = self.slice(at, 2)?;
         let b = [b[0], b[1]];
         Ok(match self.order {
@@ -71,7 +71,7 @@ impl<'a> Bytes<'a> {
         })
     }
     /// The 32-bit value at `at`.
-    pub fn u32(&self, at: u64) -> Result<u32> {
+    pub(crate) fn u32(&self, at: u64) -> Result<u32> {
         let b = self.slice(at, 4)?;
         let b = [b[0], b[1], b[2], b[3]];
         Ok(match self.order {
@@ -97,13 +97,13 @@ pub(crate) struct Pieces<'r> {
 }
 
 impl<'r> Pieces<'r> {
-    pub fn new(file: &'r mut dyn ReadSeek) -> Option<Self> {
+    pub(crate) fn new(file: &'r mut dyn ReadSeek) -> Option<Self> {
         let len = file.seek(SeekFrom::End(0)).ok()?;
         Some(Self { file, len })
     }
     /// The `len` bytes at `at`; `None` past the end of the file, longer
     /// than [`MAX_PIECE`] or when the file can't be read.
-    pub fn read(&mut self, at: u64, len: u64) -> Option<Vec<u8>> {
+    pub(crate) fn read(&mut self, at: u64, len: u64) -> Option<Vec<u8>> {
         if len > MAX_PIECE || at.checked_add(len)? > self.len {
             return None;
         }
@@ -113,7 +113,7 @@ impl<'r> Pieces<'r> {
         Some(piece)
     }
     /// As [`Self::read`], fewer bytes where the file ends sooner.
-    pub fn read_upto(&mut self, at: u64, len: u64) -> Option<Vec<u8>> {
+    pub(crate) fn read_upto(&mut self, at: u64, len: u64) -> Option<Vec<u8>> {
         self.read(at, len.min(self.len.checked_sub(at)?))
     }
 }

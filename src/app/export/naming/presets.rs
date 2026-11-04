@@ -23,7 +23,7 @@ impl Default for Library {
 impl Library {
     /// The saved templates now. Tests read none, and can save none, unless
     /// given a library of their own.
-    pub fn load() -> Self {
+    pub(crate) fn load() -> Self {
         #[cfg(test)]
         return Self(SavedTemplates::load_from(std::path::Path::new(
             "/nonexistent/rawmakase-tests/filename_templates.json",
@@ -32,14 +32,14 @@ impl Library {
         Self(SavedTemplates::load())
     }
     /// The templates, by name; none when the file can't be read.
-    pub fn list(&self) -> Vec<SavedTemplate> {
+    pub(crate) fn list(&self) -> Vec<SavedTemplate> {
         self.0
             .as_ref()
             .map(SavedTemplates::list)
             .unwrap_or_default()
     }
     /// The name of the one saved template whose tokens are `tokens`.
-    pub fn name_of(&self, tokens: &str) -> Option<String> {
+    pub(crate) fn name_of(&self, tokens: &str) -> Option<String> {
         self.0.as_ref().ok()?.name_of(tokens)
     }
 }
@@ -58,7 +58,7 @@ pub(in crate::app) enum Preset {
 impl Preset {
     /// What a dialog's choice is: `naming`, or `custom` (Lightroom's form)
     /// when a template names files in its place.
-    pub fn of(naming: Naming, custom: Option<&str>, library: &Library) -> Self {
+    pub(crate) fn of(naming: Naming, custom: Option<&str>, library: &Library) -> Self {
         match custom {
             None => Preset::Naming(naming),
             Some(tokens) => match (builtin(tokens), library.name_of(tokens)) {
@@ -68,7 +68,7 @@ impl Preset {
             },
         }
     }
-    pub fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         match self {
             Preset::Naming(n) => n.label().into(),
             Preset::Builtin(b) => b.name.into(),
@@ -117,7 +117,7 @@ pub(in crate::app) struct Presets {
 }
 
 impl Presets {
-    pub fn new(preset: Preset, origin: &str) -> Self {
+    pub(crate) fn new(preset: Preset, origin: &str) -> Self {
         Self {
             preset,
             origin: origin.into(),
@@ -127,13 +127,13 @@ impl Presets {
         }
     }
     #[cfg(test)]
-    pub fn preset(&self) -> &Preset {
+    pub(crate) fn preset(&self) -> &Preset {
         &self.preset
     }
     /// Does `action` with the template's `tokens` (`None` when the text
     /// can't be read): Update at once, the others once their question is
     /// answered.
-    pub fn act(&mut self, action: Action, tokens: Option<&str>, library: &mut Library) {
+    pub(crate) fn act(&mut self, action: Action, tokens: Option<&str>, library: &mut Library) {
         let saved = match &self.preset {
             Preset::Saved(name) => Some(name.clone()),
             _ => None,
@@ -166,7 +166,7 @@ impl Presets {
     }
 
     /// Whether a question is open over the editor.
-    pub fn asking(&self) -> bool {
+    pub(crate) fn asking(&self) -> bool {
         self.prompt.is_some()
     }
     /// Whether `tokens` (`None` when the text can't be read) differ from the
@@ -177,7 +177,7 @@ impl Presets {
 
     /// The Preset row; the tokens of a preset chosen to start from, which
     /// the editor then shows.
-    pub fn row(
+    pub(crate) fn row(
         &mut self,
         ui: &mut egui::Ui,
         palette: &theme::Palette,
@@ -289,7 +289,7 @@ impl Presets {
     /// The question open over the editor, if any: a new preset's name, a
     /// preset's new name, or whether to delete it. Return answers it, Escape
     /// or Cancel drops it.
-    pub fn prompt_window(
+    pub(crate) fn prompt_window(
         &mut self,
         ctx: &egui::Context,
         tokens: Option<&str>,

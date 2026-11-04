@@ -62,7 +62,7 @@ pub(in crate::catalog) struct Proofs {
 }
 
 impl Proofs {
-    pub fn is_default(&self) -> bool {
+    pub(super) fn is_default(&self) -> bool {
         *self == Self::default()
     }
 }

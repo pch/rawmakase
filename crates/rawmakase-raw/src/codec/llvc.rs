@@ -23,17 +23,17 @@ pub(crate) struct Half<'a> {
 }
 
 impl<'a> Half<'a> {
-    pub fn new(data: &'a [u8]) -> Self {
+    pub(crate) fn new(data: &'a [u8]) -> Self {
         Self {
             bits: Msb::new(data),
             len: data.len() as u64 * 8,
         }
     }
     /// The bits read so far.
-    pub fn consumed(&self) -> u64 {
+    pub(crate) fn consumed(&self) -> u64 {
         self.bits.consumed()
     }
-    pub fn len(&self) -> u64 {
+    pub(crate) fn len(&self) -> u64 {
         self.len
     }
     fn check(&self) -> Result<()> {
@@ -193,17 +193,17 @@ pub(crate) struct Plane {
 }
 
 impl Plane {
-    pub fn zeros(width: usize, height: usize) -> Self {
+    pub(crate) fn zeros(width: usize, height: usize) -> Self {
         Self {
             width,
             height,
             data: vec![0; width * height],
         }
     }
-    pub fn row(&self, y: usize) -> &[i32] {
+    pub(crate) fn row(&self, y: usize) -> &[i32] {
         &self.data[y * self.width..(y + 1) * self.width]
     }
-    pub fn row_mut(&mut self, y: usize) -> &mut [i32] {
+    pub(crate) fn row_mut(&mut self, y: usize) -> &mut [i32] {
         &mut self.data[y * self.width..(y + 1) * self.width]
     }
 }

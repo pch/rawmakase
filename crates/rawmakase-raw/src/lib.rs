@@ -39,7 +39,7 @@ pub use sensor::Sensor;
 pub use variant::Variant;
 
 /// Synthetic High Efficiency codestreams, for other crates' tests.
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub use codec::nikon_he::tests as nikon_high_efficiency_test_support;
 
 /// The decoders' version, for the About window and fingerprints.

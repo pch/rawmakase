@@ -78,10 +78,10 @@ fn adobe_profile_parity_does_not_regress() {
     );
 }
 
-pub const COLUMNS: u32 = 48;
+pub(crate) const COLUMNS: u32 = 48;
 
 /// The block grid for an image: `COLUMNS` across, square-ish blocks.
-pub fn blocks(width: u32, height: u32) -> Vec<Patch> {
+pub(crate) fn blocks(width: u32, height: u32) -> Vec<Patch> {
     let rows = ((COLUMNS as f64 * height as f64 / width as f64).round() as u32).max(1);
     let edge = |i: u32, n: u32, size: u32| (i as u64 * size as u64 / n as u64) as u32;
     (0..rows)

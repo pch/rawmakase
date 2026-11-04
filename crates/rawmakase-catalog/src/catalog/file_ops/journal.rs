@@ -172,7 +172,7 @@ pub(super) struct CopyRecord {
 impl Member {
     /// Where the member is once its step is done: its destination, or where
     /// the Trash put it.
-    pub fn after(&self) -> Option<&Path> {
+    pub(super) fn after(&self) -> Option<&Path> {
         self.destination.as_deref().or(self.receipt.as_deref())
     }
 }
@@ -205,12 +205,12 @@ pub(super) struct Item {
 
 impl Item {
     /// Whether it copies its files to another volume.
-    pub fn copies(&self) -> bool {
+    pub(super) fn copies(&self) -> bool {
         self.members.iter().any(|m| m.copy.is_some())
     }
     /// The catalog photos it concerns: none for a folder it makes, those
     /// in the subtree of one it renames.
-    pub fn photos(&self) -> &[PhotoId] {
+    pub(super) fn photos(&self) -> &[PhotoId] {
         match &self.subject {
             Subject::Photos(pre) => &pre.rows,
             Subject::Folder(_) => &[],

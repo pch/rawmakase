@@ -9,14 +9,14 @@
 //! the gray ramp clip.
 use serde::{Deserialize, Serialize};
 
-pub const COLUMNS: u32 = 24;
-pub const PATCH: u32 = 32;
+pub(crate) const COLUMNS: u32 = 24;
+pub(crate) const PATCH: u32 = 32;
 const GAP: u32 = 6;
 const MARGIN: u32 = 32;
 const ROWS: u32 = 18;
 const CELL: u32 = PATCH + GAP;
-pub const WIDTH: u32 = 2 * MARGIN + COLUMNS * CELL - GAP;
-pub const HEIGHT: u32 = 2 * MARGIN + ROWS * CELL - GAP;
+pub(crate) const WIDTH: u32 = 2 * MARGIN + COLUMNS * CELL - GAP;
+pub(crate) const HEIGHT: u32 = 2 * MARGIN + ROWS * CELL - GAP;
 /// Linear value of diffuse white relative to the white level.
 const WHITE_LEVEL_SCALE: f64 = 0.8;
 const BACKGROUND: [f64; 3] = [0.09; 3];
@@ -55,7 +55,7 @@ fn cell(column: u32, row: u32) -> (u32, u32) {
     (MARGIN + column * CELL, MARGIN + row * CELL)
 }
 
-pub fn srgb_to_linear(v: f64) -> f64 {
+pub(crate) fn srgb_to_linear(v: f64) -> f64 {
     if v <= 0.04045 {
         v / 12.92
     } else {
@@ -64,7 +64,7 @@ pub fn srgb_to_linear(v: f64) -> f64 {
 }
 
 /// OKLCh (Björn Ottosson's OKLab) to linear sRGB. Values may fall outside [0, 1].
-pub fn oklch(l: f64, c: f64, h_degrees: f64) -> [f64; 3] {
+pub(crate) fn oklch(l: f64, c: f64, h_degrees: f64) -> [f64; 3] {
     let (a, b) = (
         c * h_degrees.to_radians().cos(),
         c * h_degrees.to_radians().sin(),
@@ -291,15 +291,15 @@ impl Layout {
     }
 }
 
-pub type Matrix = [[f64; 3]; 3];
+pub(crate) type Matrix = [[f64; 3]; 3];
 
-pub fn mul(a: &Matrix, b: &Matrix) -> Matrix {
+pub(crate) fn mul(a: &Matrix, b: &Matrix) -> Matrix {
     std::array::from_fn(|r| std::array::from_fn(|c| (0..3).map(|k| a[r][k] * b[k][c]).sum()))
 }
-pub fn apply(m: &Matrix, v: [f64; 3]) -> [f64; 3] {
+pub(crate) fn apply(m: &Matrix, v: [f64; 3]) -> [f64; 3] {
     std::array::from_fn(|r| (0..3).map(|k| m[r][k] * v[k]).sum())
 }
-pub fn invert(m: &Matrix) -> Matrix {
+pub(crate) fn invert(m: &Matrix) -> Matrix {
     let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
         - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
         + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
@@ -312,7 +312,7 @@ pub fn invert(m: &Matrix) -> Matrix {
     })
 }
 
-pub const SRGB_TO_XYZ: Matrix = [
+pub(crate) const SRGB_TO_XYZ: Matrix = [
     [0.412_456_4, 0.357_576_1, 0.180_437_5],
     [0.212_672_9, 0.715_152_2, 0.072_175],
     [0.019_333_9, 0.119_192, 0.950_304_1],
@@ -361,7 +361,7 @@ const BRADFORD: Matrix = [
 ];
 
 /// Bradford adaptation between two whites.
-pub fn adapt(from: [f64; 3], to: [f64; 3]) -> Matrix {
+pub(crate) fn adapt(from: [f64; 3], to: [f64; 3]) -> Matrix {
     let src = apply(&BRADFORD, from);
     let dst = apply(&BRADFORD, to);
     let scale: Matrix =
@@ -474,12 +474,12 @@ fn normalise(m: Matrix, white: [f64; 3]) -> Matrix {
 }
 
 /// A chart ready to write: camera values in 0..=1 and the neutral for As Shot WB.
-pub struct Rendered {
+pub(crate) struct Rendered {
     pub camera: Vec<[f64; 3]>,
     pub as_shot_neutral: [f64; 3],
 }
 
-pub fn render(layout: &Layout, camera: &Camera, illuminant: Illuminant) -> Rendered {
+pub(crate) fn render(layout: &Layout, camera: &Camera, illuminant: Illuminant) -> Rendered {
     let white = illuminant.white();
     let m = camera.matrix_for(illuminant.temperature());
     let to_camera = mul(

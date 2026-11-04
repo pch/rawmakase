@@ -5,9 +5,9 @@
 //! mosaics.
 use super::chart::{Camera, Matrix};
 
-pub const TILE: u32 = 256;
+pub(crate) const TILE: u32 = 256;
 
-pub struct Image<'a> {
+pub(crate) struct Image<'a> {
     pub width: u32,
     pub height: u32,
     /// Camera values in 0..=1, one per pixel; the mosaic samples one channel of each.
@@ -22,7 +22,7 @@ pub struct Image<'a> {
 
 /// DefaultBlackRender: `Auto` writes no tag, as the committed charts have.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum BlackRender {
+pub(crate) enum BlackRender {
     Auto,
     /// Tag value 1, as Adobe's camera-matching profiles carry it.
     None,
@@ -113,7 +113,7 @@ fn tiles(width: u32, height: u32, camera: &[[f64; 3]]) -> Vec<Vec<u8>> {
         .collect()
 }
 
-pub fn write(image: &Image, camera: &Camera) -> Vec<u8> {
+pub(crate) fn write(image: &Image, camera: &Camera) -> Vec<u8> {
     let tiles = tiles(image.width, image.height, image.camera);
     let mut tags: Vec<(u16, Value)> = vec![
         (254, Value::Long(vec![0])),
@@ -196,11 +196,16 @@ const PROPHOTO_TO_XYZ: Matrix = [
 /// neutral As Shot white balance and a linear ProfileToneCurve, so Camera Raw's
 /// ProPhoto output is its scene tone stage's. `scene` holds scene values; the sensor
 /// holds them divided by 2^`baseline_exposure`, clipped at its white.
-pub fn write_probe(width: u32, height: u32, scene: &[[f64; 3]], baseline_exposure: f64) -> Vec<u8> {
+pub(crate) fn write_probe(
+    width: u32,
+    height: u32,
+    scene: &[[f64; 3]],
+    baseline_exposure: f64,
+) -> Vec<u8> {
     write_probe_black_render(width, height, scene, baseline_exposure, BlackRender::Auto)
 }
 
-pub fn write_probe_black_render(
+pub(crate) fn write_probe_black_render(
     width: u32,
     height: u32,
     scene: &[[f64; 3]],

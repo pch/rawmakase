@@ -457,7 +457,7 @@ struct Photo {
 }
 
 impl Folders {
-    pub fn index(folders: &HashMap<FolderId, Located>) -> Self {
+    pub(super) fn index(folders: &HashMap<FolderId, Located>) -> Self {
         let mut by_dir: HashMap<FileId, Vec<FolderId>> = HashMap::new();
         for (id, f) in folders {
             let found = f
@@ -481,7 +481,7 @@ impl Folders {
     /// photos read once for [`shared`] and [`occupied`] (#692), not for
     /// each photo checked. The only photo rows `checks` may change are
     /// those `execute::moved` changes, which [`Self::refresh`] reads again.
-    pub fn caching<R>(&self, checks: impl FnOnce() -> R) -> R {
+    pub(super) fn caching<R>(&self, checks: impl FnOnce() -> R) -> R {
         struct Stop<'a>(&'a Folders);
         impl Drop for Stop<'_> {
             fn drop(&mut self) {
@@ -569,7 +569,7 @@ impl Folders {
     /// Reads master `master`'s family again into what [`Self::caching`]
     /// keeps, once `execute::moved` gave it another folder or name in the
     /// transaction.
-    pub fn refresh(&self, db: &impl Reads, master: PhotoId) -> anyhow::Result<()> {
+    pub(super) fn refresh(&self, db: &impl Reads, master: PhotoId) -> anyhow::Result<()> {
         if self.photos.borrow().is_none() {
             return Ok(());
         }
@@ -621,7 +621,7 @@ impl Folders {
     }
 
     /// The catalog folders over directory `dir`.
-    pub fn over(&self, dir: &Path) -> Vec<FolderId> {
+    pub(super) fn over(&self, dir: &Path) -> Vec<FolderId> {
         fsops::entry(dir)
             .ok()
             .and_then(|e| self.by_dir.get(&e.id).cloned())
@@ -819,7 +819,7 @@ impl<'a> Files<'a> {
     }
 
     /// The names in `dir`, listed once.
-    pub fn listing(&mut self, dir: &Path) -> Result<Rc<Listing>, String> {
+    pub(super) fn listing(&mut self, dir: &Path) -> Result<Rc<Listing>, String> {
         self.listings
             .entry(dir.to_path_buf())
             .or_insert_with(|| {
@@ -844,7 +844,7 @@ impl<'a> Files<'a> {
     }
 
     /// How `dir`, whose names are `listing`, compares names.
-    pub fn rules(&mut self, dir: &Path, listing: &Listing) -> Names {
+    pub(super) fn rules(&mut self, dir: &Path, listing: &Listing) -> Names {
         *self
             .rules
             .entry(dir.to_path_buf())
@@ -893,7 +893,7 @@ impl<'a> Files<'a> {
 
     /// Whether a rename on `volume`, which `path` is on, can change only a
     /// name's spelling.
-    pub fn renames_spelling(&mut self, volume: VolumeId, path: &Path) -> bool {
+    pub(super) fn renames_spelling(&mut self, volume: VolumeId, path: &Path) -> bool {
         self.volume(volume, path)
             .is_some_and(|v| v.renames_spelling)
     }
@@ -1072,7 +1072,7 @@ impl<'a> Files<'a> {
 
     /// Family `f`'s item: its file and companions resolved and checked, or
     /// why it is left out.
-    pub fn family(
+    pub(super) fn family(
         &mut self,
         f: Family,
         by_id: &HashMap<PhotoId, &PhotoRow>,

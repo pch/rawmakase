@@ -351,7 +351,7 @@ impl TrashTreeState {
     /// resolves elsewhere, a folder in it has a location of its own,
     /// something else of the catalog is inside it, or a family in it
     /// changed. `None` when everything holds.
-    pub fn check(&self, db: &impl Reads, computer: &str) -> Result<Option<String>> {
+    pub(super) fn check(&self, db: &impl Reads, computer: &str) -> Result<Option<String>> {
         if super::tree::subtree(db, self.root, &self.from)? != self.folders {
             return Ok(Some(CHANGED.into()));
         }
@@ -786,7 +786,7 @@ enum Found {
 }
 
 impl ReceiptSeen {
-    pub fn of(disk: &dyn Disk, item: &Item) -> Self {
+    pub(super) fn of(disk: &dyn Disk, item: &Item) -> Self {
         let Some(at) = item.members.first().and_then(|m| m.receipt.clone()) else {
             return Self {
                 at: None,

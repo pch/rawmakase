@@ -58,7 +58,7 @@ const MAX_HEADER: u32 = 1 << 20;
 
 impl Header {
     /// The header in a `CMP1` box's payload.
-    pub fn parse(p: &[u8]) -> Result<Header> {
+    pub(crate) fn parse(p: &[u8]) -> Result<Header> {
         let u16_at = |at: usize| p.get(at..at + 2).map(|b| u16::from_be_bytes([b[0], b[1]]));
         let u32_at = |at: usize| {
             p.get(at..at + 4)
@@ -82,7 +82,7 @@ impl Header {
         Ok(h)
     }
     /// Whether this coding is decoded here.
-    pub fn check(&self) -> Result<()> {
+    pub(crate) fn check(&self) -> Result<()> {
         if !matches!(self.version, 0x100 | 0x200)
             || self.planes != 4
             || self.encoding != 0

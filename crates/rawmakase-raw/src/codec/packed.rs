@@ -25,7 +25,7 @@ pub(crate) struct Packing {
 
 impl Packing {
     /// Plain bit packing, most significant bit first.
-    pub fn msb(bits: u32) -> Self {
+    pub(crate) fn msb(bits: u32) -> Self {
         Self {
             bits,
             word: 1,
@@ -34,7 +34,7 @@ impl Packing {
         }
     }
     /// The bytes a row of `width` samples takes, its padding included.
-    pub fn row_bytes(&self, width: usize) -> usize {
+    pub(crate) fn row_bytes(&self, width: usize) -> usize {
         let bytes = (width * self.bits as usize).div_ceil(8);
         if self.pad { bytes + width / 10 } else { bytes }
     }

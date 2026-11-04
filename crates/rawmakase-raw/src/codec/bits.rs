@@ -23,7 +23,7 @@ pub(crate) struct Msb<'a> {
 }
 
 impl<'a> Msb<'a> {
-    pub fn new(data: &'a [u8]) -> Self {
+    pub(crate) fn new(data: &'a [u8]) -> Self {
         Self {
             data,
             pos: 0,
@@ -36,14 +36,14 @@ impl<'a> Msb<'a> {
         }
     }
     /// A JPEG entropy-coded segment.
-    pub fn jpeg(data: &'a [u8]) -> Self {
+    pub(crate) fn jpeg(data: &'a [u8]) -> Self {
         Self {
             jpeg: true,
             ..Self::new(data)
         }
     }
     /// The bits of the data (up to a JPEG marker) not yet consumed.
-    pub fn unread(&self) -> u64 {
+    pub(crate) fn unread(&self) -> u64 {
         let cached = u64::from(self.bits).saturating_sub(self.past as u64 * 8);
         let mut rest = 0u64;
         if !self.marker {
@@ -65,12 +65,12 @@ impl<'a> Msb<'a> {
     /// Whether bits past the end of the data (or a JPEG marker) were
     /// consumed, in this restart interval or an earlier one: the stream was
     /// truncated.
-    pub fn overrun(&self) -> bool {
+    pub(crate) fn overrun(&self) -> bool {
         self.overran || self.past as u64 * 8 > u64::from(self.bits)
     }
     /// The bits consumed so far, those past the end included (a pump not
     /// reading JPEG).
-    pub fn consumed(&self) -> u64 {
+    pub(crate) fn consumed(&self) -> u64 {
         (self.pos + self.past) as u64 * 8 - u64::from(self.bits)
     }
     #[inline]
@@ -122,7 +122,7 @@ impl<'a> Msb<'a> {
     }
     /// The next `n` bits (at most 32) without consuming them.
     #[inline]
-    pub fn peek(&mut self, n: u32) -> u32 {
+    pub(crate) fn peek(&mut self, n: u32) -> u32 {
         debug_assert!(n <= 32);
         if n == 0 {
             return 0;
@@ -133,7 +133,7 @@ impl<'a> Msb<'a> {
         (self.cache >> (64 - n)) as u32
     }
     #[inline]
-    pub fn skip(&mut self, n: u32) {
+    pub(crate) fn skip(&mut self, n: u32) {
         if self.bits < n {
             self.refill();
         }
@@ -142,14 +142,14 @@ impl<'a> Msb<'a> {
     }
     /// The next `n` bits (at most 32).
     #[inline]
-    pub fn get(&mut self, n: u32) -> u32 {
+    pub(crate) fn get(&mut self, n: u32) -> u32 {
         let v = self.peek(n);
         self.skip(n);
         v
     }
     /// Restarts after a JPEG restart marker: drops the cached bits and skips
     /// the marker (0xFFDn) at the current position, if there is one.
-    pub fn restart(&mut self) {
+    pub(crate) fn restart(&mut self) {
         // A pump fetches ahead, so it has normally stopped at the marker, and
         // what is cached is the segment's padding.
         self.overran = self.overrun();
@@ -179,7 +179,7 @@ pub(crate) struct Words<'a> {
 }
 
 impl<'a> Words<'a> {
-    pub fn new(data: &'a [u8], order: crate::io::Order) -> Self {
+    pub(crate) fn new(data: &'a [u8], order: crate::io::Order) -> Self {
         Self {
             data,
             order,
@@ -190,7 +190,7 @@ impl<'a> Words<'a> {
     }
     /// The next `n` bits (at most 32) without consuming them.
     #[inline]
-    pub fn peek(&mut self, n: u32) -> u32 {
+    pub(crate) fn peek(&mut self, n: u32) -> u32 {
         debug_assert!(n <= 32);
         if n == 0 {
             return 0;
@@ -214,7 +214,7 @@ impl<'a> Words<'a> {
         (self.cache >> (64 - n)) as u32
     }
     #[inline]
-    pub fn skip(&mut self, n: u32) {
+    pub(crate) fn skip(&mut self, n: u32) {
         if n == 0 {
             return;
         }
@@ -224,7 +224,7 @@ impl<'a> Words<'a> {
     }
     /// The next `n` bits (at most 32).
     #[inline]
-    pub fn get(&mut self, n: u32) -> u32 {
+    pub(crate) fn get(&mut self, n: u32) -> u32 {
         let v = self.peek(n);
         self.skip(n);
         v

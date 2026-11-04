@@ -195,7 +195,7 @@ mod scanned {
         photo != name && name.to_str().is_some() && names_of(photo).contains(&caseless(name))
     }
 
-    pub fn readers<'a>(companion: &OsStr, names: &'a [OsString]) -> Vec<&'a OsString> {
+    pub(super) fn readers<'a>(companion: &OsStr, names: &'a [OsString]) -> Vec<&'a OsString> {
         let Some(wanted) = companion.to_str().map(|s| caseless(OsStr::new(s))) else {
             return Vec::new();
         };
@@ -234,7 +234,7 @@ mod scanned {
         })
     }
 
-    pub fn of(
+    pub(super) fn of(
         photo: &OsStr,
         names: &[OsString],
         same_file: &dyn Fn(&OsStr, &OsStr) -> bool,
@@ -252,7 +252,7 @@ mod scanned {
         (carried, shared)
     }
 
-    pub fn arrival_conflict(
+    pub(super) fn arrival_conflict(
         photo: &OsStr,
         carried: &[OsString],
         projected: &[OsString],

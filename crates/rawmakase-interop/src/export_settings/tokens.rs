@@ -488,7 +488,7 @@ pub const TOKENS: &[Def] = &[
 /// The token Lightroom's `id` stands for. Lightroom reads its numbering
 /// tokens by pattern (`naming_sequenceNumber_(%d)Digit`), so
 /// "naming_sequenceNumber_3Digit" is a Sequence # (001) too.
-pub fn token(id: &str) -> Option<Token> {
+pub(super) fn token(id: &str) -> Option<Token> {
     if let Some(def) = TOKENS.iter().find(|d| d.id == id) {
         return Some(def.token);
     }

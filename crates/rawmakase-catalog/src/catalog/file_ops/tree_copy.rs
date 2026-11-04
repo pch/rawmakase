@@ -118,10 +118,10 @@ pub(super) struct TreeCopy {
 }
 
 impl TreeCopy {
-    pub fn files(&self) -> usize {
+    pub(super) fn files(&self) -> usize {
         self.entries.iter().filter(|e| e.identity.is_some()).count()
     }
-    pub fn directories(&self) -> usize {
+    pub(super) fn directories(&self) -> usize {
         self.entries.len() - self.files()
     }
 }
