@@ -142,7 +142,7 @@ asset-aware job source is necessary for Library workers:
 | Path | Required behavior |
 | --- | --- |
 | Develop After/Before, fit/regions, overlay and Reference View | Resolve the particular displayed recipe, including historical Before states |
-| Library thumbnails and edited previews (`src/app/library/previews.rs`) | Carry catalog identity and captured IDs; never substitute Defaults on an asset error |
+| Library thumbnails and edited previews (`src/app/library/previews/`) | Carry catalog identity and captured IDs; never substitute Defaults on an asset error |
 | Library Loupe (`src/app/library/stage.rs`, `src/app/library/screen.rs`) | Preserve typed asset errors through source selection and rendering |
 | Build Standard/1:1 Previews (`src/app/preview_build.rs`) | Resolve captured saved assets and report per-photo failure without publishing an incomplete preview |
 | Snapshot/history restore | Install recipe/IDs and history synchronously; resolve render assets asynchronously under the new revision |
