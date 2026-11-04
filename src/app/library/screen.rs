@@ -10,7 +10,7 @@ use super::thumbnails;
 use crate::catalog::{Photo, PhotoId};
 use eframe::egui;
 use rawmakase_cancel::Cancel;
-use rawmakase_decode::ai_cache::AiCache;
+use rawmakase_decode::ai::cache::AiCache;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},

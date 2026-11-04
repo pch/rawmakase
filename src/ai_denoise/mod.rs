@@ -3,7 +3,7 @@
 //! (docs/rendering-quality.md#ai-denoise). The desktop editor's side (the open
 //! photo's result, the Library's Loupe) is `app/ai_denoise.rs`; the command line's
 //! is [`CommandLine`] and the `rawmakase denoise` development command, [`command`]. Export reaches it as a
-//! [`rawmakase_decode::ai_denoise::AiBase`]; Develop asks for a photo with
+//! [`rawmakase_decode::ai::denoise::AiBase`]; Develop asks for a photo with
 //! [`Service::request`] and receives its progress, a partial result after the tiles
 //! covering the 100% view, and the final result as [`Update`]s.
 //!
@@ -17,8 +17,8 @@ use crate::camera_data::CameraImage;
 use crate::develop::AiSource;
 use anyhow::{Result, anyhow, bail};
 use rawmakase_cancel::Cancel;
-use rawmakase_decode::ai_cache::{AiCache, AiEntry};
-use rawmakase_decode::ai_denoise::{AiBase, ModelOutput, PackedBayer, Unsupported, assemble};
+use rawmakase_decode::ai::cache::{AiCache, AiEntry};
+use rawmakase_decode::ai::denoise::{AiBase, ModelOutput, PackedBayer, Unsupported, assemble};
 use rawmakase_inference::denoise::{GainReference, Grid, Output, TileModel, fit_gain, run};
 use rawmakase_inference::{InferenceError, Provider, RAWNIND};
 use std::collections::{HashMap, VecDeque};

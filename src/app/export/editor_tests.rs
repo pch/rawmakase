@@ -181,7 +181,7 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
                 watermark: None,
                 demosaic: Default::default(),
                 cache: editor.decode_cache.clone(),
-                ai: rawmakase_decode::ai_denoise::AiService::refusing("no AI Denoise in tests"),
+                ai: rawmakase_decode::ai::denoise::AiService::refusing("no AI Denoise in tests"),
             },
             Cancel::NEVER,
             |_| {},

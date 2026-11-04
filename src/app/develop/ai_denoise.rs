@@ -5,8 +5,8 @@ use crate::ai_denoise::{CHANGED_SINCE_OPENED, Request, State, Update, finished};
 use crate::camera_data::CameraImage;
 use crate::develop::AiSource;
 use rawmakase_cancel::Cancel;
-use rawmakase_decode::ai_cache::AiCache;
-use rawmakase_decode::ai_denoise::{ModelOutput, assemble};
+use rawmakase_decode::ai::cache::AiCache;
+use rawmakase_decode::ai::denoise::{ModelOutput, assemble};
 use std::path::Path;
 use std::sync::{
     Arc, Mutex,
@@ -265,10 +265,10 @@ impl crate::app::Editor {
     }
     /// The service as exports reach it, with the installed model (or none, when every
     /// photo with AI Denoise on fails with the reason).
-    pub(in crate::app) fn ai_service(&self) -> rawmakase_decode::ai_denoise::AiService {
+    pub(in crate::app) fn ai_service(&self) -> rawmakase_decode::ai::denoise::AiService {
         self.ai_denoise
             .set_model(self.selection.models.denoise.path());
-        rawmakase_decode::ai_denoise::AiService(Arc::new(self.ai_denoise.clone()))
+        rawmakase_decode::ai::denoise::AiService(Arc::new(self.ai_denoise.clone()))
     }
     /// The results' disk cache, which follows the decode cache's folder.
     pub(in crate::app) fn ai_denoise_cache(&self) -> &AiCache {

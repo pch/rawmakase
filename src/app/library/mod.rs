@@ -1367,7 +1367,7 @@ impl Library {
         }
     }
     /// Edited previews with AI Denoise render from the finished results in `cache`.
-    pub(in crate::app) fn set_ai_cache(&mut self, cache: &rawmakase_decode::ai_cache::AiCache) {
+    pub(in crate::app) fn set_ai_cache(&mut self, cache: &rawmakase_decode::ai::cache::AiCache) {
         self.cache.edit_tx.set_ai_cache(cache.clone());
         self.screen.set_ai_cache(cache);
     }

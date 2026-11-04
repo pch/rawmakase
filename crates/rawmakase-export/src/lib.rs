@@ -4,7 +4,8 @@
 //! the desktop app.
 #[cfg(test)]
 use rawmakase_catalog::catalog;
-use rawmakase_decode::{ai_denoise, color_management, decode, decode_cache, photo, raw};
+use rawmakase_decode::ai::denoise as ai_denoise;
+use rawmakase_decode::{color_management, decode, decode_cache, photo, raw};
 use rawmakase_engine::develop;
 use rawmakase_interop::{edits, exif, export_settings, jpeg, raw_defaults, xmp};
 use rawmakase_model::{

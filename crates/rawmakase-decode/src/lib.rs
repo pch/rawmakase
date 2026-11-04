@@ -26,8 +26,3 @@ pub mod dev;
 pub mod photo;
 pub mod raster;
 pub mod raw;
-
-// The paths the app and the other crates use, kept while the app's files move
-// (#808 Phase 3).
-pub use ai::{cache as ai_cache, denoise as ai_denoise};
-pub use dev::{decode_dump, fingerprint, half_check};

@@ -8,7 +8,7 @@ use crate::catalog::preview_cache::{PreviewCache, Stamp};
 use crate::model::recipe::Recipe;
 use eframe::egui;
 use rawmakase_cancel::Cancel;
-use rawmakase_decode::ai_cache::AiCache;
+use rawmakase_decode::ai::cache::AiCache;
 use std::path::{Path, PathBuf};
 use std::sync::{
     Mutex,
@@ -269,7 +269,7 @@ fn with_ai(
     path: &Path,
     _: &crate::storage::Identity,
     _: &EditSource,
-    _: &rawmakase_decode::ai_cache::AiEntry,
+    _: &rawmakase_decode::ai::cache::AiEntry,
     _: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
     RENDERS
@@ -288,8 +288,8 @@ fn with_ai_denoise() -> anyhow::Result<EditSource> {
 
 /// Stores a finished AI Denoise result for the file at `path` in `cache`.
 fn finish_ai(cache: &AiCache, path: &Path) -> anyhow::Result<()> {
-    let layout = rawmakase_decode::ai_denoise::Layout::new(4, 4, [0, 0]);
-    let entry = rawmakase_decode::ai_cache::AiEntry {
+    let layout = rawmakase_decode::ai::denoise::Layout::new(4, 4, [0, 0]);
+    let entry = rawmakase_decode::ai::cache::AiEntry {
         layout,
         gain: 1.,
         rgb: vec![0.5; 3 * layout.output_pixels()],
@@ -381,7 +381,7 @@ fn a_raw_renders_its_preview_from_a_finished_result() -> anyhow::Result<()> {
     let packed = crate::photo::open(&path)?.packed_bayer(Cancel::new(&cancel))?;
     let layout = packed.layout;
     // A flat result: the preview shows it, not the chart.
-    let entry = rawmakase_decode::ai_cache::AiEntry {
+    let entry = rawmakase_decode::ai::cache::AiEntry {
         layout,
         gain: 1.,
         rgb: vec![0.3; 3 * layout.output_pixels()],
