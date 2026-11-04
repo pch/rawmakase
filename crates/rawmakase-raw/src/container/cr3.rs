@@ -21,7 +21,7 @@ use crate::io::{Bytes, Pieces};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
 use crate::vendor::canon_cr3 as notes;
-use std::sync::atomic::AtomicBool;
+use rawmakase_cancel::Cancel;
 
 /// Canon's metadata box in `moov`.
 const CANON_UUID: [u8; 16] = [
@@ -551,7 +551,7 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &Cr3Plan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let file = Bytes::new(bytes, crate::io::Order::Big);
     let sample = file.slice(plan.offset, plan.len)?;
@@ -606,6 +606,7 @@ fn mean(data: &[u16], width: u32, info: &RawInfo, area: [u32; 4]) -> Result<[u32
 mod tests {
     use super::{CANON_UUID, XMP_UUID};
     use crate::info::UNSET;
+    use rawmakase_cancel::Cancel;
     use std::sync::atomic::AtomicBool;
 
     fn bx(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
@@ -938,7 +939,7 @@ mod tests {
             crate::preview(&info, &file).unwrap()[..],
             [0xff, 0xd8, 0xff, 0xd9]
         );
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!(s.data, vec![8193; 16]);
         assert_eq!(s.area, [0, 0, 4, 4]);
         // The notes' levels red, green, green, blue as red, green, blue,
@@ -950,7 +951,7 @@ mod tests {
         // 14-bit samples' maximum.
         assert_eq!(info.levels, Some([101, 14008, 16383]));
         assert_eq!(
-            crate::decode(&info, &file, &AtomicBool::new(true)).unwrap_err(),
+            crate::decode(&info, &file, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
             crate::Error::Cancelled
         );
     }
@@ -961,11 +962,11 @@ mod tests {
         let info = crate::open(&file).unwrap();
         assert_eq!(info.variant, crate::Variant::Cr3Craw);
         assert_eq!([info.width, info.height], [16, 16]);
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!(s.data, vec![8198; 256]);
         for n in (4096..file.len()).step_by(5) {
             if let Ok(info) = crate::open(&file[..n]) {
-                let _ = crate::decode(&info, &file[..n], &AtomicBool::new(false));
+                let _ = crate::decode(&info, &file[..n], Cancel::NEVER);
             }
         }
     }
@@ -1012,7 +1013,7 @@ mod tests {
             let _ = crate::embedded_xmp(&mut std::io::Cursor::new(&file[..n]));
             if let Ok(info) = crate::open(&file[..n]) {
                 let _ = crate::preview(&info, &file[..n]);
-                let decoded = crate::decode(&info, &file[..n], &cancel);
+                let decoded = crate::decode(&info, &file[..n], Cancel::new(&cancel));
                 assert!(n >= 4096 + 4 + 112 || decoded.is_err(), "{n}");
             }
         }
@@ -1025,7 +1026,7 @@ mod tests {
                 let _ = crate::embedded_xmp(&mut std::io::Cursor::new(&d));
                 if let Ok(info) = crate::open(&d) {
                     let _ = crate::preview(&info, &d);
-                    let _ = crate::decode(&info, &d, &cancel);
+                    let _ = crate::decode(&info, &d, Cancel::new(&cancel));
                 }
             }
         }

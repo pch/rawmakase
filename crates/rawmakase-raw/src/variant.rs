@@ -3,7 +3,7 @@
 use crate::error::{Error, Result};
 use crate::info::RawInfo;
 use crate::sensor::Sensor;
-use std::sync::atomic::AtomicBool;
+use rawmakase_cancel::Cancel;
 
 /// A RAW variant: a container with one encoding and layout of its sensor
 /// data. A file of a recognised container in a variant not listed here is
@@ -380,7 +380,7 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
 }
 
 /// Decodes the sensor data `info` describes.
-pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Result<Sensor> {
+pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: Cancel<'_>) -> Result<Sensor> {
     match (&info.plan, info.variant) {
         (
             Plan::Dng(plan),

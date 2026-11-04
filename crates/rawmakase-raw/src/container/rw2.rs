@@ -16,7 +16,7 @@ use crate::io::Bytes;
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
 use crate::vendor::panasonic as tags;
-use std::sync::atomic::AtomicBool;
+use rawmakase_cancel::Cancel;
 
 /// How the sensor data is coded.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -207,7 +207,7 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &Rw2Plan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let file = Bytes::new(bytes, crate::io::Order::Little);
     let data = match &plan.coding {
@@ -279,6 +279,7 @@ pub(crate) fn decode(
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::info::UNSET;
+    use rawmakase_cancel::Cancel;
     use std::sync::atomic::AtomicBool;
 
     /// A little-endian RW2 file: IFD0 with `entries` (tag, type, values as
@@ -400,7 +401,7 @@ pub(crate) mod tests {
         assert_eq!(info.presets.fine_weather, [600., 256., 400.]);
         assert_eq!(info.presets.shade, [0.; 3]);
         assert_eq!(info.iso, 400.);
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         // Raw format 4: 15 above the tags; 12 bits.
         assert_eq!(s.black, [115, 116, 117, 116]);
         assert_eq!(s.white, 4095);
@@ -415,14 +416,14 @@ pub(crate) mod tests {
             .collect();
         let file = rw2(&header(4, 12, [28, 2]), &rotated(&logical));
         let info = crate::open(&file).unwrap();
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!(&s.data[..4], &[0x123, 0x124, 0x123, 0x124]);
         assert_eq!(s.data[14..16], [0x456, 0x457]);
         assert_eq!(s.data[55], 0x9ac);
         // Format 3 is not rotated.
         let file = rw2(&header(3, 12, [28, 2]), &logical);
         let info = crate::open(&file).unwrap();
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!(s.data[28..30], [0x789, 0x78a]);
         assert_eq!(s.black[0], 115);
         // White is the range over the green level (0x25) by 256: 4095 ·
@@ -433,7 +434,7 @@ pub(crate) mod tests {
             .collect();
         let file = rw2(&entries, &logical);
         let info = crate::open(&file).unwrap();
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!(s.white, 3971);
     }
 
@@ -448,7 +449,7 @@ pub(crate) mod tests {
         let file = rw2(&header(5, 12, [10, 2]), &rotated(&logical));
         let info = crate::open(&file).unwrap();
         assert_eq!(info.variant, crate::Variant::Rw2PackedRotated);
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         let want: [u16; 10] = std::array::from_fn(|i| 0x800 + i as u16);
         assert_eq!(s.data[..10], want);
         // Raw format 5 records black as it is.
@@ -463,7 +464,7 @@ pub(crate) mod tests {
         let file = rw2(&header(6, 14, [11, 1]), &word.to_le_bytes());
         let info = crate::open(&file).unwrap();
         assert_eq!(info.variant, crate::Variant::Rw2Seeded);
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!(s.data, [985, 1985].repeat(6)[..11]);
         // Black as the tags say; white 1/256 of the range below it.
         assert_eq!(s.black, [100, 101, 102, 101]);
@@ -473,7 +474,7 @@ pub(crate) mod tests {
         entries.extend([short(0x0e, 16000), short(0x0f, 16380), short(0x10, 16000)]);
         let file = rw2(&entries, &word.to_le_bytes());
         let info = crate::open(&file).unwrap();
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!(s.white, 16380);
         // Raw format 7: packed 14-bit samples, nine a block, not rotated.
         let mut word = 0u128;
@@ -484,7 +485,7 @@ pub(crate) mod tests {
         let file = rw2(&header(7, 14, [9, 5]), &data);
         let info = crate::open(&file).unwrap();
         assert_eq!(info.variant, crate::Variant::Rw2Packed);
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         let row: [u16; 9] = std::array::from_fn(|i| 0x2000 + i as u16);
         assert_eq!(s.data[..36], row.repeat(4));
         // Read in whole groups of four rows: the fifth is 0.
@@ -554,7 +555,7 @@ pub(crate) mod tests {
         let file = format8(4, &[2, 2], &[0, 0], &stream);
         let info = crate::open(&file).unwrap();
         assert_eq!(info.variant, crate::Variant::Rw2Huffman);
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         // Top left 1, bottom left 2, top right 0, bottom right −1 (0).
         assert_eq!(s.data, [1, 0, 1, 0, 2, 0, 2, 0]);
         assert_eq!(s.white, 65535);
@@ -563,7 +564,7 @@ pub(crate) mod tests {
         let info = crate::open(&file).unwrap();
         let cancel = AtomicBool::new(false);
         assert!(matches!(
-            crate::decode(&info, &file, &cancel),
+            crate::decode(&info, &file, Cancel::new(&cancel)),
             Err(crate::Error::Unsupported(_))
         ));
     }
@@ -590,7 +591,7 @@ pub(crate) mod tests {
         assert_eq!(info.variant, crate::Variant::Rw2Unpacked);
         assert_eq!(info.cam_mul, [2., 1., 1.5, 1.]);
         assert_eq!(info.presets.fine_weather, [423., 256., 363.]);
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!(s.data, [0x123, 0x456, 0x789, 0xfff]);
         assert_eq!(s.white, 4095);
         // Raw format 2: packed 12-bit blocks, not rotated, black as tagged.
@@ -601,7 +602,7 @@ pub(crate) mod tests {
         let file = rw2(&header(2, 12, [10, 1]), &word.to_le_bytes());
         let info = crate::open(&file).unwrap();
         assert_eq!(info.variant, crate::Variant::Rw2Packed);
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         let want: [u16; 10] = std::array::from_fn(|i| 0x100 + i as u16);
         assert_eq!(s.data, want);
         assert_eq!(s.black, [100, 101, 102, 101]);
@@ -665,19 +666,19 @@ pub(crate) mod tests {
         let cancel = AtomicBool::new(false);
         for len in (0..file.len()).step_by(7) {
             if let Ok(info) = crate::open(&file[..len]) {
-                let _ = crate::decode(&info, &file[..len], &cancel);
+                let _ = crate::decode(&info, &file[..len], Cancel::new(&cancel));
             }
         }
         // The data cut short is an error.
         let short = &file[..file.len() - 0x3fe0];
         let info = crate::open(short).unwrap();
-        assert!(crate::decode(&info, short, &cancel).is_err());
+        assert!(crate::decode(&info, short, Cancel::new(&cancel)).is_err());
         // Every byte of the header changed in turn.
         for at in 4..file.len() - 0x4000 {
             let mut bad = file.clone();
             bad[at] ^= 0xff;
             if let Ok(info) = crate::open(&bad) {
-                let _ = crate::decode(&info, &bad, &cancel);
+                let _ = crate::decode(&info, &bad, Cancel::new(&cancel));
             }
         }
         // The same for raw format 8's strip tags and streams.
@@ -686,10 +687,10 @@ pub(crate) mod tests {
             let mut bad = file.clone();
             bad[at] ^= 0xff;
             if let Ok(info) = crate::open(&bad) {
-                let _ = crate::decode(&info, &bad, &cancel);
+                let _ = crate::decode(&info, &bad, Cancel::new(&cancel));
             }
             if let Ok(info) = crate::open(&file[..at]) {
-                let _ = crate::decode(&info, &file[..at], &cancel);
+                let _ = crate::decode(&info, &file[..at], Cancel::new(&cancel));
             }
         }
         // An unknown raw format is unsupported.

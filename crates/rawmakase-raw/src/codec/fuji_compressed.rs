@@ -26,8 +26,8 @@
 //! the decoded samples with LibRaw's recorded output on our test dataset.
 use super::bits::Msb;
 use crate::error::{Error, Result, corrupt};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Columns per stripe.
 const STRIPE: usize = 768;
@@ -114,7 +114,7 @@ pub(crate) fn decode(
     height: u32,
     bits: u32,
     xtrans: bool,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Vec<u16>> {
     let n = crate::io::samples(width, height, 1)?;
     let h = header(src, width, height, bits, xtrans)?;
@@ -156,7 +156,7 @@ pub(crate) fn decode(
         });
         at += len;
     }
-    if cancel.load(Ordering::Relaxed) {
+    if cancel.is_cancelled() {
         return Err(Error::Cancelled);
     }
     let decoded = stripes
@@ -297,7 +297,7 @@ impl Lines {
 }
 
 /// Decodes one stripe: `height × width` samples.
-fn stripe(s: &Stripe, h: &Header, cancel: &AtomicBool) -> Result<Vec<u16>> {
+fn stripe(s: &Stripe, h: &Header, cancel: Cancel<'_>) -> Result<Vec<u16>> {
     let size = if h.xtrans { STRIPE * 2 / 3 } else { STRIPE / 2 };
     let max = (1u32 << h.bits) - 1;
     // Red, green and blue lines; per group red and blue have three, green six.
@@ -323,7 +323,7 @@ fn stripe(s: &Stripe, h: &Header, cancel: &AtomicBool) -> Result<Vec<u16>> {
     out.try_reserve_exact(s.width * 6 * h.groups)
         .map_err(|_| Error::TooLarge("Fujifilm stripe"))?;
     for group in 0..h.groups {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let q = u32::from(s.quantisers.get(group).copied().unwrap_or(0));
@@ -461,6 +461,7 @@ fn stripe(s: &Stripe, h: &Header, cancel: &AtomicBool) -> Result<Vec<u16>> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     /// Bits, most significant first, into bytes.
     fn pack(bits: &[bool]) -> Vec<u8> {
@@ -582,7 +583,7 @@ pub(crate) mod tests {
             for xtrans in [false, true] {
                 // 780 columns: the second stripe's 12 columns are kept.
                 let data = stream(bits, xtrans, 780, 3, &zeros(bits, xtrans, 3), None);
-                let out = decode(&data, 780, 18, bits, xtrans, &cancel).unwrap();
+                let out = decode(&data, 780, 18, bits, xtrans, Cancel::new(&cancel)).unwrap();
                 assert_eq!(out, vec![0; 780 * 18]);
             }
         }
@@ -593,16 +594,16 @@ pub(crate) mod tests {
         let cancel = AtomicBool::new(false);
         let data = stream(14, true, 780, 3, &zeros(14, true, 3), Some(&[0, 0, 0]));
         assert_eq!(
-            decode(&data, 780, 18, 14, true, &cancel).unwrap(),
+            decode(&data, 780, 18, 14, true, Cancel::new(&cancel)).unwrap(),
             vec![0; 780 * 18]
         );
         for len in (0..data.len()).step_by(5) {
-            let _ = decode(&data[..len], 780, 18, 14, true, &cancel);
+            let _ = decode(&data[..len], 780, 18, 14, true, Cancel::new(&cancel));
         }
         for at in 0..64 {
             let mut bad = data.clone();
             bad[at] ^= 0xa5;
-            let _ = decode(&bad, 780, 18, 14, true, &cancel);
+            let _ = decode(&bad, 780, 18, 14, true, Cancel::new(&cancel));
         }
         let mut seed = 0x1234_5678u32;
         let garbage: Vec<u8> = (0..4096)
@@ -613,24 +614,24 @@ pub(crate) mod tests {
             .collect();
         for q in [0u8, 1, 3, 9] {
             let data = stream(12, false, 780, 1, &garbage, Some(&[q]));
-            let _ = decode(&data, 780, 6, 12, false, &cancel);
+            let _ = decode(&data, 780, 6, 12, false, Cancel::new(&cancel));
         }
         // Stripes too short for their samples are refused before the image
         // is allocated.
         let short = stream(14, true, 780, 3, &[0; 64], None);
         assert!(matches!(
-            decode(&short, 780, 18, 14, true, &cancel),
+            decode(&short, 780, 18, 14, true, Cancel::new(&cancel)),
             Err(Error::Corrupt(_))
         ));
         // The header must describe the image.
-        assert!(decode(&data, 782, 18, 14, true, &cancel).is_err());
+        assert!(decode(&data, 782, 18, 14, true, Cancel::new(&cancel)).is_err());
         assert!(matches!(
-            decode(&data, 780, 18, 14, false, &cancel),
+            decode(&data, 780, 18, 14, false, Cancel::new(&cancel)),
             Err(Error::Unsupported(_))
         ));
         cancel.store(true, Ordering::Relaxed);
         assert_eq!(
-            decode(&data, 780, 18, 14, true, &cancel),
+            decode(&data, 780, 18, 14, true, Cancel::new(&cancel)),
             Err(Error::Cancelled)
         );
     }

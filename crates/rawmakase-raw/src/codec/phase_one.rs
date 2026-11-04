@@ -22,7 +22,7 @@
 use super::bits::Words;
 use crate::error::{Error, Result, corrupt};
 use crate::io::Order;
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// The difference lengths a prefix code selects.
 const LENGTHS: [u32; 10] = [8, 7, 6, 9, 11, 10, 5, 12, 14, 13];
@@ -96,7 +96,7 @@ pub(crate) fn decode(
     output: Output,
     width: usize,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     if width == 0 {
         return Err(corrupt("IIQ rows of no columns"));
@@ -105,7 +105,7 @@ pub(crate) fn decode(
     // eight columns, and a word.
     let most = width.div_ceil(8).saturating_mul(36).saturating_add(8);
     for (r, dst) in out.chunks_exact_mut(width).enumerate() {
-        if r % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if r % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let at = *offsets.get(r).ok_or_else(|| corrupt("IIQ row offsets"))? as usize;
@@ -201,7 +201,7 @@ pub(crate) fn decode_sv2(
     order: Order,
     width: usize,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     if width == 0 {
         return Err(corrupt("IIQ rows of no columns"));
@@ -214,7 +214,7 @@ pub(crate) fn decode_sv2(
         .div_ceil(8)
         .saturating_add(8);
     for (r, dst) in out.chunks_exact_mut(width).enumerate() {
-        if r % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if r % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let at = *offsets.get(r).ok_or_else(|| corrupt("IIQ row offsets"))? as usize;
@@ -229,6 +229,7 @@ pub(crate) fn decode_sv2(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     /// Bits written most significant first into little-endian 32-bit words.
     struct Writer {
@@ -382,7 +383,7 @@ mod tests {
                 Output::Plain,
                 8,
                 &mut out,
-                &cancel
+                Cancel::new(&cancel)
             )
             .is_err()
         );
@@ -394,7 +395,7 @@ mod tests {
                 Output::Plain,
                 8,
                 &mut out,
-                &cancel
+                Cancel::new(&cancel)
             )
             .is_err()
         );
@@ -406,7 +407,7 @@ mod tests {
                 Output::Plain,
                 8,
                 &mut out,
-                &cancel
+                Cancel::new(&cancel)
             )
             .is_ok()
         );
@@ -418,7 +419,7 @@ mod tests {
                 Output::Plain,
                 8,
                 &mut out,
-                &AtomicBool::new(true)
+                Cancel::new(&AtomicBool::new(true))
             ),
             Err(Error::Cancelled)
         );

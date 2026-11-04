@@ -21,7 +21,7 @@ use crate::io::{Bytes, Order};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
 use crate::vendor::phase_one as notes;
-use std::sync::atomic::AtomicBool;
+use rawmakase_cancel::Cancel;
 
 /// Where the Phase One block is in the file.
 const BLOCK: u64 = 8;
@@ -141,7 +141,7 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &IiqPlan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let mut data = crate::io::zeroed(crate::io::samples(plan.width, plan.height, 1)?)?;
     let (at, size) = plan.data;
@@ -192,6 +192,7 @@ pub(crate) fn decode(
 mod tests {
     use super::*;
     use crate::container::test_tiff::{ascii, tiff};
+    use std::sync::atomic::AtomicBool;
 
     /// A little-endian IIQ by `model` of 4 × 2 samples in `format`: rows of
     /// literal 16-bit values (rows narrower than eight columns are all
@@ -234,7 +235,7 @@ mod tests {
 
     fn decode(file: &[u8]) -> Result<(RawInfo, Sensor)> {
         let info = crate::open(file)?;
-        let sensor = crate::decode(&info, file, &AtomicBool::new(false))?;
+        let sensor = crate::decode(&info, file, Cancel::NEVER)?;
         Ok((info, sensor))
     }
 
@@ -281,7 +282,7 @@ mod tests {
             let file = iiq("IQ3 100MP", format, rows);
             let info = crate::open(&file).unwrap();
             assert_eq!(
-                crate::decode(&info, &file, &AtomicBool::new(true)).unwrap_err(),
+                crate::decode(&info, &file, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
                 Error::Cancelled
             );
             for end in 0..file.len() {

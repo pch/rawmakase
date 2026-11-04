@@ -31,8 +31,8 @@
 //! Sources: our own measurements, comparing the decoded samples with
 //! LibRaw's recorded output on our test dataset.
 use crate::error::{Error, Result, corrupt};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 const CHUNK: usize = 0x4000;
 const ROTATION: usize = 0x1ff8;
@@ -81,7 +81,7 @@ pub(crate) fn decode(
     rotated: bool,
     width: u32,
     height: u32,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Vec<u16>> {
     let n = crate::io::samples(width, height, 1)?;
     let need = usize::try_from(len(block, width, height)).map_err(|_| corrupt("RAW size"))?;
@@ -96,7 +96,7 @@ pub(crate) fn decode(
     out.par_chunks_mut(CHUNK / 16 * per)
         .enumerate()
         .try_for_each(|(c, out)| {
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 return Err(Error::Cancelled);
             }
             let start = c * CHUNK;
@@ -126,7 +126,7 @@ pub(crate) fn decode(
 
 /// Decodes `width × height` 12-bit samples from the high bits of 16-bit
 /// little-endian words in `src`.
-pub(crate) fn words(src: &[u8], width: u32, height: u32, cancel: &AtomicBool) -> Result<Vec<u16>> {
+pub(crate) fn words(src: &[u8], width: u32, height: u32, cancel: Cancel<'_>) -> Result<Vec<u16>> {
     let n = crate::io::samples(width, height, 1)?;
     let (words, _) = src.as_chunks::<2>();
     let words = words
@@ -137,7 +137,7 @@ pub(crate) fn words(src: &[u8], width: u32, height: u32, cancel: &AtomicBool) ->
     out.par_chunks_mut(row * 64)
         .zip(words.par_chunks(row * 64))
         .try_for_each(|(out, words)| {
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 return Err(Error::Cancelled);
             }
             for (o, w) in out.iter_mut().zip(words) {
@@ -241,6 +241,7 @@ fn seeded(block: &[u8; 16], bits: u32, out: &mut [u16]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     /// A block written from its highest bit down: (value, bits) fields.
     fn block_down(fields: &[(u32, u32)]) -> [u8; 16] {
@@ -339,26 +340,26 @@ mod tests {
             c.copy_from_slice(&(i as u16).to_le_bytes());
         }
         let block = Block::Packed { bits: 16 };
-        let out = decode(&src, block, true, 64, 128, &AtomicBool::new(false)).unwrap();
+        let out = decode(&src, block, true, 64, 128, Cancel::NEVER).unwrap();
         assert_eq!(out[0], (ROTATION / 2) as u16);
         assert_eq!(out[(CHUNK - ROTATION) / 2], 0);
-        let plain = decode(&src, block, false, 64, 128, &AtomicBool::new(false)).unwrap();
+        let plain = decode(&src, block, false, 64, 128, Cancel::NEVER).unwrap();
         assert_eq!(plain[5], 5);
     }
 
     #[test]
     fn words_hold_samples_in_their_high_bits() {
         let src = [0x30, 0x12, 0xf0, 0xff, 0x00];
-        let out = words(&src, 2, 1, &AtomicBool::new(false)).unwrap();
+        let out = words(&src, 2, 1, Cancel::NEVER).unwrap();
         assert_eq!(out, [0x123, 0xfff]);
-        assert!(words(&src, 3, 1, &AtomicBool::new(false)).is_err());
+        assert!(words(&src, 3, 1, Cancel::NEVER).is_err());
     }
 
     #[test]
     fn short_data_is_an_error() {
         let cancel = AtomicBool::new(false);
-        assert!(decode(&[0; 100], Block::Delta, true, 14, 10, &cancel).is_err());
-        assert!(decode(&[0; 160], Block::Delta, true, 14, 10, &cancel).is_ok());
-        assert!(decode(&[], Block::Delta, true, 0, 10, &cancel).is_err());
+        assert!(decode(&[0; 100], Block::Delta, true, 14, 10, Cancel::new(&cancel)).is_err());
+        assert!(decode(&[0; 160], Block::Delta, true, 14, 10, Cancel::new(&cancel)).is_ok());
+        assert!(decode(&[], Block::Delta, true, 0, 10, Cancel::new(&cancel)).is_err());
     }
 }

@@ -13,7 +13,7 @@
 //! match with LibRaw's output on every DCR of the test dataset.
 use crate::error::{Error, Result};
 use crate::io::Order;
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// The samples of a block.
 const BLOCK: usize = 256;
@@ -119,7 +119,7 @@ pub(crate) fn decode(
     order: Order,
     width: usize,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     if width == 0 {
         return Err(crate::error::corrupt("Kodak rows of no samples"));
@@ -127,7 +127,7 @@ pub(crate) fn decode(
     let mut bytes = Bytes { data: src, pos: 0 };
     let mut buf = [0i32; BLOCK];
     for (y, row) in out.chunks_exact_mut(width).enumerate() {
-        if y % 16 == 0 && cancel.load(Ordering::Relaxed) {
+        if y % 16 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         for dst in row.chunks_mut(BLOCK) {
@@ -152,6 +152,7 @@ pub(crate) fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     #[test]
     fn a_block_of_differences_and_a_plain_one() {
@@ -163,7 +164,7 @@ mod tests {
         // size 4 & 7 == 4: a 16-bit prefetch.
         s.extend([(bits >> 8) as u8, bits as u8]);
         let mut out = [0u16; 4];
-        decode(&s, Order::Big, 4, &mut out, &AtomicBool::new(false)).unwrap();
+        decode(&s, Order::Big, 4, &mut out, Cancel::NEVER).unwrap();
         // Even columns: 3, 3 - 5 = -2; odd: 0, 1.
         assert_eq!(out, [3, 0, (-2i32) as u16, 1]);
         // A length over 12: plain groups of six words.
@@ -173,7 +174,7 @@ mod tests {
             s.extend(w.to_be_bytes());
         }
         let mut out = [0u16; 8];
-        decode(&s, Order::Big, 8, &mut out, &AtomicBool::new(false)).unwrap();
+        decode(&s, Order::Big, 8, &mut out, Cancel::NEVER).unwrap();
         assert_eq!(
             out,
             [0x135, 0x246, 0xabc, 0xdef, 0x123, 0x456, 0x789, 0xaaa]
@@ -185,10 +186,16 @@ mod tests {
         let mut out = vec![0u16; 600];
         for len in 0..40 {
             let s = vec![0x5a; len];
-            let _ = decode(&s, Order::Big, 300, &mut out, &AtomicBool::new(false));
+            let _ = decode(&s, Order::Big, 300, &mut out, Cancel::NEVER);
         }
         assert_eq!(
-            decode(&[0; 8], Order::Big, 300, &mut out, &AtomicBool::new(true)),
+            decode(
+                &[0; 8],
+                Order::Big,
+                300,
+                &mut out,
+                Cancel::new(&AtomicBool::new(true))
+            ),
             Err(Error::Cancelled)
         );
     }

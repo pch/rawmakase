@@ -17,7 +17,7 @@ use crate::info::{Cfa, RawInfo};
 use crate::io::{Bytes, Order, Pieces};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
-use std::sync::atomic::AtomicBool;
+use rawmakase_cancel::Cancel;
 
 /// The most blocks read.
 const MAX_BLOCKS: usize = 64;
@@ -224,7 +224,7 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &MrwPlan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let width = plan.width as usize;
     let mut data = crate::io::zeroed(crate::io::samples(plan.width, plan.height, 1)?)?;
@@ -262,6 +262,7 @@ pub(crate) fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     /// A block named `name` holding `body`.
     fn block(name: &[u8; 4], body: &[u8]) -> Vec<u8> {
@@ -315,7 +316,7 @@ mod tests {
 
     fn decode(file: &[u8]) -> Result<(RawInfo, Sensor)> {
         let info = crate::open(file)?;
-        let sensor = crate::decode(&info, file, &AtomicBool::new(false))?;
+        let sensor = crate::decode(&info, file, Cancel::NEVER)?;
         Ok((info, sensor))
     }
 
@@ -405,7 +406,7 @@ mod tests {
         let file = mrw(0x59, 1, &[0x5a; 12]);
         let info = crate::open(&file).unwrap();
         assert_eq!(
-            crate::decode(&info, &file, &AtomicBool::new(true)).unwrap_err(),
+            crate::decode(&info, &file, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
             Error::Cancelled
         );
         for end in 0..file.len() {

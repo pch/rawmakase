@@ -14,7 +14,7 @@ use crate::info::{Cfa, RawInfo};
 use crate::io::{Bytes, Order};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
-use std::sync::atomic::AtomicBool;
+use rawmakase_cancel::Cancel;
 
 /// Sinar's settings, text of `key value` lines.
 const SETTINGS: [u16; 2] = [0xc517, 0xc516];
@@ -129,7 +129,7 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &StiPlan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let mut data = crate::io::zeroed(crate::io::samples(plan.width, plan.height, 1)?)?;
     let (at, size) = plan.data;
@@ -154,6 +154,7 @@ pub(crate) fn decode(
 mod tests {
     use super::*;
     use crate::container::test_tiff::{E, ascii, dir, long, offsets, short, tiff};
+    use std::sync::atomic::AtomicBool;
 
     const LE: Order = Order::Little;
 
@@ -200,7 +201,7 @@ mod tests {
         assert_eq!(info.make, "Sinar");
         assert_eq!(info.flip, 3);
         assert_eq!(info.cam_mul, [1.5, 1., 1.25, 1.]);
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!(s.data, [1, 2, 3, 4]);
         assert_eq!(s.white, 16383);
         // No Neutral line: no white balance.
@@ -213,12 +214,12 @@ mod tests {
         let file = sti(&[0u8; 8], "Neutral 1 1 1");
         let info = crate::open(&file).unwrap();
         assert_eq!(
-            crate::decode(&info, &file, &AtomicBool::new(true)).unwrap_err(),
+            crate::decode(&info, &file, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
             Error::Cancelled
         );
         for end in 0..file.len() {
             if let Ok(info) = crate::open(&file[..end]) {
-                let _ = crate::decode(&info, &file[..end], &AtomicBool::new(false));
+                let _ = crate::decode(&info, &file[..end], Cancel::NEVER);
             }
         }
         let mut noisy = file;
@@ -226,7 +227,7 @@ mod tests {
             *b ^= (i * 7919 % 251) as u8;
         }
         if let Ok(info) = crate::open(&noisy) {
-            let _ = crate::decode(&info, &noisy, &AtomicBool::new(false));
+            let _ = crate::decode(&info, &noisy, Cancel::NEVER);
         }
     }
 }

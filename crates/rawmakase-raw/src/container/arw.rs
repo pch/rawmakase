@@ -15,7 +15,7 @@ use crate::io::{Bytes, Order};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
 use crate::vendor::sony;
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// Where an ARW's sensor data is and how it is coded.
 #[derive(Clone, Debug, Default)]
@@ -281,7 +281,7 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &ArwPlan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let (width, height) = (plan.width as usize, plan.height as usize);
     let file = Bytes::new(
@@ -320,7 +320,7 @@ pub(crate) fn decode(
                 .zip(data.chunks_exact_mut(width))
                 .enumerate()
             {
-                if y % 256 == 0 && cancel.load(Ordering::Relaxed) {
+                if y % 256 == 0 && cancel.is_cancelled() {
                     return Err(Error::Cancelled);
                 }
                 for (d, c) in dst.iter_mut().zip(row.as_chunks::<2>().0) {
@@ -339,7 +339,7 @@ pub(crate) fn decode(
                 .zip(data.chunks_exact_mut(width))
                 .enumerate()
             {
-                if y % 256 == 0 && cancel.load(Ordering::Relaxed) {
+                if y % 256 == 0 && cancel.is_cancelled() {
                     return Err(Error::Cancelled);
                 }
                 crate::codec::sony::packed12(row, dst);
@@ -391,7 +391,7 @@ fn ycbcr_tiles<'a>(
     plan: &ArwPlan,
     strip: &impl Fn(usize) -> Result<&'a [u8]>,
     rgb: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     let (width, height) = (plan.width as usize, plan.height as usize);
     let [tw, th] = plan.tile.map(|v| v as usize);
@@ -402,7 +402,7 @@ fn ycbcr_tiles<'a>(
     }
     let mut samples = Vec::new();
     for i in 0..tiles {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let tile = strip(i)?;
@@ -446,7 +446,7 @@ fn ljpeg_tiles<'a>(
     plan: &ArwPlan,
     strip: &impl Fn(usize) -> Result<&'a [u8]>,
     data: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     let (width, height) = (plan.width as usize, plan.height as usize);
     let [tw, th] = plan.tile.map(|v| v as usize);
@@ -457,7 +457,7 @@ fn ljpeg_tiles<'a>(
     }
     let mut samples = Vec::new();
     for i in 0..tiles {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let tile = strip(i)?;
@@ -632,7 +632,7 @@ pub(crate) mod tests {
 
     fn decode(file: &[u8]) -> Result<(RawInfo, Sensor)> {
         let info = crate::open(file)?;
-        let sensor = crate::decode(&info, file, &AtomicBool::new(false))?;
+        let sensor = crate::decode(&info, file, Cancel::NEVER)?;
         Ok((info, sensor))
     }
 

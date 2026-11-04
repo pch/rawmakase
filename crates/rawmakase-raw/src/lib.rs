@@ -12,6 +12,7 @@
 //! whose EXIF is not a TIFF at the file's start; [`embedded_xmp`] the XMP a
 //! CR3 keeps in a box of its own.
 #![forbid(unsafe_code)]
+use rawmakase_cancel::Cancel;
 mod captured;
 mod codec;
 mod color;
@@ -35,12 +36,8 @@ pub use exif_tiffs::ExifTiffs;
 pub use info::{Cfa, MatrixSource, Presets, PreviewSpace, RawInfo, SuperCcd, UNSET};
 pub use preview::{NoPreview, is_jpeg_xl};
 pub use sensor::Sensor;
-use std::sync::atomic::AtomicBool;
 pub use variant::Variant;
 
-/// Nikon High Efficiency (JPEG XS) codestream decoding, for the LibRaw
-/// bridge's unpack until RAWmakase's own decoders replace it.
-pub use codec::nikon_he::decode as decode_nikon_high_efficiency;
 /// Synthetic High Efficiency codestreams, for other crates' tests.
 #[cfg(feature = "test-support")]
 pub use codec::nikon_he::tests as nikon_high_efficiency_test_support;
@@ -189,6 +186,6 @@ fn embedded(
 
 /// The sensor data of the file `info` was read from; stops with
 /// [`Error::Cancelled`] soon after `cancel` is set.
-pub fn decode(info: &RawInfo, bytes: &[u8], cancel: &AtomicBool) -> Result<Sensor> {
+pub fn decode(info: &RawInfo, bytes: &[u8], cancel: Cancel<'_>) -> Result<Sensor> {
     variant::decode(info, bytes, cancel)
 }

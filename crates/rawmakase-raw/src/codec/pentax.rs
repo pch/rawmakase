@@ -22,8 +22,8 @@ use crate::codec::huffman::extend;
 use crate::codec::speculative::{self, Stream};
 use crate::error::{Error, Result, corrupt};
 use crate::io::Order;
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Prefix codes by the next 12 bits: (length, difference length).
 pub(crate) struct Codes {
@@ -126,7 +126,7 @@ pub(crate) fn decode(
     width: usize,
     height: usize,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     decode_with(data, codes, width, height, out, cancel, true)
 }
@@ -138,7 +138,7 @@ fn decode_with(
     width: usize,
     height: usize,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     shared: bool,
 ) -> Result<()> {
     let samples = width * height;
@@ -153,7 +153,7 @@ fn decode_with(
     // The first two samples of the last row of each parity.
     let mut first = [[0i32; 2]; 2];
     for (row, dst) in out.chunks_exact_mut(width).take(height).enumerate() {
-        if row % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if row % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let mut last = [0i32; 2];
@@ -192,7 +192,7 @@ impl Stream for Differences<'_> {
 /// The samples of the differences in `out` (rows of `width`), as [`decode`]
 /// predicts them: the first two of each row in order, the rest of each row
 /// on all threads.
-fn predict(out: &mut [u16], width: usize, cancel: &AtomicBool) -> Result<()> {
+fn predict(out: &mut [u16], width: usize, cancel: Cancel<'_>) -> Result<()> {
     let mut first = [[0u16; 2]; 2];
     let starts: Vec<[u16; 2]> = out
         .chunks_exact(width)
@@ -208,7 +208,7 @@ fn predict(out: &mut [u16], width: usize, cancel: &AtomicBool) -> Result<()> {
     out.par_chunks_exact_mut(width)
         .zip(starts)
         .try_for_each(|(row, start)| {
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 return Err(Error::Cancelled);
             }
             let mut last = start;
@@ -228,6 +228,7 @@ fn predict(out: &mut [u16], width: usize, cancel: &AtomicBool) -> Result<()> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     #[test]
     fn samsung_s_table_is_complete_and_prefix_free() {
@@ -252,14 +253,23 @@ pub(crate) mod tests {
             let (width, height) = (1500, 1200);
             let mut parallel = vec![0; width * height + 7];
             let mut sequential = parallel.clone();
-            decode_with(&data, &codes, width, height, &mut parallel, &cancel, true).unwrap();
+            decode_with(
+                &data,
+                &codes,
+                width,
+                height,
+                &mut parallel,
+                Cancel::new(&cancel),
+                true,
+            )
+            .unwrap();
             decode_with(
                 &data,
                 &codes,
                 width,
                 height,
                 &mut sequential,
-                &cancel,
+                Cancel::new(&cancel),
                 false,
             )
             .unwrap();
@@ -271,7 +281,7 @@ pub(crate) mod tests {
     fn cancelling_stops_the_prediction() {
         let mut out = vec![0; 64];
         assert_eq!(
-            predict(&mut out, 8, &AtomicBool::new(true)),
+            predict(&mut out, 8, Cancel::new(&AtomicBool::new(true))),
             Err(Error::Cancelled)
         );
     }
@@ -320,7 +330,7 @@ pub(crate) mod tests {
             .map(|c| c.iter().enumerate().fold(0, |a, (i, b)| a | b << (7 - i)))
             .collect();
         let mut out = [0u16; 12];
-        decode(&bytes, &codes, 4, 3, &mut out, &AtomicBool::new(false)).unwrap();
+        decode(&bytes, &codes, 4, 3, &mut out, Cancel::NEVER).unwrap();
         assert_eq!(&out[..4], &[3, 2, 3, 14]);
         assert_eq!(&out[4..8], &[(-10i32) as u16, 0, (-10i32) as u16, 0]);
         assert_eq!(out[8], 1);

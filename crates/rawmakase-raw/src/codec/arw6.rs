@@ -11,7 +11,7 @@
 //! (the curve to linear values).
 use super::llvc::{self, Half, Level, Plane};
 use crate::error::{Error, Result, corrupt};
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// A tile of the strip: where its bytes start (in the strip), and where it
 /// goes in the image.
@@ -248,7 +248,7 @@ fn shift(tile: &[u8], residual: &Stream, width: usize) -> Result<usize> {
 
 /// Decodes one tile into its four planes: the green mean, two chroma and the
 /// residual, `width / 2 × height / 2` each.
-fn planes(tile: &[u8], width: usize, height: usize, cancel: &AtomicBool) -> Result<[Plane; 4]> {
+fn planes(tile: &[u8], width: usize, height: usize, cancel: Cancel<'_>) -> Result<[Plane; 4]> {
     let (vs, streams) = streams(tile, width, height)?;
     let w = width / 2;
     if !w.is_multiple_of(8) || vs == 0 {
@@ -282,7 +282,7 @@ fn planes(tile: &[u8], width: usize, height: usize, cancel: &AtomicBool) -> Resu
             let width = [w3, w3, w2, w1][g];
             for (part, r) in halves(tile, s, count)?.iter().zip(&layout) {
                 // Every half transmission unit: a few lines.
-                if cancel.load(Ordering::Relaxed) {
+                if cancel.is_cancelled() {
                     return Err(Error::Cancelled);
                 }
                 let mut half = Half::new(part.bytes);
@@ -355,7 +355,7 @@ fn planes(tile: &[u8], width: usize, height: usize, cancel: &AtomicBool) -> Resu
     }
     let mut res = Plane::zeros(w, vs);
     for (part, r) in halves(tile, &streams[12], count)?.iter().zip(&layout) {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let mut half = Half::new(part.bytes);
@@ -374,12 +374,12 @@ fn planes(tile: &[u8], width: usize, height: usize, cancel: &AtomicBool) -> Resu
 /// mean less a quarter of the residual around it, the second the first's
 /// average around it plus the residual, red and blue twice their chroma
 /// plus the greens' mean (our measurements). Red, green / green, blue cells.
-fn mosaic(p: &[Plane; 4], out: &mut [u16], stride: usize, cancel: &AtomicBool) -> Result<()> {
+fn mosaic(p: &[Plane; 4], out: &mut [u16], stride: usize, cancel: Cancel<'_>) -> Result<()> {
     let [m, c1, c2, res] = p;
     let (w, h) = (m.width, m.height);
     let mut g1 = vec![0i64; w * h];
     for j in 0..h {
-        if j % 16 == 0 && cancel.load(Ordering::Relaxed) {
+        if j % 16 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let (rp, rj) = (res.row(j.saturating_sub(1)), res.row(j));
@@ -392,7 +392,7 @@ fn mosaic(p: &[Plane; 4], out: &mut [u16], stride: usize, cancel: &AtomicBool) -
     }
     let clip = |v: i64| v.clamp(0, 4095) as u16;
     for j in 0..h {
-        if j % 16 == 0 && cancel.load(Ordering::Relaxed) {
+        if j % 16 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let jn = (j + 1).min(h - 1);
@@ -419,11 +419,11 @@ pub(crate) fn decode(
     width: usize,
     height: usize,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     let tiles = tiles(strip, width, height)?;
     for (i, t) in tiles.iter().enumerate() {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let end = tiles.get(i + 1).map_or(strip.len(), |n| n.offset);
@@ -486,6 +486,7 @@ pub(crate) fn curve() -> Vec<u16> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     /// Bits, most significant first.
     #[derive(Default)]
@@ -678,7 +679,7 @@ pub(crate) mod tests {
         };
         let strip = encode_strip(width, height, &encode_tile(width, height, &ll3));
         let mut out = vec![0u16; width * height];
-        decode(&strip, width, height, &mut out, &AtomicBool::new(false)).unwrap();
+        decode(&strip, width, height, &mut out, Cancel::NEVER).unwrap();
         // The centre of the block of 1300 (lowest-band columns 3 to 5) is
         // mosaic column 4 × 16 + 8.
         for row in [16, 17, 32, 33] {
@@ -717,7 +718,7 @@ pub(crate) mod tests {
         let mut out = vec![0u16; width * height];
         let (result, latency) = std::thread::scope(|s| {
             let decoding = s.spawn(|| {
-                let r = decode(&strip, width, height, &mut out, &cancel);
+                let r = decode(&strip, width, height, &mut out, Cancel::new(&cancel));
                 (r, std::time::Instant::now())
             });
             std::thread::sleep(std::time::Duration::from_millis(20));
@@ -746,12 +747,12 @@ pub(crate) mod tests {
         let mut out = vec![0u16; width * height];
         let cancel = AtomicBool::new(false);
         for end in (0..strip.len()).step_by(7) {
-            let _ = decode(&strip[..end], width, height, &mut out, &cancel);
+            let _ = decode(&strip[..end], width, height, &mut out, Cancel::new(&cancel));
         }
         let mut noisy = strip;
         for (i, b) in noisy.iter_mut().enumerate().skip(16) {
             *b ^= (i * 7919 % 251) as u8;
         }
-        let _ = decode(&noisy, width, height, &mut out, &cancel);
+        let _ = decode(&noisy, width, height, &mut out, Cancel::new(&cancel));
     }
 }

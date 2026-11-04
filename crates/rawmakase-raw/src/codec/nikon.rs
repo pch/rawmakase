@@ -18,8 +18,8 @@ use super::bits::Msb;
 use super::huffman::Huffman;
 use super::speculative::{self, Stream};
 use crate::error::{Error, Result};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The linearization table's version of lossless data.
 const LOSSLESS: u8 = 0x46;
@@ -45,7 +45,7 @@ pub(crate) fn decode(
     width: usize,
     height: usize,
     coding: &Coding,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Vec<u16>> {
     decode_with(data, width, height, coding, cancel, true)
 }
@@ -56,7 +56,7 @@ fn decode_with(
     width: usize,
     height: usize,
     coding: &Coding,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     shared: bool,
 ) -> Result<Vec<u16>> {
     if !matches!(coding.bits, 12 | 14) {
@@ -93,7 +93,7 @@ fn decode_with(
     let mut bits = Msb::new(data);
     let mut first = coding.predictors.map(|row| row.map(i32::from));
     for (y, row) in out.chunks_exact_mut(width).enumerate() {
-        if y % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if y % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         if split == Some(y) {
@@ -146,7 +146,7 @@ fn predict(
     width: usize,
     coding: &Coding,
     curve: &[u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     let diff = |v: u16| i32::from(v as i16);
     let mut first = coding.predictors.map(|row| row.map(i32::from));
@@ -164,7 +164,7 @@ fn predict(
     out.par_chunks_exact_mut(width)
         .zip(starts)
         .try_for_each(|(row, start)| {
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 return Err(Error::Cancelled);
             }
             let mut left = start;
@@ -357,6 +357,7 @@ static TABLES: [Table; 6] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     /// Bits written as a string of 0s and 1s, zeros after.
     fn stream(bits: &str) -> Vec<u8> {
@@ -383,7 +384,7 @@ mod tests {
     }
 
     fn run(data: &[u8], width: usize, height: usize, c: &Coding) -> Vec<u16> {
-        decode(data, width, height, c, &AtomicBool::new(false)).unwrap()
+        decode(data, width, height, c, Cancel::NEVER).unwrap()
     }
 
     #[test]
@@ -510,8 +511,10 @@ mod tests {
         ] {
             let cancel = AtomicBool::new(false);
             let (width, height) = (1500, 1000);
-            let parallel = decode_with(&data, width, height, &c, &cancel, true).unwrap();
-            let sequential = decode_with(&data, width, height, &c, &cancel, false).unwrap();
+            let parallel =
+                decode_with(&data, width, height, &c, Cancel::new(&cancel), true).unwrap();
+            let sequential =
+                decode_with(&data, width, height, &c, Cancel::new(&cancel), false).unwrap();
             assert!(parallel == sequential, "{:?}", c.version);
         }
     }
@@ -522,7 +525,7 @@ mod tests {
         let curve: Vec<u16> = (0..0x4000).collect();
         let mut out = vec![0; 64];
         assert_eq!(
-            predict(&mut out, 8, &c, &curve, &AtomicBool::new(true)),
+            predict(&mut out, 8, &c, &curve, Cancel::new(&AtomicBool::new(true))),
             Err(Error::Cancelled)
         );
     }
@@ -548,14 +551,14 @@ mod tests {
             let c = coding(version, bits, &points, 2);
             for len in 0..40 {
                 let data: Vec<u8> = (0..len).map(|i| (i * 151 + 7) as u8).collect();
-                let _ = decode(&data, 16, 4, &c, &AtomicBool::new(false));
+                let _ = decode(&data, 16, 4, &c, Cancel::NEVER);
             }
         }
         let c = coding([0x46, 0x30], 16, &[], 0);
-        assert!(decode(&[0; 64], 4, 4, &c, &AtomicBool::new(false)).is_err());
+        assert!(decode(&[0; 64], 4, 4, &c, Cancel::NEVER).is_err());
         let c = coding([0x46, 0x30], 12, &[], 0);
         assert_eq!(
-            decode(&[0; 64], 4, 4, &c, &AtomicBool::new(true)),
+            decode(&[0; 64], 4, 4, &c, Cancel::new(&AtomicBool::new(true))),
             Err(Error::Cancelled)
         );
     }

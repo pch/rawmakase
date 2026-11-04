@@ -14,8 +14,8 @@
 //! Sources: ITU T.81 for the differences; our own measurements, comparing
 //! the decoded samples with LibRaw's recorded output on our test dataset.
 use crate::error::{Error, Result, corrupt};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A strip's bits, each byte's from its lowest up, as one number read from
 /// its highest bit: the bytes are reversed as they are read, not copied.
@@ -142,7 +142,7 @@ pub(crate) fn decode(
     codes: &Codes,
     width: u32,
     height: u32,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Vec<u16>> {
     let n = crate::io::samples(width, height, 1)?;
     let (width, height) = (width as usize, height as usize);
@@ -182,13 +182,13 @@ pub(crate) fn decode(
     Ok(out)
 }
 
-fn strip(s: &Strip, codes: &Codes, height: usize, cancel: &AtomicBool) -> Result<Vec<u16>> {
+fn strip(s: &Strip, codes: &Codes, height: usize, cancel: Cancel<'_>) -> Result<Vec<u16>> {
     let width = s.width;
     let mut bits = Bits::new(s.data);
     let mut out = vec![0u16; width * height];
     let mut first = [0i32; 4];
     for pair in 0..height.div_ceil(2) {
-        if pair % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if pair % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let mut cell = first;
@@ -258,7 +258,7 @@ mod tests {
             left: 0,
             width: 4,
         };
-        let out = decode(&[s], &codes(), 4, 4, &AtomicBool::new(false)).unwrap();
+        let out = decode(&[s], &codes(), 4, 4, Cancel::NEVER).unwrap();
         // Cell sites: TL, BL, TR, BR = rows (0,1,0,1), columns (0,0,1,1).
         assert_eq!(
             out,
@@ -285,7 +285,7 @@ mod tests {
             left: 0,
             width: width as usize,
         };
-        let r = decode(&[s], &codes, width, height, &AtomicBool::new(false));
+        let r = decode(&[s], &codes, width, height, Cancel::NEVER);
         assert!(matches!(r, Err(Error::Corrupt(_))), "{r:?}");
         // A strip far longer than its samples could take.
         let data = vec![0u8; 1000];
@@ -294,7 +294,7 @@ mod tests {
             left: 0,
             width: 2,
         };
-        let r = decode(&[s], &codes, 2, 2, &AtomicBool::new(false));
+        let r = decode(&[s], &codes, 2, 2, Cancel::NEVER);
         assert!(matches!(r, Err(Error::Corrupt(_))), "{r:?}");
         // Odd sizes code whole cells: a 1 × 3 strip may hold two cells' worst
         // case (16 bytes each) and the slack.
@@ -304,7 +304,7 @@ mod tests {
             left: 0,
             width: 1,
         };
-        let r = decode(&[s], &codes, 1, 3, &AtomicBool::new(false));
+        let r = decode(&[s], &codes, 1, 3, Cancel::NEVER);
         assert!(
             !matches!(&r, Err(Error::Corrupt(m)) if m.contains("longer")),
             "{r:?}"
@@ -323,7 +323,7 @@ mod tests {
             left: 0,
             width: 2,
         };
-        let out = decode(&[s], &codes, 2, 2, &AtomicBool::new(false)).unwrap();
+        let out = decode(&[s], &codes, 2, 2, Cancel::NEVER).unwrap();
         // −2, clamped to 0; read as category 4 it would be +8.
         assert_eq!(out, [0, 0, 0, 0]);
         // "1111" is no code: an error, not a panic.
@@ -333,14 +333,14 @@ mod tests {
             left: 0,
             width: 2,
         };
-        assert!(decode(&[s], &codes, 2, 2, &AtomicBool::new(false)).is_err());
+        assert!(decode(&[s], &codes, 2, 2, Cancel::NEVER).is_err());
         // Strips that do not cover the image.
         let s = Strip {
             data: &[],
             left: 1,
             width: 2,
         };
-        assert!(decode(&[s], &codes, 2, 2, &AtomicBool::new(false)).is_err());
+        assert!(decode(&[s], &codes, 2, 2, Cancel::NEVER).is_err());
         assert!(Codes::new(&pairs[..5]).is_err());
     }
 }

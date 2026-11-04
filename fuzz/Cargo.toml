@@ -19,6 +19,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+rawmakase-cancel = { path = "../crates/rawmakase-cancel" }
 rawmakase-raw = { path = "../crates/rawmakase-raw" }
 
 [workspace]

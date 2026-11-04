@@ -31,8 +31,8 @@
 //! (the quantization step scale), and our own measurements.
 use crate::codec::bits::Msb;
 use crate::error::{Error, Result, corrupt};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The image header (`CMP1`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -262,7 +262,7 @@ fn layout(h: &Header, sample: &[u8]) -> Result<Vec<Tile>> {
 
 /// Decodes the sensor data in `sample`, which the image header `h` describes:
 /// `width × height` samples.
-pub(crate) fn decode(h: &Header, sample: &[u8], cancel: &AtomicBool) -> Result<Vec<u16>> {
+pub(crate) fn decode(h: &Header, sample: &[u8], cancel: Cancel<'_>) -> Result<Vec<u16>> {
     h.check()?;
     if h.levels > 0 && h.tile_height < h.height {
         return Err(Error::Unsupported("C-RAW tiles stacked vertically".into()));
@@ -437,8 +437,8 @@ fn run(p: &mut Msb, index: &mut usize, left: usize) -> Result<usize> {
     Ok(n.min(left))
 }
 
-fn check_cancel(cancel: &AtomicBool) -> Result<()> {
-    if cancel.load(Ordering::Relaxed) {
+fn check_cancel(cancel: Cancel<'_>) -> Result<()> {
+    if cancel.is_cancelled() {
         Err(Error::Cancelled)
     } else {
         Ok(())
@@ -464,7 +464,7 @@ fn push_row(out: &mut Vec<i32>, row: &[i32]) -> Result<()> {
 }
 
 /// A losslessly coded `w × h` plane (or low-pass band).
-fn lossless(src: &[u8], w: usize, h: usize, cancel: &AtomicBool) -> Result<Vec<i32>> {
+fn lossless(src: &[u8], w: usize, h: usize, cancel: Cancel<'_>) -> Result<Vec<i32>> {
     if w == 0 || h == 0 {
         return Err(corrupt("CRX empty plane"));
     }
@@ -520,7 +520,7 @@ fn lossless(src: &[u8], w: usize, h: usize, cancel: &AtomicBool) -> Result<Vec<i
 }
 
 /// A high-pass subband of `w × h` coefficients.
-fn high_pass(src: &[u8], w: usize, h: usize, cancel: &AtomicBool) -> Result<Vec<i32>> {
+fn high_pass(src: &[u8], w: usize, h: usize, cancel: Cancel<'_>) -> Result<Vec<i32>> {
     if w == 0 || h == 0 {
         return Err(corrupt("CRX empty subband"));
     }
@@ -615,7 +615,7 @@ impl Map {
     /// A `w × h` map: its first value a 32-bit number, every later one
     /// median-predicted with a Rice-coded residual (23 zeros escape an
     /// 8-bit residual).
-    fn decode(src: &[u8], w: usize, h: usize, cancel: &AtomicBool) -> Result<Map> {
+    fn decode(src: &[u8], w: usize, h: usize, cancel: Cancel<'_>) -> Result<Map> {
         check_cancel(cancel)?;
         if w == 0 || h == 0 || w.saturating_mul(h) > crate::io::MAX_SAMPLES as usize / 16 {
             return Err(corrupt("CRX quantization map size"));
@@ -703,7 +703,7 @@ fn wavelet(
     h: usize,
     edges: Edges,
     map: Option<&Map>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Vec<i32>> {
     // Per level, finest first: the line lengths split, and the coded low and
     // high-pass widths and heights.
@@ -779,7 +779,7 @@ fn wavelet(
 }
 
 /// Multiplies every coefficient by `step`, checking `cancel` as it goes.
-fn scale(v: &mut [i32], step: i32, cancel: &AtomicBool) -> Result<()> {
+fn scale(v: &mut [i32], step: i32, cancel: Cancel<'_>) -> Result<()> {
     for chunk in v.chunks_mut(1 << 16) {
         check_cancel(cancel)?;
         chunk.iter_mut().for_each(|c| *c = c.saturating_mul(step));
@@ -796,7 +796,7 @@ fn synthesize(
     w: usize,
     h: usize,
     edges: Edges,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Vec<i32>> {
     let (top, bottom) = rows;
     if parts
@@ -883,6 +883,7 @@ fn line(low: &[i32], high: &[i32], out: &mut [i32], before: bool, after: bool) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     fn no() -> AtomicBool {
         AtomicBool::new(false)
@@ -979,7 +980,7 @@ pub(crate) mod tests {
     #[test]
     fn decodes_lossless_planes_into_the_mosaic() {
         let s = flat();
-        let out = decode(&header(4, 4, 0, 108), &s, &no()).unwrap();
+        let out = decode(&header(4, 4, 0, 108), &s, Cancel::new(&no())).unwrap();
         assert_eq!(out, vec![8193; 16]);
     }
 
@@ -988,13 +989,13 @@ pub(crate) mod tests {
         let s = flat();
         let h = header(4, 4, 0, 108);
         for n in 0..s.len() {
-            assert!(decode(&h, &s[..n], &no()).is_err(), "{n}");
+            assert!(decode(&h, &s[..n], Cancel::new(&no())).is_err(), "{n}");
         }
         for i in 0..s.len() {
             for v in [0, 1, 0x7f, 0xff] {
                 let mut d = s.clone();
                 d[i] = v;
-                let _ = decode(&h, &d, &no());
+                let _ = decode(&h, &d, Cancel::new(&no()));
             }
         }
     }
@@ -1004,22 +1005,28 @@ pub(crate) mod tests {
         let s = flat();
         let mut h = header(4, 4, 0, 108);
         h.width = 70_000;
-        assert!(matches!(decode(&h, &s, &no()), Err(Error::TooLarge(_))));
+        assert!(matches!(
+            decode(&h, &s, Cancel::new(&no())),
+            Err(Error::TooLarge(_))
+        ));
         let mut h = header(4, 4, 0, 108);
         h.levels = 2;
-        assert!(matches!(decode(&h, &s, &no()), Err(Error::Unsupported(_))));
+        assert!(matches!(
+            decode(&h, &s, Cancel::new(&no())),
+            Err(Error::Unsupported(_))
+        ));
         let mut h = header(4, 4, 0, 108);
         h.tile_width = 0;
-        assert!(decode(&h, &s, &no()).is_err());
+        assert!(decode(&h, &s, Cancel::new(&no())).is_err());
         let mut h = header(4, 4, 0, u32::MAX);
         h.tile_width = 2;
-        assert!(decode(&h, &s, &no()).is_err());
+        assert!(decode(&h, &s, Cancel::new(&no())).is_err());
         // A large image the data cannot hold fails before it is allocated.
         let h = header(60_000, 26_000, 0, 108);
-        assert!(decode(&h, &s, &no()).is_err());
+        assert!(decode(&h, &s, Cancel::new(&no())).is_err());
         let cancel = AtomicBool::new(true);
         assert_eq!(
-            decode(&header(4, 4, 0, 108), &s, &cancel),
+            decode(&header(4, 4, 0, 108), &s, Cancel::new(&cancel)),
             Err(Error::Cancelled)
         );
     }
@@ -1059,13 +1066,19 @@ pub(crate) mod tests {
     fn decodes_three_wavelet_levels() {
         let h = header(16, 16, 3, 12 + 4 * 12 * 11);
         // Low-pass 0: every sample is the midpoint.
-        assert_eq!(decode(&h, &craw(0x80, 4), &no()).unwrap(), vec![8192; 256]);
+        assert_eq!(
+            decode(&h, &craw(0x80, 4), Cancel::new(&no())).unwrap(),
+            vec![8192; 256]
+        );
         // Low-pass 3 (residual 6: six zeros and a one), parameter 10: step
         // (64 · 2) / 64 = 2, so 6 throughout.
-        assert_eq!(decode(&h, &craw(0x02, 10), &no()).unwrap(), vec![8198; 256]);
+        assert_eq!(
+            decode(&h, &craw(0x02, 10), Cancel::new(&no())).unwrap(),
+            vec![8198; 256]
+        );
         let s = craw(0x02, 10);
         for n in 0..s.len() {
-            assert!(decode(&h, &s[..n], &no()).is_err(), "{n}");
+            assert!(decode(&h, &s[..n], Cancel::new(&no())).is_err(), "{n}");
         }
     }
 
@@ -1230,7 +1243,10 @@ pub(crate) mod tests {
     #[test]
     fn a_large_version_2_tile_decodes_and_cancels_midway() {
         let (h, s) = craw2_large(64, 32);
-        assert_eq!(decode(&h, &s, &no()).unwrap(), vec![8192; 64 * 32]);
+        assert_eq!(
+            decode(&h, &s, Cancel::new(&no())).unwrap(),
+            vec![8192; 64 * 32]
+        );
         let (h, s) = craw2_large(4096, 2048);
         // On a fast or busy machine the timer can fire after the decode
         // finishes, which tests nothing: try again with a shorter delay. The
@@ -1245,7 +1261,7 @@ pub(crate) mod tests {
                     std::time::Instant::now()
                 })
             };
-            let result = decode(&h, &s, &cancel);
+            let result = decode(&h, &s, Cancel::new(&cancel));
             let returned = std::time::Instant::now();
             let set = setter.join().unwrap();
             match result {
@@ -1264,20 +1280,20 @@ pub(crate) mod tests {
     fn maps_scaling_and_assembly_check_cancellation() {
         let yes = AtomicBool::new(true);
         let map = map_coded(64, 64);
-        assert!(Map::decode(&map, 64, 64, &no()).is_ok());
+        assert!(Map::decode(&map, 64, 64, Cancel::new(&no())).is_ok());
         assert_eq!(
-            Map::decode(&map, 64, 64, &yes).err(),
+            Map::decode(&map, 64, 64, Cancel::new(&yes)).err(),
             Some(Error::Cancelled)
         );
         let mut v = vec![1; 1 << 18];
-        assert_eq!(scale(&mut v, 2, &yes), Err(Error::Cancelled));
+        assert_eq!(scale(&mut v, 2, Cancel::new(&yes)), Err(Error::Cancelled));
         // Cancelled once every plane is decoded: still not a success.
         let s = flat();
         let cancel = AtomicBool::new(false);
         let h = header(4, 4, 0, 108);
-        assert!(decode(&h, &s, &cancel).is_ok());
+        assert!(decode(&h, &s, Cancel::new(&cancel)).is_ok());
         cancel.store(true, Ordering::Relaxed);
-        assert_eq!(decode(&h, &s, &cancel), Err(Error::Cancelled));
+        assert_eq!(decode(&h, &s, Cancel::new(&cancel)), Err(Error::Cancelled));
     }
 
     #[test]
@@ -1285,23 +1301,26 @@ pub(crate) mod tests {
         let mut h = header(16, 16, 3, 20 + 4 * (12 + 10 * 20));
         h.version = 0x200;
         // Low-pass 3 scaled by 2.
-        assert_eq!(decode(&h, &craw2(2), &no()).unwrap(), vec![8198; 256]);
+        assert_eq!(
+            decode(&h, &craw2(2), Cancel::new(&no())).unwrap(),
+            vec![8198; 256]
+        );
         let s = craw2(2);
         for n in 0..s.len() {
-            assert!(decode(&h, &s[..n], &no()).is_err(), "{n}");
+            assert!(decode(&h, &s[..n], Cancel::new(&no())).is_err(), "{n}");
         }
         for i in 0..s.len() {
             for v in [0, 0x7f, 0xff] {
                 let mut d = s.clone();
                 d[i] = v;
-                let _ = decode(&h, &d, &no());
+                let _ = decode(&h, &d, Cancel::new(&no()));
             }
         }
         // Tiles stacked vertically are not decoded.
         let mut v = header(16, 16, 3, 540);
         v.tile_height = 8;
         assert!(matches!(
-            decode(&v, &craw(0x02, 10), &no()),
+            decode(&v, &craw(0x02, 10), Cancel::new(&no())),
             Err(Error::Unsupported(_))
         ));
     }
@@ -1391,9 +1410,9 @@ pub(crate) mod tests {
     fn quantization_maps() {
         // 1 × 2: the first value a 32-bit literal 300 (QP 150), the second
         // predicted from it with residual 0 (`1`).
-        let m = Map::decode(&[0, 0, 1, 0x2c, 0x80], 1, 2, &no()).unwrap();
+        let m = Map::decode(&[0, 0, 1, 0x2c, 0x80], 1, 2, Cancel::new(&no())).unwrap();
         assert_eq!(m.values, [150, 150]);
-        assert!(Map::decode(&[0, 0, 1], 1, 2, &no()).is_err());
+        assert!(Map::decode(&[0, 0, 1], 1, 2, Cancel::new(&no())).is_err());
         assert!(m.at(2, 0).is_err());
     }
 }

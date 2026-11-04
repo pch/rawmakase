@@ -17,7 +17,7 @@ use crate::io::{Bytes, Order};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
 use crate::vendor::nikon::{Coolpix, Curve, Notes};
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// Where a NEF's raw image is and how it is coded.
 #[derive(Clone, Debug)]
@@ -349,7 +349,7 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &NefPlan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let (width, height) = (plan.width as usize, plan.height as usize);
     let file = Bytes::new(
@@ -399,7 +399,7 @@ pub(crate) fn decode(
         }
         Variant::NefHighEfficiency => {
             let mut out = vec![0u16; crate::io::samples(plan.width, plan.height, 1)?];
-            nikon_he::decode_cancellable(&data, &mut out, width, height, width, cancel)?;
+            nikon_he::decode(&data, &mut out, width, height, width, cancel)?;
             (1, out)
         }
         Variant::NefUnpacked | Variant::NefPacked | Variant::NefPacked14 => {
@@ -428,9 +428,9 @@ fn strip_data<'a>(
     file: &Bytes<'a>,
     strips: &[(u64, u64)],
     budget: u64,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<std::borrow::Cow<'a, [u8]>> {
-    if cancel.load(Ordering::Relaxed) {
+    if cancel.is_cancelled() {
         return Err(Error::Cancelled);
     }
     if let [(at, len)] = strips {
@@ -447,7 +447,7 @@ fn strip_data<'a>(
     out.try_reserve_exact(usize::try_from(total).map_err(|_| Error::TooLarge("NEF strips"))?)
         .map_err(|_| Error::TooLarge("NEF strips"))?;
     for (i, &(at, len)) in strips.iter().enumerate() {
-        if i % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if i % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         out.extend_from_slice(file.slice(at, len)?);
@@ -461,13 +461,13 @@ fn uncompressed(
     width: usize,
     height: usize,
     plan: &NefPlan,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Vec<u16>> {
     let mut out = vec![0u16; crate::io::samples(width as u32, height as u32, 1)?];
     let bits = plan.bits;
     let mut words32 = Vec::new();
     for (y, row) in out.chunks_exact_mut(width).enumerate() {
-        if y % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if y % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         // The stored row this row is.
@@ -540,6 +540,7 @@ fn uncompressed(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     /// A little-endian TIFF directory at `at` with its long values after it.
     fn directory(entries: &[(u16, u16, Vec<u8>)], at: usize) -> Vec<u8> {
@@ -697,7 +698,7 @@ pub(crate) mod tests {
         assert_eq!(info.cam_mul, [600. / 256., 1., 400. / 256., 1.]);
         // The crop starts on an even column, keeping its far edge.
         assert_eq!(info.frame, [2, 0, 2, 2]);
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!(s.data, [2017, 2079, 2017, 3102, 2048, 2048, 2018, 2048]);
         // BlackLevel is at 14 bits; the data at 12. White is Adobe's for
         // the Z 7's 12-bit files.
@@ -718,12 +719,12 @@ pub(crate) mod tests {
         plan.strips = vec![(at, 65_536); 1024];
         let cancel = AtomicBool::new(false);
         assert!(matches!(
-            crate::decode(&info, &file, &cancel),
+            crate::decode(&info, &file, Cancel::new(&cancel)),
             Err(Error::Corrupt(_))
         ));
         cancel.store(true, Ordering::Relaxed);
         assert_eq!(
-            crate::decode(&info, &file, &cancel).unwrap_err(),
+            crate::decode(&info, &file, Cancel::new(&cancel)).unwrap_err(),
             Error::Cancelled
         );
     }
@@ -739,9 +740,7 @@ pub(crate) mod tests {
                 let file = nef_in_strips("NIKON Z 7", 2, 10_000, bits, 34713, &[], &data, strips);
                 let info = crate::open(&file).unwrap();
                 assert_eq!(info.variant, variant);
-                crate::decode(&info, &file, &AtomicBool::new(false))
-                    .unwrap()
-                    .data
+                crate::decode(&info, &file, Cancel::NEVER).unwrap().data
             };
             assert_eq!(decode(1), decode(2), "{bits} bits");
         }
@@ -783,7 +782,7 @@ pub(crate) mod tests {
             let file = nef(model, 64, 64, 14, 34713, &note, &stream);
             let info = crate::open(&file).unwrap();
             assert_eq!(info.variant, Variant::NefHighEfficiency, "{model}");
-            let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+            let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
             let value = crate::codec::nikon_he::tests::blank_value();
             assert!(s.data.iter().all(|&v| v == value), "{model}");
             // Adobe's white for both bodies' 14-bit files.
@@ -806,7 +805,7 @@ pub(crate) mod tests {
             white: 0,
         };
         let run = |data: &[u8], p: &NefPlan, width| {
-            uncompressed(data, width, 2, p, &AtomicBool::new(false)).unwrap()
+            uncompressed(data, width, 2, p, Cancel::NEVER).unwrap()
         };
         let data = [0x34, 0x12, 0xab, 0x56, 0x78, 0x9a];
         assert_eq!(
@@ -845,7 +844,7 @@ pub(crate) mod tests {
         groups.extend([0xff, 0x12, 0x30]);
         let mut p = plan(Layout::Groups, 12, 18, false);
         p.height = 1;
-        let out = uncompressed(&groups, 11, 1, &p, &AtomicBool::new(false)).unwrap();
+        let out = uncompressed(&groups, 11, 1, &p, Cancel::NEVER).unwrap();
         assert_eq!(out[10], 0x123);
     }
 
@@ -863,7 +862,7 @@ pub(crate) mod tests {
             (info.variant, info.sraw, info.balanced, info.cfa.is_none()),
             (Variant::NefSmallRaw, true, true, true)
         );
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!((s.channels, s.white, s.black), (4, 16383, [0; 4]));
         assert_eq!(s.data[..4], [3214, 3214, 3214, 0]);
     }
@@ -873,14 +872,14 @@ pub(crate) mod tests {
         let file = huffman_nef();
         for len in 0..file.len() {
             if let Ok(info) = crate::open(&file[..len]) {
-                let _ = crate::decode(&info, &file[..len], &AtomicBool::new(false));
+                let _ = crate::decode(&info, &file[..len], Cancel::NEVER);
             }
         }
         let mut damaged = file.clone();
         for at in (8..file.len()).step_by(3) {
             damaged[at] ^= 0x5a;
             if let Ok(info) = crate::open(&damaged) {
-                let _ = crate::decode(&info, &damaged, &AtomicBool::new(false));
+                let _ = crate::decode(&info, &damaged, Cancel::NEVER);
             }
         }
     }

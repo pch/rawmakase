@@ -1,0 +1,13 @@
+[package]
+name = "rawmakase-cancel"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "RAWmakase's cancellation token: a borrowed request to stop long-running work, shared by every crate that does such work"
+license.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

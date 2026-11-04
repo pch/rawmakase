@@ -12,6 +12,7 @@ publish = false
 test-support = []
 
 [dependencies]
+rawmakase-cancel = { path = "../rawmakase-cancel", version = "0.1.0" }
 rawmakase-tiff = { path = "../rawmakase-tiff", version = "0.1.0" }
 # Deflate-compressed DNG tiles.
 miniz_oxide = "0.9"

@@ -16,7 +16,7 @@ use super::bits::Words;
 use super::huffman::Huffman;
 use crate::error::{Error, Result, corrupt};
 use crate::io::Order;
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// The headers' Huffman table and predictor, and where the data starts.
 struct Headers {
@@ -79,7 +79,7 @@ fn headers(src: &[u8]) -> Result<Headers> {
 
 /// Decodes `out.len() / width` rows of `width` samples from `src`, the
 /// stream from its SOI.
-pub(crate) fn decode(src: &[u8], width: usize, out: &mut [u16], cancel: &AtomicBool) -> Result<()> {
+pub(crate) fn decode(src: &[u8], width: usize, out: &mut [u16], cancel: Cancel<'_>) -> Result<()> {
     if width == 0 || !width.is_multiple_of(2) {
         return Err(Error::Unsupported("Hasselblad rows of an odd width".into()));
     }
@@ -94,7 +94,7 @@ pub(crate) fn decode(src: &[u8], width: usize, out: &mut [u16], cancel: &AtomicB
     // The rows decoded: this one, the last, and the one before.
     let mut rows = [vec![0i32; width], vec![0i32; width], vec![0i32; width]];
     for (y, dst) in out.chunks_exact_mut(width).enumerate() {
-        if y % 32 == 0 && cancel.load(Ordering::Relaxed) {
+        if y % 32 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         rows.rotate_left(1);
@@ -143,6 +143,7 @@ pub(crate) fn decode(src: &[u8], width: usize, out: &mut [u16], cancel: &AtomicB
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     /// A stream of SOI, a DHT of three codes (0 → length 0, 10 → 1, 11 →
     /// 16) and an SOS of `predictor`, then `bits` packed into little-endian
@@ -188,7 +189,7 @@ mod tests {
             ],
         );
         let mut out = vec![0u16; 4];
-        decode(&s, 4, &mut out, &AtomicBool::new(false)).unwrap();
+        decode(&s, 4, &mut out, Cancel::NEVER).unwrap();
         assert_eq!(out, [0x8001, 0x8000, 0x8001 - 0x8000, 0x8000 - 1]);
     }
 
@@ -202,7 +203,7 @@ mod tests {
             .collect();
         let s = stream(11, &bits);
         let mut out = vec![0u16; width * height];
-        decode(&s, width, &mut out, &AtomicBool::new(false)).unwrap();
+        decode(&s, width, &mut out, Cancel::NEVER).unwrap();
         assert_eq!(out[..2], [0x8000u16.wrapping_add(0xfffe); 2]);
     }
 
@@ -210,15 +211,15 @@ mod tests {
     fn bad_streams_are_errors() {
         let cancel = AtomicBool::new(false);
         let mut out = vec![0u16; 4];
-        assert!(decode(&[0, 1, 2], 4, &mut out, &cancel).is_err());
-        assert!(decode(&stream(1, &[]), 4, &mut out, &cancel).is_err());
-        assert!(decode(&stream(8, &[]), 3, &mut out[..3], &cancel).is_err());
+        assert!(decode(&[0, 1, 2], 4, &mut out, Cancel::new(&cancel)).is_err());
+        assert!(decode(&stream(1, &[]), 4, &mut out, Cancel::new(&cancel)).is_err());
+        assert!(decode(&stream(8, &[]), 3, &mut out[..3], Cancel::new(&cancel)).is_err());
         let s = stream(8, &[(0b10, 2), (0, 1), (1, 1)]);
         for end in 0..s.len() {
-            let _ = decode(&s[..end], 4, &mut out, &cancel);
+            let _ = decode(&s[..end], 4, &mut out, Cancel::new(&cancel));
         }
         assert_eq!(
-            decode(&s, 4, &mut out, &AtomicBool::new(true)),
+            decode(&s, 4, &mut out, Cancel::new(&AtomicBool::new(true))),
             Err(Error::Cancelled)
         );
     }

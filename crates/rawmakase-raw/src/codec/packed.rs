@@ -9,7 +9,7 @@
 //! LibRaw's output on our files.
 use crate::error::{Error, Result};
 use crate::io::Order;
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// How a row's samples are packed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,10 +79,10 @@ pub(crate) fn rows(
     width: usize,
     stride: usize,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     for (y, dst) in out.chunks_exact_mut(width).enumerate() {
-        if y % 256 == 0 && cancel.load(Ordering::Relaxed) {
+        if y % 256 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let Some(start) = y.checked_mul(stride).filter(|&s| s < src.len()) else {
@@ -103,7 +103,7 @@ pub(crate) fn fields(
     width: usize,
     stride: usize,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     let height = out.len() / width.max(1);
     let even = height.div_ceil(2);
@@ -114,7 +114,7 @@ pub(crate) fn fields(
         let part = src.get(start..).unwrap_or(&[]);
         rows(part, p, width, stride, &mut field, cancel)?;
         for (i, row) in field.chunks_exact(width).enumerate() {
-            if i % 256 == 0 && cancel.load(Ordering::Relaxed) {
+            if i % 256 == 0 && cancel.is_cancelled() {
                 return Err(Error::Cancelled);
             }
             let y = 2 * i + first;
@@ -132,10 +132,10 @@ pub(crate) fn words(
     order: Order,
     shift: u32,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     for (i, (o, w)) in out.iter_mut().zip(src.as_chunks::<2>().0).enumerate() {
-        if i % (1 << 20) == 0 && cancel.load(Ordering::Relaxed) {
+        if i % (1 << 20) == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let v = match order {
@@ -201,25 +201,10 @@ mod tests {
     #[test]
     fn short_data_leaves_zeros() {
         let mut out = vec![7u16; 8];
-        rows(
-            &[0xff; 3],
-            Packing::msb(12),
-            2,
-            3,
-            &mut out,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
+        rows(&[0xff; 3], Packing::msb(12), 2, 3, &mut out, Cancel::NEVER).unwrap();
         assert_eq!(out, [0xfff, 0xfff, 7, 7, 7, 7, 7, 7]);
         let mut out = [0u16; 3];
-        words(
-            &[1, 2, 3, 4, 5],
-            Order::Big,
-            4,
-            &mut out,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
+        words(&[1, 2, 3, 4, 5], Order::Big, 4, &mut out, Cancel::NEVER).unwrap();
         assert_eq!(out, [0x0102 >> 4, 0x0304 >> 4, 0]);
     }
 }
