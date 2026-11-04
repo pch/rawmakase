@@ -63,7 +63,7 @@ pub fn raw_xmp(path: &Path) -> Option<Vec<u8>> {
 pub fn open(path: &Path) -> Result<Raw> {
     let mut raw = Raw::open_file(path)?;
     let metadata = &mut raw.metadata;
-    let builtin = crate::lens::embedded::read_builtin(path, metadata);
+    let builtin = crate::raw::lens::read_builtin(path, metadata);
     (metadata.lens, metadata.lens_stand_in) = (builtin.lens, builtin.stand_in);
     if let Some(dng) = crate::dng::read(path) {
         // 0 is the DNG default; the camera table is for other raw formats.

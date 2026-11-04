@@ -8,6 +8,7 @@ use std::{
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
 };
+pub(crate) mod lens;
 mod own;
 mod priority;
 use crate::camera_data::{

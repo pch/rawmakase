@@ -86,7 +86,8 @@ pub struct Builtin {
 /// The built-in correction that applies without Enable Profile Corrections; `None`
 /// for unsupported files or when the camera stored none. `m` is the decoded image the
 /// radii are fractions of: its size and default crop.
-pub fn read(path: &Path, m: &Metadata) -> Option<LensCorrection> {
+#[cfg(test)]
+fn read(path: &Path, m: &Metadata) -> Option<LensCorrection> {
     read_builtin(path, m).lens
 }
 
@@ -1551,7 +1552,7 @@ mod tests {
         (0..=200)
             .flat_map(|i| {
                 let px = corner * f64::from(i) / 200.;
-                let scale = c.radial_scale((px / half) as f32);
+                let scale = c.radial_scale_with((px / half) as f32, 1.);
                 (0..3).map(move |ch| (px * f64::from(scale[ch]) - adobe(ch, px)).abs())
             })
             .fold(0., f64::max)
@@ -1710,7 +1711,7 @@ mod tests {
         (0..=200)
             .flat_map(|i| {
                 let px = corner * f64::from(i) / 200.;
-                let scale = c.radial_scale((px / half) as f32);
+                let scale = c.radial_scale_with((px / half) as f32, 1.);
                 [0, 2].map(|ch| {
                     let ours = px * f64::from(scale[ch] - scale[1]);
                     let theirs = adobe(ch, px) - adobe(1, px);
@@ -1882,7 +1883,7 @@ mod tests {
         assert!(c.distortion.is_some());
         let half = 5792f64.hypot(4352.) / 2.;
         // Adobe's warp applies at the sensor radius green samples after distortion.
-        let sensor = |px: f64| px * f64::from(c.radial_scale((px / half) as f32)[1]);
+        let sensor = |px: f64| px * f64::from(c.radial_scale_with((px / half) as f32, 1.)[1]);
         let unit = 2896f64.hypot(2176.);
         let (off, most) =
             largest_ca_difference(&c, &m, &|ch, px| adobe(warp[ch], unit, sensor(px)));
@@ -2653,7 +2654,7 @@ mod tests {
             // Both framed to keep the default crop's corner.
             let corner = 6960f64.hypot(4640.) / 2.;
             let half = 6959f64.hypot(4639.) / 2.;
-            let ours = |px: f64| f64::from(c.radial_scale((px / half) as f32)[1]);
+            let ours = |px: f64| f64::from(c.radial_scale_with((px / half) as f32, 1.)[1]);
             let off = (0..=100)
                 .map(|i| corner * f64::from(i) / 100.)
                 .map(|px| px * (ours(px) / ours(corner) - scale(px) / scale(corner)).abs())

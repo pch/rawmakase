@@ -199,7 +199,7 @@ pub struct Metadata {
     pub lens: Option<crate::optics::LensCorrection>,
     /// The camera's fuller lens data, used in place of an Adobe lens profile when
     /// Enable Profile Corrections is on and none is imported (Sony's tables; see
-    /// `rawmakase_model::lens::embedded::Builtin`).
+    /// `rawmakase_decode`'s `raw::lens::Builtin`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lens_stand_in: Option<crate::optics::LensCorrection>,
     /// Lens model as recorded by the camera, e.g. "FE 55mm F1.8 ZA". A file that
