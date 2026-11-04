@@ -57,22 +57,28 @@ impl Editor {
         let id = self.load.id();
         let base = self.document.edit.recipe().clone();
         self.document.auto_input = Some(inputs(kind, &base));
-        let tx = self.tx.clone();
-        let ctx = self.context.clone();
-        std::thread::spawn(move || {
-            // A panic still sends a result, so Auto does not stay disabled.
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match kind {
-                AutoKind::Settings => crate::develop::auto_tone_cancellable(&im, &base, &cancel),
-                AutoKind::WhiteBalance => {
-                    crate::develop::auto_white_balance_cancellable(&im, &base, &cancel)
+        super::task::spawn(
+            self.tx.clone(),
+            self.context.clone(),
+            move |tx| {
+                let result = match kind {
+                    AutoKind::Settings => {
+                        crate::develop::auto_tone_cancellable(&im, &base, &cancel)
+                    }
+                    AutoKind::WhiteBalance => {
+                        crate::develop::auto_white_balance_cancellable(&im, &base, &cancel)
+                    }
                 }
-            }))
-            .unwrap_or_else(|_| Err(anyhow::anyhow!("the estimate failed unexpectedly")))
-            .map(Box::new)
-            .map_err(|e| format!("Auto: {e:#}"));
-            let _ = tx.send(Event::Auto { id, kind, result });
-            ctx.request_repaint();
-        });
+                .map(Box::new)
+                .map_err(|e| format!("Auto: {e:#}"));
+                let _ = tx.send(Event::Auto { id, kind, result });
+            },
+            // A panic still sends a result, so Auto does not stay disabled.
+            move |tx, _| {
+                let result = Err("Auto: the estimate failed unexpectedly".to_owned());
+                let _ = tx.send(Event::Auto { id, kind, result });
+            },
+        );
     }
 
     /// Applies an Auto estimate as one History step. Only the fields Auto sets are

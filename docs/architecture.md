@@ -135,7 +135,9 @@ before it still run on the UI thread without a deadline: a Library Copy Name or
 metadata field being typed, and the session file ([shutdown](shutdown.md#where-the-code-stands)). Four kinds of worker exist:
 
 - **One-off tasks** (`app::task::spawn`): opening a catalog, an import, a file
-  operation, a fit. A panic still reaches the UI as a failure. The state that owns
+  operation, a fit, and Develop's analyses of the open photo (Auto, Upright, Auto
+  Straighten, the targeted adjustment and Point Color samples). A panic still
+  reaches the UI as a failure. The state that owns
   the work says it is running. Fits and downloads are owned by a `Task`, whose
   generation and cancel flag reject stale results. Catalog dialogs, opening and
   import, folder changes, batch edits and file operations hold

@@ -23,22 +23,29 @@ impl Editor {
         let (generation, _) = self.document.upright.start();
         let id = self.load.id();
         let base = self.document.edit.recipe().clone();
-        let tx = self.tx.clone();
-        let ctx = self.context.clone();
-        std::thread::spawn(move || {
+        let analysed = base.clone();
+        super::task::spawn(
+            self.tx.clone(),
+            self.context.clone(),
+            move |tx| {
+                let result = Ok(crate::develop::upright::analyse(&im, &base));
+                let _ = tx.send(Event::Upright {
+                    id,
+                    generation,
+                    analysed: Box::new(base),
+                    result,
+                });
+            },
             // A panic still sends a result, so Upright does not wait forever.
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                crate::develop::upright::analyse(&im, &base)
-            }))
-            .map_err(|_| "Upright: the analysis failed unexpectedly".to_owned());
-            let _ = tx.send(Event::Upright {
-                id,
-                generation,
-                analysed: Box::new(base),
-                result,
-            });
-            ctx.request_repaint();
-        });
+            move |tx, _| {
+                let _ = tx.send(Event::Upright {
+                    id,
+                    generation,
+                    analysed: Box::new(analysed),
+                    result: Err("Upright: the analysis failed unexpectedly".to_owned()),
+                });
+            },
+        );
     }
 
     /// Measures what the edit needs from the photo and lacks: a Straighten Auto copied

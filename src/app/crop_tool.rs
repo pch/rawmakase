@@ -428,22 +428,29 @@ impl super::Editor {
         let (generation, _) = self.document.straighten.start();
         let id = self.load.id();
         let base = self.document.edit.recipe().clone();
-        let tx = self.tx.clone();
-        let ctx = self.context.clone();
-        std::thread::spawn(move || {
+        let analysed = base.clone();
+        super::task::spawn(
+            self.tx.clone(),
+            self.context.clone(),
+            move |tx| {
+                let result = Ok(crate::develop::upright::straighten_angle(&im, &base));
+                let _ = tx.send(super::worker::Event::Straighten {
+                    id,
+                    generation,
+                    analysed: Box::new(base),
+                    result,
+                });
+            },
             // A panic still sends a result, so Auto does not stay disabled.
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                crate::develop::upright::straighten_angle(&im, &base)
-            }))
-            .map_err(|_| "Auto straighten: the analysis failed unexpectedly".to_owned());
-            let _ = tx.send(super::worker::Event::Straighten {
-                id,
-                generation,
-                analysed: Box::new(base),
-                result,
-            });
-            ctx.request_repaint();
-        });
+            move |tx, _| {
+                let _ = tx.send(super::worker::Event::Straighten {
+                    id,
+                    generation,
+                    analysed: Box::new(analysed),
+                    result: Err("Auto straighten: the analysis failed unexpectedly".to_owned()),
+                });
+            },
+        );
     }
     /// Measures the photo when its Straighten waits for Auto, as after pasting or
     /// undoing to the Crop of a photo whose angle was Auto.

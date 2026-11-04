@@ -40,23 +40,31 @@ impl super::Editor {
         let (generation, cancel) = self.document.point_color_pick.start();
         let id = self.load.id();
         let sampled = self.document.edit.recipe().clone();
-        let tx = self.tx.clone();
-        let ctx = self.context.clone();
-        std::thread::spawn(move || {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                crate::develop::quality::point_color_pick(&im, &sampled, u, v, &cancel)
-            }))
-            .unwrap_or_else(|_| Err(anyhow::anyhow!("sampling failed unexpectedly")))
-            .map_err(|e| format!("Cannot sample a color: {e:#}"));
-            let sampled = Box::new(sampled);
-            let _ = tx.send(super::worker::Event::PointColorSample {
-                id,
-                generation,
-                sampled,
-                result,
-            });
-            ctx.request_repaint();
-        });
+        let on_panic = sampled.clone();
+        super::task::spawn(
+            self.tx.clone(),
+            self.context.clone(),
+            move |tx| {
+                let result =
+                    crate::develop::quality::point_color_pick(&im, &sampled, u, v, &cancel)
+                        .map_err(|e| format!("Cannot sample a color: {e:#}"));
+                let _ = tx.send(super::worker::Event::PointColorSample {
+                    id,
+                    generation,
+                    sampled: Box::new(sampled),
+                    result,
+                });
+            },
+            // A panic still sends a result, so the dropper does not wait for it.
+            move |tx, _| {
+                let _ = tx.send(super::worker::Event::PointColorSample {
+                    id,
+                    generation,
+                    sampled: Box::new(on_panic),
+                    result: Err("Cannot sample a color: sampling failed unexpectedly".to_owned()),
+                });
+            },
+        );
     }
 
     /// Adds the sampled swatch as one History step, selects it and puts the dropper
