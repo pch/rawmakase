@@ -7,6 +7,9 @@
 //! It depends on no other crate, so every crate, the RAW decoders and inference
 //! among them, can take it.
 #![forbid(unsafe_code)]
+// Every public item says what it is for: this crate is a contract other crates
+// and clients build on (#808 step 4.13).
+#![warn(missing_docs)]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A request to stop work early: a borrowed flag the owner sets, or

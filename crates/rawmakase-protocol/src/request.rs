@@ -44,6 +44,8 @@ pub enum Request {
     Capabilities,
     /// Catalog photos matching `query`, a page at a time.
     Photos {
+        /// Only photos whose file name contains this text, ignoring case; every photo
+        /// when left out.
         #[serde(
             default,
             deserialize_with = "lenient",
@@ -68,6 +70,7 @@ pub enum Request {
     },
     /// The develop presets, of one group or all.
     Presets {
+        /// Only the presets of this group, by its name as the Presets panel shows it.
         #[serde(
             default,
             deserialize_with = "lenient",
@@ -78,18 +81,21 @@ pub enum Request {
     /// Applies a develop preset by `id`, or else by `name` within an optional
     /// `group`. One of `id` and `name` is required.
     Preset {
+        /// The preset's id, as `presets` lists it.
         #[serde(
             default,
             deserialize_with = "lenient",
             skip_serializing_if = "Option::is_none"
         )]
         id: Option<String>,
+        /// The preset's name, when there is no `id`.
         #[serde(
             default,
             deserialize_with = "lenient",
             skip_serializing_if = "Option::is_none"
         )]
         name: Option<String>,
+        /// The group `name` is looked for in; every group when left out.
         #[serde(
             default,
             deserialize_with = "lenient",
@@ -99,6 +105,7 @@ pub enum Request {
     },
     /// Sets a tone curve's points.
     Curve {
+        /// Which curve: the composite one or a colour channel's.
         #[serde(deserialize_with = "channel")]
         channel: CurveChannel,
         /// Normalized `[input, output]` pairs; see [`crate::curve`].
@@ -107,31 +114,45 @@ pub enum Request {
     },
     /// Sets a parameter to a value, finite as an `f32`.
     Set {
+        /// A parameter's name, as `capabilities` lists it; a colour band needs its
+        /// channel (`band3.sat`).
         #[serde(deserialize_with = "param")]
         param: String,
+        /// The value in the units the panel shows where it is set, clamped to what
+        /// the parameter supports there: Exposure in EV (±8 globally, though the
+        /// slider shows ±5; ±4 on a mask), Temperature in kelvin on a RAW's own
+        /// edit, but −100…100 on a mask or a rendered photo, as Tint is. See
+        /// docs/automation.md.
         #[serde(deserialize_with = "finite")]
         value: f64,
     },
     /// Turns a parameter by ticks, as a dial would.
     Turn {
+        /// A parameter's name, as for `set`.
         #[serde(deserialize_with = "param")]
         param: String,
+        /// Steps of the parameter's own size, up or down, at most [`MAX_TICKS`] either
+        /// way.
         #[serde(deserialize_with = "ticks")]
         ticks: i32,
     },
     /// Runs a named action, or a keyboard shortcut such as `cmd+shift+z`.
     Action {
+        /// The action's name, as `capabilities` lists it, or a shortcut.
         #[serde(deserialize_with = "action")]
         action: String,
     },
     /// Opens a catalog photo by `id`, or else by `name`. One is required.
     Open {
+        /// The photo's catalog id, as `photos` lists it.
         #[serde(
             default,
             deserialize_with = "lenient",
             skip_serializing_if = "Option::is_none"
         )]
         id: Option<i64>,
+        /// When there is no `id`: the file name, with or without its extension, or,
+        /// with a `/` or `\`, the path. It must match one photo only.
         #[serde(
             default,
             deserialize_with = "lenient",
@@ -141,16 +162,19 @@ pub enum Request {
     },
     /// Searches the Library; empty text clears the search.
     Search {
+        /// What to search for, as the Library's search field takes it.
         #[serde(deserialize_with = "text")]
         text: String,
     },
     /// Switches between Develop and the Library.
     Module {
+        /// The module to show.
         #[serde(deserialize_with = "module")]
         module: Module,
     },
     /// Goes to the next (1) or previous (-1) photo.
     Photo {
+        /// 1 for the next photo, -1 for the previous one.
         #[serde(deserialize_with = "step")]
         step: i32,
     },
@@ -159,8 +183,10 @@ pub enum Request {
     /// Renders the edit to a new file at `path`, full size unless `max_edge`
     /// says otherwise.
     Export {
+        /// The new file; an existing one is refused.
         #[serde(deserialize_with = "path")]
         path: PathBuf,
+        /// The output's long edge in pixels, at most [`MAX_EDGE`].
         #[serde(
             default,
             deserialize_with = "max_edge",
@@ -171,8 +197,10 @@ pub enum Request {
     /// Renders a reduced preview to a new file at `path`, with a long edge of
     /// [`DEFAULT_PREVIEW_EDGE`] unless `max_edge` says otherwise.
     Preview {
+        /// The new file; an existing one is refused.
         #[serde(deserialize_with = "path")]
         path: PathBuf,
+        /// The preview's long edge in pixels, at most [`MAX_EDGE`].
         #[serde(
             default,
             deserialize_with = "max_edge",
@@ -183,19 +211,23 @@ pub enum Request {
     /// Queues previews of the selected photos, built in the background; the
     /// reply says how many were queued, and `state` how far they have got.
     BuildPreviews {
+        /// Which previews; Standard by default.
         #[serde(default)]
         kind: PreviewKind,
     },
     /// An output job's status.
     Job {
+        /// The job's id, from the reply that started it.
         #[serde(deserialize_with = "job_id")]
         job_id: u64,
     },
     /// Answers once `until` holds, or after `timeout_ms` ([`DEFAULT_WAIT_MS`]
     /// by default, at most [`MAX_WAIT_MS`]).
     Wait {
+        /// The condition, tagged by `until`.
         #[serde(flatten)]
         until: Until,
+        /// How long to wait at most, in milliseconds.
         #[serde(
             default,
             deserialize_with = "timeout_ms",
@@ -206,16 +238,20 @@ pub enum Request {
     /// A Loupedeck dial's MIDI control change, through the default mapping.
     /// Refuses a `target`.
     Cc {
+        /// The control number, 0 to 127.
         #[serde(deserialize_with = "cc")]
         cc: u8,
+        /// The control's value, 0 to 127.
         #[serde(deserialize_with = "cc_value")]
         value: u8,
     },
     /// A Loupedeck button's MIDI note, through the default mapping. Refuses a
     /// `target`.
     Note {
+        /// The note number, 0 to 127.
         #[serde(deserialize_with = "note")]
         note: u8,
+        /// How the button is pressed; a click by default.
         #[serde(default, deserialize_with = "press")]
         press: Press,
     },
@@ -227,11 +263,13 @@ pub enum Request {
 pub enum Until {
     /// The photo is loaded, or another replaced it.
     Loaded {
+        /// The photo's catalog id.
         #[serde(deserialize_with = "photo_id")]
         photo_id: i64,
     },
     /// The output job has finished, or does not exist.
     Job {
+        /// The job's id, from the reply that started it.
         #[serde(deserialize_with = "job_id")]
         job_id: u64,
     },
@@ -252,7 +290,9 @@ pub enum PreviewKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Module {
+    /// Develop, editing the open photo.
     Develop,
+    /// The Library, browsing the catalog.
     Library,
 }
 
@@ -263,7 +303,9 @@ pub enum Press {
     /// Down, then up.
     #[default]
     Click,
+    /// Down only: held until an `up`.
     Down,
+    /// Up only: lets a held button go.
     Up,
 }
 

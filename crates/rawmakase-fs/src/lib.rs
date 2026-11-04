@@ -24,6 +24,9 @@
 // Every unsafe operation here crosses into a system API: each one says why it is
 // sound, and an unsafe function's body is no unsafe block of its own.
 #![deny(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
+// Every public item says what it is for: this crate is a contract other crates
+// and clients build on (#808 step 4.13).
+#![warn(missing_docs)]
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 use std::{fmt, io};
@@ -57,12 +60,15 @@ pub enum FsError {
     /// The volume or system cannot do this step as asked (no exclusive
     /// rename, say); nothing was changed.
     Unsupported,
+    /// The name to act on, or a folder on its way, isn't there.
     NotFound,
+    /// The system refused the step for this user.
     PermissionDenied,
     /// The source and destination are on different volumes.
     CrossDevice,
     /// The volume is full, or the user's quota on it is.
     NoSpace,
+    /// Any other failure, as the system gave it.
     Io(io::Error),
 }
 
@@ -126,6 +132,7 @@ impl FileId {
         index: 0,
     };
 
+    /// The volume this file object is on.
     pub fn volume(self) -> VolumeId {
         self.volume
     }
@@ -167,20 +174,26 @@ impl std::str::FromStr for FileId {
     }
 }
 
+/// What a name is, as [`Entry`] reads it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntryKind {
+    /// A regular file.
     File,
+    /// A folder.
     Directory,
     /// A symbolic link, or on Windows any name-surrogate reparse point (a
     /// junction, a mount point).
     Symlink,
+    /// Anything else: a device, a pipe, a socket.
     Other,
 }
 
 /// What a name in a folder is, read without following a link at its end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Entry {
+    /// The file object the name is, or for a link the link itself.
     pub id: FileId,
+    /// What it is: a link is [`EntryKind::Symlink`], never what it points to.
     pub kind: EntryKind,
     /// How many names the file object has.
     pub links: u64,
@@ -253,7 +266,10 @@ pub enum Folding {
 /// (NFC against NFD).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NameRules {
+    /// Whether names that differ only in case are one file.
     pub case: Folding,
+    /// Whether names that differ only in Unicode form (NFC against NFD) are one
+    /// file.
     pub normalization: Folding,
 }
 
@@ -318,6 +334,7 @@ pub enum Containment {
     /// This name on the way is on another volume than the root: a mount
     /// point.
     MountPoint(PathBuf),
+    /// Looking at a name on the way failed.
     Fs(FsError),
 }
 
@@ -351,7 +368,9 @@ pub fn canonical_below(root: &Path, path: &Path) -> Result<PathBuf, Containment>
     Ok(at)
 }
 
-/// A volume's file system, as far as moving files on it goes.
+/// A volume's file system, as far as moving files on it goes. The variants are
+/// named for their file systems; those that cover several say which.
+#[allow(missing_docs)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VolumeKind {
     Apfs,
@@ -403,10 +422,12 @@ impl VolumeKind {
 /// What a volume is, as far as moving files on it goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VolumeFacts {
+    /// Its file system.
     pub kind: VolumeKind,
     /// On this computer, rather than a network share (or a FUSE file
     /// system, which may be one), where locks are unreliable.
     pub local: bool,
+    /// Mounted read-only: nothing on it can be renamed, made or removed.
     pub read_only: bool,
     /// Whether an exclusive rename can change only a name's case or Unicode
     /// form (`ROUND.NEF` to `round.NEF`) on it, as APFS's can. Elsewhere it

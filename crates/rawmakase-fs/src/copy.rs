@@ -81,6 +81,7 @@ pub enum CopyError {
     Stopped,
     /// The file to copy into isn't the empty file object it was given.
     NotTheFile,
+    /// A read or a write failed.
     Fs(FsError),
 }
 
