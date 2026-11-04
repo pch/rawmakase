@@ -684,9 +684,14 @@ impl Editor {
         let Some(m) = &self.document.metadata else {
             return;
         };
-        let result = crate::edits::lightroom_edit(text, m, &self.document.profiles);
+        let result =
+            crate::edits::Start::Lightroom(text.to_owned()).resolve(m, &self.document.profiles);
         match result {
-            Ok((r, warnings)) => {
+            Ok(crate::edits::Resolved {
+                recipe: r,
+                warnings,
+                ..
+            }) => {
                 self.document.edit.replace(r);
                 // Short for the status bar; the full list shows on hover.
                 self.document.lightroom_notice = if warnings.is_empty() {

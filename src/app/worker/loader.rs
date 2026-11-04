@@ -276,7 +276,9 @@ fn opener(
             );
             // The raw defaults; the catalog's edit replaces them once the header
             // is installed.
-            let recipe = job.defaults.resolve(&metadata, &profiles).recipe;
+            let recipe = crate::edits::Start::Defaults(job.defaults.clone())
+                .resolve(&metadata, &profiles)?
+                .recipe;
             send(
                 &tx,
                 &ctx,
