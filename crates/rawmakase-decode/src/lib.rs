@@ -14,7 +14,7 @@
 //! elsewhere from the system's libheif, opened at run time. Highlight recovery
 //! after a decode is the renderer's (crates/rawmakase-engine).
 use rawmakase_engine::develop;
-use rawmakase_model::{camera_data, camera_profiles, dng, lens, storage};
+use rawmakase_model::{camera_data, camera_profiles, dng, lens, optics, storage, tiff};
 
 pub mod ai_cache;
 pub mod ai_denoise;

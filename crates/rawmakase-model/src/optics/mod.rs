@@ -22,7 +22,9 @@ pub struct Radial {
 impl Radial {
     /// The most knots a table may have; `develop`'s GPU port sizes its search by it.
     pub const MAX_KNOTS: usize = 256;
-    pub(crate) fn new(knots: Vec<f32>, values: Vec<f32>) -> Option<Self> {
+    /// The table of `knots` and `values`, or `None` when it is not a valid one
+    /// (see `valid`).
+    pub fn new(knots: Vec<f32>, values: Vec<f32>) -> Option<Self> {
         let r = Self { knots, values };
         r.valid().then_some(r)
     }
