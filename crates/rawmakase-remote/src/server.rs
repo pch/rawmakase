@@ -67,16 +67,21 @@ pub enum EngineError {
 pub struct Outcome {
     /// The name the photo's clicks are asked under.
     pub key: String,
+    /// The photo's people and animals, all zero where there are none.
     pub subject: Coverage,
 }
 
 /// What [`Engine::describe`] says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Info {
+    /// The selection model, as its id, `@`, and the first 16 hex digits of its
+    /// weights' SHA-256.
     pub model: String,
+    /// The panoptic model's id, which finds people and animals.
     pub panoptic: String,
     /// The sky model, empty when the worker has none.
     pub sky: String,
+    /// The execution provider the models run on, as the runtime names it.
     pub provider: String,
 }
 
@@ -245,6 +250,7 @@ struct Cancels {
 }
 
 impl<E: Engine> Server<E> {
+    /// A worker answering with `engine`, with nothing running or cancelled.
     pub fn new(engine: E) -> Self {
         Self {
             engine: std::sync::Mutex::new(engine),

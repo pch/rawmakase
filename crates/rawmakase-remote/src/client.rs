@@ -23,7 +23,10 @@ use crate::protocol::{
 /// an error the app can show, not a drawer that waits forever.
 #[derive(Debug, Clone)]
 pub struct RemoteOptions {
+    /// How long connecting to each address the endpoint resolves to may take (it
+    /// tries the first `CONNECT_ATTEMPTS` in turn): 5 s by default.
     pub connect_timeout: Duration,
+    /// How long the worker may take to answer one request: 180 s by default.
     pub request_timeout: Duration,
 }
 
@@ -50,10 +53,14 @@ pub struct RemoteAnalysis {
 /// provider they are running on, as the runtime registered them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServerInfo {
+    /// The selection model, as its id, `@`, and the first 16 hex digits of its
+    /// weights' SHA-256.
     pub model: String,
+    /// The panoptic model's id, which finds people and animals.
     pub panoptic: String,
     /// The sky model, empty when the worker has none.
     pub sky: String,
+    /// The execution provider the models run on, as the runtime names it.
     pub provider: String,
 }
 
@@ -99,6 +106,7 @@ impl RemoteSession {
         Self::with_options(endpoint, RemoteOptions::default())
     }
 
+    /// Talks to the worker at `endpoint` (`host:port`), within `options`' bounds.
     pub fn with_options(endpoint: impl Into<String>, options: RemoteOptions) -> Self {
         Self {
             endpoint: endpoint.into(),

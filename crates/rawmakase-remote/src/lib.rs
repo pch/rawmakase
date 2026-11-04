@@ -13,6 +13,9 @@
 //! SSH tunnel from another computer; it binds the loopback by default, speaks
 //! no credentials of its own, and answers `ping` with what it actually loaded.
 //! See `docs/remote-inference.md` for setup.
+// Every public item says what it is for: the protocol and the client are a
+// contract between processes (#808 step 4.13).
+#![warn(missing_docs)]
 
 pub mod client;
 pub mod protocol;

@@ -33,8 +33,12 @@ pub const MAX_LABEL_BYTES: usize = 128;
 /// What a request asks the worker to do.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Request {
+    /// The protocol version, [`VERSION`].
     pub v: u32,
+    /// The client's name for this request, at most [`MAX_LABEL_BYTES`]: its
+    /// response carries it back, and a `cancel` names it.
     pub id: String,
+    /// What to do, tagged by `op`.
     #[serde(flatten)]
     pub op: Op,
 }
@@ -44,25 +48,40 @@ pub struct Request {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Op {
+    /// What the worker runs: its models and provider ([`Reply::Ping`]).
     Ping,
+    /// A photo's subject selection, kept under a `key` for later `segment`s.
     Analyze {
+        /// The photo's width in pixels.
         width: u32,
+        /// The photo's height in pixels.
         height: u32,
+        /// 8-bit sRGB, interleaved R G B, row-major: `width × height × 3` bytes, at
+        /// most [`MAX_IMAGE_BYTES`].
         #[serde(with = "base64_bytes")]
         pixels: Vec<u8>,
     },
+    /// What one click or box marks on a photo the worker analysed.
     Segment {
+        /// The `key` the photo's `analyze` answered.
         key: String,
+        /// The clicks and box.
         prompt: WirePrompt,
     },
     /// The photo's sky, from its own model.
     Sky {
+        /// The photo's width in pixels.
         width: u32,
+        /// The photo's height in pixels.
         height: u32,
+        /// 8-bit sRGB, interleaved R G B, row-major: `width × height × 3` bytes, at
+        /// most [`MAX_IMAGE_BYTES`].
         #[serde(with = "base64_bytes")]
         pixels: Vec<u8>,
     },
+    /// Asks the worker to stop a request; it is answered with [`Reply::Ack`].
     Cancel {
+        /// The `id` of the request to stop.
         target: String,
     },
 }
@@ -70,10 +89,14 @@ pub enum Op {
 /// What the worker answered: exactly one of `ok` and `err`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Response {
+    /// The protocol version the worker speaks.
     pub v: u32,
+    /// The `id` of the request this answers.
     pub id: String,
+    /// The answer, when the request succeeded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ok: Option<Reply>,
+    /// Why it didn't.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub err: Option<WireError>,
 }
@@ -115,21 +138,33 @@ impl Response {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "reply", rename_all = "snake_case")]
 pub enum Reply {
+    /// What the worker runs.
     Ping {
+        /// The selection model, as its id, `@`, and the first 16 hex digits of
+        /// its weights' SHA-256.
         model: String,
+        /// The panoptic model's id, which finds people and animals.
         panoptic: String,
         /// The sky model, empty when the worker was started without one.
         sky: String,
+        /// The execution provider the models run on, as the runtime names it.
         provider: String,
     },
+    /// A photo analysed.
     Analyze {
+        /// What the worker calls this photo; `segment` asks under this name.
         key: String,
+        /// The photo's people and animals, all zero where there are none.
         subject: WireCoverage,
     },
+    /// What the prompt marks.
     Segment {
+        /// The object, at the photo's aspect ratio.
         coverage: WireCoverage,
     },
+    /// The photo's sky.
     Sky {
+        /// Where the sky model finds sky.
         coverage: WireCoverage,
     },
     /// A `cancel` was noted; whether it stopped anything is said by the request
@@ -140,7 +175,9 @@ pub enum Reply {
 /// Why a request produced nothing.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WireError {
+    /// What the client may decide on.
     pub code: Code,
+    /// What went wrong, for a person to read.
     pub message: String,
 }
 
@@ -165,8 +202,10 @@ pub enum Code {
 /// fractions of the photo's width and height.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct WirePrompt {
+    /// The clicks, at most 32.
     #[serde(default)]
     pub points: Vec<WirePoint>,
+    /// A box, `[left, top, right, bottom]`, with left < right and top < bottom.
     #[serde(default)]
     pub bounds: Option<[f32; 4]>,
 }
@@ -174,8 +213,11 @@ pub struct WirePrompt {
 /// One click: where, and whether it marks the object.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct WirePoint {
+    /// Across, from 0 at the left edge to 1 at the right.
     pub x: f32,
+    /// Down, from 0 at the top edge to 1 at the bottom.
     pub y: f32,
+    /// Whether the click marks the object, rather than what isn't it.
     pub positive: bool,
 }
 
@@ -218,8 +260,11 @@ impl WirePrompt {
 /// 8-bit coverage as it travels.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WireCoverage {
+    /// Its width in pixels.
     pub width: usize,
+    /// Its height in pixels.
     pub height: usize,
+    /// One byte per pixel, row-major, from 0 (unselected) to 255 (selected).
     #[serde(with = "base64_bytes")]
     pub data: Vec<u8>,
 }
@@ -304,10 +349,12 @@ pub mod base64_bytes {
     use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
     use serde::{Deserialize, Deserializer, Serializer, de::Error};
 
+    /// Writes `bytes` as a base64 string.
     pub fn serialize<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&BASE64.encode(bytes))
     }
 
+    /// Reads a base64 string back into bytes.
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
         let text = String::deserialize(deserializer)?;
         BASE64.decode(text.as_bytes()).map_err(Error::custom)
