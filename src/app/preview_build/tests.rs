@@ -282,10 +282,15 @@ fn shown(e: &Editor, id: PhotoId) -> Option<egui::TextureId> {
 fn edited_in_grid(e: &mut Editor, id: PhotoId) {
     save_edit(e, id, 0.5);
     let ctx = e.context.clone();
-    e.library
-        .as_mut()
-        .unwrap()
-        .update_edited(&ctx, id, image::RgbImage::new(4, 4), "{}".into());
+    let library = e.library.as_mut().unwrap();
+    let rendered = crate::storage::Identity::read(&library.photo(id).unwrap().path).ok();
+    library.update_edited(
+        &ctx,
+        id,
+        rendered.as_ref(),
+        image::RgbImage::new(4, 4),
+        "{}".into(),
+    );
 }
 
 #[test]

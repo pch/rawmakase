@@ -367,12 +367,15 @@ impl PreviewTextures {
         }
     }
     /// Shows Develop's latest render as the photo's thumbnail and caches it
-    /// under the edit it was rendered with. Renders still in flight are older.
+    /// under the edit it was rendered with, for the file as `stamp` gives it
+    /// when it was rendered (none: it is shown, not cached). Renders still in
+    /// flight are older.
     pub(super) fn store_edited(
         &mut self,
         ctx: &egui::Context,
         id: PhotoId,
         path: PathBuf,
+        stamp: Option<crate::catalog::preview_cache::Stamp>,
         image: image::RgbImage,
         recipe_json: String,
     ) {
@@ -380,7 +383,14 @@ impl PreviewTextures {
         let ticket = self.ticket();
         self.edited_requested.insert(id, ticket);
         self.insert_edited(ctx, id, &image);
-        let _ = self.edit_tx.send(EditJob::Store { path, tag, image });
+        if let Some(stamp) = stamp {
+            let _ = self.edit_tx.send(EditJob::Store {
+                path,
+                tag,
+                stamp,
+                image,
+            });
+        }
     }
     /// Worth a status line: still working, or something could not be prepared.
     pub(super) fn progress_active(&self) -> bool {
