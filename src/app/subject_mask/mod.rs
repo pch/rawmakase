@@ -20,7 +20,8 @@ use crate::model::recipe::Recipe;
 use rawmakase_inference::{Point, Prompt as ModelPrompt};
 use std::hash::{Hash, Hasher};
 
-pub(super) use models::{Models, Pack, runtime_dir};
+use crate::model_install::Pack;
+pub(super) use models::Models;
 
 /// Which of the two selections a request makes. Background is the same coverage with
 /// the component inverted, so adding a brush to it still adds coverage.

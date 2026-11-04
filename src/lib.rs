@@ -49,6 +49,7 @@ pub mod comparison;
 pub mod diagnostics;
 pub(crate) mod edit_session;
 pub mod lensfun_install;
+pub(crate) mod model_install;
 pub(crate) mod platform;
 /// For headless commands: whether a path's volume is mounted.
 pub use platform::volume::mounted as volume_mounted;

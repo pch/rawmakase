@@ -455,7 +455,7 @@ impl Editor {
             installed: self.selection.models.denoise.installed(),
             progress: self.selection.models.denoise.progress(),
             install_failure: self.selection.models.denoise.failure().map(str::to_string),
-            megabytes: crate::app::subject_mask::Pack::Denoise.megabytes(),
+            megabytes: crate::model_install::Pack::Denoise.megabytes(),
             status: self.document.ai.status().cloned(),
         };
         // Cached per camera: this scans Adobe's profile folders.
@@ -641,13 +641,13 @@ impl Editor {
         }
         match ai_action {
             Some(ai_denoise::Action::Install) => {
-                self.install_model(crate::app::subject_mask::Pack::Denoise);
+                self.install_model(crate::model_install::Pack::Denoise);
             }
             Some(ai_denoise::Action::Remove) => self.remove_ai_denoise_model(),
             Some(ai_denoise::Action::Cancel) => {
                 self.selection
                     .models
-                    .of_mut(crate::app::subject_mask::Pack::Denoise)
+                    .of_mut(crate::model_install::Pack::Denoise)
                     .cancel();
             }
             None => {}

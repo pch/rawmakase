@@ -306,7 +306,7 @@ fn threads() -> usize {
 }
 
 fn load_model(dir: &Path, provider: Provider) -> Result<Box<dyn TileModel + Send>, String> {
-    let bundled = super::subject_mask::runtime_dir();
+    let bundled = crate::model_install::runtime_dir();
     let runtime_library = rawmakase_inference::runtime::runtime_file_names()
         .iter()
         .map(|name| bundled.join(name))
@@ -1351,7 +1351,7 @@ impl super::Editor {
         let service = self.ai_denoise.clone();
         self.selection
             .models
-            .of_mut(super::subject_mask::Pack::Denoise)
+            .of_mut(crate::model_install::Pack::Denoise)
             .remove(
                 move || service.unload(),
                 self.tx.clone(),
@@ -1452,7 +1452,7 @@ impl CommandLine {
             !image.fast,
             "AI Denoise needs the full-size image; render without --fast"
         );
-        let pack = super::subject_mask::Pack::Denoise;
+        let pack = crate::model_install::Pack::Denoise;
         anyhow::ensure!(
             pack.is_installed(),
             "AI Denoise is on but its model is not installed"
@@ -1599,7 +1599,7 @@ pub fn command(c: Command) -> Result<()> {
     let model = c
         .model
         .clone()
-        .unwrap_or_else(|| super::subject_mask::Pack::Denoise.installed_dir());
+        .unwrap_or_else(|| crate::model_install::Pack::Denoise.installed_dir());
     service.set_model(Some(model));
     let t = Instant::now();
     let entry = service.entry(&c.input, &file, Cancel::NEVER)?;
