@@ -124,7 +124,7 @@ fn a_drop_where_the_photos_are_already_does_nothing() -> anyhow::Result<()> {
     let r = root(&e);
     let library = e.library.as_mut().unwrap();
     library.request_move(vec![x], r, "sub".into(), "sub".into());
-    assert!(library.take_file_request().is_none());
+    assert!(library.next_request().is_none());
     Ok(())
 }
 

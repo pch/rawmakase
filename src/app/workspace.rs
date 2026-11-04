@@ -1,6 +1,5 @@
 use super::Editor;
 use super::dialogs::{CatalogDialog, FolderAction};
-use super::library::PreviewsRequest;
 use super::messages::Topic;
 use super::panels::WorkspacePanel;
 use super::state::Tool;
@@ -26,6 +25,78 @@ impl Editor {
             || self.folder_sync.is_reviewing()
             || self.file_ops.dialog_open()
             || self.auto_stack_open()
+    }
+    /// Carries out what the Library asked for this frame, in the order it asked
+    /// (`library::outbox`). A request that opens a window (Remove Copy, Remove Folder,
+    /// Read Metadata, a file operation) while another is open, or one opened earlier
+    /// this frame, is refused with a message rather than replacing it.
+    pub(super) fn library_requests(&mut self, ctx: &egui::Context) {
+        use super::library::{FileRequest, PreviewsRequest, outbox::Request};
+        use crate::app::library::CopyAction;
+        while let Some(request) = self.library.as_mut().and_then(|l| l.next_request()) {
+            // Each of these opens a window: a confirmation, a folder to choose, a
+            // name to type.
+            let dialog = matches!(
+                request,
+                Request::Copy(CopyAction::Remove(_))
+                    | Request::Removal(_)
+                    | Request::Read(_)
+                    | Request::File(_)
+            );
+            if dialog && self.workspace_modal() {
+                self.messages
+                    .warn("Finish what the open window asks first, then try again.");
+                continue;
+            }
+            match request {
+                Request::Copy(action) => self.virtual_copy(action),
+                Request::Previews(PreviewsRequest::Build(ids, kind)) => {
+                    self.build_previews_from_menu(&ids, kind)
+                }
+                Request::Previews(PreviewsRequest::Discard(ids, kinds)) => {
+                    self.discard_previews(&ids, &kinds)
+                }
+                Request::Sync(scope, name) => self.start_folder_sync(scope, name),
+                Request::Find(photo) => self.choose_file_on_disk(photo, ctx),
+                Request::Removal(removal) => self.modal = Some(super::Modal::RemoveFolder(removal)),
+                Request::Export(request) => self.export_as_catalog(request),
+                Request::Read(ids) => self.modal = Some(super::Modal::ReadMetadata(ids)),
+                Request::File(FileRequest::Remove(ids)) => self.request_photo_removal(ids),
+                Request::File(FileRequest::Delete(ids)) => self.request_photo_delete(ids, false),
+                Request::File(FileRequest::Trash(ids)) => self.request_photo_trash(ids),
+                Request::File(FileRequest::DeleteRejected) => self.request_rejected_delete(),
+                Request::File(FileRequest::Rename(ids)) => self.request_rename(ids),
+                Request::File(FileRequest::ChooseParent { root, from }) => {
+                    self.choose_parent_for(root, from)
+                }
+                Request::File(FileRequest::MoveFolder {
+                    root,
+                    from,
+                    to_root,
+                    to,
+                }) => self.request_folder_move(root, from, to_root, to),
+                Request::File(FileRequest::RenameFolder { root, logical }) => {
+                    self.rename_folder(root, logical)
+                }
+                Request::File(FileRequest::TrashFolder { root, logical }) => {
+                    self.request_folder_trash(root, logical)
+                }
+                Request::File(FileRequest::Move {
+                    photos,
+                    root,
+                    to,
+                    name,
+                }) => self.request_photo_move(photos, root, to, name),
+                Request::File(FileRequest::ChooseFolder(ids)) => self.choose_folder_for(ids),
+                Request::File(FileRequest::NewFolder {
+                    root,
+                    parent,
+                    name,
+                    photos,
+                    inside,
+                }) => self.name_new_folder(root, parent, name, photos, inside),
+            }
+        }
     }
     /// Whether the Library's Auto-Stack by Capture Time window is open.
     pub(super) fn auto_stack_open(&self) -> bool {
@@ -204,70 +275,8 @@ impl Editor {
         if self.chrome.hidden(self.module) {
             title_bar_pad(ui);
         }
-        if let Some(request) = self.library.as_mut().and_then(|l| l.take_copy_request()) {
-            self.virtual_copy(request);
-        }
-        if let Some(request) = self
-            .library
-            .as_mut()
-            .and_then(|l| l.take_previews_request())
-        {
-            match request {
-                PreviewsRequest::Build(ids, kind) => self.build_previews_from_menu(&ids, kind),
-                PreviewsRequest::Discard(ids, kinds) => self.discard_previews(&ids, &kinds),
-            }
-        }
-        if let Some((scope, name)) = self.library.as_mut().and_then(|l| l.take_sync_request()) {
-            self.start_folder_sync(scope, name);
-        }
-        if let Some(photo) = self.library.as_mut().and_then(|l| l.take_find_request()) {
-            let ctx = self.context.clone();
-            self.choose_file_on_disk(photo, &ctx);
-        }
+        self.library_requests(&ctx);
         self.poll_folder_sync();
-        if let Some(removal) = self.library.as_mut().and_then(|l| l.take_removal_request()) {
-            self.modal = Some(super::Modal::RemoveFolder(removal));
-        }
-        if let Some(request) = self.library.as_mut().and_then(|l| l.take_export_request()) {
-            self.export_as_catalog(request);
-        }
-        if let Some(ids) = self.library.as_mut().and_then(|l| l.take_read_request()) {
-            self.modal = Some(super::Modal::ReadMetadata(ids));
-        }
-        use super::library::FileRequest;
-        match self.library.as_mut().and_then(|l| l.take_file_request()) {
-            Some(FileRequest::Remove(ids)) => self.request_photo_removal(ids),
-            Some(FileRequest::Delete(ids)) => self.request_photo_delete(ids, false),
-            Some(FileRequest::Trash(ids)) => self.request_photo_trash(ids),
-            Some(FileRequest::DeleteRejected) => self.request_rejected_delete(),
-            Some(FileRequest::Rename(ids)) => self.request_rename(ids),
-            Some(FileRequest::ChooseParent { root, from }) => self.choose_parent_for(root, from),
-            Some(FileRequest::MoveFolder {
-                root,
-                from,
-                to_root,
-                to,
-            }) => self.request_folder_move(root, from, to_root, to),
-            Some(FileRequest::RenameFolder { root, logical }) => self.rename_folder(root, logical),
-            Some(FileRequest::TrashFolder { root, logical }) => {
-                self.request_folder_trash(root, logical)
-            }
-            Some(FileRequest::Move {
-                photos,
-                root,
-                to,
-                name,
-            }) => self.request_photo_move(photos, root, to, name),
-            Some(FileRequest::ChooseFolder(ids)) => self.choose_folder_for(ids),
-            Some(FileRequest::NewFolder {
-                root,
-                parent,
-                name,
-                photos,
-                inside,
-            }) => self.name_new_folder(root, parent, name, photos, inside),
-            None => {}
-        }
         self.poll_file_recovery();
         if let Some(library) = &mut self.library
             && library.take_reread_finished()

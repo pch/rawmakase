@@ -161,6 +161,8 @@ impl Editor {
             return;
         }
         if !self.activity.begin_dialog() {
+            self.messages
+                .warn("Find on Disk waits for the work in progress; try again once it is done.");
             return;
         }
         let start = picker_start(&path);

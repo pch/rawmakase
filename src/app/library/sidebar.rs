@@ -295,7 +295,7 @@ impl Library {
                                     action = Action::RelinkFolder(root, logical)
                                 }
                                 Some(TreeAction::Synchronize(scope, name)) => {
-                                    self.sync_request = Some((scope, name));
+                                    self.ask(super::outbox::Request::Sync(scope, name));
                                 }
                                 Some(TreeAction::NewFolder {
                                     root,
@@ -304,42 +304,48 @@ impl Library {
                                     folder,
                                 }) => self.request_new_folder(root, parent, name, folder),
                                 Some(TreeAction::RenameFolder { root, logical }) => {
-                                    self.file_request =
-                                        Some(super::FileRequest::RenameFolder { root, logical })
+                                    self.ask(super::outbox::Request::File(
+                                        super::FileRequest::RenameFolder { root, logical },
+                                    ))
                                 }
                                 Some(TreeAction::MoveFolder { root, logical }) => {
-                                    self.file_request = Some(super::FileRequest::ChooseParent {
-                                        root,
-                                        from: logical,
-                                    })
+                                    self.ask(super::outbox::Request::File(
+                                        super::FileRequest::ChooseParent {
+                                            root,
+                                            from: logical,
+                                        },
+                                    ))
                                 }
                                 Some(TreeAction::TrashFolder { root, logical }) => {
-                                    self.file_request =
-                                        Some(super::FileRequest::TrashFolder { root, logical })
+                                    self.ask(super::outbox::Request::File(
+                                        super::FileRequest::TrashFolder { root, logical },
+                                    ))
                                 }
                                 Some(TreeAction::RemoveRoot(root, name)) => {
-                                    self.removal_request = Some(super::FolderRemoval {
-                                        catalog: self.session.catalog().location().clone(),
-                                        name,
-                                        folders: HashSet::new(),
-                                        photos: 0,
-                                        empty_root: Some(root),
-                                        exported: None,
-                                    });
+                                    self.ask(super::outbox::Request::Removal(
+                                        super::FolderRemoval {
+                                            catalog: self.session.catalog().location().clone(),
+                                            name,
+                                            folders: HashSet::new(),
+                                            photos: 0,
+                                            empty_root: Some(root),
+                                            exported: None,
+                                        },
+                                    ));
                                 }
                                 Some(TreeAction::DropFolder {
                                     root,
                                     from,
                                     to_root,
                                     to,
-                                }) => {
-                                    self.file_request = Some(super::FileRequest::MoveFolder {
+                                }) => self.ask(super::outbox::Request::File(
+                                    super::FileRequest::MoveFolder {
                                         root,
                                         from,
                                         to_root,
                                         to,
-                                    })
-                                }
+                                    },
+                                )),
                                 Some(TreeAction::Reveal(path)) => {
                                     if let Err(e) = crate::platform::reveal::reveal(&path) {
                                         self.messages.fail(format!(
@@ -354,31 +360,33 @@ impl Library {
                                     name,
                                     photos,
                                 }) => self.request_move(photos, root, to, name),
-                                Some(TreeAction::Remove(name, folders, photos)) => {
-                                    self.removal_request = Some(super::FolderRemoval {
+                                Some(TreeAction::Remove(name, folders, photos)) => self.ask(
+                                    super::outbox::Request::Removal(super::FolderRemoval {
                                         catalog: self.session.catalog().location().clone(),
                                         name,
                                         folders,
                                         photos,
                                         empty_root: None,
                                         exported: None,
-                                    })
-                                }
+                                    }),
+                                ),
                                 Some(TreeAction::ExportCatalog(name, folders, photos)) => {
                                     let mut ids: Vec<_> = folders.iter().copied().collect();
                                     ids.sort();
-                                    self.export_request = Some(super::CatalogExportRequest {
-                                        name: name.clone(),
-                                        scope: crate::catalog::ExportScope::Folders(ids),
-                                        removal: Some(super::FolderRemoval {
-                                            catalog: self.session.catalog().location().clone(),
-                                            name,
-                                            folders,
-                                            photos,
-                                            empty_root: None,
-                                            exported: None,
-                                        }),
-                                    })
+                                    self.ask(super::outbox::Request::Export(
+                                        super::CatalogExportRequest {
+                                            name: name.clone(),
+                                            scope: crate::catalog::ExportScope::Folders(ids),
+                                            removal: Some(super::FolderRemoval {
+                                                catalog: self.session.catalog().location().clone(),
+                                                name,
+                                                folders,
+                                                photos,
+                                                empty_root: None,
+                                                exported: None,
+                                            }),
+                                        },
+                                    ))
                                 }
                                 Some(TreeAction::ShowSubfolders(shown)) => {
                                     self.show_subfolders(shown)
