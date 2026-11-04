@@ -470,7 +470,8 @@ sibling `tests.rs`. Keep regressions with the domain that owns the behavior.
 
 | Location | Coverage / use |
 | --- | --- |
-| [app/tests.rs](../src/app/tests.rs), [library/tests.rs](../src/app/library/tests.rs) | Editor interactions, state transitions, worker results, navigation, library trees and metadata. Small state owners also contain inline tests. |
+| [app/testing.rs](../src/app/testing.rs) | What the app's tests share: editors with a catalog or a photo (`editor_with_catalog`, `community_editor`, `editor_with_blue_photo`, `two_photo_editor`), frames run through them (`in_edit_frame`, `controls_frame`, `panel_frame`), and the clicks and keys they send (`click`, `press`, `key_down`, `labelled`, `centre`). |
+| `app/<feature>_editor_tests.rs` (`editor_tests.rs` inside a feature's folder), [library/tests.rs](../src/app/library/tests.rs) | The whole editor driven through its frames, beside the feature each test is about (`crop_tool_editor_tests.rs`, `chrome_editor_tests.rs`, `events_editor_tests.rs`, `undo_editor_tests.rs`…): interactions, state transitions, worker results, navigation, library trees and metadata. [app/tests.rs](../src/app/tests.rs) keeps the tests of `app/mod.rs` itself (the icon, the GPU adapter, eframe's errors). Small state owners also contain inline tests. |
 | [develop/pipeline/tests.rs](../crates/rawmakase-engine/src/develop/pipeline/tests.rs) | Rendering, geometry and reference regressions; numeric helpers also have inline tests. |
 | [camera_profiles/tests.rs](../crates/rawmakase-model/src/camera_profiles/tests.rs) | Profile parsing and validation. |
 | [camera_profiles/catalogue_tests.rs](../crates/rawmakase-model/src/camera_profiles/catalogue_tests.rs) | The shipped catalogue's pins, terms and cross-body matching; refused entries; deterministic generation; verified, no-clobber installs; and an ignored check of the pinned checkouts. |

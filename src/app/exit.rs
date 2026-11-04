@@ -81,3 +81,7 @@ impl Editor {
         self.controls.close_requests();
     }
 }
+
+#[cfg(test)]
+#[path = "exit_editor_tests.rs"]
+mod editor_tests;

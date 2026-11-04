@@ -660,3 +660,7 @@ mod tests {
         assert_eq!([far[0] + far[2], far[1] + far[3]], size);
     }
 }
+
+#[cfg(test)]
+#[path = "magnifier_editor_tests.rs"]
+mod editor_tests;

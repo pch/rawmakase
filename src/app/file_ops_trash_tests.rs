@@ -5,7 +5,7 @@
 use super::tests::{frame, ids_left, select, settle, tap};
 use super::*;
 use crate::app::Editor;
-use crate::app::tests::editor_with_catalog;
+use crate::app::testing::editor_with_catalog;
 use crate::catalog::PhotoId;
 use eframe::egui::{Key, Modifiers};
 use std::path::PathBuf;

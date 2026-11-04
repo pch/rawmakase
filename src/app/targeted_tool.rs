@@ -550,7 +550,7 @@ mod tests {
         assert!(e.view.parametric_curve);
         let before = e.document.edit.recipe().clone();
         e.start_targeted_drag(Target::ToneCurve, [0.75, 0.5]);
-        crate::app::tests::in_edit_frame(&ctx, &mut e, |e| e.drag_targeted(25.));
+        crate::app::testing::in_edit_frame(&ctx, &mut e, |e| e.drag_targeted(25.));
         e.release_targeted();
         assert_eq!(*e.document.edit.recipe(), before);
         wait_for_sample(&ctx, &mut e);
@@ -571,11 +571,11 @@ mod tests {
         let mut e = editor(&ctx);
         e.toggle_targeted(Target::ToneCurve);
         e.start_targeted_drag(Target::ToneCurve, [0.75, 0.5]);
-        crate::app::tests::in_edit_frame(&ctx, &mut e, |e| e.drag_targeted(25.));
+        crate::app::testing::in_edit_frame(&ctx, &mut e, |e| e.drag_targeted(25.));
         // The sample arrives while the button is still down; then it is released.
         wait_for_sample(&ctx, &mut e);
         assert!(e.view.targeted.is_some());
-        crate::app::tests::in_edit_frame(&ctx, &mut e, |e| e.drag_targeted(0.));
+        crate::app::testing::in_edit_frame(&ctx, &mut e, |e| e.drag_targeted(0.));
         e.release_targeted();
         assert!(
             (e.document
@@ -603,10 +603,10 @@ mod tests {
         // Or after it arrived, while the drag goes on.
         e.start_targeted_drag(Target::ToneCurve, [0.75, 0.5]);
         wait_for_sample(&ctx, &mut e);
-        crate::app::tests::in_edit_frame(&ctx, &mut e, |e| e.drag_targeted(10.));
+        crate::app::testing::in_edit_frame(&ctx, &mut e, |e| e.drag_targeted(10.));
         e.document.edit.setup_mut().exposure = 0.2;
         let changed = e.document.edit.recipe().clone();
-        crate::app::tests::in_edit_frame(&ctx, &mut e, |e| e.drag_targeted(10.));
+        crate::app::testing::in_edit_frame(&ctx, &mut e, |e| e.drag_targeted(10.));
         assert!(e.view.targeted.is_none());
         assert_eq!(*e.document.edit.recipe(), changed);
     }
@@ -619,7 +619,7 @@ mod tests {
         e.toggle_targeted(Target::Hsl(HslChannel::Hue));
         e.start_targeted_drag(Target::Hsl(HslChannel::Hue), [0.75, 0.5]);
         wait_for_sample(&ctx, &mut e);
-        crate::app::tests::in_edit_frame(&ctx, &mut e, |e| e.drag_targeted(40.));
+        crate::app::testing::in_edit_frame(&ctx, &mut e, |e| e.drag_targeted(40.));
         assert_eq!(*e.document.edit.recipe(), before);
         assert!(
             e.messages.line().contains("Nothing to adjust"),

@@ -592,3 +592,7 @@ pub(super) fn hint(ui: &mut egui::Ui, text: &str) {
         );
     });
 }
+
+#[cfg(test)]
+#[path = "retouch_tool_editor_tests.rs"]
+mod editor_tests;

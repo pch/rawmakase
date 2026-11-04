@@ -347,3 +347,7 @@ fn preset_fields(ui: &mut egui::Ui, form: &mut PresetForm, library: &crate::pres
             });
     });
 }
+
+#[cfg(test)]
+#[path = "settings_transfer_editor_tests.rs"]
+mod editor_tests;

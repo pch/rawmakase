@@ -863,3 +863,7 @@ mod tests {
         assert_eq!(press(egui::Modifiers::COMMAND, &mut e), Compare::Off);
     }
 }
+
+#[cfg(test)]
+#[path = "before_after_editor_tests.rs"]
+mod editor_tests;

@@ -301,7 +301,7 @@ fn a_profile_file_replaced_after_installation_is_not_applied() {
 /// choosing the profile in the menu is, that Undo and Redo take back and remake.
 #[test]
 fn applying_an_installed_profile_from_the_offer_is_one_undoable_history_step() {
-    use crate::app::tests::{click, community_editor, controls_frame, labelled};
+    use crate::app::testing::{click, community_editor, controls_frame, labelled};
     let ctx = egui::Context::default();
     let mut e = community_editor(&ctx, "X-T20", false);
     let dir = tempfile::tempdir().unwrap();
@@ -333,7 +333,7 @@ fn applying_an_installed_profile_from_the_offer_is_one_undoable_history_step() {
 /// contents. Using one leaves the other offered, to download or apply.
 #[test]
 fn a_profile_sharing_another_sources_name_and_camera_is_not_taken_for_it() {
-    use crate::app::tests::{click, community_editor, controls_frame, labelled};
+    use crate::app::testing::{click, community_editor, controls_frame, labelled};
     let name = "Synthetic X-T20";
     let (a, b) = (dcp(name, 1), dcp(name, 2));
     let (first, second) = (
@@ -664,7 +664,7 @@ fn an_installed_profile_is_checked_again_before_it_applies_without_a_download() 
     assert_eq!(offer.profiles.len(), 1);
     write(dir.path(), "installed.dcp", &dcp(&reviewed.profile.name, 2));
     let recipe = e.document.edit.recipe().clone();
-    crate::app::tests::in_edit_frame(&ctx, &mut e, |e| {
+    crate::app::testing::in_edit_frame(&ctx, &mut e, |e| {
         e.profile_offer_action(OfferAction::Apply(&reviewed.profile.id), &ctx);
     });
     assert!(!e.profile_download.task.is_running(), "no download");

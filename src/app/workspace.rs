@@ -2339,3 +2339,7 @@ mod tests {
         assert!(!editor.quitting_would_cut_off_work());
     }
 }
+
+#[cfg(test)]
+#[path = "workspace_editor_tests.rs"]
+mod editor_tests;

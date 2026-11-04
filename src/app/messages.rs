@@ -1558,3 +1558,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "messages_editor_tests.rs"]
+mod editor_tests;

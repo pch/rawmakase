@@ -123,3 +123,7 @@ impl Editor {
             && !self.document.camera_look.is_running()
     }
 }
+
+#[cfg(test)]
+#[path = "camera_look_editor_tests.rs"]
+mod editor_tests;

@@ -634,3 +634,7 @@ pub(super) struct RenderEdges {
     /// What to render at the current zoom: Fit, or smaller zoomed out.
     pub(super) max_edge: u32,
 }
+
+#[cfg(test)]
+#[path = "workflow_editor_tests.rs"]
+mod editor_tests;

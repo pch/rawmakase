@@ -885,3 +885,7 @@ fn suggestion(catalog: &crate::catalog::Catalog, action: &FolderAction) -> Optio
             .filter(|path| path.is_dir())
     })
 }
+
+#[cfg(test)]
+#[path = "catalog_editor_tests.rs"]
+mod editor_tests;

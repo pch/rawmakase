@@ -2683,3 +2683,7 @@ pub(super) fn search_field(ui: &mut egui::Ui, text: &mut String, hint: &str) -> 
     }
     response
 }
+
+#[cfg(test)]
+#[path = "widgets_editor_tests.rs"]
+mod editor_tests;

@@ -12,7 +12,7 @@ use std::time::Duration;
 /// result for an image no longer shown is dropped.
 #[test]
 fn the_switch_is_an_edit_and_a_result_is_not() {
-    use super::super::tests::{community_editor, labelled};
+    use crate::app::testing::{community_editor, labelled};
     use eframe::egui;
     // The Detail panel sits far down: a tall window keeps it on screen.
     fn controls_frame(
@@ -152,7 +152,7 @@ fn a_partial_result_asks_again_a_final_or_failed_one_does_not() {
 /// A partial result is dropped when the final one fails: Develop renders plain.
 #[test]
 fn a_failure_after_a_partial_result_drops_it() {
-    use super::super::tests::community_editor;
+    use crate::app::testing::community_editor;
     let ctx = eframe::egui::Context::default();
     let mut editor = community_editor(&ctx, "X-T20", false);
     let plain = fixture(Provider::Cpu, Behaviour::default()).plain();
@@ -183,7 +183,7 @@ fn a_failure_after_a_partial_result_drops_it() {
 fn the_decoded_images_file_is_the_loaders_reading() {
     use super::super::worker::Event;
     let ctx = eframe::egui::Context::default();
-    let mut editor = super::super::tests::community_editor(&ctx, "X-T20", false);
+    let mut editor = crate::app::testing::community_editor(&ctx, "X-T20", false);
     let f = fixture(Provider::Cpu, Behaviour::default());
     let photo = f.photo("a.raw");
     let before = crate::storage::Identity::read(&photo).unwrap();
@@ -215,7 +215,7 @@ fn the_decoded_images_file_is_the_loaders_reading() {
 #[test]
 fn an_image_without_its_files_identity_gets_no_ai_request() {
     let ctx = eframe::egui::Context::default();
-    let mut editor = super::super::tests::community_editor(&ctx, "X-T20", false);
+    let mut editor = crate::app::testing::community_editor(&ctx, "X-T20", false);
     let f = fixture(Provider::Cpu, Behaviour::default());
     let plain = f.plain();
     editor.document.set_image(plain.clone());
@@ -238,7 +238,7 @@ fn an_image_without_its_files_identity_gets_no_ai_request() {
 fn a_job_under_way_keeps_the_librarys_previews_in_the_background() {
     use crate::app::library::Pace;
     let ctx = eframe::egui::Context::default();
-    let mut editor = super::super::tests::community_editor(&ctx, "X-T20", false);
+    let mut editor = crate::app::testing::community_editor(&ctx, "X-T20", false);
     let f = fixture(Provider::Cpu, Behaviour::default());
     editor.ai_denoise = f.service.clone();
     editor.module = super::super::Module::Library;
@@ -269,7 +269,7 @@ fn a_job_under_way_keeps_the_librarys_previews_in_the_background() {
 fn a_job_handing_over_its_result_keeps_the_librarys_previews_in_the_background() {
     use crate::app::library::Pace;
     let ctx = eframe::egui::Context::default();
-    let mut editor = super::super::tests::community_editor(&ctx, "X-T20", false);
+    let mut editor = crate::app::testing::community_editor(&ctx, "X-T20", false);
     let f = fixture(Provider::Cpu, Behaviour::default());
     editor.ai_denoise = f.service.clone();
     editor.module = super::super::Module::Library;
@@ -327,7 +327,7 @@ fn command_line_renders_use_the_cache_folder_preferences_chose() {
 #[test]
 fn the_loupe_loads_a_finished_result_of_any_provider_without_running_the_model() {
     let ctx = eframe::egui::Context::default();
-    let mut editor = super::super::tests::community_editor(&ctx, "X-T20", false);
+    let mut editor = crate::app::testing::community_editor(&ctx, "X-T20", false);
     // The service would run on CoreML; the result was made on the CPU.
     let f = fixture(Provider::CoreML, Behaviour::default());
     editor.ai_denoise = f.service.clone();
@@ -337,7 +337,7 @@ fn the_loupe_loads_a_finished_result_of_any_provider_without_running_the_model()
     editor.document.opened_at(path.clone());
     editor.document.image_file = editor.document.file.clone();
     editor.module = super::super::Module::Library;
-    super::super::tests::in_edit_frame(&ctx, &mut editor, |e| {
+    crate::app::testing::in_edit_frame(&ctx, &mut editor, |e| {
         e.document.edit.recipe_mut().switch_ai_denoise(true)
     });
     editor.schedule();
@@ -373,7 +373,7 @@ fn the_loupe_loads_a_finished_result_of_any_provider_without_running_the_model()
 #[test]
 fn a_partial_result_after_the_final_one_is_ignored() {
     let ctx = eframe::egui::Context::default();
-    let mut editor = super::super::tests::community_editor(&ctx, "X-T20", false);
+    let mut editor = crate::app::testing::community_editor(&ctx, "X-T20", false);
     let f = fixture(Provider::Cpu, Behaviour::default());
     let plain = f.plain();
     editor.document.set_image(plain.clone());

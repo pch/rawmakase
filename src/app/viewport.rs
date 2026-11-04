@@ -976,3 +976,7 @@ impl Editor {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "viewport_editor_tests.rs"]
+mod editor_tests;

@@ -690,3 +690,7 @@ mod compatibility_tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "session_editor_tests.rs"]
+mod editor_tests;

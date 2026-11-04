@@ -341,3 +341,7 @@ mod tests {
         assert_eq!(stopping.len(), 1);
     }
 }
+
+#[cfg(test)]
+#[path = "lensfun_editor_tests.rs"]
+mod editor_tests;

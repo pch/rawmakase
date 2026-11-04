@@ -160,3 +160,7 @@ fn fill(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "ui_snapshot_editor_tests.rs"]
+mod editor_tests;

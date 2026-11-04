@@ -332,3 +332,7 @@ pub fn user_ai_denoise_cache() -> AiCache {
 #[cfg(test)]
 #[path = "ai_denoise_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "ai_denoise_editor_tests.rs"]
+mod editor_tests;

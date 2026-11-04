@@ -212,3 +212,7 @@ impl Editor {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "brush_scroll_editor_tests.rs"]
+mod editor_tests;

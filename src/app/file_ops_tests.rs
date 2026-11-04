@@ -2,7 +2,7 @@
 //! would: what the confirmation counts, what dismisses it, what it removes
 //! and what the app forgets with it.
 use super::*;
-use crate::app::tests::editor_with_catalog;
+use crate::app::testing::editor_with_catalog;
 use crate::app::{Editor, Module};
 use crate::catalog::PhotoId;
 use eframe::egui::{self, Key, Modifiers, Pos2, Rect, Vec2};

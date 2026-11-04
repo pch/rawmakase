@@ -467,3 +467,7 @@ mod tests {
         assert_eq!(distance_to_segment(Pos2::new(14., 3.), a, b), 5.);
     }
 }
+
+#[cfg(test)]
+#[path = "guided_tool_editor_tests.rs"]
+mod editor_tests;

@@ -740,3 +740,7 @@ mod tests {
         assert_eq!(CropGuides::from_session(&unknown), CropGuides::default());
     }
 }
+
+#[cfg(test)]
+#[path = "crop_tool_editor_tests.rs"]
+mod editor_tests;

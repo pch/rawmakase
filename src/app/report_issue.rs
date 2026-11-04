@@ -401,7 +401,7 @@ fn note_ui(ui: &mut egui::Ui, palette: &theme::Palette, note: &Note, version: &s
 mod tests {
     use super::*;
     use crate::app::Module;
-    use crate::app::tests::editor_with_catalog;
+    use crate::app::testing::editor_with_catalog;
     use crate::diagnostics::Field;
     use std::sync::Mutex;
     use std::sync::mpsc::{Receiver, Sender, channel};

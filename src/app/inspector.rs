@@ -1071,3 +1071,7 @@ fn setting_control(
         setting_slider(ui, step, id, id.value_mut(r), default)
     });
 }
+
+#[cfg(test)]
+#[path = "inspector/editor_tests.rs"]
+mod editor_tests;
