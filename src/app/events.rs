@@ -595,13 +595,14 @@ impl Editor {
             self.document.snapshots.list = l.session.catalog().snapshots(photo).unwrap_or_default();
             // The edit as the catalog stores it, read once: the Lightroom settings
             // applied below are the ones read with it.
-            let record = l.session.catalog().edit_record(photo);
-            let saved = record
-                .as_ref()
+            let start = l
+                .session
+                .catalog()
+                .edit_record(photo)
                 .map_err(|e| anyhow::anyhow!("{e:#}"))
-                .and_then(|r| r.saved(&p));
-            match saved {
-                Ok(Some(saved)) => {
+                .and_then(|r| crate::edits::Start::capture(&r, &p, self.raw_defaults.clone()));
+            match start {
+                Ok(crate::edits::Start::Saved(saved)) => {
                     self.document.origin = crate::app::develop::state::EditOrigin::Saved;
                     self.document.edit.replace(saved.recipe);
                     self.document.export = saved.export;
@@ -625,14 +626,17 @@ impl Editor {
                         self.document.lightroom_notice = e.to_string();
                     }
                 }
-                Ok(None) => {
+                Ok(start) => {
                     self.document.export = ExportOptions::default();
                     self.document.edit.save_state_mut().saved();
                     self.document.lightroom_notice.clear();
                     // No RAWmakase edit yet: start from the Lightroom edit, as
-                    // Lightroom shows it, once camera profiles are known.
-                    self.document.pending_lightroom =
-                        record.ok().and_then(|r| r.lightroom().map(str::to_owned));
+                    // Lightroom shows it, once camera profiles are known. Without
+                    // one, the raw defaults the photo opened with stay.
+                    self.document.pending_lightroom = match start {
+                        crate::edits::Start::Lightroom(text) => Some(text),
+                        _ => None,
+                    };
                     if self.document.pending_lightroom.is_some() {
                         self.document.origin = crate::app::develop::state::EditOrigin::Lightroom;
                     }

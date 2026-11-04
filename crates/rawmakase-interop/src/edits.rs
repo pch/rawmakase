@@ -1,11 +1,18 @@
 //! The edit a photo is developed with, worked out the same way wherever it is
 //! needed: its saved RAWmakase edit, else its Lightroom edit, else the raw
-//! defaults. Develop, Sync Settings and Export all start from here.
+//! defaults. Develop, Library previews, Sync Settings and Export all start from
+//! here.
 //!
 //! The catalog reads the stored edit (`Catalog::edit_record` in `rawmakase_catalog`)
 //! and [`resolve`] works it out after, so a caller can read many photos at once
-//! and resolve them later, off the UI thread. Upright's analysis needs the
-//! developed photo, so it is a step of its own: `rawmakase_engine::develop::upright::complete`.
+//! and resolve them later, off the UI thread. A caller that chooses the source at
+//! one moment and develops it at another (Develop installs a saved edit when the
+//! photo's header arrives and converts a Lightroom edit once its camera profiles
+//! are known; Library previews render the source their cache entry is tagged with)
+//! holds a [`Start`]: the chosen source, read once, resolved when the metadata and
+//! profiles are known. Each caller keeps its own policy for what an error or a
+//! warning does. Upright's analysis needs the developed photo, so it is a step of
+//! its own: `rawmakase_engine::develop::upright::complete`.
 use crate::{
     camera_data::Metadata, camera_profiles::CameraProfile, export_settings::ExportOptions,
     model::recipe::Recipe, raw_defaults::DevelopDefaults, storage::Identity,
@@ -15,7 +22,7 @@ use std::{path::Path, sync::Arc};
 
 /// A saved RAWmakase edit: the recipe, with its spots and masks, and how the
 /// photo exports.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SavedEdit {
     pub recipe: Recipe,
     pub export: ExportOptions,
@@ -116,30 +123,105 @@ pub fn resolve(
     defaults: &DevelopDefaults,
 ) -> Result<Resolved> {
     if let Some(saved) = record.saved(path)? {
-        return Ok(Resolved {
-            recipe: saved.recipe,
-            export: saved.export,
-            origin: Origin::Saved,
-            warnings: Vec::new(),
-        });
+        return Ok(of_saved(saved));
     }
     if let Some(text) = record.lightroom() {
-        let (recipe, warnings) =
-            lightroom_edit(text, m, profiles).context("Its Lightroom edit can't be read")?;
-        return Ok(Resolved {
-            recipe,
-            export: ExportOptions::default(),
-            origin: Origin::Lightroom,
-            warnings,
-        });
+        return of_lightroom(text, m, profiles).context("Its Lightroom edit can't be read");
     }
-    let resolved = defaults.resolve(m, profiles);
+    Ok(of_defaults(defaults, m, profiles))
+}
+
+/// Where a photo's starting edit comes from, chosen once and resolved when the
+/// photo's metadata and camera profiles are known. The source's text and the raw
+/// defaults' presets are read when it is chosen; [`Start::resolve`] reads no
+/// catalog, saved edit or preset file. Settings that name a Lensfun lens still
+/// resolve it against the database installed when they are applied, as everywhere.
+#[derive(Clone, Debug)]
+pub enum Start {
+    /// A saved RAWmakase edit, read and checked against its file
+    /// ([`EditRecord::saved`]).
+    Saved(Box<SavedEdit>),
+    /// Lightroom's develop settings, as the catalog stores them.
+    Lightroom(String),
+    /// No edit: these raw defaults.
+    Defaults(Arc<DevelopDefaults>),
+    /// A recipe as JSON, read as it is: what a Library preview's cache entry is
+    /// tagged with. Unlike [`Start::Saved`] it is not checked against its file.
+    RecipeJson(String),
+    /// Adobe Default with the photo's profiles (`Recipe::with_profiles`), whatever
+    /// the raw defaults are.
+    AdobeDefault,
+}
+impl Start {
+    /// Photo `record` at `path`'s source, as [`resolve`] chooses it: its saved edit
+    /// (read and checked now; an error when it can't be), else its Lightroom edit,
+    /// else `defaults`.
+    pub fn capture(
+        record: &EditRecord,
+        path: &Path,
+        defaults: Arc<DevelopDefaults>,
+    ) -> Result<Self> {
+        if let Some(saved) = record.saved(path)? {
+            return Ok(Self::Saved(Box::new(saved)));
+        }
+        Ok(match record.lightroom() {
+            Some(text) => Self::Lightroom(text.to_owned()),
+            None => Self::Defaults(defaults),
+        })
+    }
+    /// The edit this source gives a photo with metadata `m` and camera profiles
+    /// `profiles`, with what it could not bring along. An error only for a
+    /// Lightroom edit or a recipe that can't be read.
+    pub fn resolve(&self, m: &Metadata, profiles: &[Arc<CameraProfile>]) -> Result<Resolved> {
+        Ok(match self {
+            Self::Saved(saved) => of_saved((**saved).clone()),
+            Self::Lightroom(text) => of_lightroom(text, m, profiles)?,
+            Self::Defaults(defaults) => of_defaults(defaults, m, profiles),
+            Self::RecipeJson(json) => Resolved {
+                recipe: serde_json::from_str(json)?,
+                export: ExportOptions::default(),
+                origin: Origin::Saved,
+                warnings: Vec::new(),
+            },
+            Self::AdobeDefault => Resolved {
+                recipe: Recipe::with_profiles(m, profiles),
+                export: ExportOptions::default(),
+                origin: Origin::Defaults,
+                warnings: Vec::new(),
+            },
+        })
+    }
+}
+
+fn of_saved(saved: SavedEdit) -> Resolved {
+    Resolved {
+        recipe: saved.recipe,
+        export: saved.export,
+        origin: Origin::Saved,
+        warnings: Vec::new(),
+    }
+}
+fn of_lightroom(text: &str, m: &Metadata, profiles: &[Arc<CameraProfile>]) -> Result<Resolved> {
+    let (recipe, warnings) = lightroom_edit(text, m, profiles)?;
     Ok(Resolved {
+        recipe,
+        export: ExportOptions::default(),
+        origin: Origin::Lightroom,
+        warnings,
+    })
+}
+fn of_defaults(
+    defaults: &DevelopDefaults,
+    m: &Metadata,
+    profiles: &[Arc<CameraProfile>],
+) -> Resolved {
+    let resolved = defaults.resolve(m, profiles);
+    Resolved {
         recipe: resolved.recipe,
         export: ExportOptions::default(),
         origin: Origin::Defaults,
         warnings: resolved.note.into_iter().collect(),
-    })
+    }
 }
 
 /// Spots and masks from their stored text; none when there is none. The catalog reads

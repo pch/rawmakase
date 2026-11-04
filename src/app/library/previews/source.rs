@@ -1,4 +1,5 @@
 //! What an edited preview is rendered from, and the tag it is kept under.
+use crate::edits::Start;
 use crate::model::recipe::Recipe;
 use rawmakase_cancel::Cancel;
 use std::{path::Path, sync::Arc};
@@ -25,14 +26,13 @@ impl EditSource {
     ) -> anyhow::Result<Recipe> {
         let (profiles, _) = crate::camera_profiles::installed(m);
         let profiles = crate::camera_look::with_default(path, m, profiles, cancel);
-        Ok(match edit {
-            Some(Self::Recipe(json)) => serde_json::from_str(json)?,
-            Some(Self::Lightroom(text)) => {
-                crate::lr_develop::convert_develop(text, m, &profiles, None)?.0
-            }
-            Some(Self::Defaults(defaults)) => defaults.resolve(m, &profiles).recipe,
-            None => Recipe::with_profiles(m, &profiles),
-        })
+        let start = match edit {
+            Some(Self::Recipe(json)) => Start::RecipeJson(json.clone()),
+            Some(Self::Lightroom(text)) => Start::Lightroom(text.clone()),
+            Some(Self::Defaults(defaults)) => Start::Defaults(defaults.clone()),
+            None => Start::AdobeDefault,
+        };
+        Ok(start.resolve(m, &profiles)?.recipe)
     }
     /// Identifies this edit, developed by this build's RAW decoder
     /// (`raw::developed`), in the preview cache.

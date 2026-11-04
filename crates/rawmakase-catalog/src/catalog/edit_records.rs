@@ -199,6 +199,82 @@ mod tests {
         Ok(())
     }
 
+    /// A source chosen once ([`crate::edits::Start`]) and resolved later gives what
+    /// [`resolve`] gives; the sources only previews and Develop use keep their own
+    /// rules.
+    #[test]
+    fn a_captured_start_resolves_as_resolve_does() -> Result<()> {
+        use crate::edits::Start;
+        use std::sync::Arc;
+        let (_d, mut c, photos) = catalog()?;
+        let metadata = chart_metadata();
+        let (profiles, _) = crate::camera_profiles::installed(&metadata);
+        let defaults = Arc::new(crate::raw_defaults::brighter_defaults());
+        let (a, b, unedited) = (&photos[0], &photos[1], &photos[2]);
+        let mut saved = Recipe::with_profiles(&metadata, &profiles);
+        saved.exposure = 0.4;
+        c.save_edit(
+            a.0,
+            &a.1,
+            &crate::storage::Identity::read(&a.1)?,
+            &saved,
+            &ExportOptions::default(),
+            super::super::HistoryUpdate::Keep,
+        )?;
+        set_lightroom(&c, b.0, "s = { Exposure2012 = 0.25 }")?;
+        set_lightroom(&c, unedited.0, "")?;
+        for (photo, origin) in [
+            (a, Origin::Saved),
+            (b, Origin::Lightroom),
+            (unedited, Origin::Defaults),
+        ] {
+            let record = c.edit_record(photo.0)?;
+            let start = Start::capture(&record, &photo.1, defaults.clone())?;
+            let later = start.resolve(&metadata, &profiles)?;
+            let now = resolve(&record, &photo.1, &metadata, &profiles, &defaults)?;
+            assert_eq!(
+                (
+                    later.origin,
+                    &later.recipe,
+                    later.export.quality,
+                    &later.warnings
+                ),
+                (origin, &now.recipe, now.export.quality, &now.warnings)
+            );
+        }
+        // An unreadable Lightroom edit is an error either way; only `resolve` says
+        // whose it is.
+        set_lightroom(&c, b.0, "not Lightroom")?;
+        let record = c.edit_record(b.0)?;
+        let later = Start::capture(&record, &b.1, defaults.clone())?
+            .resolve(&metadata, &profiles)
+            .unwrap_err();
+        let now = resolve(&record, &b.1, &metadata, &profiles, &defaults).unwrap_err();
+        assert!(!format!("{later:#}").contains("Its Lightroom edit can't be read"));
+        assert!(format!("{now:#}").starts_with("Its Lightroom edit can't be read"));
+        // A preview's recipe is read as it is, not validated, and Adobe Default
+        // ignores the defaults.
+        let mut out_of_bounds = saved.clone();
+        out_of_bounds.exposure = 99.;
+        assert!(out_of_bounds.validate().is_err());
+        let json = serde_json::to_string(&out_of_bounds)?;
+        assert_eq!(
+            Start::RecipeJson(json)
+                .resolve(&metadata, &profiles)?
+                .recipe,
+            out_of_bounds
+        );
+        let adobe = Start::AdobeDefault.resolve(&metadata, &profiles)?;
+        assert_eq!(
+            (adobe.origin, adobe.recipe),
+            (
+                Origin::Defaults,
+                Recipe::with_profiles(&metadata, &profiles)
+            )
+        );
+        Ok(())
+    }
+
     #[test]
     fn an_edit_that_cant_be_used_is_an_error_never_the_defaults() -> Result<()> {
         let (_d, mut c, photos) = catalog()?;
