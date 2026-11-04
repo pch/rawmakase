@@ -1,6 +1,7 @@
 use super::*;
 use crate::ai_denoise::key;
 use crate::ai_denoise::tests::*;
+use rawmakase_cancel::Cancel;
 use rawmakase_decode::ai_cache::AiEntry;
 use rawmakase_decode::ai_denoise::PackedBayer;
 use rawmakase_inference::Provider;

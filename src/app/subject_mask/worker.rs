@@ -189,7 +189,7 @@ fn select(job: &Job, state: &mut State) -> Result<Generated, Failure> {
             &key,
             endpoint.as_deref(),
             job.model.as_deref(),
-            &job.cancel,
+            Cancel::new(&job.cancel),
             state,
         )?,
         (_, Some(endpoint)) => select_remotely(endpoint, &rgb, &key, job, state)?,
@@ -229,14 +229,14 @@ fn select_sky(
     key: &str,
     endpoint: Option<&str>,
     model: Option<&std::path::Path>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     state: &mut State,
 ) -> Result<(Coverage, Feature, Failure, String), Failure> {
     if state.sky.as_ref().is_none_or(|(k, _)| *k != key) {
         state.sky = None;
         let coverage = match endpoint {
             Some(endpoint) => RemoteSession::new(endpoint)
-                .sky(rgb, Cancel::new(cancel))
+                .sky(rgb, cancel)
                 .map_err(remote_failure)?,
             None => {
                 let Some(model) = model else {
@@ -247,7 +247,7 @@ fn select_sky(
                         Some(Sky::load_with(model, &load_options()).map_err(failure)?);
                 }
                 let session = state.sky_session.as_mut().expect("loaded above");
-                session.select(rgb, Cancel::new(cancel)).map_err(failure)?
+                session.select(rgb, cancel).map_err(failure)?
             }
         };
         state.sky = Some((key.to_string(), coverage));
@@ -600,10 +600,17 @@ mod tests {
         };
         let cancel = AtomicBool::new(false);
         let (coverage, feature, ..) =
-            select_sky(&rgb, &key, None, None, &cancel, &mut state).unwrap();
+            select_sky(&rgb, &key, None, None, Cancel::new(&cancel), &mut state).unwrap();
         assert_eq!((coverage.data, feature), (vec![255, 0], Feature::Sky));
         assert!(matches!(
-            select_sky(&rgb, "another", None, None, &cancel, &mut state),
+            select_sky(
+                &rgb,
+                "another",
+                None,
+                None,
+                Cancel::new(&cancel),
+                &mut state
+            ),
             Err(Failure::ModelMissing)
         ));
         assert!(state.sky.is_none(), "the old photo's answer is let go of");

@@ -1,4 +1,5 @@
 use super::*;
+use rawmakase_cancel::Cancel;
 use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc;
 
@@ -95,7 +96,7 @@ pub(crate) fn mosaic() -> Vec<f32> {
 pub(crate) fn fixture(provider: Provider, behaviour: Behaviour) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let behaviour = Arc::new(behaviour);
-    let source: Source = Arc::new(|path: &Path, _: &AtomicBool| {
+    let source: Source = Arc::new(|path: &Path, _: Cancel<'_>| {
         anyhow::ensure!(path.exists(), "no such photo");
         if std::fs::read(path)?.starts_with(b"xtrans") {
             return Err(anyhow::Error::new(Unsupported("not Bayer")));
@@ -180,13 +181,13 @@ fn export(
     service: &Service,
     photo: &Path,
     plain: &Arc<CameraImage>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Arc<CameraImage>> {
     service.get(
         photo,
         &crate::storage::Identity::read(photo)?,
         plain,
-        Cancel::new(cancel),
+        cancel,
     )
 }
 
@@ -259,7 +260,7 @@ fn concurrent_requests_for_one_photo_run_one_job() {
     let exports: Vec<_> = (0..2)
         .map(|_| {
             let (service, photo, plain) = (f.service.clone(), photo.clone(), plain.clone());
-            std::thread::spawn(move || export(&service, &photo, &plain, &AtomicBool::new(false)))
+            std::thread::spawn(move || export(&service, &photo, &plain, Cancel::NEVER))
         })
         .collect();
     std::thread::sleep(Duration::from_millis(100));
@@ -286,7 +287,7 @@ fn a_gpu_failure_after_good_tiles_reruns_on_the_cpu_under_the_cpus_key() {
     let (rx, _wanted) = f.request(&photo, &plain, None);
     let export = {
         let (service, photo, plain) = (f.service.clone(), photo.clone(), plain.clone());
-        std::thread::spawn(move || export(&service, &photo, &plain, &AtomicBool::new(false)))
+        std::thread::spawn(move || export(&service, &photo, &plain, Cancel::NEVER))
     };
     assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
     export.join().unwrap().unwrap();
@@ -443,7 +444,7 @@ fn a_cancelled_export_stops_waiting() {
     let export = {
         let (service, photo, plain, cancel) =
             (f.service.clone(), f.photo("a.raw"), plain, cancel.clone());
-        std::thread::spawn(move || export(&service, &photo, &plain, &cancel))
+        std::thread::spawn(move || export(&service, &photo, &plain, Cancel::new(&cancel)))
     };
     std::thread::sleep(Duration::from_millis(100));
     cancel.store(true, Ordering::Relaxed);
@@ -758,15 +759,8 @@ fn a_sink_panicking_on_the_final_result_strands_no_queued_job() {
     let (exported, exported_rx) = mpsc::channel();
     let (service, waiter_plain, waiter_photo) = (f.service.clone(), plain, b);
     std::thread::spawn(move || {
-        let _ = exported.send(
-            export(
-                &service,
-                &waiter_photo,
-                &waiter_plain,
-                &AtomicBool::new(false),
-            )
-            .is_ok(),
-        );
+        let _ =
+            exported.send(export(&service, &waiter_photo, &waiter_plain, Cancel::NEVER).is_ok());
     });
     while f.service.queue().waiting.is_empty() {
         assert!(

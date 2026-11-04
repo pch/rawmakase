@@ -85,8 +85,12 @@ fn develop(
         Opened::Raw(raw) => raw,
         // A JPEG, PNG or TIFF opens at full size: nothing to cache or refine.
         Opened::Rendered(image) => {
-            let recipe =
-                EditSource::recipe(Some(&job.edit), &image.metadata, &job.path, &job.cancel)?;
+            let recipe = EditSource::recipe(
+                Some(&job.edit),
+                &image.metadata,
+                &job.path,
+                Cancel::new(&job.cancel),
+            )?;
             if !job.cancel.load(Ordering::Relaxed) {
                 ready(ReferenceImage {
                     image: Arc::new(image),
@@ -97,7 +101,12 @@ fn develop(
             return Ok(());
         }
     };
-    let recipe = EditSource::recipe(Some(&job.edit), &raw.metadata, &job.path, &job.cancel)?;
+    let recipe = EditSource::recipe(
+        Some(&job.edit),
+        &raw.metadata,
+        &job.path,
+        Cancel::new(&job.cancel),
+    )?;
     let full_size = FullSize::with_cache(&job.path, job.demosaic, cache.clone());
     if let Some(image) = full_size.cached(&raw.metadata) {
         // Closed before the reference is ready: Windows refuses to rename or

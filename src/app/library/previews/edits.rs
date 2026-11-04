@@ -6,6 +6,7 @@ use super::thumbnails::Worker;
 use crate::catalog::PhotoId;
 use crate::catalog::preview_cache::{PreviewCache, Stamp};
 use eframe::egui;
+use rawmakase_cancel::Cancel;
 use rawmakase_decode::ai_cache::AiCache;
 use std::{
     collections::HashSet,
@@ -70,7 +71,7 @@ pub(in crate::app) enum Pace {
     Full,
 }
 /// Renders a 640 px edited preview, giving up once the flag is set.
-type RenderEdited = fn(&Path, &EditSource, &AtomicBool) -> anyhow::Result<image::RgbImage>;
+type RenderEdited = fn(&Path, &EditSource, Cancel<'_>) -> anyhow::Result<image::RgbImage>;
 /// Renders a preview of an edit with AI Denoise from a finished result: the file's
 /// version the result was made for, and the result.
 type RenderWithAi = fn(
@@ -78,7 +79,7 @@ type RenderWithAi = fn(
     &crate::storage::Identity,
     &EditSource,
     &rawmakase_decode::ai_cache::AiEntry,
-    &AtomicBool,
+    Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage>;
 /// Where edited preview jobs go, and how fast they are rendered. Dropping it
 /// closes the worker, as [`EditQueue::close`] does.
@@ -509,10 +510,13 @@ impl Renders {
                 let stamp = Stamp::read(&path).ok()?;
                 let (image, shows) = match finished_entry(&path, &source, ai.as_ref()) {
                     Some((file, entry)) => (
-                        render_ai(&path, &file, &source, &entry, &cancel).ok()?,
+                        render_ai(&path, &file, &source, &entry, Cancel::new(&cancel)).ok()?,
                         PreviewAi::Finished,
                     ),
-                    None => (render(&path, &source, &cancel).ok()?, plain_of(&source)),
+                    None => (
+                        render(&path, &source, Cancel::new(&cancel)).ok()?,
+                        plain_of(&source),
+                    ),
                 };
                 if let Some(cache) = &mut *cache(&cache_at)
                     && let Err(error) =

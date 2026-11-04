@@ -1,4 +1,6 @@
 use super::*;
+use rawmakase_cancel::Cancel;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
 
@@ -126,9 +128,9 @@ fn open(e: &mut Editor, m: Metadata, dir: &Path) {
 
 /// A transport that never delivers: it waits until its job is cancelled (the
 /// editor's drop cancels it too), so nothing is ever installed.
-pub(super) fn waits(_: &Entry, cancel: &AtomicBool, _: &AtomicUsize) -> Result<Vec<u8>> {
+pub(super) fn waits(_: &Entry, cancel: Cancel<'_>, _: &AtomicUsize) -> Result<Vec<u8>> {
     let until = Instant::now() + Duration::from_secs(10);
-    while !cancel.load(Ordering::Relaxed) && Instant::now() < until {
+    while !cancel.is_cancelled() && Instant::now() < until {
         std::thread::sleep(Duration::from_millis(5));
     }
     anyhow::bail!("offline")
@@ -678,13 +680,13 @@ fn profile_transport_rejects_truncated_oversized_and_failed_responses() {
     let cancel = AtomicBool::new(false);
     let progress = AtomicUsize::new(0);
     assert_eq!(
-        read_body(&b"abcd"[..], 4, &cancel, &progress).unwrap(),
+        read_body(&b"abcd"[..], 4, Cancel::new(&cancel), &progress).unwrap(),
         b"abcd"
     );
     assert_eq!(progress.load(Ordering::Relaxed), 4);
-    assert!(read_body(&b"abc"[..], 4, &cancel, &progress).is_err());
-    assert!(read_body(&b"abcde"[..], 4, &cancel, &progress).is_err());
-    assert!(read_body(&b""[..], MAX_BYTES + 1, &cancel, &progress).is_err());
+    assert!(read_body(&b"abc"[..], 4, Cancel::new(&cancel), &progress).is_err());
+    assert!(read_body(&b"abcde"[..], 4, Cancel::new(&cancel), &progress).is_err());
+    assert!(read_body(&b""[..], MAX_BYTES + 1, Cancel::new(&cancel), &progress).is_err());
     struct Broken;
     impl Read for Broken {
         fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
@@ -692,7 +694,7 @@ fn profile_transport_rejects_truncated_oversized_and_failed_responses() {
         }
     }
     assert!(
-        read_body(Broken, 4, &cancel, &progress)
+        read_body(Broken, 4, Cancel::new(&cancel), &progress)
             .unwrap_err()
             .to_string()
             .contains("interrupted")
@@ -703,7 +705,7 @@ fn profile_transport_rejects_truncated_oversized_and_failed_responses() {
 fn profile_transport_cancels_before_and_during_a_response() {
     let cancel = AtomicBool::new(true);
     let progress = AtomicUsize::new(0);
-    assert!(read_body(&b"abcd"[..], 4, &cancel, &progress).is_err());
+    assert!(read_body(&b"abcd"[..], 4, Cancel::new(&cancel), &progress).is_err());
     assert_eq!(progress.load(Ordering::Relaxed), 0);
     struct Cancels<'a>(&'a AtomicBool);
     impl Read for Cancels<'_> {
@@ -714,7 +716,7 @@ fn profile_transport_cancels_before_and_during_a_response() {
         }
     }
     cancel.store(false, Ordering::Relaxed);
-    assert!(read_body(Cancels(&cancel), 4, &cancel, &progress).is_err());
+    assert!(read_body(Cancels(&cancel), 4, Cancel::new(&cancel), &progress).is_err());
 }
 
 /// Fetches every catalogue profile from its pinned URL with the app's transport and
@@ -736,7 +738,7 @@ fn published_catalogue_files_match_their_pins() {
             model: model.into(),
             ..Default::default()
         };
-        let bytes = fetch(e, &AtomicBool::new(false), &AtomicUsize::new(0))
+        let bytes = fetch(e, Cancel::NEVER, &AtomicUsize::new(0))
             .unwrap_or_else(|why| panic!("{}: {why:#}", e.profile.id));
         e.verify(&bytes, &m)
             .unwrap_or_else(|why| panic!("{}: {why:#}", e.profile.id));

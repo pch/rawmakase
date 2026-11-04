@@ -9,6 +9,7 @@ use super::previews::EditSource;
 use super::thumbnails;
 use crate::catalog::{Photo, PhotoId};
 use eframe::egui;
+use rawmakase_cancel::Cancel;
 use rawmakase_decode::ai_cache::AiCache;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -32,7 +33,7 @@ const THREADS: usize = 2;
 /// the edit's stamp, so an edit saved anywhere renders it again.
 type Key = (PhotoId, PathBuf, u32, u64);
 /// Renders a preview, giving up once the flag is set.
-type Render = fn(&Path, u32, Option<&EditSource>, &AtomicBool) -> anyhow::Result<image::RgbImage>;
+type Render = fn(&Path, u32, Option<&EditSource>, Cancel<'_>) -> anyhow::Result<image::RgbImage>;
 
 struct Job {
     key: Key,
@@ -310,11 +311,11 @@ fn work(
                             source,
                             key.2,
                             ai.as_ref(),
-                            &shared.cancel,
+                            Cancel::new(&shared.cancel),
                         )
                         .map(|(image, _)| image)
                     }
-                    _ => render(&key.1, key.2, edit.as_ref(), &shared.cancel),
+                    _ => render(&key.1, key.2, edit.as_ref(), Cancel::new(&shared.cancel)),
                 }
             }));
             match rendered {
@@ -343,7 +344,7 @@ fn render(
     path: &Path,
     edge: u32,
     edit: Option<&EditSource>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
     let edited = matches!(edit, Some(EditSource::Recipe(_) | EditSource::Lightroom(_)));
     if !edited && !crate::storage::is_raw(path) {
@@ -362,13 +363,13 @@ mod tests {
         let path = directory.path().join("photo.jpg");
         let edit = super::super::previews::tests::edited_jpeg(&path)?;
         let cancel = AtomicBool::new(false);
-        let edited = render(&path, 64, Some(&edit), &cancel)?;
+        let edited = render(&path, 64, Some(&edit), Cancel::new(&cancel))?;
         assert!(
             edited.pixels().all(|p| p.0[1] > 75),
             "{:?}",
             edited.get_pixel(0, 0)
         );
-        let unedited = render(&path, 64, None, &cancel)?;
+        let unedited = render(&path, 64, None, Cancel::new(&cancel))?;
         assert!(unedited.pixels().all(|p| p.0[1].abs_diff(60) <= 2));
         Ok(())
     }
@@ -408,7 +409,7 @@ mod tests {
             path: &Path,
             _: u32,
             _: Option<&EditSource>,
-            _: &AtomicBool,
+            _: Cancel<'_>,
         ) -> anyhow::Result<image::RgbImage> {
             match path.to_str() {
                 Some("panics") => panic!("render panics"),
@@ -550,11 +551,11 @@ mod tests {
             _: &Path,
             _: u32,
             _: Option<&EditSource>,
-            cancel: &AtomicBool,
+            cancel: Cancel<'_>,
         ) -> anyhow::Result<image::RgbImage> {
             STARTED.store(true, Ordering::Relaxed);
             // A render that only a cancel ends.
-            while !cancel.load(Ordering::Relaxed) {
+            while !cancel.is_cancelled() {
                 std::thread::sleep(std::time::Duration::from_millis(1));
             }
             anyhow::bail!("Cancelled")

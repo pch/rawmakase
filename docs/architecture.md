@@ -53,7 +53,7 @@ on it directly.)
 | `rawmakase-engine` | The renderer (`develop`): the CPU pipeline, which is the reference, and the GPU preview port | The RAW decoders, the catalog, the GUI |
 | `rawmakase-raw` | RAWmakase's own RAW decoders ([RAW decoding](raw-decoding.md)) | Everything but `rawmakase-tiff` and `rawmakase-cancel` |
 | `rawmakase-tiff` | The bounded TIFF reader DNGs and RAW containers use; no RAW knowledge | Everything |
-| `rawmakase-cancel` | `Cancel`, the borrowed request to stop long-running work, which its owner's flag sets; shared infrastructure the crates that do such work take as they move off bare `&AtomicBool` (#808 step 4.7) | Everything |
+| `rawmakase-cancel` | `Cancel`, the borrowed request to stop long-running work, which its owner's flag sets: every crate that does such work takes one, and owners keep their flags | Everything |
 | `rawmakase-decode` | Opening and decoding photos: the only crate that reaches `rawmakase-raw`; colour management, demosaicing, rendered files (JPEG … HEIF), the full-size decode and its cache, AI Denoise's packing and assembly, Camera Look fitting | C imaging libraries, the catalog, export, the GUI |
 | `rawmakase-export` | Developing and writing exports, with their watermarks | The app, a window or GPU backend |
 | `rawmakase-inference` | Running the selection models and AI Denoise's model through a lazily loaded ONNX Runtime: pixels in, coverage or denoised camera RGB out | Every other workspace crate |

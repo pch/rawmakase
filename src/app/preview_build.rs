@@ -126,14 +126,14 @@ pub(super) struct Finished {
 }
 
 /// Renders `item` at its edge, giving up once the flag is set.
-pub(super) type Render = fn(&Item, &AtomicBool) -> anyhow::Result<image::RgbImage>;
+pub(super) type Render = fn(&Item, Cancel<'_>) -> anyhow::Result<image::RgbImage>;
 
 /// Builds and stores one photo's preview, unless a fresh one is there.
 fn build_one(
     item: &Item,
     cache: Option<&mut PreviewCache>,
     render: Render,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Outcome {
     let Some(cache) = cache else {
         return Outcome::Failed("the preview cache can't be opened".into());
@@ -152,11 +152,11 @@ fn build_one(
     };
     let image = match render(item, cancel) {
         Ok(image) => image,
-        Err(_) if cancel.load(Ordering::Relaxed) => return Outcome::Cancelled,
+        Err(_) if cancel.is_cancelled() => return Outcome::Cancelled,
         Err(e) => return Outcome::Failed(format!("{e:#}")),
     };
     // The last moment to stop: nothing is stored.
-    if cancel.load(Ordering::Relaxed) {
+    if cancel.is_cancelled() {
         return Outcome::Cancelled;
     }
     if image.width().max(image.height()) > JPEG_LIMIT {
@@ -198,16 +198,12 @@ fn thumbnail(image: &image::RgbImage) -> image::RgbImage {
 /// Renders a catalog photo as batch export does: its edit resolved through the
 /// identity-checked record (a protected or unreadable edit fails, never falling
 /// back to the defaults), Upright completed, then a cancellable render.
-pub(super) fn render(item: &Item, cancel: &AtomicBool) -> anyhow::Result<image::RgbImage> {
-    let opened = crate::photo::open_source(&item.path, Cancel::new(cancel))
+pub(super) fn render(item: &Item, cancel: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+    let opened = crate::photo::open_source(&item.path, cancel)
         .with_context(|| format!("{} can't be read", item.path.display()))?;
     let (profiles, _) = crate::camera_profiles::installed(opened.metadata());
-    let profiles = crate::camera_look::with_default(
-        &item.path,
-        opened.metadata(),
-        profiles,
-        Cancel::new(cancel),
-    );
+    let profiles =
+        crate::camera_look::with_default(&item.path, opened.metadata(), profiles, cancel);
     let mut recipe = item_recipe(item, opened.metadata(), &profiles)?;
     let image = match opened {
         Opened::Raw(raw) if needs_full(&recipe, &raw.metadata, item.edge) => {
@@ -216,14 +212,14 @@ pub(super) fn render(item: &Item, cancel: &AtomicBool) -> anyhow::Result<image::
                 &item.path,
                 item.demosaic,
                 &item.decode_cache,
-                Cancel::new(cancel),
+                cancel,
             )?
         }
-        Opened::Raw(raw) => raw.develop(Decode::Half, Cancel::new(cancel))?,
+        Opened::Raw(raw) => raw.develop(Decode::Half, cancel)?,
         // A JPEG, PNG or TIFF opens at full size: there is no smaller decode.
         Opened::Rendered(image) => image,
     };
-    ensure!(!cancel.load(Ordering::Relaxed), "Cancelled");
+    ensure!(!cancel.is_cancelled(), "Cancelled");
     develop(&mut recipe, &image, item.edge, cancel)
 }
 
@@ -242,10 +238,10 @@ fn develop(
     recipe: &mut Recipe,
     image: &crate::camera_data::CameraImage,
     edge: u32,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
     crate::develop::upright::complete(recipe, image);
-    let out = crate::develop::render(image, &recipe.checked()?, edge, Cancel::new(cancel))?;
+    let out = crate::develop::render(image, &recipe.checked()?, edge, cancel)?;
     image::RgbImage::from_raw(out.width, out.height, out.rgb8()).context("Invalid preview size")
 }
 
@@ -361,7 +357,7 @@ impl Builder {
                     Next::Build(item, cancel) => (item, cancel),
                 };
                 let held = cache.as_mut();
-                let build = || build_one(&item, held, render, &cancel);
+                let build = || build_one(&item, held, render, Cancel::new(&cancel));
                 let caught =
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match &pool {
                         Some(pool) => pool.install(build),

@@ -1,5 +1,6 @@
 use super::*;
 use crate::app::testing::editor_with_catalog;
+use rawmakase_cancel::Cancel;
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -13,7 +14,7 @@ static RELEASED: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
 /// Renders by the file's name: "panic…" panics, "fail…" fails, "slow…" waits
 /// until released or cancelled, "edited…" resolves its edit first as a build does;
 /// anything else is a small solid image.
-fn test_render(item: &Item, cancel: &AtomicBool) -> anyhow::Result<image::RgbImage> {
+fn test_render(item: &Item, cancel: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
     RENDERED.lock().unwrap().push(item.path.clone());
     let name = item.path.file_name().unwrap().to_string_lossy().to_string();
     if name.starts_with("panic") {
@@ -28,7 +29,7 @@ fn test_render(item: &Item, cancel: &AtomicBool) -> anyhow::Result<image::RgbIma
         // Wait until this test releases the file or cancels the build. A clock
         // limit stored the preview when the test thread was slow to cancel.
         while !released(&item.path) {
-            anyhow::ensure!(!cancel.load(Ordering::Relaxed), "Cancelled");
+            anyhow::ensure!(!cancel.is_cancelled(), "Cancelled");
             std::thread::sleep(Duration::from_millis(2));
         }
     }
@@ -224,8 +225,11 @@ fn cancel_during_a_render_stores_nothing_and_drops_the_rest() {
 
 #[test]
 fn a_cancel_seen_after_the_render_still_stores_nothing() {
-    fn cancels(_: &Item, cancel: &AtomicBool) -> anyhow::Result<image::RgbImage> {
-        cancel.store(true, Ordering::Relaxed);
+    // The build's flag, which the render sets as it finishes, as a cancel arriving
+    // then would.
+    static CANCEL: AtomicBool = AtomicBool::new(false);
+    fn cancels(_: &Item, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+        CANCEL.store(true, Ordering::Relaxed);
         Ok(image::RgbImage::new(8, 8))
     }
     let dir = tempfile::tempdir().unwrap();
@@ -246,7 +250,7 @@ fn a_cancel_seen_after_the_render_still_stores_nothing() {
         edge: 2048,
         ticket: None,
     };
-    let outcome = build_one(&item, Some(&mut cache), cancels, &AtomicBool::new(false));
+    let outcome = build_one(&item, Some(&mut cache), cancels, Cancel::new(&CANCEL));
     assert!(matches!(outcome, Outcome::Cancelled));
     assert!(
         !cache
@@ -584,7 +588,7 @@ fn upright_is_completed_before_rendering() {
     let image = synthetic(96, 64);
     let mut recipe = Recipe::default();
     recipe.upright.mode = crate::model::transform::UprightMode::Auto;
-    let out = develop(&mut recipe, &image, 48, &AtomicBool::new(false)).unwrap();
+    let out = develop(&mut recipe, &image, 48, Cancel::NEVER).unwrap();
     assert!(!recipe.upright.needs_analysis());
     assert!(out.width().max(out.height()) <= 48);
 }
@@ -593,7 +597,7 @@ fn upright_is_completed_before_rendering() {
 fn a_real_render_stops_once_cancelled() {
     let image = synthetic(96, 64);
     let mut recipe = Recipe::default();
-    assert!(develop(&mut recipe, &image, 48, &AtomicBool::new(true)).is_err());
+    assert!(develop(&mut recipe, &image, 48, Cancel::new(&AtomicBool::new(true))).is_err());
 }
 
 #[test]
@@ -848,7 +852,7 @@ fn one_to_one_previews_build_at_full_size_and_discard_on_their_own() {
 
 #[test]
 fn a_photo_too_large_for_a_jpeg_fails_with_why() {
-    fn panorama(_: &Item, _: &AtomicBool) -> anyhow::Result<image::RgbImage> {
+    fn panorama(_: &Item, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
         Ok(image::RgbImage::new(JPEG_LIMIT + 1, 1))
     }
     let dir = tempfile::tempdir().unwrap();
@@ -869,7 +873,7 @@ fn a_photo_too_large_for_a_jpeg_fails_with_why() {
         edge: 0,
         ticket: None,
     };
-    let outcome = build_one(&item, Some(&mut cache), panorama, &AtomicBool::new(false));
+    let outcome = build_one(&item, Some(&mut cache), panorama, Cancel::NEVER);
     assert!(matches!(outcome, Outcome::Failed(why) if why.contains("65535")));
 }
 
@@ -1029,7 +1033,7 @@ fn a_jpeg_preview_renders_from_the_file() -> anyhow::Result<()> {
         edge: 2048,
         ticket: None,
     };
-    let preview = render(&item, &AtomicBool::new(false))?;
+    let preview = render(&item, Cancel::NEVER)?;
     assert_eq!(preview.dimensions(), (48, 32));
     for p in preview.pixels() {
         for (got, want) in p.0.iter().zip(colour.0) {

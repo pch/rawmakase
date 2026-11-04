@@ -12,9 +12,10 @@ use crate::app::design::{self, Tone, radius, space, text};
 use crate::app::theme;
 use crate::catalog::CatalogLocation;
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
+use rawmakase_cancel::Cancel;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 
 /// Camera Raw's shared folder, installed with Lightroom for all users. It
 /// holds Adobe's camera profiles and the Adobe looks (Adobe Color…).
@@ -181,7 +182,7 @@ fn adobe_cameras(profiles: &std::path::Path) -> Vec<String> {
 }
 impl Found {
     /// What there is for `models`, the cameras the catalog records.
-    fn scan(models: &[String], cancel: &AtomicBool) -> Self {
+    fn scan(models: &[String], cancel: Cancel<'_>) -> Self {
         let mut found = Self::default();
         let shared = shared_camera_raw();
         let known = shared
@@ -210,8 +211,8 @@ impl Found {
     }
     /// Camera Raw's profiles and presets, narrowed to the cameras found.
     /// Stops early once `cancel` is set, as the result is then dropped.
-    fn find_on_disk(&mut self, cancel: &AtomicBool) {
-        let cancelled = || cancel.load(Ordering::Relaxed);
+    fn find_on_disk(&mut self, cancel: Cancel<'_>) {
+        let cancelled = || cancel.is_cancelled();
         if let Some(shared) = shared_camera_raw() {
             let profiles = shared.join("CameraProfiles");
             for camera in &self.cameras {
@@ -762,7 +763,7 @@ impl Editor {
         let tx = self.tx.clone();
         let ctx = self.context.clone();
         std::thread::spawn(move || {
-            let found = Found::scan(&models, &cancel);
+            let found = Found::scan(&models, Cancel::new(&cancel));
             if !cancel.load(Ordering::Relaxed) {
                 let _ = tx.send(Event::OnboardingScanned {
                     generation,
