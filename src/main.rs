@@ -123,6 +123,12 @@ enum Command {
         overwrite: bool,
         #[arg(long)]
         recipe: Option<PathBuf>,
+        /// Start from the photo's edit in this RAWmakase catalog (a virtual copy's is
+        /// the master's): its saved edit, else its Lightroom edit, else the raw
+        /// defaults. Without it, a legacy sidecar, else the raw defaults chosen in
+        /// Preferences. `--recipe` comes before both.
+        #[arg(long)]
+        catalog: Option<PathBuf>,
         /// Apply Auto tone, as the Basic panel's Auto button does; white balance is kept.
         /// Auto sets Exposure itself, so it cannot be combined with --exposure.
         #[arg(long, conflicts_with = "exposure")]
@@ -525,6 +531,7 @@ fn main() -> Result<()> {
             fast,
             overwrite,
             recipe,
+            catalog,
             auto,
             auto_wb,
             tap,
@@ -535,20 +542,37 @@ fn main() -> Result<()> {
             let r = rawmakase::photo::open(&input)?;
             let mut edit = if let Some(p) = recipe {
                 rawmakase::presets::load_preset(&p)?.recipe
+            } else if let Some(sidecar) = catalog
+                .is_none()
+                .then(|| rawmakase::catalog::legacy_sidecar::load(&input))
+                .transpose()?
+                .flatten()
+            {
+                sidecar.recipe
             } else {
-                rawmakase::catalog::legacy_sidecar::load(&input)?
-                    .map(|s| s.recipe)
-                    .unwrap_or_else(|| {
-                        // As the app opens it: a photo without colour data starts
-                        // from its fitted camera look.
-                        let profiles = rawmakase::camera_look::with_default(
-                            &input,
-                            &r.metadata,
-                            rawmakase::camera_profiles::installed(&r.metadata).0,
-                            Cancel::NEVER,
-                        );
-                        Recipe::with_profiles(&r.metadata, &profiles)
-                    })
+                let record = match &catalog {
+                    Some(catalog) => catalog_edit(catalog, &input)?,
+                    None => rawmakase::edits::EditRecord::default(),
+                };
+                // As the app opens it: a photo without colour data starts from its
+                // fitted camera look.
+                let profiles = rawmakase::camera_look::with_default(
+                    &input,
+                    &r.metadata,
+                    rawmakase::camera_profiles::installed(&r.metadata).0,
+                    Cancel::NEVER,
+                );
+                let resolved = rawmakase::edits::resolve(
+                    &record,
+                    &input,
+                    &r.metadata,
+                    &profiles,
+                    &rawmakase::app::user_raw_defaults(),
+                )?;
+                for warning in &resolved.warnings {
+                    eprintln!("{warning}");
+                }
+                resolved.recipe
             };
             if let Some(e) = exposure {
                 edit.exposure = e;
@@ -809,6 +833,39 @@ fn main() -> Result<()> {
 
 /// `rawmakase sync-folder`: scans, prints the plan, and applies it with
 /// `apply`.
+/// The stored edit of the photo at `input` in `catalog`: of the master, as a path
+/// names it, not of a virtual copy. A photo the catalog doesn't have, or has more
+/// than once (two folders found at the same place), is an error.
+fn catalog_edit(
+    catalog: &std::path::Path,
+    input: &std::path::Path,
+) -> Result<rawmakase::edits::EditRecord> {
+    let c = rawmakase::catalog::Catalog::open(catalog)?;
+    let input = input.canonicalize()?;
+    let found: Vec<_> = c
+        .photos()?
+        .into_iter()
+        .filter(|p| p.master.is_none() && p.path.canonicalize().is_ok_and(|p| p == input))
+        .map(|p| p.id)
+        .collect();
+    let photo = match found[..] {
+        [photo] => photo,
+        [] => anyhow::bail!("{} is not in the catalog", input.display()),
+        _ => anyhow::bail!(
+            "{} is {} photos in the catalog: two of its folders are found at the same place",
+            input.display(),
+            found.len()
+        ),
+    };
+    // Masks made from a selection are read back from the catalog, as in the app.
+    rawmakase::storage::mask_assets::add_loader(c.mask_asset_loader());
+    // One consistent read: the recipe with the spots and masks saved with it.
+    c.photo_records(&[photo])?
+        .pop()
+        .map(|record| record.edit)
+        .ok_or_else(|| anyhow::anyhow!("{} is not in the catalog", input.display()))
+}
+
 fn sync_folder(
     catalog: &std::path::Path,
     folder: Option<&std::path::Path>,
