@@ -33,7 +33,7 @@
 //! our dataset); the measurement found that tiles' samples are kept within
 //! the bit depth.
 use crate::error::{Error, Result};
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// Bits most significant first from little-endian 32-bit words, read a
 /// word at a time as needed; zeros past the end.
@@ -96,11 +96,11 @@ pub(crate) fn blocks(
     width: usize,
     height: usize,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     let at = |out: &[u16], r: usize, c: usize| i32::from(out[r * width + c]);
     for row in 0..height {
-        if row % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if row % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let start = rows.get(row).map_or(usize::MAX, |&r| r as usize);
@@ -140,7 +140,7 @@ pub(crate) fn blocks(
         }
     }
     for row in (0..height.saturating_sub(1)).step_by(2) {
-        if row % 256 == 0 && cancel.load(Ordering::Relaxed) {
+        if row % 256 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         for col in (0..width.saturating_sub(1)).step_by(2) {
@@ -158,7 +158,7 @@ pub(crate) fn tiles(
     width: usize,
     height: usize,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     let opt = data.get(9).copied().unwrap_or(0);
     let init = data
@@ -178,7 +178,7 @@ pub(crate) fn tiles(
     // The code widths carry over from row to row.
     let mut len = [0i32; 4];
     for row in 0..height {
-        if row % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if row % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         // Rows start on 16-byte boundaries.
@@ -309,7 +309,7 @@ mod tests {
         }
         let data = w.words();
         let mut out = vec![0u16; 32];
-        blocks(&data, &[0, 0], 16, 2, &mut out, &AtomicBool::new(false)).unwrap();
+        blocks(&data, &[0, 0], 16, 2, &mut out, Cancel::NEVER).unwrap();
         // Before the swap row 0 is 129, 127, 130, 127, …; the swap moves
         // row 0's odd samples down and row 1's even ones up.
         assert_eq!(out[0], 129);
@@ -339,7 +339,7 @@ mod tests {
         }
         data.extend(w.words());
         let mut out = vec![0u16; 16];
-        tiles(&data, 12, 16, 1, &mut out, &AtomicBool::new(false)).unwrap();
+        tiles(&data, 12, 16, 1, &mut out, Cancel::NEVER).unwrap();
         // Codes 0, 1, −2, −1 (2-bit signed) over 1000, the scale 0.
         assert_eq!(out[0], 1000);
         assert_eq!(out[2], 1001);

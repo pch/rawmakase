@@ -20,8 +20,8 @@
 //! the ones Adobe DNG Converter reproduces bit for bit; the tests compare against its
 //! output.
 use crate::error::{Error, Result, corrupt};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Fails with a `Corrupt` error saying `format!(…)` unless `cond` holds.
 macro_rules! ensure {
@@ -58,28 +58,18 @@ const CAP: u16 = 0xff50;
 
 /// Decodes a codestream into `out`, `width` by `height` raw values `pitch` apart,
 /// which must be the codestream's own size. Values are 14-bit, black included.
-pub fn decode(
+/// Stops with `Error::Cancelled` soon after `cancel` is set: it is checked before
+/// each precinct and between the stages.
+pub(crate) fn decode(
     data: &[u8],
     out: &mut [u16],
     width: usize,
     height: usize,
     pitch: usize,
-) -> Result<()> {
-    decode_cancellable(data, out, width, height, pitch, &AtomicBool::new(false))
-}
-
-/// [`decode`], stopping with `Error::Cancelled` soon after `cancel` is set:
-/// it is checked before each precinct and between the stages.
-pub(crate) fn decode_cancellable(
-    data: &[u8],
-    out: &mut [u16],
-    width: usize,
-    height: usize,
-    pitch: usize,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     let cancelled = || {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             Err(Error::Cancelled)
         } else {
             Ok(())
@@ -730,7 +720,7 @@ fn decode_slices(
     layout: &Layout,
     precincts: &[usize],
     coefficients: &mut Coefficients,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     let precinct_len = coefficients.precinct_len();
     let (w, n) = (coefficients.width, coefficients.components);
@@ -741,7 +731,7 @@ fn decode_slices(
         .try_for_each(|(rows, offsets)| {
             let mut state = SliceState::new(layout);
             for (precinct, &offset) in rows.chunks_mut(precinct_len).zip(offsets) {
-                if cancel.load(Ordering::Relaxed) {
+                if cancel.is_cancelled() {
                     return Err(Error::Cancelled);
                 }
                 decode_precinct(data, offset, header, layout, &mut state, precinct, w, n)?;
@@ -944,6 +934,8 @@ fn decode_precinct(
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod tests {
+    #[cfg(test)]
+    use rawmakase_cancel::Cancel;
     /// The vendor bytes of every sample file: black 1008, gain 84429 (Q16), knee
     /// 16255.
     const VENDOR: [u8; 13] = [
@@ -1053,7 +1045,7 @@ pub mod tests {
         let (width, height) = (64, 32);
         let stream = blank_codestream(width as u16, height as u16);
         let mut out = vec![0u16; width * height];
-        super::decode(&stream, &mut out, width, height, width).unwrap();
+        super::decode(&stream, &mut out, width, height, width, Cancel::NEVER).unwrap();
         assert_eq!(blank_value(), 2734);
         assert!(out.iter().all(|&v| v == blank_value()), "{:?}", &out[..8]);
     }
@@ -1063,14 +1055,24 @@ pub mod tests {
         let (width, height, pitch) = (64, 32, 70);
         let stream = blank(width as u16, height as u16, VENDOR);
         let mut out = vec![7u16; pitch * height];
-        super::decode(&stream, &mut out, width, height, pitch).unwrap();
+        super::decode(&stream, &mut out, width, height, pitch, Cancel::NEVER).unwrap();
         for row in out.chunks(pitch) {
             assert!(row[..width].iter().all(|&v| v != 7));
             assert!(row[width..].iter().all(|&v| v == 7));
         }
         // A buffer of another size is refused, not overrun.
-        assert!(super::decode(&stream, &mut out, 62, height, pitch).is_err());
-        assert!(super::decode(&stream, &mut out[..pitch * 31], width, height, pitch).is_err());
+        assert!(super::decode(&stream, &mut out, 62, height, pitch, Cancel::NEVER).is_err());
+        assert!(
+            super::decode(
+                &stream,
+                &mut out[..pitch * 31],
+                width,
+                height,
+                pitch,
+                Cancel::NEVER
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1104,10 +1106,12 @@ pub mod tests {
         let gcli = |x| coded(width as u16, height as u16, VENDOR, Some(x));
         // The packet is well formed, so its GCLI is read: 15 is accepted (and the
         // data it calls for is missing), more is refused before the data is read.
-        let error = super::decode(&gcli(15), &mut out, width, height, width).unwrap_err();
+        let error =
+            super::decode(&gcli(15), &mut out, width, height, width, Cancel::NEVER).unwrap_err();
         assert!(!error.to_string().contains("GCLI"), "{error}");
         for x in [16, 31] {
-            let error = super::decode(&gcli(x), &mut out, width, height, width).unwrap_err();
+            let error =
+                super::decode(&gcli(x), &mut out, width, height, width, Cancel::NEVER).unwrap_err();
             assert!(error.to_string().contains("GCLI"), "{x}: {error}");
         }
     }
@@ -1120,11 +1124,26 @@ pub mod tests {
         use std::sync::atomic::{AtomicBool, Ordering};
         let cancel = AtomicBool::new(true);
         assert_eq!(
-            super::decode_cancellable(&stream, &mut out, width, height, width, &cancel),
+            super::decode(
+                &stream,
+                &mut out,
+                width,
+                height,
+                width,
+                Cancel::new(&cancel)
+            ),
             Err(crate::error::Error::Cancelled)
         );
         cancel.store(false, Ordering::Relaxed);
-        super::decode_cancellable(&stream, &mut out, width, height, width, &cancel).unwrap();
+        super::decode(
+            &stream,
+            &mut out,
+            width,
+            height,
+            width,
+            Cancel::new(&cancel),
+        )
+        .unwrap();
         assert!(out.iter().all(|&v| v == blank_value()));
     }
 
@@ -1146,7 +1165,15 @@ pub mod tests {
         let mut out = vec![0u16; width * height];
         for len in 0..stream.len() {
             assert!(
-                super::decode(&stream[..len], &mut out, width, height, width).is_err(),
+                super::decode(
+                    &stream[..len],
+                    &mut out,
+                    width,
+                    height,
+                    width,
+                    Cancel::NEVER
+                )
+                .is_err(),
                 "decoded {len} bytes"
             );
         }
@@ -1155,7 +1182,7 @@ pub mod tests {
             for value in [0x00, 0x7f, 0xff] {
                 let mut damaged = stream.clone();
                 damaged[at] = value;
-                let _ = super::decode(&damaged, &mut out, width, height, width);
+                let _ = super::decode(&damaged, &mut out, width, height, width, Cancel::NEVER);
             }
         }
     }

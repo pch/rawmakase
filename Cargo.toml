@@ -10,7 +10,7 @@ repository = "https://github.com/pch/rawmakase"
 # The control protocol and its command-line client build on their own, without
 # the app's GUI, GPU or native libraries.
 [workspace]
-members = ["crates/rawmakase-catalog", "crates/rawmakase-decode", "crates/rawmakase-engine", "crates/rawmakase-export", "crates/rawmakase-inference", "crates/rawmakase-interop", "crates/rawmakase-model", "crates/rawmakase-protocol", "crates/rawmakase-raw", "crates/rawmakase-remote", "crates/rawmakase-tiff", "tools/rawmakase-ctl"]
+members = ["crates/rawmakase-cancel", "crates/rawmakase-catalog", "crates/rawmakase-decode", "crates/rawmakase-engine", "crates/rawmakase-export", "crates/rawmakase-inference", "crates/rawmakase-interop", "crates/rawmakase-model", "crates/rawmakase-protocol", "crates/rawmakase-raw", "crates/rawmakase-remote", "crates/rawmakase-tiff", "tools/rawmakase-ctl"]
 
 # What every crate of the workspace shares. CI and `make check` read the minimum
 # Rust version from the `rust-version` line here.

@@ -16,7 +16,7 @@
 //! exactly on all 10 ARW1 files of our dataset.
 use super::bits::Msb;
 use crate::error::{Error, Result};
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// Samples in an ARW2 block, and bytes it is stored in.
 const BLOCK: usize = 16;
@@ -64,7 +64,7 @@ pub(crate) fn arw2(
     width: usize,
     height: usize,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     let mut codes = [0u16; BLOCK];
     for (y, (row, dst)) in data
@@ -73,7 +73,7 @@ pub(crate) fn arw2(
         .take(height)
         .enumerate()
     {
-        if y % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if y % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         for (group, dst) in row
@@ -148,7 +148,7 @@ pub(crate) fn arw1(
     width: usize,
     height: usize,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     // The code of every 15-bit prefix: its length and difference bits.
     let mut table = Vec::with_capacity(1 << 15);
@@ -158,7 +158,7 @@ pub(crate) fn arw1(
     let mut pump = Msb::new(data);
     let mut sum = 0i32;
     for (n, col) in (0..width).rev().enumerate() {
-        if n % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if n % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let mut row = 0;
@@ -255,7 +255,7 @@ mod tests {
         let odd = pack(20, 5, 15, 14, &[2; 14]);
         let row: Vec<u8> = even.iter().chain(&odd).copied().collect();
         let mut out = vec![0; 32];
-        arw2(&row, 32, 1, &mut out, &AtomicBool::new(false)).unwrap();
+        arw2(&row, 32, 1, &mut out, Cancel::NEVER).unwrap();
         assert_eq!(&out[..6], &[10, 5 + 2, 0, 5 + 2, 1, 7]);
         assert_eq!(&out[28..], &[1, 5, 1, 20]);
     }
@@ -331,16 +331,9 @@ mod tests {
         let samples: Vec<u16> = (0..w * h).map(|i| (i * 977 % 4096) as u16).collect();
         let data = arw1_encode(&samples, w, h);
         let mut out = vec![0; w * h];
-        arw1(&data, w, h, &mut out, &AtomicBool::new(false)).unwrap();
+        arw1(&data, w, h, &mut out, Cancel::NEVER).unwrap();
         assert_eq!(out, samples);
         // Truncated: zeros, no panic.
-        arw1(
-            &data[..data.len() / 2],
-            w,
-            h,
-            &mut out,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
+        arw1(&data[..data.len() / 2], w, h, &mut out, Cancel::NEVER).unwrap();
     }
 }

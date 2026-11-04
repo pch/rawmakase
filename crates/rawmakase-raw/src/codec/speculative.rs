@@ -25,8 +25,8 @@
 //! its errors.
 use super::bits::Msb;
 use crate::error::{Error, Result};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Symbol starts kept per decoding to meet the true stream at (true streams
 /// meet a chunk's within a few dozen symbols).
@@ -102,11 +102,7 @@ struct Spec {
 /// where the symbol after the last starts; `None` when the stream is too
 /// short to share or the decoding can't be shown to be the sequential one
 /// (`out` is then to be decoded in order).
-pub(crate) fn decode<S: Stream>(
-    s: &S,
-    out: &mut [u16],
-    cancel: &AtomicBool,
-) -> Result<Option<u64>> {
+pub(crate) fn decode<S: Stream>(s: &S, out: &mut [u16], cancel: Cancel<'_>) -> Result<Option<u64>> {
     let len = s.data().len();
     if !shares(len) {
         return Ok(None);
@@ -124,7 +120,7 @@ fn decode_in_chunks<S: Stream>(
     s: &S,
     out: &mut [u16],
     chunk: usize,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Option<u64>> {
     let total = s.data().len() as u64 * 8;
     let chunk = chunk.max(1) as u64 * 8;
@@ -165,7 +161,7 @@ fn speculate<S: Stream>(
     phase: usize,
     cap: usize,
     mut main: Option<&[u64]>,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Spec> {
     let cycle = s.cycle().max(1);
     let mut pump = Pump::at(s.data(), start);
@@ -205,7 +201,7 @@ fn speculate<S: Stream>(
         }
         if j.is_multiple_of(CHECKPOINT) {
             spec.checkpoints.push(pos);
-            if j.is_multiple_of(64 * CHECKPOINT) && cancel.load(Ordering::Relaxed) {
+            if j.is_multiple_of(64 * CHECKPOINT) && cancel.is_cancelled() {
                 return Err(Error::Cancelled);
             }
         }
@@ -301,6 +297,7 @@ fn start_of<S: Stream>(s: &S, spec: &Spec, j: usize) -> u64 {
 mod tests {
     use super::*;
     use crate::codec::huffman::Huffman;
+    use std::sync::atomic::AtomicBool;
 
     /// Two JPEG Huffman tables used in turn, each symbol a difference
     /// length followed by that many bits.
@@ -383,8 +380,7 @@ mod tests {
                     // more (the stream read on in zeros).
                     for n in [10_000, 30_000, 60_000] {
                         let mut out = vec![0; n];
-                        let got =
-                            decode_in_chunks(&t, &mut out, 1500, &AtomicBool::new(false)).unwrap();
+                        let got = decode_in_chunks(&t, &mut out, 1500, Cancel::NEVER).unwrap();
                         let want = sequential(&t, n);
                         match (got, &want) {
                             (Some(end), Some((values, at))) => {
@@ -427,7 +423,7 @@ mod tests {
         }
         let data = [0xffu8; 50_000];
         let mut out = vec![0; 1_000_000];
-        let got = decode_in_chunks(&Empty(&data), &mut out, 4096, &AtomicBool::new(false));
+        let got = decode_in_chunks(&Empty(&data), &mut out, 4096, Cancel::NEVER);
         assert_eq!(got, Ok(None));
     }
 
@@ -441,7 +437,7 @@ mod tests {
         };
         let mut out = vec![0; 100_000];
         assert_eq!(
-            decode_in_chunks(&t, &mut out, 4096, &AtomicBool::new(true)),
+            decode_in_chunks(&t, &mut out, 4096, Cancel::new(&AtomicBool::new(true))),
             Err(Error::Cancelled)
         );
     }

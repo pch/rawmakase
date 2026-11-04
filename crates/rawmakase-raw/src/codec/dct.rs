@@ -6,7 +6,7 @@
 use super::bits::Msb;
 use super::huffman::{Huffman, extend};
 use crate::error::{Error, Result, corrupt};
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// Whether `data` is a DCT JPEG this module decodes (its first frame is
 /// SOF0 or SOF1).
@@ -37,7 +37,7 @@ const ZIGZAG: [usize; 64] = [
 /// frame's width and height.
 pub(crate) fn decode_into(
     data: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     out: &mut Vec<u16>,
 ) -> Result<(usize, usize)> {
     if data.len() < 4 || data[..2] != [0xff, 0xd8] {
@@ -152,7 +152,7 @@ pub(crate) fn decode_into(
     let mut predictor = 0i32;
     let mut left = restart;
     for by in 0..bh {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         for bx in 0..bw {
@@ -252,17 +252,17 @@ mod tests {
         f.extend([0xff, 0xd9]);
         assert!(is_dct(&f));
         let mut out = Vec::new();
-        let (w, h) = decode_into(&f, &AtomicBool::new(false), &mut out).unwrap();
+        let (w, h) = decode_into(&f, Cancel::NEVER, &mut out).unwrap();
         assert_eq!((w, h), (8, 8));
         // 12 · 2 / 8 = 3 above the level shift of 128.
         assert!(out.iter().all(|&v| v == 131), "{out:?}");
         for end in 0..f.len() {
-            let _ = decode_into(&f[..end], &AtomicBool::new(false), &mut out);
+            let _ = decode_into(&f[..end], Cancel::NEVER, &mut out);
         }
         // A restart interval segment too short to hold its value.
         let mut bad = f[..2].to_vec();
         bad.extend([0xff, 0xdd, 0, 2]);
         bad.extend(&f[2..]);
-        assert!(decode_into(&bad, &AtomicBool::new(false), &mut out).is_err());
+        assert!(decode_into(&bad, Cancel::NEVER, &mut out).is_err());
     }
 }

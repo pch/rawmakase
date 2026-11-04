@@ -18,7 +18,7 @@ use crate::io::{Bytes, Order};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
 use crate::vendor::fujifilm::{self as fuji, Records, SuperCcd};
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// How the sensor data is coded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -394,13 +394,13 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &RafPlan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let (w, h) = (plan.width as usize, plan.height as usize);
     let n = crate::io::samples(plan.width, plan.height, 1)?;
     let available = (bytes.len() as u64).saturating_sub(plan.offset);
     let src = Bytes::new(bytes, Order::Little).slice(plan.offset, plan.length.min(available))?;
-    let cancelled = || cancel.load(Ordering::Relaxed);
+    let cancelled = || cancel.is_cancelled();
     if cancelled() {
         return Err(Error::Cancelled);
     }
@@ -577,6 +577,7 @@ fn unpack_lsb(src: &[u8], bits: u32, out: &mut [u16]) {
 #[cfg(test)]
 mod tests {
     use crate::info::UNSET;
+    use rawmakase_cancel::Cancel;
     use std::sync::atomic::AtomicBool;
 
     /// A big-endian record directory.
@@ -688,7 +689,7 @@ mod tests {
 
     fn decode(file: &[u8]) -> (crate::RawInfo, crate::Sensor) {
         let info = crate::open(file).unwrap();
-        let s = crate::decode(&info, file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, file, Cancel::NEVER).unwrap();
         (info, s)
     }
 
@@ -788,7 +789,7 @@ mod tests {
         let file = raf("FinePix S1", &[(0x100, pair(40000, 40000))], &[0; 96], 0);
         let info = crate::open(&file).unwrap();
         assert!(matches!(
-            crate::decode(&info, &file, &cancel),
+            crate::decode(&info, &file, Cancel::new(&cancel)),
             Err(crate::Error::Corrupt(_))
         ));
         // A black level beyond 16 bits.
@@ -812,7 +813,7 @@ mod tests {
         // Cancelled before decoding.
         let cancelled = AtomicBool::new(true);
         assert_eq!(
-            crate::decode(&info, &file, &cancelled).unwrap_err(),
+            crate::decode(&info, &file, Cancel::new(&cancelled)).unwrap_err(),
             crate::Error::Cancelled
         );
     }
@@ -853,7 +854,7 @@ mod tests {
             let file = raf("X-A9", &records(false), &block(&e, &[0; 8]), 0);
             let info = crate::open(&file).unwrap();
             assert!(matches!(
-                crate::decode(&info, &file, &cancel),
+                crate::decode(&info, &file, Cancel::new(&cancel)),
                 Err(crate::Error::Corrupt(_))
             ));
         }
@@ -886,7 +887,7 @@ mod tests {
         );
         let info = crate::open(&file).unwrap();
         assert!(matches!(
-            crate::decode(&info, &file, &AtomicBool::new(false)),
+            crate::decode(&info, &file, Cancel::NEVER),
             Err(crate::Error::Corrupt(_))
         ));
     }
@@ -905,14 +906,14 @@ mod tests {
         for file in &files {
             for len in 0..file.len() {
                 if let Ok(info) = crate::open(&file[..len]) {
-                    let _ = crate::decode(&info, &file[..len], &cancel);
+                    let _ = crate::decode(&info, &file[..len], Cancel::new(&cancel));
                 }
             }
             for at in 16..file.len() {
                 let mut bad = file.clone();
                 bad[at] ^= 0x5a;
                 if let Ok(info) = crate::open(&bad) {
-                    let _ = crate::decode(&info, &bad, &cancel);
+                    let _ = crate::decode(&info, &bad, Cancel::new(&cancel));
                 }
             }
         }

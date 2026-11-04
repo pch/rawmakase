@@ -14,7 +14,7 @@ use crate::io::{Bytes, Order};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
 use crate::vendor::samsung;
-use std::sync::atomic::AtomicBool;
+use rawmakase_cancel::Cancel;
 
 /// Where an SRW's sensor data is and how it is coded, and its levels.
 #[derive(Clone, Debug)]
@@ -177,7 +177,7 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &SrwPlan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let (width, height) = (plan.width as usize, plan.height as usize);
     let mut data = crate::io::zeroed(crate::io::samples(plan.width, plan.height, 1)?)?;
@@ -237,6 +237,7 @@ pub(crate) fn decode(
 mod tests {
     use super::*;
     use crate::container::test_tiff::{E, ascii, dir, long, longs, offsets, point, short, tiff};
+    use std::sync::atomic::AtomicBool;
 
     const BE: Order = Order::Big;
     const KEY: [u32; 11] = [305, 72, 737, 456, 282, 307, 519, 724, 13, 505, 193];
@@ -307,7 +308,7 @@ mod tests {
 
     fn decode(file: &[u8]) -> Result<(RawInfo, Sensor)> {
         let info = crate::open(file)?;
-        let sensor = crate::decode(&info, file, &AtomicBool::new(false))?;
+        let sensor = crate::decode(&info, file, Cancel::NEVER)?;
         Ok((info, sensor))
     }
 
@@ -428,7 +429,7 @@ mod tests {
             let info = crate::open(&file).unwrap();
             let cancelled = AtomicBool::new(true);
             assert_eq!(
-                crate::decode(&info, &file, &cancelled).unwrap_err(),
+                crate::decode(&info, &file, Cancel::new(&cancelled)).unwrap_err(),
                 Error::Cancelled
             );
             for end in (0..file.len()).step_by(3) {

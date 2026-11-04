@@ -24,7 +24,7 @@
 //! Sources: the DNG Specification 1.7.1.0; our own measurements on the test
 //! dataset's DNGs (where each list's coordinates start).
 use crate::error::{Error, Result};
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// The latest DNG version whose opcodes are understood (1.7.1.0).
 const VERSION: u32 = 0x0107_0100;
@@ -322,7 +322,7 @@ impl Image<'_> {
 }
 
 /// Applies `ops` to `image`, in order.
-pub(crate) fn apply(ops: &[Opcode], image: &mut Image, cancel: &AtomicBool) -> Result<()> {
+pub(crate) fn apply(ops: &[Opcode], image: &mut Image, cancel: Cancel<'_>) -> Result<()> {
     if !image.fits() || image.width == 0 || image.height == 0 || image.planes == 0 {
         return Ok(());
     }
@@ -334,7 +334,7 @@ pub(crate) fn apply(ops: &[Opcode], image: &mut Image, cancel: &AtomicBool) -> R
             Opcode::FixBadPixelsConstant { constant, phase } => {
                 let mut bad = Mask::new(image.width, image.height)?;
                 for row in 0..image.height {
-                    if row % CANCEL_ROWS == 0 && cancel.load(Ordering::Relaxed) {
+                    if row % CANCEL_ROWS == 0 && cancel.is_cancelled() {
                         return Err(Error::Cancelled);
                     }
                     for col in 0..image.width {
@@ -448,7 +448,7 @@ impl GainMap {
 fn map(
     image: &mut Image,
     area: &Area,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     f: impl Fn(usize, usize, usize, u16) -> u16,
 ) -> Result<()> {
     let first = area.plane as usize;
@@ -457,7 +457,7 @@ fn map(
     let right = (area.right as usize).min(image.width);
     let rows = (area.top as usize..bottom).step_by(area.row_pitch as usize);
     for (n, row) in rows.enumerate() {
-        if n % CANCEL_ROWS == 0 && cancel.load(Ordering::Relaxed) {
+        if n % CANCEL_ROWS == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         for col in (area.left as usize..right).step_by(area.col_pitch as usize) {
@@ -471,7 +471,7 @@ fn map(
 }
 
 /// FixVignetteRadial over the whole image.
-fn vignette(image: &mut Image, k: &[f64; 5], centre: [f64; 2], cancel: &AtomicBool) -> Result<()> {
+fn vignette(image: &mut Image, k: &[f64; 5], centre: [f64; 2], cancel: Cancel<'_>) -> Result<()> {
     let (x1, y1) = ((image.width - 1) as f64, (image.height - 1) as f64);
     let (cx, cy) = (centre[0] * x1, centre[1] * y1);
     let mx = cx.abs().max((x1 - cx).abs());
@@ -541,7 +541,7 @@ impl Mask {
     /// the rectangles covering each column as a difference array, so the
     /// work is the mask's area plus the rectangles' count, however many
     /// overlap.
-    fn set_rects(&mut self, rects: &[[u32; 4]], cancel: &AtomicBool) -> Result<()> {
+    fn set_rects(&mut self, rects: &[[u32; 4]], cancel: Cancel<'_>) -> Result<()> {
         let (w, h) = (self.width, self.height);
         // (row, left, right, +1 where a rectangle starts, -1 where it ends).
         let mut events: Vec<(usize, usize, usize, i32)> = Vec::new();
@@ -566,7 +566,7 @@ impl Mask {
         diff.resize(w + 1, 0i32);
         let (mut next, mut active) = (0, 0i64);
         for row in 0..h {
-            if row % CANCEL_ROWS == 0 && cancel.load(Ordering::Relaxed) {
+            if row % CANCEL_ROWS == 0 && cancel.is_cancelled() {
                 return Err(Error::Cancelled);
             }
             while let Some(&(at, left, right, delta)) = events.get(next)
@@ -607,7 +607,7 @@ impl Mask {
 /// has any (a green's diagonal neighbours first, then two pixels away
 /// along the row and column and diagonally), else the first good pixel of
 /// the colour along each of the four directions, within 16 two-pixel steps.
-fn patch(image: &mut Image, bad: &Mask, phase: u32, cancel: &AtomicBool) -> Result<()> {
+fn patch(image: &mut Image, bad: &Mask, phase: u32, cancel: Cancel<'_>) -> Result<()> {
     if !bad.any {
         return Ok(());
     }
@@ -632,7 +632,7 @@ fn patch(image: &mut Image, bad: &Mask, phase: u32, cancel: &AtomicBool) -> Resu
         (2, 2),
     ];
     for row in 0..image.height {
-        if row % CANCEL_ROWS == 0 && cancel.load(Ordering::Relaxed) {
+        if row % CANCEL_ROWS == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         for col in 0..image.width {
@@ -678,6 +678,7 @@ fn patch(image: &mut Image, bad: &Mask, phase: u32, cancel: &AtomicBool) -> Resu
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     /// An opcode list of `(id, flags, parameters)`.
     pub(crate) fn list(ops: &[(u32, u32, Vec<u8>)]) -> Vec<u8> {
@@ -723,7 +724,7 @@ pub(crate) mod tests {
             height,
             planes: 1,
         };
-        apply(&ops, &mut image, &AtomicBool::new(false)).unwrap();
+        apply(&ops, &mut image, Cancel::NEVER).unwrap();
     }
 
     /// A gain map of 2 × 2 points over a 3 × 3 image, every pixel: row 0 and
@@ -852,7 +853,7 @@ pub(crate) mod tests {
             [3, 5, 9, 9],
             [2, 2, 2, 5],
         ];
-        bad.set_rects(&rects, &none).unwrap();
+        bad.set_rects(&rects, Cancel::new(&none)).unwrap();
         let marked: Vec<(usize, usize)> = (0..4)
             .flat_map(|r| (0..6).map(move |c| (r, c)))
             .filter(|&(r, c)| bad.get(r, c))
@@ -886,9 +887,12 @@ pub(crate) mod tests {
             planes: 1,
         };
         let cancelled = AtomicBool::new(true);
-        assert_eq!(apply(&ops, &mut image, &cancelled), Err(Error::Cancelled));
+        assert_eq!(
+            apply(&ops, &mut image, Cancel::new(&cancelled)),
+            Err(Error::Cancelled)
+        );
         let started = std::time::Instant::now();
-        apply(&ops, &mut image, &none).unwrap();
+        apply(&ops, &mut image, Cancel::new(&none)).unwrap();
         assert!(started.elapsed() < std::time::Duration::from_secs(2));
     }
 
@@ -961,6 +965,9 @@ pub(crate) mod tests {
             planes: 1,
         };
         let cancelled = AtomicBool::new(true);
-        assert_eq!(apply(&ops, &mut image, &cancelled), Err(Error::Cancelled));
+        assert_eq!(
+            apply(&ops, &mut image, Cancel::new(&cancelled)),
+            Err(Error::Cancelled)
+        );
     }
 }

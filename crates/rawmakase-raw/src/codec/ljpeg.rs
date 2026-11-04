@@ -10,8 +10,8 @@ use super::bits::Msb;
 use super::huffman::Huffman;
 use super::speculative::{self, Stream};
 use crate::error::{Error, Result, corrupt};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A component of the frame.
 #[derive(Clone, Copy, Debug)]
@@ -210,7 +210,7 @@ pub(crate) fn header(data: &[u8]) -> Result<Header> {
 
 /// Decodes the stream: MCU rows of MCUs × `samples_per_mcu` samples.
 #[cfg(test)]
-pub(crate) fn decode(data: &[u8], cancel: &AtomicBool) -> Result<(Header, Vec<u16>)> {
+pub(crate) fn decode(data: &[u8], cancel: Cancel<'_>) -> Result<(Header, Vec<u16>)> {
     let h = header(data)?;
     let mut out = Vec::new();
     decode_into(&h, data, cancel, &mut out)?;
@@ -225,7 +225,7 @@ pub(crate) fn decode(data: &[u8], cancel: &AtomicBool) -> Result<(Header, Vec<u1
 pub(crate) fn decode_into(
     h: &Header,
     data: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     out: &mut Vec<u16>,
 ) -> Result<()> {
     let spec = decode_with(h, data, cancel, out, false);
@@ -281,7 +281,7 @@ struct Slot<'a> {
 fn decode_with(
     h: &Header,
     data: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     out: &mut Vec<u16>,
     sixteen: bool,
 ) -> Result<Read> {
@@ -341,7 +341,7 @@ fn decode_with(
     let by_rows = h.predictor == 1 && restart == 0;
     let mcus = if by_rows { 1.min(across) } else { across };
     for y in 0..rows {
-        if y % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if y % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         // Whether the MCU row above is a line to predict from.
@@ -433,7 +433,7 @@ fn decode_with(
             })
             .collect();
         out.par_chunks_exact_mut(row).try_for_each(|line| {
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 return Err(Error::Cancelled);
             }
             for x in 1..across {
@@ -468,7 +468,7 @@ fn differences(
     scan: &[u8],
     tables: &[&Huffman],
     sixteen: bool,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
     out: &mut [u16],
 ) -> Result<(u64, bool)> {
     let restart = usize::from(h.restart) * tables.len();
@@ -493,7 +493,7 @@ fn differences(
     }
     let mut bits = Msb::jpeg(scan);
     for (k, d) in out.iter_mut().enumerate() {
-        if k % (64 << 10) == 0 && cancel.load(Ordering::Relaxed) {
+        if k % (64 << 10) == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         if restart > 0 && k > 0 && k % restart == 0 {
@@ -553,6 +553,7 @@ impl Stream for Differences<'_> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     #[test]
     fn a_scan_naming_none_of_the_frame_s_components_takes_them_in_order() {
@@ -562,7 +563,7 @@ pub(crate) mod tests {
         // size and count) renumbered: the scan names it no more.
         let sof = jpeg.windows(2).position(|w| w == [0xff, 0xc3]).unwrap();
         jpeg[sof + 10] = jpeg[sof + 10].wrapping_add(7);
-        let (_, out) = decode(&jpeg, &AtomicBool::new(false)).unwrap();
+        let (_, out) = decode(&jpeg, Cancel::NEVER).unwrap();
         assert_eq!(out, samples);
     }
 
@@ -577,7 +578,7 @@ pub(crate) mod tests {
         for predictor in [1, 4] {
             let jpeg = encode(&samples, width, 16, predictor);
             assert!(speculative::shares(jpeg.len()) || rayon::current_num_threads() < 2);
-            let (_, out) = decode(&jpeg, &AtomicBool::new(false)).unwrap();
+            let (_, out) = decode(&jpeg, Cancel::NEVER).unwrap();
             assert!(out == samples, "predictor {predictor}");
         }
     }
@@ -755,7 +756,7 @@ pub(crate) mod tests {
         let mut header = super::header(&data).unwrap();
         header.lines = true;
         let mut out = Vec::new();
-        decode_into(&header, &data, &AtomicBool::new(false), &mut out).unwrap();
+        decode_into(&header, &data, Cancel::NEVER, &mut out).unwrap();
         assert_eq!(header.mcus(), (3, 2));
         let mut want = Vec::new();
         for y in 0..2 {
@@ -769,7 +770,7 @@ pub(crate) mod tests {
         for end in 0..data.len() {
             if let Ok(mut header) = super::header(&data[..end]) {
                 header.lines = true;
-                let _ = decode_into(&header, &data[..end], &AtomicBool::new(false), &mut out);
+                let _ = decode_into(&header, &data[..end], Cancel::NEVER, &mut out);
             }
         }
     }
@@ -782,12 +783,12 @@ pub(crate) mod tests {
             .collect();
         for predictor in 1..=7 {
             let data = encode(&samples, w, 12, predictor);
-            let (header, out) = decode(&data, &AtomicBool::new(false)).unwrap();
+            let (header, out) = decode(&data, Cancel::NEVER).unwrap();
             assert_eq!((header.width, header.height), (w as u16, h as u16));
             assert_eq!(out, samples, "predictor {predictor}");
         }
         let full: Vec<u16> = (0..w * h).map(|i| (i * 40503 % 65536) as u16).collect();
-        let (_, out) = decode(&encode(&full, w, 16, 1), &AtomicBool::new(false)).unwrap();
+        let (_, out) = decode(&encode(&full, w, 16, 1), Cancel::NEVER).unwrap();
         assert_eq!(out, full);
     }
 
@@ -848,7 +849,7 @@ pub(crate) mod tests {
         // As T.81 codes it: the first sample 32768 off the initial 32768, so 0
         // (wrapping); then 0, then +1.
         let spec = stream(3, &table, &[(0, 1), (0b10, 2), (0b11, 2), (1, 1)]);
-        assert_eq!(decode(&spec, &cancel).unwrap().1, [0, 0, 1]);
+        assert_eq!(decode(&spec, Cancel::new(&cancel)).unwrap().1, [0, 0, 1]);
         // The same samples written with 16 bits after the length 16 (0x8000,
         // -32768): T.81's reading would leave two bytes unread.
         let extra = stream(
@@ -856,15 +857,15 @@ pub(crate) mod tests {
             &table,
             &[(0, 1), (0x7fff, 16), (0b10, 2), (0b11, 2), (1, 1)],
         );
-        assert_eq!(decode(&extra, &cancel).unwrap().1, [0, 0, 1]);
+        assert_eq!(decode(&extra, Cancel::new(&cancel)).unwrap().1, [0, 0, 1]);
         // A stream both readings decode, the 16 bits read as its data: only
         // the reading that consumes the stream exactly counts.
         let ambiguous = stream(2, &table, &[(0, 1), (0x7fff, 16), (0b10, 2)]);
-        assert_eq!(decode(&ambiguous, &cancel).unwrap().1, [0, 0]);
+        assert_eq!(decode(&ambiguous, Cancel::new(&cancel)).unwrap().1, [0, 0]);
         // A stream whose 16-bit reading runs past its end: T.81's stands,
         // trailing data and all.
         let short = stream(2, &table, &[(0, 1), (0b10, 2), (0, 13)]);
-        assert_eq!(decode(&short, &cancel).unwrap().1, [0, 0]);
+        assert_eq!(decode(&short, Cancel::new(&cancel)).unwrap().1, [0, 0]);
     }
 
     #[test]
@@ -873,7 +874,7 @@ pub(crate) mod tests {
         // The SOS's last byte (Ah, Al) before the entropy-coded data.
         let sos = data.windows(2).position(|w| w == [0xff, 0xda]).unwrap();
         data[sos + 9] = 15;
-        assert!(decode(&data, &AtomicBool::new(false)).is_err());
+        assert!(decode(&data, Cancel::NEVER).is_err());
     }
 
     #[test]
@@ -881,9 +882,9 @@ pub(crate) mod tests {
         let samples: Vec<u16> = (0..64).map(|i| i * 50).collect();
         let data = encode(&samples, 8, 12, 1);
         for end in 0..data.len() {
-            let _ = decode(&data[..end], &AtomicBool::new(false));
+            let _ = decode(&data[..end], Cancel::NEVER);
         }
-        assert!(decode(b"not a jpeg", &AtomicBool::new(false)).is_err());
+        assert!(decode(b"not a jpeg", Cancel::NEVER).is_err());
     }
 
     /// A lossless JPEG of components sampled `(h, v)`, each a plane of
@@ -993,7 +994,7 @@ pub(crate) mod tests {
                 assert_eq!(header.mcus(), (mcus, rows));
                 header.block_rows = block_rows;
                 let mut out = Vec::new();
-                decode_into(&header, &data, &AtomicBool::new(false), &mut out).unwrap();
+                decode_into(&header, &data, Cancel::NEVER, &mut out).unwrap();
                 assert_eq!(out, want, "{h} × {v}, block rows {block_rows}");
             }
         }

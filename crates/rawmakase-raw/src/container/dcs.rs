@@ -19,7 +19,7 @@ use crate::info::{Cfa, RawInfo};
 use crate::io::{Bytes, Order};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 const KODAK_IFD: u16 = 0x8290;
 /// BlackLevelTop and BlackLevelBottom.
@@ -279,7 +279,7 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &DcsPlan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let count = crate::io::samples(plan.width, plan.height, 1)?;
     let (at, size) = plan.strip;
@@ -331,7 +331,7 @@ pub(crate) fn decode(
     let mut data = data;
     if let Some(curve) = &plan.curve {
         for (i, v) in data.iter_mut().enumerate() {
-            if i % (1 << 20) == 0 && cancel.load(Ordering::Relaxed) {
+            if i % (1 << 20) == 0 && cancel.is_cancelled() {
                 return Err(Error::Cancelled);
             }
             *v = curve[usize::from(*v).min(curve.len().saturating_sub(1))];
@@ -354,6 +354,7 @@ pub(crate) fn decode(
 mod tests {
     use super::*;
     use crate::container::test_tiff::{E, ascii, dir, long, offsets, short, shorts, tiff};
+    use std::sync::atomic::AtomicBool;
 
     const BE: Order = Order::Big;
 
@@ -418,7 +419,7 @@ mod tests {
         let file = dcs(&jpeg);
         let info = crate::open(&file).unwrap();
         assert_eq!(info.variant, Variant::DcsLosslessJpeg);
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!(s.data, samples.iter().map(|v| v * 2).collect::<Vec<_>>());
         // Black: the mean of the top and bottom levels, rounding up.
         assert_eq!((s.black, s.white), ([12; 4], 4095));
@@ -426,7 +427,7 @@ mod tests {
         assert_eq!(info.cam_mul, [0.5, 1., 2., 1.]);
         assert_eq!(info.presets.daylight, [500., 1000., 2000.]);
         assert_eq!(
-            crate::decode(&info, &file, &AtomicBool::new(true)).unwrap_err(),
+            crate::decode(&info, &file, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
             Error::Cancelled
         );
     }
@@ -440,16 +441,16 @@ mod tests {
         let file = dcs_coded(&[row, row].concat(), 65000, 1024);
         let info = crate::open(&file).unwrap();
         assert_eq!(info.variant, Variant::DcsKodak);
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         // The codes through the 1024-entry curve (doubling).
         assert_eq!(s.data, [20, 24, 36, 42, 20, 24, 36, 42]);
         assert_eq!(
-            crate::decode(&info, &file, &AtomicBool::new(true)).unwrap_err(),
+            crate::decode(&info, &file, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
             Error::Cancelled
         );
         for end in 0..file.len() {
             if let Ok(info) = crate::open(&file[..end]) {
-                let _ = crate::decode(&info, &file[..end], &AtomicBool::new(false));
+                let _ = crate::decode(&info, &file[..end], Cancel::NEVER);
             }
         }
     }
@@ -490,12 +491,12 @@ mod tests {
             (info.make.as_str(), info.model.as_str()),
             ("Kodak", "DCS460D")
         );
-        let s = crate::decode(&info, &file, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &file, Cancel::NEVER).unwrap();
         assert_eq!(s.data[..4], [0, 3, 6, 9]);
         assert_eq!(s.white, 765);
         for end in 0..file.len() {
             if let Ok(info) = crate::open(&file[..end]) {
-                let _ = crate::decode(&info, &file[..end], &AtomicBool::new(false));
+                let _ = crate::decode(&info, &file[..end], Cancel::NEVER);
             }
         }
     }
@@ -506,7 +507,7 @@ mod tests {
         let file = dcs(&crate::codec::ljpeg::tests::encode(&samples, 4, 12, 1));
         for end in 0..file.len() {
             if let Ok(info) = crate::open(&file[..end]) {
-                let _ = crate::decode(&info, &file[..end], &AtomicBool::new(false));
+                let _ = crate::decode(&info, &file[..end], Cancel::NEVER);
             }
         }
         let mut noisy = file;
@@ -514,7 +515,7 @@ mod tests {
             *b ^= (i * 7919 % 251) as u8;
         }
         if let Ok(info) = crate::open(&noisy) {
-            let _ = crate::decode(&info, &noisy, &AtomicBool::new(false));
+            let _ = crate::decode(&info, &noisy, Cancel::NEVER);
         }
     }
 }

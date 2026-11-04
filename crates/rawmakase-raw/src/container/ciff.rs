@@ -16,8 +16,8 @@ use crate::info::{Cfa, RawInfo};
 use crate::io::Pieces;
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
+use rawmakase_cancel::Cancel;
 use std::ops::Range;
-use std::sync::atomic::AtomicBool;
 
 /// The most records and the deepest nesting read: files with more are
 /// malformed or hostile.
@@ -349,7 +349,7 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &CrwPlan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let raw = bytes
         .get(plan.raw.clone())
@@ -395,6 +395,7 @@ pub(crate) fn decode(
 
 #[cfg(test)]
 mod tests {
+    use rawmakase_cancel::Cancel;
     use std::sync::atomic::AtomicBool;
 
     /// A record: its tag (data format, storage and index) and its value.
@@ -491,7 +492,7 @@ mod tests {
         assert_eq!((info.width, info.height), (128, 1));
         assert_eq!(info.flip, 6);
         assert_eq!(info.focal, 50.);
-        let sensor = crate::decode(&info, &bytes, &AtomicBool::new(false)).unwrap();
+        let sensor = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
         // The 10-bit values, then their low bits, four to a byte.
         assert_eq!(
             &sensor.data[..4],
@@ -535,7 +536,7 @@ mod tests {
         let info = crate::open(&bytes).unwrap();
         assert_eq!((info.raw_width, info.raw_height), (128, 1));
         assert_eq!(info.model, "PowerShot T1");
-        assert!(crate::decode(&info, &bytes, &AtomicBool::new(false)).is_ok());
+        assert!(crate::decode(&info, &bytes, Cancel::NEVER).is_ok());
     }
 
     /// The TimeStamp record dates a CRW, found in ImageProps below the
@@ -598,7 +599,7 @@ mod tests {
         let bytes = sample(128, 1, 0);
         let info = crate::open(&bytes).unwrap();
         assert_eq!(
-            crate::decode(&info, &bytes, &AtomicBool::new(true)).unwrap_err(),
+            crate::decode(&info, &bytes, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
             crate::Error::Cancelled
         );
     }
@@ -609,7 +610,7 @@ mod tests {
         // samples are allocated.
         let bytes = sample(0xfffe, 0xfffe, 0);
         if let Ok(info) = crate::open(&bytes) {
-            assert!(crate::decode(&info, &bytes, &AtomicBool::new(false)).is_err());
+            assert!(crate::decode(&info, &bytes, Cancel::NEVER).is_err());
         }
         // Directories nested deeper than any file's.
         let mut nested = block(&[(0x1835, longs(&[0]))]);
@@ -635,7 +636,7 @@ mod tests {
         for end in 0..bytes.len() {
             let _ = crate::capture_dates(&mut std::io::Cursor::new(&bytes[..end]));
             if let Ok(info) = crate::open(&bytes[..end]) {
-                let _ = crate::decode(&info, &bytes[..end], &AtomicBool::new(false));
+                let _ = crate::decode(&info, &bytes[..end], Cancel::NEVER);
             }
         }
         let mut garbage = bytes;
@@ -644,7 +645,7 @@ mod tests {
         }
         let _ = crate::capture_dates(&mut std::io::Cursor::new(&garbage));
         if let Ok(info) = crate::open(&garbage) {
-            let _ = crate::decode(&info, &garbage, &AtomicBool::new(false));
+            let _ = crate::decode(&info, &garbage, Cancel::NEVER);
         }
     }
 }

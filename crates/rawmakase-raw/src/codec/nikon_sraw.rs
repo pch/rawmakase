@@ -17,7 +17,7 @@
 //! does not carry it. The rounding of LibRaw's arithmetic is not known: about
 //! one value in ten thousand falls one to four curve steps from LibRaw's.
 use crate::error::{Error, Result, corrupt};
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// The tone curve's steps, one hexadecimal digit each: the curve at index
 /// i + 1 less the curve at i, from 0 at index 0 (compat-observed: LibRaw's
@@ -91,7 +91,7 @@ pub(crate) fn decode(
     data: &[u8],
     width: usize,
     height: usize,
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Vec<u16>> {
     if !width.is_multiple_of(2) {
         return Err(corrupt("small RAW of an odd width"));
@@ -111,7 +111,7 @@ pub(crate) fn decode(
     let mut out = vec![0u16; samples];
     let pairs = width / 2;
     for (y, row) in out.chunks_exact_mut(width * 4).enumerate() {
-        if y % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if y % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let src = data.get(y * pairs * 6..).unwrap_or(&[]);
@@ -181,7 +181,7 @@ mod tests {
             [560, 560, 2018, 2073],
             [448, 448, 2040, 2056],
         ];
-        let out = decode(&pack(&quads), 8, 1, &AtomicBool::new(false)).unwrap();
+        let out = decode(&pack(&quads), 8, 1, Cancel::NEVER).unwrap();
         assert_eq!(out[..4], [3214, 3214, 3214, 0]);
         assert_eq!(out[8..11], [14186; 3]);
         assert_eq!(out[16..19], [1477, 1218, 958]);
@@ -194,8 +194,8 @@ mod tests {
     fn short_and_odd_inputs_do_not_panic() {
         for len in 0..30 {
             let data: Vec<u8> = (0..len).map(|i| (i * 97) as u8).collect();
-            let _ = decode(&data, 4, 2, &AtomicBool::new(false));
+            let _ = decode(&data, 4, 2, Cancel::NEVER);
         }
-        assert!(decode(&[0; 12], 3, 1, &AtomicBool::new(false)).is_err());
+        assert!(decode(&[0; 12], 3, 1, Cancel::NEVER).is_err());
     }
 }

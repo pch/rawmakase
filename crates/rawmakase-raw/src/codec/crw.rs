@@ -15,7 +15,7 @@
 use super::bits::Msb;
 use super::huffman::{Huffman, extend};
 use crate::error::{Error, Result, corrupt};
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// Per decoder table (the CRW's DecoderTable 0 to 2), the DC and the AC code
 /// lengths (codes of each length 1 to 16) and symbols in code order, as a
@@ -122,7 +122,7 @@ pub(crate) struct Image<'a> {
 /// Decodes `image` into `out` (`width × height` samples, already sized):
 /// 10-bit samples, or 12-bit ones with their low bits. Arithmetic wraps at 16
 /// bits, as the samples RAWmakase has always read do on malformed data.
-pub(crate) fn decode(image: &Image, out: &mut [u16], cancel: &AtomicBool) -> Result<()> {
+pub(crate) fn decode(image: &Image, out: &mut [u16], cancel: Cancel<'_>) -> Result<()> {
     let [dc, ac] = TABLES
         .get(image.table)
         .ok_or_else(|| Error::Unsupported(format!("CRW decoder table {}", image.table)))?;
@@ -136,7 +136,7 @@ pub(crate) fn decode(image: &Image, out: &mut [u16], cancel: &AtomicBool) -> Res
     let mut carry = 0i32;
     let mut block = [0i32; 64];
     for (n, start) in (0..count).step_by(64).enumerate() {
-        if n % 1024 == 0 && cancel.load(Ordering::Relaxed) {
+        if n % 1024 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         block.fill(0);
@@ -186,6 +186,7 @@ pub(crate) fn decode(image: &Image, out: &mut [u16], cancel: &AtomicBool) -> Res
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use rawmakase_cancel::Cancel;
     use std::sync::atomic::AtomicBool;
 
     /// Writes `codes` (bit strings) as a byte-stuffed stream.
@@ -233,7 +234,7 @@ pub(crate) mod tests {
             low_bits: None,
         };
         let mut out = vec![0u16; 128];
-        super::decode(&image, &mut out, &AtomicBool::new(false)).unwrap();
+        super::decode(&image, &mut out, Cancel::NEVER).unwrap();
         // Block 0: 512 + 5, 512 + 1, then 517 - 7, then copies two apart.
         assert_eq!(&out[..6], &[517, 513, 510, 513, 510, 513]);
         // Block 1: its first difference is the running DC (5 - 2 = 3).
@@ -246,7 +247,7 @@ pub(crate) mod tests {
             low_bits: Some(&low),
             ..image
         };
-        super::decode(&image, &mut out, &AtomicBool::new(false)).unwrap();
+        super::decode(&image, &mut out, Cancel::NEVER).unwrap();
         assert_eq!(
             &out[..4],
             &[517 << 2, 513 << 2 | 1, 510 << 2 | 2, 513 << 2 | 3]
@@ -265,7 +266,7 @@ pub(crate) mod tests {
                     coded: data,
                     low_bits: Some(&[0xff; 7]),
                 };
-                let _ = super::decode(&image, &mut out, &AtomicBool::new(false));
+                let _ = super::decode(&image, &mut out, Cancel::NEVER);
             }
         }
         let image = super::Image {
@@ -275,10 +276,10 @@ pub(crate) mod tests {
             coded: &[],
             low_bits: None,
         };
-        assert!(super::decode(&image, &mut out, &AtomicBool::new(false)).is_err());
+        assert!(super::decode(&image, &mut out, Cancel::NEVER).is_err());
         let image = super::Image { table: 0, ..image };
         assert_eq!(
-            super::decode(&image, &mut out, &AtomicBool::new(true)),
+            super::decode(&image, &mut out, Cancel::new(&AtomicBool::new(true))),
             Err(crate::Error::Cancelled)
         );
     }

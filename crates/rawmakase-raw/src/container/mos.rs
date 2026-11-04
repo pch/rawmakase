@@ -16,7 +16,7 @@ use crate::io::{Bytes, Order};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
 use crate::vendor::leaf;
-use std::sync::atomic::AtomicBool;
+use rawmakase_cancel::Cancel;
 
 /// Leaf's private data.
 const LEAF_DATA: u16 = 0x8606;
@@ -146,11 +146,11 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
 
 /// The image of `coded` rows of `width`, whose even rows come first, then
 /// its odd rows from the bottom up (our measurement against LibRaw's output).
-fn deinterlace(coded: &[u16], width: usize, cancel: &AtomicBool) -> Result<Vec<u16>> {
+fn deinterlace(coded: &[u16], width: usize, cancel: Cancel<'_>) -> Result<Vec<u16>> {
     let mut out = crate::io::zeroed(coded.len())?;
     let height = coded.len() / width.max(1);
     for (j, row) in coded.chunks_exact(width).enumerate() {
-        if j % 256 == 0 && cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        if j % 256 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let y = if j % 2 == 0 {
@@ -168,7 +168,7 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &MosPlan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let count = crate::io::samples(plan.width, plan.height, 1)?;
     let (at, size) = plan.data;
@@ -227,6 +227,7 @@ mod tests {
     use super::*;
     use crate::container::test_tiff::{E, long, offsets, short, tiff};
     use crate::vendor::leaf::tests::packet;
+    use std::sync::atomic::AtomicBool;
 
     const LE: Order = Order::Little;
 
@@ -268,7 +269,7 @@ mod tests {
 
     fn decode(file: &[u8]) -> Result<(RawInfo, Sensor)> {
         let info = crate::open(file)?;
-        let sensor = crate::decode(&info, file, &AtomicBool::new(false))?;
+        let sensor = crate::decode(&info, file, Cancel::NEVER)?;
         Ok((info, sensor))
     }
 
@@ -326,7 +327,7 @@ mod tests {
         for file in [mos(1, &words, 1), mos(99, &jpeg, 0)] {
             let info = crate::open(&file).unwrap();
             assert_eq!(
-                crate::decode(&info, &file, &AtomicBool::new(true)).unwrap_err(),
+                crate::decode(&info, &file, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
                 Error::Cancelled
             );
             for end in 0..file.len() {

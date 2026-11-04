@@ -5,6 +5,9 @@
 # sideways; edges down the layering need no line. scripts/crate-closures.sh checks
 # the crates outside the workspace (GPU, GUI, native libraries) with cargo tree.
 
+# The cancellation token is shared by every crate that does long work, the RAW
+# decoders and inference among them, so it depends on none of them.
+rawmakase-cancel never rawmakase-tiff rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote rawmakase-ctl
 # The TIFF container reader is the bottom layer: the model and the RAW decoders read
 # through it.
 rawmakase-tiff never rawmakase-model rawmakase-raw rawmakase-interop rawmakase-catalog rawmakase-engine rawmakase-decode rawmakase-export rawmakase-protocol rawmakase-inference rawmakase-remote

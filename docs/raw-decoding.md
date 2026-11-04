@@ -13,7 +13,7 @@ add a camera or a variant.
 
 - `crates/rawmakase-tiff` reads TIFF directories (bounded, no RAW knowledge);
   the model's DNG reader and `rawmakase-raw` use it.
-- `crates/rawmakase-raw` depends only on `rawmakase-tiff` and pure-Rust
+- `crates/rawmakase-raw` depends only on `rawmakase-tiff`, `rawmakase-cancel` and pure-Rust
   crates (Deflate, JPEG XL through jxl-oxide, rayon, the TOML tables' parser). It has no unsafe code (`#![forbid(unsafe_code)]`), no build script,
   and never panics on malformed input; every allocation is checked against
   header limits (`io::samples`). Metadata records are read in place or up to

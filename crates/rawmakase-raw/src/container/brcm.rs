@@ -15,7 +15,7 @@ use crate::error::{Error, Result, corrupt};
 use crate::info::{Cfa, RawInfo};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// The raw block's header size, after which the rows start.
 const HEADER: u64 = 32768;
@@ -204,14 +204,14 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &BrcmPlan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let width = plan.width as usize;
     let mut data = crate::io::zeroed(crate::io::samples(plan.width, plan.height, 1)?)?;
     let start = usize::try_from(plan.data).map_err(|_| corrupt("Broadcom data"))?;
     let rows = bytes.get(start..).unwrap_or(&[]);
     for (y, out) in data.chunks_exact_mut(width).enumerate() {
-        if y % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if y % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         // Truncated files keep what they have.
@@ -245,6 +245,7 @@ pub(crate) fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     /// An empty JPEG, then a raw block of `sensor` of 8 × 2.
     fn file(sensor: &str, bits: u8) -> Vec<u8> {
@@ -287,12 +288,12 @@ mod tests {
             (info.make.as_str(), info.model.as_str()),
             ("Broadcom", "RPi IMX219")
         );
-        let s = crate::decode(&info, &f, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &f, Cancel::NEVER).unwrap();
         assert_eq!(&s.data[..8], &[4, 5, 6, 7, 4, 5, 6, 7]);
         assert_eq!((s.black, s.white), ([66; 4], 1023));
         assert_eq!(&crate::preview(&info, &f).unwrap()[..], &f[..4]);
         assert_eq!(
-            crate::decode(&info, &f, &AtomicBool::new(true)).unwrap_err(),
+            crate::decode(&info, &f, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
             Error::Cancelled
         );
         assert!(matches!(
@@ -305,7 +306,7 @@ mod tests {
         ));
         for end in 0..f.len().min(40000) {
             if let Ok(info) = crate::open(&f[..end]) {
-                let _ = crate::decode(&info, &f[..end], &AtomicBool::new(false));
+                let _ = crate::decode(&info, &f[..end], Cancel::NEVER);
             }
         }
         assert_eq!(
@@ -344,7 +345,7 @@ mod tests {
         let f = with_jpeg(&jpeg, "imx219 version 1.0", 10);
         let info = crate::open(&f).unwrap();
         assert_eq!(info.variant, Variant::BrcmPacked);
-        let s = crate::decode(&info, &f, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &f, Cancel::NEVER).unwrap();
         assert_eq!(&s.data[..4], &[4, 5, 6, 7]);
         assert_eq!(&crate::preview(&info, &f).unwrap()[..], &jpeg[..]);
         // A block whose rows are not in the file is none.

@@ -16,7 +16,7 @@ use crate::facts::Headerless;
 use crate::info::{Cfa, RawInfo};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// A headerless file's table row.
 #[derive(Clone, Copy, Debug)]
@@ -61,11 +61,11 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &HeaderlessPlan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let [width, height] = plan.row.raw_size;
     let count = crate::io::samples(width, height, 1)?;
-    if cancel.load(Ordering::Relaxed) {
+    if cancel.is_cancelled() {
         return Err(crate::error::Error::Cancelled);
     }
     let mut data = crate::io::zeroed(count)?;
@@ -112,7 +112,7 @@ pub(crate) fn decode(
     };
     if let Some(curve) = curve.filter(|c| !c.is_empty()) {
         for (i, v) in data.iter_mut().enumerate() {
-            if i % (1 << 20) == 0 && cancel.load(Ordering::Relaxed) {
+            if i % (1 << 20) == 0 && cancel.is_cancelled() {
                 return Err(crate::error::Error::Cancelled);
             }
             *v = curve[usize::from(*v).min(curve.len() - 1)];
@@ -120,7 +120,7 @@ pub(crate) fn decode(
     }
     if let Some(shift) = row.shift.filter(|&s| s > 0) {
         for (i, v) in data.iter_mut().enumerate() {
-            if i % (1 << 20) == 0 && cancel.load(Ordering::Relaxed) {
+            if i % (1 << 20) == 0 && cancel.is_cancelled() {
                 return Err(crate::error::Error::Cancelled);
             }
             *v >>= shift.min(15);
@@ -156,6 +156,7 @@ pub(crate) fn decode(
 
 #[cfg(test)]
 mod tests {
+    use rawmakase_cancel::Cancel;
     use std::sync::atomic::AtomicBool;
 
     #[test]
@@ -171,14 +172,14 @@ mod tests {
         );
         assert_eq!((info.raw_width, info.raw_height), (2672, 1968));
         assert_eq!(info.margins, [12, 8]);
-        let sensor = crate::decode(&info, &bytes, &AtomicBool::new(false)).unwrap();
+        let sensor = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
         assert!(sensor.data.iter().all(|&v| v == 0x155));
         assert_eq!(sensor.black, [0x155; 4]);
         assert_eq!(sensor.white, 1023);
         // One byte more or less is no known file.
         assert!(crate::open(&bytes[1..]).is_err());
         assert_eq!(
-            crate::decode(&info, &bytes, &AtomicBool::new(true)).unwrap_err(),
+            crate::decode(&info, &bytes, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
             crate::Error::Cancelled
         );
     }
@@ -196,18 +197,18 @@ mod tests {
             ("Pentax", "Optio S4")
         );
         assert_eq!((info.width, info.height), (2324, 1737));
-        let s = crate::decode(&info, &bytes, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
         assert_eq!(&s.data[..4], &[0x123, 0x456, 0x123, 0x456]);
         assert_eq!(s.data[2346], 0x123);
         assert_eq!((s.black, s.white), ([0; 4], 3968));
         // 10-bit samples in the top bits of 16-bit little-endian words.
         let bytes = [0xc0u8, 0xff].repeat(12_000_000);
         let info = crate::open(&bytes).unwrap();
-        let s = crate::decode(&info, &bytes, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
         assert!(s.data.iter().all(|&v| v == 1023));
         assert_eq!(s.white, 992);
         assert_eq!(
-            crate::decode(&info, &bytes, &AtomicBool::new(true)).unwrap_err(),
+            crate::decode(&info, &bytes, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
             crate::Error::Cancelled
         );
     }
@@ -219,7 +220,7 @@ mod tests {
         let bytes = vec![3u8; 6_163_328];
         let info = crate::open(&bytes).unwrap();
         assert_eq!((info.make.as_str(), info.model.as_str()), ("Kodak", "C603"));
-        let s = crate::decode(&info, &bytes, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
         assert!(s.data.iter().all(|&v| v == 198));
         assert_eq!((s.black, s.white), ([0; 4], 65535));
         // A "CFAI" file: a 3160-byte header whose curve at byte 168 is the
@@ -231,11 +232,11 @@ mod tests {
         }
         bytes.extend((0..2864 * 2152).map(|i| (i % 256) as u8));
         let info = crate::open(&bytes).unwrap();
-        let s = crate::decode(&info, &bytes, &AtomicBool::new(false)).unwrap();
+        let s = crate::decode(&info, &bytes, Cancel::NEVER).unwrap();
         assert_eq!(&s.data[..3], &[0, 4, 8]);
         assert_eq!(s.white, 1020);
         assert_eq!(
-            crate::decode(&info, &bytes, &AtomicBool::new(true)).unwrap_err(),
+            crate::decode(&info, &bytes, Cancel::new(&AtomicBool::new(true))).unwrap_err(),
             crate::Error::Cancelled
         );
     }

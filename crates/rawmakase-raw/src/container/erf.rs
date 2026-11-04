@@ -14,7 +14,7 @@ use crate::io::{Bytes, Order};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
 use crate::vendor::epson;
-use std::sync::atomic::AtomicBool;
+use rawmakase_cancel::Cancel;
 
 /// Where the sensor data is and how it is packed, and its levels.
 #[derive(Clone, Debug)]
@@ -127,7 +127,7 @@ pub(crate) fn decode(
     info: &RawInfo,
     plan: &ErfPlan,
     bytes: &[u8],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<Sensor> {
     let width = plan.width as usize;
     let mut data = crate::io::zeroed(crate::io::samples(plan.width, plan.height, 1)?)?;
@@ -155,6 +155,7 @@ pub(crate) fn decode(
 mod tests {
     use super::*;
     use crate::container::test_tiff::{E, ascii, dir, long, offsets, point, short, shorts, tiff};
+    use std::sync::atomic::AtomicBool;
 
     const BE: Order = Order::Big;
 
@@ -209,7 +210,7 @@ mod tests {
 
     fn decode(file: &[u8]) -> Result<(RawInfo, Sensor)> {
         let info = crate::open(file)?;
-        let sensor = crate::decode(&info, file, &AtomicBool::new(false))?;
+        let sensor = crate::decode(&info, file, Cancel::NEVER)?;
         Ok((info, sensor))
     }
 
@@ -265,7 +266,7 @@ mod tests {
             let info = crate::open(&file).unwrap();
             let cancelled = AtomicBool::new(true);
             assert_eq!(
-                crate::decode(&info, &file, &cancelled).unwrap_err(),
+                crate::decode(&info, &file, Cancel::new(&cancelled)).unwrap_err(),
                 Error::Cancelled
             );
             for end in (0..file.len()).step_by(3) {

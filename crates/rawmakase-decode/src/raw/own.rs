@@ -41,7 +41,11 @@ impl Own {
         Ok(rawmakase_raw::preview_reaching(&self.info, &self.bytes, edge)?.to_vec())
     }
     fn decode(&self, cancel: &AtomicBool) -> Result<rawmakase_raw::Sensor> {
-        let s = rawmakase_raw::decode(&self.info, &self.bytes, cancel)?;
+        let s = rawmakase_raw::decode(
+            &self.info,
+            &self.bytes,
+            rawmakase_cancel::Cancel::new(cancel),
+        )?;
         let [left, top, w, h] = s.area;
         ensure!(
             s.channels > 0

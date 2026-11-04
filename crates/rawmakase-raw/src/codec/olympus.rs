@@ -33,7 +33,7 @@
 //! start a byte later than 12-bit samples'.
 use crate::codec::bits::Msb;
 use crate::error::{Error, Result};
-use std::sync::atomic::{AtomicBool, Ordering};
+use rawmakase_cancel::Cancel;
 
 /// Bytes before the first row's codes of 12-bit samples (14-bit samples
 /// have one more).
@@ -55,11 +55,11 @@ pub(crate) fn decode(
     width: usize,
     height: usize,
     out: &mut [u16],
-    cancel: &AtomicBool,
+    cancel: Cancel<'_>,
 ) -> Result<()> {
     let mut bits = Msb::new(data.get(header..).unwrap_or(&[]));
     for row in 0..height {
-        if row % 64 == 0 && cancel.load(Ordering::Relaxed) {
+        if row % 64 == 0 && cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
         let mut carry = [Carry::default(); 2];
@@ -173,15 +173,7 @@ pub(crate) mod tests {
     #[test]
     fn codes_are_differences_from_the_neighbours() {
         let mut out = [0u16; 4];
-        decode(
-            &row_of_four(),
-            HEADER,
-            4,
-            1,
-            &mut out,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
+        decode(&row_of_four(), HEADER, 4, 1, &mut out, Cancel::NEVER).unwrap();
         assert_eq!(out, [21, 65527, 97, 65525]);
     }
 
@@ -197,7 +189,7 @@ pub(crate) mod tests {
         w.put(0b100, 12);
         w.put(0b0001, 4);
         let mut out = [0u16; 1];
-        decode(&w.bytes, HEADER, 1, 1, &mut out, &AtomicBool::new(false)).unwrap();
+        decode(&w.bytes, HEADER, 1, 1, &mut out, Cancel::NEVER).unwrap();
         assert_eq!(out, [132]);
     }
 
