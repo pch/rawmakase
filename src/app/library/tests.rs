@@ -5,6 +5,7 @@ use super::tree::{FolderNode, TreeAction, folder_tree_row};
 use super::*;
 use crate::catalog::{Folder, PhotoId};
 use eframe::egui::{Color32, Vec2};
+use rawmakase_cancel::Cancel;
 use std::{collections::HashMap, path::PathBuf};
 #[test]
 fn develop_workspace_drains_library_preview_results() -> Result<()> {
@@ -322,7 +323,7 @@ fn an_unsupported_jpeg_says_why_in_develop() -> Result<()> {
     assert_eq!(refusal.label(), "JPG file");
     assert_eq!(refusal.detail(), "RAWmakase can't edit CMYK images");
     // What opening it fails with says the same.
-    let error = crate::photo::open_source(&file, &Default::default())
+    let error = crate::photo::open_source(&file, Cancel::NEVER)
         .err()
         .expect("a CMYK file can't be opened");
     assert_eq!(Refusal::opening(&file, &error), Some(refusal));

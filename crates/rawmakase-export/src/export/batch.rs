@@ -14,6 +14,7 @@ use crate::{
     raw_defaults::DevelopDefaults,
 };
 use anyhow::{Context, Result, bail, ensure};
+use rawmakase_cancel::Cancel;
 use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
@@ -494,7 +495,7 @@ fn render(
 ) -> Result<(job::Prepared, Vec<String>)> {
     // The file as it is before it is decoded: AI Denoise's result must be of the same.
     let file = crate::storage::Identity::read(&photo.source).ok();
-    let opened = crate::photo::open_source(&photo.source, cancel)
+    let opened = crate::photo::open_source(&photo.source, Cancel::new(cancel))
         .with_context(|| format!("{} can't be read", photo.source.display()))?;
     let (mut recipe, mut notes) = match &photo.edit {
         Edit::Catalog(record) => {
@@ -503,7 +504,7 @@ fn render(
                 &photo.source,
                 opened.metadata(),
                 profiles,
-                cancel,
+                Cancel::new(cancel),
             );
             let resolved = edits::resolve(
                 record,

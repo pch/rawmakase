@@ -9,6 +9,7 @@ use crate::{
     raw::thumbnail,
 };
 use eframe::egui;
+use rawmakase_cancel::Cancel;
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -78,7 +79,8 @@ impl Ahead {
         let Ok(identity) = crate::storage::Identity::read(path) else {
             return;
         };
-        let Ok(Opened::Rendered(image)) = crate::photo::open_source(path, cancel) else {
+        let Ok(Opened::Rendered(image)) = crate::photo::open_source(path, Cancel::new(cancel))
+        else {
             return;
         };
         if !cancel.load(Ordering::Relaxed) {
@@ -118,7 +120,7 @@ fn prefetcher(cache: DecodeCache, ahead: Ahead) -> Latest<Prefetch> {
         }
         let full = FullSize::with_cache(&job.path, job.demosaic, cache.clone());
         let open = || crate::photo::open(&job.path);
-        let _ = pool.install(|| full.get(open, DecodePolicy::Prefetch, &job.cancel));
+        let _ = pool.install(|| full.get(open, DecodePolicy::Prefetch, Cancel::new(&job.cancel)));
     })
 }
 /// Runs as a photo's full-size stage starts and once it has opened the file;
@@ -158,7 +160,11 @@ fn full_loader(
                 unchanged(&job.path, job.file.as_ref())?;
                 let raw = crate::photo::open(&job.path)?;
                 between.run(&job.path, FullStage::Opened);
-                let image = Arc::new(job.full.decode(raw, DecodePolicy::Show, &job.cancel)?);
+                let image = Arc::new(job.full.decode(
+                    raw,
+                    DecodePolicy::Show,
+                    Cancel::new(&job.cancel),
+                )?);
                 if job.cancel.load(Ordering::Relaxed) {
                     return Ok(());
                 }
@@ -175,7 +181,7 @@ fn full_loader(
                         status: format!("Developed in {:.2}s", job.started.elapsed().as_secs_f32()),
                     },
                 );
-                job.full.store(&image, &job.cancel);
+                job.full.store(&image, Cancel::new(&job.cancel));
             }
             // Only now, so decoding the neighbour never slows the photo on screen.
             if let Some(prefetch) = prefetch {
@@ -256,7 +262,7 @@ fn opener(
             let was_ahead = prefetched.is_some();
             let opened = match prefetched {
                 Some(image) => Opened::Rendered(image),
-                None => crate::photo::open_source(&path, &job.cancel)?,
+                None => crate::photo::open_source(&path, Cancel::new(&job.cancel))?,
             };
             unchanged(&path, file.as_ref())?;
             let metadata = opened.metadata().clone();
@@ -267,8 +273,12 @@ fn opener(
             } = crate::camera_profiles::listed(&metadata);
             // A photo without colour data starts from its fitted camera look, fitted
             // (or read from the fit cache) before its defaults are installed.
-            let profiles =
-                crate::camera_look::with_default(&path, &metadata, profiles, &job.cancel);
+            let profiles = crate::camera_look::with_default(
+                &path,
+                &metadata,
+                profiles,
+                Cancel::new(&job.cancel),
+            );
             // The raw defaults; the catalog's edit replaces them once the header
             // is installed.
             let recipe = job.defaults.resolve(&metadata, &profiles).recipe;
@@ -375,7 +385,7 @@ fn opener(
             // Lightroom-style two stages: a half-size decode (about 0.2 s) makes
             // the photo editable at once; the full-resolution decode, which can
             // take seconds, then replaces it for 100% views and export.
-            let quick = Arc::new(raw.develop(Decode::Half, &job.cancel)?);
+            let quick = Arc::new(raw.develop(Decode::Half, Cancel::new(&job.cancel))?);
             unchanged(&path, file.as_ref())?;
             send(
                 &tx,

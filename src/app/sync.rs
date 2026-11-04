@@ -457,14 +457,17 @@ impl Opened {
                         );
                         match full.cached(&raw.metadata) {
                             Some(image) => image,
-                            None => {
-                                full.decode(raw, crate::decode::DecodePolicy::Export, cancel)?
-                            }
+                            None => full.decode(
+                                raw,
+                                crate::decode::DecodePolicy::Export,
+                                Cancel::new(cancel),
+                            )?,
                         }
                     }
-                    None => {
-                        raw.develop(crate::camera_data::Decode::full(decoding.demosaic), cancel)?
-                    }
+                    None => raw.develop(
+                        crate::camera_data::Decode::full(decoding.demosaic),
+                        Cancel::new(cancel),
+                    )?,
                 },
                 crate::photo::Opened::Rendered(image) => image,
             };
@@ -485,7 +488,7 @@ fn prepare(
 ) -> Result<Prepared> {
     // Read first, so a file replaced while its settings are worked out is noticed.
     let identity = crate::storage::Identity::read(&target.path)?;
-    let opened = crate::photo::open_source(&target.path, &Default::default())
+    let opened = crate::photo::open_source(&target.path, Cancel::NEVER)
         .with_context(|| format!("{} can't be read", target.name))?;
     let metadata = opened.metadata().clone();
     let mut photo = Opened {
@@ -494,7 +497,8 @@ fn prepare(
         image: None,
     };
     let (profiles, _) = crate::camera_profiles::installed(&metadata);
-    let profiles = crate::camera_look::with_default(&target.path, &metadata, profiles, cancel);
+    let profiles =
+        crate::camera_look::with_default(&target.path, &metadata, profiles, Cancel::new(cancel));
     let record = catalog.edit_record(target.id)?;
     let resolved = edits::resolve(&record, &target.path, &metadata, &profiles, defaults)?;
     let starting_warnings = starting_warnings(resolved.origin, resolved.warnings);
@@ -646,12 +650,12 @@ fn photo_settings(
     photo: &SyncTarget,
     defaults: &DevelopDefaults,
 ) -> Result<(Settings, Vec<String>)> {
-    let opened = crate::photo::open_source(&photo.path, &Default::default())
+    let opened = crate::photo::open_source(&photo.path, Cancel::NEVER)
         .with_context(|| format!("{} can't be read", photo.name))?;
     let metadata = opened.metadata().clone();
     let (profiles, _) = crate::camera_profiles::installed(&metadata);
     let profiles =
-        crate::camera_look::with_default(&photo.path, &metadata, profiles, &Default::default());
+        crate::camera_look::with_default(&photo.path, &metadata, profiles, Cancel::NEVER);
     let record = catalog.edit_record(photo.id)?;
     let resolved = edits::resolve(&record, &photo.path, &metadata, &profiles, defaults)?;
     let warnings = starting_warnings(resolved.origin, resolved.warnings);
@@ -1206,7 +1210,7 @@ mod tests {
         .save(&png)?;
         c.add_folder(&folder)?;
         let id = c.photos()?.into_iter().find(|p| p.path == png).unwrap().id;
-        let metadata = crate::photo::open_source(&png, &Default::default())?
+        let metadata = crate::photo::open_source(&png, Cancel::NEVER)?
             .metadata()
             .clone();
         let mut source = Recipe::with_profiles(&metadata, &[]);
@@ -1432,13 +1436,13 @@ mod tests {
         let defaults = DevelopDefaults::default();
         let mut exposures = Vec::new();
         for (id, path) in &all {
-            let opened = crate::photo::open_source(path, &Default::default())?;
+            let opened = crate::photo::open_source(path, Cancel::NEVER)?;
             let metadata = opened.metadata().clone();
             let (profiles, _) = crate::camera_profiles::installed(&metadata);
             let image = match opened {
                 crate::photo::Opened::Raw(raw) => raw.develop(
                     crate::camera_data::Decode::full(Default::default()),
-                    &AtomicBool::new(false),
+                    Cancel::NEVER,
                 )?,
                 crate::photo::Opened::Rendered(image) => image,
             };
@@ -1505,7 +1509,7 @@ mod tests {
             .find(|p| p.path == png)
             .unwrap()
             .id;
-        let opened = crate::photo::open_source(&png, &Default::default())?;
+        let opened = crate::photo::open_source(&png, Cancel::NEVER)?;
         let image = match opened {
             crate::photo::Opened::Rendered(image) => image,
             crate::photo::Opened::Raw(_) => unreachable!(),

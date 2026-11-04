@@ -3,6 +3,7 @@
 use super::{Editor, history::Step, worker::Event};
 use crate::camera_profiles::CameraProfile;
 use crate::develop::black_white::TreatmentChoice;
+use rawmakase_cancel::Cancel;
 use std::sync::Arc;
 
 /// `listed`, a photo's profiles listed again (after an import), with the fitted
@@ -39,7 +40,7 @@ impl Editor {
                 // The file as it was when the fit started: one replaced or changed
                 // meanwhile may have been fitted instead of the photo shown.
                 let key = crate::camera_look::cache::FitKey::of(&path).ok();
-                let result = crate::camera_look::fit(&path, &inputs, &cancel)
+                let result = crate::camera_look::fit(&path, &inputs, Cancel::new(&cancel))
                     .map(|f| Box::new(f.profile))
                     .map_err(|e| e.reason)
                     .and_then(|p| {

@@ -192,7 +192,7 @@ pub fn decode_full(
     let full = FullSize::with_cache(source, demosaic, cache.clone());
     match full.cached(&raw.metadata) {
         Some(image) => Ok(image),
-        None => full.decode(raw, DecodePolicy::Export, cancel),
+        None => full.decode(raw, DecodePolicy::Export, Cancel::new(cancel)),
     }
 }
 
@@ -236,7 +236,11 @@ fn full_size(
     let full = FullSize::with_cache(source, demosaic, cache.clone());
     Ok(Arc::new(match full.cached(&image.metadata) {
         Some(cached) => cached,
-        None => full.decode(crate::photo::open(source)?, DecodePolicy::Export, cancel)?,
+        None => full.decode(
+            crate::photo::open(source)?,
+            DecodePolicy::Export,
+            Cancel::new(cancel),
+        )?,
     }))
 }
 

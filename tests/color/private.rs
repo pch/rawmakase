@@ -245,7 +245,7 @@ fn photos_match_accepted_renders() {
         let im = match rawmakase::photo::open(raw).and_then(|r| {
             r.develop(
                 rawmakase::camera_data::Decode::full(Default::default()),
-                &AtomicBool::new(false),
+                Cancel::NEVER,
             )
         }) {
             Ok(im) => im,
@@ -439,7 +439,7 @@ fn photos_camera_raw_parity_does_not_regress() {
             let im = match rawmakase::photo::open(&corpus.join("raws").join(raw)).and_then(|r| {
                 r.develop(
                     rawmakase::camera_data::Decode::full(Default::default()),
-                    &AtomicBool::new(false),
+                    Cancel::NEVER,
                 )
             }) {
                 Ok(im) => im,

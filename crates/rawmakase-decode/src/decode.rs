@@ -10,10 +10,7 @@ use crate::{
 };
 use anyhow::Result;
 use rawmakase_cancel::Cancel;
-use std::{
-    path::Path,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::path::Path;
 
 /// What a full-size decode does beyond decoding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,19 +77,19 @@ impl FullSize {
         &self,
         raw: Raw,
         policy: DecodePolicy,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<CameraImage> {
         let image = raw.develop(Decode::Full(self.demosaic), cancel)?;
         if policy != DecodePolicy::Export {
-            crate::develop::quality::recovered(&image, Cancel::new(cancel))?;
+            crate::develop::quality::recovered(&image, cancel)?;
         }
         Ok(image)
     }
     /// Keeps `image`, decoded by [`decode`](Self::decode), for next time. Develop
     /// stores after showing the image, so writing it never delays the photo; a
     /// cancelled decode, or a cache that cannot be written, stores nothing.
-    pub fn store(&self, image: &CameraImage, cancel: &AtomicBool) {
-        if !cancel.load(Ordering::Relaxed)
+    pub fn store(&self, image: &CameraImage, cancel: Cancel<'_>) {
+        if !cancel.is_cancelled()
             && let Some(key) = &self.key
         {
             let _ = self.cache.store(key, image);
@@ -105,7 +102,7 @@ impl FullSize {
         &self,
         open: impl FnOnce() -> Result<Raw>,
         policy: DecodePolicy,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Option<CameraImage>> {
         if policy == DecodePolicy::Prefetch && self.is_cached() {
             return Ok(None);
@@ -127,6 +124,7 @@ impl FullSize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     fn chart() -> std::path::PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus/charts/synthetic-d65.dng")
@@ -140,20 +138,30 @@ mod tests {
         let open = || crate::photo::open(&chart());
         let go = AtomicBool::new(false);
         // An export decodes but leaves the cache as it was.
-        assert!(full.get(open, DecodePolicy::Export, &go)?.is_some());
+        assert!(
+            full.get(open, DecodePolicy::Export, Cancel::new(&go))?
+                .is_some()
+        );
         assert!(!full.is_cached());
         // A cancelled decode stores nothing.
-        let decoded = full.decode(open()?, DecodePolicy::Show, &go)?;
-        full.store(&decoded, &AtomicBool::new(true));
+        let decoded = full.decode(open()?, DecodePolicy::Show, Cancel::new(&go))?;
+        full.store(&decoded, Cancel::new(&AtomicBool::new(true)));
         assert!(!full.is_cached());
         // Showing a photo keeps it, recovered, for next time.
-        let shown = full.get(open, DecodePolicy::Show, &go)?.unwrap();
+        let shown = full
+            .get(open, DecodePolicy::Show, Cancel::new(&go))?
+            .unwrap();
         assert!(full.is_cached());
         let again = full.cached(&open()?.metadata).unwrap();
         assert_eq!(again.pixels, shown.pixels);
         // Then a prefetch has nothing to do, and an export uses the cache's copy.
-        assert!(full.get(open, DecodePolicy::Prefetch, &go)?.is_none());
-        let exported = full.get(open, DecodePolicy::Export, &go)?.unwrap();
+        assert!(
+            full.get(open, DecodePolicy::Prefetch, Cancel::new(&go))?
+                .is_none()
+        );
+        let exported = full
+            .get(open, DecodePolicy::Export, Cancel::new(&go))?
+            .unwrap();
         assert_eq!(exported.pixels, shown.pixels);
         Ok(())
     }

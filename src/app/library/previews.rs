@@ -146,7 +146,7 @@ impl EditSource {
         cancel: &AtomicBool,
     ) -> anyhow::Result<Recipe> {
         let (profiles, _) = crate::camera_profiles::installed(m);
-        let profiles = crate::camera_look::with_default(path, m, profiles, cancel);
+        let profiles = crate::camera_look::with_default(path, m, profiles, Cancel::new(cancel));
         Ok(match edit {
             Some(Self::Recipe(json)) => serde_json::from_str(json)?,
             Some(Self::Lightroom(text)) => {
@@ -992,10 +992,12 @@ fn open_quickly(
     edit: Option<&EditSource>,
     cancel: &AtomicBool,
 ) -> anyhow::Result<(crate::camera_data::CameraImage, Recipe)> {
-    let opened = crate::photo::open_source(path, cancel)?;
+    let opened = crate::photo::open_source(path, Cancel::new(cancel))?;
     let recipe = EditSource::recipe(edit, opened.metadata(), path, cancel)?;
     let image = match opened {
-        crate::photo::Opened::Raw(raw) => raw.develop(crate::camera_data::Decode::Half, cancel)?,
+        crate::photo::Opened::Raw(raw) => {
+            raw.develop(crate::camera_data::Decode::Half, Cancel::new(cancel))?
+        }
         crate::photo::Opened::Rendered(image) => image,
     };
     anyhow::ensure!(!cancel.load(Ordering::Relaxed), "Cancelled");
@@ -1191,7 +1193,7 @@ pub(super) mod tests {
         };
         let recipe: Recipe = serde_json::from_str(&json)?;
         let crate::photo::Opened::Rendered(image) =
-            crate::photo::open_source(&path, &AtomicBool::new(false))?
+            crate::photo::open_source(&path, Cancel::NEVER)?
         else {
             unreachable!("a PNG opens rendered")
         };

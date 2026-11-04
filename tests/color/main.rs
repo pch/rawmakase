@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::{Arc, atomic::AtomicBool},
+    sync::Arc,
 };
 
 pub fn corpus() -> PathBuf {
@@ -215,7 +215,7 @@ pub fn develop(path: &Path) -> CameraImage {
         .and_then(|r| {
             r.develop(
                 rawmakase::camera_data::Decode::full(Default::default()),
-                &AtomicBool::new(false),
+                Cancel::NEVER,
             )
         })
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()))

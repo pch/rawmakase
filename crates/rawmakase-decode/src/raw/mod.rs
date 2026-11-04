@@ -3,11 +3,9 @@
 //! camera-space pixels and the embedded preview. The values they produce are
 //! [`crate::camera_data`]'s.
 use anyhow::{Result, ensure};
+use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
-use std::{
-    path::Path,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::path::Path;
 pub(crate) mod lens;
 mod own;
 mod priority;
@@ -404,7 +402,7 @@ impl Raw {
     /// mosaic is demosaiced as development does it, its white balance taken off, and
     /// sampled again as an RGGB mosaic of the same size
     /// (docs/rendering-quality.md#ai-denoise).
-    pub fn packed_bayer(self, cancel: &AtomicBool) -> Result<crate::ai_denoise::PackedBayer> {
+    pub fn packed_bayer(self, cancel: Cancel<'_>) -> Result<crate::ai_denoise::PackedBayer> {
         let red = match self.own.bayer_red() {
             Ok(red) => red,
             Err(own::XTRANS) => return self.packed_xtrans(cancel),
@@ -416,7 +414,7 @@ impl Raw {
             .own
             .cfa(cancel)?
             .ok_or_else(|| anyhow::anyhow!("Sensor data RAWmakase cannot develop"))?;
-        ensure!(!cancel.load(Ordering::Relaxed), "Development cancelled");
+        ensure!(!cancel.is_cancelled(), "Development cancelled");
         Ok(crate::ai_denoise::PackedBayer::pack(
             cfa.width as usize,
             cfa.height as usize,
@@ -425,7 +423,7 @@ impl Raw {
         ))
     }
     /// An X-Trans photo's [`Self::packed_bayer`].
-    fn packed_xtrans(self, cancel: &AtomicBool) -> Result<crate::ai_denoise::PackedBayer> {
+    fn packed_xtrans(self, cancel: Cancel<'_>) -> Result<crate::ai_denoise::PackedBayer> {
         let wb = self.metadata.wb;
         let image = self.develop(Decode::Full(Default::default()), cancel)?;
         let (w, h) = (image.width as usize, image.height as usize);
@@ -443,13 +441,13 @@ impl Raw {
                 p[c] / wb[c].max(f32::MIN_POSITIVE)
             })
             .collect();
-        ensure!(!cancel.load(Ordering::Relaxed), "Development cancelled");
+        ensure!(!cancel.is_cancelled(), "Development cancelled");
         Ok(crate::ai_denoise::PackedBayer::pack(w, h, &data, [0, 0]))
     }
-    pub fn develop(self, decode: Decode, cancel: &AtomicBool) -> Result<CameraImage> {
+    pub fn develop(self, decode: Decode, cancel: Cancel<'_>) -> Result<CameraImage> {
         // Small RAWs develop at full size in either mode, as they always have.
         if let Some((width, height, pixels)) = self.own.rgb(self.metadata.wb, cancel)? {
-            ensure!(!cancel.load(Ordering::Relaxed), "Development cancelled");
+            ensure!(!cancel.is_cancelled(), "Development cancelled");
             return Ok(CameraImage {
                 recovered: Default::default(),
                 width,
@@ -473,7 +471,7 @@ impl Raw {
         &self,
         cfa: Option<Cfa>,
         half: bool,
-        cancel: &AtomicBool,
+        cancel: Cancel<'_>,
     ) -> Result<Option<CameraImage>> {
         let Some(Cfa {
             width: w,
@@ -484,7 +482,7 @@ impl Raw {
         else {
             return Ok(None);
         };
-        ensure!(!cancel.load(Ordering::Relaxed), "Development cancelled");
+        ensure!(!cancel.is_cancelled(), "Development cancelled");
         let wb = self.metadata.wb;
         let (width, height) = (w as usize, h as usize);
         let clipped = data
@@ -513,7 +511,7 @@ impl Raw {
         } else {
             (w, h, crate::demosaic::demosaic(&cfa))
         };
-        ensure!(!cancel.load(Ordering::Relaxed), "Development cancelled");
+        ensure!(!cancel.is_cancelled(), "Development cancelled");
         Ok(Some(CameraImage {
             recovered: Default::default(),
             width: w,
@@ -758,6 +756,7 @@ fn preview_image(bytes: Vec<u8>, flip: i32) -> anyhow::Result<image::RgbImage> {
 
 #[cfg(test)]
 mod tests {
+    use rawmakase_cancel::Cancel;
     /// A JPEG XL preview (Lightroom's DNGs embed one, of 1024 pixels, beside
     /// a 256-pixel JPEG) decodes, turned by the RAW's orientation:
     /// `rawmakase-raw`'s 8 × 4 lossless test codestream, whose pixel (x, y)
@@ -1064,7 +1063,7 @@ mod tests {
     #[test]
     fn nikon_high_efficiency_raws_are_decoded_on_every_body() {
         use crate::camera_data::{Decode, Demosaic};
-        use std::sync::atomic::AtomicBool;
+
         // Zeros after it, inside this small file's raw data.
         let stream = [
             rawmakase_raw::nikon_high_efficiency_test_support::blank_codestream(64, 64),
@@ -1083,7 +1082,7 @@ mod tests {
             for decode in [Decode::Half, Decode::Full(Demosaic::Rawmakase)] {
                 let raw = super::Raw::open_file(&path).unwrap();
                 let image = raw
-                    .develop(decode, &AtomicBool::new(false))
+                    .develop(decode, Cancel::NEVER)
                     .unwrap_or_else(|e| panic!("{model}, {decode:?}: {e}"));
                 // The blank codestream is one value throughout.
                 let first = image.pixels[0];
@@ -1099,7 +1098,7 @@ mod tests {
     #[test]
     fn broken_nikon_high_efficiency_raws_are_errors() {
         use crate::camera_data::{Decode, Demosaic};
-        use std::sync::atomic::AtomicBool;
+
         // JPEG XS's start of codestream and capabilities marker, then noise.
         const JPEG_XS: [u8; 4] = [0xff, 0x10, 0xff, 0x50];
         for model in ["NIKON Z5_2", "NIKON Z 8"] {
@@ -1113,7 +1112,7 @@ mod tests {
                     assert!(error.to_string().contains("JPEG XS"), "{error}");
                 }
                 let error = raw
-                    .develop(decode, &AtomicBool::new(false))
+                    .develop(decode, Cancel::NEVER)
                     .err()
                     .unwrap_or_else(|| panic!("{model} developed with {decode:?}"));
                 assert!(
@@ -1124,6 +1123,6 @@ mod tests {
         }
         let (_dir, path) = nef("NIKON Z5_2", &[0; 4]);
         let raw = super::Raw::open_file(&path).unwrap();
-        assert!(raw.develop(Decode::Half, &AtomicBool::new(false)).is_ok());
+        assert!(raw.develop(Decode::Half, Cancel::NEVER).is_ok());
     }
 }

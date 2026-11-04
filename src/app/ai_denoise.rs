@@ -294,7 +294,7 @@ fn open_mosaic(path: &Path, cancel: &AtomicBool) -> Result<PackedBayer> {
             "AI Denoise works on RAW files only.",
         )));
     }
-    crate::photo::open(path)?.packed_bayer(cancel)
+    crate::photo::open(path)?.packed_bayer(Cancel::new(cancel))
 }
 
 /// ONNX Runtime threads: fewer than rendering's, so a running job leaves the UI and
@@ -726,7 +726,7 @@ impl Service {
                                     clipped: &packed.clipped,
                                 },
                                 plain,
-                                cancel,
+                                Cancel::new(cancel),
                             )
                             .ok()?;
                             AiSource::recover(image, Cancel::new(cancel))
@@ -898,7 +898,7 @@ impl Service {
                         clipped: &entry.clipped,
                     },
                     plain,
-                    &AtomicBool::new(false),
+                    Cancel::NEVER,
                 );
                 match image.and_then(|i| AiSource::recover(i, Cancel::NEVER)) {
                     Ok(source) => State::Ready(source),
@@ -1153,7 +1153,7 @@ impl AiBase for Service {
                 clipped: &entry.clipped,
             },
             plain,
-            cancel,
+            Cancel::new(cancel),
         )
         .map(Arc::new)
     }
@@ -1568,7 +1568,7 @@ pub fn command(c: Command) -> Result<()> {
     let file = crate::storage::Identity::read(&c.input)?;
     let plain = Arc::new(crate::photo::open(&c.input)?.develop(
         crate::camera_data::Decode::full(Default::default()),
-        &AtomicBool::new(false),
+        Cancel::NEVER,
     )?);
     let decoded = started.elapsed();
     if c.bench_plain {
@@ -1613,7 +1613,7 @@ pub fn command(c: Command) -> Result<()> {
             clipped: &entry.clipped,
         },
         &plain,
-        &AtomicBool::new(false),
+        Cancel::NEVER,
     )?;
     let source = AiSource::recover(image, Cancel::NEVER)?;
     let assembled = t.elapsed();

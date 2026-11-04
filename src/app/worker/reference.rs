@@ -13,6 +13,7 @@ use crate::{
     photo::Opened,
 };
 use eframe::egui;
+use rawmakase_cancel::Cancel;
 use std::{
     path::PathBuf,
     sync::{
@@ -80,7 +81,7 @@ fn develop(
     cache: &DecodeCache,
     mut ready: impl FnMut(ReferenceImage),
 ) -> anyhow::Result<()> {
-    let raw = match crate::photo::open_source(&job.path, &job.cancel)? {
+    let raw = match crate::photo::open_source(&job.path, Cancel::new(&job.cancel))? {
         Opened::Raw(raw) => raw,
         // A JPEG, PNG or TIFF opens at full size: nothing to cache or refine.
         Opened::Rendered(image) => {
@@ -109,7 +110,7 @@ fn develop(
         });
         return Ok(());
     }
-    let half = raw.develop(camera_data::Decode::Half, &job.cancel)?;
+    let half = raw.develop(camera_data::Decode::Half, Cancel::new(&job.cancel))?;
     if job.cancel.load(Ordering::Relaxed) {
         return Ok(());
     }
@@ -119,11 +120,11 @@ fn develop(
         resolution: Resolution::Half,
     });
     let opened = crate::photo::open(&job.path)?;
-    let full = Arc::new(full_size.decode(opened, DecodePolicy::Show, &job.cancel)?);
+    let full = Arc::new(full_size.decode(opened, DecodePolicy::Show, Cancel::new(&job.cancel))?);
     if job.cancel.load(Ordering::Relaxed) {
         return Ok(());
     }
-    full_size.store(&full, &job.cancel);
+    full_size.store(&full, Cancel::new(&job.cancel));
     ready(ReferenceImage {
         image: full,
         recipe,
