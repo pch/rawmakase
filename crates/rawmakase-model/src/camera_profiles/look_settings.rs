@@ -368,4 +368,155 @@ mod tests {
         bad.toning.as_mut().unwrap().balance = 3.;
         assert!(bad.validate().is_err());
     }
+
+    /// What a look's settings read today, frozen before the Camera Raw key table
+    /// (#808 step 4.12): each key alone at values across and beyond its range, the
+    /// vignette's dependent settings with and without an amount, and which keys a
+    /// look accepts at all. Compared with `look_settings_golden.txt`, written by this
+    /// test with `RAWMAKASE_BLESS=1`; floats in full, so a one-bit change fails.
+    #[test]
+    fn every_look_setting_reads_as_before() {
+        use std::fmt::Write as _;
+        const VALUES: &[&str] = &[
+            "", "0", "-0", "+0.5", "-0.5", "1", "2.4", "4.99", "5", "5.01", "-5", "-5.01", "5.5",
+            "-12.5", "33.3", "50", "99.99", "-100", "100", "100.01", "101", "180", "359", "360",
+            "361", "1e-7", "-1e-7", "inf", "x", "NaN",
+        ];
+        let mut keys: Vec<String> = [
+            "Exposure2012",
+            "Saturation",
+            "ParametricShadows",
+            "ParametricDarks",
+            "ParametricLights",
+            "ParametricHighlights",
+            "ParametricShadowSplit",
+            "ParametricMidtoneSplit",
+            "ParametricHighlightSplit",
+            "SplitToningShadowHue",
+            "SplitToningShadowSaturation",
+            "SplitToningHighlightHue",
+            "SplitToningHighlightSaturation",
+            "SplitToningBalance",
+            "PostCropVignetteAmount",
+            "PostCropVignetteMidpoint",
+            "PostCropVignetteFeather",
+            "PostCropVignetteRoundness",
+            "PostCropVignetteStyle",
+            "PostCropVignetteHighlightContrast",
+            "Dehaze",
+            "Contrast2012",
+            "Exposure",
+            "HueAdjustment",
+            "HueAdjustmentTeal",
+        ]
+        .map(String::from)
+        .to_vec();
+        for band in BANDS {
+            for control in ["Hue", "Saturation", "Luminance"] {
+                keys.push(format!("{control}Adjustment{band}"));
+            }
+        }
+        // The settings' fields that differ from a look without any, floats in full.
+        fn changed(result: &Result<LookSettings>) -> String {
+            fn walk(prefix: &str, v: &serde_json::Value, d: &serde_json::Value, out: &mut String) {
+                match (v, d) {
+                    (serde_json::Value::Object(m), serde_json::Value::Object(dm)) => {
+                        for (k, v) in m {
+                            walk(&format!("{prefix}.{k}"), v, &dm[k], out);
+                        }
+                    }
+                    (serde_json::Value::Array(a), serde_json::Value::Array(da)) => {
+                        for (i, v) in a.iter().enumerate() {
+                            let d = da.get(i).unwrap_or(&serde_json::Value::Null);
+                            walk(&format!("{prefix}[{i}]"), v, d, out);
+                        }
+                    }
+                    _ => {
+                        // Compared as written: JSON numbers hold -0 equal to 0.
+                        let text = |v: &serde_json::Value| match v.as_f64() {
+                            Some(f) if v.is_f64() => format!("{:?}", f as f32),
+                            _ => v.to_string(),
+                        };
+                        if text(v) != text(d) {
+                            let _ = write!(out, " {prefix}={}", text(v));
+                        }
+                    }
+                }
+            }
+            match result {
+                Ok(s) => {
+                    let mut out = String::from("ok");
+                    let base = serde_json::to_value(LookSettings::default()).unwrap();
+                    walk("", &serde_json::to_value(s).unwrap(), &base, &mut out);
+                    out
+                }
+                Err(e) => format!("error {e:#}"),
+            }
+        }
+        let mut out = String::new();
+        for key in &keys {
+            let _ = writeln!(out, "# {key} read {}", LookSettings::reads(key));
+            // Alone, and with the setting that makes it count: a vignette's amount, the
+            // toning's saturations.
+            let context: &[(&str, &str)] = match key.as_str() {
+                k if k.starts_with("PostCropVignette") && k != "PostCropVignetteAmount" => {
+                    &[("PostCropVignetteAmount", "-20")]
+                }
+                k if k.starts_with("SplitToning") && !k.ends_with("Saturation") => &[
+                    ("SplitToningShadowSaturation", "20"),
+                    ("SplitToningHighlightSaturation", "30"),
+                ],
+                _ => &[],
+            };
+            for (name, with) in [("alone", &[][..]), ("with", context)] {
+                if name == "with" && with.is_empty() {
+                    continue;
+                }
+                for value in VALUES {
+                    let result = LookSettings::parse(|k| {
+                        if k == key {
+                            value
+                        } else {
+                            with.iter().find(|(c, _)| *c == k).map_or("", |(_, v)| *v)
+                        }
+                    });
+                    let _ = writeln!(out, "{key}={value:?} {name} {}", changed(&result));
+                }
+            }
+        }
+        // The vignette's other settings, with an amount and without one.
+        for amount in ["", "0", "-20"] {
+            for (key, value) in [
+                ("PostCropVignetteStyle", "x"),
+                ("PostCropVignetteStyle", "3"),
+                ("PostCropVignetteMidpoint", "150"),
+                ("PostCropVignetteFeather", "-1"),
+            ] {
+                let result = LookSettings::parse(|k| match k {
+                    "PostCropVignetteAmount" => amount,
+                    k if k == key => value,
+                    _ => "",
+                });
+                let _ = writeln!(
+                    out,
+                    "amount {amount:?} {key}={value:?} {}",
+                    changed(&result)
+                );
+            }
+        }
+        if std::env::var_os("RAWMAKASE_BLESS").is_some() {
+            std::fs::write(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("src/camera_profiles/look_settings_golden.txt"),
+                &out,
+            )
+            .unwrap();
+            return;
+        }
+        let golden = include_str!("look_settings_golden.txt");
+        for (i, (want, got)) in golden.lines().zip(out.lines()).enumerate() {
+            assert_eq!(got, want, "line {}", i + 1);
+        }
+        assert_eq!(out.lines().count(), golden.lines().count(), "line count");
+    }
 }

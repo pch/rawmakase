@@ -71,4 +71,6 @@ pub struct Preset {
     pub builtin: bool,
 }
 #[cfg(test)]
+mod key_table_tests;
+#[cfg(test)]
 mod tests;
