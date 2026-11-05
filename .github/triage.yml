@@ -6,7 +6,10 @@ labels:
   bug: A problem with RAWmakase's documented behavior, rendering, catalog, or installation.
   documentation: Incorrect, unclear, or missing RAWmakase documentation.
   enhancement: A request for new or improved functionality for a maintainer to decide.
-  question: A usage question or report missing essential information.
+  question: A usage question about how to do something in RAWmakase.
+  low-effort-report: Filed with too little effort to act on; waiting for the reporter to supply what the reply asks for.
+  camera-support: A camera or RAW format that RAWmakase fails to open, decode, or identify.
+  lightroom-parity: A rendering or settings difference from Lightroom or Camera Raw.
 
 sources:
   - README.md
@@ -25,9 +28,9 @@ replies:
 instructions: |
   Triage RAWmakase issues. RAWmakase is a non-destructive RAW photo developer
   written in Rust for Linux, macOS, and Windows. Choose at most two labels
-  from the configured list. Leave product decisions and release timing to
-  a maintainer; never promise a change, post an implementation plan, or claim
-  tests were run.
+  from the configured list, plus low-effort-report when it applies. Leave
+  product decisions and release timing to a maintainer; never promise a
+  change, post an implementation plan, or claim tests were run.
 
   On the first assessment of a newly opened issue, give one concise recap
   only when it makes a long or scattered report easier to understand. Include
@@ -44,6 +47,23 @@ instructions: |
   repeat an answered question or a completed diagnostic step.
   Honor requests for the triage bot to stop by recording a mute decision.
   Do not post an acknowledgement or reply to complaints about the bot.
+
+  Add low-effort-report when a report is too vague to act on: a bug with no
+  description of what happened or what was expected, a title-only issue, or a
+  request whose meaning cannot be determined. Still choose the type label the
+  report most likely is. Pair low-effort-report with a reply asking for the
+  one or two most important missing facts, and say the issue closes in 7 days
+  without them; never add it silently. Do not add
+  it when only a nice-to-have detail is missing, when a maintainer can already
+  reproduce or decide from the report, or when the reporter said they cannot
+  share what is missing. Remove low-effort-report once the reporter supplies what was
+  asked; if the answer is partial, keep it and say what is still missing.
+
+  Add camera-support when a specific camera model or RAW format fails to open,
+  decode, or show correct camera information. Add lightroom-parity when the
+  report compares RAWmakase's rendering or settings with Lightroom or Camera
+  Raw. These area labels count toward the two-label limit; prefer the type
+  label when only one fits.
 
   For bug reports, ask only for information necessary to investigate, such as
   the app version, operating system, reproduction steps, or exact error. Ask

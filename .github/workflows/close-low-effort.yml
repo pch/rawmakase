@@ -1,0 +1,65 @@
+name: Close low-effort reports
+
+# Triage labels a report that is too vague to act on with low-effort-report,
+# asks for the missing details and removes the label once the reporter answers.
+# This job closes reports still labelled after a week with no human reply.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List the issues that would close without closing them
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: close-low-effort
+  cancel-in-progress: false
+
+jobs:
+  close:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      LABEL: low-effort-report
+      GRACE_DAYS: 7
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+    steps:
+      - name: Close reports still missing details
+        run: |
+          set -euo pipefail
+          cutoff=$(date -u -d "-${GRACE_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)
+          gh issue list --state open --label "$LABEL" --limit 200 \
+            --json number --jq '.[].number' |
+          while read -r number; do
+            # The grace period runs from the latest time the label was added.
+            labeled=$(gh api --paginate "repos/$GH_REPO/issues/$number/events" \
+              --jq ".[] | select(.event == \"labeled\" and .label.name == \"$LABEL\") | .created_at" |
+              sort | tail -n 1)
+            if [[ -z "$labeled" || "$labeled" > "$cutoff" ]]; then
+              continue
+            fi
+            # A human reply since then means the label is out of date, not
+            # that the report should close; leave it to a maintainer.
+            replies=$(gh api --paginate "repos/$GH_REPO/issues/$number/comments" \
+              --jq ".[] | select(.user.type != \"Bot\" and .created_at > \"$labeled\") | .id" |
+              wc -l)
+            if [[ "$replies" -gt 0 ]]; then
+              echo "#$number: human reply since labelling, skipped"
+              continue
+            fi
+            echo "#$number: labelled $labeled, closing"
+            if [[ "$DRY_RUN" != "true" ]]; then
+              gh issue close "$number" --reason "not planned" --comment \
+                "Closing because the details asked for above weren't provided within ${GRACE_DAYS} days. Reply with them and a maintainer can reopen this issue."
+            fi
+          done
