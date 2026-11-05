@@ -1045,19 +1045,40 @@ mod tests {
     #[test]
     fn importing_a_cameras_adobe_profiles_skips_the_unreadable_ones() -> Result<()> {
         // Camera Raw files HDR Camera Matching profiles with the others for newer
-        // bodies (Nikon's Z 8, say); one of them must not stop the rest.
+        // bodies (Nikon's Z 8, say); one of them must not stop the rest. Tag 52551
+        // (ProfileDynamicRange) is a version, a dynamic range and a float hint, in the
+        // file's byte order: a profile marked standard dynamic range imports, one marked
+        // HDR is skipped until HDR renders, and an unknown version is refused.
         let temp = tempfile::tempdir()?;
         let standard = temp.path().join("NIKON Z 8 Adobe Standard.dcp");
         std::fs::write(&standard, dcp("NIKON Z 8", "Adobe Standard"))?;
+        let marked = temp.path().join("Nikon Z 8 Camera Flat.dcp");
+        let sdr = (52551, 7, vec![1, 0, 0, 0, 0, 0, 0, 0]);
+        std::fs::write(&marked, dcp_with("NIKON Z 8", "Camera Flat", [sdr]))?;
         let hdr = temp.path().join("Nikon Z 8 Camera Flat HDR.dcp");
-        let flag = (52551, 7, vec![1, 0, 0, 0, 0, 0, 0, 0]);
+        let flag = (52551, 7, vec![1, 0, 1, 0, 0, 0, 0, 0]);
         std::fs::write(&hdr, dcp_with("NIKON Z 8", "Camera Flat HDR", [flag]))?;
+        let future = temp.path().join("Nikon Z 8 Camera Future.dcp");
+        let version = (52551, 7, vec![2, 0, 0, 0, 0, 0, 0, 0]);
+        std::fs::write(&future, dcp_with("NIKON Z 8", "Camera Future", [version]))?;
         let dest = temp.path().join("library");
-        let done = import_readable_into(&[standard, hdr.clone()], &dest)?;
-        assert_eq!(done.imported, [dest.join("NIKON Z 8 Adobe Standard.dcp")]);
-        assert_eq!(done.skipped.len(), 1, "{:?}", done.skipped);
+        let done = import_readable_into(&[standard, marked, hdr.clone(), future.clone()], &dest)?;
+        assert_eq!(
+            done.imported,
+            [
+                dest.join("NIKON Z 8 Adobe Standard.dcp"),
+                dest.join("Nikon Z 8 Camera Flat.dcp")
+            ]
+        );
+        assert_eq!(done.skipped.len(), 2, "{:?}", done.skipped);
         assert_eq!(done.skipped[0].0, hdr);
         assert!(done.skipped[0].1.contains("HDR"), "{}", done.skipped[0].1);
+        assert_eq!(done.skipped[1].0, future);
+        assert!(
+            done.skipped[1].1.contains("version 2"),
+            "{}",
+            done.skipped[1].1
+        );
         assert!(!dest.join("Nikon Z 8 Camera Flat HDR.dcp").exists());
         Ok(())
     }
