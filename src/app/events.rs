@@ -391,8 +391,15 @@ impl Editor {
                     self.document.failed = Some(error.clone());
                     self.messages.fail_on(Topic::Load, error);
                     self.document.finish_load(id);
-                    // No render is coming to take over from the stored preview.
+                    // No render is coming to take over from the stored preview,
+                    // or from the camera's: the photo shows it couldn't be opened.
                     self.preview.stand_in = None;
+                    if self.preview.embedded {
+                        self.preview.texture = None;
+                        self.preview.navigator = None;
+                        self.preview.embedded = false;
+                        self.preview.status.clear();
+                    }
                 }
                 Event::Failed {
                     id,
