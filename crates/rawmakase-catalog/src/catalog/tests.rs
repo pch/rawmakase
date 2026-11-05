@@ -65,6 +65,43 @@ fn lightroom_folder_stacks_are_imported_with_their_top_and_collapse() -> Result<
     Ok(())
 }
 #[test]
+fn lightroom_original_filenames_become_import_facts() -> Result<()> {
+    let d = tempfile::tempdir()?;
+    // A catalog without the column gives no facts: none is invented.
+    let source = d.path().join("old.lrcat");
+    fixture(&source)?;
+    let destination = d.path().join("old.rawmakase");
+    import_lightroom(&source, &destination)?;
+    assert_eq!(
+        Catalog::open(&destination)?.import_facts(PhotoId(40))?,
+        None
+    );
+    // Lightroom Classic's: the name the file had when Lightroom imported
+    // it, for the master only (a virtual copy reads its master's).
+    let source = d.path().join("renamed.lrcat");
+    fixture(&source)?;
+    {
+        let db = Connection::open(&source)?;
+        db.execute_batch(
+            "ALTER TABLE AgLibraryFile ADD COLUMN originalFilename TEXT;
+             UPDATE AgLibraryFile SET originalFilename='DSCF0001.RAF' WHERE id_local=30;
+             INSERT INTO AgLibraryFile VALUES(31,20,'other.ARW','other','ARW',NULL),(32,20,'third.ARW','third','ARW','');
+             INSERT INTO Adobe_images VALUES(42,31,'',0,0,'','RAW','',NULL,'AB'),(43,32,'',0,0,'','RAW','',NULL,'AB');",
+        )?;
+    }
+    let destination = d.path().join("renamed.rawmakase");
+    import_lightroom(&source, &destination)?;
+    let cat = Catalog::open(&destination)?;
+    assert_eq!(
+        cat.import_facts(PhotoId(40))?,
+        Some(("DSCF0001.RAF".into(), None, None, false))
+    );
+    for id in [41, 42, 43] {
+        assert_eq!(cat.import_facts(PhotoId(id))?, None, "{id}");
+    }
+    Ok(())
+}
+#[test]
 fn lightroom_metadata_preserves_all_labels_flags_and_unrated_photos() -> Result<()> {
     let d = tempfile::tempdir()?;
     let source = d.path().join("metadata.lrcat");

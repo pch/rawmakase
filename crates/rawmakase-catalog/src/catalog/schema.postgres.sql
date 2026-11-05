@@ -161,6 +161,19 @@ CREATE TABLE IF NOT EXISTS import_burst_stacks (
     seconds DOUBLE PRECISION NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS photo_import_facts (
+    photo BIGINT PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+    original_name TEXT NOT NULL,
+    exif_captured TEXT,
+    size BIGINT,
+    exif_read BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS catalog_counters (
+    name TEXT PRIMARY KEY,
+    value BIGINT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

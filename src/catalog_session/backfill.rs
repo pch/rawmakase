@@ -44,17 +44,26 @@ pub(crate) struct Saved<T> {
 
 impl CatalogSession {
     /// Reads the capture times still missing, of the photos `available` says
-    /// are online and not tried since [`Self::retry_capture_times`].
+    /// are online and not tried since [`Self::retry_capture_times`]: those
+    /// with no date, and those whose import facts still want the date their
+    /// file's EXIF gives, whatever date the photo has
+    /// ([`crate::catalog::Catalog::photos_to_read_exif_capture`]).
     pub(crate) fn start_capture_times(&mut self, available: impl Fn(&Path) -> bool) {
         if self.backfill.capture.is_some() {
             return;
         }
+        // Without them, the photos with no date are still read.
+        let unread: HashSet<PhotoId> = self
+            .catalog
+            .photos_to_read_exif_capture()
+            .map(|ids| ids.into_iter().collect())
+            .unwrap_or_default();
         let tried = &self.backfill.capture_tried;
         let todo: Vec<_> = self
             .photos
             .iter()
             .filter(|p| {
-                p.captured.is_empty()
+                (p.captured.is_empty() || unread.contains(&p.id))
                     && p.master.is_none()
                     && !tried.contains(&p.id)
                     && has_capture_time(&p.path)
@@ -95,7 +104,8 @@ impl CatalogSession {
         self.backfill.capture.is_some()
     }
     /// Saves the capture times read so far, a virtual copy taking its
-    /// master's. Returns the times saved; the photos keep their order.
+    /// master's, with what each read found for the photo's import facts.
+    /// Returns the times saved; the photos keep their order.
     pub(crate) fn poll_capture_times(&mut self) -> Saved<Vec<(PhotoId, String)>> {
         let Some(reader) = &self.backfill.capture else {
             return Saved::default();
@@ -104,39 +114,57 @@ impl CatalogSession {
         if done {
             self.backfill.capture = None;
         }
-        let dated: Vec<(PhotoId, String)> = read
+        let reads: Vec<(PhotoId, Option<String>)> = read
             .into_iter()
             .filter_map(|(id, read)| match read {
-                CaptureRead::Dated(time) => Some((id, time)),
-                _ => None,
+                CaptureRead::Dated(time) => Some((id, Some(time))),
+                CaptureRead::Undated => Some((id, None)),
+                CaptureRead::Unreadable => None,
             })
+            .collect();
+        let dated: Vec<(PhotoId, String)> = reads
+            .iter()
+            .filter_map(|(id, time)| Some((*id, time.clone()?)))
             .collect();
         let mut out = Saved {
             start_again: done,
             ..Default::default()
         };
-        if !dated.is_empty() {
-            match self.catalog.fill_capture_times(&dated) {
-                Ok(()) => {
-                    self.apply_capture_times(&dated);
-                    out.saved = dated;
-                }
+        if !reads.is_empty() {
+            match self.catalog.record_capture_reads(&reads) {
+                // Only the photos given a date: one read only for its import
+                // facts keeps its own, as the catalog does.
+                Ok(()) => out.saved = self.apply_capture_times(&dated),
                 Err(e) => out.error = Some(e),
             }
         }
         out
     }
-    fn apply_capture_times(&mut self, times: &[(PhotoId, String)]) {
-        let times: HashMap<PhotoId, &String> = times.iter().map(|(id, t)| (*id, t)).collect();
+    /// Gives the session's photos without a date (a virtual copy, its
+    /// master's) the times read, as [`crate::catalog::Catalog::fill_capture_times`]
+    /// gives the catalog's. Returns the times read that some photo took, in
+    /// their order.
+    fn apply_capture_times(&mut self, times: &[(PhotoId, String)]) -> Vec<(PhotoId, String)> {
+        let by_id: HashMap<PhotoId, &String> = times.iter().map(|(id, t)| (*id, t)).collect();
+        let mut taken = HashSet::new();
         for photo in &mut self.photos {
-            if photo.captured.is_empty()
-                && let Some(time) = times
-                    .get(&photo.id)
-                    .or_else(|| photo.master.and_then(|m| times.get(&m)))
-            {
-                photo.captured = (*time).clone();
+            if !photo.captured.is_empty() {
+                continue;
+            }
+            let read = [Some(photo.id), photo.master]
+                .into_iter()
+                .flatten()
+                .find(|id| by_id.contains_key(id));
+            if let Some(read) = read {
+                photo.captured = by_id[&read].clone();
+                taken.insert(read);
             }
         }
+        times
+            .iter()
+            .filter(|(id, _)| taken.contains(id))
+            .cloned()
+            .collect()
     }
     /// Reads the info of the photos that have none or are to be read again
     /// (see [`crate::catalog::Catalog::photos_to_read_info`]), of those
@@ -234,12 +262,36 @@ fn has_capture_time(path: &Path) -> bool {
 }
 
 fn read_capture(path: &Path) -> CaptureRead {
+    read_capture_with(path, capture_time)
+}
+
+/// [`read_capture`], reading the date with `read`, which can't tell a file
+/// without a date from a read that failed. So a file is taken for one with
+/// no date only once all of it was read without an error and a second
+/// `read`, of the bytes just read, still finds none, the file the same
+/// throughout (its size, time and first bytes): a read cut short, as on a
+/// card pulled or a file still being written, is read again later rather
+/// than its import facts recorded as having no date.
+fn read_capture_with(path: &Path, read: impl Fn(&Path) -> Option<String>) -> CaptureRead {
     if !can_read(path) {
         return CaptureRead::Unreadable;
     }
-    match capture_time(path) {
-        Some(time) => CaptureRead::Dated(time),
-        None => CaptureRead::Undated,
+    let before = crate::storage::Identity::read(path).ok();
+    if let Some(time) = read(path) {
+        return CaptureRead::Dated(time);
+    }
+    let whole = std::fs::File::open(path)
+        .and_then(|mut f| std::io::copy(&mut f, &mut std::io::sink()))
+        .is_ok();
+    if !whole {
+        return CaptureRead::Unreadable;
+    }
+    let again = read(path);
+    let same = before.is_some() && crate::storage::Identity::read(path).ok() == before;
+    match again {
+        Some(time) if same => CaptureRead::Dated(time),
+        None if same => CaptureRead::Undated,
+        _ => CaptureRead::Unreadable,
     }
 }
 
@@ -372,6 +424,36 @@ mod tests {
         // Gone, it is tried again later.
         std::fs::remove_file(&sd9)?;
         assert_eq!(read_info(&sd9), None);
+        Ok(())
+    }
+    #[test]
+    fn a_file_that_changes_or_goes_while_read_is_read_again_later() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("a.jpg");
+        std::fs::write(&file, b"no date in here")?;
+        // Read whole and unchanged: it has no date.
+        assert_eq!(read_capture_with(&file, |_| None), CaptureRead::Undated);
+        // Still being written, or the card pulled: tried again, never
+        // taken for a file without a date.
+        let grows = read_capture_with(&file, |p| {
+            std::fs::write(p, b"no date in here, and more").ok();
+            None
+        });
+        assert_eq!(grows, CaptureRead::Unreadable);
+        let gone = read_capture_with(&file, |p| {
+            std::fs::remove_file(p).ok();
+            None
+        });
+        assert_eq!(gone, CaptureRead::Unreadable);
+        // A read that failed part way, the file unchanged: read again, from
+        // the bytes just read whole, it finds the date.
+        std::fs::write(&file, b"a date in here")?;
+        let tries = std::cell::Cell::new(0);
+        let flaky = read_capture_with(&file, |_| {
+            tries.set(tries.get() + 1);
+            (tries.get() > 1).then(|| "2024-03-02T10:00:01.000".to_string())
+        });
+        assert_eq!(flaky, CaptureRead::Dated("2024-03-02T10:00:01.000".into()));
         Ok(())
     }
     #[test]

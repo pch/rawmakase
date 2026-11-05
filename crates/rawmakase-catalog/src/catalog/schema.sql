@@ -183,6 +183,28 @@ CREATE TABLE IF NOT EXISTS import_burst_stacks (
     seconds REAL NOT NULL
 );
 
+-- What a master photo was when it entered the catalog, for Import Photos'
+-- suspected duplicates and the Original filename token: its file's name then,
+-- its size and the capture time its file's EXIF gives. Written with the
+-- photo; `exif_captured` is filled in by the background read of capture times
+-- (`exif_read` 0 until read; 1 with a NULL `exif_captured` when the file has
+-- none). Kept apart from `photos.captured`, which the user and XMP may set.
+-- Photos added by releases before it have no row.
+CREATE TABLE IF NOT EXISTS photo_import_facts (
+    photo INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+    original_name TEXT NOT NULL,
+    exif_captured TEXT,
+    size INTEGER,
+    exif_read INTEGER NOT NULL
+);
+
+-- Numbers the catalog hands out once, by name: `import_number`, the last
+-- Import # an Import Photos run took.
+CREATE TABLE IF NOT EXISTS catalog_counters (
+    name TEXT PRIMARY KEY,
+    value INTEGER NOT NULL
+);
+
 -- Facts about the catalog itself, by name.
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,

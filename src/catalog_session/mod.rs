@@ -586,6 +586,112 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn import_facts_get_the_exif_date_whatever_date_the_photo_has() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let folder = directory.path().join("photos");
+        std::fs::create_dir(&folder)?;
+        let dated = crate::export::exif::dated_file(true, "2024:03:02 10:00:01", "");
+        let size = dated.len() as i64;
+        std::fs::write(folder.join("a.jpg"), dated)?;
+        image::RgbImage::new(6, 4).save(folder.join("b.png"))?;
+        let path = directory.path().join("library.rawmakase");
+        Catalog::create(&path)?.add_folder(&folder)?;
+        let Opened { mut session, .. } = CatalogSession::open(&CatalogLocation::from(&path))?;
+        let id = |session: &CatalogSession, name: &str| {
+            session
+                .photos
+                .iter()
+                .find(|p| p.filename == name)
+                .unwrap()
+                .id
+        };
+        let (a, b) = (id(&session, "a.jpg"), id(&session, "b.png"));
+        // Added from a folder: its name and size, its EXIF still to read.
+        assert_eq!(
+            session.catalog.import_facts(a)?,
+            Some(("a.jpg".into(), None, Some(size), false))
+        );
+        // A date from elsewhere (XMP, the user) is not the file's EXIF.
+        session
+            .catalog
+            .fill_capture_times(&[(a, "2020-01-01T00:00:00.000".into())])?;
+        session.reload()?;
+        session.start_capture_times(|_| true);
+        let mut saved = Vec::new();
+        let started = std::time::Instant::now();
+        while session.reading_capture_times() {
+            assert!(started.elapsed() < std::time::Duration::from_secs(10));
+            let capture = session.poll_capture_times();
+            assert!(capture.error.is_none());
+            saved.extend(capture.saved);
+            std::thread::yield_now();
+        }
+        assert!(saved.is_empty(), "{saved:?}");
+        let photo = session.photos.iter().find(|p| p.id == a).unwrap();
+        assert_eq!(photo.captured, "2020-01-01T00:00:00.000");
+        assert_eq!(
+            session.catalog.import_facts(a)?,
+            Some((
+                "a.jpg".into(),
+                Some("2024-03-02T10:00:01.000".into()),
+                Some(size),
+                true
+            ))
+        );
+        // A file with no date is read once: it has none.
+        let (_, captured, _, read) = session.catalog.import_facts(b)?.unwrap();
+        assert_eq!((captured, read), (None, true));
+        assert!(session.catalog.photos_to_read_exif_capture()?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn an_undated_copy_of_a_dated_master_shows_the_date_its_file_gives() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let folder = directory.path().join("photos");
+        std::fs::create_dir(&folder)?;
+        std::fs::write(
+            folder.join("a.jpg"),
+            crate::export::exif::dated_file(true, "2024:03:02 10:00:01", ""),
+        )?;
+        let path = directory.path().join("library.rawmakase");
+        Catalog::create(&path)?.add_folder(&folder)?;
+        let Opened { mut session, .. } = CatalogSession::open(&CatalogLocation::from(&path))?;
+        let a = session.photos[0].id;
+        let copy = session.catalog.create_virtual_copy(a)?;
+        // The master dated since (by its XMP), its copy not.
+        session.catalog_mut_for_tests().db_for_tests().execute(
+            "UPDATE photos SET captured='2020-01-01T00:00:00.000' WHERE id=?",
+            [a.0],
+        )?;
+        session.reload()?;
+        session.start_capture_times(|_| true);
+        let mut saved = Vec::new();
+        let started = std::time::Instant::now();
+        while session.reading_capture_times() {
+            assert!(started.elapsed() < std::time::Duration::from_secs(10));
+            saved.extend(session.poll_capture_times().saved);
+            std::thread::yield_now();
+        }
+        let captured = |session: &CatalogSession, id| {
+            session
+                .photos
+                .iter()
+                .find(|p| p.id == id)
+                .unwrap()
+                .captured
+                .clone()
+        };
+        // As the catalog has them, so the Library sorts them again.
+        assert_eq!(captured(&session, a), "2020-01-01T00:00:00.000");
+        assert_eq!(captured(&session, copy), "2024-03-02T10:00:01.000");
+        assert!(!saved.is_empty());
+        session.reload()?;
+        assert_eq!(captured(&session, copy), "2024-03-02T10:00:01.000");
+        Ok(())
+    }
+
     /// A little-endian TIFF of one directory of ASCII tags, values of up to
     /// four bytes in their entries.
     fn ascii_tiff(tags: &[(u16, &str)]) -> Vec<u8> {
