@@ -236,6 +236,22 @@ impl Loader {
         [self.open.stop(), self.full.stop(), self.prefetch.stop()]
     }
 }
+/// The camera's embedded preview as Develop's placeholder shows it: some cameras
+/// embed a full-size JPEG (60 MP on a Sony A7CR), and a screen-sized copy is all
+/// the placeholder needs.
+fn placeholder(im: image::RgbImage) -> image::RgbImage {
+    let edge = im.width().max(im.height());
+    if edge <= 2560 {
+        return im;
+    }
+    let k = 2560. / edge as f32;
+    image::imageops::resize(
+        &im,
+        (im.width() as f32 * k) as u32,
+        (im.height() as f32 * k) as u32,
+        image::imageops::FilterType::Triangle,
+    )
+}
 fn opener(
     tx: Sender<Event>,
     ctx: egui::Context,
@@ -255,6 +271,27 @@ fn opener(
             let file = crate::storage::Identity::read(&path).ok();
             let prefetched = ahead.take(&path, file.as_ref());
             let was_ahead = prefetched.is_some();
+            // On a network volume the camera's preview is read alone and shown
+            // first, rather than once the whole file has arrived.
+            let mut embedded_sent = false;
+            if prefetched.is_none()
+                && crate::storage::is_raw(&path)
+                && crate::platform::preview_reads::previews_only(&path)
+                && let Ok(im) = crate::raw::largest_thumbnail_from_file(&path)
+            {
+                send(
+                    &tx,
+                    &ctx,
+                    Event::Embedded {
+                        id: job.id,
+                        image: placeholder(im),
+                    },
+                );
+                embedded_sent = true;
+            }
+            if job.cancel.load(Ordering::Relaxed) {
+                return Ok(());
+            }
             let opened = match prefetched {
                 Some(image) => Opened::Rendered(image),
                 None => crate::photo::open_source(&path, Cancel::new(&job.cancel))?,
@@ -331,27 +368,13 @@ fn opener(
                     return Ok(());
                 }
             };
-            if let Ok(im) = thumbnail(&mut raw) {
-                // Some cameras embed a full-size JPEG (60 MP on a Sony A7CR);
-                // a screen-sized copy is all the placeholder needs.
-                let edge = im.width().max(im.height());
-                let im = if edge > 2560 {
-                    let k = 2560. / edge as f32;
-                    image::imageops::resize(
-                        &im,
-                        (im.width() as f32 * k) as u32,
-                        (im.height() as f32 * k) as u32,
-                        image::imageops::FilterType::Triangle,
-                    )
-                } else {
-                    im
-                };
+            if !embedded_sent && let Ok(im) = thumbnail(&mut raw) {
                 send(
                     &tx,
                     &ctx,
                     Event::Embedded {
                         id: job.id,
-                        image: im,
+                        image: placeholder(im),
                     },
                 );
             }

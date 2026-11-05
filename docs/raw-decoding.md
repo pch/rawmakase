@@ -90,6 +90,8 @@ none. In either case, and whenever a part needed isn't found, the caller
 reads the whole file.
 The ignored test `real_files_give_the_same_preview_read_in_pieces` compares
 the two reads on a folder of RAWs; it is how a variant is added.
+`largest_preview_from_file(file)` reads the largest preview, as `preview`
+chooses it, the same way, for Develop's placeholder on network volumes.
 
 Modules, each with a small `pub(crate)` surface:
 
