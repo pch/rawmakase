@@ -27,8 +27,16 @@ pub(crate) struct Cli {
 
 /// The protocol's [`rawmakase_protocol::Target`], with the guards an MCP client
 /// must always send.
+///
+/// Parameter types are inlined rather than referenced through `$defs`: some
+/// clients, Claude among them, don't resolve `$ref` and send the object as a
+/// JSON string instead (issue 881).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(
+    inline,
+    description = "The open photo and the guards from the latest state."
+)]
 struct McpTarget {
     /// Catalog photo ID from get_state (omit only for an uncataloged photo).
     photo_id: Option<i64>,
@@ -116,6 +124,7 @@ impl From<McpTarget> for rawmakase_protocol::Target {
 /// The protocol's [`rawmakase_protocol::CurveChannel`], described for MCP clients.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(inline, description = "Tone curve channel to replace.")]
 enum CurveChannel {
     Rgb,
     Red,
@@ -142,6 +151,7 @@ struct ToneCurve {
 }
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(inline)]
 enum CurvePreset {
     Linear,
     MediumContrast,
@@ -536,4 +546,30 @@ pub(crate) fn run(cli: Cli) -> anyhow::Result<()> {
         service.waiting().await?;
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Some MCP clients, Claude among them, don't resolve `$ref`. They send a
+    /// referenced object as a JSON string, which the adapter then rejects
+    /// (issue 881), so every tool schema must be self-contained.
+    #[test]
+    fn tool_schemas_inline_every_parameter_type() {
+        let tools = Server::tool_router().list_all();
+        assert!(!tools.is_empty());
+        for tool in tools {
+            let schema = Value::Object((*tool.input_schema).clone());
+            let text = schema.to_string();
+            assert!(
+                !text.contains("$ref") && !text.contains("$defs"),
+                "{} references a shared definition: {text}",
+                tool.name
+            );
+            if let Some(target) = schema["properties"].get("target") {
+                assert_eq!(target["type"], "object", "{}: {target}", tool.name);
+            }
+        }
+    }
 }
