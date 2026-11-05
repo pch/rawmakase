@@ -119,34 +119,51 @@ impl Codes {
     }
 }
 
+/// Bytes past the strip's stated length the parallel decoding still reads:
+/// the stream can end a few bytes past it (40 symbols on a K-3 Mark III).
+const STRIP_SLACK: usize = 64 << 10;
+
 /// Decodes `height` rows of `width` samples into `out` (`width × height`).
+/// `strip` is how many bytes the file says the stream takes, if it says:
+/// what follows (a JPEG, other frames) is not decoded on spare threads.
 pub(crate) fn decode(
     data: &[u8],
+    strip: Option<usize>,
     codes: &Codes,
     width: usize,
     height: usize,
     out: &mut [u16],
     cancel: Cancel<'_>,
 ) -> Result<()> {
-    decode_with(data, codes, width, height, out, cancel, true)
+    decode_with(data, strip, codes, width, height, out, cancel, true).map(drop)
 }
 
-/// [`decode`], on all threads where it can (`shared`).
+/// [`decode`], on all threads where it can (`shared`); whether it did.
+#[allow(clippy::too_many_arguments)]
 fn decode_with(
     data: &[u8],
+    strip: Option<usize>,
     codes: &Codes,
     width: usize,
     height: usize,
     out: &mut [u16],
     cancel: Cancel<'_>,
     shared: bool,
-) -> Result<()> {
+) -> Result<bool> {
     let samples = width * height;
     if shared && width > 0 && out.len() >= samples {
         let out = &mut out[..samples];
-        let stream = Differences { data, codes };
-        if speculative::decode(&stream, out, cancel)?.is_some() {
-            return predict(out, width, cancel);
+        let span = strip.map_or(data.len(), |n| {
+            n.saturating_add(STRIP_SLACK).min(data.len())
+        });
+        let stream = Differences {
+            data: &data[..span],
+            codes,
+        };
+        if let Some(end) = speculative::decode(&stream, out, cancel)?
+            && reads_within(end, span, data.len())
+        {
+            return predict(out, width, cancel).map(|()| true);
         }
     }
     let mut bits = Msb::new(data);
@@ -170,7 +187,15 @@ fn decode_with(
             *d = v as u16;
         }
     }
-    Ok(())
+    Ok(false)
+}
+
+/// Whether a stream decoded from the first `span` of `len` bytes, ending
+/// at bit `end`, is the one decoded from all of them. A code is looked up
+/// by the 12 bits where it starts, so every bit read lies before
+/// `end + 12`; past the span the decoding read zeros, not the data.
+fn reads_within(end: u64, span: usize, len: usize) -> bool {
+    span == len || end + 12 <= span as u64 * 8
 }
 
 /// The data's differences, each as the 16 bits of an `i16`.
@@ -255,6 +280,7 @@ pub(crate) mod tests {
             let mut sequential = parallel.clone();
             decode_with(
                 &data,
+                None,
                 &codes,
                 width,
                 height,
@@ -265,6 +291,7 @@ pub(crate) mod tests {
             .unwrap();
             decode_with(
                 &data,
+                None,
                 &codes,
                 width,
                 height,
@@ -275,6 +302,74 @@ pub(crate) mod tests {
             .unwrap();
             assert!(parallel == sequential);
         }
+    }
+
+    /// Where `n` differences coded from the start of `data` end, in bits.
+    fn stream_end(data: &[u8], codes: &Codes, n: usize) -> u64 {
+        let mut bits = Msb::new(data);
+        for _ in 0..n {
+            codes.difference(&mut bits);
+        }
+        bits.consumed()
+    }
+
+    /// The strip's stated length bounds what is decoded on spare threads
+    /// (pixel-shift PEFs keep three frames after it, #725), and the
+    /// samples stay the sequential decoder's however short it is.
+    #[test]
+    fn the_strip_bounds_the_parallel_decoding() {
+        let codes = Codes::samsung();
+        let (width, height) = (1000, 1000);
+        let stream: Vec<u8> = (0..4_000_000u32)
+            .map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8)
+            .collect();
+        let end = stream_end(&stream, &codes, width * height);
+        let bytes = usize::try_from(end.div_ceil(8)).unwrap();
+        assert!(bytes > 4 * STRIP_SLACK && stream.len() > 2 * bytes);
+        let mut sequential = vec![0; width * height];
+        let cancel = Cancel::NEVER;
+        let used = decode_with(
+            &stream,
+            None,
+            &codes,
+            width,
+            height,
+            &mut sequential,
+            cancel,
+            false,
+        );
+        assert_eq!(used, Ok(false));
+        let cases = [
+            // The stream ends just past the stated length, within the slack.
+            (Some(bytes - 100), true),
+            (Some(bytes), true),
+            // Far past it: decoded in order, from all the data.
+            (Some(bytes / 2), false),
+            (None, true),
+        ];
+        // Two workers, so that the stream is shared on any machine.
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(2)
+            .build()
+            .unwrap();
+        pool.install(|| {
+            for (strip, shared) in cases {
+                let mut out = vec![0; width * height];
+                let used = decode_with(
+                    &stream, strip, &codes, width, height, &mut out, cancel, true,
+                );
+                assert_eq!(used, Ok(shared), "strip {strip:?}");
+                assert!(out == sequential, "strip {strip:?}");
+            }
+        });
+    }
+
+    #[test]
+    fn decodings_reading_past_the_span_are_not_the_stream_s() {
+        assert!(reads_within(8 * 100 - 12, 100, 200));
+        assert!(!reads_within(8 * 100 - 11, 100, 200));
+        // All of the data: past it every decoder reads zeros.
+        assert!(reads_within(8 * 300, 100, 100));
     }
 
     #[test]
@@ -330,7 +425,7 @@ pub(crate) mod tests {
             .map(|c| c.iter().enumerate().fold(0, |a, (i, b)| a | b << (7 - i)))
             .collect();
         let mut out = [0u16; 12];
-        decode(&bytes, &codes, 4, 3, &mut out, Cancel::NEVER).unwrap();
+        decode(&bytes, None, &codes, 4, 3, &mut out, Cancel::NEVER).unwrap();
         assert_eq!(&out[..4], &[3, 2, 3, 14]);
         assert_eq!(&out[4..8], &[(-10i32) as u16, 0, (-10i32) as u16, 0]);
         assert_eq!(out[8], 1);
