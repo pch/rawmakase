@@ -527,7 +527,7 @@ fn render(
         } => {
             if let Some(file) = file {
                 ensure!(
-                    crate::storage::Identity::read(&photo.source)? == *file,
+                    crate::storage::Identity::read(&photo.source)?.same_photo(file),
                     "the photo's file changed since it was shown; open it again to export it"
                 );
             }

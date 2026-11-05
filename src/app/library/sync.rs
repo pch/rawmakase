@@ -388,7 +388,8 @@ pub(in crate::app) fn synchronize(
     // A file replaced since it was read gets nothing: its settings were worked out
     // for the file that was there.
     let (prepared, replaced): (Vec<_>, Vec<_>) = prepared.into_iter().partition(|p| {
-        crate::storage::Identity::read(&p.synced.path).is_ok_and(|now| now == p.synced.identity)
+        crate::storage::Identity::read(&p.synced.path)
+            .is_ok_and(|now| now.same_photo(&p.synced.identity))
     });
     result.failed.extend(replaced.iter().map(|p| SyncFailure {
         name: p.name.clone(),
@@ -725,7 +726,7 @@ pub(in crate::app) fn restore(
         // protects the file. Without an edit there is none: compare with the one
         // the Sync read before writing its settings again.
         let now = crate::storage::Identity::read(&path).map_err(SyncRestoreError::Write)?;
-        if saved.is_none() && now != e.identity {
+        if saved.is_none() && !now.same_photo(&e.identity) {
             return Err(SyncRestoreError::Write(anyhow::anyhow!(
                 "{} changed since the Sync",
                 path.display()

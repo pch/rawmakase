@@ -76,8 +76,9 @@ pub struct PhotoRecord {
 
 impl EditRecord {
     /// The saved RAWmakase edit, if there is one. An error when it can't be read, or
-    /// when the file at `path` is not the one it was saved for: the edit is then
-    /// protected, never replaced by another.
+    /// when the file at `path` is not the photo it was saved for
+    /// ([`Identity::same_photo`]): the edit is then protected, never replaced by
+    /// another.
     pub fn saved(&self, path: &Path) -> Result<Option<SavedEdit>> {
         let Some(recipe) = &self.recipe else {
             return Ok(None);
@@ -85,7 +86,7 @@ impl EditRecord {
         let saved: Identity =
             serde_json::from_str(self.identity.as_deref().context("Missing photo identity")?)?;
         ensure!(
-            saved == Identity::read(path)?,
+            saved.same_photo(&Identity::read(path)?),
             "Photo changed since this catalog edit was saved; catalog edit protected"
         );
         let recipe: Recipe = serde_json::from_str(recipe)?;

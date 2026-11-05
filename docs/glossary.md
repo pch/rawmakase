@@ -129,8 +129,10 @@ drive). The Library still lists it and shows stored previews.
 ## Files and the catalog
 
 **Identity** (`storage::identity::Identity`). What identifies a photo's file: its
-size, modification time and a hash of its first 64 KiB. Caches and saves use it to
-tell that a file was replaced. **Stamp** is the cheaper check, size and modification
+size, modification time and a hash of its first 64 KiB. Caches use all three to
+tell that a file was replaced. A saved edit stays bound to the same photo, its size
+and first bytes (`Identity::same_photo`): a new modification time alone, as a cloud
+mount or `touch` leaves, keeps the edit and is stored with the next save. **Stamp** is the cheaper check, size and modification
 time from one stat, for cached previews.
 
 **Virtual copy** (`catalog::copies`). Lightroom's virtual copies: another photo of

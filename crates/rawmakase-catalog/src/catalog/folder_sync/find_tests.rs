@@ -360,8 +360,9 @@ fn the_picked_file_without_a_checksum_is_ticked_but_not_verified() -> Result<()>
     assert_eq!(plan.default_accepted().moves.len(), 1);
     f.apply(&plan, &plan.default_accepted())?;
     assert_eq!(f.path_of(a), out.join("IMG_1001.dng"));
-    // Its edit stays protected, as after a probable move.
-    assert!(f.cat.load_edit(a, &out.join("IMG_1001.dng")).is_err());
+    // Not verified, but the same photo (`Identity::same_photo`): its edit
+    // still applies.
+    assert!(f.cat.load_edit(a, &out.join("IMG_1001.dng"))?.is_some());
     Ok(())
 }
 
