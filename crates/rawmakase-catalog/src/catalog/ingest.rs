@@ -399,16 +399,60 @@ impl Catalog {
     /// Only empty dates are filled, never one Lightroom or the user set, and a
     /// photo's virtual copies get its date too.
     pub fn fill_capture_times(&mut self, times: &[(PhotoId, String)]) -> Result<()> {
+        self.db.write(|w| fill_capture_times(w, times))
+    }
+    /// The master photos whose import facts still want the capture time
+    /// their file's EXIF gives, whatever date the photo has (one from XMP or
+    /// the user doesn't count).
+    pub fn photos_to_read_exif_capture(&self) -> Result<Vec<PhotoId>> {
+        self.db.read(
+            sql!(
+                "SELECT f.photo FROM photo_import_facts f JOIN photos p ON p.id = f.photo
+                 WHERE f.exif_read = 0 AND p.master_id IS NULL ORDER BY f.photo"
+            ),
+            &[],
+        )
+    }
+    /// The import facts of `photo`: its original name, EXIF capture time,
+    /// size and whether its EXIF was read; `None` without a row.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn import_facts(&self, photo: PhotoId) -> Result<Option<StoredFacts>> {
+        row! {
+            struct Facts {
+                original_name: String,
+                exif_captured: Option<String>,
+                size: Option<i64>,
+                exif_read: i64,
+            }
+        }
+        let facts: Option<Facts> = self.db.read_optional(
+            sql!(
+                "SELECT original_name, exif_captured, size, exif_read
+                 FROM photo_import_facts WHERE photo=?"
+            ),
+            &[&photo],
+        )?;
+        Ok(facts.map(|f| (f.original_name, f.exif_captured, f.size, f.exif_read != 0)))
+    }
+    /// Records what reading photos' files for their capture times found, in
+    /// one transaction: each date fills the photo's empty date as
+    /// [`Self::fill_capture_times`] does, and every read (`None`: the file
+    /// has no date) completes import facts not read yet. Only the facts
+    /// row's EXIF capture time is written for a photo that has a date.
+    pub fn record_capture_reads(&mut self, reads: &[(PhotoId, Option<String>)]) -> Result<()> {
+        let dated: Vec<(PhotoId, String)> = reads
+            .iter()
+            .filter_map(|(id, time)| Some((*id, time.clone()?)))
+            .collect();
         self.db.write(|w| {
-            // Two statements, each on an index, rather than one OR that scans.
-            for (id, captured) in times {
+            fill_capture_times(w, &dated)?;
+            for (id, time) in reads {
                 w.execute(
-                    sql!("UPDATE photos SET captured=?1 WHERE id=?2 AND captured=''"),
-                    &[captured, id],
-                )?;
-                w.execute(
-                    sql!("UPDATE photos SET captured=?1 WHERE master_id=?2 AND captured=''"),
-                    &[captured, id],
+                    sql!(
+                        "UPDATE photo_import_facts SET exif_captured=?1, exif_read=1
+                         WHERE photo=?2 AND exif_read=0"
+                    ),
+                    &[time, id],
                 )?;
             }
             Ok(())
@@ -426,6 +470,7 @@ impl Catalog {
         NewPhoto {
             file: read.file,
             place: read.place,
+            facts: read.facts,
             edit,
             metadata: read.metadata,
             report: read.report,
@@ -467,9 +512,11 @@ fn read_new_photo<P>(file: PathBuf, place: P, defaults: &super::NewPhotoDefaults
     });
     let (metadata, report) = super::sidecar::read_file(&file, defaults.raw_xmp());
     let defaults = defaults.for_file(&file, metadata.as_ref());
+    let facts = ImportFacts::of_file(&file);
     FilesRead {
         file,
         place,
+        facts,
         legacy,
         metadata,
         report,
@@ -483,6 +530,7 @@ type Legacy = (super::legacy_sidecar::Sidecar, Vec<(String, Vec<u8>)>);
 struct FilesRead<P> {
     file: PathBuf,
     place: P,
+    facts: ImportFacts,
     legacy: Option<Result<Option<Legacy>>>,
     metadata: Option<crate::xmp::descriptive::Read>,
     report: super::SidecarReport,
@@ -554,6 +602,22 @@ fn side_by_side<T: Send, R: Send>(items: Vec<T>, read: impl Fn(T) -> R + Sync) -
     });
     done.sort_unstable_by_key(|(index, _)| *index);
     done.into_iter().map(|(_, read)| read).collect()
+}
+
+/// [`Catalog::fill_capture_times`] in `w`'s transaction.
+fn fill_capture_times(w: &mut Write<'_>, times: &[(PhotoId, String)]) -> Result<()> {
+    // Two statements, each on an index, rather than one OR that scans.
+    for (id, captured) in times {
+        w.execute(
+            sql!("UPDATE photos SET captured=?1 WHERE id=?2 AND captured=''"),
+            &[captured, id],
+        )?;
+        w.execute(
+            sql!("UPDATE photos SET captured=?1 WHERE master_id=?2 AND captured=''"),
+            &[captured, id],
+        )?;
+    }
+    Ok(())
 }
 
 /// The catalog folder at `logical` in `root`, made if there is none, in
@@ -645,11 +709,62 @@ fn refused<T>(result: Result<T>) -> Result<Result<T>> {
 pub(in crate::catalog) struct NewPhoto<P> {
     pub(in crate::catalog) file: PathBuf,
     pub(in crate::catalog) place: P,
+    /// What it is as it enters the catalog (see [`ImportFacts`]).
+    pub(in crate::catalog) facts: ImportFacts,
     edit: Option<LegacyEdit>,
     metadata: Option<crate::xmp::descriptive::Read>,
     /// Its sidecars that could not be read, or were ignored.
     report: super::SidecarReport,
     defaults: super::defaults::Fill,
+}
+
+/// A photo's `photo_import_facts` row as stored: its original name, EXIF
+/// capture time, size and whether its EXIF was read.
+#[cfg(any(test, feature = "test-support"))]
+pub(in crate::catalog) type StoredFacts = (String, Option<String>, Option<i64>, bool);
+
+/// What a photo is as it enters the catalog, kept in `photo_import_facts`:
+/// its file's name then, its size, and the capture time its file's EXIF
+/// gives, once read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::catalog) struct ImportFacts {
+    pub(in crate::catalog) original_name: String,
+    /// `None` when the file's size could not be read.
+    pub(in crate::catalog) size: Option<u64>,
+    /// The EXIF capture time once read (`Some(None)`: the file has none);
+    /// `None` leaves it to the background read of capture times.
+    pub(in crate::catalog) exif_captured: Option<Option<String>>,
+}
+impl ImportFacts {
+    /// Those Add Folder and Synchronize know of the file at `file`: its
+    /// name and size; its EXIF is read later, in the background.
+    fn of_file(file: &Path) -> Self {
+        Self {
+            original_name: file
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+            size: std::fs::metadata(file).ok().map(|m| m.len()),
+            exif_captured: None,
+        }
+    }
+    /// Records them for new photo `photo`, in `w`'s transaction.
+    pub(in crate::catalog) fn insert(&self, w: &mut Write<'_>, photo: PhotoId) -> Result<()> {
+        let size = self.size.map(|s| s as i64);
+        let (read, captured) = match &self.exif_captured {
+            Some(captured) => (1i64, captured.as_deref()),
+            None => (0, None),
+        };
+        w.execute(
+            sql!(
+                "INSERT INTO photo_import_facts(photo, original_name, exif_captured, size, exif_read)
+                 VALUES(?, ?, ?, ?, ?)"
+            ),
+            &[&photo, &self.original_name, &captured, &size, &read],
+        )?;
+        Ok(())
+    }
 }
 
 /// The catalog format a write of `photos` needs for the edits they bring.
@@ -702,6 +817,7 @@ impl PhotoWriter {
             sql!("INSERT INTO photo_imports(photo, batch) VALUES(?, ?)"),
             &[&id, &batch],
         )?;
+        photo.facts.insert(w, id)?;
         if let Some(edit) = photo.edit {
             // An edit an older release saved that can't be kept stays
             // unused on disk.

@@ -235,6 +235,32 @@ fn generated_templates_round_trip() {
     }
 }
 
+/// Lightroom's Original filename: the name the file had when it entered the
+/// catalog, without its extension; the current name when the catalog
+/// doesn't know it (a photo added before it kept them).
+#[test]
+fn original_filename_is_the_name_at_import() {
+    let renamed = NameFields {
+        original_name: Some("DSCF0001.RAF".into()),
+        ..NameFields::default()
+    };
+    let named = |tokens: &str, f: &NameFields| name(tokens, f, "").0;
+    assert_eq!(named("{{image_originalName}}", &renamed), "DSCF0001");
+    assert_eq!(
+        named("{{image_name}}-{{image_originalName}}", &renamed),
+        "6489169691-DSCF0001"
+    );
+    assert_eq!(
+        named("{{image_originalName}}", &NameFields::default()),
+        "6489169691"
+    );
+    let template = TokenTemplate::parse("{{image_originalName}}");
+    assert!(template.names_each_photo());
+    assert!(!template.needs().any());
+    assert_eq!(template.to_display(), "{Original filename}");
+    assert_eq!(template.to_lightroom(), "{{image_originalName}}");
+}
+
 /// The tokens filled from the file alone, the creators and the keywords,
 /// as Lightroom filled them for a synthetic JPEG.
 #[test]

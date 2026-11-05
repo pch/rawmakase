@@ -540,6 +540,16 @@ impl<'db> LightroomWrite<'db> {
         query(self.write.db, sql.text(), params, None)
     }
 
+    /// Whether table `table` of the attached Lightroom catalog has column
+    /// `column`.
+    pub(in crate::catalog) fn has_column(&self, table: &str, column: &str) -> Result<bool> {
+        Ok(!self
+            .read_sqlite::<i64>(
+                sqlite_sql!("SELECT 1 FROM pragma_table_info(?, 'lr') WHERE name=?"),
+                &[&table, &column],
+            )?
+            .is_empty())
+    }
     /// Whether the attached Lightroom catalog has table `name`.
     pub(in crate::catalog) fn has_table(&self, name: &str) -> Result<bool> {
         Ok(!self

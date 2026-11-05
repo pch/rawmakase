@@ -233,6 +233,21 @@ fn copy_tables(lr: &mut LightroomWrite<'_>) -> Result<()> {
     ] {
         lr.execute_sqlite(statement, &[])?;
     }
+    // The name a master's file had when Lightroom imported it, for Import
+    // Photos' suspected duplicates and the Original filename token. Its EXIF
+    // capture time is read from the file in the background; Lightroom keeps
+    // no file size.
+    if lr.has_column("AgLibraryFile", "originalFilename")? {
+        lr.execute_sqlite(
+            sqlite_sql!(
+                "INSERT INTO photo_import_facts(photo, original_name, exif_captured, size, exif_read)
+                 SELECT i.id_local, f.originalFilename, NULL, NULL, 0
+                 FROM lr.Adobe_images i JOIN lr.AgLibraryFile f ON f.id_local=i.rootFile
+                 WHERE i.masterImage IS NULL AND COALESCE(f.originalFilename, '')<>''"
+            ),
+            &[],
+        )?;
+    }
     if lr.has_table("Adobe_imageDevelopSettings")? {
         lr.execute_sqlite(
             sqlite_sql!(

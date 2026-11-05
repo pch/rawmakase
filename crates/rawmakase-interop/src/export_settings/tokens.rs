@@ -20,6 +20,9 @@ pub enum Token {
     Filename,
     /// The digits at the end of the file's name ("0001" of DSC0001).
     FilenameNumberSuffix,
+    /// The name its file had when it entered the catalog, without its
+    /// extension (see [`super::NameFields::original_name`]).
+    OriginalFilename,
     /// A virtual copy's name.
     CopyName,
     /// The name of the folder the file is in.
@@ -163,7 +166,12 @@ pub const TOKENS: &[Def] = &[
         Token::FolderName,
         Menu::ImageName,
     ),
-    unsupported("image_originalName", "Original filename"),
+    def(
+        "image_originalName",
+        "Original filename",
+        Token::OriginalFilename,
+        Menu::ImageName,
+    ),
     unsupported("image_originalName_number_suffix", "Original number suffix"),
     unsupported("image_preservedName", "Preserved filename"),
     unsupported("image_name_extension", "Filename extension"),
@@ -764,11 +772,15 @@ impl TokenTemplate {
         self.tokens().any(|t| matches!(t, Token::Sequence(_)))
     }
     /// Whether each photo of an export gets a name of its own: with neither
-    /// the file's name nor a sequence number, photos may share one (and are
-    /// then told apart by "-2", "-3"…).
+    /// the file's name (current or original) nor a sequence number, photos
+    /// may share one (and are then told apart by "-2", "-3"…).
     pub fn names_each_photo(&self) -> bool {
-        self.tokens()
-            .any(|t| matches!(t, Token::Filename | Token::Sequence(_)))
+        self.tokens().any(|t| {
+            matches!(
+                t,
+                Token::Filename | Token::OriginalFilename | Token::Sequence(_)
+            )
+        })
     }
 
     /// `source`'s new name without its extension, for its place `at`, with
@@ -815,6 +827,14 @@ impl TokenTemplate {
                     }
                     Some(suffix.to_string())
                 }
+                Token::OriginalFilename => Some(match &f.original_name {
+                    Some(original) => Path::new(original)
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned(),
+                    None => stem.to_string(),
+                }),
                 Token::CopyName => Some(f.copy_name.clone()),
                 Token::FolderName => Some(
                     source

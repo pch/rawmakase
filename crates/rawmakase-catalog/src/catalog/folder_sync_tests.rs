@@ -271,6 +271,30 @@ mod scenarios {
     }
 
     #[test]
+    fn synchronized_photos_keep_the_name_and_size_they_were_added_with() -> Result<()> {
+        let mut f = fixture()?;
+        let new = f.root.join("Lisbon/IMG_2000.dng");
+        std::fs::write(&new, b"synthetic raw, synchronized")?;
+        let plan = f.plan(SyncScope::All)?;
+        let applied = f.apply(&plan, &plan.default_accepted())?;
+        assert_eq!(applied.added, 1);
+        let id = f.id("IMG_2000.dng");
+        assert_eq!(
+            f.cat.import_facts(id)?,
+            Some(("IMG_2000.dng".into(), None, Some(27), false))
+        );
+        // Renamed outside RAWmakase and found again: still the name it had.
+        let old = f.id("IMG_1001.dng");
+        let to = f.root.join("Lisbon/keep-01.dng");
+        copy_then_delete(&f.root.join("Lisbon/IMG_1001.dng"), &to)?;
+        let plan = f.plan(SyncScope::All)?;
+        f.apply(&plan, &plan.default_accepted())?;
+        assert_eq!(f.path_of(old), to);
+        assert_eq!(f.cat.import_facts(old)?.unwrap().0, "IMG_1001.dng");
+        Ok(())
+    }
+
+    #[test]
     fn a_photo_renamed_into_a_new_folder_keeps_its_rating_keywords_and_edit() -> Result<()> {
         let mut f = fixture()?;
         let id = f.id("IMG_1001.dng");

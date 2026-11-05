@@ -51,6 +51,14 @@ pub(super) fn read(db: &impl Reads, id: PhotoId) -> Result<NameFields> {
     // By name, as Lightroom lists them.
     keywords.sort_by_cached_key(|k| (k.to_lowercase(), k.clone()));
     keywords.dedup();
+    // A virtual copy's file is its master's.
+    let original_name: Option<String> = db.read_optional(
+        sql!(
+            "SELECT f.original_name FROM photo_import_facts f
+             WHERE f.photo = (SELECT COALESCE(p.master_id, p.id) FROM photos p WHERE p.id = ?)"
+        ),
+        &[&id],
+    )?;
     let d = super::descriptive::read(db, id)?;
     // No row is the file's own (`None`); a cleared one is empty.
     let text = |value: &Option<Value<LangAlt>>| match value {
@@ -61,6 +69,7 @@ pub(super) fn read(db: &impl Reads, id: PhotoId) -> Result<NameFields> {
     Ok(NameFields {
         captured: Some(photo.captured).filter(|c| !c.is_empty()),
         copy_name: photo.copy_name,
+        original_name,
         info: super::info::read(db, id)?.unwrap_or_default(),
         title: text(&d.title),
         caption: text(&d.caption),
@@ -149,11 +158,33 @@ mod tests {
         assert_eq!(cleared[0].caption.as_deref(), Some(""));
         assert_eq!((fields[0].rating, fields[0].label.as_str()), (3, "Red"));
         assert_eq!(fields[0].camera, Default::default());
-        // Nothing known is nothing.
-        assert_eq!(fields[1], NameFields::default());
-        // A virtual copy: its own name, its master's info.
+        // Nothing known but the name it was added with.
+        assert_eq!(
+            fields[1],
+            NameFields {
+                original_name: Some("b.ARW".into()),
+                ..NameFields::default()
+            }
+        );
+        // A virtual copy: its own name, its master's info and original name.
         assert_eq!(fields[2].copy_name, "Copy 1");
         assert_eq!(fields[2].info, info);
+        assert_eq!(fields[2].original_name.as_deref(), Some("a.ARW"));
+        // Renamed, it keeps the name it was added with.
+        cat.db_for_tests().execute(
+            "UPDATE photos SET filename = 'renamed.ARW' WHERE id = ?",
+            rusqlite::params![ids[0].0],
+        )?;
+        assert_eq!(
+            cat.name_fields(&ids[..1])?[0].original_name.as_deref(),
+            Some("a.ARW")
+        );
+        // Added by a release that didn't keep it: not known.
+        cat.db_for_tests().execute(
+            "DELETE FROM photo_import_facts WHERE photo = ?",
+            rusqlite::params![ids[1].0],
+        )?;
+        assert_eq!(cat.name_fields(&ids[1..2])?[0].original_name, None);
         Ok(())
     }
 }

@@ -223,6 +223,10 @@ pub struct NameFields {
     pub captured: Option<String>,
     /// A virtual copy's name.
     pub copy_name: String,
+    /// The name its file had when it entered the catalog (its master's for
+    /// a virtual copy), with its extension; `None` when the catalog doesn't
+    /// know it, and the Original filename token then gives the current name.
+    pub original_name: Option<String>,
     /// Lens, exposure, focal length, ISO and dimensions; its camera is not
     /// used, see `camera`.
     pub info: crate::metadata::PhotoInfo,
@@ -276,6 +280,7 @@ impl NameFields {
     pub const NONE: NameFields = NameFields {
         captured: None,
         copy_name: String::new(),
+        original_name: None,
         info: crate::metadata::PhotoInfo {
             camera: None,
             lens: None,
