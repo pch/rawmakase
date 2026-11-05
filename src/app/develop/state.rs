@@ -347,7 +347,8 @@ pub(in crate::app) struct ViewState {
     /// A drag in the histogram in progress.
     pub(in crate::app) tone_drag: Option<crate::app::develop::panels::tone_drag::ToneDrag>,
     pub(in crate::app) tool: Tool,
-    pub(in crate::app) crop_drag: Option<([f32; 4], usize)>,
+    /// A drag on the crop, from the press to the release.
+    pub(in crate::app) crop_drag: Option<crate::app::develop::tools::crop_drag::CropDrag>,
     /// The aspect this photo's crop is locked to, in the Crop menu's values: the
     /// photo's own ratio (negative), a preset or Custom ratio (positive; its
     /// reciprocal after X), or 0 for unlocked (Free). It is 0 exactly when Free is

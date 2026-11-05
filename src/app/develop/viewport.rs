@@ -2,6 +2,7 @@ use crate::app::Editor;
 use crate::app::Module;
 use crate::app::develop::before_after;
 use crate::app::develop::state::{TextureMode, Tool};
+use crate::app::develop::tools::crop_drag::{self, CropDrag, Handle};
 use crate::app::develop::tools::crop_tool::{Attention, Guide, Ruler, crop_aspect_shown};
 use crate::app::ui::design::{Tone, radius, text};
 use crate::app::ui::icons::{self, Icon};
@@ -596,83 +597,51 @@ impl Editor {
                 egui::StrokeKind::Inside,
             );
             self.crop_guides_ui(ui, cr, rect);
-            let handles = [
-                cr.left_top(),
-                cr.right_top(),
-                cr.right_bottom(),
-                cr.left_bottom(),
-                cr.left_center(),
-                cr.right_center(),
-                cr.center_top(),
-                cr.center_bottom(),
-            ];
-            for p in handles {
+            for h in Handle::ALL {
                 ui.painter().rect_filled(
-                    Rect::from_center_size(p, Vec2::splat(8.)),
+                    Rect::from_center_size(h.on(cr), Vec2::splat(8.)),
                     1.,
                     Color32::WHITE,
                 );
             }
             let ruling = self.straighten_ruler(ui, &response, rect);
+            let alt = ui.input(|i| i.modifiers.alt);
             if !ruling
                 && response.drag_started()
-                && let Some(p) = response.interact_pointer_pos()
+                && let Some(p) = ui
+                    .input(|i| i.pointer.press_origin())
+                    .or_else(|| response.interact_pointer_pos())
             {
-                let nearest = handles
-                    .iter()
-                    .enumerate()
-                    .min_by(|(_, a), (_, b)| a.distance(p).total_cmp(&b.distance(p)))
-                    .map(|(i, q)| (i, q.distance(p)));
-                let handle = nearest
-                    .filter(|(_, d)| *d < 25.)
-                    .map(|(i, _)| i)
-                    .unwrap_or(8);
-                self.view.crop_drag = Some((c, handle));
+                // The handle under the press, not under the pointer once it has moved far
+                // enough to start a drag: a quick flick would otherwise miss it.
+                self.view.crop_drag = Some(CropDrag::new(c, Handle::pressed(cr, p), alt));
             }
             if !ruling
                 && response.dragged()
-                && let Some((start, handle)) = self.view.crop_drag
+                && let Some(drag) = self.view.crop_drag.as_mut()
             {
-                let delta = response.total_drag_delta().unwrap_or_default();
-                let dx = delta.x / rect.width();
-                let dy = delta.y / rect.height();
-                let mut c = start;
-                match handle {
-                    0 => {
-                        c[0] += dx;
-                        c[1] += dy;
+                let moved = response.total_drag_delta().unwrap_or_default();
+                drag.follow_alt(alt, c, moved);
+                let drag = *drag;
+                let d = (moved - drag.from) / rect.size();
+                match drag.handle.filter(|_| drag.about_centre) {
+                    Some(handle) => {
+                        let ratio = self.crop_constraint();
+                        let crop = crop_drag::resize_about_centre(
+                            drag.start,
+                            handle,
+                            d,
+                            ratio,
+                            rect.width() / rect.height(),
+                        );
+                        self.document.edit.recipe_mut().crop = crop;
                     }
-                    1 => {
-                        c[2] += dx;
-                        c[1] += dy;
-                    }
-                    2 => {
-                        c[2] += dx;
-                        c[3] += dy;
-                    }
-                    3 => {
-                        c[0] += dx;
-                        c[3] += dy;
-                    }
-                    4 => c[0] += dx,
-                    5 => c[2] += dx,
-                    6 => c[1] += dy,
-                    7 => c[3] += dy,
-                    _ => {
-                        let dx = dx.clamp(-c[0], 1. - c[2]);
-                        let dy = dy.clamp(-c[1], 1. - c[3]);
-                        c[0] += dx;
-                        c[2] += dx;
-                        c[1] += dy;
-                        c[3] += dy;
+                    None => {
+                        self.document.edit.recipe_mut().crop =
+                            crop_drag::drag_sides(drag.start, drag.handle, d);
+                        self.fit_aspect();
                     }
                 }
-                c[0] = c[0].clamp(0., start[2] - 0.01);
-                c[1] = c[1].clamp(0., start[3] - 0.01);
-                c[2] = c[2].clamp(c[0] + 0.01, 1.);
-                c[3] = c[3].clamp(c[1] + 0.01, 1.);
-                self.document.edit.recipe_mut().crop = c;
-                self.fit_aspect();
             }
             if response.drag_stopped() {
                 self.view.crop_drag = None;

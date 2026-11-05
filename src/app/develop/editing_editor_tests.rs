@@ -227,7 +227,11 @@ fn navigation_during_an_edit_frame_cannot_dirty_the_next_document() {
     );
     editor.document.edit.setup_mut().exposure = 1.25;
     editor.presets.preview = Some(editor.document.edit.recipe().clone());
-    editor.view.crop_drag = Some(([0., 0., 1., 1.], 0));
+    editor.view.crop_drag = Some(crate::app::develop::tools::crop_drag::CropDrag::new(
+        [0., 0., 1., 1.],
+        None,
+        false,
+    ));
     let frame = editor.begin_edit_frame();
     // This does not need a valid RAW: navigation resets state before asynchronous decoding.
     editor.open_raw(
