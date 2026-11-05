@@ -17,6 +17,12 @@ const MIN_LEVEL: f32 = 1. / 16.;
 fn max_level(fit: f32) -> f32 {
     MAX_LEVEL.max(fit * 2.)
 }
+/// How much more than the view a 1:1 region renders on each side, as a
+/// fraction of the view's width and height.
+const REGION_MARGIN: f32 = 0.25;
+/// The longest edge a region with its margin renders at: the texture size
+/// every GPU supports (wgpu's default limit).
+const REGION_EDGE: u32 = 8192;
 /// Cmd+= and Cmd+- zoom by this factor, half a doubling, so each press looks like
 /// the same step whatever the level.
 const STEP: f32 = std::f32::consts::SQRT_2;
@@ -119,6 +125,40 @@ impl Zoom {
             .round()
             .clamp(0., (height - h) as f32) as u32;
         Some([x, y, w, h])
+    }
+    /// The 1:1 region to render for a view `viewport` pixels in size, as
+    /// [`Self::region`] but with a margin around it, so a drag moves pixels
+    /// already rendered instead of rendering on every frame: on a GPU that is
+    /// not much faster than the frames, that work held back the frames shown.
+    /// `last`, the region last asked for, is kept while it still covers the
+    /// view and is no larger than a new one would be.
+    pub(crate) fn render_region(
+        &self,
+        viewport: Vec2,
+        width: u32,
+        height: u32,
+        last: Option<[u32; 4]>,
+    ) -> Option<[u32; 4]> {
+        let [x, y, w, h] = self.region(viewport, width, height)?;
+        let grow = |at: u32, len: u32, total: u32| {
+            let margin = (len as f32 * REGION_MARGIN).round() as u32;
+            let grown = (len + 2 * margin).min(REGION_EDGE.max(len)).min(total);
+            let start = (at + len / 2).saturating_sub(grown / 2).min(total - grown);
+            (start, grown)
+        };
+        let (gx, gw) = grow(x, w, width);
+        let (gy, gh) = grow(y, h, height);
+        let covers = |[lx, ly, lw, lh]: [u32; 4]| {
+            lx <= x
+                && ly <= y
+                && lx + lw >= x + w
+                && ly + lh >= y + h
+                && lx + lw <= width
+                && ly + lh <= height
+                && lw <= gw
+                && lh <= gh
+        };
+        Some(last.filter(|l| covers(*l)).unwrap_or([gx, gy, gw, gh]))
     }
     /// Lightroom's click on the photo: from Fit, zooms in keeping `pos` (on the
     /// photo drawn at `rect` in `area`, `size` image pixels) under the pointer;
@@ -417,6 +457,45 @@ mod tests {
         let mut glide = Glide::to([0.2, 0.2], pan, photo);
         assert!(!glide.step(&mut zoom, Some(PhotoId(2)), 1. / 60.));
         assert_eq!(zoom.pan, pan);
+    }
+
+    /// A 1:1 region renders with a margin around the view, kept while a drag
+    /// stays within it and rendered again once the view leaves it; never past
+    /// the photo or the largest texture a GPU takes.
+    #[test]
+    fn a_region_renders_with_a_margin_a_drag_stays_within() {
+        use super::Zoom;
+        use eframe::egui::Vec2;
+        let mut zoom = Zoom {
+            on: true,
+            level: 1.,
+            pan: [0.5, 0.5],
+        };
+        let view = Vec2::new(1000., 600.);
+        let region = |zoom: &Zoom, last| zoom.render_region(view, 6000, 4000, last);
+        let first = region(&zoom, None).unwrap();
+        assert_eq!(first, [2250, 1550, 1500, 900]);
+        // A drag of 200 pixels stays within the margin of 250.
+        zoom.pan[0] += 200. / 6000.;
+        assert_eq!(region(&zoom, Some(first)), Some(first));
+        // One of 300 leaves it: a new region around the view.
+        zoom.pan[0] = 0.5 + 300. / 6000.;
+        assert_eq!(region(&zoom, Some(first)), Some([2550, 1550, 1500, 900]));
+        // A region rendered at a lower zoom, larger than one at this zoom
+        // needs, is not kept.
+        zoom.pan = [0.5, 0.5];
+        zoom.level = 2.;
+        assert_eq!(region(&zoom, Some(first)), Some([2625, 1775, 750, 450]));
+        // At a corner the margin stays on the photo.
+        zoom.level = 1.;
+        zoom.pan = [0., 1.];
+        assert_eq!(region(&zoom, None), Some([0, 3100, 1500, 900]));
+        // A view almost as large as the GPU's largest texture gets what margin
+        // fits, and one larger than the photo the whole photo.
+        let wide = zoom.render_region(Vec2::new(7000., 600.), 20000, 4000, None);
+        assert_eq!(wide.map(|r| r[2]), Some(8192));
+        let all = zoom.render_region(Vec2::new(7000., 5000.), 6000, 4000, None);
+        assert_eq!(all, Some([0, 0, 6000, 4000]));
     }
 
     /// The part of the photo in view, wherever the zoom is: below 100% too, when

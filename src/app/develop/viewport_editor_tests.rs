@@ -48,7 +48,11 @@ fn keyboard_fit_and_physical_pixel_region() {
     e.document.set_image(image);
     e.view.zoom.on = true;
     e.view.viewport = Vec2::new(4., 2.);
-    assert_eq!(e.region(), Some([4, 3, 4, 2]));
+    // The view's own region is in physical pixels; the one rendered adds a
+    // margin around it.
+    let view = e.view.zoom.region(e.view.viewport, 12, 8);
+    assert_eq!(view, Some([4, 3, 4, 2]));
+    assert_eq!(e.region(), Some([3, 2, 6, 4]));
 }
 
 /// Cmd+0 is 100%, Cmd+1 fits, and Cmd+= / Cmd+- zoom by a constant factor from
@@ -193,4 +197,64 @@ fn photo_click_zooms_and_drag_pans_without_editing() {
     assert!(zoom, "Releasing a pan must not toggle zoom");
     frame(vec![button(q, true)]);
     assert!(!frame(vec![button(q, false)]).0);
+}
+
+/// Zoomed in at 1.5x scaling, a pointer step of one point is a pixel and a
+/// half: the photo is drawn on whole screen pixels wherever the pan puts it, or
+/// a slow drag softens it every other frame.
+#[test]
+fn a_zoomed_in_photo_sits_on_whole_screen_pixels() {
+    let ctx = egui::Context::default();
+    ctx.set_pixels_per_point(1.5);
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    e.document.set_image(Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 400,
+        height: 300,
+        pixels: vec![[0.2; 3]; 120_000],
+        metadata: Metadata {
+            width: 400,
+            height: 300,
+            wb: [1.; 3],
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+    }));
+    e.module = Module::Develop;
+    e.preview.texture = Some(
+        ctx.load_texture(
+            "photo",
+            egui::ColorImage::filled([40, 30], egui::Color32::GRAY),
+            egui::TextureOptions::LINEAR,
+        )
+        .into(),
+    );
+    e.view.zoom.on = true;
+    e.view.zoom.level = 1.;
+    for step in 0..12 {
+        e.view.zoom.pan = [0.4 + step as f32 * 0.0137, 0.45 + step as f32 * 0.0091];
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(100., 80.))),
+                ..Default::default()
+            },
+            |ui| {
+                e.viewport_ui(ui);
+            },
+        )
+        .textures_delta
+        .clear();
+        let at = e.view.shown_rect.expect("the photo is drawn").min * 1.5;
+        assert!(
+            (at.x - at.x.round()).abs() < 1e-3 && (at.y - at.y.round()).abs() < 1e-3,
+            "drawn at {at:?} pixels"
+        );
+    }
 }

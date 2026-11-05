@@ -372,7 +372,16 @@ impl Editor {
         let geometry = Geometry::new(&image, &recipe, 0);
         let viewport = self.view.viewport;
         let job = BeforeJob {
-            region: zoom.region(viewport, geometry.width, geometry.height),
+            region: zoom.render_region(
+                viewport,
+                geometry.width,
+                geometry.height,
+                self.preview
+                    .before
+                    .submitted
+                    .as_ref()
+                    .and_then(|j| j.region),
+            ),
             max_edge: crate::app::develop::workflow::render_edges(&zoom, viewport, &geometry)
                 .max_edge,
             ai: self.document.ai_source(&image, &recipe.ai_denoise),
