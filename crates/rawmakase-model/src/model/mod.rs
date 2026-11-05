@@ -3,6 +3,7 @@ pub mod ai_denoise;
 pub mod camera_raw;
 pub mod edit;
 pub mod effects;
+pub mod hdr;
 pub mod image_frame;
 pub mod masks;
 pub mod measures;

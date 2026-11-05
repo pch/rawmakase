@@ -672,7 +672,7 @@ fn releases_before_ai_denoise_refuse_its_format() {
     use super::db::{AI_DENOISE, LENSFUN, NEWEST};
     assert!(!opens(AI_DENOISE, LENSFUN));
     assert!(opens(AI_DENOISE, NEWEST) && opens(LENSFUN, NEWEST));
-    assert!(!opens(AI_DENOISE + 1, NEWEST));
+    assert!(!opens(NEWEST + 1, NEWEST));
 }
 
 /// AI Denoise on, or off with its Amount moved, in the edit, a History state or a
@@ -744,5 +744,64 @@ fn storing_ai_denoise_anywhere_raises_the_format() -> Result<()> {
     let mut cat = Catalog::open(&path)?;
     cat.add_snapshot(id, "Denoised", &with_ai_denoise(true, 1.))?;
     assert_eq!(cat.format_version()?, super::db::AI_DENOISE);
+    Ok(())
+}
+
+/// Version 6 holds HDR edits: releases that open up to 5 refuse it.
+#[test]
+fn releases_before_hdr_refuse_its_format() {
+    use super::db::{AI_DENOISE, HDR, NEWEST};
+    assert!(!opens(HDR, AI_DENOISE));
+    assert!(opens(HDR, NEWEST) && opens(AI_DENOISE, NEWEST));
+    // Any write holding an HDR edit asks for it, over every other setting's version.
+    let mut on = with_ai_denoise(true, 0.5);
+    on.hdr.enabled = true;
+    assert_eq!(super::format_upgrade::Stores::of([&on]).version(), HDR);
+    on.hdr.enabled = false;
+    assert_eq!(
+        super::format_upgrade::Stores::of([&on]).version(),
+        AI_DENOISE
+    );
+}
+
+/// HDR values kept while HDR is off save and load back without raising the format;
+/// an edit with HDR on is refused while this release can't render it, leaving the
+/// catalog and the photo's edit as they were.
+#[test]
+fn kept_hdr_values_save_and_an_active_hdr_edit_is_refused() -> Result<()> {
+    let (dir, path, file, id) = current_catalog()?;
+    let mut cat = Catalog::open(&path)?;
+    let mut kept = Recipe::default();
+    kept.hdr.limit = 3.;
+    kept.hdr.sdr.shadows = -0.4;
+    cat.save_edit(
+        id,
+        &file,
+        &crate::storage::Identity::read(&file)?,
+        &kept,
+        &ExportOptions::default(),
+        HistoryUpdate::Keep,
+    )?;
+    assert_eq!(cat.format_version()?, VERSION);
+    assert_eq!(cat.load_edit(id, &file)?.unwrap().recipe.hdr, kept.hdr);
+
+    let mut on = kept.clone();
+    on.hdr.enabled = true;
+    let error = cat
+        .save_edit(
+            id,
+            &file,
+            &crate::storage::Identity::read(&file)?,
+            &on,
+            &ExportOptions::default(),
+            HistoryUpdate::Keep,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("HDR"), "{error}");
+    assert!(cat.add_snapshot(id, "HDR", &on).is_err());
+    assert_eq!(cat.format_version()?, VERSION);
+    assert!(backups(dir.path())?.is_empty());
+    assert_eq!(cat.load_edit(id, &file)?.unwrap().recipe, kept);
     Ok(())
 }

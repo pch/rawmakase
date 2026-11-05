@@ -696,8 +696,55 @@ pub const CROP: [Slider; 4] = [
     },
 ];
 
+/// High Dynamic Range's limit, in stops above graphics white
+/// ([`crate::model::hdr::HdrSettings::limit`]).
+pub const HDR_MAX_VALUE: Slider = Slider {
+    key: "HDRMaxValue",
+    units: 1.,
+    group: HighDynamicRange,
+};
+/// The SDR rendition's sliders (-100 to +100), in the order of
+/// [`crate::model::hdr::SdrRendition::fields`].
+pub const SDR_RENDITION: [Slider; 7] = [
+    Slider {
+        key: "SDRBrightness",
+        units: 100.,
+        group: HighDynamicRange,
+    },
+    Slider {
+        key: "SDRContrast",
+        units: 100.,
+        group: HighDynamicRange,
+    },
+    Slider {
+        key: "SDRClarity",
+        units: 100.,
+        group: HighDynamicRange,
+    },
+    Slider {
+        key: "SDRHighlights",
+        units: 100.,
+        group: HighDynamicRange,
+    },
+    Slider {
+        key: "SDRShadows",
+        units: 100.,
+        group: HighDynamicRange,
+    },
+    Slider {
+        key: "SDRWhites",
+        units: 100.,
+        group: HighDynamicRange,
+    },
+    Slider {
+        key: "SDRBlend",
+        units: 100.,
+        group: HighDynamicRange,
+    },
+];
+
 /// The sliders that aren't part of a family.
-const SINGLES: [Slider; 53] = [
+const SINGLES: [Slider; 54] = [
     EXPOSURE,
     CONTRAST,
     HIGHLIGHTS,
@@ -751,6 +798,7 @@ const SINGLES: [Slider; 53] = [
     PERSPECTIVE_X,
     PERSPECTIVE_Y,
     CROP_ANGLE,
+    HDR_MAX_VALUE,
 ];
 
 /// The slider whose key is `key`, if `key` is one.
@@ -775,6 +823,7 @@ fn every() -> impl Iterator<Item = Slider> {
         .chain(DEFRINGE_HUE_LO)
         .chain(DEFRINGE_HUE_HI)
         .chain(CROP)
+        .chain(SDR_RENDITION)
 }
 
 #[cfg(test)]

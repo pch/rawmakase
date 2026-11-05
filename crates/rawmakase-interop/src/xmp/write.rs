@@ -100,6 +100,18 @@ impl Settings {
     }
 }
 
+/// High Dynamic Range's mode, limit and SDR rendition, formatted as Camera Raw 18.7
+/// writes them (`HDRMaxValue="+4.00"`, `SDRBrightness="+50"`).
+pub(super) fn hdr_settings(r: &Recipe) -> Settings {
+    let mut s = Settings(Vec::new());
+    s.text("HDREditMode", if r.hdr.enabled { "1" } else { "0" });
+    s.put(crs::HDR_MAX_VALUE, r.hdr.limit, 2, true);
+    for (slider, value) in crs::SDR_RENDITION.into_iter().zip(r.hdr.sdr.values()) {
+        s.put(slider, value, 0, true);
+    }
+    s
+}
+
 /// An enhanced profile (Adobe Color, a creative look) as Lightroom writes it: a `Look`
 /// element over its base profile, which `CameraProfile` names. Indented for a
 /// settings description.
@@ -242,6 +254,10 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
         (crs::SATURATION, r.saturation),
     ] {
         s.put(slider, value, 0, true);
+    }
+    // As Camera Raw 18.7 writes them: only while HDR is on or a value was set.
+    if !r.hdr.is_default() {
+        s.0.extend(hdr_settings(r).0);
     }
     for i in 0..4 {
         s.put(crs::PARAMETRIC[i], r.effects.parametric[i], 0, true);

@@ -205,6 +205,10 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         sharpening_detail: _,
         sharpening_masking: _,
         masks: _,
+        // Not rendered: a recipe with HDR on fails validation before it reaches a
+        // stage (`HdrSettings::check_renderable`), and values kept while HDR is off
+        // change nothing. HDR rendering must key the stages that read it.
+        hdr: _,
         // Not read when rendering: switched-off panels are bypassed before the stages
         // (see `Recipe::as_rendered`).
         panels: _,

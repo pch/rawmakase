@@ -1569,6 +1569,16 @@ fn lightroom_15_controls_at_rest_are_not_reported() -> Result<()> {
         let (_, w) = convert_develop(&text, &crate::camera_data::Metadata::default(), &[], None)?;
         assert!(!w.is_empty(), "{active}");
     }
+    // HDR values set while HDR is off are kept, so switching it on restores them.
+    let text = "s = { Exposure2012 = 0.5, HDREditMode = 0, HDRMaxValue = 3.5, SDRBrightness = 20, SDRBlend = -40 }";
+    let (r, w) = convert_develop(text, &crate::camera_data::Metadata::default(), &[], None)?;
+    assert!(w.is_empty(), "{w:?}");
+    assert!(!r.hdr.enabled);
+    assert_eq!(r.hdr.limit, 3.5);
+    assert_eq!(
+        (r.hdr.sdr.brightness, r.hdr.sdr.blend),
+        (20. * 0.01, -40. * 0.01)
+    );
     Ok(())
 }
 #[test]

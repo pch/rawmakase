@@ -172,6 +172,7 @@ impl Preset {
         self.apply_auto_gray_mix(&mut settings, &mut recipe, m, image)?;
         self.apply_auto_tone(&mut settings, &mut recipe, image)?;
         self.apply_panels(&mut settings, &mut recipe)?;
+        self.apply_hdr(&mut settings, &mut recipe)?;
         let skipped = self.apply_local(&mut recipe, m);
         ensure!(skipped.is_empty(), "{}", skipped.join("; "));
         self.validate_remaining(&mut settings, m)?;
@@ -257,6 +258,9 @@ impl Preset {
         });
         stage(&mut recipe, &|r| {
             self.apply_panels(&mut settings.borrow_mut(), r)
+        });
+        stage(&mut recipe, &|r| {
+            self.apply_hdr(&mut settings.borrow_mut(), r)
         });
         stage(&mut recipe, &|_| {
             self.validate_remaining(&mut settings.borrow_mut(), m)
@@ -1181,11 +1185,47 @@ impl Preset {
         }
         edits.skipped
     }
+    /// High Dynamic Range's mode, limit and SDR rendition. Camera Raw 18.7 replaces a
+    /// limit outside its range with its default and an SDR slider outside -100..+100
+    /// with 0, rather than refusing them: they are read the same way. Values kept while
+    /// HDR is off are read too, so switching HDR on restores them. HDR on is refused
+    /// while it can't be rendered ([`HdrSettings::check_renderable`]).
+    ///
+    /// [`HdrSettings::check_renderable`]: crate::model::hdr::HdrSettings::check_renderable
+    fn apply_hdr(&self, settings: &mut Settings<'_>, r: &mut Recipe) -> Result<()> {
+        use crate::model::hdr::{DEFAULT_LIMIT, LIMIT_RANGE};
+        let v = settings.values;
+        let mode = "HDREditMode";
+        settings.seen.insert(mode.into());
+        if let Some(on) = number(v, mode)? {
+            ensure!(on == 0. || on == 1., "Invalid {mode}");
+            r.hdr.enabled = on == 1.;
+        }
+        settings.seen.insert(crs::HDR_MAX_VALUE.key.into());
+        if let Some(limit) = number(v, crs::HDR_MAX_VALUE.key)? {
+            r.hdr.limit = if LIMIT_RANGE.contains(&limit) {
+                limit
+            } else {
+                DEFAULT_LIMIT
+            };
+        }
+        for (slider, out) in crs::SDR_RENDITION.iter().zip(r.hdr.sdr.values_mut()) {
+            settings.seen.insert(slider.key.into());
+            if let Some(value) = number(v, slider.key)? {
+                let value = value * slider.scale();
+                *out = if (-1. ..=1.).contains(&value) {
+                    value
+                } else {
+                    0.
+                };
+            }
+        }
+        r.hdr.check_renderable()
+    }
     fn validate_remaining(&self, settings: &mut Settings<'_>, m: &Metadata) -> Result<()> {
         let v = settings.values;
         // No-op geometry/default flags are safe; active unsupported operations are explicit blockers.
         for (key, default) in [
-            ("HDREditMode", "0"),
             ("IncrementalTemperature", "0"),
             ("IncrementalTint", "0"),
             // Camera Raw 18.6 effects without rendering support yet.
@@ -1208,25 +1248,12 @@ impl Preset {
         // constrains the crop tool and does not change rendering.
         settings.seen.insert("CropConstrainToUnitSquare".into());
         // Lightroom 15 writes these into every record. Glow's own controls do nothing
-        // while Glow is 0 (an active Glow is refused above), the SDR and HDR values
-        // apply only in HDR editing, and Distraction Removal's switch changes nothing
-        // without removals, which are reported on their own.
+        // while Glow is 0 (an active Glow is refused above), and Distraction Removal's
+        // switch changes nothing without removals, which are reported on their own.
         let at_rest = |key: &str| v.get(key).is_none_or(|value| value.parse() == Ok(0f32));
         let mut neutral = vec!["EnableDistractionRemoval"];
         if at_rest("Glow") {
             neutral.extend(["GlowRange", "GlowSpread", "GlowStyle", "GlowWarmth"]);
-        }
-        if at_rest("HDREditMode") {
-            neutral.extend([
-                "HDRMaxValue",
-                "SDRBlend",
-                "SDRBrightness",
-                "SDRClarity",
-                "SDRContrast",
-                "SDRHighlights",
-                "SDRShadows",
-                "SDRWhites",
-            ]);
         }
         settings.seen.extend(neutral.into_iter().map(String::from));
         let unknown: Vec<_> = v

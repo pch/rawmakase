@@ -112,6 +112,11 @@ pub fn preset(r: &Recipe, shown: &Metadata, info: &PresetInfo, groups: &GroupSel
         .filter(|(key, _)| !attributes.iter().any(|(k, _)| k == key))
         .collect();
     attributes.extend(dormant);
+    // HDR's settings are written only once set; a preset of the group carries them at
+    // their defaults too, so applying it sets HDR as this photo has it.
+    if groups.contains(SettingGroup::HighDynamicRange) && r.hdr.is_default() {
+        attributes.extend(super::write::hdr_settings(r).0);
+    }
     // Each chosen panel's switch as the photo has it, on or off, so applying the
     // preset also sets that panel the same way.
     for panel in crate::model::panels::Panel::ALL {
@@ -212,6 +217,7 @@ pub(crate) fn group_of_key(key: &str) -> Option<SettingGroup> {
         "EnableCalibration" => Calibration,
         "EnableRetouch" => SpotRemoval,
         "HasCrop" | "CropConstrainToWarp" => Crop,
+        "HDREditMode" => HighDynamicRange,
         _ if starts("Parametric") || starts("ToneCurve") => ToneCurve,
         _ if starts("HueAdjustment")
             || starts("SaturationAdjustment")

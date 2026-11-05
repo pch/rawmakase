@@ -27,12 +27,19 @@ pub const LENSFUN_SCHEMA: u32 = 12;
 /// than render it without AI Denoise (or drop the setting when saving). Every other
 /// recipe keeps its version.
 pub const AI_DENOISE_SCHEMA: u32 = 13;
+/// The version a recipe with HDR editing on is written as: releases before it read up
+/// to [`AI_DENOISE_SCHEMA`] and refuse it rather than render it as SDR (or drop the
+/// setting when saving). HDR values kept while HDR is off don't need it: those
+/// releases keep them as unknown settings and render the edit as it should.
+pub const HDR_SCHEMA: u32 = 14;
 /// The newest version this release reads.
-pub const NEWEST: u32 = AI_DENOISE_SCHEMA;
+pub const NEWEST: u32 = HDR_SCHEMA;
 
-/// The version to save `recipe` as.
+/// The version to save `recipe` as: the newest any of its settings needs.
 pub fn schema_for(recipe: &super::recipe::Recipe) -> u32 {
-    if !recipe.ai_denoise.is_default() {
+    if recipe.hdr.is_active() {
+        HDR_SCHEMA
+    } else if !recipe.ai_denoise.is_default() {
         AI_DENOISE_SCHEMA
     } else if recipe.uses_lensfun() {
         LENSFUN_SCHEMA
@@ -151,11 +158,11 @@ mod tests {
             assert!(v["recipe"].get("engine").is_none(), "{version}");
             assert_eq!(v["recipe"]["exposure"], 0.5);
         }
-        for version in [12, 13] {
+        for version in [12, 13, 14] {
             let mut v = serde_json::json!({"schema": version, "pipeline": version, "recipe": {}});
             assert!(super::migrate_recipe(&mut v).is_ok());
         }
-        let mut v = serde_json::json!({"schema": 14, "pipeline": 14, "recipe": {}});
+        let mut v = serde_json::json!({"schema": 15, "pipeline": 15, "recipe": {}});
         assert!(super::migrate_recipe(&mut v).is_err());
         let mut v = serde_json::json!({"schema": 5, "pipeline": 6, "recipe": {}});
         assert!(super::migrate_recipe(&mut v).is_err());
@@ -408,5 +415,49 @@ mod tests {
         }
         // A release that knows nothing of it reads up to 12 only.
         const { assert!(super::AI_DENOISE_SCHEMA > super::LENSFUN_SCHEMA) };
+    }
+
+    /// HDR on needs schema 14, over AI Denoise's 13, and a release that reads up to 13
+    /// refuses it. Values kept while HDR is off keep the version the recipe had: such a
+    /// release keeps them as unknown settings, and they come back unchanged.
+    #[test]
+    fn active_hdr_is_saved_as_its_own_schema_and_kept_values_are_not() {
+        use super::super::{hdr::HdrSettings, recipe::Recipe};
+        let mut r = Recipe::default();
+        assert!(serde_json::to_value(&r).unwrap().get("hdr").is_none());
+        r.hdr = HdrSettings {
+            limit: 3.,
+            ..Default::default()
+        };
+        r.hdr.sdr.brightness = 0.3;
+        assert_eq!(super::schema_for(&r), super::SCHEMA);
+        r.ai_denoise.enabled = true;
+        assert_eq!(super::schema_for(&r), super::AI_DENOISE_SCHEMA);
+        let envelope = |r: &Recipe| {
+            serde_json::json!({
+                "schema": super::schema_for(r),
+                "pipeline": super::schema_for(r),
+                "recipe": serde_json::to_value(r).unwrap(),
+            })
+        };
+        // An earlier release reads it, keeping `hdr` as an unknown setting.
+        let kept = envelope(&r);
+        assert!(super::reads(&kept, super::AI_DENOISE_SCHEMA));
+        assert!(kept["recipe"]["hdr"].is_object());
+        let read: Recipe = serde_json::from_value(kept["recipe"].clone()).unwrap();
+        assert_eq!(read.hdr, r.hdr);
+        assert!(read.validate().is_ok());
+
+        r.hdr.enabled = true;
+        assert_eq!(super::schema_for(&r), super::HDR_SCHEMA);
+        let active = envelope(&r);
+        assert!(!super::reads(&active, super::AI_DENOISE_SCHEMA));
+        assert!(super::reads(&active, super::NEWEST));
+        let read: Recipe = serde_json::from_value(active["recipe"].clone()).unwrap();
+        assert_eq!(read.hdr, r.hdr);
+        assert!(read.unknown.is_empty());
+        // This release reads it but refuses to render it, keeping it as saved.
+        assert!(read.validate().is_err());
+        const { assert!(super::HDR_SCHEMA > super::AI_DENOISE_SCHEMA) };
     }
 }
