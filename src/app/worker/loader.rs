@@ -278,6 +278,8 @@ fn opener(
                 && crate::storage::is_raw(&path)
                 && crate::platform::preview_reads::previews_only(&path)
                 && let Ok(im) = crate::raw::largest_thumbnail_from_file(&path)
+                // As every image sent: of this file, not one replaced meanwhile.
+                && unchanged(&path, file.as_ref()).is_ok()
             {
                 send(
                     &tx,
