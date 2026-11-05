@@ -1,5 +1,5 @@
 use super::{
-    HEAD, Sparse, TAIL, checked, header_from_file, header_in_pieces, in_pieces,
+    HEAD, Sparse, TAIL, checked, header_from_file, in_pieces, largest_in_pieces,
     largest_preview_from_file, preview_from_file,
 };
 use crate::container::nef::tests::nef;
@@ -402,18 +402,11 @@ fn real_files_give_the_same_preview_read_in_pieces() {
         }
         // The largest, as Develop's placeholder reads it, any format.
         if let Ok(whole) = crate::preview(&info, &file) {
-            let mut cursor = Cursor::new(&file);
-            let largest = Sparse::new(&mut cursor).and_then(|mut f| {
-                let info = header_in_pieces(&mut f, |_| true)?;
-                let (at, len) = crate::preview::find(&info, &f.bytes).ok()?;
-                f.fill(at, len)?;
-                Some(crate::embedded(&f.bytes, (at, len)).ok()?.into_owned())
-            });
-            match largest {
-                Some(p) if p == whole.as_ref() => largest_same += 1,
-                Some(_) => {
+            match largest_in_pieces(&mut Cursor::new(&file), |_| true) {
+                Some(p) if p.preview == whole.as_ref() => largest_same += 1,
+                Some(p) => {
                     eprintln!("another largest: {} ({:?})", path.display(), info.variant);
-                    if checked(info.variant) {
+                    if checked(info.variant) || checked(p.info.variant) {
                         differ.push(path.display().to_string());
                     }
                 }

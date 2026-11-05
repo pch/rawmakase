@@ -69,8 +69,17 @@ pub fn preview_from_file(file: &mut (impl Read + Seek), edge: u32) -> Option<Par
 /// candidates' frames are read, as a reader may size its candidates from
 /// them. `None` when it can't be read this way.
 pub fn largest_preview_from_file(file: &mut (impl Read + Seek)) -> Option<PartialPreview> {
+    largest_in_pieces(file, checked)
+}
+
+/// The preview [`largest_preview_from_file`] reads, for files whose variant
+/// `allow` accepts.
+fn largest_in_pieces(
+    file: &mut (impl Read + Seek),
+    allow: impl Fn(Variant) -> bool,
+) -> Option<PartialPreview> {
     let mut f = Sparse::new(file)?;
-    let info = header_in_pieces(&mut f, checked)?;
+    let info = header_in_pieces(&mut f, allow)?;
     let (at, len) = crate::preview::find(&info, &f.bytes).ok()?;
     f.fill(at, len)?;
     let preview = crate::embedded(&f.bytes, (at, len)).ok()?.into_owned();
