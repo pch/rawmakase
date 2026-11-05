@@ -119,7 +119,7 @@ there is no separate MCP authentication flow. MCP opens no network listener.
 | `run_action` | Named operations such as undo/redo, reset, color/B&W treatment, ratings, flags and labels |
 | `save_photo` | Waits for the current edit to be saved to the catalog |
 | `preview_photo` | Returns a rendered JPEG image plus captured revision for visual inspection |
-| `export_photo` | Starts a JPEG, TIFF or PNG export to a new absolute output path |
+| `export_photo` | Starts a JPEG, TIFF or PNG export to a new absolute output path, in sRGB unless `color_space` is `adobe-rgb` or `prophoto` (TIFF only; another path is refused) |
 | `get_job` | Reports export progress, completion or failure |
 | `build_previews` | Queues Standard-Sized (or, with `kind: one_to_one`, 1:1) previews of the selected photos; `get_state`'s `building_previews` shows progress |
 

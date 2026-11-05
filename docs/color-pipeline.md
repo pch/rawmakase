@@ -51,9 +51,42 @@ Colors the edit pushes outside sRGB, such as a saturated orange brightened past 
 
 On the corpus chart (Camera Raw 18.7, 369 cases), clipping lowered the mean ΔE00 from 1.62 to 1.29: the default render 0.91 → 0.66, white balance at 8000 K under illuminant A 4.22 → 0.89 and at 5000 K 2.45 → 0.69, the parametric curve cases 0.76–2.95 → 0.48–1.15, Color Grading 0.75–2.02 → 0.56–1.43, Point Color 0.83–1.82 → 0.69–1.11 and Camera Calibration 0.97–2.21 → 0.71–2.02. Positive Highlights moved further off (+60: 5.27 → 5.89, +100: 7.98 → 8.66), and Dehaze and Shadows +100 by up to 0.15. These figures predate the scene tone stage.
 
+An export in Adobe RGB (1998) or ProPhoto RGB clips in that space instead ([export color spaces](#export-color-spaces)), so colors between sRGB's gamut and its own keep their saturation.
+
+## Export color spaces
+
+An export is written in sRGB (the default), Adobe RGB (1998) or ProPhoto RGB, chosen under File Settings in the Export dialog and saved in `export.json` (`ExportSettings::color_space`), never with an edit, a preset or the catalog. Adobe RGB is written as JPEG, PNG or 16-bit TIFF; ProPhoto RGB only as 16-bit TIFF, as 8 bits band in so wide a gamut. A combination a format can't hold is refused before anything renders, by `ExportSettings::output_space` in the dialog, Export with Previous and batches, and by `Format::supports` for a target named directly (the CLI, the automation socket, MCP and `rawmakase control`), rather than written in another space or format.
+
+**Where the conversion happens.** The edit renders as it always has up to the end of the colour stage (Oklab, D65). `finish_color_in` (`develop/pipeline/pixel.rs`) takes the unclipped linear sRGB that `lab_to_srgb` returns, applies one 3×3 matrix to the destination's linear RGB (`OutputSpace::from_linear_srgb` in `rawmakase-model/src/color/output.rs`), clips each channel to 0–1 there, the same rule as sRGB's, and encodes with the destination's curve. The matrices come from the published chromaticities: Adobe RGB shares sRGB's D65 white; ProPhoto's white is D50, so its matrix includes the Bradford D65→D50 adaptation ICC profiles use for their D50 connection space. White stays exactly white, and sRGB's red and blue primaries, which Adobe RGB shares, have no other channel. sRGB keeps its own code path, so sRGB exports are byte for byte what they were (`export/srgb_fixtures.rs` records them). There is no gamut compression.
+
+**Curves.** Adobe RGB: gamma 563/256 (2.19921875), as its specification and profile give it. ProPhoto: ROMM RGB's curve, gamma 1.8 with a linear segment of slope 16 below 1/512 (1/32 encoded), as the profile's parametric curve. This is not Adobe's pure-gamma-1.8 ProPhoto profile: colour-managed readers show the same colours, but raw dark code values differ slightly from a Lightroom ProPhoto export.
+
+**Profiles.** Adobe RGB embeds `assets/AdobeCompat-v2.icc` and ProPhoto `assets/ProPhoto-v4.icc`, CC0 profiles from Compact-ICC-Profiles at commit bdd84663061bc4ae95ca70decff54f581e27f702, pinned by SHA-256 (`licenses/Compact-ICC-Profiles-CC0.txt`); no Adobe file and no Adobe installation is involved. sRGB embeds `assets/srgb.icc`, unchanged. `color_management::output_profile` is the one owner of which profile a space embeds. Tests read the profiles with moxcms: their curves agree with the encoders within one code value at 16 bits over every code value, their colorants with the matrices within 3×10⁻⁵ (the profiles' s15.16 rounding), and moxcms's transform from sRGB with the conversion within 10⁻⁴ in linear light. Read back through their profiles by moxcms, 16-bit TIFF exports are the sRGB export within 4 code values on grays and 3×10⁻⁴ on colours (the profiles' colorants and white differ from the published chromaticities by up to 2×10⁻⁵); 8-bit Adobe RGB within 2.5 code values on grays and 0.008 in linear light on colours, since a dark channel beside a bright one is read back as a difference of two 8-bit values. The tolerance of one code value at 16 bits planned for #604 holds for the curves; with the published-chromaticity matrices it can't for saturated colours, as a pure-gamma channel near zero turns the profiles' rounding into many code values.
+
+**Metadata.** EXIF ColorSpace is 1 for sRGB and 0xFFFF (uncalibrated) for Adobe RGB and ProPhoto; Adobe RGB also gets an interoperability directory with index "R03" (version 0100), as cameras and Lightroom write. A camera's own ColorSpace and interoperability index ("R98") are never carried into an export. The XMP packet says nothing about colour. The profile is embedded whatever the metadata switches say.
+
+**After the colour stage.** These stages work on the destination's encoded values; each keeps its sRGB branch exactly:
+
+| Stage | Clip | In another space |
+| --- | --- | --- |
+| `finish_color` | Linear 0–1 per channel, then encoded 0–1: the output clip | In the destination's linear RGB |
+| Sharpening (`quality/detail.rs`) | Encoded 0–1 | Detail of luminance with the destination's primaries |
+| Masks' Noise (`local_noise`) | None | Edges by the destination's luminance |
+| Post-crop vignette (`effects/vignette.rs`) | Decoded and encoded 0–1 | Decoded and encoded with the destination's curve, Highlights' protection by its luminance; the slider and mask mappings, measured on sRGB renders, are the same |
+| Grain (`effects.rs`) | Encoded 0–1 | Strength by the destination's luminance |
+| Resize | None | Per channel, unchanged |
+| Watermark (`watermark::Ready::apply`) | None (alpha-over) | The mark's sRGB colours (text, shadow, graphic) converted first, so a red mark is the same red; a graphic's own profile is still ignored |
+| Quantizing (`Rendered::rgb8`, `rgb16`) | 0–1 | Unchanged |
+
+Before it, a camera profile's or `.cube` look's RGB table may still clip in its own space by design (`Gamut::Clip`), limiting those profiles' gamut. Range masks (Color and Luminance Range) measure an unmasked sRGB render whatever the export's space, so a mask selects the same pixels in every space. For Adobe RGB and ProPhoto the finishing stages' result differs slightly from "render sRGB, then convert", as they see the destination's values.
+
+**CPU only.** `develop::render_export` renders without the stage cache or GPU, and returns an `ExportImage`, the pixels with their space; only it makes one in a space other than sRGB, and the encoders take the profile from it. `render_base` and `render_preview` refuse a space other than sRGB together with the preview's GPU stages. The preview, histogram, clipping warnings, pickers and RGB readout stay sRGB.
+
+**Settings from other releases.** A space only a later release knows is kept in `export.json` and saved back until one is chosen, as a later format is, but never exported as another: the dialog shows it as not available in this version, and Export with Previous or a batch refuses it. A release before this one keeps the `color_space` field among the settings it doesn't know and exports sRGB.
+
 ## Display
 
-The renderer returns encoded sRGB. `egui::ColorImage::from_rgb` supplies those bytes to egui's own texture/compositing path; there is no extra application gamma pass. The viewport measures logical-point dimensions times `pixels_per_point` when asking for a 100% region, then paints the result at one texel per physical pixel.
+The renderer returns encoded sRGB. The preview is not an output soft proof: an Adobe RGB or ProPhoto export can hold more saturated colours than the sRGB preview shows. `egui::ColorImage::from_rgb` supplies those bytes to egui's own texture/compositing path; there is no extra application gamma pass. The viewport measures logical-point dimensions times `pixels_per_point` when asking for a 100% region, then paints the result at one texel per physical pixel.
 
 Clipping is judged on the rendered encoded-sRGB values (0–1), before any monitor profile, so the display never changes it. A channel clips in the highlights at 0.999 or above and in the shadows at 0.001 or below (`HIGHLIGHT_CLIP`, `SHADOW_CLIP` in `develop/rendered.rs`; the GPU's `present.wgsl` uses the same values and counts clipped pixels per channel while it counts the histogram). The highlight warning paints red where any channel clips, the shadow warning blue where all three do. Each histogram triangle lights when more than 0.1% of the pixels clip in a channel, in the colours of the clipping channels (white when all three).
 
