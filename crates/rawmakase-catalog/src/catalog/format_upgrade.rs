@@ -82,7 +82,7 @@ impl Stores {
         recipes
             .into_iter()
             .map(|r| {
-                if r.hdr.is_active() {
+                if r.uses_hdr() {
                     Self::Hdr
                 } else if !r.ai_denoise.is_default() {
                     Self::AiDenoise

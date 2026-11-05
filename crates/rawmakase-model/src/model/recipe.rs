@@ -628,6 +628,12 @@ impl Recipe {
         }
         self.lens_profile_choice.resolve(&m.lens_profiles, m)
     }
+    /// Whether the edit renders in HDR or uses an HDR camera profile: it is saved in
+    /// a format releases before HDR refuse (`saved_format::schema_for`, the catalog's
+    /// version 6). Values kept while HDR is off do not count.
+    pub fn uses_hdr(&self) -> bool {
+        self.hdr.is_active() || self.profile.as_ref().is_some_and(|p| p.is_hdr())
+    }
     /// Whether the edit names a Lensfun lens, in use or not, resolved or not: it is
     /// saved in a format releases before Lensfun refuse (`saved_format::schema_for`,
     /// the catalog's version 4).

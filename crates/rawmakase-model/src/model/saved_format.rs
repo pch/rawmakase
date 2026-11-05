@@ -37,7 +37,7 @@ pub const NEWEST: u32 = HDR_SCHEMA;
 
 /// The version to save `recipe` as: the newest any of its settings needs.
 pub fn schema_for(recipe: &super::recipe::Recipe) -> u32 {
-    if recipe.hdr.is_active() {
+    if recipe.uses_hdr() {
         HDR_SCHEMA
     } else if !recipe.ai_denoise.is_default() {
         AI_DENOISE_SCHEMA

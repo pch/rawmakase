@@ -162,6 +162,7 @@ pub fn matrix_base(m: &Metadata, forward: Matrix) -> Result<CameraProfile> {
         tone: super::default_tone(),
         exposure: 0.,
         black_render: super::BlackRender::Auto,
+        dynamic_range: super::DynamicRange::Standard,
     };
     let calibration = p.neutral_calibration(m);
     let neutral: [f32; 3] = std::array::from_fn(|c| 1. / (m.wb[c] * calibration[c]));

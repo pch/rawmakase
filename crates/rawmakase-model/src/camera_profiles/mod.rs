@@ -1,4 +1,4 @@
-//! DCP forward-matrix profiles. Unsupported matrix-only/HDR/triple-illuminant profiles
+//! DCP forward-matrix profiles. Unsupported matrix-only and triple-illuminant profiles
 //! are rejected explicitly. Copyright and rendering data travel with the recipe.
 use crate::{
     camera_data::Metadata,
@@ -58,6 +58,11 @@ pub struct CameraProfile {
     exposure: f32,
     #[serde(default, skip_serializing_if = "BlackRender::is_auto")]
     black_render: BlackRender,
+    /// DNG 1.7's `ProfileDynamicRange`. An HDR profile's tables and tone curve take
+    /// [`overrange`]-encoded values. Saved only for HDR profiles, which releases that
+    /// predate them refuse (`saved_format::HDR_SCHEMA`).
+    #[serde(default, skip_serializing_if = "DynamicRange::is_standard")]
+    dynamic_range: DynamicRange,
 }
 /// The DNG `DefaultBlackRender` tag: whether the raw converter subtracts its
 /// default black (the exposure ramp at Shadows 5) under this profile. Adobe's
@@ -193,6 +198,19 @@ impl BlackRender {
         *self == Self::Auto
     }
 }
+/// A camera profile's dynamic range (DNG 1.7 `ProfileDynamicRange`).
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DynamicRange {
+    #[default]
+    Standard,
+    High,
+}
+impl DynamicRange {
+    fn is_standard(&self) -> bool {
+        *self == Self::Standard
+    }
+}
 /// How far `t` sits from the first calibration illuminant towards the second,
 /// interpolated in inverse temperature as the DNG specification does.
 fn weight(t: f32, kelvin1: f32, kelvin2: f32) -> f32 {
@@ -325,6 +343,10 @@ impl CameraProfile {
             ..self.clone()
         }
     }
+    /// Whether this is an HDR camera profile (DNG 1.7 `ProfileDynamicRange` 1).
+    pub fn is_hdr(&self) -> bool {
+        self.dynamic_range == DynamicRange::High
+    }
     /// Whether this is a look with Lightroom's Profile Amount.
     pub fn supports_amount(&self) -> bool {
         self.enhanced.as_ref().is_some_and(|e| e.amount.is_some())
@@ -333,6 +355,10 @@ impl CameraProfile {
         if let Some(look) = &self.enhanced {
             look.validate()?;
         }
+        ensure!(
+            !self.is_hdr() || crate::model::hdr::renders(),
+            "HDR profiles are not supported yet"
+        );
         ensure!(
             !self.name.is_empty()
                 && !self.camera.is_empty()
@@ -677,6 +703,7 @@ impl CameraProfile {
             tone: default_tone(),
             exposure: 0.,
             black_render: BlackRender::None,
+            dynamic_range: DynamicRange::Standard,
         }
     }
     pub fn is_embedded(&self) -> bool {
@@ -730,6 +757,7 @@ impl CameraProfile {
             tone: default_tone(),
             exposure: 0.,
             black_render: BlackRender::Auto,
+            dynamic_range: DynamicRange::Standard,
         };
         p.validate().ok()?;
         Some(p)
@@ -776,6 +804,7 @@ pub mod fitted;
 mod library;
 mod look_settings;
 pub mod open;
+pub mod overrange;
 mod rgb_table;
 pub use cube_look::{Fidelity, LutSpace};
 pub use dcp::{d65_color_matrix, from_bytes};

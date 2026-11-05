@@ -25,6 +25,11 @@ pub const DEFAULT_LIMIT: f32 = 2.3;
 /// and its SDR rendition reach every caller that renders an edit.
 const RENDERS_HDR: bool = false;
 
+/// Whether this release renders HDR: active HDR edits and HDR camera profiles.
+pub const fn renders() -> bool {
+    RENDERS_HDR
+}
+
 /// An edit's HDR settings: its mode, limit and SDR rendition.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
