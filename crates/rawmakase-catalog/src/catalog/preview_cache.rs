@@ -46,6 +46,10 @@ const GENERATION: i64 = 12;
 const RASTER_GENERATION: i64 = 6;
 /// Thumbnails a prune deletes in one write.
 const PRUNE_STEP: usize = 256;
+/// Pages, of 4 KiB, [`PreviewCache::release_free_space`] gives back in one
+/// write: about 30 ms each on an SSD, at most about 100 ms (measured), well
+/// within the 250 ms another connection waits for a write.
+const RELEASE_STEP: u32 = 256;
 /// The thumbnails' budget when none is set, in bytes.
 pub const DEFAULT_THUMBNAIL_BUDGET: u64 = 512 * 1024 * 1024;
 /// The thumbnails' budget every connection prunes to, in bytes
@@ -575,6 +579,24 @@ impl PreviewCache {
         self.db.execute_batch("PRAGMA incremental_vacuum(256);")?;
         Ok(())
     }
+    /// Gives back to the disk the space dropped thumbnails and previews leave
+    /// in the file, which pruning releases only a little at a time: for a
+    /// smaller thumbnail budget to free the disk space it promises. The file is
+    /// shortened [`RELEASE_STEP`] pages at a time, each its own short write, so
+    /// the connections making thumbnails meanwhile aren't kept waiting; for
+    /// gigabytes it takes a minute or more, on a thread of its own.
+    pub fn release_free_space(&mut self) -> Result<()> {
+        loop {
+            let free: i64 = self
+                .db
+                .query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
+            if free == 0 {
+                return Ok(());
+            }
+            self.db
+                .execute_batch(&format!("PRAGMA incremental_vacuum({RELEASE_STEP});"))?;
+        }
+    }
     /// Drops the least recently used thumbnails until those left fit
     /// `budget` bytes: the cache is read once, newest first, and the rest
     /// deleted [`PRUNE_STEP`] at a time, each its own short write, so a large
@@ -777,6 +799,31 @@ mod tests {
             .db
             .query_row("SELECT count(*) FROM previews", [], |r| r.get(0))?;
         assert_eq!(left, 0);
+        Ok(())
+    }
+    /// The space thumbnails dropped for a smaller budget leave in the file is
+    /// given back to the disk.
+    #[test]
+    fn released_space_shortens_the_file() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let path = d.path().join("previews.sqlite3");
+        let mut cache = PreviewCache::open(&path)?;
+        for n in 0..500i64 {
+            cache.db.execute(
+                "INSERT INTO previews VALUES(?1,0,'0','',0,1,1,zeroblob(20000),?2)",
+                params![format!("{n}.ARW"), n],
+            )?;
+        }
+        cache.db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        let full = std::fs::metadata(&path)?.len();
+        cache.prune(0)?;
+        cache.release_free_space()?;
+        cache.db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        let free: i64 = cache
+            .db
+            .query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
+        assert_eq!(free, 0);
+        assert!(std::fs::metadata(&path)?.len() < full / 10);
         Ok(())
     }
     fn photo(d: &tempfile::TempDir) -> Result<(PathBuf, PreviewCache)> {

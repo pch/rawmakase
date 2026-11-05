@@ -987,8 +987,13 @@ impl Editor {
                 .width(120.)
                 .selected_text(bytes(budget))
                 .show_ui(ui, |ui| {
-                    for mib in session::THUMBNAIL_CACHE_SIZES {
-                        let choice = u64::from(mib) << 20;
+                    // A size saved by another release, not offered here, stays
+                    // until another is chosen.
+                    let offered = session::THUMBNAIL_CACHE_SIZES.map(|mib| u64::from(mib) << 20);
+                    if !offered.contains(&thumbnail_budget) {
+                        ui.selectable_value(&mut budget, thumbnail_budget, bytes(thumbnail_budget));
+                    }
+                    for choice in offered {
                         ui.selectable_value(&mut budget, choice, bytes(choice));
                     }
                 });
@@ -1002,12 +1007,21 @@ impl Editor {
         if budget != thumbnail_budget {
             crate::catalog::preview_cache::set_thumbnail_budget(budget);
             let _ = self.save_session();
-            // Opening prunes to the budget: a smaller one takes effect now, off
-            // the UI thread.
-            std::thread::spawn(|| {
-                let path = crate::catalog::preview_cache::PreviewCache::path();
-                let _ = crate::catalog::preview_cache::PreviewCache::open(&path);
-            });
+            if budget < thumbnail_budget {
+                // Opening prunes to the budget, and the space freed is given
+                // back to the disk, off the UI thread: for gigabytes that takes
+                // a minute or more. Each step is its own write, so quitting
+                // meanwhile loses nothing; what is left is given back by later
+                // prunes. Nothing waits for this thread, and a failure leaves the
+                // file as large as it was.
+                std::thread::spawn(|| {
+                    let path = crate::catalog::preview_cache::PreviewCache::path();
+                    if let Ok(mut cache) = crate::catalog::preview_cache::PreviewCache::open(&path)
+                    {
+                        let _ = cache.release_free_space();
+                    }
+                });
+            }
         }
     }
     /// Caches decoded images in `folder`, or the default directory for `None`,

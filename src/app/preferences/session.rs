@@ -179,7 +179,8 @@ pub(crate) struct Session {
     )]
     pub standard_preview_size: Option<u32>,
     /// Preferences > Performance > Thumbnail cache: how many MiB of Library
-    /// thumbnails the preview cache keeps, one of [`THUMBNAIL_CACHE_SIZES`].
+    /// thumbnails the preview cache keeps, one of [`THUMBNAIL_CACHE_SIZES`] or
+    /// another in [`THUMBNAIL_CACHE_SIZE_RANGE`] a later release offers.
     #[serde(
         default,
         deserialize_with = "lenient",
@@ -253,11 +254,11 @@ impl Session {
         groups.set(SettingGroup::HighDynamicRange, inclusion);
         Some(groups)
     }
-    /// The Thumbnail Cache size in MiB, or the default when none of the
-    /// offered sizes was saved.
+    /// The Thumbnail Cache size in MiB, or the default when none in
+    /// [`THUMBNAIL_CACHE_SIZE_RANGE`] was saved.
     pub(crate) fn thumbnail_cache_size_mib(&self) -> u32 {
         self.thumbnail_cache_size_mib
-            .filter(|size| THUMBNAIL_CACHE_SIZES.contains(size))
+            .filter(|size| THUMBNAIL_CACHE_SIZE_RANGE.contains(size))
             .unwrap_or((crate::catalog::preview_cache::DEFAULT_THUMBNAIL_BUDGET >> 20) as u32)
     }
     pub(crate) fn decoded_cache_size_gib(&self) -> u32 {
@@ -286,6 +287,10 @@ impl Session {
 /// The Thumbnail Cache sizes offered, in MiB: the default 512 MiB holds about
 /// 6,000 thumbnails.
 pub(in crate::app) const THUMBNAIL_CACHE_SIZES: [u32; 6] = [512, 1024, 2048, 4096, 8192, 16384];
+/// The Thumbnail Cache sizes kept when read, in MiB: those offered and others
+/// a later release may offer, so that reading its session here and saving it
+/// again doesn't replace the user's choice.
+pub(in crate::app) const THUMBNAIL_CACHE_SIZE_RANGE: std::ops::RangeInclusive<u32> = 64..=1_048_576;
 
 pub(in crate::app) const DECODED_CACHE_SIZE_RANGE: std::ops::RangeInclusive<u32> = 1..=1_048_576;
 
@@ -523,7 +528,15 @@ mod raw_defaults_tests {
                 serde_json::from_str(&serde_json::to_string(&session).unwrap()).unwrap();
             assert_eq!(back.thumbnail_cache_size_mib(), size);
         }
-        for size in [0, 100, 513, u32::MAX] {
+        // One a later release offers is kept, so that saving doesn't replace it.
+        for size in [64, 3072, 32768] {
+            let session = Session {
+                thumbnail_cache_size_mib: Some(size),
+                ..Default::default()
+            };
+            assert_eq!(session.thumbnail_cache_size_mib(), size);
+        }
+        for size in [0, 63, 1_048_577, u32::MAX] {
             let session = Session {
                 thumbnail_cache_size_mib: Some(size),
                 ..Default::default()
