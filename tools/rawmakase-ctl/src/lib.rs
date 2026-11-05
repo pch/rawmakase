@@ -105,6 +105,9 @@ enum Command {
         path: PathBuf,
         #[arg(long)]
         max_edge: Option<u32>,
+        /// The colour space; sRGB when left out. ProPhoto RGB needs a TIFF path.
+        #[arg(long, value_enum)]
+        color_space: Option<ColorSpace>,
         #[arg(long)]
         no_wait: bool,
         #[arg(long, default_value_t = 120)]
@@ -176,6 +179,16 @@ enum Command {
     Develop,
     /// List the Loupedeck's dial and button names
     Controls,
+}
+
+/// The colour space `export` writes in.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum ColorSpace {
+    Srgb,
+    /// Adobe RGB (1998)
+    AdobeRgb,
+    /// ProPhoto RGB, 16-bit TIFF only
+    Prophoto,
 }
 
 /// Which previews `build-previews` builds.
@@ -394,9 +407,19 @@ fn commands(command: &Command) -> Result<Vec<Request>, String> {
                 PreviewSize::OneToOne => rawmakase_protocol::request::PreviewKind::OneToOne,
             },
         }],
-        Command::Export { path, max_edge, .. } => vec![Request::Export {
+        Command::Export {
+            path,
+            max_edge,
+            color_space,
+            ..
+        } => vec![Request::Export {
             path: absolute(path)?,
             max_edge: *max_edge,
+            color_space: color_space.map(|s| match s {
+                ColorSpace::Srgb => rawmakase_protocol::request::ColorSpace::Srgb,
+                ColorSpace::AdobeRgb => rawmakase_protocol::request::ColorSpace::AdobeRgb,
+                ColorSpace::Prophoto => rawmakase_protocol::request::ColorSpace::Prophoto,
+            }),
         }],
         Command::Preview { path, max_edge, .. } => vec![Request::Preview {
             path: absolute(path)?,
@@ -782,6 +805,30 @@ mod tests {
         assert_eq!(
             requests(&cli.command).unwrap(),
             [json!({"cmd": "set", "param": "exposure", "value": 0.5})]
+        );
+    }
+
+    /// `export --color-space` is forwarded to the socket by its names; without it
+    /// the request leaves the space out, which means sRGB.
+    #[test]
+    fn export_forwards_its_color_space() {
+        let path = std::env::temp_dir().join("e.tif");
+        let path = path.to_str().unwrap();
+        let cli = Cli::try_parse_from(["rawmakase-ctl", "export", path]).unwrap();
+        assert_eq!(
+            requests(&cli.command).unwrap(),
+            [json!({"cmd": "export", "path": path})]
+        );
+        for name in ["srgb", "adobe-rgb", "prophoto"] {
+            let cli = Cli::try_parse_from(["rawmakase-ctl", "export", path, "--color-space", name])
+                .unwrap();
+            assert_eq!(
+                requests(&cli.command).unwrap(),
+                [json!({"cmd": "export", "path": path, "color_space": name})]
+            );
+        }
+        assert!(
+            Cli::try_parse_from(["rawmakase-ctl", "export", path, "--color-space", "p3"]).is_err()
         );
     }
 }

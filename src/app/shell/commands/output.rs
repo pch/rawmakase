@@ -126,11 +126,13 @@ impl Outputs {
                 )
             })
     }
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn start(
         &mut self,
         photo: job::Photo,
         path: PathBuf,
         edge: u32,
+        space: crate::color::OutputSpace,
         generation: u64,
         revision: u64,
         ctx: eframe::egui::Context,
@@ -159,6 +161,18 @@ impl Outputs {
                 "Output directory does not exist",
             ));
         }
+        let mut settings = ExportSettings {
+            format,
+            resize: edge > 0,
+            long_edge: edge.max(1),
+            ..Default::default()
+        };
+        settings.choose_color_space(space);
+        // A format that can't hold the space is refused now, never exported in
+        // another space or format.
+        settings
+            .output_space()
+            .map_err(|e| Error::new("invalid_request", e.to_string()))?;
         while self.jobs.len() >= 32 {
             let old = self
                 .jobs
@@ -195,12 +209,6 @@ impl Outputs {
         let thread = std::thread::Builder::new()
             .name("control-output".into())
             .spawn(move || {
-                let settings = ExportSettings {
-                    format,
-                    resize: edge > 0,
-                    long_edge: edge.max(1),
-                    ..Default::default()
-                };
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     job::run(
                         photo,

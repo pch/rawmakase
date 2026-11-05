@@ -290,7 +290,7 @@ pub(super) fn color_stage(
         // Identity color controls need no hue angle or trigonometry.
         lab[0] = lab[0].clamp(0., 1.);
     }
-    let out = finish_color(lab);
+    let out = finish_color_in(lab, lut.space);
     // Visualize Range grays what the swatch leaves out after every color control, so
     // none of them tints it.
     mixed
@@ -302,6 +302,15 @@ pub(super) fn color_stage(
 /// (docs/color-pipeline.md#out-of-gamut-colors). Returns encoded sRGB.
 pub(super) fn finish_color(lab: [f32; 3]) -> [f32; 3] {
     lab_to_srgb(lab).map(|v| srgb_encode(v.clamp(0., 1.)).clamp(0., 1.))
+}
+/// [`finish_color`] into `space`: the unclipped linear sRGB through `space`'s matrix,
+/// each channel clipped to 0–1 there and encoded with its curve
+/// (docs/color-pipeline.md#export-color-spaces).
+pub(super) fn finish_color_in(lab: [f32; 3], space: crate::color::OutputSpace) -> [f32; 3] {
+    match space {
+        crate::color::OutputSpace::Srgb => finish_color(lab),
+        space => space.from_srgb_linear(lab_to_srgb(lab)),
+    }
 }
 
 /// What the per-pixel stage hands back.

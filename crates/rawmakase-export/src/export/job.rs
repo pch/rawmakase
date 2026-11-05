@@ -55,11 +55,16 @@ pub fn run(
     cancel: Cancel<'_>,
     progress: impl Fn(f32),
 ) -> Result<Option<String>> {
+    // The target's format, not only the settings', must hold the colour space;
+    // checked before anything renders.
+    if let Some(format) = crate::export_settings::Format::from_path(target) {
+        format.supports(settings.output_space()?)?;
+    }
     let prepared = prepare(&photo, settings, cancel, &progress)?;
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    super::export_with(
+    super::export_image(
         target,
         &photo.source,
         &prepared.rendered,
@@ -74,7 +79,8 @@ pub fn run(
 
 /// A photo rendered for export, with what goes in the file beside its pixels.
 pub struct Prepared {
-    pub rendered: crate::rendered::Rendered,
+    /// The pixels, in the colour space the settings chose.
+    pub rendered: crate::develop::ExportImage,
     pub metadata: crate::camera_data::Metadata,
     pub options: crate::export_settings::ExportOptions,
     pub embed: Embed,
@@ -83,13 +89,15 @@ pub struct Prepared {
 }
 
 /// Renders `photo` for an export with `settings`, reporting progress up to 0.85.
-/// Stops between stages once `cancel` is set.
+/// Stops between stages once `cancel` is set. Settings whose colour space can't be
+/// exported (in their format, or from a later release) are refused first.
 pub fn prepare(
     photo: &Photo,
     settings: &ExportSettings,
     cancel: Cancel<'_>,
     progress: &impl Fn(f32),
 ) -> Result<Prepared> {
+    let space = settings.output_space()?;
     let cancelled = || -> Result<()> {
         ensure!(!cancel.is_cancelled(), "Cancelled");
         Ok(())
@@ -131,11 +139,12 @@ pub fn prepare(
     let options = settings.options();
     let ai = ai_source(photo, &image, cancel)?;
     cancelled()?;
-    let mut rendered = crate::develop::render_with_ai(
+    let mut rendered = crate::develop::render_export(
         &image,
         &photo.recipe.checked()?,
         ai.as_ref(),
         options.max_edge,
+        space,
         cancel,
     )?;
     if let Some(w) = &watermark
@@ -400,7 +409,8 @@ mod tests {
             Ok(
                 prepare(photo, &ExportSettings::default(), Cancel::NEVER, &|_| {})?
                     .rendered
-                    .pixels,
+                    .pixels()
+                    .to_vec(),
             )
         };
         let mut plain = photo(&source, &dir.path().join("cache"));

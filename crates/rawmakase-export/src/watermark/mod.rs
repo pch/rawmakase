@@ -5,7 +5,8 @@
 //! `watermarks`, a graphic one with its own copy of the image.
 pub mod fonts;
 mod raster;
-use crate::rendered::Rendered;
+use crate::color::OutputSpace;
+use crate::develop::ExportImage;
 use crate::storage::RasterFormat;
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -327,20 +328,31 @@ impl Ready {
         })
     }
     /// Lays the mark over `image`'s pixels; false when there was nothing
-    /// to draw (text the font has none of).
-    pub fn apply(&self, image: &mut Rendered) -> bool {
-        let Some(mark) = self.place(image.width, image.height) else {
+    /// to draw (text the font has none of). The mark's colours, its text, shadow
+    /// and graphic, are sRGB; in another space they are converted to it first, so
+    /// a red mark is the same red in every space. A graphic's own profile is
+    /// ignored, as it always has been.
+    pub fn apply(&self, image: &mut ExportImage) -> bool {
+        let space = image.space();
+        let (width, height) = (image.width(), image.height());
+        let Some(mut mark) = self.place(width, height) else {
             return false;
         };
-        composite(image, &mark);
+        if space != OutputSpace::Srgb {
+            for p in &mut mark.rgba {
+                let [r, g, b] = space.from_srgb([p[0], p[1], p[2]]);
+                [p[0], p[1], p[2]] = [r, g, b];
+            }
+        }
+        composite(image.pixels_mut(), width, height, &mark);
         true
     }
 }
 
-/// Alpha-over in output-encoded sRGB: pixels the mark doesn't cover keep
+/// Alpha-over in the image's encoded values: pixels the mark doesn't cover keep
 /// their exact values.
-pub fn composite(image: &mut Rendered, mark: &Placed) {
-    let (w, h) = (image.width as i64, image.height as i64);
+fn composite(pixels: &mut [[f32; 3]], width: u32, height: u32, mark: &Placed) {
+    let (w, h) = (i64::from(width), i64::from(height));
     for my in 0..mark.height as i64 {
         let y = mark.y + my;
         if y < 0 || y >= h {
@@ -355,7 +367,7 @@ pub fn composite(image: &mut Rendered, mark: &Placed) {
             if a <= 0. {
                 continue;
             }
-            let p = &mut image.pixels[(y * w + x) as usize];
+            let p = &mut pixels[(y * w + x) as usize];
             for (c, m) in p.iter_mut().zip([r, g, b]) {
                 *c = m * a + *c * (1. - a);
             }

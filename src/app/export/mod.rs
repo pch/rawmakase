@@ -695,6 +695,9 @@ impl Editor {
                 );
             }
             Err(Unplanned::NoFolder) => self.messages.warn("Choose a folder to export to"),
+            Err(Unplanned::Settings(reason)) => {
+                self.messages.fail(format!("Export stopped: {reason}"))
+            }
             Err(Unplanned::Conflicts(conflicts)) => {
                 pending.conflicts = conflicts;
                 self.exports.pending = Some(pending);

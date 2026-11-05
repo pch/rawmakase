@@ -116,17 +116,20 @@ fn defringe_strength(amount: f32, chroma: f32) -> f32 {
         * (1. - (-amount * 20. / DEFRINGE_RATE).exp())
 }
 pub fn spatial_finish(im: &mut Rendered, r: &Recipe, origin: [u32; 2], full: [u32; 2]) {
-    spatial_finish_scaled(im, r, origin, full, 1.);
+    spatial_finish_scaled(im, r, origin, full, 1., crate::color::OutputSpace::Srgb);
 }
 /// Vignettes and grain for an output with `scale` pixels per full-resolution pixel.
 /// Grain keeps its full-resolution pattern and, like the full render resized, loses
-/// amplitude where a preview pixel averages several grains.
+/// amplitude where a preview pixel averages several grains. `im` is encoded in
+/// `space`, whose curve the vignette decodes with and whose primaries weigh the
+/// luminance grain follows.
 pub(crate) fn spatial_finish_scaled(
     im: &mut Rendered,
     r: &Recipe,
     origin: [u32; 2],
     full: [u32; 2],
     scale: f32,
+    space: crate::color::OutputSpace,
 ) {
     let e = &r.effects;
     if e.grain == 0. && e.vignette == 0. {
@@ -141,9 +144,9 @@ pub(crate) fn spatial_finish_scaled(
         let y = origin[1] + i as u32 / im.width;
         let nx = ((x as f32 + 0.5) / full[0] as f32 - 0.5) * 2.;
         let ny = ((y as f32 + 0.5) / full[1] as f32 - 0.5) * 2.;
-        let l = crate::color::luminance(*p);
+        let l = space.luminance(*p);
         if let Some(v) = &vignette {
-            *p = v.apply(*p, v.mask(nx, ny));
+            *p = v.apply(*p, v.mask(nx, ny), space);
         }
         let (gx, gy) = if scale == 1. {
             (x as f32, y as f32)

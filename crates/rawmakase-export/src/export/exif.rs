@@ -2,12 +2,19 @@
 //! `crate::exif`) as one little-endian TIFF block.
 use crate::exif::{
     CameraExif, Field,
-    tag::{EXIF_IFD, GPS_IFD},
+    tag::{EXIF_IFD, GPS_IFD, INTEROPERABILITY_IFD},
 };
 
 /// A little-endian TIFF block for a JPEG APP1 segment: the main directory, then
 /// the EXIF and GPS directories it points to.
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn tiff_block(d: CameraExif) -> Vec<u8> {
+    tiff_block_with(d, &[])
+}
+
+/// [`tiff_block`] with an interoperability directory of `interop`'s fields after
+/// the EXIF directory, which points to it, when there are any.
+pub(super) fn tiff_block_with(d: CameraExif, interop: &[Field]) -> Vec<u8> {
     fn directory(mut fields: Vec<Field>, offset: u32) -> Vec<u8> {
         fields.sort_by_key(|f| f.tag);
         let mut out = (fields.len() as u16).to_le_bytes().to_vec();
@@ -35,9 +42,13 @@ pub(super) fn tiff_block(d: CameraExif) -> Vec<u8> {
     }
     let CameraExif {
         mut main,
-        exif,
+        mut exif,
         gps,
     } = d;
+    exif.retain(|f| f.tag != INTEROPERABILITY_IFD);
+    if !interop.is_empty() {
+        exif.push(Field::long(INTEROPERABILITY_IFD, 0));
+    }
     let has_exif = !exif.is_empty();
     let has_gps = !gps.is_empty();
     main.retain(|f| f.tag != EXIF_IFD && f.tag != GPS_IFD);
@@ -49,8 +60,24 @@ pub(super) fn tiff_block(d: CameraExif) -> Vec<u8> {
     }
     // Directories follow each other; the pointers depend only on sizes.
     let exif_at = 8 + directory(main.clone(), 8).len() as u32;
+    let interop_at = exif_at + directory(exif.clone(), exif_at).len() as u32;
+    for f in &mut exif {
+        if f.tag == INTEROPERABILITY_IFD {
+            f.bytes = interop_at.to_le_bytes().to_vec();
+        }
+    }
     let exif_block = directory(exif, exif_at);
-    let gps_at = exif_at + if has_exif { exif_block.len() as u32 } else { 0 };
+    let interop_block = if interop.is_empty() {
+        Vec::new()
+    } else {
+        directory(interop.to_vec(), interop_at)
+    };
+    let gps_at = exif_at
+        + if has_exif {
+            (exif_block.len() + interop_block.len()) as u32
+        } else {
+            0
+        };
     for f in &mut main {
         match f.tag {
             EXIF_IFD => f.bytes = exif_at.to_le_bytes().to_vec(),
@@ -62,6 +89,7 @@ pub(super) fn tiff_block(d: CameraExif) -> Vec<u8> {
     out.extend(directory(main, 8));
     if has_exif {
         out.extend(exif_block);
+        out.extend(interop_block);
     }
     if has_gps {
         out.extend(directory(gps, gps_at));

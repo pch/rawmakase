@@ -5,6 +5,7 @@ use crate::app::export::naming::presets::Preset;
 use crate::app::ui::design::{Tone, button, radius, size, space, text};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::{confirm_modal, form_row, modal_frame, pretty_path, primary_button};
+use crate::color::OutputSpace;
 use crate::export_settings::{AfterExport, Destination, Existing, Format, Include, NameContext};
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use std::{path::Path, sync::atomic::Ordering};
@@ -209,6 +210,9 @@ impl Editor {
             Some(true) if self.exports.draft.target(&source).is_none() => {
                 self.messages.warn("Choose a folder to export to");
             }
+            Some(true) if let Err(e) = self.exports.draft.output_space() => {
+                self.messages.warn(e.to_string());
+            }
             Some(true) => {
                 self.exports.dialog = false;
                 self.export(self.exports.draft.clone());
@@ -387,8 +391,46 @@ impl Editor {
             }),
         }
         form_row(ui, "Color Space", |ui| {
-            ui.label(egui::RichText::new("sRGB").color(palette.tone(Tone::TEXT)));
+            let later = s.later_color_space().is_some();
+            let shown = if later {
+                "Not available in this version"
+            } else {
+                s.color_space.label()
+            };
+            egui::ComboBox::from_id_salt("export-color-space")
+                .width(220.)
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    for space in OutputSpace::ALL {
+                        let supported = s.format.supports(space);
+                        let item = ui
+                            .add_enabled(
+                                supported.is_ok(),
+                                egui::Button::selectable(
+                                    !later && s.color_space == space,
+                                    space.label(),
+                                ),
+                            )
+                            .on_disabled_hover_text(
+                                supported.err().map(|e| e.to_string()).unwrap_or_default(),
+                            );
+                        if item.clicked() {
+                            s.choose_color_space(space);
+                        }
+                    }
+                });
         });
+        // Why the choice can't be exported as it is: ProPhoto RGB in JPEG or PNG,
+        // or a space from a later release.
+        if let Err(e) = s.output_space() {
+            form_row(ui, "", |ui| {
+                ui.label(
+                    egui::RichText::new(e.to_string())
+                        .size(text::LABEL)
+                        .color(Color32::from_rgb(230, 170, 100)),
+                );
+            });
+        }
 
         section(ui, "Image Sizing");
         form_row(ui, "", |ui| {

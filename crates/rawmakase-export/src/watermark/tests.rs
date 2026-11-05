@@ -1,4 +1,5 @@
 use super::*;
+use crate::rendered::Rendered;
 
 fn gray(width: u32, height: u32, v: f32) -> Rendered {
     Rendered {
@@ -105,13 +106,14 @@ fn png_alpha_is_honoured_and_untouched_pixels_keep_full_precision() -> Result<()
     w.anchor = Anchor(0, 0);
     // A value 16-bit TIFF holds and 8-bit can't.
     let v = 1000. / 65535.;
-    let mut image = gray(100, 100, v);
+    let mut image = crate::develop::ExportImage::srgb(gray(100, 100, v));
     w.ready_in(&images)?.apply(&mut image);
+    let pixels = image.pixels();
     // Outside the mark, and under its transparent half, exactly as rendered.
-    assert_eq!(image.pixels[99 * 100 + 99], [v; 3]);
-    assert_eq!(image.pixels[10 * 100 + 10], [v; 3]);
+    assert_eq!(pixels[99 * 100 + 99], [v; 3]);
+    assert_eq!(pixels[10 * 100 + 10], [v; 3]);
     // Under the half-opaque red, the exact mix.
-    let p = image.pixels[10 * 100 + 90];
+    let p = pixels[10 * 100 + 90];
     assert!((p[0] - (0.5 + v * 0.5)).abs() < 1e-6);
     assert!((p[1] - v * 0.5).abs() < 1e-6);
     Ok(())

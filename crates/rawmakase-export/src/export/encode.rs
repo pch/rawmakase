@@ -1,13 +1,16 @@
 //! JPEG, 16-bit TIFF and 8-bit PNG encoding with an ICC profile, EXIF
 //! directories and XMP.
-use super::Embed;
+use super::{Embed, metadata::Directories};
 use crate::{
+    develop::ExportImage,
     exif::{
-        CameraExif, Field,
-        tag::{EXIF_IFD, GPS_IFD, ICC_PROFILE, RESOLUTION_UNIT, X_RESOLUTION, XMP, Y_RESOLUTION},
+        Field,
+        tag::{
+            EXIF_IFD, GPS_IFD, ICC_PROFILE, INTEROPERABILITY_IFD, RESOLUTION_UNIT, X_RESOLUTION,
+            XMP, Y_RESOLUTION,
+        },
     },
-    rendered::Rendered,
-    tiff::kind::{ASCII, FLOAT, LONG, RATIONAL, SHORT, SLONG, SRATIONAL, SSHORT},
+    tiff::kind::{ASCII, FLOAT, LONG, RATIONAL, SHORT, SLONG, SRATIONAL, SSHORT, UNDEFINED},
 };
 use anyhow::{Result, ensure};
 use image::{ImageEncoder, codecs::jpeg::JpegEncoder};
@@ -19,10 +22,10 @@ use tiff::{
 
 pub(super) fn jpeg(
     out: &mut impl Write,
-    image: &Rendered,
+    image: &ExportImage,
     quality: u8,
     profile: Vec<u8>,
-    directories: CameraExif,
+    directories: Directories,
     embed: &Embed,
 ) -> Result<()> {
     let mut jpeg = Vec::new();
@@ -31,8 +34,8 @@ pub(super) fn jpeg(
     e.set_exif_metadata(super::metadata::jpeg_exif(directories))?;
     e.write_image(
         &image.rgb8(),
-        image.width,
-        image.height,
+        image.width(),
+        image.height(),
         image::ExtendedColorType::Rgb8,
     )?;
     if let Some(xmp) = &embed.xmp {
@@ -44,15 +47,31 @@ pub(super) fn jpeg(
 
 pub(super) fn tiff(
     out: &mut (impl Write + Seek),
-    image: &Rendered,
+    image: &ExportImage,
     profile: Vec<u8>,
-    directories: &CameraExif,
+    directories: &Directories,
     embed: &Embed,
 ) -> Result<()> {
+    let Directories {
+        exif: directories,
+        interop,
+    } = directories;
     let mut e = TiffEncoder::new(out)?;
+    let interop_offset = if interop.is_empty() {
+        None
+    } else {
+        let mut dir = e.extra_directory()?;
+        for f in interop {
+            write_field(&mut dir, f)?;
+        }
+        Some(dir.finish_with_offsets()?.offset)
+    };
     let mut exif = e.extra_directory()?;
     for f in &directories.exif {
         write_field(&mut exif, f)?;
+    }
+    if let Some(offset) = interop_offset {
+        exif.write_tag(Tag::Unknown(INTEROPERABILITY_IFD), offset)?;
     }
     let exif_offset = exif.finish_with_offsets()?.offset;
     let gps_offset = if directories.gps.is_empty() {
@@ -64,7 +83,7 @@ pub(super) fn tiff(
         }
         Some(gps.finish_with_offsets()?.offset)
     };
-    let mut im = e.new_image::<RGB16>(image.width, image.height)?;
+    let mut im = e.new_image::<RGB16>(image.width(), image.height())?;
     im.encoder()
         .write_tag(Tag::Unknown(EXIF_IFD), exif_offset)?;
     if let Some(offset) = gps_offset {
@@ -98,12 +117,12 @@ pub(super) fn tiff(
 /// iTXt chunk, as the XMP specification asks.
 pub(super) fn png(
     out: &mut impl Write,
-    image: &Rendered,
+    image: &ExportImage,
     profile: Vec<u8>,
-    directories: CameraExif,
+    directories: Directories,
     embed: &Embed,
 ) -> Result<()> {
-    let mut info = png::Info::with_size(image.width, image.height);
+    let mut info = png::Info::with_size(image.width(), image.height());
     info.color_type = png::ColorType::Rgb;
     info.bit_depth = png::BitDepth::Eight;
     info.icc_profile = Some(profile.into());
@@ -165,8 +184,8 @@ pub(super) fn insert_xmp(jpeg: Vec<u8>, xmp: &str) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-/// Writes one EXIF field into a TIFF directory with its own type. BYTE, SBYTE
-/// and UNDEFINED values are written as bytes.
+/// Writes one EXIF field into a TIFF directory with its own type. UNDEFINED
+/// values keep their type; BYTE and SBYTE values are written as bytes.
 fn write_field<W: Write + Seek, K: TiffKind>(
     dir: &mut DirectoryEncoder<'_, W, K>,
     f: &Field,
@@ -237,6 +256,7 @@ fn write_field<W: Write + Seek, K: TiffKind>(
                 .collect();
             write_array(dir, tag, v)?
         }
+        UNDEFINED => dir.write_tag(tag, Undefined(&f.bytes))?,
         _ => dir.write_tag(tag, f.bytes.as_slice())?,
     }
     Ok(())
@@ -261,6 +281,20 @@ impl tiff::encoder::TiffValue for CameraText {
     }
     fn data(&self) -> std::borrow::Cow<'_, [u8]> {
         std::borrow::Cow::Borrowed(&self.0)
+    }
+}
+
+/// An UNDEFINED value (ExifVersion, InteroperabilityVersion…), which the encoder
+/// would write as BYTE from a plain byte slice.
+struct Undefined<'a>(&'a [u8]);
+impl tiff::encoder::TiffValue for Undefined<'_> {
+    const BYTE_LEN: u8 = 1;
+    const FIELD_TYPE: tiff::tags::Type = tiff::tags::Type::UNDEFINED;
+    fn count(&self) -> usize {
+        self.0.len()
+    }
+    fn data(&self) -> std::borrow::Cow<'_, [u8]> {
+        std::borrow::Cow::Borrowed(self.0)
     }
 }
 

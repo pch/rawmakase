@@ -48,6 +48,7 @@ fn invalid(message: impl Into<String>) -> Error {
 }
 
 fn command(request: &Value) -> commands::Result<Vec<Msg>> {
+    use crate::color::OutputSpace;
     use rawmakase_protocol::request::{self as wire, Press, Request, Until as WireUntil};
     if request
         .get("protocol")
@@ -118,13 +119,23 @@ fn command(request: &Value) -> commands::Result<Vec<Msg>> {
         Request::Module { module } => Operation::Module(module == wire::Module::Develop),
         Request::Photo { step } => Operation::Navigate(step),
         Request::Save => Operation::Save,
-        Request::Export { path, max_edge } => Operation::Output {
+        Request::Export {
+            path,
+            max_edge,
+            color_space,
+        } => Operation::Output {
             path,
             max_edge: max_edge.unwrap_or(0),
+            space: match color_space.unwrap_or_default() {
+                wire::ColorSpace::Srgb => OutputSpace::Srgb,
+                wire::ColorSpace::AdobeRgb => OutputSpace::AdobeRgb,
+                wire::ColorSpace::Prophoto => OutputSpace::ProPhoto,
+            },
         },
         Request::Preview { path, max_edge } => Operation::Output {
             path,
             max_edge: max_edge.unwrap_or(wire::DEFAULT_PREVIEW_EDGE),
+            space: OutputSpace::Srgb,
         },
         Request::BuildPreviews { kind } => Operation::BuildPreviews(match kind {
             wire::PreviewKind::Standard => crate::catalog::preview_cache::PreviewKind::Standard,
@@ -456,14 +467,30 @@ mod tests {
         ));
         assert!(matches!(
             operation(json!({"cmd":"export","path":"/tmp/p.jpg"})),
-            Operation::Output { max_edge: 0, .. }
+            Operation::Output {
+                max_edge: 0,
+                space: crate::color::OutputSpace::Srgb,
+                ..
+            }
         ));
+        for (name, space) in [
+            ("srgb", crate::color::OutputSpace::Srgb),
+            ("adobe-rgb", crate::color::OutputSpace::AdobeRgb),
+            ("prophoto", crate::color::OutputSpace::ProPhoto),
+        ] {
+            let op = operation(json!({"cmd":"export","path":"/tmp/p.tif","color_space":name}));
+            assert!(
+                matches!(op, Operation::Output { space: s, .. } if s == space),
+                "{name}"
+            );
+        }
         for value in [
             json!({"cmd":"rename"}),
             json!({"cmd":"cc","cc":1,"value":1,"target":{}}),
             json!({"cmd":"turn","param":"band2","ticks":1}),
             json!({"cmd":"turn","param":"nonsense","ticks":1}),
             json!({"cmd":"open"}),
+            json!({"cmd":"export","path":"/tmp/p.tif","color_space":"display-p3"}),
         ] {
             assert_eq!(
                 command(&value).err().map(|e| e.code),

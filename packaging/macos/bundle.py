@@ -74,6 +74,7 @@ def main():
     notices.mkdir()
     shutil.copy2(root / "LICENSE", notices / "RAWmakase.txt")
     shutil.copy2(root / "licenses/Adobe-DNG-SDK.txt", notices)
+    shutil.copy2(root / "licenses/Compact-ICC-Profiles-CC0.txt", notices)
     shutil.copy2(root / "licenses/Hack-MIT-BitstreamVera.txt", notices)
     shutil.copy2(root / "licenses/Inter-OFL.txt", notices)
     shutil.copy2(root / "licenses/Lensfun-database-CC-BY-SA-3.0.txt", notices)

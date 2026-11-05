@@ -179,6 +179,7 @@ rawmakase thumbnail photo.dng embedded.jpg
 rawmakase render photo.dng edited.jpg --exposure 0.7 --max-edge 2400
 rawmakase render photo.dng edited.tiff --xmp preset.xmp
 rawmakase render photo.dng edited.jpg --auto
+rawmakase render photo.dng wide.tiff --color-space prophoto
 rawmakase import-catalog Lightroom.lrcat Photos.rawmakase
 rawmakase fingerprint *.NEF        # decode facts per file as JSON lines, for regression checks
 rawmakase help
@@ -192,7 +193,7 @@ rawmakase help
 - Edits saved beside photos by releases before 0.1.8 (`photo.dng.rawmakase.json`, with spots and masks in `photo.dng.rawmakase-local.json`, or in the data directory's `sidecars/` folder for read-only locations) are brought into the catalog when you add their folder, and left as they are.
 - Profiles, presets, previews and session state: `~/Library/Application Support/RAWmakase` on macOS, `$XDG_DATA_HOME/rawmakase` (default `~/.local/share/rawmakase`) on Linux, `%APPDATA%\RAWmakase` on Windows. `RAWMAKASE_DATA_DIR` overrides it.
 
-Exports are always sRGB. The display defaults to sRGB; pick a monitor ICC profile under **More** only if your compositor does not already manage color.
+Exports are sRGB unless the Export dialog's Color Space says Adobe RGB (1998) or ProPhoto RGB (16-bit TIFF only), each with its own embedded profile; `render` and `render-batch` take `--color-space srgb|adobe-rgb|prophoto`. The preview is always sRGB and is not a soft proof of a wider export. The display defaults to sRGB; pick a monitor ICC profile under **More** only if your compositor does not already manage color.
 
 ## Development
 
@@ -241,6 +242,6 @@ The skills call on each other: `issue` hands off to `ship`, and `ship` and `issu
 
 ## License
 
-RAWmakase is released under the [MIT License](LICENSE). The DNG default tone curve and temperature table come from the Adobe DNG SDK, under the license in [licenses/Adobe-DNG-SDK.txt](licenses/Adobe-DNG-SDK.txt). The interface font, Inter, is under the SIL Open Font License ([licenses/Inter-OFL.txt](licenses/Inter-OFL.txt)), and the icons are Lucide's, under the ISC License ([licenses/Lucide-ISC.txt](licenses/Lucide-ISC.txt)). egui's bundled fallback fonts are compiled into the binary as well: Hack ([licenses/Hack-MIT-BitstreamVera.txt](licenses/Hack-MIT-BitstreamVera.txt)), Noto Emoji ([licenses/NotoEmoji-OFL.txt](licenses/NotoEmoji-OFL.txt)), Ubuntu Light ([licenses/Ubuntu-UFL.txt](licenses/Ubuntu-UFL.txt)) and the emoji icon font ([licenses/emoji-icon-font-MIT.txt](licenses/emoji-icon-font-MIT.txt)). The Rust dependencies and ONNX Runtime keep their own licenses; see [dependencies](docs/dependencies.md).
+RAWmakase is released under the [MIT License](LICENSE). The DNG default tone curve and temperature table come from the Adobe DNG SDK, under the license in [licenses/Adobe-DNG-SDK.txt](licenses/Adobe-DNG-SDK.txt). The Adobe RGB (1998) and ProPhoto RGB profiles exports embed are Compact-ICC-Profiles' public-domain (CC0) files ([licenses/Compact-ICC-Profiles-CC0.txt](licenses/Compact-ICC-Profiles-CC0.txt)). The interface font, Inter, is under the SIL Open Font License ([licenses/Inter-OFL.txt](licenses/Inter-OFL.txt)), and the icons are Lucide's, under the ISC License ([licenses/Lucide-ISC.txt](licenses/Lucide-ISC.txt)). egui's bundled fallback fonts are compiled into the binary as well: Hack ([licenses/Hack-MIT-BitstreamVera.txt](licenses/Hack-MIT-BitstreamVera.txt)), Noto Emoji ([licenses/NotoEmoji-OFL.txt](licenses/NotoEmoji-OFL.txt)), Ubuntu Light ([licenses/Ubuntu-UFL.txt](licenses/Ubuntu-UFL.txt)) and the emoji icon font ([licenses/emoji-icon-font-MIT.txt](licenses/emoji-icon-font-MIT.txt)). The Rust dependencies and ONNX Runtime keep their own licenses; see [dependencies](docs/dependencies.md).
 
 Adobe, Lightroom and Camera Raw are trademarks of Adobe Inc. RAWmakase is not affiliated with or endorsed by Adobe.

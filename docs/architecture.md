@@ -77,7 +77,7 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | --- | --- | --- |
 | `camera_data` | A RAW's metadata, the demosaic and decode choices and the decoded camera-space image, as values with no native code | `camera_data.rs` |
 | `raw` | RAW files: reading metadata, decoding into `camera_data` images, oriented embedded thumbnails, with RAWmakase's own decoders (`crates/rawmakase-raw`, see [RAW decoding](raw-decoding.md)) | RAW decoding |
-| `color_management` | The sRGB profile exports embed and the transform of 8-bit sRGB to a monitor profile, in pure Rust (moxcms reads the profiles) | `color_management.rs` |
+| `color_management` | The profile each export colour space embeds (`output_profile`: sRGB's, and the CC0 Adobe RGB and ProPhoto profiles) and the transform of 8-bit sRGB to a monitor profile, in pure Rust (moxcms reads the profiles) | `color_management.rs` |
 | `photo` | Opening a photo: `open_source` is the one entry point, sending a RAW to `raw` and a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL to `raster`; a RAW's decoder facts from `raw`, then the camera's lens tables, a DNG's profile and hints, and the imported lens profiles that fit | `photo.rs` |
 | `raster` | Opening a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL: decoded upright and converted from its embedded ICC profile or CICP colour to 8-bit sRGB for previews, or to linear ProPhoto f32 for Develop (pure Rust: `image`, `jxl-oxide`, `rav1d` without assembly, `moxcms`; a HEIC's pixels come from the system's ImageIO on macOS, Windows Imaging Component on Windows, and elsewhere the system's libheif, opened at run time; without it a HEIC is listed and decoding says what to install) | `raster.rs`, `raster/` |
 | `demosaic` | RAWmakase's own Bayer and X-Trans demosaicing of the unpacked sensor data | `demosaic.rs` |
@@ -98,7 +98,7 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `presets` | Native JSON recipe presets, installed XMP collections, favorites and preset import, and a preset's application to one photo, which Develop and the Library's batch share | `native.rs`, `library.rs`, `photo.rs` |
 | `storage` | RAW identity checks, which files are photos and the rendered formats' facts (`RasterFormat`: extensions, MIME types, names; the codecs are `raster`'s and `export`'s), application paths and atomic JSON writes. The file system primitives moving a user's files needs are `rawmakase-fs`'s. Saved-recipe versions are `model::saved_format`, the desktop session is `app::preferences::session` and legacy sidecar import is `catalog::legacy_sidecar` | `identity.rs`, `files.rs`, `formats.rs` |
 | `export_settings` | Export choices as values: the Export dialog's settings, Rename Photos' remembered choices (`RenameSettings`), the user's saved file-name templates (`SavedTemplates`), a photo's saved `ExportOptions`, and the naming templates (`NameTemplate`: Lightroom's presets and Filename Template Editor templates, `TokenTemplate`) exports and renames name files by, from the `NameFields` taken once per export | `export_settings.rs`, `export_settings/tokens.rs`, `export_settings/rename.rs`, `export_settings/saved.rs` |
-| `export` | JPEG, 16-bit TIFF and PNG encoding, selected EXIF, sRGB ICC embedding, atomic output publication | `mod.rs`, `metadata.rs` |
+| `export` | JPEG, 16-bit TIFF and PNG encoding, selected EXIF with the colour space's ColorSpace and interoperability index, ICC embedding of the pixels' colour space (taken from the `ExportImage`, never from a second setting), the sRGB conversion of watermark colours, atomic output publication | `mod.rs`, `metadata.rs` |
 | `ids` | Typed catalog row ids (`PhotoId`, `FolderId`, `RootId`, `CollectionId`), stored and serialized as their integers; a leaf, so edit resolution and export use them below the catalog | `ids.rs` |
 | `metadata` | Photo metadata as values: descriptive fields (title, caption, copyright, creator, capture, location), keywords and camera settings; depends on nothing else | `metadata.rs` |
 | `edit_session` | The edit of the photo open in Develop apart from the window: its bounded History (named steps, one per gesture, saved with the edit) and save state; no egui | `history.rs`, `save_state.rs` |
@@ -118,8 +118,10 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `lensfun_install` | Downloading, checking, publishing and removing Lensfun's lens database on request (never bundled, never fetched unasked); reading it is `lens::lensfun::installed`'s, the panels and the job thread are `app`'s | `lensfun_install.rs` |
 | `comparison` | Reproducible reference-image comparisons using the same develop APIs | `comparison.rs` |
 
-`color` holds shared numeric primitives (matrices, sRGB transfer, HSV) and the tone-curve
-model (`color::curve`). It depends on nothing else, so camera profiles, XMP and the
+`color` holds shared numeric primitives (matrices, sRGB transfer, HSV), the export colour
+spaces (`color::output::OutputSpace`: each space's matrix from linear sRGB, transfer curve
+and luminance, the one owner of those facts for the engine, export settings and export)
+and the tone-curve model (`color::curve`). It depends on nothing else, so camera profiles, XMP and the
 interface use it without depending on recipe or render orchestration. Presets and
 camera profiles independently use storage's asset-directory policy; neither
 library discovers its folders through the other.
@@ -341,6 +343,12 @@ Some features span several owners; each module's docs describe its part:
 - `app::preferences::monitor` resolves the Monitor profile into the profile each render job
   captures; `platform::display` owns the OS queries. No choice changes the
   renderer's output colour space or export profiles.
+- An export's colour space travels in its `ExportSettings` (export.json), captured
+  with the job, never in a recipe, `ExportOptions` or the catalog.
+  `ExportSettings::output_space` is the one check of space and format before
+  rendering. Only `develop::render_export` makes an `ExportImage` in a space other
+  than sRGB, on the CPU; the preview, its GPU stages and caches stay sRGB, and
+  `render_base` refuses another space with them.
 
 ## Boundaries to preserve
 

@@ -2,6 +2,8 @@
 //! develop pipeline, XMP and the interface. Depends on nothing else in the crate.
 pub mod curve;
 pub mod hsv;
+pub mod output;
+pub use output::OutputSpace;
 
 /// Relative luminance with the Rec. 709 / sRGB weights, in the units of `p`.
 pub fn luminance(p: [f32; 3]) -> f32 {

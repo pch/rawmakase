@@ -1,9 +1,10 @@
 //! The EXIF directories an export writes: the camera's own when it is included,
 //! with the export's size, orientation, resolution and software.
-use super::{Embed, exif::tiff_block};
+use super::{Embed, exif::tiff_block_with};
 use crate::build_info::SOFTWARE;
 use crate::{
     camera_data::Metadata,
+    color::OutputSpace,
     exif::{
         CameraExif, Field,
         tag::{
@@ -13,7 +14,48 @@ use crate::{
     },
 };
 
-pub(super) fn directories(m: &Metadata, embed: &Embed, width: u32, height: u32) -> CameraExif {
+/// The EXIF directories of an export, and the fields of its interoperability
+/// directory (none for sRGB, as exports have always written).
+pub(super) struct Directories {
+    pub(super) exif: CameraExif,
+    pub(super) interop: Vec<Field>,
+}
+
+/// EXIF's ColorSpace for an export in `space`: 1 for sRGB, 0xFFFF (uncalibrated) for
+/// any other, as cameras and Lightroom write Adobe RGB and ProPhoto RGB files.
+fn color_space(space: OutputSpace) -> u16 {
+    match space {
+        OutputSpace::Srgb => 1,
+        OutputSpace::AdobeRgb | OutputSpace::ProPhoto => 0xffff,
+    }
+}
+
+/// The interoperability directory of an export in `space`: Adobe RGB's index "R03"
+/// (DCF's option file) and version 1.00, as cameras and Lightroom write them.
+fn interop(space: OutputSpace) -> Vec<Field> {
+    match space {
+        OutputSpace::AdobeRgb => vec![
+            Field::ascii(1, "R03"),
+            Field {
+                tag: 2,
+                kind: crate::tiff::kind::UNDEFINED,
+                count: 4,
+                bytes: b"0100".to_vec(),
+            },
+        ],
+        OutputSpace::Srgb | OutputSpace::ProPhoto => Vec::new(),
+    }
+}
+
+/// The directories of an export in `space`. The camera's ColorSpace and
+/// interoperability directory are never carried over: an export writes its own.
+pub(super) fn directories(
+    m: &Metadata,
+    embed: &Embed,
+    width: u32,
+    height: u32,
+    space: OutputSpace,
+) -> Directories {
     let mut d = embed
         .camera
         .clone()
@@ -49,16 +91,19 @@ pub(super) fn directories(m: &Metadata, embed: &Embed, width: u32, height: u32) 
     ]);
     d.exif.retain(|f| f.tag != COLOR_SPACE);
     d.exif.extend([
-        Field::short(COLOR_SPACE, 1),
+        Field::short(COLOR_SPACE, color_space(space)),
         Field::long(PIXEL_X_DIMENSION, width),
         Field::long(PIXEL_Y_DIMENSION, height),
     ]);
-    d
+    Directories {
+        exif: d,
+        interop: interop(space),
+    }
 }
 
 /// The eXIf payload of a PNG export: the TIFF stream alone.
-pub(super) fn png_exif(d: CameraExif) -> Vec<u8> {
-    tiff_block(d)
+pub(super) fn png_exif(d: Directories) -> Vec<u8> {
+    tiff_block_with(d.exif, &d.interop)
 }
 
 /// The most EXIF a JPEG's APP1 segment holds: its length counts itself (2
@@ -70,15 +115,19 @@ const JPEG_EXIF_MAX: usize = 65_535 - 2 - 6;
 /// directories' before the main directory's, until it fits; the file's own
 /// fields (orientation, resolution, software, pixel size, colour space) stay.
 /// TIFF and PNG exports keep all of it.
-pub(super) fn jpeg_exif(mut d: CameraExif) -> Vec<u8> {
+pub(super) fn jpeg_exif(d: Directories) -> Vec<u8> {
+    let Directories {
+        exif: mut d,
+        interop,
+    } = d;
     // Required for JPEG by the EXIF standard: chroma samples are centered.
     d.main.push(Field::short(YCBCR_POSITIONING, 1));
-    let block = tiff_block(d.clone());
+    let block = tiff_block_with(d.clone(), &interop);
     if block.len() <= JPEG_EXIF_MAX {
         return block;
     }
     fit(&mut d, block.len() - JPEG_EXIF_MAX);
-    let block = tiff_block(d);
+    let block = tiff_block_with(d, &interop);
     // Never a segment the JPEG can't hold.
     if block.len() <= JPEG_EXIF_MAX {
         block
@@ -144,8 +193,16 @@ fn fit(d: &mut CameraExif, excess: usize) {
 
 #[cfg(test)]
 mod tests {
+    use super::super::exif::tiff_block;
     use super::*;
     use crate::exif::tag::MODEL;
+
+    fn srgb(exif: CameraExif) -> Directories {
+        Directories {
+            exif,
+            interop: Vec::new(),
+        }
+    }
 
     #[test]
     fn oversized_jpeg_exif_drops_the_largest_capture_values_first() {
@@ -174,7 +231,7 @@ mod tests {
         );
         assert_eq!(tags(&d.main), [MAKE, MODEL, YCBCR_POSITIONING]);
         assert_eq!(d.gps.len(), 1);
-        assert_eq!(jpeg_exif(camera()), tiff_block(d));
+        assert_eq!(jpeg_exif(srgb(camera())), tiff_block(d));
 
         // Thousands of small entries are cut in one pass too, highest tags
         // first, so a crafted file can't make the export crawl. (Without GPS,
@@ -186,7 +243,7 @@ mod tests {
             gps: Vec::new(),
             ..camera()
         };
-        let block = jpeg_exif(many);
+        let block = jpeg_exif(srgb(many));
         assert!(block.len() <= JPEG_EXIF_MAX && block.len() > JPEG_EXIF_MAX - 12);
         let entry = |tag: u16| [tag.to_le_bytes(), 3u16.to_le_bytes()].concat();
         assert!(block.windows(4).any(|w| w == entry(0x1000)));
@@ -222,7 +279,7 @@ mod tests {
                 .filter_map(Field::text)
                 .collect::<Vec<_>>()
         };
-        let d = directories(&m, &embed(Vec::new(), true), 4, 4);
+        let d = directories(&m, &embed(Vec::new(), true), 4, 4, OutputSpace::Srgb).exif;
         assert_eq!(lens(&d), ["smc PENTAX-DA 18-55mm F3.5-5.6 AL"]);
         // The camera's own name is kept.
         let d = directories(
@@ -230,7 +287,9 @@ mod tests {
             &embed(vec![Field::ascii(LENS_MODEL, "DA 18-55")], true),
             4,
             4,
-        );
+            OutputSpace::Srgb,
+        )
+        .exif;
         assert_eq!(lens(&d), ["DA 18-55"]);
         // Nothing of the camera's when its information is left out.
         let left_out = Embed {
@@ -238,6 +297,6 @@ mod tests {
             camera_fallback: false,
             ..Default::default()
         };
-        assert!(lens(&directories(&m, &left_out, 4, 4)).is_empty());
+        assert!(lens(&directories(&m, &left_out, 4, 4, OutputSpace::Srgb).exif).is_empty());
     }
 }

@@ -49,6 +49,7 @@ def main():
     licenses.mkdir(parents=True)
     for source, target in [(root / "LICENSE", licenses / "LICENSE"),
                            (root / "licenses/Adobe-DNG-SDK.txt", licenses / "Adobe-DNG-SDK.txt"),
+                           (root / "licenses/Compact-ICC-Profiles-CC0.txt", licenses / "Compact-ICC-Profiles-CC0.txt"),
                            (root / "licenses/Hack-MIT-BitstreamVera.txt", licenses / "Hack-MIT-BitstreamVera.txt"),
                            (root / "licenses/Inter-OFL.txt", licenses / "Inter-OFL.txt"),
                            (root / "licenses/Lensfun-database-CC-BY-SA-3.0.txt", licenses / "Lensfun-database-CC-BY-SA-3.0.txt"),

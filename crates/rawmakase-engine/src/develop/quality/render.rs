@@ -211,6 +211,7 @@ pub(crate) fn render_level(
     if let Some(frame) = frame {
         return Ok(Output::Frame(Box::new(frame)));
     }
+    let srgb = crate::color::OutputSpace::Srgb;
     let (mut out, weights) = develop::render_base(
         &toned,
         &tonal_recipe,
@@ -219,15 +220,17 @@ pub(crate) fn render_level(
         spread,
         cancel,
         Some(stages),
+        srgb,
     )?;
-    sharpen_with_radius(&mut out, r, sigma, weights.as_deref(), cancel)?;
-    local_noise(&mut out, weights.as_deref());
+    sharpen_with_radius(&mut out, r, sigma, weights.as_deref(), srgb, cancel)?;
+    local_noise(&mut out, weights.as_deref(), srgb);
     crate::develop::effects::spatial_finish_scaled(
         &mut out,
         r,
         [left, top],
         [size.0, size.1],
         scale,
+        srgb,
     );
     check_cancel(cancel)?;
     Ok(Output::Pixels(crop(out, [x - left, y - top, w, h])))
@@ -255,7 +258,18 @@ pub fn render(
     region: Option<[u32; 4]>,
     cancel: Cancel<'_>,
 ) -> Result<Rendered> {
-    render_preview(im, &resolve(im, r), None, max_edge, region, cancel, None).map(Output::pixels)
+    let srgb = crate::color::OutputSpace::Srgb;
+    render_preview(
+        im,
+        &resolve(im, r),
+        None,
+        max_edge,
+        region,
+        srgb,
+        cancel,
+        None,
+    )
+    .map(Output::pixels)
 }
 /// [`render`](fn@render) of a photo whose AI Denoise source is `ai`.
 pub fn render_with_ai(
@@ -265,19 +279,55 @@ pub fn render_with_ai(
     max_edge: u32,
     cancel: Cancel<'_>,
 ) -> Result<Rendered> {
-    render_preview(im, &resolve(im, r), ai, max_edge, None, cancel, None).map(Output::pixels)
+    let srgb = crate::color::OutputSpace::Srgb;
+    render_preview(im, &resolve(im, r), ai, max_edge, None, srgb, cancel, None).map(Output::pixels)
+}
+/// [`render_with_ai`] for an export in `space`: on the CPU, with no stage cache or GPU.
+/// Point Color's Visualize Range, a preview's view that grays encoded sRGB, is never
+/// exported.
+pub fn render_export(
+    im: &CameraImage,
+    r: &ValidRecipe,
+    ai: Option<&crate::develop::AiSource>,
+    max_edge: u32,
+    space: crate::color::OutputSpace,
+    cancel: Cancel<'_>,
+) -> Result<crate::develop::ExportImage> {
+    use crate::model::point_color::{SwatchView, without_visualization};
+    let (stripped, checked);
+    let r = if r.point_colors.iter().any(|p| p.view != SwatchView::Adjust) {
+        let mut recipe = (**r).clone();
+        without_visualization(&mut recipe.point_colors);
+        stripped = recipe;
+        checked = stripped.checked()?;
+        &checked
+    } else {
+        r
+    };
+    let out = render_preview(im, &resolve(im, r), ai, max_edge, None, space, cancel, None)?;
+    Ok(crate::develop::ExportImage::rendered_in(
+        out.pixels(),
+        space,
+    ))
 }
 /// `im` rendered with `resolved` (from [`resolve`] of `im`): the whole photo within
-/// `max_edge`, or `region` at 100%.
+/// `max_edge`, or `region` at 100%, encoded in `space`. Only an sRGB render may have
+/// `stages`, the preview's GPU and caches.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_preview(
     im: &CameraImage,
     resolved: &Resolved,
     ai: Option<&crate::develop::AiSource>,
     max_edge: u32,
     region: Option<[u32; 4]>,
+    space: crate::color::OutputSpace,
     cancel: Cancel<'_>,
     mut stages: Option<&mut Stages>,
 ) -> Result<Output> {
+    ensure!(
+        space == crate::color::OutputSpace::Srgb || stages.is_none(),
+        "Only sRGB renders run on the GPU"
+    );
     ensure!(!cancel.is_cancelled(), "Render superseded");
     let source = resolved.source(im, ai, cancel, stages.as_mut().map(|s| &mut *s.retouch))?;
     let r = resolved.recipe.as_ref();
@@ -369,6 +419,7 @@ pub(crate) fn render_preview(
         0.,
         cancel,
         stages.as_deref_mut(),
+        space,
     )?;
     let local_finish = weights
         .as_ref()
@@ -389,10 +440,18 @@ pub(crate) fn render_preview(
     }
     ensure!(!cancel.is_cancelled(), "Render superseded");
     if !gpu_sharpened {
-        sharpen(&mut out, r, weights.as_deref(), cancel)?;
-        local_noise(&mut out, weights.as_deref());
+        let sigma = Sharpener::new(r).sigma;
+        sharpen_with_radius(&mut out, r, sigma, weights.as_deref(), space, cancel)?;
+        local_noise(&mut out, weights.as_deref(), space);
     }
-    crate::develop::effects::spatial_finish(&mut out, r, [left, top], [g.width, g.height]);
+    crate::develop::effects::spatial_finish_scaled(
+        &mut out,
+        r,
+        [left, top],
+        [g.width, g.height],
+        1.,
+        space,
+    );
     ensure!(!cancel.is_cancelled(), "Render superseded");
     if region.is_some() {
         Ok(Output::Pixels(crop(out, [x - left, y - top, w, h])))

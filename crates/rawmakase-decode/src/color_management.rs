@@ -25,6 +25,7 @@ use moxcms::{
     ColorProfile, DataColorSpace, Layout, LutDataType, LutStore, LutWarehouse, RenderingIntent,
     ToneReprCurve, TransformOptions,
 };
+use rawmakase_model::color::OutputSpace;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -32,6 +33,18 @@ use std::sync::{Arc, Mutex};
 /// (Little CMS 2.19's built-in sRGB, dated 2024-01-01, without a profile ID).
 pub fn srgb_profile() -> &'static [u8] {
     include_bytes!("../../../assets/srgb.icc")
+}
+
+/// The profile an export in `space` embeds: [`srgb_profile`] for sRGB, and for Adobe
+/// RGB (1998) and ProPhoto RGB the CC0 `AdobeCompat-v2.icc` and `ProPhoto-v4.icc` of
+/// Compact-ICC-Profiles (`licenses/Compact-ICC-Profiles-CC0.txt`), whose colorants and
+/// curves are [`OutputSpace`]'s conversion.
+pub fn output_profile(space: OutputSpace) -> &'static [u8] {
+    match space {
+        OutputSpace::Srgb => srgb_profile(),
+        OutputSpace::AdobeRgb => include_bytes!("../../../assets/AdobeCompat-v2.icc"),
+        OutputSpace::ProPhoto => include_bytes!("../../../assets/ProPhoto-v4.icc"),
+    }
 }
 
 /// Converts 8-bit sRGB pixels in place to the monitor profile at `path`. On
@@ -502,6 +515,10 @@ impl Inverse {
 
 #[cfg(test)]
 mod tests {
+    use super::{
+        ColorProfile, Curves, Layout, Mat3, OutputSpace, TransformOptions, colorants, eval, invert,
+        output_profile, srgb_profile,
+    };
     use std::path::{Path, PathBuf};
 
     fn fixture(name: &str) -> PathBuf {
@@ -522,6 +539,104 @@ mod tests {
             }
         }
         rgb
+    }
+
+    fn sha256(bytes: &[u8]) -> String {
+        let sha: [u8; 32] = <sha2::Sha256 as sha2::Digest>::digest(bytes).into();
+        sha.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// The wide-gamut profiles are the pinned Compact-ICC-Profiles files, and sRGB's
+    /// is the one exports have always embedded.
+    #[test]
+    fn each_output_space_embeds_its_pinned_profile() {
+        assert_eq!(output_profile(OutputSpace::Srgb), srgb_profile());
+        assert_eq!(
+            sha256(output_profile(OutputSpace::AdobeRgb)),
+            "60fb2adecacf82132db0b1c09b303316f3bbd9e2823e7ba096d01627d12d57c9"
+        );
+        assert_eq!(
+            sha256(output_profile(OutputSpace::ProPhoto)),
+            "090daf740c136b4a63bf979d64f034b4a65aa5abbb04a0917729222afe2bb5c2"
+        );
+    }
+
+    /// Each profile's tone curves, as the ICC evaluator here reads them, are
+    /// [`OutputSpace`]'s curve within one code value at 16 bits over every code value.
+    #[test]
+    fn output_profiles_curves_are_the_encoders() {
+        for space in [OutputSpace::AdobeRgb, OutputSpace::ProPhoto] {
+            let profile = ColorProfile::new_from_slice(output_profile(space)).unwrap();
+            let curves = Curves::of(&profile).unwrap();
+            let mut worst = 0i32;
+            for code in 0..=65535u16 {
+                let encoded = f64::from(code) / 65535.;
+                for c in &curves.0 {
+                    let linear = eval(c, encoded);
+                    let ours = (space.encode(linear as f32).clamp(0., 1.) * 65535.).round() as i32;
+                    worst = worst.max((ours - i32::from(code)).abs());
+                }
+            }
+            assert!(worst <= 1, "{space:?}: {worst} code values");
+        }
+    }
+
+    /// The profiles' colorants give [`OutputSpace::from_linear_srgb`] from sRGB's
+    /// within their s15.16 rounding, and moxcms's own transform from sRGB to each
+    /// profile agrees with the conversion on ramps, primaries and saturated patches.
+    #[test]
+    fn output_profiles_colorants_and_transforms_are_the_conversion() {
+        let srgb = ColorProfile::new_from_slice(srgb_profile()).unwrap();
+        let from = colorants(&srgb);
+        let mut patches: Vec<[f64; 3]> = (0..=64).map(|i| [f64::from(i) / 64.; 3]).collect();
+        for p in [
+            [1., 0., 0.],
+            [0., 1., 0.],
+            [0., 0., 1.],
+            [1., 1., 0.],
+            [0., 1., 1.],
+            [1., 0., 1.],
+            [0.8, 0.3, 0.1],
+            [0.1, 0.6, 0.3],
+            [0.2, 0.3, 0.9],
+            [0.05, 0.02, 0.01],
+        ] {
+            patches.push(p);
+        }
+        for space in [OutputSpace::AdobeRgb, OutputSpace::ProPhoto] {
+            let dst = ColorProfile::new_from_slice(output_profile(space)).unwrap();
+            let profile = mul3(invert(colorants(&dst)).unwrap(), from);
+            for (row, ours) in profile.iter().zip(space.from_linear_srgb()) {
+                for (p, o) in row.iter().zip(ours) {
+                    assert!((p - f64::from(o)).abs() < 3e-5, "{space:?}: {profile:?}");
+                }
+            }
+            let transform = srgb
+                .create_transform_f64(Layout::Rgb, &dst, Layout::Rgb, TransformOptions::default())
+                .unwrap();
+            let src: Vec<f64> = patches.iter().flatten().copied().collect();
+            let mut out = vec![0.; src.len()];
+            transform.transform(&src, &mut out).unwrap();
+            for (p, theirs) in patches.iter().zip(out.chunks(3)) {
+                let ours = space.from_srgb(p.map(|v| v as f32));
+                for (o, t) in ours.iter().zip(theirs) {
+                    // Compared linear: near zero a pure gamma curve turns the profile's
+                    // rounding into many code values.
+                    let (o, t) = (
+                        f64::from(space.decode(*o)),
+                        f64::from(space.decode(*t as f32)),
+                    );
+                    assert!(
+                        (o - t).abs() < 1e-4,
+                        "{space:?} {p:?}: {ours:?} vs {theirs:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    fn mul3(a: Mat3, b: Mat3) -> Mat3 {
+        std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| a[i][k] * b[k][j]).sum()))
     }
 
     #[test]

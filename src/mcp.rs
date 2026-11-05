@@ -97,6 +97,16 @@ struct Export {
     target: McpTarget,
     /// Optional maximum edge; omit for full size.
     max_edge: Option<u32>,
+    /// Optional colour space; omit for sRGB. ProPhoto RGB needs a .tif path.
+    color_space: Option<McpColorSpace>,
+}
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+#[schemars(inline)]
+enum McpColorSpace {
+    Srgb,
+    AdobeRgb,
+    Prophoto,
 }
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -444,12 +454,18 @@ impl Server {
             .await
     }
     #[tool(
-        description = "Start exporting the guarded edit to a new JPEG, TIFF or PNG file. Returns a job ID; call get_job until status is completed before claiming the file exists. Does not overwrite files."
+        description = "Start exporting the guarded edit to a new JPEG, TIFF or PNG file, in sRGB unless color_space is adobe-rgb or prophoto (TIFF only). Returns a job ID; call get_job until status is completed before claiming the file exists. Does not overwrite files."
     )]
     async fn export_photo(&self, Parameters(p): Parameters<Export>) -> CallToolResult {
+        use rawmakase_protocol::request::ColorSpace;
         let request = Request::Export {
             path: p.path.into(),
             max_edge: p.max_edge,
+            color_space: p.color_space.map(|s| match s {
+                McpColorSpace::Srgb => ColorSpace::Srgb,
+                McpColorSpace::AdobeRgb => ColorSpace::AdobeRgb,
+                McpColorSpace::Prophoto => ColorSpace::Prophoto,
+            }),
         };
         self.send(request, Some(p.target)).await
     }
@@ -571,5 +587,29 @@ mod tests {
                 assert_eq!(target["type"], "object", "{}: {target}", tool.name);
             }
         }
+    }
+
+    /// export_photo's colour space takes the socket's names and is optional.
+    #[test]
+    fn export_photo_takes_an_optional_color_space() {
+        let read = |value: Value| serde_json::from_value::<Export>(value);
+        let target = json!({"photo_id": 1, "generation": 2, "revision": 3});
+        let export = read(json!({"path": "/tmp/a.tif", "target": target})).unwrap();
+        assert!(export.color_space.is_none());
+        for name in ["srgb", "adobe-rgb", "prophoto"] {
+            let export =
+                read(json!({"path": "/tmp/a.tif", "target": target, "color_space": name})).unwrap();
+            assert!(export.color_space.is_some(), "{name}");
+        }
+        assert!(
+            read(json!({"path": "/tmp/a.tif", "target": target, "color_space": "p3"})).is_err()
+        );
+        let tools = Server::tool_router().list_all();
+        let tool = tools.iter().find(|t| t.name == "export_photo").unwrap();
+        let schema = Value::Object((*tool.input_schema).clone()).to_string();
+        assert!(
+            schema.contains("adobe-rgb") && schema.contains("prophoto"),
+            "{schema}"
+        );
     }
 }

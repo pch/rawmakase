@@ -22,7 +22,6 @@ fn check_cancel(cancel: Cancel<'_>) -> Result<()> {
     Ok(())
 }
 
-use crate::color::luminance;
 pub fn fit_edge(width: u32, height: u32, viewport: [u32; 2]) -> u32 {
     let scale = (viewport[0].max(1) as f64 / width as f64)
         .min(viewport[1].max(1) as f64 / height as f64)

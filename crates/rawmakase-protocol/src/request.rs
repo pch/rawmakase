@@ -181,7 +181,7 @@ pub enum Request {
     /// Saves the current edit.
     Save,
     /// Renders the edit to a new file at `path`, full size unless `max_edge`
-    /// says otherwise.
+    /// says otherwise, in sRGB unless `color_space` says otherwise.
     Export {
         /// The new file; an existing one is refused.
         #[serde(deserialize_with = "path")]
@@ -193,6 +193,14 @@ pub enum Request {
             skip_serializing_if = "Option::is_none"
         )]
         max_edge: Option<u32>,
+        /// The pixels' colour space and the profile embedded; the app refuses one
+        /// the file's format can't hold (ProPhoto RGB needs TIFF).
+        #[serde(
+            default,
+            deserialize_with = "color_space",
+            skip_serializing_if = "Option::is_none"
+        )]
+        color_space: Option<ColorSpace>,
     },
     /// Renders a reduced preview to a new file at `path`, with a long edge of
     /// [`DEFAULT_PREVIEW_EDGE`] unless `max_edge` says otherwise.
@@ -273,6 +281,19 @@ pub enum Until {
         #[serde(deserialize_with = "job_id")]
         job_id: u64,
     },
+}
+
+/// The colour space an `export` writes in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ColorSpace {
+    /// sRGB, as every export without a choice.
+    #[default]
+    Srgb,
+    /// Adobe RGB (1998).
+    AdobeRgb,
+    /// ProPhoto RGB, 16-bit TIFF only.
+    Prophoto,
 }
 
 /// The previews a `build_previews` command builds.
@@ -362,6 +383,9 @@ fn channel<'de, D: Deserializer<'de>>(d: D) -> Result<CurveChannel, D::Error> {
 }
 fn points<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<[f32; 2]>, D::Error> {
     or(d, "points must be an array of [input, output] pairs")
+}
+fn color_space<'de, D: Deserializer<'de>>(d: D) -> Result<Option<ColorSpace>, D::Error> {
+    or(d, "color_space must be srgb, adobe-rgb or prophoto").map(Some)
 }
 fn module<'de, D: Deserializer<'de>>(d: D) -> Result<Module, D::Error> {
     or(d, "module must be develop or library")
@@ -498,6 +522,23 @@ mod tests {
                 Request::Export {
                     path: "/tmp/e.tif".into(),
                     max_edge: Some(16384),
+                    color_space: None,
+                },
+            ),
+            (
+                json!({"cmd":"export","path":"/tmp/e.tif","color_space":"prophoto"}),
+                Request::Export {
+                    path: "/tmp/e.tif".into(),
+                    max_edge: None,
+                    color_space: Some(ColorSpace::Prophoto),
+                },
+            ),
+            (
+                json!({"cmd":"export","path":"/tmp/e.jpg","color_space":"adobe-rgb"}),
+                Request::Export {
+                    path: "/tmp/e.jpg".into(),
+                    max_edge: None,
+                    color_space: Some(ColorSpace::AdobeRgb),
                 },
             ),
             (
@@ -611,6 +652,10 @@ mod tests {
             (
                 json!({"cmd":"module","module":"map"}),
                 "module must be develop or library",
+            ),
+            (
+                json!({"cmd":"export","path":"/tmp/e.tif","color_space":"display-p3"}),
+                "color_space must be srgb, adobe-rgb or prophoto",
             ),
             (
                 json!({"cmd":"curve","channel":"luma","points":[[0,0],[1,1]]}),
