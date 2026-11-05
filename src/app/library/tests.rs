@@ -1630,6 +1630,44 @@ fn preview_textures_keep_the_ones_shown_when_scrolling_back() -> Result<()> {
     }
     Ok(())
 }
+/// A thumbnail that comes back after its cell has scrolled out, when every
+/// texture kept is shown, is the one dropped, not one shown.
+#[test]
+fn a_thumbnail_back_after_its_cell_left_drops_none_shown() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF"])?;
+    let ctx = library.ctx.clone();
+    let image = image::RgbImage::new(2, 2);
+    let path = |n: usize| PathBuf::from(format!("{n}.RAF"));
+    let show = |library: &mut Library| {
+        for n in 0..216 {
+            library.cache.edit_seen.insert(PhotoId(n as _));
+            library.cache.thumb_seen.insert(path(n));
+        }
+        library.cache.publish_shown();
+    };
+    show(&mut library);
+    for n in 0..216 {
+        library.cache.insert_thumb(&ctx, path(n), &image);
+    }
+    show(&mut library);
+    // Asked for while scrolled down a row, back once scrolled up again.
+    library.cache.insert_thumb(&ctx, path(216), &image);
+    for n in 0..216 {
+        assert!(library.cache.thumbs.contains_key(&path(n)), "{n} dropped");
+    }
+    assert!(!library.cache.thumbs.contains_key(&path(216)));
+    library.cache.edited_requested.insert(PhotoId(216), 1);
+    for n in 0..216 {
+        library.cache.edited_requested.insert(PhotoId(n as _), 1);
+        library.cache.insert_edited(&ctx, PhotoId(n as _), &image);
+    }
+    library.cache.insert_edited(&ctx, PhotoId(216), &image);
+    assert_eq!(library.cache.edited.len(), 216);
+    assert!(!library.cache.edited.contains_key(&PhotoId(216)));
+    // Not kept, so asked for again once shown.
+    assert!(library.cache.edited_ticket(PhotoId(216)).is_none());
+    Ok(())
+}
 /// Develop's render is kept for the file it was rendered from: the store
 /// carries that file's stamp, and a render of a file not known is shown, not
 /// cached.

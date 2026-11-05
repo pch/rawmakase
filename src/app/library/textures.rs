@@ -197,10 +197,20 @@ impl PreviewTextures {
     ) {
         if !self.thumbs.contains_key(&path) {
             while self.thumbs.len() >= self.kept() {
-                let Some(old) = oldest_not_shown(&mut self.thumb_order, &self.shown_files) else {
-                    break;
-                };
-                self.thumbs.remove(&old);
+                match oldest_not_shown(&mut self.thumb_order, &self.shown_files) {
+                    Some(old) => {
+                        self.thumbs.remove(&old);
+                    }
+                    // Every one kept is shown and this one isn't: it is the
+                    // one not kept, asked for again once shown.
+                    None if !self.shown_files.contains(&path) => return,
+                    None => match self.thumb_order.pop_front() {
+                        Some(old) => {
+                            self.thumbs.remove(&old);
+                        }
+                        None => break,
+                    },
+                }
             }
             self.thumb_order.push_back(path.clone());
         }
@@ -210,8 +220,17 @@ impl PreviewTextures {
     pub(super) fn insert_edited(&mut self, ctx: &egui::Context, id: PhotoId, im: &image::RgbImage) {
         if !self.edited.contains_key(&id) {
             while self.edited.len() >= self.kept() {
-                let Some(old) = oldest_not_shown(&mut self.edited_order, &self.shown_photos) else {
-                    break;
+                let old = match oldest_not_shown(&mut self.edited_order, &self.shown_photos) {
+                    Some(old) => old,
+                    // As for thumbnails: not kept, so asked for again.
+                    None if !self.shown_photos.contains(&id) => {
+                        self.edited_requested.remove(&id);
+                        return;
+                    }
+                    None => match self.edited_order.pop_front() {
+                        Some(old) => old,
+                        None => break,
+                    },
                 };
                 self.edited.remove(&old);
                 self.edited_requested.remove(&old);
@@ -423,13 +442,13 @@ impl PreviewTextures {
             .show(ui, self.edits_pending, !self.ahead.is_empty());
     }
 }
-/// Takes the oldest of `order` not shown in the last frame, or the oldest
-/// when all are: dropping one shown would have it asked for again at once.
+/// Takes the oldest of `order` not shown in the last frame; `None` when all
+/// are. Dropping one shown would have it asked for again at once.
 fn oldest_not_shown<K: Eq + std::hash::Hash>(
     order: &mut VecDeque<K>,
     shown: &HashSet<K>,
 ) -> Option<K> {
-    let at = order.iter().position(|k| !shown.contains(k)).unwrap_or(0);
+    let at = order.iter().position(|k| !shown.contains(k))?;
     order.remove(at)
 }
 fn texture(ctx: &egui::Context, name: String, im: &image::RgbImage) -> egui::TextureHandle {
