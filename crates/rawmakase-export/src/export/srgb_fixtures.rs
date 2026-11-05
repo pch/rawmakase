@@ -441,17 +441,17 @@ fn a_graphic_watermark_over_an_srgb_export_matches_its_fixture() -> Result<()> {
         Cancel::NEVER,
     )?);
     assert!(ready.apply(&mut rendered));
-    let rendered = rendered.into_image();
     let source = dir.path().join("source.dng");
     std::fs::write(&source, b"synthetic")?;
     let mut found = Vec::new();
     for format in Format::ALL {
         let target = dir.path().join(format!("graphic.{}", format.extension()));
-        super::export(
+        super::export_image(
             &target,
             &source,
             &rendered,
             &image.metadata,
+            &Default::default(),
             &Default::default(),
             Replace::NoClobber,
         )?;

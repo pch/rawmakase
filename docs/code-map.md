@@ -117,7 +117,7 @@ standalone `rawmakase-ctl`). The last two build without the app.
 | File | Responsibility |
 | --- | --- |
 | [develop/mod.rs](../crates/rawmakase-engine/src/develop/mod.rs) | Public rendering API and exports of `Recipe`, `Geometry` and `Rendered`. |
-| [develop/export_image.rs](../crates/rawmakase-engine/src/develop/export_image.rs) | `ExportImage`: an export's pixels with their colour space, which only `render_export` makes in a space other than sRGB, so a buffer is never written with another space's profile. |
+| [develop/export_image.rs](../crates/rawmakase-engine/src/develop/export_image.rs) | `ExportImage`: an export's pixels with their colour space, which only `render_export` makes in a space other than sRGB; the buffer never leaves it as a `Rendered`, so a buffer is never written with another space's profile. |
 | [recipe.rs](../crates/rawmakase-engine/src/develop/recipe.rs) | What rendering makes of a recipe: the measured manual Vignetting and `Denoise`, AI Denoise's blend (with the source captured when the render started) then colour and luminance noise reduction, with their execution on the camera image. |
 | [ai_denoise.rs](../crates/rawmakase-engine/src/develop/ai_denoise.rs) | AI Denoise in rendering: `AiSource`, a photo's result with highlights recovered on its own, equal only to itself (by pointer), and `AiBlend`, `plain + amount × (ai − plain)` before manual noise reduction. The engine never computes or fetches a source. |
 | [raw_defaults.rs](../crates/rawmakase-interop/src/raw_defaults.rs) | Raw defaults: the master and per-camera choices (Adobe Default, Camera Settings, RAWmakase Default or a preset), and resolving a photo's starting settings with a fallback note. See [raw defaults](xmp-presets.md#raw-defaults). |

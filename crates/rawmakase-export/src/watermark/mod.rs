@@ -7,7 +7,6 @@ pub mod fonts;
 mod raster;
 use crate::color::OutputSpace;
 use crate::develop::ExportImage;
-use crate::rendered::Rendered;
 use crate::storage::RasterFormat;
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -335,8 +334,8 @@ impl Ready {
     /// ignored, as it always has been.
     pub fn apply(&self, image: &mut ExportImage) -> bool {
         let space = image.space();
-        let image = image.image_mut();
-        let Some(mut mark) = self.place(image.width, image.height) else {
+        let (width, height) = (image.width(), image.height());
+        let Some(mut mark) = self.place(width, height) else {
             return false;
         };
         if space != OutputSpace::Srgb {
@@ -345,15 +344,15 @@ impl Ready {
                 [p[0], p[1], p[2]] = [r, g, b];
             }
         }
-        composite(image, &mark);
+        composite(image.pixels_mut(), width, height, &mark);
         true
     }
 }
 
 /// Alpha-over in the image's encoded values: pixels the mark doesn't cover keep
 /// their exact values.
-pub fn composite(image: &mut Rendered, mark: &Placed) {
-    let (w, h) = (image.width as i64, image.height as i64);
+fn composite(pixels: &mut [[f32; 3]], width: u32, height: u32, mark: &Placed) {
+    let (w, h) = (i64::from(width), i64::from(height));
     for my in 0..mark.height as i64 {
         let y = mark.y + my;
         if y < 0 || y >= h {
@@ -368,7 +367,7 @@ pub fn composite(image: &mut Rendered, mark: &Placed) {
             if a <= 0. {
                 continue;
             }
-            let p = &mut image.pixels[(y * w + x) as usize];
+            let p = &mut pixels[(y * w + x) as usize];
             for (c, m) in p.iter_mut().zip([r, g, b]) {
                 *c = m * a + *c * (1. - a);
             }

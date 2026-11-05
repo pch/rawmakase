@@ -1,7 +1,10 @@
 //! A render for export together with the colour space its pixels are encoded in
 //! (docs/color-pipeline.md#export-color-spaces). Only [`crate::develop::render_export`]
-//! makes one in a space other than sRGB, so a buffer rendered as sRGB can never be
-//! written with another space's profile.
+//! makes one in a space other than sRGB, and the buffer never leaves it: its pixels
+//! are read and drawn on in place, and encoded through [`ExportImage::rgb8`] and
+//! [`ExportImage::rgb16`]. So a buffer rendered as sRGB can't be written with another
+//! space's profile, nor a wide-gamut one handed to an sRGB encoder as a
+//! [`Rendered`].
 use crate::color::OutputSpace;
 use crate::rendered::Rendered;
 
@@ -25,15 +28,27 @@ impl ExportImage {
     pub fn space(&self) -> OutputSpace {
         self.space
     }
-    pub fn image(&self) -> &Rendered {
-        &self.image
+    pub fn width(&self) -> u32 {
+        self.image.width
+    }
+    pub fn height(&self) -> u32 {
+        self.image.height
+    }
+    /// The pixels, encoded in [`ExportImage::space`], row by row.
+    pub fn pixels(&self) -> &[[f32; 3]] {
+        &self.image.pixels
     }
     /// The pixels, to draw on (a watermark) in [`ExportImage::space`].
-    pub fn image_mut(&mut self) -> &mut Rendered {
-        &mut self.image
+    pub fn pixels_mut(&mut self) -> &mut [[f32; 3]] {
+        &mut self.image.pixels
     }
-    pub fn into_image(self) -> Rendered {
-        self.image
+    /// [`Rendered::rgb8`] of the pixels.
+    pub fn rgb8(&self) -> Vec<u8> {
+        self.image.rgb8()
+    }
+    /// [`Rendered::rgb16`] of the pixels.
+    pub fn rgb16(&self) -> Vec<u16> {
+        self.image.rgb16()
     }
 }
 
@@ -137,7 +152,7 @@ mod tests {
                 Cancel::NEVER,
             )?;
             assert_eq!(export.space(), OutputSpace::Srgb);
-            assert!(export.image().pixels == plain.pixels, "{name}");
+            assert!(export.pixels() == plain.pixels.as_slice(), "{name}");
         }
         Ok(())
     }
@@ -174,9 +189,13 @@ mod tests {
             for space in [OutputSpace::AdobeRgb, OutputSpace::ProPhoto] {
                 let out = crate::develop::render_export(&im, &r, None, edge, space, Cancel::NEVER)?;
                 assert_eq!(out.space(), space);
-                let out = out.image();
-                assert_eq!((out.width, out.height), (srgb.width, srgb.height));
-                let [a, b] = [left, right].map(|x| as_linear_srgb(space, at(out, x)));
+                assert_eq!((out.width(), out.height()), (srgb.width, srgb.height));
+                let out = Rendered {
+                    width: out.width(),
+                    height: out.height(),
+                    pixels: out.pixels().to_vec(),
+                };
+                let [a, b] = [left, right].map(|x| as_linear_srgb(space, at(&out, x)));
                 assert!(
                     a[0] < -0.01 && b[0] < -0.01,
                     "{name} {space:?}: {a:?} {b:?}"
@@ -237,7 +256,7 @@ mod tests {
         assert!((srgb.pixels[right][2] - plain.pixels[right][2]).abs() < 1e-3);
         for space in [OutputSpace::AdobeRgb, OutputSpace::ProPhoto] {
             let out = crate::develop::render_export(&im, &r, None, 0, space, Cancel::NEVER)?;
-            for (o, s) in out.image().pixels.iter().zip(&srgb.pixels) {
+            for (o, s) in out.pixels().iter().zip(&srgb.pixels) {
                 // Clipped back into sRGB: the brightened red passes sRGB's white.
                 let back =
                     as_linear_srgb(space, *o).map(|v| crate::color::srgb_encode(v.clamp(0., 1.)));
@@ -249,4 +268,5 @@ mod tests {
         }
         Ok(())
     }
+
 }

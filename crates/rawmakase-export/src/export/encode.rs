@@ -2,6 +2,7 @@
 //! directories and XMP.
 use super::{Embed, metadata::Directories};
 use crate::{
+    develop::ExportImage,
     exif::{
         Field,
         tag::{
@@ -9,7 +10,6 @@ use crate::{
             XMP, Y_RESOLUTION,
         },
     },
-    rendered::Rendered,
     tiff::kind::{ASCII, FLOAT, LONG, RATIONAL, SHORT, SLONG, SRATIONAL, SSHORT, UNDEFINED},
 };
 use anyhow::{Result, ensure};
@@ -22,7 +22,7 @@ use tiff::{
 
 pub(super) fn jpeg(
     out: &mut impl Write,
-    image: &Rendered,
+    image: &ExportImage,
     quality: u8,
     profile: Vec<u8>,
     directories: Directories,
@@ -34,8 +34,8 @@ pub(super) fn jpeg(
     e.set_exif_metadata(super::metadata::jpeg_exif(directories))?;
     e.write_image(
         &image.rgb8(),
-        image.width,
-        image.height,
+        image.width(),
+        image.height(),
         image::ExtendedColorType::Rgb8,
     )?;
     if let Some(xmp) = &embed.xmp {
@@ -47,7 +47,7 @@ pub(super) fn jpeg(
 
 pub(super) fn tiff(
     out: &mut (impl Write + Seek),
-    image: &Rendered,
+    image: &ExportImage,
     profile: Vec<u8>,
     directories: &Directories,
     embed: &Embed,
@@ -83,7 +83,7 @@ pub(super) fn tiff(
         }
         Some(gps.finish_with_offsets()?.offset)
     };
-    let mut im = e.new_image::<RGB16>(image.width, image.height)?;
+    let mut im = e.new_image::<RGB16>(image.width(), image.height())?;
     im.encoder()
         .write_tag(Tag::Unknown(EXIF_IFD), exif_offset)?;
     if let Some(offset) = gps_offset {
@@ -117,12 +117,12 @@ pub(super) fn tiff(
 /// iTXt chunk, as the XMP specification asks.
 pub(super) fn png(
     out: &mut impl Write,
-    image: &Rendered,
+    image: &ExportImage,
     profile: Vec<u8>,
     directories: Directories,
     embed: &Embed,
 ) -> Result<()> {
-    let mut info = png::Info::with_size(image.width, image.height);
+    let mut info = png::Info::with_size(image.width(), image.height());
     info.color_type = png::ColorType::Rgb;
     info.bit_depth = png::BitDepth::Eight;
     info.icc_profile = Some(profile.into());

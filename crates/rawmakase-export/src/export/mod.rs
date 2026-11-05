@@ -12,7 +12,6 @@ pub mod queue;
 pub use crate::storage::Replace;
 use crate::{
     camera_data::Metadata,
-    color::OutputSpace,
     develop::ExportImage,
     export_settings::{ExportOptions, Format},
     rendered::Rendered,
@@ -72,16 +71,8 @@ pub fn export_with(
     embed: &Embed,
     replace: Replace,
 ) -> Result<()> {
-    write(
-        path,
-        source,
-        image,
-        OutputSpace::Srgb,
-        m,
-        options,
-        embed,
-        replace,
-    )
+    let image = ExportImage::srgb(image.clone());
+    write(path, source, &image, m, options, embed, replace)
 }
 
 /// Exports `image` to `path` with the profile of its colour space.
@@ -94,24 +85,13 @@ pub fn export_image(
     embed: &Embed,
     replace: Replace,
 ) -> Result<()> {
-    write(
-        path,
-        source,
-        image.image(),
-        image.space(),
-        m,
-        options,
-        embed,
-        replace,
-    )
+    write(path, source, image, m, options, embed, replace)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn write(
     path: &Path,
     source: &Path,
-    image: &Rendered,
-    space: OutputSpace,
+    image: &ExportImage,
     m: &Metadata,
     options: &ExportOptions,
     embed: &Embed,
@@ -126,7 +106,7 @@ fn write(
         );
         ensure!(replace == Replace::Overwrite, "Destination already exists");
     }
-    let staged = stage_in(path, image, space, m, options, embed)?;
+    let staged = stage_image(path, image, m, options, embed)?;
     crate::storage::persist(staged.file, path, replace)
 }
 
@@ -187,10 +167,11 @@ pub fn stage(
     options: &ExportOptions,
     embed: &Embed,
 ) -> Result<Staged> {
-    stage_in(path, image, OutputSpace::Srgb, m, options, embed)
+    stage_image(path, &ExportImage::srgb(image.clone()), m, options, embed)
 }
 
-/// [`stage`] of `image` with the profile of its colour space.
+/// [`stage`] of `image` with its colour space's profile and EXIF colour space; a
+/// format that can't hold the space is refused before anything is written.
 pub fn stage_image(
     path: &Path,
     image: &ExportImage,
@@ -198,20 +179,7 @@ pub fn stage_image(
     options: &ExportOptions,
     embed: &Embed,
 ) -> Result<Staged> {
-    stage_in(path, image.image(), image.space(), m, options, embed)
-}
-
-/// `image`, encoded in `space`, staged for `path` with `space`'s profile and EXIF
-/// colour space; a format that can't hold `space` is refused before anything is
-/// written.
-fn stage_in(
-    path: &Path,
-    image: &Rendered,
-    space: OutputSpace,
-    m: &Metadata,
-    options: &ExportOptions,
-    embed: &Embed,
-) -> Result<Staged> {
+    let space = image.space();
     ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
     options.validate()?;
     let format = Format::from_path(path).ok_or_else(|| {
@@ -222,7 +190,7 @@ fn stage_in(
     let mut temp = NamedTempFile::new_in(parent)?;
     let unfinished = WRITING.track(temp.path());
     let profile = crate::color_management::output_profile(space).to_vec();
-    let directories = metadata::directories(m, embed, image.width, image.height, space);
+    let directories = metadata::directories(m, embed, image.width(), image.height(), space);
     match format {
         Format::Jpeg => encode::jpeg(
             &mut temp,

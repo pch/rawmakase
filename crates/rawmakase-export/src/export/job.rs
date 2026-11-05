@@ -409,8 +409,8 @@ mod tests {
             Ok(
                 prepare(photo, &ExportSettings::default(), Cancel::NEVER, &|_| {})?
                     .rendered
-                    .into_image()
-                    .pixels,
+                    .pixels()
+                    .to_vec(),
             )
         };
         let mut plain = photo(&source, &dir.path().join("cache"));

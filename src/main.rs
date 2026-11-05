@@ -726,8 +726,8 @@ fn main() -> Result<()> {
             let max = im.pixels.iter().flatten().copied().fold(0f32, f32::max);
             println!(
                 "{}x{} | develop {:?} | render {:?} | total {:?} | camera max {:.4} | scale {:.6} | integer clipped {}",
-                out.image().width,
-                out.image().height,
+                out.width(),
+                out.height(),
                 developed,
                 rendered,
                 t.elapsed(),
