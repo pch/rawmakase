@@ -1,6 +1,6 @@
 [package]
 name = "rawmakase"
-version = "0.4.11"
+version = "0.4.12"
 edition.workspace = true
 rust-version.workspace = true
 description = "A fast, non-destructive RAW photo developer"
