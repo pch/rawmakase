@@ -82,10 +82,10 @@ reduction on both sides, per photo:
   The 16-bit TIFF is 273 MB. Lossless-only output is a valid interchange
   fallback, but not a credible replacement for the lossy JXL exports #894 asks for.
 
-Decision: no Rust encoder qualifies for lossy HDR JXL. As the plan requires, a
-concrete libjxl proposal goes to the owner (dependency, platforms, packaging and
-licence notices). Until it is decided, JXL export is blocked. HDR editing and TIFF
-interchange continue, and the lossless Rust path stays the fallback.
+Decision: no Rust encoder qualifies for lossy HDR JXL. The owner deferred the libjxl
+dependency on 2026-11-05. #906 records the proposal, its consequences and a build
+spike. Until #906 is decided, HDR JXL export is lossless only, through the Rust
+path. HDR editing, gain-map bundling and TIFF interchange continue.
 
 **Gain-map bundle.** libjxl's `lib/extras/gain_map.cc` defines the `jhgm` box:
 a version byte (0), a big-endian u16 size and the ISO 21496-1 metadata, a u8 size and
@@ -101,7 +101,7 @@ They are used for fixtures and validation only; none is a runtime dependency.
 
 ## Open
 
-- The libjxl decision (above).
+- Lossy HDR JXL: deferred to #906.
 - Fixtures: synthetic PQ, HLG and gain-map files from the tools above, plus a camera
   HLG/PQ HEIF and an Apple gain-map HEIC/JPEG, which need a real capture. Synthetic
   ramps crossing white, saturated highlights and negative matrix results.
@@ -115,7 +115,7 @@ They are used for fixtures and validation only; none is a runtime dependency.
 ## Progress
 
 - [ ] Stage 1: harness, Nikon measurements and codec spike done; fixtures, frozen
-  family, display prototype and the libjxl decision open.
+  family and display prototype open. The libjxl decision is deferred to #906.
 - [ ] Stage 2: HDR settings in the recipe (`model::hdr`), schema 14 and catalog
   version 6 for HDR on, values kept while off without a format change, XMP and
   Lightroom reading and writing, presets, the High Dynamic Range Copy/Sync group,
