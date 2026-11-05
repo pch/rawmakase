@@ -2,7 +2,7 @@
 use crate::app::testing::*;
 use crate::app::*;
 use crate::camera_data::Metadata;
-use eframe::egui::{Pos2, Rect};
+use eframe::egui::{Pos2, Rect, Vec2};
 
 #[test]
 fn double_clicking_a_defringe_hue_resets_it_to_its_colors_default() {
@@ -210,4 +210,135 @@ fn the_basic_panel_offers_relative_white_balance_for_a_jpeg() {
         assert_eq!(count(&labels, offered), 1, "{offered}: {labels:?}");
     }
     assert_eq!(count(&labels, "Daylight"), 0, "{labels:?}");
+}
+
+#[test]
+fn the_crop_aspect_names_the_crops_ratio_beside_its_padlock() {
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    crate::app::ui::icons::install(&ctx);
+    let drawer = |crop_aspect: &str, crop: [f32; 4]| {
+        let mut e = Editor::with_context(
+            &ctx,
+            None,
+            crate::app::preferences::session::Session {
+                crop_aspect: crop_aspect.into(),
+                ..Default::default()
+            },
+            None,
+        );
+        e.document
+            .set_image(std::sync::Arc::new(crate::camera_data::CameraImage {
+                recovered: Default::default(),
+                width: 300,
+                height: 200,
+                pixels: vec![[0.1; 3]; 60000],
+                metadata: Metadata {
+                    width: 300,
+                    height: 200,
+                    ..Default::default()
+                },
+                fast: false,
+                scale_factor: 1.,
+                scale_clipped: 0,
+            }));
+        e.document.edit.setup_mut().crop = crop;
+        e.view.toggle(crate::app::develop::state::Tool::Crop);
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400., 800.))),
+                ..Default::default()
+            },
+            |ui| {
+                let frame = e.begin_edit_frame();
+                e.tool_drawer(ui);
+                e.finish_edit_frame(frame, &ctx);
+            },
+        );
+        output.textures_delta.clear();
+        output
+            .platform_output
+            .accesskit_update
+            .expect("accessibility is on")
+    };
+    let custom = [0., 0., 0.75, 1.];
+    // Free: Custom, as Lightroom shows it, beside an open padlock (measured).
+    let free = drawer("free", custom);
+    assert!(labelled(&free, "Custom").is_some());
+    assert!(labelled(&free, "Aspect unlocked").is_some());
+    assert!(labelled(&free, "Aspect locked").is_none());
+    // Unlocked and uncropped, the photo's own ratio is named.
+    let whole = drawer("free", [0., 0., 1., 1.]);
+    assert!(labelled(&whole, "Original").is_some());
+    assert!(labelled(&whole, "Aspect unlocked").is_some());
+    // A ratio chosen locks the Custom crop as read.
+    let locked = drawer("original", custom);
+    assert!(labelled(&locked, "Custom").is_some());
+    assert!(labelled(&locked, "Aspect locked").is_some());
+}
+
+#[test]
+fn clicking_the_crop_padlock_locks_and_unlocks_the_aspect() {
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    crate::app::ui::icons::install(&ctx);
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session {
+            crop_aspect: "free".into(),
+            ..Default::default()
+        },
+        None,
+    );
+    e.document
+        .set_image(std::sync::Arc::new(crate::camera_data::CameraImage {
+            recovered: Default::default(),
+            width: 300,
+            height: 200,
+            pixels: vec![[0.1; 3]; 60000],
+            metadata: Metadata {
+                width: 300,
+                height: 200,
+                ..Default::default()
+            },
+            fast: false,
+            scale_factor: 1.,
+            scale_clipped: 0,
+        }));
+    e.document.edit.setup_mut().crop = [0., 0., 0.75, 1.];
+    e.view.toggle(crate::app::develop::state::Tool::Crop);
+    let frame = |e: &mut Editor, events: Vec<egui::Event>| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400., 800.))),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                let frame = e.begin_edit_frame();
+                e.tool_drawer(ui);
+                e.finish_edit_frame(frame, &ctx);
+            },
+        );
+        output.textures_delta.clear();
+        output
+            .platform_output
+            .accesskit_update
+            .expect("accessibility is on")
+    };
+    let click = |e: &mut Editor, label: &str| {
+        let tree = frame(e, vec![]);
+        let at = centre(labelled(&tree, label).expect(label));
+        let [down, up] = press_and_release(at);
+        frame(e, down);
+        frame(e, up);
+        frame(e, vec![])
+    };
+    let tree = click(&mut e, "Aspect unlocked");
+    assert!(labelled(&tree, "Aspect locked").is_some());
+    assert!(e.crop_constraint().is_some());
+    let tree = click(&mut e, "Aspect locked");
+    assert!(labelled(&tree, "Aspect unlocked").is_some());
+    assert_eq!(e.crop_constraint(), None);
 }

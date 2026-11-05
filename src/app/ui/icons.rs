@@ -41,6 +41,8 @@ fastframe_icons::icons! {
         FlipHorizontal => "flip-horizontal-2",
         FlipVertical => "flip-vertical-2",
         SwapOrientation => "arrow-left-right",
+        AspectLocked => lucide "lock",
+        AspectUnlocked => "lock-open",
         Settings => lucide "settings",
         Catalog => "library-big",
         Performance => "gauge",

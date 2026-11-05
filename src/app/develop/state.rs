@@ -348,6 +348,12 @@ pub(in crate::app) struct ViewState {
     pub(in crate::app) tone_drag: Option<crate::app::develop::panels::tone_drag::ToneDrag>,
     pub(in crate::app) tool: Tool,
     pub(in crate::app) crop_drag: Option<([f32; 4], usize)>,
+    /// The aspect this photo's crop is locked to, in the Crop menu's values: the
+    /// photo's own ratio (negative), a preset or Custom ratio (positive; its
+    /// reciprocal after X), or 0 for unlocked (Free). It is 0 exactly when Free is
+    /// the chosen aspect. Gestures ask [`Editor::crop_constraint`], not this.
+    ///
+    /// [`Editor::crop_constraint`]: crate::app::Editor::crop_constraint
     pub(in crate::app) aspect: f32,
     /// Whether `aspect` was read from this photo's crop since the Crop tool opened.
     pub(in crate::app) aspect_read: bool,
@@ -356,7 +362,8 @@ pub(in crate::app) struct ViewState {
     /// chosen aspect.
     pub(in crate::app) aspect_reloaded: bool,
     /// The aspect last chosen from the Crop tool's menu, which an uncropped photo
-    /// opens with; saved in the session.
+    /// opens with; saved in the session. Free (0) leaves every photo's aspect
+    /// unlocked; any other choice locks it.
     pub(in crate::app) chosen_aspect: f32,
     /// The crop guide overlay; saved in the session.
     pub(in crate::app) crop_guides: crate::app::develop::tools::crop_tool::CropGuides,

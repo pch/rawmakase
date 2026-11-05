@@ -2,7 +2,7 @@ use crate::app::Editor;
 use crate::app::Module;
 use crate::app::develop::before_after;
 use crate::app::develop::state::{TextureMode, Tool};
-use crate::app::develop::tools::crop_tool::{Attention, Guide, Ruler};
+use crate::app::develop::tools::crop_tool::{Attention, Guide, Ruler, crop_aspect_shown};
 use crate::app::ui::design::{Tone, radius, text};
 use crate::app::ui::icons::{self, Icon};
 use crate::app::ui::theme;
@@ -11,8 +11,7 @@ use crate::develop::{self, Geometry};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 impl Editor {
-    /// Constrains the crop to the chosen aspect: negative keeps the photo's
-    /// own ratio, zero is free, and presets follow the photo's orientation.
+    /// Constrains the crop to [`Self::crop_constraint`]; a Free crop is left as it is.
     pub(in crate::app) fn fit_aspect(&mut self) {
         if let Some(crop) = self.fitted_crop() {
             self.document.edit.recipe_mut().crop = crop;
@@ -20,23 +19,8 @@ impl Editor {
     }
     /// The crop [`Self::fit_aspect`] makes, when it changes it.
     fn fitted_crop(&self) -> Option<[f32; 4]> {
-        if self.view.aspect == 0. {
-            return None;
-        }
-        let im = self.document.full()?;
-        let mut r = self.document.edit.recipe().clone();
-        let c = r.crop;
-        r.crop = [0., 0., 1., 1.];
-        let g = Geometry::new(im, &r, 0);
-        let portrait = g.oriented_height > g.oriented_width;
-        let aspect = if self.view.aspect < 0. {
-            g.oriented_width / g.oriented_height
-        } else if portrait {
-            1. / self.view.aspect
-        } else {
-            self.view.aspect
-        };
-        let ratio = aspect * g.oriented_height / g.oriented_width;
+        let ratio = self.crop_constraint()?;
+        let c = self.document.edit.recipe().crop;
         let cx = (c[0] + c[2]) / 2.;
         let cy = (c[1] + c[3]) / 2.;
         let mut w = c[2] - c[0];
@@ -60,18 +44,23 @@ impl Editor {
     /// matches, or else its exact ratio as Custom. An uncropped photo takes the
     /// aspect last chosen from the menu, and a preset crops it as an edit of its
     /// own, recorded before any frame or command that follows; not when the photo
-    /// was loaded again with the tool open, which keeps the edit loaded.
+    /// was loaded again with the tool open, which keeps the edit loaded. With Free
+    /// chosen the aspect stays unlocked, whatever the crop.
     pub(in crate::app) fn read_aspect(&mut self) {
         if !self.view.is(Tool::Crop) || self.view.aspect_read {
             return;
         }
-        let Some(im) = self.document.full().cloned() else {
+        let Some(photo) = self.crop_frame() else {
             return;
         };
         self.view.aspect_read = true;
         let c = self.document.edit.recipe().crop;
+        // Free is the padlock open: reading a photo names its ratio in the menu but
+        // never locks it, as Lightroom's open padlock stays open when Crop opens again
+        // on its Custom crop.
+        let free = self.view.chosen_aspect == 0.;
         if c == [0., 0., 1., 1.] && self.view.aspect_reloaded {
-            self.view.aspect = -1.;
+            self.view.aspect = if free { 0. } else { -1. };
             return;
         }
         if c == [0., 0., 1., 1.] {
@@ -83,29 +72,10 @@ impl Editor {
             }
             return;
         }
-        let mut r = self.document.edit.recipe().clone();
-        r.crop = [0., 0., 1., 1.];
-        let g = Geometry::new(&im, &r, 0);
-        let photo = g.oriented_width / g.oriented_height;
-        let crop = (c[2] - c[0]) / (c[3] - c[1]) * photo;
-        // As fit_aspect reads it: presets are long over short for landscape photos.
-        let aspect = if g.oriented_height > g.oriented_width {
-            1. / crop
+        self.view.aspect = if free {
+            0.
         } else {
-            crop
-        };
-        let near = |a: f32, b: f32| (a / b - 1.).abs() < 0.005;
-        // A preset either way round: its reciprocal is the other orientation (X).
-        self.view.aspect = if near(crop, photo) {
-            -1.
-        } else {
-            crate::app::develop::panels::inspector::ASPECTS
-                .iter()
-                .map(|(a, ..)| *a)
-                .filter(|a| *a > 0.)
-                .flat_map(|a| [a, 1. / a])
-                .find(|a| near(aspect, *a))
-                .unwrap_or(aspect)
+            crop_aspect_shown(c, photo)
         };
     }
     /// What Develop's minimap shows: the photo, and the part in view, at any

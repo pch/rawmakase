@@ -41,6 +41,8 @@ fn crop_tool_reads_each_photos_own_aspect() {
         );
         editor.view.aspect
     };
+    // Original is chosen (the default session), so each crop's aspect is locked as
+    // read; with Free it would stay unlocked (`free_stays_unlocked_when_crop_reopens`).
     // The last photo's XPan crop does not carry over to an uncropped photo.
     editor.view.aspect = 65. / 24.;
     assert_eq!(open(&mut editor, [0., 0., 1., 1.]), -1.);
@@ -518,4 +520,282 @@ fn crop_keys_swap_and_cycle_the_overlay_but_not_while_typing() -> anyhow::Result
     press(&mut e, egui::Key::X, false, false);
     assert_eq!(e.library.as_ref().unwrap().photo(ids[0]).unwrap().flag, -1);
     Ok(())
+}
+
+/// A 300 × 200 photo with a preview to draw, for crop drags on the viewport.
+fn editor_for_crop_drags(ctx: &egui::Context, crop_aspect: &str) -> Editor {
+    let mut editor = Editor::with_context(
+        ctx,
+        None,
+        crate::app::preferences::session::Session {
+            crop_aspect: crop_aspect.into(),
+            ..Default::default()
+        },
+        None,
+    );
+    editor.document.set_image(Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 300,
+        height: 200,
+        pixels: vec![[0.1; 3]; 60000],
+        metadata: Metadata {
+            width: 300,
+            height: 200,
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+    }));
+    editor.preview.texture = Some(
+        ctx.load_texture(
+            "photo",
+            egui::ColorImage::filled([300, 200], egui::Color32::GRAY),
+            egui::TextureOptions::LINEAR,
+        )
+        .into(),
+    );
+    editor
+}
+
+/// A frame of Develop's viewport given `events`, as the window draws it.
+fn viewport_frame(ctx: &egui::Context, editor: &mut Editor, events: Vec<egui::Event>) {
+    let frame = editor.begin_edit_frame();
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::splat(400.),
+            )),
+            events,
+            ..Default::default()
+        },
+        |ui| {
+            editor.viewport_ui(ui);
+        },
+    );
+    output.textures_delta.clear();
+    editor.finish_edit_frame(frame, ctx);
+}
+
+/// Drags the crop's `handle` (as the viewport numbers them: 5 is the right side, 7 the
+/// bottom) by `by`, a fraction of the photo's width and height, with the pointer.
+fn drag_crop_handle(ctx: &egui::Context, editor: &mut Editor, handle: usize, by: egui::Vec2) {
+    // A frame first, so the photo's place on screen is known.
+    viewport_frame(ctx, editor, vec![]);
+    let rect = editor.view.shown_rect.expect("the photo is drawn");
+    let c = editor.document.edit.recipe().crop;
+    let at = |x: f32, y: f32| {
+        egui::Pos2::new(
+            rect.left() + x * rect.width(),
+            rect.top() + y * rect.height(),
+        )
+    };
+    let (mx, my) = ((c[0] + c[2]) / 2., (c[1] + c[3]) / 2.);
+    let from = match handle {
+        5 => at(c[2], my),
+        7 => at(mx, c[3]),
+        _ => unreachable!("not used here"),
+    };
+    let to = from + by * rect.size();
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    viewport_frame(
+        ctx,
+        editor,
+        vec![egui::Event::PointerMoved(from), button(from, true)],
+    );
+    // A few points first, as a hand moves: the drag starts by the handle it pressed.
+    let step = from + (to - from).normalized() * 8.;
+    viewport_frame(ctx, editor, vec![egui::Event::PointerMoved(step)]);
+    viewport_frame(
+        ctx,
+        editor,
+        vec![egui::Event::PointerMoved(from.lerp(to, 0.5))],
+    );
+    viewport_frame(ctx, editor, vec![egui::Event::PointerMoved(to)]);
+    viewport_frame(ctx, editor, vec![button(to, false)]);
+}
+
+/// Closes and opens the Crop tool again, as R pressed twice does.
+fn reopen_crop(ctx: &egui::Context, editor: &mut Editor) {
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    viewport_frame(ctx, editor, vec![]);
+}
+
+fn assert_near(a: f32, b: f32, what: &str) {
+    assert!((a - b).abs() < 0.01, "{what}: {a} is not {b}");
+}
+
+#[test]
+fn free_stays_unlocked_when_crop_reopens() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_for_crop_drags(&ctx, "free");
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    // The right side dragged in: the crop is 225 × 200, a Custom ratio.
+    drag_crop_handle(&ctx, &mut editor, 5, egui::vec2(-0.25, 0.));
+    assert_near(editor.document.edit.recipe().crop[2], 0.75, "right");
+    // Lightroom keeps its padlock open through R pressed twice (measured), so the
+    // reopened tool still lets the next drag change the ratio.
+    reopen_crop(&ctx, &mut editor);
+    assert_eq!(editor.crop_constraint(), None);
+    assert_near(
+        editor.document.edit.recipe().crop[2],
+        0.75,
+        "right on reopening",
+    );
+    drag_crop_handle(&ctx, &mut editor, 7, egui::vec2(0., -0.2));
+    let c = editor.document.edit.recipe().crop;
+    assert_near(c[2] - c[0], 0.75, "width after the bottom is dragged");
+    assert_near(c[3] - c[1], 0.8, "height after the bottom is dragged");
+}
+
+#[test]
+fn a_chosen_ratio_still_locks_a_reopened_custom_crop() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_for_crop_drags(&ctx, "4x5");
+    editor.document.edit.setup_mut().crop = [0., 0., 0.75, 1.];
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    viewport_frame(&ctx, &mut editor, vec![]);
+    // Locked, the photo's own Custom ratio is kept: 0.75 of the width over the
+    // whole height, in the crop's 0–1 coordinates.
+    let ratio = editor.crop_constraint().expect("locked");
+    assert_near(ratio, 0.75, "the crop's ratio");
+    drag_crop_handle(&ctx, &mut editor, 7, egui::vec2(0., -0.2));
+    let c = editor.document.edit.recipe().crop;
+    assert_near((c[2] - c[0]) / (c[3] - c[1]), 0.75, "ratio after the drag");
+}
+
+#[test]
+fn free_drags_stay_free_while_crop_stays_open() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_for_crop_drags(&ctx, "free");
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    drag_crop_handle(&ctx, &mut editor, 5, egui::vec2(-0.25, 0.));
+    drag_crop_handle(&ctx, &mut editor, 7, egui::vec2(0., -0.2));
+    drag_crop_handle(&ctx, &mut editor, 5, egui::vec2(-0.25, 0.));
+    let c = editor.document.edit.recipe().crop;
+    assert_near(c[2] - c[0], 0.5, "width");
+    assert_near(c[3] - c[1], 0.8, "height");
+    assert_eq!(editor.crop_constraint(), None);
+}
+
+#[test]
+fn free_stays_unlocked_from_photo_to_photo_and_on_reload() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_for_crop_drags(&ctx, "free");
+    editor.module = Module::Develop;
+    let image = editor.document.full().cloned().unwrap();
+    let custom = [0., 0., 0.75, 1.];
+    let full = [0., 0., 1., 1.];
+    let path = std::path::PathBuf::from("missing-crop-fixture.ARW");
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    // Another photo with a Custom crop, then the same photo loaded again, cropped and
+    // uncropped: each reads unlocked, and reading makes no edit.
+    for (again, crop) in [(false, custom), (true, custom), (true, full)] {
+        if again {
+            editor.document.opened_at(path.clone());
+        }
+        editor.open_raw(path.clone(), None);
+        assert!(editor.view.is(crate::app::develop::state::Tool::Crop));
+        editor.document.set_image(image.clone());
+        editor.document.edit.setup_mut().crop = crop;
+        let frame = editor.begin_edit_frame();
+        editor.finish_edit_frame(frame, &ctx);
+        assert_eq!(
+            editor.crop_constraint(),
+            None,
+            "reloaded: {again}, {crop:?}"
+        );
+        assert_eq!(editor.document.edit.recipe().crop, crop);
+        assert_eq!(editor.document.edit.history().steps().0.len(), 0);
+        assert!(!editor.document.edit.save_state().needs_save());
+    }
+}
+
+#[test]
+fn free_stays_unlocked_after_a_relaunch() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let session = dir.path().join("session.json");
+    let ctx = egui::Context::default();
+    let mut editor = editor_for_crop_drags(&ctx, "1x1");
+    editor.session.set_file(Some(session.clone()));
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    viewport_frame(&ctx, &mut editor, vec![]);
+    let frame = editor.begin_edit_frame();
+    editor.choose_aspect(0.);
+    editor.finish_edit_frame(frame, &ctx);
+    let saved: crate::app::preferences::session::Session =
+        serde_json::from_slice(&std::fs::read(&session)?)?;
+    let mut relaunched = editor_for_crop_drags(&ctx, &saved.crop_aspect);
+    relaunched.document.edit.setup_mut().crop = [0., 0., 0.75, 1.];
+    relaunched
+        .view
+        .toggle(crate::app::develop::state::Tool::Crop);
+    viewport_frame(&ctx, &mut relaunched, vec![]);
+    assert_eq!(relaunched.crop_constraint(), None);
+    assert_eq!(relaunched.document.edit.recipe().crop, [0., 0., 0.75, 1.]);
+    Ok(())
+}
+
+#[test]
+fn a_and_the_padlock_lock_the_crop_at_its_ratio_and_unlock_it() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_for_crop_drags(&ctx, "free");
+    editor.document.edit.setup_mut().crop = [0., 0., 0.75, 1.];
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    viewport_frame(&ctx, &mut editor, vec![]);
+    let steps = editor.document.edit.history().steps().0.len();
+    let press_a = |editor: &mut Editor| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::A,
+                    physical_key: Some(egui::Key::A),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            },
+            |_| {
+                let frame = editor.begin_edit_frame();
+                editor.develop_shortcuts(&ctx);
+                editor.finish_edit_frame(frame, &ctx);
+            },
+        );
+        output.textures_delta.clear();
+    };
+    // Locking a Custom crop keeps that ratio on this photo, with Original the choice
+    // an uncropped photo opens with; the crop itself is not changed.
+    press_a(&mut editor);
+    assert_near(
+        editor.crop_constraint().expect("locked"),
+        0.75,
+        "locked ratio",
+    );
+    assert_eq!(editor.view.chosen_aspect, -1.);
+    assert_eq!(editor.document.edit.recipe().crop, [0., 0., 0.75, 1.]);
+    assert_eq!(editor.document.edit.history().steps().0.len(), steps);
+    drag_crop_handle(&ctx, &mut editor, 7, egui::vec2(0., -0.2));
+    let c = editor.document.edit.recipe().crop;
+    assert_near((c[2] - c[0]) / (c[3] - c[1]), 0.75, "ratio after the drag");
+    // A again unlocks, as Free does.
+    press_a(&mut editor);
+    assert_eq!(editor.crop_constraint(), None);
+    assert_eq!(editor.view.chosen_aspect, 0.);
+    // A crop at a preset, either way round, locks to that preset as the menu would.
+    // 150 × 200 is 3 x 4 turned (the photo is landscape).
+    editor
+        .document
+        .edit
+        .change(None, |r| r.crop = [0., 0., 0.5, 1.]);
+    press_a(&mut editor);
+    assert_eq!(editor.view.chosen_aspect, 4. / 3.);
+    assert_eq!(editor.view.aspect, 3. / 4.);
 }
