@@ -1,8 +1,9 @@
 //! The choices of Lightroom's Export dialog: where the file goes, its name, format,
 //! size and metadata. Saved as `export.json` in the data folder, so the next
 //! export (and Export with Previous) starts from them.
+use crate::color::OutputSpace;
 use crate::storage::RasterFormat;
-use anyhow::{Result, ensure};
+use anyhow::{Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -107,6 +108,17 @@ impl Format {
     pub fn from_path(path: &Path) -> Option<Format> {
         let raster = RasterFormat::of(path)?;
         Self::ALL.into_iter().find(|f| f.raster() == raster)
+    }
+    /// Whether an export in this format can be in `space`: ProPhoto RGB is written
+    /// only as 16-bit TIFF, as 8 bits band in so wide a gamut.
+    pub fn supports(self, space: OutputSpace) -> Result<()> {
+        if space.needs_sixteen_bits() && self != Format::Tiff {
+            bail!(
+                "{} exports only as 16-bit TIFF; choose TIFF or another color space",
+                space.label()
+            );
+        }
+        Ok(())
     }
     /// Every extension an export can have, as a sentence lists them:
     /// ".jpg, .jpeg, .tif, .tiff or .png".
@@ -513,6 +525,14 @@ pub struct ExportSettings {
     pub format: Format,
     #[serde(skip)]
     pub later_format: LaterFormat,
+    /// The colour space of the pixels and the embedded profile; sRGB in settings
+    /// saved before there was a choice, and standing in for one only a later
+    /// release knows (see [`LaterColorSpace`]), which is refused rather than
+    /// exported as sRGB.
+    #[serde(deserialize_with = "known_or_default")]
+    pub color_space: OutputSpace,
+    #[serde(skip)]
+    pub later_color_space: LaterColorSpace,
     pub quality: u8,
     pub resize: bool,
     pub long_edge: u32,
@@ -556,6 +576,8 @@ impl Default for ExportSettings {
             uppercase: false,
             format: Format::Jpeg,
             later_format: LaterFormat::default(),
+            color_space: OutputSpace::Srgb,
+            later_color_space: LaterColorSpace::default(),
             quality: 92,
             resize: false,
             long_edge: 2048,
@@ -579,6 +601,12 @@ impl Default for ExportSettings {
 /// still finds its choice after this one saves the settings.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LaterFormat(Option<serde_json::Value>);
+
+/// The saved colour space when only a later release knows it. Kept and saved
+/// back until a space is chosen, as [`LaterFormat`] is, but never exported as
+/// another: [`ExportSettings::output_space`] refuses it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LaterColorSpace(Option<serde_json::Value>);
 
 /// The saved Rename To when only a later release knows it, as
 /// [`LaterFormat`] is for the format.
@@ -667,6 +695,27 @@ impl ExportSettings {
         self.format = format;
         self.later_format = LaterFormat::default();
     }
+    /// The colour space the user picks, which replaces one from a later release.
+    pub fn choose_color_space(&mut self, space: OutputSpace) {
+        self.color_space = space;
+        self.later_color_space = LaterColorSpace::default();
+    }
+    /// The saved colour space only a later release knows, as saved.
+    pub fn later_color_space(&self) -> Option<&serde_json::Value> {
+        self.later_color_space.0.as_ref()
+    }
+    /// The colour space to export in, checked with the format before anything
+    /// renders: refused when only a later release knows it, and for ProPhoto RGB in
+    /// a format other than TIFF. Every export checks its settings with this.
+    pub fn output_space(&self) -> Result<OutputSpace> {
+        if let Some(later) = self.later_color_space() {
+            bail!(
+                "The color space {later} is from a later version of RAWmakase; choose another in the Export dialog"
+            );
+        }
+        self.format.supports(self.color_space)?;
+        Ok(self.color_space)
+    }
     /// The Rename To preset the user picks, which replaces a custom template
     /// and a choice from a later release.
     pub fn choose_naming(&mut self, naming: Naming) {
@@ -712,12 +761,17 @@ impl ExportSettings {
             .get("format")
             .filter(|format| Format::deserialize(*format).is_err())
             .cloned();
+        let later_color_space = saved
+            .get("color_space")
+            .filter(|space| OutputSpace::deserialize(*space).is_err())
+            .cloned();
         let later_naming = saved
             .get("naming")
             .filter(|naming| Option::<Naming>::deserialize(*naming).is_err())
             .cloned();
         let mut settings = Self::deserialize(saved).ok()?;
         settings.later_format = LaterFormat(later_format);
+        settings.later_color_space = LaterColorSpace(later_color_space);
         settings.later_naming = LaterNaming(later_naming);
         Some(settings)
     }
@@ -728,6 +782,11 @@ impl ExportSettings {
             && self.format == Format::default()
         {
             saved["format"] = later.clone();
+        }
+        if let LaterColorSpace(Some(later)) = &self.later_color_space
+            && self.color_space == OutputSpace::default()
+        {
+            saved["color_space"] = later.clone();
         }
         if let LaterNaming(Some(later)) = &self.later_naming
             && self.naming.is_none()
@@ -1032,6 +1091,78 @@ mod tests {
         assert_eq!(written["newer_flag"], true);
         Ok(())
     }
+    /// Settings saved before the choice export sRGB; each space reads back as saved.
+    #[test]
+    fn the_color_space_is_srgb_unless_chosen_and_reads_back() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("export.json");
+        std::fs::write(&file, r#"{"format":"Tiff","folder":"/x"}"#)?;
+        let read = ExportSettings::load_from(&file).unwrap();
+        assert_eq!(read.color_space, OutputSpace::Srgb);
+        assert_eq!(read.output_space()?, OutputSpace::Srgb);
+        for space in OutputSpace::ALL {
+            let mut settings = read.clone();
+            settings.choose_color_space(space);
+            settings.save_to(&file)?;
+            let back = ExportSettings::load_from(&file).unwrap();
+            assert_eq!(back.output_space()?, space);
+            assert_eq!(back, settings);
+        }
+        Ok(())
+    }
+    /// ProPhoto RGB is written only as 16-bit TIFF: with JPEG or PNG it is refused,
+    /// before anything renders.
+    #[test]
+    fn prophoto_needs_tiff_and_the_others_take_any_format() {
+        for format in Format::ALL {
+            for space in OutputSpace::ALL {
+                let mut s = ExportSettings::default();
+                s.choose_format(format);
+                s.choose_color_space(space);
+                let allowed = space != OutputSpace::ProPhoto || format == Format::Tiff;
+                assert_eq!(s.output_space().is_ok(), allowed, "{format:?} {space:?}");
+                assert_eq!(format.supports(space).is_ok(), allowed);
+            }
+        }
+        let mut s = ExportSettings::default();
+        s.choose_color_space(OutputSpace::ProPhoto);
+        let error = s.output_space().unwrap_err().to_string();
+        assert!(
+            error.contains("ProPhoto RGB") && error.contains("TIFF"),
+            "{error}"
+        );
+    }
+    /// A space only a later release knows is kept and saved back, as a later
+    /// format is, but never exported as another: an export refuses it until a space
+    /// is chosen here.
+    #[test]
+    fn a_color_space_from_a_later_release_is_kept_and_refused() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("export.json");
+        let saved = |file: &Path| -> anyhow::Result<serde_json::Value> {
+            Ok(serde_json::from_str(&std::fs::read_to_string(file)?)?)
+        };
+        std::fs::write(&file, r#"{"color_space":"DisplayP3","quality":80}"#)?;
+        let mut read = ExportSettings::load_from(&file).unwrap();
+        assert_eq!(read.quality, 80);
+        assert!(read.later_color_space().is_some());
+        let error = read.output_space().unwrap_err().to_string();
+        assert!(
+            error.contains("DisplayP3") && error.contains("color space"),
+            "{error}"
+        );
+        read.quality = 70;
+        read.save_to(&file)?;
+        assert_eq!(saved(&file)?["color_space"], "DisplayP3");
+        assert_eq!(saved(&file)?["quality"], 70);
+        let mut read = ExportSettings::load_from(&file).unwrap();
+        assert!(read.output_space().is_err());
+        read.choose_color_space(OutputSpace::AdobeRgb);
+        assert_eq!(read.output_space()?, OutputSpace::AdobeRgb);
+        read.save_to(&file)?;
+        assert_eq!(saved(&file)?["color_space"], "AdobeRgb");
+        Ok(())
+    }
     #[test]
     fn settings_this_release_knows_are_saved_as_they_were() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
@@ -1048,6 +1179,7 @@ mod tests {
             "start_number",
             "uppercase",
             "format",
+            "color_space",
             "quality",
             "resize",
             "long_edge",
