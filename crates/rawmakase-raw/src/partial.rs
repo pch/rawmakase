@@ -1,4 +1,5 @@
-//! The embedded preview read from a file in pieces, without its sensor data:
+//! The embedded preview, and the header facts, read from a file in pieces,
+//! without its sensor data:
 //! for files on network volumes, where reading the whole file to show its
 //! preview costs most of the time.
 //!
@@ -101,6 +102,35 @@ fn checked(variant: Variant) -> bool {
             | OrfCompressed
             | PefHuffman
     )
+}
+
+/// A RAW's header facts read in pieces ([`header_from_file`]).
+pub struct PartialHeader {
+    /// The header facts, as [`crate::open`] reads them from the parts read;
+    /// as [`PartialPreview::info`], facts taken from the sensor data are not
+    /// to be relied on.
+    pub info: RawInfo,
+    /// The file's bytes where they were read, zeros elsewhere: the readers'
+    /// view of the file, never to be decoded.
+    pub bytes: Vec<u8>,
+    /// The bytes read from the file.
+    pub read: u64,
+}
+
+/// The header facts of the RAW `file`, read without its sensor data, as
+/// [`preview_from_file`] reads them before choosing a preview: its start and
+/// end, each preview candidate's start up to its frame header (a file whose
+/// EXIF gives no image size takes its frame from the largest preview's), and
+/// only for the formats [`checked`] accepts. `None` when it can't be read this
+/// way; the caller then reads the whole file.
+pub fn header_from_file(file: &mut (impl Read + Seek)) -> Option<PartialHeader> {
+    let mut f = Sparse::new(file)?;
+    let info = header_in_pieces(&mut f, checked)?;
+    Some(PartialHeader {
+        info,
+        read: f.read,
+        bytes: f.bytes,
+    })
 }
 
 /// The preview [`preview_from_file`] reads, for files whose variant `allow`
