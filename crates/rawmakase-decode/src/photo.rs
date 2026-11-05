@@ -69,9 +69,23 @@ pub fn open(path: &Path) -> Result<Raw> {
 /// photo info on a network volume, where reading the whole file is most of
 /// the cost. Facts the readers take from the sensor data (measured black
 /// levels) are not to be relied on. An error when the header can't be read
-/// that way; the caller then opens the file whole.
+/// that way, or gives none of ISO, shutter speed and aperture; the caller then
+/// opens the file whole.
 pub fn header_metadata(path: &Path) -> Result<crate::camera_data::Metadata> {
-    Ok(with_file_facts(path, Raw::open_header(path)?)?.metadata)
+    let metadata = with_file_facts(path, Raw::open_header(path)?)?.metadata;
+    // An EXIF directory beyond the parts read reads as empty, and photo info
+    // is kept once read: none of ISO, shutter speed and aperture is read from
+    // the file whole instead, as a file truly without them is today.
+    anyhow::ensure!(
+        has_exposure(&metadata),
+        "No exposure found without reading the whole file"
+    );
+    Ok(metadata)
+}
+
+/// Whether `metadata` has any of ISO, shutter speed and aperture.
+fn has_exposure(metadata: &crate::camera_data::Metadata) -> bool {
+    metadata.iso > 0. || metadata.shutter > 0. || metadata.aperture > 0.
 }
 
 /// `raw`, opened from `path`, with what the file says beyond the decoders'
@@ -215,6 +229,30 @@ mod tests {
         }
         eprintln!("same photo info: {same}, header not read (read whole instead): {header_failed}");
         assert!(same > 0);
+    }
+
+    /// A header counts as read only with any of ISO, shutter speed and
+    /// aperture; `header_metadata` is an error without.
+    #[test]
+    fn a_header_needs_some_exposure() {
+        use crate::camera_data::Metadata;
+        assert!(!super::has_exposure(&Metadata::default()));
+        for metadata in [
+            Metadata {
+                iso: 100.,
+                ..Default::default()
+            },
+            Metadata {
+                shutter: 1. / 250.,
+                ..Default::default()
+            },
+            Metadata {
+                aperture: 2.8,
+                ..Default::default()
+            },
+        ] {
+            assert!(super::has_exposure(&metadata));
+        }
     }
 
     use rawmakase_cancel::Cancel;
