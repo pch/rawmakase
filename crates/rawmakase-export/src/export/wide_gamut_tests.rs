@@ -402,3 +402,56 @@ fn a_prophoto_image_is_never_staged_as_jpeg_or_png() -> Result<()> {
     );
     Ok(())
 }
+
+/// A TIFF export writes UNDEFINED fields as UNDEFINED, not BYTE: the camera's
+/// ExifVersion and Adobe RGB's InteroperabilityVersion.
+#[test]
+fn a_tiff_export_keeps_undefined_fields_undefined() -> Result<()> {
+    use crate::exif::{CameraExif, Field, tag};
+    use crate::tiff::kind::UNDEFINED;
+    let dir = tempfile::tempdir()?;
+    let image = synthetic(16, 12);
+    let rendered = crate::develop::render_export(
+        &image,
+        &Recipe::default().checked()?,
+        None,
+        0,
+        OutputSpace::AdobeRgb,
+        Cancel::NEVER,
+    )?;
+    let embed = super::Embed {
+        camera: Some(CameraExif {
+            main: vec![Field::ascii(tag::MAKE, "Test")],
+            exif: vec![Field {
+                tag: 0x9000,
+                kind: UNDEFINED,
+                count: 4,
+                bytes: b"0231".to_vec(),
+            }],
+            gps: Vec::new(),
+        }),
+        ..Default::default()
+    };
+    let tif = dir.path().join("a.tif");
+    super::export_image(
+        &tif,
+        &dir.path().join("source.dng"),
+        &rendered,
+        &image.metadata,
+        &Default::default(),
+        &embed,
+        Replace::NoClobber,
+    )?;
+    let mut t = crate::tiff::Tiff::open(std::fs::File::open(&tif)?, 0).unwrap();
+    let main = t.ifd(t.first).unwrap();
+    let exif = t.ifd(t.offset(&main[&tag::EXIF_IFD]).unwrap()).unwrap();
+    let version = &exif[&0x9000];
+    assert_eq!((version.kind, version.count), (UNDEFINED, 4));
+    let interop = t
+        .ifd(t.offset(&exif[&tag::INTEROPERABILITY_IFD]).unwrap())
+        .unwrap();
+    let version = &interop[&2];
+    assert_eq!((version.kind, version.count), (UNDEFINED, 4));
+    assert_eq!(t.raw(version).as_deref(), Some(&b"0100"[..]));
+    Ok(())
+}

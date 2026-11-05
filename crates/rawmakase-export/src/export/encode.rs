@@ -10,7 +10,7 @@ use crate::{
         },
     },
     rendered::Rendered,
-    tiff::kind::{ASCII, FLOAT, LONG, RATIONAL, SHORT, SLONG, SRATIONAL, SSHORT},
+    tiff::kind::{ASCII, FLOAT, LONG, RATIONAL, SHORT, SLONG, SRATIONAL, SSHORT, UNDEFINED},
 };
 use anyhow::{Result, ensure};
 use image::{ImageEncoder, codecs::jpeg::JpegEncoder};
@@ -184,8 +184,8 @@ pub(super) fn insert_xmp(jpeg: Vec<u8>, xmp: &str) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-/// Writes one EXIF field into a TIFF directory with its own type. BYTE, SBYTE
-/// and UNDEFINED values are written as bytes.
+/// Writes one EXIF field into a TIFF directory with its own type. UNDEFINED
+/// values keep their type; BYTE and SBYTE values are written as bytes.
 fn write_field<W: Write + Seek, K: TiffKind>(
     dir: &mut DirectoryEncoder<'_, W, K>,
     f: &Field,
@@ -256,6 +256,7 @@ fn write_field<W: Write + Seek, K: TiffKind>(
                 .collect();
             write_array(dir, tag, v)?
         }
+        UNDEFINED => dir.write_tag(tag, Undefined(&f.bytes))?,
         _ => dir.write_tag(tag, f.bytes.as_slice())?,
     }
     Ok(())
@@ -280,6 +281,20 @@ impl tiff::encoder::TiffValue for CameraText {
     }
     fn data(&self) -> std::borrow::Cow<'_, [u8]> {
         std::borrow::Cow::Borrowed(&self.0)
+    }
+}
+
+/// An UNDEFINED value (ExifVersion, InteroperabilityVersion…), which the encoder
+/// would write as BYTE from a plain byte slice.
+struct Undefined<'a>(&'a [u8]);
+impl tiff::encoder::TiffValue for Undefined<'_> {
+    const BYTE_LEN: u8 = 1;
+    const FIELD_TYPE: tiff::tags::Type = tiff::tags::Type::UNDEFINED;
+    fn count(&self) -> usize {
+        self.0.len()
+    }
+    fn data(&self) -> std::borrow::Cow<'_, [u8]> {
+        std::borrow::Cow::Borrowed(self.0)
     }
 }
 
