@@ -702,7 +702,7 @@ impl Editor {
             }
         }
         if self.view.zoom.on && self.region() != self.preview.last_region {
-            self.schedule();
+            self.schedule_pan();
         }
         response
     }

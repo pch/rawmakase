@@ -203,10 +203,16 @@ pub(in crate::app) struct RenderView {
 }
 impl RenderView {
     pub(in crate::app) fn same(&self, other: &Self) -> bool {
+        self.same_photo(other) && self.region == other.region
+    }
+    /// The same view panned at 100% or more: only the region it shows moved.
+    pub(in crate::app) fn panned(&self, other: &Self) -> bool {
+        self.same_photo(other) && self.region.is_some() && other.region.is_some()
+    }
+    fn same_photo(&self, other: &Self) -> bool {
         self.image.ptr_eq(&other.image)
             && self.path == other.path
             && self.photo == other.photo
-            && self.region == other.region
             && self.max_edge == other.max_edge
     }
 }

@@ -625,3 +625,101 @@ fn a_photo_that_failed_to_open_is_not_shown_loading() {
     editor.document.start_load();
     assert!(painted_texts(&mut editor, &ctx).contains(&"Loading photo…".to_string()));
 }
+
+/// Panning at 100% or more renders the region panned to on every frame. On a GPU
+/// slower than the frames, cancelling the running region showed no sharp pixels
+/// until the drag stopped, and the photo jumped between blurry and sharp; the
+/// running region now finishes and shows where it was rendered.
+#[test]
+fn a_region_overtaken_by_a_pan_still_shows_where_it_was_rendered() {
+    use crate::app::develop::state::TextureMode;
+    let ctx = egui::Context::default();
+    let (mut e, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
+    let (taken_tx, taken) = std::sync::mpsc::channel();
+    let (_release, release) = std::sync::mpsc::channel();
+    e.renderer = worker::holding(taken_tx, release);
+    e.preview.texture = Some(
+        ctx.load_texture(
+            "photo",
+            egui::ColorImage::filled([32, 24], egui::Color32::GRAY),
+            egui::TextureOptions::LINEAR,
+        )
+        .into(),
+    );
+    e.view.zoom.on = true;
+    e.view.zoom.level = 4.;
+    let frame = |e: &mut Editor| {
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(40., 40.),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                e.viewport_ui(ui);
+            },
+        )
+        .textures_delta
+        .clear();
+    };
+    frame(&mut e);
+    let first = e.preview.task.id();
+    let first_region = e.region().expect("zoomed in to a region");
+    assert_eq!(
+        taken.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok(first)
+    );
+    // Dragged on while the first region still renders.
+    for i in 1..=5 {
+        e.view.zoom.pan[0] = 0.5 + i as f32 / 50.;
+        frame(&mut e);
+    }
+    let last = e.preview.task.id();
+    assert!(last > first);
+    assert_ne!(e.region(), Some(first_region));
+    let rendered = |id, status: &str| Event::Rendered {
+        id,
+        pane: worker::Pane::After,
+        preview: worker::Preview::Pixels {
+            image: crate::rendered::Rendered {
+                width: 1,
+                height: 1,
+                pixels: vec![[0.5; 3]],
+            },
+            display_rgb: vec![128; 3],
+            navigator: None,
+        },
+        histogram: Box::new(crate::rendered::Histogram::EMPTY),
+        thumbnail: None,
+        samples: None,
+        stage: worker::RenderStage::Region,
+        status: status.into(),
+    };
+    e.tx.send(rendered(first, "first")).unwrap();
+    e.events(&ctx);
+    assert_eq!(e.preview.status, "first");
+    assert_eq!(e.preview.mode, TextureMode::Region(first_region));
+    assert!(e.preview.task.is_running());
+    e.tx.send(rendered(last, "last")).unwrap();
+    e.events(&ctx);
+    assert_eq!(e.preview.status, "last");
+    assert_eq!(e.preview.mode, TextureMode::Region(e.region().unwrap()));
+    assert!(!e.preview.task.is_running());
+    // A new zoom level still cancels the region running.
+    e.view.zoom.pan[0] = 0.4;
+    frame(&mut e);
+    let panned = e.preview.task.id();
+    assert!(panned > last && e.preview.task.is_running());
+    e.view.zoom.level = 8.;
+    frame(&mut e);
+    e.tx.send(rendered(panned, "another level")).unwrap();
+    e.events(&ctx);
+    assert_eq!(e.preview.status, "last");
+}
