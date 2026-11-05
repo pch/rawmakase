@@ -125,6 +125,7 @@ fn fixed_change(a: &Recipe, b: &Recipe) -> Option<SettingGroup> {
         ),
         (a.masks != b.masks, Masking),
         (a.ai_denoise != b.ai_denoise, AiDenoise),
+        (a.hdr != b.hdr, HighDynamicRange),
         (!same_swatches(a, b), ColorAdjustments),
         // Settings from a newer release: their kind is unknown.
         (a.unknown != b.unknown, ProcessVersion),
@@ -375,6 +376,7 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         noise_luma,
         noise_chroma,
         ai_denoise,
+        hdr,
         sharpening,
         crop,
         straighten,
@@ -484,6 +486,7 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         noise_luma: lerp(a.noise_luma, *noise_luma, t, 0., 1.),
         noise_chroma: lerp(a.noise_chroma, *noise_chroma, t, 0., 1.),
         ai_denoise: *ai_denoise,
+        hdr: *hdr,
         sharpening: lerp(a.sharpening, *sharpening, t, 0., 1.),
         crop: *crop,
         straighten: *straighten,

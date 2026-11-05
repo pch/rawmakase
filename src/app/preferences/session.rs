@@ -5,7 +5,8 @@ use crate::storage::{data_dir, read_json_or_default};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// `Session::copy_groups` as releases before AI Denoise read it.
+/// `Session::copy_groups` as releases before AI Denoise read it: without AI Denoise's
+/// and High Dynamic Range's groups, which are saved apart.
 mod known_groups {
     use crate::model::settings_groups::{GroupInclusion, GroupSelection, SettingGroup};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -17,7 +18,9 @@ mod known_groups {
             .as_ref()
             .map(|g| {
                 g.groups()
-                    .filter(|g| *g != SettingGroup::AiDenoise)
+                    .filter(|g| {
+                        !matches!(g, SettingGroup::AiDenoise | SettingGroup::HighDynamicRange)
+                    })
                     .collect::<Vec<_>>()
             })
             .serialize(s)
@@ -139,7 +142,8 @@ pub(crate) struct Session {
     /// The groups Copy Settings copied last time; None until it has been used. Written
     /// with only the groups releases before AI Denoise know (an unknown one makes them
     /// drop the whole session) and read leniently, skipping names this release does
-    /// not know; AI Denoise's group is in `copy_ai_denoise`.
+    /// not know; AI Denoise's group is in `copy_ai_denoise`, High Dynamic Range's in
+    /// `copy_hdr`.
     #[serde(default, with = "known_groups")]
     pub copy_groups: Option<crate::model::settings_groups::GroupSelection>,
     /// Whether Copy Settings includes AI Denoise, apart from `copy_groups`.
@@ -149,6 +153,13 @@ pub(crate) struct Session {
         skip_serializing_if = "Option::is_none"
     )]
     pub copy_ai_denoise: Option<bool>,
+    /// Whether Copy Settings includes High Dynamic Range, apart from `copy_groups`.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub copy_hdr: Option<bool>,
     /// The Crop tool's guide overlay.
     #[serde(default, deserialize_with = "lenient")]
     pub crop_guides: CropGuideLayout,
@@ -214,8 +225,9 @@ impl<'de> Deserialize<'de> for Unknown {
 }
 
 impl Session {
-    /// The Copy Settings groups saved last time, with AI Denoise's (saved apart), which
-    /// a session from before it includes, as it is by default.
+    /// The Copy Settings groups saved last time, with AI Denoise's and High Dynamic
+    /// Range's (saved apart), which a session from before them includes, as they are
+    /// by default.
     pub(crate) fn copy_groups(&self) -> Option<crate::model::settings_groups::GroupSelection> {
         use crate::model::settings_groups::{GroupInclusion, SettingGroup};
         let mut groups = self.copy_groups.clone()?;
@@ -225,6 +237,12 @@ impl Session {
             GroupInclusion::Excluded
         };
         groups.set(SettingGroup::AiDenoise, inclusion);
+        let inclusion = if self.copy_hdr.unwrap_or(true) {
+            GroupInclusion::Included
+        } else {
+            GroupInclusion::Excluded
+        };
+        groups.set(SettingGroup::HighDynamicRange, inclusion);
         Some(groups)
     }
     pub(crate) fn decoded_cache_size_gib(&self) -> u32 {
@@ -387,6 +405,10 @@ impl SessionState {
                     self.copy_groups
                         .contains(crate::model::settings_groups::SettingGroup::AiDenoise),
                 ),
+                copy_hdr: Some(
+                    self.copy_groups
+                        .contains(crate::model::settings_groups::SettingGroup::HighDynamicRange),
+                ),
                 unknown: self.unknown.clone(),
                 ..owned
             },
@@ -537,14 +559,20 @@ mod copy_groups_tests {
                 GroupInclusion::Excluded
             };
             groups.set(SettingGroup::AiDenoise, inclusion);
+            groups.set(SettingGroup::HighDynamicRange, inclusion);
             let session = Session {
                 copy_groups: Some(groups.clone()),
                 copy_ai_denoise: Some(groups.contains(SettingGroup::AiDenoise)),
+                copy_hdr: Some(groups.contains(SettingGroup::HighDynamicRange)),
                 ..Default::default()
             };
             let json = serde_json::to_value(&session).unwrap();
             let names = json["copy_groups"].as_array().unwrap();
             assert!(!names.iter().any(|n| n == "ai_denoise"), "{names:?}");
+            assert!(
+                !names.iter().any(|n| n == "high_dynamic_range"),
+                "{names:?}"
+            );
             assert!(names.iter().any(|n| n == "color_noise_reduction"));
             let read: Session = serde_json::from_value(json).unwrap();
             assert_eq!(read.copy_groups(), Some(groups));
@@ -556,6 +584,7 @@ mod copy_groups_tests {
         let groups = older.copy_groups().unwrap();
         assert!(groups.contains(SettingGroup::Exposure));
         assert!(groups.contains(SettingGroup::AiDenoise));
+        assert!(groups.contains(SettingGroup::HighDynamicRange));
         assert!(!groups.contains(SettingGroup::Contrast));
     }
 }

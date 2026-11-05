@@ -147,6 +147,79 @@ fn an_edited_jpeg_whose_file_changed_reopens_from_the_file() -> anyhow::Result<(
     Ok(())
 }
 
+/// A stored History this release can't read (a newer release's, or one holding HDR
+/// states it refuses) is never replaced by a save: the photo opens with its edit,
+/// protected and saying why, and the History stays in the catalog unchanged.
+#[test]
+fn an_unreadable_history_protects_the_edit() -> anyhow::Result<()> {
+    use std::io::Write as _;
+    use worker::LoadedHeader;
+    let dir = tempfile::tempdir()?;
+    let file = dir.path().join("photo.ARW");
+    std::fs::write(&file, vec![7u8; 16])?;
+    let path = dir.path().join("photos.rawmakase");
+    let mut catalog = crate::catalog::Catalog::create(&path)?;
+    catalog.add_folder(dir.path())?;
+    let id = catalog.photos()?[0].id;
+    let saved = Recipe {
+        exposure: 1.,
+        ..Default::default()
+    };
+    catalog.save_edit(
+        id,
+        &file,
+        &crate::storage::Identity::read(&file)?,
+        &saved,
+        &Default::default(),
+        crate::catalog::HistoryUpdate::Keep,
+    )?;
+    drop(catalog);
+    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), Default::default());
+    z.write_all(br#"{"version": 99}"#)?;
+    let blob = z.finish()?;
+    rusqlite::Connection::open(&path)?.execute(
+        "INSERT INTO develop_history(photo, data) VALUES (?, ?)",
+        rusqlite::params![id.0, blob],
+    )?;
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    editor.library = Some(Box::new(library::Library::load(&path, ctx.clone())?));
+    editor.document.reset(Some(id));
+    let (generation, _) = editor.document.start_load();
+    editor
+        .tx
+        .send(Event::Header(Box::new(LoadedHeader {
+            id: generation,
+            file: crate::storage::Identity::read(&file).ok(),
+            path: file.clone(),
+            metadata: Metadata::default(),
+            recipe: Recipe::default(),
+            export: Default::default(),
+            status: "Original".into(),
+        })))
+        .unwrap();
+    editor.events(&ctx);
+    assert_eq!(editor.document.edit.recipe().exposure, 1.);
+    assert!(editor.document.edit.save_state().is_protected());
+    assert!(
+        editor.document.lightroom_notice.contains("History"),
+        "{}",
+        editor.document.lightroom_notice
+    );
+    let stored: Vec<u8> = rusqlite::Connection::open(&path)?.query_row(
+        "SELECT data FROM develop_history WHERE photo=?",
+        [id.0],
+        |row| row.get(0),
+    )?;
+    assert_eq!(stored, blob);
+    Ok(())
+}
+
 /// A photo with no saved edit has no stored identity to protect it: the edit is
 /// saved for the file it was opened as, so a file replaced while it is open gets
 /// none of it, whether autosave or a save before navigation writes it. The edit

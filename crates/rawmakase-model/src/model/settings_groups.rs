@@ -24,6 +24,7 @@ pub enum SettingGroup {
     Shadows,
     Whites,
     Blacks,
+    HighDynamicRange,
     Texture,
     Clarity,
     Dehaze,
@@ -61,7 +62,7 @@ pub struct Section {
 }
 
 impl SettingGroup {
-    pub const ALL: [SettingGroup; 34] = [
+    pub const ALL: [SettingGroup; 35] = [
         SettingGroup::WhiteBalance,
         SettingGroup::Exposure,
         SettingGroup::Contrast,
@@ -69,6 +70,7 @@ impl SettingGroup {
         SettingGroup::Shadows,
         SettingGroup::Whites,
         SettingGroup::Blacks,
+        SettingGroup::HighDynamicRange,
         SettingGroup::Texture,
         SettingGroup::Clarity,
         SettingGroup::Dehaze,
@@ -114,10 +116,11 @@ impl SettingGroup {
                 | SpotRemoval
                 | Crop
                 | Masking
+                | HighDynamicRange
         )
     }
     /// Copy Settings' sections, in Lightroom's order.
-    pub const SECTIONS: [Section; 13] = {
+    pub const SECTIONS: [Section; 14] = {
         use SettingGroup::*;
         [
             Section {
@@ -127,6 +130,10 @@ impl SettingGroup {
             Section {
                 title: "Basic Tone",
                 groups: &[Exposure, Contrast, Highlights, Shadows, Whites, Blacks],
+            },
+            Section {
+                title: "High Dynamic Range",
+                groups: &[HighDynamicRange],
             },
             Section {
                 title: "Presence",
@@ -190,6 +197,7 @@ impl SettingGroup {
             Shadows => "Shadows",
             Whites => "White Clipping",
             Blacks => "Black Clipping",
+            HighDynamicRange => "High Dynamic Range",
             Texture => "Texture",
             Clarity => "Clarity",
             Dehaze => "Dehaze",
@@ -255,6 +263,9 @@ impl SettingGroup {
             Shadows => to.shadows = from.shadows,
             Whites => to.whites = from.whites,
             Blacks => to.blacks = from.blacks,
+            // The mode, the limit and the SDR rendition travel together; the profile
+            // stays with Treatment & Profile.
+            HighDynamicRange => to.hdr = from.hdr,
             Texture => {
                 e.texture = f.texture;
             }
@@ -679,6 +690,7 @@ pub(crate) fn every_setting(r: &Recipe) -> Vec<(&'static str, Kind)> {
         noise_luma: _,
         noise_chroma: _,
         ai_denoise: _,
+        hdr: _,
         sharpening: _,
         crop: _,
         straighten: _,
@@ -769,6 +781,7 @@ pub(crate) fn every_setting(r: &Recipe) -> Vec<(&'static str, Kind)> {
         ("noise_luma", Group(LuminanceNoiseReduction)),
         ("noise_chroma", Group(ColorNoiseReduction)),
         ("ai_denoise", Group(AiDenoise)),
+        ("hdr", Group(HighDynamicRange)),
         ("sharpening", Group(Sharpening)),
         ("crop", Group(Crop)),
         ("straighten", Group(Crop)),

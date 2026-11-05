@@ -229,6 +229,8 @@ pub fn convert_develop(
         preset.settings.remove("RAWmakaseLookUUID");
         preset.settings.remove(crate::xmp::look::SETTING);
     }
+    // HDR on is refused outright, not skipped as one setting among others.
+    preset.check_hdr_renderable()?;
     // Spots and masks convert on their own and report what they skip.
     let local_settings = std::mem::take(&mut preset.local);
     // Build a compatible patch before application. Related fields are validated together.

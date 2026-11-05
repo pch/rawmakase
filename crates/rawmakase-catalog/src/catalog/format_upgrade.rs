@@ -45,7 +45,8 @@ impl Catalog {
     /// so a catalog of an earlier format is upgraded in the same transaction, after
     /// its backup: when `write` fails, the catalog stays as it was (the backup is
     /// left beside it). `stores` says what the write stores: a Lensfun lens choice
-    /// raises the catalog to version 4, an AI Denoise setting to version 5.
+    /// raises the catalog to version 4, an AI Denoise setting to version 5, an HDR edit
+    /// to version 6.
     pub(super) fn write_recipes<R>(
         &mut self,
         stores: Stores,
@@ -70,6 +71,8 @@ pub(super) enum Stores {
     /// AI Denoise not at its default (on, or its Amount moved), with or without a
     /// Lensfun lens choice.
     AiDenoise,
+    /// HDR on, with or without the others.
+    Hdr,
 }
 impl Stores {
     /// For a write of `recipes`.
@@ -79,7 +82,9 @@ impl Stores {
         recipes
             .into_iter()
             .map(|r| {
-                if !r.ai_denoise.is_default() {
+                if r.hdr.is_active() {
+                    Self::Hdr
+                } else if !r.ai_denoise.is_default() {
                     Self::AiDenoise
                 } else if r.uses_lensfun() {
                     Self::Lensfun
@@ -95,6 +100,7 @@ impl Stores {
             Self::Recipes => super::db::VERSION,
             Self::Lensfun => super::db::LENSFUN,
             Self::AiDenoise => super::db::AI_DENOISE,
+            Self::Hdr => super::db::HDR,
         }
     }
 }

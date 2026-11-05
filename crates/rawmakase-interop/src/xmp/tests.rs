@@ -2399,3 +2399,69 @@ fn unreadable_filter_settings_are_refused() -> Result<()> {
     );
     Ok(())
 }
+
+/// Camera Raw 18.7's HDR settings: kept while HDR is off and written back as Camera
+/// Raw writes them; a limit or SDR slider outside its range reads as Camera Raw
+/// renders it (the default limit, 0); HDR on is refused, strictly and leniently, while
+/// RAWmakase can't render it.
+#[test]
+fn hdr_settings_are_kept_while_off_and_refused_on() {
+    use crate::model::settings_groups::{GroupInclusion, GroupSelection, SettingGroup};
+    let m = Metadata::default();
+    let attrs = "c:Exposure2012=\"0.5\" c:HDREditMode=\"0\" c:HDRMaxValue=\"+5.00\" c:SDRBrightness=\"+30\" c:SDRBlend=\"-50\" c:SDRClarity=\"150\"";
+    let p = parse(Path::new("photo.xmp"), &xml(attrs, "")).unwrap();
+    let r = p.apply(&Recipe::default(), &m, &[], None).unwrap();
+    assert!(!r.hdr.enabled);
+    assert_eq!(r.hdr.limit, 5.);
+    // Read as every slider is: Camera Raw's value times the key table's scale.
+    assert_eq!(r.hdr.sdr.brightness, 30. * 0.01);
+    assert_eq!(r.hdr.sdr.blend, -50. * 0.01);
+    // Outside -100..+100, read as Camera Raw renders it.
+    assert_eq!(r.hdr.sdr.clarity, 0.);
+    let out_of_range = xml("c:HDRMaxValue=\"10\"", "");
+    let limit = parse(Path::new("limit.xmp"), &out_of_range)
+        .unwrap()
+        .apply(&r, &m, &[], None)
+        .unwrap()
+        .hdr
+        .limit;
+    assert_eq!(limit, crate::model::hdr::DEFAULT_LIMIT);
+
+    // A preset of the group carries them, as Camera Raw writes them, and reads back.
+    let mut groups = GroupSelection::none();
+    groups.set(SettingGroup::HighDynamicRange, GroupInclusion::Included);
+    let info = crate::xmp::preset_write::PresetInfo::new("HDR", "Tests");
+    let text = crate::xmp::preset_write::preset(&r, &m, &info, &groups);
+    for written in [
+        "crs:HDREditMode=\"0\"",
+        "crs:HDRMaxValue=\"+5.00\"",
+        "crs:SDRBrightness=\"+30\"",
+        "crs:SDRBlend=\"-50\"",
+        "crs:SupportsAmount=\"False\"",
+    ] {
+        assert!(text.contains(written), "{written}");
+    }
+    assert!(!text.contains("Exposure2012"));
+    let back = parse(Path::new("hdr.xmp"), &text)
+        .unwrap()
+        .apply(&Recipe::default(), &m, &[], None)
+        .unwrap();
+    assert_eq!(back.hdr, r.hdr);
+    // The group at its defaults writes them too, so applying it resets HDR.
+    let defaults = crate::xmp::preset_write::preset(&Recipe::default(), &m, &info, &groups);
+    let reset = parse(Path::new("reset.xmp"), &defaults)
+        .unwrap()
+        .apply(&r, &m, &[], None)
+        .unwrap();
+    assert!(reset.hdr.is_default());
+
+    // HDR on: refused strictly and leniently alike, never rendered as SDR.
+    let on = xml(&attrs.replace("HDREditMode=\"0\"", "HDREditMode=\"1\""), "");
+    let p = parse(Path::new("on.xmp"), &on).unwrap();
+    let error = p.apply(&Recipe::default(), &m, &[], None).unwrap_err();
+    assert!(error.to_string().contains("HDR"), "{error}");
+    let error = p
+        .apply_lenient(&Recipe::default(), &m, &[], None)
+        .unwrap_err();
+    assert!(error.to_string().contains("HDR"), "{error}");
+}

@@ -1,4 +1,4 @@
-# rich sets AutoLateralCA=7 Blacks2012=7 BlueHue=7 BlueSaturation=7 Clarity2012=7 ColorGradeBlending=7 ColorGradeGlobalHue=7 ColorGradeGlobalLum=7 ColorGradeGlobalSat=7 ColorGradeHighlightLum=7 ColorGradeMidtoneHue=7 ColorGradeMidtoneLum=7 ColorGradeMidtoneSat=7 ColorGradeShadowLum=7 ColorNoiseReduction=7 ColorNoiseReductionDetail=7 ColorNoiseReductionSmoothness=7 ColorVariance=7 Contrast2012=7 CropAngle=7 CropBottom=0.3 CropConstrainToWarp=7 CropLeft=0.3 CurveRefineSaturation=7 DefringeGreenAmount=7 DefringeGreenHueHi=7 DefringeGreenHueLo=7 DefringePurpleAmount=7 DefringePurpleHueHi=7 DefringePurpleHueLo=7 Dehaze=7 Exposure2012=7 GrainAmount=7 GrainFrequency=7 GrainSeed=7 GrainSize=7 GrayMixerAqua=7 GrayMixerBlue=7 GrayMixerGreen=7 GrayMixerMagenta=7 GrayMixerOrange=7 GrayMixerPurple=7 GrayMixerRed=7 GrayMixerYellow=7 GreenHue=7 GreenSaturation=7 HasSettings=7 Highlights2012=7 HueAdjustmentAqua=7 HueAdjustmentBlue=7 HueAdjustmentGreen=7 HueAdjustmentMagenta=7 HueAdjustmentOrange=7 HueAdjustmentPurple=7 HueAdjustmentRed=7 HueAdjustmentYellow=7 LensManualDistortionAmount=7 LensProfileDistortionScale=7 LensProfileEnable=7 LensProfileVignettingScale=7 LuminanceAdjustmentAqua=7 LuminanceAdjustmentBlue=7 LuminanceAdjustmentGreen=7 LuminanceAdjustmentMagenta=7 LuminanceAdjustmentOrange=7 LuminanceAdjustmentPurple=7 LuminanceAdjustmentRed=7 LuminanceAdjustmentYellow=7 LuminanceNoiseReductionContrast=7 LuminanceNoiseReductionDetail=7 LuminanceSmoothing=7 ParametricDarks=7 ParametricHighlightSplit=70 ParametricHighlights=7 ParametricLights=7 ParametricMidtoneSplit=45 ParametricShadowSplit=7 ParametricShadows=7 PerspectiveAspect=7 PerspectiveHorizontal=7 PerspectiveRotate=7 PerspectiveScale=70 PerspectiveUpright=-7 PerspectiveVertical=7 PerspectiveX=7 PerspectiveY=7 PostCropVignetteAmount=7 PostCropVignetteFeather=7 PostCropVignetteHighlightContrast=7 PostCropVignetteMidpoint=7 PostCropVignetteRoundness=7 PostCropVignetteStyle=3 ProcessVersion=7 RedHue=7 RedSaturation=7 Saturation=7 SaturationAdjustmentAqua=7 SaturationAdjustmentBlue=7 SaturationAdjustmentGreen=7 SaturationAdjustmentMagenta=7 SaturationAdjustmentOrange=7 SaturationAdjustmentPurple=7 SaturationAdjustmentRed=7 SaturationAdjustmentYellow=7 ShadowTint=7 Shadows2012=7 SharpenDetail=7 SharpenEdgeMasking=7 SharpenRadius=3 Sharpness=7 Temperature=5300 Texture=7 Tint=7 UprightCenterMode=7 UprightFocalMode=7 UprightPreview=7 UprightTransformCount=7 UprightVersion=7 Vibrance=7 VignetteAmount=7 VignetteMidpoint=7 Whites2012=7
+# rich sets AutoLateralCA=7 Blacks2012=7 BlueHue=7 BlueSaturation=7 Clarity2012=7 ColorGradeBlending=7 ColorGradeGlobalHue=7 ColorGradeGlobalLum=7 ColorGradeGlobalSat=7 ColorGradeHighlightLum=7 ColorGradeMidtoneHue=7 ColorGradeMidtoneLum=7 ColorGradeMidtoneSat=7 ColorGradeShadowLum=7 ColorNoiseReduction=7 ColorNoiseReductionDetail=7 ColorNoiseReductionSmoothness=7 ColorVariance=7 Contrast2012=7 CropAngle=7 CropBottom=0.3 CropConstrainToWarp=7 CropLeft=0.3 CurveRefineSaturation=7 DefringeGreenAmount=7 DefringeGreenHueHi=7 DefringeGreenHueLo=7 DefringePurpleAmount=7 DefringePurpleHueHi=7 DefringePurpleHueLo=7 Dehaze=7 Exposure2012=7 GrainAmount=7 GrainFrequency=7 GrainSeed=7 GrainSize=7 GrayMixerAqua=7 GrayMixerBlue=7 GrayMixerGreen=7 GrayMixerMagenta=7 GrayMixerOrange=7 GrayMixerPurple=7 GrayMixerRed=7 GrayMixerYellow=7 GreenHue=7 GreenSaturation=7 HDRMaxValue=7 HasSettings=7 Highlights2012=7 HueAdjustmentAqua=7 HueAdjustmentBlue=7 HueAdjustmentGreen=7 HueAdjustmentMagenta=7 HueAdjustmentOrange=7 HueAdjustmentPurple=7 HueAdjustmentRed=7 HueAdjustmentYellow=7 LensManualDistortionAmount=7 LensProfileDistortionScale=7 LensProfileEnable=7 LensProfileVignettingScale=7 LuminanceAdjustmentAqua=7 LuminanceAdjustmentBlue=7 LuminanceAdjustmentGreen=7 LuminanceAdjustmentMagenta=7 LuminanceAdjustmentOrange=7 LuminanceAdjustmentPurple=7 LuminanceAdjustmentRed=7 LuminanceAdjustmentYellow=7 LuminanceNoiseReductionContrast=7 LuminanceNoiseReductionDetail=7 LuminanceSmoothing=7 ParametricDarks=7 ParametricHighlightSplit=70 ParametricHighlights=7 ParametricLights=7 ParametricMidtoneSplit=45 ParametricShadowSplit=7 ParametricShadows=7 PerspectiveAspect=7 PerspectiveHorizontal=7 PerspectiveRotate=7 PerspectiveScale=70 PerspectiveUpright=-7 PerspectiveVertical=7 PerspectiveX=7 PerspectiveY=7 PostCropVignetteAmount=7 PostCropVignetteFeather=7 PostCropVignetteHighlightContrast=7 PostCropVignetteMidpoint=7 PostCropVignetteRoundness=7 PostCropVignetteStyle=3 ProcessVersion=7 RedHue=7 RedSaturation=7 SDRBlend=7 SDRBrightness=7 SDRClarity=7 SDRContrast=7 SDRHighlights=7 SDRShadows=7 SDRWhites=7 Saturation=7 SaturationAdjustmentAqua=7 SaturationAdjustmentBlue=7 SaturationAdjustmentGreen=7 SaturationAdjustmentMagenta=7 SaturationAdjustmentOrange=7 SaturationAdjustmentPurple=7 SaturationAdjustmentRed=7 SaturationAdjustmentYellow=7 ShadowTint=7 Shadows2012=7 SharpenDetail=7 SharpenEdgeMasking=7 SharpenRadius=3 Sharpness=7 Temperature=5300 Texture=7 Tint=7 UprightCenterMode=7 UprightFocalMode=7 UprightPreview=7 UprightTransformCount=7 UprightVersion=7 Vibrance=7 VignetteAmount=7 VignetteMidpoint=7 Whites2012=7
 # base plain
   writes AutoLateralCA=0
   writes Blacks2012=0
@@ -160,6 +160,8 @@
   writes GrayMixerYellow=+7
   writes GreenHue=+7
   writes GreenSaturation=+7
+  writes HDREditMode=0
+  writes HDRMaxValue=+7.00
   writes HasCrop=True
   writes HasSettings=True
   writes Highlights2012=+7
@@ -211,6 +213,13 @@
   writes ProcessVersion=11.0
   writes RedHue=+7
   writes RedSaturation=+7
+  writes SDRBlend=+7
+  writes SDRBrightness=+7
+  writes SDRClarity=+7
+  writes SDRContrast=+7
+  writes SDRHighlights=+7
+  writes SDRShadows=+7
+  writes SDRWhites=+7
   writes Saturation=+7
   writes SaturationAdjustmentAqua=+7
   writes SaturationAdjustmentBlue=+7
@@ -298,6 +307,8 @@
   writes GrayMixerYellow=+7
   writes GreenHue=+7
   writes GreenSaturation=+7
+  writes HDREditMode=0
+  writes HDRMaxValue=+7.00
   writes HasCrop=True
   writes HasSettings=True
   writes Highlights2012=+7
@@ -349,6 +360,13 @@
   writes ProcessVersion=11.0
   writes RedHue=+7
   writes RedSaturation=+7
+  writes SDRBlend=+7
+  writes SDRBrightness=+7
+  writes SDRClarity=+7
+  writes SDRContrast=+7
+  writes SDRHighlights=+7
+  writes SDRShadows=+7
+  writes SDRWhites=+7
   writes Saturation=+7
   writes SaturationAdjustmentAqua=+7
   writes SaturationAdjustmentBlue=+7
@@ -3407,6 +3425,61 @@ jpeg GreenSaturation=["100"] ok .effects.calibration[1][1]=1.0 | writes GreenSat
 jpeg GreenSaturation=["5500"] error GreenSaturation is outside supported range || lenient warns ["GreenSaturation is outside supported range"]
 jpeg GreenSaturation=["True"] error Invalid GreenSaturation: True: invalid float literal || lenient warns ["Invalid GreenSaturation: True: invalid float literal"]
 jpeg GreenSaturation=["x"] error Invalid GreenSaturation: x: invalid float literal || lenient warns ["Invalid GreenSaturation: x: invalid float literal"]
+# HDREditMode group Some(HighDynamicRange)
+plain HDREditMode=["0", "-0"] ok | writes || lenient same
+plain HDREditMode=["1e-7", "-1e-7", "+0.5", "-0.5", "0.49", "0.51", "-1", "2.4", "2.005", "2.015", "5", "7.99", "8", "8.01", "-8", "-8.01", "-12.5", "25", "33.3", "49.5", "50", "-75", "99.5", "100", "-100", "100.01", "150", "180", "360", "2000", "5500", "50000", "50001"] error Invalid HDREditMode || lenient warns ["Invalid HDREditMode"]
+plain HDREditMode=["1"] error HDR editing is preserved but not supported yet || lenient error HDR editing is preserved but not supported yet
+plain HDREditMode=["inf", "-inf", "NaN"] error Non-finite HDREditMode || lenient warns ["Non-finite HDREditMode"]
+plain HDREditMode=["x"] error Invalid HDREditMode: x: invalid float literal || lenient warns ["Invalid HDREditMode: x: invalid float literal"]
+plain HDREditMode=["True"] error Invalid HDREditMode: True: invalid float literal || lenient warns ["Invalid HDREditMode: True: invalid float literal"]
+plain HDREditMode=["False"] error Invalid HDREditMode: False: invalid float literal || lenient warns ["Invalid HDREditMode: False: invalid float literal"]
+plain HDREditMode=["Custom"] error Invalid HDREditMode: Custom: invalid float literal || lenient warns ["Invalid HDREditMode: Custom: invalid float literal"]
+plain HDREditMode=["As Shot"] error Invalid HDREditMode: As Shot: invalid float literal || lenient warns ["Invalid HDREditMode: As Shot: invalid float literal"]
+rich HDREditMode=["0", "-0"] ok | writes || lenient same
+rich HDREditMode=["1"] error HDR editing is preserved but not supported yet || lenient error HDR editing is preserved but not supported yet
+rich HDREditMode=["-1", "7", "50", "-100", "100", "5500"] error Invalid HDREditMode || lenient warns ["Invalid HDREditMode"]
+rich HDREditMode=["True"] error Invalid HDREditMode: True: invalid float literal || lenient warns ["Invalid HDREditMode: True: invalid float literal"]
+rich HDREditMode=["x"] error Invalid HDREditMode: x: invalid float literal || lenient warns ["Invalid HDREditMode: x: invalid float literal"]
+off HDREditMode=["0", "-0"] ok | writes || lenient same
+off HDREditMode=["1"] error HDR editing is preserved but not supported yet || lenient error HDR editing is preserved but not supported yet
+off HDREditMode=["-1", "7", "50", "-100", "100", "5500"] error Invalid HDREditMode || lenient warns ["Invalid HDREditMode"]
+off HDREditMode=["True"] error Invalid HDREditMode: True: invalid float literal || lenient warns ["Invalid HDREditMode: True: invalid float literal"]
+off HDREditMode=["x"] error Invalid HDREditMode: x: invalid float literal || lenient warns ["Invalid HDREditMode: x: invalid float literal"]
+jpeg HDREditMode=["0", "-0"] ok | writes || lenient same
+jpeg HDREditMode=["1"] error HDR editing is preserved but not supported yet || lenient error HDR editing is preserved but not supported yet
+jpeg HDREditMode=["-1", "7", "50", "-100", "100", "5500"] error Invalid HDREditMode || lenient warns ["Invalid HDREditMode"]
+jpeg HDREditMode=["True"] error Invalid HDREditMode: True: invalid float literal || lenient warns ["Invalid HDREditMode: True: invalid float literal"]
+jpeg HDREditMode=["x"] error Invalid HDREditMode: x: invalid float literal || lenient warns ["Invalid HDREditMode: x: invalid float literal"]
+# HDRMaxValue group Some(HighDynamicRange)
+plain HDRMaxValue=["0", "-0", "1e-7", "-1e-7", "+0.5", "-0.5", "0.49", "0.51", "-1", "8.01", "-8", "-8.01", "-12.5", "25", "33.3", "49.5", "50", "-75", "99.5", "100", "-100", "100.01", "150", "180", "360", "2000", "5500", "50000", "50001"] ok | writes || lenient same
+plain HDRMaxValue=["1"] ok .hdr.enabled=false .hdr.limit=1.0 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+1.00 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain HDRMaxValue=["2.4"] ok .hdr.enabled=false .hdr.limit=2.4 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.40 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain HDRMaxValue=["2.005"] ok .hdr.enabled=false .hdr.limit=2.005 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.01 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain HDRMaxValue=["2.015"] ok .hdr.enabled=false .hdr.limit=2.015 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.02 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain HDRMaxValue=["5"] ok .hdr.enabled=false .hdr.limit=5.0 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+5.00 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain HDRMaxValue=["7.99"] ok .hdr.enabled=false .hdr.limit=7.99 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+7.99 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain HDRMaxValue=["8"] ok .hdr.enabled=false .hdr.limit=8.0 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+8.00 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain HDRMaxValue=["inf", "-inf", "NaN"] error Non-finite HDRMaxValue || lenient warns ["Non-finite HDRMaxValue"]
+plain HDRMaxValue=["x"] error Invalid HDRMaxValue: x: invalid float literal || lenient warns ["Invalid HDRMaxValue: x: invalid float literal"]
+plain HDRMaxValue=["True"] error Invalid HDRMaxValue: True: invalid float literal || lenient warns ["Invalid HDRMaxValue: True: invalid float literal"]
+plain HDRMaxValue=["False"] error Invalid HDRMaxValue: False: invalid float literal || lenient warns ["Invalid HDRMaxValue: False: invalid float literal"]
+plain HDRMaxValue=["Custom"] error Invalid HDRMaxValue: Custom: invalid float literal || lenient warns ["Invalid HDRMaxValue: Custom: invalid float literal"]
+plain HDRMaxValue=["As Shot"] error Invalid HDRMaxValue: As Shot: invalid float literal || lenient warns ["Invalid HDRMaxValue: As Shot: invalid float literal"]
+rich HDRMaxValue=["0", "-0", "-1", "50", "-100", "100", "5500"] ok .hdr.limit=2.3 | writes HDRMaxValue=+2.30 || lenient same
+rich HDRMaxValue=["1"] ok .hdr.limit=1.0 | writes HDRMaxValue=+1.00 || lenient same
+rich HDRMaxValue=["7"] ok | writes || lenient same
+rich HDRMaxValue=["True"] error Invalid HDRMaxValue: True: invalid float literal || lenient warns ["Invalid HDRMaxValue: True: invalid float literal"]
+rich HDRMaxValue=["x"] error Invalid HDRMaxValue: x: invalid float literal || lenient warns ["Invalid HDRMaxValue: x: invalid float literal"]
+off HDRMaxValue=["0", "-0", "-1", "50", "-100", "100", "5500"] ok .hdr.limit=2.3 | writes HDRMaxValue=+2.30 || lenient same
+off HDRMaxValue=["1"] ok .hdr.limit=1.0 | writes HDRMaxValue=+1.00 || lenient same
+off HDRMaxValue=["7"] ok | writes || lenient same
+off HDRMaxValue=["True"] error Invalid HDRMaxValue: True: invalid float literal || lenient warns ["Invalid HDRMaxValue: True: invalid float literal"]
+off HDRMaxValue=["x"] error Invalid HDRMaxValue: x: invalid float literal || lenient warns ["Invalid HDRMaxValue: x: invalid float literal"]
+jpeg HDRMaxValue=["0", "-0", "-1", "50", "-100", "100", "5500"] ok | writes || lenient same
+jpeg HDRMaxValue=["1"] ok .hdr.enabled=false .hdr.limit=1.0 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+1.00 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg HDRMaxValue=["7"] ok .hdr.enabled=false .hdr.limit=7.0 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+7.00 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg HDRMaxValue=["True"] error Invalid HDRMaxValue: True: invalid float literal || lenient warns ["Invalid HDRMaxValue: True: invalid float literal"]
+jpeg HDRMaxValue=["x"] error Invalid HDRMaxValue: x: invalid float literal || lenient warns ["Invalid HDRMaxValue: x: invalid float literal"]
 # HasCrop group Some(Crop)
 plain HasCrop=["0", "1", "True", "False"] ok | writes || lenient same
 plain HasCrop=["-0", "1e-7", "-1e-7", "+0.5", "-0.5", "0.49", "0.51", "-1", "2.4", "2.005", "2.015", "5", "7.99", "8", "8.01", "-8", "-8.01", "-12.5", "25", "33.3", "49.5", "50", "-75", "99.5", "100", "-100", "100.01", "150", "180", "360", "2000", "5500", "50000", "50001", "inf", "-inf", "NaN", "x", "Custom", "As Shot"] error Invalid boolean HasCrop || lenient warns ["Invalid boolean HasCrop"]
@@ -6551,6 +6624,447 @@ jpeg RedSaturation=["100"] ok .effects.calibration[0][1]=1.0 | writes RedSaturat
 jpeg RedSaturation=["5500"] error RedSaturation is outside supported range || lenient warns ["RedSaturation is outside supported range"]
 jpeg RedSaturation=["True"] error Invalid RedSaturation: True: invalid float literal || lenient warns ["Invalid RedSaturation: True: invalid float literal"]
 jpeg RedSaturation=["x"] error Invalid RedSaturation: x: invalid float literal || lenient warns ["Invalid RedSaturation: x: invalid float literal"]
+# SDRBlend group Some(HighDynamicRange)
+plain SDRBlend=["0", "-0", "100.01", "150", "180", "360", "2000", "5500", "50000", "50001"] ok | writes || lenient same
+plain SDRBlend=["1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=1e-9 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["-1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=-1e-9 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["+0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.005 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["-0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=-0.005 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["0.49"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0049 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["0.51"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0050999997 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+1 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.01 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+1 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=-0.01 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=-1 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["2.4"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.024 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+2 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["2.005"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.02005 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+2 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["2.015"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.02015 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+2 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.049999997 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+5 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["7.99"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0799 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+8 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.08 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+8 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0801 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+8 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["-8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=-0.08 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=-8 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["-8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=-0.0801 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=-8 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["-12.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=-0.125 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=-12 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["25"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.25 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+25 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["33.3"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.33299997 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+33 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["49.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.49499997 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+50 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.5 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+50 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["-75"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=-0.75 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=-75 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["99.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.995 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+100 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=1.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+100 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=-1.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=-100 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBlend=["inf", "-inf", "NaN"] error Non-finite SDRBlend || lenient warns ["Non-finite SDRBlend"]
+plain SDRBlend=["x"] error Invalid SDRBlend: x: invalid float literal || lenient warns ["Invalid SDRBlend: x: invalid float literal"]
+plain SDRBlend=["True"] error Invalid SDRBlend: True: invalid float literal || lenient warns ["Invalid SDRBlend: True: invalid float literal"]
+plain SDRBlend=["False"] error Invalid SDRBlend: False: invalid float literal || lenient warns ["Invalid SDRBlend: False: invalid float literal"]
+plain SDRBlend=["Custom"] error Invalid SDRBlend: Custom: invalid float literal || lenient warns ["Invalid SDRBlend: Custom: invalid float literal"]
+plain SDRBlend=["As Shot"] error Invalid SDRBlend: As Shot: invalid float literal || lenient warns ["Invalid SDRBlend: As Shot: invalid float literal"]
+rich SDRBlend=["0", "5500"] ok .hdr.sdr.blend=0.0 | writes SDRBlend=0 || lenient same
+rich SDRBlend=["-0"] ok .hdr.sdr.blend=-0.0 | writes SDRBlend=0 || lenient same
+rich SDRBlend=["1"] ok .hdr.sdr.blend=0.01 | writes SDRBlend=+1 || lenient same
+rich SDRBlend=["-1"] ok .hdr.sdr.blend=-0.01 | writes SDRBlend=-1 || lenient same
+rich SDRBlend=["7"] ok | writes || lenient same
+rich SDRBlend=["50"] ok .hdr.sdr.blend=0.5 | writes SDRBlend=+50 || lenient same
+rich SDRBlend=["-100"] ok .hdr.sdr.blend=-1.0 | writes SDRBlend=-100 || lenient same
+rich SDRBlend=["100"] ok .hdr.sdr.blend=1.0 | writes SDRBlend=+100 || lenient same
+rich SDRBlend=["True"] error Invalid SDRBlend: True: invalid float literal || lenient warns ["Invalid SDRBlend: True: invalid float literal"]
+rich SDRBlend=["x"] error Invalid SDRBlend: x: invalid float literal || lenient warns ["Invalid SDRBlend: x: invalid float literal"]
+off SDRBlend=["0", "5500"] ok .hdr.sdr.blend=0.0 | writes SDRBlend=0 || lenient same
+off SDRBlend=["-0"] ok .hdr.sdr.blend=-0.0 | writes SDRBlend=0 || lenient same
+off SDRBlend=["1"] ok .hdr.sdr.blend=0.01 | writes SDRBlend=+1 || lenient same
+off SDRBlend=["-1"] ok .hdr.sdr.blend=-0.01 | writes SDRBlend=-1 || lenient same
+off SDRBlend=["7"] ok | writes || lenient same
+off SDRBlend=["50"] ok .hdr.sdr.blend=0.5 | writes SDRBlend=+50 || lenient same
+off SDRBlend=["-100"] ok .hdr.sdr.blend=-1.0 | writes SDRBlend=-100 || lenient same
+off SDRBlend=["100"] ok .hdr.sdr.blend=1.0 | writes SDRBlend=+100 || lenient same
+off SDRBlend=["True"] error Invalid SDRBlend: True: invalid float literal || lenient warns ["Invalid SDRBlend: True: invalid float literal"]
+off SDRBlend=["x"] error Invalid SDRBlend: x: invalid float literal || lenient warns ["Invalid SDRBlend: x: invalid float literal"]
+jpeg SDRBlend=["0", "-0", "5500"] ok | writes || lenient same
+jpeg SDRBlend=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.01 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+1 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRBlend=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=-0.01 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=-1 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRBlend=["7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.07 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+7 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRBlend=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.5 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+50 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRBlend=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=-1.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=-100 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRBlend=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=1.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=+100 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRBlend=["True"] error Invalid SDRBlend: True: invalid float literal || lenient warns ["Invalid SDRBlend: True: invalid float literal"]
+jpeg SDRBlend=["x"] error Invalid SDRBlend: x: invalid float literal || lenient warns ["Invalid SDRBlend: x: invalid float literal"]
+# SDRBrightness group Some(HighDynamicRange)
+plain SDRBrightness=["0", "-0", "100.01", "150", "180", "360", "2000", "5500", "50000", "50001"] ok | writes || lenient same
+plain SDRBrightness=["1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=1e-9 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["-1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=-1e-9 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["+0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.005 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["-0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=-0.005 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["0.49"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0049 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["0.51"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0050999997 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+1 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.01 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+1 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=-0.01 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=-1 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["2.4"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.024 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+2 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["2.005"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.02005 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+2 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["2.015"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.02015 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+2 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.049999997 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+5 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["7.99"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0799 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+8 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.08 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+8 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0801 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+8 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["-8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=-0.08 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=-8 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["-8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=-0.0801 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=-8 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["-12.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=-0.125 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=-12 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["25"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.25 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+25 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["33.3"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.33299997 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+33 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["49.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.49499997 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+50 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.5 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+50 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["-75"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=-0.75 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=-75 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["99.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.995 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+100 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=1.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+100 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=-1.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=-100 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRBrightness=["inf", "-inf", "NaN"] error Non-finite SDRBrightness || lenient warns ["Non-finite SDRBrightness"]
+plain SDRBrightness=["x"] error Invalid SDRBrightness: x: invalid float literal || lenient warns ["Invalid SDRBrightness: x: invalid float literal"]
+plain SDRBrightness=["True"] error Invalid SDRBrightness: True: invalid float literal || lenient warns ["Invalid SDRBrightness: True: invalid float literal"]
+plain SDRBrightness=["False"] error Invalid SDRBrightness: False: invalid float literal || lenient warns ["Invalid SDRBrightness: False: invalid float literal"]
+plain SDRBrightness=["Custom"] error Invalid SDRBrightness: Custom: invalid float literal || lenient warns ["Invalid SDRBrightness: Custom: invalid float literal"]
+plain SDRBrightness=["As Shot"] error Invalid SDRBrightness: As Shot: invalid float literal || lenient warns ["Invalid SDRBrightness: As Shot: invalid float literal"]
+rich SDRBrightness=["0", "5500"] ok .hdr.sdr.brightness=0.0 | writes SDRBrightness=0 || lenient same
+rich SDRBrightness=["-0"] ok .hdr.sdr.brightness=-0.0 | writes SDRBrightness=0 || lenient same
+rich SDRBrightness=["1"] ok .hdr.sdr.brightness=0.01 | writes SDRBrightness=+1 || lenient same
+rich SDRBrightness=["-1"] ok .hdr.sdr.brightness=-0.01 | writes SDRBrightness=-1 || lenient same
+rich SDRBrightness=["7"] ok | writes || lenient same
+rich SDRBrightness=["50"] ok .hdr.sdr.brightness=0.5 | writes SDRBrightness=+50 || lenient same
+rich SDRBrightness=["-100"] ok .hdr.sdr.brightness=-1.0 | writes SDRBrightness=-100 || lenient same
+rich SDRBrightness=["100"] ok .hdr.sdr.brightness=1.0 | writes SDRBrightness=+100 || lenient same
+rich SDRBrightness=["True"] error Invalid SDRBrightness: True: invalid float literal || lenient warns ["Invalid SDRBrightness: True: invalid float literal"]
+rich SDRBrightness=["x"] error Invalid SDRBrightness: x: invalid float literal || lenient warns ["Invalid SDRBrightness: x: invalid float literal"]
+off SDRBrightness=["0", "5500"] ok .hdr.sdr.brightness=0.0 | writes SDRBrightness=0 || lenient same
+off SDRBrightness=["-0"] ok .hdr.sdr.brightness=-0.0 | writes SDRBrightness=0 || lenient same
+off SDRBrightness=["1"] ok .hdr.sdr.brightness=0.01 | writes SDRBrightness=+1 || lenient same
+off SDRBrightness=["-1"] ok .hdr.sdr.brightness=-0.01 | writes SDRBrightness=-1 || lenient same
+off SDRBrightness=["7"] ok | writes || lenient same
+off SDRBrightness=["50"] ok .hdr.sdr.brightness=0.5 | writes SDRBrightness=+50 || lenient same
+off SDRBrightness=["-100"] ok .hdr.sdr.brightness=-1.0 | writes SDRBrightness=-100 || lenient same
+off SDRBrightness=["100"] ok .hdr.sdr.brightness=1.0 | writes SDRBrightness=+100 || lenient same
+off SDRBrightness=["True"] error Invalid SDRBrightness: True: invalid float literal || lenient warns ["Invalid SDRBrightness: True: invalid float literal"]
+off SDRBrightness=["x"] error Invalid SDRBrightness: x: invalid float literal || lenient warns ["Invalid SDRBrightness: x: invalid float literal"]
+jpeg SDRBrightness=["0", "-0", "5500"] ok | writes || lenient same
+jpeg SDRBrightness=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.01 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+1 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRBrightness=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=-0.01 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=-1 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRBrightness=["7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.07 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+7 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRBrightness=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.5 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+50 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRBrightness=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=-1.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=-100 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRBrightness=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=1.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=+100 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRBrightness=["True"] error Invalid SDRBrightness: True: invalid float literal || lenient warns ["Invalid SDRBrightness: True: invalid float literal"]
+jpeg SDRBrightness=["x"] error Invalid SDRBrightness: x: invalid float literal || lenient warns ["Invalid SDRBrightness: x: invalid float literal"]
+# SDRClarity group Some(HighDynamicRange)
+plain SDRClarity=["0", "-0", "100.01", "150", "180", "360", "2000", "5500", "50000", "50001"] ok | writes || lenient same
+plain SDRClarity=["1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=1e-9 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["-1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=-1e-9 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["+0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.005 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["-0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=-0.005 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["0.49"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0049 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["0.51"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0050999997 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+1 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.01 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+1 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=-0.01 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=-1 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["2.4"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.024 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+2 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["2.005"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.02005 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+2 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["2.015"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.02015 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+2 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.049999997 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+5 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["7.99"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0799 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+8 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.08 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+8 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0801 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+8 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["-8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=-0.08 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=-8 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["-8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=-0.0801 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=-8 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["-12.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=-0.125 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=-12 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["25"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.25 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+25 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["33.3"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.33299997 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+33 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["49.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.49499997 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+50 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.5 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+50 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["-75"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=-0.75 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=-75 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["99.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.995 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+100 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=1.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+100 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=-1.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=-100 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRClarity=["inf", "-inf", "NaN"] error Non-finite SDRClarity || lenient warns ["Non-finite SDRClarity"]
+plain SDRClarity=["x"] error Invalid SDRClarity: x: invalid float literal || lenient warns ["Invalid SDRClarity: x: invalid float literal"]
+plain SDRClarity=["True"] error Invalid SDRClarity: True: invalid float literal || lenient warns ["Invalid SDRClarity: True: invalid float literal"]
+plain SDRClarity=["False"] error Invalid SDRClarity: False: invalid float literal || lenient warns ["Invalid SDRClarity: False: invalid float literal"]
+plain SDRClarity=["Custom"] error Invalid SDRClarity: Custom: invalid float literal || lenient warns ["Invalid SDRClarity: Custom: invalid float literal"]
+plain SDRClarity=["As Shot"] error Invalid SDRClarity: As Shot: invalid float literal || lenient warns ["Invalid SDRClarity: As Shot: invalid float literal"]
+rich SDRClarity=["0", "5500"] ok .hdr.sdr.clarity=0.0 | writes SDRClarity=0 || lenient same
+rich SDRClarity=["-0"] ok .hdr.sdr.clarity=-0.0 | writes SDRClarity=0 || lenient same
+rich SDRClarity=["1"] ok .hdr.sdr.clarity=0.01 | writes SDRClarity=+1 || lenient same
+rich SDRClarity=["-1"] ok .hdr.sdr.clarity=-0.01 | writes SDRClarity=-1 || lenient same
+rich SDRClarity=["7"] ok | writes || lenient same
+rich SDRClarity=["50"] ok .hdr.sdr.clarity=0.5 | writes SDRClarity=+50 || lenient same
+rich SDRClarity=["-100"] ok .hdr.sdr.clarity=-1.0 | writes SDRClarity=-100 || lenient same
+rich SDRClarity=["100"] ok .hdr.sdr.clarity=1.0 | writes SDRClarity=+100 || lenient same
+rich SDRClarity=["True"] error Invalid SDRClarity: True: invalid float literal || lenient warns ["Invalid SDRClarity: True: invalid float literal"]
+rich SDRClarity=["x"] error Invalid SDRClarity: x: invalid float literal || lenient warns ["Invalid SDRClarity: x: invalid float literal"]
+off SDRClarity=["0", "5500"] ok .hdr.sdr.clarity=0.0 | writes SDRClarity=0 || lenient same
+off SDRClarity=["-0"] ok .hdr.sdr.clarity=-0.0 | writes SDRClarity=0 || lenient same
+off SDRClarity=["1"] ok .hdr.sdr.clarity=0.01 | writes SDRClarity=+1 || lenient same
+off SDRClarity=["-1"] ok .hdr.sdr.clarity=-0.01 | writes SDRClarity=-1 || lenient same
+off SDRClarity=["7"] ok | writes || lenient same
+off SDRClarity=["50"] ok .hdr.sdr.clarity=0.5 | writes SDRClarity=+50 || lenient same
+off SDRClarity=["-100"] ok .hdr.sdr.clarity=-1.0 | writes SDRClarity=-100 || lenient same
+off SDRClarity=["100"] ok .hdr.sdr.clarity=1.0 | writes SDRClarity=+100 || lenient same
+off SDRClarity=["True"] error Invalid SDRClarity: True: invalid float literal || lenient warns ["Invalid SDRClarity: True: invalid float literal"]
+off SDRClarity=["x"] error Invalid SDRClarity: x: invalid float literal || lenient warns ["Invalid SDRClarity: x: invalid float literal"]
+jpeg SDRClarity=["0", "-0", "5500"] ok | writes || lenient same
+jpeg SDRClarity=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.01 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+1 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRClarity=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=-0.01 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=-1 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRClarity=["7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.07 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+7 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRClarity=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.5 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+50 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRClarity=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=-1.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=-100 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRClarity=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=1.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=+100 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRClarity=["True"] error Invalid SDRClarity: True: invalid float literal || lenient warns ["Invalid SDRClarity: True: invalid float literal"]
+jpeg SDRClarity=["x"] error Invalid SDRClarity: x: invalid float literal || lenient warns ["Invalid SDRClarity: x: invalid float literal"]
+# SDRContrast group Some(HighDynamicRange)
+plain SDRContrast=["0", "-0", "100.01", "150", "180", "360", "2000", "5500", "50000", "50001"] ok | writes || lenient same
+plain SDRContrast=["1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=1e-9 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["-1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=-1e-9 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["+0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.005 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["-0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=-0.005 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["0.49"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0049 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["0.51"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0050999997 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+1 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.01 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+1 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=-0.01 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=-1 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["2.4"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.024 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+2 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["2.005"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.02005 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+2 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["2.015"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.02015 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+2 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.049999997 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+5 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["7.99"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0799 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+8 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.08 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+8 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0801 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+8 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["-8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=-0.08 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=-8 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["-8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=-0.0801 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=-8 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["-12.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=-0.125 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=-12 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["25"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.25 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+25 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["33.3"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.33299997 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+33 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["49.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.49499997 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+50 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.5 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+50 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["-75"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=-0.75 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=-75 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["99.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.995 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+100 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=1.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+100 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=-1.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=-100 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRContrast=["inf", "-inf", "NaN"] error Non-finite SDRContrast || lenient warns ["Non-finite SDRContrast"]
+plain SDRContrast=["x"] error Invalid SDRContrast: x: invalid float literal || lenient warns ["Invalid SDRContrast: x: invalid float literal"]
+plain SDRContrast=["True"] error Invalid SDRContrast: True: invalid float literal || lenient warns ["Invalid SDRContrast: True: invalid float literal"]
+plain SDRContrast=["False"] error Invalid SDRContrast: False: invalid float literal || lenient warns ["Invalid SDRContrast: False: invalid float literal"]
+plain SDRContrast=["Custom"] error Invalid SDRContrast: Custom: invalid float literal || lenient warns ["Invalid SDRContrast: Custom: invalid float literal"]
+plain SDRContrast=["As Shot"] error Invalid SDRContrast: As Shot: invalid float literal || lenient warns ["Invalid SDRContrast: As Shot: invalid float literal"]
+rich SDRContrast=["0", "5500"] ok .hdr.sdr.contrast=0.0 | writes SDRContrast=0 || lenient same
+rich SDRContrast=["-0"] ok .hdr.sdr.contrast=-0.0 | writes SDRContrast=0 || lenient same
+rich SDRContrast=["1"] ok .hdr.sdr.contrast=0.01 | writes SDRContrast=+1 || lenient same
+rich SDRContrast=["-1"] ok .hdr.sdr.contrast=-0.01 | writes SDRContrast=-1 || lenient same
+rich SDRContrast=["7"] ok | writes || lenient same
+rich SDRContrast=["50"] ok .hdr.sdr.contrast=0.5 | writes SDRContrast=+50 || lenient same
+rich SDRContrast=["-100"] ok .hdr.sdr.contrast=-1.0 | writes SDRContrast=-100 || lenient same
+rich SDRContrast=["100"] ok .hdr.sdr.contrast=1.0 | writes SDRContrast=+100 || lenient same
+rich SDRContrast=["True"] error Invalid SDRContrast: True: invalid float literal || lenient warns ["Invalid SDRContrast: True: invalid float literal"]
+rich SDRContrast=["x"] error Invalid SDRContrast: x: invalid float literal || lenient warns ["Invalid SDRContrast: x: invalid float literal"]
+off SDRContrast=["0", "5500"] ok .hdr.sdr.contrast=0.0 | writes SDRContrast=0 || lenient same
+off SDRContrast=["-0"] ok .hdr.sdr.contrast=-0.0 | writes SDRContrast=0 || lenient same
+off SDRContrast=["1"] ok .hdr.sdr.contrast=0.01 | writes SDRContrast=+1 || lenient same
+off SDRContrast=["-1"] ok .hdr.sdr.contrast=-0.01 | writes SDRContrast=-1 || lenient same
+off SDRContrast=["7"] ok | writes || lenient same
+off SDRContrast=["50"] ok .hdr.sdr.contrast=0.5 | writes SDRContrast=+50 || lenient same
+off SDRContrast=["-100"] ok .hdr.sdr.contrast=-1.0 | writes SDRContrast=-100 || lenient same
+off SDRContrast=["100"] ok .hdr.sdr.contrast=1.0 | writes SDRContrast=+100 || lenient same
+off SDRContrast=["True"] error Invalid SDRContrast: True: invalid float literal || lenient warns ["Invalid SDRContrast: True: invalid float literal"]
+off SDRContrast=["x"] error Invalid SDRContrast: x: invalid float literal || lenient warns ["Invalid SDRContrast: x: invalid float literal"]
+jpeg SDRContrast=["0", "-0", "5500"] ok | writes || lenient same
+jpeg SDRContrast=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.01 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+1 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRContrast=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=-0.01 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=-1 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRContrast=["7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.07 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+7 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRContrast=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.5 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+50 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRContrast=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=-1.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=-100 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRContrast=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=1.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=+100 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRContrast=["True"] error Invalid SDRContrast: True: invalid float literal || lenient warns ["Invalid SDRContrast: True: invalid float literal"]
+jpeg SDRContrast=["x"] error Invalid SDRContrast: x: invalid float literal || lenient warns ["Invalid SDRContrast: x: invalid float literal"]
+# SDRHighlights group Some(HighDynamicRange)
+plain SDRHighlights=["0", "-0", "100.01", "150", "180", "360", "2000", "5500", "50000", "50001"] ok | writes || lenient same
+plain SDRHighlights=["1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=1e-9 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["-1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=-1e-9 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["+0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.005 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["-0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=-0.005 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["0.49"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0049 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["0.51"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0050999997 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+1 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.01 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+1 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=-0.01 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=-1 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["2.4"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.024 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+2 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["2.005"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.02005 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+2 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["2.015"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.02015 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+2 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.049999997 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+5 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["7.99"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0799 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+8 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.08 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+8 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0801 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+8 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["-8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=-0.08 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=-8 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["-8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=-0.0801 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=-8 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["-12.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=-0.125 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=-12 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["25"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.25 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+25 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["33.3"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.33299997 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+33 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["49.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.49499997 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+50 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.5 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+50 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["-75"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=-0.75 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=-75 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["99.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.995 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+100 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=1.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+100 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=-1.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=-100 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRHighlights=["inf", "-inf", "NaN"] error Non-finite SDRHighlights || lenient warns ["Non-finite SDRHighlights"]
+plain SDRHighlights=["x"] error Invalid SDRHighlights: x: invalid float literal || lenient warns ["Invalid SDRHighlights: x: invalid float literal"]
+plain SDRHighlights=["True"] error Invalid SDRHighlights: True: invalid float literal || lenient warns ["Invalid SDRHighlights: True: invalid float literal"]
+plain SDRHighlights=["False"] error Invalid SDRHighlights: False: invalid float literal || lenient warns ["Invalid SDRHighlights: False: invalid float literal"]
+plain SDRHighlights=["Custom"] error Invalid SDRHighlights: Custom: invalid float literal || lenient warns ["Invalid SDRHighlights: Custom: invalid float literal"]
+plain SDRHighlights=["As Shot"] error Invalid SDRHighlights: As Shot: invalid float literal || lenient warns ["Invalid SDRHighlights: As Shot: invalid float literal"]
+rich SDRHighlights=["0", "5500"] ok .hdr.sdr.highlights=0.0 | writes SDRHighlights=0 || lenient same
+rich SDRHighlights=["-0"] ok .hdr.sdr.highlights=-0.0 | writes SDRHighlights=0 || lenient same
+rich SDRHighlights=["1"] ok .hdr.sdr.highlights=0.01 | writes SDRHighlights=+1 || lenient same
+rich SDRHighlights=["-1"] ok .hdr.sdr.highlights=-0.01 | writes SDRHighlights=-1 || lenient same
+rich SDRHighlights=["7"] ok | writes || lenient same
+rich SDRHighlights=["50"] ok .hdr.sdr.highlights=0.5 | writes SDRHighlights=+50 || lenient same
+rich SDRHighlights=["-100"] ok .hdr.sdr.highlights=-1.0 | writes SDRHighlights=-100 || lenient same
+rich SDRHighlights=["100"] ok .hdr.sdr.highlights=1.0 | writes SDRHighlights=+100 || lenient same
+rich SDRHighlights=["True"] error Invalid SDRHighlights: True: invalid float literal || lenient warns ["Invalid SDRHighlights: True: invalid float literal"]
+rich SDRHighlights=["x"] error Invalid SDRHighlights: x: invalid float literal || lenient warns ["Invalid SDRHighlights: x: invalid float literal"]
+off SDRHighlights=["0", "5500"] ok .hdr.sdr.highlights=0.0 | writes SDRHighlights=0 || lenient same
+off SDRHighlights=["-0"] ok .hdr.sdr.highlights=-0.0 | writes SDRHighlights=0 || lenient same
+off SDRHighlights=["1"] ok .hdr.sdr.highlights=0.01 | writes SDRHighlights=+1 || lenient same
+off SDRHighlights=["-1"] ok .hdr.sdr.highlights=-0.01 | writes SDRHighlights=-1 || lenient same
+off SDRHighlights=["7"] ok | writes || lenient same
+off SDRHighlights=["50"] ok .hdr.sdr.highlights=0.5 | writes SDRHighlights=+50 || lenient same
+off SDRHighlights=["-100"] ok .hdr.sdr.highlights=-1.0 | writes SDRHighlights=-100 || lenient same
+off SDRHighlights=["100"] ok .hdr.sdr.highlights=1.0 | writes SDRHighlights=+100 || lenient same
+off SDRHighlights=["True"] error Invalid SDRHighlights: True: invalid float literal || lenient warns ["Invalid SDRHighlights: True: invalid float literal"]
+off SDRHighlights=["x"] error Invalid SDRHighlights: x: invalid float literal || lenient warns ["Invalid SDRHighlights: x: invalid float literal"]
+jpeg SDRHighlights=["0", "-0", "5500"] ok | writes || lenient same
+jpeg SDRHighlights=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.01 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+1 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRHighlights=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=-0.01 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=-1 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRHighlights=["7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.07 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+7 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRHighlights=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.5 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+50 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRHighlights=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=-1.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=-100 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRHighlights=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=1.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=+100 SDRShadows=0 SDRWhites=0 || lenient same
+jpeg SDRHighlights=["True"] error Invalid SDRHighlights: True: invalid float literal || lenient warns ["Invalid SDRHighlights: True: invalid float literal"]
+jpeg SDRHighlights=["x"] error Invalid SDRHighlights: x: invalid float literal || lenient warns ["Invalid SDRHighlights: x: invalid float literal"]
+# SDRShadows group Some(HighDynamicRange)
+plain SDRShadows=["0", "-0", "100.01", "150", "180", "360", "2000", "5500", "50000", "50001"] ok | writes || lenient same
+plain SDRShadows=["1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=1e-9 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRShadows=["-1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=-1e-9 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRShadows=["+0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.005 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRShadows=["-0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=-0.005 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRShadows=["0.49"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0049 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRShadows=["0.51"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0050999997 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+1 SDRWhites=0 || lenient same
+plain SDRShadows=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.01 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+1 SDRWhites=0 || lenient same
+plain SDRShadows=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=-0.01 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=-1 SDRWhites=0 || lenient same
+plain SDRShadows=["2.4"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.024 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+2 SDRWhites=0 || lenient same
+plain SDRShadows=["2.005"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.02005 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+2 SDRWhites=0 || lenient same
+plain SDRShadows=["2.015"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.02015 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+2 SDRWhites=0 || lenient same
+plain SDRShadows=["5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.049999997 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+5 SDRWhites=0 || lenient same
+plain SDRShadows=["7.99"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0799 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+8 SDRWhites=0 || lenient same
+plain SDRShadows=["8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.08 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+8 SDRWhites=0 || lenient same
+plain SDRShadows=["8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0801 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+8 SDRWhites=0 || lenient same
+plain SDRShadows=["-8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=-0.08 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=-8 SDRWhites=0 || lenient same
+plain SDRShadows=["-8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=-0.0801 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=-8 SDRWhites=0 || lenient same
+plain SDRShadows=["-12.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=-0.125 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=-12 SDRWhites=0 || lenient same
+plain SDRShadows=["25"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.25 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+25 SDRWhites=0 || lenient same
+plain SDRShadows=["33.3"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.33299997 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+33 SDRWhites=0 || lenient same
+plain SDRShadows=["49.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.49499997 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+50 SDRWhites=0 || lenient same
+plain SDRShadows=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.5 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+50 SDRWhites=0 || lenient same
+plain SDRShadows=["-75"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=-0.75 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=-75 SDRWhites=0 || lenient same
+plain SDRShadows=["99.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.995 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+100 SDRWhites=0 || lenient same
+plain SDRShadows=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=1.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+100 SDRWhites=0 || lenient same
+plain SDRShadows=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=-1.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=-100 SDRWhites=0 || lenient same
+plain SDRShadows=["inf", "-inf", "NaN"] error Non-finite SDRShadows || lenient warns ["Non-finite SDRShadows"]
+plain SDRShadows=["x"] error Invalid SDRShadows: x: invalid float literal || lenient warns ["Invalid SDRShadows: x: invalid float literal"]
+plain SDRShadows=["True"] error Invalid SDRShadows: True: invalid float literal || lenient warns ["Invalid SDRShadows: True: invalid float literal"]
+plain SDRShadows=["False"] error Invalid SDRShadows: False: invalid float literal || lenient warns ["Invalid SDRShadows: False: invalid float literal"]
+plain SDRShadows=["Custom"] error Invalid SDRShadows: Custom: invalid float literal || lenient warns ["Invalid SDRShadows: Custom: invalid float literal"]
+plain SDRShadows=["As Shot"] error Invalid SDRShadows: As Shot: invalid float literal || lenient warns ["Invalid SDRShadows: As Shot: invalid float literal"]
+rich SDRShadows=["0", "5500"] ok .hdr.sdr.shadows=0.0 | writes SDRShadows=0 || lenient same
+rich SDRShadows=["-0"] ok .hdr.sdr.shadows=-0.0 | writes SDRShadows=0 || lenient same
+rich SDRShadows=["1"] ok .hdr.sdr.shadows=0.01 | writes SDRShadows=+1 || lenient same
+rich SDRShadows=["-1"] ok .hdr.sdr.shadows=-0.01 | writes SDRShadows=-1 || lenient same
+rich SDRShadows=["7"] ok | writes || lenient same
+rich SDRShadows=["50"] ok .hdr.sdr.shadows=0.5 | writes SDRShadows=+50 || lenient same
+rich SDRShadows=["-100"] ok .hdr.sdr.shadows=-1.0 | writes SDRShadows=-100 || lenient same
+rich SDRShadows=["100"] ok .hdr.sdr.shadows=1.0 | writes SDRShadows=+100 || lenient same
+rich SDRShadows=["True"] error Invalid SDRShadows: True: invalid float literal || lenient warns ["Invalid SDRShadows: True: invalid float literal"]
+rich SDRShadows=["x"] error Invalid SDRShadows: x: invalid float literal || lenient warns ["Invalid SDRShadows: x: invalid float literal"]
+off SDRShadows=["0", "5500"] ok .hdr.sdr.shadows=0.0 | writes SDRShadows=0 || lenient same
+off SDRShadows=["-0"] ok .hdr.sdr.shadows=-0.0 | writes SDRShadows=0 || lenient same
+off SDRShadows=["1"] ok .hdr.sdr.shadows=0.01 | writes SDRShadows=+1 || lenient same
+off SDRShadows=["-1"] ok .hdr.sdr.shadows=-0.01 | writes SDRShadows=-1 || lenient same
+off SDRShadows=["7"] ok | writes || lenient same
+off SDRShadows=["50"] ok .hdr.sdr.shadows=0.5 | writes SDRShadows=+50 || lenient same
+off SDRShadows=["-100"] ok .hdr.sdr.shadows=-1.0 | writes SDRShadows=-100 || lenient same
+off SDRShadows=["100"] ok .hdr.sdr.shadows=1.0 | writes SDRShadows=+100 || lenient same
+off SDRShadows=["True"] error Invalid SDRShadows: True: invalid float literal || lenient warns ["Invalid SDRShadows: True: invalid float literal"]
+off SDRShadows=["x"] error Invalid SDRShadows: x: invalid float literal || lenient warns ["Invalid SDRShadows: x: invalid float literal"]
+jpeg SDRShadows=["0", "-0", "5500"] ok | writes || lenient same
+jpeg SDRShadows=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.01 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+1 SDRWhites=0 || lenient same
+jpeg SDRShadows=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=-0.01 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=-1 SDRWhites=0 || lenient same
+jpeg SDRShadows=["7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.07 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+7 SDRWhites=0 || lenient same
+jpeg SDRShadows=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.5 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+50 SDRWhites=0 || lenient same
+jpeg SDRShadows=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=-1.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=-100 SDRWhites=0 || lenient same
+jpeg SDRShadows=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=1.0 .hdr.sdr.whites=0.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=+100 SDRWhites=0 || lenient same
+jpeg SDRShadows=["True"] error Invalid SDRShadows: True: invalid float literal || lenient warns ["Invalid SDRShadows: True: invalid float literal"]
+jpeg SDRShadows=["x"] error Invalid SDRShadows: x: invalid float literal || lenient warns ["Invalid SDRShadows: x: invalid float literal"]
+# SDRWhites group Some(HighDynamicRange)
+plain SDRWhites=["0", "-0", "100.01", "150", "180", "360", "2000", "5500", "50000", "50001"] ok | writes || lenient same
+plain SDRWhites=["1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=1e-9 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRWhites=["-1e-7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=-1e-9 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRWhites=["+0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.005 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRWhites=["-0.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=-0.005 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRWhites=["0.49"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0049 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=0 || lenient same
+plain SDRWhites=["0.51"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0050999997 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+1 || lenient same
+plain SDRWhites=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.01 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+1 || lenient same
+plain SDRWhites=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=-0.01 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=-1 || lenient same
+plain SDRWhites=["2.4"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.024 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+2 || lenient same
+plain SDRWhites=["2.005"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.02005 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+2 || lenient same
+plain SDRWhites=["2.015"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.02015 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+2 || lenient same
+plain SDRWhites=["5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.049999997 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+5 || lenient same
+plain SDRWhites=["7.99"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0799 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+8 || lenient same
+plain SDRWhites=["8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.08 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+8 || lenient same
+plain SDRWhites=["8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.0801 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+8 || lenient same
+plain SDRWhites=["-8"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=-0.08 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=-8 || lenient same
+plain SDRWhites=["-8.01"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=-0.0801 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=-8 || lenient same
+plain SDRWhites=["-12.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=-0.125 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=-12 || lenient same
+plain SDRWhites=["25"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.25 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+25 || lenient same
+plain SDRWhites=["33.3"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.33299997 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+33 || lenient same
+plain SDRWhites=["49.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.49499997 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+50 || lenient same
+plain SDRWhites=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.5 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+50 || lenient same
+plain SDRWhites=["-75"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=-0.75 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=-75 || lenient same
+plain SDRWhites=["99.5"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.995 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+100 || lenient same
+plain SDRWhites=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=1.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+100 || lenient same
+plain SDRWhites=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=-1.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=-100 || lenient same
+plain SDRWhites=["inf", "-inf", "NaN"] error Non-finite SDRWhites || lenient warns ["Non-finite SDRWhites"]
+plain SDRWhites=["x"] error Invalid SDRWhites: x: invalid float literal || lenient warns ["Invalid SDRWhites: x: invalid float literal"]
+plain SDRWhites=["True"] error Invalid SDRWhites: True: invalid float literal || lenient warns ["Invalid SDRWhites: True: invalid float literal"]
+plain SDRWhites=["False"] error Invalid SDRWhites: False: invalid float literal || lenient warns ["Invalid SDRWhites: False: invalid float literal"]
+plain SDRWhites=["Custom"] error Invalid SDRWhites: Custom: invalid float literal || lenient warns ["Invalid SDRWhites: Custom: invalid float literal"]
+plain SDRWhites=["As Shot"] error Invalid SDRWhites: As Shot: invalid float literal || lenient warns ["Invalid SDRWhites: As Shot: invalid float literal"]
+rich SDRWhites=["0", "5500"] ok .hdr.sdr.whites=0.0 | writes SDRWhites=0 || lenient same
+rich SDRWhites=["-0"] ok .hdr.sdr.whites=-0.0 | writes SDRWhites=0 || lenient same
+rich SDRWhites=["1"] ok .hdr.sdr.whites=0.01 | writes SDRWhites=+1 || lenient same
+rich SDRWhites=["-1"] ok .hdr.sdr.whites=-0.01 | writes SDRWhites=-1 || lenient same
+rich SDRWhites=["7"] ok | writes || lenient same
+rich SDRWhites=["50"] ok .hdr.sdr.whites=0.5 | writes SDRWhites=+50 || lenient same
+rich SDRWhites=["-100"] ok .hdr.sdr.whites=-1.0 | writes SDRWhites=-100 || lenient same
+rich SDRWhites=["100"] ok .hdr.sdr.whites=1.0 | writes SDRWhites=+100 || lenient same
+rich SDRWhites=["True"] error Invalid SDRWhites: True: invalid float literal || lenient warns ["Invalid SDRWhites: True: invalid float literal"]
+rich SDRWhites=["x"] error Invalid SDRWhites: x: invalid float literal || lenient warns ["Invalid SDRWhites: x: invalid float literal"]
+off SDRWhites=["0", "5500"] ok .hdr.sdr.whites=0.0 | writes SDRWhites=0 || lenient same
+off SDRWhites=["-0"] ok .hdr.sdr.whites=-0.0 | writes SDRWhites=0 || lenient same
+off SDRWhites=["1"] ok .hdr.sdr.whites=0.01 | writes SDRWhites=+1 || lenient same
+off SDRWhites=["-1"] ok .hdr.sdr.whites=-0.01 | writes SDRWhites=-1 || lenient same
+off SDRWhites=["7"] ok | writes || lenient same
+off SDRWhites=["50"] ok .hdr.sdr.whites=0.5 | writes SDRWhites=+50 || lenient same
+off SDRWhites=["-100"] ok .hdr.sdr.whites=-1.0 | writes SDRWhites=-100 || lenient same
+off SDRWhites=["100"] ok .hdr.sdr.whites=1.0 | writes SDRWhites=+100 || lenient same
+off SDRWhites=["True"] error Invalid SDRWhites: True: invalid float literal || lenient warns ["Invalid SDRWhites: True: invalid float literal"]
+off SDRWhites=["x"] error Invalid SDRWhites: x: invalid float literal || lenient warns ["Invalid SDRWhites: x: invalid float literal"]
+jpeg SDRWhites=["0", "-0", "5500"] ok | writes || lenient same
+jpeg SDRWhites=["1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.01 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+1 || lenient same
+jpeg SDRWhites=["-1"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=-0.01 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=-1 || lenient same
+jpeg SDRWhites=["7"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.07 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+7 || lenient same
+jpeg SDRWhites=["50"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=0.5 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+50 || lenient same
+jpeg SDRWhites=["-100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=-1.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=-100 || lenient same
+jpeg SDRWhites=["100"] ok .hdr.enabled=false .hdr.limit=2.3 .hdr.sdr.blend=0.0 .hdr.sdr.brightness=0.0 .hdr.sdr.clarity=0.0 .hdr.sdr.contrast=0.0 .hdr.sdr.highlights=0.0 .hdr.sdr.shadows=0.0 .hdr.sdr.whites=1.0 | writes HDREditMode=0 HDRMaxValue=+2.30 SDRBlend=0 SDRBrightness=0 SDRClarity=0 SDRContrast=0 SDRHighlights=0 SDRShadows=0 SDRWhites=+100 || lenient same
+jpeg SDRWhites=["True"] error Invalid SDRWhites: True: invalid float literal || lenient warns ["Invalid SDRWhites: True: invalid float literal"]
+jpeg SDRWhites=["x"] error Invalid SDRWhites: x: invalid float literal || lenient warns ["Invalid SDRWhites: x: invalid float literal"]
 # Saturation group Some(Saturation)
 plain Saturation=["0"] ok | writes || lenient same
 plain Saturation=["-0"] ok .saturation=-0.0 | writes || lenient same
@@ -8697,6 +9211,64 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
     </rdf:Description>
    </rdf:RDF>
   </x:xmpmeta>
+# preset HighDynamicRange
+  <x:xmpmeta xmlns:x="adobe:ns:meta/">
+   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about=""
+      xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+     crs:PresetType="Normal"
+     crs:Cluster=""
+     crs:UUID="0123456789ABCDEF0123456789ABCDEF"
+     crs:SupportsAmount="False"
+     crs:SupportsColor="True"
+     crs:SupportsMonochrome="True"
+     crs:SupportsHighDynamicRange="True"
+     crs:SupportsNormalDynamicRange="True"
+     crs:SupportsSceneReferred="True"
+     crs:SupportsOutputReferred="True"
+     crs:CameraModelRestriction=""
+     crs:Copyright=""
+     crs:ContactInfo=""
+     crs:Version="15.4"
+     crs:RAWmakasePreset="2"
+     crs:HDREditMode="0"
+     crs:HDRMaxValue="+7.00"
+     crs:SDRBrightness="+7"
+     crs:SDRContrast="+7"
+     crs:SDRClarity="+7"
+     crs:SDRHighlights="+7"
+     crs:SDRShadows="+7"
+     crs:SDRWhites="+7"
+     crs:SDRBlend="+7"
+     crs:HasSettings="True">
+     <crs:Name>
+      <rdf:Alt>
+       <rdf:li xml:lang="x-default">Case</rdf:li>
+      </rdf:Alt>
+     </crs:Name>
+     <crs:ShortName>
+      <rdf:Alt>
+       <rdf:li xml:lang="x-default"></rdf:li>
+      </rdf:Alt>
+     </crs:ShortName>
+     <crs:SortName>
+      <rdf:Alt>
+       <rdf:li xml:lang="x-default"></rdf:li>
+      </rdf:Alt>
+     </crs:SortName>
+     <crs:Group>
+      <rdf:Alt>
+       <rdf:li xml:lang="x-default">Tests</rdf:li>
+      </rdf:Alt>
+     </crs:Group>
+     <crs:Description>
+      <rdf:Alt>
+       <rdf:li xml:lang="x-default"></rdf:li>
+      </rdf:Alt>
+     </crs:Description>
+    </rdf:Description>
+   </rdf:RDF>
+  </x:xmpmeta>
 # preset Texture
   <x:xmpmeta xmlns:x="adobe:ns:meta/">
    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -10227,6 +10799,15 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:Dehaze="+7"
      crs:Vibrance="+7"
      crs:Saturation="+7"
+     crs:HDREditMode="0"
+     crs:HDRMaxValue="+7.00"
+     crs:SDRBrightness="+7"
+     crs:SDRContrast="+7"
+     crs:SDRClarity="+7"
+     crs:SDRHighlights="+7"
+     crs:SDRShadows="+7"
+     crs:SDRWhites="+7"
+     crs:SDRBlend="+7"
      crs:ParametricShadows="+7"
      crs:ParametricDarks="+7"
      crs:ParametricLights="+7"

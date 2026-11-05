@@ -50,8 +50,13 @@ pub(in crate::catalog) const LENSFUN: i64 = 4;
 /// render without AI Denoise and save without the setting. Raised to by the first
 /// write that stores one, as [`LENSFUN`] is.
 pub(in crate::catalog) const AI_DENOISE: i64 = 5;
+/// The first version that may hold HDR edits (an edit, a History state or a snapshot
+/// with HDR on), which releases before it would render as SDR and save without the
+/// setting. Values kept while HDR is off don't raise it. Raised to by the first write
+/// that stores one, as [`LENSFUN`] is.
+pub(in crate::catalog) const HDR: i64 = 6;
 /// The newest version this release opens.
-pub(in crate::catalog) const NEWEST: i64 = AI_DENOISE;
+pub(in crate::catalog) const NEWEST: i64 = HDR;
 /// The newest version the releases before the one engine open.
 #[cfg(test)]
 pub(in crate::catalog) const BEFORE_ONE_ENGINE: i64 = 2;

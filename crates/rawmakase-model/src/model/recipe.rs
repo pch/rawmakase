@@ -114,6 +114,14 @@ pub struct Recipe {
         skip_serializing_if = "crate::model::ai_denoise::AiDenoise::is_default"
     )]
     pub ai_denoise: crate::model::ai_denoise::AiDenoise,
+    /// High Dynamic Range editing. Omitted when off with every value at its default,
+    /// so releases that predate it read the recipe; an active HDR edit needs the saved
+    /// format that knows it (`saved_format::schema_for`).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::model::hdr::HdrSettings::is_default"
+    )]
+    pub hdr: crate::model::hdr::HdrSettings,
     pub sharpening: f32,
     pub crop: [f32; 4],
     pub straighten: f32,
@@ -231,6 +239,7 @@ impl Default for Recipe {
             noise_luma: 0.,
             noise_chroma: 0.,
             ai_denoise: Default::default(),
+            hdr: Default::default(),
             sharpening: 0.35,
             crop: [0., 0., 1., 1.],
             straighten: 0.,
@@ -523,6 +532,8 @@ impl Recipe {
             "Invalid detail adjustment"
         );
         ensure!(self.ai_denoise.is_valid(), "Invalid AI Denoise Amount");
+        self.hdr.validate()?;
+        self.hdr.check_renderable()?;
         ensure!(
             self.crop.iter().all(|v| (0. ..=1.).contains(v))
                 && self.crop[2] - self.crop[0] >= 0.01

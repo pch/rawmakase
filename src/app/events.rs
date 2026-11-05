@@ -606,12 +606,28 @@ impl Editor {
                     self.document.origin = crate::app::develop::state::EditOrigin::Saved;
                     self.document.edit.replace(saved.recipe);
                     self.document.export = saved.export;
-                    // A History that cannot be read leaves the edit as it is.
-                    if let Ok(Some(history)) = l.session.catalog().load_history(photo) {
-                        self.document.edit.restore_history(history);
-                    }
+                    // A stored History that cannot be read (a newer release's, or one
+                    // holding HDR states this release refuses) leaves the edit as it
+                    // is, but protected: saving would replace that History for good.
+                    let catalog = l.session.catalog();
+                    let unreadable = match catalog.load_history(photo) {
+                        Ok(Some(history)) => {
+                            self.document.edit.restore_history(history);
+                            None
+                        }
+                        Ok(None) => catalog
+                            .has_history(photo)
+                            .unwrap_or(true)
+                            .then(|| "Its History is from a newer RAWmakase".to_string()),
+                        Err(e) => Some(format!("{e:#}")),
+                    };
                     self.document.edit.save_state_mut().saved();
                     self.document.lightroom_notice.clear();
+                    if let Some(why) = unreadable {
+                        let why = format!("{why}; edit protected");
+                        self.document.edit.save_state_mut().protect(why.clone());
+                        self.document.lightroom_notice = why;
+                    }
                     // Masks made from a selection are read from the catalog now. One
                     // that cannot be leaves the edit and its History as they are, but
                     // protected: saving it would lose the mask for good.

@@ -6,6 +6,12 @@ struct Tag {
     count: usize,
     bytes: Vec<u8>,
 }
+/// A profile's dynamic range, from `ProfileDynamicRange`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DynamicRange {
+    Standard,
+    High,
+}
 struct Dcp {
     tags: BTreeMap<u16, Tag>,
     little: bool,
@@ -150,6 +156,47 @@ impl Dcp {
             std::array::from_fn(|j| a[i * 3 + j])
         }))
     }
+    /// `ProfileDynamicRange` (tag 52551): eight bytes in the file's byte order, a
+    /// version (1), the profile's dynamic range (0 standard, 1 high) and a float hint
+    /// of the brightest output the profile is made for, where 0 gives none. Without
+    /// the tag a profile is standard dynamic range.
+    fn dynamic_range(&self) -> Result<DynamicRange> {
+        let Some(t) = self.tags.get(&52551) else {
+            return Ok(DynamicRange::Standard);
+        };
+        ensure!(
+            t.kind == 7 && t.count == 8,
+            "Invalid ProfileDynamicRange tag"
+        );
+        let u16at = |o: usize| {
+            let a = [t.bytes[o], t.bytes[o + 1]];
+            if self.little {
+                u16::from_le_bytes(a)
+            } else {
+                u16::from_be_bytes(a)
+            }
+        };
+        let version = u16at(0);
+        ensure!(
+            version == 1,
+            "Unsupported ProfileDynamicRange version {version}"
+        );
+        let hint: [u8; 4] = t.bytes[4..8].try_into()?;
+        let hint = if self.little {
+            f32::from_le_bytes(hint)
+        } else {
+            f32::from_be_bytes(hint)
+        };
+        ensure!(
+            hint.is_finite() && hint >= 0.,
+            "Invalid ProfileDynamicRange hint"
+        );
+        match u16at(2) {
+            0 => Ok(DynamicRange::Standard),
+            1 => Ok(DynamicRange::High),
+            other => anyhow::bail!("Unsupported profile dynamic range {other}"),
+        }
+    }
     fn table(&self, dims: u16, data: u16, encoding: u16) -> Result<Option<Table>> {
         if !self.tags.contains_key(&data) {
             return Ok(None);
@@ -183,8 +230,8 @@ pub fn from_bytes(b: &[u8]) -> Result<CameraProfile> {
         "Triple-illuminant profiles are not supported"
     );
     ensure!(
-        !d.tags.contains_key(&52551),
-        "HDR profiles are not supported"
+        d.dynamic_range()? == DynamicRange::Standard,
+        "HDR profiles are not supported yet"
     );
     ensure!(
         d.scalar(50941, 0.)? != 2.,
@@ -297,5 +344,73 @@ mod tests {
         assert!(super::d65_color_matrix(&dcp(4)).unwrap().is_some());
         assert!(super::d65_color_matrix(&dcp(21)).unwrap().is_some());
         assert!(super::d65_color_matrix(&dcp(255)).is_err());
+    }
+
+    /// A DCP holding only tag 52551 with `kind`, `bytes` and `count`, in either byte
+    /// order (the tag's own bytes are given as stored).
+    fn dynamic_range_dcp(little: bool, kind: u16, count: u32, bytes: &[u8]) -> Vec<u8> {
+        let u16b = |v: u16| {
+            if little {
+                v.to_le_bytes()
+            } else {
+                v.to_be_bytes()
+            }
+        };
+        let u32b = |v: u32| {
+            if little {
+                v.to_le_bytes()
+            } else {
+                v.to_be_bytes()
+            }
+        };
+        let mut b = if little {
+            b"II".to_vec()
+        } else {
+            b"MM".to_vec()
+        };
+        b.extend(u16b(0x4352));
+        b.extend(u32b(8));
+        b.extend(u16b(1));
+        b.extend(u16b(52551));
+        b.extend(u16b(kind));
+        b.extend(u32b(count));
+        b.extend(u32b(8 + 2 + 12 + 4));
+        b.extend(u32b(0));
+        b.extend(bytes);
+        b
+    }
+
+    /// ProfileDynamicRange is read in the file's byte order and checked as the DNG
+    /// specification lays it out; a zero hint is "no hint", not a ceiling.
+    #[test]
+    fn profile_dynamic_range_follows_the_files_byte_order_and_is_checked() {
+        use super::{Dcp, DynamicRange};
+        let read = |little, kind, count, bytes: &[u8]| {
+            Dcp::read(&dynamic_range_dcp(little, kind, count, bytes))
+                .unwrap()
+                .dynamic_range()
+        };
+        let hint = 4f32;
+        let mut be = vec![0, 1, 0, 1];
+        be.extend(hint.to_be_bytes());
+        assert_eq!(read(false, 7, 8, &be).unwrap(), DynamicRange::High);
+        let mut le = vec![1, 0, 0, 0];
+        le.extend(0f32.to_le_bytes());
+        assert_eq!(read(true, 7, 8, &le).unwrap(), DynamicRange::Standard);
+        // Read big-endian, these little-endian bytes are version 256.
+        let error = read(false, 7, 8, &le).unwrap_err().to_string();
+        assert!(error.contains("version 256"), "{error}");
+        let mut range = vec![1, 0, 2, 0];
+        range.extend(0f32.to_le_bytes());
+        assert!(read(true, 7, 8, &range).is_err());
+        let mut negative = vec![1, 0, 1, 0];
+        negative.extend((-1f32).to_le_bytes());
+        assert!(read(true, 7, 8, &negative).is_err());
+        let mut nan = vec![1, 0, 1, 0];
+        nan.extend(f32::NAN.to_le_bytes());
+        assert!(read(true, 7, 8, &nan).is_err());
+        // The wrong type or length.
+        assert!(read(true, 1, 8, &le).is_err());
+        assert!(read(true, 7, 6, &le[..6]).is_err());
     }
 }
