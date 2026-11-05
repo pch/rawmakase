@@ -44,6 +44,8 @@ const GENERATION: i64 = 12;
 // 5: an edited JPEG, PNG or TIFF renders from the scene its rendering is of.
 // 6: Highlights, as `GENERATION` 6.
 const RASTER_GENERATION: i64 = 6;
+/// Thumbnails a prune deletes in one write.
+const PRUNE_STEP: usize = 256;
 /// The thumbnails' budget when none is set, in bytes.
 pub const DEFAULT_THUMBNAIL_BUDGET: u64 = 512 * 1024 * 1024;
 /// The thumbnails' budget every connection prunes to, in bytes
@@ -573,18 +575,31 @@ impl PreviewCache {
         self.db.execute_batch("PRAGMA incremental_vacuum(256);")?;
         Ok(())
     }
+    /// Drops the least recently used thumbnails until those left fit
+    /// `budget` bytes: the cache is read once, newest first, and the rest
+    /// deleted [`PRUNE_STEP`] at a time, each its own short write, so a large
+    /// cache cut down to a small budget neither takes time growing with the
+    /// square of its size nor keeps other connections waiting on one long
+    /// transaction.
     fn prune(&mut self, budget: i64) -> Result<()> {
-        loop {
-            let bytes: i64 = self.db.query_row(
-                "SELECT COALESCE(sum(length(jpeg)),0) FROM previews",
-                [],
-                |r| r.get(0),
-            )?;
-            if bytes <= budget {
-                break;
+        let over: Vec<String> = self
+            .db
+            .prepare(
+                "SELECT source_path FROM (SELECT source_path, sum(length(jpeg)) OVER (ORDER BY last_used DESC, source_path DESC) AS kept FROM previews) WHERE kept > ?1",
+            )?
+            .query_map([budget], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut delete = self
+            .db
+            .prepare("DELETE FROM previews WHERE source_path=?1")?;
+        for step in over.chunks(PRUNE_STEP) {
+            let tx = self.db.unchecked_transaction()?;
+            for path in step {
+                delete.execute([path])?;
             }
-            self.db.execute("DELETE FROM previews WHERE source_path IN (SELECT source_path FROM previews ORDER BY last_used,source_path LIMIT 32)",[])?;
+            tx.commit()?;
         }
+        drop(delete);
         self.db.execute_batch("PRAGMA incremental_vacuum(256);")?;
         Ok(())
     }
@@ -736,6 +751,32 @@ mod tests {
                 .prepare("SELECT * FROM precious")
                 .is_ok()
         );
+        Ok(())
+    }
+    /// A prune keeps the most recently used thumbnails that fit the budget,
+    /// and drops every one used before them, whatever their number.
+    #[test]
+    fn a_prune_keeps_the_newest_that_fit() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let mut cache = PreviewCache::open(&d.path().join("previews.sqlite3"))?;
+        for n in 0..3000i64 {
+            cache.db.execute(
+                "INSERT INTO previews VALUES(?1,0,'0','',0,1,1,zeroblob(100),?2)",
+                params![format!("{n}.ARW"), n],
+            )?;
+        }
+        cache.prune(100 * 1000 + 50)?;
+        let kept: Vec<i64> = cache
+            .db
+            .prepare("SELECT last_used FROM previews ORDER BY last_used")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        assert_eq!(kept, (2000..3000).collect::<Vec<_>>());
+        cache.prune(0)?;
+        let left: i64 = cache
+            .db
+            .query_row("SELECT count(*) FROM previews", [], |r| r.get(0))?;
+        assert_eq!(left, 0);
         Ok(())
     }
     fn photo(d: &tempfile::TempDir) -> Result<(PathBuf, PreviewCache)> {
