@@ -259,6 +259,21 @@ impl Editor {
             _ => return,
         }
         let palette = theme::palette(ui.ctx());
+        // The chosen aspect is the lock; `view.aspect` is read from the photo only
+        // once it is decoded.
+        let locked = self.view.chosen_aspect != 0.;
+        // Unlocked, the menu still names the crop's own ratio, as Lightroom shows
+        // Custom beside its open padlock.
+        let shown = if locked {
+            self.view.aspect
+        } else {
+            self.crop_frame().map_or(0., |photo| {
+                crate::app::develop::tools::crop_tool::crop_aspect_shown(
+                    self.document.edit.recipe().crop,
+                    photo,
+                )
+            })
+        };
         let mut action = None;
         let mut chosen = None;
         let mut guides = self.view.crop_guides;
@@ -276,10 +291,13 @@ impl Editor {
                 egui::FontId::proportional(text::LABEL),
             );
             control_row(ui, "Aspect", |ui| {
-                let w = ui.available_width() - CROP_CONTROL - 4.;
+                let w = ui.available_width() - 2. * (CROP_CONTROL + 4.);
+                if aspect_lock(ui, locked).clicked() {
+                    action = Some(CropAction::ToggleLock);
+                }
                 egui::ComboBox::from_id_salt("crop-aspect")
                     .width(w)
-                    .selected_text(aspect_name(self.view.aspect))
+                    .selected_text(aspect_name(shown))
                     .show_ui(ui, |ui| {
                         for (aspect, name, _) in ASPECTS {
                             if ui
@@ -430,6 +448,7 @@ impl Editor {
         }
         match action {
             Some(CropAction::Swap) => self.swap_crop_orientation(),
+            Some(CropAction::ToggleLock) => self.toggle_aspect_lock(),
             Some(CropAction::AutoStraighten) => self.start_auto_straighten(),
             None => {}
         }
@@ -742,6 +761,7 @@ impl Editor {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CropAction {
     Swap,
+    ToggleLock,
     AutoStraighten,
 }
 
@@ -999,6 +1019,29 @@ pub(in crate::app) const DRAWER_TOOLS: [(Tool, &str, &str); 4] = [
 pub(in crate::app) const DRAWER_LABEL_COLUMN: f32 = 68.;
 /// The height of the Crop drawer's controls, centred in their 26 pt rows.
 const CROP_CONTROL: f32 = 22.;
+/// The Crop aspect's padlock, a button: closed while drags keep the crop's aspect,
+/// open while it is Free. Clicking it, or A, locks or unlocks it.
+fn aspect_lock(ui: &mut egui::Ui, locked: bool) -> egui::Response {
+    let (icon, label, hint) = if locked {
+        (Icon::AspectLocked, "Aspect locked", "Unlock aspect · A")
+    } else {
+        (Icon::AspectUnlocked, "Aspect unlocked", "Lock aspect · A")
+    };
+    // Selected while locked, as the Ruler button is while armed: the shackle alone
+    // is too small a difference to see.
+    let response = ui.add_sized(
+        [CROP_CONTROL, CROP_CONTROL],
+        egui::Button::new("").selected(locked),
+    );
+    let ink = if locked {
+        ui.visuals().selection.stroke.color
+    } else {
+        ui.style().interact(&response).fg_stroke.color
+    };
+    icons::paint_at(ui.painter(), icon, response.rect.center(), 14., ink);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    response.on_hover_text(hint)
+}
 /// A Crop drawer button showing `icon`, `width` wide.
 fn crop_icon_button(ui: &mut egui::Ui, icon: Icon, width: f32) -> egui::Response {
     let response = ui.add_sized([width, CROP_CONTROL], egui::Button::new(""));

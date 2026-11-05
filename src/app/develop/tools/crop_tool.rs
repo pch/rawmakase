@@ -413,7 +413,8 @@ impl crate::app::Editor {
         r.crop = swap_orientation(r.crop, photo);
         self.view.aspect = swapped_aspect(self.view.aspect, photo);
     }
-    /// The Crop tool's keys: X swaps the crop's orientation, O cycles the guide overlay
+    /// The Crop tool's keys: X swaps the crop's orientation, A locks or unlocks its
+    /// aspect, O cycles the guide overlay
     /// and Shift+O turns it. The caller leaves them alone while a text field has focus.
     pub(in crate::app) fn crop_keys(&mut self, i: &egui::InputState) {
         // The modifiers held with each key press, which a quick release of Shift
@@ -433,6 +434,7 @@ impl crate::app::Editor {
             }
             match key {
                 egui::Key::X if !modifiers.shift => self.swap_crop_orientation(),
+                egui::Key::A if !modifiers.shift => self.toggle_aspect_lock(),
                 egui::Key::O => {
                     let mut guides = self.view.crop_guides;
                     if modifiers.shift {
@@ -456,6 +458,30 @@ impl crate::app::Editor {
             self.view.chosen_aspect = aspect;
             let _ = self.save_session();
         }
+    }
+    /// The padlock (A): unlocks the aspect, as choosing Free does, or locks the crop at
+    /// the ratio it has now. A ratio the menu has (Original, or a preset either way
+    /// round) is then the chosen aspect, as if picked from the menu. A Custom ratio is
+    /// locked on this photo only, with Original as the choice: the session has no name
+    /// for it, and an uncropped photo opening locked is then left uncropped rather than
+    /// cropped to a ratio from another photo.
+    pub(in crate::app) fn toggle_aspect_lock(&mut self) {
+        if self.view.chosen_aspect != 0. {
+            self.choose_aspect(0.);
+            return;
+        }
+        let Some(photo) = self.crop_frame() else {
+            return;
+        };
+        let shown = crop_aspect_shown(self.document.edit.recipe().crop, photo);
+        let chosen = crate::app::develop::panels::inspector::ASPECTS
+            .iter()
+            .map(|(a, ..)| *a)
+            .find(|a| *a == shown || (*a > 0. && 1. / *a == shown))
+            .unwrap_or(-1.);
+        self.view.aspect = shown;
+        self.view.chosen_aspect = chosen;
+        let _ = self.save_session();
     }
     /// Changes the guide overlay, saved in the session as a view preference.
     pub(in crate::app) fn set_crop_guides(&mut self, guides: CropGuides) {

@@ -742,3 +742,60 @@ fn free_stays_unlocked_after_a_relaunch() -> anyhow::Result<()> {
     assert_eq!(relaunched.document.edit.recipe().crop, [0., 0., 0.75, 1.]);
     Ok(())
 }
+
+#[test]
+fn a_and_the_padlock_lock_the_crop_at_its_ratio_and_unlock_it() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_for_crop_drags(&ctx, "free");
+    editor.document.edit.setup_mut().crop = [0., 0., 0.75, 1.];
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    viewport_frame(&ctx, &mut editor, vec![]);
+    let steps = editor.document.edit.history().steps().0.len();
+    let press_a = |editor: &mut Editor| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::A,
+                    physical_key: Some(egui::Key::A),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            },
+            |_| {
+                let frame = editor.begin_edit_frame();
+                editor.develop_shortcuts(&ctx);
+                editor.finish_edit_frame(frame, &ctx);
+            },
+        );
+        output.textures_delta.clear();
+    };
+    // Locking a Custom crop keeps that ratio on this photo, with Original the choice
+    // an uncropped photo opens with; the crop itself is not changed.
+    press_a(&mut editor);
+    assert_near(
+        editor.crop_constraint().expect("locked"),
+        0.75,
+        "locked ratio",
+    );
+    assert_eq!(editor.view.chosen_aspect, -1.);
+    assert_eq!(editor.document.edit.recipe().crop, [0., 0., 0.75, 1.]);
+    assert_eq!(editor.document.edit.history().steps().0.len(), steps);
+    drag_crop_handle(&ctx, &mut editor, 7, egui::vec2(0., -0.2));
+    let c = editor.document.edit.recipe().crop;
+    assert_near((c[2] - c[0]) / (c[3] - c[1]), 0.75, "ratio after the drag");
+    // A again unlocks, as Free does.
+    press_a(&mut editor);
+    assert_eq!(editor.crop_constraint(), None);
+    assert_eq!(editor.view.chosen_aspect, 0.);
+    // A crop at a preset, either way round, locks to that preset as the menu would.
+    // 150 × 200 is 3 x 4 turned (the photo is landscape).
+    editor
+        .document
+        .edit
+        .change(None, |r| r.crop = [0., 0., 0.5, 1.]);
+    press_a(&mut editor);
+    assert_eq!(editor.view.chosen_aspect, 4. / 3.);
+    assert_eq!(editor.view.aspect, 3. / 4.);
+}
