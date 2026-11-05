@@ -77,6 +77,20 @@ property list, which the SD9 and SD10 write instead. It is none when a section
 holding them can't be read, so what a file still being copied hides is read
 again later, and only the properties asked for are decoded.
 
+`preview_from_file(file, edge)` reads a RAW's preview for a thumbnail `edge`
+pixels on its long side without the rest of the file, for Library thumbnails
+on network volumes. Unlike the reads above, it gives the existing readers a
+buffer the file's size, filled only where read: the file's start and end, each
+preview candidate's start up to its JPEG frame header, at which the file is
+opened again (NEF's reader sizes its previews from their frames), then the
+preview chosen. A reader can't tell zeros not read from the file's own, so
+it is used only for the variants whose previews read this way matched the
+whole-file ones (`partial::checked`), and a preview smaller than `edge` is
+none. In either case, and whenever a part needed isn't found, the caller
+reads the whole file.
+The ignored test `real_files_give_the_same_preview_read_in_pieces` compares
+the two reads on a folder of RAWs; it is how a variant is added.
+
 Modules, each with a small `pub(crate)` surface:
 
 | Module | Owns |
@@ -84,6 +98,7 @@ Modules, each with a small `pub(crate)` surface:
 | `io` | Bounded byte reads, in memory or in pieces of the file, and the allocation limits |
 | `exif_tiffs` | Where a CR3, MRW or X3F keeps its camera's EXIF, read from the file's pieces (`exif_tiffs`) |
 | `captured` | Capture dates read from a file's pieces, by container (`capture_dates`) |
+| `partial` | A thumbnail's embedded preview read in pieces, for the variants checked against whole-file reads (`preview_from_file`) |
 | `codec/` | Decoders from bytes to samples, knowing no container or camera: bit pumps, JPEG Huffman codes, the parallel decoding of one stream of prefix codes (`speculative`), lossless JPEG, DNG's JPEG XL tiles, Nikon's Huffman-coded data and small RAWs, Nikon High Efficiency (JPEG XS), Panasonic's blocks and strips, Sony's codings, Fujifilm's compressed stripes, Canon's CRX, Olympus's coding, packed samples, Pentax's Huffman-coded differences, Samsung's codings, Canon's CRW blocks, Phase One's IIQ rows, Hasselblad's pairs |
 | `container/` | Probing and structure per container family: where the sensor data, previews and maker notes are (`tiff`, `dng`, `nef`, `rw2`, `arw`, `raf`, `cr3`, `orf`, `pef`, `srw`, `erf`, `cr2`, `headerless`, `ciff`, `iiq`, `fff`, `mos`, `sti`, `brcm`, `mrw`, `dcs`, `kdc`; `x3f` for its EXIF, capture dates and property list alone) |
 | `vendor/` | Per-maker rules: what a maker's own tags and maker notes mean (white balance, presets, lens, crops, levels) and their decryption (`nikon`, `panasonic`, `sony`, `fujifilm`, `canon_cr3`, `olympus`, `pentax`, `samsung`, `epson`, `canon`, `phase_one`, `hasselblad`, `leaf`) |
