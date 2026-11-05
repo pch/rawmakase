@@ -708,6 +708,17 @@ pub fn thumbnail_reaching(raw: &mut Raw, edge: u32) -> anyhow::Result<image::Rgb
     let bytes = raw.thumbnail_reaching(edge)?;
     preview_image(bytes, raw.metadata.flip)
 }
+/// [`thumbnail_reaching`]'s thumbnail of the RAW at `path`, read without its
+/// sensor data (see [`rawmakase_raw::preview_from_file`]). An error when the
+/// file can't be read that way; the caller then opens it whole.
+pub fn thumbnail_reaching_from_file(path: &Path, edge: u32) -> anyhow::Result<image::RgbImage> {
+    // Unbuffered: each piece is read whole, and a buffer would read past it.
+    let mut file = std::fs::File::open(path)?;
+    let partial = rawmakase_raw::preview_from_file(&mut file, edge).ok_or_else(|| {
+        anyhow::anyhow!("No embedded preview found without reading the whole file")
+    })?;
+    preview_image(partial.preview, partial.info.flip)
+}
 /// The most pixels a JPEG XL preview may claim: a 100-megapixel camera's.
 /// Its header is read before any pixel, so a hostile one is refused before
 /// the image is allocated.
