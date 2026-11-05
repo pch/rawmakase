@@ -6,6 +6,8 @@ pub(crate) enum Action {
     NewCatalog,
     OpenCatalog,
     AddFolder,
+    /// File › Import Photos…
+    ImportPhotos,
     Export,
     Close,
     Undo,
@@ -41,11 +43,12 @@ pub(crate) struct KeyEquivalent {
 
 impl Action {
     /// Every item, in the menus' order.
-    pub(crate) const ALL: [Self; 21] = [
+    pub(crate) const ALL: [Self; 22] = [
         Self::Preferences,
         Self::NewCatalog,
         Self::OpenCatalog,
         Self::AddFolder,
+        Self::ImportPhotos,
         Self::Export,
         Self::Close,
         Self::Undo,
@@ -74,12 +77,14 @@ impl Action {
     }
 
     /// The key equivalent the item had before its keys followed the key map:
-    /// the fixed ones, and Preferences, Export and Keyboard Shortcuts'.
+    /// the fixed ones, and Preferences, Import Photos, Export and Keyboard
+    /// Shortcuts'.
     pub(crate) fn native_key_equivalent(self) -> Option<KeyEquivalent> {
         let (key, shift) = match self {
             Self::Preferences => (",", false),
             Self::OpenCatalog => ("o", false),
             Self::AddFolder => ("o", true),
+            Self::ImportPhotos => ("i", true),
             Self::Export => ("e", true),
             Self::Close => ("w", false),
             Self::Undo => ("z", false),

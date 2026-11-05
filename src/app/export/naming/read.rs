@@ -383,6 +383,65 @@ fn read_file(photo: &ToRead) -> Result<FileFields, String> {
     })
 }
 
+/// What names take from the photo at `path` that no catalog has yet (Import
+/// Photos' scan of a card): everything [`read_file`] reads, with its own
+/// title, caption, copyright and creator, its capture time as the catalog's
+/// backfill reads it (EXIF, else the RAW container) and its photo info. A
+/// file that can't be opened now is an error; one whose info can't be made
+/// out still gives the rest, as Add Folder still adds it.
+pub(in crate::app) fn read_new_photo(path: &std::path::Path) -> Result<NameFields, String> {
+    let read = read_file(&ToRead {
+        path: path.to_path_buf(),
+        standalone: false,
+        descriptive: true,
+    })?;
+    let mut fields = NameFields::default();
+    fill(&mut fields, read, false);
+    // What the catalog will have of it once added, as Add Folder reads it:
+    // its rating, label and keywords from its sidecar or its own XMP.
+    if let Some(xmp) = crate::catalog_session::read_file_metadata(path).0 {
+        fields.rating = xmp.rating.unwrap_or(0);
+        fields.label = xmp.label.unwrap_or_default();
+        let mut keywords: Vec<String> = xmp
+            .keywords
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|path| path.last().cloned())
+            .collect();
+        // By name, as Lightroom lists them, each once.
+        keywords.sort_by_cached_key(|k| (k.to_lowercase(), k.clone()));
+        keywords.dedup();
+        fields.keywords = keywords.join(", ");
+    }
+    fields.captured = crate::catalog_session::file_capture_time(path);
+    fields.info = crate::catalog_session::file_photo_info(path)
+        .flatten()
+        .unwrap_or_default();
+    Ok(fields)
+}
+
+#[cfg(test)]
+mod new_photo_tests {
+    #[test]
+    fn a_new_photo_names_by_the_rating_label_and_keywords_its_files_give() -> anyhow::Result<()> {
+        let d = tempfile::tempdir()?;
+        let photo = d.path().join("A.jpg");
+        image::RgbImage::new(4, 4).save(&photo)?;
+        std::fs::write(
+            d.path().join("A.jpg.xmp"),
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmp:Rating="5" xmp:Label="Red">
+<dc:subject><rdf:Bag><rdf:li>Zebra</rdf:li><rdf:li>apple</rdf:li></rdf:Bag></dc:subject>
+</rdf:Description></rdf:RDF></x:xmpmeta>"#,
+        )?;
+        let fields = super::read_new_photo(&photo).map_err(anyhow::Error::msg)?;
+        assert_eq!(fields.rating, 5);
+        assert_eq!(fields.label, "Red");
+        assert_eq!(fields.keywords, "apple, Zebra");
+        Ok(())
+    }
+}
+
 /// For tests: the real reader.
 #[cfg(test)]
 pub(in crate::app) fn read_path(

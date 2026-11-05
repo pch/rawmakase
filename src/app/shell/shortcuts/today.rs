@@ -83,7 +83,7 @@ pub(super) const STACKS: [Shortcut; 4] = [
     ("S", "Collapse / expand the stack"),
     ("Shift+S", "Move to the top of the stack"),
 ];
-pub(super) const GENERAL: [Shortcut; 13] = [
+pub(super) const GENERAL: [Shortcut; 14] = [
     ("G", "Library"),
     ("D", "Develop"),
     ("Tab", "Hide / show the side panels"),
@@ -95,6 +95,7 @@ pub(super) const GENERAL: [Shortcut; 13] = [
     ("F7 / F8 / F6", "Left panel / right panel / filmstrip"),
     ("Shift+F8", "Fold / open Presets and History"),
     ("Cmd+'", "Create virtual copy"),
+    ("Cmd+Shift+I", "Import photos from a card or folder"),
     ("Cmd+,", "Preferences"),
     ("Cmd+/", "These shortcuts"),
 ];

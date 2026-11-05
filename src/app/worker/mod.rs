@@ -148,6 +148,20 @@ pub(crate) enum Event {
             >,
         >,
     ),
+    /// Import Photos' attached drives, for dialog `.0` (see
+    /// `app::file_ops::import`).
+    ImportVolumes(u64, Vec<crate::app::file_ops::Drive>),
+    /// Import Photos' scan of its source finished, or failed.
+    ImportScanned(Box<crate::app::file_ops::ImportScanned>),
+    /// One of the scan's photos' thumbnails.
+    ImportThumbnail(Box<crate::app::file_ops::ImportThumbnail>),
+    /// A plan of Import Photos' choices.
+    ImportPlanned(Box<crate::app::file_ops::ImportPlanned>),
+    /// Import Photos' run `.0` ended, its thread's report of it.
+    ImportDone(
+        u64,
+        Box<Result<crate::catalog::file_ops::ImportOutcome, String>>,
+    ),
     /// A file operation's run ended, its thread's report of it.
     FileOpDone(
         crate::catalog::file_ops::BatchId,

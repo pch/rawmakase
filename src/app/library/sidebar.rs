@@ -533,6 +533,15 @@ impl Library {
                     {
                         action = Action::AddFolder;
                     }
+                            if add_row(ui, "Import Photos…")
+                        .on_hover_text(
+                            "Copy photos from a card or folder into the library, and add them \
+                             to this catalog.",
+                        )
+                        .clicked()
+                    {
+                        action = Action::ImportPhotos;
+                    }
                         });
                         section(ui, "Collections", |ui| {
                             let tree = &trees.collections;

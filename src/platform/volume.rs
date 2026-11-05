@@ -458,6 +458,73 @@ fn startup_name() -> String {
     })
     .clone()
 }
+/// The drives attached besides the startup disk, as Import Photos offers
+/// them as sources: macOS's folders in /Volumes (the startup disk's entry
+/// there is a link), Linux's mounts below /media and /run/media, and
+/// Windows' removable drives. Only names are read, never the drives
+/// themselves, so a stalled network mount among them doesn't block; still,
+/// call it off the UI thread.
+pub(crate) fn attached() -> Vec<Volume> {
+    let mut found = attached_mounts();
+    found.sort();
+    found.dedup();
+    found
+}
+#[cfg(target_os = "macos")]
+fn attached_mounts() -> Vec<Volume> {
+    let Ok(entries) = std::fs::read_dir("/Volumes") else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        // The entry's own type, from the listing: a link isn't followed.
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|e| Volume {
+            name: e.file_name().to_string_lossy().into_owned(),
+            mount: Some(e.path()),
+            id: None,
+        })
+        .collect()
+}
+#[cfg(target_os = "linux")]
+fn attached_mounts() -> Vec<Volume> {
+    let table = std::fs::read_to_string("/proc/self/mountinfo").unwrap_or_default();
+    parse_mountinfo(&table)
+        .into_iter()
+        .filter(|(point, _)| point.starts_with("/media") || point.starts_with("/run/media"))
+        .filter_map(|(point, _)| {
+            Some(Volume {
+                name: point.file_name()?.to_string_lossy().into_owned(),
+                mount: Some(point),
+                id: None,
+            })
+        })
+        .collect()
+}
+#[cfg(windows)]
+fn attached_mounts() -> Vec<Volume> {
+    use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
+    // GetDriveTypeW's DRIVE_REMOVABLE: card readers and USB sticks.
+    const REMOVABLE: u32 = 2;
+    // SAFETY: GetLogicalDrives takes nothing and returns a bit mask.
+    let drives = unsafe { GetLogicalDrives() };
+    (0..26u8)
+        .filter(|i| drives & (1 << i) != 0)
+        .filter_map(|i| {
+            let root = format!("{}:\\", char::from(b'A' + i));
+            let wide: Vec<u16> = root.encode_utf16().chain([0]).collect();
+            // SAFETY: `wide` is a NUL-terminated drive root.
+            let kind = unsafe { GetDriveTypeW(wide.as_ptr()) };
+            // Named as every drive letter is, by its label and letter, with
+            // the serial number that tells two disks at one letter apart.
+            (kind == REMOVABLE).then(|| volume_of(Path::new(&root)))
+        })
+        .collect()
+}
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+fn attached_mounts() -> Vec<Volume> {
+    Vec::new()
+}
 /// Free and total bytes on the volume holding `path`, from `df` on macOS and
 /// Linux; `None` where that isn't available.
 pub(crate) fn space(path: &Path) -> Option<(u64, u64)> {
@@ -479,6 +546,17 @@ pub(crate) fn space(path: &Path) -> Option<(u64, u64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_drives_attached_leave_out_the_startup_disk() {
+        let attached = attached();
+        assert!(attached.iter().all(|v| v.mount.is_some()));
+        assert!(
+            attached
+                .iter()
+                .all(|v| v.mount.as_deref() != Some(Path::new("/"))),
+            "{attached:?}"
+        );
+    }
     #[test]
     fn names_external_and_local_volumes() {
         let usb = volume_of(Path::new("/Volumes/Samsung USB/05 Pacific Highway"));

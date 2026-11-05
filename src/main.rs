@@ -368,6 +368,13 @@ fn main() -> Result<()> {
         .build_global()
         .ok();
     let a = Args::parse_from(&launch.arguments);
+    // Photos an interrupted Import Photos run adds when recovery finishes
+    // it, here or in a command that runs file operations, get the camera's
+    // EXIF and a RAW's own XMP read as every photo added does.
+    rawmakase::catalog::install_file_readers(
+        rawmakase::photo::camera_exif,
+        rawmakase::photo::raw_xmp,
+    );
     match a.command {
         Some(Command::Mcp { data_dir }) => mcp(data_dir)?,
         Some(Command::Control(cli)) => rawmakase_ctl::run(cli).map_err(anyhow::Error::msg)?,
