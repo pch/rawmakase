@@ -10,6 +10,7 @@ use anyhow::{Result, ensure};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 const APP_ID: i64 = 0x4f4d5052;
@@ -43,7 +44,26 @@ const GENERATION: i64 = 12;
 // 5: an edited JPEG, PNG or TIFF renders from the scene its rendering is of.
 // 6: Highlights, as `GENERATION` 6.
 const RASTER_GENERATION: i64 = 6;
-const LIMIT: i64 = 512 * 1024 * 1024;
+/// The thumbnails' budget when none is set, in bytes.
+pub const DEFAULT_THUMBNAIL_BUDGET: u64 = 512 * 1024 * 1024;
+/// The thumbnails' budget every connection prunes to, in bytes
+/// ([`set_thumbnail_budget`]).
+static THUMBNAIL_BUDGET: AtomicU64 = AtomicU64::new(DEFAULT_THUMBNAIL_BUDGET);
+/// Sets how many bytes of Library thumbnails the cache keeps, the least
+/// recently used going first (Preferences > Performance > Thumbnail cache). It
+/// holds for every connection of this process, from its next prune: when it
+/// is opened, and every 32 thumbnails stored. Standard and 1:1 previews keep
+/// their own budgets.
+pub fn set_thumbnail_budget(bytes: u64) {
+    THUMBNAIL_BUDGET.store(bytes, Ordering::Relaxed);
+}
+/// The budget [`set_thumbnail_budget`] set.
+pub fn thumbnail_budget() -> u64 {
+    THUMBNAIL_BUDGET.load(Ordering::Relaxed)
+}
+fn budget() -> i64 {
+    i64::try_from(thumbnail_budget()).unwrap_or(i64::MAX)
+}
 // 2: the one engine, as `GENERATION` 3.
 // 3: highlight recovery, as `GENERATION` 4.
 // 4: OpcodeList3 GainMaps, as `GENERATION` 5.
@@ -173,7 +193,7 @@ impl PreviewCache {
             writes: 0,
             sized_writes: 0,
         };
-        cache.prune(LIMIT)?;
+        cache.prune(budget())?;
         for kind in PreviewKind::ALL {
             cache.prune_sized(kind, kind.budget())?;
         }
@@ -258,7 +278,7 @@ impl PreviewCache {
         self.db.execute("INSERT INTO previews VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(source_path) DO UPDATE SET source_size=excluded.source_size,modified_ns=excluded.modified_ns,prefix_hash=excluded.prefix_hash,generation=excluded.generation,width=excluded.width,height=excluded.height,jpeg=excluded.jpeg,last_used=excluded.last_used",params![tagged(path, tag),stamp.size as i64,stamp.modified_ns.to_string(),"",generation(path),image.width(),image.height(),jpeg,now()])?;
         self.writes += 1;
         if self.writes.is_multiple_of(32) {
-            self.prune(LIMIT)?;
+            self.prune(budget())?;
         }
         Ok(())
     }
