@@ -1563,12 +1563,17 @@ fn lightroom_15_controls_at_rest_are_not_reported() -> Result<()> {
     let (r, w) = convert_develop(text, &crate::camera_data::Metadata::default(), &[], None)?;
     assert!(w.is_empty(), "{w:?}");
     assert_eq!(r.exposure, 0.5);
-    // Active, they are still reported.
-    for active in ["Glow = 20", "HDREditMode = 1"] {
-        let text = format!("s = {{ {active}, GlowRange = 50, HDRMaxValue = 2.3 }}");
-        let (_, w) = convert_develop(&text, &crate::camera_data::Metadata::default(), &[], None)?;
-        assert!(!w.is_empty(), "{active}");
-    }
+    // An active Glow is still reported.
+    let text = "s = { Glow = 20, GlowRange = 50, HDRMaxValue = 2.3 }";
+    let (_, w) = convert_develop(text, &crate::camera_data::Metadata::default(), &[], None)?;
+    assert!(!w.is_empty());
+    // HDR on is refused outright: rendered without it, the edit would be SDR.
+    let text = "s = { Exposure2012 = 0.5, HDREditMode = 1, HDRMaxValue = 5 }";
+    let error = convert_develop(text, &crate::camera_data::Metadata::default(), &[], None)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("HDR"), "{error}");
     // HDR values set while HDR is off are kept, so switching it on restores them.
     let text = "s = { Exposure2012 = 0.5, HDREditMode = 0, HDRMaxValue = 3.5, SDRBrightness = 20, SDRBlend = -40 }";
     let (r, w) = convert_develop(text, &crate::camera_data::Metadata::default(), &[], None)?;

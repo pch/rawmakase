@@ -704,7 +704,7 @@ pub const HDR_MAX_VALUE: Slider = Slider {
     group: HighDynamicRange,
 };
 /// The SDR rendition's sliders (-100 to +100), in the order of
-/// [`crate::model::hdr::SdrRendition::fields`].
+/// [`crate::model::hdr::SdrRendition::values`].
 pub const SDR_RENDITION: [Slider; 7] = [
     Slider {
         key: "SDRBrightness",

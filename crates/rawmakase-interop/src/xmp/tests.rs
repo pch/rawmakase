@@ -2403,7 +2403,7 @@ fn unreadable_filter_settings_are_refused() -> Result<()> {
 /// Camera Raw 18.7's HDR settings: kept while HDR is off and written back as Camera
 /// Raw writes them; a limit or SDR slider outside its range reads as Camera Raw
 /// renders it (the default limit, 0); HDR on is refused, strictly and leniently, while
-/// RAWmakase can't render it, keeping the base recipe's HDR settings.
+/// RAWmakase can't render it.
 #[test]
 fn hdr_settings_are_kept_while_off_and_refused_on() {
     use crate::model::settings_groups::{GroupInclusion, GroupSelection, SettingGroup};
@@ -2455,14 +2455,13 @@ fn hdr_settings_are_kept_while_off_and_refused_on() {
         .unwrap();
     assert!(reset.hdr.is_default());
 
-    // HDR on: refused, and leniently the other settings apply with a warning while
-    // the base's HDR settings stay as they were.
+    // HDR on: refused strictly and leniently alike, never rendered as SDR.
     let on = xml(&attrs.replace("HDREditMode=\"0\"", "HDREditMode=\"1\""), "");
     let p = parse(Path::new("on.xmp"), &on).unwrap();
     let error = p.apply(&Recipe::default(), &m, &[], None).unwrap_err();
     assert!(error.to_string().contains("HDR"), "{error}");
-    let (lenient, warnings) = p.apply_lenient(&Recipe::default(), &m, &[], None).unwrap();
-    assert_eq!(lenient.exposure, 0.5);
-    assert!(lenient.hdr.is_default());
-    assert!(warnings.iter().any(|w| w.contains("HDR")), "{warnings:?}");
+    let error = p
+        .apply_lenient(&Recipe::default(), &m, &[], None)
+        .unwrap_err();
+    assert!(error.to_string().contains("HDR"), "{error}");
 }
