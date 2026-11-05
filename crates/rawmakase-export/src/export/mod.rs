@@ -166,4 +166,6 @@ pub fn stage(
 }
 
 #[cfg(test)]
+mod srgb_fixtures;
+#[cfg(test)]
 mod tests;
