@@ -363,6 +363,13 @@ impl Editor {
                     from.max.lerp(target.max, ease),
                 )
             }
+            // Zoomed in, the photo sits on whole screen pixels: at 1.5x scaling a
+            // pointer step is a pixel and a half, and a photo drawn between
+            // pixels softens every other frame of a drag.
+            None if self.view.zoom.on => {
+                let snap = |v: f32| (v * ppp).round() / ppp;
+                target.translate(Pos2::new(snap(target.min.x), snap(target.min.y)) - target.min)
+            }
             None => target,
         };
         self.view.shown_rect = Some(rect);
