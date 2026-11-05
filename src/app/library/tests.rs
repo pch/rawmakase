@@ -1530,6 +1530,24 @@ fn thumbnail_requests_are_not_repeated_while_pending_or_failed() -> Result<()> {
     assert!(library.texture(&library.session.photos()[0]).is_some());
     Ok(())
 }
+/// The views publish what they showed last frame before asking for this
+/// frame's thumbnails: one shown for the first time is made, not skipped by
+/// a worker that takes it before the next frame publishes it.
+#[test]
+fn a_thumbnail_asked_for_in_its_first_frame_is_not_skipped() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF"])?;
+    let ctx = library.ctx.clone();
+    let path = library.session.photos()[0].path.clone();
+    library.cache.publish_shown();
+    library.cache.request_thumbnail(&path, &ctx);
+    let result = library
+        .cache
+        .thumb_rx
+        .recv_timeout(std::time::Duration::from_secs(5))?;
+    assert_eq!(result.path, path);
+    assert!(!result.skipped);
+    Ok(())
+}
 /// A thumbnail skipped because it was no longer shown isn't failed: shown
 /// again, it is asked for again.
 #[test]

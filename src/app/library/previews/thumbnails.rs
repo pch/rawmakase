@@ -95,6 +95,9 @@ pub(super) fn spawn_with(
                     if result_tx.send(skipped).is_err() {
                         break;
                     }
+                    // The UI clears it from what is pending and asks again
+                    // once it is shown, which takes a frame.
+                    ctx.request_repaint();
                     continue;
                 }
                 let (cache, open_error) = opened.get_or_insert_with(open);

@@ -308,11 +308,23 @@ impl PreviewTextures {
     }
     pub(super) fn request_thumbnail(&mut self, path: &Path, ctx: &egui::Context) {
         self.thumb_seen.insert(path.to_path_buf());
-        if !self.thumbs.contains_key(path)
-            && !self.pending.contains(path)
-            && !self.failed.contains(path)
-            && self.thumb_tx.try_send(path.to_path_buf()).is_ok()
+        if self.thumbs.contains_key(path)
+            || self.pending.contains(path)
+            || self.failed.contains(path)
         {
+            return;
+        }
+        // The files shown this frame are published only at the next: a
+        // worker taking this one before then makes it, not skips it.
+        if let Some(shown) = self
+            .thumb_shown
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_mut()
+        {
+            shown.insert(path.to_path_buf());
+        }
+        if self.thumb_tx.try_send(path.to_path_buf()).is_ok() {
             self.pending.insert(path.to_path_buf());
             self.progress.queued();
             ctx.request_repaint();
