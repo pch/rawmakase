@@ -69,7 +69,9 @@ pub use collections::{
     CollectionOptions, Member, MembershipChange, Position, RemovedCollections, SmartRules,
 };
 pub use db::assert_shape as assert_sql_shape;
-pub use defaults::{CameraExifReader, ImportOptions, MetadataDefaults, NewPhotoDefaults};
+pub use defaults::{
+    CameraExifReader, ImportOptions, MetadataDefaults, NewPhotoDefaults, install_file_readers,
+};
 pub use descriptive::MetadataSnapshot;
 pub use develop_history::{HistoryUpdate, SavedHistory, SavedStep};
 pub use editable_previews::{

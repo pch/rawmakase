@@ -383,7 +383,7 @@ pub(super) fn original_here(disk: &dyn Disk, m: &Member) -> bool {
 
 /// [`original_here`], as `proof` says: by its exact name alone where file
 /// ids don't stay.
-fn original_proven(disk: &dyn Disk, m: &Member, proof: Proof) -> bool {
+pub(super) fn original_proven(disk: &dyn Disk, m: &Member, proof: Proof) -> bool {
     let here = match (proof, m.id) {
         (Proof::Ids, Some(id)) => presence(disk, &m.source, id) == Presence::Here,
         (Proof::Ids, None) => false,
@@ -702,7 +702,7 @@ pub(super) fn undo_as(
 }
 
 /// Where a member's partial copy is.
-enum Partial {
+pub(super) enum Partial {
     /// Not there.
     Gone,
     /// There, at this name, and proven this run's.
@@ -715,7 +715,7 @@ enum Partial {
 /// spell it otherwise than it was given): by its journalled file object
 /// ([`copy_at`]); or, made but not journalled yet, the one such name, only
 /// while it is an empty plain file.
-fn partial(disk: &dyn Disk, m: &Member, temp: &Path, proofs: Proofs) -> Partial {
+pub(super) fn partial(disk: &dyn Disk, m: &Member, temp: &Path, proofs: Proofs) -> Partial {
     if proofs.copies == Proof::Names {
         return partial_named(disk, m, temp, proofs.since);
     }
@@ -778,7 +778,7 @@ fn partial_named(disk: &dyn Disk, m: &Member, temp: &Path, since: i64) -> Partia
 /// `proofs` says: by its file object ([`copy_at`]), or where names prove it
 /// by the name alone, holding the bytes copied. `Some(None)` when it isn't
 /// there, `None` when that can't be told.
-fn complete_at(
+pub(super) fn complete_at(
     disk: &dyn Disk,
     at: &Path,
     copy: &CopyRecord,

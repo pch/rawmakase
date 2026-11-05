@@ -118,7 +118,7 @@ fn the_editor_shows_tokens_by_their_labels_and_others_by_their_ids() {
     );
     assert_eq!(
         token("naming_importNumber_2Digit"),
-        Some(Token::Unsupported("Import #"))
+        Some(Token::ImportNumber(2))
     );
     assert_eq!(token("naming_sequenceNumber_Digit"), None);
     // Labels read in any case, and each names one token.
@@ -259,6 +259,37 @@ fn original_filename_is_the_name_at_import() {
     assert!(!template.needs().any());
     assert_eq!(template.to_display(), "{Original filename}");
     assert_eq!(template.to_lightroom(), "{{image_originalName}}");
+}
+
+/// Lightroom's Import #: the run's number, given only by Import Photos; in
+/// Rename and Export it is a note, and no menu of theirs offers it.
+#[test]
+fn import_number_is_import_photos_own() {
+    let imported = NameFields {
+        import_number: Some(7),
+        ..NameFields::default()
+    };
+    let named = |tokens: &str, f: &NameFields| name(tokens, f, "");
+    assert_eq!(named("{{naming_importNumber_3Digits}}", &imported).0, "007");
+    assert_eq!(named("x{{naming_importNumber_1Digit}}", &imported).0, "x7");
+    assert_eq!(
+        named("x{{naming_importNumber_2Digits}}", &NameFields::default()),
+        (
+            "x".into(),
+            vec!["Import # is given only by Import Photos".into()]
+        )
+    );
+    let template = TokenTemplate::parse("{{naming_importNumber_4Digits}}");
+    assert_eq!(template.to_lightroom(), "{{naming_importNumber_4Digits}}");
+    assert_eq!(template.to_display(), "{Import # (0001)}");
+    assert!(!super::menu(super::Menu::Numbering).any(|d| d.label.starts_with("Import #")));
+    assert_eq!(super::import_menu(super::Menu::Numbering).count(), 5);
+    assert_eq!(
+        super::import_menu(super::Menu::Custom)
+            .map(|d| d.label)
+            .collect::<Vec<_>>(),
+        ["Shoot Name"]
+    );
 }
 
 /// The tokens filled from the file alone, the creators and the keywords,
@@ -449,7 +480,7 @@ fn what_a_photo_lacks_is_empty_and_said() {
         [
             "unknown file name token {{future}}",
             "not supported yet: Flash",
-            "not supported yet: Import # (001)",
+            "Import # is given only by Import Photos",
             "the template gave no name: named after the file",
         ]
     );

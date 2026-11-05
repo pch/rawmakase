@@ -32,6 +32,12 @@ pub enum Token {
     Sequence(u8),
     /// How many photos the export has, with at least this many digits.
     Total(u8),
+    /// The number of the Import Photos run that names the photo, with at
+    /// least this many digits (see [`super::NameFields::import_number`]).
+    ImportNumber(u8),
+    /// The Shoot Name typed in Import Photos (see
+    /// [`super::NameFields::shoot_name`]).
+    ShootName,
     /// A part of the capture date.
     Date(DatePart),
     Field(Field),
@@ -139,6 +145,16 @@ const fn def(id: &'static str, label: &'static str, token: Token, menu: Menu) ->
         menu: Some(menu),
     }
 }
+/// A token only Import Photos fills, which no menu of Rename or Export
+/// offers (see [`import_menu`]).
+const fn import_only(id: &'static str, label: &'static str, token: Token) -> Def {
+    Def {
+        id,
+        label,
+        token,
+        menu: None,
+    }
+}
 const fn unsupported(id: &'static str, label: &'static str) -> Def {
     Def {
         id,
@@ -235,11 +251,31 @@ pub const TOKENS: &[Def] = &[
         Token::Total(5),
         Menu::Numbering,
     ),
-    unsupported("naming_importNumber_1Digit", "Import # (1)"),
-    unsupported("naming_importNumber_2Digits", "Import # (01)"),
-    unsupported("naming_importNumber_3Digits", "Import # (001)"),
-    unsupported("naming_importNumber_4Digits", "Import # (0001)"),
-    unsupported("naming_importNumber_5Digits", "Import # (00001)"),
+    import_only(
+        "naming_importNumber_1Digit",
+        "Import # (1)",
+        Token::ImportNumber(1),
+    ),
+    import_only(
+        "naming_importNumber_2Digits",
+        "Import # (01)",
+        Token::ImportNumber(2),
+    ),
+    import_only(
+        "naming_importNumber_3Digits",
+        "Import # (001)",
+        Token::ImportNumber(3),
+    ),
+    import_only(
+        "naming_importNumber_4Digits",
+        "Import # (0001)",
+        Token::ImportNumber(4),
+    ),
+    import_only(
+        "naming_importNumber_5Digits",
+        "Import # (00001)",
+        Token::ImportNumber(5),
+    ),
     unsupported("naming_operationSequence_1Digit", "Image # (1)"),
     unsupported("naming_operationSequence_2Digits", "Image # (01)"),
     unsupported("naming_operationSequence_3Digits", "Image # (001)"),
@@ -490,7 +526,7 @@ pub const TOKENS: &[Def] = &[
         Token::CustomText,
         Menu::Custom,
     ),
-    unsupported("shoot_custom_token", "Shoot Name"),
+    import_only("shoot_custom_token", "Shoot Name", Token::ShootName),
 ];
 
 /// The token Lightroom's `id` stands for. Lightroom reads its numbering
@@ -513,14 +549,25 @@ pub(super) fn token(id: &str) -> Option<Token> {
         return Some(Token::Total(n));
     }
     let numbered = |prefix: &str, label: &'static str| digits(prefix).map(|_| label);
-    numbered("naming_importNumber_", "Import #")
-        .or_else(|| numbered("naming_operationSequence_", "Image #"))
-        .map(Token::Unsupported)
+    if let Some(n) = digits("naming_importNumber_") {
+        return Some(Token::ImportNumber(n));
+    }
+    numbered("naming_operationSequence_", "Image #").map(Token::Unsupported)
 }
 
 /// The token whose menu label is `label`, any case.
 pub fn by_label(label: &str) -> Option<&'static Def> {
     TOKENS.iter().find(|d| d.label.eq_ignore_ascii_case(label))
+}
+
+/// The tokens Import Photos' editor offers in `menu` besides [`menu`]'s:
+/// Import # in Numbering, Shoot Name in Custom, in order.
+pub fn import_menu(menu: Menu) -> impl Iterator<Item = &'static Def> {
+    TOKENS.iter().filter(move |d| match d.token {
+        Token::ImportNumber(_) => menu == Menu::Numbering,
+        Token::ShootName => menu == Menu::Custom,
+        _ => false,
+    })
 }
 
 /// The tokens a menu offers, in order.
@@ -767,6 +814,10 @@ impl TokenTemplate {
     pub fn uses_text(&self) -> bool {
         self.tokens().any(|t| t == Token::CustomText)
     }
+    /// Whether it takes Import Photos' Shoot Name.
+    pub fn uses_shoot(&self) -> bool {
+        self.tokens().any(|t| t == Token::ShootName)
+    }
     /// Whether it numbers photos from Start Number.
     pub fn uses_sequence(&self) -> bool {
         self.tokens().any(|t| matches!(t, Token::Sequence(_)))
@@ -852,6 +903,13 @@ impl TokenTemplate {
                 Token::Total(digits) => {
                     Some(format!("{:0width$}", at.total, width = usize::from(digits)))
                 }
+                Token::ImportNumber(digits) => match f.import_number {
+                    Some(number) => Some(format!("{number:0width$}", width = usize::from(digits))),
+                    None => {
+                        note("Import # is given only by Import Photos".into());
+                        None
+                    }
+                },
                 Token::Date(part) => match captured.as_ref().and_then(|c| c.part(part)) {
                     Some(value) => Some(value),
                     None if part.time() => {
@@ -875,6 +933,13 @@ impl TokenTemplate {
                     }
                     value
                 }
+                Token::ShootName => match f.shoot_name.as_deref().map(str::trim) {
+                    Some(shoot) => Some(shoot.to_string()),
+                    None => {
+                        note("Shoot Name is given only by Import Photos".into());
+                        None
+                    }
+                },
                 Token::CustomText => {
                     let text = text.trim();
                     // Lightroom's name for a custom text left empty.
@@ -1199,9 +1264,26 @@ pub const BUILTIN: [Builtin; 3] = [
     },
 ];
 
-/// The built-in template `tokens` is, if any.
+/// Lightroom's templates only its Import offers (its `specialClass`
+/// "import" naming presets), listed in Import Photos' File Renaming after
+/// the others Lightroom has, as Lightroom lists them.
+pub const IMPORT_BUILTIN: [Builtin; 2] = [
+    Builtin {
+        name: "Shoot Name - Original File Number",
+        tokens: "{{shoot_custom_token}}-{{image_filename_number_suffix}}",
+    },
+    Builtin {
+        name: "Shoot Name - Sequence",
+        tokens: "{{shoot_custom_token}}-{{naming_sequenceNumber_3Digits}}",
+    },
+];
+
+/// The built-in template `tokens` is, if any, Import's own included.
 pub fn builtin(tokens: &str) -> Option<&'static Builtin> {
-    BUILTIN.iter().find(|b| b.tokens == tokens)
+    BUILTIN
+        .iter()
+        .chain(&IMPORT_BUILTIN)
+        .find(|b| b.tokens == tokens)
 }
 
 #[cfg(test)]

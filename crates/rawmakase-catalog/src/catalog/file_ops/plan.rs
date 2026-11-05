@@ -230,7 +230,11 @@ pub(super) fn plan_with(
             let mut files = Files::new(catalog, &folders, disk);
             super::rename::items(&mut files, families, &by_id, &stems, &mut skipped)?
         }
-        Kind::RenameFolder | Kind::MoveFolder | Kind::MoveRoot | Kind::TrashFolder => Vec::new(),
+        Kind::RenameFolder
+        | Kind::MoveFolder
+        | Kind::MoveRoot
+        | Kind::TrashFolder
+        | Kind::ImportCopy => Vec::new(),
     };
     let mut summary = summarize(&items, &by_id, computers > 1);
     if kind == Kind::RenamePhotos {
@@ -324,14 +328,14 @@ fn tree_plan(
 }
 
 /// Seconds since 1970.
-fn now() -> i64 {
+pub(super) fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64)
 }
 
 /// A run's id: random, so two runs never share one.
-fn new_batch() -> anyhow::Result<BatchId> {
+pub(super) fn new_batch() -> anyhow::Result<BatchId> {
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes).map_err(|e| anyhow::anyhow!("{e}"))?;
     Ok(BatchId(bytes.iter().map(|b| format!("{b:02x}")).collect()))

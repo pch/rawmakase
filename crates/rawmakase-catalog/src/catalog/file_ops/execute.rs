@@ -93,7 +93,8 @@ pub(super) fn execute_with(
         | Kind::RenameFolder
         | Kind::MoveFolder
         | Kind::MoveRoot
-        | Kind::TrashFolder => {
+        | Kind::TrashFolder
+        | Kind::ImportCopy => {
             let lock = super::lock::acquire(catalog)?;
             super::recover::prune(catalog)?;
             let recovery = super::recover::run(catalog, disk, trash)?;
@@ -170,9 +171,12 @@ pub(super) fn execute_with(
                     run.files(catalog, &item, cancel)
                 }
                 // A folder rename, move or Trash has no photo items.
-                Kind::RenameFolder | Kind::MoveFolder | Kind::MoveRoot | Kind::TrashFolder => {
-                    Ok(())
-                }
+                // Nor does a plan import: imports run as `import` runs them.
+                Kind::RenameFolder
+                | Kind::MoveFolder
+                | Kind::MoveRoot
+                | Kind::TrashFolder
+                | Kind::ImportCopy => Ok(()),
             }
         };
         // A catalog that can't be written stops the run; what was
@@ -1321,7 +1325,7 @@ pub(super) fn complete(
         Subject::Tree(_) => return super::tree::complete(w, computer, disk, item),
         // Completed only by `tree_trash`, from its receipt read before the
         // transaction.
-        Subject::TrashTree(_) => {
+        Subject::TrashTree(_) | Subject::Import(_) => {
             return journal::set_state(
                 w,
                 item.id,
@@ -1361,7 +1365,8 @@ pub(super) fn complete(
             | Kind::RenameFolder
             | Kind::MoveFolder
             | Kind::MoveRoot
-            | Kind::TrashFolder => Some("not a photo operation".into()),
+            | Kind::TrashFolder
+            | Kind::ImportCopy => Some("not a photo operation".into()),
         },
     };
     let state = match reason {

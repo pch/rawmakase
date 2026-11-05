@@ -995,7 +995,8 @@ fn summary_of(outcome: &Outcome, verb: &Verb) -> String {
             | ItemResult::Renamed { .. }
             | ItemResult::FolderRenamed
             | ItemResult::FolderMoved
-            | ItemResult::Created { .. } => None,
+            | ItemResult::Created { .. }
+            | ItemResult::Imported => None,
             ItemResult::Unchanged(why) => Some(why.clone().unwrap_or_else(|| "unchanged".into())),
             ItemResult::NeedsRecovery(why) => Some(why.clone()),
             ItemResult::Kept => Some("kept as it is".into()),

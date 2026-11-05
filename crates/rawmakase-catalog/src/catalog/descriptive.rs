@@ -226,6 +226,43 @@ pub(super) fn keywords(db: &impl Reads, id: PhotoId) -> Result<Vec<Keyword>> {
     Ok(keywords)
 }
 
+/// What Import Photos' Apply During Import gives a photo it adds, in the
+/// transaction that adds it: `creator` and `copyright` replace what its
+/// files say (the camera's, a sidecar's), and `keywords` (paths, top first)
+/// are added to its own, as Lightroom applies them (measured in Lightroom
+/// Classic 2026). An empty field gives nothing.
+pub(super) fn apply_import(
+    w: &mut Write<'_>,
+    photo: PhotoId,
+    creator: &str,
+    copyright: &str,
+    keywords: &[Vec<String>],
+) -> Result<()> {
+    let (creator, copyright) = (creator.trim(), copyright.trim());
+    if !creator.is_empty() || !copyright.is_empty() {
+        let mut d = read(w, photo)?;
+        if !creator.is_empty() {
+            d.creator = Some(Value::Set(vec![creator.to_string()]));
+        }
+        if !copyright.is_empty() {
+            let slot = d.text_mut(TextField::Copyright);
+            let mut langs = match slot.take() {
+                Some(Value::Set(langs)) => langs,
+                _ => LangAlt::default(),
+            };
+            langs.0.retain(|(lang, _)| lang != DEFAULT_LANG);
+            langs.0.insert(0, (DEFAULT_LANG.into(), copyright.into()));
+            *slot = Some(Value::Set(langs));
+        }
+        write(w, photo, &d)?;
+    }
+    for path in keywords {
+        let keyword = super::keywords::typed_keyword(w, path)?;
+        apply(w, &[photo], keyword)?;
+    }
+    Ok(())
+}
+
 /// Gives `photo` `keyword`, unless it has it already; whether it did.
 pub(super) fn tag_photo(w: &mut Write<'_>, photo: PhotoId, keyword: i64) -> Result<bool> {
     Ok(w.execute(

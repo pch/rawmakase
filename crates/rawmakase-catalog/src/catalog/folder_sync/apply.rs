@@ -389,7 +389,11 @@ impl Catalog {
             }
             keep
         });
-        let (added, report) = self
+        let crate::catalog::ingest::Inserted {
+            added,
+            report,
+            importing,
+        } = self
             .insert(
                 Path::new(""),
                 files.to_vec(),
@@ -399,6 +403,10 @@ impl Catalog {
                 || true,
             )?
             .unwrap_or_default();
+        not_placed.extend(importing.into_iter().map(|path| NotChecked {
+            path,
+            reason: "being imported".into(),
+        }));
         Ok((added.len(), report, not_placed))
     }
 }

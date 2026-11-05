@@ -22,6 +22,9 @@ pub struct Added {
     /// Folders that equally specific locations claim. Nothing is added
     /// until one of the options is chosen for each.
     pub ambiguous: Vec<Ambiguity>,
+    /// Files left out because Import Photos is copying them there and
+    /// hasn't added them yet.
+    pub importing: Vec<PathBuf>,
 }
 /// A folder on disk not added because its catalog folder is elsewhere on
 /// this computer.
@@ -75,6 +78,16 @@ pub struct FilesAdded {
     /// The files not added, as reported, with why.
     pub refused: Vec<(PathBuf, FileRefusal)>,
 }
+/// What [`Catalog::insert`] did.
+#[derive(Debug, Default)]
+pub(in crate::catalog) struct Inserted {
+    /// The files added.
+    pub added: Vec<PathBuf>,
+    /// Sidecars that could not be read.
+    pub report: super::SidecarReport,
+    /// Files left out because an unresolved Import Photos will publish them.
+    pub importing: Vec<PathBuf>,
+}
 /// Why [`Catalog::import_files`] didn't add a file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileRefusal {
@@ -94,12 +107,15 @@ pub enum FileRefusal {
 pub(in crate::catalog) enum ImportKind {
     Add,
     Sync,
+    /// Import Photos' copies.
+    Copy,
 }
 impl ImportKind {
     fn as_str(self) -> &'static str {
         match self {
             Self::Add => "add",
             Self::Sync => "sync",
+            Self::Copy => "copy",
         }
     }
 }
@@ -269,7 +285,11 @@ impl Catalog {
             result.ambiguous = placed.ambiguous;
             return Ok(result);
         }
-        if let Some((added, report)) = self.insert(
+        if let Some(Inserted {
+            added,
+            report,
+            importing,
+        }) = self.insert(
             &folder,
             files,
             &placed.places,
@@ -277,7 +297,7 @@ impl Catalog {
             ImportKind::Add,
             || true,
         )? {
-            (result.added, result.report) = (added.len(), report);
+            (result.added, result.report, result.importing) = (added.len(), report, importing);
         }
         Ok(result)
     }
@@ -376,7 +396,31 @@ impl Catalog {
         if !any_new {
             return Ok(begin().then_some(result));
         }
-        let Some((added, report)) = self.insert(
+        // A file an unresolved Import Photos will publish isn't added half
+        // imported; the activity lock keeps a running import out, so this is
+        // one a stopped or failed import left to recover.
+        let computer = self.computer.id.clone();
+        // Only a file that would be added: one the catalog has is left alone.
+        let new_reserved = self.db.snapshot(|s| {
+            let reserved = super::file_ops::reserved_for_import(s, &computer)?;
+            for file in &to_add {
+                if !reserved.contains(&super::sidecar::caseless(file.as_os_str())) {
+                    continue;
+                }
+                match file.parent().and_then(|d| placed.places.get(d)) {
+                    Some(Place::Folder(root, logical)) if known(s, *root, logical, file)? => {}
+                    _ => return Ok(Some(file.clone())),
+                }
+            }
+            Ok(None)
+        })?;
+        if let Some(file) = new_reserved {
+            anyhow::bail!(
+                "{} is being imported by Import Photos; finish or recover that import first",
+                file.display()
+            );
+        }
+        let Some(Inserted { added, report, .. }) = self.insert(
             &folder,
             to_add,
             &placed.places,
@@ -426,10 +470,11 @@ impl Catalog {
     /// Adds the photos of `files` the catalog doesn't have, each with what
     /// its files hold, in one transaction, their folders where `places` says
     /// (a new root being the `chosen` folder). Files in a directory `places`
-    /// has no place for are left out. Returns the files added, and what
-    /// reading their sidecars found; `None`, with nothing written, when
-    /// `begin`, asked once the files are read and before the transaction,
-    /// says no.
+    /// has no place for are left out, and so are those an unfinished Import
+    /// Photos of this computer is copying (read in the same transaction).
+    /// Returns the files added, what reading their sidecars found and the
+    /// files being imported; `None`, with nothing written, when `begin`,
+    /// asked once the files are read and before the transaction, says no.
     pub(in crate::catalog) fn insert(
         &mut self,
         chosen: &Path,
@@ -438,7 +483,7 @@ impl Catalog {
         defaults: &super::NewPhotoDefaults,
         kind: ImportKind,
         begin: impl FnOnce() -> bool,
-    ) -> Result<Option<(Vec<PathBuf>, super::SidecarReport)>> {
+    ) -> Result<Option<Inserted>> {
         // Photos already in the catalog are left before their files are read.
         let files: Vec<(PathBuf, &Place)> = self.db.snapshot(|s| {
             let mut new = Vec::new();
@@ -461,7 +506,10 @@ impl Catalog {
         if !begin() {
             return Ok(None);
         }
+        let computer = self.computer.id.clone();
         self.write_new_photos(|w, writer| {
+            let reserved = super::file_ops::reserved_for_import(w, &computer)?;
+            let mut importing = Vec::new();
             // The newest batch is Previous Import, empty when nothing new
             // was found.
             let batch = new_batch(w, kind)?;
@@ -470,6 +518,10 @@ impl Catalog {
             let mut added = Vec::new();
             let mut report = super::SidecarReport::default();
             for photo in photos {
+                if reserved.contains(&super::sidecar::caseless(photo.file.as_os_str())) {
+                    importing.push(photo.file);
+                    continue;
+                }
                 let (root, logical) = match photo.place {
                     Place::Folder(root, logical) => (*root, logical.clone()),
                     Place::New(logical) => {
@@ -509,7 +561,11 @@ impl Catalog {
                     &[&batch, &IMPORT_BURST_SECONDS],
                 )?;
             }
-            Ok(Some((added, report)))
+            Ok(Some(Inserted {
+                added,
+                report,
+                importing,
+            }))
         })
     }
     /// What each of `files` brings (see [`NewPhoto`]), read from its files,

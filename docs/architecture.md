@@ -700,7 +700,11 @@ Some features span several owners; each module's docs describe its part:
   another root moves as a folder does, and leaves the catalog's roots, with
   its locations on every computer, in the transaction that re-keys its
   folders; it is journalled as its own kind (`move_root`), which earlier
-  releases fail closed on. Every disk step is journalled, after its folders
+  releases fail closed on. Import Photos copies photos into the library as
+  `import_copy` items, each file copied as a move to another drive copies it
+  and named by an exclusive rename; a copy written whole is never removed, the
+  source is never written, and the catalog adds a photo only once every file of
+  its item is proven copied; earlier releases fail closed on the kind. Every disk step is journalled, after its folders
   are synced, before the item's next, and recovery decides whatever a crash left from
   the journal and the disk, putting back only what it proves. Items moved or
   renamed within a drive go up to 100 at a time (#692), each step in one

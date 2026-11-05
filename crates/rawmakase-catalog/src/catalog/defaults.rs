@@ -92,6 +92,31 @@ impl NewPhotoDefaults {
     pub fn with_options(self, options: ImportOptions) -> Self {
         Self { options, ..self }
     }
+    /// What Preferences said, as an import journals it.
+    pub(super) fn snapshot(&self) -> (MetadataDefaults, ImportOptions) {
+        (self.metadata.clone(), self.options.clone())
+    }
+    /// These readers, with the Preferences an import journalled.
+    pub(super) fn with_snapshot(&self, metadata: MetadataDefaults, options: ImportOptions) -> Self {
+        Self {
+            metadata,
+            options,
+            ..self.clone()
+        }
+    }
+    /// The readers [`install_file_readers`] installed, with no metadata
+    /// defaults: what recovery of an import starts from, which journalled
+    /// its Preferences but can't journal the readers.
+    pub(super) fn installed() -> Self {
+        match READERS.get() {
+            Some((camera_exif, raw_xmp)) => Self {
+                camera_exif: Some(*camera_exif),
+                raw_xmp: Some(*raw_xmp),
+                ..Self::default()
+            },
+            None => Self::default(),
+        }
+    }
     /// Whether the bursts of the photos added are to be stacked.
     pub(super) fn stack_bursts(&self) -> bool {
         self.options.stack_bursts
@@ -124,6 +149,19 @@ impl NewPhotoDefaults {
                 .then(|| Value::Set(LangAlt::new(defaults.copyright.trim()))),
         }
     }
+}
+
+/// The readers the app gives every photo added (see [`NewPhotoDefaults::new`]),
+/// for what is added when no request carries them: an import recovery
+/// finishes after a crash.
+static READERS: std::sync::OnceLock<(CameraExifReader, super::RawXmpReader)> =
+    std::sync::OnceLock::new();
+
+/// Installs the app's readers of a photo's camera EXIF and a RAW's own XMP,
+/// once per process, for imports recovery finishes. Later calls change
+/// nothing.
+pub fn install_file_readers(camera_exif: CameraExifReader, raw_xmp: super::RawXmpReader) {
+    let _ = READERS.set((camera_exif, raw_xmp));
 }
 
 /// The defaults one added photo gets, worked out before it is written.
