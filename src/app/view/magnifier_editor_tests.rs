@@ -30,7 +30,7 @@ fn the_librarys_loupe_magnifies_raws_at_fit_and_its_minimap_zooms() -> anyhow::R
     assert!(e.view.magnifier.on);
     e.library_inspect([0.25, 0.75]);
     assert!(e.view.zoom.on);
-    assert_eq!(e.view.zoom.pan, [0.25, 0.75]);
+    assert!(e.view.glide.is_some());
     assert!(e.magnifier_blocked().is_some());
     Ok(())
 }

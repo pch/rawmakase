@@ -203,10 +203,16 @@ pub(in crate::app) struct RenderView {
 }
 impl RenderView {
     pub(in crate::app) fn same(&self, other: &Self) -> bool {
+        self.same_photo(other) && self.region == other.region
+    }
+    /// The same view panned at 100% or more: only the region it shows moved.
+    pub(in crate::app) fn panned(&self, other: &Self) -> bool {
+        self.same_photo(other) && self.region.is_some() && other.region.is_some()
+    }
+    fn same_photo(&self, other: &Self) -> bool {
         self.image.ptr_eq(&other.image)
             && self.path == other.path
             && self.photo == other.photo
-            && self.region == other.region
             && self.max_edge == other.max_edge
     }
 }
@@ -390,6 +396,8 @@ pub(in crate::app) struct ViewState {
     pub(in crate::app) zoom_key: (bool, f32),
     pub(in crate::app) zoom_anim: Option<(f64, egui::Rect)>,
     pub(in crate::app) shown_rect: Option<egui::Rect>,
+    /// Where a minimap click or drag is moving the view.
+    pub(in crate::app) glide: Option<crate::app::view::navigator::Glide>,
 }
 impl Default for ViewState {
     fn default() -> Self {
@@ -432,6 +440,7 @@ impl Default for ViewState {
             zoom_key: (false, 1.),
             zoom_anim: None,
             shown_rect: None,
+            glide: None,
         }
     }
 }
@@ -688,6 +697,28 @@ impl PreviewState {
     }
 }
 impl ViewState {
+    /// Moves the view on to where the minimap points, once a frame before the
+    /// photo is drawn; see [`Glide`](crate::app::view::navigator::Glide).
+    pub(in crate::app) fn glide_pan(&mut self, ctx: &egui::Context, photo: Option<PhotoId>) {
+        let Some(glide) = &mut self.glide else {
+            return;
+        };
+        let dt = ctx.input(|i| i.stable_dt).min(0.1);
+        if glide.step(&mut self.zoom, photo, dt) {
+            ctx.request_repaint();
+        } else {
+            self.glide = None;
+        }
+    }
+    /// Sends the view of `photo` to `at` on the minimap, zoomed in.
+    pub(in crate::app) fn glide_to(&mut self, at: [f32; 2], photo: Option<PhotoId>) {
+        self.zoom.on = true;
+        self.glide = Some(crate::app::view::navigator::Glide::to(
+            at,
+            self.zoom.pan,
+            photo,
+        ));
+    }
     /// The ICC profile renders convert to for the monitor, captured by each job.
     pub(in crate::app) fn display_profile(&self) -> Option<PathBuf> {
         self.monitor
@@ -740,6 +771,7 @@ impl ViewState {
     pub(crate) fn clear_document(&mut self) {
         self.zoom.on = false;
         self.zoom_anim = None;
+        self.glide = None;
         self.shown_rect = None;
         self.tool = Tool::None;
         self.point_color.selected = None;

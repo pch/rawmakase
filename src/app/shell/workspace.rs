@@ -1217,6 +1217,14 @@ impl Editor {
         }
         let photo_area = ui.available_rect_before_wrap().shrink(PHOTO_MARGIN);
         let magnify = self.view.magnifier.on && self.magnifier_blocked().is_none();
+        // A photo developed in the Loupe glides in `viewport_ui`, once a frame.
+        if loupe
+            && let Some(l) = self.library.as_ref()
+            && l.loupe_develops().is_none()
+        {
+            let photo = l.selected();
+            self.view.glide_pan(ui.ctx(), photo);
+        }
         match &mut self.library {
             Some(l) if !l.session.photos().is_empty() => {
                 let magnifier = magnify.then_some(&mut self.view.magnifier);
@@ -1268,8 +1276,8 @@ impl Editor {
     /// A point chosen on the minimap of a photo the Loupe shows itself: zoomed
     /// in there.
     pub(in crate::app) fn library_inspect(&mut self, at: [f32; 2]) {
-        self.view.zoom.pan = at;
-        self.view.zoom.on = true;
+        let photo = self.library.as_ref().and_then(|l| l.selected());
+        self.view.glide_to(at, photo);
     }
     /// The Library's right panel: the active photo's Quick Develop, info and
     /// metadata. It has no Navigator: the Loupe's toolbar zooms, and its minimap

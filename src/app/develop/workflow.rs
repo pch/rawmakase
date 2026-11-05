@@ -24,6 +24,17 @@ pub(in crate::app) enum Flushed {
 /// opened, there is nothing to check its file against.
 const UNIDENTIFIED: &str = "the photo's file could not be read when it was opened";
 
+/// What a render is scheduled for, which decides whether the one running is
+/// cancelled or let finish and show on the way.
+#[derive(Clone, Copy)]
+enum Change {
+    /// Anything else: a new zoom level, photo or display setting.
+    View,
+    Edit,
+    /// The 100% region panned to another part of the photo.
+    Pan,
+}
+
 impl Editor {
     pub(in crate::app) fn open(&mut self, path: PathBuf) {
         let catalog = path
@@ -432,16 +443,23 @@ impl Editor {
         self.view.zoom.region(self.view.viewport, g.width, g.height)
     }
     pub(in crate::app) fn schedule(&mut self) {
-        self.schedule_render(false);
+        self.schedule_render(Change::View);
     }
     /// Renders an edit. While a slider moves, each change starts a render; one of
     /// the same view already running finishes and shows on the way instead of being
     /// cancelled, or a GPU slower than the changes would show nothing until the
     /// slider stops.
     pub(in crate::app) fn schedule_edit(&mut self) {
-        self.schedule_render(true);
+        self.schedule_render(Change::Edit);
     }
-    fn schedule_render(&mut self, edit: bool) {
+    /// Renders the 100% region the view was panned to. As for an edit, a region
+    /// of the same edit already running finishes and shows where it was, or a
+    /// drag (on the minimap, where the photo moves fast) on a GPU slower than the
+    /// frames would show no sharp pixels until it stops.
+    pub(in crate::app) fn schedule_pan(&mut self) {
+        self.schedule_render(Change::Pan);
+    }
+    fn schedule_render(&mut self, change: Change) {
         let image = self.document.full().cloned();
         if let Some(image) = image {
             self.yield_before();
@@ -468,11 +486,15 @@ impl Editor {
                 region,
                 max_edge,
             };
-            let same_view = self
-                .preview
-                .last_view
-                .as_ref()
-                .is_some_and(|v| v.same(&view));
+            let last = self.preview.last_view.as_ref();
+            let let_finish = match change {
+                Change::View => false,
+                Change::Edit => last.is_some_and(|v| v.same(&view)),
+                Change::Pan => {
+                    last.is_some_and(|v| v.panned(&view))
+                        && self.preview.pending.recipe.as_ref() == Some(&recipe)
+                }
+            };
             self.preview.last_view = Some(view);
             let ai = self.shown_ai_source(&image, &recipe.ai_denoise);
             let rendered_ai = match &ai {
@@ -483,7 +505,7 @@ impl Editor {
                 Some(_) => crate::app::develop::state::RenderedAi::Partial,
             };
             let (id, cancel) = self.preview.start(
-                edit && same_view,
+                let_finish,
                 crate::app::develop::state::Pending {
                     recipe: Some(recipe.clone()),
                     mode: region.map_or(

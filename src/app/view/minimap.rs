@@ -84,6 +84,9 @@ impl Editor {
     ) -> (bool, Option<[f32; 2]>) {
         const EDGE: f32 = 180.;
         let size = size * (EDGE / size.x.max(size.y));
+        // The outline is drawn where the view is going, under the pointer, while
+        // the photo glides after it: centred on the target at the size shown.
+        let heading = self.view.glide.map(|g| g.target());
         let place = &mut self.view.minimap;
         let grip_id = egui::Id::new("minimap-grip");
         // Where the pointer holds it, through the frame the button is released in.
@@ -124,6 +127,12 @@ impl Editor {
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
         painter.image(texture, rect, uv, Color32::WHITE);
         let [x, y, w, h] = shown;
+        let (x, y) = heading.map_or((x, y), |[tx, ty]| {
+            (
+                (tx - w / 2.).clamp(0., 1. - w),
+                (ty - h / 2.).clamp(0., 1. - h),
+            )
+        });
         let at = |fx: f32, fy: f32| rect.min + Vec2::new(fx, fy) * rect.size();
         painter.rect_stroke(
             Rect::from_min_max(at(x, y), at(x + w, y + h)),
@@ -135,8 +144,13 @@ impl Editor {
             .then(|| response.interact_pointer_pos())
             .flatten()
             .map(|p| {
+                // As far as the view can go: past the edge of the part in view, a
+                // glide would spend its time where the photo no longer moves.
                 let at = (p - rect.min) / rect.size();
-                [at.x.clamp(0., 1.), at.y.clamp(0., 1.)]
+                [
+                    at.x.clamp(w / 2., 1. - w / 2.),
+                    at.y.clamp(h / 2., 1. - h / 2.),
+                ]
             });
         let on_map = response.hovered() || handle.hovered() || handle.dragged();
         if on_map && !response.dragged() {
