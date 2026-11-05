@@ -1,5 +1,6 @@
-//! Atomic JPEG, 16-bit TIFF and PNG export with sRGB ICC, the camera's EXIF and the
-//! edit as Camera Raw XMP, as Lightroom embeds them.
+//! Atomic JPEG, 16-bit TIFF and PNG export with the ICC profile of the pixels' colour
+//! space (sRGB, Adobe RGB (1998) or ProPhoto RGB), the camera's EXIF and the edit as
+//! Camera Raw XMP, as Lightroom embeds them.
 pub mod assemble;
 pub mod batch;
 mod encode;
@@ -11,11 +12,13 @@ pub mod queue;
 pub use crate::storage::Replace;
 use crate::{
     camera_data::Metadata,
+    color::OutputSpace,
+    develop::ExportImage,
     export_settings::{ExportOptions, Format},
     rendered::Rendered,
     storage::is_raw,
 };
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, ensure};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -59,10 +62,56 @@ pub fn export(
     export_with(path, source, image, m, options, &Embed::default(), replace)
 }
 
+/// Exports `image`, encoded sRGB, to `path`.
 pub fn export_with(
     path: &Path,
     source: &Path,
     image: &Rendered,
+    m: &Metadata,
+    options: &ExportOptions,
+    embed: &Embed,
+    replace: Replace,
+) -> Result<()> {
+    write(
+        path,
+        source,
+        image,
+        OutputSpace::Srgb,
+        m,
+        options,
+        embed,
+        replace,
+    )
+}
+
+/// Exports `image` to `path` with the profile of its colour space.
+pub fn export_image(
+    path: &Path,
+    source: &Path,
+    image: &ExportImage,
+    m: &Metadata,
+    options: &ExportOptions,
+    embed: &Embed,
+    replace: Replace,
+) -> Result<()> {
+    write(
+        path,
+        source,
+        image.image(),
+        image.space(),
+        m,
+        options,
+        embed,
+        replace,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write(
+    path: &Path,
+    source: &Path,
+    image: &Rendered,
+    space: OutputSpace,
     m: &Metadata,
     options: &ExportOptions,
     embed: &Embed,
@@ -77,7 +126,7 @@ pub fn export_with(
         );
         ensure!(replace == Replace::Overwrite, "Destination already exists");
     }
-    let staged = stage(path, image, m, options, embed)?;
+    let staged = stage_in(path, image, space, m, options, embed)?;
     crate::storage::persist(staged.file, path, replace)
 }
 
@@ -129,8 +178,8 @@ pub fn remove_unfinished() {
     WRITING.remove_all();
 }
 
-/// The export of `image` for `path`, encoded into a synced temporary file in
-/// `path`'s folder.
+/// The export of `image`, encoded sRGB, for `path`, encoded into a synced temporary
+/// file in `path`'s folder.
 pub fn stage(
     path: &Path,
     image: &Rendered,
@@ -138,15 +187,44 @@ pub fn stage(
     options: &ExportOptions,
     embed: &Embed,
 ) -> Result<Staged> {
+    stage_in(path, image, OutputSpace::Srgb, m, options, embed)
+}
+
+/// [`stage`] of `image` with the profile of its colour space.
+pub fn stage_image(
+    path: &Path,
+    image: &ExportImage,
+    m: &Metadata,
+    options: &ExportOptions,
+    embed: &Embed,
+) -> Result<Staged> {
+    stage_in(path, image.image(), image.space(), m, options, embed)
+}
+
+/// `image`, encoded in `space`, staged for `path` with `space`'s profile and EXIF
+/// colour space; a format that can't hold `space` is refused before anything is
+/// written.
+fn stage_in(
+    path: &Path,
+    image: &Rendered,
+    space: OutputSpace,
+    m: &Metadata,
+    options: &ExportOptions,
+    embed: &Embed,
+) -> Result<Staged> {
     ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
     options.validate()?;
+    let format = Format::from_path(path).ok_or_else(|| {
+        anyhow::anyhow!("Export extension must be {}", Format::extensions_listed())
+    })?;
+    format.supports(space)?;
     let parent = crate::storage::parent_dir(path);
     let mut temp = NamedTempFile::new_in(parent)?;
     let unfinished = WRITING.track(temp.path());
-    let profile = crate::color_management::srgb_profile().to_vec();
-    let directories = metadata::directories(m, embed, image.width, image.height);
-    match Format::from_path(path) {
-        Some(Format::Jpeg) => encode::jpeg(
+    let profile = crate::color_management::output_profile(space).to_vec();
+    let directories = metadata::directories(m, embed, image.width, image.height, space);
+    match format {
+        Format::Jpeg => encode::jpeg(
             &mut temp,
             image,
             options.quality,
@@ -154,9 +232,8 @@ pub fn stage(
             directories,
             embed,
         )?,
-        Some(Format::Tiff) => encode::tiff(&mut temp, image, profile, &directories, embed)?,
-        Some(Format::Png) => encode::png(&mut temp, image, profile, directories, embed)?,
-        None => bail!("Export extension must be {}", Format::extensions_listed()),
+        Format::Tiff => encode::tiff(&mut temp, image, profile, &directories, embed)?,
+        Format::Png => encode::png(&mut temp, image, profile, directories, embed)?,
     }
     temp.as_file().sync_all()?;
     Ok(Staged {
@@ -169,3 +246,5 @@ pub fn stage(
 mod srgb_fixtures;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod wide_gamut_tests;

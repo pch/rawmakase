@@ -404,6 +404,17 @@ fn default_srgb_exports_match_the_recorded_fixtures() -> Result<()> {
     Ok(())
 }
 
+/// sRGB chosen in the settings writes the recorded files too.
+#[test]
+fn chosen_srgb_exports_match_the_recorded_fixtures() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let mut settings = ExportSettings::default();
+    settings.choose_color_space(crate::color::OutputSpace::Srgb);
+    let found = fingerprints(&settings, dir.path())?;
+    check_recorded(&found, RECORDED);
+    Ok(())
+}
+
 /// A graphic watermark's pixels, translucent, over a plain export.
 #[test]
 fn a_graphic_watermark_over_an_srgb_export_matches_its_fixture() -> Result<()> {
@@ -423,9 +434,14 @@ fn a_graphic_watermark_over_an_srgb_export_matches_its_fixture() -> Result<()> {
     };
     let ready = mark.ready_in(&images)?;
     let image = synthetic(96, 64);
-    let mut rendered =
-        crate::develop::render(&image, &Recipe::default().checked()?, 0, Cancel::NEVER)?;
+    let mut rendered = crate::develop::ExportImage::srgb(crate::develop::render(
+        &image,
+        &Recipe::default().checked()?,
+        0,
+        Cancel::NEVER,
+    )?);
     assert!(ready.apply(&mut rendered));
+    let rendered = rendered.into_image();
     let source = dir.path().join("source.dng");
     std::fs::write(&source, b"synthetic")?;
     let mut found = Vec::new();

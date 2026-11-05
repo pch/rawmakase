@@ -5,6 +5,8 @@
 //! `watermarks`, a graphic one with its own copy of the image.
 pub mod fonts;
 mod raster;
+use crate::color::OutputSpace;
+use crate::develop::ExportImage;
 use crate::rendered::Rendered;
 use crate::storage::RasterFormat;
 use anyhow::{Context, Result, ensure};
@@ -327,17 +329,28 @@ impl Ready {
         })
     }
     /// Lays the mark over `image`'s pixels; false when there was nothing
-    /// to draw (text the font has none of).
-    pub fn apply(&self, image: &mut Rendered) -> bool {
-        let Some(mark) = self.place(image.width, image.height) else {
+    /// to draw (text the font has none of). The mark's colours, its text, shadow
+    /// and graphic, are sRGB; in another space they are converted to it first, so
+    /// a red mark is the same red in every space. A graphic's own profile is
+    /// ignored, as it always has been.
+    pub fn apply(&self, image: &mut ExportImage) -> bool {
+        let space = image.space();
+        let image = image.image_mut();
+        let Some(mut mark) = self.place(image.width, image.height) else {
             return false;
         };
+        if space != OutputSpace::Srgb {
+            for p in &mut mark.rgba {
+                let [r, g, b] = space.from_srgb([p[0], p[1], p[2]]);
+                [p[0], p[1], p[2]] = [r, g, b];
+            }
+        }
         composite(image, &mark);
         true
     }
 }
 
-/// Alpha-over in output-encoded sRGB: pixels the mark doesn't cover keep
+/// Alpha-over in the image's encoded values: pixels the mark doesn't cover keep
 /// their exact values.
 pub fn composite(image: &mut Rendered, mark: &Placed) {
     let (w, h) = (image.width as i64, image.height as i64);

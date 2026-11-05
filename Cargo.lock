@@ -3831,6 +3831,7 @@ dependencies = [
  "image",
  "md-5",
  "memmap2",
+ "moxcms",
  "png 0.18.1",
  "rawmakase-cancel",
  "rawmakase-catalog",

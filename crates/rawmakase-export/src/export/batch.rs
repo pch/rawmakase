@@ -125,12 +125,16 @@ pub enum Unplanned {
     NoFolder,
     /// Ask what to do: these files exist. Plan again with the answer.
     Conflicts(Vec<PathBuf>),
+    /// The settings can't be exported as they are (the reason): a colour space the
+    /// format can't hold, or one only a later release knows.
+    Settings(String),
 }
 impl std::fmt::Display for Unplanned {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Unplanned::NoFolder => f.write_str("Choose a folder to export to"),
             Unplanned::Conflicts(files) => write!(f, "{} files already exist", files.len()),
+            Unplanned::Settings(reason) => f.write_str(reason),
         }
     }
 }
@@ -233,6 +237,10 @@ pub fn plan(
     settings: &ExportSettings,
     answer: Option<Existing>,
 ) -> Result<Plan, Unplanned> {
+    // Nothing is planned, asked or rendered for settings no photo could export with.
+    settings
+        .output_space()
+        .map_err(|e| Unplanned::Settings(format!("{e:#}")))?;
     // Numbered in the order the photos were chosen, so a photo that fails or is
     // skipped keeps its number and the others theirs.
     let total = photos.len();
@@ -452,7 +460,7 @@ fn export(
         if let Some(parent) = planned.target.parent() {
             std::fs::create_dir_all(parent).map_err(anyhow::Error::from)?;
         }
-        let staged = super::stage(
+        let staged = super::stage_image(
             &planned.target,
             &prepared.rendered,
             &prepared.metadata,

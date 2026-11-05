@@ -1,10 +1,13 @@
 //! JPEG, 16-bit TIFF and 8-bit PNG encoding with an ICC profile, EXIF
 //! directories and XMP.
-use super::Embed;
+use super::{Embed, metadata::Directories};
 use crate::{
     exif::{
-        CameraExif, Field,
-        tag::{EXIF_IFD, GPS_IFD, ICC_PROFILE, RESOLUTION_UNIT, X_RESOLUTION, XMP, Y_RESOLUTION},
+        Field,
+        tag::{
+            EXIF_IFD, GPS_IFD, ICC_PROFILE, INTEROPERABILITY_IFD, RESOLUTION_UNIT, X_RESOLUTION,
+            XMP, Y_RESOLUTION,
+        },
     },
     rendered::Rendered,
     tiff::kind::{ASCII, FLOAT, LONG, RATIONAL, SHORT, SLONG, SRATIONAL, SSHORT},
@@ -22,7 +25,7 @@ pub(super) fn jpeg(
     image: &Rendered,
     quality: u8,
     profile: Vec<u8>,
-    directories: CameraExif,
+    directories: Directories,
     embed: &Embed,
 ) -> Result<()> {
     let mut jpeg = Vec::new();
@@ -46,13 +49,29 @@ pub(super) fn tiff(
     out: &mut (impl Write + Seek),
     image: &Rendered,
     profile: Vec<u8>,
-    directories: &CameraExif,
+    directories: &Directories,
     embed: &Embed,
 ) -> Result<()> {
+    let Directories {
+        exif: directories,
+        interop,
+    } = directories;
     let mut e = TiffEncoder::new(out)?;
+    let interop_offset = if interop.is_empty() {
+        None
+    } else {
+        let mut dir = e.extra_directory()?;
+        for f in interop {
+            write_field(&mut dir, f)?;
+        }
+        Some(dir.finish_with_offsets()?.offset)
+    };
     let mut exif = e.extra_directory()?;
     for f in &directories.exif {
         write_field(&mut exif, f)?;
+    }
+    if let Some(offset) = interop_offset {
+        exif.write_tag(Tag::Unknown(INTEROPERABILITY_IFD), offset)?;
     }
     let exif_offset = exif.finish_with_offsets()?.offset;
     let gps_offset = if directories.gps.is_empty() {
@@ -100,7 +119,7 @@ pub(super) fn png(
     out: &mut impl Write,
     image: &Rendered,
     profile: Vec<u8>,
-    directories: CameraExif,
+    directories: Directories,
     embed: &Embed,
 ) -> Result<()> {
     let mut info = png::Info::with_size(image.width, image.height);

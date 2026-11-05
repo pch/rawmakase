@@ -754,6 +754,11 @@ impl ExportSettings {
             .then(|| template.tokens())
             .flatten()
     }
+    /// The settings saved at `path`, read as [`ExportSettings::load`] reads them.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn load_file(path: &Path) -> Option<Self> {
+        Self::load_from(path)
+    }
     fn load_from(path: &Path) -> Option<Self> {
         let saved: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
