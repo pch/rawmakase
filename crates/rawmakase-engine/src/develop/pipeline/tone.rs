@@ -4,6 +4,9 @@ use super::*;
 pub(super) struct CurveSet {
     /// Where the stage stops.
     pub(super) output: PixelOutput,
+    /// The colour space the finished pixels are encoded in: sRGB but for an export
+    /// in another space.
+    pub(super) space: crate::color::OutputSpace,
     pub(super) exposure_gain: f32,
     /// Contrast as a measured Camera Raw curve.
     pub(super) basic: Option<crate::develop::tone_lut::ToneLut>,
@@ -165,6 +168,7 @@ impl CurveSet {
         };
         Self {
             output: PixelOutput::Display,
+            space: crate::color::OutputSpace::Srgb,
             exposure_gain: 2f32.powf(r.exposure + r.camera_exposure),
             basic: basic_tone(r, &photo),
             local: None,

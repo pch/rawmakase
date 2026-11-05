@@ -169,6 +169,7 @@ impl PreviewRenderer {
             ai.as_ref(),
             max_edge,
             region,
+            crate::color::OutputSpace::Srgb,
             cancel,
             Some(&mut self.stages(display)),
         )
@@ -423,6 +424,43 @@ mod tests {
             scale_factor: 1.,
             scale_clipped: 0,
         }
+    }
+    /// A render in a space other than sRGB never reaches the preview's GPU or caches:
+    /// given them, it is refused before anything renders.
+    #[test]
+    fn only_srgb_renders_take_the_previews_stages() {
+        let mut p = PreviewRenderer::default();
+        let im = image(40, 30, 0.2);
+        let recipe = Recipe::default();
+        let r = recipe.checked().unwrap();
+        let resolved = quality::resolve(&im, &r);
+        for space in [
+            crate::color::OutputSpace::AdobeRgb,
+            crate::color::OutputSpace::ProPhoto,
+        ] {
+            let refused = quality::render_preview(
+                &im,
+                &resolved,
+                None,
+                0,
+                None,
+                space,
+                Cancel::NEVER,
+                Some(&mut p.stages(None)),
+            );
+            assert!(refused.is_err(), "{space:?}");
+        }
+        let srgb = quality::render_preview(
+            &im,
+            &resolved,
+            None,
+            0,
+            None,
+            crate::color::OutputSpace::Srgb,
+            Cancel::NEVER,
+            Some(&mut p.stages(None)),
+        );
+        assert!(srgb.is_ok());
     }
     #[test]
     fn fit_uses_a_pyramid_level_and_never_reuses_another_photo() {

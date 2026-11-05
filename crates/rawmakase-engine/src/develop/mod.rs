@@ -15,6 +15,7 @@ mod crop_constraint;
 // Develop code names the curve primitives as `develop::curve`, where they began.
 use crate::color::curve;
 pub mod effects;
+mod export_image;
 mod geometry;
 pub mod gpu;
 pub mod guided;
@@ -41,6 +42,7 @@ pub mod texture;
 mod tone_lut;
 pub mod upright;
 pub use ai_denoise::AiSource;
+pub use export_image::ExportImage;
 pub use preview_renderer::{PreviewRenderer, render_fitted};
 pub mod quality;
 mod recipe;
@@ -57,4 +59,6 @@ pub use geometry::{Geometry, rendered_crop};
 pub use image_space::ViewMapping;
 pub use orientation::{Mirror, QuarterTurn, mirror, turn};
 pub(crate) use pipeline::{Camera, camera_stage, render_base};
-pub use pipeline::{neutral_pick, pick_fringe, preview, render, render_region, render_with_ai};
+pub use pipeline::{
+    neutral_pick, pick_fringe, preview, render, render_export, render_region, render_with_ai,
+};

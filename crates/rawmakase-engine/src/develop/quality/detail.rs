@@ -2,13 +2,21 @@
 use super::*;
 use rawmakase_cancel::Cancel;
 
+#[cfg(test)]
 pub(in crate::develop) fn sharpen(
     im: &mut Rendered,
     r: &Recipe,
     local: Option<&MaskWeights>,
     cancel: Cancel<'_>,
 ) -> Result<()> {
-    sharpen_with_radius(im, r, Sharpener::new(r).sigma, local, cancel)
+    sharpen_with_radius(
+        im,
+        r,
+        Sharpener::new(r).sigma,
+        local,
+        crate::color::OutputSpace::Srgb,
+        cancel,
+    )
 }
 /// Normalized Gaussian taps. Below half a pixel, which only scaled previews use, a
 /// sampled Gaussian degenerates to a single tap; three taps with the same variance
@@ -26,11 +34,14 @@ pub(crate) fn gaussian(sigma: f32) -> (i32, Vec<f32>) {
     (radius, weights.into_iter().map(|x| x / sum).collect())
 }
 /// Sharpening; masks' Sharpness adds to the amount per pixel, and below zero softens.
+/// The detail is that of luminance with the primaries of `space`, the one `im` is
+/// encoded in.
 pub(super) fn sharpen_with_radius(
     im: &mut Rendered,
     r: &Recipe,
     sigma: f32,
     local: Option<&MaskWeights>,
+    space: crate::color::OutputSpace,
     cancel: Cancel<'_>,
 ) -> Result<()> {
     check_cancel(cancel)?;
@@ -40,7 +51,7 @@ pub(super) fn sharpen_with_radius(
     }
     let sharpener = Sharpener::new(r);
     let (radius, weights) = gaussian(sigma);
-    let lum: Vec<f32> = im.pixels.par_iter().map(|p| luminance(*p)).collect();
+    let lum: Vec<f32> = im.pixels.par_iter().map(|p| space.luminance(*p)).collect();
     let w = im.width as usize;
     let h = im.height as usize;
     let mut horizontal = vec![0.; lum.len()];
@@ -80,8 +91,13 @@ pub(super) fn sharpen_with_radius(
     check_cancel(cancel)
 }
 /// Masks' Noise: an edge-aware 5×5 average blended in by the pixel's amount (0–1).
-/// Negative values have no effect.
-pub(super) fn local_noise(im: &mut Rendered, local: Option<&MaskWeights>) {
+/// Negative values have no effect. Edges are told by luminance with the primaries of
+/// `space`, the one `im` is encoded in.
+pub(super) fn local_noise(
+    im: &mut Rendered,
+    local: Option<&MaskWeights>,
+    space: crate::color::OutputSpace,
+) {
     let Some(weights) = local.filter(|w| w.uses(&[slot::NOISE])) else {
         return;
     };
@@ -96,12 +112,12 @@ pub(super) fn local_noise(im: &mut Rendered, local: Option<&MaskWeights>) {
             return;
         };
         let (x, y) = (i as i32 % w, i as i32 / w);
-        let center = luminance(src[i]);
+        let center = space.luminance(src[i]);
         let (mut sum, mut total) = ([0.; 3], 0.);
         for dy in -2..=2 {
             for dx in -2..=2 {
                 let q = src[((y + dy).clamp(0, h - 1) * w + (x + dx).clamp(0, w - 1)) as usize];
-                let k = 1. / (1. + (luminance(q) - center).powi(2) / 0.0004);
+                let k = 1. / (1. + (space.luminance(q) - center).powi(2) / 0.0004);
                 for c in 0..3 {
                     sum[c] += q[c] * k;
                 }

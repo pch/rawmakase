@@ -15,7 +15,7 @@
 //!   highlights darken more, and lightens like Highlight Priority at about half the
 //!   strength.
 use super::{Effects, VignetteStyle};
-use crate::color::{srgb_decode, srgb_encode};
+use crate::color::{OutputSpace, srgb_decode};
 use crate::develop::effects::EffectsRendering;
 
 /// Camera Raw's neutral tone response at default settings, measured on the chart's gray
@@ -131,9 +131,12 @@ impl PostCropVignette {
         let z = (((q / (1. - q)).ln() - self.midpoint) / self.feather).clamp(-40., 40.);
         1. / (1. + (-z).exp())
     }
-    /// An encoded sRGB pixel with the vignette applied at `mask`.
-    pub(crate) fn apply(&self, encoded: [f32; 3], mask: f32) -> [f32; 3] {
-        let b = encoded.map(|v| srgb_decode(v.clamp(0., 1.)));
+    /// A pixel encoded in `space` with the vignette applied at `mask`. The pixel is
+    /// decoded and encoded with `space`'s curve, and its luminance has `space`'s
+    /// primaries; the sliders' and the mask's mappings, measured on sRGB renders, are
+    /// the same in every space.
+    pub(crate) fn apply(&self, encoded: [f32; 3], mask: f32, space: OutputSpace) -> [f32; 3] {
+        let b = encoded.map(|v| space.decode(v.clamp(0., 1.)));
         let lighten = self.amount > 0.;
         let x = self.amount.abs();
         let linear = match (self.style, lighten) {
@@ -158,7 +161,7 @@ impl PostCropVignette {
             (style, false) => {
                 let shape = 1.7625 + 0.6875 * x * x;
                 let gain = 1. - 0.97 * darkening(x) * (1. - (1. - mask).powf(shape));
-                let y = crate::color::luminance(b);
+                let y = space.luminance(b);
                 let protect = if self.highlights > 0. {
                     (1. - smoothstep(0.198, 1.108, y)).powf(self.highlights.powf(1.43))
                 } else {
@@ -175,7 +178,7 @@ impl PostCropVignette {
                 }
             }
         };
-        linear.map(|v| srgb_encode(v.clamp(0., 1.)))
+        linear.map(|v| space.encode(v.clamp(0., 1.)))
     }
     fn paint_darken(&self, b: [f32; 3], amount: f32, mask: f32) -> [f32; 3] {
         let gain = 1. - darkening(amount) * (1. - srgb_decode(1. - mask));
@@ -212,7 +215,7 @@ mod tests {
     /// Linear output over linear input of a neutral pixel at the middle of the frame's
     /// right edge, where Camera Raw's default vignette has half its strength.
     fn edge_gain(v: &PostCropVignette, encoded: f32) -> f32 {
-        let out = v.apply([encoded; 3], v.mask(1., 0.));
+        let out = v.apply([encoded; 3], v.mask(1., 0.), OutputSpace::Srgb);
         srgb_decode(out[1]) / srgb_decode(encoded)
     }
     #[test]

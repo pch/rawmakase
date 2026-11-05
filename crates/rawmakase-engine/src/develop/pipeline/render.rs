@@ -24,6 +24,18 @@ pub fn render_with_ai(
 ) -> Result<Rendered> {
     crate::develop::quality::render_with_ai(im, r, ai, max_edge, cancel)
 }
+/// [`render_with_ai`] for an export in `space`, on the CPU: the colour stage ends in
+/// `space` and every finishing stage works on its values.
+pub fn render_export(
+    im: &CameraImage,
+    r: &ValidRecipe,
+    ai: Option<&crate::develop::AiSource>,
+    max_edge: u32,
+    space: crate::color::OutputSpace,
+    cancel: Cancel<'_>,
+) -> Result<crate::develop::ExportImage> {
+    crate::develop::quality::render_export(im, r, ai, max_edge, space, cancel)
+}
 pub fn render_region(im: &CameraImage, r: &ValidRecipe, region: [u32; 4]) -> Result<Rendered> {
     crate::develop::quality::render(im, r, 0, Some(region), Cancel::NEVER)
 }
@@ -34,6 +46,11 @@ pub fn render_region(im: &CameraImage, r: &ValidRecipe, region: [u32; 4]) -> Res
 /// With a `cache`, the geometry, lens-warp and noise-reduction samples are kept, so a
 /// following render that only changes color and tone reruns the per-pixel stage alone.
 /// A `backend` with a GPU runs that stage there when the port covers the recipe.
+///
+/// The pixels are encoded in `space`. Only sRGB renders may have `stages`: the GPU
+/// and its caches are the preview's, and an export in another space never reaches
+/// them.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_base(
     toned: &Toned,
     r: &Recipe,
@@ -42,7 +59,12 @@ pub(crate) fn render_base(
     spread: f32,
     cancel: Cancel<'_>,
     stages: Option<&mut crate::develop::preview_renderer::Stages>,
+    space: crate::color::OutputSpace,
 ) -> Result<(Rendered, Option<Arc<MaskWeights>>)> {
+    ensure!(
+        space == crate::color::OutputSpace::Srgb || stages.is_none(),
+        "Only sRGB renders run on the GPU"
+    );
     let mut base = r.clone();
     base.sharpening = 0.;
     let im = toned.source();
@@ -53,7 +75,7 @@ pub(crate) fn render_base(
     let Some(stages) = stages else {
         if !masked {
             return Ok((
-                render_region_inner(im, &base, g, region, spread, cancel)?,
+                render_region_inner(im, &base, g, region, spread, cancel, space)?,
                 None,
             ));
         }
@@ -70,7 +92,7 @@ pub(crate) fn render_base(
             cancel,
         )?;
         let samples = detail(toned, &base, samples, weights.as_deref(), None, cancel)?;
-        let out = develop_samples(im, &base, &samples, cancel, weights.as_deref())?;
+        let out = develop_samples_in(im, &base, &samples, cancel, weights.as_deref(), space)?;
         return Ok((out, weights));
     };
     base.validate()?;
@@ -223,7 +245,8 @@ pub(crate) fn mask_weights(
         let mut plain = r.clone();
         plain.masks.clear();
         // Range masks select from the photo as it renders, never as Visualize Range
-        // grays it.
+        // grays it, and always in sRGB, whatever space an export is in: a mask
+        // selects the same pixels in every space.
         crate::model::point_color::without_visualization(&mut plain.point_colors);
         let im = toned.source();
         let gpu = stages.as_deref_mut().and_then(|s| {
@@ -353,7 +376,25 @@ pub(crate) fn develop_samples(
     cancel: Cancel<'_>,
     weights: Option<&MaskWeights>,
 ) -> Result<Rendered> {
-    develop_samples_to(im, r, samples, cancel, weights, PixelOutput::Display)
+    develop_samples_in(
+        im,
+        r,
+        samples,
+        cancel,
+        weights,
+        crate::color::OutputSpace::Srgb,
+    )
+}
+/// [`develop_samples`] encoded in `space`.
+pub(crate) fn develop_samples_in(
+    im: Source,
+    r: &Recipe,
+    samples: &Samples,
+    cancel: Cancel<'_>,
+    weights: Option<&MaskWeights>,
+    space: crate::color::OutputSpace,
+) -> Result<Rendered> {
+    develop_samples_to(im, r, samples, cancel, weights, PixelOutput::Display, space)
 }
 /// `region` of the output as a dropper samples it at the stage `output` names,
 /// through the same sampling, lens correction, retouching and masks as the render.
@@ -369,7 +410,15 @@ pub(crate) fn stage_samples(
     let samples = Arc::new(sample_region(im, r, g, region, 0., cancel)?);
     let weights = mask_weights(toned, r, g, region, 0., Some(&samples), None, cancel)?;
     let samples = detail(toned, r, samples, weights.as_deref(), None, cancel)?;
-    develop_samples_to(im, r, &samples, cancel, weights.as_deref(), output)
+    develop_samples_to(
+        im,
+        r,
+        &samples,
+        cancel,
+        weights.as_deref(),
+        output,
+        crate::color::OutputSpace::Srgb,
+    )
 }
 /// The camera's own samples of `region`, before highlight reconstruction, noise
 /// reduction and retouching, through the same geometry, lens correction and
@@ -399,6 +448,7 @@ pub(crate) fn camera_samples(
         pixels,
     })
 }
+#[allow(clippy::too_many_arguments)]
 fn develop_samples_to(
     im: Source,
     r: &Recipe,
@@ -406,11 +456,13 @@ fn develop_samples_to(
     cancel: Cancel<'_>,
     weights: Option<&MaskWeights>,
     output: PixelOutput,
+    space: crate::color::OutputSpace,
 ) -> Result<Rendered> {
     let camera = camera_stage(&im.metadata, r);
     let local_tone = weights.is_some_and(|w| w.uses(&[slot::SHADOWS, slot::HIGHLIGHTS]));
     let mut lut = CurveSet::for_image(im, r, camera, local_tone);
     lut.output = output;
+    lut.space = space;
     let math = weights.map(|_| LocalMath::new(&im.metadata, r));
     let mut pixels = vec![[0.; 3]; samples.pixels.len()];
     pixels.par_iter_mut().enumerate().for_each(|(i, out)| {
@@ -437,7 +489,7 @@ fn develop_samples_to(
     })
 }
 /// One sample per output pixel of `region`, without the stage cache: the per-pixel
-/// stage over the lens-warped or noise-reduced samples.
+/// stage over the lens-warped or noise-reduced samples, encoded in `space`.
 pub(super) fn render_region_inner(
     im: Source,
     r: &Recipe,
@@ -445,10 +497,12 @@ pub(super) fn render_region_inner(
     region: [u32; 4],
     spread: f32,
     cancel: Cancel<'_>,
+    space: crate::color::OutputSpace,
 ) -> Result<Rendered> {
     r.validate()?;
     let camera = camera_stage(&im.metadata, r);
-    let lut = CurveSet::for_image(im, r, camera, false);
+    let mut lut = CurveSet::for_image(im, r, camera, false);
+    lut.space = space;
     let [x0, y0, w, h] = region;
     ensure!(
         w > 0
