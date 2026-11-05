@@ -53,7 +53,9 @@ instructions: |
   request whose meaning cannot be determined. Still choose the type label the
   report most likely is. Pair low-effort-report with a reply asking for the
   one or two most important missing facts, and say the issue closes in 7 days
-  without them; never add it silently. Do not add
+  without them. Add it without a reply when a maintainer already asked for
+  the missing details or replied most recently; otherwise never add it
+  silently. Do not add
   it when only a nice-to-have detail is missing, when a maintainer can already
   reproduce or decide from the report, or when the reporter said they cannot
   share what is missing. Remove low-effort-report once the reporter supplies what was
