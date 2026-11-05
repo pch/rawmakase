@@ -607,6 +607,10 @@ fn the_open_photo_is_not_exported_over_a_file_replaced_since() -> Result<()> {
         file,
     };
     photos[0].edit = shown(Some(crate::storage::Identity::read(a)?));
+    // Only its modification time changed (issue #870): still the photo shown.
+    let file = std::fs::File::options().write(true).open(a)?;
+    file.set_modified(file.metadata()?.modified()? + std::time::Duration::from_secs(2))?;
+    drop(file);
     // Another file than the one shown.
     photos[1].edit = shown(Some(crate::storage::Identity::read(b)?));
     let mut bytes = std::fs::read(b)?;

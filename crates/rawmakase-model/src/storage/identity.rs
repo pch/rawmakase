@@ -54,6 +54,18 @@ impl Identity {
             prefix_hash: format!("{hash:016x}"),
         })
     }
+    /// Whether `other` names the same photo, as a saved edit is bound to it:
+    /// the same size and first bytes, whatever the modification time.
+    ///
+    /// A different photo at the same path differs in its first
+    /// [`IDENTITY_PREFIX`] bytes, which hold every camera format's header and
+    /// capture metadata, or in its size. The modification time alone changes
+    /// without the bytes changing: a cloud mount reporting it rounded, a copy
+    /// that doesn't keep it, `touch` (issue #870). Caches still key on the whole
+    /// identity, so they read such a file again.
+    pub fn same_photo(&self, other: &Self) -> bool {
+        self.size == other.size && self.prefix_hash == other.prefix_hash
+    }
     /// The size and modification time this identity names, as a preview's
     /// [`Stamp`] keeps them.
     pub fn stamp(&self) -> Stamp {

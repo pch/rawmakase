@@ -20,8 +20,9 @@ pub struct EditToSave<'a> {
     pub id: PhotoId,
     pub path: &'a Path,
     /// The file the edit was made for, as read when its photo was opened or its
-    /// settings read: a save to a file at `path` that no longer matches it is
-    /// refused, even with no saved edit there to protect.
+    /// settings read: a save to a file at `path` that is no longer the same photo
+    /// ([`Identity::same_photo`]) is refused, even with no saved edit there to
+    /// protect.
     pub source: &'a Identity,
     pub recipe: &'a Recipe,
     pub export: &'a ExportOptions,

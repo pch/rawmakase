@@ -144,8 +144,8 @@ fn undo_in_develop_reverses_the_flag_before_the_exposure() -> anyhow::Result<()>
 }
 
 /// Undoing a Develop change on a photo closed since saves to the file its saved
-/// edit names, which a verified move refreshes: the same bytes with another
-/// modification time still take the undo.
+/// edit names: the same bytes with another modification time, as a verified
+/// move with a coarser time leaves them, still take the undo (issue #870).
 #[test]
 fn undo_on_a_closed_photo_follows_a_verified_move_of_its_file() -> anyhow::Result<()> {
     let (d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
@@ -160,23 +160,12 @@ fn undo_on_a_closed_photo_follows_a_verified_move_of_its_file() -> anyhow::Resul
     e.sync_undo();
     e.document.reset(Some(ids[1]));
     e.document.opened_at(d.path().join("photos/b.RAF"));
-    // As a verified move with a coarser time leaves it: the catalog's edit names
-    // the file as it is now.
     std::fs::File::options()
         .write(true)
         .open(&a)?
         .set_modified(std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1))?;
-    let library = e.library.as_mut().unwrap();
-    assert!(library.session.catalog().load_edit(ids[0], &a).is_err());
-    let crate::catalog::CatalogLocation::File(catalog) =
-        library.session.catalog().location().clone();
-    rusqlite::Connection::open(catalog)?.execute(
-        "UPDATE photos SET identity=? WHERE id=?",
-        rusqlite::params![
-            serde_json::to_string(&crate::storage::Identity::read(&a)?)?,
-            ids[0].0
-        ],
-    )?;
+    let library = e.library.as_ref().unwrap();
+    assert!(library.session.catalog().load_edit(ids[0], &a)?.is_some());
     e.undo();
     let library = e.library.as_ref().unwrap();
     let saved = library.session.catalog().load_edit(ids[0], &a)?.unwrap();

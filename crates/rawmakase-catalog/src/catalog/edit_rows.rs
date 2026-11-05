@@ -72,12 +72,15 @@ impl Catalog {
             }
             EditChange::Save(e) => e,
         };
+        let now = Identity::read(e.path)?;
         ensure!(
-            Identity::read(e.path)? == *e.source,
+            now.same_photo(e.source),
             "{} changed since its edit was made; edit not saved",
             e.path.display()
         );
-        let save = self.checked(e.source, e.recipe, e.export, e.history)?;
+        // Stored for the file as it is, so a new modification time alone
+        // (issue #870) is taken up by the next save.
+        let save = self.checked(&now, e.recipe, e.export, e.history)?;
         // Refuse replacing an edit after the underlying source changed.
         let _ = self.load_edit(e.id, e.path)?;
         Ok(CheckedChange {
@@ -240,10 +243,10 @@ pub(super) enum Refresh {
 }
 
 /// Gives the saved edit of `photo`, whose file was found moved, the identity
-/// of the file found (`now`), only when that edit was saved for exactly the
-/// version `was` names (mtime included) and the file found was verified to
-/// have that version's content. An edit saved for another version stays
-/// bound to it.
+/// of the file found (`now`), only when that edit was saved for the photo
+/// `was` names ([`Identity::same_photo`]) and the file found was verified to
+/// have that version's content. An edit saved for another photo stays bound
+/// to it.
 pub(super) fn refresh_identity(
     w: &mut Write<'_>,
     photo: PhotoId,
@@ -255,7 +258,7 @@ pub(super) fn refresh_identity(
     let Some(Some(saved)) = saved else {
         return Ok(Refresh::NoEdit);
     };
-    if serde_json::from_str::<Identity>(&saved).ok().as_ref() != Some(was) {
+    if !serde_json::from_str::<Identity>(&saved).is_ok_and(|saved| saved.same_photo(was)) {
         return Ok(Refresh::Protected);
     }
     w.execute(

@@ -417,8 +417,9 @@ mod scenarios {
         };
         f.apply(&plan, &accepted)?;
         assert_eq!(f.path_of(id), to);
-        // Not verified: the edit stays bound to the file it was saved for.
-        assert!(f.cat.load_edit(id, &to).is_err());
+        // Not verified, but the same photo (`Identity::same_photo`): its edit
+        // still applies, whatever the copy's modification time.
+        assert!(f.cat.load_edit(id, &to)?.is_some());
         Ok(())
     }
 
@@ -427,14 +428,12 @@ mod scenarios {
         let mut f = fixture()?;
         let id = f.id("IMG_1001.dng");
         f.edit(id)?;
-        // The file changed after the edit was saved; the checksum is of the
-        // new version.
+        // The file's bytes changed after the edit was saved; the checksum is
+        // of the new version.
         let from = f.root.join("Lisbon/IMG_1001.dng");
-        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(30);
-        std::fs::File::options()
-            .write(true)
-            .open(&from)?
-            .set_modified(later)?;
+        let mut bytes = std::fs::read(&from)?;
+        bytes[16] ^= 0xff;
+        std::fs::write(&from, bytes)?;
         f.checksum_all()?;
         let to = f.root.join("Lisbon/moved.dng");
         copy_then_delete(&from, &to)?;

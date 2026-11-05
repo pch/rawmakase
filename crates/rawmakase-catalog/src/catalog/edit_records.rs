@@ -275,6 +275,57 @@ mod tests {
         Ok(())
     }
 
+    /// Issue #870: a file whose modification time alone changed, as a cloud
+    /// mount or `touch` can leave it, keeps its edit and takes saves; one whose
+    /// bytes changed stays protected.
+    #[test]
+    fn a_new_modification_time_alone_keeps_the_edit_and_its_saves() -> Result<()> {
+        use crate::storage::Identity;
+        let (_d, mut c, photos) = catalog()?;
+        let (id, path) = &photos[0];
+        let opened = Identity::read(path)?;
+        let mut edit = Recipe {
+            exposure: 0.1,
+            ..Default::default()
+        };
+        let save = |c: &mut Catalog, source: &Identity, edit: &Recipe| {
+            c.save_edit(
+                *id,
+                path,
+                source,
+                edit,
+                &ExportOptions::default(),
+                super::super::HistoryUpdate::Keep,
+            )
+        };
+        save(&mut c, &opened, &edit)?;
+
+        let file = std::fs::File::options().write(true).open(path)?;
+        let modified = file.metadata()?.modified()?;
+        file.set_modified(modified + std::time::Duration::from_secs(2))?;
+        drop(file);
+        let touched = Identity::read(path)?;
+        assert_ne!(touched, opened);
+        assert_eq!(c.load_edit(*id, path)?.unwrap().recipe, edit);
+        // The editor still holds the identity read when the photo was opened.
+        edit.exposure = 0.2;
+        save(&mut c, &opened, &edit)?;
+        assert_eq!(c.load_edit(*id, path)?.unwrap().recipe, edit);
+        // The saved edit now names the file as it is.
+        let stored: Identity = serde_json::from_str(&c.edit_record(*id)?.identity.expect("saved"))?;
+        assert_eq!(stored, touched);
+
+        // Same size, other bytes: another photo, never given this edit.
+        let mut bytes = std::fs::read(path)?;
+        bytes[16] ^= 0xff;
+        std::fs::write(path, bytes)?;
+        let error = format!("{:#}", c.load_edit(*id, path).unwrap_err());
+        assert!(error.contains("protected"), "{error}");
+        assert!(save(&mut c, &opened, &edit).is_err());
+        assert!(save(&mut c, &Identity::read(path)?, &edit).is_err());
+        Ok(())
+    }
+
     #[test]
     fn an_edit_that_cant_be_used_is_an_error_never_the_defaults() -> Result<()> {
         let (_d, mut c, photos) = catalog()?;
