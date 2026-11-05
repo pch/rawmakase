@@ -14,7 +14,7 @@ use std::{
     thread::JoinHandle,
 };
 
-/// Textures kept per cache; older ones are dropped first.
+/// Textures kept per cache; older ones not shown are dropped first.
 const KEPT: usize = 192;
 /// Photos asked for ahead at once; looked at for it in a frame; whose edit
 /// is read from the catalog for it in a frame, on the UI thread; and asked
@@ -63,10 +63,14 @@ pub(super) struct PreviewTextures {
     /// Photos one view shows at once, e.g. a large survey; never fewer
     /// textures are kept, so none is dropped while it is shown.
     pub(super) shown_at_once: usize,
-    /// Photos shown in the last frame, by every view together (the grid and
-    /// the filmstrip below it); never fewer textures are kept, so a grid of
-    /// more cells than [`KEPT`] doesn't drop thumbnails it shows.
-    shown_last_frame: usize,
+    /// Files whose thumbnail is shown this frame, by every view together.
+    pub(super) thumb_seen: HashSet<PathBuf>,
+    /// The files and photos shown in the last frame, by every view together
+    /// (the grid and the filmstrip below it). Never fewer textures are kept,
+    /// and these are never the ones dropped, so a grid of more cells than
+    /// [`KEPT`] doesn't drop thumbnails it shows.
+    shown_files: HashSet<PathBuf>,
+    shown_photos: HashSet<PhotoId>,
     /// The two workers, to wait for at exit.
     threads: [Option<JoinHandle<()>>; 2],
 }
@@ -103,7 +107,9 @@ impl PreviewTextures {
             edited_order: VecDeque::new(),
             progress: Progress::default(),
             shown_at_once: 0,
-            shown_last_frame: 0,
+            thumb_seen: HashSet::new(),
+            shown_files: HashSet::new(),
+            shown_photos: HashSet::new(),
             threads: [Some(thumbs), Some(edits)],
         }
     }
@@ -174,14 +180,14 @@ impl PreviewTextures {
     }
     /// Hands the worker the photos shown last frame. Call once per frame.
     pub(super) fn publish_shown(&mut self) {
-        let shown = std::mem::take(&mut self.edit_seen);
-        self.shown_last_frame = shown.len();
-        *self.edit_wanted.lock().unwrap() = shown;
+        self.shown_files = std::mem::take(&mut self.thumb_seen);
+        self.shown_photos = std::mem::take(&mut self.edit_seen);
+        *self.edit_wanted.lock().unwrap() = self.shown_photos.clone();
     }
     /// How many textures of each kind are kept: [`KEPT`], or as many as are
     /// shown at once.
     fn kept(&self) -> usize {
-        KEPT.max(self.shown_at_once).max(self.shown_last_frame)
+        KEPT.max(self.shown_at_once).max(self.shown_photos.len())
     }
     pub(super) fn insert_thumb(
         &mut self,
@@ -191,7 +197,7 @@ impl PreviewTextures {
     ) {
         if !self.thumbs.contains_key(&path) {
             while self.thumbs.len() >= self.kept() {
-                let Some(old) = self.thumb_order.pop_front() else {
+                let Some(old) = oldest_not_shown(&mut self.thumb_order, &self.shown_files) else {
                     break;
                 };
                 self.thumbs.remove(&old);
@@ -204,7 +210,7 @@ impl PreviewTextures {
     pub(super) fn insert_edited(&mut self, ctx: &egui::Context, id: PhotoId, im: &image::RgbImage) {
         if !self.edited.contains_key(&id) {
             while self.edited.len() >= self.kept() {
-                let Some(old) = self.edited_order.pop_front() else {
+                let Some(old) = oldest_not_shown(&mut self.edited_order, &self.shown_photos) else {
                     break;
                 };
                 self.edited.remove(&old);
@@ -267,6 +273,7 @@ impl PreviewTextures {
         self.request_edited(photo, edit);
     }
     pub(super) fn request_thumbnail(&mut self, path: &Path, ctx: &egui::Context) {
+        self.thumb_seen.insert(path.to_path_buf());
         if !self.thumbs.contains_key(path)
             && !self.pending.contains(path)
             && !self.failed.contains(path)
@@ -415,6 +422,15 @@ impl PreviewTextures {
         self.progress
             .show(ui, self.edits_pending, !self.ahead.is_empty());
     }
+}
+/// Takes the oldest of `order` not shown in the last frame, or the oldest
+/// when all are: dropping one shown would have it asked for again at once.
+fn oldest_not_shown<K: Eq + std::hash::Hash>(
+    order: &mut VecDeque<K>,
+    shown: &HashSet<K>,
+) -> Option<K> {
+    let at = order.iter().position(|k| !shown.contains(k)).unwrap_or(0);
+    order.remove(at)
 }
 fn texture(ctx: &egui::Context, name: String, im: &image::RgbImage) -> egui::TextureHandle {
     ctx.load_texture(

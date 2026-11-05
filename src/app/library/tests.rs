@@ -1587,6 +1587,49 @@ fn preview_textures_keep_every_one_shown_in_a_frame() -> Result<()> {
     assert!(library.cache.thumbs.contains_key(&PathBuf::from("300.RAF")));
     Ok(())
 }
+/// A grid of more cells than [`KEPT`] scrolled down a row and back up: the
+/// thumbnails coming back push out ones not shown, never ones still shown,
+/// which would be asked for again and push out the next row, and so on.
+#[test]
+fn preview_textures_keep_the_ones_shown_when_scrolling_back() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF"])?;
+    let ctx = library.ctx.clone();
+    let image = image::RgbImage::new(2, 2);
+    let path = |n: usize| PathBuf::from(format!("{n}.RAF"));
+    // 27 columns and 8 rows shown: rows `first` to `first + 7`.
+    let show = |library: &mut Library, first: usize| {
+        for n in first * 27..(first + 8) * 27 {
+            library.cache.edit_seen.insert(PhotoId(n as _));
+            library.cache.thumb_seen.insert(path(n));
+        }
+        library.cache.publish_shown();
+        // Only those not already kept were asked for, and come back.
+        let missing: Vec<usize> = (first * 27..(first + 8) * 27)
+            .filter(|&n| !library.cache.thumbs.contains_key(&path(n)))
+            .collect();
+        for n in missing {
+            library.cache.insert_thumb(&ctx, path(n), &image);
+        }
+        let missing: Vec<usize> = (first * 27..(first + 8) * 27)
+            .filter(|&n| !library.cache.edited.contains_key(&PhotoId(n as _)))
+            .collect();
+        for n in missing {
+            library.cache.edited_requested.insert(PhotoId(n as _), 1);
+            library.cache.insert_edited(&ctx, PhotoId(n as _), &image);
+        }
+    };
+    show(&mut library, 0);
+    show(&mut library, 1);
+    show(&mut library, 0);
+    for n in 0..8 * 27 {
+        assert!(library.cache.thumbs.contains_key(&path(n)), "{n} dropped");
+        assert!(
+            library.cache.edited.contains_key(&PhotoId(n as _)),
+            "edited {n} dropped"
+        );
+    }
+    Ok(())
+}
 /// Develop's render is kept for the file it was rendered from: the store
 /// carries that file's stamp, and a render of a file not known is shown, not
 /// cached.
