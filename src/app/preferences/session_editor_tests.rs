@@ -86,11 +86,10 @@ fn the_window_reopens_maximized_as_it_was_left() -> anyhow::Result<()> {
         crate::app::preferences::session::Session::default(),
         Some(dir.path().join("session.json")),
     );
-    let keeps = crate::app::shell::workspace::KEEPS_MAXIMIZED;
-    assert_eq!(window_frame(&mut e, &ctx, 0., true, false), (keeps, false));
+    assert_eq!(window_frame(&mut e, &ctx, 0., true, false), (true, false));
     // Minimized from maximized, Windows reports it not maximized.
-    assert_eq!(window_frame(&mut e, &ctx, 1., false, true), (keeps, false));
-    assert_eq!(window_frame(&mut e, &ctx, 2., true, false), (keeps, false));
+    assert_eq!(window_frame(&mut e, &ctx, 1., false, true), (true, false));
+    assert_eq!(window_frame(&mut e, &ctx, 2., true, false), (true, false));
     // Restored to its size.
     assert_eq!(window_frame(&mut e, &ctx, 3., false, false), (false, false));
     Ok(())
@@ -108,26 +107,25 @@ fn a_window_reopened_maximized_keeps_that_until_the_window_manager_maximizes_it(
     crate::storage::atomic_json(&file, &session())?;
     let ctx = egui::Context::default();
     let mut e = Editor::with_context(&ctx, None, session(), Some(file.clone()));
-    let keeps = crate::app::shell::workspace::KEEPS_MAXIMIZED;
     // An X11 window manager maximizes the window only once it is shown: the first
     // frame asks again, and the frames before it is maximized don't count.
-    assert_eq!(window_frame(&mut e, &ctx, 0., false, false), (true, keeps));
+    assert_eq!(window_frame(&mut e, &ctx, 0., false, false), (true, true));
     assert_eq!(window_frame(&mut e, &ctx, 0.5, false, false), (true, false));
     assert_eq!(window_frame(&mut e, &ctx, 1., true, false), (true, false));
     assert_eq!(
         window_frame(&mut e, &ctx, 1.5, false, false),
-        (!keeps, false)
+        (false, false)
     );
 
     // One that never maximizes it: after a while, the window is saved as it is.
     crate::storage::atomic_json(&file, &session())?;
     let ctx = egui::Context::default();
     let mut e = Editor::with_context(&ctx, None, session(), Some(file.clone()));
-    assert_eq!(window_frame(&mut e, &ctx, 0., false, false), (true, keeps));
+    assert_eq!(window_frame(&mut e, &ctx, 0., false, false), (true, true));
     assert_eq!(window_frame(&mut e, &ctx, 1.9, false, false), (true, false));
     assert_eq!(
         window_frame(&mut e, &ctx, 2.1, false, false),
-        (!keeps, false)
+        (false, false)
     );
 
     // Maximized already (Windows, Wayland), or started minimized: nothing to ask.
