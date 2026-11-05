@@ -28,8 +28,8 @@ impl Own {
         Ok((Self { bytes, info }, header))
     }
     /// The file at `path` read in pieces, its header alone
-    /// ([`rawmakase_raw::header_from_file`]): for its metadata, never decoded,
-    /// as its sensor data is zeros.
+    /// ([`rawmakase_raw::header_from_file`]): for its metadata, with no bytes
+    /// of the file kept, so decoding it fails rather than decoding zeros.
     pub(super) fn open_header(path: &Path) -> Result<(Self, Header)> {
         // Unbuffered: each piece is read whole, and a buffer would read past it.
         let mut file = std::fs::File::open(path)?;
@@ -38,7 +38,7 @@ impl Own {
         let header = header(&partial.info);
         Ok((
             Self {
-                bytes: partial.bytes.into(),
+                bytes: Arc::from(Vec::new()),
                 info: partial.info,
             },
             header,

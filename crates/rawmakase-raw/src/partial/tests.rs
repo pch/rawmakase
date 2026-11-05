@@ -221,10 +221,11 @@ fn a_candidate_read_whole_without_a_frame_header_is_left_out() {
     assert_eq!(partial.preview, whole.as_ref());
 }
 
-/// The facts photo info is made of (camera, lens, exposure, size, crop,
-/// orientation) read from the header alone are those read from the whole
-/// file, the frame taken from the largest preview's size included; a little
-/// of the file is read.
+/// The header facts read alone are those read from the whole file: camera,
+/// variant, size, crop and orientation, the frame taken from the largest
+/// preview's size included; a little of the file is read. This NEF has no
+/// exposure or lens tags, so those compare empty: real files are compared by
+/// `rawmakase-decode`'s `photo_info_from_the_header_is_the_whole_file_s`.
 #[test]
 fn header_facts_read_in_pieces_are_the_whole_file_s() {
     let file = nef_with_previews(3 << 20, &sizes(), 0);
@@ -271,7 +272,6 @@ fn header_facts_read_in_pieces_are_the_whole_file_s() {
         ]
     );
     assert_eq!((p.lens_id, p.lens_info), (whole.lens_id, whole.lens_info));
-    assert_eq!(partial.bytes.len(), file.len());
     assert!(partial.read < HEAD + TAIL + 3 * (64 << 10) + 1);
     assert!(header_from_file(&mut Cursor::new(Vec::<u8>::new())).is_none());
 }

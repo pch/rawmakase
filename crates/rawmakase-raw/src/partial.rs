@@ -67,7 +67,10 @@ pub fn preview_from_file(file: &mut (impl Read + Seek), edge: u32) -> Option<Par
 /// candidate without an error and choose another. For these formats the
 /// comparison with whole-file reads over the raw.pixls.us archive found no
 /// difference; a format is added once `real_files_give_the_same_preview_read_in_pieces`
-/// finds none for it.
+/// finds none for it. [`header_from_file`] reads photo info by the same list:
+/// for it, `rawmakase-decode`'s `photo_info_from_the_header_is_the_whole_file_s`
+/// is the comparison, as photo info can come from parts of the file a preview
+/// doesn't need (an EXIF directory between the parts read reads as empty).
 fn checked(variant: Variant) -> bool {
     use Variant::*;
     matches!(
@@ -104,15 +107,13 @@ fn checked(variant: Variant) -> bool {
     )
 }
 
-/// A RAW's header facts read in pieces ([`header_from_file`]).
+/// A RAW's header facts read in pieces ([`header_from_file`]). The parts of
+/// the file read aren't kept: nothing is to be decoded from them.
 pub struct PartialHeader {
     /// The header facts, as [`crate::open`] reads them from the parts read;
     /// as [`PartialPreview::info`], facts taken from the sensor data are not
     /// to be relied on.
     pub info: RawInfo,
-    /// The file's bytes where they were read, zeros elsewhere: the readers'
-    /// view of the file, never to be decoded.
-    pub bytes: Vec<u8>,
     /// The bytes read from the file.
     pub read: u64,
 }
@@ -126,11 +127,7 @@ pub struct PartialHeader {
 pub fn header_from_file(file: &mut (impl Read + Seek)) -> Option<PartialHeader> {
     let mut f = Sparse::new(file)?;
     let info = header_in_pieces(&mut f, checked)?;
-    Some(PartialHeader {
-        info,
-        read: f.read,
-        bytes: f.bytes,
-    })
+    Some(PartialHeader { info, read: f.read })
 }
 
 /// The preview [`preview_from_file`] reads, for files whose variant `allow`
