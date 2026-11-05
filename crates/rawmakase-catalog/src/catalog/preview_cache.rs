@@ -50,8 +50,10 @@ const PRUNE_STEP: usize = 256;
 /// write: at most about 150 ms on an SSD (measured), within the 250 ms another
 /// connection waits for a write.
 const RELEASE_STEP: u32 = 256;
-/// The pause after each such write, for other connections' writes: without
-/// it they rarely got the lock within their 250 ms (measured).
+/// The shortest pause after each such write, which is otherwise as long as
+/// the write took. SQLite wakes a writer waiting for the lock after 1, 2, 5
+/// ... 50, 100 ms; with only a short pause between such writes, some found
+/// it taken each time and gave up after their 250 ms (measured).
 const RELEASE_PAUSE: Duration = Duration::from_millis(5);
 /// The thumbnails' budget when none is set, in bytes.
 pub const DEFAULT_THUMBNAIL_BUDGET: u64 = 512 * 1024 * 1024;
@@ -586,13 +588,17 @@ impl PreviewCache {
     /// in the file, which pruning releases only a little at a time: for a
     /// smaller thumbnail budget to free the disk space it promises. The file is
     /// shortened [`RELEASE_STEP`] pages at a time, each its own short write,
-    /// with a pause after each so the connections making thumbnails meanwhile
-    /// get their writes in; for gigabytes it takes a minute or more, on a thread
-    /// of its own. It ends once a step gives nothing back, as in a file made
-    /// without incremental vacuum.
+    /// with a pause after each as long as the write took, so the connections
+    /// making thumbnails meanwhile get their writes in; for gigabytes it takes
+    /// a minute or more, on a thread of its own. It ends once a step gives
+    /// nothing back, as in a file made without incremental vacuum.
     pub fn release_free_space(&mut self) -> Result<()> {
-        while self.free_pages()? > 0 && self.release_step()? > 0 {
-            std::thread::sleep(RELEASE_PAUSE);
+        while self.free_pages()? > 0 {
+            let started = std::time::Instant::now();
+            if self.release_step()? == 0 {
+                break;
+            }
+            std::thread::sleep(RELEASE_PAUSE.max(started.elapsed()));
         }
         Ok(())
     }
