@@ -93,11 +93,16 @@ enum Command {
     /// say so.
     SystemInfo,
     /// Render one RAW with several XMP sidecars, developing it once: for comparisons
-    /// with Camera Raw. `jobs` is a JSON list of {"xmp", "output", "max_edge"}; existing
-    /// outputs are skipped.
+    /// with Camera Raw. `jobs` is a JSON list of {"xmp", "output", "max_edge",
+    /// "color_space"}; existing outputs are skipped. A job's `color_space` (srgb,
+    /// adobe-rgb or prophoto) replaces --color-space.
     RenderBatch {
         input: PathBuf,
         jobs: PathBuf,
+        /// The colour space of every job without its own: srgb, adobe-rgb or prophoto
+        /// (16-bit TIFF only).
+        #[arg(long, value_parser = parse_color_space, default_value = "srgb")]
+        color_space: rawmakase::color::OutputSpace,
     },
     Thumbnail {
         input: PathBuf,
@@ -117,6 +122,10 @@ enum Command {
         exposure: Option<f32>,
         #[arg(long, default_value_t = 0)]
         max_edge: u32,
+        /// The output's colour space: srgb, adobe-rgb or prophoto (16-bit TIFF only).
+        /// An output whose format can't hold it is refused before anything renders.
+        #[arg(long, value_parser = parse_color_space, default_value = "srgb", conflicts_with = "tap")]
+        color_space: rawmakase::color::OutputSpace,
         #[arg(long)]
         fast: bool,
         #[arg(long)]
@@ -228,6 +237,18 @@ enum Command {
         #[arg(long, default_value_t = 20)]
         iterations: usize,
     },
+}
+/// A `--color-space`, by the names the automation socket uses too.
+fn parse_color_space(name: &str) -> Result<rawmakase::color::OutputSpace, String> {
+    rawmakase::color::OutputSpace::from_name(name)
+        .ok_or_else(|| format!("unknown color space {name:?}; use srgb, adobe-rgb or prophoto"))
+}
+/// Refuses an `output` whose format can't hold `space`, before anything renders.
+fn check_output(output: &std::path::Path, space: rawmakase::color::OutputSpace) -> Result<()> {
+    use rawmakase::export_settings::Format;
+    Format::from_path(output)
+        .ok_or_else(|| anyhow::anyhow!("Export extension must be {}", Format::extensions_listed()))?
+        .supports(space)
 }
 /// A half-size check's `--reference`.
 fn parse_reference(json: &str) -> Result<rawmakase::half_check::Reference, String> {
@@ -447,13 +468,19 @@ fn main() -> Result<()> {
                 serde_json::to_string_pretty(&r.metadata)?
             );
         }
-        Some(Command::RenderBatch { input, jobs }) => {
+        Some(Command::RenderBatch {
+            input,
+            jobs,
+            color_space,
+        }) => {
             #[derive(serde::Deserialize)]
             struct Job {
                 xmp: PathBuf,
                 output: PathBuf,
                 #[serde(default)]
                 max_edge: u32,
+                #[serde(default)]
+                color_space: Option<String>,
             }
             let jobs: Vec<Job> = serde_json::from_str(&std::fs::read_to_string(&jobs)?)?;
             // Read before decoding: AI Denoise's result must be of the same file.
@@ -473,6 +500,11 @@ fn main() -> Result<()> {
                 rawmakase::ai_denoise::CommandLine::new(rawmakase::app::user_ai_denoise_cache());
             for job in jobs.iter().filter(|j| !j.output.exists()) {
                 let rendered = (|| -> Result<()> {
+                    let space = match &job.color_space {
+                        Some(name) => parse_color_space(name).map_err(anyhow::Error::msg)?,
+                        None => color_space,
+                    };
+                    check_output(&job.output, space)?;
                     let preset =
                         rawmakase::xmp::parse(&job.xmp, &std::fs::read_to_string(&job.xmp)?)?;
                     let edit = preset.apply(
@@ -482,14 +514,15 @@ fn main() -> Result<()> {
                         Some(&rawmakase::develop::Measures(&im)),
                     )?;
                     let ai = ai_denoise.source(&input, &file, &im, &edit)?;
-                    let out = develop::render_with_ai(
+                    let out = develop::render_export(
                         &im,
                         &edit.checked()?,
                         ai.as_ref(),
                         job.max_edge,
+                        space,
                         Cancel::NEVER,
                     )?;
-                    rawmakase::export::export_with(
+                    rawmakase::export::export_image(
                         &job.output,
                         &input,
                         &out,
@@ -528,6 +561,7 @@ fn main() -> Result<()> {
             output,
             exposure,
             max_edge,
+            color_space,
             fast,
             overwrite,
             recipe,
@@ -536,6 +570,9 @@ fn main() -> Result<()> {
             auto_wb,
             tap,
         }) => {
+            if tap.is_none() {
+                check_output(&output, color_space)?;
+            }
             let t = Instant::now();
             // Read before decoding: AI Denoise's result must be of the same file.
             let file = rawmakase::storage::Identity::read(&input)?;
@@ -654,15 +691,16 @@ fn main() -> Result<()> {
             let ai =
                 rawmakase::ai_denoise::CommandLine::new(rawmakase::app::user_ai_denoise_cache())
                     .source(&input, &file, &im, &edit)?;
-            let out = develop::render_with_ai(
+            let out = develop::render_export(
                 &im,
                 &edit.checked()?,
                 ai.as_ref(),
                 max_edge,
+                color_space,
                 Cancel::NEVER,
             )?;
             let rendered = t.elapsed() - developed;
-            rawmakase::export::export_with(
+            rawmakase::export::export_image(
                 &output,
                 &input,
                 &out,
@@ -688,8 +726,8 @@ fn main() -> Result<()> {
             let max = im.pixels.iter().flatten().copied().fold(0f32, f32::max);
             println!(
                 "{}x{} | develop {:?} | render {:?} | total {:?} | camera max {:.4} | scale {:.6} | integer clipped {}",
-                out.width,
-                out.height,
+                out.image().width,
+                out.image().height,
                 developed,
                 rendered,
                 t.elapsed(),
@@ -1172,6 +1210,47 @@ mod tests {
         let written = image::open(&output).unwrap().to_rgb32f();
         assert_eq!(written.dimensions(), (2, 1));
         assert_eq!(written.get_pixel(1, 0).0, [0.4, 0.5, 0.6]);
+    }
+
+    /// `--color-space` takes the socket's names, and an output whose format can't hold
+    /// the space is refused before anything is read.
+    #[test]
+    fn render_takes_a_color_space_and_refuses_prophoto_outside_tiff() {
+        use rawmakase::color::OutputSpace;
+        let parse = |args: &[&str]| {
+            Args::try_parse_from(
+                ["rawmakase", "render", "in.dng", "out.tif"]
+                    .iter()
+                    .chain(args),
+            )
+        };
+        for (name, space) in [
+            ("srgb", OutputSpace::Srgb),
+            ("adobe-rgb", OutputSpace::AdobeRgb),
+            ("prophoto", OutputSpace::ProPhoto),
+        ] {
+            let cli = parse(&["--color-space", name]).unwrap();
+            assert!(
+                matches!(cli.command, Some(Command::Render { color_space, .. }) if color_space == space),
+                "{name}"
+            );
+        }
+        assert!(matches!(
+            parse(&[]).unwrap().command,
+            Some(Command::Render {
+                color_space: OutputSpace::Srgb,
+                ..
+            })
+        ));
+        assert!(parse(&["--color-space", "display-p3"]).is_err());
+        assert!(parse(&["--color-space", "prophoto", "--tap", "scene-input"]).is_err());
+        for name in ["a.jpg", "a.png"] {
+            let refused = check_output(std::path::Path::new(name), OutputSpace::ProPhoto);
+            assert!(refused.unwrap_err().to_string().contains("TIFF"), "{name}");
+            check_output(std::path::Path::new(name), OutputSpace::AdobeRgb).unwrap();
+        }
+        check_output(std::path::Path::new("a.tiff"), OutputSpace::ProPhoto).unwrap();
+        assert!(check_output(std::path::Path::new("a.webp"), OutputSpace::Srgb).is_err());
     }
 
     #[test]

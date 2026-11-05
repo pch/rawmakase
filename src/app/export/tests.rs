@@ -331,6 +331,67 @@ fn return_exports_from_the_dialog() -> anyhow::Result<()> {
     return_key(&mut e);
     assert_eq!(e.messages.line(), "Choose a folder to export to");
     assert!(e.exports.dialog);
+    // ProPhoto RGB in a JPEG: said, and the dialog stays open with nothing queued.
+    open(&mut e);
+    e.exports.draft.folder = Some(_dir.path().join("out"));
+    e.exports
+        .draft
+        .choose_color_space(crate::color::OutputSpace::ProPhoto);
+    return_key(&mut e);
+    assert!(
+        e.messages.line().contains("ProPhoto RGB"),
+        "{}",
+        e.messages.line()
+    );
+    assert!(e.exports.dialog && e.exports.queued.is_empty());
+    Ok(())
+}
+
+/// Export with Previous exports in the saved colour space, and refuses one its
+/// format can't hold or a later release saved, before anything renders.
+#[test]
+fn export_with_previous_keeps_its_colour_space_or_refuses_it() -> anyhow::Result<()> {
+    use crate::color::OutputSpace;
+    let (dir, mut e, ids, ctx) = editor()?;
+    e.exports.unsaved_settings = true;
+    e.library.as_mut().unwrap().select(Some(ids[0]));
+    let out = dir.path().join("out");
+    let mut jpeg = settings(&out);
+    jpeg.choose_format(Format::Jpeg);
+    jpeg.choose_color_space(OutputSpace::ProPhoto);
+    e.export_previous(Some(jpeg));
+    assert!(e.exports.queued.is_empty());
+    assert!(
+        e.messages.line().contains("ProPhoto RGB"),
+        "{}",
+        e.messages.line()
+    );
+    let file = dir.path().join("export.json");
+    std::fs::write(&file, r#"{"color_space":"DisplayP3","format":"Tiff"}"#)?;
+    let mut later = ExportSettings::load_file(&file).unwrap();
+    (later.destination, later.folder) = (Destination::Folder, Some(out.clone()));
+    e.messages.clear_line();
+    e.export_previous(Some(later));
+    assert!(e.exports.queued.is_empty());
+    assert!(
+        e.messages.line().contains("later version"),
+        "{}",
+        e.messages.line()
+    );
+    assert!(listing(&out).is_empty());
+    let mut adobe = settings(&out);
+    adobe.choose_color_space(OutputSpace::AdobeRgb);
+    e.export_previous(Some(adobe));
+    // The batch captured its settings: a choice made in the dialog meanwhile
+    // doesn't change it.
+    e.exports.draft.choose_color_space(OutputSpace::Srgb);
+    wait(&mut e, &ctx);
+    let exported = out.join("a.tif");
+    let facts = crate::exif::colour_facts(&exported).unwrap();
+    assert_eq!(
+        (facts.color_space, facts.interop_index.as_deref()),
+        (Some(0xffff), Some("R03"))
+    );
     Ok(())
 }
 
