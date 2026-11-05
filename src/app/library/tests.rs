@@ -1555,6 +1555,38 @@ fn preview_textures_keep_the_newest_192() -> Result<()> {
     assert_eq!(library.cache.thumb_order.len(), 192);
     Ok(())
 }
+/// Every thumbnail shown in one frame stays: a grid of more than 192 cells (a
+/// wide screen with small thumbnails, the filmstrip below) dropped thumbnails
+/// still shown for the ones it had just asked for, and asked for them again,
+/// flickering. Once fewer are shown, the usual number is kept.
+#[test]
+fn preview_textures_keep_every_one_shown_in_a_frame() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF"])?;
+    let ctx = library.ctx.clone();
+    let image = image::RgbImage::new(2, 2);
+    for n in 0..300 {
+        library.cache.edit_seen.insert(PhotoId(n));
+    }
+    library.cache.publish_shown();
+    for n in 0..300 {
+        library
+            .cache
+            .insert_thumb(&ctx, PathBuf::from(format!("{n}.RAF")), &image);
+        library.cache.edited_requested.insert(PhotoId(n), 1);
+        library.cache.insert_edited(&ctx, PhotoId(n), &image);
+    }
+    assert_eq!(library.cache.thumbs.len(), 300);
+    assert_eq!(library.cache.edited.len(), 300);
+    // A frame showing a few: the oldest go again, down to 192.
+    library.cache.edit_seen.insert(PhotoId(0));
+    library.cache.publish_shown();
+    library
+        .cache
+        .insert_thumb(&ctx, PathBuf::from("300.RAF"), &image);
+    assert_eq!(library.cache.thumbs.len(), 192);
+    assert!(library.cache.thumbs.contains_key(&PathBuf::from("300.RAF")));
+    Ok(())
+}
 /// Develop's render is kept for the file it was rendered from: the store
 /// carries that file's stamp, and a render of a file not known is shown, not
 /// cached.

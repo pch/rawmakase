@@ -63,6 +63,10 @@ pub(super) struct PreviewTextures {
     /// Photos one view shows at once, e.g. a large survey; never fewer
     /// textures are kept, so none is dropped while it is shown.
     pub(super) shown_at_once: usize,
+    /// Photos shown in the last frame, by every view together (the grid and
+    /// the filmstrip below it); never fewer textures are kept, so a grid of
+    /// more cells than [`KEPT`] doesn't drop thumbnails it shows.
+    shown_last_frame: usize,
     /// The two workers, to wait for at exit.
     threads: [Option<JoinHandle<()>>; 2],
 }
@@ -99,6 +103,7 @@ impl PreviewTextures {
             edited_order: VecDeque::new(),
             progress: Progress::default(),
             shown_at_once: 0,
+            shown_last_frame: 0,
             threads: [Some(thumbs), Some(edits)],
         }
     }
@@ -170,7 +175,13 @@ impl PreviewTextures {
     /// Hands the worker the photos shown last frame. Call once per frame.
     pub(super) fn publish_shown(&mut self) {
         let shown = std::mem::take(&mut self.edit_seen);
+        self.shown_last_frame = shown.len();
         *self.edit_wanted.lock().unwrap() = shown;
+    }
+    /// How many textures of each kind are kept: [`KEPT`], or as many as are
+    /// shown at once.
+    fn kept(&self) -> usize {
+        KEPT.max(self.shown_at_once).max(self.shown_last_frame)
     }
     pub(super) fn insert_thumb(
         &mut self,
@@ -179,7 +190,7 @@ impl PreviewTextures {
         im: &image::RgbImage,
     ) {
         if !self.thumbs.contains_key(&path) {
-            while self.thumbs.len() >= KEPT.max(self.shown_at_once) {
+            while self.thumbs.len() >= self.kept() {
                 let Some(old) = self.thumb_order.pop_front() else {
                     break;
                 };
@@ -192,7 +203,7 @@ impl PreviewTextures {
     }
     pub(super) fn insert_edited(&mut self, ctx: &egui::Context, id: PhotoId, im: &image::RgbImage) {
         if !self.edited.contains_key(&id) {
-            while self.edited.len() >= KEPT.max(self.shown_at_once) {
+            while self.edited.len() >= self.kept() {
                 let Some(old) = self.edited_order.pop_front() else {
                     break;
                 };
