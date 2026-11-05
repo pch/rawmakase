@@ -48,7 +48,11 @@ fn keyboard_fit_and_physical_pixel_region() {
     e.document.set_image(image);
     e.view.zoom.on = true;
     e.view.viewport = Vec2::new(4., 2.);
-    assert_eq!(e.region(), Some([4, 3, 4, 2]));
+    // The view's own region is in physical pixels; the one rendered adds a
+    // margin around it.
+    let view = e.view.zoom.region(e.view.viewport, 12, 8);
+    assert_eq!(view, Some([4, 3, 4, 2]));
+    assert_eq!(e.region(), Some([3, 2, 6, 4]));
 }
 
 /// Cmd+0 is 100%, Cmd+1 fits, and Cmd+= / Cmd+- zoom by a constant factor from

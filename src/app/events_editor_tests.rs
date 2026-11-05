@@ -676,9 +676,9 @@ fn a_region_overtaken_by_a_pan_still_shows_where_it_was_rendered() {
         taken.recv_timeout(std::time::Duration::from_secs(5)),
         Ok(first)
     );
-    // Dragged on while the first region still renders.
+    // Dragged on while the first region still renders, past its margin.
     for i in 1..=5 {
-        e.view.zoom.pan[0] = 0.5 + i as f32 / 50.;
+        e.view.zoom.pan[0] = 0.5 + i as f32 / 25.;
         frame(&mut e);
     }
     let last = e.preview.task.id();

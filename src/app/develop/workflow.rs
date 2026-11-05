@@ -432,15 +432,22 @@ impl Editor {
             _ => Overlay::None,
         }
     }
-    /// The 1:1 region to render when zoomed to 100% or more; below 100% the
-    /// whole photo is rendered at the zoomed size instead.
+    /// The 1:1 region to render when zoomed to 100% or more, with a margin
+    /// around the view; below 100% the whole photo is rendered at the zoomed
+    /// size instead. See
+    /// [`Zoom::render_region`](crate::app::view::navigator::Zoom::render_region).
     pub(in crate::app) fn region(&self) -> Option<[u32; 4]> {
         let im = self.document.full()?;
         self.region_in(&Geometry::new(im, &self.effective_recipe(), 0))
     }
     /// The 1:1 region of a photo with geometry `g` that the view shows, as `region`.
     pub(in crate::app) fn region_in(&self, g: &Geometry) -> Option<[u32; 4]> {
-        self.view.zoom.region(self.view.viewport, g.width, g.height)
+        self.view.zoom.render_region(
+            self.view.viewport,
+            g.width,
+            g.height,
+            self.preview.last_region,
+        )
     }
     pub(in crate::app) fn schedule(&mut self) {
         self.schedule_render(Change::View);
