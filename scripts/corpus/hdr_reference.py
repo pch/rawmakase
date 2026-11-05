@@ -1,7 +1,8 @@
 """Separate, immutable Camera Raw HDR reference capture and linear diagnostics.
 
 Run `capture CONFIG OUT`, where CONFIG is a local JSON array of jobs with source,
-licence, split, profile (DCP path), settings, and optional curves. OUT must not
+licence, split, profile (a DCP path, or `embedded` for a DNG's own profile), settings,
+and optional curves. OUT must not
 exist. Originals are hashed and copied before Adobe opens anything. Full-size
 TIFFs, complete returned XMP, and linear Display P3 arrays are retained. No SDR
 corpus files are read or written. `compare REF.npy CANDIDATE.npy` is diagnostic,
@@ -47,6 +48,22 @@ def reduce_linear(pixels, factor):
     counts = (np.minimum(factor, pixels.shape[0] - ys)[:, None] *
               np.minimum(factor, pixels.shape[1] - xs)[None, :])
     return sums / counts[..., None]
+
+
+def store_compressed(path, pixels, icc):
+    """Rewrites Photoshop's uncompressed TIFF losslessly (Deflate with a horizontal
+    predictor) with the same pixels and ICC profile, and checks it reads back exactly.
+    Returns the SHA-256 of the pixel data."""
+    import tifffile
+    pixels = np.ascontiguousarray(pixels)
+    temporary = path.with_suffix('.tmp.tif')
+    tifffile.imwrite(temporary, pixels, photometric='rgb', compression='zlib',
+                     predictor=True, iccprofile=icc)
+    with tifffile.TiffFile(temporary) as tiff:
+        if not np.array_equal(tiff.asarray(), pixels) or tiff.pages[0].tags[34675].value != icc:
+            raise RuntimeError('Compressed reference does not read back exactly')
+    temporary.replace(path)
+    return hashlib.sha256(pixels.tobytes()).hexdigest()
 
 
 def compare(reference, candidate):
@@ -106,7 +123,8 @@ def capture(config, out, factor):
                 raise ValueError(f'Missing {key}')
         if job['split'] not in ('training', 'validation', 'holdout', 'diagnostic'):
             raise ValueError('Unknown split')
-        if not Path(job['source']).is_file() or not Path(job['profile']).is_file():
+        if not Path(job['source']).is_file() or not (
+                job['profile'] == 'embedded' or Path(job['profile']).is_file()):
             raise ValueError('Source and DCP must exist')
     if factor < 1:
         raise ValueError('Reduction factor must be positive')
@@ -119,7 +137,7 @@ def capture(config, out, factor):
         folder.mkdir()
         source = Path(job['source']).resolve()
         source_hash = sha256(source)
-        profile_hash = sha256(job['profile'])
+        profile_hash = None if job['profile'] == 'embedded' else sha256(job['profile'])
         copy = folder / ('input' + source.suffix)
         shutil.copyfile(source, copy)
         if sha256(copy) != source_hash:
@@ -136,7 +154,8 @@ def capture(config, out, factor):
                         'end tell\nend timeout'], capture_output=True, text=True, timeout=660)
         (folder / 'photoshop.log').write_text(completed.stdout + completed.stderr)
         completed.check_returncode()
-        if sha256(source) != source_hash or sha256(job['profile']) != profile_hash:
+        if sha256(source) != source_hash or (
+                profile_hash is not None and sha256(job['profile']) != profile_hash):
             raise RuntimeError('Original source or profile changed during capture')
         metadata = json.loads(subprocess.check_output(['exiftool', '-j', '-G1', '-s', str(output)]))[0]
         (folder / 'returned.xmp').write_bytes(subprocess.check_output(['exiftool', '-b', '-XMP', str(output)]))
@@ -159,12 +178,15 @@ def capture(config, out, factor):
         expected_hdr = str(job['settings'].get('HDREditMode', '0')) == '1'
         if expected_hdr != (transfer == 'ST2084'):
             raise ValueError('Requested HDR intent and returned transfer disagree')
+        output_hash = sha256(output)
+        pixels_hash = store_compressed(output, pixels, icc)
         reduced = reduce_linear(linear, factor)
         np.save(folder / 'linear-p3.npy', reduced)
         record = dict(job=job, source_sha256=source_hash, profile_sha256=profile_hash,
                       camera_raw=camera_raw.version(), requested_xmp_sha256=sha256(folder / 'requested.xmp'),
                       returned_xmp_sha256=sha256(folder / 'returned.xmp'),
-                      output_sha256=sha256(output), output_icc_sha256=hashlib.sha256(icc).hexdigest(),
+                      output_sha256=output_hash, stored='Deflate TIFF, identical pixels and ICC',
+                      pixels_sha256=pixels_hash, output_icc_sha256=hashlib.sha256(icc).hexdigest(),
                       linear_sha256=sha256(folder / 'linear-p3.npy'),
                       output_dimensions=[pixels.shape[1], pixels.shape[0]],
                       reduced_dimensions=[reduced.shape[1], reduced.shape[0]],
