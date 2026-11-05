@@ -266,7 +266,7 @@ pub(crate) struct Library {
     grid_shown: std::ops::Range<usize>,
     /// External volumes attached at the last check, to notice one returning;
     /// None before the first check.
-    attached: Option<HashSet<std::path::PathBuf>>,
+    attached: Option<HashSet<crate::platform::volume::Volume>>,
     pub(in crate::app) messages: crate::app::shell::messages::Messages,
     /// Background reads are held off while a file operation holds the
     /// catalog: nothing starts them until it lets go.
@@ -466,7 +466,10 @@ impl Library {
     }
     /// Checks again which photos are online when an external volume comes
     /// back, so they show and their capture times are read.
-    fn volumes_checked(&mut self, online: &HashMap<std::path::PathBuf, volumes::VolumeState>) {
+    fn volumes_checked(
+        &mut self,
+        online: &HashMap<crate::platform::volume::Volume, volumes::VolumeState>,
+    ) {
         // Nothing to compare with until the first check has answered.
         if online.is_empty() {
             return;
@@ -474,13 +477,13 @@ impl Library {
         let attached: HashSet<_> = online
             .iter()
             .filter(|(_, (on, _))| *on)
-            .map(|(mount, _)| mount.clone())
+            .map(|(volume, _)| volume.clone())
             .collect();
         // The first answer may come during or after the online check (the
         // sidebar starts the volume check), so that check is made again
         // unless it finished with every photo online.
         let returned = match &self.attached {
-            Some(before) => attached.iter().any(|mount| !before.contains(mount)),
+            Some(before) => attached.iter().any(|volume| !before.contains(volume)),
             None => {
                 self.availability.checking()
                     || self
