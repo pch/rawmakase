@@ -7,6 +7,7 @@ use super::{Catalog, FolderId, PhotoId, RootId};
 use anyhow::{Result, ensure};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 /// What adding a folder did.
 #[derive(Debug, Default)]
@@ -365,15 +366,32 @@ impl Catalog {
     /// by side, as one after another leaves a slow disk or a network share
     /// waiting on each; the checks against the catalog follow in order.
     /// `place` travels with each photo for its caller.
+    ///
+    /// Each folder's names are read once, by the first reader to come to one
+    /// of its photos, so that whether a sidecar exists beside each photo needn't
+    /// be asked of the file system name by name (`sidecar::Listing`).
     pub(in crate::catalog) fn read_new_photos<P: Send>(
         &self,
         files: Vec<(PathBuf, P)>,
         defaults: &super::NewPhotoDefaults,
     ) -> Vec<NewPhoto<P>> {
-        side_by_side(files, |(file, place)| read_new_photo(file, place, defaults))
-            .into_iter()
-            .map(|read| self.new_photo(read))
-            .collect()
+        let listings: HashMap<PathBuf, OnceLock<Option<super::sidecar::Listing>>> = files
+            .iter()
+            .filter_map(|(file, _)| file.parent())
+            .map(|folder| (folder.to_path_buf(), OnceLock::new()))
+            .collect();
+        side_by_side(files, |(file, place)| {
+            let listing = file.parent().and_then(|folder| {
+                listings
+                    .get(folder)?
+                    .get_or_init(|| super::sidecar::Listing::read(folder))
+                    .as_ref()
+            });
+            read_new_photo(file, place, defaults, listing)
+        })
+        .into_iter()
+        .map(|read| self.new_photo(read))
+        .collect()
     }
     /// Runs `write` in one transaction, with a [`PhotoWriter`] for the
     /// photos it inserts, then tells the edits it stored that they were
@@ -497,11 +515,16 @@ impl Catalog {
 /// What a new photo's files hold: the edit an older release saved beside it
 /// (a RAW's only), its sidecar's and its own XMP metadata, and the defaults
 /// where neither has a value. Nothing of the catalog is read.
-fn read_new_photo<P>(file: PathBuf, place: P, defaults: &super::NewPhotoDefaults) -> FilesRead<P> {
+fn read_new_photo<P>(
+    file: PathBuf,
+    place: P,
+    defaults: &super::NewPhotoDefaults,
+    listing: Option<&super::sidecar::Listing>,
+) -> FilesRead<P> {
     // Its masks compressed as they are read, so a folder of them is never
     // held decompressed at once.
     let legacy = crate::storage::is_raw(&file).then(|| {
-        let Some((sidecar, bitmaps)) = super::legacy_sidecar::import(&file)? else {
+        let Some((sidecar, bitmaps)) = super::legacy_sidecar::import(&file, listing)? else {
             return Ok(None);
         };
         let bitmaps = bitmaps
@@ -510,7 +533,7 @@ fn read_new_photo<P>(file: PathBuf, place: P, defaults: &super::NewPhotoDefaults
             .collect::<Result<_>>()?;
         Ok(Some((sidecar, bitmaps)))
     });
-    let (metadata, report) = super::sidecar::read_file(&file, defaults.raw_xmp());
+    let (metadata, report) = super::sidecar::read_file_listed(&file, defaults.raw_xmp(), listing);
     let defaults = defaults.for_file(&file, metadata.as_ref());
     let facts = ImportFacts::of_file(&file);
     FilesRead {
