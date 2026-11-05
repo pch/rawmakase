@@ -4,13 +4,18 @@
 //! by [`volume_of`] where nothing could be found.
 use std::path::{Component, Path, PathBuf, Prefix};
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Volume {
     /// Display name: the drive's name, a drive letter, or the startup disk.
     pub name: String,
     /// Where the volume is mounted, for external and network drives; `None`
     /// for the startup disk, which is always attached.
     pub mount: Option<PathBuf>,
+    /// Which disk it is, where the system tells: a local Windows drive's
+    /// volume serial number, so another disk given the same drive letter is
+    /// another drive (#891). `None` elsewhere, for a network drive, and for
+    /// a drive an earlier release kept, which is then known by its mount.
+    pub id: Option<String>,
 }
 
 impl Volume {
@@ -44,6 +49,7 @@ impl Volume {
                 self.name
             },
             mount: Some(mount),
+            id: self.id,
         }
     }
 }
@@ -68,6 +74,7 @@ pub(crate) fn volume_of(path: &Path) -> Volume {
         return Volume {
             name,
             mount: Some(mount),
+            id: None,
         };
     }
     let names: Vec<String> = parts
@@ -85,6 +92,7 @@ pub(crate) fn volume_of(path: &Path) -> Volume {
         Some(Volume {
             name,
             mount: Some(mount),
+            id: None,
         })
     };
     let first = names.first().map(String::as_str);
@@ -98,6 +106,7 @@ pub(crate) fn volume_of(path: &Path) -> Volume {
     external.unwrap_or_else(|| Volume {
         name: startup_name(),
         mount: None,
+        id: None,
     })
 }
 /// `path` without Windows' `\\?\` prefix (`\\?\D:\x` is `D:\x`, and
@@ -151,13 +160,34 @@ pub(crate) fn is_mounted(mount: &Path) -> bool {
 /// The drive `path` is on, from the mount the file system reports for it:
 /// macOS's `statfs` mount point and the volume's name, Linux's longest
 /// mount point in /proc/self/mountinfo holding the path (each GVFS share a
-/// drive of its own), Windows' `GetVolumePathNameW` and the volume's label.
+/// drive of its own), Windows' `GetVolumePathNameW` and the volume's label
+/// and serial number.
 /// `None` where `path` isn't there, as an offline drive's folders aren't,
 /// or its mount can't be read. Can block on a stalled network mount: call
 /// it off the UI thread.
 pub(crate) fn locate(path: &Path) -> Option<Volume> {
-    let (point, label) = mount_of(path)?;
-    Some(drive_at(&point, label.as_deref(), startup_mounts()))
+    let found = mount_of(path)?;
+    Some(Volume {
+        id: found.id,
+        ..drive_at(&found.point, found.label.as_deref(), startup_mounts())
+    })
+}
+/// What the file system reports of the mount holding a path.
+struct Mount {
+    point: PathBuf,
+    label: Option<String>,
+    /// See [`Volume::id`].
+    id: Option<String>,
+}
+impl Mount {
+    #[cfg_attr(windows, allow(dead_code))]
+    fn at(point: PathBuf, label: Option<String>) -> Mount {
+        Mount {
+            point,
+            label,
+            id: None,
+        }
+    }
 }
 /// The name of the drive mounted at `mount`, from the path alone, for a
 /// mount point the caller found: as [`locate`] names it, but without its
@@ -173,8 +203,10 @@ pub(crate) fn name_of_mount(mount: &Path) -> String {
 /// The drive mounted at `point` with volume label `label`: the startup disk
 /// for one of its own mounts (macOS's system volumes, Linux's "/" and the
 /// home folder's); a drive whose path [`volume_of`] names (/Volumes/NAME,
-/// /run/media/USER/NAME, a drive letter) as it always has; any other by its
-/// label, or the mount point's name without one.
+/// /run/media/USER/NAME, a UNC share) as it always has, and a drive letter
+/// as Windows names it, by its label and letter (`Card (F:)`), so two disks
+/// given one letter read apart (#891); any other by its label, or the
+/// mount point's name without one.
 fn drive_at(point: &Path, label: Option<&str>, startup: &[PathBuf]) -> Volume {
     let point = &plain(point);
     let system = cfg!(target_os = "macos") && point.starts_with("/System/Volumes");
@@ -182,20 +214,32 @@ fn drive_at(point: &Path, label: Option<&str>, startup: &[PathBuf]) -> Volume {
         return Volume {
             name: startup_name(),
             mount: None,
+            id: None,
         };
     }
+    let label = label.filter(|l| !l.is_empty());
     let by_path = volume_of(point);
     if by_path.mount.as_deref() == Some(point) {
-        return by_path;
+        let letter = matches!(
+            point.components().next(),
+            Some(Component::Prefix(p)) if matches!(p.kind(), Prefix::Disk(_))
+        );
+        return match label {
+            Some(label) if letter => Volume {
+                name: format!("{label} ({})", by_path.name),
+                ..by_path
+            },
+            _ => by_path,
+        };
     }
     let name = label
-        .filter(|l| !l.is_empty())
         .map(str::to_owned)
         .or_else(|| point.file_name().map(|n| n.to_string_lossy().into_owned()))
         .unwrap_or_else(|| point.display().to_string());
     Volume {
         name,
         mount: Some(point.to_path_buf()),
+        id: None,
     }
 }
 /// The startup disk's mount points: those of "/" and of the home folder
@@ -210,13 +254,13 @@ fn startup_mounts() -> &'static [PathBuf] {
         let home = std::env::var_os("HOME").map(PathBuf::from);
         std::iter::once(PathBuf::from("/"))
             .chain(home)
-            .filter_map(|p| mount_of(&p).map(|(point, _)| point))
+            .filter_map(|p| mount_of(&p).map(|m| m.point))
             .collect()
     })
 }
 /// macOS: `statfs`'s mount point, named by the volume.
 #[cfg(target_os = "macos")]
-fn mount_of(path: &Path) -> Option<(PathBuf, Option<String>)> {
+fn mount_of(path: &Path) -> Option<Mount> {
     use std::os::unix::ffi::OsStrExt as _;
     let fs = rustix::fs::statfs(path).ok()?;
     let point: Vec<u8> = fs
@@ -227,7 +271,7 @@ fn mount_of(path: &Path) -> Option<(PathBuf, Option<String>)> {
         .collect();
     let point = PathBuf::from(std::ffi::OsStr::from_bytes(&point));
     let label = volume_name(&point);
-    Some((point, label))
+    Some(Mount::at(point, label))
 }
 /// The name macOS gives the volume mounted at `point` (`NSURLVolumeNameKey`).
 #[cfg(target_os = "macos")]
@@ -248,7 +292,7 @@ fn volume_name(point: &Path) -> Option<String> {
 /// Linux: the longest mount point holding the (resolved) path, named by
 /// its name; below GVFS's FUSE mount, the share the path is on.
 #[cfg(target_os = "linux")]
-fn mount_of(path: &Path) -> Option<(PathBuf, Option<String>)> {
+fn mount_of(path: &Path) -> Option<Mount> {
     let path = std::fs::canonicalize(path).ok()?;
     let table = parse_mountinfo(&std::fs::read_to_string("/proc/self/mountinfo").ok()?);
     let points: Vec<PathBuf> = table.iter().map(|(p, _)| p.clone()).collect();
@@ -257,15 +301,20 @@ fn mount_of(path: &Path) -> Option<(PathBuf, Option<String>)> {
         .iter()
         .any(|(p, fs)| *p == point && fs == "fuse.gvfsd-fuse");
     if gvfs && let Some((share, name)) = gvfs_share(&point, &path) {
-        return Some((share, Some(name)));
+        return Some(Mount::at(share, Some(name)));
     }
-    Some((point, None))
+    Some(Mount::at(point, None))
 }
-/// Windows: `GetVolumePathNameW`'s volume, named by its label.
+/// Windows: `GetVolumePathNameW`'s volume, named by its label and known
+/// by its serial number; a network drive by its path alone, as the server's
+/// file system's label and serial say nothing of the share.
 #[cfg(windows)]
-fn mount_of(path: &Path) -> Option<(PathBuf, Option<String>)> {
+fn mount_of(path: &Path) -> Option<Mount> {
     use std::os::windows::ffi::{OsStrExt as _, OsStringExt as _};
-    use windows_sys::Win32::Storage::FileSystem::{GetVolumeInformationW, GetVolumePathNameW};
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetDriveTypeW, GetVolumeInformationW, GetVolumePathNameW,
+    };
+    use windows_sys::Win32::System::WindowsProgramming::DRIVE_REMOTE;
     std::fs::metadata(path).ok()?;
     let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
     let mut point = vec![0u16; wide.len().max(261)];
@@ -276,35 +325,49 @@ fn mount_of(path: &Path) -> Option<(PathBuf, Option<String>)> {
         return None;
     }
     let end = point.iter().position(|&c| c == 0)?;
+    let found = PathBuf::from(std::ffi::OsString::from_wide(&point[..end]));
+    // SAFETY: `point` is the NUL-terminated volume path just written.
+    if unsafe { GetDriveTypeW(point.as_ptr()) } == DRIVE_REMOTE {
+        return Some(Mount {
+            point: found,
+            label: None,
+            id: None,
+        });
+    }
     let mut label = [0u16; 261];
-    // SAFETY: `point` is the NUL-terminated volume path just written, and
-    // `label` holds the 261 characters given; the other outputs are unused.
-    let named = unsafe {
+    let mut serial = 0u32;
+    // SAFETY: `point` is the NUL-terminated volume path just written,
+    // `label` holds the 261 characters given and `serial` one number; the
+    // other outputs are unused.
+    let read = unsafe {
         GetVolumeInformationW(
             point.as_ptr(),
             label.as_mut_ptr(),
             label.len() as u32,
-            std::ptr::null_mut(),
+            &mut serial,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             0,
         )
     } != 0;
-    let label = named
+    let label = read
         .then(|| {
             let n = label.iter().position(|&c| c == 0).unwrap_or(label.len());
             String::from_utf16_lossy(&label[..n])
         })
         .filter(|l| !l.is_empty());
-    Some((
-        PathBuf::from(std::ffi::OsString::from_wide(&point[..end])),
+    // As `vol` prints it.
+    let id = read.then(|| format!("{:04X}-{:04X}", serial >> 16, serial & 0xFFFF));
+    Some(Mount {
+        point: found,
         label,
-    ))
+        id,
+    })
 }
 /// Elsewhere no mount is read, and the path decides ([`volume_of`]).
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
-fn mount_of(_path: &Path) -> Option<(PathBuf, Option<String>)> {
+fn mount_of(_path: &Path) -> Option<Mount> {
     None
 }
 /// The longest of `points` holding `path`, by whole names.
@@ -448,8 +511,15 @@ mod tests {
         assert_eq!(drive.name, "D:");
         assert_eq!(drive.mount, Some(PathBuf::from(r"D:\")));
         assert_eq!(volume_of(Path::new(r"\\?\D:\Photos\2026")), drive);
-        assert_eq!(drive_at(Path::new(r"\\?\D:\"), Some("Data"), &[]), drive);
-        assert_eq!(drive_at(Path::new(r"D:\"), Some("Data"), &[]), drive);
+        assert_eq!(drive_at(Path::new(r"\\?\D:\"), None, &[]), drive);
+        // A labelled drive letter is named as Windows names it (#891).
+        let data = Volume {
+            name: "Data (D:)".into(),
+            ..drive.clone()
+        };
+        assert_eq!(drive_at(Path::new(r"\\?\D:\"), Some("Data"), &[]), data);
+        assert_eq!(drive_at(Path::new(r"D:\"), Some("Data"), &[]), data);
+        assert_eq!(drive_at(Path::new(r"D:\"), Some(""), &[]), drive);
         let share = volume_of(Path::new(r"\\nas\photos\Party"));
         assert_eq!(share.name, r"nas\photos");
         assert_eq!(share.mount, Some(PathBuf::from(r"\\nas\photos\")));
@@ -463,6 +533,7 @@ mod tests {
         let kept = |name: &str, mount: &str| Volume {
             name: name.into(),
             mount: Some(mount.into()),
+            id: None,
         };
         assert_eq!(kept(r"\\?\D:", r"\\?\D:\").plain(), drive);
         assert_eq!(kept(r"nas\photos", r"\\?\UNC\nas\photos\").plain(), share);
@@ -481,6 +552,7 @@ mod mount_tests {
         Volume {
             name: startup_name(),
             mount: None,
+            id: None,
         }
     }
 
@@ -603,13 +675,12 @@ broken line
         };
         // As the system names it: /tmp is /private/tmp on macOS.
         let mount = std::fs::canonicalize(mount).unwrap();
-        let found = Volume {
-            name,
-            mount: Some(mount.clone()),
-        };
-        assert_eq!(locate(&mount), Some(found.clone()));
+        // Its id is whatever the system gives the drive.
+        let named = |v: Volume| (v.name, v.mount);
+        let found = (name, Some(mount.clone()));
+        assert_eq!(locate(&mount).map(named), Some(found.clone()));
         let dir = tempfile::tempdir_in(&mount).unwrap();
-        assert_eq!(locate(dir.path()), Some(found));
+        assert_eq!(locate(dir.path()).map(named), Some(found));
         assert!(is_mounted(&mount));
     }
 

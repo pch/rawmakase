@@ -27,8 +27,9 @@ pub(super) struct Checked {
     /// Each root's drive, as last found: kept while the root can't be found,
     /// so a detached drive's folders stay under its name.
     pub seen: Seen,
-    /// Per volume mount (the startup disk as "/").
-    pub online: HashMap<PathBuf, VolumeState>,
+    /// Per drive: a disk at another's drive letter doesn't make that one
+    /// attached (#891).
+    pub online: HashMap<Volume, VolumeState>,
 }
 
 /// Where [`Volumes`] keep the drives they found, across launches: set once
@@ -54,6 +55,10 @@ struct SeenDrive {
     /// Where it was mounted; none for the startup disk.
     #[serde(default)]
     mount: Option<PathBuf>,
+    /// [`Volume::id`]: none in a file an earlier release wrote, which reads
+    /// this one's without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
 }
 fn load(file: &Path) -> Seen {
     let drives: DrivesFile = crate::storage::read_json_or_default(file);
@@ -66,6 +71,7 @@ fn load(file: &Path) -> Seen {
             let volume = Volume {
                 name: d.name,
                 mount: d.mount,
+                id: d.id,
             }
             .plain();
             (PathBuf::from(root), volume)
@@ -80,6 +86,7 @@ fn save(file: &Path, seen: &Seen) -> anyhow::Result<()> {
             let drive = SeenDrive {
                 name: v.name.clone(),
                 mount: v.mount.clone(),
+                id: v.id.clone(),
             };
             Some((root.to_str()?.to_owned(), drive))
         })
@@ -183,7 +190,9 @@ fn drive_of(seen: &Seen, root: &Path) -> Volume {
 /// there) and whether each drive is attached (`mounted`) with its free
 /// space, given the drives they were on before (`seen`). A root not found
 /// keeps the drive it was on; so does one found where its drive, detached,
-/// was mounted, as the empty folder left there is not the disk.
+/// was mounted, as the empty folder left there is not the disk. A drive
+/// known by its [`Volume::id`] is attached only while that disk is the one
+/// at its mount, not another given its drive letter (#891).
 pub(super) fn survey(
     roots: &[PathBuf],
     seen: &Seen,
@@ -198,10 +207,13 @@ pub(super) fn survey(
             .or_insert_with(|| mounted(mount))
     };
     let mut seen = seen.clone();
+    // The drives found this time, by the roots found on them.
+    let mut located: Vec<Volume> = Vec::new();
     for root in roots {
         let Some(found) = locate(root) else {
             continue;
         };
+        located.push(found.clone());
         // A root was just found on it: attached, though its folder may be
         // on its parent's device (a GVFS share, a bind mount).
         if let Some(mount) = &found.mount {
@@ -223,16 +235,38 @@ pub(super) fn survey(
             seen.insert(root.clone(), found);
         }
     }
+    // A disk known by its id is as it is found now for every root kept on
+    // it, those not found too: renamed, it stays one drive.
+    for kept in seen.values_mut() {
+        if let Some(now) = located
+            .iter()
+            .find(|f| f.id.is_some() && f.id == kept.id && f.mount == kept.mount)
+        {
+            kept.clone_from(now);
+        }
+    }
+    // The disk at each mount, for the drives known by theirs.
+    let mut there: HashMap<PathBuf, Option<String>> = HashMap::new();
     let mut online = HashMap::new();
     for root in roots {
         let volume = drive_of(&seen, root);
-        let mount = volume.mount.clone().unwrap_or_else(|| PathBuf::from("/"));
-        if online.contains_key(&mount) {
+        if online.contains_key(&volume) {
             continue;
         }
-        let on = volume.mount.is_none() || is_attached(&mut attached, &mount);
-        let free = if on { space(&mount) } else { None };
-        online.insert(mount, (on, free));
+        let on = match &volume.mount {
+            None => true,
+            Some(mount) => {
+                is_attached(&mut attached, mount)
+                    && (volume.id.is_none()
+                        || *there
+                            .entry(mount.clone())
+                            .or_insert_with(|| locate(mount).and_then(|v| v.id))
+                            == volume.id)
+            }
+        };
+        let mount = volume.mount.as_deref().unwrap_or(Path::new("/"));
+        let free = if on { space(mount) } else { None };
+        online.insert(volume, (on, free));
     }
     Checked { seen, online }
 }
@@ -370,12 +404,21 @@ mod tests {
         Volume {
             name: name.into(),
             mount: Some(mount.into()),
+            id: None,
+        }
+    }
+    /// A disk known by its serial number, as a local Windows drive is.
+    fn disk(name: &str, mount: &str, id: &str) -> Volume {
+        Volume {
+            id: Some(id.into()),
+            ..drive(name, mount)
         }
     }
     fn startup() -> Volume {
         Volume {
             name: "Macintosh HD".into(),
             mount: None,
+            id: None,
         }
     }
     /// The free space each mount reports, for a check that reads it.
@@ -411,8 +454,8 @@ mod tests {
         assert_eq!(
             checked.online,
             HashMap::from([
-                (PathBuf::from("/tmp/rmk590-mnt"), (true, Some((40, 50)))),
-                (PathBuf::from("/"), (true, Some((87, 1000)))),
+                (drive("RMK590", "/tmp/rmk590-mnt"), (true, Some((40, 50)))),
+                (startup(), (true, Some((87, 1000)))),
             ])
         );
     }
@@ -424,14 +467,15 @@ mod tests {
     fn a_drive_a_root_is_found_on_is_attached() {
         let share = PathBuf::from("/run/user/1000/gvfs/smb-share:server=nas,share=photos");
         let root = share.join("2024");
+        let photos = drive("photos", share.to_str().unwrap());
         let checked = survey(
             std::slice::from_ref(&root),
             &Seen::new(),
-            |_| Some(drive("photos", share.to_str().unwrap())),
+            |_| Some(photos.clone()),
             |_| false,
             |_| Some((1, 2)),
         );
-        assert_eq!(checked.online[&share], (true, Some((1, 2))));
+        assert_eq!(checked.online[&photos], (true, Some((1, 2))));
     }
 
     /// A root that can't be found stays on the drive it was last seen on,
@@ -443,16 +487,18 @@ mod tests {
         let seen = Seen::from([(card.clone(), drive("RMK590", "/tmp/rmk590-mnt"))]);
         let checked = survey(&[card, usb.clone()], &seen, |_| None, |_| false, space);
         assert_eq!(checked.seen, seen);
-        assert_eq!(checked.online[Path::new("/tmp/rmk590-mnt")], (false, None));
+        assert_eq!(
+            checked.online[&drive("RMK590", "/tmp/rmk590-mnt")],
+            (false, None)
+        );
         assert!(!checked.seen.contains_key(&usb));
         let by_path = crate::platform::volume::volume_of(&usb);
-        let mount = by_path.mount.clone().unwrap_or_else(|| "/".into());
         let expected = if by_path.mount.is_some() {
             (false, None)
         } else {
-            (true, Some((87, 1000)))
+            (true, space(Path::new("/")))
         };
-        assert_eq!(checked.online[&mount], expected);
+        assert_eq!(checked.online[&by_path], expected);
     }
 
     /// The empty folder a detached drive leaves where it was mounted is not
@@ -470,7 +516,10 @@ mod tests {
             space,
         );
         assert_eq!(detached.seen, seen);
-        assert_eq!(detached.online[Path::new("/tmp/rmk590-mnt")], (false, None));
+        assert_eq!(
+            detached.online[&drive("RMK590", "/tmp/rmk590-mnt")],
+            (false, None)
+        );
         // Named through a link, as /tmp is /private/tmp.
         let linked = Seen::from([(card.clone(), drive("RMK590", "/private/tmp/rmk590-mnt"))]);
         let detached = survey(
@@ -525,6 +574,181 @@ mod tests {
         assert!(load(&file).is_empty());
         Ok(())
     }
+    /// Two disks given one drive letter are two drives (#891): a root of
+    /// the disk detached stays on it, offline, while the other disk's roots
+    /// are on that one, attached; and it is attached again only once it is
+    /// the disk at that letter, which the other's leaving doesn't make it.
+    #[test]
+    fn a_disk_at_another_disks_drive_letter_is_another_drive() {
+        let (first, second) = (PathBuf::from("F:/Holiday"), PathBuf::from("F:/Wedding"));
+        let a = disk("Holiday (F:)", "F:/", "1111-1111");
+        let b = disk("Wedding (F:)", "F:/", "2222-2222");
+        let roots = [first.clone(), second.clone()];
+        let at = |disk: &Volume, folders: &[&PathBuf]| {
+            let (disk, folders) = (
+                disk.clone(),
+                folders.iter().map(|f| (*f).clone()).collect::<Vec<_>>(),
+            );
+            move |p: &Path| {
+                (p == Path::new("F:/") || folders.iter().any(|f| f == p)).then(|| disk.clone())
+            }
+        };
+        let seen = Seen::from([(first.clone(), a.clone())]);
+        let swapped = survey(
+            &roots,
+            &seen,
+            at(&b, &[&second]),
+            |_| true,
+            |_| Some((1, 2)),
+        );
+        assert_eq!(swapped.seen[&first], a);
+        assert_eq!(swapped.seen[&second], b);
+        assert_eq!(swapped.online[&a], (false, None));
+        assert_eq!(swapped.online[&b], (true, Some((1, 2))));
+        // Back again, it is attached and the other offline.
+        let back = survey(&roots, &swapped.seen, at(&a, &[&first]), |_| true, |_| None);
+        assert_eq!(back.seen, swapped.seen);
+        assert_eq!(back.online[&a], (true, None));
+        assert_eq!(back.online[&b], (false, None));
+        // Neither at the letter: both offline, still apart.
+        let gone = survey(&roots, &back.seen, |_| None, |_| false, |_| None);
+        assert_eq!(gone.seen, swapped.seen);
+        assert_eq!(
+            gone.online,
+            HashMap::from([(a, (false, None)), (b, (false, None))])
+        );
+    }
+    /// A disk renamed is one drive: a root of it that can't be found (its
+    /// folder renamed meanwhile) takes the name the disk is found by now,
+    /// beside the roots found on it, rather than show as a drive of its own.
+    #[test]
+    fn a_disk_renamed_is_one_drive() {
+        let (found, missing) = (PathBuf::from("F:/Holiday"), PathBuf::from("F:/Gone"));
+        let old = disk("Old (F:)", "F:/", "1111-1111");
+        let new = disk("New (F:)", "F:/", "1111-1111");
+        let seen = Seen::from([(found.clone(), old.clone()), (missing.clone(), old)]);
+        let locate = |p: &Path| (p != missing).then(|| new.clone());
+        let checked = survey(
+            &[found.clone(), missing.clone()],
+            &seen,
+            locate,
+            |_| true,
+            |_| None,
+        );
+        assert_eq!(checked.seen[&found], new);
+        assert_eq!(checked.seen[&missing], new);
+        assert_eq!(checked.online, HashMap::from([(new.clone(), (true, None))]));
+    }
+    /// A drive an earlier release kept has no id, and is known by its mount
+    /// as it was: attached while any disk is mounted there. Once a root is
+    /// found on it, it is the disk found, and is kept as that one.
+    #[test]
+    fn a_drive_kept_without_its_id_is_known_by_its_mount() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("drives.json");
+        let (root, other) = (PathBuf::from("F:/Holiday"), PathBuf::from("F:/Wedding"));
+        // As 0.4.11 and earlier wrote it.
+        std::fs::write(
+            &file,
+            br#"{"roots": {"F:/Holiday": {"name": "F:", "mount": "F:/"}}}"#,
+        )?;
+        let kept = load(&file);
+        assert_eq!(kept[&root], drive("F:", "F:/"));
+        let b = disk("Wedding (F:)", "F:/", "2222-2222");
+        let locate = |p: &Path| (p != root).then(|| b.clone());
+        let checked = survey(&[root.clone(), other], &kept, locate, |_| true, |_| None);
+        assert_eq!(checked.online[&drive("F:", "F:/")], (true, None));
+        assert_eq!(checked.online[&b], (true, None));
+        // Found on its disk, the root is kept with that disk's id, which a
+        // release that knows none reads past.
+        let a = disk("Holiday (F:)", "F:/", "1111-1111");
+        let found = survey(
+            std::slice::from_ref(&root),
+            &kept,
+            |_| Some(a.clone()),
+            |_| true,
+            |_| None,
+        );
+        save(&file, &found.seen)?;
+        assert_eq!(load(&file)[&root], a);
+        assert!(std::fs::read_to_string(&file)?.contains(r#""id": "1111-1111""#));
+        Ok(())
+    }
+    /// Two real disks swapped at one drive letter (#891): each a disk image
+    /// holding one folder, attached in turn at the same letter by the
+    /// Storage module's cmdlets (as an administrator). Each is found as its
+    /// own drive, and only the one attached is online.
+    #[test]
+    #[cfg(windows)]
+    #[ignore = "needs RAWMAKASE_TEST_VHDS: two .vhdx files, each a volume with a folder named as its label, and RAWMAKASE_TEST_LETTER"]
+    fn two_disks_swapped_at_one_letter_are_two_drives() -> anyhow::Result<()> {
+        let (Some(vhds), Some(letter)) = (
+            std::env::var_os("RAWMAKASE_TEST_VHDS"),
+            std::env::var("RAWMAKASE_TEST_LETTER").ok(),
+        ) else {
+            return Ok(());
+        };
+        let vhds: Vec<PathBuf> = std::env::split_paths(&vhds).collect();
+        let powershell = |script: String| -> anyhow::Result<String> {
+            let out = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-Command", &script])
+                .output()?;
+            anyhow::ensure!(out.status.success(), "{script}: {out:?}");
+            Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+        };
+        let detach = |vhd: &Path| {
+            powershell(format!(
+                "Dismount-DiskImage -ImagePath '{}' | Out-Null",
+                vhd.display()
+            ))
+        };
+        let attach = |vhd: &Path| -> anyhow::Result<PathBuf> {
+            let label = powershell(format!(
+                "$d = Mount-DiskImage -ImagePath '{}' -NoDriveLetter -PassThru | Get-Disk; \
+                 $p = $d | Get-Partition | Where-Object Type -ne Reserved | Select-Object -First 1; \
+                 $p | Set-Partition -NewDriveLetter {letter}; \
+                 Start-Sleep -Seconds 2; (Get-Volume -DriveLetter {letter}).FileSystemLabel",
+                vhd.display()
+            ))?;
+            Ok(PathBuf::from(format!(r"{letter}:\{label}")))
+        };
+        for vhd in &vhds {
+            let _ = detach(vhd);
+        }
+        let locate = crate::platform::volume::locate;
+        let mounted = crate::platform::volume::is_mounted;
+        let first = attach(&vhds[0])?;
+        let a = locate(&first).expect("the first disk");
+        let seen = survey(
+            std::slice::from_ref(&first),
+            &Seen::new(),
+            locate,
+            mounted,
+            |_| None,
+        )
+        .seen;
+        detach(&vhds[0])?;
+        let second = attach(&vhds[1])?;
+        let roots = [first.clone(), second.clone()];
+        let swapped = survey(&roots, &seen, locate, mounted, |_| None);
+        let b = swapped.seen[&second].clone();
+        detach(&vhds[1])?;
+        eprintln!("{a:?}\n{b:?}");
+        assert_ne!(a.id, None);
+        assert_ne!(a.id, b.id);
+        assert_ne!(a.name, b.name);
+        assert_eq!(a.mount, b.mount);
+        assert_eq!(swapped.seen[&first], a);
+        assert!(!swapped.online[&a].0);
+        assert!(swapped.online[&b].0);
+        let back = attach(&vhds[0])?;
+        assert_eq!(back, first);
+        let returned = survey(&roots, &swapped.seen, locate, mounted, |_| None);
+        detach(&vhds[0])?;
+        assert!(returned.online[&a].0);
+        assert!(!returned.online[&b].0);
+        Ok(())
+    }
     /// A Windows drive an earlier release kept as `\\?\D:` is `D:`, as
     /// it is found now: a root offline keeps it, and another folder found
     /// on that drive is on the same drive (#678).
@@ -540,6 +764,7 @@ mod tests {
         let old = Volume {
             name: r"\\?\D:".into(),
             mount: Some(r"\\?\D:\".into()),
+            id: None,
         };
         save(&file, &Seen::from([(offline.clone(), old)]))?;
         let d = crate::platform::volume::volume_of(&found);

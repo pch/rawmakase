@@ -254,16 +254,17 @@ impl Library {
                         if k > 0 {
                             ui.add_space(space::L);
                         }
-                        let state = online
-                            .get(volume.mount.as_deref().unwrap_or(std::path::Path::new("/")))
-                            .copied();
+                        let state = online.get(volume).copied();
                         let attached = match &volume.mount {
                             None => Some(true),
                             Some(_) => state.map(|s| s.0),
                         };
                         let space = state.and_then(|s| s.1);
                         let photos = drive.photos;
-                        let key = format!("volume-collapsed:{}", volume.name);
+                        let key = match &volume.id {
+                            Some(id) => format!("volume-collapsed:{}:{id}", volume.name),
+                            None => format!("volume-collapsed:{}", volume.name),
+                        };
                         let collapsed = self.expanded.contains(&key);
                         if volumes::volume_row(ui, volume, attached, space, photos, !collapsed)
                             .clicked()

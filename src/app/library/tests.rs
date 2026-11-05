@@ -3426,11 +3426,53 @@ fn the_folders_panel_groups_roots_by_the_drive_found_for_them() -> Result<()> {
     let image = crate::platform::volume::Volume {
         name: "RMK590".into(),
         mount: Some(root.parent().unwrap().into()),
+        id: None,
     };
     library
         .volumes
         .set_seen(volumes::Seen::from([(root, image.clone())]));
     assert_eq!(frame(&mut library), vec![image]);
+    Ok(())
+}
+
+#[test]
+fn two_disks_given_one_drive_letter_show_as_two_drives() -> Result<()> {
+    // #891: a disk detached from F: and another given F: showed as one F:,
+    // holding both disks' folders. Unlabelled, both are named F:.
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("library.rawmakase");
+    let mut catalog = Catalog::create(&path)?;
+    for folder in ["Holiday", "Wedding"] {
+        let folder = directory.path().join(folder);
+        std::fs::create_dir(&folder)?;
+        std::fs::write(folder.join("a.RAF"), b"synthetic raw")?;
+        catalog.add_folder(&folder)?;
+    }
+    drop(catalog);
+    let mut library = Library::load(&path, egui::Context::default())?;
+    let ctx = library.ctx.clone();
+    let frame = |library: &mut Library| {
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            egui::Panel::left("sidebar").show(ui, |ui| library.sidebar(ui));
+        });
+        output.textures_delta.clear();
+        library.sidebar_trees.clone().expect("the sidebar's trees")
+    };
+    frame(&mut library);
+    library.volumes.wait();
+    let disk = |id: &str| crate::platform::volume::Volume {
+        name: "F:".into(),
+        mount: Some(directory.path().into()),
+        id: Some(id.into()),
+    };
+    let roots: Vec<PathBuf> = library.anchors().into_iter().map(|a| a.2).collect();
+    library.volumes.set_seen(volumes::Seen::from([
+        (roots[0].clone(), disk("1111-1111")),
+        (roots[1].clone(), disk("2222-2222")),
+    ]));
+    let trees = frame(&mut library);
+    assert_eq!(trees.drives(), vec![disk("1111-1111"), disk("2222-2222")]);
+    assert_eq!(trees.drive_photos(), vec![1, 1]);
     Ok(())
 }
 
@@ -3473,6 +3515,7 @@ fn a_folder_located_on_another_drive_shows_under_that_drive() -> Result<()> {
     let drive = |name: &str, mount: &std::path::Path| crate::platform::volume::Volume {
         name: name.into(),
         mount: Some(mount.into()),
+        id: None,
     };
     let disk = drive("Disk", &directory.path().join("disk"));
     let other = drive("Other", &directory.path().join("other"));
