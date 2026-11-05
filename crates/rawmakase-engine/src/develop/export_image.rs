@@ -269,4 +269,32 @@ mod tests {
         Ok(())
     }
 
+    /// An export never shows Visualize Range, which grays encoded sRGB: in every
+    /// space it renders as the edit without it.
+    #[test]
+    fn an_export_leaves_point_colors_visualize_range_out() -> anyhow::Result<()> {
+        use crate::model::point_color::{PointColor, visualize_range};
+        let im = greens();
+        let r = Recipe {
+            point_colors: vec![PointColor::sampled([0.2, 0.8, 0.1])],
+            ..Default::default()
+        };
+        let mut shown = r.clone();
+        shown.point_colors = visualize_range(&r.point_colors, 0).unwrap();
+        for space in OutputSpace::ALL {
+            let render = |r: &Recipe| -> anyhow::Result<Vec<[f32; 3]>> {
+                let out = crate::develop::render_export(
+                    &im,
+                    &r.checked()?,
+                    None,
+                    0,
+                    space,
+                    Cancel::NEVER,
+                )?;
+                Ok(out.pixels().to_vec())
+            };
+            assert_eq!(render(&shown)?, render(&r)?, "{space:?}");
+        }
+        Ok(())
+    }
 }

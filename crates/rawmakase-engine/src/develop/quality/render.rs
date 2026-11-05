@@ -283,6 +283,8 @@ pub fn render_with_ai(
     render_preview(im, &resolve(im, r), ai, max_edge, None, srgb, cancel, None).map(Output::pixels)
 }
 /// [`render_with_ai`] for an export in `space`: on the CPU, with no stage cache or GPU.
+/// Point Color's Visualize Range, a preview's view that grays encoded sRGB, is never
+/// exported.
 pub fn render_export(
     im: &CameraImage,
     r: &ValidRecipe,
@@ -291,6 +293,17 @@ pub fn render_export(
     space: crate::color::OutputSpace,
     cancel: Cancel<'_>,
 ) -> Result<crate::develop::ExportImage> {
+    use crate::model::point_color::{SwatchView, without_visualization};
+    let (stripped, checked);
+    let r = if r.point_colors.iter().any(|p| p.view != SwatchView::Adjust) {
+        let mut recipe = (**r).clone();
+        without_visualization(&mut recipe.point_colors);
+        stripped = recipe;
+        checked = stripped.checked()?;
+        &checked
+    } else {
+        r
+    };
     let out = render_preview(im, &resolve(im, r), ai, max_edge, None, space, cancel, None)?;
     Ok(crate::develop::ExportImage::rendered_in(
         out.pixels(),
