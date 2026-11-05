@@ -24,6 +24,7 @@ fn develop_workspace_drains_library_preview_results() -> Result<()> {
             path,
             image: Some(image::RgbImage::new(16, 16)),
             cache_error: None,
+            skipped: false,
         })?;
     }
     let mut editor = crate::app::Editor::with_context(&ctx, None, Default::default(), None);
@@ -1527,6 +1528,32 @@ fn thumbnail_requests_are_not_repeated_while_pending_or_failed() -> Result<()> {
     library.cache.request_thumbnail(&path, &ctx);
     assert_eq!(rx.try_iter().count(), 0);
     assert!(library.texture(&library.session.photos()[0]).is_some());
+    Ok(())
+}
+/// A thumbnail skipped because it was no longer shown isn't failed: shown
+/// again, it is asked for again.
+#[test]
+fn a_skipped_thumbnail_is_asked_for_again() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF"])?;
+    let ctx = library.ctx.clone();
+    let (tx, rx) = std::sync::mpsc::sync_channel(8);
+    library.cache.thumb_tx = tx;
+    let (result_tx, result_rx) = std::sync::mpsc::sync_channel(8);
+    library.cache.thumb_rx = result_rx;
+    let path = library.session.photos()[0].path.clone();
+    library.cache.request_thumbnail(&path, &ctx);
+    assert_eq!(rx.try_iter().count(), 1);
+    result_tx.try_send(previews::PreviewResult {
+        path: path.clone(),
+        image: None,
+        cache_error: None,
+        skipped: true,
+    })?;
+    library.cache.poll(&ctx);
+    assert!(!library.cache.pending.contains(&path));
+    assert!(!library.cache.failed.contains(&path));
+    library.cache.request_thumbnail(&path, &ctx);
+    assert_eq!(rx.try_iter().count(), 1);
     Ok(())
 }
 #[test]

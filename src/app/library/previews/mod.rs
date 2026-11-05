@@ -13,7 +13,7 @@ pub(in crate::app::library) use edits::{EditJob, EditQueue, EditResult, Wanted, 
 pub(in crate::app::library) use progress::Progress;
 pub(in crate::app::library) use render::{develop_for_preview, develop_quickly};
 pub(in crate::app) use source::{EditSource, PreviewAi};
-pub(in crate::app::library) use thumbnails::{PreviewResult, spawn};
+pub(in crate::app::library) use thumbnails::{PreviewResult, ShownFiles, spawn};
 
 #[cfg(test)]
 pub(super) mod tests;
