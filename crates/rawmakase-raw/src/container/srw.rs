@@ -207,7 +207,7 @@ pub(crate) fn decode(
         }
         Variant::SrwHuffman => {
             let codes = crate::codec::pentax::Codes::samsung();
-            crate::codec::pentax::decode(src, &codes, width, height, &mut data, cancel)?;
+            crate::codec::pentax::decode(src, None, &codes, width, height, &mut data, cancel)?;
         }
         Variant::SrwTiles => {
             crate::codec::samsung::tiles(src, plan.bits, width, height, &mut data, cancel)?;

@@ -20,6 +20,9 @@ use rawmakase_cancel::Cancel;
 #[derive(Clone, Debug)]
 pub(crate) struct PefPlan {
     pub offset: u64,
+    /// The bytes IFD0's strips hold (`StripByteCounts`); 0 when the file
+    /// doesn't say.
+    pub length: u64,
     pub width: u32,
     pub height: u32,
     pub bits: u32,
@@ -145,6 +148,7 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         .unwrap_or(full);
     info.plan = Plan::Pef(PefPlan {
         offset: t.base + u64::from(offset),
+        length: bytes,
         width,
         height,
         bits,
@@ -191,7 +195,11 @@ pub(crate) fn decode(
                 .as_ref()
                 .ok_or_else(|| corrupt("PEF without its Huffman table"))?;
             let codes = crate::codec::pentax::Codes::from_note(table, *order)?;
-            crate::codec::pentax::decode(src, &codes, width, height, &mut data, cancel)?;
+            // Pixel-shift files keep three more frames after the first, and
+            // every PEF its full-size JPEG: the strip's length bounds the
+            // stream's parallel decoding (#725).
+            let strip = usize::try_from(plan.length).ok().filter(|&n| n > 0);
+            crate::codec::pentax::decode(src, strip, &codes, width, height, &mut data, cancel)?;
         }
         Variant::PefPacked => {
             let p = Packing::msb(plan.bits);
