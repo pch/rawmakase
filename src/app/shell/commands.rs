@@ -142,6 +142,8 @@ pub(in crate::app) enum Operation {
     Output {
         path: std::path::PathBuf,
         max_edge: u32,
+        /// The colour space: an export's choice, sRGB for a preview.
+        space: crate::color::OutputSpace,
     },
     Job(u64),
     /// Builds previews of the selection, as the thumbnail menu does.
@@ -787,7 +789,11 @@ impl Editor {
                     return self.command_navigate(step);
                 }
             }
-            Operation::Output { path, max_edge } => {
+            Operation::Output {
+                path,
+                max_edge,
+                space,
+            } => {
                 self.require_develop()?;
                 let photo = self
                     .export_photo()
@@ -799,6 +805,7 @@ impl Editor {
                         photo,
                         path,
                         max_edge,
+                        space,
                         self.document.load_id(),
                         self.automation.revision,
                         ctx.clone(),

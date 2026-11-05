@@ -354,6 +354,7 @@ fn output_job_publishes_the_captured_revision_and_never_clobbers() -> anyhow::Re
             Command::new(Operation::Output {
                 path: path.clone(),
                 max_edge: 16,
+                space: crate::color::OutputSpace::Srgb,
             }),
             &ctx,
         )
@@ -381,11 +382,70 @@ fn output_job_publishes_the_captured_revision_and_never_clobbers() -> anyhow::Re
     assert_eq!(job["revision"], revision);
     assert!(path.is_file());
     assert_eq!(
-        e.execute_command(Command::new(Operation::Output { path, max_edge: 16 }), &ctx)
-            .unwrap_err()
-            .code,
+        e.execute_command(
+            Command::new(Operation::Output {
+                path,
+                max_edge: 16,
+                space: crate::color::OutputSpace::Srgb,
+            }),
+            &ctx
+        )
+        .unwrap_err()
+        .code,
         "already_exists"
     );
+    Ok(())
+}
+
+/// An export the path's format can't hold in its colour space is refused before a job
+/// starts, and nothing is written; ProPhoto RGB as TIFF is exported with its profile.
+#[test]
+fn an_output_in_a_colour_space_its_format_cant_hold_is_refused() -> anyhow::Result<()> {
+    use crate::color::OutputSpace;
+    let (mut e, ctx) = editor();
+    let dir = tempfile::tempdir()?;
+    let source = dir.path().join("synthetic.dng");
+    std::fs::write(&source, b"synthetic")?;
+    e.document.opened_at(source);
+    let output = |e: &mut Editor, path: &std::path::Path, space| {
+        e.execute_command(
+            Command::new(Operation::Output {
+                path: path.to_path_buf(),
+                max_edge: 16,
+                space,
+            }),
+            &ctx,
+        )
+    };
+    for name in ["wide.jpg", "wide.png"] {
+        let path = dir.path().join(name);
+        let error = output(&mut e, &path, OutputSpace::ProPhoto).unwrap_err();
+        assert_eq!(error.code, "invalid_request", "{name}");
+        assert!(error.message.contains("TIFF"), "{}", error.message);
+        assert!(!path.exists());
+    }
+    let path = dir.path().join("wide.tif");
+    let id = json(output(&mut e, &path, OutputSpace::ProPhoto).unwrap())["job_id"]
+        .as_u64()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let job = json(
+            e.execute_command(Command::new(Operation::Job(id)), &ctx)
+                .unwrap(),
+        );
+        if job["status"] != "running" {
+            assert_eq!(job["status"], "completed", "{job}");
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "output never completed"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let facts = crate::exif::colour_facts(&path).unwrap();
+    assert_eq!(facts.color_space, Some(0xffff));
     Ok(())
 }
 
