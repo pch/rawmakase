@@ -560,6 +560,18 @@ fn editor_for_crop_drags(ctx: &egui::Context, crop_aspect: &str) -> Editor {
 
 /// A frame of Develop's viewport given `events`, as the window draws it.
 fn viewport_frame(ctx: &egui::Context, editor: &mut Editor, events: Vec<egui::Event>) {
+    viewport_frame_with(ctx, editor, events, egui::Modifiers::NONE);
+}
+
+/// A frame of Develop's viewport given `events`, with `modifiers` held.
+fn viewport_frame_with(
+    ctx: &egui::Context,
+    editor: &mut Editor,
+    events: Vec<egui::Event>,
+    modifiers: egui::Modifiers,
+) {
+    let mut events = events;
+    events.insert(0, egui::Event::ModifiersChanged(modifiers));
     let frame = editor.begin_edit_frame();
     let mut output = ctx.run_ui(
         egui::RawInput {
@@ -581,44 +593,61 @@ fn viewport_frame(ctx: &egui::Context, editor: &mut Editor, events: Vec<egui::Ev
 /// Drags the crop's `handle` (as the viewport numbers them: 5 is the right side, 7 the
 /// bottom) by `by`, a fraction of the photo's width and height, with the pointer.
 fn drag_crop_handle(ctx: &egui::Context, editor: &mut Editor, handle: usize, by: egui::Vec2) {
+    let handle = match handle {
+        5 => (1, 0),
+        7 => (0, 1),
+        _ => unreachable!("not used here"),
+    };
+    drag_crop(ctx, editor, handle, &[(by, egui::Modifiers::NONE)]);
+}
+
+/// Presses the crop's handle `(x, y)` (−1 left or top, 0 the middle, 1 right or bottom)
+/// and moves the pointer through `path`, offsets from the press as fractions of the
+/// photo's width and height, a frame each, with each one's modifiers held; then releases
+/// it where it ends, with the last modifiers still held.
+fn drag_crop(
+    ctx: &egui::Context,
+    editor: &mut Editor,
+    (x, y): (i8, i8),
+    path: &[(egui::Vec2, egui::Modifiers)],
+) {
     // A frame first, so the photo's place on screen is known.
     viewport_frame(ctx, editor, vec![]);
     let rect = editor.view.shown_rect.expect("the photo is drawn");
     let c = editor.document.edit.recipe().crop;
-    let at = |x: f32, y: f32| {
-        egui::Pos2::new(
-            rect.left() + x * rect.width(),
-            rect.top() + y * rect.height(),
-        )
+    let side = |s: i8, min: f32, max: f32| match s {
+        -1 => min,
+        1 => max,
+        _ => (min + max) / 2.,
     };
-    let (mx, my) = ((c[0] + c[2]) / 2., (c[1] + c[3]) / 2.);
-    let from = match handle {
-        5 => at(c[2], my),
-        7 => at(mx, c[3]),
-        _ => unreachable!("not used here"),
-    };
-    let to = from + by * rect.size();
-    let button = |pos, pressed| egui::Event::PointerButton {
+    let from = egui::Pos2::new(
+        rect.left() + side(x, c[0], c[2]) * rect.width(),
+        rect.top() + side(y, c[1], c[3]) * rect.height(),
+    );
+    let first = path.first().map_or(egui::Modifiers::NONE, |p| p.1);
+    let button = |pos, pressed, modifiers| egui::Event::PointerButton {
         pos,
         button: egui::PointerButton::Primary,
         pressed,
-        modifiers: egui::Modifiers::NONE,
+        modifiers,
     };
-    viewport_frame(
+    viewport_frame_with(
         ctx,
         editor,
-        vec![egui::Event::PointerMoved(from), button(from, true)],
+        vec![egui::Event::PointerMoved(from), button(from, true, first)],
+        first,
     );
     // A few points first, as a hand moves: the drag starts by the handle it pressed.
+    let to = from + path[0].0 * rect.size();
     let step = from + (to - from).normalized() * 8.;
-    viewport_frame(ctx, editor, vec![egui::Event::PointerMoved(step)]);
-    viewport_frame(
-        ctx,
-        editor,
-        vec![egui::Event::PointerMoved(from.lerp(to, 0.5))],
-    );
-    viewport_frame(ctx, editor, vec![egui::Event::PointerMoved(to)]);
-    viewport_frame(ctx, editor, vec![button(to, false)]);
+    viewport_frame_with(ctx, editor, vec![egui::Event::PointerMoved(step)], first);
+    let mut last = (from, first);
+    for &(by, modifiers) in path {
+        let to = from + by * rect.size();
+        viewport_frame_with(ctx, editor, vec![egui::Event::PointerMoved(to)], modifiers);
+        last = (to, modifiers);
+    }
+    viewport_frame_with(ctx, editor, vec![button(last.0, false, last.1)], last.1);
 }
 
 /// Closes and opens the Crop tool again, as R pressed twice does.
@@ -798,4 +827,153 @@ fn a_and_the_padlock_lock_the_crop_at_its_ratio_and_unlock_it() {
     press_a(&mut editor);
     assert_eq!(editor.view.chosen_aspect, 4. / 3.);
     assert_eq!(editor.view.aspect, 3. / 4.);
+}
+
+const ALT: egui::Modifiers = egui::Modifiers::ALT;
+const PLAIN: egui::Modifiers = egui::Modifiers::NONE;
+
+/// A 300 × 200 photo cropped to `crop`, with the Crop tool open at `crop_aspect`.
+fn editor_with_crop(ctx: &egui::Context, crop_aspect: &str, crop: [f32; 4]) -> Editor {
+    let mut editor = editor_for_crop_drags(ctx, crop_aspect);
+    editor.document.edit.setup_mut().crop = crop;
+    editor.view.toggle(crate::app::develop::state::Tool::Crop);
+    viewport_frame(ctx, &mut editor, vec![]);
+    editor
+}
+
+fn crop_centre(c: [f32; 4]) -> (f32, f32) {
+    ((c[0] + c[2]) / 2., (c[1] + c[3]) / 2.)
+}
+
+#[test]
+fn alt_drags_resize_a_free_crop_about_its_centre_from_every_handle() {
+    let ctx = egui::Context::default();
+    for (x, y) in [
+        (-1, -1),
+        (1, -1),
+        (1, 1),
+        (-1, 1),
+        (-1, 0),
+        (1, 0),
+        (0, -1),
+        (0, 1),
+    ] {
+        let mut editor = editor_with_crop(&ctx, "free", [0.3, 0.3, 0.7, 0.7]);
+        let out = egui::vec2(f32::from(x), f32::from(y)) * 0.1;
+        drag_crop(&ctx, &mut editor, (x, y), &[(out, ALT)]);
+        let c = editor.document.edit.recipe().crop;
+        let what = format!("handle {x}, {y}: {c:?}");
+        let (cx, cy) = crop_centre(c);
+        assert_near(cx, 0.5, &what);
+        assert_near(cy, 0.5, &what);
+        assert_near(c[2] - c[0], if x == 0 { 0.4 } else { 0.6 }, &what);
+        assert_near(c[3] - c[1], if y == 0 { 0.4 } else { 0.6 }, &what);
+    }
+}
+
+#[test]
+fn alt_drags_keep_a_locked_crops_ratio_and_centre() {
+    let ctx = egui::Context::default();
+    // Original locks the crop to the photo's own 3:2, which is 1:1 in 0–1 terms.
+    for (x, y) in [(1, 1), (-1, 0), (0, 1)] {
+        let mut editor = editor_with_crop(&ctx, "original", [0.3, 0.3, 0.7, 0.7]);
+        let ratio = editor.crop_constraint().expect("locked");
+        assert_near(ratio, 1., "Original in 0–1 terms");
+        drag_crop(
+            &ctx,
+            &mut editor,
+            (x, y),
+            &[(egui::vec2(0.1, 0.1) * f32::from(x + y).signum(), ALT)],
+        );
+        let c = editor.document.edit.recipe().crop;
+        let what = format!("handle {x}, {y}: {c:?}");
+        let (cx, cy) = crop_centre(c);
+        assert_near(cx, 0.5, &what);
+        assert_near(cy, 0.5, &what);
+        assert_near((c[2] - c[0]) / (c[3] - c[1]), 1., &what);
+        assert!(c[2] - c[0] > 0.45, "{what}: grew");
+    }
+}
+
+#[test]
+fn alt_pressed_and_released_mid_drag_changes_how_the_rest_resizes() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_with_crop(&ctx, "free", [0.2, 0.3, 0.6, 0.7]);
+    let steps = editor.document.edit.history().steps().0.len();
+    // The right side out by 0.1 alone; Alt pressed with the pointer still, which moves
+    // nothing; out 0.05 more with Alt, which moves the left side too; Alt released and
+    // out 0.05 more, the right side alone again.
+    drag_crop(
+        &ctx,
+        &mut editor,
+        (1, 0),
+        &[
+            (egui::vec2(0.1, 0.), PLAIN),
+            (egui::vec2(0.1, 0.), ALT),
+            (egui::vec2(0.15, 0.), ALT),
+            (egui::vec2(0.15, 0.), PLAIN),
+            (egui::vec2(0.2, 0.), PLAIN),
+        ],
+    );
+    let c = editor.document.edit.recipe().crop;
+    assert_near(c[0], 0.15, "left");
+    assert_near(c[2], 0.8, "right");
+    assert_eq!([c[1], c[3]], [0.3, 0.7], "top and bottom untouched");
+    // One gesture, one History step, whatever the modifiers did meanwhile.
+    assert_eq!(editor.document.edit.history().steps().0.len(), steps + 1);
+    editor.undo();
+    assert_eq!(editor.document.edit.recipe().crop, [0.2, 0.3, 0.6, 0.7]);
+}
+
+#[test]
+fn an_alt_drag_stops_at_the_photos_edge_and_at_the_smallest_crop() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_with_crop(&ctx, "free", [0.1, 0.3, 0.5, 0.7]);
+    // Out past the left edge, then back in: the drag follows the pointer, not where it
+    // stopped.
+    drag_crop(
+        &ctx,
+        &mut editor,
+        (1, 0),
+        &[(egui::vec2(0.5, 0.), ALT), (egui::vec2(0.05, 0.), ALT)],
+    );
+    let c = editor.document.edit.recipe().crop;
+    assert_near(c[0], 0.05, "left");
+    assert_near(c[2], 0.55, "right");
+    drag_crop(&ctx, &mut editor, (1, 0), &[(egui::vec2(0.5, 0.), ALT)]);
+    let c = editor.document.edit.recipe().crop;
+    assert_near(c[0], 0., "left at the edge");
+    assert_near(c[2], 0.6, "right");
+    // In across the centre: the smallest crop, still about it.
+    drag_crop(&ctx, &mut editor, (-1, 0), &[(egui::vec2(0.8, 0.), ALT)]);
+    let c = editor.document.edit.recipe().crop;
+    assert_near(crop_centre(c).0, 0.3, "centre");
+    editor.document.edit.recipe().validate().unwrap();
+}
+
+#[test]
+fn a_quick_drag_takes_the_handle_it_was_pressed_on() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_with_crop(&ctx, "free", [0.2, 0.2, 0.8, 0.8]);
+    viewport_frame(&ctx, &mut editor, vec![]);
+    let rect = editor.view.shown_rect.expect("the photo is drawn");
+    let from = egui::pos2(rect.left() + 0.8 * rect.width(), rect.center().y);
+    // 40 points in the first frame of the drag, well past the handle's reach.
+    let to = from - egui::vec2(40., 0.);
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: PLAIN,
+    };
+    viewport_frame(
+        &ctx,
+        &mut editor,
+        vec![egui::Event::PointerMoved(from), button(from, true)],
+    );
+    viewport_frame(&ctx, &mut editor, vec![egui::Event::PointerMoved(to)]);
+    viewport_frame(&ctx, &mut editor, vec![button(to, false)]);
+    let c = editor.document.edit.recipe().crop;
+    assert_near(c[0], 0.2, "left stays");
+    assert!(c[2] < 0.75, "the right side moved in: {c:?}");
 }
