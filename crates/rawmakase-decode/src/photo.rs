@@ -61,7 +61,23 @@ pub fn raw_xmp(path: &Path) -> Option<Vec<u8>> {
 
 /// The photo at `path`, opened for developing.
 pub fn open(path: &Path) -> Result<Raw> {
-    let mut raw = Raw::open_file(path)?;
+    with_file_facts(path, Raw::open_file(path)?)
+}
+
+/// The metadata [`open`] gives the RAW at `path`, from its header read in
+/// pieces, without its sensor data ([`Raw::open_header`]): for
+/// photo info on a network volume, where reading the whole file is most of
+/// the cost. Facts the readers take from the sensor data (measured black
+/// levels) are not to be relied on. An error when the header can't be read
+/// that way; the caller then opens the file whole.
+pub fn header_metadata(path: &Path) -> Result<crate::camera_data::Metadata> {
+    Ok(with_file_facts(path, Raw::open_header(path)?)?.metadata)
+}
+
+/// `raw`, opened from `path`, with what the file says beyond the decoders'
+/// facts: lens tables, a DNG's profile and hints, and the imported lens
+/// profiles.
+fn with_file_facts(path: &Path, mut raw: Raw) -> Result<Raw> {
     let metadata = &mut raw.metadata;
     let builtin = crate::raw::lens::read_builtin(path, metadata);
     (metadata.lens, metadata.lens_stand_in) = (builtin.lens, builtin.stand_in);
@@ -158,6 +174,49 @@ fn embedded_profile_status(
 }
 #[cfg(test)]
 mod tests {
+    /// Every RAW in `RAWMAKASE_HEADER_FIXTURES` (paths separated by `:`, folders
+    /// searched) has the same photo info from its header read in pieces as
+    /// from the file opened whole; prints how many were compared.
+    #[test]
+    #[ignore = "Set RAWMAKASE_HEADER_FIXTURES to RAWs or folders of them"]
+    fn photo_info_from_the_header_is_the_whole_file_s() {
+        use rawmakase_model::metadata::PhotoInfo;
+        let list = std::env::var("RAWMAKASE_HEADER_FIXTURES").expect("RAWMAKASE_HEADER_FIXTURES");
+        let mut todo: Vec<std::path::PathBuf> = std::env::split_paths(&list).collect();
+        let (mut same, mut header_failed) = (0, 0);
+        while let Some(path) = todo.pop() {
+            if path.is_dir() {
+                todo.extend(
+                    std::fs::read_dir(&path)
+                        .unwrap()
+                        .flatten()
+                        .map(|e| e.path()),
+                );
+                continue;
+            }
+            if !rawmakase_model::storage::is_raw(&path) {
+                continue;
+            }
+            let Ok(whole) = super::open(&path) else {
+                continue;
+            };
+            let Ok(header) = super::header_metadata(&path) else {
+                eprintln!("header not read: {}", path.display());
+                header_failed += 1;
+                continue;
+            };
+            assert_eq!(
+                PhotoInfo::from_metadata(&header),
+                PhotoInfo::from_metadata(&whole.metadata),
+                "{}",
+                path.display()
+            );
+            same += 1;
+        }
+        eprintln!("same photo info: {same}, header not read (read whole instead): {header_failed}");
+        assert!(same > 0);
+    }
+
     use rawmakase_cancel::Cancel;
     #[test]
     fn an_embedded_profile_is_told_from_none_and_from_an_unreadable_one() {
