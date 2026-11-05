@@ -75,6 +75,7 @@ install:
 	install -Dm755 $(BIN) $(DESTDIR)$(PREFIX)/bin/rawmakase
 	install -Dm644 LICENSE $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/LICENSE
 	install -Dm644 licenses/Adobe-DNG-SDK.txt $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/Adobe-DNG-SDK.txt
+	install -Dm644 licenses/Compact-ICC-Profiles-CC0.txt $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/Compact-ICC-Profiles-CC0.txt
 	install -Dm644 licenses/Hack-MIT-BitstreamVera.txt $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/Hack-MIT-BitstreamVera.txt
 	install -Dm644 licenses/Inter-OFL.txt $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/Inter-OFL.txt
 	install -Dm644 licenses/Lensfun-database-CC-BY-SA-3.0.txt $(DESTDIR)$(PREFIX)/share/licenses/$(PKGNAME)/Lensfun-database-CC-BY-SA-3.0.txt
