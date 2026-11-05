@@ -1548,6 +1548,26 @@ fn a_thumbnail_asked_for_in_its_first_frame_is_not_skipped() -> Result<()> {
     assert!(!result.skipped);
     Ok(())
 }
+/// A thumbnail queued, not shown for a frame and shown again while still
+/// queued is made, not skipped as not shown in the frame between.
+#[test]
+fn a_queued_thumbnail_shown_again_is_not_skipped() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF"])?;
+    let ctx = library.ctx.clone();
+    let path = library.session.photos()[0].path.clone();
+    let (tx, rx) = std::sync::mpsc::sync_channel(8);
+    library.cache.thumb_tx = tx;
+    library.cache.publish_shown();
+    library.cache.request_thumbnail(&path, &ctx);
+    assert_eq!(rx.try_iter().count(), 1);
+    // A frame without it, then one with it again.
+    library.cache.publish_shown();
+    library.cache.publish_shown();
+    library.cache.request_thumbnail(&path, &ctx);
+    let shown = library.cache.thumb_shown.lock().unwrap();
+    assert!(shown.as_ref().is_some_and(|shown| shown.contains(&path)));
+    Ok(())
+}
 /// A thumbnail skipped because it was no longer shown isn't failed: shown
 /// again, it is asked for again.
 #[test]

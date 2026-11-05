@@ -46,7 +46,7 @@ pub(super) struct PreviewTextures {
     edit_wanted: Wanted,
     /// Last frame's [`Self::thumb_seen`] as the thumbnail workers see them:
     /// a request for a file no longer shown is skipped.
-    thumb_shown: previews::ShownFiles,
+    pub(super) thumb_shown: previews::ShownFiles,
     /// Edited previews of photos shown queued and not yet back.
     pub(super) edits_pending: usize,
     /// How fast edited previews are rendered, as last told the worker.
@@ -308,14 +308,12 @@ impl PreviewTextures {
     }
     pub(super) fn request_thumbnail(&mut self, path: &Path, ctx: &egui::Context) {
         self.thumb_seen.insert(path.to_path_buf());
-        if self.thumbs.contains_key(path)
-            || self.pending.contains(path)
-            || self.failed.contains(path)
-        {
+        if self.thumbs.contains_key(path) || self.failed.contains(path) {
             return;
         }
         // The files shown this frame are published only at the next: a
-        // worker taking this one before then makes it, not skips it.
+        // worker taking this one before then, queued now or earlier, makes
+        // it, not skips it.
         if let Some(shown) = self
             .thumb_shown
             .lock()
@@ -324,7 +322,7 @@ impl PreviewTextures {
         {
             shown.insert(path.to_path_buf());
         }
-        if self.thumb_tx.try_send(path.to_path_buf()).is_ok() {
+        if !self.pending.contains(path) && self.thumb_tx.try_send(path.to_path_buf()).is_ok() {
             self.pending.insert(path.to_path_buf());
             self.progress.queued();
             ctx.request_repaint();
