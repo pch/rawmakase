@@ -220,7 +220,7 @@ pub(crate) fn decode(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::container::test_tiff::{E, ascii, dir, long, offsets, point, short, shorts, tiff};
     use std::sync::atomic::AtomicBool;
@@ -238,7 +238,7 @@ mod tests {
     }
 
     /// A new-style note (`PENTAX \0II`, offsets from its start) of `entries`.
-    fn note(entries: Vec<E>) -> Vec<u8> {
+    pub(crate) fn note(entries: Vec<E>) -> Vec<u8> {
         let mut out = b"PENTAX \0II".to_vec();
         out.extend(dir(&entries, 10, LE));
         out
@@ -246,7 +246,7 @@ mod tests {
 
     /// A little-endian PEF by `make` and `model` of `width × height` coded `bps` bits with
     /// `compression`, its data `strip`, IFD0 entries `more` and a note.
-    fn pef(
+    pub(crate) fn pef(
         [make, model]: [&str; 2],
         [width, height, bps, compression]: [u32; 4],
         strip: &[u8],
