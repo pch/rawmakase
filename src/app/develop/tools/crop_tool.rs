@@ -345,9 +345,32 @@ pub(in crate::app) fn swapped_aspect(aspect: f32, photo: Vec2) -> f32 {
     }
 }
 
+/// The aspect the Crop tool's menu names for `crop`, in the menu's values: Original
+/// at the photo's own ratio, a preset either way round (X swaps them), or else the
+/// crop's exact ratio, shown as Custom. `photo` is the straightened photo's width and
+/// height, which the crop's 0–1 coordinates span. Presets are long side over short
+/// for a landscape photo and short over long for a portrait one, as
+/// [`crate::app::Editor::crop_constraint`] reads them.
+pub(in crate::app) fn crop_aspect_shown(crop: [f32; 4], photo: Vec2) -> f32 {
+    let photo = photo.x / photo.y;
+    let ratio = (crop[2] - crop[0]) / (crop[3] - crop[1]) * photo;
+    let aspect = if photo < 1. { 1. / ratio } else { ratio };
+    let near = |a: f32, b: f32| (a / b - 1.).abs() < 0.005;
+    if near(ratio, photo) {
+        return -1.;
+    }
+    crate::app::develop::panels::inspector::ASPECTS
+        .iter()
+        .map(|(a, ..)| *a)
+        .filter(|a| *a > 0.)
+        .flat_map(|a| [a, 1. / a])
+        .find(|a| near(aspect, *a))
+        .unwrap_or(aspect)
+}
+
 impl crate::app::Editor {
     /// The straightened photo's width and height, which the crop's 0–1 coordinates span.
-    fn crop_frame(&self) -> Option<Vec2> {
+    pub(in crate::app) fn crop_frame(&self) -> Option<Vec2> {
         let im = self.document.full()?;
         let r = Recipe {
             crop: [0., 0., 1., 1.],
@@ -356,6 +379,30 @@ impl crate::app::Editor {
         };
         let g = crate::develop::Geometry::new(im, &r, 0);
         Some(Vec2::new(g.oriented_width, g.oriented_height))
+    }
+    /// The ratio every crop gesture keeps: the crop's width over its height in its 0–1
+    /// coordinates on the straightened photo ([`Self::crop_frame`]). `None` when the
+    /// aspect is unlocked (Free) or no photo is decoded.
+    ///
+    /// This is the only place a gesture learns whether, and to what, the crop is
+    /// constrained: handle drags ask it, and so must any later gesture that resizes or
+    /// moves the crop. None reads [`ViewState::aspect`] or the chosen aspect itself,
+    /// or infers a ratio from the crop.
+    ///
+    /// [`ViewState::aspect`]: crate::app::develop::state::ViewState::aspect
+    pub(in crate::app) fn crop_constraint(&self) -> Option<f32> {
+        if self.view.aspect == 0. {
+            return None;
+        }
+        let photo = self.crop_frame()?;
+        let aspect = if self.view.aspect < 0. {
+            photo.x / photo.y
+        } else if photo.y > photo.x {
+            1. / self.view.aspect
+        } else {
+            self.view.aspect
+        };
+        Some(aspect * photo.y / photo.x)
     }
     /// X: swaps the crop between portrait and landscape, keeping its aspect.
     pub(in crate::app) fn swap_crop_orientation(&mut self) {
