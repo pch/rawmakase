@@ -5,6 +5,7 @@
 //! place.
 use crate::app::ui::design::{Tone, radius, text};
 use crate::app::ui::theme;
+use crate::catalog::PhotoId;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 /// The closest zoom the slider and Cmd+= reach: 1600%, or twice Fit for a photo
@@ -148,27 +149,39 @@ impl Zoom {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::app) struct Glide {
     target: [f32; 2],
-    /// The pan this glide last set: anything else moving it (a hand drag, a
-    /// new photo) ends the glide.
+    /// The pan this glide last set: anything else moving it (a hand drag)
+    /// ends the glide.
     at: [f32; 2],
+    /// The photo it pans. Moving on keeps the zoom and pan, so the next photo
+    /// would otherwise glide on to a point chosen on this one.
+    photo: Option<PhotoId>,
 }
 impl Glide {
     /// The time constant of the ease, in seconds.
     const TAU: f32 = 0.05;
-    pub(in crate::app) fn to(target: [f32; 2], from: [f32; 2]) -> Self {
-        Self { target, at: from }
+    pub(in crate::app) fn to(target: [f32; 2], from: [f32; 2], photo: Option<PhotoId>) -> Self {
+        Self {
+            target,
+            at: from,
+            photo,
+        }
     }
-    /// How far the view still has to go from `zoom`'s pan, as fractions of
-    /// the photo's width and height.
-    pub(in crate::app) fn lead(&self, zoom: &Zoom) -> [f32; 2] {
-        [0, 1].map(|i| self.target[i] - zoom.pan[i])
+    /// Where the view is going, as a fraction of the photo's width and height.
+    pub(in crate::app) fn target(&self) -> [f32; 2] {
+        self.target
     }
-    /// Moves `zoom`'s pan `dt` seconds further towards the target. Returns
-    /// whether it has further to go; not once something else moved the pan.
-    pub(in crate::app) fn step(&mut self, zoom: &mut Zoom, dt: f32) -> bool {
+    /// Moves `zoom`'s pan on `photo` `dt` seconds further towards the target.
+    /// Returns whether it has further to go; not once something else moved the
+    /// pan, or on another photo.
+    pub(in crate::app) fn step(
+        &mut self,
+        zoom: &mut Zoom,
+        photo: Option<PhotoId>,
+        dt: f32,
+    ) -> bool {
         const NEAR: f32 = 1e-5;
         let moved = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs().max((a[1] - b[1]).abs());
-        if !zoom.on || moved(zoom.pan, self.at) > NEAR {
+        if !zoom.on || photo != self.photo || moved(zoom.pan, self.at) > NEAR {
             return false;
         }
         let k = 1. - (-dt.max(0.) / Self::TAU).exp();
@@ -370,36 +383,40 @@ mod tests {
     /// gives way to anything else moving it.
     #[test]
     fn a_glide_eases_the_pan_to_its_target_and_gives_way() {
-        use super::{Glide, Zoom};
+        use super::{Glide, PhotoId, Zoom};
         let mut zoom = Zoom {
             on: true,
             level: 1.,
             pan: [0.5, 0.5],
         };
-        let mut glide = Glide::to([0.7, 0.3], zoom.pan);
-        assert!(glide.step(&mut zoom, 1. / 60.));
+        let photo = Some(PhotoId(1));
+        let mut glide = Glide::to([0.7, 0.3], zoom.pan, photo);
+        assert!(glide.step(&mut zoom, photo, 1. / 60.));
         let first = zoom.pan;
         assert!(first[0] > 0.5 && first[0] < 0.7 && first[1] < 0.5 && first[1] > 0.3);
-        // The minimap's outline leads the photo by what is left to go.
-        let lead = glide.lead(&zoom);
-        assert!((first[0] + lead[0] - 0.7).abs() < 1e-6 && (first[1] + lead[1] - 0.3).abs() < 1e-6);
         // It arrives in well under half a second.
         let mut frames = 1;
-        while glide.step(&mut zoom, 1. / 60.) {
+        while glide.step(&mut zoom, photo, 1. / 60.) {
             frames += 1;
             assert!(frames < 30, "still gliding: {:?}", zoom.pan);
         }
         assert_eq!(zoom.pan, [0.7, 0.3]);
         // A hand drag mid-glide ends it where the hand put the view.
-        let mut glide = Glide::to([0.2, 0.2], zoom.pan);
-        glide.step(&mut zoom, 1. / 60.);
+        let mut glide = Glide::to([0.2, 0.2], zoom.pan, photo);
+        glide.step(&mut zoom, photo, 1. / 60.);
         zoom.pan = [0.6, 0.6];
-        assert!(!glide.step(&mut zoom, 1. / 60.));
+        assert!(!glide.step(&mut zoom, photo, 1. / 60.));
         assert_eq!(zoom.pan, [0.6, 0.6]);
         // As does going back to Fit.
-        let mut glide = Glide::to([0.2, 0.2], zoom.pan);
+        let mut glide = Glide::to([0.2, 0.2], zoom.pan, photo);
         zoom.on = false;
-        assert!(!glide.step(&mut zoom, 1. / 60.));
+        assert!(!glide.step(&mut zoom, photo, 1. / 60.));
+        // And moving on to another photo, which keeps the zoom and pan.
+        zoom.on = true;
+        let pan = zoom.pan;
+        let mut glide = Glide::to([0.2, 0.2], pan, photo);
+        assert!(!glide.step(&mut zoom, Some(PhotoId(2)), 1. / 60.));
+        assert_eq!(zoom.pan, pan);
     }
 
     /// The part of the photo in view, wherever the zoom is: below 100% too, when

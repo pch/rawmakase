@@ -85,8 +85,8 @@ impl Editor {
         const EDGE: f32 = 180.;
         let size = size * (EDGE / size.x.max(size.y));
         // The outline is drawn where the view is going, under the pointer, while
-        // the photo glides after it.
-        let lead = self.view.glide.map_or([0.; 2], |g| g.lead(&self.view.zoom));
+        // the photo glides after it: centred on the target at the size shown.
+        let heading = self.view.glide.map(|g| g.target());
         let place = &mut self.view.minimap;
         let grip_id = egui::Id::new("minimap-grip");
         // Where the pointer holds it, through the frame the button is released in.
@@ -127,10 +127,12 @@ impl Editor {
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
         painter.image(texture, rect, uv, Color32::WHITE);
         let [x, y, w, h] = shown;
-        let (x, y) = (
-            (x + lead[0]).clamp(0., 1. - w),
-            (y + lead[1]).clamp(0., 1. - h),
-        );
+        let (x, y) = heading.map_or((x, y), |[tx, ty]| {
+            (
+                (tx - w / 2.).clamp(0., 1. - w),
+                (ty - h / 2.).clamp(0., 1. - h),
+            )
+        });
         let at = |fx: f32, fy: f32| rect.min + Vec2::new(fx, fy) * rect.size();
         painter.rect_stroke(
             Rect::from_min_max(at(x, y), at(x + w, y + h)),

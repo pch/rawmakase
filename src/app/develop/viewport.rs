@@ -134,7 +134,7 @@ impl Editor {
     }
     /// A point of the edit chosen on the minimap: zoomed in there.
     pub(in crate::app) fn inspect(&mut self, at: [f32; 2]) {
-        self.view.glide_to(at);
+        self.view.glide_to(at, self.document.catalog_photo);
         if self.view.is(Tool::Crop) {
             self.view.tool = Tool::None;
         }
@@ -327,7 +327,7 @@ impl Editor {
             .document
             .full()
             .map(|im| Geometry::new(im, &self.effective_recipe(), 0));
-        self.view.glide_pan(ui.ctx());
+        self.view.glide_pan(ui.ctx(), self.document.catalog_photo);
         // `rect` is where the whole (cropped) photo sits on screen. The last whole-photo
         // render always fills it, and a 100% region is drawn over its part of it, so
         // zooming and panning scale images that are already there instead of showing
