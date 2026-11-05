@@ -141,6 +141,46 @@ impl Zoom {
     }
 }
 
+/// A minimap click or drag moving the view: the pan eases to where it points
+/// instead of jumping there. A point on the minimap is twenty or more on the
+/// photo, so a mouse reporting whole points, and frames that get no motion
+/// between others that get several, would move the photo in uneven leaps.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(in crate::app) struct Glide {
+    target: [f32; 2],
+    /// The pan this glide last set: anything else moving it (a hand drag, a
+    /// new photo) ends the glide.
+    at: [f32; 2],
+}
+impl Glide {
+    /// The time constant of the ease, in seconds.
+    const TAU: f32 = 0.05;
+    pub(in crate::app) fn to(target: [f32; 2], from: [f32; 2]) -> Self {
+        Self { target, at: from }
+    }
+    /// How far the view still has to go from `zoom`'s pan, as fractions of
+    /// the photo's width and height.
+    pub(in crate::app) fn lead(&self, zoom: &Zoom) -> [f32; 2] {
+        [0, 1].map(|i| self.target[i] - zoom.pan[i])
+    }
+    /// Moves `zoom`'s pan `dt` seconds further towards the target. Returns
+    /// whether it has further to go; not once something else moved the pan.
+    pub(in crate::app) fn step(&mut self, zoom: &mut Zoom, dt: f32) -> bool {
+        const NEAR: f32 = 1e-5;
+        let moved = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs().max((a[1] - b[1]).abs());
+        if !zoom.on || moved(zoom.pan, self.at) > NEAR {
+            return false;
+        }
+        let k = 1. - (-dt.max(0.) / Self::TAU).exp();
+        let pan = [0, 1].map(|i| zoom.pan[i] + (self.target[i] - zoom.pan[i]) * k);
+        // Within a tenth of a pixel of a photo 10,000 pixels across.
+        let arrived = moved(pan, self.target) < 1e-5;
+        zoom.pan = if arrived { self.target } else { pan };
+        self.at = zoom.pan;
+        !arrived
+    }
+}
+
 /// A photo's texture and its size.
 pub(in crate::app) type Photo = (egui::TextureId, Vec2);
 
@@ -324,6 +364,42 @@ mod tests {
                 level *= 1.19;
             }
         }
+    }
+
+    /// A minimap drag eases the view to where it points, frame by frame, and
+    /// gives way to anything else moving it.
+    #[test]
+    fn a_glide_eases_the_pan_to_its_target_and_gives_way() {
+        use super::{Glide, Zoom};
+        let mut zoom = Zoom {
+            on: true,
+            level: 1.,
+            pan: [0.5, 0.5],
+        };
+        let mut glide = Glide::to([0.7, 0.3], zoom.pan);
+        assert!(glide.step(&mut zoom, 1. / 60.));
+        let first = zoom.pan;
+        assert!(first[0] > 0.5 && first[0] < 0.7 && first[1] < 0.5 && first[1] > 0.3);
+        // The minimap's outline leads the photo by what is left to go.
+        let lead = glide.lead(&zoom);
+        assert!((first[0] + lead[0] - 0.7).abs() < 1e-6 && (first[1] + lead[1] - 0.3).abs() < 1e-6);
+        // It arrives in well under half a second.
+        let mut frames = 1;
+        while glide.step(&mut zoom, 1. / 60.) {
+            frames += 1;
+            assert!(frames < 30, "still gliding: {:?}", zoom.pan);
+        }
+        assert_eq!(zoom.pan, [0.7, 0.3]);
+        // A hand drag mid-glide ends it where the hand put the view.
+        let mut glide = Glide::to([0.2, 0.2], zoom.pan);
+        glide.step(&mut zoom, 1. / 60.);
+        zoom.pan = [0.6, 0.6];
+        assert!(!glide.step(&mut zoom, 1. / 60.));
+        assert_eq!(zoom.pan, [0.6, 0.6]);
+        // As does going back to Fit.
+        let mut glide = Glide::to([0.2, 0.2], zoom.pan);
+        zoom.on = false;
+        assert!(!glide.step(&mut zoom, 1. / 60.));
     }
 
     /// The part of the photo in view, wherever the zoom is: below 100% too, when

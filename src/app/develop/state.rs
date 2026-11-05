@@ -396,6 +396,8 @@ pub(in crate::app) struct ViewState {
     pub(in crate::app) zoom_key: (bool, f32),
     pub(in crate::app) zoom_anim: Option<(f64, egui::Rect)>,
     pub(in crate::app) shown_rect: Option<egui::Rect>,
+    /// Where a minimap click or drag is moving the view.
+    pub(in crate::app) glide: Option<crate::app::view::navigator::Glide>,
 }
 impl Default for ViewState {
     fn default() -> Self {
@@ -438,6 +440,7 @@ impl Default for ViewState {
             zoom_key: (false, 1.),
             zoom_anim: None,
             shown_rect: None,
+            glide: None,
         }
     }
 }
@@ -694,6 +697,24 @@ impl PreviewState {
     }
 }
 impl ViewState {
+    /// Moves the view on to where the minimap points, once a frame before the
+    /// photo is drawn; see [`Glide`](crate::app::view::navigator::Glide).
+    pub(in crate::app) fn glide_pan(&mut self, ctx: &egui::Context) {
+        let Some(glide) = &mut self.glide else {
+            return;
+        };
+        let dt = ctx.input(|i| i.stable_dt).min(0.1);
+        if glide.step(&mut self.zoom, dt) {
+            ctx.request_repaint();
+        } else {
+            self.glide = None;
+        }
+    }
+    /// Sends the view to `at` on the minimap, zoomed in.
+    pub(in crate::app) fn glide_to(&mut self, at: [f32; 2]) {
+        self.zoom.on = true;
+        self.glide = Some(crate::app::view::navigator::Glide::to(at, self.zoom.pan));
+    }
     /// The ICC profile renders convert to for the monitor, captured by each job.
     pub(in crate::app) fn display_profile(&self) -> Option<PathBuf> {
         self.monitor
