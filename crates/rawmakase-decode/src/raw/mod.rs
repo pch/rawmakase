@@ -708,6 +708,32 @@ pub fn thumbnail_reaching(raw: &mut Raw, edge: u32) -> anyhow::Result<image::Rgb
     let bytes = raw.thumbnail_reaching(edge)?;
     preview_image(bytes, raw.metadata.flip)
 }
+/// The embedded preview of the RAW at `path`, as stored, and the RAW's
+/// orientation (`Metadata::flip`), read without the file's sensor data (see
+/// [`rawmakase_raw::preview_from_file`]): the smallest that reaches `edge` as
+/// [`Raw::thumbnail_reaching`] chooses, or with `edge` `None` the largest as
+/// [`Raw::thumbnail`] gives it. An error when the file can't be read that way;
+/// the caller then opens it whole.
+pub fn embedded_preview_from_file(path: &Path, edge: Option<u32>) -> Result<(Vec<u8>, i32)> {
+    // Unbuffered: each piece is read whole, and a buffer would read past it.
+    let mut file = std::fs::File::open(path)?;
+    let partial = rawmakase_raw::preview_from_file(&mut file, edge).ok_or_else(|| {
+        anyhow::anyhow!("No embedded preview found without reading the whole file")
+    })?;
+    Ok((partial.preview, partial.info.flip))
+}
+/// [`thumbnail_reaching`]'s thumbnail of the RAW at `path`, read without its
+/// sensor data ([`embedded_preview_from_file`]).
+pub fn thumbnail_reaching_from_file(path: &Path, edge: u32) -> anyhow::Result<image::RgbImage> {
+    let (bytes, flip) = embedded_preview_from_file(path, Some(edge))?;
+    preview_image(bytes, flip)
+}
+/// [`thumbnail`]'s preview of the RAW at `path`, read without its sensor data
+/// ([`embedded_preview_from_file`]).
+pub fn thumbnail_from_file(path: &Path) -> anyhow::Result<image::RgbImage> {
+    let (bytes, flip) = embedded_preview_from_file(path, None)?;
+    preview_image(bytes, flip)
+}
 /// The most pixels a JPEG XL preview may claim: a 100-megapixel camera's.
 /// Its header is read before any pixel, so a hostile one is refused before
 /// the image is allocated.

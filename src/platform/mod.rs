@@ -5,6 +5,7 @@ pub(crate) mod memory;
 #[cfg(any(target_os = "macos", test))]
 pub(crate) mod menu;
 pub(crate) mod network;
+pub(crate) mod preview_reads;
 pub(crate) mod quit;
 pub(crate) mod reveal;
 pub(crate) mod titlebar;
