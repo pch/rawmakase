@@ -375,12 +375,13 @@ impl Catalog {
         files: Vec<(PathBuf, P)>,
         defaults: &super::NewPhotoDefaults,
     ) -> Vec<NewPhoto<P>> {
+        let readers = readers(files.first().and_then(|(file, _)| file.parent()));
         let listings: HashMap<PathBuf, OnceLock<Option<super::sidecar::Listing>>> = files
             .iter()
             .filter_map(|(file, _)| file.parent())
             .map(|folder| (folder.to_path_buf(), OnceLock::new()))
             .collect();
-        side_by_side(files, |(file, place)| {
+        side_by_side(files, readers, |(file, place)| {
             let listing = file.parent().and_then(|folder| {
                 listings
                     .get(folder)?
@@ -562,15 +563,38 @@ struct FilesRead<P> {
 
 /// Threads that read files side by side.
 const READERS: usize = 4;
-/// `read` of each of `items`, in their order, on up to [`READERS`] threads
+/// Threads that read files side by side on a network volume, where each
+/// read mostly waits on round trips to the server rather than on the disk
+/// or the processor.
+const NETWORK_READERS: usize = 16;
+/// How many threads read new photos' files from `folder`, the first's: on a
+/// network volume [`NETWORK_READERS`], else one a core, up to [`READERS`].
+/// Asking the volume can wait on a stalled mount, so this runs off the UI
+/// thread, as reading the files does.
+fn readers(folder: Option<&Path>) -> usize {
+    let local = folder
+        .is_none_or(|folder| rawmakase_fs::volume_facts(folder).map_or(true, |facts| facts.local));
+    if local {
+        local_readers()
+    } else {
+        NETWORK_READERS
+    }
+}
+fn local_readers() -> usize {
+    std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .clamp(1, READERS)
+}
+/// `read` of each of `items`, in their order, on up to `readers` threads
 /// side by side. A panic in one stops the others before their next item and
 /// is the caller's, as it would be read in turn; items no thread could be
 /// started for are read on the caller's.
-fn side_by_side<T: Send, R: Send>(items: Vec<T>, read: impl Fn(T) -> R + Sync) -> Vec<R> {
-    let threads = std::thread::available_parallelism()
-        .map_or(1, |n| n.get())
-        .clamp(1, READERS)
-        .min(items.len());
+fn side_by_side<T: Send, R: Send>(
+    items: Vec<T>,
+    readers: usize,
+    read: impl Fn(T) -> R + Sync,
+) -> Vec<R> {
+    let threads = readers.max(1).min(items.len());
     if threads <= 1 {
         return items.into_iter().map(read).collect();
     }
@@ -1139,12 +1163,16 @@ mod tests {
 
     #[test]
     fn new_photos_files_are_read_side_by_side_and_kept_in_order() {
-        let readers = std::thread::available_parallelism()
-            .map_or(1, |n| n.get())
-            .min(super::READERS);
+        for readers in [super::local_readers(), super::NETWORK_READERS] {
+            reads_side_by_side(readers);
+        }
+        assert!(super::side_by_side(Vec::<u32>::new(), 4, |n| n).is_empty());
+    }
+
+    fn reads_side_by_side(readers: usize) {
         let running = AtomicUsize::new(0);
         let most = AtomicUsize::new(0);
-        let read = super::side_by_side((0..40).collect(), |n: u32| {
+        let read = super::side_by_side((0..40).collect(), readers, |n: u32| {
             let now = running.fetch_add(1, Ordering::SeqCst) + 1;
             most.fetch_max(now, Ordering::SeqCst);
             // Waits a little for the others, as a slow disk would.
@@ -1159,14 +1187,13 @@ mod tests {
         });
         assert_eq!(read, (0..40).map(|n| n * 2).collect::<Vec<_>>());
         assert_eq!(most.load(Ordering::SeqCst), readers);
-        assert!(super::side_by_side(Vec::<u32>::new(), |n| n).is_empty());
     }
 
     #[test]
     fn a_panicking_read_stops_the_others() {
         let reads = AtomicUsize::new(0);
         let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            super::side_by_side((0..1000).collect(), |n: u32| {
+            super::side_by_side((0..1000).collect(), super::local_readers(), |n: u32| {
                 reads.fetch_add(1, Ordering::SeqCst);
                 assert_ne!(n, 3, "unreadable");
                 std::thread::sleep(Duration::from_millis(10));
