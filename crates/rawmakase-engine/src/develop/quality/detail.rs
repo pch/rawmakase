@@ -44,6 +44,28 @@ pub(super) fn sharpen_with_radius(
     space: crate::color::OutputSpace,
     cancel: Cancel<'_>,
 ) -> Result<()> {
+    sharpen_in(im, r, sigma, local, space, |v| v.clamp(0., 1.), cancel)
+}
+/// [`sharpen_with_radius`] of an HDR master's encoded values ([`super::hdr`]): nothing
+/// is clipped at white, and values stay at or above black.
+pub(super) fn sharpen_unbounded(
+    im: &mut Rendered,
+    r: &Recipe,
+    sigma: f32,
+    space: crate::color::OutputSpace,
+    cancel: Cancel<'_>,
+) -> Result<()> {
+    sharpen_in(im, r, sigma, None, space, |v| v.max(0.), cancel)
+}
+fn sharpen_in(
+    im: &mut Rendered,
+    r: &Recipe,
+    sigma: f32,
+    local: Option<&MaskWeights>,
+    space: crate::color::OutputSpace,
+    bound: impl Fn(f32) -> f32 + Sync,
+    cancel: Cancel<'_>,
+) -> Result<()> {
     check_cancel(cancel)?;
     let local = local.filter(|w| w.uses(&[slot::SHARPNESS]));
     if r.sharpening == 0. && local.is_none() {
@@ -85,7 +107,7 @@ pub(super) fn sharpen_with_radius(
         let delta = sharpener.delta(d, amount);
         // Add only luminance detail, preserving inter-channel differences.
         for v in p {
-            *v = (*v + delta).clamp(0., 1.);
+            *v = bound(*v + delta);
         }
     });
     check_cancel(cancel)

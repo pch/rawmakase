@@ -628,6 +628,12 @@ impl Recipe {
         }
         self.lens_profile_choice.resolve(&m.lens_profiles, m)
     }
+    /// Whether the edit renders in HDR or uses an HDR camera profile: it is saved in
+    /// a format releases before HDR refuse (`saved_format::schema_for`, the catalog's
+    /// version 6). Values kept while HDR is off do not count.
+    pub fn uses_hdr(&self) -> bool {
+        self.hdr.is_active() || self.profile.as_ref().is_some_and(|p| p.is_hdr())
+    }
     /// Whether the edit names a Lensfun lens, in use or not, resolved or not: it is
     /// saved in a format releases before Lensfun refuse (`saved_format::schema_for`,
     /// the catalog's version 4).
@@ -802,10 +808,23 @@ impl Recipe {
             .or_else(|| self.builtin_correction(m))
             .map(Cow::Borrowed)
     }
-    /// Recipe as rendered: switched-off panels bypassed, profile-internal adjustments
-    /// and the default profile. A monochrome photo renders without white balance
-    /// gains, whatever an edit from another photo or a preset gave it.
+    /// Recipe as rendered in SDR: switched-off panels bypassed, profile-internal
+    /// adjustments and the default profile. A monochrome photo renders without white
+    /// balance gains, whatever an edit from another photo or a preset gave it.
+    ///
+    /// An HDR edit renders here as its SDR rendition: the edit with HDR off
+    /// (docs/records/hdr-stage1-results.md#sdr-rendition). Only
+    /// [`Self::resolved_hdr`] renders its HDR master, so no SDR caller can receive
+    /// HDR pixels.
     pub fn resolved(&self, m: &Metadata) -> std::borrow::Cow<'_, Self> {
+        let mut r = self.resolved_hdr(m);
+        if r.hdr.is_active() {
+            r.to_mut().hdr.enabled = false;
+        }
+        r
+    }
+    /// [`Self::resolved`] keeping HDR on: the recipe of an edit's HDR master.
+    pub fn resolved_hdr(&self, m: &Metadata) -> std::borrow::Cow<'_, Self> {
         let mut r = match self.as_rendered() {
             std::borrow::Cow::Borrowed(r) => r.with_profile_adjustments(),
             std::borrow::Cow::Owned(r) => {

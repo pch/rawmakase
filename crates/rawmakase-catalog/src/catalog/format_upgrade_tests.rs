@@ -765,11 +765,11 @@ fn releases_before_hdr_refuse_its_format() {
 }
 
 /// HDR values kept while HDR is off save and load back without raising the format;
-/// an edit with HDR on is refused while this release can't render it, leaving the
-/// catalog and the photo's edit as they were.
+/// an edit with HDR on saves, raising the catalog to the HDR version that earlier
+/// releases refuse, and loads back as it was saved.
 #[test]
-fn kept_hdr_values_save_and_an_active_hdr_edit_is_refused() -> Result<()> {
-    let (dir, path, file, id) = current_catalog()?;
+fn kept_hdr_values_save_and_an_active_hdr_edit_raises_the_format() -> Result<()> {
+    let (_dir, path, file, id) = current_catalog()?;
     let mut cat = Catalog::open(&path)?;
     let mut kept = Recipe::default();
     kept.hdr.limit = 3.;
@@ -787,21 +787,16 @@ fn kept_hdr_values_save_and_an_active_hdr_edit_is_refused() -> Result<()> {
 
     let mut on = kept.clone();
     on.hdr.enabled = true;
-    let error = cat
-        .save_edit(
-            id,
-            &file,
-            &crate::storage::Identity::read(&file)?,
-            &on,
-            &ExportOptions::default(),
-            HistoryUpdate::Keep,
-        )
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("HDR"), "{error}");
-    assert!(cat.add_snapshot(id, "HDR", &on).is_err());
-    assert_eq!(cat.format_version()?, VERSION);
-    assert!(backups(dir.path())?.is_empty());
-    assert_eq!(cat.load_edit(id, &file)?.unwrap().recipe, kept);
+    cat.save_edit(
+        id,
+        &file,
+        &crate::storage::Identity::read(&file)?,
+        &on,
+        &ExportOptions::default(),
+        HistoryUpdate::Keep,
+    )?;
+    assert!(cat.format_version()? >= super::db::HDR);
+    assert_eq!(cat.load_edit(id, &file)?.unwrap().recipe, on);
+    cat.add_snapshot(id, "HDR", &on)?;
     Ok(())
 }

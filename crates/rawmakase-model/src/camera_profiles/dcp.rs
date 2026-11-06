@@ -1,16 +1,10 @@
-use super::{CameraProfile, Matrix, Table};
+use super::{CameraProfile, DynamicRange, Matrix, Table};
 use anyhow::{Context, Result, ensure};
 use std::collections::BTreeMap;
 struct Tag {
     kind: u16,
     count: usize,
     bytes: Vec<u8>,
-}
-/// A profile's dynamic range, from `ProfileDynamicRange`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DynamicRange {
-    Standard,
-    High,
 }
 struct Dcp {
     tags: BTreeMap<u16, Tag>,
@@ -222,16 +216,20 @@ impl Dcp {
     }
 }
 pub fn from_bytes(b: &[u8]) -> Result<CameraProfile> {
+    let p = parse(b)?;
+    p.validate()?;
+    Ok(p)
+}
+
+/// [`from_bytes`] without the profile's validation, which also refuses what this
+/// release cannot render yet (HDR profiles).
+pub(crate) fn parse(b: &[u8]) -> Result<CameraProfile> {
     let d = Dcp::read(b)?;
     ensure!(
         !d.tags.contains_key(&52531)
             && !d.tags.contains_key(&52537)
             && !d.tags.contains_key(&52538),
         "Triple-illuminant profiles are not supported"
-    );
-    ensure!(
-        d.dynamic_range()? == DynamicRange::Standard,
-        "HDR profiles are not supported yet"
     );
     ensure!(
         d.scalar(50941, 0.)? != 2.,
@@ -288,8 +286,8 @@ pub fn from_bytes(b: &[u8]) -> Result<CameraProfile> {
         } else {
             super::BlackRender::Auto
         },
+        dynamic_range: d.dynamic_range()?,
     };
-    p.validate()?;
     Ok(p)
 }
 

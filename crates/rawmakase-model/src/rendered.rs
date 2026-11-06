@@ -127,6 +127,18 @@ impl Rendered {
     }
 }
 
+/// An HDR master: linear ProPhoto RGB (D50), 1 = graphics white, nothing clipped
+/// above white and no channel above [`HdrImage::peak`]. Conversion to absolute
+/// luminance (nits) and to a transfer function belongs to the output that writes it.
+#[derive(Clone, Debug)]
+pub struct HdrImage {
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<[f32; 3]>,
+    /// 2^HDR limit: the brightest any channel may be.
+    pub peak: f32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

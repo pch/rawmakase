@@ -1045,10 +1045,10 @@ mod tests {
     #[test]
     fn importing_a_cameras_adobe_profiles_skips_the_unreadable_ones() -> Result<()> {
         // Camera Raw files HDR Camera Matching profiles with the others for newer
-        // bodies (Nikon's Z 8, say); one of them must not stop the rest. Tag 52551
-        // (ProfileDynamicRange) is a version, a dynamic range and a float hint, in the
-        // file's byte order: a profile marked standard dynamic range imports, one marked
-        // HDR is skipped until HDR renders, and an unknown version is refused.
+        // bodies (Nikon's Z 8, say). Tag 52551 (ProfileDynamicRange) is a version, a
+        // dynamic range and a float hint, in the file's byte order: a profile marked
+        // standard dynamic range imports as an ordinary one, one marked HDR imports as
+        // an HDR profile, and an unknown version is refused without stopping the rest.
         let temp = tempfile::tempdir()?;
         let standard = temp.path().join("NIKON Z 8 Adobe Standard.dcp");
         std::fs::write(&standard, dcp("NIKON Z 8", "Adobe Standard"))?;
@@ -1062,24 +1062,54 @@ mod tests {
         let version = (52551, 7, vec![2, 0, 0, 0, 0, 0, 0, 0]);
         std::fs::write(&future, dcp_with("NIKON Z 8", "Camera Future", [version]))?;
         let dest = temp.path().join("library");
-        let done = import_readable_into(&[standard, marked, hdr.clone(), future.clone()], &dest)?;
+        let done = import_readable_into(&[standard, marked, hdr, future.clone()], &dest)?;
         assert_eq!(
             done.imported,
             [
                 dest.join("NIKON Z 8 Adobe Standard.dcp"),
-                dest.join("Nikon Z 8 Camera Flat.dcp")
+                dest.join("Nikon Z 8 Camera Flat.dcp"),
+                dest.join("Nikon Z 8 Camera Flat HDR.dcp"),
             ]
         );
-        assert_eq!(done.skipped.len(), 2, "{:?}", done.skipped);
-        assert_eq!(done.skipped[0].0, hdr);
-        assert!(done.skipped[0].1.contains("HDR"), "{}", done.skipped[0].1);
-        assert_eq!(done.skipped[1].0, future);
+        assert_eq!(done.skipped.len(), 1, "{:?}", done.skipped);
+        assert_eq!(done.skipped[0].0, future);
         assert!(
-            done.skipped[1].1.contains("version 2"),
+            done.skipped[0].1.contains("version 2"),
             "{}",
-            done.skipped[1].1
+            done.skipped[0].1
         );
-        assert!(!dest.join("Nikon Z 8 Camera Flat HDR.dcp").exists());
+        let marked =
+            super::super::from_bytes(&std::fs::read(dest.join("Nikon Z 8 Camera Flat.dcp"))?)?;
+        assert!(
+            !marked.is_hdr(),
+            "an explicit SDR tag is an ordinary profile"
+        );
+        let hdr =
+            super::super::from_bytes(&std::fs::read(dest.join("Nikon Z 8 Camera Flat HDR.dcp"))?)?;
+        assert!(hdr.is_hdr());
+        assert_eq!(hdr.hdr_tone()?, super::super::hdr_tone::HdrTone::Overrange);
+        Ok(())
+    }
+    #[test]
+    fn an_hdr_profile_is_read_and_saved_only_in_the_hdr_format() -> Result<()> {
+        use crate::model::{recipe::Recipe, saved_format};
+        let flag = (52551, 7, vec![1, 0, 1, 0, 0, 0, 0, 0]);
+        let hdr = super::super::dcp::parse(&dcp_with("NIKON Z 8", "Camera Flat HDR", [flag]))?;
+        assert!(hdr.is_hdr());
+        assert!(hdr.validate().is_ok());
+        let standard = super::super::dcp::from_bytes(&dcp("NIKON Z 8", "Adobe Standard"))?;
+        assert!(!standard.is_hdr());
+        assert!(!serde_json::to_string(&standard)?.contains("dynamic_range"));
+        assert!(serde_json::to_string(&hdr)?.contains(r#""dynamic_range":"high""#));
+        let mut r = Recipe {
+            profile: Some(Arc::new(standard)),
+            ..Default::default()
+        };
+        assert!(!r.uses_hdr());
+        assert!(saved_format::schema_for(&r) < saved_format::HDR_SCHEMA);
+        r.profile = Some(Arc::new(hdr));
+        assert!(r.uses_hdr());
+        assert_eq!(saved_format::schema_for(&r), saved_format::HDR_SCHEMA);
         Ok(())
     }
     #[test]

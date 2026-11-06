@@ -54,6 +54,15 @@ impl Output {
     }
 }
 pub fn resize(image: Rendered, max_edge: u32) -> Rendered {
+    let mut out = resize_unbounded(image, max_edge);
+    for p in &mut out.pixels {
+        *p = p.map(|v| v.clamp(0., 1.));
+    }
+    out
+}
+/// [`resize`] without clipping to 0–1: Lanczos's ringing is kept, for an HDR master's
+/// encoded values (which its caller bounds).
+pub(crate) fn resize_unbounded(image: Rendered, max_edge: u32) -> Rendered {
     if max_edge == 0 || image.width.max(image.height) <= max_edge {
         return image;
     }
@@ -73,18 +82,20 @@ pub fn resize(image: Rendered, max_edge: u32) -> Rendered {
             .as_chunks::<3>()
             .0
             .iter()
-            .map(|p| [p[0].clamp(0., 1.), p[1].clamp(0., 1.), p[2].clamp(0., 1.)])
+            .map(|p| [p[0], p[1], p[2]])
             .collect(),
     }
 }
 
 mod detail;
+mod hdr;
 mod highlights;
 mod local;
 mod prepare;
 mod render;
 mod samples;
 pub(crate) use detail::*;
+pub use hdr::render_hdr;
 pub use highlights::*;
 pub(crate) use local::*;
 pub(crate) use prepare::{Resolved, resolve};

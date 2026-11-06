@@ -203,12 +203,24 @@ fn photo_sidecar_empty_point_colors_and_preset_provenance() {
     assert_eq!(r.exposure, 0.5);
     assert!(r.point_colors.is_empty());
     let hdr = text.replace("c:HDREditMode=\"0\"", "c:HDREditMode=\"1\"");
-    assert!(
-        parse(Path::new("hdr.xmp"), &hdr)
-            .unwrap()
-            .apply(&Recipe::default(), &Metadata::default(), &[], None)
-            .is_err()
+    let r = parse(Path::new("hdr.xmp"), &hdr)
+        .unwrap()
+        .apply(&Recipe::default(), &Metadata::default(), &[], None)
+        .unwrap();
+    assert!(r.hdr.is_active());
+    // With an adjustment HDR does not render yet, HDR on is kept, not dropped: the
+    // HDR master is what is refused (`model::hdr::check_recipe`).
+    let clarity = hdr.replace(
+        "c:Exposure2012=\"0.5\"",
+        "c:Exposure2012=\"0.5\" c:Clarity2012=\"20\"",
     );
+    let p = parse(Path::new("hdr.xmp"), &clarity).unwrap();
+    let r = p
+        .apply(&Recipe::default(), &Metadata::default(), &[], None)
+        .unwrap();
+    assert!(r.hdr.is_active() && r.effects.clarity > 0.);
+    let error = crate::model::hdr::check_recipe(&r).unwrap_err().to_string();
+    assert!(error.contains("not supported in HDR"), "{error}");
 }
 
 /// Swatches as Camera Raw 18.7 stores them: hue in sixths of a turn, then saturation,
@@ -2455,13 +2467,14 @@ fn hdr_settings_are_kept_while_off_and_refused_on() {
         .unwrap();
     assert!(reset.hdr.is_default());
 
-    // HDR on: refused strictly and leniently alike, never rendered as SDR.
+    // HDR on: applied strictly and leniently alike, with its values; the SDR
+    // rendition sliders set here refuse only the HDR master.
     let on = xml(&attrs.replace("HDREditMode=\"0\"", "HDREditMode=\"1\""), "");
     let p = parse(Path::new("on.xmp"), &on).unwrap();
-    let error = p.apply(&Recipe::default(), &m, &[], None).unwrap_err();
-    assert!(error.to_string().contains("HDR"), "{error}");
-    let error = p
-        .apply_lenient(&Recipe::default(), &m, &[], None)
-        .unwrap_err();
+    let strict = p.apply(&Recipe::default(), &m, &[], None).unwrap();
+    assert!(strict.hdr.is_active());
+    let (lenient, _) = p.apply_lenient(&Recipe::default(), &m, &[], None).unwrap();
+    assert_eq!(lenient.hdr, strict.hdr);
+    let error = crate::model::hdr::check_recipe(&strict).unwrap_err();
     assert!(error.to_string().contains("HDR"), "{error}");
 }

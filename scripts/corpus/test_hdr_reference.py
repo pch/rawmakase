@@ -1,4 +1,5 @@
 """HDR reference boundary regressions; no Photoshop or private data required."""
+import importlib.util
 import unittest
 
 import numpy as np
@@ -38,6 +39,23 @@ class HdrReferenceTests(unittest.TestCase):
         self.assertEqual(result['max_abs_reference_white'], 3)
         self.assertEqual(result['highlight_max_abs_reference_white'], 3)
         self.assertEqual(result['max_luminance_error_stops'], 2)
+
+    @unittest.skipUnless(importlib.util.find_spec('tifffile'), 'tifffile is not installed')
+    def test_stored_reference_keeps_pixels_and_profile(self):
+        import tempfile
+        from pathlib import Path
+        import tifffile
+        pixels = np.random.default_rng(1).integers(0, 65536, (5, 7, 3), dtype=np.uint16)
+        icc = b'synthetic icc bytes'
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'reference.tif'
+            tifffile.imwrite(path, pixels, photometric='rgb', iccprofile=icc)
+            digest = hdr.store_compressed(path, pixels, icc)
+            with tifffile.TiffFile(path) as tiff:
+                np.testing.assert_array_equal(tiff.asarray(), pixels)
+                self.assertEqual(tiff.pages[0].tags[34675].value, icc)
+                self.assertNotEqual(tiff.pages[0].compression, 1)
+            self.assertEqual(len(digest), 64)
 
     def test_comparison_refuses_mismatched_geometry_and_nonfinite(self):
         with self.assertRaises(ValueError):

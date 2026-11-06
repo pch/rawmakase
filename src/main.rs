@@ -149,6 +149,10 @@ enum Command {
         /// of linear ProPhoto RGB at full size (docs/scene-tone-stage.md).
         #[arg(long, value_enum)]
         tap: Option<Tap>,
+        /// Write the edit's HDR master (the edit needs HDR on) as a 32-bit float TIFF
+        /// of linear ProPhoto RGB, 1 = graphics white, for comparisons with Camera Raw.
+        #[arg(long, conflicts_with_all = ["tap", "color_space"])]
+        hdr: bool,
     },
     /// Print each file's decode fingerprint as a line of JSON: what opening and
     /// unpacking it yields, for decode regression checks.
@@ -569,8 +573,9 @@ fn main() -> Result<()> {
             auto,
             auto_wb,
             tap,
+            hdr,
         }) => {
-            if tap.is_none() {
+            if tap.is_none() && !hdr {
                 check_output(&output, color_space)?;
             }
             let t = Instant::now();
@@ -691,6 +696,29 @@ fn main() -> Result<()> {
             let ai =
                 rawmakase::ai_denoise::CommandLine::new(rawmakase::app::user_ai_denoise_cache())
                     .source(&input, &file, &im, &edit)?;
+            if hdr {
+                let out = develop::render_hdr(
+                    &im,
+                    &edit.checked()?,
+                    ai.as_ref(),
+                    max_edge,
+                    Cancel::NEVER,
+                )?;
+                let rendered = rawmakase::rendered::Rendered {
+                    width: out.width,
+                    height: out.height,
+                    pixels: out.pixels,
+                };
+                save_stage(&output, &input, rendered, overwrite)?;
+                println!(
+                    "{}x{} HDR master, peak {} | total {:?}",
+                    out.width,
+                    out.height,
+                    out.peak,
+                    t.elapsed()
+                );
+                return Ok(());
+            }
             let out = develop::render_export(
                 &im,
                 &edit.checked()?,

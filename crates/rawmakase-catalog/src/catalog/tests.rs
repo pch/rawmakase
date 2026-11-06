@@ -1567,12 +1567,17 @@ fn lightroom_15_controls_at_rest_are_not_reported() -> Result<()> {
     let text = "s = { Glow = 20, GlowRange = 50, HDRMaxValue = 2.3 }";
     let (_, w) = convert_develop(text, &crate::camera_data::Metadata::default(), &[], None)?;
     assert!(!w.is_empty());
-    // HDR on is refused outright: rendered without it, the edit would be SDR.
+    // HDR on is kept, never dropped: rendered without it, the edit would be SDR. With
+    // an adjustment HDR does not render yet, its HDR master is what is refused.
     let text = "s = { Exposure2012 = 0.5, HDREditMode = 1, HDRMaxValue = 5 }";
-    let error = convert_develop(text, &crate::camera_data::Metadata::default(), &[], None)
-        .err()
-        .unwrap()
-        .to_string();
+    let (r, _) = convert_develop(text, &crate::camera_data::Metadata::default(), &[], None)?;
+    assert!(r.hdr.is_active());
+    assert_eq!(r.hdr.limit, 5.);
+    assert!(crate::model::hdr::check_recipe(&r).is_ok());
+    let text = "s = { Exposure2012 = 0.5, Contrast2012 = 20, HDREditMode = 1, HDRMaxValue = 5 }";
+    let (r, _) = convert_develop(text, &crate::camera_data::Metadata::default(), &[], None)?;
+    assert!(r.hdr.is_active());
+    let error = crate::model::hdr::check_recipe(&r).unwrap_err().to_string();
     assert!(error.contains("HDR"), "{error}");
     // HDR values set while HDR is off are kept, so switching it on restores them.
     let text = "s = { Exposure2012 = 0.5, HDREditMode = 0, HDRMaxValue = 3.5, SDRBrightness = 20, SDRBlend = -40 }";

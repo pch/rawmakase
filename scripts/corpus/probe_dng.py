@@ -50,7 +50,8 @@ def filmic(x):
 
 
 def write(path, image, *, curve='linear', look=None, hue_sat=None, baseline_exposure=0.,
-          black_render=None, name='RAWmakase Probe', as_shot_neutral=(1., 1., 1.), black_level=0):
+          black_render=None, name='RAWmakase Probe', as_shot_neutral=(1., 1., 1.), black_level=0,
+          dynamic_range=None):
     """Write `image` (scene values, divided by 2**baseline_exposure on the sensor) as a
     mosaic DNG.
 
@@ -61,6 +62,10 @@ def write(path, image, *, curve='linear', look=None, hue_sat=None, baseline_expo
     sensor stores the scene scaled by it, so channels with a smaller value clip later
     in scene terms: a renderer's white balance multiplies them back and its highlight
     reconstruction has to deal with the partially clipped patches.
+    `dynamic_range`: ProfileDynamicRange (0 SDR, 1 HDR, version 1, no output hint);
+    omitted when None.
+    `curve`: ProfileToneCurve as a kind for `tone_curve` or points; None omits the tag,
+    so a renderer uses its default curve (Camera Raw's ACR3 curve).
     `black_level`: BlackLevel in 16-bit units; the sensor's 0 is stored there, so noise
     below black survives in the file (negative scene values down to -black/(65535-black)).
     """
@@ -69,7 +74,7 @@ def write(path, image, *, curve='linear', look=None, hue_sat=None, baseline_expo
     entries = []
 
     def add(tag, kind, values):
-        fmt = {1: 'B', 2: 'B', 3: 'H', 4: 'I', 5: 'I', 10: 'i', 11: 'f'}[kind]
+        fmt = {1: 'B', 2: 'B', 3: 'H', 4: 'I', 5: 'I', 7: 'B', 10: 'i', 11: 'f'}[kind]
         if isinstance(values, str):
             values = list(values.encode() + b'\0')
         count = len(values) // 2 if kind in (5, 10) else len(values)
@@ -116,7 +121,8 @@ def write(path, image, *, curve='linear', look=None, hue_sat=None, baseline_expo
     add(50730, 10, _srational([baseline_exposure]))
     add(50778, 3, [D50])
     add(50936, 2, name)
-    add(50940, 11, tone_curve(curve) if isinstance(curve, str) else list(curve))
+    if curve is not None:
+        add(50940, 11, tone_curve(curve) if isinstance(curve, str) else list(curve))
     add(50941, 4, [3])
     add(50964, 10, _srational(PROPHOTO_TO_XYZ.flatten()))
     if hue_sat is not None:
@@ -129,6 +135,8 @@ def write(path, image, *, curve='linear', look=None, hue_sat=None, baseline_expo
         add(50982, 11, [float(v) for v in np.asarray(data).flatten()])
     if black_render is not None:
         add(51110, 4, [black_render])
+    if dynamic_range is not None:
+        add(52551, 7, list(struct.pack('<HHf', 1, dynamic_range, 0.)))
     entries.sort(key=lambda e: e[0])
     offset = 8 + 2 + 12 * len(entries) + 4
     body, extra = b'', b''

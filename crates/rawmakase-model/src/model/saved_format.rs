@@ -37,7 +37,7 @@ pub const NEWEST: u32 = HDR_SCHEMA;
 
 /// The version to save `recipe` as: the newest any of its settings needs.
 pub fn schema_for(recipe: &super::recipe::Recipe) -> u32 {
-    if recipe.hdr.is_active() {
+    if recipe.uses_hdr() {
         HDR_SCHEMA
     } else if !recipe.ai_denoise.is_default() {
         AI_DENOISE_SCHEMA
@@ -456,8 +456,8 @@ mod tests {
         let read: Recipe = serde_json::from_value(active["recipe"].clone()).unwrap();
         assert_eq!(read.hdr, r.hdr);
         assert!(read.unknown.is_empty());
-        // This release reads it but refuses to render it, keeping it as saved.
-        assert!(read.validate().is_err());
+        // This release reads and renders it.
+        assert!(read.validate().is_ok());
         const { assert!(super::HDR_SCHEMA > super::AI_DENOISE_SCHEMA) };
     }
 }
