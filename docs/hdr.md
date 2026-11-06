@@ -61,3 +61,33 @@ Camera Looks), DCP tables encoded in sRGB, and ordinary tone curves unlike the
 measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
 asked for.
+
+## HDR export
+
+An export with **HDR** on (the Export dialog's HDR rows for TIFF, `ExportSettings::hdr`,
+`rawmakase render --hdr-export`) writes the edit's HDR master instead of its SDR
+rendition. The encoding is captured with the job (`export::job::prepare`) and never
+reads the display or the editor. Gamut and transfer are separate choices
+(`color::hdr_output`):
+
+| Transfer | File | Graphics white |
+| --- | --- | --- |
+| PQ (ST 2084) | 16-bit TIFF | 203 cd/m², absolute; signal 0.5806 |
+| HLG (BT.2100) | 16-bit TIFF | 203 cd/m² on HLG's 1,000 cd/m² reference display: the inverse OOTF (system gamma 1.2 on the gamut's luminance), then the OETF; signal 0.75 |
+| Linear | 32-bit float TIFF | 1.0, as Photoshop's 32-bit documents |
+
+Gamuts: Rec. 2020, Display P3 and Rec. 709, all D65 (Bradford from the master's D50).
+Out-of-gamut channels clip at 0, and each channel is held to the HDR limit again in
+the output gamut. The ICC profile (`color_management::hdr_profile`) is ICC v4 with
+the gamut's colorants and a `cicp` tag naming primaries and transfer; EXIF's
+ColorSpace is Uncalibrated. No mastering-display metadata is written.
+
+An HDR export needs an edit with HDR on (otherwise it is refused, not exported as
+SDR), refuses watermarks (they are composited in SDR) and is a TIFF. An SDR export of
+an HDR edit is its SDR rendition. JPEG XL and gain maps follow (#894; lossy JPEG XL
+waits on #906).
+
+Checked with an independent reader: the Z 8 reference photo's PQ Display P3 export,
+decoded by `tifffile` and the ST 2084 EOTF, scores against Camera Raw's own PQ TIFF
+exactly as the master does (median 0.061 stop above white), and the master and the
+decoded export agree to 0.003.

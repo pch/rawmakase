@@ -235,4 +235,8 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
   `rawmakase render --hdr`. Open: positive Whites, Contrast, Highlights, Shadows,
   the colour stage, looks, the SDR rendition sliders, 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
-- [ ] Stages 4–6 not started.
+- [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display
+  P3, Rec. 709; CICP-tagged ICC), checked against Camera Raw's PQ TIFF through an
+  independent decoder. Open: JPEG XL PQ/HLG (lossless through a Rust encoder; lossy
+  waits on #906), JPEG XL and JPEG gain maps.
+- [ ] Stages 4 and 5 not started.
