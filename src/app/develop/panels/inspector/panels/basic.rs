@@ -112,6 +112,9 @@ pub(in crate::app::develop::panels::inspector) fn show(
         if treatment != shown {
             actions.push(Action::Treatment(treatment));
         }
+        if !rendered {
+            hdr_row(ui, r);
+        }
         let old_profile = r.profile.clone();
         // Without a profile the matrix path renders through the DNG default look.
         let matrix = "Default (camera matrix)";
@@ -425,4 +428,27 @@ pub(in crate::app::develop::panels::inspector) fn show(
         r.blacks = 0.;
     }
     actions
+}
+
+/// High Dynamic Range: the edit's HDR switch, with what the photo shows. Until HDR
+/// displays are supported the photo shows the edit's SDR rendition, and an edit whose
+/// HDR master can't render yet says why (`model::hdr::check_recipe`).
+fn hdr_row(ui: &mut egui::Ui, r: &mut Recipe) {
+    control_row(ui, "HDR", |ui| {
+        ui.checkbox(&mut r.hdr.enabled, "High Dynamic Range")
+            .on_hover_text(
+                "Edit in HDR: highlights above white are kept for HDR exports. \
+                 The photo is shown as its SDR rendition.",
+            );
+    });
+    if r.hdr.is_active() {
+        let note = match crate::model::hdr::check_recipe(r) {
+            Ok(()) => "Showing the SDR rendition".to_owned(),
+            Err(e) => format!("Showing the SDR rendition. HDR export unavailable: {e}"),
+        };
+        ui.horizontal(|ui| {
+            ui.add_space(control_left(ui));
+            ui.add(egui::Label::new(egui::RichText::new(note).small()).wrap());
+        });
+    }
 }

@@ -3,6 +3,7 @@
 //! Camera Raw applies them (docs/scene-tone-stage.md).
 mod global;
 mod haze;
+mod hdr_whites;
 mod measures;
 pub(crate) use global::{
     GlobalTone, MASK_VALUES, SLIDER_STEP, SLIDERS, T_FIRST, T_SAMPLES, T_STEP, U_FIRST, U_SAMPLES,
@@ -42,6 +43,24 @@ pub(crate) fn needs_haze(r: &Recipe) -> bool {
 }
 impl SceneTone {
     pub(crate) fn new(r: &Recipe, measures: &PhotoMeasures, haze: Option<Dehazing>) -> Self {
+        let black_point = r
+            .profile
+            .as_ref()
+            .is_none_or(|p| p.black_render() != crate::camera_profiles::BlackRender::None);
+        if r.hdr.is_active() {
+            return Self {
+                global: GlobalTone::hdr(
+                    r.whites,
+                    r.blacks,
+                    measures.black_key(r.exposure),
+                    measures.dark_key(r.exposure),
+                    black_point,
+                ),
+                dehaze: r.effects.dehaze,
+                dehaze_key: measures.p99 + r.exposure,
+                haze,
+            };
+        }
         Self {
             global: GlobalTone::new(
                 [
@@ -54,9 +73,7 @@ impl SceneTone {
                 r.blacks,
                 measures.black_key(r.exposure),
                 measures.dark_key(r.exposure),
-                r.profile
-                    .as_ref()
-                    .is_none_or(|p| p.black_render() != crate::camera_profiles::BlackRender::None),
+                black_point,
             ),
             dehaze: r.effects.dehaze,
             dehaze_key: measures.p99 + r.exposure,

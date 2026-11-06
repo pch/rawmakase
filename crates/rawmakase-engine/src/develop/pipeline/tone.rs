@@ -35,6 +35,35 @@ pub(super) struct CurveSet {
     pub(crate) measures: crate::develop::scene_tone::PhotoMeasures,
     /// The scene tone stage (S3) for these measures.
     pub(super) scene: crate::develop::scene_tone::SceneTone,
+    /// An HDR render's profile stage and limit; `None` renders SDR.
+    pub(super) hdr: Option<HdrFinish>,
+}
+/// How an HDR render finishes after the scene tone stage: the profile's look and
+/// curve unclipped ([`crate::camera_profiles::CameraProfile::finish_hdr`]). The colour stage's controls are not rendered: an HDR
+/// edit that uses them does not validate (`model::hdr::check_recipe`).
+pub(super) struct HdrFinish {
+    tone: crate::camera_profiles::hdr_tone::HdrTone,
+}
+impl HdrFinish {
+    /// For a recipe with HDR on and a profile whose curve renders in HDR.
+    pub(super) fn new(r: &Recipe) -> Option<Self> {
+        if !r.hdr.is_active() {
+            return None;
+        }
+        Some(Self {
+            tone: r.profile.as_ref()?.hdr_tone().ok()?,
+        })
+    }
+    /// Linear ProPhoto RGB from the scene tone stage to the HDR master before its
+    /// limit: linear ProPhoto RGB, 1 = graphics white, not negative.
+    pub(super) fn finish(&self, scene: [f32; 3], r: &Recipe) -> [f32; 3] {
+        let rgb = match &r.profile {
+            Some(profile) => profile.finish_hdr(scene, &self.tone),
+            None => mul(crate::camera_profiles::PRO_TO_RGB, scene),
+        };
+        // The limit applies once, after sharpening and resizing (`render_hdr`).
+        mul(crate::camera_profiles::RGB_TO_PRO, rgb).map(|v| v.max(0.))
+    }
 }
 impl CurveSet {
     /// Curves plus the Shadows/Highlights map of this image (which also carries the
@@ -201,6 +230,7 @@ impl CurveSet {
             channels: std::array::from_fn(|c| CurveLut::new(&r.effects.channels[c])),
             measures: Default::default(),
             scene: crate::develop::scene_tone::SceneTone::new(r, &Default::default(), None),
+            hdr: HdrFinish::new(r),
         }
     }
 }

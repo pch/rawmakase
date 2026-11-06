@@ -1,9 +1,11 @@
-# HDR stage 1: references, codec and display feasibility
+# HDR results: references, measurements and progress
 
-Status: in progress, 2026-11-05. Stage 1 of the
-[HDR implementation plan](hdr-implementation-plan.md). It records what was measured,
-the decisions taken from it and what remains open. The plan's other stages are
-tracked in [Progress](#progress).
+Status: in progress, 2026-11-06. The record of the
+[HDR implementation plan](hdr-implementation-plan.md): what was measured, the
+decisions taken from it, validation results and what remains open. Stage 1 (references,
+codec and display feasibility) comes first; stage 3's rendering measurements follow
+in [HDR rendering](#hdr-rendering). Progress on every stage is in
+[Progress](#progress). The rendering contract itself is [HDR](../hdr.md).
 
 ## Reference harness
 
@@ -99,9 +101,114 @@ the base image.
 gain-map JPEGs), libheif 1.23 (`heif-enc`: PQ/HLG HEIC with CICP), and exiftool.
 They are used for fixtures and validation only; none is a runtime dependency.
 
+## HDR rendering
+
+Measured with Camera Raw 18.7 on synthetic gray-ramp DNGs (`probe_dng.py`, 192
+patches over 14 stops, a linear embedded profile unless stated), captured as P3 PQ
+16-bit through `hdr_reference.py`, graphics white 1. Probe sets are local; their
+results are below and in the engine's measured tables.
+
+**Scene tone stage.** With a linear profile the default HDR render is the scene
+itself from 0.5 up (to 0.004 stop), with the SDR default black point's toe below,
+at sensor whites 1, 4, 16 and 64 and limits 1 to 8. The limit rolls off only at the
+top: scene 16 renders as 15.84 at limit 4; peaks above 49.26 are PQ's 10,000-nit
+ceiling, not the limit. Exposure ±1 and ±2 are gains. Blacks −100 to +100 match the
+SDR render below 0.25 (0.001 stop) and leave values above white alone. Negative
+Whites is a gain over scene value, the same at sensor whites 4, 16 and 64, photo
+maxima 0.5 to 8 and limits 2.3 and 8. Positive Whites is not: on ramps whose maximum
+is below about 2, Camera Raw stretches much further (+3.8 stops at scene 0.3 on a
+ramp peaking at 0.5, +0.9 on one peaking at 8), and on photos it follows their
+bright end. It is refused in HDR until measured. Contrast, Highlights and Shadows
+depend on the photo (Highlights −100 holds a ramp at 0.25–0.28 above 0.3); not fitted.
+
+**Ordinary profile curves.** Camera Raw does not extend an ordinary (SDR) profile's
+curve by the DNG SDK's slope rule or the overrange rule. Measured on the ramp:
+
+- Curves that never rise above the identity (linear, x^1.1, x^1.25, x², a knee of
+  slope 0.5 then 1.5) render as the identity in HDR, ignoring the curve.
+- Any brightening curve renders close to one common extension above white: at scene
+  1.2 the ACR3 curve and 57 camera-matching curves render between 3.4 and 3.6 (the SDR
+  curve gives 1). Curves that render brighter upper midtones render lower highlights.
+- Absent and explicit ACR3 curves render identically, and the result does not depend
+  on the sensor's white (white +2 against +4 agree).
+- Gamma curves without a toe (x^0.6 to x^0.9) and steep filmic curves depart from
+  the camera curves' extension: x^0.9, nearly the identity, renders scene 0.43 as 0.89.
+
+RAWmakase renders the ACR3 curve's HDR extension as measured, and other curves as it
+times a gain linear in the curve's log2 ratio to ACR3 at twelve inputs and at the
+pixel's input, with weights per scene value fitted on the 58 camera-matching curves
+(from 9 makers' installed DCPs, captured as probe curves only). Left out one at a
+time, 52 curves have a median error above white of 0.05 stop or less; the worst
+sample is 0.27 stop (Panasonic Cinelike V2). A curve whose twelve ratios are more
+than 4 (Mahalanobis) from the fitted curves' is refused: that excludes the toeless
+gammas and steep filmic curves the fit misses, and two of the 58.
+
+**HDR profiles.** The DNG SDK rule (overrange encoding, RGBTone on encoded values,
+slope extension above encoded 1, 3D tables on encoded values) renders Camera Standard
+HDR within 0.01 stop median above white on six of six photos.
+
+### Validation
+
+`scripts/corpus/hdr_validate.py` renders each HDR job of the family with
+`rawmakase render --hdr` and compares as the references were reduced (factor 8,
+linear Display P3). Twelve CC0 raw.pixls.us photos, Adobe Standard (the ACR3 curve
+and the camera's look table) and Camera Standard HDR, HDR limit 4 unless stated.
+`rel` compares how far HDR departs from SDR, ours against Camera Raw's, which
+separates the HDR extension from differences both renders share; `SDR` is the SDR
+render's own median luminance error against Camera Raw.
+
+| Photo (split) | Default above white: median / p95 | rel p95 | peak | ΔE_ITP mean / p95 | SDR |
+| --- | --- | --- | --- | --- | --- |
+| Nikon Z 8 (validation) | 0.061 / 0.096 | 0.094 | +0.078 | 2.9 / 7.0 | 0.010 |
+| Nikon Z f (validation) | 0.007 / 0.009 | 0.018 | +0.007 | 0.9 / 2.9 | 0.006 |
+| Nikon Z6 III (validation) | 0.014 / 0.131 | 0.129 | **+0.108** | 1.4 / 3.7 | 0.011 |
+| Panasonic S1M2 (validation) | 0.061 / **0.395** | 0.271 | −0.012 | **27.4 / 110** | **0.116** |
+| Sony A7R III (validation) | 0.032 / 0.075 | 0.072 | −0.011 | 0.9 / 1.9 | 0.005 |
+| Canon 850D (validation) | 0.032 / 0.035 | 0.034 | +0.025 | 1.6 / 2.4 | 0.028 |
+| Nikon Z50 II (holdout) | 0.012 / 0.020 | 0.008 | +0.082 | 1.3 / 2.7 | 0.018 |
+| Nikon Z5 II (holdout) | 0.017 / 0.025 | 0.012 | −0.011 | 2.2 / 4.5 | 0.010 |
+| Panasonic S1M2ES (holdout) | 0.078 / **1.55** | **0.444** | −0.030 | **24.1 / 91** | **0.220** |
+| Fujifilm X100V (holdout) | 0.030 / 0.063 | 0.051 | **+0.360** | **5.6 / 19.4** | 0.041 |
+| Sony A7R IV (holdout) | 0.045 / 0.061 | 0.080 | +0.026 | 1.4 / 3.9 | 0.013 |
+| Pentax K-1 II (holdout) | none above white | — | +0.025 | **9.6 / 29.7** | **0.121** |
+
+Camera Standard HDR: median above white 0.001–0.008 on the four Nikons and the
+Z50 II/Z5 II, 0.05–0.09 on the two Panasonics. Exposure ±1, Whites −100, Blacks −100
+and limits 2.3 and 6 stay within the tolerances on the same photos as the default.
+Below 0.5, RAWmakase's HDR and SDR renders agree as Camera Raw's do on every photo
+(p99 0.005–0.28 against Camera Raw's 0.016–0.289 on the same photos; medians ≤ 0.003).
+
+Re-run after the limit was made to apply once, last: every number above is unchanged to 0.01 stop (limit 2.3 on the Z 8: median 0.051, p95 0.099).
+
+Eight of twelve photos pass every tolerance. The failures are not the HDR extension:
+
+- The two Panasonics and the Pentax have SDR errors of 0.12–0.22 stop median against
+  Camera Raw already (a pre-existing SDR gap for these bodies); HDR inherits them.
+- The X100V's and Z6 III's peaks are specular highlights rebuilt above the sensor's
+  clip. SDR clips them at white, HDR shows the reconstruction's values (known to
+  differ from Camera Raw's; decode, not tone).
+
+### Decisions
+
+- **The SDR rendition is the edit with HDR off.** Camera Raw's own default SDR
+  rendition is unmeasured (its TIFF output has none); the SDR rendition sliders refuse
+  the master until measured.
+- **Unmeasured adjustments refuse the HDR master, not the edit.** An imported or
+  edited HDR edit with Clarity, a look or positive Whites keeps HDR on and stays
+  valid; its SDR rendition renders it, and the master (HDR export) is refused with
+  the reason, shown in Develop under the HDR switch. Refusing the edit itself would
+  make Develop's ordinary sliders fail to render whenever HDR is on.
+- **The release guard is lifted** (`model::hdr::renders`): every SDR caller receives
+  the SDR rendition through `Recipe::resolved`, the GPU refuses HDR recipes, and the
+  master is reached only through `render_hdr`.
+
 ## Open
 
 - Lossy HDR JXL: deferred to #906.
+- Positive Whites, Contrast, Highlights, Shadows and the colour stage in HDR.
+- The SDR rendition sliders and Camera Raw's default SDR rendition.
+- Looks (Adobe Color and other enhanced profiles) in HDR: the most common profile in
+  Lightroom edits, so the next measurement.
 - Fixtures: synthetic PQ, HLG and gain-map files from the tools above, plus a camera
   HLG/PQ HEIF and an Apple gain-map HEIC/JPEG, which need a real capture. Synthetic
   ramps crossing white, saturated highlights and negative matrix results.
@@ -116,9 +223,16 @@ They are used for fixtures and validation only; none is a runtime dependency.
 
 - [ ] Stage 1: harness, Nikon measurements and codec spike done; fixtures, frozen
   family and display prototype open. The libjxl decision is deferred to #906.
-- [ ] Stage 2: HDR settings in the recipe (`model::hdr`), schema 14 and catalog
+- [x] Stage 2 (#905): HDR settings in the recipe (`model::hdr`), schema 14 and catalog
   version 6 for HDR on, values kept while off without a format change, XMP and
   Lightroom reading and writing, presets, the High Dynamic Range Copy/Sync group,
   and one shared guard refusing HDR on. Profile grouping (52552) and the previous
   reader's profile check are left for stage 3's DCP work.
-- [ ] Stages 3–6 not started.
+- [ ] Stage 3: the CPU HDR master (`render_hdr`), HDR profiles rendered and
+  importable, the ordinary-curve extension, Exposure, negative Whites, Blacks and the
+  limit, measured and validated on the family (above); the SDR rendition everywhere
+  else; the release guard lifted with Develop's HDR switch and SDR-rendition status;
+  `rawmakase render --hdr`. Open: positive Whites, Contrast, Highlights, Shadows,
+  the colour stage, looks, the SDR rendition sliders, 52552 grouping (library only,
+  needed when toggling HDR pairs profiles).
+- [ ] Stages 4–6 not started.

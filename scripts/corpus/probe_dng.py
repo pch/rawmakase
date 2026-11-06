@@ -64,6 +64,8 @@ def write(path, image, *, curve='linear', look=None, hue_sat=None, baseline_expo
     reconstruction has to deal with the partially clipped patches.
     `dynamic_range`: ProfileDynamicRange (0 SDR, 1 HDR, version 1, no output hint);
     omitted when None.
+    `curve`: ProfileToneCurve as a kind for `tone_curve` or points; None omits the tag,
+    so a renderer uses its default curve (Camera Raw's ACR3 curve).
     `black_level`: BlackLevel in 16-bit units; the sensor's 0 is stored there, so noise
     below black survives in the file (negative scene values down to -black/(65535-black)).
     """
@@ -119,7 +121,8 @@ def write(path, image, *, curve='linear', look=None, hue_sat=None, baseline_expo
     add(50730, 10, _srational([baseline_exposure]))
     add(50778, 3, [D50])
     add(50936, 2, name)
-    add(50940, 11, tone_curve(curve) if isinstance(curve, str) else list(curve))
+    if curve is not None:
+        add(50940, 11, tone_curve(curve) if isinstance(curve, str) else list(curve))
     add(50941, 4, [3])
     add(50964, 10, _srational(PROPHOTO_TO_XYZ.flatten()))
     if hue_sat is not None:

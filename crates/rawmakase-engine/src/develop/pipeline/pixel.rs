@@ -28,6 +28,9 @@ pub(super) fn process_pixel(
     if lut.output == PixelOutput::SceneOutput {
         return scene;
     }
+    if let Some(hdr) = &lut.hdr {
+        return hdr.finish(scene, r);
+    }
     let rgb = profile_stage(scene, r);
     color_stage(rgb, r, lut, local.map(|l| l.delta))
 }

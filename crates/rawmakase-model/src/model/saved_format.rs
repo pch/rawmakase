@@ -456,8 +456,8 @@ mod tests {
         let read: Recipe = serde_json::from_value(active["recipe"].clone()).unwrap();
         assert_eq!(read.hdr, r.hdr);
         assert!(read.unknown.is_empty());
-        // This release reads it but refuses to render it, keeping it as saved.
-        assert!(read.validate().is_err());
+        // This release reads and renders it.
+        assert!(read.validate().is_ok());
         const { assert!(super::HDR_SCHEMA > super::AI_DENOISE_SCHEMA) };
     }
 }

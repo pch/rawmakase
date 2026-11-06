@@ -808,10 +808,23 @@ impl Recipe {
             .or_else(|| self.builtin_correction(m))
             .map(Cow::Borrowed)
     }
-    /// Recipe as rendered: switched-off panels bypassed, profile-internal adjustments
-    /// and the default profile. A monochrome photo renders without white balance
-    /// gains, whatever an edit from another photo or a preset gave it.
+    /// Recipe as rendered in SDR: switched-off panels bypassed, profile-internal
+    /// adjustments and the default profile. A monochrome photo renders without white
+    /// balance gains, whatever an edit from another photo or a preset gave it.
+    ///
+    /// An HDR edit renders here as its SDR rendition: the edit with HDR off
+    /// (docs/records/hdr-stage1-results.md#sdr-rendition). Only
+    /// [`Self::resolved_hdr`] renders its HDR master, so no SDR caller can receive
+    /// HDR pixels.
     pub fn resolved(&self, m: &Metadata) -> std::borrow::Cow<'_, Self> {
+        let mut r = self.resolved_hdr(m);
+        if r.hdr.is_active() {
+            r.to_mut().hdr.enabled = false;
+        }
+        r
+    }
+    /// [`Self::resolved`] keeping HDR on: the recipe of an edit's HDR master.
+    pub fn resolved_hdr(&self, m: &Metadata) -> std::borrow::Cow<'_, Self> {
         let mut r = match self.as_rendered() {
             std::borrow::Cow::Borrowed(r) => r.with_profile_adjustments(),
             std::borrow::Cow::Owned(r) => {

@@ -182,9 +182,12 @@ impl PixelParams {
         );
     }
 }
-/// Whether the GPU port renders this (resolved) recipe.
+/// Whether the GPU port renders this (resolved) recipe. It has no HDR rendering: an
+/// HDR edit reaches it only as its SDR rendition (`Recipe::resolved`), and an HDR
+/// profile's 3D tables, which look up overrange-encoded values
+/// (`CameraProfile::camera_color`), render on the CPU.
 pub(crate) fn supported(r: &Recipe) -> bool {
-    r.profile.is_some()
+    r.profile.as_ref().is_some_and(|p| !p.is_hdr()) && !r.hdr.is_active()
 }
 /// Parameters for `im`'s per-pixel stage with the resolved recipe `r`, or `None` when
 /// the GPU port does not cover it.

@@ -291,6 +291,16 @@ impl Table {
         }
         out
     }
+    /// [`Self::apply`] as the DNG SDK applies an HDR profile's table: a 3D table looks
+    /// up and returns [`overrange`]-encoded values; a 2.5D table works on linear ones.
+    fn apply_overrange(&self, rgb: [f32; 3], other: Option<&Table>, weight: f32) -> [f32; 3] {
+        if self.dims[2] > 1 {
+            self.apply(rgb.map(|v| overrange::encode(v.max(0.))), other, weight)
+                .map(overrange::decode)
+        } else {
+            self.apply(rgb.map(|v| v.max(0.)), other, weight)
+        }
+    }
     fn apply(&self, rgb: [f32; 3], other: Option<&Table>, weight: f32) -> [f32; 3] {
         let max = rgb.into_iter().fold(0f32, f32::max);
         let min = rgb.into_iter().fold(f32::INFINITY, f32::min).max(0.);
@@ -534,7 +544,11 @@ impl CameraProfile {
     pub fn camera_color(&self, p: [f32; 3], matrix: Matrix, t: f32) -> [f32; 3] {
         let mut rgb = mul(matrix, p);
         if let Some(table) = &self.hue1 {
-            rgb = table.apply(rgb, self.hue2.as_ref(), self.weight(t));
+            rgb = if self.is_hdr() {
+                table.apply_overrange(rgb, self.hue2.as_ref(), self.weight(t))
+            } else {
+                table.apply(rgb, self.hue2.as_ref(), self.weight(t))
+            };
         }
         mul(PRO_TO_RGB, rgb).map(|v| v * 2f32.powf(self.exposure))
     }
@@ -565,6 +579,74 @@ impl CameraProfile {
             p = look.apply_curve(p);
         }
         mul(PRO_TO_RGB, p)
+    }
+}
+impl CameraProfile {
+    /// How this profile's tone curve renders in HDR, or why it cannot yet: looks
+    /// (Lightroom's creative and Adobe looks, `.cube` looks and fitted Camera Looks)
+    /// have no measured HDR rendering.
+    pub fn hdr_tone(&self) -> Result<hdr_tone::HdrTone> {
+        ensure!(
+            self.enhanced.is_none(),
+            "Looks and Camera Look are not supported in HDR yet"
+        );
+        // An sRGB-encoded table's lookup above white is not measured.
+        ensure!(
+            [&self.hue1, &self.hue2, &self.look]
+                .into_iter()
+                .flatten()
+                .all(|t| !t.srgb),
+            "This profile's sRGB-encoded tables are not supported in HDR yet"
+        );
+        if self.is_hdr() {
+            Ok(hdr_tone::HdrTone::Overrange)
+        } else {
+            hdr_tone::HdrTone::ordinary(&self.tone)
+        }
+    }
+    /// [`Self::finish`] for an HDR render with `tone` (from [`Self::hdr_tone`]): nothing
+    /// is clipped at white. An HDR profile's look table works on overrange-encoded
+    /// values and its curve maps them, as the DNG SDK renders it; an ordinary
+    /// profile's table keeps the values above white it scales, and its curve is the
+    /// measured extension. Both curves apply DNG RGBTone fashion.
+    pub fn finish_hdr(&self, pro: [f32; 3], tone: &hdr_tone::HdrTone) -> [f32; 3] {
+        let mut p = pro.map(|v| v.max(0.));
+        if let Some(table) = &self.look {
+            p = if self.is_hdr() {
+                table.apply_overrange(p, None, 0.)
+            } else {
+                table.apply(p, None, 0.)
+            };
+        }
+        let p = match tone {
+            hdr_tone::HdrTone::Overrange => {
+                // RGBTone on the encoded values, as the SDK does, then decoded.
+                let e = p.map(|v| overrange::encode(v.max(0.)));
+                let curve = |x: f32| {
+                    if x <= 1. {
+                        evaluate_tone(&self.tone, x)
+                    } else {
+                        let top = evaluate_tone(&self.tone, 1.);
+                        top + (x - 1.) * (top - evaluate_tone(&self.tone, 0.999)) / 0.001
+                    }
+                };
+                rgb_tone(e, curve).map(overrange::decode)
+            }
+            tone => rgb_tone(p.map(|v| v.max(0.)), |x| tone.evaluate(&self.tone, x)),
+        };
+        mul(PRO_TO_RGB, p)
+    }
+}
+/// DNG RGBTone: `curve` maps the brightest and darkest channel; the middle one keeps
+/// its relative place between them.
+fn rgb_tone(p: [f32; 3], curve: impl Fn(f32) -> f32) -> [f32; 3] {
+    let low = p.into_iter().fold(f32::INFINITY, f32::min);
+    let high = p.into_iter().fold(f32::NEG_INFINITY, f32::max);
+    let (a, b) = (curve(low), curve(high));
+    if high - low > 1e-8 {
+        p.map(|v| a + (b - a) * (v - low) / (high - low))
+    } else {
+        [b; 3]
     }
 }
 /// A profile's tables as the GPU develop stage reads them (see `develop::gpu`).
@@ -640,6 +722,12 @@ impl CameraProfile {
     pub fn with_cube_for_test(&self, cube: &str) -> Result<Self> {
         let converted = cube_look::convert(cube.as_bytes(), LutSpace::Srgb)?;
         enhanced::LookFile::parse(&cube_look::look_xmp(&converted, "Cube", ""))?.compose(self)
+    }
+    /// This profile marked HDR (`ProfileDynamicRange` 1), for tests.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn as_hdr_for_test(mut self) -> Self {
+        self.dynamic_range = DynamicRange::High;
+        self
     }
     /// A profile with hue/saturation, look and enhanced-look tables for GPU tests.
     #[cfg(any(test, feature = "test-support"))]
@@ -801,6 +889,10 @@ mod cube_look;
 mod dcp;
 mod enhanced;
 pub mod fitted;
+pub mod hdr_tone;
+#[rustfmt::skip]
+#[allow(clippy::excessive_precision)]
+mod hdr_tone_data;
 mod library;
 mod look_settings;
 pub mod open;

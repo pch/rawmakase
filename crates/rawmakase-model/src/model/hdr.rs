@@ -10,6 +10,12 @@
 //! is the one guard every entry point uses to refuse one (XMP, Lightroom's Develop
 //! settings, presets, saved edits and automation all validate the recipe), so an active
 //! HDR edit is preserved and reported rather than rendered as SDR.
+//!
+//! Where HDR renders, [`check_recipe`] refuses the HDR master of an edit that uses an
+//! adjustment whose HDR rendering has not been measured, rather than rendering it
+//! wrong. The edit stays valid and keeps HDR on: its SDR rendition, which every SDR
+//! view and export shows, renders it whole, and the reason is shown where the HDR
+//! master is asked for.
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 
@@ -23,11 +29,30 @@ pub const DEFAULT_LIMIT: f32 = 2.3;
 
 /// Whether this release renders active HDR edits. Raised only when the CPU HDR master
 /// and its SDR rendition reach every caller that renders an edit.
-const RENDERS_HDR: bool = false;
+const RENDERS_HDR: bool = true;
 
 /// Whether this release renders HDR: active HDR edits and HDR camera profiles.
 pub const fn renders() -> bool {
     RENDERS_HDR
+}
+
+/// Where the HDR limit's roll-off starts, as a fraction of the peak. Camera Raw 18.7
+/// renders a linear ramp unchanged to just below 2^limit × graphics white and scene
+/// 16 at limit 4 as 15.84: a knee at 97% with slope 1 reproduces both.
+const LIMIT_KNEE: f32 = 0.97;
+
+/// `v` (linear, 1 = graphics white) rolled off to at most `peak`: the HDR limit as an
+/// HDR render applies it to each channel, last. Values below the knee pass unchanged.
+pub fn roll_off(v: f32, peak: f32) -> f32 {
+    let knee = LIMIT_KNEE * peak;
+    if v.is_nan() {
+        0.
+    } else if v <= knee {
+        v
+    } else {
+        let room = peak - knee;
+        peak - room * (-(v - knee) / room).exp()
+    }
 }
 
 /// An edit's HDR settings: its mode, limit and SDR rendition.
@@ -88,6 +113,11 @@ impl SdrRendition {
 }
 
 impl HdrSettings {
+    /// The brightest value an HDR render of these settings may have: 2^limit times
+    /// graphics white.
+    pub fn peak(&self) -> f32 {
+        self.limit.exp2()
+    }
     /// HDR off with every value at its default: not saved, so releases that predate HDR
     /// read the recipe unchanged.
     pub fn is_default(&self) -> bool {
@@ -124,6 +154,94 @@ impl HdrSettings {
     }
 }
 
+/// Refuses the HDR master of an active HDR edit that this release can render only in
+/// SDR: an adjustment, look or profile whose rendering above graphics white has not
+/// been measured against Camera Raw (docs/records/hdr-stage1-results.md). An edit
+/// with HDR off, or with nothing but measured adjustments, passes.
+///
+/// Measured: white balance, Exposure, negative Whites, Blacks, the HDR limit, camera profiles
+/// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), and what works
+/// on the camera's samples before tone: lens corrections, geometry, noise reduction,
+/// AI Denoise, Heal and Clone, and output sharpening.
+pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
+    // What renders: a switched-off panel's adjustments do not.
+    let r = r.as_rendered();
+    if !r.hdr.is_active() {
+        return Ok(());
+    }
+    // Without one, the camera matrix with the ACR3 curve renders it (`Recipe::resolved`).
+    if let Some(profile) = &r.profile {
+        profile.hdr_tone()?;
+    }
+    ensure!(
+        r.hdr.sdr == SdrRendition::default(),
+        "The SDR rendition's adjustments are not supported in HDR yet"
+    );
+    // The identity over the whole domain: points on the diagonal from black to white.
+    // A curve whose ends are inside 0–1 clamps the rest, so it is not one.
+    let identity = |c: &crate::color::curve::ToneCurve| {
+        c.points.first() == Some(&[0., 0.])
+            && c.points.last() == Some(&[1., 1.])
+            && c.points.iter().all(|p| p[0] == p[1])
+    };
+    let defaults = super::recipe::Recipe::default();
+    let unmeasured: [(&str, bool); 15] = [
+        ("Contrast", r.contrast != 0.),
+        // Camera Raw stretches a photo whose brightest areas are below about twice
+        // graphics white much further than the measured gain (+3.8 stops at scene 0.3
+        // on a ramp peaking at 0.5); negative Whites follows no photo statistic.
+        ("Positive Whites", r.whites > 0.),
+        (
+            "Highlights and Shadows",
+            r.highlights != 0. || r.shadows != 0.,
+        ),
+        (
+            "Levels",
+            r.black_point != defaults.black_point
+                || r.white_point != defaults.white_point
+                || r.midtone != defaults.midtone,
+        ),
+        (
+            "The Tone Curve",
+            !identity(&r.curve)
+                || !r.effects.channels.iter().all(identity)
+                || r.effects.parametric != [0.; 4],
+        ),
+        (
+            "Presence",
+            r.saturation != 0.
+                || r.vibrance != 0.
+                || r.effects.clarity != 0.
+                || r.effects.texture != 0.
+                || r.effects.dehaze != 0.,
+        ),
+        ("The Color Mixer", r.hsl != [[0.; 3]; 8]),
+        ("Point Color", !r.point_colors.is_empty()),
+        (
+            "Color Grading",
+            r.grading != [[0.; 3]; 3] || r.effects.global_grade != [0.; 3],
+        ),
+        (
+            "Calibration",
+            r.effects.calibration != [[0.; 2]; 3] || r.effects.shadow_tint != 0.,
+        ),
+        ("Black & White", r.effects.monochrome),
+        ("Defringe", r.effects.defringe != [0.; 2]),
+        ("Effects", r.effects.grain != 0. || r.effects.vignette != 0.),
+        (
+            "Masks",
+            r.masks
+                .iter()
+                .any(crate::model::masks::MaskGroup::is_active),
+        ),
+        ("Red Eye", !r.red_eye.is_blank()),
+    ];
+    if let Some((name, _)) = unmeasured.iter().find(|(_, used)| *used) {
+        anyhow::bail!("{name} is not supported in HDR yet");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,7 +257,65 @@ mod tests {
         hdr.enabled = true;
         assert!(hdr.is_active());
         assert!(hdr.validate().is_ok());
-        assert!(hdr.check_renderable().is_err());
+        assert!(hdr.check_renderable().is_ok());
+    }
+
+    /// An HDR master renders with measured adjustments only. The edit itself stays
+    /// valid either way, and its SDR rendition renders the rest.
+    #[test]
+    fn only_measured_adjustments_render_in_hdr() {
+        use crate::model::recipe::Recipe;
+        let mut r = Recipe::default();
+        r.hdr.enabled = true;
+        r.exposure = 1.;
+        r.whites = -0.5;
+        r.blacks = -0.3;
+        r.sharpening = 0.4;
+        assert!(check_recipe(&r).is_ok());
+        let unmeasured: [fn(&mut Recipe); 6] = [
+            |r| r.contrast = 0.1,
+            |r| r.shadows = 0.1,
+            |r| r.effects.clarity = 0.1,
+            |r| r.saturation = 0.1,
+            |r| r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]],
+            |r| r.hdr.sdr.brightness = 0.1,
+        ];
+        for change in unmeasured {
+            let mut edit = r.clone();
+            change(&mut edit);
+            let error = check_recipe(&edit).unwrap_err().to_string();
+            assert!(error.contains("HDR"), "{error}");
+            assert!(edit.validate().is_ok());
+            edit.hdr.enabled = false;
+            assert!(check_recipe(&edit).is_ok());
+        }
+        // A curve with extra points on the diagonal is still the identity; one whose
+        // ends stop short of black and white clamps, so it is not.
+        r.curve.points = vec![[0., 0.], [0.5, 0.5], [1., 1.]];
+        assert!(check_recipe(&r).is_ok());
+        r.curve.points = vec![[0.2, 0.2], [0.8, 0.8]];
+        assert!(check_recipe(&r).is_err());
+        r.curve = Default::default();
+        r.effects.channels[1].points = vec![[0.2, 0.2], [0.8, 0.8]];
+        assert!(check_recipe(&r).is_err());
+    }
+
+    #[test]
+    fn the_limit_rolls_off_only_at_the_top_and_never_exceeds_the_peak() {
+        assert_eq!(roll_off(1., 16.), 1.);
+        assert_eq!(roll_off(15., 16.), 15.);
+        // Camera Raw 18.7: scene 16 at limit 4 renders as 15.84.
+        assert!((roll_off(16., 16.) - 15.84).abs() < 0.03);
+        for v in [16.5, 100., 1e9, f32::INFINITY] {
+            assert!(roll_off(v, 16.) <= 16.);
+        }
+        assert_eq!(roll_off(f32::NAN, 16.), 0.);
+        let mut last = 0.;
+        for i in 0..400 {
+            let y = roll_off(i as f32 / 10., 16.);
+            assert!(y >= last);
+            last = y;
+        }
     }
 
     #[test]

@@ -266,10 +266,9 @@ mod tests {
         assert_eq!(load_preset(&path).unwrap().recipe.exposure, 0.5);
     }
     /// HDR values kept while HDR is off save in the version earlier releases read and
-    /// load back; a preset with HDR on, as a later release would write it, is refused
-    /// while HDR doesn't render, and saving one is refused too.
+    /// load back; a preset with HDR on saves in the HDR schema and loads back.
     #[test]
-    fn a_preset_keeps_hdr_values_and_refuses_hdr_on() {
+    fn a_preset_keeps_hdr_values_and_saves_hdr_on_in_its_schema() {
         use crate::model::saved_format::{AI_DENOISE_SCHEMA, HDR_SCHEMA, reads};
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("p.json");
@@ -282,16 +281,14 @@ mod tests {
         assert!(reads(&saved, AI_DENOISE_SCHEMA));
         assert_eq!(load_preset(&path).unwrap().recipe.hdr, r.hdr);
 
+        // HDR on saves as the HDR schema, which earlier releases refuse, and loads back.
         r.hdr.enabled = true;
-        assert!(save_preset(&path, &r, &Metadata::default()).is_err());
-        let on = serde_json::json!({
-            "schema": HDR_SCHEMA,
-            "pipeline": HDR_SCHEMA,
-            "recipe": serde_json::to_value(&r).unwrap(),
-        });
-        std::fs::write(&path, on.to_string()).unwrap();
-        let error = load_preset(&path).err().unwrap().to_string();
-        assert!(error.contains("HDR"), "{error}");
+        save_preset(&path, &r, &Metadata::default()).unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert!(!reads(&saved, AI_DENOISE_SCHEMA));
+        assert!(reads(&saved, HDR_SCHEMA));
+        assert_eq!(load_preset(&path).unwrap().recipe.hdr, r.hdr);
     }
     /// A preset an earlier release saved loses the settings that chose its engine
     /// and operators, and keeps its sliders and a newer release's setting.
