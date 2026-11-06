@@ -254,6 +254,27 @@ mod tests {
         Ok(())
     }
 
+    /// A resized master keeps its highlights: `image`'s resize clips float samples to
+    /// 0–1, which an HDR master's encoded values exceed.
+    #[test]
+    fn a_resized_master_keeps_light_above_white() -> anyhow::Result<()> {
+        let im = grays(&[0.2, 4.064, 4.064, 4.064]);
+        let r = hdr_recipe(&im);
+        let full = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        let small = render_hdr(&im, &r.checked()?, None, 16, Cancel::NEVER)?;
+        assert_eq!(small.width, 16);
+        let peak =
+            |o: &crate::rendered::HdrImage| o.pixels.iter().flatten().copied().fold(0f32, f32::max);
+        assert!(peak(&full) > 16.);
+        assert!(
+            (peak(&small) / peak(&full) - 1.).abs() < 0.05,
+            "{} {}",
+            peak(&small),
+            peak(&full)
+        );
+        Ok(())
+    }
+
     #[test]
     fn an_sdr_edit_has_no_hdr_master() {
         let im = grays(&[0.5]);
