@@ -385,6 +385,12 @@ pub(in crate::app) struct ViewState {
     pub(in crate::app) monitor: crate::app::preferences::monitor::MonitorProfile,
     /// The display profile the system assigns to the window's display.
     pub(in crate::app) system_display: crate::app::preferences::monitor::SystemProbe,
+    /// What the window's display can show of HDR now: a view fact, never part of an
+    /// edit, read each frame.
+    pub(in crate::app) hdr_display: crate::app::shell::display::HdrDisplay,
+    /// Whether this frame's photo is due as its HDR master, drawn or still
+    /// rendering, which asks the compositor for EDR.
+    pub(in crate::app) hdr_shown: bool,
     pub(in crate::app) selected_band: usize,
     /// The Color Grading panel's view: 3-Way or one wheel.
     pub(in crate::app) grading: crate::app::develop::panels::color_grading::GradingView,
@@ -434,6 +440,8 @@ impl Default for ViewState {
             guided: Default::default(),
             monitor: Default::default(),
             system_display: Default::default(),
+            hdr_display: Default::default(),
+            hdr_shown: false,
             selected_band: 0,
             grading: Default::default(),
             selected_curve: 0,

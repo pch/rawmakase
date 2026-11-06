@@ -217,7 +217,8 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
   rendition, so this needs a gain-map export path.
 - Opening defaults for unedited PQ, HLG and gain-map sources, and HDR toggling with
   unavailable paired profiles.
-- A float HDR photo surface through eframe/wgpu (EDR on macOS).
+- HDR display beyond macOS Develop's Fit view: zoomed views, comparisons, a GPU
+  HDR path, Windows Advanced Color, Linux, and highlights beyond the headroom.
 
 ## Progress
 
@@ -242,4 +243,9 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
   libultrahdr; JPEG XL gain maps (`jhgm`), the bundle read by libjxl's `jxlinfo`. A
   resized master lost its light above white until #910. Open: lossy JPEG XL waits on
   #906; AVIF and HEIC HDR are not planned for #894.
-- [ ] Stages 4 and 5 not started.
+- [ ] Stage 5: macOS HDR display: a float surface through RAWmakase's egui fork
+  (`surface_format_selector`, offered upstream), extended sRGB with EDR while an HDR
+  photo shows, and the CPU master in Develop's Fit view held to the display's
+  headroom, with the Basic panel's note naming it. Checked on a MacBook Pro XDR
+  display with a CC0 Z 8 photo. Open: the rest of the stage (above).
+- [ ] Stage 4 not started.

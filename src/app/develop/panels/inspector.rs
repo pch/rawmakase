@@ -505,6 +505,7 @@ impl Editor {
         // Upright analyses the decoded photo once and keeps a correction for every mode.
         let upright_ready = self.document.full().is_some() && !self.document.upright.is_running();
         let can_fit_camera_look = self.can_fit_camera_look();
+        let hdr = self.hdr_presentation();
         // A conversion to black & white waiting for the photo to decode.
         let pending_treatment = self
             .document
@@ -528,6 +529,7 @@ impl Editor {
             auto_ready,
             auto_in_effect,
             can_fit_camera_look,
+            hdr: &hdr,
         };
         let mut requests = panels::Requests::default();
         let view = &mut self.view;

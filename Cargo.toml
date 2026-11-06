@@ -125,7 +125,7 @@ objc2.workspace = true
 # The title bar's event monitor (src/platform/titlebar.rs).
 block2 = "0.6"
 dispatch2 = "0.3"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "NSApplication", "NSCell", "NSEvent", "NSGraphicsContext", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSWindow", "objc2-quartz-core"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "NSApplication", "NSCell", "NSEvent", "NSGraphicsContext", "NSMenu", "NSMenuItem", "NSResponder", "NSScreen", "NSView", "NSWindow", "objc2-quartz-core"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColorSpace"] }
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "CAMetalLayer", "objc2-core-graphics"] }
 # The Trash (src/platform/trash/macos.rs): NSFileManager's trashItemAtURL,
@@ -182,16 +182,16 @@ workspace = true
 # winit forks"), among them file drops on Wayland. Move egui and winit
 # together, to the revisions that guide lists.
 [patch.crates-io]
-ecolor = { git = "https://github.com/crmne/egui", rev = "6ce633ba5f7f64d19ef6d204f9377da560bb546b" }
-eframe = { git = "https://github.com/crmne/egui", rev = "6ce633ba5f7f64d19ef6d204f9377da560bb546b" }
-egui = { git = "https://github.com/crmne/egui", rev = "6ce633ba5f7f64d19ef6d204f9377da560bb546b" }
-egui-wgpu = { git = "https://github.com/crmne/egui", rev = "6ce633ba5f7f64d19ef6d204f9377da560bb546b" }
-egui-winit = { git = "https://github.com/crmne/egui", rev = "6ce633ba5f7f64d19ef6d204f9377da560bb546b" }
-egui_extras = { git = "https://github.com/crmne/egui", rev = "6ce633ba5f7f64d19ef6d204f9377da560bb546b" }
-egui_glow = { git = "https://github.com/crmne/egui", rev = "6ce633ba5f7f64d19ef6d204f9377da560bb546b" }
-emath = { git = "https://github.com/crmne/egui", rev = "6ce633ba5f7f64d19ef6d204f9377da560bb546b" }
-epaint = { git = "https://github.com/crmne/egui", rev = "6ce633ba5f7f64d19ef6d204f9377da560bb546b" }
-epaint_default_fonts = { git = "https://github.com/crmne/egui", rev = "6ce633ba5f7f64d19ef6d204f9377da560bb546b" }
+ecolor = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
+eframe = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
+egui = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
+egui-wgpu = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
+egui-winit = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
+egui_extras = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
+egui_glow = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
+emath = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
+epaint = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
+epaint_default_fonts = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
 winit = { git = "https://github.com/crmne/winit", rev = "ed7caa9023f10b397f5b6ec8284a840cbd8a6f65" }
 
 [profile.release]

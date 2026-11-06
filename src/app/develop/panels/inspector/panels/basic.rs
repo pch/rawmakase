@@ -42,6 +42,8 @@ pub(in crate::app::develop::panels::inspector) struct View<'a> {
     pub auto_ready: bool,
     pub auto_in_effect: bool,
     pub can_fit_camera_look: bool,
+    /// What the viewport shows of an HDR edit.
+    pub hdr: &'a crate::app::develop::hdr_preview::Presentation,
 }
 
 /// Draws the panel.
@@ -65,6 +67,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
         auto_ready,
         auto_in_effect,
         can_fit_camera_look,
+        hdr,
     } = *facts;
     // A JPEG, TIFF or PNG: its Embedded profile, and relative white balance.
     let rendered = metadata.is_some_and(|m| m.is_rendered());
@@ -113,7 +116,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
             actions.push(Action::Treatment(treatment));
         }
         if !rendered {
-            hdr_row(ui, r);
+            hdr_row(ui, r, hdr);
         }
         let old_profile = r.profile.clone();
         // Without a profile the matrix path renders through the DNG default look.
@@ -430,10 +433,14 @@ pub(in crate::app::develop::panels::inspector) fn show(
     actions
 }
 
-/// High Dynamic Range: the edit's HDR switch, with what the photo shows. Until HDR
-/// displays are supported the photo shows the edit's SDR rendition, and an edit whose
-/// HDR master can't render yet says why (`model::hdr::check_recipe`).
-fn hdr_row(ui: &mut egui::Ui, r: &mut Recipe) {
+/// High Dynamic Range: the edit's HDR switch, with what the photo shows: its HDR
+/// master where the viewport can show it (`shown`), else its SDR rendition and why;
+/// an edit whose HDR master can't render yet says why (`model::hdr::check_recipe`).
+fn hdr_row(
+    ui: &mut egui::Ui,
+    r: &mut Recipe,
+    shown: &crate::app::develop::hdr_preview::Presentation,
+) {
     control_row(ui, "HDR", |ui| {
         ui.checkbox(&mut r.hdr.enabled, "High Dynamic Range")
             .on_hover_text(
@@ -442,9 +449,19 @@ fn hdr_row(ui: &mut egui::Ui, r: &mut Recipe) {
             );
     });
     if r.hdr.is_active() {
-        let note = match crate::model::hdr::check_recipe(r) {
-            Ok(()) => "Showing the SDR rendition".to_owned(),
-            Err(e) => format!("Showing the SDR rendition. HDR export unavailable: {e}"),
+        use crate::app::develop::hdr_preview::Presentation;
+        let note = match (crate::model::hdr::check_recipe(r), shown) {
+            (Err(e), _) => format!("Showing the SDR rendition. HDR export unavailable: {e}"),
+            (Ok(()), Presentation::Hdr { stops }) => {
+                format!("Showing HDR, up to {stops:.1} stops above white on this display")
+            }
+            (Ok(()), Presentation::Rendering) => {
+                "Showing the SDR rendition while HDR renders".to_owned()
+            }
+            (Ok(()), Presentation::Failed(e)) => {
+                format!("Showing the SDR rendition. HDR preview failed: {e}")
+            }
+            (Ok(()), Presentation::Sdr(why)) => format!("Showing the SDR rendition: {why}"),
         };
         ui.horizontal(|ui| {
             ui.add_space(control_left(ui));

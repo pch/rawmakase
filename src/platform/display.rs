@@ -251,57 +251,113 @@ impl Surface {
     }
 
     /// Called while painting, after wgpu has had its last chance to reconfigure.
-    pub(crate) fn prepare(&self, device_rgb: bool) {
+    /// `layer` says how the surface's pixels are to be read (see [`Layer`]).
+    pub(crate) fn prepare(&self, layer: Layer) {
         let Some(main_thread) = objc2::MainThreadMarker::new() else {
             return;
         };
         // Look up the current layer; surface recovery can replace it.
-        if let Some(layer) = self.0.get(main_thread).layer() {
-            prepare_layer(&layer, device_rgb);
+        if let Some(root) = self.0.get(main_thread).layer() {
+            prepare_layer(&root, layer);
         }
+    }
+    /// How far above SDR white the window's display can show light, as linear
+    /// factors over SDR white (1 on an SDR display): `(now, potential)`. `now` is
+    /// macOS's `maximumExtendedDynamicRangeColorComponentValue`, which stays 1 until a
+    /// layer asks for EDR and then follows the display's brightness and other HDR
+    /// content; `potential` is `maximumPotentialExtendedDynamicRangeColorComponentValue`,
+    /// what the display can reach at all.
+    pub(crate) fn headroom(&self) -> (f32, f32) {
+        let Some(main_thread) = objc2::MainThreadMarker::new() else {
+            return (1., 1.);
+        };
+        let view = self.0.get(main_thread);
+        view.window()
+            .and_then(|w| w.screen())
+            .map_or((1., 1.), |s| {
+                (
+                    (s.maximumExtendedDynamicRangeColorComponentValue() as f32).max(1.),
+                    (s.maximumPotentialExtendedDynamicRangeColorComponentValue() as f32).max(1.),
+                )
+            })
     }
 }
 
+/// How the window surface's pixels are read on macOS.
 #[cfg(target_os = "macos")]
-fn prepare_layer(layer: &objc2_quartz_core::CALayer, device_rgb: bool) {
-    use objc2_core_graphics::{CGColorSpace, kCGColorSpaceSRGB};
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Layer {
+    /// The pixels are already in the monitor's device RGB (a manual monitor
+    /// transform): no colour space, so nothing converts them twice.
+    pub(crate) device_rgb: bool,
+    /// The surface holds 16-bit floats: tagged extended sRGB, whose values above 1
+    /// are light above SDR white; egui writes sRGB-encoded values to it either way.
+    pub(crate) extended: bool,
+    /// Asks the compositor for extended dynamic range: an HDR photo is shown.
+    pub(crate) edr: bool,
+}
+
+#[cfg(target_os = "macos")]
+fn prepare_layer(layer: &objc2_quartz_core::CALayer, mode: Layer) {
+    use objc2_core_graphics::{CGColorSpace, kCGColorSpaceExtendedSRGB, kCGColorSpaceSRGB};
 
     // wgpu-hal 30.0.1 resets sRGB surfaces to nil, which means device RGB,
     // not sRGB. Tagging the layer lets Core Animation match the current display.
     // A manual monitor transform already outputs device RGB, so keep nil there.
-    let srgb = (!device_rgb).then(|| {
-        // SAFETY: this constant is available on every supported macOS version.
-        CGColorSpace::with_name(Some(unsafe { kCGColorSpaceSRGB }))
-            .expect("macOS provides the standard sRGB color space")
+    let space = (!mode.device_rgb).then(|| {
+        // SAFETY: these constants are available on every supported macOS version.
+        let name = if mode.extended {
+            unsafe { kCGColorSpaceExtendedSRGB }
+        } else {
+            unsafe { kCGColorSpaceSRGB }
+        };
+        CGColorSpace::with_name(Some(name)).expect("macOS provides the sRGB color spaces")
     });
-    tag_layers(layer, srgb.as_deref());
+    tag_layers(
+        layer,
+        space.as_deref(),
+        mode.edr && mode.extended && !mode.device_rgb,
+    );
 }
 
 #[cfg(target_os = "macos")]
 fn tag_layers(
     layer: &objc2_quartz_core::CALayer,
     space: Option<&objc2_core_graphics::CGColorSpace>,
+    edr: bool,
 ) {
     use objc2_quartz_core::CAMetalLayer;
 
     // raw-window-metal normally installs a sublayer beneath the view's layer.
-    if let Some(metal) = layer.downcast_ref::<CAMetalLayer>()
-        && metal.colorspace().as_deref() != space
-    {
-        metal.setColorspace(space);
+    if let Some(metal) = layer.downcast_ref::<CAMetalLayer>() {
+        if metal.colorspace().as_deref() != space {
+            metal.setColorspace(space);
+        }
+        if metal.wantsExtendedDynamicRangeContent() != edr {
+            metal.setWantsExtendedDynamicRangeContent(edr);
+        }
     }
     // SAFETY: AppKit layers are visited on the main thread, with no concurrent
     // hierarchy mutation. Tests use isolated layers owned by their test thread.
     if let Some(children) = unsafe { layer.sublayers() } {
         for child in children {
-            tag_layers(&child, space);
+            tag_layers(&child, space, edr);
         }
     }
 }
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::prepare_layer;
+    use super::{Layer, prepare_layer};
+    const SDR: Layer = Layer {
+        device_rgb: false,
+        extended: false,
+        edr: false,
+    };
+    const DEVICE: Layer = Layer {
+        device_rgb: true,
+        ..SDR
+    };
     use objc2_core_graphics::{CGColorSpace, kCGColorSpaceSRGB};
     use objc2_quartz_core::{CALayer, CAMetalLayer};
 
@@ -323,27 +379,61 @@ mod tests {
         root.addSublayer(&container);
         container.addSublayer(&metal);
         metal.setColorspace(None);
-        prepare_layer(&root, false);
+        prepare_layer(&root, SDR);
         assert_srgb(&metal);
         // wgpu 30 resets this property when reconfiguring (e.g. on resize).
         metal.setColorspace(None);
-        prepare_layer(&root, false);
+        prepare_layer(&root, SDR);
         assert_srgb(&metal);
         metal.removeFromSuperlayer();
         let replacement = CAMetalLayer::new();
         root.addSublayer(&replacement);
-        prepare_layer(&root, false);
+        prepare_layer(&root, SDR);
         assert_srgb(&replacement);
     }
 
     #[test]
     fn manual_device_rgb_is_not_color_converted_twice() {
         let metal = CAMetalLayer::new();
-        prepare_layer(&metal, false);
+        prepare_layer(&metal, SDR);
         assert_srgb(&metal);
-        prepare_layer(&metal, true);
+        prepare_layer(&metal, DEVICE);
         assert!(metal.colorspace().is_none());
-        prepare_layer(&metal, false);
+        prepare_layer(&metal, SDR);
         assert_srgb(&metal);
+    }
+
+    /// A float surface is tagged extended sRGB, and asks for EDR only while an HDR
+    /// photo is shown; a device-RGB monitor transform never does.
+    #[test]
+    fn a_float_surface_is_extended_srgb_and_edr_follows_the_photo() {
+        use objc2_core_graphics::{CGColorSpace, kCGColorSpaceExtendedSRGB};
+        let metal = CAMetalLayer::new();
+        let extended = Layer {
+            extended: true,
+            ..SDR
+        };
+        prepare_layer(&metal, extended);
+        let name = CGColorSpace::name(metal.colorspace().as_deref()).unwrap();
+        // SAFETY: this framework constant is available on every supported macOS.
+        assert_eq!(&*name, unsafe { kCGColorSpaceExtendedSRGB });
+        assert!(!metal.wantsExtendedDynamicRangeContent());
+        prepare_layer(
+            &metal,
+            Layer {
+                edr: true,
+                ..extended
+            },
+        );
+        assert!(metal.wantsExtendedDynamicRangeContent());
+        prepare_layer(
+            &metal,
+            Layer {
+                edr: true,
+                ..DEVICE
+            },
+        );
+        assert!(!metal.wantsExtendedDynamicRangeContent());
+        assert!(metal.colorspace().is_none());
     }
 }

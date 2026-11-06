@@ -378,6 +378,9 @@ impl Editor {
         if let (Some(region), Some(at)) = (&region_texture, region_rect) {
             painter.image(region.id(), at, uv, Color32::WHITE);
         }
+        if region_texture.is_none() {
+            self.hdr_preview_ui(&painter, rect);
+        }
         if self.view.compare.renders_before_alone() {
             before_after::badge(ui, area, "Before");
         }
@@ -923,6 +926,106 @@ impl Editor {
             values,
             palette.tone(Tone::TEXT),
         );
+    }
+}
+
+impl crate::app::Editor {
+    /// The HDR preview Develop's viewport is due to show in its Fit view: where the
+    /// display has headroom and the photo shown is an edit with HDR on whose master
+    /// renders, with nothing drawn into its SDR rendition. Otherwise why the SDR
+    /// rendition shows, for the Basic panel's note.
+    pub(in crate::app) fn hdr_preview_due(
+        &self,
+    ) -> Result<
+        (
+            crate::app::develop::hdr_preview::Key,
+            std::sync::Arc<crate::camera_data::CameraImage>,
+        ),
+        &'static str,
+    > {
+        let display = self.view.hdr_display;
+        let recipe = self.effective_recipe();
+        let image = self.document.full().ok_or("the photo is still opening")?;
+        let refuse = |no: bool, why| if no { Err(why) } else { Ok(()) };
+        refuse(!display.available(), "this display shows no HDR")?;
+        // A chosen monitor profile converts the SDR rendition alone; the surface
+        // then holds device RGB, which has no extended range.
+        refuse(
+            self.view.monitor.device_rgb(),
+            "HDR shows only with the system's display profile",
+        )?;
+        refuse(self.module != Module::Develop, "HDR shows in Develop")?;
+        refuse(self.view.zoom.on, "HDR shows in Fit")?;
+        refuse(
+            self.view.compare != before_after::Compare::Off,
+            "HDR doesn't show in comparisons yet",
+        )?;
+        // Visualizations render into the SDR rendition: the clipping warning,
+        // Remove's spots, a mask's overlay and Point Color's range.
+        refuse(
+            self.view.clipping.overlay().any()
+                || self.overlay() != crate::app::worker::Overlay::None
+                || self.visualized_swatch().is_some(),
+            "a visualization is shown",
+        )?;
+        refuse(!recipe.hdr.is_active(), "HDR is off")?;
+        refuse(image.metadata.is_rendered(), "HDR is for raw photos")?;
+        refuse(
+            crate::model::hdr::check_recipe(&recipe).is_err(),
+            "this edit doesn't render in HDR yet",
+        )?;
+        // Its result is the full photo's; the preview renders a reduced copy.
+        refuse(
+            recipe.ai_denoise.enabled,
+            "AI Denoise isn't previewed in HDR yet",
+        )?;
+        refuse(
+            self.preview.last_fit_edge == 0,
+            "the photo is still opening",
+        )?;
+        let key = crate::app::develop::hdr_preview::Key::new(
+            image,
+            &recipe,
+            self.preview.last_fit_edge,
+            display.headroom,
+        );
+        Ok((key, image.clone()))
+    }
+    /// What Develop shows of the open edit, for the Basic panel's note.
+    pub(in crate::app) fn hdr_presentation(
+        &self,
+    ) -> crate::app::develop::hdr_preview::Presentation {
+        use crate::app::develop::hdr_preview::Presentation;
+        match self.hdr_preview_due() {
+            Err(why) => Presentation::Sdr(why),
+            Ok((key, _)) => match self.hdr_preview.failure(&key) {
+                Some(e) => Presentation::Failed(e.to_owned()),
+                None if self.hdr_preview.shows(&key) => Presentation::Hdr {
+                    stops: self.view.hdr_display.headroom.log2(),
+                },
+                None => Presentation::Rendering,
+            },
+        }
+    }
+    /// Draws the HDR master over the photo when it is due ([`Self::hdr_preview_due`])
+    /// and its preview for exactly this edit, size and headroom is there; the SDR
+    /// rendition shows until then. Asks for EDR (`ViewState::hdr_shown`) whenever the
+    /// master is due and hasn't failed.
+    fn hdr_preview_ui(&mut self, painter: &egui::Painter, rect: Rect) {
+        let Some(state) = self.render_state.clone() else {
+            return;
+        };
+        let Ok((key, image)) = self.hdr_preview_due() else {
+            return;
+        };
+        self.hdr_preview.request(key.clone(), image);
+        if let Some((id, _)) = self.hdr_preview.texture(&key, &state) {
+            let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
+            painter.image(id, rect, uv, Color32::WHITE);
+        }
+        // EDR stays on while an edit's preview is re-rendered: macOS ramps the
+        // display's headroom when it is switched, and the next preview needs it.
+        self.view.hdr_shown = self.hdr_preview.failure(&key).is_none();
     }
 }
 
