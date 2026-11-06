@@ -77,6 +77,7 @@ fn an_hdr_tiff_keeps_highlights_above_white() -> Result<()> {
     let pq = HdrOutput {
         gamut: HdrGamut::Rec2020,
         transfer: HdrTransfer::Pq,
+        gain_map: false,
     };
     let (pixels, icc) = read(&export(&photo, &settings(Some(pq)), dir.path(), "pq")?)?;
     let white: Vec<f32> = pixels
@@ -193,6 +194,7 @@ fn an_hdr_jpeg_xl_carries_the_same_light_as_the_tiff() -> Result<()> {
     let pq = HdrOutput {
         gamut: HdrGamut::DisplayP3,
         transfer: HdrTransfer::Pq,
+        gain_map: false,
     };
     let tiff = export(&photo, &settings(Some(pq)), dir.path(), "pq")?;
     let mut jxl_settings = settings(Some(pq));
@@ -323,5 +325,85 @@ fn an_hdr_export_checks_its_own_encoding_in_the_targets_format() -> Result<()> {
     .unwrap_err();
     assert!(error.to_string().contains("Linear"), "{error}");
     assert!(!wrong.exists());
+    Ok(())
+}
+
+/// A gain-map JPEG: its base is the SDR rendition (the plain SDR JPEG export's
+/// pixels, as `image` decodes both), its MPF index finds the gain map, and the map
+/// with its ISO 21496-1 metadata turns the base back into the master's light.
+#[test]
+fn a_gain_map_jpeg_rebuilds_the_master_from_its_sdr_base() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let image = synthetic(96, 48);
+    let recipe = hdr_recipe(&image);
+    let photo = photo(image, &dir.path().join("in.dng"), dir.path(), recipe);
+    let gain = HdrOutput {
+        gamut: HdrGamut::Rec709,
+        gain_map: true,
+        ..Default::default()
+    };
+    let mut s = settings(Some(gain));
+    s.choose_format(Format::Jpeg);
+    s.quality = 100;
+    let target = dir.path().join("gm.jpg");
+    job::run(
+        photo.clone(),
+        &s,
+        &target,
+        Replace::NoClobber,
+        Cancel::NEVER,
+        |_| {},
+    )?;
+    let bytes = std::fs::read(&target)?;
+    // The MPF index: the second entry's size and offset from the TIFF header.
+    let mpf = bytes.windows(4).position(|w| w == b"MPF\0").expect("MPF");
+    let tiff = mpf + 4;
+    let field = |at: usize| u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+    let (size, offset) = (field(tiff + 50 + 20), field(tiff + 50 + 24));
+    let map_jpeg = &bytes[tiff + offset..];
+    assert_eq!(map_jpeg.len(), size);
+    assert!(map_jpeg.starts_with(&[0xff, 0xd8]));
+    let iso = map_jpeg
+        .windows(28)
+        .position(|w| w == b"urn:iso:std:iso:ts:21496:-1\0")
+        .expect("ISO 21496-1 metadata");
+    let meta = &map_jpeg[iso + 28..];
+    let rational = |at: usize| {
+        i32::from_be_bytes(meta[at..at + 4].try_into().unwrap()) as f32
+            / u32::from_be_bytes(meta[at + 4..at + 8].try_into().unwrap()) as f32
+    };
+    let (min, max) = (rational(21), rational(29));
+    assert!(
+        (rational(13) - 4.).abs() < 1e-3,
+        "the alternate's headroom is the limit"
+    );
+    // The base is the SDR rendition, as the SDR JPEG export writes it.
+    let mut sdr = settings(None);
+    sdr.choose_format(Format::Jpeg);
+    sdr.quality = 100;
+    let plain = dir.path().join("sdr.jpg");
+    job::run(
+        photo,
+        &sdr,
+        &plain,
+        Replace::NoClobber,
+        Cancel::NEVER,
+        |_| {},
+    )?;
+    let base = image::load_from_memory(&bytes)?.to_rgb8();
+    assert_eq!(base.as_raw(), image::open(&plain)?.to_rgb8().as_raw());
+    // Applied at full weight, the map brings back light above white.
+    let map = image::load_from_memory(map_jpeg)?.to_luma8();
+    let k = 1. / 64.;
+    let peak = base
+        .pixels()
+        .zip(map.pixels())
+        .map(|(b, g)| {
+            let lin = crate::color::srgb_decode(b.0[1] as f32 / 255.);
+            let gain = (min + (max - min) * g.0[0] as f32 / 255.).exp2();
+            (lin + k) * gain - k
+        })
+        .fold(0f32, f32::max);
+    assert!(peak > 2., "{peak}");
     Ok(())
 }

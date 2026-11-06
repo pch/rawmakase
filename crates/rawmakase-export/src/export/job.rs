@@ -162,7 +162,20 @@ pub fn prepare(
         Some(output) => {
             let master =
                 crate::develop::render_hdr(&image, &recipe, ai.as_ref(), options.max_edge, cancel)?;
-            super::Pixels::Hdr(super::HdrPixels::encode(&master, output))
+            if output.gain_map {
+                // The base is the edit's SDR rendition, rendered as an sRGB export.
+                let base = crate::develop::render_export(
+                    &image,
+                    &recipe,
+                    ai.as_ref(),
+                    options.max_edge,
+                    crate::color::OutputSpace::Srgb,
+                    cancel,
+                )?;
+                super::Pixels::GainMap(super::GainMapPixels::new(base, &master)?)
+            } else {
+                super::Pixels::Hdr(super::HdrPixels::encode(&master, output))
+            }
         }
         None => {
             let mut rendered = crate::develop::render_export(
@@ -437,7 +450,9 @@ mod tests {
         let render = |photo: &Photo| -> Result<Vec<[f32; 3]>> {
             match prepare(photo, &ExportSettings::default(), Cancel::NEVER, &|_| {})?.rendered {
                 crate::export::Pixels::Sdr(image) => Ok(image.pixels().to_vec()),
-                crate::export::Pixels::Hdr(_) => anyhow::bail!("an SDR export rendered HDR"),
+                crate::export::Pixels::Hdr(_) | crate::export::Pixels::GainMap(_) => {
+                    anyhow::bail!("an SDR export rendered HDR")
+                }
             }
         };
         let mut plain = photo(&source, &dir.path().join("cache"));

@@ -550,7 +550,11 @@ mod hdr_profile_tests {
     fn every_hdr_encoding_has_a_profile_that_reads_back() {
         for gamut in HdrGamut::ALL {
             for transfer in HdrTransfer::ALL {
-                let output = HdrOutput { gamut, transfer };
+                let output = HdrOutput {
+                    gamut,
+                    transfer,
+                    gain_map: false,
+                };
                 let bytes = hdr_profile(output).unwrap();
                 let back = ColorProfile::new_from_slice(&bytes).unwrap();
                 let cicp = back.cicp.expect("cicp");

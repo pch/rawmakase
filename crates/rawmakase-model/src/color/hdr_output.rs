@@ -44,6 +44,12 @@ pub enum HdrTransfer {
 pub struct HdrOutput {
     pub gamut: HdrGamut,
     pub transfer: HdrTransfer,
+    /// A gain map (ISO 21496-1) over the SDR rendition, in place of HDR pixels: the
+    /// file shows its SDR base where a reader or display has no HDR, and the master
+    /// where it has. `transfer` does not apply; the base is sRGB, and `gamut` must be
+    /// Rec. 709. Omitted when off, so the encodings saved before it read the same.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gain_map: bool,
 }
 
 /// Linear ProPhoto RGB (D50) to linear XYZ D65: ProPhoto's matrix and Bradford's
@@ -217,6 +223,7 @@ mod tests {
         let pq = HdrOutput {
             gamut: HdrGamut::Rec2020,
             transfer: HdrTransfer::Pq,
+            gain_map: false,
         };
         // BT.2408: 203 cd/m² is PQ 0.5806 and HLG 0.75.
         for v in pq.encode(white, 16.) {

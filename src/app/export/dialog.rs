@@ -674,22 +674,53 @@ fn section(ui: &mut egui::Ui, title: &str) {
 /// (`export::job::prepare`), so the choice is the user's to make per export.
 fn hdr_rows(ui: &mut egui::Ui, s: &mut crate::export_settings::ExportSettings) {
     use crate::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
+    // A JPEG holds a gain map over its sRGB base, TIFF and JPEG XL HDR pixels.
+    let jpeg = s.format == Format::Jpeg;
     form_row(ui, "HDR", |ui| {
         let mut on = s.hdr.is_some();
-        if ui
-            .checkbox(&mut on, "Export HDR edits in HDR")
-            .on_hover_text(
+        let (label, tip) = if jpeg {
+            (
+                "Export HDR edits with a gain map",
+                "Writes the SDR rendition with an ISO 21496-1 gain map to the HDR master: \
+                 HDR displays show the master, others the SDR rendition. \
+                 Watermarks are not supported in HDR yet.",
+            )
+        } else {
+            (
+                "Export HDR edits in HDR",
                 "Writes the HDR master of edits with High Dynamic Range on. \
                  Graphics white is 203 cd/m². Watermarks are not supported in HDR yet.",
             )
-            .changed()
-        {
-            s.choose_hdr(on.then(HdrOutput::default));
+        };
+        if ui.checkbox(&mut on, label).on_hover_text(tip).changed() {
+            s.choose_hdr(on.then(|| {
+                if jpeg {
+                    HdrOutput {
+                        gamut: HdrGamut::Rec709,
+                        gain_map: true,
+                        ..Default::default()
+                    }
+                } else {
+                    HdrOutput::default()
+                }
+            }));
         }
     });
     let Some(mut output) = s.hdr else {
         return;
     };
+    if jpeg {
+        // The gain map's base is sRGB; nothing else to choose.
+        if !output.gain_map || output.gamut != HdrGamut::Rec709 {
+            output.gain_map = true;
+            output.gamut = HdrGamut::Rec709;
+            s.choose_hdr(Some(output));
+        }
+        return;
+    }
+    if output.gain_map {
+        output.gain_map = false;
+    }
     form_row(ui, "HDR Gamut", |ui| {
         egui::ComboBox::from_id_salt("export-hdr-gamut")
             .width(220.)

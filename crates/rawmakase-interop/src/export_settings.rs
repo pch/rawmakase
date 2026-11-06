@@ -126,16 +126,30 @@ impl Format {
         }
         Ok(())
     }
-    /// Whether an HDR export can be written in this format.
+    /// Whether an HDR export can be written in this format: TIFF and JPEG XL hold
+    /// HDR pixels, JPEG a gain map.
     pub fn holds_hdr(self) -> bool {
-        matches!(self, Format::Tiff | Format::Jxl)
+        matches!(self, Format::Tiff | Format::Jxl | Format::Jpeg)
     }
-    /// Refuses an HDR export of `output` that `format` can't hold: anything but TIFF
-    /// and JPEG XL, and linear light in anything but TIFF.
+    /// Refuses an HDR export of `output` that `format` can't hold: a gain map in
+    /// anything but JPEG (and in another gamut than Rec. 709, its sRGB base's), HDR
+    /// pixels in anything but TIFF and JPEG XL, and linear light in anything but TIFF.
     pub fn check_hdr(format: Format, output: crate::color::hdr_output::HdrOutput) -> Result<()> {
+        use crate::color::hdr_output::HdrGamut;
+        if output.gain_map {
+            ensure!(
+                format == Format::Jpeg,
+                "Gain maps are written as JPEG for now; choose JPEG, or HDR pixels in TIFF or JPEG XL"
+            );
+            ensure!(
+                output.gamut == HdrGamut::Rec709,
+                "A gain map's base is sRGB: choose the Rec. 709 gamut"
+            );
+            return Ok(());
+        }
         ensure!(
-            format.holds_hdr(),
-            "HDR exports are TIFF or JPEG XL files; choose one or turn HDR export off"
+            matches!(format, Format::Tiff | Format::Jxl),
+            "HDR pixels are written as TIFF or JPEG XL; choose one, or a gain map for JPEG"
         );
         ensure!(
             format == Format::Tiff
@@ -1262,6 +1276,27 @@ mod tests {
         std::fs::write(&file, r#"{"format":"Jpeg","hdr":null}"#)?;
         let read = ExportSettings::load_from(&file).unwrap();
         assert_eq!(read.hdr_output()?, None);
+        // A gain map only in JPEG, over an sRGB (Rec. 709) base; HDR pixels never in
+        // JPEG.
+        use crate::color::hdr_output::{HdrGamut, HdrOutput};
+        let gain = HdrOutput {
+            gamut: HdrGamut::Rec709,
+            gain_map: true,
+            ..Default::default()
+        };
+        assert!(Format::check_hdr(Format::Jpeg, gain).is_ok());
+        assert!(Format::check_hdr(Format::Tiff, gain).is_err());
+        assert!(
+            Format::check_hdr(
+                Format::Jpeg,
+                HdrOutput {
+                    gamut: HdrGamut::Rec2020,
+                    ..gain
+                }
+            )
+            .is_err()
+        );
+        assert!(Format::check_hdr(Format::Jpeg, HdrOutput::default()).is_err());
         // One this release knows round-trips.
         let mut known = ExportSettings::default();
         known.choose_format(Format::Tiff);

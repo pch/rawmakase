@@ -238,6 +238,7 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display
   P3, Rec. 709; CICP-tagged ICC; #908), checked against Camera Raw's PQ TIFF through an
   independent decoder; lossless JPEG XL PQ and HLG (and SDR sRGB), checked with
-  libjxl's `jxlinfo` and `djxl` and jxl-oxide. Open: JPEG XL and JPEG gain maps; lossy
-  JPEG XL waits on #906.
+  libjxl's `jxlinfo` and `djxl` and jxl-oxide; gain-map JPEG (ISO 21496-1) checked with
+  libultrahdr. A resized master lost its light above white until #910. Open: JPEG XL
+  gain maps (`jhgm`); lossy JPEG XL waits on #906.
 - [ ] Stages 4 and 5 not started.
