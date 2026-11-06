@@ -153,8 +153,9 @@ enum Command {
         /// of linear ProPhoto RGB, 1 = graphics white, for comparisons with Camera Raw.
         #[arg(long, conflicts_with_all = ["tap", "color_space"])]
         hdr: bool,
-        /// Export the edit's HDR master as an HDR TIFF in this encoding (pq, hlg or
-        /// linear), as the Export dialog's HDR export writes it (the edit needs HDR on).
+        /// Export the edit's HDR master in this encoding (pq, hlg or linear: TIFF or
+        /// JPEG XL; gain-map: JPEG), as the Export dialog's HDR export writes it (the
+        /// edit needs HDR on).
         #[arg(long, value_enum, conflicts_with_all = ["tap", "color_space", "hdr"])]
         hdr_export: Option<HdrTransferArg>,
         /// The HDR export's gamut: rec2020, display-p3 or rec709.
@@ -308,6 +309,8 @@ enum HdrTransferArg {
     Pq,
     Hlg,
     Linear,
+    /// A gain-map JPEG over the SDR rendition (with --hdr-gamut rec709).
+    GainMap,
 }
 /// `render --hdr-gamut`.
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -604,16 +607,18 @@ fn main() -> Result<()> {
                     HdrTransferArg::Pq => HdrTransfer::Pq,
                     HdrTransferArg::Hlg => HdrTransfer::Hlg,
                     HdrTransferArg::Linear => HdrTransfer::Linear,
+                    HdrTransferArg::GainMap => HdrTransfer::default(),
                 },
                 gamut: match hdr_gamut {
                     HdrGamutArg::Rec2020 => HdrGamut::Rec2020,
                     HdrGamutArg::DisplayP3 => HdrGamut::DisplayP3,
                     HdrGamutArg::Rec709 => HdrGamut::Rec709,
                 },
+                gain_map: matches!(transfer, HdrTransferArg::GainMap),
             });
             if let Some(encoding) = hdr_output {
                 let format = rawmakase::export_settings::Format::from_path(&output).ok_or_else(
-                    || anyhow::anyhow!("An HDR export is a TIFF or JPEG XL: name the output .tif, .tiff or .jxl"),
+                    || anyhow::anyhow!("An HDR export is a TIFF, JPEG XL or gain-map JPEG: name the output .tif, .tiff, .jxl or .jpg"),
                 )?;
                 rawmakase::export_settings::Format::check_hdr(format, encoding)?;
             }
@@ -746,9 +751,23 @@ fn main() -> Result<()> {
                     max_edge,
                     Cancel::NEVER,
                 )?;
-                let pixels = rawmakase::export::Pixels::Hdr(rawmakase::export::HdrPixels::encode(
-                    &master, encoding,
-                ));
+                let pixels = if encoding.gain_map {
+                    let base = develop::render_export(
+                        &im,
+                        &edit.checked()?,
+                        ai.as_ref(),
+                        max_edge,
+                        rawmakase::color::OutputSpace::Srgb,
+                        Cancel::NEVER,
+                    )?;
+                    rawmakase::export::Pixels::GainMap(rawmakase::export::GainMapPixels::new(
+                        base, &master,
+                    )?)
+                } else {
+                    rawmakase::export::Pixels::Hdr(rawmakase::export::HdrPixels::encode(
+                        &master, encoding,
+                    ))
+                };
                 rawmakase::export::export_pixels(
                     &output,
                     &input,

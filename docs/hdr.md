@@ -95,6 +95,25 @@ SDR), refuses watermarks (they are composited in SDR) and is a TIFF or a JPEG XL
 (linear light a TIFF only). An SDR export of an HDR edit is its SDR rendition. Gain
 maps follow (#894).
 
+### Gain maps
+
+A JPEG export with HDR on writes a gain map (`export::gain_map`, ISO 21496-1) instead
+of HDR pixels: the base is the edit's SDR rendition, exactly the SDR JPEG export's
+pixels and metadata, and the gain map turns it into the HDR master on a display with
+headroom. The map is one 8-bit channel the base's size, computed in the base's colour
+space (sRGB primaries, linear) from luminance as log2 of (HDR + 1/64) / (SDR + 1/64),
+between its minimum and maximum over the photo, gamma 1. The base's headroom is 0 and
+the alternate's log2 of 2^limit. The file is laid out as libultrahdr writes it: the base
+with an ISO 21496-1 version marker and an MPF index, then the map's grayscale JPEG with
+the metadata in APP2. No XMP `hdrgm` metadata (Adobe's earlier gain-map format) is
+written. A gain map's gamut is the base's, Rec. 709; JPEG XL gain maps (`jhgm`) follow.
+
+libultrahdr 2.0.2 (`ultrahdr_app`) reads the Z 8 reference photo's gain-map export
+(2048 px) as Ultra HDR with this metadata, and its decode at full headroom matches
+RAWmakase's own reconstruction to 0.002 stop and the master above white to 0.006 stop
+median (p95 0.022). Deep shadows carry the 8-bit JPEG base's quantization (p95 0.4
+stop below 0.05 of white).
+
 Checked with an independent reader: the Z 8 reference photo's PQ Display P3 export,
 decoded by `tifffile` and the ST 2084 EOTF, scores against Camera Raw's own PQ TIFF
 exactly as the master does (median 0.061 stop above white), and the master and the

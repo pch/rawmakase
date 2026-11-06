@@ -6,6 +6,7 @@ pub mod batch;
 mod encode;
 pub mod exif;
 mod extended_xmp;
+pub mod gain_map;
 pub mod job;
 mod jxl;
 mod metadata;
@@ -32,6 +33,45 @@ use tempfile::NamedTempFile;
 pub enum Pixels {
     Sdr(ExportImage),
     Hdr(HdrPixels),
+    /// The SDR rendition (sRGB) with a gain map to the HDR master.
+    GainMap(GainMapPixels),
+}
+/// A gain-map export's renditions: its sRGB base and the map over it.
+#[derive(Clone)]
+pub struct GainMapPixels {
+    pub base: ExportImage,
+    /// One 8-bit sample a pixel, the base's size.
+    pub map: Vec<u8>,
+    pub metadata: gain_map::Metadata,
+}
+impl GainMapPixels {
+    /// The gain map from `base`, the SDR rendition in sRGB, to `master`, of the same
+    /// size.
+    pub fn new(base: ExportImage, master: &crate::rendered::HdrImage) -> Result<Self> {
+        use crate::color::hdr_output::HdrGamut;
+        ensure!(
+            base.space() == crate::color::OutputSpace::Srgb
+                && (base.width(), base.height()) == (master.width, master.height),
+            "A gain map's base is the master's size, in sRGB"
+        );
+        let to_rgb = HdrGamut::Rec709.prophoto_to_rgb();
+        let hdr: Vec<[f32; 3]> = master
+            .pixels
+            .iter()
+            .map(|p| crate::color::mul(to_rgb, *p))
+            .collect();
+        let sdr: Vec<[f32; 3]> = base
+            .pixels()
+            .iter()
+            .map(|p| p.map(|v| crate::color::srgb_decode(v.clamp(0., 1.))))
+            .collect();
+        let (map, metadata) = gain_map::compute(&sdr, &hdr, master.peak)?;
+        Ok(Self {
+            base,
+            map,
+            metadata,
+        })
+    }
 }
 /// An HDR master encoded by [`HdrOutput::encode`]: PQ and HLG signal values (0–1) or
 /// linear light (1 = graphics white), in its gamut, row by row.
@@ -67,12 +107,14 @@ impl Pixels {
         match self {
             Self::Sdr(image) => image.width(),
             Self::Hdr(image) => image.width,
+            Self::GainMap(image) => image.base.width(),
         }
     }
     pub fn height(&self) -> u32 {
         match self {
             Self::Sdr(image) => image.height(),
             Self::Hdr(image) => image.height,
+            Self::GainMap(image) => image.base.height(),
         }
     }
 }
@@ -153,9 +195,9 @@ pub fn export_pixels(
 ) -> Result<()> {
     match pixels {
         Pixels::Sdr(image) => write(path, source, image, m, options, embed, replace),
-        Pixels::Hdr(image) => {
+        Pixels::Hdr(_) | Pixels::GainMap(_) => {
             check_destination(path, source, replace)?;
-            let staged = stage_hdr(path, image, m, embed)?;
+            let staged = stage_pixels(path, pixels, m, options, embed)?;
             crate::storage::persist(staged.file, path, replace)
         }
     }
@@ -259,7 +301,57 @@ pub fn stage_pixels(
     match pixels {
         Pixels::Sdr(image) => stage_image(path, image, m, options, embed),
         Pixels::Hdr(image) => stage_hdr(path, image, m, embed),
+        Pixels::GainMap(image) => stage_gain_map(path, image, m, options, embed),
     }
+}
+
+/// A gain-map JPEG: the sRGB base as an SDR JPEG export is, with its ICC profile, EXIF
+/// and XMP, the gain map's grayscale JPEG after it, and their ISO 21496-1 metadata and
+/// MPF index. Any other format is refused before anything is written.
+pub fn stage_gain_map(
+    path: &Path,
+    image: &GainMapPixels,
+    m: &Metadata,
+    options: &ExportOptions,
+    embed: &Embed,
+) -> Result<Staged> {
+    ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
+    options.validate()?;
+    ensure!(
+        Format::from_path(path) == Some(Format::Jpeg),
+        "A gain-map export is a JPEG: name it .jpg or .jpeg"
+    );
+    let parent = crate::storage::parent_dir(path);
+    let mut temp = NamedTempFile::new_in(parent)?;
+    let unfinished = WRITING.track(temp.path());
+    let base = &image.base;
+    let profile = crate::color_management::output_profile(base.space()).to_vec();
+    let directories = metadata::directories(m, embed, base.width(), base.height(), base.space());
+    let mut primary = Vec::new();
+    encode::jpeg(
+        &mut primary,
+        base,
+        options.quality,
+        profile,
+        directories,
+        embed,
+    )?;
+    let mut map = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut map, options.quality).encode(
+        &image.map,
+        base.width(),
+        base.height(),
+        image::ExtendedColorType::L8,
+    )?;
+    std::io::Write::write_all(
+        &mut temp,
+        &gain_map::assemble(&primary, &map, &image.metadata)?,
+    )?;
+    temp.as_file().sync_all()?;
+    Ok(Staged {
+        file: temp,
+        _unfinished: unfinished,
+    })
 }
 
 /// An HDR master as a TIFF, with its encoding's ICC profile (CICP and colorants):
@@ -269,7 +361,7 @@ pub fn stage_pixels(
 pub fn stage_hdr(path: &Path, image: &HdrPixels, m: &Metadata, embed: &Embed) -> Result<Staged> {
     ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
     let format = Format::from_path(path)
-        .filter(|f| f.holds_hdr())
+        .filter(|f| matches!(f, Format::Tiff | Format::Jxl))
         .ok_or_else(|| {
             anyhow::anyhow!("An HDR export is a TIFF or JPEG XL: name it .tif, .tiff or .jxl")
         })?;
