@@ -138,8 +138,8 @@ impl Format {
         use crate::color::hdr_output::HdrGamut;
         if output.gain_map {
             ensure!(
-                format == Format::Jpeg,
-                "Gain maps are written as JPEG for now; choose JPEG, or HDR pixels in TIFF or JPEG XL"
+                matches!(format, Format::Jpeg | Format::Jxl),
+                "Gain maps are written as JPEG or JPEG XL; choose one, or HDR pixels in TIFF"
             );
             ensure!(
                 output.gamut == HdrGamut::Rec709,
@@ -1286,6 +1286,7 @@ mod tests {
         };
         assert!(Format::check_hdr(Format::Jpeg, gain).is_ok());
         assert!(Format::check_hdr(Format::Tiff, gain).is_err());
+        assert!(Format::check_hdr(Format::Jxl, gain).is_ok());
         assert!(
             Format::check_hdr(
                 Format::Jpeg,

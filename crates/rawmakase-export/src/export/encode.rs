@@ -193,6 +193,7 @@ pub(super) fn jxl(
         &codestream,
         Some(&exif),
         embed.xmp.as_deref(),
+        None,
     )?)?;
     Ok(())
 }
@@ -239,6 +240,38 @@ pub(super) fn jxl_hdr(
         &codestream,
         Some(&exif),
         embed.xmp.as_deref(),
+        None,
+    )?)?;
+    Ok(())
+}
+
+/// A gain-map JPEG XL: the sRGB base as an SDR JPEG XL export is, with the map's
+/// grayscale codestream and its ISO 21496-1 metadata in a `jhgm` box.
+pub(super) fn jxl_gain_map(
+    out: &mut impl Write,
+    image: &super::GainMapPixels,
+    directories: Directories,
+    embed: &Embed,
+) -> Result<()> {
+    let base = &image.base;
+    ensure!(
+        base.space() == crate::color::OutputSpace::Srgb,
+        "A gain map's base is sRGB"
+    );
+    let codestream = super::jxl::codestream(
+        base.width(),
+        base.height(),
+        super::jxl::Samples::Eight(&base.rgb8()),
+        super::jxl::Colour::Srgb,
+    )?;
+    let map = super::jxl::gray_codestream(base.width(), base.height(), &image.map)?;
+    let bundle = super::jxl::gain_map_bundle(&image.metadata.iso_21496(), &map)?;
+    let exif = super::metadata::png_exif(directories);
+    out.write_all(&super::jxl::container(
+        &codestream,
+        Some(&exif),
+        embed.xmp.as_deref(),
+        Some(&bundle),
     )?)?;
     Ok(())
 }

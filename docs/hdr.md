@@ -106,7 +106,17 @@ between its minimum and maximum over the photo, gamma 1. The base's headroom is 
 the alternate's log2 of 2^limit. The file is laid out as libultrahdr writes it: the base
 with an ISO 21496-1 version marker and an MPF index, then the map's grayscale JPEG with
 the metadata in APP2. No XMP `hdrgm` metadata (Adobe's earlier gain-map format) is
-written. A gain map's gamut is the base's, Rec. 709; JPEG XL gain maps (`jhgm`) follow.
+written. A gain map's gamut is the base's, Rec. 709.
+
+A JPEG XL export can carry the same gain map (the Export dialog's "As a gain map over
+the SDR rendition", or `--hdr-export gain-map` to a `.jxl`): the base is the lossless
+8-bit sRGB SDR JPEG XL, and a `jhgm` box (libjxl's gain-map bundle) holds version 0,
+the ISO 21496-1 metadata, no alternate colour encoding or ICC profile (the map applies
+in the base's colour space), and the map's lossless grayscale codestream. libjxl 0.12's
+`jxlinfo` reads the box as a version 0 bundle with its 61-byte metadata and the map's
+codestream, and `djxl` decodes the base; no local tool applies a JPEG XL gain map, so
+its reconstruction is checked only through the JPEG form, which shares the map and
+metadata.
 
 libultrahdr 2.0.2 (`ultrahdr_app`) reads the Z 8 reference photo's gain-map export
 (2048 px) as Ultra HDR with this metadata, and its decode at full headroom matches
