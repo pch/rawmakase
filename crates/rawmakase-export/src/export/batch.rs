@@ -239,7 +239,7 @@ pub fn plan(
 ) -> Result<Plan, Unplanned> {
     // Nothing is planned, asked or rendered for settings no photo could export with.
     settings
-        .output_space()
+        .check_output()
         .map_err(|e| Unplanned::Settings(format!("{e:#}")))?;
     // Numbered in the order the photos were chosen, so a photo that fails or is
     // skipped keeps its number and the others theirs.

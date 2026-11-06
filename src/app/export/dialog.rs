@@ -210,7 +210,7 @@ impl Editor {
             Some(true) if self.exports.draft.target(&source).is_none() => {
                 self.messages.warn("Choose a folder to export to");
             }
-            Some(true) if let Err(e) = self.exports.draft.output_space() => {
+            Some(true) if let Err(e) = self.exports.draft.check_output() => {
                 self.messages.warn(e.to_string());
             }
             Some(true) => {
@@ -394,6 +394,12 @@ impl Editor {
             Format::Png => form_row(ui, "Bit Depth", |ui| {
                 ui.label(egui::RichText::new("8 bits/component").color(palette.tone(Tone::TEXT)));
             }),
+            Format::Jxl => form_row(ui, "Compression", |ui| {
+                ui.label(
+                    egui::RichText::new("Lossless; 8 bits/component, 16 for HDR")
+                        .color(palette.tone(Tone::TEXT)),
+                );
+            }),
         }
         form_row(ui, "Color Space", |ui| {
             let later = s.later_color_space().is_some();
@@ -425,12 +431,12 @@ impl Editor {
                     }
                 });
         });
-        if s.format == Format::Tiff {
+        if s.format.holds_hdr() {
             hdr_rows(ui, s);
         }
         // Why the choice can't be exported as it is: ProPhoto RGB in JPEG or PNG,
         // or a space from a later release.
-        if let Err(e) = s.output_space().and(s.hdr_output().map(|_| ())) {
+        if let Err(e) = s.check_output() {
             form_row(ui, "", |ui| {
                 ui.label(
                     egui::RichText::new(e.to_string())

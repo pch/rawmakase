@@ -181,3 +181,147 @@ fn an_sdr_export_of_an_hdr_edit_is_its_sdr_rendition() -> Result<()> {
     assert_eq!(read(&a)?.0, read(&b)?.0);
     Ok(())
 }
+
+/// An HDR JPEG XL export decodes in jxl-oxide with its header's PQ encoding and the
+/// same light as the TIFF; linear light is TIFF only, and an SDR JPEG XL is sRGB.
+#[test]
+fn an_hdr_jpeg_xl_carries_the_same_light_as_the_tiff() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let image = synthetic(64, 32);
+    let recipe = hdr_recipe(&image);
+    let photo = photo(image, &dir.path().join("in.dng"), dir.path(), recipe);
+    let pq = HdrOutput {
+        gamut: HdrGamut::DisplayP3,
+        transfer: HdrTransfer::Pq,
+    };
+    let tiff = export(&photo, &settings(Some(pq)), dir.path(), "pq")?;
+    let mut jxl_settings = settings(Some(pq));
+    jxl_settings.choose_format(Format::Jxl);
+    let target = dir.path().join("pq.jxl");
+    job::run(
+        photo.clone(),
+        &jxl_settings,
+        &target,
+        Replace::NoClobber,
+        Cancel::NEVER,
+        |_| {},
+    )?;
+    let bytes = std::fs::read(&target)?;
+    let decoded = jxl_oxide::JxlImage::builder()
+        .read(std::io::Cursor::new(&bytes))
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let encoding = format!("{:?}", decoded.image_header().metadata.colour_encoding);
+    assert!(
+        encoding.contains("P3") && encoding.contains("Pq"),
+        "{encoding}"
+    );
+    let frame = decoded
+        .render_frame(0)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let signal: Vec<u16> = frame
+        .image_all_channels()
+        .buf()
+        .iter()
+        .map(|v| (v * 65535.).round() as u16)
+        .collect();
+    let (from_tiff, _) = read(&tiff)?;
+    let tiff_signal: Vec<u16> = from_tiff
+        .iter()
+        .map(|v| (v * 65535.).round() as u16)
+        .collect();
+    assert_eq!(
+        signal, tiff_signal,
+        "lossless: the JPEG XL holds the TIFF's samples"
+    );
+    let mut linear = jxl_settings.clone();
+    linear.choose_hdr(Some(HdrOutput {
+        transfer: HdrTransfer::Linear,
+        ..pq
+    }));
+    assert!(linear.hdr_output().is_err());
+    // An SDR JPEG XL holds exactly the PNG's 8-bit sRGB samples.
+    let mut sdr = jxl_settings;
+    sdr.choose_hdr(None);
+    let sdr_jxl = dir.path().join("sdr.jxl");
+    job::run(
+        photo.clone(),
+        &sdr,
+        &sdr_jxl,
+        Replace::NoClobber,
+        Cancel::NEVER,
+        |_| {},
+    )?;
+    let mut png = sdr.clone();
+    png.choose_format(Format::Png);
+    let sdr_png = dir.path().join("sdr.png");
+    job::run(
+        photo,
+        &png,
+        &sdr_png,
+        Replace::NoClobber,
+        Cancel::NEVER,
+        |_| {},
+    )?;
+    let decoded = jxl_oxide::JxlImage::builder()
+        .read(std::io::Cursor::new(std::fs::read(&sdr_jxl)?))
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let encoding = format!("{:?}", decoded.image_header().metadata.colour_encoding);
+    assert!(encoding.contains("Srgb"), "{encoding}");
+    let frame = decoded
+        .render_frame(0)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let samples: Vec<u8> = frame
+        .image_all_channels()
+        .buf()
+        .iter()
+        .map(|v| (v * 255.).round() as u8)
+        .collect();
+    let png_samples = image::open(&sdr_png)?.to_rgb8().into_raw();
+    assert_eq!(samples, png_samples);
+    sdr.choose_color_space(crate::color::OutputSpace::AdobeRgb);
+    assert!(sdr.output_space().is_err());
+    Ok(())
+}
+
+/// An HDR export never uses the SDR colour space: one left from a TIFF export
+/// (Adobe RGB) doesn't stop an HDR JPEG XL. The target's format is checked against
+/// the transfer before anything renders: linear light into a .jxl is refused.
+#[test]
+fn an_hdr_export_checks_its_own_encoding_in_the_targets_format() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let image = synthetic(32, 24);
+    let recipe = hdr_recipe(&image);
+    let photo = photo(image, &dir.path().join("in.dng"), dir.path(), recipe);
+    let mut s = settings(Some(HdrOutput::default()));
+    s.choose_color_space(crate::color::OutputSpace::AdobeRgb);
+    s.choose_format(Format::Jxl);
+    assert!(s.check_output().is_ok());
+    let target = dir.path().join("kept.jxl");
+    job::run(
+        photo.clone(),
+        &s,
+        &target,
+        Replace::NoClobber,
+        Cancel::NEVER,
+        |_| {},
+    )?;
+    assert!(target.exists());
+    let mut linear = settings(Some(HdrOutput {
+        transfer: HdrTransfer::Linear,
+        ..Default::default()
+    }));
+    linear.choose_format(Format::Tiff);
+    let wrong = dir.path().join("linear.jxl");
+    let error = job::run(
+        photo,
+        &linear,
+        &wrong,
+        Replace::NoClobber,
+        Cancel::NEVER,
+        |_| {},
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("Linear"), "{error}");
+    assert!(!wrong.exists());
+    Ok(())
+}

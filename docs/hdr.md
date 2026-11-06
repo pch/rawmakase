@@ -64,7 +64,7 @@ asked for.
 
 ## HDR export
 
-An export with **HDR** on (the Export dialog's HDR rows for TIFF, `ExportSettings::hdr`,
+An export with **HDR** on (the Export dialog's HDR rows for TIFF and JPEG XL, `ExportSettings::hdr`,
 `rawmakase render --hdr-export`) writes the edit's HDR master instead of its SDR
 rendition. The encoding is captured with the job (`export::job::prepare`) and never
 reads the display or the editor. Gamut and transfer are separate choices
@@ -76,6 +76,14 @@ reads the display or the editor. Gamut and transfer are separate choices
 | HLG (BT.2100) | 16-bit TIFF | 203 cd/m² on HLG's 1,000 cd/m² reference display: the inverse OOTF (system gamma 1.2 on the gamut's luminance), then the OETF; signal 0.75 |
 | Linear | 32-bit float TIFF | 1.0, as Photoshop's 32-bit documents |
 
+PQ and HLG are also written as lossless 16-bit JPEG XL (`export::jxl`): `zune-jpegxl`
+encodes the frame and RAWmakase writes the image header in place of zune's sRGB one,
+naming the primaries (JPEG XL's enumeration: P3 is 11 there, 12 in CICP) and the
+transfer, with the tone mapping's intensity target (10,000 cd/m² for PQ, 1,000 for
+HLG), in a container with `Exif` and `xml ` boxes. Lossless files are large (193 MB for
+the 45 MP Z 8 photo, as large as its 16-bit TIFF); lossy JPEG XL waits on #906.
+JPEG XL also exports SDR, losslessly in 8-bit sRGB only.
+
 Gamuts: Rec. 2020, Display P3 and Rec. 709, all D65 (Bradford from the master's D50).
 Out-of-gamut channels clip at 0, and each channel is held to the HDR limit again in
 the output gamut. The ICC profile (`color_management::hdr_profile`) is ICC v4 with
@@ -83,11 +91,13 @@ the gamut's colorants and a `cicp` tag naming primaries and transfer; EXIF's
 ColorSpace is Uncalibrated. No mastering-display metadata is written.
 
 An HDR export needs an edit with HDR on (otherwise it is refused, not exported as
-SDR), refuses watermarks (they are composited in SDR) and is a TIFF. An SDR export of
-an HDR edit is its SDR rendition. JPEG XL and gain maps follow (#894; lossy JPEG XL
-waits on #906).
+SDR), refuses watermarks (they are composited in SDR) and is a TIFF or a JPEG XL
+(linear light a TIFF only). An SDR export of an HDR edit is its SDR rendition. Gain
+maps follow (#894).
 
 Checked with an independent reader: the Z 8 reference photo's PQ Display P3 export,
 decoded by `tifffile` and the ST 2084 EOTF, scores against Camera Raw's own PQ TIFF
 exactly as the master does (median 0.061 stop above white), and the master and the
-decoded export agree to 0.003.
+decoded export agree to 0.003. libjxl 0.12's `jxlinfo` reads the JPEG XL exports' header
+as written (P3 or Rec. 2100 primaries, PQ or HLG, intensity target), and `djxl`
+decodes the PQ export to exactly the TIFF's 16-bit samples.

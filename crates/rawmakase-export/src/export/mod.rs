@@ -7,6 +7,7 @@ mod encode;
 pub mod exif;
 mod extended_xmp;
 pub mod job;
+mod jxl;
 mod metadata;
 pub mod queue;
 pub use crate::storage::Replace;
@@ -262,14 +263,16 @@ pub fn stage_pixels(
 }
 
 /// An HDR master as a TIFF, with its encoding's ICC profile (CICP and colorants):
-/// 16-bit PQ or HLG signal, or 32-bit float linear light. Anything but a TIFF is
-/// refused before anything is written.
+/// 16-bit PQ or HLG signal, or 32-bit float linear light; or as a lossless 16-bit
+/// JPEG XL naming its encoding in its header. Any other format is refused before
+/// anything is written.
 pub fn stage_hdr(path: &Path, image: &HdrPixels, m: &Metadata, embed: &Embed) -> Result<Staged> {
     ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
-    ensure!(
-        Format::from_path(path) == Some(Format::Tiff),
-        "An HDR export is a TIFF: name it .tif or .tiff"
-    );
+    let format = Format::from_path(path)
+        .filter(|f| f.holds_hdr())
+        .ok_or_else(|| {
+            anyhow::anyhow!("An HDR export is a TIFF or JPEG XL: name it .tif, .tiff or .jxl")
+        })?;
     ensure!(
         image.pixels.len() == image.width as usize * image.height as usize,
         "HDR export has the wrong size"
@@ -277,9 +280,14 @@ pub fn stage_hdr(path: &Path, image: &HdrPixels, m: &Metadata, embed: &Embed) ->
     let parent = crate::storage::parent_dir(path);
     let mut temp = NamedTempFile::new_in(parent)?;
     let unfinished = WRITING.track(temp.path());
-    let profile = crate::color_management::hdr_profile(image.output)?;
     let directories = metadata::directories_uncalibrated(m, embed, image.width, image.height);
-    encode::tiff_hdr(&mut temp, image, profile, &directories, embed)?;
+    match format {
+        Format::Jxl => encode::jxl_hdr(&mut temp, image, directories, embed)?,
+        _ => {
+            let profile = crate::color_management::hdr_profile(image.output)?;
+            encode::tiff_hdr(&mut temp, image, profile, &directories, embed)?
+        }
+    }
     temp.as_file().sync_all()?;
     Ok(Staged {
         file: temp,
@@ -319,6 +327,7 @@ pub fn stage_image(
         )?,
         Format::Tiff => encode::tiff(&mut temp, image, profile, &directories, embed)?,
         Format::Png => encode::png(&mut temp, image, profile, directories, embed)?,
+        Format::Jxl => encode::jxl(&mut temp, image, directories, embed)?,
     }
     temp.as_file().sync_all()?;
     Ok(Staged {

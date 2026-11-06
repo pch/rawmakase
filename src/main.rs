@@ -611,12 +611,11 @@ fn main() -> Result<()> {
                     HdrGamutArg::Rec709 => HdrGamut::Rec709,
                 },
             });
-            if hdr_output.is_some() {
-                anyhow::ensure!(
-                    rawmakase::export_settings::Format::from_path(&output)
-                        == Some(rawmakase::export_settings::Format::Tiff),
-                    "An HDR export is a TIFF: name the output .tif or .tiff"
-                );
+            if let Some(encoding) = hdr_output {
+                let format = rawmakase::export_settings::Format::from_path(&output).ok_or_else(
+                    || anyhow::anyhow!("An HDR export is a TIFF or JPEG XL: name the output .tif, .tiff or .jxl"),
+                )?;
+                rawmakase::export_settings::Format::check_hdr(format, encoding)?;
             }
             if tap.is_none() && !hdr && hdr_output.is_none() {
                 check_output(&output, color_space)?;

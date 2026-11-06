@@ -22,6 +22,10 @@ use image::ImageDecoder;
 use rawmakase_cancel::Cancel;
 use std::{path::Path, sync::Arc};
 
+/// The formats with recorded fixtures and an `image` decoder; JPEG XL exports are
+/// checked through jxl-oxide in `hdr_tests.rs`.
+const FIXTURE_FORMATS: [Format; 3] = [Format::Jpeg, Format::Tiff, Format::Png];
+
 /// The SHA-256 of `assets/srgb.icc`, which every sRGB export embeds.
 const SRGB_ICC: &str = "d68baed8428c7b500c33a60da52a08a845b4bf4ae4745cbda046811e2b0eb3c9";
 
@@ -324,7 +328,7 @@ pub(super) fn fingerprints(
         if watermark {
             photo.watermark = Some(text_watermark());
         }
-        for format in Format::ALL {
+        for format in FIXTURE_FORMATS {
             let mut settings = settings.clone();
             settings.choose_format(format);
             settings.resize = edge > 0;
@@ -352,7 +356,7 @@ pub(super) fn fingerprints(
     )?;
     let recipe = Recipe::for_metadata(&image.metadata);
     let chart_photo = photo(image, &chart, &dir.join("cache"), recipe);
-    for format in Format::ALL {
+    for format in FIXTURE_FORMATS {
         let mut settings = settings.clone();
         settings.choose_format(format);
         settings.resize = true;
@@ -444,7 +448,7 @@ fn a_graphic_watermark_over_an_srgb_export_matches_its_fixture() -> Result<()> {
     let source = dir.path().join("source.dng");
     std::fs::write(&source, b"synthetic")?;
     let mut found = Vec::new();
-    for format in Format::ALL {
+    for format in FIXTURE_FORMATS {
         let target = dir.path().join(format!("graphic.{}", format.extension()));
         super::export_image(
             &target,
