@@ -317,16 +317,25 @@ pub fn stage_gain_map(
 ) -> Result<Staged> {
     ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
     options.validate()?;
-    ensure!(
-        Format::from_path(path) == Some(Format::Jpeg),
-        "A gain-map export is a JPEG: name it .jpg or .jpeg"
-    );
+    let format = Format::from_path(path)
+        .filter(|f| matches!(f, Format::Jpeg | Format::Jxl))
+        .ok_or_else(|| {
+            anyhow::anyhow!("A gain-map export is a JPEG or JPEG XL: name it .jpg, .jpeg or .jxl")
+        })?;
     let parent = crate::storage::parent_dir(path);
     let mut temp = NamedTempFile::new_in(parent)?;
     let unfinished = WRITING.track(temp.path());
     let base = &image.base;
-    let profile = crate::color_management::output_profile(base.space()).to_vec();
     let directories = metadata::directories(m, embed, base.width(), base.height(), base.space());
+    if format == Format::Jxl {
+        encode::jxl_gain_map(&mut temp, image, directories, embed)?;
+        temp.as_file().sync_all()?;
+        return Ok(Staged {
+            file: temp,
+            _unfinished: unfinished,
+        });
+    }
+    let profile = crate::color_management::output_profile(base.space()).to_vec();
     let mut primary = Vec::new();
     encode::jpeg(
         &mut primary,

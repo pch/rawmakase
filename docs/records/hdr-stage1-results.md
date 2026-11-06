@@ -239,6 +239,7 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
   P3, Rec. 709; CICP-tagged ICC; #908), checked against Camera Raw's PQ TIFF through an
   independent decoder; lossless JPEG XL PQ and HLG (and SDR sRGB), checked with
   libjxl's `jxlinfo` and `djxl` and jxl-oxide; gain-map JPEG (ISO 21496-1) checked with
-  libultrahdr. A resized master lost its light above white until #910. Open: JPEG XL
-  gain maps (`jhgm`); lossy JPEG XL waits on #906.
+  libultrahdr; JPEG XL gain maps (`jhgm`), the bundle read by libjxl's `jxlinfo`. A
+  resized master lost its light above white until #910. Open: lossy JPEG XL waits on
+  #906; AVIF and HEIC HDR are not planned for #894.
 - [ ] Stages 4 and 5 not started.

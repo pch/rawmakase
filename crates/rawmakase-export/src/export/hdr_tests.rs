@@ -407,3 +407,70 @@ fn a_gain_map_jpeg_rebuilds_the_master_from_its_sdr_base() -> Result<()> {
     assert!(peak > 2., "{peak}");
     Ok(())
 }
+
+/// A gain-map JPEG XL: its base decodes (jxl-oxide, which leaves the `jhgm` box
+/// alone) as the SDR JPEG XL export's pixels, and its `jhgm` box holds the ISO 21496-1
+/// metadata and the map's codestream, which decodes to the map's size.
+#[test]
+fn a_gain_map_jpeg_xl_carries_its_base_and_map() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let image = synthetic(48, 32);
+    let recipe = hdr_recipe(&image);
+    let photo = photo(image, &dir.path().join("in.dng"), dir.path(), recipe);
+    let gain = HdrOutput {
+        gamut: HdrGamut::Rec709,
+        gain_map: true,
+        ..Default::default()
+    };
+    let mut s = settings(Some(gain));
+    s.choose_format(Format::Jxl);
+    let target = dir.path().join("gm.jxl");
+    job::run(
+        photo.clone(),
+        &s,
+        &target,
+        Replace::NoClobber,
+        Cancel::NEVER,
+        |_| {},
+    )?;
+    let mut sdr = settings(None);
+    sdr.choose_format(Format::Jxl);
+    let plain = dir.path().join("sdr.jxl");
+    job::run(
+        photo,
+        &sdr,
+        &plain,
+        Replace::NoClobber,
+        Cancel::NEVER,
+        |_| {},
+    )?;
+    let pixels = |path: &Path| -> Result<Vec<f32>> {
+        let image = jxl_oxide::JxlImage::builder()
+            .read(std::io::Cursor::new(std::fs::read(path)?))
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let frame = image.render_frame(0).map_err(|e| anyhow::anyhow!("{e}"))?;
+        Ok(frame.image_all_channels().buf().to_vec())
+    };
+    assert_eq!(pixels(&target)?, pixels(&plain)?);
+    // The boxes, by their 8-byte headers.
+    let bytes = std::fs::read(&target)?;
+    let mut at = 12;
+    let mut bundle = None;
+    while at + 8 <= bytes.len() {
+        let size = u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+        if &bytes[at + 4..at + 8] == b"jhgm" {
+            bundle = Some(&bytes[at + 8..at + size]);
+        }
+        at += size;
+    }
+    let bundle = bundle.expect("jhgm box");
+    let meta = u16::from_be_bytes([bundle[1], bundle[2]]) as usize;
+    assert_eq!(meta, 61);
+    let codestream = &bundle[3 + meta + 1 + 4..];
+    let map = jxl_oxide::JxlImage::builder()
+        .read(std::io::Cursor::new(codestream))
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let size = &map.image_header().size;
+    assert_eq!((size.width, size.height), (48, 32));
+    Ok(())
+}

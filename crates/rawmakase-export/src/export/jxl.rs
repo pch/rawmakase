@@ -60,6 +60,42 @@ pub(super) fn codestream(
     Ok(out)
 }
 
+/// A lossless 8-bit grayscale codestream of `samples`, as zune writes it (its header
+/// names gray with the sRGB transfer): a gain map's.
+pub(super) fn gray_codestream(width: u32, height: u32, samples: &[u8]) -> Result<Vec<u8>> {
+    use zune_core::{bit_depth::BitDepth, colorspace::ColorSpace, options::EncoderOptions};
+    ensure!(
+        samples.len() == width as usize * height as usize,
+        "JPEG XL gain map has the wrong size"
+    );
+    let options = EncoderOptions::new(
+        width as usize,
+        height as usize,
+        ColorSpace::Luma,
+        BitDepth::Eight,
+    );
+    let mut encoded = Vec::new();
+    zune_jpegxl::JxlSimpleEncoder::new(samples, options)
+        .encode(&mut encoded)
+        .map_err(|e| anyhow::anyhow!("JPEG XL encoding failed: {e:?}"))?;
+    Ok(encoded)
+}
+
+/// A `jhgm` box's payload (libjxl's gain-map bundle): version 0, the ISO 21496-1
+/// `metadata` (big-endian u16 length), no alternate colour encoding (a zero length:
+/// the map applies in the base's colour space), no alternate ICC profile (a zero u32
+/// length), then the map's naked `codestream`.
+pub(super) fn gain_map_bundle(metadata: &[u8], codestream: &[u8]) -> Result<Vec<u8>> {
+    let len = u16::try_from(metadata.len())?;
+    let mut out = vec![0];
+    out.extend(len.to_be_bytes());
+    out.extend_from_slice(metadata);
+    out.push(0);
+    out.extend(0u32.to_be_bytes());
+    out.extend_from_slice(codestream);
+    Ok(out)
+}
+
 /// An export's samples.
 pub(super) enum Samples<'a> {
     Eight(&'a [u8]),
@@ -189,11 +225,13 @@ impl Bits {
     }
 }
 
-/// `codestream` in a JPEG XL container with the export's EXIF (a TIFF stream) and XMP.
+/// `codestream` in a JPEG XL container with the export's EXIF (a TIFF stream), XMP and
+/// gain-map bundle ([`gain_map_bundle`]).
 pub(super) fn container(
     codestream: &[u8],
     exif: Option<&[u8]>,
     xmp: Option<&str>,
+    gain_map: Option<&[u8]>,
 ) -> Result<Vec<u8>> {
     let mut out = vec![
         0, 0, 0, 0x0c, b'J', b'X', b'L', b' ', 0x0d, 0x0a, 0x87, 0x0a,
@@ -217,6 +255,9 @@ pub(super) fn container(
     }
     if let Some(xmp) = xmp {
         push(b"xml ", &[xmp.as_bytes()])?;
+    }
+    if let Some(bundle) = gain_map {
+        push(b"jhgm", &[bundle])?;
     }
     push(b"jxlc", &[codestream])?;
     Ok(out)
@@ -252,6 +293,7 @@ mod tests {
             &codestream(w, h, Samples::Sixteen(&samples), colour)?,
             None,
             Some("<x:xmpmeta/>"),
+            None,
         )?;
         let image = jxl_oxide::JxlImage::builder()
             .read(std::io::Cursor::new(&bytes))
@@ -271,6 +313,36 @@ mod tests {
             .buf()
             .iter()
             .map(|v| (v * 65535.).round() as u16)
+            .collect();
+        assert_eq!(back, samples);
+        Ok(())
+    }
+
+    /// A gain-map bundle is laid out as libjxl's `JxlGainMapReadBundle` reads it, and
+    /// its codestream decodes as the map's gray samples.
+    #[test]
+    fn a_gain_map_bundle_reads_back_as_libjxl_reads_it() -> Result<()> {
+        let samples: Vec<u8> = (0..16 * 9).map(|i| (i * 7 % 256) as u8).collect();
+        let codestream = gray_codestream(16, 9, &samples)?;
+        let metadata = [7u8; 61];
+        let bundle = gain_map_bundle(&metadata, &codestream)?;
+        // libjxl's reader: version, BE16 metadata size, metadata, u8 colour encoding
+        // size (0: none), BE32 ICC size (0), then the codestream to the end.
+        assert_eq!(bundle[0], 0);
+        assert_eq!(u16::from_be_bytes([bundle[1], bundle[2]]), 61);
+        assert_eq!(&bundle[3..64], &metadata);
+        assert_eq!(bundle[64], 0);
+        assert_eq!(&bundle[65..69], &[0, 0, 0, 0]);
+        assert_eq!(&bundle[69..], &codestream[..]);
+        let image = jxl_oxide::JxlImage::builder()
+            .read(std::io::Cursor::new(&codestream))
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let frame = image.render_frame(0).map_err(|e| anyhow::anyhow!("{e}"))?;
+        let back: Vec<u8> = frame
+            .image_all_channels()
+            .buf()
+            .iter()
+            .map(|v| (v * 255.).round() as u8)
             .collect();
         assert_eq!(back, samples);
         Ok(())

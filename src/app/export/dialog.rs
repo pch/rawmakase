@@ -718,8 +718,23 @@ fn hdr_rows(ui: &mut egui::Ui, s: &mut crate::export_settings::ExportSettings) {
         }
         return;
     }
-    if output.gain_map {
+    if s.format == Format::Jxl {
+        form_row(ui, "", |ui| {
+            ui.checkbox(&mut output.gain_map, "As a gain map over the SDR rendition")
+                .on_hover_text(
+                    "An SDR JPEG XL that HDR displays show as the HDR master (ISO 21496-1), \
+                     in place of HDR pixels",
+                );
+        });
+    } else {
         output.gain_map = false;
+    }
+    if output.gain_map {
+        output.gamut = HdrGamut::Rec709;
+        if s.hdr != Some(output) {
+            s.choose_hdr(Some(output));
+        }
+        return;
     }
     form_row(ui, "HDR Gamut", |ui| {
         egui::ComboBox::from_id_salt("export-hdr-gamut")
