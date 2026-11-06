@@ -6,16 +6,12 @@ on:
     paths-ignore:
       - 'website/**'
       - '.github/workflows/website.yml'
-      - 'stats/**'
-      - '.github/workflows/stats.yml'
       - '**.md'
   pull_request:
     branches: [main]
     paths-ignore:
       - 'website/**'
       - '.github/workflows/website.yml'
-      - 'stats/**'
-      - '.github/workflows/stats.yml'
       - '**.md'
   schedule:
     - cron: '23 7 * * 5'
@@ -39,7 +35,7 @@ jobs:
       fail-fast: false
       matrix:
         # Preserve the languages and weekly coverage of GitHub's default
-        # setup, while allowing website- and stats-only changes to skip these jobs.
+        # setup, while allowing website-only changes to skip these jobs.
         # No C or C++ is left to analyse since the LibRaw bridge went (#526).
         language: [actions, python, ruby, rust]
     steps:
