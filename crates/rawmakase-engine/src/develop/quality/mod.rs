@@ -60,17 +60,26 @@ pub fn resize(image: Rendered, max_edge: u32) -> Rendered {
     }
     out
 }
-/// [`resize`] without clipping to 0–1: Lanczos's ringing is kept, for an HDR master's
-/// encoded values (which its caller bounds).
+/// [`resize`] without clipping at 1: for an HDR master's encoded values, which its
+/// caller bounds. `image`'s resize clips float samples to 0–1, so values above 1 are
+/// scaled into that range first, with room for Lanczos's overshoot, and back after;
+/// values at most 1 (every SDR render's) are resized as they are.
 pub(crate) fn resize_unbounded(image: Rendered, max_edge: u32) -> Rendered {
     if max_edge == 0 || image.width.max(image.height) <= max_edge {
         return image;
     }
     let (w, h) = output_size(image.width, image.height, max_edge);
+    let top = image.pixels.iter().flatten().copied().fold(0f32, f32::max);
+    let scale = if top > 1. { 2. * top } else { 1. };
     let buffer = image::Rgb32FImage::from_raw(
         image.width,
         image.height,
-        image.pixels.into_iter().flatten().collect(),
+        image
+            .pixels
+            .into_iter()
+            .flatten()
+            .map(|v| if scale == 1. { v } else { v / scale })
+            .collect(),
     )
     .unwrap();
     let buffer = image::imageops::resize(&buffer, w, h, image::imageops::FilterType::Lanczos3);
@@ -82,7 +91,13 @@ pub(crate) fn resize_unbounded(image: Rendered, max_edge: u32) -> Rendered {
             .as_chunks::<3>()
             .0
             .iter()
-            .map(|p| [p[0], p[1], p[2]])
+            .map(|p| {
+                if scale == 1. {
+                    [p[0], p[1], p[2]]
+                } else {
+                    [p[0] * scale, p[1] * scale, p[2] * scale]
+                }
+            })
             .collect(),
     }
 }
