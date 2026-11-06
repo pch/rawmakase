@@ -721,6 +721,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         })
     }
     /// Renders one job and returns its published stages and final pixels.

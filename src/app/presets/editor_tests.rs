@@ -25,6 +25,7 @@ fn refreshing_preset_support_cancels_the_hover_render() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     editor.document.set_image(image);
     editor.presets.preview = Some(Recipe {

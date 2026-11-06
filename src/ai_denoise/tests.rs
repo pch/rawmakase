@@ -150,6 +150,7 @@ impl Fixture {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         })
     }
     /// A Develop request whose updates arrive on the returned channel.

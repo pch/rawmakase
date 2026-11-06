@@ -400,6 +400,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         }
     }
     /// Auto CA is measured on the photo itself: Auto Tone, whose reduced copy shares
@@ -980,6 +981,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         };
         // Measured on the preset's crop: the warm half.
         let attrs = r#"c:WhiteBalance="Auto" c:CropLeft="0" c:CropTop="0" c:CropRight="0.45" c:CropBottom="1""#;
@@ -1025,6 +1027,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         };
         let attrs = r#"c:ConvertToGrayscale="True" c:AutoGrayscaleMix="True""#;
         let preset = crate::xmp::parse(std::path::Path::new("auto.xmp"), &packet(attrs))?;

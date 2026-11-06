@@ -38,6 +38,26 @@ pub const fn renders() -> bool {
 
 pub use crate::color::hdr_output::roll_off;
 
+/// The HDR limit a new HDR file starts with: the fewest whole stops whose roll-off
+/// (from [`LIMIT_KNEE`](crate::color::hdr_output::LIMIT_KNEE) of the limit) starts
+/// at or above its `peak`, so its own light renders as it is. A peak beyond the
+/// largest limit's knee gets that limit, and its brightest light rolls off; a black
+/// or non-finite peak gets the smallest.
+pub fn limit_containing(peak: f32) -> f32 {
+    let (low, high) = (*LIMIT_RANGE.start(), *LIMIT_RANGE.end());
+    let knee = |limit: f32| crate::color::hdr_output::LIMIT_KNEE * limit.exp2();
+    let stops = (peak / crate::color::hdr_output::LIMIT_KNEE).log2().ceil();
+    if !stops.is_finite() {
+        return low;
+    }
+    // `log2` can round a peak just past a knee down onto it: the knee is checked.
+    let mut limit = stops.clamp(low, high);
+    if knee(limit) < peak && limit < high {
+        limit += 1.;
+    }
+    limit
+}
+
 /// An edit's HDR settings: its mode, limit and SDR rendition.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -225,9 +245,207 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
     Ok(())
 }
 
+/// Whether `r` renders an HDR master of the photo `m` describes, and if not, why;
+/// every caller asks this, so the Basic panel's note, Develop's HDR preview,
+/// export and the renderer agree. With HDR off there is nothing to check.
+/// - A raw: [`check_recipe`].
+/// - An HDR file: [`check_hdr_file`].
+/// - An SDR JPEG, PNG or TIFF: refused; its pseudo-scene inverts an SDR rendering,
+///   which has no HDR to give.
+pub fn check_for(r: &super::recipe::Recipe, m: &crate::camera_data::Metadata) -> Result<()> {
+    if !r.as_rendered().hdr.is_active() {
+        return Ok(());
+    }
+    match (m.hdr_source, m.is_rendered()) {
+        (Some(_), _) => check_hdr_file(r, m),
+        (None, true) => anyhow::bail!(
+            "HDR editing of SDR JPEG, PNG, TIFF and other rendered files is not supported"
+        ),
+        (None, false) => check_recipe(r),
+    }
+}
+
+/// Whether `r` renders an HDR master of an HDR file (docs/records/hdr-stage4-design.md):
+/// its light renders as it is, with Exposure, crop, straighten, Rotate and Flip, and
+/// the HDR limit. Anything else that renders differently from a new HDR file's
+/// settings (`Recipe::for_rendered`) is refused, by name, until it is measured on
+/// display-referred light; the edit keeps it, and its SDR rendition renders it.
+pub fn check_hdr_file(r: &super::recipe::Recipe, m: &crate::camera_data::Metadata) -> Result<()> {
+    let r = r.as_rendered();
+    let d = super::recipe::Recipe::for_rendered(m);
+    let identity_curve = |c: &crate::color::curve::ToneCurve| {
+        c.points.first() == Some(&[0., 0.])
+            && c.points.last() == Some(&[1., 1.])
+            && c.points.iter().all(|p| p[0] == p[1])
+    };
+    let refused: [(&str, bool); 15] = [
+        (
+            "White balance",
+            r.temperature != d.temperature
+                || r.tint != d.tint
+                || r.incremental_temperature != d.incremental_temperature
+                || r.incremental_tint != d.incremental_tint
+                || r.wb != d.wb
+                || r.auto_white_balance.is_some(),
+        ),
+        (
+            "A profile",
+            !r.profile.as_ref().is_none_or(|p| p.is_embedded())
+                || r.profile_amount != d.profile_amount,
+        ),
+        (
+            "Tone",
+            r.contrast != d.contrast
+                || r.highlights != d.highlights
+                || r.shadows != d.shadows
+                || r.whites != d.whites
+                || r.blacks != d.blacks
+                || r.black_point != d.black_point
+                || r.white_point != d.white_point
+                || r.midtone != d.midtone,
+        ),
+        (
+            "The Tone Curve",
+            !identity_curve(&r.curve) || r.curve_saturation != d.curve_saturation,
+        ),
+        (
+            "Color",
+            r.saturation != d.saturation
+                || r.vibrance != d.vibrance
+                || r.hsl != d.hsl
+                || !r.point_colors.is_empty()
+                || r.grading != d.grading,
+        ),
+        ("Presence and Effects", r.effects != d.effects),
+        (
+            "Detail",
+            r.sharpening != d.sharpening
+                || r.noise_luma != d.noise_luma
+                || r.noise_chroma != d.noise_chroma,
+        ),
+        ("AI Denoise", r.ai_denoise.enabled),
+        (
+            "Lens corrections",
+            r.lens_builtin != d.lens_builtin
+                || r.lens_profile != d.lens_profile
+                || r.lens_distortion != d.lens_distortion
+                || r.lens_vignetting != d.lens_vignetting
+                || r.lens_manual_distortion != d.lens_manual_distortion
+                || r.lens_ca != d.lens_ca,
+        ),
+        ("Transform", r.transform != d.transform),
+        (
+            "Upright",
+            r.upright.mode != super::transform::UprightMode::Off,
+        ),
+        ("Heal and Clone", !r.retouch.is_empty()),
+        ("Red Eye", !r.red_eye.is_blank()),
+        (
+            "Masks",
+            r.masks
+                .iter()
+                .any(crate::model::masks::MaskGroup::is_active),
+        ),
+        (
+            "The SDR rendition's adjustments",
+            r.hdr.sdr != SdrRendition::default(),
+        ),
+    ];
+    if let Some((name, _)) = refused.iter().find(|(_, used)| *used) {
+        anyhow::bail!("{name} is not supported in HDR for HDR files yet");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A new HDR file's limit contains its peak below the knee, from just below a
+    /// knee to just above it, clamped to the limits there are.
+    #[test]
+    fn the_default_limit_contains_the_peak_below_its_knee() {
+        let knee = |limit: f32| crate::color::hdr_output::LIMIT_KNEE * limit.exp2();
+        for limit in 1..=8 {
+            let limit = limit as f32;
+            assert_eq!(limit_containing(knee(limit) * 0.999), limit);
+            assert_eq!(limit_containing(knee(limit)), limit);
+            if limit < 8. {
+                assert_eq!(limit_containing(knee(limit) * 1.001), limit + 1.);
+            }
+        }
+        // The next float past a knee, which `log2` rounds onto it, is past it.
+        for limit in 1..8 {
+            let knee = knee(limit as f32);
+            assert_eq!(
+                limit_containing(f32::from_bits(knee.to_bits() + 1)),
+                limit as f32 + 1.
+            );
+        }
+        // 16 is past limit 4's knee (15.52): limit 5, so 16 renders as 16.
+        assert_eq!(limit_containing(16.), 5.);
+        assert!(roll_off(16., limit_containing(16.).exp2()) == 16.);
+        assert_eq!(limit_containing(0.), 1.);
+        assert_eq!(limit_containing(0.5), 1.);
+        assert_eq!(limit_containing(f32::NAN), 1.);
+        assert_eq!(limit_containing(1e6), 8.);
+    }
+
+    /// An HDR file renders its master with Exposure, the geometry and the limit;
+    /// anything else refuses the master by name and leaves the edit as it is. An SDR
+    /// rendered file has no master; a raw is checked as raws are.
+    #[test]
+    fn an_hdr_files_master_takes_exposure_geometry_and_the_limit() {
+        use crate::camera_data::{HdrSource, Metadata, Source};
+        use crate::color::hdr_output::HdrTransfer;
+        let file = Metadata {
+            source: Source::Rendered,
+            hdr_source: Some(HdrSource {
+                transfer: HdrTransfer::Pq,
+                peak: 4.,
+            }),
+            ..Default::default()
+        };
+        let mut r = super::super::recipe::Recipe::for_rendered(&file);
+        r.hdr.enabled = true;
+        assert!(check_for(&r, &file).is_ok());
+        let mut fine = r.clone();
+        fine.exposure = 1.;
+        fine.crop = [0.1, 0.1, 0.9, 0.9];
+        fine.straighten = 3.;
+        fine.rotation = 1;
+        fine.flip_x = true;
+        fine.hdr.limit = 2.;
+        assert!(check_for(&fine, &file).is_ok());
+        type Change = fn(&mut super::super::recipe::Recipe);
+        let refusals: [(&str, Change); 8] = [
+            ("White balance", |r| r.incremental_temperature = 10.),
+            ("Tone", |r| r.contrast = 10.),
+            ("Detail", |r| r.sharpening = 40.),
+            ("AI Denoise", |r| r.ai_denoise.enabled = true),
+            ("Transform", |r| r.transform.vertical = 10.),
+            ("Color", |r| r.saturation = 10.),
+            ("Presence and Effects", |r| r.effects.clarity = 10.),
+            ("The SDR rendition's adjustments", |r| {
+                r.hdr.sdr.brightness = 10.
+            }),
+        ];
+        for (name, change) in refusals {
+            let mut edit = r.clone();
+            change(&mut edit);
+            let error = check_for(&edit, &file).unwrap_err().to_string();
+            assert!(error.starts_with(name), "{name}: {error}");
+        }
+        let sdr_file = Metadata {
+            hdr_source: None,
+            ..file.clone()
+        };
+        assert!(check_for(&r, &sdr_file).is_err());
+        let mut off = r;
+        off.hdr.enabled = false;
+        off.contrast = 50.;
+        assert!(check_for(&off, &file).is_ok(), "HDR off checks nothing");
+    }
 
     #[test]
     fn values_kept_while_off_are_not_active_but_are_not_default() {

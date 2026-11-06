@@ -211,6 +211,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         });
         editor.document.set_image(image);
         editor.module = crate::app::Module::Develop;

@@ -243,11 +243,12 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
   libultrahdr; JPEG XL gain maps (`jhgm`), the bundle read by libjxl's `jxlinfo`. A
   resized master lost its light above white until #910. Open: lossy JPEG XL waits on
   #906; AVIF and HEIC HDR are not planned for #894.
-- [ ] Stage 4: HDR TIFFs and PNGs (an ICC CICP transfer of PQ, HLG or linear, and
-  32-bit float TIFFs) are recognised: refused for Develop as HDR JPEG XL, AVIF and
-  HEIC files are, instead of opening with graphics white at 2% of PQ, and previewed
-  with graphics white as white, linear light above it no longer clipped. Open:
-  opening PQ, HLG, linear and gain-map files as HDR.
+- [ ] Stage 4: HDR TIFF, PNG, JPEG XL and AVIF files (PQ, HLG or linear in BT.709,
+  BT.2020 or P3; identity-curve ICCs; float TIFFs) open as HDR edits
+  ([design](hdr-stage4-design.md)): exact light, master identity at their own
+  settings, Exposure and geometry. The SDR rendition is the Library's tone map.
+  Open: gain-map input, HDR HEIC, other adjustments on HDR files, Transform and
+  Upright.
 - [ ] Stage 5: macOS HDR display: a float surface through RAWmakase's egui fork
   (`surface_format_selector`, offered upstream), extended sRGB with EDR while an HDR
   photo shows, and the CPU master in Develop's Fit view held to the display's

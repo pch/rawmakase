@@ -73,12 +73,14 @@ impl AvifFile {
             Property::Av1Config(c) => c.get(2).is_some_and(|b| b & 0x40 != 0),
             _ => false,
         });
+        // HDR is the last reason: `raster::prepare` lifts it for HDR that decodes
+        // exactly, and a tiled or animated file stays refused whatever else it is.
         let refused = if tiled {
             Some(Unsupported("tiled AVIF".into()))
-        } else if nclx.is_some_and(Nclx::hdr) {
-            Some(Unsupported("HDR".into()))
         } else if heif.brands.contains(b"avis") {
             Some(Unsupported("animated".into()))
+        } else if nclx.is_some_and(Nclx::hdr) {
+            Some(Unsupported("HDR".into()))
         } else {
             None
         };

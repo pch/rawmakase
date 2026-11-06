@@ -115,8 +115,12 @@ pub(in crate::app::develop::panels::inspector) fn show(
         if treatment != shown {
             actions.push(Action::Treatment(treatment));
         }
-        if !rendered {
-            hdr_row(ui, r, hdr);
+        // Raws, and HDR files; an SDR JPEG, PNG or TIFF has no HDR to give. Before
+        // its metadata is read, a photo is checked as a raw, as it was before.
+        let raw = Metadata::default();
+        match metadata {
+            Some(m) if m.is_rendered() && m.hdr_source.is_none() => {}
+            m => hdr_row(ui, r, m.unwrap_or(&raw), hdr),
         }
         let old_profile = r.profile.clone();
         // Without a profile the matrix path renders through the DNG default look.
@@ -435,10 +439,11 @@ pub(in crate::app::develop::panels::inspector) fn show(
 
 /// High Dynamic Range: the edit's HDR switch, with what the photo shows: its HDR
 /// master where the viewport can show it (`shown`), else its SDR rendition and why;
-/// an edit whose HDR master can't render yet says why (`model::hdr::check_recipe`).
+/// an edit whose HDR master can't render yet says why (`model::hdr::check_for`).
 fn hdr_row(
     ui: &mut egui::Ui,
     r: &mut Recipe,
+    metadata: &crate::camera_data::Metadata,
     shown: &crate::app::develop::hdr_preview::Presentation,
 ) {
     control_row(ui, "HDR", |ui| {
@@ -450,7 +455,7 @@ fn hdr_row(
     });
     if r.hdr.is_active() {
         use crate::app::develop::hdr_preview::Presentation;
-        let note = match (crate::model::hdr::check_recipe(r), shown) {
+        let note = match (crate::model::hdr::check_for(r, metadata), shown) {
             (Err(e), _) => format!("Showing the SDR rendition. HDR export unavailable: {e}"),
             (Ok(()), Presentation::Hdr { stops }) => {
                 format!("Showing HDR, up to {stops:.1} stops above white on this display")

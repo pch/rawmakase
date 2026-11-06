@@ -354,6 +354,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         };
         let r = Recipe {
             lens_builtin: true,
@@ -402,6 +403,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         };
         let samples = [[0.15; 3], [0.1; 3], [0.12; 3]];
         let at = |x| stripe_ca_sample((&im).into(), x, 30., samples);

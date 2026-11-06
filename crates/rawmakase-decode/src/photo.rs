@@ -541,6 +541,41 @@ mod tests {
         }
     }
 
+    /// An HDR file opens for Develop and export as an HDR edit: its light survives
+    /// the conversion to the SDR pseudo-scene, it starts with HDR on, and its master
+    /// at those settings is its light.
+    #[test]
+    fn an_hdr_file_opens_as_an_hdr_edit_whose_master_is_its_light() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/data/formats")
+            .join("pq.avif");
+        let super::Opened::Rendered(image) = super::open_source(&path, Cancel::NEVER).unwrap()
+        else {
+            panic!("an HDR file opens as rendered");
+        };
+        let light = image.hdr().expect("its light").clone();
+        let recipe = rawmakase_model::model::recipe::Recipe::for_new_rendered(&image.metadata);
+        assert!(recipe.hdr.enabled, "an HDR file starts as an HDR edit");
+        let master = rawmakase_engine::develop::render_hdr(
+            &image,
+            &recipe.checked().unwrap(),
+            None,
+            0,
+            Cancel::NEVER,
+        )
+        .unwrap();
+        assert_eq!(
+            (master.width, master.height),
+            (light.width(), light.height())
+        );
+        for (got, want) in master.pixels.iter().zip(light.pixels()) {
+            assert!(
+                (0..3).all(|c| (got[c] - want[c]).abs() <= 1e-5 * want[c].abs().max(1.)),
+                "{got:?} against {want:?}"
+            );
+        }
+    }
+
     #[test]
     fn open_source_opens_a_png_as_rendered() {
         let dir = tempfile::tempdir().unwrap();

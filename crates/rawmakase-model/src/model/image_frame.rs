@@ -144,6 +144,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
             recovered: Default::default(),
         }
     }

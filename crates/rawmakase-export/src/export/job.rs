@@ -353,6 +353,7 @@ mod tests {
                 fast: false,
                 scale_factor: 1.,
                 scale_clipped: 0,
+                hdr: Default::default(),
             }),
             source: source.to_path_buf(),
             recipe: Recipe::default(),
@@ -608,6 +609,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         };
         let _ = cached.recovered.set(Arc::new(cached.clone()));
         cache.store(&DecodeCache::key(&chart, Demosaic::default())?, &cached)?;
@@ -636,6 +638,7 @@ mod tests {
                 fast,
                 scale_factor: 1.,
                 scale_clipped: 0,
+                hdr: Default::default(),
             };
             let _ = image.recovered.set(Arc::new(image.clone()));
             image

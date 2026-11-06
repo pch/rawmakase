@@ -241,6 +241,7 @@ fn the_crop_aspect_names_the_crops_ratio_beside_its_padlock() {
                 fast: false,
                 scale_factor: 1.,
                 scale_clipped: 0,
+                hdr: Default::default(),
             }));
         e.document.edit.setup_mut().crop = crop;
         e.view.toggle(crate::app::develop::state::Tool::Crop);
@@ -305,6 +306,7 @@ fn clicking_the_crop_padlock_locks_and_unlocks_the_aspect() {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         }));
     e.document.edit.setup_mut().crop = [0., 0., 0.75, 1.];
     e.view.toggle(crate::app::develop::state::Tool::Crop);

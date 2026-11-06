@@ -34,6 +34,7 @@ fn remove_tool_adds_spots_paints_brushes_and_edits_the_selection() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     editor.document.set_image(image);
     editor.preview.texture = Some(

@@ -260,6 +260,7 @@ pub fn assemble(
         fast: false,
         scale_factor: plain.scale_factor,
         scale_clipped: plain.scale_clipped,
+        hdr: Default::default(),
     })
 }
 
@@ -408,6 +409,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 7,
+            hdr: Default::default(),
         }
     }
 

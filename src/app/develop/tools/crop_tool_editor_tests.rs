@@ -26,6 +26,7 @@ fn crop_tool_reads_each_photos_own_aspect() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     editor.document.set_image(image);
     let open = |editor: &mut Editor, crop: [f32; 4]| {
@@ -80,6 +81,7 @@ fn crop_tool_stays_open_from_photo_to_photo() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     // Another photo, opened while Crop is: the tool stays and reads it as if
     // opened on it.
@@ -158,6 +160,7 @@ fn choosing_the_photos_own_aspect_leaves_an_uncropped_photo_alone() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     editor.view.toggle(crate::app::develop::state::Tool::Crop);
     let frame = editor.begin_edit_frame();
@@ -192,6 +195,7 @@ fn fitting_a_crop_dragged_to_its_smallest_keeps_it_valid() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     editor.view.tool = crate::app::develop::state::Tool::Crop;
     editor.view.aspect = -1.;
@@ -229,6 +233,7 @@ fn the_chosen_aspect_is_its_own_edit_before_the_next_operation() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     editor.document.edit.change(None, |r| r.exposure = 1.25);
     editor.sync_command_revision();
@@ -280,6 +285,7 @@ fn the_chosen_aspect_ends_a_held_slider_drag_first() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     // Exposure dragged to +1.25, the button still held as R opens Crop.
     let frame = editor.document.edit.begin();
@@ -319,6 +325,7 @@ fn crop_tool_keeps_the_chosen_aspect_for_uncropped_photos() -> anyhow::Result<()
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     let new_editor = |s: crate::app::preferences::session::Session| {
         let mut editor = Editor::with_context(&ctx, None, s, None);
@@ -422,6 +429,7 @@ fn crop_keys_swap_and_cycle_the_overlay_but_not_while_typing() -> anyhow::Result
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     let crop = [0.1, 0.2, 0.5, 0.6];
     e.document.edit.setup_mut().crop = crop;
@@ -546,6 +554,7 @@ fn editor_for_crop_drags(ctx: &egui::Context, crop_aspect: &str) -> Editor {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     editor.preview.texture = Some(
         ctx.load_texture(

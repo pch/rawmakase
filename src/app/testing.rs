@@ -102,6 +102,7 @@ pub(in crate::app) fn editor_with_blue_photo(
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     if decoded {
         editor.document.set_image(image.clone());

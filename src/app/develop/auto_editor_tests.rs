@@ -35,6 +35,7 @@ fn auto_is_one_undoable_step_that_keeps_edits_made_while_it_ran() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     editor.document.edit.setup_mut().saturation = 0.25;
     let before = editor.document.edit.recipe().clone();
@@ -167,6 +168,7 @@ fn auto_shortcut_starts_auto_once_the_photo_is_decoded() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     press(&mut e);
     assert!(e.document.auto.is_running());
@@ -248,6 +250,7 @@ fn auto_runs_again_when_the_crop_changed_while_it_ran() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     // An estimate for the uncropped photo arrives after the photo was cropped.
     let mut auto = editor.document.edit.recipe().clone();
@@ -287,6 +290,7 @@ fn auto_runs_again_when_it_failed_on_settings_changed_since() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     // An estimate that failed on the uncropped photo arrives after the photo was cropped.
     editor.document.auto_input = Some(editor.document.edit.recipe().clone());
@@ -384,6 +388,7 @@ fn auto_white_balance_on_a_jpeg_sets_its_relative_temp_and_tint() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     *editor.document.edit.setup_mut() = Recipe::for_rendered(&metadata);
     editor.start_auto(worker::AutoKind::WhiteBalance);

@@ -233,11 +233,11 @@ impl DevelopDefaults {
     /// missing or does not apply, or a camera-matching profile that isn't
     /// imported, leaves Adobe Default, with a note saying so.
     /// Raw Defaults are for raw files: a JPEG, PNG or TIFF starts from
-    /// [`Recipe::for_rendered`] whatever they say.
+    /// [`Recipe::for_new_rendered`] whatever they say.
     pub fn resolve(&self, m: &Metadata, profiles: &[Arc<CameraProfile>]) -> Resolved {
         if m.is_rendered() {
             return Resolved {
-                recipe: Recipe::for_rendered(m),
+                recipe: Recipe::for_new_rendered(m),
                 name: DefaultChoice::Adobe.label(),
                 note: None,
             };
@@ -486,7 +486,7 @@ mod tests {
             per_camera,
         ] {
             let r = load(settings).resolve(&rendered, &profiles);
-            assert_eq!(r.recipe, Recipe::for_rendered(&rendered));
+            assert_eq!(r.recipe, Recipe::for_new_rendered(&rendered));
             assert_eq!(r.name, DefaultChoice::Adobe.label());
             assert!(r.note.is_none());
         }

@@ -969,9 +969,8 @@ impl crate::app::Editor {
             "a visualization is shown",
         )?;
         refuse(!recipe.hdr.is_active(), "HDR is off")?;
-        refuse(image.metadata.is_rendered(), "HDR is for raw photos")?;
         refuse(
-            crate::model::hdr::check_recipe(&recipe).is_err(),
+            crate::model::hdr::check_for(&recipe, &image.metadata).is_err(),
             "this edit doesn't render in HDR yet",
         )?;
         // Its result is the full photo's; the preview renders a reduced copy.

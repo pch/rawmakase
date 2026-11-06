@@ -37,6 +37,9 @@ rayon.workspace = true
 # A TIFF's ICC profile, which `image` drops from a small image (`raster::tiff_icc`);
 # the version `image` decodes TIFFs with, in pure Rust.
 tiff.workspace = true
+# A PNG's cICP and animation control, which `image` doesn't report
+# (`raster::png_facts`); the version `image` decodes PNGs with, in pure Rust.
+png = "0.18.1"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json.workspace = true
 # Decode fingerprints hash the unpacked sensor data.

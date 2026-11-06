@@ -25,6 +25,7 @@ pub(in crate::app) fn broken_photo() -> Arc<CameraImage> {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     })
 }
 fn editor(ctx: &egui::Context) -> Editor {

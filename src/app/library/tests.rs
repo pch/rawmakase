@@ -346,6 +346,23 @@ fn an_unsupported_jpeg_says_why_in_develop() -> Result<()> {
 /// an HDR one is shown in the Library but Develop says why it can't edit it;
 /// where this system decodes HEIC (macOS, and Linux with libheif).
 #[cfg(not(windows))]
+/// An HDR AVIF opens in Develop, as an HDR edit; HDR HEIC files are still refused
+/// (see below).
+#[test]
+fn an_hdr_avif_is_not_refused_for_develop() -> Result<()> {
+    let formats = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/formats");
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    std::fs::copy(formats.join("pq.avif"), folder.join("pq.avif"))?;
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&folder)?;
+    let library = Library::load(&path, egui::Context::default())?;
+    let photo = library.session.photos()[0].clone();
+    assert_eq!(develop_refusal(&photo, true), None);
+    Ok(())
+}
+
 #[test]
 fn a_heic_opens_in_develop_and_an_hdr_one_says_why_not() -> Result<()> {
     if let Err(why) = crate::raster::heif_decoder() {

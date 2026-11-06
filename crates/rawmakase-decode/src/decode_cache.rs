@@ -284,6 +284,7 @@ impl DecodeCache {
             fast: header.fast,
             scale_factor: header.scale_factor,
             scale_clipped: header.scale_clipped,
+            hdr: Default::default(),
         };
         let mut recovered = CameraImage {
             recovered: Default::default(),
@@ -294,6 +295,7 @@ impl DecodeCache {
             fast: image.fast,
             scale_factor: image.scale_factor,
             scale_clipped: image.scale_clipped,
+            hdr: Default::default(),
         };
         recovered
             .pixels
@@ -314,6 +316,12 @@ impl DecodeCache {
     /// trims the directory to the size cap. Written to a temporary file and renamed,
     /// so a concurrent reader never sees a partial entry.
     pub fn store(&self, key: &str, image: &CameraImage) -> Result<()> {
+        // RAWs only: a rendered file opens fast enough, and an HDR file's light isn't
+        // in the cache's format (docs/records/hdr-stage4-design.md).
+        ensure!(
+            !image.metadata.is_rendered(),
+            "The decode cache keeps RAWs only"
+        );
         let recovered = image.recovered.get().context("Image not recovered")?;
         ensure!(
             recovered.pixels.len() == image.pixels.len(),
@@ -468,6 +476,14 @@ mod tests {
     #[test]
     fn changed_limit_reaches_existing_workers_and_controls_eviction() -> Result<()> {
         let dir = tempfile::tempdir()?;
+        let mut rendered = image(4, 3, 0.2);
+        rendered.metadata.source = rawmakase_model::camera_data::Source::Rendered;
+        assert!(
+            DecodeCache::new(dir.path().join("rendered"), u64::MAX)
+                .store("r", &rendered)
+                .is_err(),
+            "the decode cache keeps RAWs only"
+        );
         let cache = DecodeCache::new(dir.path().to_path_buf(), 1);
         let worker = cache.clone();
         cache.set_limit(1 << 20);
@@ -547,6 +563,7 @@ mod tests {
             fast: false,
             scale_factor: 1.5,
             scale_clipped: 7,
+            hdr: Default::default(),
         };
         let mut recovered = im.clone();
         recovered.pixels[3] = [2., 3., 4.];

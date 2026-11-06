@@ -656,6 +656,7 @@ mod tests {
                     fast: false,
                     scale_factor: 1.,
                     scale_clipped: 0,
+                    hdr: Default::default(),
                 }),
                 status: "Developed in 0.20s".into(),
             })

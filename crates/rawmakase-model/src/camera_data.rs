@@ -241,6 +241,12 @@ pub struct Metadata {
     /// metadata keeps its saved form; metadata from earlier releases reads as Raw.
     #[serde(default, skip_serializing_if = "Source::is_raw")]
     pub source: Source,
+    /// For an HDR file (a rendered PQ, HLG or linear-light file), its transfer and
+    /// the peak of its light; `None` for every other photo, and in metadata saved
+    /// before HDR files opened. The light itself is [`CameraImage::hdr`]: this fact
+    /// alone renders nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hdr_source: Option<HdrSource>,
     /// The sensor data's mean black, white and maximum (the samples' bit depth's)
     /// where the decoder knows them on opening (Canon's mosaics, whose white
     /// Adobe takes by ISO speed): the camera exposure follows the white as
@@ -372,6 +378,194 @@ pub struct CameraImage {
     pub fast: bool,
     pub scale_factor: f32,
     pub scale_clipped: u32,
+    /// An HDR file's own light beside its SDR pseudo-scene
+    /// (docs/records/hdr-stage4-design.md); empty for every other image.
+    pub hdr: HdrSlot,
+}
+
+/// What an HDR file is, as its metadata records it.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HdrSource {
+    pub transfer: crate::color::hdr_output::HdrTransfer,
+    /// The largest channel of the full-resolution light, 1 = graphics white.
+    pub peak: f32,
+}
+
+/// An HDR file's light: linear ProPhoto RGB, 1 = graphics white (203 cd/m²), finite
+/// and signed, oriented as its paired SDR image. Built by the decoder
+/// ([`HdrLight::new`]) and, for previews, reduced from one ([`HdrLight::reduced`]);
+/// immutable after.
+#[derive(Debug)]
+pub struct HdrLight {
+    width: u32,
+    height: u32,
+    pixels: std::sync::Arc<[[f32; 3]]>,
+    source: HdrSource,
+}
+impl HdrLight {
+    /// `pixels` of a `width` × `height` file whose transfer is `transfer`; `None`
+    /// when the count doesn't match. Non-finite values become 0.
+    pub fn new(
+        width: u32,
+        height: u32,
+        mut pixels: Vec<[f32; 3]>,
+        transfer: crate::color::hdr_output::HdrTransfer,
+    ) -> Option<Self> {
+        if pixels.len() != width as usize * height as usize {
+            return None;
+        }
+        let mut peak = 0f32;
+        for p in &mut pixels {
+            for v in p.iter_mut() {
+                if !v.is_finite() {
+                    *v = 0.;
+                }
+                peak = peak.max(*v);
+            }
+        }
+        Some(Self {
+            width,
+            height,
+            pixels: pixels.into(),
+            source: HdrSource { transfer, peak },
+        })
+    }
+    /// This light reduced to `width` × `height` by `reduce`, which averages it as the
+    /// paired SDR image is reduced; the full-resolution peak is kept, so defaults
+    /// don't depend on a reduction. `None` when `reduce` returns the wrong count.
+    pub fn reduced(
+        &self,
+        width: u32,
+        height: u32,
+        reduce: impl FnOnce(&[[f32; 3]]) -> Vec<[f32; 3]>,
+    ) -> Option<Self> {
+        let pixels = reduce(&self.pixels);
+        (pixels.len() == width as usize * height as usize).then(|| Self {
+            width,
+            height,
+            pixels: pixels.into(),
+            source: self.source,
+        })
+    }
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+    pub fn pixels(&self) -> &[[f32; 3]] {
+        &self.pixels
+    }
+    pub fn source(&self) -> HdrSource {
+        self.source
+    }
+}
+
+/// Where a decoded HDR file keeps its light. Empty by default, and a clone is
+/// empty: a copy of an image is an SDR working image unless it is made through the
+/// operations that keep the light ([`CameraImage::with_hdr`],
+/// [`CameraImage::shares_hdr`]).
+#[derive(Default)]
+pub struct HdrSlot(Option<std::sync::Arc<HdrLight>>);
+impl Clone for HdrSlot {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl CameraImage {
+    /// `self` paired with `light`, its HDR light, which records the source fact in
+    /// the metadata; refused when their sizes differ.
+    pub fn with_hdr(mut self, light: std::sync::Arc<HdrLight>) -> Option<Self> {
+        if (light.width, light.height) != (self.width, self.height) {
+            return None;
+        }
+        self.metadata.hdr_source = Some(light.source);
+        self.hdr = HdrSlot(Some(light));
+        Some(self)
+    }
+    /// `self` with the light `other` holds, shared: for an image that is `other`
+    /// at its size (a preview that needed no reduction).
+    pub fn shares_hdr(self, other: &CameraImage) -> Self {
+        match other.hdr.0.clone() {
+            Some(light) => self
+                .with_hdr(light)
+                .unwrap_or_else(|| unreachable!("an image sharing light is the same size")),
+            None => self,
+        }
+    }
+    /// The HDR file's light, while it still matches this image's size; `None` for
+    /// every other image. A mismatch can only come from code that changed the
+    /// image's size in place.
+    pub fn hdr(&self) -> Option<&std::sync::Arc<HdrLight>> {
+        let light = self.hdr.0.as_ref()?;
+        let matches = (light.width, light.height) == (self.width, self.height);
+        debug_assert!(matches, "an HDR light no longer the size of its image");
+        matches.then_some(light)
+    }
+}
+
+#[cfg(test)]
+mod hdr_tests {
+    use super::*;
+    use crate::color::hdr_output::HdrTransfer;
+    use std::sync::Arc;
+
+    fn image(width: u32, height: u32) -> CameraImage {
+        CameraImage {
+            width,
+            height,
+            recovered: Default::default(),
+            pixels: vec![[0.5; 3]; (width * height) as usize],
+            metadata: Metadata {
+                source: Source::Rendered,
+                ..Default::default()
+            },
+            fast: false,
+            scale_factor: 1.,
+            scale_clipped: 0,
+            hdr: Default::default(),
+        }
+    }
+
+    /// The light pairs only with an image its size, records the source fact, and
+    /// isn't copied into a clone, which is an SDR working image.
+    #[test]
+    // The clone is what is tested: it must drop the light.
+    #[allow(clippy::redundant_clone)]
+    fn hdr_light_pairs_by_size_and_clones_drop_it() {
+        let light = HdrLight::new(
+            2,
+            1,
+            vec![[4., 1., f32::NAN], [-0.5, 0.2, 0.1]],
+            HdrTransfer::Pq,
+        )
+        .unwrap();
+        assert_eq!(light.source().peak, 4.);
+        assert_eq!(light.pixels()[0][2], 0., "non-finite becomes 0");
+        assert_eq!(light.pixels()[1][0], -0.5, "signed values stay");
+        assert!(HdrLight::new(2, 2, vec![[0.; 3]], HdrTransfer::Pq).is_none());
+        let light = Arc::new(light);
+        assert!(image(3, 1).with_hdr(light.clone()).is_none());
+        let paired = image(2, 1).with_hdr(light.clone()).unwrap();
+        assert!(paired.hdr().is_some());
+        assert_eq!(paired.metadata.hdr_source, Some(light.source()));
+        assert!(paired.clone().hdr().is_none());
+        let shared = paired.clone().shares_hdr(&paired);
+        assert!(Arc::ptr_eq(shared.hdr().unwrap(), &light));
+    }
+
+    /// A reduced light keeps the full-resolution peak and must have the size asked.
+    #[test]
+    fn a_reduced_light_keeps_the_full_peak() {
+        let light = HdrLight::new(2, 1, vec![[8.; 3], [0.; 3]], HdrTransfer::Linear).unwrap();
+        let half = light
+            .reduced(1, 1, |p| vec![[(p[0][0] + p[1][0]) / 2.; 3]])
+            .unwrap();
+        assert_eq!(half.pixels(), &[[4.; 3]]);
+        assert_eq!(half.source().peak, 8.);
+        assert!(light.reduced(2, 2, |p| p.to_vec()).is_none());
+    }
 }
 
 #[cfg(test)]

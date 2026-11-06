@@ -361,6 +361,7 @@ impl Raw {
             dng_analog_balance: (h.analog_balance != [1.; 3]).then_some(h.analog_balance),
             dng_matrix_profile_signature: None,
             source: Source::Raw,
+            hdr_source: None,
             lens_profiles: Default::default(),
             lateral_ca: Default::default(),
             embedded_dcp: None,
@@ -458,6 +459,7 @@ impl Raw {
                 // integers, so nothing saturates.
                 scale_factor: 1.,
                 scale_clipped: 0,
+                hdr: Default::default(),
             });
         }
         let cfa = self.own.cfa(cancel)?;
@@ -520,6 +522,7 @@ impl Raw {
             fast: half,
             scale_factor: 1.,
             scale_clipped: clipped,
+            hdr: Default::default(),
         }))
     }
 }

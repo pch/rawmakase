@@ -321,7 +321,7 @@ impl Samples {
         self.pixels.len() * 20
     }
 }
-fn sample_region(
+pub(crate) fn sample_region(
     im: Source,
     r: &Recipe,
     g: &Geometry,
@@ -581,6 +581,7 @@ mod sampling_tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         };
         im.metadata.width = im.width;
         im.metadata.height = im.height;

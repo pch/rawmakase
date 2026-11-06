@@ -39,6 +39,7 @@ fn red_eye_tool_adds_moves_and_deletes_one_history_step_each() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     editor.document.set_image(image);
     editor.preview.texture = Some(
@@ -171,6 +172,7 @@ fn a_new_red_eye_correction_turns_the_red_eye_switch_on() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     editor.document.set_image(image);
     let panels = &mut editor.document.edit.setup_mut().panels;
@@ -218,6 +220,7 @@ fn pet_eye_type_finds_a_glowing_pupil_and_adds_a_catchlight() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     editor.document.set_image(image);
     // Red Eye finds nothing red there.
@@ -324,6 +327,7 @@ fn red_eye_tool_refuses_a_red_area_too_large_to_be_a_pupil() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     editor.document.set_image(image);
     in_edit_frame(&ctx, &mut editor, |e| e.add_red_eye([0.5, 0.5], 0.48));
