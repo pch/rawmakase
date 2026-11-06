@@ -235,3 +235,39 @@ pub fn local_edits(text: Option<&str>) -> Result<crate::model::recipe::LocalEdit
     local.validate()?;
     Ok(local)
 }
+
+#[cfg(test)]
+mod hdr_tests {
+    use super::*;
+    use crate::camera_data::{HdrSource, Source};
+    use crate::color::hdr_output::HdrTransfer;
+
+    fn hdr_file() -> Metadata {
+        Metadata {
+            source: Source::Rendered,
+            hdr_source: Some(HdrSource {
+                transfer: HdrTransfer::Pq,
+                peak: 6.,
+            }),
+            ..Default::default()
+        }
+    }
+
+    /// A new HDR file starts as an HDR edit; a Lightroom edit of one that says
+    /// nothing of HDR keeps HDR off, as it read before HDR files opened, and one that
+    /// sets the limit alone does not turn HDR on either.
+    #[test]
+    fn only_a_new_hdr_file_starts_with_hdr_on() -> Result<()> {
+        let m = hdr_file();
+        let defaults = Recipe::for_new_rendered(&m);
+        assert!(defaults.hdr.enabled);
+        assert_eq!(defaults.hdr.limit, 3.);
+        for text in ["s = { Exposure2012 = 0.5 }", "s = { HDRMaxValue = 3 }"] {
+            let (recipe, _) = lightroom_edit(text, &m, &[])?;
+            assert!(!recipe.hdr.enabled, "{text}");
+        }
+        let (on, _) = lightroom_edit("s = { HDREditMode = 1 }", &m, &[])?;
+        assert!(on.hdr.enabled);
+        Ok(())
+    }
+}

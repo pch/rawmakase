@@ -25,11 +25,13 @@ impl JxlFile {
         })
     }
 
+    /// Why Develop refuses it. An animation is refused whatever else it is; HDR is
+    /// last, as the reason `raster::prepare` lifts for HDR that decodes exactly.
     pub(super) fn refusal(&self) -> Option<Unsupported> {
-        if self.hdr {
-            Some(Unsupported("HDR".into()))
-        } else if self.animated {
+        if self.animated {
             Some(Unsupported("animated".into()))
+        } else if self.hdr {
+            Some(Unsupported("HDR".into()))
         } else {
             None
         }

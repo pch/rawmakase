@@ -87,8 +87,25 @@ pub(super) fn sample(im: Source, x: f32, y: f32) -> [f32; 3] {
         (a[i] * (1. - fx) + b[i] * fx) * (1. - fy) + (c[i] * (1. - fx) + d[i] * fx) * fy
     })
 }
+/// The photo reduced to `max` for previews. An HDR file's light is reduced with it,
+/// over the same footprints, or shared when the photo is small enough already: the
+/// one derived image that keeps it (docs/records/hdr-stage4-design.md).
 pub fn preview(im: &CameraImage, max: u32) -> CameraImage {
-    preview_source(im.into(), max)
+    let copy = preview_source(im.into(), max);
+    let Some(light) = im.hdr() else {
+        return copy;
+    };
+    if (copy.width, copy.height) == (im.width, im.height) {
+        return copy.shares_hdr(im);
+    }
+    let (w, h) = (copy.width, copy.height);
+    let reduced = light.reduced(w, h, |p| {
+        box_reduce(light.width(), light.height(), w, h, |i| p[i])
+    });
+    match reduced.and_then(|light| copy.clone().with_hdr(std::sync::Arc::new(light))) {
+        Some(paired) => paired,
+        None => unreachable!("a light reduced to its preview's size pairs with it"),
+    }
 }
 /// The photo reduced to `max` for measuring it. A DNG's OpcodeList3 GainMap (its lens
 /// shading) is part of the photo as Camera Raw measures it, so the copy carries it in
@@ -117,28 +134,7 @@ pub(crate) fn preview_source(im: Source, max: u32) -> CameraImage {
     let scale = max as f32 / im.width.max(im.height) as f32;
     let w = (im.width as f32 * scale).round() as u32;
     let h = (im.height as f32 * scale).round() as u32;
-    let mut pixels = vec![[0.; 3]; w as usize * h as usize];
-    // Box integration keeps fine detail from aliasing while reducing the sensor image.
-    pixels.par_iter_mut().enumerate().for_each(|(i, out)| {
-        let x = i as u32 % w;
-        let y = i as u32 / w;
-        let x0 = x * im.width / w;
-        let x1 = ((x + 1) * im.width / w).max(x0 + 1);
-        let y0 = y * im.height / h;
-        let y1 = ((y + 1) * im.height / h).max(y0 + 1);
-        for yy in y0..y1 {
-            for xx in x0..x1 {
-                let p = im.px((yy * im.width + xx) as usize);
-                for c in 0..3 {
-                    out[c] += p[c];
-                }
-            }
-        }
-        let n = ((x1 - x0) * (y1 - y0)) as f32;
-        for v in out {
-            *v /= n;
-        }
-    });
+    let pixels = box_reduce(im.width, im.height, w, h, |i| im.px(i));
     CameraImage {
         recovered: Default::default(),
         width: w,
@@ -151,6 +147,39 @@ pub(crate) fn preview_source(im: Source, max: u32) -> CameraImage {
         hdr: Default::default(),
     }
 }
+/// A `width` × `height` image whose pixel `i` is `px(i)` reduced to `w` × `h` by box
+/// integration, which keeps fine detail from aliasing.
+fn box_reduce(
+    width: u32,
+    height: u32,
+    w: u32,
+    h: u32,
+    px: impl Fn(usize) -> [f32; 3] + Sync,
+) -> Vec<[f32; 3]> {
+    let mut pixels = vec![[0.; 3]; w as usize * h as usize];
+    pixels.par_iter_mut().enumerate().for_each(|(i, out)| {
+        let x = i as u32 % w;
+        let y = i as u32 / w;
+        let x0 = x * width / w;
+        let x1 = ((x + 1) * width / w).max(x0 + 1);
+        let y0 = y * height / h;
+        let y1 = ((y + 1) * height / h).max(y0 + 1);
+        for yy in y0..y1 {
+            for xx in x0..x1 {
+                let p = px((yy * width + xx) as usize);
+                for c in 0..3 {
+                    out[c] += p[c];
+                }
+            }
+        }
+        let n = ((x1 - x0) * (y1 - y0)) as f32;
+        for v in out {
+            *v /= n;
+        }
+    });
+    pixels
+}
+
 /// A detail sample averaged over an output pixel's footprint: four taps at ±`spread`
 /// source pixels, which with bilinear sampling approximate a box filter.
 pub(super) fn footprint_sample(im: Source, x: f32, y: f32, spread: f32) -> [f32; 3] {

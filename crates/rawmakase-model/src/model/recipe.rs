@@ -403,6 +403,19 @@ impl Recipe {
             ..Self::default()
         }
     }
+    /// What a rendered photo without a saved edit starts from: [`Self::for_rendered`],
+    /// and for an HDR file an HDR edit at a limit its own light renders within
+    /// (docs/records/hdr-stage4-design.md). Saved edits, Lightroom's among them, read
+    /// on `for_rendered`'s settings, where a missing HDR field means HDR off, as it
+    /// did before HDR files opened.
+    pub fn for_new_rendered(m: &Metadata) -> Self {
+        let mut recipe = Self::for_rendered(m);
+        if let Some(source) = m.hdr_source {
+            recipe.hdr.enabled = true;
+            recipe.hdr.limit = crate::model::hdr::limit_containing(source.peak);
+        }
+        recipe
+    }
     /// Lightroom's Adobe Default: the settings a photo starts from.
     pub fn with_profiles(
         m: &Metadata,

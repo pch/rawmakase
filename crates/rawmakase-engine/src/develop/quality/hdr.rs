@@ -19,13 +19,10 @@ pub fn render_hdr(
 ) -> Result<crate::rendered::HdrImage> {
     use crate::color::{srgb_decode, srgb_encode};
     ensure!(r.hdr.is_active(), "This edit has HDR off");
-    crate::model::hdr::check_recipe(r)?;
-    // A rendered file's pseudo-scene inverts an SDR rendering; its HDR source path is
-    // its own (docs/records/hdr-implementation-plan.md, stage 4).
-    ensure!(
-        !im.metadata.is_rendered(),
-        "HDR editing of JPEG, PNG, TIFF and other rendered files is not supported yet"
-    );
+    crate::model::hdr::check_for(r, &im.metadata)?;
+    if im.metadata.hdr_source.is_some() {
+        return render_hdr_light(im, r, max_edge, cancel);
+    }
     let recipe = r.resolved_hdr(&im.metadata);
     ensure!(
         recipe
@@ -85,12 +82,167 @@ pub fn render_hdr(
     })
 }
 
+/// The HDR master of an HDR file (docs/records/hdr-stage4-design.md): its own light,
+/// which no profile, white balance or tone stage applies to, through Exposure (a gain),
+/// the geometry its SDR rendition renders with, a resize in linear light, and the
+/// limit. `im` is the decoded photo or its preview reduction, which hold the light;
+/// a working image doesn't, and a fact in its metadata alone renders nothing.
+/// Resizing clamps negative light to 0; at full size it stays signed.
+fn render_hdr_light(
+    im: &CameraImage,
+    r: &ValidRecipe,
+    max_edge: u32,
+    cancel: Cancel<'_>,
+) -> Result<crate::rendered::HdrImage> {
+    use anyhow::Context;
+    let light = im.hdr().context("This HDR file's light was not decoded")?;
+    let recipe = r.resolved_hdr(&im.metadata);
+    let source = CameraImage {
+        width: light.width(),
+        height: light.height(),
+        recovered: Default::default(),
+        pixels: light.pixels().to_vec(),
+        metadata: im.metadata.clone(),
+        fast: im.fast,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    };
+    let g = Geometry::new(&source, &recipe, 0);
+    let samples = crate::develop::pipeline::sample_region(
+        (&source).into(),
+        &recipe,
+        &g,
+        [0, 0, g.width, g.height],
+        0.,
+        cancel,
+    )?;
+    check_cancel(cancel)?;
+    let gain = recipe.exposure.exp2();
+    let out = crate::rendered::Rendered {
+        width: samples.width,
+        height: samples.height,
+        pixels: samples
+            .pixels
+            .into_iter()
+            .map(|p| p.map(|v| v * gain))
+            .collect(),
+    };
+    let resized = resize_unbounded(out, max_edge);
+    let peak = recipe.hdr.peak();
+    Ok(crate::rendered::HdrImage {
+        width: resized.width,
+        height: resized.height,
+        pixels: resized
+            .pixels
+            .into_iter()
+            .map(|p| p.map(|v| crate::model::hdr::roll_off(v, peak)))
+            .collect(),
+        peak,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::camera_data::Metadata;
     use crate::camera_profiles::CameraProfile;
     use crate::model::recipe::Recipe;
+
+    /// A `w` × `h` HDR file whose light is `light(x, y)`, paired with its SDR
+    /// rendition as the decoder pairs them.
+    fn hdr_file(w: u32, h: u32, light: impl Fn(u32, u32) -> [f32; 3]) -> CameraImage {
+        use crate::camera_data::{HdrLight, Source};
+        let pixels: Vec<[f32; 3]> = (0..w * h).map(|i| light(i % w, i / w)).collect();
+        let light = HdrLight::new(
+            w,
+            h,
+            pixels.clone(),
+            crate::color::hdr_output::HdrTransfer::Pq,
+        )
+        .unwrap();
+        let metadata = Metadata {
+            width: w,
+            height: h,
+            raw_width: w,
+            raw_height: h,
+            wb: [1.; 3],
+            daylight_wb: [1.; 3],
+            matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+            source: Source::Rendered,
+            ..Default::default()
+        };
+        CameraImage {
+            width: w,
+            height: h,
+            recovered: Default::default(),
+            pixels: pixels.iter().map(|p| p.map(|v| v.clamp(0., 1.))).collect(),
+            metadata,
+            fast: false,
+            scale_factor: 1.,
+            scale_clipped: 0,
+            hdr: Default::default(),
+        }
+        .with_hdr(std::sync::Arc::new(light))
+        .unwrap()
+    }
+
+    /// An HDR file's master at its own settings is its light: above white, signed and
+    /// coloured alike. Exposure is a gain; Rotate turns it as the SDR rendition turns.
+    #[test]
+    fn an_hdr_files_master_is_its_light() -> Result<()> {
+        let light = |x: u32, y: u32| match (x, y) {
+            (0, 0) => [6., 6., 6.],
+            (1, 0) => [-0.2, 0.4, 0.9],
+            _ => [0.1 * x as f32, 0.05 * y as f32, 0.3],
+        };
+        let im = hdr_file(6, 4, light);
+        let r = Recipe::for_new_rendered(&im.metadata);
+        assert!(r.hdr.enabled, "an HDR file starts as an HDR edit");
+        assert_eq!(r.hdr.limit, 3., "6 is past limit 2's knee");
+        let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        assert_eq!((out.width, out.height), (6, 4));
+        for (i, p) in out.pixels.iter().enumerate() {
+            let want = light(i as u32 % 6, i as u32 / 6);
+            assert!(
+                (0..3).all(|c| (p[c] - want[c]).abs() < 1e-5),
+                "{i}: {p:?} against {want:?}"
+            );
+        }
+        let mut brighter = r.clone();
+        brighter.exposure = 1.;
+        brighter.hdr.limit = 4.;
+        let out = render_hdr(&im, &brighter.checked()?, None, 0, Cancel::NEVER)?;
+        assert!((out.pixels[0][0] - 12.).abs() < 1e-4, "{:?}", out.pixels[0]);
+        let mut turned = r;
+        turned.rotation = 1;
+        let out = render_hdr(&im, &turned.checked()?, None, 0, Cancel::NEVER)?;
+        let sdr = crate::develop::render(&im, &turned.checked()?, 0, Cancel::NEVER)?;
+        assert_eq!((out.width, out.height), (sdr.width, sdr.height));
+        assert_eq!((out.width, out.height), (4, 6));
+        // The bright corner goes where the SDR rendition's goes.
+        let brightest = |pixels: &[[f32; 3]]| {
+            (0..pixels.len())
+                .max_by(|a, b| pixels[*a][1].total_cmp(&pixels[*b][1]))
+                .unwrap()
+        };
+        assert_eq!(brightest(&out.pixels), brightest(&sdr.pixels));
+        Ok(())
+    }
+
+    /// The fact that a photo is an HDR file renders nothing without its light: a
+    /// working copy of the image has none.
+    #[test]
+    // The clone is what is tested: a working copy has no light.
+    #[allow(clippy::redundant_clone)]
+    fn an_hdr_files_working_copy_renders_no_master() -> Result<()> {
+        let im = hdr_file(2, 2, |_, _| [2.; 3]);
+        let r = Recipe::for_new_rendered(&im.metadata);
+        let copy = im.clone();
+        assert!(copy.metadata.hdr_source.is_some() && copy.hdr().is_none());
+        assert!(render_hdr(&copy, &r.checked()?, None, 0, Cancel::NEVER).is_err());
+        Ok(())
+    }
 
     /// Grays at the scene values `levels` (white-balanced camera values, which the
     /// camera matrix profile renders neutral), one per column of a strip 8 pixels

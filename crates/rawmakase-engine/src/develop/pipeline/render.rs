@@ -321,7 +321,7 @@ impl Samples {
         self.pixels.len() * 20
     }
 }
-fn sample_region(
+pub(crate) fn sample_region(
     im: Source,
     r: &Recipe,
     g: &Geometry,

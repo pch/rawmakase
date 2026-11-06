@@ -259,12 +259,20 @@ fn prepare(path: &Path) -> Result<Prepared> {
         "Image too large to preview"
     );
     let orientation = decoder.orientation()?;
-    let profile = decoder
-        .icc_profile()
-        .ok()
-        .flatten()
-        .or_else(|| generic.then(|| tiff_icc(path)).flatten())
-        .and_then(|icc| ColorProfile::new_from_slice(&icc).ok());
+    // A PNG's cICP chunk takes precedence over its ICC profile (PNG 3rd edition);
+    // the `image` crate reads the ICC profile alone.
+    let png = match generic {
+        true => png_facts(path)?.unwrap_or_default(),
+        false => PngFacts::default(),
+    };
+    let profile = png.cicp.clone().or_else(|| {
+        decoder
+            .icc_profile()
+            .ok()
+            .flatten()
+            .or_else(|| generic.then(|| tiff_icc(path)).flatten())
+            .and_then(|icc| ColorProfile::new_from_slice(&icc).ok())
+    });
     let float = generic
         && matches!(
             decoder.color_type(),
@@ -277,6 +285,11 @@ fn prepare(path: &Path) -> Result<Prepared> {
     let hdr = hdr_white
         .and_then(|_| hdr_decoding(profile.as_ref(), float))
         .filter(|_| kind != Kind::Heic);
+    // An APNG is an animation, and narrow-range samples aren't expanded: both are
+    // refused whatever else the file is.
+    let refused = refused
+        .or_else(|| png.animated.then(|| Unsupported("animated".into())))
+        .or_else(|| png.narrow.then(|| Unsupported("narrow-range".into())));
     let refused = match refused {
         Some(Unsupported(reason)) if reason == "HDR" && hdr.is_some() => None,
         refused => refused,
@@ -316,6 +329,58 @@ fn tiff_icc(path: &Path) -> Option<Vec<u8>> {
         .ok()
 }
 
+/// What a PNG's own chunks say that `image` doesn't report, read by the `png`
+/// crate, which checks each chunk's CRC and drops a damaged ancillary one.
+#[derive(Default)]
+struct PngFacts {
+    /// The colour its cICP chunk gives it, when moxcms makes a full-range profile of it.
+    cicp: Option<ColorProfile>,
+    /// Its cICP says narrow range, which neither conversion expands.
+    narrow: bool,
+    /// An APNG: an animation, whatever its default image is.
+    animated: bool,
+}
+
+/// [`PngFacts`] of the file at `path`; `None` when it isn't a PNG. A PNG whose
+/// chunks don't read is an error, not a PNG without facts: its colour or animation
+/// would be lost. It reads within the allocation budget `image` decodes it with.
+fn png_facts(path: &Path) -> Result<Option<PngFacts>> {
+    use moxcms::{CicpColorPrimaries, CicpProfile, MatrixCoefficients, TransferCharacteristics};
+    use std::io::{Read, Seek};
+    let mut file = std::io::BufReader::new(std::fs::File::open(path)?);
+    let mut signature = [0u8; 8];
+    if file.read_exact(&mut signature).is_err() || signature != *b"\x89PNG\r\n\x1a\n" {
+        return Ok(None);
+    }
+    file.rewind()?;
+    let limits = png::Limits {
+        bytes: 512 * 1024 * 1024,
+    };
+    let reader = png::Decoder::new_with_limits(file, limits)
+        .read_info()
+        .map_err(|e| anyhow!("Could not read the PNG file: {e}"))?;
+    let info = reader.info();
+    let mut facts = PngFacts {
+        animated: info.animation_control.is_some(),
+        ..Default::default()
+    };
+    if let Some(c) = info.coding_independent_code_points {
+        facts.narrow = !c.is_video_full_range_image;
+        facts.cicp = (|| {
+            let profile = ColorProfile::new_from_cicp(CicpProfile {
+                color_primaries: CicpColorPrimaries::try_from(c.color_primaries).ok()?,
+                transfer_characteristics: TransferCharacteristics::try_from(c.transfer_function)
+                    .ok()?,
+                matrix_coefficients: MatrixCoefficients::try_from(c.matrix_coefficients).ok()?,
+                full_range: true,
+            });
+            profile.cicp.is_some().then_some(profile)
+        })()
+        .filter(|_| !facts.narrow);
+    }
+    Ok(Some(facts))
+}
+
 /// The size of the image at `path` as shown, after its orientation, from its
 /// header alone; `None` when it can't be read.
 pub fn dimensions(path: &Path) -> Option<(u32, u32)> {
@@ -348,7 +413,7 @@ pub fn decode(path: &Path) -> Result<RgbImage> {
         image.apply_orientation(orientation);
         let (width, height) = (image.width(), image.height());
         let mut pixels = hdr.apply(image, Cancel::NEVER)?;
-        pixels.par_iter_mut().for_each(|p| *p = tone_map(*p));
+        pixels.par_iter_mut().for_each(|p| *p = hdr_sdr(*p));
         return Ok(linear_pro_photo_to_srgb(&pixels, width, height));
     }
     // HDR that doesn't decode exactly (float samples through a curved profile):
@@ -438,11 +503,7 @@ pub(crate) fn open(path: &Path, cancel: Cancel<'_>) -> Result<CameraImage> {
                 hdr.transfer(),
             )
             .context("Could not decode the HDR image")?;
-            let sdr = light
-                .pixels()
-                .par_iter()
-                .map(|p| tone_map(p.map(|v| v.max(0.))))
-                .collect();
+            let sdr = light.pixels().par_iter().map(|p| hdr_sdr(*p)).collect();
             (Some(light), sdr)
         }
         None => {
@@ -649,6 +710,13 @@ fn luminance_weights(profile: &ColorProfile) -> [f32; 3] {
     } else {
         [1. / 3.; 3]
     }
+}
+
+/// An HDR file's SDR rendition of light `p` (linear ProPhoto, 1 = graphics white):
+/// negative channels at 0, then [`tone_map`]. The Library's preview and Develop's
+/// SDR rendition both take it, so they agree.
+fn hdr_sdr(p: [f32; 3]) -> [f32; 3] {
+    tone_map(p.map(|v| v.max(0.)))
 }
 
 /// Light of an HDR image relative to its reference white, brought into the
@@ -1870,6 +1938,144 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// An HDR AVIF that is also an image sequence stays refused as one: lifting the
+    /// HDR refusal doesn't lift the animation's.
+    #[test]
+    fn an_animated_hdr_avif_is_still_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bytes = std::fs::read(fixture("pq.avif")).unwrap();
+        // The ftyp box's major brand, at bytes 8–12: `avif` made `avis`.
+        assert_eq!(&bytes[8..12], b"avif");
+        bytes[11] = b's';
+        let path = dir.path().join("sequence.avif");
+        std::fs::write(&path, bytes).unwrap();
+        assert_eq!(super::probe(&path).unwrap_err().0, "animated");
+    }
+
+    /// An HDR file's SDR rendition is the same in the Library and in Develop, signed
+    /// light included: both clip it at 0 before the tone map.
+    #[test]
+    fn an_hdr_files_sdr_rendition_is_the_librarys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("signed.tif");
+        let to_srgb = rawmakase_model::color::hdr_output::HdrGamut::Rec709.prophoto_to_rgb();
+        let light = [[-0.25f32, 0.3, 0.1], [2., 0.5, 0.1]];
+        let samples: Vec<f32> = light
+            .iter()
+            .flat_map(|p| rawmakase_model::color::mul(to_srgb, *p))
+            .collect();
+        tiff(
+            &path,
+            bytemuck::cast_slice(&samples),
+            ExtendedColorType::Rgb32F,
+            None,
+        );
+        let preview = decode(&path).unwrap();
+        let opened = super::open(&path, Cancel::NEVER).unwrap();
+        let develop = super::linear_pro_photo_to_srgb(&opened.pixels, 2, 1);
+        assert_eq!(preview.as_raw(), develop.as_raw());
+    }
+
+    /// A PNG whose cICP chunk says PQ, without an ICC profile, opens as HDR: graphics
+    /// white is its light's 1.
+    #[test]
+    fn a_pq_png_marked_by_its_cicp_chunk_opens_as_hdr() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain = dir.path().join("plain.png");
+        // PQ's graphics white (203 cd/m²) is signal 0.5806: code 38050 of 65535.
+        let samples: Vec<u8> = [38050u16; 3].iter().flat_map(|v| v.to_ne_bytes()).collect();
+        png(&plain, &samples, ExtendedColorType::Rgb16, None);
+        let mut bytes = std::fs::read(&plain).unwrap();
+        // cICP: BT.2020, PQ, identity matrix, full range; after IHDR (8 + 25 bytes).
+        let data = [9u8, 16, 0, 1];
+        bytes.splice(33..33, png_chunk(b"cICP", &data));
+        let path = dir.path().join("pq.png");
+        std::fs::write(&path, bytes).unwrap();
+        assert!(super::probe(&path).is_ok());
+        let opened = super::open(&path, Cancel::NEVER).unwrap();
+        let light = opened.hdr().expect("an HDR light").pixels()[0];
+        assert!(light.iter().all(|v| (v - 1.).abs() < 2e-3), "{light:?}");
+        // After many metadata chunks it is read all the same.
+        let mut later = std::fs::read(&plain).unwrap();
+        let mut texts = Vec::new();
+        for i in 0..80 {
+            texts.extend(png_chunk(b"tEXt", format!("k{i}\0v").as_bytes()));
+        }
+        texts.extend(png_chunk(b"cICP", &data));
+        later.splice(33..33, texts);
+        let path = dir.path().join("later.png");
+        std::fs::write(&path, later).unwrap();
+        assert!(super::open(&path, Cancel::NEVER).unwrap().hdr().is_some());
+        // A text chunk larger than the png crate's own default budget (64 MiB) is
+        // read within `image`'s, cICP and all.
+        let mut large = std::fs::read(&plain).unwrap();
+        let mut text = b"k\0".to_vec();
+        text.resize(66 << 20, b'v');
+        let mut chunks = png_chunk(b"tEXt", &text);
+        chunks.extend(png_chunk(b"cICP", &data));
+        large.splice(33..33, chunks);
+        let path = dir.path().join("large.png");
+        std::fs::write(&path, large).unwrap();
+        assert!(super::open(&path, Cancel::NEVER).unwrap().hdr().is_some());
+        // A damaged cICP is dropped, as the decoder drops it: the file is sRGB.
+        let mut damaged = std::fs::read(&plain).unwrap();
+        let mut chunk = png_chunk(b"cICP", &data);
+        let last = chunk.len() - 1;
+        chunk[last] ^= 0xff;
+        damaged.splice(33..33, chunk);
+        let path = dir.path().join("damaged.png");
+        std::fs::write(&path, damaged).unwrap();
+        assert!(super::open(&path, Cancel::NEVER).unwrap().hdr().is_none());
+        // Narrow range isn't expanded: refused for Develop.
+        let mut narrow = std::fs::read(&plain).unwrap();
+        narrow.splice(33..33, png_chunk(b"cICP", &[1, 1, 0, 0]));
+        let path = dir.path().join("narrow.png");
+        std::fs::write(&path, narrow).unwrap();
+        assert_eq!(super::probe(&path).unwrap_err().0, "narrow-range");
+    }
+
+    /// An APNG, HDR or not, is an animation: refused for Develop as other animated
+    /// files are, though the Library shows its default image.
+    #[test]
+    fn an_apng_is_refused_for_develop() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain = dir.path().join("plain.png");
+        png(&plain, &[0, 0, 0], ExtendedColorType::Rgb8, None);
+        let mut bytes = std::fs::read(&plain).unwrap();
+        // acTL: two frames, played once; before the image data.
+        let mut actl = 2u32.to_be_bytes().to_vec();
+        actl.extend_from_slice(&0u32.to_be_bytes());
+        bytes.splice(33..33, png_chunk(b"acTL", &actl));
+        let path = dir.path().join("animated.png");
+        std::fs::write(&path, bytes).unwrap();
+        assert_eq!(super::probe(&path).unwrap_err().0, "animated");
+    }
+
+    /// A PNG chunk of `kind` holding `data`, with its length and CRC.
+    fn png_chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+        let mut chunk = (data.len() as u32).to_be_bytes().to_vec();
+        chunk.extend_from_slice(kind);
+        chunk.extend_from_slice(data);
+        chunk.extend_from_slice(&crc32(&chunk[4..]).to_be_bytes());
+        chunk
+    }
+
+    /// PNG's CRC-32 (ISO 3309).
+    fn crc32(bytes: &[u8]) -> u32 {
+        let mut crc = !0u32;
+        for b in bytes {
+            crc ^= u32::from(*b);
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 {
+                    (crc >> 1) ^ 0xedb8_8320
+                } else {
+                    crc >> 1
+                };
+            }
+        }
+        !crc
     }
 
     /// A small BigTIFF's profile is read too: a PQ one opens as HDR.

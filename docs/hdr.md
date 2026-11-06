@@ -98,12 +98,44 @@ asked for.
 
 ## HDR files
 
-Develop doesn't open HDR files yet (stage 4 of the plan): a JPEG XL, AVIF or HEIC
-file marked PQ or HLG, a TIFF or PNG whose ICC profile's CICP tag says PQ, HLG or
-linear light (RAWmakase's own HDR exports among them), and a TIFF of 32-bit float
-samples, which is read as linear light with 1.0 at graphics white, as Photoshop's
-32-bit documents are. The Library shows them with graphics white (203 cd/m²) as
-white and brighter light rolled off into it, and says why Develop can't edit them.
+An HDR file opens in Develop as an HDR edit ([the design](records/hdr-stage4-design.md)).
+These files qualify:
+
+- a TIFF, PNG, JPEG XL or AVIF whose CICP (in the file or its ICC profile) says PQ,
+  HLG or linear light, at full range, in BT.709, BT.2020 or Display P3 (RAWmakase's
+  own HDR exports among them);
+- a TIFF of 32-bit float samples, through an ICC profile without CICP whose curves
+  are the identity (Photoshop's 32-bit documents), or without a profile, read as
+  linear sRGB primaries; 1.0 is graphics white. Integer samples with such a profile
+  stop at graphics white, so they open as SDR files.
+
+A PNG's own cICP chunk counts as its CICP and takes precedence over its ICC profile,
+as the PNG specification says; the `png` crate reads it, checking its CRC. A
+narrow-range cICP and an APNG are refused for Develop, HDR or not.
+
+Its light (`camera_data::HdrLight`: linear ProPhoto, 1 = graphics white, signed) is
+decoded exactly, in f32, by `HdrOutput::decode`, the inverse of the HDR export's
+encoding. The image's own pixels are its SDR rendition: graphics white at 0.926 and
+brighter light rolled off into white, as the Library shows it, which Develop's SDR
+path renders through the rendered-file pseudo-scene. That SDR rendition is
+RAWmakase's; Camera Raw's for these files is not measured.
+
+A new HDR file starts with HDR on (`Recipe::for_new_rendered`), at the fewest whole
+stops of limit whose roll-off starts at or above its peak
+(`model::hdr::limit_containing`). A saved edit keeps its own settings; one that says
+nothing of HDR, a Lightroom edit made before, reads HDR off, as it did when HDR
+files didn't open. Its master is its light, with Exposure (a gain), crop,
+straighten, Rotate and Flip, resized in linear light (negative light clamps to 0
+there) and then limited. Anything else refuses the master by name
+(`model::hdr::check_hdr_file`); the edit keeps it, and its SDR rendition renders
+it.
+
+Still refused, as Develop refused every HDR file before:
+- HDR HEIC, which ImageIO and libheif draw their own way;
+- gain-map files;
+- HDR in other primaries or a curved profile.
+
+The Library shows them with graphics white as white and says why.
 
 ## HDR export
 

@@ -1,6 +1,6 @@
 # HDR stage 4: opening HDR files as HDR edits
 
-Status: Proposal, revision 3. It covers the first increment of stage 4 of the
+Status: Implemented (first increment). Agreed after three review rounds. It covers the first increment of stage 4 of the
 [HDR implementation plan](hdr-implementation-plan.md): an HDR file (PQ, HLG or
 linear light) opens in Develop as an HDR edit instead of being refused
 ([HDR files](../hdr.md#hdr-files)). Gain-map inputs, HEIC and adjustments other

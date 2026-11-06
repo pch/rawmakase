@@ -185,7 +185,7 @@ pub fn hlg_decode(rgb: [f32; 3], weights: [f32; 3]) -> [f32; 3] {
 /// Where the HDR limit's roll-off starts, as a fraction of the peak. Camera Raw 18.7
 /// renders a linear ramp unchanged to just below 2^limit × graphics white and scene
 /// 16 at limit 4 as 15.84: a knee at 97% with slope 1 reproduces both.
-const LIMIT_KNEE: f32 = 0.97;
+pub const LIMIT_KNEE: f32 = 0.97;
 
 /// `v` (linear, 1 = graphics white) rolled off to at most `peak`: the HDR limit
 /// (`model::hdr`) as an HDR render and its export apply it to each channel, last. Values below the knee pass unchanged.
