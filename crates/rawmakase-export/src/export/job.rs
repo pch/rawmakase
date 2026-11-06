@@ -58,11 +58,11 @@ pub fn run(
     // The target's format, not only the settings', must hold the colour space or the
     // HDR encoding; checked before anything renders.
     let format = crate::export_settings::Format::from_path(target);
-    if settings.hdr_output()?.is_some() {
-        ensure!(
-            format == Some(crate::export_settings::Format::Tiff),
-            "An HDR export is a TIFF: name it .tif or .tiff"
-        );
+    if let Some(output) = settings.hdr_output()? {
+        let format = format.ok_or_else(|| {
+            anyhow::anyhow!("An HDR export is a TIFF or JPEG XL: name it .tif, .tiff or .jxl")
+        })?;
+        crate::export_settings::Format::check_hdr(format, output)?;
     } else if let Some(format) = format {
         format.supports(settings.output_space()?)?;
     }
@@ -103,8 +103,8 @@ pub fn prepare(
     cancel: Cancel<'_>,
     progress: &impl Fn(f32),
 ) -> Result<Prepared> {
+    settings.check_output()?;
     let hdr = settings.hdr_output()?;
-    let space = settings.output_space()?;
     if hdr.is_some() {
         // Captured with the job: the edit's own intent, never the editor's or display's.
         ensure!(
@@ -170,7 +170,7 @@ pub fn prepare(
                 &recipe,
                 ai.as_ref(),
                 options.max_edge,
-                space,
+                settings.output_space()?,
                 cancel,
             )?;
             if let Some(w) = &watermark

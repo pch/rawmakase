@@ -767,7 +767,7 @@ fn export_refuses_to_destroy_a_raw_the_source_or_an_existing_file() -> Result<()
             &options,
             Replace::NoClobber
         )),
-        "Export extension must be .jpg, .jpeg, .tif, .tiff or .png"
+        "Export extension must be .jpg, .jpeg, .tif, .tiff, .png or .jxl"
     );
     assert!(!webp.exists());
     Ok(())

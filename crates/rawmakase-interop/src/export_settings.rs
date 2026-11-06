@@ -84,16 +84,19 @@ pub enum Format {
     Jpeg,
     Tiff,
     Png,
+    /// JPEG XL, lossless: 8-bit sRGB, or an HDR export's 16-bit PQ or HLG.
+    Jxl,
 }
 impl Format {
     /// The formats an export can be written in.
-    pub const ALL: [Self; 3] = [Self::Jpeg, Self::Tiff, Self::Png];
+    pub const ALL: [Self; 4] = [Self::Jpeg, Self::Tiff, Self::Png, Self::Jxl];
 
     pub fn raster(self) -> RasterFormat {
         match self {
             Format::Jpeg => RasterFormat::Jpeg,
             Format::Tiff => RasterFormat::Tiff,
             Format::Png => RasterFormat::Png,
+            Format::Jxl => RasterFormat::Jxl,
         }
     }
     /// The extension an export is named with.
@@ -112,12 +115,33 @@ impl Format {
     /// Whether an export in this format can be in `space`: ProPhoto RGB is written
     /// only as 16-bit TIFF, as 8 bits band in so wide a gamut.
     pub fn supports(self, space: OutputSpace) -> Result<()> {
+        if self == Format::Jxl && space != OutputSpace::Srgb {
+            bail!("JPEG XL exports are sRGB, or HDR; choose sRGB, HDR export or another format");
+        }
         if space.needs_sixteen_bits() && self != Format::Tiff {
             bail!(
                 "{} exports only as 16-bit TIFF; choose TIFF or another color space",
                 space.label()
             );
         }
+        Ok(())
+    }
+    /// Whether an HDR export can be written in this format.
+    pub fn holds_hdr(self) -> bool {
+        matches!(self, Format::Tiff | Format::Jxl)
+    }
+    /// Refuses an HDR export of `output` that `format` can't hold: anything but TIFF
+    /// and JPEG XL, and linear light in anything but TIFF.
+    pub fn check_hdr(format: Format, output: crate::color::hdr_output::HdrOutput) -> Result<()> {
+        ensure!(
+            format.holds_hdr(),
+            "HDR exports are TIFF or JPEG XL files; choose one or turn HDR export off"
+        );
+        ensure!(
+            format == Format::Tiff
+                || output.transfer != crate::color::hdr_output::HdrTransfer::Linear,
+            "Linear HDR is written as 32-bit float TIFF only; choose TIFF, PQ or HLG"
+        );
         Ok(())
     }
     /// Every extension an export can have, as a sentence lists them:
@@ -912,13 +936,19 @@ impl ExportSettings {
             );
         }
         if let Some(output) = self.hdr {
-            ensure!(
-                self.format == Format::Tiff,
-                "HDR exports are TIFF files for now; choose TIFF or turn HDR export off"
-            );
+            Format::check_hdr(self.format, output)?;
             return Ok(Some(output));
         }
         Ok(None)
+    }
+    /// What every export checks before anything renders: an HDR export's encoding in
+    /// its format, else the SDR colour space in its format ([`Self::output_space`]).
+    /// An HDR export never uses the SDR colour space, so that is not checked then.
+    pub fn check_output(&self) -> Result<()> {
+        if self.hdr_output()?.is_none() {
+            self.output_space()?;
+        }
+        Ok(())
     }
     pub fn options(&self) -> ExportOptions {
         ExportOptions {
@@ -1175,7 +1205,7 @@ mod tests {
         Ok(())
     }
     /// ProPhoto RGB is written only as 16-bit TIFF: with JPEG or PNG it is refused,
-    /// before anything renders.
+    /// before anything renders. A JPEG XL is sRGB.
     #[test]
     fn prophoto_needs_tiff_and_the_others_take_any_format() {
         for format in Format::ALL {
@@ -1183,7 +1213,11 @@ mod tests {
                 let mut s = ExportSettings::default();
                 s.choose_format(format);
                 s.choose_color_space(space);
-                let allowed = space != OutputSpace::ProPhoto || format == Format::Tiff;
+                let allowed = if format == Format::Jxl {
+                    space == OutputSpace::Srgb
+                } else {
+                    space != OutputSpace::ProPhoto || format == Format::Tiff
+                };
                 assert_eq!(s.output_space().is_ok(), allowed, "{format:?} {space:?}");
                 assert_eq!(format.supports(space).is_ok(), allowed);
             }
@@ -1327,16 +1361,17 @@ mod tests {
             ("a.tiff", Format::Tiff),
             ("a.Tiff", Format::Tiff),
             ("a.png", Format::Png),
+            ("a.JXL", Format::Jxl),
         ] {
             assert_eq!(Format::from_path(Path::new(name)), Some(format), "{name}");
         }
         assert_eq!(
             Format::ALL.map(Format::mime_type),
-            ["image/jpeg", "image/tiff", "image/png"]
+            ["image/jpeg", "image/tiff", "image/png", "image/jxl"]
         );
         assert_eq!(
             Format::extensions_listed(),
-            ".jpg, .jpeg, .tif, .tiff or .png"
+            ".jpg, .jpeg, .tif, .tiff, .png or .jxl"
         );
     }
     #[test]

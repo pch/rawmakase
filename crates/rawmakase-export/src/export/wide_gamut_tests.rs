@@ -13,6 +13,10 @@ use moxcms::{ColorProfile, Layout, TransformOptions};
 use rawmakase_cancel::Cancel;
 use std::path::{Path, PathBuf};
 
+/// The formats with recorded fixtures and an `image` decoder; JPEG XL exports are
+/// checked through jxl-oxide in `hdr_tests.rs`.
+const FIXTURE_FORMATS: [Format; 3] = [Format::Jpeg, Format::Tiff, Format::Png];
+
 fn settings(format: Format, space: OutputSpace) -> ExportSettings {
     let mut s = ExportSettings {
         include: Include::AllExceptCameraRaw,
@@ -275,7 +279,7 @@ fn each_space_embeds_its_profile_and_exif_colour_space() -> Result<()> {
         Recipe::default(),
     );
     for space in OutputSpace::ALL {
-        for format in Format::ALL {
+        for format in FIXTURE_FORMATS {
             if format.supports(space).is_err() {
                 continue;
             }

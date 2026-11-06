@@ -171,6 +171,78 @@ where
     Ok(())
 }
 
+/// A lossless 8-bit sRGB JPEG XL, its EXIF and XMP in container boxes.
+pub(super) fn jxl(
+    out: &mut impl Write,
+    image: &ExportImage,
+    directories: Directories,
+    embed: &Embed,
+) -> Result<()> {
+    ensure!(
+        image.space() == crate::color::OutputSpace::Srgb,
+        "JPEG XL exports are sRGB"
+    );
+    let codestream = super::jxl::codestream(
+        image.width(),
+        image.height(),
+        super::jxl::Samples::Eight(&image.rgb8()),
+        super::jxl::Colour::Srgb,
+    )?;
+    let exif = super::metadata::png_exif(directories);
+    out.write_all(&super::jxl::container(
+        &codestream,
+        Some(&exif),
+        embed.xmp.as_deref(),
+    )?)?;
+    Ok(())
+}
+
+/// An HDR export's lossless 16-bit JPEG XL: PQ or HLG signal values, the header naming
+/// the primaries and transfer, with the intensity target their maximum stands for
+/// (10,000 cd/m² for PQ, HLG's 1,000 cd/m² reference display).
+pub(super) fn jxl_hdr(
+    out: &mut impl Write,
+    image: &super::HdrPixels,
+    directories: Directories,
+    embed: &Embed,
+) -> Result<()> {
+    use crate::color::hdr_output::{HLG_PEAK_NITS, HdrGamut, HdrTransfer};
+    let intensity_target = match image.output.transfer {
+        HdrTransfer::Pq => 10_000.,
+        HdrTransfer::Hlg => HLG_PEAK_NITS,
+        HdrTransfer::Linear => anyhow::bail!("Linear HDR is written as TIFF only"),
+    };
+    let samples: Vec<u16> = image
+        .pixels
+        .iter()
+        .flatten()
+        .map(|v| (v.clamp(0., 1.) * 65535. + 0.5) as u16)
+        .collect();
+    let codestream = super::jxl::codestream(
+        image.width,
+        image.height,
+        super::jxl::Samples::Sixteen(&samples),
+        super::jxl::Colour::Hdr {
+            // JPEG XL's own primaries enumeration: CICP's but for P3, which it numbers 11.
+            primaries: match image.output.gamut {
+                HdrGamut::Rec2020 => 9,
+                HdrGamut::DisplayP3 => 11,
+                HdrGamut::Rec709 => 1,
+            },
+            // Its transfer functions are numbered as CICP's.
+            transfer: image.output.transfer.cicp(),
+            intensity_target,
+        },
+    )?;
+    let exif = super::metadata::png_exif(directories);
+    out.write_all(&super::jxl::container(
+        &codestream,
+        Some(&exif),
+        embed.xmp.as_deref(),
+    )?)?;
+    Ok(())
+}
+
 /// An 8-bit PNG, its EXIF in an eXIf chunk and its XMP in an uncompressed
 /// iTXt chunk, as the XMP specification asks.
 pub(super) fn png(

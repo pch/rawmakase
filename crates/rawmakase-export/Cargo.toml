@@ -33,11 +33,17 @@ skrifa = "0.49"
 tempfile.workspace = true
 tiff.workspace = true
 unicode-normalization.workspace = true
+# JPEG XL exports: lossless modular encoding in pure Rust; RAWmakase writes the
+# image header (colour encoding, tone mapping) and the container itself.
+zune-jpegxl = { version = "0.5.2", default-features = false, features = ["std", "threads"] }
+zune-core = { version = "0.5.3", default-features = false, features = ["std"] }
 # Inter and the installed-font directories for text watermarks. It is built for
 # egui and brings egui along, though nothing here draws with it.
 fastframe-fonts.workspace = true
 
 [dev-dependencies]
+# An independent decoder for JPEG XL exports.
+jxl-oxide = { version = "0.12.6", default-features = false }
 rawmakase-catalog = { path = "../rawmakase-catalog", version = "0.1.0", features = ["test-support"] }
 rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0", features = ["test-support"] }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0", features = ["test-support"] }
