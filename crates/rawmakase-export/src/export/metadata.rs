@@ -56,6 +56,27 @@ pub(super) fn directories(
     height: u32,
     space: OutputSpace,
 ) -> Directories {
+    directories_with(m, embed, width, height, color_space(space), interop(space))
+}
+/// The directories of an export whose colour EXIF can't name (an HDR export):
+/// ColorSpace Uncalibrated, no interoperability index; its ICC profile says what the
+/// pixels are.
+pub(super) fn directories_uncalibrated(
+    m: &Metadata,
+    embed: &Embed,
+    width: u32,
+    height: u32,
+) -> Directories {
+    directories_with(m, embed, width, height, 0xffff, Vec::new())
+}
+fn directories_with(
+    m: &Metadata,
+    embed: &Embed,
+    width: u32,
+    height: u32,
+    color: u16,
+    interop: Vec<Field>,
+) -> Directories {
     let mut d = embed
         .camera
         .clone()
@@ -91,14 +112,11 @@ pub(super) fn directories(
     ]);
     d.exif.retain(|f| f.tag != COLOR_SPACE);
     d.exif.extend([
-        Field::short(COLOR_SPACE, color_space(space)),
+        Field::short(COLOR_SPACE, color),
         Field::long(PIXEL_X_DIMENSION, width),
         Field::long(PIXEL_Y_DIMENSION, height),
     ]);
-    Directories {
-        exif: d,
-        interop: interop(space),
-    }
+    Directories { exif: d, interop }
 }
 
 /// The eXIf payload of a PNG export: the TIFF stream alone.

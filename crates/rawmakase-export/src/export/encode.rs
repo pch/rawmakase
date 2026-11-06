@@ -52,6 +52,64 @@ pub(super) fn tiff(
     directories: &Directories,
     embed: &Embed,
 ) -> Result<()> {
+    tiff_of::<RGB16, _>(
+        out,
+        [image.width(), image.height()],
+        &image.rgb16(),
+        profile,
+        directories,
+        embed,
+    )
+}
+
+/// An HDR export's TIFF: PQ and HLG as 16-bit signal values, linear light as 32-bit
+/// float (1 = graphics white), with `profile` naming the encoding.
+pub(super) fn tiff_hdr(
+    out: &mut (impl Write + Seek),
+    image: &super::HdrPixels,
+    profile: Vec<u8>,
+    directories: &Directories,
+    embed: &Embed,
+) -> Result<()> {
+    use crate::color::hdr_output::HdrTransfer;
+    let size = [image.width, image.height];
+    match image.output.transfer {
+        HdrTransfer::Pq | HdrTransfer::Hlg => {
+            let data: Vec<u16> = image
+                .pixels
+                .iter()
+                .flatten()
+                .map(|v| (v.clamp(0., 1.) * 65535. + 0.5) as u16)
+                .collect();
+            tiff_of::<RGB16, _>(out, size, &data, profile, directories, embed)
+        }
+        HdrTransfer::Linear => {
+            let data: Vec<f32> = image.pixels.iter().flatten().copied().collect();
+            tiff_of::<tiff::encoder::colortype::RGB32Float, _>(
+                out,
+                size,
+                &data,
+                profile,
+                directories,
+                embed,
+            )
+        }
+    }
+}
+
+fn tiff_of<C, W>(
+    out: &mut W,
+    [width, height]: [u32; 2],
+    data: &[C::Inner],
+    profile: Vec<u8>,
+    directories: &Directories,
+    embed: &Embed,
+) -> Result<()>
+where
+    C: tiff::encoder::colortype::ColorType,
+    [C::Inner]: tiff::encoder::TiffValue,
+    W: Write + Seek,
+{
     let Directories {
         exif: directories,
         interop,
@@ -83,7 +141,7 @@ pub(super) fn tiff(
         }
         Some(gps.finish_with_offsets()?.offset)
     };
-    let mut im = e.new_image::<RGB16>(image.width(), image.height())?;
+    let mut im = e.new_image::<C>(width, height)?;
     im.encoder()
         .write_tag(Tag::Unknown(EXIF_IFD), exif_offset)?;
     if let Some(offset) = gps_offset {
@@ -109,7 +167,7 @@ pub(super) fn tiff(
     if let Some(xmp) = &embed.xmp {
         im.encoder().write_tag(Tag::Unknown(XMP), xmp.as_bytes())?;
     }
-    im.write_data(&image.rgb16())?;
+    im.write_data(data)?;
     Ok(())
 }
 

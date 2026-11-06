@@ -47,6 +47,33 @@ pub fn output_profile(space: OutputSpace) -> &'static [u8] {
     }
 }
 
+/// The ICC profile an HDR export in `output` embeds: an ICC v4 profile with the
+/// gamut's colorants and D65 white, a `cicp` tag naming the primaries and transfer
+/// (which HDR readers use), and the transfer's curve as moxcms approximates it for
+/// readers without CICP. A linear export's curve is the identity.
+pub fn hdr_profile(output: rawmakase_model::color::hdr_output::HdrOutput) -> Result<Vec<u8>> {
+    use moxcms::{CicpColorPrimaries, CicpProfile, MatrixCoefficients, TransferCharacteristics};
+    let cicp = CicpProfile {
+        color_primaries: CicpColorPrimaries::try_from(output.gamut.cicp())?,
+        transfer_characteristics: TransferCharacteristics::try_from(output.transfer.cicp())?,
+        matrix_coefficients: MatrixCoefficients::Identity,
+        full_range: true,
+    };
+    let mut profile = ColorProfile::new_from_cicp(cicp);
+    ensure!(
+        profile.cicp.is_some(),
+        "No ICC profile for this HDR encoding"
+    );
+    profile.description = Some(moxcms::ProfileText::Localizable(vec![
+        moxcms::LocalizableString {
+            language: "en".into(),
+            country: "US".into(),
+            value: format!("{} {}", output.gamut.label(), output.transfer.label()),
+        },
+    ]));
+    Ok(profile.encode()?)
+}
+
 /// Converts 8-bit sRGB pixels in place to the monitor profile at `path`. On
 /// any failure the pixels are left as they were.
 pub fn display_transform(path: &Path, data: &mut [u8]) -> Result<()> {
@@ -510,6 +537,32 @@ impl Inverse {
         let i = (p.floor() as usize).min(Self::N - 1);
         let f = p - i as f64;
         self.table[i] * (1. - f) + self.table[i + 1] * f
+    }
+}
+
+#[cfg(test)]
+mod hdr_profile_tests {
+    use super::*;
+    use rawmakase_model::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
+
+    /// Every HDR encoding's profile reads back with its CICP and RGB colorants.
+    #[test]
+    fn every_hdr_encoding_has_a_profile_that_reads_back() {
+        for gamut in HdrGamut::ALL {
+            for transfer in HdrTransfer::ALL {
+                let output = HdrOutput { gamut, transfer };
+                let bytes = hdr_profile(output).unwrap();
+                let back = ColorProfile::new_from_slice(&bytes).unwrap();
+                let cicp = back.cicp.expect("cicp");
+                assert_eq!(cicp.color_primaries as u8, gamut.cicp(), "{output:?}");
+                assert_eq!(
+                    cicp.transfer_characteristics as u8,
+                    transfer.cicp(),
+                    "{output:?}"
+                );
+                assert_eq!(back.color_space, DataColorSpace::Rgb);
+            }
+        }
     }
 }
 

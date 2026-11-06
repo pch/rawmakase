@@ -36,24 +36,7 @@ pub const fn renders() -> bool {
     RENDERS_HDR
 }
 
-/// Where the HDR limit's roll-off starts, as a fraction of the peak. Camera Raw 18.7
-/// renders a linear ramp unchanged to just below 2^limit × graphics white and scene
-/// 16 at limit 4 as 15.84: a knee at 97% with slope 1 reproduces both.
-const LIMIT_KNEE: f32 = 0.97;
-
-/// `v` (linear, 1 = graphics white) rolled off to at most `peak`: the HDR limit as an
-/// HDR render applies it to each channel, last. Values below the knee pass unchanged.
-pub fn roll_off(v: f32, peak: f32) -> f32 {
-    let knee = LIMIT_KNEE * peak;
-    if v.is_nan() {
-        0.
-    } else if v <= knee {
-        v
-    } else {
-        let room = peak - knee;
-        peak - room * (-(v - knee) / room).exp()
-    }
-}
+pub use crate::color::hdr_output::roll_off;
 
 /// An edit's HDR settings: its mode, limit and SDR rendition.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

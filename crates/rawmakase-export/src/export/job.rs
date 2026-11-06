@@ -55,16 +55,22 @@ pub fn run(
     cancel: Cancel<'_>,
     progress: impl Fn(f32),
 ) -> Result<Option<String>> {
-    // The target's format, not only the settings', must hold the colour space;
-    // checked before anything renders.
-    if let Some(format) = crate::export_settings::Format::from_path(target) {
+    // The target's format, not only the settings', must hold the colour space or the
+    // HDR encoding; checked before anything renders.
+    let format = crate::export_settings::Format::from_path(target);
+    if settings.hdr_output()?.is_some() {
+        ensure!(
+            format == Some(crate::export_settings::Format::Tiff),
+            "An HDR export is a TIFF: name it .tif or .tiff"
+        );
+    } else if let Some(format) = format {
         format.supports(settings.output_space()?)?;
     }
     let prepared = prepare(&photo, settings, cancel, &progress)?;
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    super::export_image(
+    super::export_pixels(
         target,
         &photo.source,
         &prepared.rendered,
@@ -79,8 +85,8 @@ pub fn run(
 
 /// A photo rendered for export, with what goes in the file beside its pixels.
 pub struct Prepared {
-    /// The pixels, in the colour space the settings chose.
-    pub rendered: crate::develop::ExportImage,
+    /// The pixels, in the colour space or HDR encoding the settings chose.
+    pub rendered: super::Pixels,
     pub metadata: crate::camera_data::Metadata,
     pub options: crate::export_settings::ExportOptions,
     pub embed: Embed,
@@ -97,7 +103,19 @@ pub fn prepare(
     cancel: Cancel<'_>,
     progress: &impl Fn(f32),
 ) -> Result<Prepared> {
+    let hdr = settings.hdr_output()?;
     let space = settings.output_space()?;
+    if hdr.is_some() {
+        // Captured with the job: the edit's own intent, never the editor's or display's.
+        ensure!(
+            photo.recipe.hdr.is_active(),
+            "This photo's edit has HDR off: turn on High Dynamic Range in Develop, or export it in SDR"
+        );
+        ensure!(
+            photo.watermark.is_none(),
+            "Watermarks are not supported in HDR exports yet"
+        );
+    }
     let cancelled = || -> Result<()> {
         ensure!(!cancel.is_cancelled(), "Cancelled");
         Ok(())
@@ -139,19 +157,30 @@ pub fn prepare(
     let options = settings.options();
     let ai = ai_source(photo, &image, cancel)?;
     cancelled()?;
-    let mut rendered = crate::develop::render_export(
-        &image,
-        &photo.recipe.checked()?,
-        ai.as_ref(),
-        options.max_edge,
-        space,
-        cancel,
-    )?;
-    if let Some(w) = &watermark
-        && !w.apply(&mut rendered)
-    {
-        notice = Some("the watermark's text has no characters its font can draw".into());
-    }
+    let recipe = photo.recipe.checked()?;
+    let rendered = match hdr {
+        Some(output) => {
+            let master =
+                crate::develop::render_hdr(&image, &recipe, ai.as_ref(), options.max_edge, cancel)?;
+            super::Pixels::Hdr(super::HdrPixels::encode(&master, output))
+        }
+        None => {
+            let mut rendered = crate::develop::render_export(
+                &image,
+                &recipe,
+                ai.as_ref(),
+                options.max_edge,
+                space,
+                cancel,
+            )?;
+            if let Some(w) = &watermark
+                && !w.apply(&mut rendered)
+            {
+                notice = Some("the watermark's text has no characters its font can draw".into());
+            }
+            super::Pixels::Sdr(rendered)
+        }
+    };
     cancelled()?;
     progress(0.85);
     let file = file.filter(|_| policy.reads_file());
@@ -406,12 +435,10 @@ mod tests {
         std::fs::write(&source, b"synthetic")?;
         let flat = Arc::new(Flat(Default::default(), 0.6));
         let render = |photo: &Photo| -> Result<Vec<[f32; 3]>> {
-            Ok(
-                prepare(photo, &ExportSettings::default(), Cancel::NEVER, &|_| {})?
-                    .rendered
-                    .pixels()
-                    .to_vec(),
-            )
+            match prepare(photo, &ExportSettings::default(), Cancel::NEVER, &|_| {})?.rendered {
+                crate::export::Pixels::Sdr(image) => Ok(image.pixels().to_vec()),
+                crate::export::Pixels::Hdr(_) => anyhow::bail!("an SDR export rendered HDR"),
+            }
         };
         let mut plain = photo(&source, &dir.path().join("cache"));
         plain.ai = crate::ai_denoise::AiService(flat.clone());

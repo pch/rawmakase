@@ -381,10 +381,15 @@ impl Editor {
                 ui.add(egui::Slider::new(&mut s.quality, 1..=100));
             }),
             Format::Tiff => form_row(ui, "Bit Depth", |ui| {
-                ui.label(
-                    egui::RichText::new("16 bits/component, uncompressed")
-                        .color(palette.tone(Tone::TEXT)),
-                );
+                let linear = s
+                    .hdr
+                    .is_some_and(|h| h.transfer == crate::color::hdr_output::HdrTransfer::Linear);
+                let depth = if linear {
+                    "32-bit float for HDR edits, 16 bits/component otherwise"
+                } else {
+                    "16 bits/component, uncompressed"
+                };
+                ui.label(egui::RichText::new(depth).color(palette.tone(Tone::TEXT)));
             }),
             Format::Png => form_row(ui, "Bit Depth", |ui| {
                 ui.label(egui::RichText::new("8 bits/component").color(palette.tone(Tone::TEXT)));
@@ -420,9 +425,12 @@ impl Editor {
                     }
                 });
         });
+        if s.format == Format::Tiff {
+            hdr_rows(ui, s);
+        }
         // Why the choice can't be exported as it is: ProPhoto RGB in JPEG or PNG,
         // or a space from a later release.
-        if let Err(e) = s.output_space() {
+        if let Err(e) = s.output_space().and(s.hdr_output().map(|_| ())) {
             form_row(ui, "", |ui| {
                 ui.label(
                     egui::RichText::new(e.to_string())
@@ -653,4 +661,50 @@ fn section(ui: &mut egui::Ui, title: &str) {
         egui::FontId::proportional(text::BODY),
         palette.tone(Tone::STRONG),
     );
+}
+
+/// HDR export, for a TIFF: off (SDR, in the colour space above), or the edit's HDR
+/// master in a gamut and transfer. Edits with HDR off are refused when exported
+/// (`export::job::prepare`), so the choice is the user's to make per export.
+fn hdr_rows(ui: &mut egui::Ui, s: &mut crate::export_settings::ExportSettings) {
+    use crate::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
+    form_row(ui, "HDR", |ui| {
+        let mut on = s.hdr.is_some();
+        if ui
+            .checkbox(&mut on, "Export HDR edits in HDR")
+            .on_hover_text(
+                "Writes the HDR master of edits with High Dynamic Range on. \
+                 Graphics white is 203 cd/m². Watermarks are not supported in HDR yet.",
+            )
+            .changed()
+        {
+            s.choose_hdr(on.then(HdrOutput::default));
+        }
+    });
+    let Some(mut output) = s.hdr else {
+        return;
+    };
+    form_row(ui, "HDR Gamut", |ui| {
+        egui::ComboBox::from_id_salt("export-hdr-gamut")
+            .width(220.)
+            .selected_text(output.gamut.label())
+            .show_ui(ui, |ui| {
+                for gamut in HdrGamut::ALL {
+                    ui.selectable_value(&mut output.gamut, gamut, gamut.label());
+                }
+            });
+    });
+    form_row(ui, "HDR Encoding", |ui| {
+        egui::ComboBox::from_id_salt("export-hdr-transfer")
+            .width(220.)
+            .selected_text(output.transfer.label())
+            .show_ui(ui, |ui| {
+                for transfer in HdrTransfer::ALL {
+                    ui.selectable_value(&mut output.transfer, transfer, transfer.label());
+                }
+            });
+    });
+    if s.hdr != Some(output) {
+        s.choose_hdr(Some(output));
+    }
 }

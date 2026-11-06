@@ -153,6 +153,13 @@ enum Command {
         /// of linear ProPhoto RGB, 1 = graphics white, for comparisons with Camera Raw.
         #[arg(long, conflicts_with_all = ["tap", "color_space"])]
         hdr: bool,
+        /// Export the edit's HDR master as an HDR TIFF in this encoding (pq, hlg or
+        /// linear), as the Export dialog's HDR export writes it (the edit needs HDR on).
+        #[arg(long, value_enum, conflicts_with_all = ["tap", "color_space", "hdr"])]
+        hdr_export: Option<HdrTransferArg>,
+        /// The HDR export's gamut: rec2020, display-p3 or rec709.
+        #[arg(long, value_enum, default_value = "rec2020", requires = "hdr_export")]
+        hdr_gamut: HdrGamutArg,
     },
     /// Print each file's decode fingerprint as a line of JSON: what opening and
     /// unpacking it yields, for decode regression checks.
@@ -294,6 +301,20 @@ impl From<LutSpace> for rawmakase::camera_profiles::LutSpace {
             LutSpace::Rec2020 => Self::Rec2020,
         }
     }
+}
+/// `render --hdr-export`'s transfer.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum HdrTransferArg {
+    Pq,
+    Hlg,
+    Linear,
+}
+/// `render --hdr-gamut`.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum HdrGamutArg {
+    Rec2020,
+    DisplayP3,
+    Rec709,
 }
 /// A stage `render --tap` writes.
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -574,8 +595,30 @@ fn main() -> Result<()> {
             auto_wb,
             tap,
             hdr,
+            hdr_export,
+            hdr_gamut,
         }) => {
-            if tap.is_none() && !hdr {
+            use rawmakase::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
+            let hdr_output = hdr_export.map(|transfer| HdrOutput {
+                transfer: match transfer {
+                    HdrTransferArg::Pq => HdrTransfer::Pq,
+                    HdrTransferArg::Hlg => HdrTransfer::Hlg,
+                    HdrTransferArg::Linear => HdrTransfer::Linear,
+                },
+                gamut: match hdr_gamut {
+                    HdrGamutArg::Rec2020 => HdrGamut::Rec2020,
+                    HdrGamutArg::DisplayP3 => HdrGamut::DisplayP3,
+                    HdrGamutArg::Rec709 => HdrGamut::Rec709,
+                },
+            });
+            if hdr_output.is_some() {
+                anyhow::ensure!(
+                    rawmakase::export_settings::Format::from_path(&output)
+                        == Some(rawmakase::export_settings::Format::Tiff),
+                    "An HDR export is a TIFF: name the output .tif or .tiff"
+                );
+            }
+            if tap.is_none() && !hdr && hdr_output.is_none() {
                 check_output(&output, color_space)?;
             }
             let t = Instant::now();
@@ -696,6 +739,42 @@ fn main() -> Result<()> {
             let ai =
                 rawmakase::ai_denoise::CommandLine::new(rawmakase::app::user_ai_denoise_cache())
                     .source(&input, &file, &im, &edit)?;
+            if let Some(encoding) = hdr_output {
+                let master = develop::render_hdr(
+                    &im,
+                    &edit.checked()?,
+                    ai.as_ref(),
+                    max_edge,
+                    Cancel::NEVER,
+                )?;
+                let pixels = rawmakase::export::Pixels::Hdr(rawmakase::export::HdrPixels::encode(
+                    &master, encoding,
+                ));
+                rawmakase::export::export_pixels(
+                    &output,
+                    &input,
+                    &pixels,
+                    &im.metadata,
+                    &ExportOptions {
+                        max_edge,
+                        ..Default::default()
+                    },
+                    &rawmakase::export::Embed::default(),
+                    if overwrite {
+                        rawmakase::export::Replace::Overwrite
+                    } else {
+                        rawmakase::export::Replace::NoClobber
+                    },
+                )?;
+                println!(
+                    "{}x{} HDR export, peak {} | total {:?}",
+                    master.width,
+                    master.height,
+                    master.peak,
+                    t.elapsed()
+                );
+                return Ok(());
+            }
             if hdr {
                 let out = develop::render_hdr(
                     &im,

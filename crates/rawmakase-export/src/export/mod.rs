@@ -25,6 +25,57 @@ use std::{
 };
 use tempfile::NamedTempFile;
 
+/// An export's pixels: an SDR render in its colour space, or an HDR master encoded
+/// for its HDR output.
+#[derive(Clone)]
+pub enum Pixels {
+    Sdr(ExportImage),
+    Hdr(HdrPixels),
+}
+/// An HDR master encoded by [`HdrOutput::encode`]: PQ and HLG signal values (0–1) or
+/// linear light (1 = graphics white), in its gamut, row by row.
+///
+/// [`HdrOutput::encode`]: crate::color::hdr_output::HdrOutput::encode
+#[derive(Clone)]
+pub struct HdrPixels {
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<[f32; 3]>,
+    pub output: crate::color::hdr_output::HdrOutput,
+}
+impl HdrPixels {
+    /// `master` encoded for `output`.
+    pub fn encode(
+        master: &crate::rendered::HdrImage,
+        output: crate::color::hdr_output::HdrOutput,
+    ) -> Self {
+        Self {
+            width: master.width,
+            height: master.height,
+            pixels: master
+                .pixels
+                .iter()
+                .map(|p| output.encode(*p, master.peak))
+                .collect(),
+            output,
+        }
+    }
+}
+impl Pixels {
+    pub fn width(&self) -> u32 {
+        match self {
+            Self::Sdr(image) => image.width(),
+            Self::Hdr(image) => image.width,
+        }
+    }
+    pub fn height(&self) -> u32 {
+        match self {
+            Self::Sdr(image) => image.height(),
+            Self::Hdr(image) => image.height,
+        }
+    }
+}
+
 /// What an export embeds besides pixels.
 #[derive(Clone, Debug)]
 pub struct Embed {
@@ -88,6 +139,39 @@ pub fn export_image(
     write(path, source, image, m, options, embed, replace)
 }
 
+/// Exports `pixels` to `path`: [`export_image`] of an SDR render, an HDR TIFF of an
+/// HDR master.
+pub fn export_pixels(
+    path: &Path,
+    source: &Path,
+    pixels: &Pixels,
+    m: &Metadata,
+    options: &ExportOptions,
+    embed: &Embed,
+    replace: Replace,
+) -> Result<()> {
+    match pixels {
+        Pixels::Sdr(image) => write(path, source, image, m, options, embed, replace),
+        Pixels::Hdr(image) => {
+            check_destination(path, source, replace)?;
+            let staged = stage_hdr(path, image, m, embed)?;
+            crate::storage::persist(staged.file, path, replace)
+        }
+    }
+}
+
+fn check_destination(path: &Path, source: &Path, replace: Replace) -> Result<()> {
+    ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
+    if path.exists() {
+        ensure!(
+            fs::canonicalize(path)? != fs::canonicalize(source)?,
+            "Cannot overwrite source"
+        );
+        ensure!(replace == Replace::Overwrite, "Destination already exists");
+    }
+    Ok(())
+}
+
 fn write(
     path: &Path,
     source: &Path,
@@ -97,15 +181,8 @@ fn write(
     embed: &Embed,
     replace: Replace,
 ) -> Result<()> {
-    ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
+    check_destination(path, source, replace)?;
     options.validate()?;
-    if path.exists() {
-        ensure!(
-            fs::canonicalize(path)? != fs::canonicalize(source)?,
-            "Cannot overwrite source"
-        );
-        ensure!(replace == Replace::Overwrite, "Destination already exists");
-    }
     let staged = stage_image(path, image, m, options, embed)?;
     crate::storage::persist(staged.file, path, replace)
 }
@@ -170,6 +247,46 @@ pub fn stage(
     stage_image(path, &ExportImage::srgb(image.clone()), m, options, embed)
 }
 
+/// [`stage_image`] or, for an HDR master, [`stage_hdr`].
+pub fn stage_pixels(
+    path: &Path,
+    pixels: &Pixels,
+    m: &Metadata,
+    options: &ExportOptions,
+    embed: &Embed,
+) -> Result<Staged> {
+    match pixels {
+        Pixels::Sdr(image) => stage_image(path, image, m, options, embed),
+        Pixels::Hdr(image) => stage_hdr(path, image, m, embed),
+    }
+}
+
+/// An HDR master as a TIFF, with its encoding's ICC profile (CICP and colorants):
+/// 16-bit PQ or HLG signal, or 32-bit float linear light. Anything but a TIFF is
+/// refused before anything is written.
+pub fn stage_hdr(path: &Path, image: &HdrPixels, m: &Metadata, embed: &Embed) -> Result<Staged> {
+    ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
+    ensure!(
+        Format::from_path(path) == Some(Format::Tiff),
+        "An HDR export is a TIFF: name it .tif or .tiff"
+    );
+    ensure!(
+        image.pixels.len() == image.width as usize * image.height as usize,
+        "HDR export has the wrong size"
+    );
+    let parent = crate::storage::parent_dir(path);
+    let mut temp = NamedTempFile::new_in(parent)?;
+    let unfinished = WRITING.track(temp.path());
+    let profile = crate::color_management::hdr_profile(image.output)?;
+    let directories = metadata::directories_uncalibrated(m, embed, image.width, image.height);
+    encode::tiff_hdr(&mut temp, image, profile, &directories, embed)?;
+    temp.as_file().sync_all()?;
+    Ok(Staged {
+        file: temp,
+        _unfinished: unfinished,
+    })
+}
+
 /// [`stage`] of `image` with its colour space's profile and EXIF colour space; a
 /// format that can't hold the space is refused before anything is written.
 pub fn stage_image(
@@ -210,6 +327,8 @@ pub fn stage_image(
     })
 }
 
+#[cfg(test)]
+mod hdr_tests;
 #[cfg(test)]
 mod srgb_fixtures;
 #[cfg(test)]
