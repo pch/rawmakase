@@ -213,6 +213,17 @@ pub fn hlg_oetf(e: f32) -> f32 {
     }
 }
 
+/// BT.2100 HLG's inverse OETF: a signal (0–1) to normalised scene light (0–1).
+pub fn hlg_inverse_oetf(signal: f32) -> f32 {
+    let (a, b, c) = (0.178_832_77, 0.284_668_92, 0.559_910_73);
+    let e = signal.clamp(0., 1.);
+    if e <= 0.5 {
+        e * e / 3.
+    } else {
+        (((e - c) / a).exp() + b) / 12.
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,6 +253,14 @@ mod tests {
         };
         for v in linear.encode(white, 16.) {
             assert!((v - 1.).abs() < 2e-3, "{v}");
+        }
+    }
+
+    #[test]
+    fn hlg_inverse_oetf_undoes_the_oetf() {
+        for e in [0., 0.01, 1. / 12., 0.2, 0.5, 1.] {
+            let back = hlg_inverse_oetf(hlg_oetf(e));
+            assert!((back - e).abs() < 1e-5, "{e}: {back}");
         }
     }
 
