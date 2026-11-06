@@ -59,11 +59,14 @@ struct Prepared {
     profile: Option<ColorProfile>,
     /// Why Develop must not edit it, though the Library can show it.
     refused: Option<Unsupported>,
+    /// How many times HDR reference white its linear 1.0 is, for an HDR file.
+    hdr_white: Option<f32>,
 }
 
 /// The decoder for the file's content (not its extension), with the reason
-/// it can't be edited if any. Applies no size limit.
-fn open_decoder(path: &Path) -> Result<(Box<dyn ImageDecoder>, Option<Unsupported>)> {
+/// it can't be edited if any, and whether it is the `image` crate's, whose float
+/// samples are linear light (a 32-bit TIFF). Applies no size limit.
+fn open_decoder(path: &Path) -> Result<(Box<dyn ImageDecoder>, Option<Unsupported>, bool)> {
     let mut head = [0u8; 64];
     let n = {
         use std::io::Read;
@@ -86,21 +89,22 @@ fn open_decoder(path: &Path) -> Result<(Box<dyn ImageDecoder>, Option<Unsupporte
                     .map_err(read_error(path))?,
             ),
             animated.then(|| Unsupported("animated".into())),
+            true,
         ),
         Kind::Jxl => {
             let file = jxl::JxlFile::open(path)?;
             let refused = file.refusal();
-            (Box::new(file), refused)
+            (Box::new(file), refused, false)
         }
         Kind::Avif => {
             let file = avif::AvifFile::open(path)?;
             let refused = file.refusal();
-            (Box::new(file), refused)
+            (Box::new(file), refused, false)
         }
         Kind::Heic => {
             let file = heic::HeicFile::open(path)?;
             let refused = file.refusal();
-            (Box::new(file), refused)
+            (Box::new(file), refused, false)
         }
         _ => (
             Box::new(
@@ -110,12 +114,13 @@ fn open_decoder(path: &Path) -> Result<(Box<dyn ImageDecoder>, Option<Unsupporte
                     .map_err(read_error(path))?,
             ),
             None,
+            true,
         ),
     })
 }
 
 fn prepare(path: &Path) -> Result<Prepared> {
-    let (mut decoder, refused) = open_decoder(path)?;
+    let (mut decoder, refused, generic) = open_decoder(path)?;
     let (w, h) = decoder.dimensions();
     anyhow::ensure!(
         (w as u64) * (h as u64) <= 150_000_000,
@@ -126,19 +131,54 @@ fn prepare(path: &Path) -> Result<Prepared> {
         .icc_profile()
         .ok()
         .flatten()
+        .or_else(|| generic.then(|| tiff_icc(path)).flatten())
         .and_then(|icc| ColorProfile::new_from_slice(&icc).ok());
+    let float = generic
+        && matches!(
+            decoder.color_type(),
+            image::ColorType::Rgb32F | image::ColorType::Rgba32F
+        );
+    let hdr_white = hdr_white(profile.as_ref(), float);
+    // Develop edits SDR files alone (docs/hdr.md); HDR ones open as HDR in a
+    // later stage. JPEG XL, AVIF and HEIC have refused them since they opened.
+    let refused = refused.or_else(|| hdr_white.map(|_| Unsupported("HDR".into())));
     Ok(Prepared {
         decoder,
         orientation,
         profile,
         refused,
+        hdr_white,
     })
+}
+
+/// The ICC profile of the TIFF at `path`, if it is one and has one, read apart
+/// from `image`: through it, the `tiff` crate keeps a tag only while its values,
+/// 32 bytes or more each as it holds them, fit in the size of the pixels, so a
+/// small image's profile was lost and the image read as sRGB. Profiles to 1 MiB.
+fn tiff_icc(path: &Path) -> Option<Vec<u8>> {
+    use std::io::{Read, Seek};
+    let mut file = std::io::BufReader::new(std::fs::File::open(path).ok()?);
+    let mut magic = [0u8; 4];
+    file.read_exact(&mut magic).ok()?;
+    // Classic TIFF and BigTIFF, in either byte order.
+    if ![*b"II*\0", *b"MM\0*", *b"II+\0", *b"MM\0+"].contains(&magic) {
+        return None;
+    }
+    file.rewind().ok()?;
+    let mut limits = tiff::decoder::Limits::default();
+    limits.ifd_value_size = 1 << 20;
+    limits.decoding_buffer_size = 64 << 20;
+    tiff::decoder::Decoder::new(file)
+        .ok()?
+        .with_limits(limits)
+        .get_tag_u8_vec(tiff::tags::Tag::IccProfile)
+        .ok()
 }
 
 /// The size of the image at `path` as shown, after its orientation, from its
 /// header alone; `None` when it can't be read.
 pub fn dimensions(path: &Path) -> Option<(u32, u32)> {
-    let (mut decoder, _) = open_decoder(path).ok()?;
+    let (mut decoder, ..) = open_decoder(path).ok()?;
     let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
     let (w, h) = decoder.dimensions();
     use Orientation::*;
@@ -158,10 +198,41 @@ pub fn decode(path: &Path) -> Result<RgbImage> {
         decoder,
         orientation,
         profile,
+        hdr_white,
         ..
     } = prepare(path)?;
-    if let Some((profile, white)) = profile.as_ref().and_then(|p| Some((p, hdr_white(p)?))) {
-        let linear = to_linear(profile, decoder.color_type())?;
+    if let Some(white) = hdr_white {
+        use moxcms::TransferCharacteristics::{Hlg, Linear};
+        let transfer = profile
+            .as_ref()
+            .and_then(|p| p.cicp)
+            .map(|c| c.transfer_characteristics);
+        let mut signal = Signal::Plain;
+        let profile = match (profile, transfer) {
+            // Float samples without a profile are linear, with sRGB's primaries.
+            (None, _) => {
+                signal = Signal::Unbounded;
+                linear_in(&ColorProfile::new_srgb())
+            }
+            (Some(profile), Some(Linear)) => {
+                signal = Signal::Unbounded;
+                linear_in(&profile)
+            }
+            // A linear profile without CICP, as Photoshop's 32-bit documents have.
+            (Some(profile), None) if linear_curves(&profile) => {
+                signal = Signal::Unbounded;
+                linear_in(&profile)
+            }
+            // HLG's system gamma works on luminance, which moxcms's per-channel
+            // decoding doesn't do: decoded here, then converted as linear light.
+            (Some(profile), Some(Hlg)) => {
+                signal = Signal::Hlg(luminance_weights(&profile));
+                linear_in(&profile)
+            }
+            (Some(profile), _) => profile,
+        };
+        let mut linear = to_linear(&profile, decoder.color_type())?;
+        linear.signal = signal;
         let mut image = DynamicImage::from_decoder(decoder).map_err(read_error(path))?;
         image.apply_orientation(orientation);
         let (width, height) = (image.width(), image.height());
@@ -196,6 +267,7 @@ pub(crate) fn open(path: &Path, cancel: Cancel<'_>) -> Result<CameraImage> {
         orientation,
         profile,
         refused,
+        ..
     } = prepare(path)?;
     if let Some(refused) = refused {
         return Err(refused.into());
@@ -310,14 +382,92 @@ fn read_error(path: &Path) -> impl Fn(image::ImageError) -> anyhow::Error + '_ {
 }
 
 /// How many times HDR reference white (203 nits, ITU-R BT.2408) the linear
-/// 1.0 of an HDR profile is: PQ's 10,000 nits, or HLG's nominal 1,000-nit
-/// peak. `None` for a profile that isn't HDR.
-fn hdr_white(profile: &ColorProfile) -> Option<f32> {
-    use moxcms::TransferCharacteristics::{Hlg, Smpte2084};
-    match profile.cicp?.transfer_characteristics {
-        Smpte2084 => Some(10_000. / 203.),
-        Hlg => Some(1_000. / 203.),
-        _ => None,
+/// 1.0 of an HDR file is: PQ's 10,000 nits, HLG's nominal 1,000-nit peak, or 1 for
+/// linear light, which RAWmakase's HDR exports and Photoshop's 32-bit documents
+/// keep with 1.0 at graphics white. Linear light is a profile's CICP transfer, or
+/// `float` samples (a 32-bit TIFF's). `None` for an SDR file.
+fn hdr_white(profile: Option<&ColorProfile>, float: bool) -> Option<f32> {
+    use moxcms::TransferCharacteristics::{Hlg, Linear, Smpte2084};
+    match profile
+        .and_then(|p| p.cicp)
+        .map(|c| c.transfer_characteristics)
+    {
+        Some(Smpte2084) => Some(10_000. / 203.),
+        Some(Hlg) => Some(1_000. / 203.),
+        Some(Linear) => Some(1.),
+        _ => float.then_some(1.),
+    }
+}
+
+/// `profile`'s primaries with no curve: its pixels as linear light. Empty curves
+/// are the identity in ICC; moxcms would use a CICP transfer over them.
+fn linear_in(profile: &ColorProfile) -> ColorProfile {
+    let mut linear = profile.clone();
+    linear.red_trc = Some(ToneReprCurve::Lut(vec![]));
+    linear.green_trc = Some(ToneReprCurve::Lut(vec![]));
+    linear.blue_trc = Some(ToneReprCurve::Lut(vec![]));
+    linear.gray_trc = Some(ToneReprCurve::Lut(vec![]));
+    linear.cicp = None;
+    linear
+}
+
+/// Whether `profile`'s RGB curves are all the identity, however each is written.
+fn linear_curves(profile: &ColorProfile) -> bool {
+    let identity = |curve: &Option<ToneReprCurve>| curve.as_ref().is_some_and(is_identity);
+    identity(&profile.red_trc) && identity(&profile.green_trc) && identity(&profile.blue_trc)
+}
+
+/// Whether an ICC tone curve is the identity on 0–1: a table that is empty, a u8.8
+/// gamma of exactly 1, or samples each within one 16-bit step of y = x; or a
+/// parametric curve of ICC types 0–4 whose every segment that applies within 0–1
+/// is y = x, by its parameters.
+fn is_identity(curve: &ToneReprCurve) -> bool {
+    const EPS: f32 = 1e-5;
+    let one = |v: f32| (v - 1.).abs() < EPS;
+    let zero = |v: f32| v.abs() < EPS;
+    match curve {
+        ToneReprCurve::Lut(table) => match table.as_slice() {
+            [] => true,
+            [gamma] => *gamma == 256,
+            table => {
+                let last = (table.len() - 1) as f64;
+                table
+                    .iter()
+                    .enumerate()
+                    .all(|(i, v)| (*v as f64 - i as f64 / last * 65535.).abs() <= 1.)
+            }
+        },
+        // Types 1–4 share (aX + b)^g above their break, plus an offset in types 2
+        // and 4: with g = 1 and a = 1 that is y = x when the offsets cancel, and it
+        // then covers 0–1 when the break is at 0 or below.
+        ToneReprCurve::Parametric(p) => match *p.as_slice() {
+            [g] => one(g),
+            [g, a, b] => one(g) && one(a) && zero(b),
+            // Below the break, at -b, the constant c.
+            [g, a, b, c] => one(g) && one(a) && b >= -EPS && zero(b + c),
+            // Below d, cX; that segment applies only when d > 0.
+            [g, a, b, c, d] => one(g) && one(a) && zero(b) && (d <= 0. || one(c)),
+            // Below d, cX + f; above it, (aX + b)^g + e.
+            [g, a, b, c, d, e, f] => {
+                one(g) && one(a) && zero(b + e) && (d <= 0. || (one(c) && zero(f)))
+            }
+            _ => false,
+        },
+    }
+}
+
+/// The luminance weights of `profile`'s RGB, from its colorants.
+fn luminance_weights(profile: &ColorProfile) -> [f32; 3] {
+    let y = [
+        profile.red_colorant.y,
+        profile.green_colorant.y,
+        profile.blue_colorant.y,
+    ];
+    let sum: f64 = y.iter().sum();
+    if sum > 0. {
+        y.map(|v| (v / sum) as f32)
+    } else {
+        [1. / 3.; 3]
     }
 }
 
@@ -406,6 +556,24 @@ pub(crate) fn rgb8_linear_pro_photo(
 struct ToLinear {
     transform: std::sync::Arc<moxcms::TransformF32Executor>,
     gray: bool,
+    /// What the samples are before the profile's transform.
+    signal: Signal,
+}
+
+/// What a file's samples hold, where the profile's own transform can't say it.
+#[derive(Clone, Copy, PartialEq)]
+enum Signal {
+    /// What the profile says.
+    Plain,
+    /// Linear light that may exceed 1, which moxcms clamps, through a linear
+    /// transform: converted scaled into 0–1 by its peak and scaled back, which the
+    /// linear transform keeps exact.
+    Unbounded,
+    /// BT.2100 HLG, through the transform of its primaries alone: the inverse OETF
+    /// to scene light, then the OOTF of HLG's 1,000-nit reference display (system
+    /// gamma 1.2 on the luminance these weights give), to display light where 1 is
+    /// that display's peak.
+    Hlg([f32; 3]),
 }
 
 /// The conversion for pixels of type `color` in `profile`; RGB, or grey for a
@@ -435,6 +603,7 @@ fn to_linear(profile: &ColorProfile, color: image::ColorType) -> Result<ToLinear
     Ok(ToLinear {
         transform,
         gray: layout == Layout::Gray,
+        signal: Signal::Plain,
     })
 }
 impl ToLinear {
@@ -445,11 +614,39 @@ impl ToLinear {
         if out.is_empty() {
             return Ok(out);
         }
-        let (samples, per_pixel) = if self.gray {
+        let (mut samples, per_pixel) = if self.gray {
             (image.to_luma32f().into_raw(), 1)
         } else {
             (image.into_rgb32f().into_raw(), 3)
         };
+        if let Signal::Hlg(weights) = self.signal {
+            samples.par_chunks_mut(per_pixel).for_each(|px| {
+                for v in px.iter_mut() {
+                    *v = rawmakase_model::color::hdr_output::hlg_inverse_oetf(*v);
+                }
+                let y = if px.len() == 3 {
+                    weights[0] * px[0] + weights[1] * px[1] + weights[2] * px[2]
+                } else {
+                    px[0]
+                };
+                let gain = if y > 0. { y.powf(0.2) } else { 0. };
+                for v in px.iter_mut() {
+                    *v *= gain;
+                }
+            });
+        }
+        let scale = if self.signal == Signal::Unbounded {
+            samples
+                .iter()
+                .copied()
+                .filter(|v| v.is_finite())
+                .fold(1f32, f32::max)
+        } else {
+            1.
+        };
+        if scale > 1. {
+            samples.par_iter_mut().for_each(|v| *v /= scale);
+        }
         samples
             .par_chunks(width * per_pixel)
             .zip(out.par_chunks_mut(width))
@@ -459,6 +656,9 @@ impl ToLinear {
                     .transform(from, bytemuck::cast_slice_mut(to))
                     .map_err(|e| anyhow!("Could not convert the image to ProPhoto: {e}"))
             })?;
+        if scale > 1. {
+            out.par_iter_mut().for_each(|p| *p = p.map(|v| v * scale));
+        }
         Ok(out)
     }
 }
@@ -1262,6 +1462,211 @@ mod tests {
             assert!(white.iter().all(|v| *v >= 250), "{name}: {white:?}");
             assert_eq!(super::probe(&fixture(name)).unwrap_err().0, "HDR", "{name}");
         }
+    }
+
+    /// A one-row TIFF of `samples` (native-endian bytes), with `icc` when given: a
+    /// small image, whose profile the `image` crate alone would lose.
+    fn tiff(path: &Path, samples: &[u8], color: ExtendedColorType, icc: Option<Vec<u8>>) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut encoder = image::codecs::tiff::TiffEncoder::new(file);
+        if let Some(icc) = icc {
+            encoder.set_icc_profile(icc).unwrap();
+        }
+        let bytes_per_pixel = match color {
+            ExtendedColorType::Rgb16 => 6,
+            ExtendedColorType::Rgb32F => 12,
+            _ => unreachable!(),
+        };
+        let width = (samples.len() / bytes_per_pixel) as u32;
+        encoder.write_image(samples, width, 1, color).unwrap();
+    }
+
+    /// RAWmakase's own HDR TIFFs (PQ and HLG in 16 bits, linear in 32-bit float),
+    /// small ones too, and a float TIFF without a profile are HDR files: refused for
+    /// Develop, which can't edit them yet, as HDR JPEG XL, AVIF and HEIC files are,
+    /// rather than opened with graphics white at 2% of PQ's range. Their previews show
+    /// graphics white (203 nits) as white, brighter light rolled off rather than
+    /// clipped, and a colour the same in every encoding: HLG's system gamma works on
+    /// luminance, not on each channel.
+    #[test]
+    fn hdr_tiffs_are_refused_for_develop_and_preview_white_as_white() {
+        use rawmakase_model::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
+        let dir = tempfile::tempdir().unwrap();
+        // Grey, graphics white and two stops above it, neutral; then a colour.
+        let pixels = [[0.18f32; 3], [1.; 3], [4.; 3], [0.3, 0.15, 0.08]];
+        let check = |path: &Path, what: &str| -> Vec<[u8; 3]> {
+            assert_eq!(super::probe(path).unwrap_err().0, "HDR", "{what}");
+            let preview = decode(path).unwrap();
+            let px: Vec<[u8; 3]> = (0..4).map(|x| preview.get_pixel(x, 0).0).collect();
+            // 0.18 is below the preview's roll-off: sRGB 118.
+            assert!(px[0].iter().all(|v| v.abs_diff(118) <= 3), "{what}: {px:?}");
+            assert!(px[1][1] > px[0][1] + 100, "{what}: {px:?}");
+            assert!(
+                px[2][1] > px[1][1],
+                "{what}: light above white clipped: {px:?}"
+            );
+            px
+        };
+        let mut colours = Vec::new();
+        for transfer in HdrTransfer::ALL {
+            let output = HdrOutput {
+                gamut: HdrGamut::Rec2020,
+                transfer,
+                ..Default::default()
+            };
+            let encoded: Vec<f32> = pixels.iter().flat_map(|p| output.encode(*p, 16.)).collect();
+            let path = dir.path().join(format!("{transfer:?}.tif"));
+            let icc = Some(crate::color_management::hdr_profile(output).unwrap());
+            if transfer == HdrTransfer::Linear {
+                let bytes: &[u8] = bytemuck::cast_slice(&encoded);
+                tiff(&path, bytes, ExtendedColorType::Rgb32F, icc);
+            } else {
+                let samples: Vec<u16> = encoded
+                    .iter()
+                    .map(|v| (v.clamp(0., 1.) * 65535. + 0.5) as u16)
+                    .collect();
+                tiff(
+                    &path,
+                    bytemuck::cast_slice(&samples),
+                    ExtendedColorType::Rgb16,
+                    icc,
+                );
+            }
+            colours.push((transfer, check(&path, &format!("{transfer:?}"))[3]));
+        }
+        let (_, pq) = colours[0];
+        for (transfer, colour) in &colours {
+            assert!(
+                colour.iter().zip(pq).all(|(a, b)| a.abs_diff(b) <= 4),
+                "{transfer:?} {colour:?} against PQ {pq:?}"
+            );
+        }
+        // A float TIFF without a profile: linear, sRGB primaries, as Photoshop's
+        // 32-bit documents are read.
+        let path = dir.path().join("float.tif");
+        let samples: Vec<f32> = pixels.iter().flatten().copied().collect();
+        tiff(
+            &path,
+            bytemuck::cast_slice(&samples),
+            ExtendedColorType::Rgb32F,
+            None,
+        );
+        check(&path, "float without a profile");
+    }
+
+    /// A float TIFF with a linear profile without CICP (Photoshop's 32-bit
+    /// documents) keeps its light above white, as one without a profile does.
+    #[test]
+    fn a_float_tiff_with_a_linear_profile_keeps_light_above_white() {
+        use moxcms::ToneReprCurve::{Lut, Parametric};
+        let dir = tempfile::tempdir().unwrap();
+        let samples = [1f32, 1., 1., 4., 4., 4., 2., 1., 0.5];
+        let plain = dir.path().join("plain.tif");
+        tiff(
+            &plain,
+            bytemuck::cast_slice(&samples),
+            ExtendedColorType::Rgb32F,
+            None,
+        );
+        let px = |path: &Path| {
+            let preview = decode(path).unwrap();
+            (0..3)
+                .map(|x| preview.get_pixel(x, 0).0)
+                .collect::<Vec<_>>()
+        };
+        let without = px(&plain);
+        assert!(without[1][1] > without[0][1], "{without:?}");
+        // The identity, as each table and parametric form writes it.
+        let identities = [
+            Lut(vec![]),
+            Lut(vec![256]),
+            Lut(vec![0, 65535]),
+            Parametric(vec![1.]),
+            Parametric(vec![1., 1., 0.]),
+            Parametric(vec![1., 1., 0., 0.]),
+            Parametric(vec![1., 1., 0., 1., 0.]),
+            Parametric(vec![1., 1., 0., 1., 0., 0., 0.]),
+            // Offsets that cancel.
+            Parametric(vec![1., 1., 0.25, -0.25]),
+            Parametric(vec![1., 1., 0.25, 1., 0.5, -0.25, 0.]),
+        ];
+        // Near the identity but not it: a gamma just above 1, and a table that
+        // bends between samples.
+        let mut bent: Vec<u16> = (0..4097).map(|i| (i * 65535 / 4096) as u16).collect();
+        bent[128] += 1300;
+        // A type-2 curve whose break is above 0: the constant c below it.
+        let raised = Parametric(vec![1., 1., -0.25, 0.25]);
+        for curve in [Parametric(vec![1.001]), Lut(bent), raised] {
+            assert!(!super::is_identity(&curve), "{curve:?}");
+        }
+        for (i, curve) in identities.into_iter().enumerate() {
+            let mut linear = moxcms::ColorProfile::new_srgb();
+            for trc in [
+                &mut linear.red_trc,
+                &mut linear.green_trc,
+                &mut linear.blue_trc,
+            ] {
+                *trc = Some(curve.clone());
+            }
+            linear.cicp = None;
+            let path = dir.path().join(format!("linear-{i}.tif"));
+            let icc = Some(linear.encode().unwrap());
+            tiff(
+                &path,
+                bytemuck::cast_slice(&samples),
+                ExtendedColorType::Rgb32F,
+                icc,
+            );
+            let with = px(&path);
+            for (a, b) in with.iter().zip(&without) {
+                assert!(
+                    a.iter().zip(b).all(|(a, b)| a.abs_diff(*b) <= 2),
+                    "{curve:?}: {with:?} {without:?}"
+                );
+            }
+        }
+    }
+
+    /// A small BigTIFF's profile is read too: a PQ one is HDR.
+    #[test]
+    fn a_small_pq_bigtiff_is_hdr() {
+        use rawmakase_model::color::hdr_output::HdrOutput;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pq.tif");
+        let icc = crate::color_management::hdr_profile(HdrOutput::default()).unwrap();
+        let mut encoder =
+            tiff::encoder::TiffEncoder::new_big(std::fs::File::create(&path).unwrap()).unwrap();
+        let mut image = encoder
+            .new_image::<tiff::encoder::colortype::RGB16>(1, 1)
+            .unwrap();
+        image
+            .encoder()
+            .write_tag(tiff::tags::Tag::IccProfile, icc.as_slice())
+            .unwrap();
+        image.write_data(&[38050u16; 3]).unwrap();
+        assert_eq!(super::probe(&path).unwrap_err().0, "HDR");
+    }
+
+    /// A float TIFF with a profile whose curve isn't linear is converted as the
+    /// profile says: a bright pixel elsewhere doesn't darken the rest, as scaling
+    /// through a curve would.
+    #[test]
+    fn a_float_tiff_with_a_curved_profile_keeps_each_pixel_its_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let srgb = moxcms::ColorProfile::new_srgb().encode().unwrap();
+        let preview = |name: &str, samples: [f32; 6]| {
+            let path = dir.path().join(name);
+            tiff(
+                &path,
+                bytemuck::cast_slice(&samples),
+                ExtendedColorType::Rgb32F,
+                Some(srgb.clone()),
+            );
+            decode(&path).unwrap().get_pixel(0, 0).0
+        };
+        let alone = preview("alone.tif", [0.5; 6]);
+        let beside_bright = preview("bright.tif", [0.5, 0.5, 0.5, 4., 4., 4.]);
+        assert_eq!(alone, beside_bright);
     }
 
     #[test]

@@ -96,6 +96,15 @@ measured family. The edit stays valid and keeps HDR on, so nothing is downgraded
 its SDR rendition renders all of it, and the reason is shown where the master is
 asked for.
 
+## HDR files
+
+Develop doesn't open HDR files yet (stage 4 of the plan): a JPEG XL, AVIF or HEIC
+file marked PQ or HLG, a TIFF or PNG whose ICC profile's CICP tag says PQ, HLG or
+linear light (RAWmakase's own HDR exports among them), and a TIFF of 32-bit float
+samples, which is read as linear light with 1.0 at graphics white, as Photoshop's
+32-bit documents are. The Library shows them with graphics white (203 cd/m²) as
+white and brighter light rolled off into it, and says why Develop can't edit them.
+
 ## HDR export
 
 An export with **HDR** on (the Export dialog's HDR rows for TIFF and JPEG XL, `ExportSettings::hdr`,
