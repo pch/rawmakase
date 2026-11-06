@@ -46,6 +46,7 @@ fn imported_profiles_render_and_roundtrip() -> anyhow::Result<()> {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
             recovered: Default::default(),
         };
         let out = develop::render(&im, &recipe.checked()?, 0, Cancel::NEVER)?;
@@ -112,6 +113,7 @@ fn imported_enhanced_profiles_match_camera_and_resolve_xmp() -> anyhow::Result<(
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
             recovered: Default::default(),
         };
         let full = develop::render(&image, &recipe.checked()?, 0, Cancel::NEVER)?;

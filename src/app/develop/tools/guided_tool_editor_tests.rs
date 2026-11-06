@@ -32,6 +32,7 @@ fn guided_upright_gestures_are_one_history_step_each() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     // The other modes analysed already, so the guides are solved at once.
     e.document.edit.setup_mut().upright.corrections = vec![[1., 0., 0., 0., 1., 0., 0., 0., 1.]; 5];

@@ -34,6 +34,7 @@ fn open(e: &mut Editor, metadata: Metadata) {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
 }
 

@@ -206,6 +206,7 @@ fn clip_indicator(
         fast: im.fast,
         scale_factor: im.scale_factor,
         scale_clipped: im.scale_clipped,
+        hdr: Default::default(),
     }
 }
 
@@ -758,6 +759,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         };
         let r = pairing_recipe(&im.metadata, None);
         assert!(r.lens_builtin);

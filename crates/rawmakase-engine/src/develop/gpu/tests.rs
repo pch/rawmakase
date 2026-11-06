@@ -78,6 +78,7 @@ fn gpu_clarity_reconstructs_fine_edges_like_the_cpu() -> Result<()> {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     };
     let samples = Arc::new(Samples {
         width: w,
@@ -198,6 +199,7 @@ fn gpu_measured_tails_match_cpu_globally_and_in_masks() -> Result<()> {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     };
     let samples = Arc::new(Samples {
         width: 240,
@@ -382,6 +384,7 @@ fn gpu_preview_preserves_regions_spatial_effects_and_falls_back() -> Result<()> 
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     };
     let mut renderer = PreviewRenderer::with_gpu();
     assert!(
@@ -491,6 +494,7 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     // The same with its darkest level lifted to about 2^-6, where Camera Raw's default
     // black adapts to it (`GlobalTone`'s default black).
@@ -898,6 +902,7 @@ fn check_presented_previews(w: u32, h: u32, ca_only: bool) -> Result<()> {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     };
     let profile = CameraProfile::camera_matrix_default(&metadata)
         .unwrap()
@@ -1126,6 +1131,7 @@ fn panning_never_writes_the_drawn_region() -> Result<()> {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     };
     let recipe = Recipe {
         profile: Some(std::sync::Arc::new(
@@ -1211,6 +1217,7 @@ fn gpu_masks_match_cpu_pixel_stage() -> Result<()> {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     let n = 4000;
     let samples = Arc::new(Samples {
@@ -1438,6 +1445,7 @@ fn kept_stages_present_the_frames_of_a_fresh_renderer() -> Result<()> {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     let profile = CameraProfile::camera_matrix_default(&metadata)
         .unwrap()
@@ -1527,6 +1535,7 @@ fn an_unsubmitted_pass_leaves_its_kept_colour_unwritten() -> Result<()> {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     };
     let samples = |step: usize| {
         Arc::new(Samples {
@@ -1752,6 +1761,7 @@ fn check_lens_render(
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     };
     let cancel = AtomicBool::new(false);
     let mut cpu = PreviewRenderer::default();

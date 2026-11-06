@@ -53,6 +53,7 @@ fn fixture() -> Fixture {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     // The tests say what the configuration file says, so a developer's own
     // `remote-inference.json` cannot bend them. Tests that exercise the remote

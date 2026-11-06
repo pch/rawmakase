@@ -98,6 +98,7 @@ fn halve(im: &CameraImage) -> CameraImage {
         fast: im.fast,
         scale_factor: im.scale_factor,
         scale_clipped: im.scale_clipped,
+        hdr: Default::default(),
     }
 }
 
@@ -116,6 +117,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         }
     }
     #[test]

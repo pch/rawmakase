@@ -167,6 +167,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         };
         let out = TextureDetail::of(&im, 1., Cancel::NEVER)
             .unwrap()
@@ -224,6 +225,7 @@ mod tests {
             fast: true,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         };
         let cancel = AtomicBool::new(false);
         let draft = TextureDetail::of(&image(2 * w), 1., Cancel::new(&cancel)).unwrap();

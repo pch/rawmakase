@@ -406,6 +406,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         });
         editor.document.set_image(image);
         editor.preview.texture = Some(

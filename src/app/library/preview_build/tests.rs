@@ -585,6 +585,7 @@ fn synthetic(width: u32, height: u32) -> crate::camera_data::CameraImage {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }
 }
 

@@ -435,6 +435,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         }
     }
     fn chroma(p: [f32; 3]) -> [f32; 2] {

@@ -30,6 +30,7 @@ fn a_mask_brush_paints_live_and_preserves_the_overlay_choice() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     editor.document.set_image(image);
     editor.preview.texture = Some(
@@ -244,6 +245,7 @@ fn dragging_a_mask_pin_moves_the_mask() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     editor.document.set_image(image);
     editor.preview.texture = Some(
@@ -475,6 +477,7 @@ fn masking_tool_draws_gradients_paints_brushes_and_edits_handles() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     editor.document.set_image(image);
     editor.preview.texture = Some(

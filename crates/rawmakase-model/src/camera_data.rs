@@ -372,6 +372,20 @@ pub struct CameraImage {
     pub fast: bool,
     pub scale_factor: f32,
     pub scale_clipped: u32,
+    /// An HDR file's own light beside its SDR pseudo-scene
+    /// (docs/records/hdr-stage4-design.md); empty for every other image.
+    pub hdr: HdrSlot,
+}
+
+/// Where a decoded HDR file keeps its light. Empty by default, and a clone is
+/// empty: a copy of an image is an SDR working image unless it is made through the
+/// operations that keep the light.
+#[derive(Default)]
+pub struct HdrSlot(());
+impl Clone for HdrSlot {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 #[cfg(test)]

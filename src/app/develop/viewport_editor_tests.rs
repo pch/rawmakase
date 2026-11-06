@@ -44,6 +44,7 @@ fn keyboard_fit_and_physical_pixel_region() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     e.document.set_image(image);
     e.view.zoom.on = true;
@@ -80,6 +81,7 @@ fn zoom_keys_go_to_100_percent_fit_and_step_by_a_factor() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     editor.document.set_image(image);
     // Fits at 0.2: 200 pixels of view for 1000 of photo.
@@ -147,6 +149,7 @@ fn photo_click_zooms_and_drag_pans_without_editing() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     });
     editor.document.set_image(image);
     editor.preview.texture = Some(
@@ -226,6 +229,7 @@ fn a_zoomed_in_photo_sits_on_whole_screen_pixels() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     e.module = Module::Develop;
     e.preview.texture = Some(

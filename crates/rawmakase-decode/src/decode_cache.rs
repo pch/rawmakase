@@ -284,6 +284,7 @@ impl DecodeCache {
             fast: header.fast,
             scale_factor: header.scale_factor,
             scale_clipped: header.scale_clipped,
+            hdr: Default::default(),
         };
         let mut recovered = CameraImage {
             recovered: Default::default(),
@@ -294,6 +295,7 @@ impl DecodeCache {
             fast: image.fast,
             scale_factor: image.scale_factor,
             scale_clipped: image.scale_clipped,
+            hdr: Default::default(),
         };
         recovered
             .pixels
@@ -547,6 +549,7 @@ mod tests {
             fast: false,
             scale_factor: 1.5,
             scale_clipped: 7,
+            hdr: Default::default(),
         };
         let mut recovered = im.clone();
         recovered.pixels[3] = [2., 3., 4.];

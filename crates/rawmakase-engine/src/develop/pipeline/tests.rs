@@ -25,6 +25,7 @@ fn fixture() -> CameraImage {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }
 }
 /// A rendered file of one row of 8-bit sRGB pixels as `photo::open_source` gives it:
@@ -60,6 +61,7 @@ pub(crate) fn rendered_fixture(srgb: &[[u8; 3]]) -> CameraImage {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     })
 }
 /// An untouched edit of a rendered file reproduces it (on the CPU): deep shadows, mid
@@ -1210,6 +1212,7 @@ fn constrain_crop_renders_no_white() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     };
     let mut r = Recipe::default();
     r.transform.vertical = 0.6;
@@ -1487,6 +1490,7 @@ fn targeted_adjustments_sample_the_photo_where_each_control_sees_it() -> anyhow:
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     };
     let r = Recipe {
         ..Default::default()
@@ -1585,6 +1589,7 @@ fn lens_photo() -> CameraImage {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }
 }
 fn profile_recipe(setup: crate::lens::choice::LensProfileSetup, filename: &str) -> Recipe {
@@ -1947,6 +1952,7 @@ fn new_edits_render_grain_at_camera_raw_strength() -> anyhow::Result<()> {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     };
     let mut r = Recipe::with_profiles(&m, &[]);
     r.sharpening = 0.;
@@ -2009,6 +2015,7 @@ fn new_edits_reduce_colour_noise_as_camera_raw() -> anyhow::Result<()> {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     };
     let mut r = Recipe::with_profiles(&m, &[]);
     assert_eq!(r.noise_chroma, 0.25);
@@ -2087,6 +2094,7 @@ fn colour_blotches_are_taken_out() -> anyhow::Result<()> {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     };
     // The colour noise of 8×8 block averages: the blotches, without the finest noise.
     let blotches = |im: &CameraImage, r: &Recipe| -> anyhow::Result<f32> {
@@ -2358,6 +2366,7 @@ fn a_lensfun_choice_reaches_the_warp_and_the_gpu() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     };
     let mut r = Recipe {
         lens_profile: true,

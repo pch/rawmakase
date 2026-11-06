@@ -458,6 +458,7 @@ impl Raw {
                 // integers, so nothing saturates.
                 scale_factor: 1.,
                 scale_clipped: 0,
+                hdr: Default::default(),
             });
         }
         let cfa = self.own.cfa(cancel)?;
@@ -520,6 +521,7 @@ impl Raw {
             fast: half,
             scale_factor: 1.,
             scale_clipped: clipped,
+            hdr: Default::default(),
         }))
     }
 }

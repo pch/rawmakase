@@ -164,6 +164,7 @@ pub(super) fn decoded(fast: bool) -> std::sync::Arc<crate::camera_data::CameraIm
         fast,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     })
 }
 

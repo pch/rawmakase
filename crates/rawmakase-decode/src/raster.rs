@@ -307,6 +307,7 @@ pub(crate) fn open(path: &Path, cancel: Cancel<'_>) -> Result<CameraImage> {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     })
 }
 

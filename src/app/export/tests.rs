@@ -153,6 +153,7 @@ fn an_open_photo_whose_edit_isnt_final_holds_back_only_its_own_export() -> anyho
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         }));
     e.document.pending_lightroom = Some("s = {}".into());
     e.module = Module::Develop;
@@ -221,6 +222,7 @@ fn a_photo_opened_without_a_catalog_is_exported_only_while_its_file_is_there() -
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         }));
     let scope = e.export_scope().expect("the open photo");
     assert!(scope.photos[0].open && scope.photos[0].id.is_none());

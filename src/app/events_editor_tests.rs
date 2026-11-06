@@ -342,6 +342,7 @@ fn a_failed_before_render_renders_the_edit_again_but_not_before() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     e.view.viewport = Vec2::new(40., 40.);
     e.set_compare(crate::app::develop::before_after::Compare::SideBySide(
@@ -389,6 +390,7 @@ fn a_failed_magnifier_render_renders_the_edit_again_but_not_the_magnifier() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     e.view.viewport = Vec2::new(40., 40.);
     e.schedule();
@@ -433,6 +435,7 @@ fn a_failed_edit_render_renders_before_again_but_not_the_edit() {
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
     }));
     e.view.viewport = Vec2::new(40., 40.);
     e.set_compare(crate::app::develop::before_after::Compare::Split(

@@ -351,6 +351,7 @@ mod tests {
             fast: false,
             scale_factor: 1.,
             scale_clipped: 0,
+            hdr: Default::default(),
         };
         let recovered = image.clone();
         let _ = image.recovered.set(Arc::new(recovered));

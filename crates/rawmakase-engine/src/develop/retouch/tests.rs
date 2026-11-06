@@ -23,6 +23,7 @@ fn image(width: u32, height: u32, f: impl Fn(f32, f32) -> [f32; 3]) -> CameraIma
         fast: false,
         scale_factor: 1.,
         scale_clipped: 0,
+        hdr: Default::default(),
         recovered: Default::default(),
     }
 }

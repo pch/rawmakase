@@ -148,6 +148,7 @@ pub(crate) fn preview_source(im: Source, max: u32) -> CameraImage {
         fast: im.fast,
         scale_factor: im.scale_factor,
         scale_clipped: im.scale_clipped,
+        hdr: Default::default(),
     }
 }
 /// A detail sample averaged over an output pixel's footprint: four taps at ±`spread`
