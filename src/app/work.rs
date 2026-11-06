@@ -20,6 +20,7 @@ pub(in crate::app) enum Kind {
     Loader,
     Renderer,
     ReferenceLoader,
+    HdrPreview,
     Export,
     Batch,
     FolderChange,
@@ -120,6 +121,16 @@ const WORK: &[Row] = &[
         slows_previews: false,
         pauses_checksums: false,
         stop: Some(|e| vec![e.reference_loader.stop()]),
+    },
+    // Develop's HDR preview, on a worker of its own.
+    Row {
+        kind: Kind::HdrPreview,
+        running: None,
+        closing: None,
+        status: None,
+        slows_previews: false,
+        pauses_checksums: false,
+        stop: Some(|e| vec![e.hdr_preview.stop()]),
     },
     // Its progress in the bar. Queued exports count, not only the one running.
     Row {

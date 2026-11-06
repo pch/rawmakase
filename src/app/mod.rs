@@ -52,6 +52,10 @@ pub(crate) struct Editor {
     /// Develop's Reference View, and the worker developing its photo.
     reference: crate::app::develop::reference::ReferenceView,
     reference_loader: Latest<worker::ReferenceJob>,
+    /// Develop's HDR preview and its worker.
+    hdr_preview: crate::app::develop::hdr_preview::HdrPreview,
+    /// The window's wgpu state this frame, for the HDR preview's texture.
+    render_state: Option<eframe::egui_wgpu::RenderState>,
     clipboard: Option<crate::app::develop::settings_transfer::Clipboard>,
     /// The settings of the photo open before this one, for Paste from Previous.
     previous_settings: Option<crate::app::develop::settings_transfer::Settings>,
@@ -311,6 +315,8 @@ impl Editor {
             renderer,
             reference: Default::default(),
             reference_loader,
+            hdr_preview: crate::app::develop::hdr_preview::HdrPreview::new(ctx.clone()),
+            render_state: None,
             clipboard: None,
             previous_settings: None,
             curves: Default::default(),
@@ -528,6 +534,9 @@ impl eframe::App for Editor {
         );
         #[cfg(windows)]
         crate::platform::taskbar_icon(frame);
+        self.view.hdr_display = crate::app::shell::display::HdrDisplay::of(frame);
+        self.render_state = frame.wgpu_render_state().cloned();
+        self.view.hdr_shown = false;
         self.draw(ui);
         if self.view.monitor.follows_system() {
             if self.view.system_display.update(frame) {
@@ -539,7 +548,18 @@ impl eframe::App for Editor {
                     .request_repaint_after(crate::app::preferences::monitor::RECHECK);
             }
         }
-        crate::app::shell::display::paint(ui, frame, self.view.monitor.device_rgb());
+        // The display's headroom follows its brightness, and nothing repaints an idle
+        // window when it moves: read it again while an HDR photo is due.
+        if self.view.hdr_shown {
+            ui.ctx()
+                .request_repaint_after(crate::app::preferences::monitor::RECHECK);
+        }
+        crate::app::shell::display::paint(
+            ui,
+            frame,
+            self.view.monitor.device_rgb(),
+            self.view.hdr_shown,
+        );
     }
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         crate::app::shell::workspace::clipboard_shortcut_keys(ctx, raw_input);
@@ -810,6 +830,17 @@ fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
             }
             descriptor
         });
+    }
+    // On macOS the window surface holds 16-bit floats where the GPU offers them, so
+    // an HDR photo can be shown above SDR white (`platform::display::Layer`); egui
+    // keeps writing sRGB-encoded values, which the layer reads as extended sRGB.
+    #[cfg(target_os = "macos")]
+    {
+        options.surface_format_selector = Some(std::sync::Arc::new(|formats| {
+            formats
+                .contains(&wgpu::TextureFormat::Rgba16Float)
+                .then_some(wgpu::TextureFormat::Rgba16Float)
+        }));
     }
     // A surface whose configuration failed reports `Validation` until it is
     // configured again; the default would skip frames until the next resize.

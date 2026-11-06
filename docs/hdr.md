@@ -26,8 +26,42 @@ Camera Raw's default SDR rendition equals its HDR-off render is not measured eit
 render, which below 0.5 agrees with the HDR master as closely as Camera Raw's two
 renders do.
 
-Until HDR displays are supported, Develop shows the SDR rendition and says so under
-the Basic panel's HDR switch, with the reason when the master can't render.
+Develop shows the HDR master on a display with headroom ([Display](#display)) and
+the SDR rendition everywhere else, and says which under the Basic panel's HDR switch,
+with the reason when the master can't render.
+
+## Display
+
+On macOS the window's surface is 16-bit float (`egui_wgpu::WgpuConfiguration`'s
+`surface_format_selector`, from RAWmakase's egui fork until it is upstream), and its
+Core Animation layer is tagged extended sRGB, so values above 1 are light above SDR
+white. The interface keeps writing the same sRGB-encoded values it wrote before, so
+it stays at SDR white. A display can show HDR when its potential headroom
+(`maximumPotentialExtendedDynamicRangeColorComponentValue`) is above 1.05. The
+window asks for EDR (`wantsExtendedDynamicRangeContent`) only while it shows an HDR
+photo; until it does, macOS reports no current headroom.
+
+While the display can show HDR, an edit with HDR on whose master renders is shown
+as its master in Develop's Fit view (`app::develop::hdr_preview`). The master is
+rendered on the CPU from a reduced copy of the photo at the fit size, then converted
+to linear sRGB primaries, with negative values kept, as extended sRGB keeps them.
+Each channel is rolled off to the display's current headroom with the HDR limit's
+roll-off and sRGB-encoded into a half-float texture. A preview is drawn only while
+it matches the photo, the edit, the fit size and the headroom (to a tenth of a stop)
+it was rendered for; until then the SDR rendition stays. While it is due, the window
+reads the headroom again every two seconds, since macOS changes it with the display's
+brightness without waking the window. Display changes are view changes, never edits.
+
+Everything else shows the SDR rendition, and the Basic panel's note says why:
+zoomed views, Before/After, Reference View, visualizations drawn into the render (the
+clipping warning, Remove's spots), edits with AI Denoise (its result is the full
+photo's, and the preview renders a reduced copy), a monitor profile chosen in
+RAWmakase (it converts the SDR rendition into device RGB, which has no extended
+range), the Library, other platforms, an SDR display, and an 8-bit surface (when wgpu
+offers no float format). A failed render is that edit's alone: its reason shows
+until the edit changes. The window asks for EDR as long as the master is due, including while
+an edit's next preview renders, so the display's headroom doesn't ramp down and up
+with every slider move.
 
 ## What the master renders
 

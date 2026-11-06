@@ -258,3 +258,77 @@ fn a_zoomed_in_photo_sits_on_whole_screen_pixels() {
         );
     }
 }
+
+/// Develop's Fit view is due to show an HDR edit's master on a display with headroom,
+/// and the SDR rendition where the display has none, the edit is SDR or refused in
+/// HDR, the view is zoomed or compares, or a visualization is drawn into the render.
+#[test]
+fn the_hdr_master_is_due_only_in_the_plain_fit_view_of_an_hdr_edit() {
+    use crate::app::develop::before_after::Compare;
+    use crate::app::develop::clipping::ClipSide;
+    use crate::app::shell::display::HdrDisplay;
+    let ctx = egui::Context::default();
+    let (mut e, _) = crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), true);
+    e.preview.last_fit_edge = 64;
+    let hdr = HdrDisplay {
+        headroom: 4.,
+        potential: 16.,
+        float_surface: true,
+    };
+    e.view.hdr_display = hdr;
+    assert!(e.hdr_preview_due().is_err(), "an SDR edit");
+    e.document.edit.setup_mut().hdr.enabled = true;
+    let (key, _) = e.hdr_preview_due().expect("an HDR edit in Fit");
+    assert_eq!(
+        e.hdr_presentation(),
+        crate::app::develop::hdr_preview::Presentation::Rendering
+    );
+    assert_eq!(
+        key,
+        crate::app::develop::hdr_preview::Key::new(
+            e.document.full().unwrap(),
+            &e.effective_recipe(),
+            64,
+            4.
+        )
+    );
+
+    e.view.hdr_display = HdrDisplay {
+        potential: 1.,
+        ..hdr
+    };
+    assert!(e.hdr_preview_due().is_err(), "an SDR display");
+    e.view.hdr_display = hdr;
+
+    e.view.zoom.on = true;
+    assert!(e.hdr_preview_due().is_err(), "zoomed in");
+    e.view.zoom.on = false;
+
+    e.view.compare = Compare::BeforeOnly;
+    assert!(e.hdr_preview_due().is_err(), "Before");
+    e.view.compare = Compare::Off;
+
+    e.view.clipping.toggle(ClipSide::Highlights);
+    assert!(e.hdr_preview_due().is_err(), "the clipping warning");
+    e.view.clipping.toggle(ClipSide::Highlights);
+
+    e.view.monitor = crate::app::preferences::monitor::MonitorProfile::Srgb;
+    assert!(
+        e.hdr_preview_due().is_err(),
+        "a monitor profile of RAWmakase's own"
+    );
+    e.view.monitor = Default::default();
+
+    e.module = Module::Library;
+    assert!(e.hdr_preview_due().is_err(), "the Library's Loupe");
+    e.module = Module::Develop;
+
+    e.document.edit.setup_mut().ai_denoise.enabled = true;
+    assert!(e.hdr_preview_due().is_err(), "AI Denoise");
+    e.document.edit.setup_mut().ai_denoise.enabled = false;
+
+    e.document.edit.setup_mut().contrast = 20.;
+    assert!(e.hdr_preview_due().is_err(), "refused in HDR");
+    e.document.edit.setup_mut().contrast = 0.;
+    assert!(e.hdr_preview_due().is_ok());
+}
