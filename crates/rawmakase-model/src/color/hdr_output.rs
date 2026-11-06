@@ -101,8 +101,13 @@ impl HdrGamut {
     pub fn prophoto_to_rgb(self) -> [[f32; 3]; 3] {
         super::mul_matrix(self.xyz_to_rgb(), PROPHOTO_TO_XYZ_D65)
     }
+    /// The gamut whose CICP colour primaries are `code` (ITU-T H.273), among those
+    /// HDR files are decoded in: BT.709, BT.2020 and Display P3 (SMPTE EG 432-1).
+    pub fn from_cicp(code: u8) -> Option<Self> {
+        Self::ALL.into_iter().find(|g| g.cicp() == code)
+    }
     /// The luminance weights of this gamut's linear RGB.
-    fn luminance(self) -> [f32; 3] {
+    pub fn luminance(self) -> [f32; 3] {
         let m = super::inverse(self.xyz_to_rgb());
         m[1]
     }
@@ -147,6 +152,34 @@ impl HdrOutput {
             HdrTransfer::Linear => rgb,
         }
     }
+}
+
+impl HdrOutput {
+    /// The light an encoded pixel holds: its transfer inverted, then its gamut's
+    /// linear RGB converted to linear ProPhoto (D50), 1 = graphics white, signed
+    /// values kept. The inverse of [`HdrOutput::encode`] inside what it represents;
+    /// what `encode` clipped (out-of-gamut channels, PQ above 10,000 cd/m², HLG
+    /// channels above 1 after its inverse OOTF) and rolled off doesn't come back.
+    pub fn decode(self, signal: [f32; 3]) -> [f32; 3] {
+        let rgb = match self.transfer {
+            HdrTransfer::Pq => signal.map(|v| pq_decode(v) / GRAPHICS_WHITE_NITS),
+            HdrTransfer::Hlg => hlg_decode(signal, self.gamut.luminance()),
+            HdrTransfer::Linear => signal,
+        };
+        super::mul(super::inverse(self.gamut.prophoto_to_rgb()), rgb)
+    }
+}
+
+/// BT.2100 HLG signal `rgb` as display light, 1 = graphics white: the inverse OETF
+/// to scene light, then the OOTF of HLG's reference display (system gamma 1.2 on
+/// the luminance `weights` give, in the signal's own primaries), the inverse of
+/// [`hlg_encode`].
+pub fn hlg_decode(rgb: [f32; 3], weights: [f32; 3]) -> [f32; 3] {
+    const GAMMA: f32 = 1.2;
+    let scene = rgb.map(hlg_inverse_oetf);
+    let y: f32 = (0..3).map(|c| weights[c] * scene[c]).sum();
+    let gain = if y > 0. { y.powf(GAMMA - 1.) } else { 0. };
+    scene.map(|v| v * gain * HLG_PEAK_NITS / GRAPHICS_WHITE_NITS)
 }
 
 /// Where the HDR limit's roll-off starts, as a fraction of the peak. Camera Raw 18.7
@@ -254,6 +287,54 @@ mod tests {
         for v in linear.encode(white, 16.) {
             assert!((v - 1.).abs() < 2e-3, "{v}");
         }
+    }
+
+    /// Light inside what each encoding represents comes back from it: in the gamut,
+    /// below the knee, under PQ's ceiling and, for HLG, with every channel at most 1
+    /// after its inverse OOTF. Pure Rec. 2020 red at 4× white is past that last
+    /// bound in HLG: it clips there, and comes back dimmer.
+    #[test]
+    fn decoding_undoes_encoding_inside_the_encodings_domain() {
+        let to_prophoto = |gamut: HdrGamut, rgb: [f32; 3]| {
+            super::super::mul(super::super::inverse(gamut.prophoto_to_rgb()), rgb)
+        };
+        for gamut in HdrGamut::ALL {
+            for transfer in HdrTransfer::ALL {
+                let output = HdrOutput {
+                    gamut,
+                    transfer,
+                    ..Default::default()
+                };
+                for rgb in [
+                    [0.18; 3],
+                    [1.; 3],
+                    [3., 3., 3.],
+                    [0.6, 0.3, 0.1],
+                    [0.002; 3],
+                ] {
+                    let light = to_prophoto(gamut, rgb);
+                    let back = output.decode(output.encode(light, 16.));
+                    for c in 0..3 {
+                        assert!(
+                            (back[c] - light[c]).abs() <= 1e-3 * light[c].abs().max(0.01),
+                            "{gamut:?} {transfer:?} {rgb:?}: {back:?} against {light:?}"
+                        );
+                    }
+                }
+            }
+        }
+        let hlg = HdrOutput {
+            gamut: HdrGamut::Rec2020,
+            transfer: HdrTransfer::Hlg,
+            ..Default::default()
+        };
+        let red = to_prophoto(HdrGamut::Rec2020, [4., 0., 0.]);
+        let back = hlg.gamut.prophoto_to_rgb();
+        let back = super::super::mul(back, hlg.decode(hlg.encode(red, 16.)));
+        assert!(
+            (back[0] - 3.77).abs() < 0.02 && back[1].abs() < 1e-3,
+            "{back:?}"
+        );
     }
 
     #[test]

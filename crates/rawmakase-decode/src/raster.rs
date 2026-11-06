@@ -1,5 +1,5 @@
 //! Opening a JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL, the files RAWmakase shows without developing.
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use image::metadata::Orientation;
 use image::{DynamicImage, ImageDecoder, RgbImage};
 use moxcms::{
@@ -18,7 +18,7 @@ mod hevc;
 mod jxl;
 
 /// What a file's first bytes say it is.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Kind {
     Avif,
     Heic,
@@ -61,12 +61,140 @@ struct Prepared {
     refused: Option<Unsupported>,
     /// How many times HDR reference white its linear 1.0 is, for an HDR file.
     hdr_white: Option<f32>,
+    /// How its light decodes exactly, for an HDR file that opens as one.
+    hdr: Option<HdrDecoding>,
+}
+
+/// How an HDR file's samples decode exactly to its light: linear ProPhoto,
+/// 1 = graphics white, signed, in f32, without moxcms's bounded tables.
+#[derive(Clone, Copy, Debug)]
+enum HdrDecoding {
+    /// A signal of a CICP gamut and transfer, decoded as RAWmakase's HDR exports
+    /// encode it (`HdrOutput::decode`).
+    Signal(rawmakase_model::color::hdr_output::HdrOutput),
+    /// Linear light through an ICC profile's colorants (D50, as ICC keeps them).
+    Colorants([[f32; 3]; 3]),
+}
+impl HdrDecoding {
+    fn transfer(self) -> rawmakase_model::color::hdr_output::HdrTransfer {
+        match self {
+            Self::Signal(output) => output.transfer,
+            Self::Colorants(_) => rawmakase_model::color::hdr_output::HdrTransfer::Linear,
+        }
+    }
+    /// The light of one pixel's samples.
+    fn light(self, rgb: [f32; 3]) -> [f32; 3] {
+        let rgb = rgb.map(|v| if v.is_finite() { v } else { 0. });
+        match self {
+            Self::Signal(output) => output.decode(rgb),
+            Self::Colorants(m) => rawmakase_model::color::mul(m, rgb),
+        }
+    }
+    /// An image's samples as light, row by row.
+    fn apply(self, image: DynamicImage, cancel: Cancel<'_>) -> Result<Vec<[f32; 3]>> {
+        let width = image.width() as usize;
+        let samples = image.into_rgb32f().into_raw();
+        let mut out = vec![[0f32; 3]; samples.len() / 3];
+        if out.is_empty() {
+            return Ok(out);
+        }
+        samples
+            .par_chunks(width * 3)
+            .zip(out.par_chunks_mut(width))
+            .try_for_each(|(from, to)| {
+                anyhow::ensure!(!cancel.is_cancelled(), "Opening cancelled");
+                for (to, px) in to.iter_mut().zip(from.as_chunks::<3>().0) {
+                    *to = self.light(*px);
+                }
+                Ok(())
+            })?;
+        Ok(out)
+    }
+}
+
+/// How an HDR file's light decodes exactly, if it does:
+/// - a CICP transfer of PQ, HLG or linear light, at full range, in BT.709,
+///   BT.2020 or Display P3;
+/// - an ICC profile without CICP whose curves are the identity, through its
+///   colorants;
+/// - `float` samples without a profile, as linear light in sRGB's primaries.
+///
+/// `None` for anything else, which stays refused.
+fn hdr_decoding(profile: Option<&ColorProfile>, float: bool) -> Option<HdrDecoding> {
+    use moxcms::TransferCharacteristics::{Hlg, Linear, Smpte2084};
+    use rawmakase_model::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
+    let signal = |gamut, transfer| {
+        HdrDecoding::Signal(HdrOutput {
+            gamut,
+            transfer,
+            ..Default::default()
+        })
+    };
+    let Some(profile) = profile else {
+        return float.then(|| signal(HdrGamut::Rec709, HdrTransfer::Linear));
+    };
+    match profile.cicp {
+        Some(cicp) => {
+            let transfer = match cicp.transfer_characteristics {
+                Smpte2084 => HdrTransfer::Pq,
+                Hlg => HdrTransfer::Hlg,
+                Linear => HdrTransfer::Linear,
+                _ => return None,
+            };
+            let gamut = HdrGamut::from_cicp(cicp.color_primaries as u8)?;
+            cicp.full_range.then(|| signal(gamut, transfer))
+        }
+        None if linear_curves(profile) => {
+            Some(HdrDecoding::Colorants(colorants_to_pro_photo(profile)?))
+        }
+        None => None,
+    }
+}
+
+/// An ICC profile's linear RGB to linear ProPhoto: its colorants (XYZ D50) and
+/// ProPhoto's inverse, in f64. `None` for colorants that don't invert.
+fn colorants_to_pro_photo(profile: &ColorProfile) -> Option<[[f32; 3]; 3]> {
+    let columns = |p: &ColorProfile| {
+        let c = [p.red_colorant, p.green_colorant, p.blue_colorant];
+        [
+            [c[0].x, c[1].x, c[2].x],
+            [c[0].y, c[1].y, c[2].y],
+            [c[0].z, c[1].z, c[2].z],
+        ]
+    };
+    let to_xyz = columns(profile);
+    let from_xyz = inverse3(columns(&ColorProfile::new_pro_photo_rgb()))?;
+    let mut m = [[0f32; 3]; 3];
+    for (r, row) in m.iter_mut().enumerate() {
+        for (c, v) in row.iter_mut().enumerate() {
+            *v = (0..3).map(|k| from_xyz[r][k] * to_xyz[k][c]).sum::<f64>() as f32;
+        }
+    }
+    Some(m)
+}
+
+/// The inverse of a 3×3 matrix; `None` when it is singular.
+fn inverse3(m: [[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
+    let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    if det.abs() < 1e-12 || !det.is_finite() {
+        return None;
+    }
+    let mut inv = [[0f64; 3]; 3];
+    for (r, row) in inv.iter_mut().enumerate() {
+        for (c, v) in row.iter_mut().enumerate() {
+            let (r1, r2) = ((c + 1) % 3, (c + 2) % 3);
+            let (c1, c2) = ((r + 1) % 3, (r + 2) % 3);
+            *v = (m[r1][c1] * m[r2][c2] - m[r1][c2] * m[r2][c1]) / det;
+        }
+    }
+    Some(inv)
 }
 
 /// The decoder for the file's content (not its extension), with the reason
-/// it can't be edited if any, and whether it is the `image` crate's, whose float
-/// samples are linear light (a 32-bit TIFF). Applies no size limit.
-fn open_decoder(path: &Path) -> Result<(Box<dyn ImageDecoder>, Option<Unsupported>, bool)> {
+/// it can't be edited if any, and what the content is. Applies no size limit.
+fn open_decoder(path: &Path) -> Result<(Box<dyn ImageDecoder>, Option<Unsupported>, Kind)> {
     let mut head = [0u8; 64];
     let n = {
         use std::io::Read;
@@ -80,7 +208,8 @@ fn open_decoder(path: &Path) -> Result<(Box<dyn ImageDecoder>, Option<Unsupporte
         }
         n
     };
-    Ok(match sniff(&head[..n]) {
+    let kind = sniff(&head[..n]);
+    Ok(match kind {
         Kind::Webp { animated } => (
             Box::new(
                 image::ImageReader::open(path)?
@@ -89,22 +218,22 @@ fn open_decoder(path: &Path) -> Result<(Box<dyn ImageDecoder>, Option<Unsupporte
                     .map_err(read_error(path))?,
             ),
             animated.then(|| Unsupported("animated".into())),
-            true,
+            kind,
         ),
         Kind::Jxl => {
             let file = jxl::JxlFile::open(path)?;
             let refused = file.refusal();
-            (Box::new(file), refused, false)
+            (Box::new(file), refused, kind)
         }
         Kind::Avif => {
             let file = avif::AvifFile::open(path)?;
             let refused = file.refusal();
-            (Box::new(file), refused, false)
+            (Box::new(file), refused, kind)
         }
         Kind::Heic => {
             let file = heic::HeicFile::open(path)?;
             let refused = file.refusal();
-            (Box::new(file), refused, false)
+            (Box::new(file), refused, kind)
         }
         _ => (
             Box::new(
@@ -114,13 +243,16 @@ fn open_decoder(path: &Path) -> Result<(Box<dyn ImageDecoder>, Option<Unsupporte
                     .map_err(read_error(path))?,
             ),
             None,
-            true,
+            kind,
         ),
     })
 }
 
 fn prepare(path: &Path) -> Result<Prepared> {
-    let (mut decoder, refused, generic) = open_decoder(path)?;
+    let (mut decoder, refused, kind) = open_decoder(path)?;
+    // The `image` crate's decoders, whose float samples are linear light (a 32-bit
+    // TIFF); JPEG XL, AVIF and HEIC have readers of their own.
+    let generic = matches!(kind, Kind::Webp { .. } | Kind::Other);
     let (w, h) = decoder.dimensions();
     anyhow::ensure!(
         (w as u64) * (h as u64) <= 150_000_000,
@@ -139,15 +271,24 @@ fn prepare(path: &Path) -> Result<Prepared> {
             image::ColorType::Rgb32F | image::ColorType::Rgba32F
         );
     let hdr_white = hdr_white(profile.as_ref(), float);
-    // Develop edits SDR files alone (docs/hdr.md); HDR ones open as HDR in a
-    // later stage. JPEG XL, AVIF and HEIC have refused them since they opened.
-    let refused = refused.or_else(|| hdr_white.map(|_| Unsupported("HDR".into())));
+    // An HDR file opens as an HDR edit where its light decodes exactly
+    // (docs/records/hdr-stage4-design.md); others stay refused, as HDR HEIC files
+    // are: ImageIO and libheif draw them their own way.
+    let hdr = hdr_white
+        .and_then(|_| hdr_decoding(profile.as_ref(), float))
+        .filter(|_| kind != Kind::Heic);
+    let refused = match refused {
+        Some(Unsupported(reason)) if reason == "HDR" && hdr.is_some() => None,
+        refused => refused,
+    }
+    .or_else(|| (hdr_white.is_some() && hdr.is_none()).then(|| Unsupported("HDR".into())));
     Ok(Prepared {
         decoder,
         orientation,
         profile,
         refused,
         hdr_white,
+        hdr,
     })
 }
 
@@ -199,8 +340,19 @@ pub fn decode(path: &Path) -> Result<RgbImage> {
         orientation,
         profile,
         hdr_white,
+        hdr,
         ..
     } = prepare(path)?;
+    if let Some(hdr) = hdr {
+        let mut image = DynamicImage::from_decoder(decoder).map_err(read_error(path))?;
+        image.apply_orientation(orientation);
+        let (width, height) = (image.width(), image.height());
+        let mut pixels = hdr.apply(image, Cancel::NEVER)?;
+        pixels.par_iter_mut().for_each(|p| *p = tone_map(*p));
+        return Ok(linear_pro_photo_to_srgb(&pixels, width, height));
+    }
+    // HDR that doesn't decode exactly (float samples through a curved profile):
+    // previewed through moxcms.
     if let Some(white) = hdr_white {
         use moxcms::TransferCharacteristics::{Hlg, Linear};
         let transfer = profile
@@ -267,17 +419,38 @@ pub(crate) fn open(path: &Path, cancel: Cancel<'_>) -> Result<CameraImage> {
         orientation,
         profile,
         refused,
+        hdr,
         ..
     } = prepare(path)?;
     if let Some(refused) = refused {
         return Err(refused.into());
     }
-    let profile = profile.unwrap_or_else(ColorProfile::new_srgb);
-    let linear = to_linear(&profile, decoder.color_type())?;
     let mut image = DynamicImage::from_decoder(decoder).map_err(read_error(path))?;
     image.apply_orientation(orientation);
     let (width, height) = (image.width(), image.height());
-    let pixels = linear.apply(image, cancel)?;
+    // An HDR file: its light, and the SDR rendition the Library shows of it.
+    let (light, pixels) = match hdr {
+        Some(hdr) => {
+            let light = rawmakase_model::camera_data::HdrLight::new(
+                width,
+                height,
+                hdr.apply(image, cancel)?,
+                hdr.transfer(),
+            )
+            .context("Could not decode the HDR image")?;
+            let sdr = light
+                .pixels()
+                .par_iter()
+                .map(|p| tone_map(p.map(|v| v.max(0.))))
+                .collect();
+            (Some(light), sdr)
+        }
+        None => {
+            let profile = profile.unwrap_or_else(ColorProfile::new_srgb);
+            let linear = to_linear(&profile, image.color())?;
+            (None, linear.apply(image, cancel)?)
+        }
+    };
     let info = rawmakase_interop::exif::photo_info(path).unwrap_or_default();
     let (make, model) = rawmakase_interop::exif::camera_names(path).unwrap_or_default();
     let number = |v: Option<f64>| v.map_or(0., |v| v as f32);
@@ -298,7 +471,7 @@ pub(crate) fn open(path: &Path, cancel: Cancel<'_>) -> Result<CameraImage> {
         source: Source::Rendered,
         ..Default::default()
     };
-    Ok(CameraImage {
+    let image = CameraImage {
         width,
         height,
         recovered: Default::default(),
@@ -308,7 +481,13 @@ pub(crate) fn open(path: &Path, cancel: Cancel<'_>) -> Result<CameraImage> {
         scale_factor: 1.,
         scale_clipped: 0,
         hdr: Default::default(),
-    })
+    };
+    match light {
+        Some(light) => image
+            .with_hdr(std::sync::Arc::new(light))
+            .context("Could not decode the HDR image"),
+        None => Ok(image),
+    }
 }
 
 /// Whether this system can decode a HEIF (HEIC) photo's pixels, or what to
@@ -817,12 +996,13 @@ mod tests {
     }
 
     #[test]
-    fn hdr_and_animated_jxls_show_but_are_refused_for_develop() {
-        for (name, reason) in [("pq.jxl", "HDR"), ("animated.jxl", "animated")] {
-            let path = fixture(name);
-            assert!(decode(&path).is_ok(), "{name}");
-            assert_eq!(super::probe(&path).unwrap_err().0, reason, "{name}");
-        }
+    fn animated_jxls_show_but_are_refused_for_develop_and_hdr_ones_open() {
+        let path = fixture("animated.jxl");
+        assert!(decode(&path).is_ok());
+        assert_eq!(super::probe(&path).unwrap_err().0, "animated");
+        let path = fixture("pq.jxl");
+        assert!(super::probe(&path).is_ok());
+        assert!(super::open(&path, Cancel::NEVER).unwrap().hdr().is_some());
     }
 
     #[test]
@@ -1332,12 +1512,15 @@ mod tests {
     // libavif writes an image sequence with a primary still item as well,
     // which the Library shows.
     #[test]
-    fn hdr_animated_and_tiled_avifs_are_refused_for_develop() {
-        for (name, reason) in [
-            ("pq.avif", "HDR"),
-            ("animated.avif", "animated"),
-            ("tiled.avif", "tiled AVIF"),
-        ] {
+    fn animated_and_tiled_avifs_are_refused_for_develop_and_hdr_ones_open() {
+        assert!(super::probe(&fixture("pq.avif")).is_ok());
+        assert!(
+            super::open(&fixture("pq.avif"), Cancel::NEVER)
+                .unwrap()
+                .hdr()
+                .is_some()
+        );
+        for (name, reason) in [("animated.avif", "animated"), ("tiled.avif", "tiled AVIF")] {
             assert_eq!(
                 super::probe(&fixture(name)).unwrap_err().0,
                 reason,
@@ -1438,10 +1621,33 @@ mod tests {
         }
     }
 
-    /// An HDR file's preview shows HDR reference white (203 nits, ITU-R
-    /// BT.2408) as white, rather than at the 2% of PQ's 10,000 nits it is,
-    /// which looked nearly black; brighter light rolls off into white. HLG
-    /// files are refused by Develop as PQ ones are.
+    /// SMPTE ST 2084 and BT.2100 HLG, written out apart from RAWmakase's own: a
+    /// neutral signal's display light, 1 = graphics white (203 cd/m²).
+    fn bt2100_grey(transfer: &str, signal: f64) -> f64 {
+        match transfer {
+            "pq" => {
+                let (m1, m2) = (2610. / 16384., 2523. / 4096. * 128.);
+                let (c1, c2, c3) = (3424. / 4096., 2413. / 128., 2392. / 128.);
+                let p = signal.powf(1. / m2);
+                10_000. * ((p - c1).max(0.) / (c2 - c3 * p)).powf(1. / m1) / 203.
+            }
+            _ => {
+                let (a, b, c) = (0.17883277, 0.28466892, 0.55991073);
+                let scene = if signal <= 0.5 {
+                    signal * signal / 3.
+                } else {
+                    (((signal - c) / a).exp() + b) / 12.
+                };
+                // The OOTF of a neutral: its luminance is itself.
+                scene.powf(1.2) * 1000. / 203.
+            }
+        }
+    }
+
+    /// An HDR file's preview shows HDR reference white (203 nits, ITU-R BT.2408) as
+    /// white, rather than at the 2% of PQ's 10,000 nits it is, which looked nearly
+    /// black; brighter light rolls off into white. In Develop it opens as HDR, its
+    /// light as BT.2100 decodes it.
     #[test]
     fn hdr_previews_show_reference_white_as_white() {
         // The fixtures' grey is code value 128/255: 95 nits in PQ, and in HLG
@@ -1461,7 +1667,18 @@ mod tests {
             );
             let white = corners(&image)[3];
             assert!(white.iter().all(|v| *v >= 250), "{name}: {white:?}");
-            assert_eq!(super::probe(&fixture(name)).unwrap_err().0, "HDR", "{name}");
+            assert!(super::probe(&fixture(name)).is_ok(), "{name}");
+            let opened = super::open(&fixture(name), Cancel::NEVER).unwrap();
+            let light = opened.hdr().expect("an HDR light");
+            let centre = light.pixels()[(h / 2 * w + w / 2) as usize];
+            let want = bt2100_grey(&name[..name.find('.').unwrap()], 128. / 255.);
+            // The channels' mean within 3%: the fixtures are lossy (JPEG XL at
+            // distance 1, AVIF through 10-bit YUV), which moves each channel a little.
+            let mean = centre.iter().map(|v| *v as f64).sum::<f64>() / 3.;
+            assert!(
+                (mean / want - 1.).abs() < 0.03,
+                "{name}: {centre:?} against {want}"
+            );
         }
     }
 
@@ -1483,20 +1700,30 @@ mod tests {
     }
 
     /// RAWmakase's own HDR TIFFs (PQ and HLG in 16 bits, linear in 32-bit float),
-    /// small ones too, and a float TIFF without a profile are HDR files: refused for
-    /// Develop, which can't edit them yet, as HDR JPEG XL, AVIF and HEIC files are,
-    /// rather than opened with graphics white at 2% of PQ's range. Their previews show
-    /// graphics white (203 nits) as white, brighter light rolled off rather than
-    /// clipped, and a colour the same in every encoding: HLG's system gamma works on
-    /// luminance, not on each channel.
+    /// small ones too, and a float TIFF without a profile open in Develop as HDR:
+    /// their light is what was encoded, within 16-bit quantisation (exactly in
+    /// float), negative channels kept. Their previews show graphics white (203 nits)
+    /// as white, brighter light rolled off rather than clipped, and a colour the same
+    /// in every encoding: HLG's system gamma works on luminance, not on each channel.
     #[test]
-    fn hdr_tiffs_are_refused_for_develop_and_preview_white_as_white() {
+    fn hdr_tiffs_open_as_hdr_and_preview_white_as_white() {
         use rawmakase_model::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
         let dir = tempfile::tempdir().unwrap();
         // Grey, graphics white and two stops above it, neutral; then a colour.
         let pixels = [[0.18f32; 3], [1.; 3], [4.; 3], [0.3, 0.15, 0.08]];
-        let check = |path: &Path, what: &str| -> Vec<[u8; 3]> {
-            assert_eq!(super::probe(path).unwrap_err().0, "HDR", "{what}");
+        let check = |path: &Path, what: &str, sixteen: bool| -> Vec<[u8; 3]> {
+            assert!(super::probe(path).is_ok(), "{what}");
+            let opened = super::open(path, Cancel::NEVER).unwrap();
+            let light = opened.hdr().unwrap_or_else(|| panic!("{what}: no light"));
+            let tolerance = if sixteen { 3e-3 } else { 1e-5 };
+            for (got, want) in light.pixels().iter().zip(&pixels) {
+                for c in 0..3 {
+                    assert!(
+                        (got[c] - want[c]).abs() <= tolerance * want[c].abs().max(0.05),
+                        "{what}: {got:?} against {want:?}"
+                    );
+                }
+            }
             let preview = decode(path).unwrap();
             let px: Vec<[u8; 3]> = (0..4).map(|x| preview.get_pixel(x, 0).0).collect();
             // 0.18 is below the preview's roll-off: sRGB 118.
@@ -1518,10 +1745,8 @@ mod tests {
             let encoded: Vec<f32> = pixels.iter().flat_map(|p| output.encode(*p, 16.)).collect();
             let path = dir.path().join(format!("{transfer:?}.tif"));
             let icc = Some(crate::color_management::hdr_profile(output).unwrap());
-            if transfer == HdrTransfer::Linear {
-                let bytes: &[u8] = bytemuck::cast_slice(&encoded);
-                tiff(&path, bytes, ExtendedColorType::Rgb32F, icc);
-            } else {
+            let sixteen = transfer != HdrTransfer::Linear;
+            if sixteen {
                 let samples: Vec<u16> = encoded
                     .iter()
                     .map(|v| (v.clamp(0., 1.) * 65535. + 0.5) as u16)
@@ -1532,8 +1757,11 @@ mod tests {
                     ExtendedColorType::Rgb16,
                     icc,
                 );
+            } else {
+                let bytes: &[u8] = bytemuck::cast_slice(&encoded);
+                tiff(&path, bytes, ExtendedColorType::Rgb32F, icc);
             }
-            colours.push((transfer, check(&path, &format!("{transfer:?}"))[3]));
+            colours.push((transfer, check(&path, &format!("{transfer:?}"), sixteen)[3]));
         }
         let (_, pq) = colours[0];
         for (transfer, colour) in &colours {
@@ -1543,16 +1771,32 @@ mod tests {
             );
         }
         // A float TIFF without a profile: linear, sRGB primaries, as Photoshop's
-        // 32-bit documents are read.
+        // 32-bit documents are read. Its light is in ProPhoto.
         let path = dir.path().join("float.tif");
-        let samples: Vec<f32> = pixels.iter().flatten().copied().collect();
+        let to_srgb = HdrGamut::Rec709.prophoto_to_rgb();
+        let samples: Vec<f32> = pixels
+            .iter()
+            .flat_map(|p| rawmakase_model::color::mul(to_srgb, *p))
+            .collect();
         tiff(
             &path,
             bytemuck::cast_slice(&samples),
             ExtendedColorType::Rgb32F,
             None,
         );
-        check(&path, "float without a profile");
+        check(&path, "float without a profile", false);
+        // Signed light stays signed.
+        let path = dir.path().join("signed.tif");
+        tiff(
+            &path,
+            bytemuck::cast_slice(&[-0.25f32, 0.5, 0.5]),
+            ExtendedColorType::Rgb32F,
+            None,
+        );
+        let opened = super::open(&path, Cancel::NEVER).unwrap();
+        let light = opened.hdr().unwrap().pixels()[0];
+        let back = rawmakase_model::color::mul(to_srgb, light);
+        assert!((back[0] + 0.25).abs() < 1e-5, "{back:?}");
     }
 
     /// A float TIFF with a linear profile without CICP (Photoshop's 32-bit
@@ -1628,7 +1872,7 @@ mod tests {
         }
     }
 
-    /// A small BigTIFF's profile is read too: a PQ one is HDR.
+    /// A small BigTIFF's profile is read too: a PQ one opens as HDR.
     #[test]
     fn a_small_pq_bigtiff_is_hdr() {
         use rawmakase_model::color::hdr_output::HdrOutput;
@@ -1645,7 +1889,8 @@ mod tests {
             .write_tag(tiff::tags::Tag::IccProfile, icc.as_slice())
             .unwrap();
         image.write_data(&[38050u16; 3]).unwrap();
-        assert_eq!(super::probe(&path).unwrap_err().0, "HDR");
+        assert!(super::probe(&path).is_ok());
+        assert!(super::open(&path, Cancel::NEVER).unwrap().hdr().is_some());
     }
 
     /// A float TIFF with a profile whose curve isn't linear is converted as the
