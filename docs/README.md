@@ -62,6 +62,7 @@ Start with the [code map](code-map.md) to find where a change belongs, the
 
 | Page | Status | What it covers |
 | --- | --- | --- |
+| [Editable previews, Stage 5 brief](records/editable-previews-stage5-brief.md) | Plan (2026-11-07), not built | What editing an offline photo from its editable preview must change, with code anchors |
 | [Parity gaps](records/parity-gaps.md) | Record (2026-10-05, last updated 2026-11-03) | Known differences from Lightroom, with their measurements |
 | [Preview performance measurements](records/preview-performance-measurements.md) | Record (2026-09-26 to 2026-10-29) | Timings behind the preview path's choices |
 | [Validation](records/validation.md) | Record (September 2026) | What was checked while engines 2 and 3 were current |
