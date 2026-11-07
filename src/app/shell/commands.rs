@@ -144,6 +144,8 @@ pub(in crate::app) enum Operation {
         max_edge: u32,
         /// The colour space: an export's choice, sRGB for a preview.
         space: crate::color::OutputSpace,
+        /// `preview` rather than `export`: the one an editable preview allows.
+        preview: bool,
     },
     Job(u64),
     /// Builds previews of the selection, as the thumbnail menu does.
@@ -853,15 +855,35 @@ impl Editor {
                 path,
                 max_edge,
                 space,
+                preview,
             } => {
                 self.require_develop()?;
-                // Never from an editable preview (nor decoded again in its place).
-                if self.document.opened_from_preview() {
-                    return Err(Error::new(
-                        "not_ready",
-                        "The photo is open from its editable preview; open it again from its original to export it",
-                    ));
-                }
+                // An editable preview is never exported (decision 5 of
+                // docs/editable-previews.md), but is previewed, so an agent can
+                // see its own offline edit: the job renders the editable preview
+                // itself, never a decode of the original in its place.
+                let opened_from = if self.document.opened_from_preview() {
+                    if !preview {
+                        return Err(Error::new(
+                            "not_ready",
+                            "The photo is open from its editable preview; open it again from its original to export it",
+                        ));
+                    }
+                    // A JPEG to look at only: a TIFF or PNG of it would be an
+                    // export at the editable preview's size, which decision 5
+                    // set aside. A path no format names is refused below.
+                    if crate::export_settings::Format::from_path(&path)
+                        .is_some_and(|f| f != crate::export_settings::Format::Jpeg)
+                    {
+                        return Err(Error::new(
+                            "invalid_request",
+                            "The photo is open from its editable preview, which is previewed only as JPEG; use a .jpg path, or open it again from its original to export it",
+                        ));
+                    }
+                    output::OpenedFrom::EditablePreview
+                } else {
+                    output::OpenedFrom::Original
+                };
                 let photo = self
                     .export_photo()
                     .ok_or_else(|| Error::new("not_ready", "The photo is not ready to export"))?;
@@ -873,6 +895,7 @@ impl Editor {
                         path,
                         max_edge,
                         space,
+                        opened_from,
                         self.document.load_id(),
                         self.automation.revision,
                         ctx.clone(),

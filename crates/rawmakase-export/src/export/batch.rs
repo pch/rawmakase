@@ -576,6 +576,7 @@ fn render(
             cache: batch.cache.clone(),
             ai: batch.ai.clone(),
             file,
+            from_editable_preview: false,
         },
         &batch.settings,
         cancel,

@@ -579,6 +579,7 @@ impl Editor {
             cache: self.decode_cache.clone(),
             ai: self.ai_service(),
             file: self.document.image_file.clone(),
+            from_editable_preview: self.document.opened_from_preview(),
         })
     }
 

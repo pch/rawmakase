@@ -47,7 +47,7 @@ fn invalid(message: impl Into<String>) -> Error {
     Error::new("invalid_request", message)
 }
 
-fn command(request: &Value) -> commands::Result<Vec<Msg>> {
+pub(super) fn command(request: &Value) -> commands::Result<Vec<Msg>> {
     use crate::color::OutputSpace;
     use rawmakase_protocol::request::{self as wire, Press, Request, Until as WireUntil};
     if request
@@ -131,11 +131,13 @@ fn command(request: &Value) -> commands::Result<Vec<Msg>> {
                 wire::ColorSpace::AdobeRgb => OutputSpace::AdobeRgb,
                 wire::ColorSpace::Prophoto => OutputSpace::ProPhoto,
             },
+            preview: false,
         },
         Request::Preview { path, max_edge } => Operation::Output {
             path,
             max_edge: max_edge.unwrap_or(wire::DEFAULT_PREVIEW_EDGE),
             space: OutputSpace::Srgb,
+            preview: true,
         },
         Request::BuildPreviews { kind } => Operation::BuildPreviews(match kind {
             wire::PreviewKind::Standard => crate::catalog::preview_cache::PreviewKind::Standard,

@@ -143,8 +143,15 @@ output. Preview defaults to a 1600-pixel long edge; use `--max-edge` to choose a
 size. Export defaults to full size. Both accept JPEG, TIFF and PNG paths and use the
 existing export pipeline. They never overwrite an existing file or change saved
 Export dialog settings. A photo open from its editable preview
-(`opened_from: editable_preview`) is never previewed or exported this way: both
-return `not_ready` until it is opened again from its original.
+(`opened_from: editable_preview`) is never exported this way: `export` returns
+`not_ready` until it is opened again from its original. It can be previewed, so an
+agent can see its own offline edit: `preview` (MCP `preview_photo`) renders the
+editable preview itself with the edit, as a JPEG only (a TIFF, PNG or JPEG XL path
+returns `invalid_request` and writes nothing), at most its 2560 pixels on the long edge,
+without AI Denoise (as Develop shows it), and with the camera's capture settings
+from the editable preview in place of the original's EXIF; it never decodes or reads
+the original, even once the original is back, until the photo is opened again
+from it. The job result's `opened_from` says which it rendered from.
 
 `export` writes sRGB unless `color_space` is `adobe-rgb` or `prophoto`
 (`--color-space` for `rawmakase control export`), with that space's embedded
@@ -159,8 +166,10 @@ rawmakase control preview /absolute/path/preview.jpg --no-wait
 rawmakase control job 1
 ```
 
-The job result contains `job_id`, `status`, `path`, `generation`, `revision` and
-`progress`. Only `completed` confirms a published file; `failed` includes an
+The job result contains `job_id`, `status`, `path`, `generation`, `revision`,
+`progress` and `opened_from` (`original`, or `editable_preview` for a preview of a
+photo open from its editable preview; added within protocol 1, which clients read
+leniently). Only `completed` confirms a published file; `failed` includes an
 error. Two output jobs may run concurrently. The latest 32 jobs are retained;
 IDs are scoped to the running app session. If a client stops waiting, the job
 continues and can be read with `job`. `wait` with `until: "job"` answers as soon as

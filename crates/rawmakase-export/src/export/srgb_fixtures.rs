@@ -207,6 +207,7 @@ pub(super) fn photo(image: CameraImage, source: &Path, cache: &Path, recipe: Rec
         cache: DecodeCache::new(cache.to_path_buf(), u64::MAX),
         ai: crate::ai_denoise::AiService::refusing("no AI Denoise here"),
         file: None,
+        from_editable_preview: false,
     }
 }
 

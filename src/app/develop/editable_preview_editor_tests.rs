@@ -560,29 +560,180 @@ fn a_photo_moved_while_offline_keeps_saving_against_the_recorded_identity() {
     assert_eq!(fx.stored_identity(a), original);
 }
 
+impl Fx {
+    /// Runs the automation request `request` (its JSON, as the control socket
+    /// reads it) on the open photo.
+    fn automate(
+        &mut self,
+        request: serde_json::Value,
+    ) -> crate::app::shell::commands::Result<serde_json::Value> {
+        let command = crate::app::shell::automation::command_of(request);
+        let ctx = self.ctx.clone();
+        self.e
+            .execute_command(command, &ctx)
+            .map(|outcome| serde_json::to_value(outcome).unwrap())
+    }
+    /// Waits for the output job `started` began; its last state.
+    fn finished(&mut self, started: &serde_json::Value) -> serde_json::Value {
+        let id = started["job_id"].as_u64().expect("a job");
+        let until = Instant::now() + Duration::from_secs(30);
+        loop {
+            let job = self
+                .automate(serde_json::json!({"cmd": "job", "job_id": id}))
+                .unwrap();
+            if job["status"] != "running" {
+                return job;
+            }
+            assert!(Instant::now() < until, "the job never finished");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+}
+
+/// The pixel size of the JPEG at `path`.
+fn jpeg_size(path: &std::path::Path) -> (u32, u32) {
+    let image = image::ImageReader::open(path)
+        .unwrap()
+        .with_guessed_format()
+        .unwrap()
+        .decode()
+        .unwrap();
+    (image.width(), image.height())
+}
+
+/// Automation's `preview` of a photo open from its editable preview renders the
+/// editable preview with the edit, says so, and never a decode of the original in
+/// its place, even once the original is back; an edit with AI Denoise renders
+/// plain, as Develop shows it.
 #[test]
-fn automation_output_is_refused_for_a_photo_open_from_its_editable_preview() {
+fn automation_previews_a_photo_open_from_its_editable_preview() {
     let mut fx = fixture(&["a.dng"]);
     let a = fx.id("a.dng");
     fx.build(a, false);
     let bytes = fx.take_offline(a);
     fx.open(a);
-    // Even with the original back: nothing is decoded in the preview's place.
+    assert!(fx.e.document.opened_from_preview());
+    let preview_size = {
+        let full = fx.e.document.full().unwrap();
+        (full.width, full.height)
+    };
+    let mut ai = fx.e.document.edit.recipe().ai_denoise;
+    ai.enabled = true;
+    ai.amount = 1.;
+    fx.e.document.edit.setup_mut().ai_denoise = ai;
+    let out = fx._dir.path().join("offline.jpg");
+    let started = fx
+        .automate(serde_json::json!({"cmd": "preview", "path": out, "max_edge": 1600}))
+        .expect("previewed");
+    assert_eq!(started["opened_from"], "editable_preview");
+    let job = fx.finished(&started);
+    assert_eq!(job["status"], "completed", "{job}");
+    assert_eq!(job["opened_from"], "editable_preview");
+    // At most the editable preview's size: the original is far larger.
+    assert_eq!(jpeg_size(&out), preview_size);
+    // The original back, the photo still open from its editable preview.
     std::fs::write(fx.path(a), bytes).unwrap();
-    let ctx = fx.ctx.clone();
-    let out = fx._dir.path().join("out.jpg");
-    let refused =
-        fx.e.execute_command(
-            Command::new(Operation::Output {
-                path: out.clone(),
-                max_edge: 64,
-                space: Default::default(),
-            }),
-            &ctx,
-        )
-        .expect_err("refused");
-    assert_eq!(refused.code, "not_ready");
-    assert!(!out.exists());
+    let back = fx._dir.path().join("back.jpg");
+    let started = fx
+        .automate(serde_json::json!({"cmd": "preview", "path": back}))
+        .expect("previewed");
+    let job = fx.finished(&started);
+    assert_eq!(job["status"], "completed", "{job}");
+    assert_eq!(job["opened_from"], "editable_preview");
+    assert_eq!(jpeg_size(&back), preview_size);
+}
+
+/// A `preview` of a photo open from its editable preview is a JPEG only: a TIFF,
+/// PNG or JPEG XL path is refused and nothing is written, while a photo open from
+/// its original is still previewed as TIFF.
+#[test]
+fn automation_previews_an_editable_preview_only_as_jpeg() {
+    let mut fx = fixture(&["a.dng", "b.dng"]);
+    let (a, b) = (fx.id("a.dng"), fx.id("b.dng"));
+    fx.build(a, false);
+    fx.take_offline(a);
+    fx.open(a);
+    for name in ["p.tif", "p.tiff", "p.png", "p.jxl", "p.TIF"] {
+        let out = fx._dir.path().join(name);
+        let refused = fx
+            .automate(serde_json::json!({"cmd": "preview", "path": out, "max_edge": 2560}))
+            .expect_err(name);
+        assert_eq!(refused.code, "invalid_request", "{name}");
+        assert!(
+            refused.message.contains("only as JPEG"),
+            "{}",
+            refused.message
+        );
+        assert!(!out.exists(), "{name}");
+    }
+    let out = fx._dir.path().join("p.JPEG");
+    let job = {
+        let started = fx
+            .automate(serde_json::json!({"cmd": "preview", "path": out}))
+            .expect("a JPEG");
+        fx.finished(&started)
+    };
+    assert_eq!(job["status"], "completed", "{job}");
+    // A photo open from its original is previewed as TIFF as before.
+    fx.open(b);
+    assert!(!fx.e.document.opened_from_preview());
+    let tiff = fx._dir.path().join("original.tif");
+    let started = fx
+        .automate(serde_json::json!({"cmd": "preview", "path": tiff}))
+        .expect("a TIFF");
+    assert_eq!(fx.finished(&started)["status"], "completed");
+    assert!(tiff.is_file());
+}
+
+/// `export` stays refused for a photo open from its editable preview, offline or
+/// with the original back (decision 5), and writes nothing.
+#[test]
+fn automation_export_is_refused_for_a_photo_open_from_its_editable_preview() {
+    let mut fx = fixture(&["a.dng"]);
+    let a = fx.id("a.dng");
+    fx.build(a, false);
+    let bytes = fx.take_offline(a);
+    fx.open(a);
+    for (back, name) in [(false, "offline"), (true, "back")] {
+        if back {
+            std::fs::write(fx.path(a), &bytes).unwrap();
+        }
+        for request in [
+            serde_json::json!({"cmd": "export", "path": fx._dir.path().join(format!("{name}.jpg"))}),
+            serde_json::json!({"cmd": "export", "path": fx._dir.path().join(format!("{name}.tif")), "max_edge": 64, "color_space": "prophoto"}),
+        ] {
+            let refused = fx.automate(request.clone()).expect_err("refused");
+            assert_eq!(refused.code, "not_ready", "{request}");
+            assert!(
+                refused.message.contains("editable preview"),
+                "{}",
+                refused.message
+            );
+        }
+        assert!(!fx._dir.path().join(format!("{name}.jpg")).exists());
+        assert!(!fx._dir.path().join(format!("{name}.tif")).exists());
+    }
+}
+
+/// Opened from its original, a photo's `preview` and `export` render from the
+/// original, as before.
+#[test]
+fn automation_previews_and_exports_a_photo_open_from_its_original() {
+    let mut fx = fixture(&["a.dng"]);
+    let a = fx.id("a.dng");
+    fx.build(a, false);
+    fx.open(a);
+    assert!(!fx.e.document.opened_from_preview());
+    for cmd in ["preview", "export"] {
+        let out = fx._dir.path().join(format!("{cmd}.jpg"));
+        let started = fx
+            .automate(serde_json::json!({"cmd": cmd, "path": out}))
+            .expect(cmd);
+        assert_eq!(started["opened_from"], "original");
+        let job = fx.finished(&started);
+        assert_eq!(job["status"], "completed", "{cmd}: {job}");
+        assert!(out.is_file(), "{cmd}");
+    }
 }
 
 /// A path that is there but can't be read (here a link to itself, which the

@@ -356,6 +356,7 @@ fn output_job_publishes_the_captured_revision_and_never_clobbers() -> anyhow::Re
                 path: path.clone(),
                 max_edge: 16,
                 space: crate::color::OutputSpace::Srgb,
+                preview: true,
             }),
             &ctx,
         )
@@ -388,6 +389,7 @@ fn output_job_publishes_the_captured_revision_and_never_clobbers() -> anyhow::Re
                 path,
                 max_edge: 16,
                 space: crate::color::OutputSpace::Srgb,
+                preview: true,
             }),
             &ctx
         )
@@ -414,6 +416,7 @@ fn an_output_in_a_colour_space_its_format_cant_hold_is_refused() -> anyhow::Resu
                 path: path.to_path_buf(),
                 max_edge: 16,
                 space,
+                preview: false,
             }),
             &ctx,
         )

@@ -321,5 +321,18 @@ impl Editor {
     }
 }
 
+/// The command a request's JSON is read as, as the control socket reads it, for
+/// tests of what automation asks for.
+#[cfg(test)]
+pub(in crate::app) fn command_of(request: serde_json::Value) -> Command {
+    match socket::command(&request)
+        .unwrap_or_else(|e| panic!("{request}: {}", e.message))
+        .remove(0)
+    {
+        Msg::Command(command) => command,
+        _ => panic!("{request} is not a command"),
+    }
+}
+
 #[cfg(test)]
 mod tests;

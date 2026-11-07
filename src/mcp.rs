@@ -463,7 +463,7 @@ impl Server {
         self.send(Request::Save, Some(p.target)).await
     }
     #[tool(
-        description = "Render the guarded edit and return a JPEG image for visual inspection, plus its captured revision. Waits up to 120 seconds. Uses a temporary file, with no user output path."
+        description = "Render the guarded edit and return a JPEG image for visual inspection, plus its captured revision. Waits up to 120 seconds. Uses a temporary file, with no user output path. A photo open from its editable preview (state opened_from: editable_preview) is previewed from the editable preview, at most 2560 pixels and without AI Denoise; the result's opened_from says which it rendered from. export_photo refuses such a photo."
     )]
     async fn preview_photo(
         &self,

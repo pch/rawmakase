@@ -41,6 +41,12 @@ pub struct Photo {
     /// changed since fails the export rather than mixing two files, and so does one
     /// whose identity could not be read (`None`).
     pub file: Option<crate::storage::Identity>,
+    /// `image` is an editable preview: reduced (`fast`, which sizes radii for the
+    /// original), yet the image to render. It is never replaced by a full-size
+    /// decode, renders without AI Denoise, as Develop shows it (an editable preview
+    /// has no sensor data), and nothing is read from `source`, which may be offline
+    /// or another file by now: the camera's EXIF stands in from `image`'s metadata.
+    pub from_editable_preview: bool,
 }
 
 /// Exports `photo` to `target`, reporting progress from 0 to 1. Stops between
@@ -128,7 +134,7 @@ pub fn prepare(
     );
     // Read once: for the export's metadata and the Simple Copyright
     // Watermark.
-    let file = (policy.reads_file() || simple_copyright)
+    let file = (!photo.from_editable_preview && (policy.reads_file() || simple_copyright))
         .then(|| crate::photo::camera_exif(&photo.source))
         .flatten();
     // Loaded first: a missing image or font fails the export before it
@@ -145,13 +151,17 @@ pub fn prepare(
         Some(w) => Some(w.ready()?),
         None => None,
     };
-    let image = full_size(
-        photo.image.clone(),
-        &photo.source,
-        photo.demosaic,
-        &photo.cache,
-        cancel,
-    )?;
+    let image = if photo.from_editable_preview {
+        photo.image.clone()
+    } else {
+        full_size(
+            photo.image.clone(),
+            &photo.source,
+            photo.demosaic,
+            &photo.cache,
+            cancel,
+        )?
+    };
     cancelled()?;
     progress(0.4);
     let options = settings.options();
@@ -197,9 +207,13 @@ pub fn prepare(
     cancelled()?;
     progress(0.85);
     let file = file.filter(|_| policy.reads_file());
-    let libraw = file
-        .is_none()
-        .then(|| stand_in(&photo.source, &image.metadata));
+    let libraw = file.is_none().then(|| {
+        if photo.from_editable_preview {
+            exif::CameraExif::from_libraw(&image.metadata)
+        } else {
+            stand_in(&photo.source, &image.metadata)
+        }
+    });
     let assembled = assemble(policy, file.as_ref(), libraw, &photo.values);
     let xmp = assembled
         .xmp
@@ -253,7 +267,7 @@ fn ai_source(
     image: &Arc<CameraImage>,
     cancel: Cancel<'_>,
 ) -> Result<Option<crate::develop::AiSource>> {
-    if !photo.recipe.as_rendered().ai_denoise.renders() {
+    if photo.from_editable_preview || !photo.recipe.as_rendered().ai_denoise.renders() {
         return Ok(None);
     }
     let file = photo.file.clone().ok_or_else(|| {
@@ -363,6 +377,7 @@ mod tests {
             cache: DecodeCache::new(cache.to_path_buf(), u64::MAX),
             ai: crate::ai_denoise::AiService::refusing("no AI Denoise here"),
             file: None,
+            from_editable_preview: false,
         }
     }
 
@@ -484,6 +499,38 @@ mod tests {
         assert_ne!(full, off);
         // Half way is neither (the tone stage is not linear, so not checked as a mean).
         assert!(half != full && half != off);
+        Ok(())
+    }
+
+    /// An editable preview renders as it is: reduced (`fast`), with no original to
+    /// decode or read at `source`, it is never decoded again in its place, the AI
+    /// Denoise service is never asked, and the camera's EXIF stands in from its
+    /// metadata.
+    #[test]
+    fn an_editable_preview_renders_as_it_is_without_its_original() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("offline.dng");
+        let flat = Arc::new(Flat(Default::default(), 0.6));
+        let mut photo = with_ai(photo(&source, &dir.path().join("cache")), 1.);
+        photo.ai = crate::ai_denoise::AiService(flat.clone());
+        photo.file = None;
+        let mut image = (*photo.image).clone();
+        image.fast = true;
+        photo.image = Arc::new(image);
+        // Without the flag, the reduced image would be decoded from the original.
+        let error = prepare(&photo, &ExportSettings::default(), Cancel::NEVER, &|_| {})
+            .err()
+            .expect("no original to decode");
+        assert!(!error.to_string().is_empty());
+        photo.from_editable_preview = true;
+        let exif = exported(photo, dir.path())?;
+        assert_eq!(flat.0.load(Ordering::SeqCst), 0);
+        let target = dir.path().join("out.jpg");
+        assert_eq!(image::image_dimensions(&target)?, (4, 2));
+        assert!(
+            exif.main.iter().chain(&exif.exif).next().is_some(),
+            "the stand-in EXIF is written"
+        );
         Ok(())
     }
 

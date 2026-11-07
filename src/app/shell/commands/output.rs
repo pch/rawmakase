@@ -21,12 +21,24 @@ enum Status {
     Completed,
     Failed,
 }
+/// What the job renders from, named as the state's `opened_from` names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(in crate::app) enum OpenedFrom {
+    Original,
+    /// The photo's editable preview (a `preview` only): 2560 pixels at most on
+    /// its long edge, without AI Denoise.
+    EditablePreview,
+}
 #[derive(Debug, Clone, Serialize)]
 pub(in crate::app) struct OutputState {
     job_id: u64,
     status: Status,
     generation: u64,
     revision: u64,
+    /// A field added within protocol 1: replies are read leniently, so older
+    /// clients ignore it.
+    opened_from: OpenedFrom,
     path: PathBuf,
     progress: f32,
     notice: Option<String>,
@@ -82,6 +94,7 @@ impl Outputs {
             status: Status::Running,
             generation: 0,
             revision: 0,
+            opened_from: OpenedFrom::Original,
             path: PathBuf::new(),
             progress: 0.,
             notice: None,
@@ -133,6 +146,7 @@ impl Outputs {
         path: PathBuf,
         edge: u32,
         space: crate::color::OutputSpace,
+        opened_from: OpenedFrom,
         generation: u64,
         revision: u64,
         ctx: eframe::egui::Context,
@@ -198,6 +212,7 @@ impl Outputs {
             status: Status::Running,
             generation,
             revision,
+            opened_from,
             path: path.clone(),
             progress: 0.,
             notice: None,
