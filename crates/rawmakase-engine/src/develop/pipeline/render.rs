@@ -143,7 +143,8 @@ pub(crate) fn render_display(
     finish: &crate::develop::gpu::Finish,
     cancel: Cancel<'_>,
     stages: &mut crate::develop::preview_renderer::Stages,
-) -> Result<Option<crate::develop::gpu::Frame>> {
+) -> Result<Option<crate::develop::quality::Output>> {
+    use crate::develop::quality::Output;
     let Some(display) = stages.display else {
         return Ok(None);
     };
@@ -154,7 +155,11 @@ pub(crate) fn render_display(
     base.sharpening = 0.;
     base.validate()?;
     let im = toned.source();
-    let Some(mut params) = pixel_params::pixel_params(im, &base) else {
+    let params = match stages.hdr {
+        Some(_) => pixel_params::pixel_params_hdr(im, &base),
+        None => pixel_params::pixel_params(im, &base),
+    };
+    let Some(mut params) = params else {
         return Ok(None);
     };
     let key = crate::develop::stage_cache::SampleKey::new(toned, &base, g, region, spread);
@@ -187,9 +192,18 @@ pub(crate) fn render_display(
         Some(&mut *stages.cache),
         cancel,
     )?;
-    Ok(stages
-        .backend
-        .present(&samples, &params, finished, finish, display, cancel))
+    Ok(match stages.hdr {
+        Some(headroom) => stages
+            .backend
+            .present_hdr(
+                &samples, &params, finished, finish, display, headroom, cancel,
+            )
+            .map(|f| Output::Hdr(Box::new(f))),
+        None => stages
+            .backend
+            .present(&samples, &params, finished, finish, display, cancel)
+            .map(|f| Output::Frame(Box::new(f))),
+    })
 }
 /// Weights of the recipe's active masks over `region` of `g`, rendered from `toned`'s
 /// image, through the stage cache when there is one. Range components first develop

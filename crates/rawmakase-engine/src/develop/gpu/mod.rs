@@ -37,6 +37,11 @@
 //! a second render with the same settings asks for it and read after its pass is
 //! submitted.
 //!
+//! An edit with HDR on has its master's preview rendered too, by the develop pass's
+//! HDR variant and `present_hdr.wgsl`, into a half-float texture of the view's own
+//! (`Processor::present_hdr`; docs/hdr.md#gpu-preview). It reads back nothing: the
+//! histogram, overlays and reduced copies are the SDR rendition's.
+//!
 //! When the GPU renders a preview, the developed pixels stay on the device and
 //! `present.wgsl` finishes them into a texture that egui draws directly (registered
 //! as a native texture by the render worker): sharpening, vignettes and grain, the
@@ -97,7 +102,7 @@ mod uniforms;
 mod weights;
 pub(crate) use develop::Input;
 pub(crate) use present::Finish;
-pub use present::{Display, Frame, MonitorLut, Slot};
+pub use present::{Display, Frame, HdrFrame, MonitorLut, Slot};
 
 /// Held by previews while they submit work, and exclusively while the window's
 /// surface is reconfigured for a new size.

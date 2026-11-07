@@ -19,7 +19,7 @@ fn render_resident(
     finish: &develop::gpu::Finish,
     cancel: Cancel<'_>,
     stages: &mut Stages,
-) -> Result<Option<develop::gpu::Frame>> {
+) -> Result<Option<Output>> {
     let Some(display) = stages.display else {
         return Ok(None);
     };
@@ -35,7 +35,11 @@ fn render_resident(
     let mut base = r.clone();
     base.sharpening = 0.;
     base.validate()?;
-    if !develop::pipeline::pixel_params::supported(&base) {
+    let supported = match stages.hdr {
+        Some(_) => develop::pipeline::pixel_params::supported_hdr(&base, &source.metadata),
+        None => develop::pipeline::pixel_params::supported(&base),
+    };
+    if !supported {
         return Ok(None);
     }
     // Masks whose ranges need developed colours, whose detail changes the samples or
@@ -67,8 +71,11 @@ fn render_resident(
         unretouched: Some(unretouched),
         measures: Some(stages.cache.measures.clone()),
     };
-    let Some(mut params) = develop::pipeline::pixel_params::pixel_params(toned.source(), &base)
-    else {
+    let params = match stages.hdr {
+        Some(_) => develop::pipeline::pixel_params::pixel_params_hdr(toned.source(), &base),
+        None => develop::pipeline::pixel_params::pixel_params(toned.source(), &base),
+    };
+    let Some(mut params) = params else {
         return Ok(None);
     };
     // The samples stay on the device, so their camera colour may too.
@@ -116,16 +123,19 @@ fn render_resident(
     }) else {
         return Ok(None);
     };
-    Ok(backend.run(cancel, |gpu| {
-        gpu.present(
-            develop::gpu::Input::Device(&samples),
-            &params,
-            r,
-            finish,
-            display,
-            cancel,
-        )
-    }))
+    let input = develop::gpu::Input::Device(&samples);
+    Ok(match stages.hdr {
+        Some(headroom) => backend
+            .run(cancel, |gpu| {
+                gpu.present_hdr(input, &params, r, finish, display, headroom, cancel)
+            })
+            .map(|f| Output::Hdr(Box::new(f))),
+        None => backend
+            .run(cancel, |gpu| {
+                gpu.present(input, &params, r, finish, display, cancel)
+            })
+            .map(|f| Output::Frame(Box::new(f))),
+    })
 }
 /// Fit and zoomed-out previews from a pyramid level (see `pyramid.rs`). Each output
 /// pixel is developed once, from the level sampled over the pixel's footprint, and
@@ -195,7 +205,7 @@ pub(crate) fn render_level(
         stages,
     )?;
     if let Some(frame) = frame {
-        return Ok(Output::Frame(Box::new(frame)));
+        return Ok(frame);
     }
     let (toned, tonal_recipe) =
         local_stage(level, full, r, level_scale, cancel, Some(stages.cache))?;
@@ -211,7 +221,10 @@ pub(crate) fn render_level(
         stages,
     )?;
     if let Some(frame) = frame {
-        return Ok(Output::Frame(Box::new(frame)));
+        return Ok(frame);
+    }
+    if stages.hdr.is_some() {
+        return Err(HdrNotOnGpu.into());
     }
     let srgb = crate::color::OutputSpace::Srgb;
     let (mut out, weights) = develop::render_base(
@@ -382,7 +395,7 @@ pub(crate) fn render_preview(
             stages,
         )?;
         if let Some(frame) = frame {
-            return Ok(Output::Frame(Box::new(frame)));
+            return Ok(frame);
         }
     }
     let (toned, tonal_recipe) = local_stage(
@@ -413,8 +426,11 @@ pub(crate) fn render_preview(
             stages,
         )?;
         if let Some(frame) = frame {
-            return Ok(Output::Frame(Box::new(frame)));
+            return Ok(frame);
         }
+    }
+    if stages.as_ref().is_some_and(|s| s.hdr.is_some()) {
+        return Err(HdrNotOnGpu.into());
     }
     let (mut out, weights) = develop::render_base(
         &toned,

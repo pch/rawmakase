@@ -12,11 +12,13 @@ An edit with HDR on has two renderings:
 
 - **The HDR master** (`develop::render_hdr`): linear ProPhoto RGB, 1 = graphics
   white, nothing clipped above white, no channel above 2^HDR limit
-  (`rendered::HdrImage`). Only the CPU renders it, without the stage cache. HDR
-  outputs encode it; conversion to nits and to PQ or HLG belongs to them.
+  (`rendered::HdrImage`). The CPU renders it, without the stage cache: HDR outputs
+  encode it, and conversion to nits and to PQ or HLG belongs to them. The GPU port
+  renders a preview of it for the window ([GPU preview](#gpu-preview)), checked
+  against the CPU's; the CPU stays the reference.
 - **The SDR rendition**: the same edit with HDR off. Every SDR view and output
   renders it: Develop, Reference View, the Library's previews and thumbnails, SDR
-  exports, and the GPU, which never sees HDR on (`Recipe::resolved` turns it off;
+  exports, and the GPU's SDR previews (`Recipe::resolved` turns HDR off;
   `Recipe::resolved_hdr` keeps it for the master).
 
 RAWmakase defines the SDR rendition as the HDR-off render, which below 0.5 agrees with
@@ -74,9 +76,20 @@ isn't visible through the protocol and is not followed. Light above SDR white on
 Wayland HDR display has not been seen yet: no HDR display was available.
 
 While the display can show HDR, an edit with HDR on whose master renders is shown
-as its master in Develop (`app::develop::hdr_preview`): in Fit, zoomed out, and
+as its master in Develop: in Fit, zoomed out, and
 zoomed in to 100% or more, and in Before Only and on each side of Before/After and
-Reference View, where each side shows its own settings' master or SDR rendition. A
+Reference View, where each side shows its own settings' master or SDR rendition.
+
+Where the GPU renders the master ([GPU preview](#gpu-preview)), the render worker
+presents it with each SDR frame of the same view, drafts during slider drags
+included: a render job asks for it at the headroom due (`RenderJob::hdr`), and the
+viewport draws it over the SDR picture it came with while the master is still due at
+that headroom. The status line then says `GPU HDR`. A headroom that moves by a tenth
+of a stop, or a master that becomes due or stops being due, renders the view again
+(`Editor::follow_hdr_display`; Before's job compares its own).
+
+Elsewhere, and until the GPU's frame is there, the CPU master shows
+(`app::develop::hdr_preview`). A
 whole photo is rendered on the CPU from a reduced copy of it at the size shown; a
 100% region (the part of the photo the SDR rendition renders at 100%, with its
 margin) from the full photo, with the margin sharpening reads around it, so it is
@@ -110,8 +123,36 @@ into device RGB, which has no extended range), the Library, other platforms, an 
 display, and an 8-bit surface (when wgpu offers no float format). A failed render is
 that edit's alone: its reason shows until the edit changes. The window asks for EDR
 as long as a master is due, including while an edit's next preview renders, so the
-display's headroom doesn't ramp down and up with every slider move. Slider drags
-wait for the CPU master; the SDR rendition shows meanwhile.
+display's headroom doesn't ramp down and up with every slider move. Where only the
+CPU renders the master, slider drags wait for it, and the SDR rendition shows
+meanwhile.
+
+### GPU preview
+
+`PreviewRenderer::render_hdr_to` (and `render_hdr_region_preview_to` for a 100%
+drag preview) presents an HDR master's preview on the GPU, from the SDR rendition's
+own samples, pyramid and caches, into a half-float texture of the view's HDR slot.
+The develop pass's HDR variant (`develop.wgsl`, `V_HDR`) renders the scene tone
+stage's HDR Whites and Blacks and an ordinary profile's look table and HDR tone
+curve, and writes linear ProPhoto unclipped; `present_hdr.wgsl` sharpens it on
+sRGB-curve-encoded values with ProPhoto luminance, applies the limit, and encodes
+extended sRGB held to the display's headroom (`color::hdr_output::extended_srgb`,
+which the CPU preview uses too). The HDR tone curve is sampled every 1/32 stop over
+log2 scene value from 2^-16 to 2^12, linear below and a power above; Whites' gains
+are read as the CPU reads them.
+
+It covers what `pixel_params::supported_hdr` accepts: a master that renders and
+needs nothing after its profile's finish (Exposure, Whites, Blacks, white balance,
+sharpening and what the SDR port samples), through an ordinary profile without a
+look whose HDR curve is the identity or the measured extension. Texture, Contrast,
+Levels and the tone curves, the colour stage (`pipeline::tone::hdr_finishes_past_the_profile`),
+an HDR profile (overrange-encoded tables and curve), a look, an HDR file's light, AI
+Denoise, and anything the SDR port leaves to the CPU (`quality::HdrNotOnGpu`) give
+no GPU frame, and the CPU master is shown instead. Measured on an Apple M1 Pro
+against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
+"GPU matches CPU" workflow): the per-pixel stage agrees to 2×10^-4 of the value,
+the presented texture to 1.3×10^-3 (half-float steps), at full size and in a
+region, at headrooms 4 and 40, sharpened and not.
 
 ### Histogram and readout
 
@@ -143,7 +184,8 @@ as in SDR.
 
 The RGB readout under the histogram reads the master too: from the HDR preview shown
 there (its 100% region, or the whole photo, kept as half floats), otherwise from the
-histogram's master of the edit as it is now. A channel up to graphics white reads as
+histogram's master of the edit as it is now; where the GPU's master shows, which
+reads nothing back, from the histogram's. A channel up to graphics white reads as
 its Melissa RGB percentage, one above it as its stops above white (`+1.3`), orange
 where the display shows it and red beyond its headroom or at the HDR limit.
 

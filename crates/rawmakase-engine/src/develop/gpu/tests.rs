@@ -1334,8 +1334,9 @@ fn shaders_are_valid_wgsl() {
         color: false,
         local: false,
         dehaze: false,
+        hdr: false,
     };
-    let modules: [(&str, String, &[&str]); 6] = [
+    let modules: [(&str, String, &[&str]); 7] = [
         (
             "develop.wgsl",
             prelude.clone()
@@ -1345,7 +1346,12 @@ fn shaders_are_valid_wgsl() {
         ),
         (
             "develop.wgsl, lean variant",
-            prelude + &lean.constants() + include_str!("develop.wgsl"),
+            prelude.clone() + &lean.constants() + include_str!("develop.wgsl"),
+            &["develop"],
+        ),
+        (
+            "develop.wgsl, HDR variant",
+            prelude + &super::develop::Variant::HDR.constants() + include_str!("develop.wgsl"),
             &["develop"],
         ),
         (
@@ -1874,6 +1880,333 @@ fn check_lens_render(
             .max()
             .unwrap();
         assert!(worst <= 1, "CPU/GPU differ by {worst}");
+    }
+    Ok(())
+}
+
+/// Compares an HDR master's float values: relative to the value, or to 1% of graphics
+/// white below it. Returns the largest, the 99.9th percentile and the mean difference.
+fn hdr_differences(actual: &[[f32; 3]], expected: &[[f32; 3]]) -> (f32, f32, f32) {
+    let d: Vec<f32> = actual
+        .iter()
+        .flatten()
+        .zip(expected.iter().flatten())
+        .map(|(a, b)| (a - b).abs() / b.abs().max(0.01))
+        .collect();
+    let mean = d.iter().sum::<f32>() / d.len() as f32;
+    let mut sorted = d;
+    sorted.sort_by(f32::total_cmp);
+    (
+        sorted[sorted.len() - 1],
+        sorted[sorted.len() * 999 / 1000],
+        mean,
+    )
+}
+
+/// A photo of grays and colours from deep shadow to six stops above graphics white,
+/// with a camera-matrix profile (the default tone curve, whose HDR extension is the
+/// measured one), and its samples at full size.
+fn hdr_fixture() -> (
+    crate::camera_data::CameraImage,
+    std::sync::Arc<crate::develop::pipeline::Samples>,
+) {
+    use crate::camera_data::{CameraImage, Metadata};
+    use crate::develop::pipeline::Samples;
+    let (w, h) = (256u32, 16u32);
+    let metadata = Metadata {
+        width: w,
+        height: h,
+        wb: [1.; 3],
+        daylight_wb: [1.; 3],
+        matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+        cam_xyz: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+        ..Default::default()
+    };
+    let pixels: Vec<[f32; 3]> = (0..w * h)
+        .map(|i| {
+            let (x, y) = (i % w, i / w);
+            // log2 scene value from −12 to +6 across, a colour per row.
+            let v = (x as f32 / (w - 1) as f32 * 18. - 12.).exp2();
+            let tint =
+                [[1., 1., 1.], [1., 0.6, 0.3], [0.3, 0.7, 1.], [0.9, 1., 0.2]][(y % 4) as usize];
+            tint.map(|t| v * t)
+        })
+        .collect();
+    let image = CameraImage {
+        width: w,
+        height: h,
+        pixels: pixels.clone(),
+        metadata,
+        recovered: Default::default(),
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    };
+    let samples = std::sync::Arc::new(Samples {
+        width: w,
+        height: h,
+        pixels,
+        positions: (0..w * h)
+            .map(|i| [(i % w) as f32, (i / w) as f32])
+            .collect(),
+    });
+    (image, samples)
+}
+
+/// The recipes an HDR master is rendered with in the parity tests: the default, and
+/// the controls the GPU port renders (Exposure, Whites, Blacks, white balance)
+/// at several limits.
+fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
+    use crate::camera_profiles::CameraProfile;
+    let mut base = Recipe {
+        profile: CameraProfile::camera_matrix_default(&image.metadata).map(std::sync::Arc::new),
+        sharpening: 0.,
+        ..Default::default()
+    };
+    base.hdr.enabled = true;
+    base.hdr.limit = 4.;
+    let variants = [
+        Recipe::clone(&base),
+        Recipe {
+            exposure: 1.3,
+            ..base.clone()
+        },
+        Recipe {
+            exposure: -0.7,
+            whites: -0.6,
+            ..base.clone()
+        },
+        Recipe {
+            whites: -1.,
+            blacks: 0.5,
+            ..base.clone()
+        },
+        // Positive Whites, which follows the photo's level.
+        Recipe {
+            whites: 0.4,
+            ..base.clone()
+        },
+        Recipe {
+            blacks: -0.8,
+            incremental_temperature: 20.,
+            incremental_tint: -10.,
+            ..base.clone()
+        },
+    ];
+    variants
+        .into_iter()
+        .map(|mut r| {
+            if r.whites < -0.9 {
+                r.hdr.limit = 8.;
+            }
+            r.resolved_hdr(&image.metadata).into_owned()
+        })
+        .collect()
+}
+
+/// The HDR master's per-pixel stage on the GPU agrees with the CPU reference in float
+/// space, above graphics white too: the scene tone stage's HDR Whites and Blacks and
+/// the profile's measured HDR tone curve.
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+fn gpu_develop_matches_cpu_hdr_master() -> Result<()> {
+    use crate::develop::pipeline::{Source, develop_samples, pixel_params::pixel_params_hdr};
+    let (image, samples) = hdr_fixture();
+    let mut gpu = Processor::new()?;
+    let cancel = AtomicBool::new(false);
+    let source = Source::new(&image);
+    for (i, recipe) in hdr_recipes(&image).iter().enumerate() {
+        let params = pixel_params_hdr(source, recipe).expect("the GPU port covers this master");
+        let expected = develop_samples(source, recipe, &samples, Cancel::new(&cancel), None)?;
+        let actual = gpu.develop(&samples, &params, Cancel::new(&cancel))?;
+        let top = expected
+            .pixels
+            .iter()
+            .flatten()
+            .copied()
+            .fold(0f32, f32::max);
+        assert!(top > 4., "recipe {i}: the master reaches {top}");
+        let (max, p999, mean) = hdr_differences(&actual.pixels, &expected.pixels);
+        eprintln!("recipe {i}: max {max:.6}, 99.9% {p999:.6}, mean {mean:.8}");
+        assert!(
+            p999 < 2e-3 && max < 1e-2 && mean < 2e-4,
+            "recipe {i}: max {max}, 99.9% {p999}, mean {mean}"
+        );
+    }
+    Ok(())
+}
+
+/// Reads a presented HDR texture (Rgba16Float) back as RGB floats.
+fn read_hdr_texture(gpu: &Processor, texture: &wgpu::Texture) -> Result<Vec<[f32; 3]>> {
+    let unhalf = |h: u16| -> f32 {
+        let sign = if h & 0x8000 != 0 { -1. } else { 1. };
+        let exponent = i32::from((h >> 10) & 0x1f);
+        let mantissa = f32::from(h & 0x3ff);
+        match exponent {
+            0 => sign * mantissa * 2f32.powi(-24),
+            31 => f32::NAN,
+            _ => sign * (1. + mantissa / 1024.) * 2f32.powi(exponent - 15),
+        }
+    };
+    let row = (texture.width() * 8).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+    let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: row as u64 * texture.height() as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    encoder.copy_texture_to_buffer(
+        texture.as_image_copy(),
+        wgpu::TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(row),
+                rows_per_image: None,
+            },
+        },
+        texture.size(),
+    );
+    gpu.queue.submit([encoder.finish()]);
+    buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+    gpu.device.poll(wgpu::PollType::wait_indefinitely())?;
+    let bytes = buffer.slice(..).get_mapped_range()?;
+    Ok(bytes
+        .chunks_exact(row as usize)
+        .flat_map(|r| r[..texture.width() as usize * 8].as_chunks::<8>().0.iter())
+        .map(|p| {
+            let h = |i: usize| unhalf(u16::from_ne_bytes([p[2 * i], p[2 * i + 1]]));
+            [h(0), h(1), h(2)]
+        })
+        .collect())
+}
+
+/// An HDR master's preview presented on the GPU is the CPU master, sharpened and
+/// limited, as extended sRGB held to the display's headroom: at full size and in a
+/// 100% region, against `render_hdr` and `render_hdr_region`. A Fit from the pyramid
+/// renders at its size. A master the port doesn't cover is left to the CPU.
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+fn presented_hdr_previews_match_the_cpu_master() -> Result<()> {
+    use crate::color::hdr_output::extended_srgb;
+    use crate::develop::{PreviewRenderer, render_hdr, render_hdr_region};
+    let (image, _) = hdr_fixture();
+    let mut renderer = PreviewRenderer::with_gpu();
+    let cancel = AtomicBool::new(false);
+    let display = |slot| super::Display {
+        slot,
+        clipping: Default::default(),
+        monitor: None,
+        navigator: None,
+        thumbnail: None,
+        samples: false,
+        drawn: Vec::new(),
+    };
+    let mut recipes = hdr_recipes(&image);
+    let mut sharpened = recipes[1].clone();
+    sharpened.sharpening = 0.6;
+    recipes.push(sharpened);
+    for (i, recipe) in recipes.iter().enumerate() {
+        let valid = recipe.checked()?;
+        for headroom in [4., 40.] {
+            for region in [None, Some([37, 3, 150, 9])] {
+                let expected = match region {
+                    None => render_hdr(&image, &valid, None, 0, Cancel::NEVER)?,
+                    Some(r) => render_hdr_region(&image, &valid, r, Cancel::NEVER)?,
+                };
+                let slot = if region.is_some() {
+                    super::Slot::Region
+                } else {
+                    super::Slot::Whole
+                };
+                let frame = renderer
+                    .render_hdr_to(
+                        &image,
+                        recipe,
+                        0,
+                        region,
+                        headroom,
+                        Cancel::new(&cancel),
+                        &display(slot),
+                    )?
+                    .unwrap_or_else(|| panic!("recipe {i}: {:?}", renderer.fallback_reason()));
+                assert_eq!(
+                    (frame.texture.width(), frame.texture.height()),
+                    (expected.width, expected.height)
+                );
+                let actual = read_hdr_texture(renderer.gpu().unwrap(), &frame.texture)?;
+                let wanted: Vec<[f32; 3]> = expected
+                    .pixels
+                    .iter()
+                    .map(|p| extended_srgb(*p, headroom))
+                    .collect();
+                let top = wanted.iter().flatten().copied().fold(0f32, f32::max);
+                assert!(top > 1.2, "recipe {i}: shown up to {top}");
+                let d: Vec<f32> = actual
+                    .iter()
+                    .flatten()
+                    .zip(wanted.iter().flatten())
+                    .map(|(a, b)| (a - b).abs() / b.abs().max(0.05))
+                    .collect();
+                let mut sorted = d.clone();
+                sorted.sort_by(f32::total_cmp);
+                let (p999, max) = (sorted[sorted.len() * 999 / 1000], sorted[sorted.len() - 1]);
+                eprintln!(
+                    "recipe {i}, headroom {headroom}, {region:?}: max {max:.5}, 99.9% {p999:.5}"
+                );
+                assert!(
+                    p999 < 5e-3 && max < 2e-2,
+                    "recipe {i}, headroom {headroom}, {region:?}: max {max}, 99.9% {p999}"
+                );
+            }
+        }
+        // Fit, from the pyramid: the master's size, values within its range.
+        let fit = renderer
+            .render_hdr_to(
+                &image,
+                recipe,
+                64,
+                None,
+                4.,
+                Cancel::new(&cancel),
+                &display(super::Slot::Whole),
+            )?
+            .expect("a Fit of the master");
+        assert_eq!((fit.texture.width(), fit.texture.height()), (64, 4));
+        let shown = read_hdr_texture(renderer.gpu().unwrap(), &fit.texture)?;
+        let top = crate::color::srgb_encode(4.);
+        assert!(
+            shown
+                .iter()
+                .flatten()
+                .all(|v| v.is_finite() && *v <= top + 1e-2)
+        );
+    }
+    // A master the port doesn't render, and an SDR edit, are left to the CPU.
+    let mut sdr = recipes[0].clone();
+    sdr.hdr.enabled = false;
+    let mut hdr_profile = recipes[0].clone();
+    hdr_profile.profile = Some(std::sync::Arc::new(
+        hdr_profile
+            .profile
+            .as_deref()
+            .unwrap()
+            .clone()
+            .as_hdr_for_test(),
+    ));
+    for recipe in [sdr, hdr_profile] {
+        let none = renderer.render_hdr_to(
+            &image,
+            &recipe,
+            0,
+            None,
+            4.,
+            Cancel::new(&cancel),
+            &display(super::Slot::Whole),
+        )?;
+        assert!(none.is_none());
     }
     Ok(())
 }

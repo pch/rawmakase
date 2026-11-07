@@ -75,6 +75,15 @@ pub struct Frame {
     /// Textures dropped since the previous frame; nothing draws them any more.
     pub released: Vec<wgpu::Texture>,
 }
+/// A presented HDR master preview ([`Processor::present_hdr`]).
+pub struct HdrFrame {
+    /// Rgba16Float, holding extended sRGB for the window.
+    pub texture: wgpu::Texture,
+    /// Changes whenever the texture is written, see [`Processor::generation`].
+    pub generation: u64,
+    /// Textures dropped since the previous frame; nothing draws them any more.
+    pub released: Vec<wgpu::Texture>,
+}
 /// The sRGB-to-monitor transform sampled on a lattice of 8-bit values, so the shader
 /// applies it without lcms. Built once per profile, from the transform the caller
 /// supplies (`color_management::display_transform`), so the engine links no colour management.
@@ -113,6 +122,8 @@ pub(crate) struct Finish {
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
     Photo(Slot),
+    /// An HDR master's preview of the view (`Processor::present_hdr`), in half floats.
+    Hdr(Slot),
     Navigator,
     /// Internal: the photo without overlays, for thumbnails and loupe samples.
     Plain,
@@ -141,6 +152,9 @@ pub(super) struct Presenter {
     targets: Vec<Target>,
     released: Vec<wgpu::Texture>,
     generation: u64,
+    /// `present_hdr.wgsl`'s bindings and encode, blur_horizontal, sharpen and present,
+    /// made when an HDR master is first presented.
+    hdr: Option<(wgpu::BindGroupLayout, [wgpu::ComputePipeline; 4])>,
 }
 impl Presenter {
     fn new(device: &wgpu::Device) -> Self {
@@ -256,7 +270,77 @@ impl Presenter {
             targets: Vec::new(),
             released: Vec::new(),
             generation: 0,
+            hdr: None,
         }
+    }
+    /// `present_hdr.wgsl`'s layout and pipelines, made on first use.
+    fn hdr_pipelines(
+        &mut self,
+        device: &wgpu::Device,
+    ) -> (wgpu::BindGroupLayout, [wgpu::ComputePipeline; 4]) {
+        self.hdr
+            .get_or_insert_with(|| {
+                let storage = |binding, read_only| wgpu::BindGroupLayoutEntry {
+                    binding,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                };
+                let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("HDR present bindings"),
+                    entries: &[
+                        storage(0, false),
+                        storage(1, false),
+                        storage(2, true),
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 3,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 4,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::StorageTexture {
+                                access: wgpu::StorageTextureAccess::WriteOnly,
+                                format: wgpu::TextureFormat::Rgba16Float,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
+                let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("present_hdr.wgsl"),
+                    source: wgpu::ShaderSource::Wgsl(include_str!("present_hdr.wgsl").into()),
+                });
+                let pipeline_layout =
+                    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("HDR present"),
+                        bind_group_layouts: &[Some(&layout)],
+                        immediate_size: 0,
+                    });
+                let pipelines = ["encode", "blur_horizontal", "sharpen", "present"].map(|entry| {
+                    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some(entry),
+                        layout: Some(&pipeline_layout),
+                        module: &module,
+                        entry_point: Some(entry),
+                        compilation_options: Default::default(),
+                        cache: None,
+                    })
+                });
+                (layout, pipelines)
+            })
+            .clone()
     }
     /// A texture of `kind` and size, reusing one when the size is unchanged and it is
     /// not `drawn`.
@@ -294,7 +378,10 @@ impl Presenter {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
+                format: match kind {
+                    Kind::Hdr(_) => wgpu::TextureFormat::Rgba16Float,
+                    _ => wgpu::TextureFormat::Rgba8Unorm,
+                },
                 usage,
                 view_formats: &[],
             });
@@ -360,6 +447,170 @@ impl Processor {
             "Preview exceeds GPU texture limits"
         );
         self.scoped(|gpu| gpu.present_inner(input, params, recipe, finish, display, cancel))
+    }
+    /// Develops `samples` with an HDR master's parameters (`pixel_params_hdr`) and
+    /// finishes them into a half-float texture of `display.slot`'s HDR view: extended
+    /// sRGB for the window, held to `headroom`, after the limit of `recipe`. Nothing is
+    /// read back; overlays, the monitor profile and reduced copies are the SDR
+    /// rendition's. Fails without side effects on the CPU.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn present_hdr(
+        &mut self,
+        input: Input,
+        params: &PixelParams,
+        recipe: &Recipe,
+        finish: &Finish,
+        display: &Display,
+        headroom: f32,
+        cancel: Cancel<'_>,
+    ) -> Result<HdrFrame> {
+        ensure!(
+            params.get(crate::develop::pipeline::pixel_params::slot::HDR)[0] >= 0.,
+            "Not an HDR master's parameters"
+        );
+        ensure!(
+            headroom.is_finite() && headroom >= 1.,
+            "Invalid display headroom"
+        );
+        self.check_develop(input, params, cancel)?;
+        let (width, height) = input.size();
+        let [x, y, w, h] = finish.crop;
+        ensure!(
+            w > 0 && h > 0 && x + w <= width && y + h <= height,
+            "Invalid preview crop"
+        );
+        let limits = self.device.limits();
+        ensure!(
+            w.max(h) <= limits.max_texture_dimension_2d
+                && width.div_ceil(16).max(height.div_ceil(16))
+                    <= limits.max_compute_workgroups_per_dimension,
+            "Preview exceeds GPU texture limits"
+        );
+        self.scoped(|gpu| {
+            gpu.present_hdr_inner(input, params, recipe, finish, display, headroom, cancel)
+        })
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn present_hdr_inner(
+        &mut self,
+        input: Input,
+        params: &PixelParams,
+        recipe: &Recipe,
+        finish: &Finish,
+        display: &Display,
+        headroom: f32,
+        cancel: Cancel<'_>,
+    ) -> Result<HdrFrame> {
+        let device = self.device.clone();
+        let mut encoder = device.create_command_encoder(&Default::default());
+        let pixels = self.record_develop(input, params, &mut encoder);
+        let presenter = self
+            .presenter
+            .get_or_insert_with(|| Presenter::new(&device));
+        let (layout, [encode, blur, sharpening, present]) = presenter.hdr_pipelines(&device);
+        let (width, height) = input.size();
+        let n = width as u64 * height as u64;
+        if presenter.scratch.as_ref().is_none_or(|b| b.size() < n * 4) {
+            presenter.scratch = None;
+            presenter.scratch = Some(device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Sharpening blur"),
+                size: n * 4,
+                usage: wgpu::BufferUsages::STORAGE,
+                mapped_at_creation: false,
+            }));
+        }
+        let sharpen = recipe.sharpening != 0.;
+        let sharpener = crate::develop::sharpening::Sharpener::new(recipe);
+        let (radius, weights) = if sharpen {
+            quality::gaussian(finish.sigma)
+        } else {
+            (0, vec![1.])
+        };
+        let weights = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sharpening weights"),
+            contents: bytemuck::cast_slice(&weights),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let [cx, cy, cw, ch] = finish.crop;
+        let m = crate::color::hdr_output::HdrGamut::Rec709.prophoto_to_rgb();
+        let values = super::uniforms::HdrPresentParams {
+            width,
+            height,
+            crop_x: cx,
+            crop_y: cy,
+            crop_w: cw,
+            crop_h: ch,
+            radius: radius as u32,
+            sharpen: sharpen as u32,
+            amount: recipe.sharpening * sharpener.gain,
+            threshold: sharpener.threshold,
+            halo: sharpener.halo,
+            dark: sharpener.dark,
+            peak: recipe.hdr.peak(),
+            headroom,
+            m00: m[0][0],
+            m01: m[0][1],
+            m02: m[0][2],
+            m10: m[1][0],
+            m11: m[1][1],
+            m12: m[1][2],
+            m20: m[2][0],
+            m21: m[2][1],
+            m22: m[2][2],
+            ..Default::default()
+        };
+        let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("HDR present parameters"),
+            contents: bytemuck::bytes_of(&values),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+        let photo = presenter.target(&device, Kind::Hdr(display.slot), cw, ch, &display.drawn);
+        let (texture, generation) = (photo.texture.clone(), photo.generation);
+        let view = texture.create_view(&Default::default());
+        let scratch = presenter.scratch.clone().unwrap();
+        let buffers = [&pixels, &scratch, &weights, &uniform];
+        let mut entries: Vec<_> = buffers
+            .into_iter()
+            .enumerate()
+            .map(|(binding, buffer)| wgpu::BindGroupEntry {
+                binding: binding as u32,
+                resource: buffer.as_entire_binding(),
+            })
+            .collect();
+        entries.push(wgpu::BindGroupEntry {
+            binding: 4,
+            resource: wgpu::BindingResource::TextureView(&view),
+        });
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("HDR present bindings"),
+            layout: &layout,
+            entries: &entries,
+        });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("HDR present"),
+                timestamp_writes: None,
+            });
+            pass.set_bind_group(0, &group, &[]);
+            if sharpen {
+                for pipeline in [&encode, &blur, &sharpening] {
+                    pass.set_pipeline(pipeline);
+                    pass.dispatch_workgroups(width.div_ceil(16), height.div_ceil(16), 1);
+                }
+            }
+            pass.set_pipeline(&present);
+            pass.dispatch_workgroups(cw.div_ceil(16), ch.div_ceil(16), 1);
+        }
+        ensure!(!cancel.is_cancelled(), "Render superseded");
+        let submission = super::submit(&self.queue, encoder);
+        super::develop::submitted(&mut self.kept);
+        super::wait(&device, submission)?;
+        ensure!(!cancel.is_cancelled(), "Render superseded");
+        Ok(HdrFrame {
+            texture,
+            generation,
+            released: std::mem::take(&mut presenter.released),
+        })
     }
     /// The generation of `texture` if it is still a preview target, to tell whether a
     /// frame's pixels are still in it.

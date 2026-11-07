@@ -60,14 +60,22 @@ struct Shown {
 }
 enum Shot {
     Pixels(crate::rendered::Rendered),
-    /// A presented frame, valid while its texture still holds `generation`.
+    /// A presented frame, valid while its texture still holds `generation`, and its
+    /// HDR master's, valid likewise.
     Frame {
         texture: wgpu::Texture,
         generation: u64,
         preview: Presented,
         histogram: Box<crate::rendered::Histogram>,
+        hdr: Option<Box<(wgpu::Texture, u64)>>,
     },
 }
+/// Renders an HDR master's preview for a display headroom, onto a display.
+type HdrRender<'a> = &'a dyn Fn(
+    &mut develop::PreviewRenderer,
+    f32,
+    &gpu::Display,
+) -> anyhow::Result<Option<gpu::HdrFrame>>;
 impl Shown {
     fn new(job: &RenderJob, out: Shot) -> Self {
         Self {
@@ -96,14 +104,22 @@ impl Shown {
             Shot::Frame {
                 texture,
                 generation,
+                preview,
+                hdr,
                 ..
             } => {
+                let held = |texture, generation| {
+                    gpu.and_then(|g| g.generation(texture)) == Some(generation)
+                };
                 // A cached frame kept no loupe samples.
                 same && !job.samples
                     && self.clipping == job.clipping
                     && self.monitor == job.monitor
                     && self.navigator == job.navigator
-                    && gpu.and_then(|g| g.generation(texture)) == Some(*generation)
+                    && held(texture, *generation)
+                    // The HDR master's preview at the headroom asked for, or none.
+                    && preview.hdr.map(|h| h.headroom) == job.hdr
+                    && hdr.as_deref().is_none_or(|(t, g)| held(t, *g))
             }
         }
     }
@@ -114,6 +130,7 @@ struct Presented {
     id: egui::TextureId,
     size: [usize; 2],
     navigator: Option<(egui::TextureId, [usize; 2])>,
+    hdr: Option<super::HdrTexture>,
 }
 impl Presented {
     fn preview(self) -> Preview {
@@ -121,7 +138,17 @@ impl Presented {
             id: self.id,
             size: self.size,
             navigator: self.navigator,
+            hdr: self.hdr,
         }
+    }
+}
+/// The status line's name for where a presented frame rendered: with its HDR
+/// master's preview when one came with it.
+fn gpu_label(presented: &Presented) -> &'static str {
+    if presented.hdr.is_some() {
+        "GPU HDR"
+    } else {
+        "GPU"
     }
 }
 /// egui's names for the textures frames are presented into.
@@ -453,8 +480,17 @@ fn render(
             } else {
                 RenderStage::Fit
             };
-            let mut publish = |out: Output, stage: RenderStage, cache: bool, gpu: bool| match out {
+            // An SDR frame is published with its HDR master's frame, when one was asked
+            // for and the GPU rendered it, so the viewport swaps both at once.
+            let mut publish = |out: Output,
+                               hdr: Option<gpu::HdrFrame>,
+                               stage: RenderStage,
+                               cache: bool,
+                               gpu: bool| match out {
                 Output::Pixels(out) => {
+                    if let (Some(textures), Some(hdr)) = (textures.as_mut(), hdr) {
+                        textures.release(hdr.released);
+                    }
                     publish_pixels(out.clone(), stage, gpu);
                     Some(Shot::Pixels(out))
                 }
@@ -462,10 +498,20 @@ fn render(
                     let textures = textures.as_mut()?;
                     textures.release(frame.released);
                     let (id, size) = textures.id(&frame.texture);
+                    let hdr = hdr.and_then(|h| {
+                        textures.release(h.released);
+                        let headroom = job.hdr?;
+                        let (id, size) = textures.id(&h.texture);
+                        Some((
+                            super::HdrTexture { id, size, headroom },
+                            (h.texture, h.generation),
+                        ))
+                    });
                     let presented = Presented {
                         id,
                         size,
                         navigator: frame.navigator.as_ref().map(|t| textures.id(t)),
+                        hdr: hdr.as_ref().map(|h| h.0),
                     };
                     if !job.cancel.load(Ordering::Relaxed) {
                         send(
@@ -483,7 +529,7 @@ fn render(
                                     .samples
                                     .and_then(|(w, h, rgb)| image::RgbImage::from_raw(w, h, rgb)),
                                 stage,
-                                status: status(stage, "GPU", &warning),
+                                status: status(stage, gpu_label(&presented), &warning),
                             },
                         );
                     }
@@ -492,8 +538,30 @@ fn render(
                         generation: frame.generation,
                         preview: presented,
                         histogram: frame.histogram,
+                        hdr: hdr.map(|h| Box::new(h.1)),
                     })
                 }
+                // SDR renders never present an HDR master.
+                Output::Hdr(frame) => {
+                    if let Some(textures) = textures.as_mut() {
+                        textures.release(frame.released);
+                    }
+                    None
+                }
+            };
+            // The HDR master's preview of a view an SDR frame was just presented for;
+            // `None` where the GPU leaves it to the CPU master, or fails, which then
+            // shows instead. Never the job's error: the SDR frame stands.
+            let hdr_frame = |processor: &mut develop::PreviewRenderer,
+                             sdr: &Output,
+                             display: Option<&gpu::Display>,
+                             render: HdrRender<'_>| {
+                let headroom = job.hdr?;
+                let display = display?;
+                if !matches!(sdr, Output::Frame(_)) || job.cancel.load(Ordering::Relaxed) {
+                    return None;
+                }
+                render(processor, headroom, display).ok().flatten()
             };
             let cached = if job.region.is_some() {
                 &*zoomed
@@ -516,7 +584,7 @@ fn render(
                             thumbnail: None,
                             samples: None,
                             stage,
-                            status: status(stage, "GPU", &warning),
+                            status: status(stage, gpu_label(preview), &warning),
                         },
                     ),
                 }
@@ -545,7 +613,22 @@ fn render(
                             zoomed_display.as_ref(),
                         )?;
                         let gpu = processor.used_gpu();
-                        publish(out, RenderStage::Draft, false, gpu);
+                        let hdr = hdr_frame(
+                            processor,
+                            &out,
+                            zoomed_display.as_ref(),
+                            &|p, headroom, display| {
+                                p.render_hdr_region_preview_to(
+                                    &job.image,
+                                    &job.recipe,
+                                    region,
+                                    headroom,
+                                    Cancel::new(&job.cancel),
+                                    display,
+                                )
+                            },
+                        );
+                        publish(out, hdr, RenderStage::Draft, false, gpu);
                     }
                     let started = Instant::now();
                     let out = processor.render_to(
@@ -560,8 +643,24 @@ fn render(
                     out
                 };
                 let gpu = processor.used_gpu();
-                *zoomed =
-                    publish(out, RenderStage::Region, true, gpu).map(|out| Shown::new(&job, out));
+                let hdr = hdr_frame(
+                    processor,
+                    &out,
+                    zoomed_display.as_ref(),
+                    &|p, headroom, display| {
+                        p.render_hdr_to(
+                            &job.image,
+                            &job.recipe,
+                            0,
+                            Some(region),
+                            headroom,
+                            Cancel::new(&job.cancel),
+                            display,
+                        )
+                    },
+                );
+                *zoomed = publish(out, hdr, RenderStage::Region, true, gpu)
+                    .map(|out| Shown::new(&job, out));
                 *showing_region = true;
                 // Only the edit's histogram is shown.
                 if job.pane == Pane::After {
@@ -593,7 +692,23 @@ fn render(
                     whole_draft.as_ref(),
                 )?;
                 let gpu = processor.used_gpu();
-                publish(out, RenderStage::Draft, false, gpu);
+                let hdr = hdr_frame(
+                    processor,
+                    &out,
+                    whole_draft.as_ref(),
+                    &|p, headroom, display| {
+                        p.render_hdr_to(
+                            &job.image,
+                            &job.recipe,
+                            edge,
+                            None,
+                            headroom,
+                            Cancel::new(&job.cancel),
+                            display,
+                        )
+                    },
+                );
+                publish(out, hdr, RenderStage::Draft, false, gpu);
             }
             let started = Instant::now();
             let out = processor.render_to(
@@ -606,7 +721,18 @@ fn render(
             )?;
             *quick_fit = matches!(out, Output::Frame(_)) && started.elapsed() < QUICK;
             let gpu = processor.used_gpu();
-            *fit = publish(out, RenderStage::Fit, true, gpu).map(|out| Shown::new(&job, out));
+            let hdr = hdr_frame(processor, &out, whole.as_ref(), &|p, headroom, display| {
+                p.render_hdr_to(
+                    &job.image,
+                    &job.recipe,
+                    job.max_edge,
+                    None,
+                    headroom,
+                    Cancel::new(&job.cancel),
+                    display,
+                )
+            });
+            *fit = publish(out, hdr, RenderStage::Fit, true, gpu).map(|out| Shown::new(&job, out));
             *showing_region = false;
             Ok(())
         })();
@@ -776,6 +902,7 @@ mod tests {
             overlay: Default::default(),
             ai,
             drawn: Vec::new(),
+            hdr: None,
         });
         let mut stages = Vec::new();
         loop {
@@ -1005,6 +1132,7 @@ mod tests {
             overlay: Default::default(),
             ai: None,
             drawn: Vec::new(),
+            hdr: None,
         });
         loop {
             match rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap() {
@@ -1043,6 +1171,7 @@ mod tests {
                 overlay: Default::default(),
                 ai: None,
                 drawn: Vec::new(),
+                hdr: None,
             });
             loop {
                 match rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap() {

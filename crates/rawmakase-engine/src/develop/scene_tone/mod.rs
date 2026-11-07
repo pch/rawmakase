@@ -3,7 +3,7 @@
 //! Camera Raw applies them (docs/scene-tone-stage.md).
 mod global;
 mod haze;
-mod hdr_whites;
+pub(crate) mod hdr_whites;
 mod measures;
 pub(crate) use global::{
     GlobalTone, MASK_VALUES, SLIDER_STEP, SLIDERS, T_FIRST, T_SAMPLES, T_STEP, U_FIRST, U_SAMPLES,

@@ -98,6 +98,10 @@ pub(crate) mod slot {
         LOCAL_FAMILIES: 1,
         LOCAL_KEYS: 3,
         GLOBAL_SH: 2,
+        // An HDR master's (`pixel_params_hdr`): the Whites gains over log2 scene value
+        // (`GlobalTone::hdr_gains`) and the profile's HDR tone curve sampled over log2
+        // scene value (`hdr_tone_table`), or -1 each for an SDR render.
+        HDR: 2,
     }
 }
 pub(crate) fn wgsl_prelude() -> String {
@@ -125,6 +129,16 @@ pub(crate) fn wgsl_prelude() -> String {
             MASK_VALUES.map(|v| format!("{v:?}")).join(", "),
             crate::develop::local_tone::FLOOR
         )
+        + &{
+            use crate::develop::scene_tone::hdr_whites::{GRID, IDENTITY_FROM, SAMPLES};
+            let [first, step] = GRID;
+            format!(
+                "const SCENE_H: vec3<f32> = vec3({first:?}, {step:?}, {SAMPLES}.0);\n\
+                 const HDR_IDENTITY_FROM: f32 = {IDENTITY_FROM:?};\n\
+                 const HDR_TONE: vec3<f32> = vec3({:?}, {:?}, {}.0);\n",
+                HDR_TONE_FIRST, HDR_TONE_STEP, HDR_TONE_SAMPLES
+            )
+        }
 }
 pub(crate) struct PixelParams {
     pub(crate) params: Vec<f32>,
@@ -182,12 +196,77 @@ impl PixelParams {
         );
     }
 }
-/// Whether the GPU port renders this (resolved) recipe. It has no HDR rendering: an
-/// HDR edit reaches it only as its SDR rendition (`Recipe::resolved`), and an HDR
-/// profile's 3D tables, which look up overrange-encoded values
-/// (`CameraProfile::camera_color`), render on the CPU.
+/// Whether the GPU port renders this (resolved) recipe's SDR rendition. An HDR edit
+/// reaches it as its SDR rendition (`Recipe::resolved`), or as its master through
+/// [`pixel_params_hdr`]. An HDR profile's 3D tables, which look up overrange-encoded
+/// values (`CameraProfile::camera_color`), render on the CPU.
 pub(crate) fn supported(r: &Recipe) -> bool {
     r.profile.as_ref().is_some_and(|p| !p.is_hdr()) && !r.hdr.is_active()
+}
+/// Whether the GPU port renders the HDR master of this recipe (resolved with HDR on,
+/// `Recipe::resolved_hdr`) of a photo with `metadata`: one whose master renders
+/// (`model::hdr::check_for`) and needs nothing after the profile's finish (no Texture,
+/// Contrast, tone curve or colour stage), through an ordinary profile without a look, whose HDR
+/// tone curve is the identity or the measured extension. An HDR profile's
+/// overrange-encoded tables and curve, a look's HDR table and curve
+/// (`CameraProfile::finish_hdr`), and an HDR file's light (`render_hdr`'s own path)
+/// render on the CPU.
+pub(crate) fn supported_hdr(r: &Recipe, metadata: &crate::camera_data::Metadata) -> bool {
+    use crate::camera_profiles::hdr_tone::HdrTone;
+    r.hdr.is_active()
+        && metadata.hdr_source.is_none()
+        && crate::model::hdr::check_for(r, metadata).is_ok()
+        // Texture's image, Contrast, the tone curves and the colour stage aren't
+        // ported to the HDR variant.
+        && crate::develop::texture::measured(r) == 0.
+        && !super::tone::hdr_finishes_past_the_profile(r)
+        && r.profile.as_ref().is_some_and(|p| {
+            !p.is_hdr()
+                && p.hdr_look().is_none()
+                && matches!(
+                    p.hdr_tone(),
+                    Ok(HdrTone::Identity | HdrTone::Extended { .. })
+                )
+        })
+}
+/// The HDR tone curve's samples over log2 scene value: from 2^-16, a 32nd of a stop
+/// apart, to 2^12. Below the first the curve is linear; above the last it goes on
+/// with the last samples' slope in log2–log2, where the measured extension is a power.
+const HDR_TONE_FIRST: f32 = -16.;
+const HDR_TONE_STEP: f32 = 1. / 32.;
+const HDR_TONE_SAMPLES: usize = 28 * 32 + 1;
+/// log2 of `profile`'s HDR tone curve (`tone`) at [`HDR_TONE_FIRST`] and every
+/// [`HDR_TONE_STEP`] after it, for `develop.wgsl`'s `hdr_curve`.
+fn hdr_tone_table(
+    tone: &crate::camera_profiles::hdr_tone::HdrTone,
+    points: &[[f32; 2]],
+) -> impl Iterator<Item = f32> {
+    (0..HDR_TONE_SAMPLES).map(move |k| {
+        let x = (HDR_TONE_FIRST + k as f32 * HDR_TONE_STEP).exp2();
+        tone.evaluate(points, x).max(f32::MIN_POSITIVE).log2()
+    })
+}
+/// Parameters for the per-pixel stage of `im`'s HDR master with the recipe `r`
+/// (resolved with HDR on), or `None` when the GPU port does not cover it
+/// ([`supported_hdr`]). The pass writes the master before its limit: linear
+/// ProPhoto, 1 = graphics white, not negative, as `CurveSet`'s `HdrFinish` does.
+pub(crate) fn pixel_params_hdr(im: Source, r: &Recipe) -> Option<PixelParams> {
+    if !supported_hdr(r, &im.metadata) {
+        return None;
+    }
+    let profile = r.profile.as_ref()?;
+    let tone = profile.hdr_tone().ok()?;
+    let camera = camera_stage(&im.metadata, r);
+    let lut = CurveSet::for_image(im, r, camera, false);
+    let gains: Vec<f32> = lut.scene.global.hdr_gains()?.to_vec();
+    let mut p = fill(r, lut, camera)?;
+    let gains = p.push(gains);
+    let curve = p.push(hdr_tone_table(
+        &tone,
+        profile.gpu_tables(r.temperature).tone,
+    ));
+    p.set(slot::HDR, &[gains, curve]);
+    Some(p)
 }
 /// Parameters for `im`'s per-pixel stage with the resolved recipe `r`, or `None` when
 /// the GPU port does not cover it.
@@ -415,6 +494,7 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     p.set(slot::ADJUST, &[lut.color_adjustments as u8 as f32]);
     p.set(slot::DEFRINGE, &e.defringe);
     p.set(slot::DEFRINGE_RANGES, e.defringe_ranges.as_flattened());
+    p.set(slot::HDR, &[-1., -1.]);
     Some(p)
 }
 impl PixelParams {

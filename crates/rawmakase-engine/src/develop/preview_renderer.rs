@@ -41,6 +41,9 @@ pub(crate) struct Stages<'a> {
     pub(crate) retouch: &'a mut super::retouch::RetouchCache,
     pub(crate) backend: &'a mut Backend,
     pub(crate) display: Option<&'a gpu::Display>,
+    /// Present the HDR master, held to this display headroom, in place of the SDR
+    /// rendition: only on the GPU (`quality::HdrNotOnGpu` otherwise).
+    pub(crate) hdr: Option<f32>,
 }
 /// Pixel budget of a reduced 100% drag preview.
 const PREVIEW_PIXELS: u64 = 600_000;
@@ -149,20 +152,74 @@ impl PreviewRenderer {
         cancel: Cancel<'_>,
         display: Option<&gpu::Display>,
     ) -> Result<Output> {
+        self.render_in(image, recipe, max_edge, region, cancel, display, None)
+    }
+    /// The HDR master of an edit with HDR on, as [`Self::render_to`] views it (the
+    /// whole photo within `max_edge`, or a 100% `region`), presented for `display`
+    /// as extended sRGB held to the display's `headroom`
+    /// (`color::hdr_output::extended_srgb`). It shares the SDR rendition's samples,
+    /// pyramid and caches. `None` when the GPU port doesn't render this master
+    /// (`pixel_params::supported_hdr`), the GPU fails or is off, or the edit uses AI
+    /// Denoise: [`super::render_hdr`] on the CPU is the reference and the fallback.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_hdr_to(
+        &mut self,
+        image: &CameraImage,
+        recipe: &Recipe,
+        max_edge: u32,
+        region: Option<[u32; 4]>,
+        headroom: f32,
+        cancel: Cancel<'_>,
+        display: &gpu::Display,
+    ) -> Result<Option<gpu::HdrFrame>> {
+        if recipe.ai_denoise.enabled {
+            return Ok(None);
+        }
+        hdr_frame(self.render_in(
+            image,
+            recipe,
+            max_edge,
+            region,
+            cancel,
+            Some(display),
+            Some(headroom),
+        ))
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn render_in(
+        &mut self,
+        image: &CameraImage,
+        recipe: &Recipe,
+        max_edge: u32,
+        region: Option<[u32; 4]>,
+        cancel: Cancel<'_>,
+        display: Option<&gpu::Display>,
+        hdr: Option<f32>,
+    ) -> Result<Output> {
         let shown = recipe.as_rendered();
         let recipe = shown.as_ref();
         self.backend.used_gpu = false;
         anyhow::ensure!(!cancel.is_cancelled(), "Render superseded");
         let recipe = &recipe.checked()?;
-        let resolved = quality::resolve(image, recipe);
+        let resolved = match hdr {
+            Some(_) => quality::resolve_hdr(image, recipe),
+            None => quality::resolve(image, recipe),
+        };
+        if hdr.is_some()
+            && !super::pipeline::pixel_params::supported_hdr(&resolved.recipe, &image.metadata)
+        {
+            return Err(quality::HdrNotOnGpu.into());
+        }
         if region.is_none()
             && max_edge > 0
-            && let Some(out) = self.render_fit(image, &resolved, max_edge, cancel, display)?
+            && let Some(out) = self.render_fit(image, &resolved, max_edge, cancel, display, hdr)?
         {
             return Ok(out);
         }
-        let ai = self.ai.clone();
+        let ai = self.ai.clone().filter(|_| hdr.is_none());
         self.release_replaced(image, &resolved.recipe, ai.as_ref(), cancel)?;
+        let mut stages = self.stages(display);
+        stages.hdr = hdr;
         quality::render_preview(
             image,
             &resolved,
@@ -171,7 +228,7 @@ impl PreviewRenderer {
             region,
             crate::color::OutputSpace::Srgb,
             cancel,
-            Some(&mut self.stages(display)),
+            Some(&mut stages),
         )
     }
     fn stages<'a>(&'a mut self, display: Option<&'a gpu::Display>) -> Stages<'a> {
@@ -180,6 +237,7 @@ impl PreviewRenderer {
             retouch: &mut self.retouch,
             backend: &mut self.backend,
             display,
+            hdr: None,
         }
     }
     /// Fit and zoomed-out views from the smallest pyramid level with at least one
@@ -191,6 +249,7 @@ impl PreviewRenderer {
         max_edge: u32,
         cancel: Cancel<'_>,
         display: Option<&gpu::Display>,
+        hdr: Option<f32>,
     ) -> Result<Option<Output>> {
         let full = resolved.geometry;
         let long = full.width.max(full.height);
@@ -202,6 +261,7 @@ impl PreviewRenderer {
         let (level, source) = self.level(image, resolved, needed, cancel)?;
         let region = [0, 0, size.0, size.1];
         let mut stages = self.stages(display);
+        stages.hdr = hdr;
         let recipe = &resolved.recipe;
         quality::render_level(&level, &source, recipe, size, region, cancel, &mut stages).map(Some)
     }
@@ -227,11 +287,53 @@ impl PreviewRenderer {
         cancel: Cancel<'_>,
         display: Option<&gpu::Display>,
     ) -> Result<Output> {
+        self.region_preview_in(image, recipe, region, cancel, display, None)
+    }
+    /// As [`Self::render_region_preview_to`] for an HDR master, as
+    /// [`Self::render_hdr_to`] presents it.
+    pub fn render_hdr_region_preview_to(
+        &mut self,
+        image: &CameraImage,
+        recipe: &Recipe,
+        region: [u32; 4],
+        headroom: f32,
+        cancel: Cancel<'_>,
+        display: &gpu::Display,
+    ) -> Result<Option<gpu::HdrFrame>> {
+        if recipe.ai_denoise.enabled {
+            return Ok(None);
+        }
+        hdr_frame(self.region_preview_in(
+            image,
+            recipe,
+            region,
+            cancel,
+            Some(display),
+            Some(headroom),
+        ))
+    }
+    fn region_preview_in(
+        &mut self,
+        image: &CameraImage,
+        recipe: &Recipe,
+        region: [u32; 4],
+        cancel: Cancel<'_>,
+        display: Option<&gpu::Display>,
+        hdr: Option<f32>,
+    ) -> Result<Output> {
         let shown = recipe.as_rendered();
         let recipe = shown.as_ref();
         self.backend.used_gpu = false;
         let recipe = &recipe.checked()?;
-        let resolved = quality::resolve(image, recipe);
+        let resolved = match hdr {
+            Some(_) => quality::resolve_hdr(image, recipe),
+            None => quality::resolve(image, recipe),
+        };
+        if hdr.is_some()
+            && !super::pipeline::pixel_params::supported_hdr(&resolved.recipe, &image.metadata)
+        {
+            return Err(quality::HdrNotOnGpu.into());
+        }
         let full = resolved.geometry;
         let [x, y, w, h] = region;
         anyhow::ensure!(
@@ -254,6 +356,7 @@ impl PreviewRenderer {
         let (level, source) = self.level(image, &resolved, needed, cancel)?;
         let region = [px, py, pw, ph];
         let mut stages = self.stages(display);
+        stages.hdr = hdr;
         let recipe = &resolved.recipe;
         quality::render_level(&level, &source, recipe, size, region, cancel, &mut stages)
     }
@@ -295,6 +398,15 @@ impl PreviewRenderer {
         cancel: Cancel<'_>,
     ) -> Option<Rendered> {
         self.backend.finish(image, recipe, sigma, max_edge, cancel)
+    }
+}
+/// An HDR render's frame, or `None` where the GPU port doesn't render it.
+fn hdr_frame(out: Result<Output>) -> Result<Option<gpu::HdrFrame>> {
+    match out {
+        Ok(Output::Hdr(frame)) => Ok(Some(*frame)),
+        Ok(_) => Err(anyhow::anyhow!("An HDR render gave an SDR frame")),
+        Err(e) if e.is::<quality::HdrNotOnGpu>() => Ok(None),
+        Err(e) => Err(e),
     }
 }
 impl Backend {
@@ -398,6 +510,33 @@ impl Backend {
                 recipe,
                 finish,
                 display,
+                cancel,
+            )
+        })
+    }
+    /// As [`Self::present`] for an HDR master's parameters, held to `headroom`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn present_hdr(
+        &mut self,
+        samples: &Arc<super::pipeline::Samples>,
+        params: &super::pipeline::pixel_params::PixelParams,
+        recipe: &Recipe,
+        finish: &gpu::Finish,
+        display: &gpu::Display,
+        headroom: f32,
+        cancel: Cancel<'_>,
+    ) -> Option<gpu::HdrFrame> {
+        if !self.fits(samples, params) {
+            return None;
+        }
+        self.run(cancel, |gpu| {
+            gpu.present_hdr(
+                gpu::Input::Cpu(samples),
+                params,
+                recipe,
+                finish,
+                display,
+                headroom,
                 cancel,
             )
         })

@@ -167,6 +167,8 @@ struct BeforeJob {
     max_edge: u32,
     monitor: Option<PathBuf>,
     clipping: ClipOverlay,
+    /// The display headroom its HDR master's GPU preview is asked for at, if due.
+    hdr: Option<f32>,
 }
 /// The photo the side beside the edit renders, its settings, the 100% region and
 /// the long edge of its whole photo.
@@ -185,6 +187,7 @@ impl PartialEq for BeforeJob {
             && self.max_edge == other.max_edge
             && self.monitor == other.monitor
             && self.clipping == other.clipping
+            && self.hdr == other.hdr
     }
 }
 
@@ -379,24 +382,32 @@ impl Editor {
         };
         let geometry = Geometry::new(&image, &recipe, 0);
         let viewport = self.view.viewport;
+        let region = zoom.render_region(
+            viewport,
+            geometry.width,
+            geometry.height,
+            self.preview
+                .before
+                .submitted
+                .as_ref()
+                .and_then(|j| j.region),
+        );
+        let max_edge =
+            crate::app::develop::workflow::render_edges(&zoom, viewport, &geometry).max_edge;
+        let hdr = self
+            .hdr_refused()
+            .and_then(|()| self.hdr_due_for(&image, &recipe, region, max_edge))
+            .ok()
+            .map(|due| due.key.headroom());
         let job = BeforeJob {
-            region: zoom.render_region(
-                viewport,
-                geometry.width,
-                geometry.height,
-                self.preview
-                    .before
-                    .submitted
-                    .as_ref()
-                    .and_then(|j| j.region),
-            ),
-            max_edge: crate::app::develop::workflow::render_edges(&zoom, viewport, &geometry)
-                .max_edge,
+            region,
+            max_edge,
             ai: self.document.ai_source(&image, &recipe.ai_denoise),
             image,
             recipe,
             monitor: self.view.display_profile(),
             clipping: self.view.clipping.overlay(),
+            hdr,
         };
         if self.preview.before.submitted.as_ref() == Some(&job) {
             return;
@@ -422,6 +433,7 @@ impl Editor {
             overlay: crate::app::worker::Overlay::None,
             ai: job.ai,
             drawn,
+            hdr: job.hdr,
         });
     }
     /// A Before render arrived.
@@ -447,8 +459,8 @@ impl Editor {
                 let image = egui::ColorImage::from_rgb(size, &display_rgb);
                 Picture::upload(slot, ctx, "before", image);
             }
-            crate::app::worker::Preview::Texture { id, size, .. } => {
-                *slot = Some(Picture::presented(id, size));
+            crate::app::worker::Preview::Texture { id, size, hdr, .. } => {
+                *slot = Some(Picture::presented_with(id, size, hdr));
             }
         }
         before.mode = before.pending_mode;
@@ -515,10 +527,18 @@ impl Editor {
     ) {
         let painter = ui.painter().with_clip_rect(pane.clip);
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
+        let due = self.hdr_second_side_due();
+        let hdr =
+            |p: &Picture| crate::app::develop::viewport::gpu_hdr_for(Some(p), due.as_ref().ok());
+        let mut gpu = crate::app::develop::viewport::GpuHdr::default();
         let before = &self.preview.before;
         match &before.texture {
             Some(texture) => {
-                painter.image(texture.id(), rect, uv, Color32::WHITE);
+                let hdr = hdr(texture);
+                gpu.whole = hdr.is_some();
+                for id in std::iter::once(texture.id()).chain(hdr.map(|h| h.id)) {
+                    painter.image(id, rect, uv, Color32::WHITE);
+                }
             }
             // Waiting for its first render; a 100% region alone is drawn below.
             None if before.region.is_none() => {
@@ -528,10 +548,13 @@ impl Editor {
             None => {}
         }
         if let (TextureMode::Region(region), Some(texture)) = (before.mode, &before.region) {
-            painter.image(texture.id(), region_on(rect, g, region), uv, Color32::WHITE);
+            let hdr = hdr(texture);
+            gpu.region = hdr.is_some();
+            for id in std::iter::once(texture.id()).chain(hdr.map(|h| h.id)) {
+                painter.image(id, region_on(rect, g, region), uv, Color32::WHITE);
+            }
         }
-        let due = self.hdr_second_side_due();
-        self.hdr_preview_ui(&painter, rect, g, due, true);
+        self.hdr_preview_ui(&painter, rect, g, due, true, gpu);
     }
     /// What the side beside the edit last asked its SDR rendition for.
     pub(in crate::app) fn second_side_submitted(&self) -> Option<SecondSide<'_>> {

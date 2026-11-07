@@ -90,6 +90,43 @@ uniform! {
     }
 }
 
+uniform! {
+    /// `Params` in `present_hdr.wgsl`: an HDR master's preview finishing.
+    HdrPresentParams {
+        /// Developed buffer size, and the rectangle of it that is shown.
+        width: u32,
+        height: u32,
+        crop_x: u32,
+        crop_y: u32,
+        crop_w: u32,
+        crop_h: u32,
+        radius: u32,
+        sharpen: u32,
+        amount: f32,
+        threshold: f32,
+        halo: f32,
+        dark: f32,
+        /// The HDR limit's peak and the display's headroom, over graphics white.
+        peak: f32,
+        headroom: f32,
+        pad0: u32,
+        pad1: u32,
+        /// Linear ProPhoto to linear sRGB primaries, row by row.
+        m00: f32,
+        m01: f32,
+        m02: f32,
+        m10: f32,
+        m11: f32,
+        m12: f32,
+        m20: f32,
+        m21: f32,
+        m22: f32,
+        pad2: u32,
+        pad3: u32,
+        pad4: u32,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,6 +179,13 @@ mod tests {
         let (members, size) = shader_params(&source);
         assert_eq!(members, rust_fields(PresentParams::FIELDS));
         assert_eq!(size, std::mem::size_of::<PresentParams>());
+    }
+
+    #[test]
+    fn hdr_present_params_match_the_shader() {
+        let (members, size) = shader_params(include_str!("present_hdr.wgsl"));
+        assert_eq!(members, rust_fields(HdrPresentParams::FIELDS));
+        assert_eq!(size, std::mem::size_of::<HdrPresentParams>());
     }
 
     #[test]
