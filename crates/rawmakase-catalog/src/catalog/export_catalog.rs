@@ -58,6 +58,11 @@ pub struct CatalogExport {
     /// For a folder exported, what to check before removing it from this
     /// catalog.
     pub removal: Option<ExportedFolders>,
+    /// Editable previews copied into the export's store folder with it.
+    pub editable_previews: usize,
+    /// Photos whose editable preview's file was gone from this catalog's store
+    /// folder: exported without one.
+    pub missing_editable_previews: Vec<PhotoId>,
 }
 
 /// Folders as they were exported: removing them from the catalog is refused
@@ -73,6 +78,10 @@ pub struct ExportedFolders {
     families: BTreeMap<PhotoId, (FamilyDigest, FamilyDigest)>,
     /// Where the folders are, on every computer the catalog knows.
     placement: Vec<String>,
+    /// Each family's editable preview files, by master: one built or discarded
+    /// since would not be what the export holds. (`user_state` leaves them
+    /// out, as file operations need.)
+    editable_previews: BTreeMap<PhotoId, Vec<String>>,
 }
 impl ExportedFolders {
     /// The folders exported.
@@ -83,6 +92,7 @@ impl ExportedFolders {
     fn read(db: &impl Reads, folders: &[FolderId]) -> Result<Self> {
         let photos = super::ingest::folder_rows(db, folders)?;
         let mut families = BTreeMap::new();
+        let mut editable_previews = BTreeMap::new();
         for &photo in &photos {
             let master = master_of(db, photo)?;
             if families.contains_key(&master) {
@@ -91,12 +101,14 @@ impl ExportedFolders {
             let user = digest::user_state(db, master)?.context("A photo left the catalog")?;
             let placed = digest::placement(db, master)?.context("A photo left the catalog")?;
             families.insert(master, (user, placed));
+            editable_previews.insert(master, super::editable_previews::family_files(db, master)?);
         }
         Ok(Self {
             folders: folders.to_vec(),
             photos,
             families,
             placement: super::locations::placement_of(db, folders)?,
+            editable_previews,
         })
     }
 }
@@ -126,6 +138,15 @@ impl Catalog {
             .unwrap_or_else(|| "Exported".into());
         let mut copy = Catalog::open_as(working.as_path(), &self.computer)?;
         let mut export = copy.keep_only(scope, &collection)?;
+        // Before the export is published, so it never names an editable preview
+        // its folder lacks; removed again if it isn't.
+        let carried = carry_editable_previews(
+            &mut copy,
+            &self.editable_preview_folder(),
+            &super::editable_previews::folder(&destination.into()),
+        )?;
+        export.editable_previews = carried.written.len() + carried.reused;
+        export.missing_editable_previews = carried.missing.clone();
         let kept: i64 = copy.db.read_one(sql!("SELECT count(*) FROM photos"), &[])?;
         drop(copy);
         // Opened again as anyone would open it, on this computer.
@@ -137,6 +158,7 @@ impl Catalog {
         drop(opened);
         crate::storage::rename_noclobber(&working, destination)
             .context("Could not save the exported catalog under its name")?;
+        carried.keep();
         export.path = destination.to_path_buf();
         Ok(export)
     }
@@ -243,6 +265,8 @@ impl Catalog {
             lens_profiles,
             kept_every_mask,
             removal,
+            editable_previews: 0,
+            missing_editable_previews: Vec::new(),
         })
     }
 
@@ -363,6 +387,103 @@ fn master_of(db: &impl Reads, photo: PhotoId) -> Result<PhotoId> {
     let master: Option<Option<PhotoId>> =
         db.read_optional(sql!("SELECT master_id FROM photos WHERE id=?"), &[&photo])?;
     Ok(master.context("A photo left the catalog")?.unwrap_or(photo))
+}
+
+/// The editable preview files copied for an export. Deleted again when dropped,
+/// unless kept: they are copies the export made, never another's.
+struct Carried {
+    folder: PathBuf,
+    /// Whether the export made the folder.
+    made_folder: bool,
+    written: Vec<PathBuf>,
+    /// Identical files already there, kept as they were.
+    reused: usize,
+    /// Photos whose file was gone, and whose rows were dropped.
+    missing: Vec<PhotoId>,
+}
+impl Carried {
+    /// The export was published: its files stay.
+    fn keep(mut self) {
+        self.written.clear();
+        self.made_folder = false;
+    }
+}
+impl Drop for Carried {
+    fn drop(&mut self) {
+        for file in &self.written {
+            let _ = std::fs::remove_file(file);
+        }
+        if self.made_folder {
+            // Only while empty: nothing but what the export wrote goes.
+            let _ = std::fs::remove_dir(&self.folder);
+        }
+    }
+}
+
+/// Copies the editable previews `copy`, an export being made, still records from
+/// `from` (this catalog's store folder) into `to` (the export's), each under
+/// its own name, replacing nothing. One whose file is gone loses its row.
+fn carry_editable_previews(copy: &mut Catalog, from: &Path, to: &Path) -> Result<Carried> {
+    let files = super::editable_previews::files(&copy.db)?;
+    let mut carried = Carried {
+        folder: to.to_path_buf(),
+        made_folder: false,
+        written: Vec::new(),
+        reused: 0,
+        missing: Vec::new(),
+    };
+    for (photo, file) in files {
+        let source_path = super::editable_previews::path_in(from, &file)?;
+        let mut source = match std::fs::File::open(&source_path) {
+            Ok(source) => source,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                carried.missing.push(photo);
+                continue;
+            }
+            Err(e) => {
+                return Err(anyhow::Error::from(e).context("Could not read an editable preview"));
+            }
+        };
+        if !carried.made_folder && !to.is_dir() {
+            std::fs::create_dir(to).context("Could not make the editable previews folder")?;
+            carried.made_folder = true;
+            crate::storage::sync_dir(crate::storage::parent_dir(to))?;
+        }
+        let path = super::editable_previews::path_in(to, &file)?;
+        // One an earlier export to this name left, when it was cut short
+        // after copying it, is this very file: it is kept, not replaced.
+        if std::fs::read(&path)
+            .is_ok_and(|there| std::fs::read(&source_path).is_ok_and(|ours| ours == there))
+        {
+            carried.reused += 1;
+            continue;
+        }
+        let staged = crate::storage::stage(to, |staged| {
+            std::io::copy(&mut source, staged)?;
+            Ok(())
+        })?;
+        crate::storage::persist(staged, &path, crate::storage::Replace::NoClobber).with_context(
+            || {
+                format!(
+                    "An editable preview is already at {}; choose another name",
+                    path.display()
+                )
+            },
+        )?;
+        carried.written.push(path);
+    }
+    if !carried.missing.is_empty() {
+        copy.db.write(|w| {
+            for photo in &carried.missing {
+                w.execute(
+                    sql!("DELETE FROM editable_previews WHERE photo=?"),
+                    &[photo],
+                )?;
+            }
+            Ok(())
+        })?;
+    }
+    Ok(carried)
 }
 
 /// The tables `schema.sql` makes.

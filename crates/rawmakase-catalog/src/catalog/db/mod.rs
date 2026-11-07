@@ -72,6 +72,8 @@ pub(in crate::catalog) fn opens(version: i64, newest: i64) -> bool {
 /// backend it is or its connection.
 pub(in crate::catalog) struct Db {
     backend: Backend,
+    /// Where the catalog is, for the files of its own beside it.
+    location: CatalogLocation,
 }
 
 /// Where the catalog's rows live.
@@ -125,6 +127,7 @@ impl Db {
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")?;
         Ok(Self {
             backend: Backend::Sqlite(db),
+            location: location.clone(),
         })
     }
 
@@ -155,6 +158,7 @@ impl Db {
             return self.write(then);
         }
         let Backend::Sqlite(db) = &mut self.backend;
+        let location = &self.location;
         ensure!(
             !backup.exists(),
             "A backup already exists: {}",
@@ -169,12 +173,15 @@ impl Db {
         let found = tx.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?;
         if found < target {
             if found < VERSION {
-                migrate(&mut Write { db: &tx })?;
+                migrate(&mut Write::new(&tx, location))?;
             }
             tx.execute_batch(&format!("PRAGMA user_version={target}"))?;
         }
-        let result = then(&mut Write { db: &tx })?;
+        let mut write = Write::new(&tx, location);
+        let result = then(&mut write)?;
+        let discarded = std::mem::take(&mut write.discarded);
         tx.commit()?;
+        delete_discarded(discarded);
         Ok(result)
     }
 
@@ -252,7 +259,9 @@ impl Db {
     }
 
     /// The only way to write: `f`'s writes are committed together, or none
-    /// of them when it fails or panics.
+    /// of them when it fails or panics. The files `f` asked to delete
+    /// ([`Write::delete_after_commit`]) are deleted once the commit succeeds,
+    /// and none of them otherwise.
     pub(in crate::catalog) fn write<R>(
         &mut self,
         f: impl FnOnce(&mut Write<'_>) -> Result<R>,
@@ -278,8 +287,11 @@ impl Db {
             Backend::Sqlite(db) => {
                 // Dropped without a commit, the transaction rolls back.
                 let tx = db.transaction_with_behavior(behavior)?;
-                let result = f(&mut Write { db: &tx })?;
+                let mut write = Write::new(&tx, &self.location);
+                let result = f(&mut write)?;
+                let discarded = std::mem::take(&mut write.discarded);
                 tx.commit()?;
+                delete_discarded(discarded);
                 Ok(result)
             }
         }
@@ -299,14 +311,28 @@ impl Db {
                 db.execute("ATTACH DATABASE ? AS lr", [lightroom.to_string_lossy()])?;
                 let attached = Attached { db };
                 let tx = attached.db.transaction()?;
-                let result = f(&mut LightroomWrite {
-                    write: Write { db: &tx },
-                })?;
+                let mut write = LightroomWrite {
+                    write: Write::new(&tx, &self.location),
+                };
+                let result = f(&mut write)?;
+                let discarded = std::mem::take(&mut write.write.discarded);
                 tx.commit()?;
                 drop(attached);
+                delete_discarded(discarded);
                 Ok(result)
             }
         }
+    }
+}
+
+/// Deletes the files a committed write discarded. They are RAWmakase's own
+/// derived files, never a user's (see [`Write::delete_after_commit`]). One
+/// that can't be deleted is left: no row names it any more, and
+/// [`Catalog::editable_preview_orphans`](super::Catalog::editable_preview_orphans)
+/// finds it again.
+fn delete_discarded(files: Vec<std::path::PathBuf>) {
+    for file in files {
+        let _ = std::fs::remove_file(file);
     }
 }
 
@@ -458,11 +484,38 @@ impl Snapshot<'_> {
 /// An open write transaction (see [`Db::write`]).
 pub(in crate::catalog) struct Write<'db> {
     db: &'db Connection,
+    location: &'db CatalogLocation,
+    /// Files to delete once the transaction commits.
+    discarded: Vec<std::path::PathBuf>,
+}
+
+impl<'db> Write<'db> {
+    fn new(db: &'db Connection, location: &'db CatalogLocation) -> Self {
+        Self {
+            db,
+            location,
+            discarded: Vec::new(),
+        }
+    }
 }
 
 impl Write<'_> {
     fn connection(&self) -> &Connection {
         self.db
+    }
+
+    /// Where the catalog being written is.
+    pub(in crate::catalog) fn location(&self) -> &CatalogLocation {
+        self.location
+    }
+
+    /// Deletes `file` once this transaction commits, and never if it rolls
+    /// back, so no committed row names a file that is gone. Only for
+    /// RAWmakase's own derived files, which the rows being written stop
+    /// naming (an editable preview): never a user's file, which only
+    /// `catalog::file_ops` moves or puts in the Trash.
+    pub(in crate::catalog) fn delete_after_commit(&mut self, file: std::path::PathBuf) {
+        self.discarded.push(file);
     }
 
     /// Runs `sql`; returns how many rows it changed.
@@ -498,12 +551,15 @@ impl Write<'_> {
         // One name serves nested savepoints too: SQLite releases and rolls
         // back to the most recent savepoint of a name.
         self.db.execute_batch("SAVEPOINT write")?;
+        // Files the savepoint's writes discarded go only if they are kept.
+        let discarded = self.discarded.len();
         match f(self) {
             Ok(value) => {
                 self.db.execute_batch("RELEASE write")?;
                 Ok(value)
             }
             Err(error) => {
+                self.discarded.truncate(discarded);
                 self.db.execute_batch("ROLLBACK TO write; RELEASE write")?;
                 Err(error)
             }

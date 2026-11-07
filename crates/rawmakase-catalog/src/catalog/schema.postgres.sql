@@ -137,6 +137,19 @@ CREATE TABLE IF NOT EXISTS photo_checksums (
 );
 CREATE INDEX IF NOT EXISTS photo_checksums_quick ON photo_checksums(size, quick_hash);
 
+CREATE TABLE IF NOT EXISTS editable_previews (
+    photo BIGINT PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+    file TEXT NOT NULL UNIQUE,
+    identity TEXT NOT NULL,
+    original_width BIGINT NOT NULL,
+    original_height BIGINT NOT NULL,
+    width BIGINT NOT NULL,
+    height BIGINT NOT NULL,
+    bytes BIGINT NOT NULL,
+    version BIGINT NOT NULL,
+    built_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS photo_sequences (
     photo BIGINT PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
     camera TEXT,

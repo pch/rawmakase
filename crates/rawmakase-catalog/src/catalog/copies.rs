@@ -116,6 +116,8 @@ impl Catalog {
                 sql!("UPDATE photo_import_facts SET photo=? WHERE photo=?"),
                 &[&id, &master],
             )?;
+            // And its editable preview.
+            super::editable_previews::pass_to(w, master, id)?;
             // And what its camera numbered it.
             w.execute(
                 sql!("DELETE FROM photo_sequences WHERE photo=?"),
@@ -155,10 +157,12 @@ impl Catalog {
         self.db.write(|w| delete_photo(w, id))
     }
 }
-/// Deletes photo `id` from the catalog with its edit, history, snapshots and
-/// metadata, and its place in collections. Its file is untouched.
+/// Deletes photo `id` from the catalog with its edit, history, snapshots,
+/// metadata and editable preview, and its place in collections. Its file is
+/// untouched; its editable preview's is deleted once the write commits.
 pub(super) fn delete_photo(w: &mut Write<'_>, id: PhotoId) -> Result<()> {
     super::edit_rows::delete_edits(w, id)?;
+    super::editable_previews::forget_photo(w, id)?;
     for delete in [
         sql!("DELETE FROM lightroom_history WHERE photo=?"),
         sql!("DELETE FROM photo_keywords WHERE photo=?"),

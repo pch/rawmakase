@@ -413,3 +413,154 @@ fn an_exported_folder_found_elsewhere_since_is_not_removed() -> Result<()> {
     assert_eq!(s.catalog.photos()?.len(), 3);
     Ok(())
 }
+
+/// Writes and records an editable preview of `photo` in `catalog`, built from
+/// its file at `path`; returns its file name.
+fn editable_preview(
+    catalog: &mut Catalog,
+    photo: PhotoId,
+    path: &std::path::Path,
+) -> Result<String> {
+    let original = crate::storage::Identity::read(path)?;
+    let file = super::editable_preview_file_name(photo, &original);
+    let folder = catalog.editable_preview_folder();
+    std::fs::create_dir_all(&folder)?;
+    std::fs::write(folder.join(&file), file.as_bytes())?;
+    catalog.record_editable_preview(
+        photo,
+        path,
+        &super::BuiltEditablePreview {
+            file: file.clone(),
+            format_version: 1,
+            original,
+            original_size: (6000, 4000),
+            size: (2560, 1707),
+        },
+    )?;
+    Ok(file)
+}
+
+#[test]
+fn an_export_carries_its_photos_editable_previews_and_no_others() -> Result<()> {
+    let mut s = shoots()?;
+    let photos = s.dir.join("photos");
+    let a1 = editable_preview(&mut s.catalog, s.a1, &photos.join("A/a1.ARW"))?;
+    let a2 = editable_preview(&mut s.catalog, s.a2, &photos.join("A/a2.ARW"))?;
+    let b1 = editable_preview(&mut s.catalog, s.b1, &photos.join("B/b1.ARW"))?;
+    // a2's file went missing: its row can't go with the export.
+    std::fs::remove_file(s.catalog.editable_preview_folder().join(&a2))?;
+    let destination = s.dir.join("out/Shoot A.rawmakase");
+
+    let export = s
+        .catalog
+        .export_catalog(&ExportScope::Folders(vec![s.a]), &destination)?;
+
+    assert_eq!(export.editable_previews, 1);
+    assert_eq!(export.missing_editable_previews, [s.a2]);
+    let out = Catalog::open(&destination)?;
+    let store = s
+        .dir
+        .canonicalize()?
+        .join("out/Shoot A.rawmakase-editable-previews");
+    assert_eq!(out.editable_preview_folder(), store);
+    let found = out.editable_preview(s.a1)?.context("carried")?;
+    assert_eq!(found.path, store.join(&a1));
+    assert_eq!(std::fs::read(&found.path)?, a1.as_bytes());
+    assert_eq!(out.editable_preview(s.a2)?, None);
+    assert_eq!(out.editable_preview(s.b1)?, None);
+    let names: Vec<_> = std::fs::read_dir(&store)?
+        .map(|e| e.map(|e| e.file_name()))
+        .collect::<std::io::Result<_>>()?;
+    assert_eq!(names, [std::ffi::OsString::from(&a1)]);
+    // This catalog keeps its own.
+    let own = s.catalog.editable_preview_folder();
+    assert!(own.join(&a1).is_file() && own.join(&b1).is_file());
+    assert!(s.catalog.editable_preview(s.a1)?.is_some());
+    Ok(())
+}
+
+#[test]
+fn a_failed_export_leaves_no_editable_preview_behind() -> Result<()> {
+    let mut s = shoots()?;
+    let photos = s.dir.join("photos");
+    editable_preview(&mut s.catalog, s.a1, &photos.join("A/a1.ARW"))?;
+    let a2 = editable_preview(&mut s.catalog, s.a2, &photos.join("A/a2.ARW"))?;
+    let out = s.dir.join("out");
+    std::fs::create_dir_all(&out)?;
+    // A file of one's name is already in the folder the export would use:
+    // nothing replaces it, and what was copied before it goes again.
+    let store = out.join("a.rawmakase-editable-previews");
+    std::fs::create_dir(&store)?;
+    std::fs::write(store.join(&a2), b"someone else's")?;
+    assert!(
+        s.catalog
+            .export_catalog(&ExportScope::Folders(vec![s.a]), &out.join("a.rawmakase"))
+            .is_err()
+    );
+    assert!(!out.join("a.rawmakase").exists());
+    assert_eq!(std::fs::read(store.join(&a2))?, b"someone else's");
+    assert_eq!(std::fs::read_dir(&store)?.count(), 1);
+
+    // The same file, left by an export cut short, is kept as it was.
+    let again = out.join("c.rawmakase-editable-previews");
+    std::fs::create_dir(&again)?;
+    std::fs::copy(
+        s.catalog.editable_preview_folder().join(&a2),
+        again.join(&a2),
+    )?;
+    let export = s
+        .catalog
+        .export_catalog(&ExportScope::Folders(vec![s.a]), &out.join("c.rawmakase"))?;
+    assert_eq!(export.editable_previews, 2);
+    assert_eq!(std::fs::read_dir(&again)?.count(), 2);
+
+    // Refused before anything is copied.
+    std::fs::write(out.join("b.rawmakase"), b"mine")?;
+    assert!(
+        s.catalog
+            .export_catalog(&ExportScope::Folders(vec![s.a]), &out.join("b.rawmakase"))
+            .is_err()
+    );
+    assert!(!out.join("b.rawmakase-editable-previews").exists());
+    Ok(())
+}
+
+#[test]
+fn an_exported_folder_whose_editable_preview_changed_since_is_not_removed() -> Result<()> {
+    let mut s = shoots()?;
+    let photos = s.dir.join("photos");
+    let export = s
+        .catalog
+        .export_catalog(&ExportScope::Folders(vec![s.a]), &s.dir.join("a.rawmakase"))?;
+    let removal = export.removal.context("removal")?;
+    // Built since: the export doesn't have it, and removing would lose it.
+    editable_preview(&mut s.catalog, s.a1, &photos.join("A/a1.ARW"))?;
+    assert!(s.catalog.remove_exported_folders(&removal).is_err());
+    // Exported with it, then discarded: what is removed is no longer what
+    // was exported, so it is refused too, as for any change since.
+    let export = s
+        .catalog
+        .export_catalog(&ExportScope::Folders(vec![s.a]), &s.dir.join("b.rawmakase"))?;
+    let removal = export.removal.context("removal")?;
+    s.catalog.discard_editable_previews(&[s.a1])?;
+    assert!(s.catalog.remove_exported_folders(&removal).is_err());
+    // Exported with it, unchanged since: removed, its file with it, while
+    // the export keeps its own copy.
+    let a1 = editable_preview(&mut s.catalog, s.a1, &photos.join("A/a1.ARW"))?;
+    let destination = s.dir.join("c.rawmakase");
+    let export = s
+        .catalog
+        .export_catalog(&ExportScope::Folders(vec![s.a]), &destination)?;
+    let removal = export.removal.context("removal")?;
+    s.catalog.remove_exported_folders(&removal)?;
+    assert_eq!(s.catalog.editable_preview(s.a1)?, None);
+    assert!(!s.catalog.editable_preview_folder().join(&a1).exists());
+    let out = Catalog::open(&destination)?;
+    assert!(
+        out.editable_preview(s.a1)?
+            .context("exported")?
+            .path
+            .is_file()
+    );
+    Ok(())
+}
