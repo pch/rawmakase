@@ -8,6 +8,13 @@ mod titlebar;
 fn main() -> eframe::Result {
     struct Probe;
     impl eframe::App for Probe {
+        fn raw_input_hook(
+            &mut self,
+            ctx: &eframe::egui::Context,
+            raw_input: &mut eframe::egui::RawInput,
+        ) {
+            titlebar::refresh_window_state(ctx, raw_input);
+        }
         fn ui(&mut self, ui: &mut eframe::egui::Ui, frame: &mut eframe::Frame) {
             if std::env::var_os("RAWMAKASE_TITLEBAR_LEGACY").is_none() {
                 titlebar::configure(frame, ui.ctx());
@@ -26,6 +33,9 @@ fn main() -> eframe::Result {
             ui.label("RAWmakase title-bar regression probe — no photos or catalog");
             ui.label("Use a real trackpad: double-click at 10 and 40 px below the top edge.");
             ui.label("Check zoom/restore, a held second click, and dragging at both heights.");
+            // What the app saves as maximized: it should follow Zoom and its undo.
+            let zoomed = ui.input(|input| input.viewport().maximized);
+            ui.label(format!("Zoomed, as AppKit reports it: {zoomed:?}"));
             if std::env::var_os("RAWMAKASE_TITLEBAR_MODAL").is_some() {
                 eframe::egui::Modal::new(eframe::egui::Id::new("probe-modal")).show(
                     ui.ctx(),
