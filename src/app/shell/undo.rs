@@ -310,18 +310,30 @@ impl Editor {
                     Direction::Undo => crate::app::library::sync::SyncSide::Before,
                     Direction::Redo => crate::app::library::sync::SyncSide::After,
                 };
-                // Each photo where it is now, after any relink since the Sync.
-                let paths: std::collections::HashMap<PhotoId, std::path::PathBuf> = sync
+                // Each photo where it is now, after any relink since the Sync,
+                // and, offline, as it would open: from its editable preview,
+                // whose recorded identity stands in for the file.
+                let mut located: std::collections::HashMap<
+                    PhotoId,
+                    crate::app::library::sync::Located,
+                > = sync
                     .edits
                     .iter()
-                    .filter_map(|e| Some((e.id, library.photo(e.id)?.path.clone())))
+                    .filter_map(|e| {
+                        let photo = library.photo(e.id)?;
+                        let at = crate::app::library::sync::Located {
+                            path: photo.path.clone(),
+                            stand_in: library.stand_in(photo),
+                        };
+                        Some((e.id, at))
+                    })
                     .collect();
-                let path = |id: PhotoId| paths.get(&id).cloned();
+                let locate = |id: PhotoId| located.remove(&id);
                 match crate::app::library::sync::restore(
                     &mut library.session,
                     &sync.edits,
                     side,
-                    path,
+                    locate,
                 ) {
                     Ok(()) => {}
                     // Nothing to return to: the command is used up, not retried.

@@ -713,3 +713,238 @@ fn the_loupe_asks_again_after_passing_through_an_online_photo() {
     assert_eq!(l.loupe_develops(), None);
     assert_eq!(l.loupe_offline_developed(), Some(a));
 }
+
+impl Fx {
+    /// Saves an edit of exposure `exposure` for `id`, against its file as it is.
+    fn save_exposure(&self, id: PhotoId, exposure: f32) {
+        let path = self.path(id);
+        let recipe = crate::model::recipe::Recipe {
+            exposure,
+            ..Default::default()
+        };
+        Catalog::open(catalog(&self.e).location())
+            .unwrap()
+            .save_edit(
+                id,
+                &path,
+                &Identity::read(&path).unwrap(),
+                &recipe,
+                &Default::default(),
+                crate::catalog::HistoryUpdate::Keep,
+            )
+            .unwrap();
+    }
+    /// Syncs `source`'s saved settings onto `targets`, as Sync Settings from the
+    /// Library does, and hands the result to the editor, which records it for
+    /// Undo.
+    fn sync(&mut self, source: PhotoId, targets: &[PhotoId]) {
+        use crate::app::library::sync::{
+            BatchChange, BatchProgress, Decoding, SyncSource, SyncTarget, synchronize,
+        };
+        let target = |id: PhotoId| SyncTarget {
+            id,
+            path: self.path(id),
+            name: format!("{id:?}"),
+        };
+        let targets: Vec<_> = targets.iter().map(|id| target(*id)).collect();
+        let result = synchronize(
+            &mut Catalog::open(catalog(&self.e).location()).unwrap(),
+            Some(&SyncSource::Photo(target(source))),
+            &BatchChange::Settings(Default::default()),
+            &targets,
+            &Default::default(),
+            &Decoding::default(),
+            &BatchProgress::new("Sync", targets.len()),
+        );
+        assert!(result.failed.is_empty(), "{:?}", result.failed);
+        assert_eq!(result.synced.len(), targets.len());
+        self.e.synced(result);
+    }
+    /// The stored edit's exposure as the catalog holds it, whatever is at its
+    /// path now.
+    fn stored_exposure(&self, id: PhotoId) -> f32 {
+        let record = catalog(&self.e).edit_record(id).unwrap();
+        serde_json::from_str::<crate::model::recipe::Recipe>(&record.recipe.expect("saved"))
+            .unwrap()
+            .exposure
+    }
+}
+
+#[test]
+fn a_syncs_undo_and_redo_restore_an_offline_photo_against_its_recorded_identity() {
+    let mut fx = fixture(&["a.dng", "b.dng"]);
+    let (a, b) = (fx.id("a.dng"), fx.id("b.dng"));
+    fx.save_exposure(a, 0.2);
+    fx.save_exposure(b, 0.7);
+    let original = fx.build(a, false);
+    fx.sync(b, &[a]);
+    assert_eq!(fx.saved_exposure(a, &fx.path(a)), 0.7);
+    fx.take_offline(a);
+    let path = fx.path(a);
+    let recorded = crate::edits::Original::recorded(&path, &original);
+    fx.e.undo();
+    assert_eq!(
+        fx.saved_exposure(a, recorded),
+        0.2,
+        "{}",
+        fx.e.messages.line()
+    );
+    assert_eq!(fx.stored_identity(a), original);
+    fx.e.redo();
+    assert_eq!(
+        fx.saved_exposure(a, recorded),
+        0.7,
+        "{}",
+        fx.e.messages.line()
+    );
+    assert_eq!(fx.stored_identity(a), original);
+}
+
+#[test]
+fn a_syncs_undo_refuses_every_photo_when_one_is_offline_without_a_usable_preview() {
+    let mut fx = fixture(&["a.dng", "b.dng", "c.dng"]);
+    let (a, b, c) = (fx.id("a.dng"), fx.id("b.dng"), fx.id("c.dng"));
+    fx.save_exposure(a, 0.2);
+    fx.save_exposure(b, 0.7);
+    fx.save_exposure(c, 0.3);
+    fx.sync(b, &[a, c]);
+    let bytes = fx.take_offline(a);
+    // One transaction: C, online, is not restored either.
+    fx.e.undo();
+    let line = fx.e.messages.line().to_owned();
+    assert!(line.starts_with("Undo failed"), "{line}");
+    assert!(line.contains("has no editable preview"), "{line}");
+    assert_eq!(fx.stored_exposure(a), 0.7);
+    assert_eq!(fx.saved_exposure(c, &fx.path(c)), 0.7);
+    // The command stays: with the original back, unchanged, Undo works as before.
+    std::fs::write(fx.path(a), &bytes).unwrap();
+    fx.e.undo();
+    assert_eq!(
+        fx.saved_exposure(a, &fx.path(a)),
+        0.2,
+        "{}",
+        fx.e.messages.line()
+    );
+    assert_eq!(fx.saved_exposure(c, &fx.path(c)), 0.3);
+}
+
+#[test]
+fn a_syncs_undo_refuses_an_offline_photo_whose_preview_is_of_another_version() {
+    // Its edit, and the Sync, were made for another version of the photo than
+    // its editable preview, which was not built again.
+    let mut fx = fixture(&["a.dng", "b.dng"]);
+    let (a, b) = (fx.id("a.dng"), fx.id("b.dng"));
+    fx.build(a, false);
+    let path = fx.path(a);
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes.extend_from_slice(b"another version");
+    std::fs::write(&path, &bytes).unwrap();
+    fx.save_exposure(a, 0.2);
+    fx.save_exposure(b, 0.7);
+    fx.sync(b, &[a]);
+    fx.take_offline(a);
+    fx.e.undo();
+    let line = fx.e.messages.line().to_owned();
+    assert!(line.contains("of another version of the photo"), "{line}");
+    assert_eq!(fx.stored_exposure(a), 0.7);
+}
+
+#[test]
+fn a_syncs_redo_refuses_an_offline_photo_without_an_edit_whose_preview_is_of_another_version() {
+    // With no edit, nothing in the catalog says the preview is stale: the
+    // identity the Sync read does.
+    let mut fx = fixture(&["a.dng", "b.dng"]);
+    let (a, b) = (fx.id("a.dng"), fx.id("b.dng"));
+    fx.build(a, false);
+    let path = fx.path(a);
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes.extend_from_slice(b"another version");
+    std::fs::write(&path, &bytes).unwrap();
+    fx.save_exposure(b, 0.7);
+    fx.sync(b, &[a]);
+    // Undo clears an edit that wasn't there, which needs no file.
+    fx.e.undo();
+    assert!(catalog(&fx.e).edit_record(a).unwrap().recipe.is_none());
+    fx.take_offline(a);
+    fx.e.redo();
+    let line = fx.e.messages.line().to_owned();
+    assert!(line.contains("changed since the Sync"), "{line}");
+    assert!(catalog(&fx.e).edit_record(a).unwrap().recipe.is_none());
+}
+
+#[test]
+fn a_syncs_undo_protects_a_replaced_original() {
+    let mut fx = fixture(&["a.dng", "b.dng"]);
+    let (a, b) = (fx.id("a.dng"), fx.id("b.dng"));
+    fx.save_exposure(a, 0.2);
+    fx.save_exposure(b, 0.7);
+    let original = fx.build(a, false);
+    fx.sync(b, &[a]);
+    // Another photo in its place: read, never stood in for by the preview.
+    let mut bytes = fx.take_offline(a);
+    bytes.extend_from_slice(b"another photo");
+    std::fs::write(fx.path(a), &bytes).unwrap();
+    fx.e.undo();
+    assert!(fx.e.messages.line().starts_with("Undo failed"));
+    assert_eq!(fx.stored_identity(a), original);
+    assert_eq!(fx.stored_exposure(a), 0.7);
+}
+
+#[test]
+fn a_syncs_undo_never_stands_in_for_an_original_that_is_there_but_cant_be_read() {
+    let mut fx = fixture(&["a.dng", "b.dng"]);
+    let (a, b) = (fx.id("a.dng"), fx.id("b.dng"));
+    fx.save_exposure(a, 0.2);
+    fx.save_exposure(b, 0.7);
+    fx.build(a, false);
+    fx.sync(b, &[a]);
+    // Something is at its path that isn't its file.
+    fx.take_offline(a);
+    std::fs::create_dir(fx.path(a)).unwrap();
+    let l = fx.e.library.as_ref().unwrap();
+    assert!(l.stand_in(l.photo(a).unwrap()).is_err());
+    fx.e.undo();
+    assert!(fx.e.messages.line().starts_with("Undo failed"));
+    std::fs::remove_dir(fx.path(a)).unwrap();
+    assert_eq!(fx.stored_exposure(a), 0.7);
+}
+
+#[test]
+fn a_syncs_undo_and_redo_reopen_the_photo_open_from_its_editable_preview() {
+    let mut fx = fixture(&["a.dng", "b.dng"]);
+    let (a, b) = (fx.id("a.dng"), fx.id("b.dng"));
+    fx.save_exposure(a, 0.2);
+    fx.save_exposure(b, 0.7);
+    let original = fx.build(a, false);
+    fx.sync(b, &[a]);
+    fx.take_offline(a);
+    fx.open(a);
+    assert!(fx.e.document.opened_from_preview());
+    assert_eq!(fx.e.document.edit.recipe().exposure, 0.7);
+    // Opened again from its editable preview, with the edit Undo wrote.
+    fx.e.undo();
+    fx.wait_loaded();
+    assert_eq!(fx.e.document.catalog_photo, Some(a));
+    assert!(fx.e.document.opened_from_preview());
+    assert_eq!(fx.e.document.edit.recipe().exposure, 0.2);
+    assert!(!fx.e.document.edit.save_state().needs_save());
+    assert_eq!(fx.stored_identity(a), original);
+    // Its editable preview gone meanwhile: Redo writes nothing and the photo
+    // stays open as it was; with the preview back, Redo works.
+    let file = catalog(&fx.e).editable_preview(a).unwrap().unwrap().path;
+    let kept = std::fs::read(&file).unwrap();
+    std::fs::remove_file(&file).unwrap();
+    fx.e.redo();
+    let line = fx.e.messages.line().to_owned();
+    assert!(line.starts_with("Redo failed"), "{line}");
+    assert_eq!(
+        fx.e.document.catalog_photo,
+        Some(a),
+        "nothing written, still open"
+    );
+    std::fs::write(&file, &kept).unwrap();
+    fx.e.redo();
+    fx.wait_loaded();
+    assert_eq!(fx.stored_exposure(a), 0.7);
+    assert_eq!(fx.e.document.edit.recipe().exposure, 0.7);
+}

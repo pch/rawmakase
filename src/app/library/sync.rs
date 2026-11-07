@@ -14,6 +14,7 @@ use crate::app::{
     Editor,
     develop::settings_transfer::Settings,
     history::{History, Step},
+    library::Refusal,
     worker::Event,
 };
 use crate::model::recipe::Recipe;
@@ -691,24 +692,48 @@ fn matched_exposure(source: &Settings, target: &crate::camera_data::Metadata) ->
     Some((source.recipe.exposure + difference).clamp(*valid.start(), *valid.end()))
 }
 
+/// Where a synchronized photo is when its Sync is undone or redone.
+pub(in crate::app) struct Located {
+    /// Its path now, which a relink may have changed since the Sync.
+    pub path: PathBuf,
+    /// What stands in for its original ([`Library::stand_in`]): the identity
+    /// its editable preview recorded, for an original certainly not there that
+    /// Develop would open from it; else why the editable preview can't be
+    /// used, which a restore that can't read the file reports.
+    ///
+    /// [`Library::stand_in`]: crate::app::library::Library::stand_in
+    pub stand_in: std::result::Result<Option<crate::storage::Identity>, Refusal>,
+}
+impl Located {
+    /// The original the photo's edit is checked against: its file, or what
+    /// stands in for it while it is not there ([`edits::Original`]).
+    fn original(&self) -> edits::Original<'_> {
+        edits::Original {
+            path: &self.path,
+            recorded: self.stand_in.as_ref().ok().and_then(Option::as_ref),
+        }
+    }
+}
+
 /// Writes one side of a Sync back, in one transaction, keeping each photo's History,
 /// which notices the change when the photo opens. A photo that had no edit before
-/// goes back to having none. `path` gives each photo's current location, which a
-/// relink may have changed since.
+/// goes back to having none. `locate` gives each photo's current location
+/// ([`Located`]). If any photo can't be written (removed, changed since, or
+/// offline without a usable editable preview), none is.
 pub(in crate::app) fn restore(
     session: &mut crate::catalog_session::CatalogSession,
     edits: &[Synced],
     side: SyncSide,
-    path: impl Fn(PhotoId) -> Option<PathBuf>,
+    mut locate: impl FnMut(PhotoId) -> Option<Located>,
 ) -> std::result::Result<(), SyncRestoreError> {
     // A photo removed since can't be restored; the caller drops the command.
-    let paths = edits
+    let located = edits
         .iter()
-        .map(|e| path(e.id))
+        .map(|e| locate(e.id))
         .collect::<Option<Vec<_>>>()
         .ok_or(SyncRestoreError::PhotoRemoved)?;
     let mut saves = Vec::with_capacity(edits.len());
-    for (e, path) in edits.iter().zip(paths) {
+    for (e, at) in edits.iter().zip(&located) {
         let (recipe, history) = match (side, &e.before) {
             (SyncSide::Before, EditBefore::None { .. }) => continue,
             // Undo brings back the History it had, redo branch included.
@@ -718,33 +743,45 @@ pub(in crate::app) fn restore(
             // Redo brings back the History the Sync saved, which Undo may have cleared.
             (SyncSide::After, _) => (&e.after, HistoryUpdate::Replace(&e.history)),
         };
+        let original = at.original();
+        // Offline, the identity its editable preview recorded, as for a save
+        // made in Develop; without a usable one, why not.
+        let now = original.identity().map_err(|error| {
+            SyncRestoreError::Write(match &at.stand_in {
+                Err(refusal) if edits::Original::is_absent(&at.path) => {
+                    anyhow::anyhow!("{}: {}", at.path.display(), refusal.detail())
+                }
+                _ => error,
+            })
+        })?;
         let saved = session
             .catalog()
-            .load_edit(e.id, &path)
+            .load_edit(e.id, original)
             .map_err(SyncRestoreError::Write)?;
         // A saved edit's identity, which a verified move of its file refreshes,
         // protects the file. Without an edit there is none: compare with the one
         // the Sync read before writing its settings again.
-        let now = crate::storage::Identity::read(&path).map_err(SyncRestoreError::Write)?;
         if saved.is_none() && !now.same_photo(&e.identity) {
             return Err(SyncRestoreError::Write(anyhow::anyhow!(
                 "{} changed since the Sync",
-                path.display()
+                at.path.display()
             )));
         }
         let export = saved.map(|saved| saved.export).unwrap_or_default();
-        saves.push((e.id, path, now, recipe, export, history));
+        saves.push((e.id, original, now, recipe, export, history));
     }
     let saves: Vec<EditToSave> = saves
         .iter()
-        .map(|(id, path, source, recipe, export, history)| EditToSave {
-            id: *id,
-            original: crate::edits::Original::file(path),
-            source,
-            recipe,
-            export,
-            history: *history,
-        })
+        .map(
+            |(id, original, source, recipe, export, history)| EditToSave {
+                id: *id,
+                original: *original,
+                source,
+                recipe,
+                export,
+                history: *history,
+            },
+        )
         .collect();
     let mut changes: Vec<EditChange> = saves.iter().map(EditChange::Save).collect();
     if side == SyncSide::Before {
@@ -1285,7 +1322,10 @@ mod tests {
             photos
                 .iter()
                 .find(|(p, _)| *p == id)
-                .map(|(_, path)| path.clone())
+                .map(|(_, path)| Located {
+                    path: path.clone(),
+                    stand_in: Ok(None),
+                })
         };
         // One Undo restores every photo; these had no edit, and have none again.
         let mut session = open_session(&_dir)?;
@@ -1470,7 +1510,12 @@ mod tests {
         assert!(again.synced.is_empty() && again.failed.is_empty());
         assert_eq!(f.catalog.load_history(all[0].0)?.unwrap().steps.len(), 1);
         // One Undo: none of them has an edit again. Redo: what was measured.
-        let path = |id: PhotoId| all.iter().find(|(p, _)| *p == id).map(|(_, p)| p.clone());
+        let path = |id: PhotoId| {
+            all.iter().find(|(p, _)| *p == id).map(|(_, p)| Located {
+                path: p.clone(),
+                stand_in: Ok(None),
+            })
+        };
         let mut session = open_session(&f._dir)?;
         restore(&mut session, &result.synced, SyncSide::Before, path)?;
         for (id, path) in &all {

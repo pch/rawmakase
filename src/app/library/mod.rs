@@ -588,10 +588,26 @@ impl Library {
         &self,
         id: PhotoId,
     ) -> Option<crate::storage::Identity> {
-        let photo = self.photo(id)?;
-        match self.develop_from(photo, photo.path.is_file()) {
-            Ok(crate::app::worker::OpenedFrom::EditablePreview(preview)) => Some(preview.original),
-            _ => None,
+        self.stand_in(self.photo(id)?).ok().flatten()
+    }
+    /// What stands in for `photo`'s original when its edit is changed without
+    /// it being open: nothing, for a file that is there; the identity its
+    /// editable preview recorded, when Develop would open it from that
+    /// ([`Self::develop_from`]); else why its editable preview can't be used.
+    /// Only a file certainly not there is ever stood in for
+    /// ([`Original::is_absent`](crate::edits::Original::is_absent)).
+    pub(in crate::app) fn stand_in(
+        &self,
+        photo: &Photo,
+    ) -> Result<Option<crate::storage::Identity>, Refusal> {
+        // A file that is there is read and checked as it is; asking Develop
+        // would probe every raster for nothing.
+        if photo.path.is_file() {
+            return Ok(None);
+        }
+        match self.develop_from(photo, false)? {
+            crate::app::worker::OpenedFrom::EditablePreview(preview) => Ok(Some(preview.original)),
+            crate::app::worker::OpenedFrom::Original => Ok(None),
         }
     }
     /// Forgets the answer [`Self::develops_from_preview`] keeps unless it is
