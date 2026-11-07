@@ -482,14 +482,9 @@ impl Processor {
         }
         let b = self.buffers.as_ref().unwrap();
         let sharpener = crate::develop::sharpening::Sharpener::new(recipe);
-        let radius = (sigma * 3.).ceil() as u32;
-        let mut weights: Vec<f32> = (-(radius as i32)..=radius as i32)
-            .map(|x| (-0.5 * (x as f32 / sigma).powi(2)).exp())
-            .collect();
-        let sum: f32 = weights.iter().sum();
-        for v in &mut weights {
-            *v /= sum;
-        }
+        // The CPU's taps, so a reduced image's sigma below half a pixel sharpens alike.
+        let (radius, mut weights) = crate::develop::quality::gaussian(sigma);
+        let radius = radius as u32;
         let (x_stride, x_weights) = weights::lanczos_axis(w, ow);
         let (y_stride, y_weights) = weights::lanczos_axis(h, oh);
         weights.extend(x_weights);

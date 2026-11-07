@@ -18,6 +18,12 @@ pub(in crate::develop) fn sharpen(
         cancel,
     )
 }
+/// [`sharpen`] with the blur's `sigma` given, for checking other paths against.
+#[cfg(test)]
+pub(in crate::develop) fn sharpen_at(im: &mut Rendered, r: &Recipe, sigma: f32) -> Result<()> {
+    let srgb = crate::color::OutputSpace::Srgb;
+    sharpen_with_radius(im, r, sigma, None, srgb, Cancel::NEVER)
+}
 /// Normalized Gaussian taps. Below half a pixel, which only scaled previews use, a
 /// sampled Gaussian degenerates to a single tap; three taps with the same variance
 /// keep the sharpening response of the full-resolution render.
