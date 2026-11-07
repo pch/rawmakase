@@ -115,7 +115,13 @@ choice meets a per-pixel bar; the excess is the dither's grain. Decided
 lossless preview's on smooth gradients, 16 px block p99 under 1 ΔE2000, per-pixel
 mean under about 0.35, and the grain under extreme edits said where the choice
 is offered — which Smaller meets, and it ships opt-in, lossless staying the
-default. 10-bit codes (6.1 MB) were set aside: 5–7
+default. Shipped as Preferences › Catalog's Lossless or Smaller choice: read once
+when a build is asked for (captured in each item, so a change applies to the
+next request), saved in the session as `smaller_editable_previews` (absent reads
+as Lossless), and followed by automation's `build_editable_previews`, which takes
+no precision of its own. It never rebuilds an editable preview that is up to
+date: the build's skip rule goes by the original's identity alone, so changing
+the choice keeps those built already at theirs. 10-bit codes (6.1 MB) were set aside: 5–7
 ΔE2000 p99 under strong edits, and banding under ordinary ones. Version 1 already
 allows the new codec or curve code.
 

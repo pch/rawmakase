@@ -487,11 +487,33 @@ impl Editor {
         });
     }
 
-    /// Preferences › Catalog › Editable previews: what they take, and Discard All
-    /// Editable Previews, confirmed first, since none can be built again while its
-    /// original is offline.
+    /// Preferences › Catalog › Editable previews: the precision they are built at,
+    /// what they take, and Discard All Editable Previews, confirmed first, since
+    /// none can be built again while its original is offline.
     fn editable_previews_block(&mut self, ui: &mut egui::Ui) {
+        use crate::editable_preview::Precision;
         group(ui, "Editable previews");
+        let mut precision = self.editable_builds.precision;
+        form_row(ui, "Build", |ui| {
+            ui.radio_value(&mut precision, Precision::Lossless, "Lossless");
+            ui.radio_value(&mut precision, Precision::Smaller, "Smaller");
+        });
+        form_row(ui, "", |ui| {
+            hint(
+                ui,
+                "Lossless: about 16 MB each, every 16-bit code kept. Smaller: about 40% smaller; adds fine grain under strong edits.",
+            );
+        });
+        form_row(ui, "", |ui| {
+            hint(
+                ui,
+                "For editable previews built from now on. Those built already are kept as they are, and one of an unchanged original isn't built again: discard it, then build it, to change it.",
+            );
+        });
+        if precision != self.editable_builds.precision {
+            self.editable_builds.precision = precision;
+            let _ = self.save_session();
+        }
         let Some(size) = self
             .library
             .as_ref()
@@ -535,7 +557,7 @@ impl Editor {
         form_row(ui, "", |ui| {
             hint(
                 ui,
-                "Build them from a photo's menu, while its original is online: a smaller copy, about 16 MB, kept beside the catalog for editing the photo while its original is offline. Editing from them comes in a later release.",
+                "Build them from a photo's menu, while its original is online: a smaller copy, kept beside the catalog, for editing the photo while its original is offline.",
             );
         });
         if discard {
@@ -1567,6 +1589,105 @@ mod tests {
             }],
         );
         assert_eq!(saved(), Some(dragged as u32));
+    }
+
+    /// Preferences › Catalog's Smaller choice, clicked as a user would once it is
+    /// scrolled into view: the next build is asked at it, and the session saves it;
+    /// Lossless, clicked, goes back.
+    #[test]
+    fn choosing_smaller_editable_previews_in_preferences_saves_it() {
+        use crate::editable_preview::Precision;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        let ctx = egui::Context::default();
+        let mut e = Editor::with_context(
+            &ctx,
+            None,
+            crate::app::preferences::session::Session::default(),
+            None,
+        );
+        e.session.set_file(Some(path.clone()));
+        e.onboarding.visible = false;
+        e.preferences.open = true;
+        e.preferences.tab = Tab::Catalog;
+        let frame = |e: &mut Editor, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(1600., 1000.),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| e.preferences_window(ui.ctx()));
+            out.textures_delta.clear();
+            out.shapes
+        };
+        let saved = || {
+            serde_json::from_slice::<crate::app::preferences::session::Session>(
+                &std::fs::read(&path).unwrap(),
+            )
+            .unwrap()
+            .smaller_editable_previews
+        };
+        // Scrolled down a step at a time until text `matches` is wholly in view and
+        // still: where it is.
+        let scroll_to = |e: &mut Editor, matches: &dyn Fn(&str) -> bool| {
+            let mut at = None;
+            let mut events = vec![];
+            for _ in 0..120 {
+                let shown = frame(e, std::mem::take(&mut events))
+                    .into_iter()
+                    .find_map(|s| match s.shape {
+                        egui::Shape::Text(t) if matches(t.galley.text()) => {
+                            let rect = t.visual_bounding_rect();
+                            s.clip_rect.contains_rect(rect).then(|| rect.center())
+                        }
+                        _ => None,
+                    });
+                if shown.is_some() {
+                    if shown == at {
+                        break;
+                    }
+                    at = shown;
+                    continue;
+                }
+                at = None;
+                events = vec![
+                    egui::Event::PointerMoved(egui::pos2(800., 500.)),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: Vec2::new(0., -40.),
+                        phase: egui::TouchPhase::Move,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ];
+            }
+            at
+        };
+        let click = |e: &mut Editor, label: &str| {
+            let pos =
+                scroll_to(e, &|text| text == label).unwrap_or_else(|| panic!("{label} is shown"));
+            let button = |pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            };
+            frame(e, vec![egui::Event::PointerMoved(pos), button(true)]);
+            frame(e, vec![button(false)]);
+        };
+        let shows =
+            |e: &mut Editor, part: &str| scroll_to(e, &|text| text.contains(part)).is_some();
+        click(&mut e, "Smaller");
+        assert_eq!(e.editable_builds.precision, Precision::Smaller);
+        // Its cost and scope are said beside it.
+        assert!(shows(&mut e, "adds fine grain under strong edits"));
+        assert!(shows(&mut e, "For editable previews built from now on"));
+        assert!(saved());
+        click(&mut e, "Lossless");
+        assert_eq!(e.editable_builds.precision, Precision::Lossless);
+        assert!(!saved());
     }
 
     /// What a page paints past the right edge it is clipped to: text or

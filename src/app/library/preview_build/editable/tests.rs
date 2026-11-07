@@ -502,6 +502,7 @@ fn a_record_that_raced_a_discard_is_discarded_again() {
         name: "a.ARW".into(),
         path: path_of(&e, ids[0]),
         demosaic: Demosaic::default(),
+        precision: editable_preview::Precision::Lossless,
         decode_cache: Default::default(),
         discards: 0,
     };
@@ -891,4 +892,53 @@ fn discard_all_says_how_many_are_of_offline_photos() {
     assert_eq!(e.asked_discard_all_offline(), None, "opening forgets it");
     e.ask_discard_all_editable_previews();
     assert_eq!(e.asked_discard_all_offline(), Some(1));
+}
+
+fn codec(e: &Editor, id: PhotoId) -> editable_preview::Codec {
+    editable_preview::read_header(&recorded(e, id).unwrap().path)
+        .unwrap()
+        .codec
+}
+
+/// Preferences › Catalog's precision is captured when a build is asked for: a
+/// build under way or waiting keeps the precision it was asked at, unless asked
+/// again for a photo still waiting, which replaces its request; the next one
+/// takes the new choice, and an editable preview of an unchanged original isn't
+/// built again for it.
+#[test]
+fn a_build_uses_the_precision_chosen_when_it_was_asked_for() {
+    use editable_preview::{Codec, Precision};
+    let names = ["slow-a.ARW", "b.ARW", "c.ARW", "d.ARW"];
+    let (_dir, mut e, ids) = editor(&names);
+    let [a, b, c, d] = names.map(|name| id_named(&e, &ids, name));
+    assert_eq!(e.editable_builds.precision, Precision::Lossless);
+    e.editable_builds.precision = Precision::Smaller;
+    e.build_editable_previews(&[a, b, d]).unwrap();
+    wait_started(&path_of(&e, a));
+    // Changed while `a` builds and `b` and `d` wait: neither `a` nor `b` changes;
+    // `d`, asked for again while waiting, is asked at the new choice.
+    e.editable_builds.precision = Precision::Lossless;
+    e.build_editable_previews(&[d]).unwrap();
+    release(&path_of(&e, a));
+    settle(&mut e);
+    assert_eq!(codec(&e, a), Codec::DitheredJxl12);
+    assert_eq!(codec(&e, b), Codec::DitheredJxl12);
+    assert_eq!(codec(&e, d), Codec::LosslessJxl16);
+    assert_eq!(opens_of(&path_of(&e, d)), 1);
+    // And it reads, at the precision it was written at.
+    editable_preview::read(&recorded(&e, a).unwrap().path, Cancel::NEVER).unwrap();
+    // The next build takes the new choice; the up-to-date ones are skipped.
+    e.build_editable_previews(&[a, b, c]).unwrap();
+    settle(&mut e);
+    assert_eq!(codec(&e, c), Codec::LosslessJxl16);
+    assert_eq!(
+        (opens_of(&path_of(&e, a)), opens_of(&path_of(&e, b))),
+        (1, 1)
+    );
+    assert_eq!(codec(&e, a), Codec::DitheredJxl12);
+    // Discarded and built again, it is at the new choice.
+    e.discard_editable_previews(Some(&[b])).unwrap();
+    e.build_editable_previews(&[b]).unwrap();
+    settle(&mut e);
+    assert_eq!(codec(&e, b), Codec::LosslessJxl16);
 }

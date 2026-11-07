@@ -236,3 +236,51 @@ fn confirming_copy_settings_saves_its_groups_even_unchanged() -> anyhow::Result<
     assert!(path.exists());
     Ok(())
 }
+
+/// Preferences › Catalog's editable preview precision: Lossless by default and
+/// for a session from before the choice (or one whose value doesn't read), Smaller
+/// once chosen and after a restart, and a newer release's fields kept throughout.
+#[test]
+fn the_editable_preview_precision_is_lossless_unless_smaller_was_chosen() -> anyhow::Result<()> {
+    use crate::editable_preview::Precision;
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("session.json");
+    let ctx = egui::Context::default();
+    let open = |json: &str| -> anyhow::Result<Editor> {
+        std::fs::write(&path, json)?;
+        let loaded: crate::app::preferences::session::Session =
+            crate::storage::read_json_or_default(&path);
+        Ok(Editor::with_context(&ctx, None, loaded, Some(path.clone())))
+    };
+    assert_eq!(
+        Editor::with_context(
+            &ctx,
+            None,
+            crate::app::preferences::session::Session::default(),
+            None
+        )
+        .editable_builds
+        .precision,
+        Precision::Lossless
+    );
+    // A session from before the choice, with a field of a newer release.
+    let mut e = open(r#"{"auto_advance": true, "a_newer_field": [1, 2]}"#)?;
+    assert_eq!(e.editable_builds.precision, Precision::Lossless);
+    e.save_session()?;
+    let json: serde_json::Value = serde_json::from_slice(&std::fs::read(&path)?)?;
+    assert!(json.get("smaller_editable_previews").is_none(), "{json}");
+    assert_eq!(json["a_newer_field"], serde_json::json!([1, 2]));
+    e.editable_builds.precision = Precision::Smaller;
+    e.save_session()?;
+    let json: serde_json::Value = serde_json::from_slice(&std::fs::read(&path)?)?;
+    assert_eq!(json["smaller_editable_previews"], true);
+    assert_eq!(json["a_newer_field"], serde_json::json!([1, 2]));
+    assert!(saved(&path).auto_advance);
+    let restarted = Editor::with_context(&ctx, None, saved(&path), None);
+    assert_eq!(restarted.editable_builds.precision, Precision::Smaller);
+    // A value that doesn't read resets only itself.
+    let e = open(r#"{"smaller_editable_previews": "yes", "auto_advance": true}"#)?;
+    assert_eq!(e.editable_builds.precision, Precision::Lossless);
+    assert!(e.session.auto_advance);
+    Ok(())
+}

@@ -440,7 +440,7 @@ impl Server {
         self.send(Request::BuildPreviews { kind }, None).await
     }
     #[tool(
-        description = "Build editable previews of the selected photos (the Library selection, or in Develop the Filmstrip's) in the background: a smaller copy of each RAW (2560 pixels, about 16 MB), kept beside the catalog, so the photo can be edited in Develop while its original is offline. A virtual copy's is its master's. Returns how many were queued and skipped (offline or not RAW); a photo whose editable preview is of its original as it is costs nothing. Queueing is not completion: get_state's building_editable_previews shows progress."
+        description = "Build editable previews of the selected photos (the Library selection, or in Develop the Filmstrip's) in the background: a smaller copy of each RAW (2560 pixels; about 16 MB, or about 9 MB when Preferences › Catalog chooses Smaller), kept beside the catalog, so the photo can be edited in Develop while its original is offline. A virtual copy's is its master's. Returns how many were queued and skipped (offline or not RAW); a photo whose editable preview is of its original as it is costs nothing. The precision follows Preferences › Catalog when the tool is called; the tool takes none of its own, and changing the setting doesn't rebuild one already built. Queueing is not completion: get_state's building_editable_previews shows progress."
     )]
     async fn build_editable_previews(&self) -> CallToolResult {
         self.send(Request::BuildEditablePreviews, None).await

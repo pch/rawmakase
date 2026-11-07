@@ -6,7 +6,9 @@
 //! (`catalog::editable_previews`), and only RAWmakase's own files are ever deleted.
 //!
 //! A request captures each item once: the master photo (a virtual copy asks for
-//! its master's), the path read and the demosaic. The worker reads the original's
+//! its master's), the path read, the demosaic and the precision Preferences ›
+//! Catalog chose then, so a choice changed while builds wait or run applies to
+//! the next request. The worker reads the original's
 //! [`Identity`] once, before anything else reads the file, and the same identity
 //! keys the decode cache lookup, names the file, goes in its header and is what
 //! the catalog records; the file is read again at the end, and a build of a file
@@ -64,6 +66,11 @@ pub(in crate::app) struct Item {
     /// demosaic it was built with, and its identity doesn't include it, as
     /// [`Demosaic`] has a single variant; revisit both if a second one is added.
     pub demosaic: Demosaic,
+    /// The precision the file is written at, as Preferences › Catalog chose it
+    /// when the build was asked for. An editable preview of this original that
+    /// is recorded already, or left whole at its name, is kept at whatever
+    /// precision it was written at: the choice never rebuilds one.
+    pub precision: editable_preview::Precision,
     /// Where the full-size decode is looked up first.
     pub decode_cache: crate::decode_cache::DecodeCache,
     /// The discards counted when it was queued.
@@ -421,13 +428,12 @@ fn build(
     } = (steps.open)(item, &identity, cancel)?;
     ensure!(!cancel.is_cancelled(), "Cancelled");
     let look = (steps.fit)(&item.path, &image.metadata, &profiles, cancel);
-    // Lossless until Preferences offers the Smaller choice.
     let mut preview = editable_preview::build(
         &image,
         &identity,
         exif,
         editable_preview::LONG_EDGE,
-        editable_preview::Precision::Lossless,
+        item.precision,
         cancel,
     )?;
     drop(image);
@@ -561,19 +567,27 @@ pub(in crate::app) struct EditableBuilds {
     /// The catalog the queued builds are for; another one cancels them.
     catalog: Option<CatalogLocation>,
     steps: Steps,
+    /// Preferences › Catalog's choice for the builds asked for from now on;
+    /// each request captures it in its items ([`Item::precision`]).
+    pub(in crate::app) precision: editable_preview::Precision,
 }
 
 impl Default for EditableBuilds {
     fn default() -> Self {
-        Self {
-            builder: None,
-            catalog: None,
-            steps: Steps::REAL,
-        }
+        Self::new(editable_preview::Precision::default())
     }
 }
 
 impl EditableBuilds {
+    /// No builds yet; those asked for are written at `precision`.
+    pub(in crate::app) fn new(precision: editable_preview::Precision) -> Self {
+        Self {
+            builder: None,
+            catalog: None,
+            steps: Steps::REAL,
+            precision,
+        }
+    }
     /// Builds through `steps`.
     #[cfg(test)]
     pub(in crate::app) fn for_tests(steps: Steps) -> Self {
@@ -662,6 +676,7 @@ impl Editor {
                         name: m.filename.clone(),
                         path: m.path.clone(),
                         demosaic: self.session.demosaic,
+                        precision: self.editable_builds.precision,
                         decode_cache: self.decode_cache.clone(),
                         discards: 0,
                     });

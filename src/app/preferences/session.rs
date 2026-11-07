@@ -136,6 +136,16 @@ pub(crate) struct Session {
     /// Preferences > Catalog: the user paused reading checksums.
     #[serde(default, deserialize_with = "lenient")]
     pub pause_checksums: bool,
+    /// Preferences > Catalog: editable previews are built Smaller (dithered
+    /// 12-bit codes) rather than Lossless, the default. Written only when set, so
+    /// a session from before the choice, or one that never made it, reads as
+    /// Lossless.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub smaller_editable_previews: bool,
     /// How the Library showed its photos last time.
     #[serde(default, deserialize_with = "lenient")]
     pub library_layout: LibraryLayout,

@@ -345,7 +345,13 @@ impl Editor {
                 standard_preview_size,
                 discard_one_to_one_after,
             ),
-            editable_builds: Default::default(),
+            editable_builds: crate::app::library::preview_build::editable::EditableBuilds::new(
+                if session.smaller_editable_previews {
+                    crate::editable_preview::Precision::Smaller
+                } else {
+                    crate::editable_preview::Precision::Lossless
+                },
+            ),
             stand_ins,
             autosave: Default::default(),
             waiting: crate::app::catalog::Waiting::restoring(place),
@@ -417,6 +423,8 @@ impl Editor {
                 .into(),
                 raw_defaults: self.raw_defaults.settings().clone(),
                 standard_preview_size: Some(self.preview_builds.standard_size),
+                smaller_editable_previews: self.editable_builds.precision
+                    == crate::editable_preview::Precision::Smaller,
                 decoded_cache_size_gib: Some((self.decode_cache.limit() >> 30) as u32),
                 decoded_cache_folder: self.decode_cache.folder(),
                 one_to_one_discard_days: Some(
