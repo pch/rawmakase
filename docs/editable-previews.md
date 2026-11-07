@@ -1,6 +1,6 @@
 # Editable previews
 
-Status: Plan (2026-11-06), not built.
+Status: Plan (2026-11-06), partly built: stages 1a, 2 and 3 are in (2026-11-07).
 
 Proposed implementation, 2026-11-06. Repository inspected at `509dda0`
 (`pch/rawmakase` main). This is a plan, not a claim of implemented support.
@@ -84,10 +84,19 @@ documented, the facts are stored with explicit defaults for missing fields
 (never as serialised internal structs that change between releases), and golden
 files of each version are opened by tests.
 
-Before shipping, measure about 20 corpus photos at 2560 px: file size, build
-time and the render difference from the original at the same size. If lossless
-averages much over about 12 MB (120 GB for 10,000 photos), add a lossy
-"Smaller" choice in Preferences first.
+Measured on 25 public CC0 RAWs (11 makes) at 2560 px: lossless files average
+15.7 MB (median 15.3, 13.4–22.2), above the roughly 12 MB first set as the bar;
+building takes 1.4 s, writing 0.2 s and reading 0.35 s a photo, and the format
+itself loses ΔE2000 0.003 on average. Decided 2026-11-07: lossless ships as the
+default anyway, since previews are built for chosen photos, not a whole catalog.
+A **"Smaller" choice comes later, in its own change**: 12-bit codes on the same
+curve (mean 9.1 MB, 42% smaller; worst p99 about 2 ΔE2000 under Saturation and
+Vibrance +100), opt-in, with dither added when writing, because on a clean,
+noise-free gradient undithered 12-bit codes show contour steps under strong
+colour or curve edits. It ships only if the dither removes most of those steps
+while adding under about 1 ΔE2000. 10-bit codes (6.1 MB) were set aside: 5–7
+ΔE2000 p99 under strong edits, and banding under ordinary ones. Version 1 already
+allows the new codec or curve code.
 
 Set aside: an 8-bit lossy file (no HDR headroom, banding under strong edits);
 a lossy DNG like Adobe's (needs a DNG writer and the 34892 decoder, loses the
@@ -128,6 +137,26 @@ table. Decided 2026-11-07, before any of them was released.
 Develop on `pch/rawmakase` main. The fork's HEIF work (rust_h265, where upstream
 uses libheif) and Library preview speed-up are not needed here; syncing the fork
 with upstream is separate work.
+
+### 8. Camera Look: the default fit is kept, fitting waits for the original
+
+A photo whose camera RAWmakase has no colour data for starts from a look fitted to
+its embedded JPEG (`camera_look::with_default`). Its fit cache is keyed by the file
+itself, so offline it can't be found, and an editable preview keeps no embedded
+JPEG. So, decided 2026-11-07:
+
+- When an editable preview is built for such a photo (`fitted::eligibility` is
+  `Absent`), its default fit is stored in the file as an optional section, in the
+  profile's own versioned form (`rawmakase:FittedProfile`, about 100 KB). Other
+  photos' files don't grow, and version 1 readers skip the section.
+- Offline, the photo opens with the stored fit, so it looks as it does online.
+  It comes from the release that built the preview; after a change to the fitter
+  it may differ slightly from the original's until the preview is rebuilt.
+- **Profile › Fit Camera Look** is disabled on an editable preview ("Connect the
+  original to fit a Camera Look"), as AI masks are. A fit already applied is part
+  of the edit and keeps working.
+
+Set aside: storing the embedded JPEG (1–5 MB) so fitting works offline too.
 
 ## Ownership
 

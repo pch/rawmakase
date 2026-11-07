@@ -42,7 +42,7 @@ Start with the [code map](code-map.md) to find where a change belongs, the
 | [MIDI](midi.md) | Current | MIDI controllers |
 | [Remote inference](remote-inference.md) | Current | Running the selection models on another computer |
 | [Subject and Background masks](subject-and-background-masks.md) | Plan (2026-10-08), built | The selection masks' design; its closing notes record where the build differs |
-| [Editable previews](editable-previews.md) | Plan (2026-11-06), not built | Editing an offline photo from a smaller copy built while it was online: decisions, owners and stages |
+| [Editable previews](editable-previews.md) | Plan (2026-11-06), partly built | Editing an offline photo from a smaller copy built while it was online: decisions, owners and stages |
 
 ## Rendering
 
