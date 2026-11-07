@@ -333,3 +333,8 @@ pub(super) fn write_extra(
         written => Ok(written?),
     }
 }
+
+/// No rename here is by a placeholder.
+pub(super) fn reserves(_path: &Path) -> Result<bool, FsError> {
+    Ok(false)
+}

@@ -14,6 +14,17 @@ pub(super) trait Disk {
     fn list(&self, dir: &Path) -> Result<Vec<OsString>, FsError>;
     fn identity(&self, path: &Path) -> anyhow::Result<Identity>;
     fn rename(&self, from: &Path, to: &Path) -> Result<(), FsError>;
+    /// Renames a photo's file `from` to `to` within its volume, a member of
+    /// a journalled item whose recovery calls [`Disk::settle_rename`]: by a
+    /// placeholder where the volume can't rename exclusively (ntfs-3g,
+    /// [`fsops::rename_reserving`]).
+    fn rename_file(&self, from: &Path, to: &Path) -> Result<(), FsError> {
+        self.rename(from, to)
+    }
+    /// Removes the placeholder a [`Disk::rename_file`] of `from` to `to`
+    /// left, cut short ([`fsops::settle_rename`]); changes nothing
+    /// otherwise.
+    fn settle_rename(&self, from: &Path, to: &Path) -> Result<(), FsError>;
     fn create_dir(&self, path: &Path) -> Result<(), FsError>;
     fn sync_dir(&self, dir: &Path) -> Result<(), FsError>;
     /// `path` with every link on the way resolved.
@@ -82,6 +93,12 @@ impl Disk for Real {
     }
     fn rename(&self, from: &Path, to: &Path) -> Result<(), FsError> {
         fsops::rename_exclusive(from, to)
+    }
+    fn rename_file(&self, from: &Path, to: &Path) -> Result<(), FsError> {
+        fsops::rename_reserving(from, to)
+    }
+    fn settle_rename(&self, from: &Path, to: &Path) -> Result<(), FsError> {
+        fsops::settle_rename(from, to)
     }
     fn create_dir(&self, path: &Path) -> Result<(), FsError> {
         fsops::create_dir(path)
@@ -299,6 +316,12 @@ impl Disk for Listed<'_> {
     }
     fn rename(&self, from: &Path, to: &Path) -> Result<(), FsError> {
         self.changes(self.disk.rename(from, to))
+    }
+    fn rename_file(&self, from: &Path, to: &Path) -> Result<(), FsError> {
+        self.changes(self.disk.rename_file(from, to))
+    }
+    fn settle_rename(&self, from: &Path, to: &Path) -> Result<(), FsError> {
+        self.changes(self.disk.settle_rename(from, to))
     }
     fn create_dir(&self, path: &Path) -> Result<(), FsError> {
         self.changes(self.disk.create_dir(path))

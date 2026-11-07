@@ -549,6 +549,278 @@ fn fat_and_exfat_volumes_are_told_and_have_no_stable_ids() {
     }
 }
 
+/// ntfs-3g's files have their disk's device number; a FUSE file system
+/// without a disk (GVFS's shares, sshfs) has an anonymous one, and only
+/// files on a disk are renamed by a link and an unlink (#914).
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[test]
+fn only_fuse_on_a_disk_renames_by_link_and_unlink() {
+    use super::unix::on_disk_fuse;
+    use rustix::fs::makedev;
+    const FUSE: u64 = 0x6573_5546;
+    assert!(on_disk_fuse(FUSE, makedev(259, 3)));
+    assert!(on_disk_fuse(FUSE, makedev(8, 17)));
+    assert!(!on_disk_fuse(FUSE, makedev(0, 52)));
+    assert!(!on_disk_fuse(0xef53, makedev(259, 3)));
+}
+
+/// The names in folder `dir`, sorted.
+fn names_in(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+/// A rename by placeholder, as on ntfs-3g (#914): never onto a file,
+/// keeping the file object, with nothing else left.
+#[test]
+fn a_rename_by_placeholder_keeps_the_file_and_leaves_one_name() {
+    let d = dir();
+    let (a, b, c) = (
+        d.path().join("a.ARW"),
+        d.path().join("b.ARW"),
+        d.path().join("c.ARW"),
+    );
+    fs::write(&a, b"a").unwrap();
+    fs::write(&b, b"b").unwrap();
+    let id = entry(&a).unwrap().id;
+    assert!(matches!(
+        rename_by_placeholder(&a, &b, &mut || Ok(())),
+        Err(FsError::AlreadyExists)
+    ));
+    assert_eq!(names_in(d.path()), ["a.ARW", "b.ARW"]);
+    assert_eq!(fs::read(&b).unwrap(), b"b");
+    rename_by_placeholder(&a, &c, &mut || Ok(())).unwrap();
+    assert_eq!(names_in(d.path()), ["b.ARW", "c.ARW"]);
+    let moved = entry(&c).unwrap();
+    assert_eq!((moved.id, moved.links), (id, 1));
+    assert_eq!(fs::read(&c).unwrap(), b"a");
+}
+
+/// A file another program puts in the placeholder's place, empty or not,
+/// is kept, and the rename refused; a rename that fails once the
+/// placeholder is made, or whose old name went meanwhile, removes it.
+#[test]
+fn a_rename_by_placeholder_keeps_a_file_put_in_its_place() {
+    for put in [&b"put at c"[..], b""] {
+        let d = dir();
+        let (a, c) = (d.path().join("a.ARW"), d.path().join("c.ARW"));
+        fs::write(&a, b"a").unwrap();
+        let renamed = rename_by_placeholder(&a, &c, &mut || {
+            let other = d.path().join("c.new");
+            fs::write(&other, put).unwrap();
+            fs::rename(&other, &c).unwrap();
+            Ok(())
+        });
+        assert!(
+            matches!(renamed, Err(FsError::AlreadyExists)),
+            "{renamed:?}"
+        );
+        assert_eq!(names_in(d.path()), ["a.ARW", "c.ARW"]);
+        assert_eq!(fs::read(&a).unwrap(), b"a");
+        assert_eq!(fs::read(&c).unwrap(), put);
+    }
+    let d = dir();
+    let (a, c) = (d.path().join("a.ARW"), d.path().join("c.ARW"));
+    fs::write(&a, b"a").unwrap();
+    let renamed = rename_by_placeholder(&a, &c, &mut || {
+        Err(FsError::Io(std::io::Error::other("injected")))
+    });
+    assert!(matches!(renamed, Err(FsError::Io(_))), "{renamed:?}");
+    assert_eq!(names_in(d.path()), ["a.ARW"]);
+    let renamed = rename_by_placeholder(&a, &c, &mut || {
+        fs::rename(&a, d.path().join("moved.ARW")).unwrap();
+        Ok(())
+    });
+    assert!(matches!(renamed, Err(FsError::NotFound)), "{renamed:?}");
+    assert_eq!(names_in(d.path()), ["moved.ARW"]);
+}
+
+/// A staged file that can't be removed stops the rename before it
+/// happens, and the placeholder goes; one of another's stays (#914
+/// review).
+#[test]
+fn a_staged_file_left_in_the_way_stops_the_rename() {
+    let d = dir();
+    let (a, c) = (d.path().join("a.ARW"), d.path().join("c.ARW"));
+    fs::write(&a, b"a").unwrap();
+    let stage = placeholder_staged(&a, &c);
+    let renamed = rename_by_placeholder(&a, &c, &mut || {
+        // As if removing it failed: something else is there instead.
+        fs::remove_file(&stage).unwrap();
+        fs::create_dir(&stage).unwrap();
+        Ok(())
+    });
+    assert!(matches!(renamed, Err(FsError::Io(_))), "{renamed:?}");
+    let stage_name = stage.file_name().unwrap().to_string_lossy().into_owned();
+    assert_eq!(names_in(d.path()), [stage_name, "a.ARW".into()]);
+    assert_eq!(fs::read(&a).unwrap(), b"a");
+}
+
+/// A placeholder a crash left, and the file it is written to first, whole
+/// or cut short, are removed, either way round; the file is where it was.
+#[test]
+fn what_a_rename_by_placeholder_cut_short_left_is_removed() {
+    let d = dir();
+    let (a, c) = (d.path().join("a.ARW"), d.path().join("c.ARW"));
+    fs::write(&a, b"a").unwrap();
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = rename_by_placeholder(&a, &c, &mut || panic!("crash"));
+    }));
+    assert!(crashed.is_err());
+    let stage = placeholder_staged(&a, &c);
+    let staged = stage.file_name().unwrap().to_string_lossy().into_owned();
+    let left = [staged.as_str(), "a.ARW", "c.ARW"];
+    assert_eq!(names_in(d.path()), left);
+    // Settled the other way round, it isn't that rename's.
+    settle_placeholder(&c, &a).unwrap();
+    assert_eq!(names_in(d.path()), left);
+    settle_placeholder(&a, &c).unwrap();
+    assert_eq!(names_in(d.path()), ["a.ARW"]);
+    assert_eq!(fs::read(&a).unwrap(), b"a");
+    // The file it is written to first, as a crash or a full drive leaves
+    // it: empty, part written, or whole.
+    for left in [&b""[..], b"RAWma", b"RAWmakase keeps this name"] {
+        fs::write(&stage, left).unwrap();
+        settle_placeholder(&a, &c).unwrap();
+        assert_eq!(names_in(d.path()), ["a.ARW"], "{left:?}");
+    }
+    // Left whole, it doesn't stop the rename.
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = rename_by_placeholder(&a, &c, &mut || panic!("crash"));
+    }));
+    assert!(crashed.is_err());
+    rename_by_placeholder(&a, &c, &mut || Ok(())).unwrap();
+    assert_eq!(names_in(d.path()), ["c.ARW"]);
+}
+
+/// Only what a rename by placeholder made is ever removed: never a photo's
+/// file, empty or not, nor a placeholder for another rename, nor a file of
+/// another program's at the hidden name, which stops the rename instead.
+#[test]
+fn settling_a_rename_by_placeholder_removes_nothing_else() {
+    let d = dir();
+    let (a, c) = (d.path().join("a.ARW"), d.path().join("c.ARW"));
+    for (what, at_a, at_c) in [
+        ("an empty file at the new name", &b"a"[..], &b""[..]),
+        ("both empty", b"", b""),
+        ("a file at the new name", b"a", b"c"),
+    ] {
+        fs::write(&a, at_a).unwrap();
+        fs::write(&c, at_c).unwrap();
+        settle_placeholder(&a, &c).unwrap();
+        settle_placeholder(&c, &a).unwrap();
+        assert_eq!(names_in(d.path()), ["a.ARW", "c.ARW"], "{what}");
+        fs::remove_file(&c).unwrap();
+    }
+    // Put back part way, as a crash leaves it: the photo's empty file at
+    // its new name, a placeholder at its old one. Only the placeholder
+    // goes, whichever way round it is settled first.
+    fs::remove_file(&a).unwrap();
+    fs::write(&c, b"").unwrap();
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = rename_by_placeholder(&c, &a, &mut || panic!("crash"));
+    }));
+    assert!(crashed.is_err());
+    settle_placeholder(&a, &c).unwrap();
+    settle_placeholder(&c, &a).unwrap();
+    assert_eq!(names_in(d.path()), ["c.ARW"]);
+    assert_eq!(fs::read(&c).unwrap(), b"");
+    // Another rename's placeholder stays.
+    let other = d.path().join("other.ARW");
+    fs::write(&other, b"o").unwrap();
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = rename_by_placeholder(&other, &a, &mut || panic!("crash"));
+    }));
+    assert!(crashed.is_err());
+    settle_placeholder(&c, &a).unwrap();
+    assert!(a.exists());
+    settle_placeholder(&other, &a).unwrap();
+    assert!(!a.exists());
+    // A file of its own at the hidden name stays, and the rename is
+    // refused.
+    let stage = placeholder_staged(&c, &a);
+    fs::write(&stage, b"someone else's").unwrap();
+    settle_placeholder(&c, &a).unwrap();
+    assert!(matches!(
+        rename_by_placeholder(&c, &a, &mut || Ok(())),
+        Err(FsError::Io(_))
+    ));
+    assert_eq!(fs::read(&stage).unwrap(), b"someone else's");
+    assert_eq!(fs::read(&c).unwrap(), b"");
+    assert!(!a.exists());
+}
+
+/// Where no rename is by a placeholder (any volume but FUSE on a disk on
+/// Linux), [`settle_rename`] leaves even a placeholder as it is.
+#[test]
+fn settling_a_rename_changes_nothing_on_other_volumes() {
+    let d = dir();
+    let (a, c) = (d.path().join("a.ARW"), d.path().join("c.ARW"));
+    fs::write(&a, b"a").unwrap();
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = rename_by_placeholder(&a, &c, &mut || panic!("crash"));
+    }));
+    settle_rename(&a, &c).unwrap();
+    assert_eq!(names_in(d.path()).len(), 3);
+}
+
+/// Linux's NTFS drivers rename photos without replacing a file: ntfs3 and
+/// `ntfs` by `RENAME_NOREPLACE`, ntfs-3g (FUSE, which answers `EINVAL` to
+/// it) by a placeholder (#914).
+#[test]
+#[ignore = "needs RAWMAKASE_TEST_NTFS_VOLUMES: folders on NTFS volumes, `:` between"]
+fn ntfs_volumes_rename_without_replacing_and_keep_the_file_object() {
+    let Some(dirs) = std::env::var_os("RAWMAKASE_TEST_NTFS_VOLUMES") else {
+        return;
+    };
+    for dir in std::env::split_paths(&dirs) {
+        let facts = volume_facts(&dir).unwrap();
+        let shown = format!("{}: {facts:?}", dir.display());
+        let d = tempfile::tempdir_in(&dir).unwrap();
+        let (a, b, c) = (
+            d.path().join("a.ARW"),
+            d.path().join("b.ARW"),
+            d.path().join("c.ARW"),
+        );
+        fs::write(&a, b"a").unwrap();
+        fs::write(&b, b"b").unwrap();
+        let id = entry(&a).unwrap().id;
+        assert!(
+            matches!(rename_reserving(&a, &b), Err(FsError::AlreadyExists)),
+            "{shown}"
+        );
+        assert_eq!(names_in(d.path()), ["a.ARW", "b.ARW"], "{shown}");
+        assert_eq!(fs::read(&b).unwrap(), b"b", "{shown}");
+        rename_reserving(&a, &c).unwrap();
+        assert_eq!(names_in(d.path()), ["b.ARW", "c.ARW"], "{shown}");
+        let moved = entry(&c).unwrap();
+        assert_eq!((moved.id, moved.links), (id, 1), "{shown}");
+        // A placeholder a crash left there is removed by recovery's call.
+        let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = rename_by_placeholder(&b, &a, &mut || panic!("crash"));
+        }));
+        assert!(crashed.is_err());
+        settle_rename(&b, &a).unwrap();
+        // Only where renames are by placeholder (ntfs-3g) is it removed,
+        // with the file it was staged in.
+        let left = names_in(d.path());
+        let staged = placeholder_staged(&b, &a);
+        let staged = staged.file_name().unwrap().to_string_lossy().into_owned();
+        match rename_exclusive(&b, &d.path().join("t.ARW")) {
+            Err(FsError::Unsupported) => assert_eq!(left, ["b.ARW", "c.ARW"], "{shown}"),
+            done => {
+                done.unwrap();
+                let all = [staged.as_str(), "a.ARW", "b.ARW", "c.ARW"];
+                assert_eq!(left, all, "{shown}");
+            }
+        }
+    }
+}
+
 #[test]
 #[ignore = "needs RAWMAKASE_TEST_NETWORK_SHARE: a writable folder on an SMB share"]
 fn an_smb_share_is_told_and_makes_files_only_where_none_is() {

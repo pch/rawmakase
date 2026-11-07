@@ -35,3 +35,8 @@ pub(super) fn write_extra(
 ) -> Result<(), FsError> {
     Err(FsError::Unsupported)
 }
+
+/// No rename here is by a placeholder.
+pub(super) fn reserves(_path: &Path) -> Result<bool, FsError> {
+    Ok(false)
+}

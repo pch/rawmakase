@@ -303,6 +303,13 @@ fn a_folder_made_just_before_the_rename_is_never_merged_into() -> Result<()> {
         fn identity(&self, p: &std::path::Path) -> anyhow::Result<crate::storage::Identity> {
             self.0.identity(p)
         }
+        fn settle_rename(
+            &self,
+            a: &std::path::Path,
+            b: &std::path::Path,
+        ) -> Result<(), fsops::FsError> {
+            self.0.settle_rename(a, b)
+        }
         fn rename(&self, a: &std::path::Path, b: &std::path::Path) -> Result<(), fsops::FsError> {
             std::fs::create_dir(b).unwrap();
             self.0.rename(a, b)
