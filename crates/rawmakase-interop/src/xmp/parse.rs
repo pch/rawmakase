@@ -30,6 +30,14 @@ fn child_text(node: roxmltree::Node<'_, '_>, name: &str) -> Option<String> {
     )
 }
 pub fn parse(path: &Path, text: &str) -> Result<Preset> {
+    parse_as(path, text, false)
+}
+/// [`parse`] for a photo's whole edit, read as a sidecar is whether or not it
+/// says it is one: Lightroom keeps each photo's edit of its library so.
+pub fn parse_photo_settings(path: &Path, text: &str) -> Result<Preset> {
+    parse_as(path, text, true)
+}
+fn parse_as(path: &Path, text: &str, photo: bool) -> Result<Preset> {
     ensure!(text.len() < 8_000_000, "XMP file too large");
     // A specific malformed export in this collection repeats the Group close tag.
     // Repair only consecutive duplicate Group closes; never rewrite the source file.
@@ -56,9 +64,10 @@ pub fn parse(path: &Path, text: &str) -> Result<Preset> {
                 && n.parent().is_some_and(|p| p.has_tag_name((RDF, "RDF")))
         })
         .context("No top-level XMP description")?;
-    let sidecar = description
-        .attribute((PHOTOSHOP, "SidecarForExtension"))
-        .is_some();
+    let sidecar = photo
+        || description
+            .attribute((PHOTOSHOP, "SidecarForExtension"))
+            .is_some();
     let mut settings: BTreeMap<_, _> = description
         .attributes()
         .filter(|a| a.namespace() == Some(CRS))

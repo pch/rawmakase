@@ -14,6 +14,7 @@ pub mod export_settings;
 pub mod isobmff;
 pub mod jpeg;
 pub mod lr_develop;
+pub mod lr_library;
 pub mod presets;
 pub mod raw_defaults;
 pub mod riff;

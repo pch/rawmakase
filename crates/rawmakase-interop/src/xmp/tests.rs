@@ -2064,6 +2064,67 @@ fn lightroom_unresolved_auto_placeholders_are_measured() -> Result<()> {
     Ok(())
 }
 
+/// Lightroom (not Classic) keeps each photo's edit as a Camera Raw XMP rather
+/// than Lua: the same settings give the same recipe either way.
+#[test]
+fn a_lightroom_edit_converts_the_same_from_xmp_as_from_lua() -> Result<()> {
+    let m = Metadata {
+        wb: [2., 1., 1.5],
+        daylight_wb: [2., 1., 1.5],
+        ..Default::default()
+    };
+    let lua = r#"s = { ProcessVersion = "15.4", WhiteBalance = "As Shot", Exposure2012 = 0.27, Highlights2012 = -19, Shadows2012 = 82, Whites2012 = 37, Blacks2012 = -33, Sharpness = 40, ToneCurvePV2012 = { 0, 0, 128, 140, 255, 255 } }"#;
+    let xmp = format!(
+        "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n{}",
+        xml(
+            r#"c:ProcessVersion="15.4" c:WhiteBalance="As Shot" c:Exposure2012="+0.27" c:Highlights2012="-19" c:Shadows2012="+82" c:Whites2012="+37" c:Blacks2012="-33" c:Sharpness="40""#,
+            r#"<c:ToneCurvePV2012><r:Seq><r:li>0, 0</r:li><r:li>128, 140</r:li><r:li>255, 255</r:li></r:Seq></c:ToneCurvePV2012>"#,
+        )
+    );
+    let (from_lua, lua_warnings) = crate::lr_develop::convert_develop(lua, &m, &[], None)?;
+    let (from_xmp, xmp_warnings) = crate::lr_develop::convert_develop(&xmp, &m, &[], None)?;
+    assert_eq!((lua_warnings, xmp_warnings), (vec![], vec![]));
+    assert!((from_xmp.exposure - 0.27).abs() < 1e-6 && from_xmp.sharpening > 0.);
+    // The settings as given are kept as written: XMP signs its numbers.
+    let as_given = |r: &crate::model::recipe::Recipe| {
+        let mut r = r.clone();
+        r.preset_settings.clear();
+        r
+    };
+    assert_eq!(as_given(&from_xmp), as_given(&from_lua));
+    assert_eq!(from_xmp.preset_settings["Exposure2012"], "+0.27");
+    Ok(())
+}
+
+/// A Lightroom library's edit is a photo's settings although it doesn't say
+/// so: the preset it was made with is a record, not a setting, and what can't
+/// be rendered yet is reported, never a reason to drop the whole edit.
+#[test]
+fn a_lightroom_library_edit_keeps_what_a_preset_would_refuse() -> Result<()> {
+    let m = Metadata::default();
+    let xmp = xml(
+        r#"c:ProcessVersion="15.4" c:Exposure2012="+0.50""#,
+        r#"<c:Preset><r:Description c:Name="Warm" c:Amount="80"/></c:Preset><c:RangeMaskMapInfo><r:Description c:RangeMaskMapInfo="x"/></c:RangeMaskMapInfo>"#,
+    );
+    // As a preset it is refused.
+    assert!(
+        parse(Path::new("edit.xmp"), &xmp)?
+            .apply(&Recipe::default(), &m, &[], None)
+            .is_err()
+    );
+    let (recipe, warnings) = crate::lr_develop::convert_develop(&xmp, &m, &[], None)?;
+    assert!((recipe.exposure - 0.5).abs() < 1e-6);
+    assert_eq!(
+        warnings,
+        ["Unsupported structured setting: RangeMaskMapInfo"]
+    );
+    // Also with a byte order mark and an XML declaration before it.
+    let declared = format!("\u{feff}<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{xmp}");
+    let (same, _) = crate::lr_develop::convert_develop(&declared, &m, &[], None)?;
+    assert_eq!(same.exposure, recipe.exposure);
+    Ok(())
+}
+
 /// Raw defaults and imports apply settings without the photo: an Auto Tone preset
 /// then leaves the sliders as they were rather than guess, and asks nothing.
 #[test]

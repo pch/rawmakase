@@ -6,7 +6,7 @@
 use crate::model::recipe::Recipe;
 use crate::xmp::look::LookAmount;
 use anyhow::{Context, Result, ensure};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 /// Parse Lightroom's serialized Lua table as data only. No interpreter is used.
 pub fn develop_fields(text: &str) -> Result<std::collections::BTreeMap<String, String>> {
     ensure!(text.len() < 16_000_000, "Develop settings too large");
@@ -77,12 +77,46 @@ pub fn develop_fields(text: &str) -> Result<std::collections::BTreeMap<String, S
     insert(&body[start..])?;
     Ok(fields)
 }
+/// A Lightroom edit as RAWmakase renders it, and the settings it can't render
+/// yet. `text` is Lightroom Classic's develop settings (Lua, from its catalog)
+/// or Lightroom's (Camera Raw XMP, from its library): both name the same
+/// settings and go through the same conversion.
 pub fn convert_develop(
     text: &str,
     m: &crate::camera_data::Metadata,
     profiles: &[std::sync::Arc<crate::camera_profiles::CameraProfile>],
     image: Option<&dyn crate::xmp::PhotoMeasures>,
 ) -> Result<(Recipe, Vec<String>)> {
+    let (preset, warnings) = if is_xmp(text) {
+        from_xmp(text)?
+    } else {
+        from_lua(text)?
+    };
+    convert_settings(preset, warnings, m, profiles, image)
+}
+
+/// Whether `text` is XML, an XMP packet, rather than Lua (`s = { ... }`),
+/// which never starts with `<`.
+fn is_xmp(text: &str) -> bool {
+    text.trim_start_matches('\u{feff}')
+        .trim_start()
+        .starts_with('<')
+}
+
+/// Lightroom's settings from a Camera Raw XMP, the whole edit as a sidecar
+/// holds one. What a preset would refuse to carry is reported instead, as a
+/// setting of Lightroom Classic's that can't be rendered yet is.
+fn from_xmp(text: &str) -> Result<(crate::xmp::Preset, Vec<String>)> {
+    let mut preset = crate::xmp::parse_photo_settings(Path::new("Lightroom edit.xmp"), text)?;
+    preset.name = "Imported Lightroom edit".into();
+    preset.group.clear();
+    let warnings = std::mem::take(&mut preset.blockers);
+    Ok((preset, warnings))
+}
+
+/// Lightroom Classic's settings from its Lua, with what can't be read as a
+/// setting reported.
+fn from_lua(text: &str) -> Result<(crate::xmp::Preset, Vec<String>)> {
     let fields = develop_fields(text)?;
     let mut preset = crate::xmp::Preset {
         photo_settings: true,
@@ -218,6 +252,18 @@ pub fn convert_develop(
             preset.settings.insert(key.clone(), value);
         }
     }
+    Ok((preset, warnings))
+}
+
+/// `preset`, a whole Lightroom edit, as a recipe for the photo `m` describes,
+/// with `warnings` and what else it can't render.
+fn convert_settings(
+    mut preset: crate::xmp::Preset,
+    mut warnings: Vec<String>,
+    m: &crate::camera_data::Metadata,
+    profiles: &[std::sync::Arc<crate::camera_profiles::CameraProfile>],
+    image: Option<&dyn crate::xmp::PhotoMeasures>,
+) -> Result<(Recipe, Vec<String>)> {
     // A look that isn't available is reported on its own, so the base profile's
     // fallback and every other setting still apply.
     if !preset.look_available(m, profiles) {
