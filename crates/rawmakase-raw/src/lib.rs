@@ -38,7 +38,7 @@ pub use captured::{CaptureDates, Stamp};
 pub use error::{Error, Result};
 pub use exif_tiffs::ExifTiffs;
 pub use info::{Cfa, MatrixSource, Presets, PreviewSpace, RawInfo, SuperCcd, UNSET};
-pub use partial::{PartialPreview, preview_from_file};
+pub use partial::{PartialHeader, PartialPreview, header_from_file, preview_from_file};
 pub use preview::{NoPreview, is_jpeg_xl};
 pub use sensor::Sensor;
 pub use variant::Variant;

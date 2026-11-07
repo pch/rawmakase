@@ -27,6 +27,23 @@ impl Own {
         let header = header(&info);
         Ok((Self { bytes, info }, header))
     }
+    /// The file at `path` read in pieces, its header alone
+    /// ([`rawmakase_raw::header_from_file`]): for its metadata, with no bytes
+    /// of the file kept, so decoding it fails rather than decoding zeros.
+    pub(super) fn open_header(path: &Path) -> Result<(Self, Header)> {
+        // Unbuffered: each piece is read whole, and a buffer would read past it.
+        let mut file = std::fs::File::open(path)?;
+        let partial = rawmakase_raw::header_from_file(&mut file)
+            .ok_or_else(|| anyhow::anyhow!("No header found without reading the whole file"))?;
+        let header = header(&partial.info);
+        Ok((
+            Self {
+                bytes: Arc::from(Vec::new()),
+                info: partial.info,
+            },
+            header,
+        ))
+    }
     /// The colour space the maker notes give the camera's JPEGs.
     pub(super) fn preview_space(&self) -> Option<super::MakerPreviewSpace> {
         self.info.preview_space.map(|s| match s {
