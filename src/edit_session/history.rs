@@ -299,6 +299,11 @@ impl History {
             self.record(before, current);
         }
     }
+    /// Forgets a pointer gesture still in progress, recording nothing, and
+    /// returns the settings it began from.
+    pub(crate) fn drop_gesture(&mut self) -> Option<Recipe> {
+        self.gesture.take()
+    }
     /// Undo, redo or a History click changed the recipe this frame, not an edit.
     pub(crate) fn is_replaying(&self) -> bool {
         self.replaying

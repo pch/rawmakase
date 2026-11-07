@@ -1025,11 +1025,17 @@ impl Editor {
     }
     /// The open photo, when a Sync or its Undo wrote `ids`' edits, opens again with
     /// what was written, so nothing stale is saved over it.
-    pub(in crate::app) fn reopen_synced(&mut self, ids: &[PhotoId]) {
+    /// Returns whether a drag still held on the open photo was taken back:
+    /// it began on the settings from before, and the photo opens with what
+    /// was written.
+    pub(in crate::app) fn reopen_synced(&mut self, ids: &[PhotoId]) -> bool {
+        let mut dragged = false;
         if let Some(open) = self.document.catalog_photo
             && ids.contains(&open)
             && let Some(path) = self.document.path.clone()
         {
+            // Saving before opening again would save the drag over it.
+            dragged = self.document.edit.discard_gesture();
             self.document.edit.save_state_mut().saved();
             // Not opened again (its editable preview can't be used now, or what
             // must be saved first could not be): the recipe on screen is the one
@@ -1039,6 +1045,7 @@ impl Editor {
                 self.close_removed_document();
             }
         }
+        dragged
     }
     /// A finished Sync: one command for Undo, and the top bar naming what failed.
     pub(in crate::app) fn synced(&mut self, result: SyncResult) {
@@ -1066,7 +1073,7 @@ impl Editor {
         let synced: Vec<_> = result.synced.iter().map(|e| e.id).collect();
         self.refresh_previews(&synced);
         // From the Library, the photo open in Develop can be among them.
-        self.reopen_synced(&synced);
+        let dragged = self.reopen_synced(&synced);
         // The reference photo may be among them.
         self.load_reference();
         if done > 0 {
@@ -1093,9 +1100,12 @@ impl Editor {
         for note in &result.notes {
             status.push_str(&format!(" · {}: {}", note.name, note.note));
         }
+        if dragged {
+            status.push_str(" · the drag in progress on the open photo was not kept");
+        }
         if !result.failed.is_empty() && done == 0 {
             self.messages.fail(status);
-        } else if !result.failed.is_empty() || !result.notes.is_empty() {
+        } else if !result.failed.is_empty() || !result.notes.is_empty() || dragged {
             self.messages.warn(status);
         } else {
             self.messages.done(status);

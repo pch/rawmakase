@@ -351,7 +351,8 @@ impl Editor {
                 }
                 let changed: Vec<_> = sync.edits.iter().map(|e| e.id).collect();
                 self.refresh_previews(&changed);
-                // Written back, or with no edit at all.
+                // Written back, or with no edit at all. The open photo was saved
+                // first, so no drag is left to take back.
                 self.reopen_synced(&changed);
                 self.messages.note(format!(
                     "{verb} {} ({})",

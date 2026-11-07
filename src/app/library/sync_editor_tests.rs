@@ -217,3 +217,156 @@ fn select_none_shortcut_clears_the_filmstrip_selection() -> anyhow::Result<()> {
     assert_eq!(library.selected(), None);
     Ok(())
 }
+
+/// A slider held on the open photo while a Sync that changes it runs.
+struct HeldDrag {
+    _d: tempfile::TempDir,
+    e: Editor,
+    ids: Vec<crate::catalog::PhotoId>,
+    path: std::path::PathBuf,
+}
+impl HeldDrag {
+    /// Photo A open in Develop, saved at exposure 0.2; a Sync begins and,
+    /// while it runs, a drag takes A's exposure to 0.9 and is still held.
+    fn new() -> anyhow::Result<Self> {
+        let (_d, e, ids) = editor_with_catalog(&["a.RAF", "b.RAF"])?;
+        let path = e
+            .library
+            .as_ref()
+            .unwrap()
+            .photo(ids[0])
+            .unwrap()
+            .path
+            .clone();
+        let mut held = Self { _d, e, ids, path };
+        held.write(0.2)?;
+        let e = &mut held.e;
+        e.module = Module::Develop;
+        e.document.catalog_photo = Some(held.ids[0]);
+        e.document.opened_at(held.path.clone());
+        e.document.edit.setup_mut().exposure = 0.2;
+        assert!(e.activity.begin_sync(std::sync::Arc::new(
+            crate::app::library::sync::BatchProgress::new("Sync", 1)
+        )));
+        let frame = e.document.edit.begin();
+        e.document.edit.recipe_mut().exposure = 0.9;
+        e.document
+            .edit
+            .finish(frame, crate::edit_session::Gesture::Held);
+        assert!(e.document.edit.history().in_gesture());
+        Ok(held)
+    }
+    /// Writes A's edit at `exposure`, as the Sync's worker does.
+    fn write(&self, exposure: f32) -> anyhow::Result<()> {
+        let library = self.e.library.as_ref().unwrap();
+        let recipe = crate::model::recipe::Recipe {
+            exposure,
+            ..Default::default()
+        };
+        crate::catalog::Catalog::open(library.session.catalog().location())?.save_edit(
+            self.ids[0],
+            &self.path,
+            &crate::storage::Identity::read(&self.path)?,
+            &recipe,
+            &Default::default(),
+            crate::catalog::HistoryUpdate::Keep,
+        )
+    }
+    /// The Sync's result: A changed from 0.2 to `after`, or, `cancelled`,
+    /// nothing changed.
+    fn result(&self, after: f32, cancelled: bool) -> crate::app::library::sync::SyncResult {
+        let history = || crate::catalog::SavedHistory {
+            origin: Default::default(),
+            steps: Vec::new(),
+            applied: 0,
+        };
+        let synced = crate::app::library::sync::Synced {
+            id: self.ids[0],
+            path: self.path.clone(),
+            before: crate::app::library::sync::EditBefore::Saved(Box::new(
+                crate::model::recipe::Recipe {
+                    exposure: 0.2,
+                    ..Default::default()
+                },
+            )),
+            after: crate::model::recipe::Recipe {
+                exposure: after,
+                ..Default::default()
+            },
+            history: history(),
+            history_before: history(),
+            identity: crate::storage::Identity::read(&self.path).unwrap(),
+        };
+        crate::app::library::sync::SyncResult {
+            change: crate::app::library::sync::BatchChange::Settings(Default::default()),
+            catalog: self
+                .e
+                .library
+                .as_ref()
+                .unwrap()
+                .session
+                .catalog()
+                .location()
+                .clone(),
+            synced: if cancelled { Vec::new() } else { vec![synced] },
+            failed: Vec::new(),
+            notes: Vec::new(),
+            cancelled,
+        }
+    }
+    fn saved_exposure(&self) -> f32 {
+        let library = self.e.library.as_ref().unwrap();
+        let edit = library.session.catalog().load_edit(self.ids[0], &self.path);
+        edit.unwrap().unwrap().recipe.exposure
+    }
+}
+
+/// The drag began on the settings from before the Sync: opening the photo
+/// again with what the Sync wrote must not save the drag over it.
+#[test]
+fn a_drag_held_while_a_sync_of_the_open_photo_finishes_is_not_saved_over_it() -> anyhow::Result<()>
+{
+    let mut held = HeldDrag::new()?;
+    held.write(0.5)?;
+    let result = held.result(0.5, false);
+    held.e.synced(result);
+    assert_eq!(held.saved_exposure(), 0.5, "the Sync's edit was replaced");
+    let e = &held.e;
+    assert!(e.document.loading(), "the open photo opens again");
+    assert!(!e.document.edit.history().in_gesture());
+    assert!(!e.document.edit.save_state().needs_save());
+    let line = e.messages.line();
+    assert!(line.contains("drag"), "{line}");
+    // Nothing of the drag reaches Undo: the Sync is the last change.
+    assert_eq!(held.e.undo_log.len(), (1, 0));
+    Ok(())
+}
+
+/// A Sync cancelled, or one that did not change the open photo, leaves the
+/// drag going, and it is saved once released.
+#[test]
+fn a_drag_held_while_a_sync_is_cancelled_or_leaves_the_photo_is_kept() -> anyhow::Result<()> {
+    for cancelled in [true, false] {
+        let mut held = HeldDrag::new()?;
+        let mut result = held.result(0.5, cancelled);
+        // Not cancelled: the Sync failed for the open photo, and wrote nothing.
+        if !cancelled {
+            result.failed.push(crate::app::library::sync::SyncFailure {
+                name: "a.RAF".into(),
+                reason: "it could not be read".into(),
+            });
+            result.synced.clear();
+        }
+        held.e.synced(result);
+        let e = &mut held.e;
+        assert!(e.document.edit.history().in_gesture(), "{cancelled}");
+        assert!(!e.document.loading());
+        let frame = e.document.edit.begin();
+        e.document
+            .edit
+            .finish(frame, crate::edit_session::Gesture::Released);
+        assert!(e.flush(), "{cancelled}");
+        assert_eq!(held.saved_exposure(), 0.9, "{cancelled}");
+    }
+    Ok(())
+}
