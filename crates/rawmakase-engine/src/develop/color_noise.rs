@@ -181,11 +181,13 @@ impl ChromaDenoise {
         offset: f32,
         cancel: Cancel<'_>,
     ) -> Result<Plane> {
-        // The photo's level this one shows. A level up to one past the photo's last
-        // is filtered with the last's settings. One that starts at the photo's
-        // unfiltered residual, or past it, is left alone, as the photo leaves it.
+        // The photo's level this one shows. A level that straddles the start of the
+        // photo's unfiltered residual is filtered with the last level's settings, in
+        // proportion to its part before the residual; one that starts at the
+        // residual, or past it, is left alone, as the photo leaves it.
         let photo_level = level as f32 + offset;
-        if photo_level >= (LEVELS + 1) as f32 || plane.w < 4 || plane.h < 4 {
+        let share = super::laplacian::filtered_share(photo_level, LEVELS + 1);
+        if share <= 0. || plane.w < 4 || plane.h < 4 {
             return Ok(plane);
         }
         ensure!(!cancel.is_cancelled(), "Render superseded");
@@ -232,6 +234,7 @@ impl ChromaDenoise {
                     // overflowing where the threshold is tiny next to the detail.
                     1. / (1. + (threshold * threshold / size).powi(ADAPTIVE_STEEPNESS))
                 };
+                let gain = super::laplacian::partial_gain(gain, share);
                 [c[0] + d[0] * gain, c[1] + d[1] * gain]
             })
             .collect();

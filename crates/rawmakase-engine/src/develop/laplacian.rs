@@ -7,21 +7,30 @@ use rayon::prelude::*;
 
 /// The photo's pyramid level that `im`'s finest level shows, `−log₂` of its
 /// [`photo_scale`](CameraImage::photo_scale): 0 for a photo decoded in full, 1 for a
-/// half-size decode. Within [`WHOLE_LEVEL`] of a whole level it is that level: a
-/// half-size decode of a photo with an odd side is a pixel more than half of it
-/// (`demosaic::half` rounds up), and its levels are still the photo's whole ones.
+/// half-size decode, a little under 1 for the half-size decode of a photo with an odd
+/// side (`demosaic::half` rounds up).
 pub(crate) fn photo_level_offset(im: &CameraImage) -> f32 {
-    let offset = -im.photo_scale().log2();
-    let whole = offset.round();
-    if (offset - whole).abs() < WHOLE_LEVEL {
-        whole
+    -im.photo_scale().log2()
+}
+/// How much of a level at the photo's level `photo_level` the photo filters, when it
+/// filters every level finer than `residual` and none from it on: all of a level that
+/// ends by then, the part before it of one that straddles it, and none of one past it.
+/// A reduced decode's level that straddles the start of the residual is filtered in
+/// proportion to its part before it, so noise reduction fades out continuously with
+/// the decode's scale instead of stopping a level early or late.
+pub(crate) fn filtered_share(photo_level: f32, residual: usize) -> f32 {
+    (residual as f32 - photo_level).clamp(0., 1.)
+}
+/// `gain`, the share of a level's detail filtering keeps, for a level of which
+/// `share` is filtered ([`filtered_share`]): the rest of the level keeps all of it.
+/// A level filtered whole keeps `gain` as it is.
+pub(crate) fn partial_gain(gain: f32, share: f32) -> f32 {
+    if share >= 1. {
+        gain
     } else {
-        offset
+        1. - share * (1. - gain)
     }
 }
-/// How far from a whole level [`photo_level_offset`] still takes it: one pixel of
-/// rounding on a long edge of 72 pixels or more is less.
-const WHOLE_LEVEL: f32 = 0.02;
 
 /// One channel at one pyramid level.
 pub(crate) struct Plane {

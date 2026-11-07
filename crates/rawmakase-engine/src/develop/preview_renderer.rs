@@ -858,12 +858,15 @@ mod tests {
         // 0.22 0.21, 1.02 0.58, 0.47 0.32 and 0.35 0.29, and the mean errors 0.0087
         // 0.0025, 0.0082 0.0022, 0.0081 0.0019, 0.0037 0.0023, 0.0034 0.0021 and
         // 0.0037 0.0025. At scales of 2 output pixels and more, every case is closer
-        // than it was but colour 10 reduced to 0.43, as far as before (0.42 against
-        // 0.40). At 1 pixel the decode also holds noise from the photo's finer scales
-        // (neither is filtered before it is reduced), which no threshold of the
-        // photo's at its scale takes out as the photo's finest level does. Mean error
-        // is mostly the noise left: it falls with any extra reduction, so it is only
-        // held, not compared.
+        // than it was but two reduced to 0.43, a little further: colour 10 (0.43
+        // against 0.40) and colour 25 with Detail and Smoothness 80 (0.25 against
+        // 0.20). The reduced decode's coarsest level straddles the photo's last, and
+        // is filtered for the 0.78 of it before the photo's residual (whole, those two
+        // were 0.42 and 0.17, and luminance 75 0.10). At 1 pixel the decode also holds
+        // noise from the photo's finer scales (neither is filtered before it is
+        // reduced), which no threshold of the photo's at its scale takes out as the
+        // photo's finest level does. Mean error is mostly the noise left: it falls
+        // with any extra reduction, so it is only held, not compared.
         type Case = (&'static str, [f32; 6], [f32; 2], [f32; 2]);
         let cases: [Case; 6] = [
             (
@@ -881,7 +884,7 @@ mod tests {
             (
                 "luminance 75",
                 [0.75, 0.5, 0., 0., 0.5, 0.5],
-                [0.07, 0.10],
+                [0.07, 0.053],
                 [0.0081, 0.0019],
             ),
             (
@@ -899,7 +902,7 @@ mod tests {
             (
                 "colour 25, Detail 80, Smoothness 80",
                 [0., 0.5, 0., 0.25, 0.8, 0.8],
-                [0.37, 0.17],
+                [0.37, 0.25],
                 [0.0038, 0.0022],
             ),
         ];
@@ -936,9 +939,69 @@ mod tests {
             }
         }
     }
-    /// A half-size decode of a photo with an odd side, a pixel larger than half of it
-    /// (`demosaic::half` rounds up), denoises as one of the even photo: its levels are
-    /// the photo's whole levels, not just finer ones, and it stops at the same level.
+    fn mean_difference(a: &[[f32; 3]], b: &[[f32; 3]]) -> f32 {
+        let sum: f32 = a
+            .iter()
+            .flatten()
+            .zip(b.iter().flatten())
+            .map(|(x, y)| (x - y).abs())
+            .sum();
+        sum / (a.len() * 3) as f32
+    }
+    /// A reduced decode's noise reduction changes continuously with its scale: the
+    /// half-size decode of a photo 1003 to 1043 pixels wide, in steps of 5 (offsets
+    /// 0.97 to 1.03), changes by about as much at every step, including the one
+    /// across offset 1, where its coarsest level stops straddling the photo's last.
+    /// A level only partly within the photo's filtered levels is filtered in
+    /// proportion. Measured: the largest step 1.14 times the median, and 0.055% of
+    /// what noise reduction changes. Filtered whole or not at all, the step across
+    /// offset 1 was 1.3 to 2.1% of it: 44 and 88 times the median step for colour,
+    /// where luminance otherwise does not change at all; snapping the offset to 1
+    /// within 0.02 only moved it to the step across 0.98.
+    #[test]
+    fn a_reduced_decode_s_noise_reduction_changes_continuously_with_its_scale() {
+        let (_, half) = noisy_photo(1024, 640, 0.06);
+        for (luma, chroma) in [(0.5, 0.), (0., 0.25), (0.6, 0.4)] {
+            let r = Recipe {
+                noise_luma: luma,
+                noise_chroma: chroma,
+                ..Default::default()
+            };
+            let r = r.checked().unwrap();
+            let denoised: Vec<_> = [1003, 1008, 1013, 1018, 1023, 1028, 1033, 1038, 1043]
+                .map(|width| {
+                    let mut im = half.clone();
+                    im.metadata.width = width;
+                    quality::denoised_camera(&im, &r, None, Cancel::NEVER)
+                        .unwrap()
+                        .pixels
+                        .clone()
+                })
+                .into();
+            let steps: Vec<f32> = denoised
+                .windows(2)
+                .map(|w| mean_difference(&w[0], &w[1]))
+                .collect();
+            let effect = mean_difference(&denoised[2], &half.pixels);
+            let mut sorted = steps.clone();
+            sorted.sort_by(f32::total_cmp);
+            let (median, most) = (sorted[sorted.len() / 2], sorted[sorted.len() - 1]);
+            // About 2.6 times the measured spread, and as much again where the steps
+            // are next to nothing (luminance's, above the finest band).
+            assert!(
+                most < 3. * median.max(1e-5 * effect),
+                "{luma} {chroma}: steps {steps:?}"
+            );
+            assert!(
+                most < 1e-3 * effect,
+                "{luma} {chroma}: steps {steps:?} of {effect}"
+            );
+        }
+    }
+    /// A half-size decode of a photo with an odd side, a pixel more than half of it
+    /// (`demosaic::half` rounds up), denoises almost as one of the even photo.
+    /// Measured: 0.03% of what noise reduction changes; filtering the straddling
+    /// level whole, as the photo's last, it was 2%.
     #[test]
     fn an_odd_photo_s_half_decode_denoises_as_an_even_one_s() {
         let (_, even) = noisy_photo(512, 320, 0.06);
@@ -956,7 +1019,9 @@ mod tests {
                 .pixels
                 .clone()
         };
-        assert_eq!(denoised(&even), denoised(&odd));
+        let (a, b) = (denoised(&even), denoised(&odd));
+        let (difference, effect) = (mean_difference(&a, &b), mean_difference(&a, &even.pixels));
+        assert!(difference < 4e-4 * effect, "{difference} of {effect}");
     }
     /// A full decode whose metadata gives another size denoises as one whose metadata
     /// gives its own: only a reduced decode's bands are the photo's. (That a full

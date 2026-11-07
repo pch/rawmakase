@@ -4,9 +4,9 @@
 //! thresholding retains detail above that noise. This is not Adobe's algorithm.
 //!
 //! The bands are the photo's: a reduced decode ([`CameraImage::photo_scale`]) is
-//! filtered with the settings of the photo's bands its own bands show, and stops where
-//! the photo does.
-use super::laplacian::{Plane, mirror, photo_level_offset};
+//! filtered with the settings of the photo's bands its own bands show, and fades out
+//! where the photo stops.
+use super::laplacian::{Plane, filtered_share, mirror, partial_gain, photo_level_offset};
 use crate::camera_data::CameraImage;
 use anyhow::{Result, ensure};
 use rawmakase_cancel::Cancel;
@@ -76,11 +76,13 @@ impl LuminanceDenoise {
         cancel: Cancel<'_>,
     ) -> Result<Plane> {
         check(cancel)?;
-        // The photo's band this one shows. A band up to one past the photo's last is
-        // filtered with the last's settings. One that starts at the photo's
-        // unfiltered residual, or past it, is left alone, as the photo leaves it.
+        // The photo's band this one shows. A band that straddles the start of the
+        // photo's unfiltered residual is filtered with the last band's settings, in
+        // proportion to its part before the residual; one that starts at the
+        // residual, or past it, is left alone, as the photo leaves it.
         let photo_level = level as f32 + offset;
-        if photo_level >= LEVELS as f32 || plane.w < 4 || plane.h < 4 {
+        let share = filtered_share(photo_level, LEVELS);
+        if share <= 0. || plane.w < 4 || plane.h < 4 {
             return Ok(Plane {
                 w: plane.w,
                 h: plane.h,
@@ -134,7 +136,7 @@ impl LuminanceDenoise {
                     } else {
                         1. / (1. + (threshold * threshold / energy.max(1e-20)).powi(2))
                     };
-                    *p += d * gain;
+                    *p += d * partial_gain(gain, share);
                 }
             });
         check(cancel)?;
