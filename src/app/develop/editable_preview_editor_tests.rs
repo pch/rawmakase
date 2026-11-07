@@ -1142,3 +1142,118 @@ fn a_syncs_undo_and_redo_reopen_the_photo_open_from_its_editable_preview() {
     assert_eq!(fx.stored_exposure(a), 0.7);
     assert_eq!(fx.e.document.edit.recipe().exposure, 0.7);
 }
+
+impl Fx {
+    /// Whether `id` has no RAWmakase edit stored.
+    fn has_no_edit(&self, id: PhotoId) -> bool {
+        catalog(&self.e).edit_record(id).unwrap().recipe.is_none()
+    }
+}
+
+#[test]
+fn a_syncs_undo_clears_the_edit_of_a_photo_that_had_none_while_its_original_is_unchanged() {
+    let mut fx = fixture(&["a.dng", "b.dng"]);
+    let (a, b) = (fx.id("a.dng"), fx.id("b.dng"));
+    fx.save_exposure(b, 0.7);
+    fx.sync(b, &[a]);
+    assert_eq!(fx.saved_exposure(a, &fx.path(a)), 0.7);
+    fx.e.undo();
+    assert!(fx.has_no_edit(a), "{}", fx.e.messages.line());
+    fx.e.redo();
+    assert_eq!(
+        fx.saved_exposure(a, &fx.path(a)),
+        0.7,
+        "{}",
+        fx.e.messages.line()
+    );
+}
+
+#[test]
+fn a_syncs_undo_never_clears_the_edit_of_a_replaced_original_that_had_none() {
+    let mut fx = fixture(&["a.dng", "b.dng"]);
+    let (a, b) = (fx.id("a.dng"), fx.id("b.dng"));
+    fx.save_exposure(b, 0.7);
+    fx.sync(b, &[a]);
+    let synced = fx.stored_identity(a);
+    // Another photo in its place: the Sync's edit is of the photo it replaced.
+    let kept = fx.take_offline(a);
+    let mut other = kept.clone();
+    other.extend_from_slice(b"another photo");
+    std::fs::write(fx.path(a), &other).unwrap();
+    fx.e.undo();
+    let line = fx.e.messages.line().to_owned();
+    assert!(line.starts_with("Undo failed"), "{line}");
+    assert_eq!(fx.stored_exposure(a), 0.7);
+    assert_eq!(fx.stored_identity(a), synced);
+    // The command stays on the Undo stack: Redo has nothing to redo.
+    assert_eq!(fx.e.undo_log.len(), (1, 0));
+    fx.e.redo();
+    assert_eq!(fx.e.undo_log.len(), (1, 0));
+    assert_eq!(fx.stored_exposure(a), 0.7);
+    // With the original back, Undo clears it and Redo writes it again.
+    std::fs::write(fx.path(a), &kept).unwrap();
+    fx.e.undo();
+    assert!(fx.has_no_edit(a), "{}", fx.e.messages.line());
+    fx.e.redo();
+    assert_eq!(
+        fx.saved_exposure(a, &fx.path(a)),
+        0.7,
+        "{}",
+        fx.e.messages.line()
+    );
+}
+
+#[test]
+fn a_syncs_undo_never_clears_the_edit_of_an_offline_photo_without_a_usable_preview() {
+    let mut fx = fixture(&["a.dng", "b.dng"]);
+    let (a, b) = (fx.id("a.dng"), fx.id("b.dng"));
+    fx.save_exposure(b, 0.7);
+    fx.sync(b, &[a]);
+    let kept = fx.take_offline(a);
+    fx.e.undo();
+    let line = fx.e.messages.line().to_owned();
+    assert!(line.starts_with("Undo failed"), "{line}");
+    assert!(line.contains("has no editable preview"), "{line}");
+    assert_eq!(fx.stored_exposure(a), 0.7);
+    std::fs::write(fx.path(a), &kept).unwrap();
+    fx.e.undo();
+    assert!(fx.has_no_edit(a), "{}", fx.e.messages.line());
+}
+
+#[test]
+fn a_syncs_undo_clears_the_edit_of_an_offline_photo_against_its_recorded_identity() {
+    let mut fx = fixture(&["a.dng", "b.dng"]);
+    let (a, b) = (fx.id("a.dng"), fx.id("b.dng"));
+    fx.save_exposure(b, 0.7);
+    let original = fx.build(a, false);
+    fx.sync(b, &[a]);
+    fx.take_offline(a);
+    fx.e.undo();
+    assert!(fx.has_no_edit(a), "{}", fx.e.messages.line());
+    fx.e.redo();
+    let path = fx.path(a);
+    assert_eq!(
+        fx.saved_exposure(a, crate::edits::Original::recorded(&path, &original)),
+        0.7,
+        "{}",
+        fx.e.messages.line()
+    );
+}
+
+#[test]
+fn a_syncs_undo_writes_no_photo_when_one_without_an_edit_was_replaced() {
+    let mut fx = fixture(&["a.dng", "b.dng", "c.dng"]);
+    let (a, b, c) = (fx.id("a.dng"), fx.id("b.dng"), fx.id("c.dng"));
+    fx.save_exposure(a, 0.2);
+    fx.save_exposure(b, 0.7);
+    fx.sync(b, &[a, c]);
+    let mut other = std::fs::read(fx.path(c)).unwrap();
+    other.extend_from_slice(b"another photo");
+    std::fs::write(fx.path(c), &other).unwrap();
+    // One transaction: A, unchanged, is not restored either.
+    fx.e.undo();
+    let line = fx.e.messages.line().to_owned();
+    assert!(line.starts_with("Undo failed"), "{line}");
+    assert_eq!(fx.saved_exposure(a, &fx.path(a)), 0.7);
+    assert_eq!(fx.stored_exposure(c), 0.7);
+}

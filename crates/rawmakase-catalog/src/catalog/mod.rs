@@ -59,7 +59,7 @@ pub use develop_history::{HistoryUpdate, SavedHistory, SavedStep};
 pub use editable_previews::{
     BuiltEditablePreview, EditablePreview, OfflinePreview, editable_preview_file_name,
 };
-pub use edits::{EditChange, EditToSave};
+pub use edits::{EditChange, EditToClear, EditToSave};
 pub use export_catalog::{CatalogExport, ExportScope, ExportedFolders};
 pub use ingest::{Ambiguity, Choice, Conflict, IMPORT_BURST_SECONDS, PendingBurstStacks};
 pub use lightroom::HistoryStep;

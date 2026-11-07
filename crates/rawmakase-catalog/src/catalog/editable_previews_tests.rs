@@ -740,3 +740,123 @@ fn an_offline_preview_is_usable_missing_or_stale() -> Result<()> {
     );
     Ok(())
 }
+
+impl Fx {
+    /// Clears `photo`'s edit, meant for the file `source` names, against
+    /// `original`, as Sync's Undo clears a photo that had no edit.
+    fn clear(
+        &mut self,
+        photo: PhotoId,
+        original: crate::edits::Original<'_>,
+        source: &Identity,
+    ) -> Result<()> {
+        self.cat.change_edits(&[EditChange::Clear(EditToClear {
+            id: photo,
+            original,
+            source,
+        })])
+    }
+    fn has_recipe(&self, photo: PhotoId) -> Result<bool> {
+        Ok(self.cat.edit_record(photo)?.recipe.is_some())
+    }
+}
+
+#[test]
+fn a_clear_is_checked_against_the_file_as_a_save_is() -> Result<()> {
+    let mut fx = fixture()?;
+    let path = fx.source(fx.a);
+    let original = fx.original("a.dng")?;
+    fx.cat.save_edit(
+        fx.a,
+        &path,
+        &original,
+        &exposure(0.4),
+        &Default::default(),
+        HistoryUpdate::Keep,
+    )?;
+    // Another photo in its place: its edit is protected, never cleared.
+    let kept = std::fs::read(&path)?;
+    std::fs::write(&path, b"another photo entirely")?;
+    let error = fx
+        .clear(fx.a, (&path).into(), &original)
+        .expect_err("refused");
+    assert!(format!("{error:#}").contains("not cleared"), "{error:#}");
+    assert!(fx.has_recipe(fx.a)?);
+    // Meant for that other photo, it is still refused: the stored edit isn't its.
+    let other = fx.original("a.dng")?;
+    assert!(fx.clear(fx.a, (&path).into(), &other).is_err());
+    assert!(fx.has_recipe(fx.a)?);
+    // Offline, with nothing standing in, the missing file can't be checked.
+    std::fs::remove_file(&path)?;
+    assert!(fx.clear(fx.a, (&path).into(), &original).is_err());
+    assert!(fx.has_recipe(fx.a)?);
+    // The same file back: cleared.
+    std::fs::write(&path, &kept)?;
+    fx.clear(fx.a, (&path).into(), &original)?;
+    assert!(!fx.has_recipe(fx.a)?);
+    Ok(())
+}
+
+#[test]
+fn an_offline_clear_is_checked_against_the_recorded_identity() -> Result<()> {
+    let mut fx = fixture()?;
+    let path = fx.source(fx.a);
+    let original = fx.original("a.dng")?;
+    std::fs::remove_file(&path)?;
+    fx.save_offline(fx.a, &path, &original, 0.4)?;
+    // A preview of another version of the photo stands in for none of its edit.
+    std::fs::write(&path, b"a later version of a")?;
+    let later = fx.original("a.dng")?;
+    std::fs::remove_file(&path)?;
+    let recorded = |identity| crate::edits::Original::recorded(&path, identity);
+    assert!(fx.clear(fx.a, recorded(&later), &later).is_err());
+    assert!(fx.clear(fx.a, recorded(&later), &original).is_err());
+    assert!(fx.has_recipe(fx.a)?);
+    fx.clear(fx.a, recorded(&original), &original)?;
+    assert!(!fx.has_recipe(fx.a)?);
+    Ok(())
+}
+
+#[test]
+fn a_change_with_one_refused_clear_writes_nothing() -> Result<()> {
+    let mut fx = fixture()?;
+    let (a, b) = (fx.source(fx.a), fx.source(fx.b));
+    let (was_a, was_b) = (fx.original("a.dng")?, fx.original("b.dng")?);
+    for (id, path, identity) in [(fx.a, &a, &was_a), (fx.b, &b, &was_b)] {
+        fx.cat.save_edit(
+            id,
+            path,
+            identity,
+            &exposure(0.4),
+            &Default::default(),
+            HistoryUpdate::Keep,
+        )?;
+    }
+    std::fs::write(&b, b"another photo entirely")?;
+    let save = EditToSave {
+        id: fx.a,
+        original: (&a).into(),
+        source: &was_a,
+        recipe: &exposure(0.9),
+        export: &Default::default(),
+        history: HistoryUpdate::Keep,
+    };
+    let refused = fx.cat.change_edits(&[
+        EditChange::Save(&save),
+        EditChange::Clear(EditToClear {
+            id: fx.b,
+            original: (&b).into(),
+            source: &was_b,
+        }),
+    ]);
+    assert!(refused.is_err());
+    let exposure_a = fx
+        .cat
+        .load_edit(fx.a, &a)?
+        .context("saved")?
+        .recipe
+        .exposure;
+    assert_eq!(exposure_a, 0.4);
+    assert!(fx.has_recipe(fx.b)?);
+    Ok(())
+}

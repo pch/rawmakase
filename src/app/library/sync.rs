@@ -20,7 +20,8 @@ use crate::app::{
 use crate::model::recipe::Recipe;
 use crate::{
     catalog::{
-        Catalog, CatalogLocation, EditChange, EditToSave, HistoryUpdate, PhotoId, SavedHistory,
+        Catalog, CatalogLocation, EditChange, EditToClear, EditToSave, HistoryUpdate, PhotoId,
+        SavedHistory,
     },
     edits::{self, Origin},
     export_settings::ExportOptions,
@@ -733,16 +734,8 @@ pub(in crate::app) fn restore(
         .collect::<Option<Vec<_>>>()
         .ok_or(SyncRestoreError::PhotoRemoved)?;
     let mut saves = Vec::with_capacity(edits.len());
+    let mut clears = Vec::new();
     for (e, at) in edits.iter().zip(&located) {
-        let (recipe, history) = match (side, &e.before) {
-            (SyncSide::Before, EditBefore::None { .. }) => continue,
-            // Undo brings back the History it had, redo branch included.
-            (SyncSide::Before, EditBefore::Saved(r)) => {
-                (r.as_ref(), HistoryUpdate::Replace(&e.history_before))
-            }
-            // Redo brings back the History the Sync saved, which Undo may have cleared.
-            (SyncSide::After, _) => (&e.after, HistoryUpdate::Replace(&e.history)),
-        };
         let original = at.original();
         // Offline, the identity its editable preview recorded, as for a save
         // made in Develop; without a usable one, why not.
@@ -754,6 +747,24 @@ pub(in crate::app) fn restore(
                 _ => error,
             })
         })?;
+        let (recipe, history) = match (side, &e.before) {
+            // Back to no edit, for the file the Sync read: the catalog checks
+            // that the edit it clears is still of that photo.
+            (SyncSide::Before, EditBefore::None { .. }) => {
+                clears.push(EditToClear {
+                    id: e.id,
+                    original,
+                    source: &e.identity,
+                });
+                continue;
+            }
+            // Undo brings back the History it had, redo branch included.
+            (SyncSide::Before, EditBefore::Saved(r)) => {
+                (r.as_ref(), HistoryUpdate::Replace(&e.history_before))
+            }
+            // Redo brings back the History the Sync saved, which Undo may have cleared.
+            (SyncSide::After, _) => (&e.after, HistoryUpdate::Replace(&e.history)),
+        };
         let saved = session
             .catalog()
             .load_edit(e.id, original)
@@ -783,15 +794,11 @@ pub(in crate::app) fn restore(
             },
         )
         .collect();
-    let mut changes: Vec<EditChange> = saves.iter().map(EditChange::Save).collect();
-    if side == SyncSide::Before {
-        changes.extend(
-            edits
-                .iter()
-                .filter(|e| matches!(e.before, EditBefore::None { .. }))
-                .map(|e| EditChange::Clear { id: e.id }),
-        );
-    }
+    let changes: Vec<EditChange> = saves
+        .iter()
+        .map(EditChange::Save)
+        .chain(clears.into_iter().map(EditChange::Clear))
+        .collect();
     session
         .change_edits(&changes)
         .map_err(SyncRestoreError::Write)

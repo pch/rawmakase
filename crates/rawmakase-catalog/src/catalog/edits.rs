@@ -11,7 +11,20 @@ use anyhow::{Context, Result};
 /// One photo's change for [`Catalog::change_edits`].
 pub enum EditChange<'a, 'b> {
     Save(&'b EditToSave<'a>),
-    Clear { id: PhotoId },
+    Clear(EditToClear<'a>),
+}
+
+/// One photo's edit to clear, checked as a save is: refused when `original` is
+/// no longer the photo `source` names, or not the photo its stored edit was
+/// saved for, so a clear never removes a protected edit.
+#[derive(Clone, Copy)]
+pub struct EditToClear<'a> {
+    pub id: PhotoId,
+    /// The photo's original, as for [`EditToSave::original`].
+    pub original: Original<'a>,
+    /// The file the clear is meant for: for Sync's Undo, the file the Sync
+    /// read before writing its settings.
+    pub source: &'a Identity,
 }
 
 /// One photo's edit for [`Catalog::save_edits`].
@@ -105,7 +118,7 @@ impl Catalog {
                         )
                         .collect::<Vec<_>>()
                 }
-                EditChange::Clear { .. } => Vec::new(),
+                EditChange::Clear(_) => Vec::new(),
             });
             self.write_recipes(super::format_upgrade::Stores::of(recipes), write)?;
         } else {

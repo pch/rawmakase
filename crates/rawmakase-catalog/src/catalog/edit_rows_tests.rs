@@ -153,12 +153,16 @@ fn removing_a_virtual_copy_removes_its_edit_and_leaves_its_masters() -> Result<(
 
 #[test]
 fn clearing_an_edit_leaves_nothing_of_it() -> Result<()> {
-    let (_dir, mut cat, _file, id) = edited()?;
+    let (_dir, mut cat, file, id) = edited()?;
     cat.db_for_tests().execute(
         "INSERT INTO develop_history(photo, data) VALUES (?, X'01')",
         [id.0],
     )?;
-    cat.change_edits(&[EditChange::Clear { id }])?;
+    cat.change_edits(&[EditChange::Clear(EditToClear {
+        id,
+        original: (&file).into(),
+        source: &crate::storage::Identity::read(&file)?,
+    })])?;
     assert_eq!(stored(&cat, id)?, [None, None, None, None, None, None]);
     Ok(())
 }
