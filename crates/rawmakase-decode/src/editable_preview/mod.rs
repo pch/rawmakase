@@ -44,6 +44,8 @@
 //! serialised whole: they change between releases, and the file must not.
 mod codec;
 mod curve;
+#[cfg(test)]
+mod depths;
 mod facts;
 mod fields;
 #[cfg(test)]
