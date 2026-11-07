@@ -36,7 +36,8 @@ pub fn render_hdr(
     let source = resolved.source(im, ai, cancel, None)?;
     let r = resolved.recipe.as_ref();
     let g = resolved.geometry;
-    let (toned, tonal_recipe) = local_stage(&source.image, &source, r, 1., cancel, None)?;
+    let (toned, tonal_recipe) =
+        local_stage(&source.image, &source, r, im.photo_scale(), cancel, None)?;
     let srgb = crate::color::OutputSpace::Srgb;
     let (mut out, _) = develop::render_base(
         &toned,
@@ -57,7 +58,7 @@ pub fn render_hdr(
             sharpen_unbounded(
                 &mut out,
                 r,
-                Sharpener::new(r).sigma,
+                Sharpener::new(r).sigma * im.photo_scale(),
                 crate::color::OutputSpace::ProPhoto,
                 cancel,
             )?;

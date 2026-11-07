@@ -474,6 +474,21 @@ impl Clone for HdrSlot {
 }
 
 impl CameraImage {
+    /// This image's pixels per pixel of the photo it develops: below 1 for a
+    /// reduced decode ([`fast`](Self::fast)), whose [`Metadata`] keeps the photo's
+    /// size, and 1 for any other image. Effects sized in the photo's pixels
+    /// (sharpening, grain) are scaled by it, so a reduced decode renders as its
+    /// photo resized. Only a reduced decode is scaled: a full decode's metadata may
+    /// give another size (margins, a turned sensor) without its pixels being smaller.
+    pub fn photo_scale(&self) -> f32 {
+        let photo = self.metadata.width.max(self.metadata.height);
+        let own = self.width.max(self.height);
+        if self.fast && photo > own && own > 0 {
+            own as f32 / photo as f32
+        } else {
+            1.
+        }
+    }
     /// `self` paired with `light`, its HDR light, which records the source fact in
     /// the metadata; refused when their sizes differ.
     pub fn with_hdr(mut self, light: std::sync::Arc<HdrLight>) -> Option<Self> {

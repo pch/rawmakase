@@ -37,7 +37,9 @@ const VERSION: i64 = 1;
 //     opcodes, Adobe profiles).
 // 12: Fujifilm's distortion table is scaled as Adobe's warps of it are, so its photos
 //     frame as in Lightroom.
-const GENERATION: i64 = 12;
+// 13: a half-size decode sharpens and grains at its photo's scale, which edited
+//     thumbnails rendered from it show differently.
+const GENERATION: i64 = 13;
 // 3: a JPEG, PNG or TIFF is converted from its embedded ICC profile.
 // 4: the one engine, as `GENERATION` 3.
 // 5: an edited JPEG, PNG or TIFF renders from the scene its rendering is of.
@@ -54,7 +56,9 @@ const LIMIT: i64 = 512 * 1024 * 1024;
 // 9: Canon's built-in lens correction, as `GENERATION` 10.
 // 10: optical centres and framing, as `GENERATION` 11.
 // 11: Fujifilm's distortion framing, as `GENERATION` 12.
-const SIZED_GENERATION: i64 = 11;
+// 12: a half-size decode's sharpening and grain, as `GENERATION` 13 (Standard
+//     previews built from it).
+const SIZED_GENERATION: i64 = 12;
 const SIZED_QUALITY: u8 = 85;
 /// Tables added after version 1, created on open so older builds, which ignore
 /// them, keep opening the file.

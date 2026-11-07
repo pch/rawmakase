@@ -56,7 +56,7 @@ impl TextureDetail {
     /// stops with an error when `cancel` is set.
     pub(crate) fn of(im: &CameraImage, scale: f32, cancel: Cancel<'_>) -> Result<Self> {
         // The image's size against the full-resolution photo's, also for a half-size
-        // draft decode, which renders at scale 1.
+        // draft decode whose caller passes scale 1 (`render_stage`).
         let full = im.metadata.width.max(im.metadata.height);
         let scale = if full > 0 {
             (im.width.max(im.height) as f32 / full as f32).min(scale.max(1e-3))
@@ -205,8 +205,8 @@ mod tests {
         assert!(gain_at(0.03, 0.5, -1.) < 0.75);
         assert!((gain_at(0.03, 0.5, 0.) - 1.).abs() < 1e-4);
     }
-    /// A half-size draft decode renders at scale 1, but its pixels are twice the size
-    /// of the photo's: Texture works at the photo's scale, as on a reduced copy.
+    /// A half-size draft decode given scale 1, whose pixels are twice the size of the
+    /// photo's, still has Texture work at the photo's scale, as on a reduced copy.
     #[test]
     fn half_size_decodes_texture_at_the_photo_scale() {
         let (w, h) = (256u32, 128u32);

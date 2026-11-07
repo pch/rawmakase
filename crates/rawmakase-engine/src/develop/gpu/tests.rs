@@ -309,7 +309,8 @@ fn gpu_matches_cpu_finishing_and_reuses_buffers() -> Result<()> {
         };
         for amount in [0., 0.7] {
             for max_edge in [0, 1, 17, 90] {
-                for radius in [0.5, 3.] {
+                // A reduced decode's photo scale takes the sigma below half a pixel.
+                for (radius, scale) in [(0.5, 1.), (3., 1.), (0.5, 0.5), (1., 0.5)] {
                     let recipe = Recipe {
                         sharpening: amount,
                         sharpening_radius: radius,
@@ -317,12 +318,13 @@ fn gpu_matches_cpu_finishing_and_reuses_buffers() -> Result<()> {
                         sharpening_detail: 0.8,
                         ..Recipe::default()
                     };
+                    let sigma = crate::develop::sharpening::Sharpener::new(&recipe).sigma * scale;
                     let mut expected = image.clone();
-                    crate::develop::quality::sharpen(&mut expected, &recipe, None, Cancel::NEVER)
-                        .unwrap();
+                    crate::develop::quality::sharpen_at(&mut expected, &recipe, sigma).unwrap();
                     let expected = crate::develop::quality::resize(expected, max_edge);
                     for _ in 0..2 {
-                        let actual = gpu.finish(&image, &recipe, max_edge, Cancel::new(&cancel))?;
+                        let actual =
+                            gpu.finish(&image, &recipe, sigma, max_edge, Cancel::new(&cancel))?;
                         assert_eq!(
                             (actual.width, actual.height),
                             (expected.width, expected.height)
@@ -336,7 +338,7 @@ fn gpu_matches_cpu_finishing_and_reuses_buffers() -> Result<()> {
                             .fold(0f32, f32::max);
                         assert!(
                             error < 2e-5,
-                            "{w}x{h}, edge={max_edge}, amount={amount}, radius={radius}: {error}"
+                            "{w}x{h}, edge={max_edge}, amount={amount}, radius={radius}, scale={scale}: {error}"
                         );
                     }
                 }
@@ -350,7 +352,7 @@ fn gpu_matches_cpu_finishing_and_reuses_buffers() -> Result<()> {
         pixels: vec![[0.5; 3]],
     };
     assert!(
-        gpu.finish(&image, &Recipe::default(), 1, Cancel::new(&cancel))
+        gpu.finish(&image, &Recipe::default(), 1., 1, Cancel::new(&cancel))
             .is_err()
     );
     Ok(())
@@ -443,7 +445,7 @@ fn gpu_preview_preserves_regions_spatial_effects_and_falls_back() -> Result<()> 
     };
     assert!(
         renderer
-            .finish(&invalid, &Recipe::default(), 0, Cancel::new(&cancel))
+            .finish(&invalid, &Recipe::default(), 1., 0, Cancel::new(&cancel))
             .is_none()
     );
     assert!(renderer.adapter_name().is_none());

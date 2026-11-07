@@ -290,10 +290,11 @@ impl PreviewRenderer {
         &mut self,
         image: &Rendered,
         recipe: &Recipe,
+        sigma: f32,
         max_edge: u32,
         cancel: Cancel<'_>,
     ) -> Option<Rendered> {
-        self.backend.finish(image, recipe, max_edge, cancel)
+        self.backend.finish(image, recipe, sigma, max_edge, cancel)
     }
 }
 impl Backend {
@@ -347,10 +348,13 @@ impl Backend {
         &mut self,
         image: &Rendered,
         recipe: &Recipe,
+        sigma: f32,
         max_edge: u32,
         cancel: Cancel<'_>,
     ) -> Option<Rendered> {
-        self.run(cancel, |gpu| gpu.finish(image, recipe, max_edge, cancel))
+        self.run(cancel, |gpu| {
+            gpu.finish(image, recipe, sigma, max_edge, cancel)
+        })
     }
     /// Whether the GPU can develop `samples` with `params`; checked before [`Self::run`],
     /// so a region too large for the device renders on the CPU without turning the GPU
@@ -535,6 +539,146 @@ mod tests {
             // part of the pyramid's error; Camera Raw's mask leaves more of it lit.
             assert!(error < 0.012, "edge {edge}: mean error {error}");
         }
+    }
+    /// A photo with fine detail, and its half-size decode: each pixel the mean of a
+    /// 2 × 2 block, marked `fast` and keeping the photo's metadata, as
+    /// `demosaic::half` makes it.
+    fn photo_and_half(w: u32, h: u32) -> (CameraImage, CameraImage) {
+        let mut full = image(w, h, 0.);
+        for (i, p) in full.pixels.iter_mut().enumerate() {
+            let (x, y) = ((i as u32 % w) as f32, (i as u32 / w) as f32);
+            let v = 0.3 + 0.12 * (x * 0.21).sin() * (y * 0.17).cos() + 0.06 * (x * 0.09).sin();
+            *p = [v * 1.1, v, v * 0.7];
+        }
+        let (hw, hh) = (w / 2, h / 2);
+        let mut half = full.clone();
+        (half.width, half.height, half.fast) = (hw, hh, true);
+        half.pixels = (0..hw * hh)
+            .map(|i| {
+                let (x, y) = (2 * (i % hw), 2 * (i / hw));
+                let at = |dx: u32, dy: u32| full.pixels[((y + dy) * w + x + dx) as usize];
+                let [a, b, c, d] = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)];
+                std::array::from_fn(|k| (a[k] + b[k] + c[k] + d[k]) / 4.)
+            })
+            .collect();
+        (full, half)
+    }
+    fn mean_error(a: &Rendered, b: &Rendered) -> f32 {
+        assert_eq!((a.width, a.height), (b.width, b.height));
+        a.pixels
+            .iter()
+            .flatten()
+            .zip(b.pixels.iter().flatten())
+            .map(|(x, y)| (x - y).abs())
+            .sum::<f32>()
+            / (a.pixels.len() * 3) as f32
+    }
+    /// A half-size decode renders as its photo rendered whole and resized to the same
+    /// size: sharpening is sized in the photo's pixels, not the reduced image's, so a
+    /// Standard preview built from it, or an editable preview, sharpens as an export does.
+    #[test]
+    fn a_reduced_decode_sharpens_as_the_photo_resized() {
+        let (w, h) = (640, 424);
+        let (full, half) = photo_and_half(w, h);
+        let recipe = Recipe {
+            sharpening: 1.,
+            sharpening_radius: 3.,
+            ..Default::default()
+        };
+        let r = recipe.checked().unwrap();
+        let expected = quality::render(&full, &r, w / 2, None, Cancel::NEVER).unwrap();
+        let reduced = quality::render(&half, &r, w / 2, None, Cancel::NEVER).unwrap();
+        let unsharpened = Recipe {
+            sharpening: 0.,
+            ..Default::default()
+        };
+        let unsharpened = unsharpened.checked().unwrap();
+        let plain = quality::render(&half, &unsharpened, w / 2, None, Cancel::NEVER).unwrap();
+        let error = mean_error(&reduced, &expected);
+        // What sharpening adds to the photo resized: the error must be a small share of
+        // it. Measured: 0.25 of it; sharpened at the full-size radius, 7.1 times it.
+        let effect = mean_error(&plain, &expected);
+        assert!(
+            error < 0.35 * effect,
+            "error {error} against sharpening's {effect}"
+        );
+    }
+    /// The Fit of a half-size decode, from its pyramid as the Library's edited previews
+    /// render it, sharpens as the photo's Fit does.
+    #[test]
+    fn a_reduced_decode_s_fit_sharpens_as_the_photo_s() {
+        let (w, h) = (640, 424);
+        let (full, half) = photo_and_half(w, h);
+        let r = Recipe {
+            sharpening: 1.,
+            sharpening_radius: 3.,
+            ..Default::default()
+        };
+        let unsharpened = Recipe {
+            sharpening: 0.,
+            ..r.clone()
+        };
+        let cancel = AtomicBool::new(false);
+        let fit = |im: &CameraImage, r: &Recipe| {
+            PreviewRenderer::default()
+                .render(im, r, 200, None, Cancel::new(&cancel))
+                .unwrap()
+        };
+        let expected = fit(&full, &r);
+        let error = mean_error(&fit(&half, &r), &expected);
+        let effect = mean_error(&fit(&half, &unsharpened), &expected);
+        // Measured: 0.04 of it; sharpened at the full-size radius, 11 times it.
+        assert!(
+            error < 0.35 * effect,
+            "error {error} against sharpening's {effect}"
+        );
+    }
+    /// A half-size decode's grain is as strong as its photo's grain resized to the same
+    /// size: drawn for the photo's pixels, not the reduced image's.
+    #[test]
+    fn a_reduced_decode_grains_as_the_photo_resized() {
+        let (w, h) = (640, 424);
+        let mut full = image(w, h, 0.);
+        full.pixels.fill([0.18; 3]);
+        let mut half = image(w / 2, h / 2, 0.);
+        half.pixels.fill([0.18; 3]);
+        (half.metadata.width, half.metadata.height, half.fast) = (w, h, true);
+        let mut r = Recipe {
+            sharpening: 0.,
+            ..Default::default()
+        };
+        r.effects.grain = 0.6;
+        r.effects.grain_size = 0.25;
+        let checked = r.checked().unwrap();
+        let spread = |im: &Rendered| {
+            let n = im.pixels.len() as f32;
+            let mean = im.pixels.iter().map(|p| p[1]).sum::<f32>() / n;
+            (im.pixels.iter().map(|p| (p[1] - mean).powi(2)).sum::<f32>() / n).sqrt()
+        };
+        let expected = quality::render(&full, &checked, w / 2, None, Cancel::NEVER).unwrap();
+        let reduced = quality::render(&half, &checked, w / 2, None, Cancel::NEVER).unwrap();
+        // Measured: 1.12; drawn for the reduced image's own pixels, 2.4.
+        let ratio = spread(&reduced) / spread(&expected);
+        assert!((0.8..1.25).contains(&ratio), "grain strength ratio {ratio}");
+    }
+    /// A full-size decode whose metadata gives another size (a decoder's margins or
+    /// turned sensor) renders exactly as before: only a reduced decode is scaled.
+    #[test]
+    fn a_full_decode_renders_at_its_own_scale_whatever_its_metadata_says() {
+        let (full, _) = photo_and_half(320, 212);
+        let mut other = full.clone();
+        (other.metadata.width, other.metadata.height) = (640, 424);
+        let mut r = Recipe {
+            sharpening: 1.,
+            sharpening_radius: 3.,
+            ..Default::default()
+        };
+        r.effects.grain = 0.5;
+        let checked = r.checked().unwrap();
+        let r = &checked;
+        let a = quality::render(&full, r, 0, None, Cancel::NEVER).unwrap();
+        let b = quality::render(&other, r, 0, None, Cancel::NEVER).unwrap();
+        assert_eq!(a.pixels, b.pixels);
     }
     /// Every edit, including ones that change only cached stages, must render exactly
     /// as a renderer without cached state would.
