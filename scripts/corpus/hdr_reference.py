@@ -142,7 +142,7 @@ def capture(config, out, factor):
         shutil.copyfile(source, copy)
         if sha256(copy) != source_hash:
             raise RuntimeError('Source changed while copying')
-        xmp = camera_raw.xmp(job['settings'], job.get('curves'))
+        xmp = camera_raw.xmp(job['settings'], job.get('curves'), job.get('look'))
         copy.with_suffix('.xmp').write_text(xmp)
         (folder / 'requested.xmp').write_text(xmp)
         output = folder / 'reference.tif'
