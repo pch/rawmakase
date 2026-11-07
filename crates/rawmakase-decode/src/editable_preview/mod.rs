@@ -34,10 +34,18 @@
 //! - `EXIF`, a record: the camera's EXIF ([`photo::camera_exif`](crate::photo::camera_exif)),
 //!   kept so that exporting from an editable preview can be added later; empty when the
 //!   original has none.
-//! - `PIXL`: the pixels in the codec's encoding. Codec 1, the only one version 1
-//!   knows, is a lossless JPEG XL codestream of three 16-bit channels (`codec`);
-//!   the samples are the camera-space values, highlights recovered, on curve 1
-//!   (`curve`), which keeps 12 stops above white.
+//! - `PIXL`: the pixels in the codec's encoding: camera-space values, highlights
+//!   recovered, on curve 1 (`curve`), which keeps 12 stops above white, as a
+//!   lossless JPEG XL codestream of three 16-bit channels (`codec`).
+//!
+//!   | Codec | Samples | Precision |
+//!   | --- | --- | --- |
+//!   | 1 | Curve 1's 16-bit codes | Lossless: within 0.013% of each value |
+//!   | 2 | Curve 1's 12-bit codes, samples 0 to 4095 in the same 16-bit codestream (4096 and above are damage); code `q` reads as 16-bit code `16 q + 8`, the middle of the 16 codes it stands for; dithered when built | [`Precision::Smaller`]: a step of 0.41%, about 40% smaller files |
+//!
+//!   Codec 2 changes only the samples: a reader that knows it widens them
+//!   (`curve::widen`) and develops them as codec 1's. The dither is the writer's
+//!   (`curve::dithered`) and nothing a reader needs.
 //!
 //! A file of a later version, or naming a codec, curve or fact code a later
 //! release introduced, is refused with an error that says so. Structs are never
@@ -96,21 +104,49 @@ const MAX_ORIGINAL_PIXELS: u64 = 1 << 34;
 /// The largest `HEAD`, `FACT` or `EXIF` section read.
 const MAX_RECORD: u64 = 64 << 20;
 
+/// How finely an editable preview keeps its pixels: the choice [`build`] takes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Precision {
+    /// Every 16-bit code, losslessly ([`Codec::LosslessJxl16`]).
+    #[default]
+    Lossless,
+    /// 12-bit codes, dithered ([`Codec::DitheredJxl12`]): about 40% smaller files.
+    Smaller,
+}
+
 /// How an editable preview's pixels are coded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Codec {
     /// Lossless JPEG XL, three 16-bit channels on the log curve (code 1).
     LosslessJxl16,
+    /// The log curve's 12-bit codes, dithered when built, kept losslessly as JPEG
+    /// XL samples 0 to 4095 in three 16-bit channels (code 2).
+    DitheredJxl12,
 }
 impl Codec {
+    /// The choice this codec keeps the pixels with.
+    pub fn precision(self) -> Precision {
+        match self {
+            Codec::LosslessJxl16 => Precision::Lossless,
+            Codec::DitheredJxl12 => Precision::Smaller,
+        }
+    }
+    fn of_precision(precision: Precision) -> Self {
+        match precision {
+            Precision::Lossless => Codec::LosslessJxl16,
+            Precision::Smaller => Codec::DitheredJxl12,
+        }
+    }
     fn code(self) -> u8 {
         match self {
             Codec::LosslessJxl16 => 1,
+            Codec::DitheredJxl12 => 2,
         }
     }
     fn of(code: u8) -> Result<Self> {
         match code {
             1 => Ok(Codec::LosslessJxl16),
+            2 => Ok(Codec::DitheredJxl12),
             _ => bail!(
                 "This editable preview's pixels are coded in a way (codec {code}) only a later release of RAWmakase reads"
             ),
@@ -177,7 +213,7 @@ impl EditablePreview {
 
 /// The editable preview of `original`, the full-size decode of the file `identity`
 /// names, at `long_edge` pixels on its long edge (never enlarged), with the camera's
-/// `exif`.
+/// `exif`, its pixels kept at `precision`.
 ///
 /// Highlights are recovered first, unless they already are, and the image is
 /// reduced by averaging the area each pixel covers. Auto CA is measured on
@@ -189,6 +225,7 @@ pub fn build(
     identity: &Identity,
     exif: Option<CameraExif>,
     long_edge: u32,
+    precision: Precision,
     cancel: Cancel<'_>,
 ) -> Result<EditablePreview> {
     ensure!(
@@ -216,7 +253,16 @@ pub fn build(
         reduced.width >= 2 && reduced.height >= 2,
         "A photo this narrow can't have an editable preview"
     );
-    let codes = encode_pixels(&reduced.pixels);
+    let codec = Codec::of_precision(precision);
+    let codes = match codec {
+        Codec::LosslessJxl16 => encode_pixels(&reduced.pixels),
+        Codec::DitheredJxl12 => reduced
+            .pixels
+            .par_iter()
+            .enumerate()
+            .map(|(i, p)| std::array::from_fn(|c| curve::widen(curve::dithered(p[c], i, c))))
+            .collect(),
+    };
     let lateral_ca = Arc::new(std::sync::OnceLock::new());
     if let Some(measured) = original.metadata.lateral_ca.get() {
         let _ = lateral_ca.set(measured.clone());
@@ -232,7 +278,7 @@ pub fn build(
     )?;
     Ok(EditablePreview {
         version: VERSION,
-        codec: Codec::LosslessJxl16,
+        codec,
         identity: identity.clone(),
         original: [original.width, original.height],
         exif,
@@ -305,6 +351,18 @@ pub fn write(path: &Path, preview: &EditablePreview) -> Result<()> {
     let codes = encode_pixels(&image.pixels);
     let pixels = match preview.codec {
         Codec::LosslessJxl16 => codec::encode(image.width, image.height, &codes)?,
+        Codec::DitheredJxl12 => {
+            // Built or read at 12 bits, every code is one `widen` made.
+            let narrow: Vec<[u16; 3]> = codes.iter().map(|p| p.map(|c| c >> 4)).collect();
+            ensure!(
+                narrow
+                    .iter()
+                    .zip(&codes)
+                    .all(|(n, c)| n.map(curve::widen) == *c),
+                "A Smaller editable preview's pixels aren't 12-bit codes"
+            );
+            codec::encode(image.width, image.height, &narrow)?
+        }
     };
     let mut head = Writer::default();
     head.u8(CODEC, preview.codec.code());
@@ -539,6 +597,14 @@ pub fn read(path: &Path, cancel: Cancel<'_>) -> Result<EditablePreview> {
     let [width, height] = head.preview;
     let codes = match head.codec {
         Codec::LosslessJxl16 => codec::decode(pixl, width, height)?,
+        Codec::DitheredJxl12 => {
+            let narrow = codec::decode(pixl, width, height)?;
+            ensure!(
+                narrow.iter().flatten().all(|q| *q < 4096),
+                "An editable preview's 12-bit pixels are damaged"
+            );
+            narrow.iter().map(|p| p.map(curve::widen)).collect()
+        }
     };
     ensure!(!cancel.is_cancelled(), "Editable preview cancelled");
     Ok(EditablePreview {

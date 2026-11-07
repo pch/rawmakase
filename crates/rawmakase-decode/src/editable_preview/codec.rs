@@ -1,4 +1,4 @@
-//! Codec 1: the pixel codes as a lossless JPEG XL codestream (ISO/IEC 18181-1) of
+//! Codecs 1 and 2: the pixel codes as a lossless JPEG XL codestream (ISO/IEC 18181-1) of
 //! three 16-bit integer channels, encoded by `zune-jpegxl` and decoded by
 //! `jxl-oxide`. The codestream's header says sRGB, as zune writes it; the samples
 //! are the curve's codes in camera space, and nothing reads that colour encoding.

@@ -1,20 +1,28 @@
-//! The measurement behind a smaller editable preview: version 1's curve with its
-//! codes quantized to 12 and 10 bits, against its 16. Codes are shifted down
-//! (code >> 4, >> 6), coded losslessly by the same encoder in its 16-bit mode
-//! (`zune-jpegxl` codes only 8 or 16 bits, so sizes are what its 16-bit path makes
-//! of the narrower codes; an encoder with a true 12-bit mode may code them otherwise), and read back to the middle of their 16-bit bucket. Nothing here
-//! changes the format: a smaller choice would be a new codec or curve code.
+//! The measurement the Smaller choice was gated on (decision 3 of the editable
+//! previews plan): version 1's curve at 12 and 10 bits against its 16, and the
+//! Smaller preview itself, 12-bit codes dithered ([`Precision::Smaller`]).
+//!
+//! Plain 12- and 10-bit codes are curve 1's codes shifted down (code >> 4, >> 6)
+//! and read back to the middle of their 16-bit bucket; the dithered 12-bit codes
+//! are what [`build`] makes. All are coded losslessly by the same encoder in its
+//! 16-bit mode (`zune-jpegxl` codes only 8 or 16 bits), so sizes are what that
+//! path makes of the narrower codes; the dithered variant's is its real file.
 //!
 //! - `precision_and_headroom`: the relative step per code at levels from 1/1000 of
 //!   white to 1000 times white, and what each level reads back as.
-//! - `banding_on_a_smooth_gradient`: a synthetic, noise-free gradient through
-//!   [`build`], rendered with strong edits; the largest step between neighbouring
-//!   output pixels (any channel) and the green levels a row reaches. Noise-free, so the worst case.
+//! - `banding_on_a_smooth_gradient`: a synthetic, noise-free gradient that changes
+//!   only along x, through [`build`], rendered with strong edits. Each column is
+//!   averaged over every row, which keeps a contour step and averages dither
+//!   away: the largest step between neighbouring columns against the lossless
+//!   preview's, the noise left about that profile, and the largest step that noise
+//!   alone makes in the profile (about 4 σ √2 / √rows). A step within that floor
+//!   is noise, not a contour. Noise-free, so the worst case for contours.
 //! - `depths`: for each RAW in `RAWMAKASE_EDITABLE_PREVIEW_SAMPLES`, the file size
-//!   at each depth, encode and decode times, and CIEDE2000 between renders of the
-//!   12- and 10-bit previews and the 16-bit one (per pixel and over 16 px blocks),
-//!   for defaults and strong edits, and an HDR edit's relative luminance difference.
-//!   A photo whose HDR render is refused is reported and left out of that line.
+//!   of each variant, build, encode and decode times, and CIEDE2000 between renders
+//!   of each variant and of the lossless preview (per pixel and over 16 px
+//!   blocks), for defaults and strong edits, and an HDR edit's relative luminance
+//!   difference. A photo whose HDR render is refused is reported and left out of
+//!   that line.
 //!
 //! Run with `cargo test -p rawmakase-decode --release --lib
 //! editable_preview::depths -- --ignored --nocapture --test-threads=1`.
@@ -23,8 +31,6 @@ use crate::color_difference::{delta_e2000, lab};
 use crate::develop;
 use rawmakase_model::model::recipe::Recipe;
 use std::time::Instant;
-
-const DEPTHS: [u32; 3] = [16, 12, 10];
 
 fn widen(c: u16, shift: u32) -> u16 {
     if shift == 0 {
@@ -153,7 +159,7 @@ fn precision_and_headroom() {
     println!("| Level | 16-bit step | 12-bit step | 10-bit step |\n| --- | --- | --- | --- |");
     for v in [1e-3f32, 0.18, 1., 8., 64., 1000.] {
         let c = curve::encode(v);
-        let row: Vec<String> = DEPTHS
+        let row: Vec<String> = [16u32, 12, 10]
             .iter()
             .map(|d| {
                 let s = 16 - d;
@@ -168,17 +174,30 @@ fn precision_and_headroom() {
     }
 }
 
-/// A smooth, sky-like gradient through the build path, then strong edits: the
-/// largest step between neighbouring output pixels, on the 16-bit output scale,
-/// and how many output levels are reached along a row.
-#[test]
-#[ignore = "a measurement, not a check"]
-fn banding_on_a_smooth_gradient() {
+/// The variants compared: 16-bit (the lossless preview), 12-bit codes rounded,
+/// 12-bit codes dithered (the Smaller choice, through [`build`] and [`write`]) and
+/// 10-bit codes rounded.
+const VARIANTS: [&str; 4] = ["16", "12", "12 dithered", "10"];
+
+/// `image` (a lossless preview's) as each of [`VARIANTS`]; `smaller` is the Smaller
+/// preview built from the same original.
+fn variants(image: &CameraImage, smaller: &CameraImage) -> Vec<CameraImage> {
+    let codes = encode_pixels(&image.pixels);
+    vec![
+        at_depth(image, &codes, 16),
+        at_depth(image, &codes, 12),
+        smaller.clone(),
+        at_depth(image, &codes, 10),
+    ]
+}
+
+/// The sky-like preview of a smooth, noise-free gradient that changes only along
+/// x, built at `precision`.
+fn gradient(precision: Precision) -> EditablePreview {
     let (w, h) = (6000u32, 600u32);
     let pixels: Vec<[f32; 3]> = (0..w * h)
         .map(|i| {
-            let (x, y) = ((i % w) as f32 / w as f32, (i / w) as f32 / h as f32);
-            let v = 0.03 + 0.25 * x + 0.01 * y;
+            let v = 0.03 + 0.25 * (i % w) as f32 / w as f32;
             [v * 0.8, v * 0.95, v * 1.3]
         })
         .collect();
@@ -200,48 +219,69 @@ fn banding_on_a_smooth_gradient() {
         scale_clipped: 0,
         hdr: Default::default(),
     };
-    let preview = build(
-        &im,
-        &crate::storage::Identity {
-            size: 1,
-            modified_ns: 1,
-            prefix_hash: "0".into(),
-        },
-        None,
-        LONG_EDGE,
-        Cancel::NEVER,
-    )
-    .unwrap();
-    let image = preview.image();
-    let codes = encode_pixels(&image.pixels);
+    let id = crate::storage::Identity {
+        size: 1,
+        modified_ns: 1,
+        prefix_hash: "0".into(),
+    };
+    build(&im, &id, None, LONG_EDGE, precision, Cancel::NEVER).unwrap()
+}
+
+/// The gradient through each variant, rendered with strong edits. The gradient
+/// changes only along x, so each column is averaged over every row: that keeps a
+/// contour step whole and averages the dither's noise away. Reported, on the
+/// 16-bit output scale: the largest step between neighbouring columns of that
+/// profile, as a multiple of the lossless preview's (contours); the noise left
+/// about the profile (standard deviation, any channel); and the largest step that
+/// noise alone makes in the profile. A step's excess over the lossless one within
+/// that floor is noise, not a contour.
+#[test]
+#[ignore = "a measurement, not a check"]
+fn banding_on_a_smooth_gradient() {
+    let lossless = gradient(Precision::Lossless);
+    let smaller = gradient(Precision::Smaller);
+    let all = variants(lossless.image(), smaller.image());
     println!(
-        "| Edit | Depth | Largest neighbour step (16-bit output levels) | Green levels on a row | Max step / 16-bit's |\n| --- | --- | --- | --- | --- |"
+        "| Edit | Variant | Largest column step (16-bit levels) | Step / lossless | Noise σ (16-bit levels) | Noise floor of the step |\n| --- | --- | --- | --- | --- | --- |"
     );
     for (name, edit) in edits() {
-        let mut r = Recipe::for_metadata(&image.metadata);
+        let mut r = Recipe::for_metadata(&lossless.image().metadata);
         edit(&mut r);
         let r = r.checked().unwrap();
         let mut base = 0.;
-        for depth in DEPTHS {
-            let im = at_depth(image, &codes, depth);
-            let out = develop::render(&im, &r, LONG_EDGE, Cancel::NEVER).unwrap();
-            let row = out.height as usize / 2;
-            let (mut largest, mut levels) = (0f32, std::collections::BTreeSet::new());
-            for x in 1..out.width as usize {
-                let a = out.pixels[row * out.width as usize + x - 1];
-                let b = out.pixels[row * out.width as usize + x];
-                for c in 0..3 {
-                    largest = largest.max((a[c] - b[c]).abs() * 65535.);
+        for (label, im) in VARIANTS.iter().zip(&all) {
+            let out = develop::render(im, &r, LONG_EDGE, Cancel::NEVER).unwrap();
+            let (w, h) = (out.width as usize, out.height as usize);
+            let profile: Vec<[f64; 3]> = (0..w)
+                .map(|x| {
+                    let mut sum = [0f64; 3];
+                    for y in 0..h {
+                        let p = out.pixels[y * w + x];
+                        (0..3).for_each(|c| sum[c] += f64::from(p[c]) * 65535. / h as f64);
+                    }
+                    sum
+                })
+                .collect();
+            let largest = profile
+                .windows(2)
+                .flat_map(|p| (0..3).map(move |c| (p[0][c] - p[1][c]).abs()))
+                .fold(0., f64::max);
+            let mut squares = 0.;
+            for row in out.pixels.chunks_exact(w) {
+                for (p, mean) in row.iter().zip(&profile) {
+                    (0..3).for_each(|c| squares += (f64::from(p[c]) * 65535. - mean[c]).powi(2));
                 }
-                levels.insert((b[1] * 65535.).round() as u32);
             }
-            if depth == 16 {
+            let noise = (squares / (w * h * 3) as f64).sqrt();
+            if *label == "16" {
                 base = largest;
             }
+            // The largest neighbour step the profile's own left-over noise makes:
+            // about 4 standard deviations of a difference of two column means.
+            let floor = 4. * noise * std::f64::consts::SQRT_2 / (h as f64).sqrt();
             println!(
-                "| {name} | {depth} | {largest:.1} | {} | {:.2} |",
-                levels.len(),
-                largest / base.max(1e-6)
+                "| {name} | {label} | {largest:.1} | {:.2} | {noise:.1} | {floor:.1} |",
+                largest / base.max(1e-9)
             );
         }
     }
@@ -266,12 +306,16 @@ fn depths() {
         eprintln!("No RAWs in RAWMAKASE_EDITABLE_PREVIEW_SAMPLES");
         return;
     }
-    let mut sizes: [Vec<f64>; 3] = Default::default();
-    let mut times: [Vec<[f64; 2]>; 3] = Default::default();
-    let mut diffs: Vec<Vec<[f64; 4]>> = vec![Vec::new(); edits().len() * 2];
-    let mut hdr: [Vec<[f64; 2]>; 2] = Default::default();
+    let n = VARIANTS.len();
+    let mut sizes: Vec<Vec<f64>> = vec![Vec::new(); n];
+    let mut times: Vec<Vec<[f64; 2]>> = vec![Vec::new(); n];
+    let mut builds: [Vec<f64>; 2] = Default::default();
+    let mut diffs: Vec<Vec<[f64; 4]>> = vec![Vec::new(); edits().len() * (n - 1)];
+    let mut hdr: Vec<Vec<[f64; 2]>> = vec![Vec::new(); n - 1];
     println!(
-        "| File | Camera | 16-bit MB | 12-bit MB | 10-bit MB |\n| --- | --- | --- | --- | --- |"
+        "| File | Camera | {} |\n| --- | --- |{}",
+        VARIANTS.map(|v| format!("{v}-bit MB")).join(" | "),
+        " --- |".repeat(n)
     );
     for path in paths {
         let name = path.file_name().unwrap().to_string_lossy().to_string();
@@ -280,18 +324,30 @@ fn depths() {
         let original = full
             .decode(raw, crate::decode::DecodePolicy::Show, Cancel::NEVER)
             .unwrap();
-        let preview = build(
-            &original,
-            &Identity::read(&path).unwrap(),
-            crate::photo::camera_exif(&path),
-            LONG_EDGE,
-            Cancel::NEVER,
-        )
-        .unwrap();
+        let identity = Identity::read(&path).unwrap();
+        let exif = crate::photo::camera_exif(&path);
+        let mut previews = Vec::new();
+        for (k, precision) in [Precision::Lossless, Precision::Smaller]
+            .into_iter()
+            .enumerate()
+        {
+            let t = Instant::now();
+            let p = build(
+                &original,
+                &identity,
+                exif.clone(),
+                LONG_EDGE,
+                precision,
+                Cancel::NEVER,
+            )
+            .unwrap();
+            builds[k].push(t.elapsed().as_secs_f64());
+            previews.push(p);
+        }
         let file = out.path().join("p.rmep");
         let _ = std::fs::remove_file(&file);
-        write(&file, &preview).unwrap();
-        let image = preview.image();
+        write(&file, &previews[0]).unwrap();
+        let image = previews[0].image();
         let codes = encode_pixels(&image.pixels);
         // Everything in the file but the pixels: HEAD, FACT, EXIF and framing.
         let pixl16 = codec::encode(image.width, image.height, &codes)
@@ -302,22 +358,41 @@ fn depths() {
             "| {name} | {} {} ",
             image.metadata.make, image.metadata.model
         );
-        let mut variants = Vec::new();
-        for (i, depth) in DEPTHS.iter().enumerate() {
-            let shift = 16 - depth;
-            let narrow: Vec<[u16; 3]> = codes.par_iter().map(|p| p.map(|c| c >> shift)).collect();
+        let all = variants(image, previews[1].image());
+        for (i, (label, im)) in VARIANTS.iter().zip(&all).enumerate() {
+            let shift = match *label {
+                "16" => 0,
+                "10" => 6,
+                _ => 4,
+            };
+            let narrow: Vec<[u16; 3]> = encode_pixels(&im.pixels)
+                .par_iter()
+                .map(|p| p.map(|c| c >> shift))
+                .collect();
             let t = Instant::now();
             let bytes = codec::encode(image.width, image.height, &narrow).unwrap();
             let enc = t.elapsed().as_secs_f64();
             let t = Instant::now();
             let back = codec::decode(&bytes, image.width, image.height).unwrap();
             let dec = t.elapsed().as_secs_f64();
-            assert!(back == narrow, "lossless at {depth} bits");
-            let size = (bytes.len() as f64 + rest) / 1e6;
+            assert!(back == narrow, "lossless at {label} bits");
+            let size = if *label == "12 dithered" {
+                // The real file the Smaller choice writes.
+                let file = out.path().join("smaller.rmep");
+                let _ = std::fs::remove_file(&file);
+                write(&file, &previews[1]).unwrap();
+                let back = read(&file, Cancel::NEVER).unwrap();
+                assert!(
+                    back.image().pixels == im.pixels,
+                    "the Smaller file reads back"
+                );
+                std::fs::metadata(&file).unwrap().len() as f64 / 1e6
+            } else {
+                (bytes.len() as f64 + rest) / 1e6
+            };
             sizes[i].push(size);
             times[i].push([enc, dec]);
             row += &format!("| {size:.2} ");
-            variants.push(at_depth(image, &codes, *depth));
         }
         println!("{row}|");
         let base = Recipe::for_metadata(&image.metadata);
@@ -325,10 +400,10 @@ fn depths() {
             let mut r = base.clone();
             edit(&mut r);
             let r = r.checked().unwrap();
-            let reference = develop::render(&variants[0], &r, LONG_EDGE, Cancel::NEVER).unwrap();
-            for (k, v) in variants[1..].iter().enumerate() {
+            let reference = develop::render(&all[0], &r, LONG_EDGE, Cancel::NEVER).unwrap();
+            for (k, v) in all[1..].iter().enumerate() {
                 let got = develop::render(v, &r, LONG_EDGE, Cancel::NEVER).unwrap();
-                diffs[e * 2 + k].push(de(
+                diffs[e * (n - 1) + k].push(de(
                     &reference.pixels,
                     &got.pixels,
                     reference.width,
@@ -336,8 +411,8 @@ fn depths() {
                 ));
             }
         }
-        for (k, v) in variants[1..].iter().enumerate() {
-            match hdr_difference(&variants[0], v, &base) {
+        for (k, v) in all[1..].iter().enumerate() {
+            match hdr_difference(&all[0], v, &base) {
                 Ok(d) => hdr[k].push(d),
                 Err(e) => eprintln!("{name}: no HDR comparison: {e:#}"),
             }
@@ -354,27 +429,30 @@ fn depths() {
         )
     };
     println!();
-    for (i, depth) in DEPTHS.iter().enumerate() {
+    for (i, label) in VARIANTS.iter().enumerate() {
         let enc: Vec<f64> = times[i].iter().map(|t| t[0]).collect();
         let dec: Vec<f64> = times[i].iter().map(|t| t[1]).collect();
         println!(
-            "{depth}-bit: size {}; encode mean {:.3} s; decode mean {:.3} s",
+            "{label}-bit: size {}; encode mean {:.3} s; decode mean {:.3} s",
             summary(&sizes[i]),
             enc.iter().sum::<f64>() / enc.len() as f64,
             dec.iter().sum::<f64>() / dec.len() as f64
         );
     }
+    for (k, label) in ["Lossless", "Smaller"].iter().enumerate() {
+        println!("build ({label}): {}", summary(&builds[k]));
+    }
     println!(
-        "\n| Edit | Depth | Pixel ΔE mean | Pixel p99 (mean / worst) | Block mean | Block p99 (mean / worst) |\n| --- | --- | --- | --- | --- | --- |"
+        "\n| Edit | Variant | Pixel ΔE mean | Pixel p99 (mean / worst) | Block mean | Block p99 (mean / worst) |\n| --- | --- | --- | --- | --- | --- |"
     );
     for (e, (name, _)) in edits().iter().enumerate() {
-        for (k, depth) in [12, 10].iter().enumerate() {
-            let d = &diffs[e * 2 + k];
+        for (k, label) in VARIANTS[1..].iter().enumerate() {
+            let d = &diffs[e * (n - 1) + k];
             let col = |j: usize| d.iter().map(|x| x[j]).collect::<Vec<_>>();
             let mean = |v: Vec<f64>| v.iter().sum::<f64>() / v.len() as f64;
             let worst = |v: Vec<f64>| v.into_iter().fold(0., f64::max);
             println!(
-                "| {name} | {depth} | {:.3} | {:.2} / {:.2} | {:.4} | {:.3} / {:.3} |",
+                "| {name} | {label} | {:.3} | {:.2} / {:.2} | {:.4} | {:.3} / {:.3} |",
                 mean(col(0)),
                 mean(col(1)),
                 worst(col(1)),
@@ -384,14 +462,14 @@ fn depths() {
             );
         }
     }
-    for (k, depth) in [12, 10].iter().enumerate() {
+    for (k, label) in VARIANTS[1..].iter().enumerate() {
         if hdr[k].is_empty() {
             continue;
         }
         let m = hdr[k].iter().map(|x| x[0]).sum::<f64>() / hdr[k].len() as f64;
         let p = hdr[k].iter().map(|x| x[1]).fold(0., f64::max);
         println!(
-            "HDR edit (limit 3 stops, +1 EV), {depth}-bit: relative luminance difference mean {:.5}, worst p99 {:.4}",
+            "HDR edit (limit 3 stops, +1 EV), {label}-bit: relative luminance difference mean {:.5}, worst p99 {:.4}",
             m, p
         );
     }

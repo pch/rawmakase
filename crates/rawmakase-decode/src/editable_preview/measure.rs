@@ -137,6 +137,7 @@ fn measure() {
                 &identity,
                 crate::photo::camera_exif(&path),
                 LONG_EDGE,
+                Precision::Lossless,
                 Cancel::NEVER,
             )?;
             let build_s = t.elapsed().as_secs_f64();

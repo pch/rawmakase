@@ -155,6 +155,7 @@ fn built(width: u32, height: u32, long_edge: u32) -> EditablePreview {
         &identity(),
         Some(exif()),
         long_edge,
+        Precision::Lossless,
         Cancel::NEVER,
     )
     .unwrap()
@@ -234,13 +235,29 @@ fn reduced_by_area_never_enlarged() {
     im.pixels = red.as_flattened().iter().map(|r| [*r, 0., 0.]).collect();
     im.recovered = Default::default();
     let _ = im.recovered.set(Arc::new(im.clone()));
-    let small = build(&im, &identity(), None, 2, Cancel::NEVER).unwrap();
+    let small = build(
+        &im,
+        &identity(),
+        None,
+        2,
+        Precision::Lossless,
+        Cancel::NEVER,
+    )
+    .unwrap();
     let small = small.image();
     assert_eq!((small.width, small.height), (2, 2));
     for (got, want) in small.pixels.iter().zip([4., 0.5, 2., 1.]) {
         assert!((got[0] / want - 1.).abs() < 1.3e-4, "{got:?} {want}");
     }
-    let same = build(&im, &identity(), None, 4000, Cancel::NEVER).unwrap();
+    let same = build(
+        &im,
+        &identity(),
+        None,
+        4000,
+        Precision::Lossless,
+        Cancel::NEVER,
+    )
+    .unwrap();
     assert_eq!((same.image().width, same.image().height), (4, 4));
     assert_eq!(same.original, [4, 4]);
 }
@@ -260,7 +277,15 @@ fn headroom_above_white_is_kept() {
     ];
     im.recovered = Default::default();
     let _ = im.recovered.set(Arc::new(im.clone()));
-    let preview = build(&im, &identity(), None, LONG_EDGE, Cancel::NEVER).unwrap();
+    let preview = build(
+        &im,
+        &identity(),
+        None,
+        LONG_EDGE,
+        Precision::Lossless,
+        Cancel::NEVER,
+    )
+    .unwrap();
     let back = read(&written(dir.path(), &preview), Cancel::NEVER).unwrap();
     for (got, want) in back.image().pixels.iter().zip(&im.pixels) {
         for c in 0..3 {
@@ -277,7 +302,15 @@ fn an_unrecovered_original_is_recovered_and_measured() {
     let mut im = original(80, 70);
     im.recovered = Default::default();
     im.metadata.lateral_ca = Default::default();
-    let preview = build(&im, &identity(), None, 40, Cancel::NEVER).unwrap();
+    let preview = build(
+        &im,
+        &identity(),
+        None,
+        40,
+        Precision::Lossless,
+        Cancel::NEVER,
+    )
+    .unwrap();
     assert!(im.recovered.get().is_some());
     assert!(im.metadata.lateral_ca.get().is_some());
     assert_eq!(
@@ -290,17 +323,67 @@ fn an_unrecovered_original_is_recovered_and_measured() {
 fn reduced_decodes_and_hdr_light_are_refused() {
     let mut im = original(8, 8);
     im.fast = true;
-    assert!(build(&im, &identity(), None, 4, Cancel::NEVER).is_err());
+    assert!(
+        build(
+            &im,
+            &identity(),
+            None,
+            4,
+            Precision::Lossless,
+            Cancel::NEVER
+        )
+        .is_err()
+    );
     let mut im = original(8, 8);
     im.metadata.hdr_source = Some(HdrSource {
         transfer: Default::default(),
         peak: 4.,
     });
-    assert!(build(&im, &identity(), None, 4, Cancel::NEVER).is_err());
-    assert!(build(&original(8, 8), &identity(), None, 0, Cancel::NEVER).is_err());
+    assert!(
+        build(
+            &im,
+            &identity(),
+            None,
+            4,
+            Precision::Lossless,
+            Cancel::NEVER
+        )
+        .is_err()
+    );
+    assert!(
+        build(
+            &original(8, 8),
+            &identity(),
+            None,
+            0,
+            Precision::Lossless,
+            Cancel::NEVER
+        )
+        .is_err()
+    );
     // The codec's smallest image is 2 × 2.
-    assert!(build(&original(8, 1), &identity(), None, 8, Cancel::NEVER).is_err());
-    assert!(build(&original(80, 4), &identity(), None, 20, Cancel::NEVER).is_err());
+    assert!(
+        build(
+            &original(8, 1),
+            &identity(),
+            None,
+            8,
+            Precision::Lossless,
+            Cancel::NEVER
+        )
+        .is_err()
+    );
+    assert!(
+        build(
+            &original(80, 4),
+            &identity(),
+            None,
+            20,
+            Precision::Lossless,
+            Cancel::NEVER
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -367,7 +450,7 @@ fn a_later_version_is_refused_with_a_clear_error() {
         assert!(message.contains("version 2"), "{message}");
         assert!(message.contains("newer"), "{message}");
     }
-    let message = Codec::of(2).unwrap_err().to_string();
+    let message = Codec::of(3).unwrap_err().to_string();
     assert!(message.contains("later release"), "{message}");
 }
 
@@ -488,6 +571,7 @@ fn the_golden_version_1_file_opens() {
             &identity(),
             Some(exif()),
             LONG_EDGE,
+            Precision::Lossless,
             Cancel::NEVER,
         )
         .unwrap();
@@ -548,7 +632,15 @@ fn of_codes(width: u32, height: u32, code: impl Fn(usize) -> u16) -> CameraImage
 fn codes_round_trip_across_the_codecs_groups() {
     let dir = tempfile::tempdir().unwrap();
     let im = of_codes(2100, 260, noisy_code);
-    let preview = build(&im, &identity(), None, 2100, Cancel::NEVER).unwrap();
+    let preview = build(
+        &im,
+        &identity(),
+        None,
+        2100,
+        Precision::Lossless,
+        Cancel::NEVER,
+    )
+    .unwrap();
     assert_eq!(preview.image().pixels, im.pixels);
     let back = read(&written(dir.path(), &preview), Cancel::NEVER).unwrap();
     assert!(back.image().pixels == im.pixels, "a code changed");
@@ -562,7 +654,17 @@ fn sizes_beyond_what_reads_are_refused_when_building() {
     assert!(check_sizes([16384, 4097], [16384, 4097]).is_err());
     assert!(check_sizes([2560, 1707], [1 << 18 | 1, 2]).is_err());
     let im = of_codes(16, 2, noisy_code);
-    assert!(build(&im, &identity(), None, 1 << 15, Cancel::NEVER).is_ok());
+    assert!(
+        build(
+            &im,
+            &identity(),
+            None,
+            1 << 15,
+            Precision::Lossless,
+            Cancel::NEVER
+        )
+        .is_ok()
+    );
 }
 
 const GOLDEN_GROUPS: &str = concat!(
@@ -585,10 +687,250 @@ fn the_golden_version_1_groups_file_opens() {
     let path = Path::new(GOLDEN_GROUPS);
     let im = of_codes(2100, 260, groups_code);
     if std::env::var_os("RAWMAKASE_WRITE_EDITABLE_PREVIEW_GOLDEN").is_some() && !path.exists() {
-        let preview = build(&im, &identity(), None, 2100, Cancel::NEVER).unwrap();
+        let preview = build(
+            &im,
+            &identity(),
+            None,
+            2100,
+            Precision::Lossless,
+            Cancel::NEVER,
+        )
+        .unwrap();
         write(path, &preview).unwrap();
     }
     let golden = read(path, Cancel::NEVER).expect("the golden version 1 groups file");
     assert_eq!(golden.header().preview, [2100, 260]);
     assert!(golden.image().pixels == im.pixels, "a code changed");
+}
+
+// The Smaller choice: 12-bit codes on curve 1, dithered when built (codec 2).
+
+/// One and a half of the curve's 12-bit steps (0.41% of the value plus the toe,
+/// where the curve turns linear): the triangular dither moves a value at most one
+/// step, and the bucket's middle is half a step from its edges.
+const SMALLER_TOLERANCE: f32 = 0.0062;
+
+/// Whether `got` is within [`SMALLER_TOLERANCE`] of `want`.
+fn within_smaller(got: f32, want: f32) -> bool {
+    (got - want).abs() <= SMALLER_TOLERANCE * (want + curve::TOE as f32)
+}
+
+fn smaller(im: &CameraImage, long_edge: u32) -> EditablePreview {
+    build(
+        im,
+        &identity(),
+        Some(exif()),
+        long_edge,
+        Precision::Smaller,
+        Cancel::NEVER,
+    )
+    .unwrap()
+}
+
+#[test]
+fn lossless_is_the_default_precision() {
+    assert_eq!(Precision::default(), Precision::Lossless);
+    assert_eq!(Codec::LosslessJxl16.precision(), Precision::Lossless);
+    assert_eq!(Codec::DitheredJxl12.precision(), Precision::Smaller);
+    assert_eq!(built(30, 20, 30).header().codec, Codec::LosslessJxl16);
+}
+
+/// A Smaller preview reads back exactly as built, within the 12-bit precision of
+/// the lossless one, and its header says which it is.
+#[test]
+fn a_smaller_preview_round_trips_within_its_precision() {
+    let dir = tempfile::tempdir().unwrap();
+    let im = original(300, 200);
+    let small = smaller(&im, 120);
+    let lossless = built(300, 200, 120);
+    assert_eq!(small.header().codec, Codec::DitheredJxl12);
+    let path = written(dir.path(), &small);
+    let back = read(&path, Cancel::NEVER).unwrap();
+    assert_same(&small, &back);
+    assert_eq!(read_header(&path).unwrap().codec, Codec::DitheredJxl12);
+    for (a, b) in back.image().pixels.iter().zip(&lossless.image().pixels) {
+        for c in 0..3 {
+            assert!(within_smaller(a[c], b[c]), "{a:?} {b:?}");
+        }
+    }
+    // Writing what was read writes the same file.
+    let again = dir.path().join("again.rmep");
+    write(&again, &back).unwrap();
+    assert_eq!(fs_bytes(&path), fs_bytes(&again));
+    // And it is smaller than the lossless file.
+    let lossless_path = dir.path().join("lossless.rmep");
+    write(&lossless_path, &lossless).unwrap();
+    assert!(fs_bytes(&path).len() < fs_bytes(&lossless_path).len());
+}
+
+/// The same photo always builds the same file: the dither is seeded by position.
+#[test]
+fn the_dither_is_deterministic() {
+    let dir = tempfile::tempdir().unwrap();
+    let im = original(200, 150);
+    let a = written(dir.path(), &smaller(&im, 200));
+    let b = dir.path().join("b.rmep");
+    write(&b, &smaller(&im, 200)).unwrap();
+    assert_eq!(fs_bytes(&a), fs_bytes(&b));
+}
+
+/// Over a flat area the dithered codes average to the value, where plain 12-bit
+/// rounding would be off by up to half a step everywhere.
+#[test]
+fn the_dither_keeps_flat_areas_unbiased() {
+    let table = curve::table();
+    for v in [0.0123f32, 0.18, 0.7, 3.3] {
+        // Values that fall between two 12-bit buckets' middles.
+        let at = curve::position(v);
+        let mut im = original(64, 64);
+        im.pixels = vec![[v; 3]; 64 * 64];
+        im.recovered = Default::default();
+        let _ = im.recovered.set(Arc::new(im.clone()));
+        let p = smaller(&im, 64);
+        let mean = p
+            .image()
+            .pixels
+            .iter()
+            .map(|p| f64::from(p[1]))
+            .sum::<f64>()
+            / 4096.;
+        let plain = table[(((at / 16.).floor() as usize) << 4) | 8];
+        let error = (mean / f64::from(v) - 1.).abs();
+        let plain_error = (f64::from(plain) / f64::from(v) - 1.).abs();
+        assert!(
+            error < 3e-4 && error < plain_error.max(3e-4),
+            "{v}: dithered {error}, plain {plain_error}"
+        );
+    }
+}
+
+/// Values above white, to 12 stops, survive the Smaller choice within its precision.
+#[test]
+fn a_smaller_preview_keeps_headroom() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut im = original(3, 2);
+    im.pixels = vec![
+        [1.5, 8., 64.],
+        [256., 1000., 4000.],
+        [0.01, 0.18, 1.],
+        [2., 2., 2.],
+        [32., 1., 1.],
+        [3000., 4., 0.5],
+    ];
+    im.recovered = Default::default();
+    let _ = im.recovered.set(Arc::new(im.clone()));
+    let back = read(
+        &written(dir.path(), &smaller(&im, LONG_EDGE)),
+        Cancel::NEVER,
+    )
+    .unwrap();
+    for (got, want) in back.image().pixels.iter().zip(&im.pixels) {
+        for c in 0..3 {
+            assert!(within_smaller(got[c], want[c]), "{got:?} {want:?}");
+        }
+    }
+}
+
+/// `file` with its HEAD codec field set to `code` and the section's hash made good
+/// again: what a release with yet another codec would write.
+fn with_codec(file: &[u8], code: u8) -> Vec<u8> {
+    let mut b = file.to_vec();
+    let len = u64::from_le_bytes(b[16..24].try_into().unwrap()) as usize;
+    let payload = 24..24 + len;
+    // The codec is HEAD's first field: id 1, length 1, its value.
+    assert_eq!(&b[24..30], &[1, 0, 1, 0, 0, 0]);
+    b[30] = code;
+    let h = hash(&b[payload.clone()]);
+    b[payload.end..payload.end + 8].copy_from_slice(&h.to_le_bytes());
+    b
+}
+
+/// A codec this release doesn't know is refused by both readers, saying a later
+/// release reads it; the release before codec 2 refused codec 2 the same way
+/// (`Codec::of` at version 1's first release).
+#[test]
+fn an_unknown_codec_is_refused_with_a_clear_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = written(dir.path(), &smaller(&original(20, 10), 20));
+    let unknown = dir.path().join("codec3.rmep");
+    std::fs::write(&unknown, with_codec(&fs_bytes(&path), 3)).unwrap();
+    for error in [
+        read(&unknown, Cancel::NEVER).err().unwrap(),
+        read_header(&unknown).err().unwrap(),
+    ] {
+        let message = error.to_string();
+        assert!(
+            message.contains("codec 3") && message.contains("later release"),
+            "{message}"
+        );
+    }
+    // A lossless file's codestream relabelled as codec 2 holds codes beyond 12
+    // bits, which is damage, not a preview.
+    let lossless = dir.path().join("lossless.rmep");
+    write(&lossless, &built(20, 10, 20)).unwrap();
+    let relabelled = dir.path().join("relabelled.rmep");
+    std::fs::write(&relabelled, with_codec(&fs_bytes(&lossless), 2)).unwrap();
+    assert!(read(&relabelled, Cancel::NEVER).is_err());
+}
+
+const GOLDEN_SMALLER: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/data/editable-preview/v1-smaller.rmep"
+);
+
+/// A version 1 Smaller file written once and checked in: every later release must
+/// keep opening codec 2 with these pixels and facts.
+#[test]
+fn the_golden_version_1_smaller_file_opens() {
+    let path = Path::new(GOLDEN_SMALLER);
+    if std::env::var_os("RAWMAKASE_WRITE_EDITABLE_PREVIEW_GOLDEN").is_some() && !path.exists() {
+        write(path, &smaller(&golden_source(), LONG_EDGE)).unwrap();
+    }
+    let golden = read(path, Cancel::NEVER).expect("the golden version 1 Smaller file");
+    assert_eq!(
+        golden.header(),
+        Header {
+            version: 1,
+            codec: Codec::DitheredJxl12,
+            identity: identity(),
+            original: [4, 3],
+            preview: [4, 3],
+        }
+    );
+    assert_eq!(read_header(path).unwrap(), golden.header());
+    let image = golden.image();
+    assert!(image.fast);
+    assert_eq!((image.scale_factor, image.scale_clipped), (1.25, 42));
+    // The file's 12-bit codes, exactly, each read as the middle of its 16 codes.
+    let codes: [[u16; 3]; 12] = [
+        [0, 0, 0],
+        [0, 84, 920],
+        [1626, 1625, 1626],
+        [2048, 2047, 2047],
+        [2273, 2048, 1822],
+        [2730, 2560, 2388],
+        [3180, 3353, 3451],
+        [4089, 4095, 2318],
+        [1877, 1707, 1536],
+        [400, 546, 637],
+        [2022, 2035, 2046],
+        [2050, 2053, 2055],
+    ];
+    let table = curve::table();
+    let read_as: Vec<[f32; 3]> = codes
+        .iter()
+        .map(|p| p.map(|q| table[(usize::from(q) << 4) + 8]))
+        .collect();
+    assert_eq!(image.pixels, read_as);
+    assert_eq!(golden.exif(), Some(&exif()));
+    assert_eq!(
+        format!("{:?}", golden.image().metadata),
+        format!("{:?}", every_fact(4, 3))
+    );
+    for (got, want) in golden.image().pixels.iter().zip(golden_pixels()) {
+        for c in 0..3 {
+            let want = want[c].min(4096.);
+            assert!(within_smaller(got[c], want), "{got:?} {want}");
+        }
+    }
 }
