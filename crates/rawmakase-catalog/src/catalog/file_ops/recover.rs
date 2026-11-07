@@ -305,6 +305,22 @@ fn decide(
     if let Some(reason) = changed(catalog, computer, folders, item)? {
         return unfinished(catalog, &reason);
     }
+    // A rename by a placeholder (ntfs-3g, #914) a crash cut short may have
+    // left one at a member's destination, or, putting it back, at its
+    // source: it is removed first, so the rules below see only the files.
+    if matches!(item.kind, Kind::MovePhotos | Kind::RenamePhotos) {
+        for m in &item.members {
+            let Some(after) = m.destination.as_deref() else {
+                continue;
+            };
+            let settled = disk
+                .settle_rename(&m.source, after)
+                .and_then(|()| disk.settle_rename(after, &m.source));
+            if settled.is_err() {
+                return unfinished(catalog, "its files are split or unreachable");
+            }
+        }
+    }
     // Rule 2, whatever the states say.
     if at_sources(disk, &item.members) {
         return catalog

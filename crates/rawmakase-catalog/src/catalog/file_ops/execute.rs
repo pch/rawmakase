@@ -560,9 +560,11 @@ impl Run<'_> {
                     Ok(receipt) => (Some(receipt.location.clone()), receipt.location),
                     Err(e) => return self.put_back(catalog, id, &changed, &e.to_string()),
                 },
-                (_, Some(to)) => match self.disk.rename(&m.source, to) {
+                (_, Some(to)) => match self.disk.rename_file(&m.source, to) {
                     Ok(()) => (None, to.clone()),
-                    Err(e) => return self.put_back(catalog, id, &changed, &e.to_string()),
+                    Err(e) => {
+                        return self.failed(catalog, id, &changed, (&m.source, to), &e.to_string());
+                    }
                 },
                 (_, None) => return self.put_back(catalog, id, &changed, "no destination"),
             };
@@ -688,11 +690,17 @@ impl Run<'_> {
                     continue;
                 };
                 let renamed = match &m.destination {
-                    Some(to) => self.disk.rename(&m.source, to).map_err(|e| e.to_string()),
+                    Some(to) => self
+                        .disk
+                        .rename_file(&m.source, to)
+                        .map_err(|e| e.to_string()),
                     None => Err("no destination".to_string()),
                 };
                 if let Err(e) = renamed {
-                    self.put_back(catalog, g.id, &g.changed, &e)?;
+                    match &m.destination {
+                        Some(to) => self.failed(catalog, g.id, &g.changed, (&m.source, to), &e)?,
+                        None => self.put_back(catalog, g.id, &g.changed, &e)?,
+                    }
                     continue;
                 }
                 g.changed.push(Member {
@@ -1141,6 +1149,32 @@ impl Run<'_> {
 
     /// After step `error` failed: puts the members already `changed` back
     /// where they were, the decision journalled first.
+    /// Puts back the item whose rename of a file (`failed`, from and to)
+    /// failed. A placeholder that rename may have left (ntfs-3g,
+    /// [`Disk::settle_rename`]) is removed first; while it can't be, or the
+    /// file isn't found where it was (its drive gone, say), the item stays
+    /// being put back, for recovery to settle it.
+    fn failed(
+        &self,
+        catalog: &mut Catalog,
+        id: OperationId,
+        changed: &[Member],
+        failed: (&Path, &Path),
+        error: &str,
+    ) -> Result<()> {
+        if self.disk.settle_rename(failed.0, failed.1).is_ok() && self.disk.entry(failed.0).is_ok()
+        {
+            return self.put_back(catalog, id, changed, error);
+        }
+        catalog
+            .db
+            .write(|w| journal::set_state(w, id, ItemState::Restoring, Some(error)))?;
+        let _ = restore(catalog, self.disk, id, changed)?;
+        catalog.db.write(|w| {
+            journal::set_state(w, id, ItemState::Restoring, Some(super::recover::NOT_BACK))
+        })
+    }
+
     fn put_back(
         &self,
         catalog: &mut Catalog,
@@ -1289,7 +1323,16 @@ pub(super) fn restore(
         let (Some(at), Some(file)) = (m.after(), m.id) else {
             return Ok(false);
         };
-        if presence(disk, at, file) != Presence::Here || disk.rename(at, &m.source).is_err() {
+        if presence(disk, at, file) != Presence::Here {
+            return Ok(false);
+        }
+        // A Trash's receipt is put back as it was taken; a rename by a
+        // placeholder where it was made by one.
+        let back = match m.receipt {
+            Some(_) => disk.rename(at, &m.source),
+            None => disk.rename_file(at, &m.source),
+        };
+        if back.is_err() {
             return Ok(false);
         }
         let synced = match m.receipt {
