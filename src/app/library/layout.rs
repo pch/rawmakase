@@ -3,7 +3,7 @@
 //! stable key, so renaming one in the interface keeps what was saved.
 use super::Library;
 use super::cell::Style;
-use super::filter::{Kind, Label, RatingOp};
+use super::filter::{FileType, Kind, Label, RatingOp};
 use super::sort::Sort;
 use super::views::View;
 use crate::app::preferences::session::LibraryLayout;
@@ -79,6 +79,16 @@ impl Keyed for Kind {
         }
     }
 }
+impl Keyed for FileType {
+    const ALL: &'static [Self] = &[Self::All, Self::Raw, Self::Jpeg];
+    fn key(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Raw => "raw",
+            Self::Jpeg => "jpeg",
+        }
+    }
+}
 fn label_key(label: &Label) -> String {
     match label {
         Label::Color(name) => name.clone(),
@@ -110,6 +120,8 @@ impl Library {
             rating_op: filters.rating_op.key().into(),
             labels: filters.labels.iter().map(label_key).collect(),
             kind: filters.kind.key().into(),
+            file_type: filters.file_type.key().into(),
+            hide_file_type_filter: filters.hide_file_type_filter,
             filters_off: !filters.enabled,
             subfolders_hidden: !self.subfolders_shown,
         }
@@ -131,6 +143,8 @@ impl Library {
         filters.rating_op = RatingOp::from_key(&layout.rating_op);
         filters.labels = layout.labels.iter().map(|l| label_from_key(l)).collect();
         filters.kind = Kind::from_key(&layout.kind);
+        filters.file_type = FileType::from_key(&layout.file_type);
+        filters.set_file_type_visible(!layout.hide_file_type_filter);
         filters.enabled = !layout.filters_off;
         self.cell_style = Style::from_key(&layout.cell_style);
         if let Some(size) = layout.thumb_size.filter(|s| (110. ..=360.).contains(s)) {

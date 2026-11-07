@@ -70,6 +70,26 @@ pub(super) enum Kind {
     Copies,
 }
 
+/// A photo's file type, using the same extension rules as import and Develop.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum FileType {
+    #[default]
+    All,
+    Raw,
+    Jpeg,
+}
+impl FileType {
+    fn matches(self, path: &Path) -> bool {
+        match self {
+            Self::All => true,
+            Self::Raw => crate::storage::is_raw(path),
+            Self::Jpeg => {
+                crate::storage::RasterFormat::of(path) == Some(crate::storage::RasterFormat::Jpeg)
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Filters {
     /// Folder ids in the chosen folder and its subfolders; None is All Photographs.
@@ -86,6 +106,8 @@ pub(super) struct Filters {
     /// The labels shown; none is every label.
     pub labels: BTreeSet<Label>,
     pub kind: Kind,
+    pub file_type: FileType,
+    pub hide_file_type_filter: bool,
     /// Cmd+L: whether the bar's settings apply.
     pub enabled: bool,
     pub only_missing: bool,
@@ -106,6 +128,8 @@ impl Default for Filters {
             rating_op: RatingOp::default(),
             labels: BTreeSet::new(),
             kind: Kind::default(),
+            file_type: FileType::default(),
+            hide_file_type_filter: false,
             enabled: true,
             only_missing: false,
             previous_import: false,
@@ -115,6 +139,13 @@ impl Default for Filters {
     }
 }
 impl Filters {
+    pub(super) fn set_file_type_visible(&mut self, visible: bool) {
+        self.hide_file_type_filter = !visible;
+        if !visible {
+            self.file_type = FileType::All;
+        }
+    }
+
     /// Indices into `photos` of the ones shown, in display order; `keys`
     /// are what the sort order needs (see `Sort::keys`).
     pub(super) fn visible(
@@ -157,7 +188,8 @@ impl Filters {
     }
     /// Whether the filter bar lets `p` through; `query` is in lower case.
     fn bar_shows(&self, p: &Photo, query: &str) -> bool {
-        (self.flags.is_empty() || self.flags.contains(&p.flag))
+        self.file_type.matches(&p.path)
+            && (self.flags.is_empty() || self.flags.contains(&p.flag))
             && self
                 .rating
                 .is_none_or(|limit| self.rating_op.holds(p.rating, limit))
@@ -182,6 +214,7 @@ impl Filters {
             || self.rating.is_some()
             || !self.labels.is_empty()
             || self.kind != Kind::All
+            || self.file_type != FileType::All
     }
     /// Filters Off: clears the filter bar, leaving the source as it is.
     pub(super) fn clear_bar(&mut self) {
@@ -191,6 +224,7 @@ impl Filters {
         self.rating_op = RatingOp::default();
         self.labels.clear();
         self.kind = Kind::All;
+        self.file_type = FileType::All;
         self.enabled = true;
     }
 }

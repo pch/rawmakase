@@ -1,5 +1,5 @@
 use super::cell::photo_cell;
-use super::filter::{Kind, Label, RatingOp};
+use super::filter::{FileType, Kind, Label, RatingOp};
 use super::stacks::StackAction;
 use super::tree::{FolderNode, TreeAction, folder_tree_row};
 use super::*;
@@ -1485,6 +1485,220 @@ fn attribute_filters_match_lightroom() -> Result<()> {
     assert!(library.filters.enabled && !library.filters.bar_set());
     Ok(())
 }
+#[test]
+fn file_type_filter_combines_with_search_rating_and_filter_switch() -> Result<()> {
+    let (_directory, mut library) = library_of(&[
+        "a.RAF", "b.dNg", "c.NEF", "d.JPG", "e.jpeg", "f.PNG", "g.TIF",
+    ])?;
+    library.filters.file_type = FileType::Raw;
+    library.filter();
+    assert_eq!(visible_names(&library), ["a.RAF", "b.dNg", "c.NEF"]);
+    assert!(library.filters.bar_set());
+    std::fs::remove_file(&library.session.photos()[0].path)?;
+    library.filter();
+    assert_eq!(visible_names(&library), ["a.RAF", "b.dNg", "c.NEF"]);
+    library.filters.query = "b.d".into();
+    library.filter();
+    assert_eq!(visible_names(&library), ["b.dNg"]);
+    library.filters.query.clear();
+    library.filters.file_type = FileType::Jpeg;
+    library.filter();
+    assert_eq!(visible_names(&library), ["d.JPG", "e.jpeg"]);
+    let jpeg = library
+        .session
+        .photos()
+        .iter()
+        .find(|p| p.filename == "d.JPG")
+        .unwrap()
+        .id;
+    library
+        .session
+        .catalog_mut_for_tests()
+        .set_metadata(jpeg, 4, 1, "Red")?;
+    library.refresh()?;
+    library.filters.rating = Some(4);
+    library.filter();
+    assert_eq!(visible_names(&library), ["d.JPG"]);
+    library.toggle_filters();
+    assert_eq!(library.visible.len(), 7);
+    assert_eq!(library.filters.file_type, FileType::Jpeg);
+    library.toggle_filters();
+    assert_eq!(visible_names(&library), ["d.JPG"]);
+    library.filters.clear_bar();
+    library.filter();
+    assert_eq!(library.filters.file_type, FileType::All);
+    assert!(!library.filters.bar_set());
+    assert_eq!(library.visible.len(), 7);
+    Ok(())
+}
+
+#[test]
+fn file_type_filter_layout_round_trips_and_reads_older_sessions() -> Result<()> {
+    use crate::app::preferences::session::LibraryLayout;
+    let (_directory, mut library) = library_of(&["a.RAF", "b.JPG"])?;
+    for file_type in [FileType::All, FileType::Raw, FileType::Jpeg] {
+        library.filters.file_type = file_type;
+        library.filters.query = "a".into();
+        library.filters.rating = Some(3);
+        let saved = library.layout();
+        let json = serde_json::to_value(&saved)?;
+        let restored: LibraryLayout = serde_json::from_value(json.clone())?;
+        library.filters.clear_bar();
+        library.apply_layout(&restored);
+        assert_eq!(library.layout(), saved);
+        assert_eq!(library.filters.file_type, file_type);
+        for key in [None, Some(serde_json::json!("future-format"))] {
+            let mut old = json.clone();
+            old.as_object_mut().unwrap().remove("file_type");
+            if let Some(key) = key {
+                old["file_type"] = key;
+            }
+            library.apply_layout(&serde_json::from_value(old)?);
+            assert_eq!(library.filters.file_type, FileType::All);
+            assert_eq!(library.filters.query, "a");
+            assert_eq!(library.filters.rating, Some(3));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn file_type_filter_visibility_is_saved_without_hiding_photos() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF", "b.JPG"])?;
+    assert!(!library.layout().hide_file_type_filter);
+    library.filters.file_type = FileType::Raw;
+    library.filters.set_file_type_visible(false);
+    library.filter();
+    assert_eq!(library.visible.len(), 2);
+    assert_eq!(library.filters.file_type, FileType::All);
+    let mut saved: crate::app::preferences::session::LibraryLayout =
+        serde_json::from_str(&serde_json::to_string(&library.layout())?)?;
+    saved.file_type = "raw".into();
+    library.filters.set_file_type_visible(true);
+    library.apply_layout(&saved);
+    assert!(library.layout().hide_file_type_filter);
+    assert_eq!(library.filters.file_type, FileType::All);
+    library.filters.clear_bar();
+    assert!(library.layout().hide_file_type_filter);
+    library.filters.set_file_type_visible(true);
+    assert_eq!(library.filters.file_type, FileType::All);
+    Ok(())
+}
+
+#[test]
+fn restoring_a_place_keeps_file_type_filter_visibility() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF", "b.JPG"])?;
+    for visible in [true, false] {
+        library.filters.set_file_type_visible(visible);
+        if visible {
+            library.filters.file_type = FileType::Raw;
+        }
+        library.filter();
+        let place = library.place();
+        library.filters.set_file_type_visible(!visible);
+        library.go_to_place(&place);
+        assert_eq!(library.filters.hide_file_type_filter, visible);
+        assert_eq!(library.filters.file_type, FileType::All);
+        assert_eq!(library.visible.len(), 2);
+    }
+    Ok(())
+}
+
+#[test]
+fn file_type_filter_buttons_work_in_wide_and_wrapped_bars() -> Result<()> {
+    fn text_center(shape: &egui::Shape, label: &str) -> Option<egui::Pos2> {
+        match shape {
+            egui::Shape::Text(text) if text.galley.text() == label => {
+                Some(text.pos + text.galley.size() / 2.)
+            }
+            egui::Shape::Vec(shapes) => shapes.iter().find_map(|s| text_center(s, label)),
+            _ => None,
+        }
+    }
+    for width in [1100., 450.] {
+        let (_directory, mut library) = library_of(&["sample.RAF", "sample.JPG", "other.PNG"])?;
+        library.filters.query = "sample".into();
+        library.filters.enabled = false;
+        let ctx = library.ctx.clone();
+        let frame = |library: &mut Library, events| {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        Vec2::new(width, 300.),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| library.filter_bar(ui),
+            );
+            output.textures_delta.clear();
+            output
+        };
+        frame(&mut library, vec![]);
+        for (label, expected) in [
+            ("RAW", vec!["sample.RAF"]),
+            ("JPEG", vec!["sample.JPG"]),
+            ("All", vec!["sample.JPG", "sample.RAF"]),
+        ] {
+            let output = frame(&mut library, vec![]);
+            let at = output
+                .shapes
+                .iter()
+                .find_map(|s| text_center(&s.shape, label))
+                .expect("file type button is drawn");
+            assert!(at.x >= 0. && at.x <= width && at.y < 300.);
+            for pressed in [true, false] {
+                frame(
+                    &mut library,
+                    vec![
+                        egui::Event::PointerMoved(at),
+                        egui::Event::PointerButton {
+                            pos: at,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                );
+            }
+            assert!(library.filters.enabled);
+            assert_eq!(library.filters.query, "sample");
+            assert_eq!(visible_names(&library), expected);
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn file_type_filter_preserves_folder_scope() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let root = directory.path().join("photos");
+    for folder in ["2025", "2026"] {
+        std::fs::create_dir_all(root.join(folder))?;
+        for name in ["a.RAF", "b.JPG"] {
+            std::fs::write(root.join(folder).join(name), b"synthetic photo")?;
+        }
+    }
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&root)?;
+    let mut library = Library::load(&path, egui::Context::default())?;
+    let key = format!("root:{}/2026", library.session.roots()[0].0);
+    library.restore_source(&key, None);
+    for file_type in [FileType::Raw, FileType::Jpeg] {
+        library.filters.file_type = file_type;
+        library.filter();
+        assert_eq!(library.visible.len(), 1);
+        assert_eq!(library.source_key(), key);
+        assert!(
+            library.session.photos()[library.visible[0]]
+                .path
+                .starts_with(root.join("2026"))
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn restore_source_scopes_to_the_folder_and_its_subfolders() -> Result<()> {
     let directory = tempfile::tempdir()?;

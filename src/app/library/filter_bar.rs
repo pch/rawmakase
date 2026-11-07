@@ -3,7 +3,7 @@
 //! compared with the operator chosen from its menu, and Kind picks masters
 //! or virtual copies. Cmd+L turns it off and on; changing it turns it on.
 use super::Library;
-use super::filter::{Kind, Label, RatingOp, toggle};
+use super::filter::{FileType, Kind, Label, RatingOp, toggle};
 use super::grid::filter_caption;
 use crate::app::library::photo_metadata::{LABELS, flag_icon, label_color};
 use crate::app::shell::shortcuts::keys_text;
@@ -45,6 +45,17 @@ impl Library {
                         ui.add_space(space::L);
                         changed |= ui.horizontal(|ui| self.kind_filter(ui, compact)).inner;
                     }
+                    if !self.filters.hide_file_type_filter {
+                        ui.add_space(space::L);
+                        // Keep the control together when the bar wraps.
+                        changed |= ui
+                            .allocate_ui_with_layout(
+                                Vec2::new(if compact { 150. } else { 220. }, TOGGLE_HEIGHT),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| self.file_type_filter(ui, compact),
+                            )
+                            .inner;
+                    }
                     ui.add_space(space::L);
                     ui.set_opacity(opacity);
                     changed |= self.filters_switch(ui);
@@ -59,6 +70,13 @@ impl Library {
         self.filters.enabled = !self.filters.enabled;
         self.filter();
     }
+    pub(in crate::app) fn file_type_filter_option(&mut self, ui: &mut egui::Ui) {
+        let mut visible = !self.filters.hide_file_type_filter;
+        if ui.checkbox(&mut visible, "Show file type filter").changed() {
+            self.filters.set_file_type_visible(visible);
+            self.filter();
+        }
+    }
     fn search_field(&mut self, ui: &mut egui::Ui, compact: bool) -> bool {
         let changed = ui
             .add(
@@ -72,6 +90,23 @@ impl Library {
             )
             .on_hover_text("Search filename, keyword, capture date or label")
             .changed();
+        self.turn_on(changed)
+    }
+    fn file_type_filter(&mut self, ui: &mut egui::Ui, compact: bool) -> bool {
+        let palette = theme::palette(ui.ctx());
+        if !compact {
+            ui.label(filter_caption(&palette, "File type"));
+        }
+        let changed = segmented(
+            ui,
+            &mut self.filters.file_type,
+            &[
+                (FileType::All, "All"),
+                (FileType::Raw, "RAW"),
+                (FileType::Jpeg, "JPEG"),
+            ],
+            150.,
+        );
         self.turn_on(changed)
     }
     fn flag_filter(&mut self, ui: &mut egui::Ui, compact: bool) -> bool {

@@ -424,6 +424,9 @@ impl Editor {
                 ui.add(egui::Label::new(egui::RichText::new(credit).size(text::SMALL)).wrap());
             });
         }
+        if let Some(library) = &mut self.library {
+            form_row(ui, "Library", |ui| library.file_type_filter_option(ui));
+        }
         gap(ui);
         group(ui, "Locations");
         let data = crate::storage::data_dir();

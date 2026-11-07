@@ -690,7 +690,9 @@ impl Library {
     /// Returns to `place`, with the photos it had selected that are still
     /// there, and scrolls to its active photo.
     pub(in crate::app) fn go_to_place(&mut self, place: &Place) {
+        let file_type_visible = !self.filters.hide_file_type_filter;
         self.filters = place.filters.clone();
+        self.filters.set_file_type_visible(file_type_visible);
         self.selected_folders = place.folders.clone();
         // The source as the catalog has it now, e.g. after a folder gained
         // subfolders since.

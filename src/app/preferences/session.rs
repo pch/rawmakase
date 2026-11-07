@@ -448,6 +448,9 @@ pub(crate) struct LibraryLayout {
     /// Colour names, "none" for no label and "other" for any other.
     pub labels: Vec<String>,
     pub kind: String,
+    /// "all", "raw" or "jpeg".
+    pub file_type: String,
+    pub hide_file_type_filter: bool,
     /// Cmd+L turned the filter bar off.
     pub filters_off: bool,
     /// Show Photos in Subfolders turned off.
