@@ -680,6 +680,370 @@ mod tests {
         let b = quality::render(&other, r, 0, None, Cancel::NEVER).unwrap();
         assert_eq!(a.pixels, b.pixels);
     }
+    fn hash(x: u32, y: u32, c: u32) -> f32 {
+        let mut v =
+            x.wrapping_mul(0x9e3779b9) ^ y.wrapping_mul(0x85ebca6b) ^ c.wrapping_mul(0xc2b2ae35);
+        v ^= v >> 15;
+        v = v.wrapping_mul(0x2c1b3c6d);
+        v ^= v >> 12;
+        (v as f32 / u32::MAX as f32) * 2. - 1.
+    }
+    /// A noisy photo, as a camera makes one: an RGGB mosaic of a grey flat, a coloured
+    /// flat and fine texture side by side, with shot noise whose spread grows with the
+    /// square root of the signal, demosaiced bilinearly; and its half-size decode, each
+    /// pixel a 2 × 2 block's red, mean green and blue, as `demosaic::half` makes it.
+    fn noisy_photo(w: u32, h: u32, amplitude: f32) -> (CameraImage, CameraImage) {
+        let colour = |x: u32, y: u32| match (x % 2, y % 2) {
+            (0, 0) => 0,
+            (1, 1) => 2,
+            _ => 1,
+        };
+        let mosaic: Vec<f32> = (0..w * h)
+            .map(|i| {
+                let (x, y) = (i % w, i / w);
+                let (fx, fy) = (x as f32, y as f32);
+                let clean = match 3 * x / w {
+                    0 => [0.18; 3],
+                    1 => [0.25, 0.15, 0.08],
+                    _ => {
+                        let v = 0.25
+                            + 0.08 * (fx * 0.6).sin() * (fy * 0.45).cos()
+                            + 0.05 * (fx * 0.23 + fy * 0.11).sin();
+                        [v * 1.1, v, v * 0.8]
+                    }
+                };
+                let v = clean[colour(x, y)];
+                v + amplitude * v.sqrt() * hash(x, y, 0)
+            })
+            .collect();
+        let mut full = image(w, h, 0.);
+        full.pixels = (0..w * h)
+            .map(|i| {
+                let (x, y) = (i % w, i / w);
+                let mut sum = [0.; 3];
+                let mut n = [0.; 3];
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        let (xx, yy) = (x as i32 + dx, y as i32 + dy);
+                        if xx < 0 || yy < 0 || xx >= w as i32 || yy >= h as i32 {
+                            continue;
+                        }
+                        let (xx, yy) = (xx as u32, yy as u32);
+                        let c = colour(xx, yy);
+                        if c == colour(x, y) && (dx, dy) != (0, 0) {
+                            continue;
+                        }
+                        sum[c] += mosaic[(yy * w + xx) as usize];
+                        n[c] += 1.;
+                    }
+                }
+                std::array::from_fn(|c| sum[c] / n[c])
+            })
+            .collect();
+        let (hw, hh) = (w / 2, h / 2);
+        let mut half = full.clone();
+        (half.width, half.height, half.fast) = (hw, hh, true);
+        half.pixels = (0..hw * hh)
+            .map(|i| {
+                let (x, y) = (2 * (i % hw), 2 * (i / hw));
+                let at = |dx: u32, dy: u32| mosaic[((y + dy) * w + x + dx) as usize];
+                [at(0, 0), (at(1, 0) + at(0, 1)) / 2., at(1, 1)]
+            })
+            .collect();
+        (full, half)
+    }
+    /// `full` reduced by area averaging to `w` × `h`, marked `fast` and keeping the
+    /// photo's metadata, as a reduced decode is.
+    fn reduce(full: &CameraImage, w: u32, h: u32) -> CameraImage {
+        let (fw, fh) = (full.width as f32 / w as f32, full.height as f32 / h as f32);
+        let mut out = full.clone();
+        (out.width, out.height, out.fast) = (w, h, true);
+        // Not the photo's highlight recovery, which a render of it may have cached.
+        out.recovered = Default::default();
+        let weights = |o: u32, f: f32, n: u32| -> Vec<(u32, f32)> {
+            let (a, b) = (o as f32 * f, (o + 1) as f32 * f);
+            (a.floor() as u32..(b.ceil() as u32).min(n))
+                .map(|i| (i, (b.min(i as f32 + 1.) - a.max(i as f32)) / f))
+                .filter(|(_, w)| *w > 0.)
+                .collect()
+        };
+        out.pixels = (0..w * h)
+            .map(|i| {
+                let (ox, oy) = (i % w, i / w);
+                let mut s = [0.; 3];
+                for (y, wy) in weights(oy, fh, full.height) {
+                    for (x, wx) in weights(ox, fw, full.width) {
+                        let p = full.pixels[(y * full.width + x) as usize];
+                        for c in 0..3 {
+                            s[c] += p[c] * wx * wy;
+                        }
+                    }
+                }
+                s
+            })
+            .collect();
+        out
+    }
+    /// The spread of `f` over the flat in columns `x0..x1` (shares of the width, rows
+    /// 5–95%) of `im`, after averaging it in `block` × `block` blocks: the noise at
+    /// scales of `block` output pixels and coarser.
+    fn noise_at(im: &Rendered, x0: f32, x1: f32, block: u32, f: impl Fn([f32; 3]) -> f32) -> f32 {
+        let (w, h) = (im.width as f32, im.height as f32);
+        let (x0, x1) = ((x0 * w) as u32, (x1 * w) as u32);
+        let (y0, y1) = ((0.05 * h) as u32, (0.95 * h) as u32);
+        let values: Vec<f32> = (0..(y1 - y0) / block)
+            .flat_map(|by| (0..(x1 - x0) / block).map(move |bx| (bx, by)))
+            .map(|(bx, by)| {
+                let mut sum = 0.;
+                for y in 0..block {
+                    for x in 0..block {
+                        let (x, y) = (x0 + bx * block + x, y0 + by * block + y);
+                        sum += f(im.pixels[(y * im.width + x) as usize]);
+                    }
+                }
+                sum / (block * block) as f32
+            })
+            .collect();
+        let n = values.len() as f32;
+        let mean = values.iter().sum::<f32>() / n;
+        (values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / n).sqrt()
+    }
+    /// The share of noise a reduced decode keeps in `small`'s render with `r`, over the
+    /// share the photo `full` keeps rendered with `r` and resized to the same size, in
+    /// the grey flat's luminance and red − green, the coloured flat's blue − green and
+    /// the texture's luminance, at scales of 1, 2, 4 and 8 output pixels; with the mean
+    /// error of the two renders. Each share is of the same image's noise without noise
+    /// reduction, which the reduction and the resize already change.
+    fn noise_kept(full: &CameraImage, small: &CameraImage, r: &Recipe) -> ([[f32; 4]; 4], f32) {
+        let r = r.checked().unwrap();
+        let mut plain = (*r).clone();
+        (plain.noise_luma, plain.noise_chroma) = (0., 0.);
+        let plain = plain.checked().unwrap();
+        let edge = small.width.max(small.height);
+        let render =
+            |im: &CameraImage, r| quality::render(im, r, edge, None, Cancel::NEVER).unwrap();
+        let (got, expected) = (render(small, &r), render(full, &r));
+        let (got_plain, expected_plain) = (render(small, &plain), render(full, &plain));
+        type Measure = fn([f32; 3]) -> f32;
+        let luma: Measure = |p| p[0] + 2. * p[1] + p[2];
+        let regions: [(Measure, f32, f32); 4] = [
+            (luma, 0.03, 0.30),
+            (|p| p[0] - p[1], 0.03, 0.30),
+            (|p| p[2] - p[1], 0.36, 0.63),
+            (luma, 0.70, 0.97),
+        ];
+        let kept = regions.map(|(f, x0, x1)| {
+            [1, 2, 4, 8].map(|b| {
+                let share = |im, plain| noise_at(im, x0, x1, b, f) / noise_at(plain, x0, x1, b, f);
+                share(&got, &got_plain) / share(&expected, &expected_plain)
+            })
+        });
+        (kept, mean_error(&got, &expected))
+    }
+    /// A reduced decode's luminance and colour noise reduction act on the photo's
+    /// scales: each keeps about the share of the noise at each scale that the photo,
+    /// denoised and resized, keeps. A half-size decode (from the mosaic, as
+    /// `demosaic::half` makes it) and the photo reduced to 0.43 by area, as an
+    /// editable preview is, are checked.
+    #[test]
+    fn a_reduced_decode_reduces_noise_as_the_photo_resized() {
+        let (w, h) = (1024, 640);
+        let (full, half) = noisy_photo(w, h, 0.06);
+        let reduced = reduce(&full, 440, 275);
+        // Name, luminance Amount, Detail and Contrast, colour Amount, Detail and
+        // Smoothness, and for the half-size decode and the reduced one the worst
+        // |ln| of the shares kept, measured, and the mean error, measured. Before
+        // their bands were the photo's (in their own pixels, five luminance and five
+        // colour levels whatever the scale) the worst |ln| were: 0.02 0.01, 0.56 0.46,
+        // 0.22 0.21, 1.02 0.58, 0.47 0.32 and 0.35 0.29, and the mean errors 0.0087
+        // 0.0025, 0.0082 0.0022, 0.0081 0.0019, 0.0037 0.0023, 0.0034 0.0021 and
+        // 0.0037 0.0025. At scales of 2 output pixels and more, every case is closer
+        // than it was but two reduced to 0.43, a little further: colour 10 (0.43
+        // against 0.40) and colour 25 with Detail and Smoothness 80 (0.25 against
+        // 0.20). The reduced decode's coarsest level straddles the photo's last, and
+        // is filtered for the 0.78 of it before the photo's residual (whole, those two
+        // were 0.42 and 0.17, and luminance 75 0.10). At 1 pixel the decode also holds
+        // noise from the photo's finer scales (neither is filtered before it is
+        // reduced), which no threshold of the photo's at its scale takes out as the
+        // photo's finest level does. Mean error is mostly the noise left: it falls
+        // with any extra reduction, so it is only held, not compared.
+        type Case = (&'static str, [f32; 6], [f32; 2], [f32; 2]);
+        let cases: [Case; 6] = [
+            (
+                "luminance 25",
+                [0.25, 0.5, 0., 0., 0.5, 0.5],
+                [0.02, 0.01],
+                [0.0087, 0.0025],
+            ),
+            (
+                "luminance 50, Detail 20, Contrast 50",
+                [0.5, 0.2, 0.5, 0., 0.5, 0.5],
+                [0.39, 0.34],
+                [0.0085, 0.0022],
+            ),
+            (
+                "luminance 75",
+                [0.75, 0.5, 0., 0., 0.5, 0.5],
+                [0.07, 0.053],
+                [0.0081, 0.0019],
+            ),
+            (
+                "colour 10",
+                [0., 0.5, 0., 0.1, 0.5, 0.5],
+                [0.61, 0.71],
+                [0.0049, 0.0025],
+            ),
+            (
+                "colour 25",
+                [0., 0.5, 0., 0.25, 0.5, 0.5],
+                [0.13, 0.15],
+                [0.0034, 0.0020],
+            ),
+            (
+                "colour 25, Detail 80, Smoothness 80",
+                [0., 0.5, 0., 0.25, 0.8, 0.8],
+                [0.37, 0.25],
+                [0.0038, 0.0022],
+            ),
+        ];
+        for (name, [l, ld, lc, c, cd, cs], worst, error) in cases {
+            let mut r = Recipe {
+                sharpening: 0.,
+                noise_luma: l,
+                noise_chroma: c,
+                ..Default::default()
+            };
+            r.effects.luma_detail = ld;
+            r.effects.luma_contrast = lc;
+            r.effects.chroma_detail = cd;
+            r.effects.chroma_smoothness = cs;
+            for (k, small) in [&half, &reduced].into_iter().enumerate() {
+                let (kept, e) = noise_kept(&full, small, &r);
+                let off = kept
+                    .as_flattened()
+                    .iter()
+                    .map(|k| k.ln().abs())
+                    .fold(0., f32::max);
+                // About 1.4 times the measured values, and at least 0.05 for the shares.
+                let bound = (worst[k] * 1.4).max(0.05);
+                assert!(
+                    off < bound,
+                    "{name}, {k}: shares kept {kept:.2?}, worst |ln| {off}"
+                );
+                assert!(e < error[k] * 1.4, "{name}, {k}: mean error {e}");
+                // The texture keeps its detail: within 10% of the photo's at every scale.
+                assert!(
+                    kept[3].iter().all(|k| (k - 1.).abs() < 0.1),
+                    "{name}, {k}: texture {kept:.2?}"
+                );
+            }
+        }
+    }
+    fn mean_difference(a: &[[f32; 3]], b: &[[f32; 3]]) -> f32 {
+        let sum: f32 = a
+            .iter()
+            .flatten()
+            .zip(b.iter().flatten())
+            .map(|(x, y)| (x - y).abs())
+            .sum();
+        sum / (a.len() * 3) as f32
+    }
+    /// A reduced decode's noise reduction changes continuously with its scale: the
+    /// half-size decode of a photo 1003 to 1043 pixels wide, in steps of 5 (offsets
+    /// 0.97 to 1.03), changes by about as much at every step, including the one
+    /// across offset 1, where its coarsest level stops straddling the photo's last.
+    /// A level only partly within the photo's filtered levels is filtered in
+    /// proportion. Measured: the largest step 1.14 times the median, and 0.055% of
+    /// what noise reduction changes. Filtered whole or not at all, the step across
+    /// offset 1 was 1.3 to 2.1% of it: 44 and 88 times the median step for colour,
+    /// where luminance otherwise does not change at all; snapping the offset to 1
+    /// within 0.02 only moved it to the step across 0.98.
+    #[test]
+    fn a_reduced_decode_s_noise_reduction_changes_continuously_with_its_scale() {
+        let (_, half) = noisy_photo(1024, 640, 0.06);
+        for (luma, chroma) in [(0.5, 0.), (0., 0.25), (0.6, 0.4)] {
+            let r = Recipe {
+                noise_luma: luma,
+                noise_chroma: chroma,
+                ..Default::default()
+            };
+            let r = r.checked().unwrap();
+            let denoised: Vec<_> = [1003, 1008, 1013, 1018, 1023, 1028, 1033, 1038, 1043]
+                .map(|width| {
+                    let mut im = half.clone();
+                    im.metadata.width = width;
+                    quality::denoised_camera(&im, &r, None, Cancel::NEVER)
+                        .unwrap()
+                        .pixels
+                        .clone()
+                })
+                .into();
+            let steps: Vec<f32> = denoised
+                .windows(2)
+                .map(|w| mean_difference(&w[0], &w[1]))
+                .collect();
+            let effect = mean_difference(&denoised[2], &half.pixels);
+            let mut sorted = steps.clone();
+            sorted.sort_by(f32::total_cmp);
+            let (median, most) = (sorted[sorted.len() / 2], sorted[sorted.len() - 1]);
+            // About 2.6 times the measured spread, and as much again where the steps
+            // are next to nothing (luminance's, above the finest band).
+            assert!(
+                most < 3. * median.max(1e-5 * effect),
+                "{luma} {chroma}: steps {steps:?}"
+            );
+            assert!(
+                most < 1e-3 * effect,
+                "{luma} {chroma}: steps {steps:?} of {effect}"
+            );
+        }
+    }
+    /// A half-size decode of a photo with an odd side, a pixel more than half of it
+    /// (`demosaic::half` rounds up), denoises almost as one of the even photo.
+    /// Measured: 0.03% of what noise reduction changes; filtering the straddling
+    /// level whole, as the photo's last, it was 2%.
+    #[test]
+    fn an_odd_photo_s_half_decode_denoises_as_an_even_one_s() {
+        let (_, even) = noisy_photo(512, 320, 0.06);
+        let mut odd = even.clone();
+        (odd.metadata.width, odd.metadata.height) = (511, 319);
+        let r = Recipe {
+            noise_luma: 0.5,
+            noise_chroma: 0.25,
+            ..Default::default()
+        };
+        let r = r.checked().unwrap();
+        let denoised = |im: &CameraImage| {
+            quality::denoised_camera(im, &r, None, Cancel::NEVER)
+                .unwrap()
+                .pixels
+                .clone()
+        };
+        let (a, b) = (denoised(&even), denoised(&odd));
+        let (difference, effect) = (mean_difference(&a, &b), mean_difference(&a, &even.pixels));
+        assert!(difference < 4e-4 * effect, "{difference} of {effect}");
+    }
+    /// A full decode whose metadata gives another size denoises as one whose metadata
+    /// gives its own: only a reduced decode's bands are the photo's. (That a full
+    /// decode denoises bit for bit as before this was checked against the earlier
+    /// build when it was made.)
+    #[test]
+    fn a_full_decode_denoises_at_its_own_scale_whatever_its_metadata_says() {
+        let (full, _) = noisy_photo(320, 200, 0.06);
+        let mut other = full.clone();
+        (other.metadata.width, other.metadata.height) = (640, 400);
+        let mut r = Recipe {
+            noise_luma: 0.6,
+            noise_chroma: 0.4,
+            ..Default::default()
+        };
+        r.effects.luma_detail = 0.3;
+        r.effects.luma_contrast = 0.4;
+        let checked = r.checked().unwrap();
+        let a = quality::render(&full, &checked, 0, None, Cancel::NEVER).unwrap();
+        let b = quality::render(&other, &checked, 0, None, Cancel::NEVER).unwrap();
+        assert_eq!(a.pixels, b.pixels);
+    }
     /// Every edit, including ones that change only cached stages, must render exactly
     /// as a renderer without cached state would.
     #[test]

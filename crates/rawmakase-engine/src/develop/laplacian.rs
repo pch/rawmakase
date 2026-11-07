@@ -1,7 +1,36 @@
 //! One channel of a Laplacian pyramid: the 5-tap binomial reduce and expand that
-//! Texture and luminance noise reduction share.
+//! Texture and luminance noise reduction share, and the photo's level a reduced
+//! decode's pyramid starts at, which colour noise reduction uses too.
+use crate::camera_data::CameraImage;
 use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
+
+/// The photo's pyramid level that `im`'s finest level shows, `−log₂` of its
+/// [`photo_scale`](CameraImage::photo_scale): 0 for a photo decoded in full, 1 for a
+/// half-size decode, a little under 1 for the half-size decode of a photo with an odd
+/// side (`demosaic::half` rounds up).
+pub(crate) fn photo_level_offset(im: &CameraImage) -> f32 {
+    -im.photo_scale().log2()
+}
+/// How much of a level at the photo's level `photo_level` the photo filters, when it
+/// filters every level finer than `residual` and none from it on: all of a level that
+/// ends by then, the part before it of one that straddles it, and none of one past it.
+/// A reduced decode's level that straddles the start of the residual is filtered in
+/// proportion to its part before it, so noise reduction fades out continuously with
+/// the decode's scale instead of stopping a level early or late.
+pub(crate) fn filtered_share(photo_level: f32, residual: usize) -> f32 {
+    (residual as f32 - photo_level).clamp(0., 1.)
+}
+/// `gain`, the share of a level's detail filtering keeps, for a level of which
+/// `share` is filtered ([`filtered_share`]): the rest of the level keeps all of it.
+/// A level filtered whole keeps `gain` as it is.
+pub(crate) fn partial_gain(gain: f32, share: f32) -> f32 {
+    if share >= 1. {
+        gain
+    } else {
+        1. - share * (1. - gain)
+    }
+}
 
 /// One channel at one pyramid level.
 pub(crate) struct Plane {

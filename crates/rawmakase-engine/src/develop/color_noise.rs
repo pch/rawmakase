@@ -16,6 +16,10 @@
 //! D7100 at ISO 2000, and at its default Amount 25 it takes out about 95% of the colour
 //! noise at every scale. The thresholds were fitted to those renders (Amount 10–100,
 //! Detail and Smoothness 0–100).
+//!
+//! The levels are the photo's: a reduced decode ([`CameraImage::photo_scale`]) is
+//! filtered with the thresholds of the photo's scales its levels show, so it keeps the
+//! share of each scale's noise the photo keeps.
 use crate::camera_data::CameraImage;
 use anyhow::{Result, ensure};
 use rawmakase_cancel::Cancel;
@@ -89,6 +93,19 @@ fn at_quarters(table: &[f32; 5], v: f32) -> f32 {
     table[i] + (table[i + 1] - table[i]) * (x - i as f32)
 }
 
+/// `table`'s entry at the fractional pyramid level `level`, between the entries of the
+/// levels either side by `mix` (given the finer, the coarser and how far from the
+/// finer), and past the coarsest the coarsest's. A whole level reads its own entry.
+fn at_level(table: &[f32; LEVELS + 1], level: f32, mix: fn(f32, f32, f32) -> f32) -> f32 {
+    let level = level.clamp(0., LEVELS as f32);
+    let i = level as usize;
+    let f = level - i as f32;
+    if f == 0. {
+        return table[i];
+    }
+    mix(table[i], table[i + 1], f)
+}
+
 /// The colour noise reduction for a recipe's sliders.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ChromaDenoise {
@@ -112,6 +129,7 @@ impl ChromaDenoise {
     /// `im` with its colour noise reduced; stops with an error when `cancel` is set.
     pub(crate) fn apply(&self, im: &CameraImage, cancel: Cancel<'_>) -> Result<CameraImage> {
         let (w, h) = (im.width as usize, im.height as usize);
+        let offset = super::laplacian::photo_level_offset(im);
         let wb = im.metadata.wb.map(|v| v.max(0.001));
         let (luma, data): (Vec<f32>, Vec<[f32; 2]>) = im
             .pixels
@@ -136,7 +154,7 @@ impl ChromaDenoise {
                 .collect(),
         };
         let chroma = Plane { w, h, data };
-        let chroma = self.filter(chroma, measurable, 0., 0., 0, cancel)?;
+        let chroma = self.filter(chroma, measurable, 0., 0., 0, offset, cancel)?;
         let mut out = im.clone();
         out.recovered = Default::default();
         out.pixels
@@ -150,7 +168,9 @@ impl ChromaDenoise {
     }
     /// Filters `plane` as pyramid level `level`, recursing to the coarser ones;
     /// `measurable` is where its noise can be measured, `finer_noise` and
-    /// `finest_noise` the noise measured at the level above and at the finest level.
+    /// `finest_noise` the noise measured at the level above and at the finest level,
+    /// and `offset` the photo's level that this image's finest shows.
+    #[allow(clippy::too_many_arguments)]
     fn filter(
         &self,
         plane: Plane,
@@ -158,9 +178,16 @@ impl ChromaDenoise {
         finer_noise: f32,
         finest_noise: f32,
         level: usize,
+        offset: f32,
         cancel: Cancel<'_>,
     ) -> Result<Plane> {
-        if level > LEVELS || plane.w < 4 || plane.h < 4 {
+        // The photo's level this one shows. A level that straddles the start of the
+        // photo's unfiltered residual is filtered with the last level's settings, in
+        // proportion to its part before the residual; one that starts at the
+        // residual, or past it, is left alone, as the photo leaves it.
+        let photo_level = level as f32 + offset;
+        let share = super::laplacian::filtered_share(photo_level, LEVELS + 1);
+        if share <= 0. || plane.w < 4 || plane.h < 4 {
             return Ok(plane);
         }
         ensure!(!cancel.is_cancelled(), "Render superseded");
@@ -181,13 +208,18 @@ impl ChromaDenoise {
             noise,
             finest_noise,
             level + 1,
+            offset,
             cancel,
         )?;
         ensure!(!cancel.is_cancelled(), "Render superseded");
         let coarse_up = coarse.up(plane.w, plane.h);
-        let threshold = self.thresholds[level]
+        // Between two of the photo's levels, the thresholds' ratio is shared out
+        // geometrically and the exponents' difference linearly.
+        let geometric = |a: f32, b: f32, f: f32| a * (b / a).powf(f);
+        let linear = |a: f32, b: f32, f: f32| a + (b - a) * f;
+        let threshold = at_level(&self.thresholds, photo_level, geometric)
             * noise
-            * (finest_noise / REFERENCE_NOISE).powf(NOISE_EXPONENT[level]);
+            * (finest_noise / REFERENCE_NOISE).powf(at_level(&NOISE_EXPONENT, photo_level, linear));
         let data = plane
             .data
             .par_iter()
@@ -202,6 +234,7 @@ impl ChromaDenoise {
                     // overflowing where the threshold is tiny next to the detail.
                     1. / (1. + (threshold * threshold / size).powi(ADAPTIVE_STEEPNESS))
                 };
+                let gain = super::laplacian::partial_gain(gain, share);
                 [c[0] + d[0] * gain, c[1] + d[1] * gain]
             })
             .collect();
