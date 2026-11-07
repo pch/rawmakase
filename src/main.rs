@@ -43,9 +43,15 @@ enum Command {
     /// what is installed, installing, updating and removing them.
     #[command(subcommand)]
     Lensfun(LensfunCommand),
+    /// Imports a Lightroom Classic catalog (`.lrcat`) or a Lightroom library
+    /// (`.lrlibrary`) into a new catalog.
     ImportCatalog {
         source: PathBuf,
         output: PathBuf,
+        /// For a Lightroom library: a folder to look for its originals in,
+        /// before the library's own. May be given more than once.
+        #[arg(long = "originals", value_name = "FOLDER")]
+        originals: Vec<PathBuf>,
     },
     CatalogInfo {
         catalog: PathBuf,
@@ -407,7 +413,28 @@ fn main() -> Result<()> {
                 summary.message()
             );
         }
-        Some(Command::ImportCatalog { source, output }) => {
+        Some(Command::ImportCatalog {
+            source,
+            output,
+            originals,
+        }) if source.is_dir() => {
+            let report = rawmakase::catalog::lightroom::import_lightroom_library(
+                &source,
+                &originals,
+                &output,
+                &Default::default(),
+            )?;
+            println!("{} into {}", report.message(), report.catalog.display());
+        }
+        Some(Command::ImportCatalog {
+            source,
+            output,
+            originals,
+        }) => {
+            anyhow::ensure!(
+                originals.is_empty(),
+                "--originals is for a Lightroom library, not a Lightroom Classic catalog"
+            );
             let path = rawmakase::catalog::lightroom::import_lightroom(&source, &output)?;
             let c = rawmakase::catalog::Catalog::open(&path)?;
             println!(

@@ -86,7 +86,7 @@ pub(crate) struct Found {
     preset_folders: Vec<PathBuf>,
     user_presets: Vec<PathBuf>,
     /// Lightroom catalogs where Lightroom keeps them, the latest used first.
-    catalogs: Vec<PathBuf>,
+    catalogs: Vec<FoundCatalog>,
 }
 impl Onboarding {
     pub(in crate::app) fn new(visible: bool) -> Self {
@@ -149,24 +149,72 @@ fn preset_folders() -> Vec<PathBuf> {
         .chain(synced.into_iter().flatten())
         .collect()
 }
-/// The Lightroom catalogs in Lightroom's folder, the latest used first.
-fn lightroom_catalogs() -> Vec<PathBuf> {
-    let Some(folder) = lightroom_folder() else {
-        return Vec::new();
+/// A Lightroom Classic catalog or Lightroom library found where Lightroom
+/// keeps it.
+#[derive(Clone, Debug)]
+pub(crate) struct FoundCatalog {
+    path: PathBuf,
+    /// When it was last written.
+    used: std::time::SystemTime,
+    /// A Lightroom library rather than a Lightroom Classic catalog.
+    library: bool,
+}
+impl FoundCatalog {
+    /// "Lightroom Library — Lightroom, last used 2026-11-03".
+    fn label(&self) -> String {
+        let name = self.path.file_stem().unwrap_or_default().to_string_lossy();
+        let kind = if self.library {
+            "Lightroom"
+        } else {
+            "Lightroom Classic"
+        };
+        let seconds = self
+            .used
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        let [year, month, day, ..] = crate::time::utc(seconds);
+        format!("{name} — {kind}, last used {year}-{month:02}-{day:02}")
+    }
+}
+/// The Lightroom Classic catalogs in Lightroom's folder and Lightroom's
+/// library where each keeps them, the latest used first.
+fn lightroom_catalogs() -> Vec<FoundCatalog> {
+    let used = |p: &std::path::Path| {
+        p.metadata()
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::UNIX_EPOCH)
     };
-    let mut found: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(folder)
+    let mut found: Vec<FoundCatalog> = lightroom_folder()
+        .map(std::fs::read_dir)
         .into_iter()
+        .flatten()
         .flatten()
         .flatten()
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|e| e == "lrcat") && p.is_file())
-        .map(|p| {
-            let used = p.metadata().and_then(|m| m.modified());
-            (used.unwrap_or(std::time::UNIX_EPOCH), p)
+        .map(|p| FoundCatalog {
+            used: used(&p),
+            path: p,
+            library: false,
         })
         .collect();
-    found.sort_by_key(|(used, _)| std::cmp::Reverse(*used));
-    found.into_iter().map(|(_, p)| p).collect()
+    // A library was last used when one of its accounts' catalogs was.
+    if let Some(library) = lightroom_library() {
+        let accounts = crate::lr_library::accounts(&library);
+        if let Some(last) = accounts
+            .iter()
+            .map(|a| used(&a.join(crate::lr_library::CATALOG)))
+            .max()
+        {
+            found.push(FoundCatalog {
+                path: library,
+                used: last,
+                library: true,
+            });
+        }
+    }
+    found.sort_by_key(|c| std::cmp::Reverse(c.used));
+    found
 }
 /// Whether this computer has something of Lightroom's to bring over: its
 /// catalog, Camera Raw's profiles and presets or Lightroom's synced presets.
@@ -460,8 +508,13 @@ impl Editor {
         );
 
         match catalog_action {
-            Some(RowAction::Import) => {
-                let source = self.onboarding.found.catalogs.first().cloned();
+            Some(RowAction::Import(i)) => {
+                let source = self
+                    .onboarding
+                    .found
+                    .catalogs
+                    .get(i)
+                    .map(|c| c.path.clone());
                 self.import_lightroom_here(source, ctx);
             }
             Some(RowAction::Choose(_)) => self.import_lightroom_here(None, ctx),
@@ -471,7 +524,7 @@ impl Editor {
             return;
         };
         match action {
-            RowAction::Import => {
+            RowAction::Import(_) => {
                 let found = &self.onboarding.found;
                 let paths = match kind {
                     // Yours first: an Adobe profile of the same name wins.
@@ -507,10 +560,10 @@ impl Editor {
         }
     }
 
-    /// The Lightroom catalog's row: the one found where Lightroom keeps it,
-    /// imported already or not.
+    /// The Lightroom catalog's row: those found where Lightroom keeps them,
+    /// the latest used first, one of them imported already or not.
     fn catalog_row(&self) -> Row {
-        let found = self.onboarding.found.catalogs.first();
+        let catalogs = &self.onboarding.found.catalogs;
         // Imported when the open catalog says it came from that file; an
         // import leaves its catalog open, and the next launch opens it again.
         let same = |a: &std::path::Path, b: &std::path::Path| {
@@ -518,11 +571,11 @@ impl Editor {
                 || a.canonicalize()
                     .is_ok_and(|a| b.canonicalize().is_ok_and(|b| a == b))
         };
-        let imported = found.filter(|source| {
+        let imported = catalogs.iter().find(|found| {
             self.onboarding
                 .imported_from
                 .iter()
-                .any(|from| same(from, source))
+                .any(|from| same(from, &found.path))
         });
         let mut row = Row {
             kind: None,
@@ -530,8 +583,15 @@ impl Editor {
             detail: "Folders, collections, ratings, flags, labels, keywords and edits.",
             mark: Mark::Todo,
             status: String::new(),
-            hover: found.map(|p| pretty_path(p)),
+            hover: (!catalogs.is_empty()).then(|| {
+                catalogs
+                    .iter()
+                    .map(|c| pretty_path(&c.path))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }),
             import: None,
+            options: Vec::new(),
             choose: ChooseWith::File,
         };
         if let Some(work) = &self.catalog_work {
@@ -545,14 +605,25 @@ impl Editor {
                 "Imported as {}, open now",
                 library.session.catalog().location().name()
             );
-        } else if let Some(source) = found {
-            row.status = format!(
-                "Found {}",
-                source.file_name().unwrap_or_default().to_string_lossy()
-            );
+        } else if !catalogs.is_empty() {
+            let names: Vec<String> = catalogs
+                .iter()
+                .map(|c| {
+                    c.path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .collect();
+            row.status = format!("Found {}", names.join(" and "));
             row.import = Some("Import".into());
+            // More than one: the button asks which.
+            if catalogs.len() > 1 {
+                row.options = catalogs.iter().map(FoundCatalog::label).collect();
+            }
         } else {
-            row.status = match lightroom_folder() {
+            row.status = match pictures() {
                 Some(folder) => format!("None in {}", pretty_path(&folder)),
                 None => "None found".into(),
             };
@@ -611,6 +682,7 @@ impl Editor {
             status: String::new(),
             hover,
             import: (n > 0).then(|| format!("Import {}", count(n, noun))),
+            options: Vec::new(),
             choose: ChooseWith::FolderOrFiles,
         };
         let cameras = || found.cameras.iter().cloned().collect::<Vec<_>>().join(", ");
@@ -860,8 +932,8 @@ enum Pick {
 /// A row's button that was clicked.
 #[derive(Clone, Copy)]
 enum RowAction {
-    /// Import what the row found.
-    Import,
+    /// Import what the row found: the option chosen of several, else 0.
+    Import(usize),
     Choose(Pick),
 }
 /// One thing to bring over, as its row shows it.
@@ -876,6 +948,9 @@ struct Row {
     hover: Option<String>,
     /// The label of the button importing what was found.
     import: Option<String>,
+    /// What there is to choose from when more than one was found; the
+    /// button then opens a menu of them.
+    options: Vec<String>,
     choose: ChooseWith,
 }
 /// Draws `row`: its mark on the title's line, its buttons on the right of
@@ -907,7 +982,7 @@ fn row_ui(ui: &mut egui::Ui, row: &Row, enabled: bool) -> Option<RowAction> {
                 ui.spacing_mut().item_spacing.x = space::M;
                 ui.add_enabled_ui(enabled && row.mark != Mark::Working, |ui| {
                     let choose = secondary(ui, "Choose…").on_hover_text(match row.choose {
-                        ChooseWith::File => "Pick a Lightroom catalog (.lrcat) elsewhere",
+                        ChooseWith::File => "Pick a Lightroom Classic catalog (.lrcat) or Lightroom library (.lrlibrary) elsewhere",
                         ChooseWith::FolderOrFiles => {
                             "Import from a folder (and its subfolders) or chosen files"
                         }
@@ -931,13 +1006,21 @@ fn row_ui(ui: &mut egui::Ui, row: &Row, enabled: bool) -> Option<RowAction> {
                     }
                     if let Some(label) = &row.import {
                         // Imported already: again, without the emphasis.
-                        let clicked = if row.mark == Mark::Done {
-                            secondary(ui, label).clicked()
+                        let button = if row.mark == Mark::Done {
+                            secondary(ui, label)
                         } else {
-                            primary(ui, label).clicked()
+                            primary(ui, label)
                         };
-                        if clicked {
-                            action = Some(RowAction::Import);
+                        if row.options.len() > 1 {
+                            egui::Popup::menu(&button).show(|ui| {
+                                for (i, option) in row.options.iter().enumerate() {
+                                    if ui.button(option).clicked() {
+                                        action = Some(RowAction::Import(i));
+                                    }
+                                }
+                            });
+                        } else if button.clicked() {
+                            action = Some(RowAction::Import(0));
                         }
                     }
                 });
@@ -1210,10 +1293,35 @@ mod tests {
             None,
         );
         editor.library = Some(Box::new(crate::app::library::Library::load(&catalog, ctx)?));
-        editor.onboarding.found.catalogs = vec![source.clone()];
+        let classic = FoundCatalog {
+            path: source.clone(),
+            used: std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_762_128_000),
+            library: false,
+        };
+        editor.onboarding.found.catalogs = vec![classic.clone()];
         let row = editor.catalog_row();
         assert!(row.mark == Mark::Todo);
         assert_eq!(row.import.as_deref(), Some("Import"));
+        assert!(row.options.is_empty());
+        // A Lightroom library too: the button asks which, latest used first.
+        let library = FoundCatalog {
+            path: dir.path().join("Lightroom Library.lrlibrary"),
+            used: std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_793_664_000),
+            library: true,
+        };
+        editor.onboarding.found.catalogs = vec![library, classic];
+        let row = editor.catalog_row();
+        assert_eq!(
+            row.options,
+            [
+                "Lightroom Library — Lightroom, last used 2026-11-03",
+                "Photos — Lightroom Classic, last used 2025-11-03",
+            ]
+        );
+        assert_eq!(
+            row.status,
+            "Found Lightroom Library.lrlibrary and Photos.lrcat"
+        );
 
         editor.onboarding.imported_from = vec![source];
         let row = editor.catalog_row();

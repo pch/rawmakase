@@ -115,6 +115,13 @@ pub(crate) enum Event {
     /// Export as Catalog finished: what it wrote, nothing when the user
     /// chose no file, or why it failed.
     CatalogExported(Box<Result<Option<crate::app::catalog::export_catalog::Exported>, String>>),
+    /// The albums of the Lightroom library the catalog was imported from,
+    /// with how many of its photos are in Adobe's cloud and their bytes, or
+    /// why they couldn't be read.
+    LightroomAlbums(Result<(Vec<crate::catalog::lightroom::LibraryAlbum>, usize, u64), String>),
+    /// Albums marked for Lightroom to download: what was marked, whether
+    /// Lightroom was opened, and the photos and bytes to come.
+    LightroomMarked(Result<(crate::catalog::lightroom::Marked, bool, usize, u64), String>),
     /// A file operation was planned (see `app::file_ops`).
     /// What export file names need from the photos' files, for the read
     /// `request` (see `app::export::naming::read`).

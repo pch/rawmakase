@@ -506,6 +506,8 @@ enum Modal {
     /// Find on Disk's review, held while the user decides whether to discard
     /// the open photo's unsaved change for it.
     DiscardForFind(Box<crate::app::catalog::folder_sync::Review>),
+    /// The Lightroom library's albums to choose which Lightroom downloads.
+    LightroomDownload(Box<crate::app::catalog::lightroom_downloads::DownloadDialog>),
 }
 impl eframe::App for Editor {
     /// What shows where no panel paints, e.g. behind the Library grid: the

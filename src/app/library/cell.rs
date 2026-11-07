@@ -48,6 +48,9 @@ pub(super) struct Shown {
     /// Its place in the grid, from 1.
     pub number: usize,
     pub available: bool,
+    /// Its original is in Adobe's cloud: imported from a Lightroom library,
+    /// and not downloaded yet.
+    pub cloud: bool,
     /// In the Quick Collection.
     pub quick: bool,
     pub style: Style,
@@ -70,6 +73,7 @@ pub(super) fn photo_cell(
         mark,
         number,
         available,
+        cloud,
         quick,
         style,
         details,
@@ -236,7 +240,11 @@ pub(super) fn photo_cell(
         painter.text(
             area.center(),
             Align2::CENTER_CENTER,
-            if available { &photo.format } else { "Offline" },
+            match (available, cloud) {
+                (true, _) => &photo.format,
+                (false, true) => "In Adobe's cloud",
+                (false, false) => "Offline",
+            },
             FontId::proportional(text::SMALL),
             ink,
         );
@@ -246,6 +254,7 @@ pub(super) fn photo_cell(
             quick,
             selected,
             available,
+            cloud,
             ink,
         };
         footer_badges(painter, &palette, cell, footer, photo, badges);
@@ -266,6 +275,7 @@ struct Badges {
     quick: bool,
     selected: bool,
     available: bool,
+    cloud: bool,
     /// The colour of the cell's text.
     ink: Color32,
 }
@@ -285,6 +295,7 @@ fn footer_badges(
         quick,
         selected,
         available,
+        cloud,
         ink,
     } = badges;
     // Lightroom's Quick Collection marker, in the footer's right corner,
@@ -327,7 +338,9 @@ fn footer_badges(
             ))
             .galley(Pos2::new(left, y - galley.size().y / 2.), galley, ink);
     }
-    if !available {
+    if !available && cloud {
+        cloud_badge(painter, Pos2::new(cell.right() - 30., y));
+    } else if !available {
         painter.text(
             Pos2::new(cell.right() - 24., y),
             Align2::RIGHT_CENTER,
@@ -336,6 +349,19 @@ fn footer_badges(
             Color32::from_rgb(210, 150, 60),
         );
     }
+}
+/// A small cloud centred at `at`: the photo's original is in Adobe's cloud.
+pub(in crate::app) fn cloud_badge(painter: &egui::Painter, at: egui::Pos2) {
+    use egui::{Pos2, Rect, Vec2};
+    let colour = Color32::from_rgb(110, 160, 220);
+    painter.circle_filled(Pos2::new(at.x - 3.5, at.y + 1.), 2.6, colour);
+    painter.circle_filled(Pos2::new(at.x, at.y - 1.), 3.4, colour);
+    painter.circle_filled(Pos2::new(at.x + 3.5, at.y + 1.), 2.6, colour);
+    painter.rect_filled(
+        Rect::from_center_size(Pos2::new(at.x, at.y + 2.), Vec2::new(7., 3.2)),
+        1.,
+        colour,
+    );
 }
 /// Lightroom's virtual copy badge: the image's lower left corner folded
 /// over. `background` is what shows behind the fold.

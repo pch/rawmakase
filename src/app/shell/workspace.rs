@@ -292,6 +292,7 @@ impl Editor {
         self.remove_copy_window(&ctx);
         self.remove_folder_window(&ctx);
         self.catalog_exported_window(&ctx);
+        self.lightroom_download_window(&ctx);
         self.folder_sync_window(&ctx);
         self.discard_for_find_window(&ctx);
         self.read_metadata_window(&ctx);
@@ -685,6 +686,19 @@ impl Editor {
             .clicked()
         {
             self.open_onboarding();
+            ui.close();
+        }
+        let in_cloud = self
+            .library
+            .as_ref()
+            .map_or(0, |l| l.session.cloud_photos().len());
+        if menu_row(ui, Icon::Collection, "Download from Lightroom…", in_cloud > 0)
+            .on_hover_text(format!(
+                "Choose albums whose originals, in Adobe's cloud, Lightroom downloads: {in_cloud} photos are there"
+            ))
+            .clicked()
+        {
+            self.open_lightroom_downloads();
             ui.close();
         }
         ui.add_space(space::XS);

@@ -68,6 +68,8 @@ impl Editor {
                     self.file_op_resolved(catalog, operation, *resolved)
                 }
                 Event::CatalogExported(result) => self.catalog_exported(*result),
+                Event::LightroomAlbums(result) => self.lightroom_albums(result),
+                Event::LightroomMarked(result) => self.lightroom_marked(result),
                 Event::FolderQuestion(question) => {
                     self.modal = Some(crate::app::Modal::FolderQuestion(*question))
                 }
@@ -560,6 +562,14 @@ impl Editor {
                 }
                 self.open_pending_photo();
                 let _ = self.save_session();
+                // The import's next step: choosing what Lightroom downloads.
+                if self
+                    .library
+                    .as_mut()
+                    .is_some_and(|l| std::mem::take(&mut l.offer_lightroom_download))
+                {
+                    self.open_lightroom_downloads();
+                }
             }
             Err(e) => {
                 self.waiting.failed();

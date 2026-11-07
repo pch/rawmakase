@@ -31,7 +31,10 @@ pub(super) struct PreviewTextures {
     pub(super) thumb_order: VecDeque<PathBuf>,
     pub(super) pending: HashSet<PathBuf>,
     pub(super) failed: HashSet<PathBuf>,
-    pub(super) thumb_tx: SyncSender<PathBuf>,
+    /// Files whose thumbnail was asked for before the file arrived, made
+    /// from a stand-in: what comes back for them is dropped.
+    superseded: HashSet<PathBuf>,
+    pub(super) thumb_tx: SyncSender<previews::ThumbJob>,
     pub(super) thumb_rx: Receiver<PreviewResult>,
     /// Edited previews: rendered from each photo's edit on a second worker.
     pub(super) edit_tx: EditQueue,
@@ -90,6 +93,7 @@ impl PreviewTextures {
             thumb_order: VecDeque::new(),
             pending: HashSet::new(),
             failed: HashSet::new(),
+            superseded: HashSet::new(),
             thumb_tx,
             thumb_rx,
             edit_tx,
@@ -134,6 +138,9 @@ impl PreviewTextures {
                 path, image: im, ..
             } = result;
             self.pending.remove(&path);
+            if self.superseded.remove(&path) {
+                continue;
+            }
             match im {
                 Some(im) => self.insert_thumb(ctx, path, &im),
                 None => {
@@ -253,6 +260,16 @@ impl PreviewTextures {
     pub(super) fn ask_again(&mut self, id: PhotoId) {
         self.edited_requested.remove(&id);
     }
+    /// Forgets the thumbnail of file `path`, made from a stand-in while it
+    /// wasn't there, so the file's own is made once it is asked for.
+    pub(super) fn forget_file(&mut self, path: &Path) {
+        self.thumbs.remove(path);
+        self.thumb_order.retain(|p| p != path);
+        self.failed.remove(path);
+        if self.pending.contains(path) {
+            self.superseded.insert(path.to_path_buf());
+        }
+    }
     /// Forgets a removed photo's previews, so a later photo given its id
     /// starts afresh.
     pub(super) fn forget(&mut self, id: PhotoId) {
@@ -283,20 +300,38 @@ impl PreviewTextures {
     pub(super) fn request(
         &mut self,
         photo: &Photo,
+        stand_in: Option<&Path>,
         ctx: &egui::Context,
         edit: impl FnOnce() -> Option<EditSource>,
     ) {
         if !self.edited.contains_key(&photo.id) {
-            self.request_thumbnail(&photo.path, ctx);
+            self.request_thumbnail_or(&photo.path, stand_in, ctx);
         }
         self.request_edited(photo, edit);
     }
+    #[cfg(test)]
     pub(super) fn request_thumbnail(&mut self, path: &Path, ctx: &egui::Context) {
+        self.request_thumbnail_or(path, None, ctx);
+    }
+    /// Queues `path`'s thumbnail, made from `stand_in` while the file isn't
+    /// there.
+    pub(super) fn request_thumbnail_or(
+        &mut self,
+        path: &Path,
+        stand_in: Option<&Path>,
+        ctx: &egui::Context,
+    ) {
         self.thumb_seen.insert(path.to_path_buf());
         if !self.thumbs.contains_key(path)
             && !self.pending.contains(path)
             && !self.failed.contains(path)
-            && self.thumb_tx.try_send(path.to_path_buf()).is_ok()
+            && self
+                .thumb_tx
+                .try_send(previews::ThumbJob {
+                    path: path.to_path_buf(),
+                    stand_in: stand_in.map(Path::to_path_buf),
+                })
+                .is_ok()
         {
             self.pending.insert(path.to_path_buf());
             self.progress.queued();

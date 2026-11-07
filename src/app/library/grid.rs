@@ -167,6 +167,7 @@ impl Library {
                                         mark: self.mark(p.id),
                                         number: row * columns + col + 1,
                                         available: exists,
+                                        cloud: self.session.cloud(&p).is_some(),
                                         quick: self.in_quick(p.id),
                                         style: self.cell_style,
                                         details: if self.cell_style == cell::Style::Expanded {

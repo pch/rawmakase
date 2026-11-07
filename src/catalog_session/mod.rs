@@ -73,6 +73,12 @@ pub(crate) struct CatalogSession {
     /// Previous Import: the photos the last Add Photo Folder or Synchronize
     /// added.
     previous_import: HashSet<PhotoId>,
+    /// Photos imported from a Lightroom library whose originals are in
+    /// Adobe's cloud, by master.
+    cloud: HashMap<PhotoId, crate::catalog::lightroom::CloudPhoto>,
+    /// Where the Lightroom edits not read yet will be, Lightroom downloading
+    /// them with their originals.
+    pending_edits: Vec<std::path::PathBuf>,
     backfill: backfill::Backfill,
     wake: Wake,
     /// Changes whenever photos may have changed place, name or master (see
@@ -122,6 +128,39 @@ impl CatalogSession {
     /// The folders located apart from their roots on this computer, by root.
     pub(crate) fn overrides(&self) -> &HashMap<RootId, Vec<crate::catalog::Override>> {
         &self.overrides
+    }
+    /// Photo `photo`'s original in Adobe's cloud, a virtual copy's its
+    /// master's, while the photo was imported from a Lightroom library and
+    /// its original hasn't arrived.
+    pub(crate) fn cloud(&self, photo: &Photo) -> Option<&crate::catalog::lightroom::CloudPhoto> {
+        self.cloud.get(&photo.master.unwrap_or(photo.id))
+    }
+    /// Every photo whose original is in Adobe's cloud (see [`Self::cloud`]).
+    pub(crate) fn cloud_photos(&self) -> &HashMap<PhotoId, crate::catalog::lightroom::CloudPhoto> {
+        &self.cloud
+    }
+    /// Takes the photos whose originals Lightroom has put in place for
+    /// downloaded, and reads the Lightroom edits it has downloaded with them
+    /// (see [`Catalog::settle_lightroom_downloads`]); reads the catalog again
+    /// when anything changed. Returns the photos that arrived and those whose
+    /// edit was read.
+    ///
+    /// A read that failed after an earlier settle had written is made now:
+    /// the photos the catalog no longer has in the cloud aren't shown there.
+    pub(crate) fn settle_lightroom_downloads(
+        &mut self,
+    ) -> Result<crate::catalog::lightroom::Settled> {
+        let settled = self.catalog.settle_lightroom_downloads()?;
+        let behind = self.catalog.lightroom_cloud_photos()?.len() != self.cloud.len();
+        if !settled.arrived.is_empty() || !settled.edits.is_empty() || behind {
+            self.reload()?;
+        }
+        Ok(settled)
+    }
+    /// Where the Lightroom edits not read yet will be (see
+    /// [`Self::settle_lightroom_downloads`]).
+    pub(crate) fn pending_lightroom_edits(&self) -> &[std::path::PathBuf] {
+        &self.pending_edits
     }
     /// Previous Import: the photos the last Add Photo Folder or Synchronize
     /// added.
@@ -243,6 +282,8 @@ impl CatalogSession {
             roots: Vec::new(),
             overrides: HashMap::new(),
             previous_import: HashSet::new(),
+            cloud: HashMap::new(),
+            pending_edits: Vec::new(),
             backfill: Default::default(),
             wake: std::sync::Arc::new(|| {}),
             generation: 0,
@@ -370,7 +411,11 @@ impl CatalogSession {
         let roots = self.catalog.roots()?;
         let overrides = self.catalog.overrides()?;
         let previous_import = self.catalog.previous_import()?.into_iter().collect();
+        let cloud = self.catalog.lightroom_cloud_photos()?;
+        let pending_edits = self.catalog.lightroom_pending_edits()?;
         self.photos = photos;
+        self.cloud = cloud;
+        self.pending_edits = pending_edits;
         self.previous_import = previous_import;
         self.folders = folders;
         self.collections = collections;

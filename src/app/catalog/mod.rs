@@ -160,12 +160,10 @@ impl Editor {
             tx,
             ctx.clone(),
             move |tx| {
+                let mut note = None;
+                let mut offer = false;
                 let result = (|| -> anyhow::Result<Option<CatalogLocation>> {
-                    let Some(source) = source.or_else(|| {
-                        rfd::FileDialog::new()
-                            .add_filter("Lightroom catalog", &["lrcat"])
-                            .pick_file()
-                    }) else {
+                    let Some(source) = source.or_else(pick_lightroom) else {
                         return Ok(None);
                     };
                     let stem = source.file_stem().unwrap_or_default().to_string_lossy();
@@ -182,14 +180,17 @@ impl Editor {
                         source.file_name().unwrap_or_default().to_string_lossy()
                     )));
                     ctx.request_repaint();
-                    Ok(Some(CatalogLocation::File(
-                        crate::catalog::lightroom::import_lightroom(&source, &destination)?,
-                    )))
+                    let (path, said, cloud) = import_lightroom_source(&source, &destination)?;
+                    note = said;
+                    offer = cloud;
+                    Ok(Some(CatalogLocation::File(path)))
                 })();
                 let event = match result {
-                    Ok(Some(location)) => {
-                        reopened(&location, false, &Default::default(), &[], &ctx)
-                    }
+                    Ok(Some(location)) => with_note(
+                        reopened(&location, false, &Default::default(), &[], &ctx),
+                        note,
+                        offer,
+                    ),
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
                 };
@@ -250,6 +251,9 @@ impl Editor {
                 // folders it skipped.
                 let mut report = crate::catalog::SidecarReport::default();
                 let mut conflicts = Vec::new();
+                // What importing a Lightroom library did, for the status line.
+                let mut note = None;
+                let mut offer = false;
                 let relinks = matches!(
                     kind,
                     CatalogDialog::Folder(
@@ -272,10 +276,7 @@ impl Editor {
                             catalog_file_dialog().pick_file().map(CatalogLocation::File)
                         }
                         CatalogDialog::ImportLightroom => {
-                            let Some(source) = rfd::FileDialog::new()
-                                .add_filter("Lightroom catalog", &["lrcat"])
-                                .pick_file()
-                            else {
+                            let Some(source) = pick_lightroom() else {
                                 return Ok(None);
                             };
                             let Some(destination) = catalog_file_dialog()
@@ -292,9 +293,11 @@ impl Editor {
                                 source.file_name().unwrap_or_default().to_string_lossy()
                             )));
                             ctx.request_repaint();
-                            Some(CatalogLocation::File(
-                                crate::catalog::lightroom::import_lightroom(&source, &destination)?,
-                            ))
+                            let (path, said, cloud) =
+                                import_lightroom_source(&source, &destination)?;
+                            note = said;
+                            offer = cloud;
+                            Some(CatalogLocation::File(path))
                         }
                         CatalogDialog::Folder(action) => {
                             crate::platform::network::prepare_filesystem_bridge();
@@ -380,7 +383,11 @@ impl Editor {
                     ctx.request_repaint();
                 }
                 let event = match result {
-                    Ok(Some(location)) => reopened(&location, relinks, &report, &conflicts, &ctx),
+                    Ok(Some(location)) => with_note(
+                        reopened(&location, relinks, &report, &conflicts, &ctx),
+                        note,
+                        offer,
+                    ),
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
                 };
@@ -646,7 +653,13 @@ impl Editor {
         if exists && let Some(l) = &mut self.library {
             l.found(&p.path);
         }
-        if let Some(refusal) = crate::app::library::develop_refusal(&p, exists) {
+        let cloud = self
+            .library
+            .as_ref()
+            .is_some_and(|l| l.session.cloud(&p).is_some());
+        if let Some(refusal) =
+            crate::app::library::develop_refusal(&p, exists).map(|r| r.in_cloud(cloud))
+        {
             // In the top bar, so the click is seen to have been answered, and the
             // right-click it may ask for can be made at once.
             self.messages.warn(format!(
@@ -1019,4 +1032,100 @@ pub(in crate::app) mod export_catalog;
 pub(in crate::app) mod export_catalog_tests;
 pub(crate) mod folder_locations;
 pub(in crate::app) mod folder_sync;
+pub(in crate::app) mod lightroom_downloads;
 pub(in crate::app) mod onboarding;
+
+/// A Lightroom Classic catalog or a Lightroom library the user picks; on
+/// macOS a library is a package, picked as a file is.
+fn pick_lightroom() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Import a Lightroom Classic catalog or a Lightroom library")
+        .add_filter(
+            "Lightroom catalog or library",
+            &["lrcat", "lrlibrary", "mcat"],
+        )
+        .pick_file()
+}
+
+/// The folders the user chooses to look for a library's originals in.
+fn choose_originals() -> Vec<PathBuf> {
+    crate::platform::network::prepare_filesystem_bridge();
+    rfd::FileDialog::new()
+        .set_title("Folders with your originals")
+        .pick_folders()
+        .unwrap_or_default()
+}
+
+/// Imports `source`, a Lightroom Classic catalog or a Lightroom library, into
+/// a new catalog at `destination`. Returns the catalog and, for a library,
+/// what was imported and what wasn't, for the status line. A library keeps
+/// on this computer only some of its originals, so the user is asked where
+/// the others are kept.
+/// Imports the Lightroom catalog or library `source` into `destination`;
+/// returns the catalog, what to say about it, and whether photos of it are
+/// in Adobe's cloud, for Download from Lightroom to be offered next.
+fn import_lightroom_source(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+) -> anyhow::Result<(PathBuf, Option<String>, bool)> {
+    // Where a library is a folder rather than a package (Windows, Linux), the
+    // file picked is one of its accounts' catalogs.
+    let library = if source
+        .file_name()
+        .is_some_and(|n| n == crate::lr_library::CATALOG)
+    {
+        source.parent().and_then(|a| a.parent()).unwrap_or(source)
+    } else {
+        source
+    };
+    if !library.is_dir() {
+        let path = crate::catalog::lightroom::import_lightroom(source, destination)?;
+        return Ok((path, None, false));
+    }
+    let elsewhere = rfd::MessageDialog::new()
+        .set_title("Where are your originals?")
+        .set_description(
+            "Lightroom keeps only some originals on this computer. If you keep your \
+             photos in a folder of your own, such as on a NAS, choose it to import \
+             those photos too.",
+        )
+        .set_buttons(rfd::MessageButtons::OkCancelCustom(
+            "Choose Folders…".into(),
+            "Only This Computer's".into(),
+        ))
+        .show();
+    // Windows' message box shows OK and Cancel for the two buttons.
+    let folders = match elsewhere {
+        rfd::MessageDialogResult::Ok => choose_originals(),
+        rfd::MessageDialogResult::Custom(chosen) if chosen == "Choose Folders…" => {
+            choose_originals()
+        }
+        _ => Vec::new(),
+    };
+    let report = crate::catalog::lightroom::import_lightroom_library(
+        library,
+        &folders,
+        destination,
+        &crate::catalog_session::new_photo_defaults(),
+    )?;
+    Ok((
+        report.catalog.clone(),
+        Some(report.message()),
+        report.cloud > 0,
+    ))
+}
+
+/// `event`, with `note` on the opened catalog's status line, and Download
+/// from Lightroom to be offered once it is open (`offer`).
+fn with_note(event: Event, note: Option<String>, offer: bool) -> Event {
+    match event {
+        Event::CatalogReady(Ok(mut library)) => {
+            if let Some(note) = note {
+                library.messages.done(note);
+            }
+            library.offer_lightroom_download = offer;
+            Event::CatalogReady(Ok(library))
+        }
+        event => event,
+    }
+}

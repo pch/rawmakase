@@ -51,6 +51,9 @@ impl Library {
                         Some(super::Refusal::Offline) => {
                             "Offline: relink its folder to edit".into()
                         }
+                        Some(super::Refusal::InCloud) => {
+                            "In Adobe's cloud: download it from Lightroom".into()
+                        }
                         Some(super::Refusal::Unsupported { reason, .. }) => {
                             format!("{reason} images can't be edited in Develop")
                         }

@@ -1,5 +1,6 @@
 //! Platform integration, independent of catalog and rendering policy.
 pub(crate) mod display;
+pub(crate) mod lightroom;
 pub(crate) mod locale;
 pub(crate) mod memory;
 #[cfg(any(target_os = "macos", test))]

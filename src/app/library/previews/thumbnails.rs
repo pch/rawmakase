@@ -20,6 +20,23 @@ pub(in crate::app::library) struct PreviewResult {
 /// A preview worker: where its jobs go, where its results come back, and its thread.
 pub(in crate::app::library) type Worker<J, R> = (J, Receiver<R>, JoinHandle<()>);
 
+/// A thumbnail asked for: the photo's file, and a JPEG to show in its place
+/// while the file isn't there (Lightroom's preview of a photo whose original
+/// is in Adobe's cloud). The stand-in is never cached: the file's own
+/// thumbnail is made once it is there.
+pub(in crate::app::library) struct ThumbJob {
+    pub path: PathBuf,
+    pub stand_in: Option<PathBuf>,
+}
+impl From<PathBuf> for ThumbJob {
+    fn from(path: PathBuf) -> Self {
+        Self {
+            path,
+            stand_in: None,
+        }
+    }
+}
+
 /// The thumbnail workers, which end once their requests or their results
 /// are dropped: a few side by side (see [`thumbnail_threads`]), so one slow
 /// file or disk doesn't hold up the rest. They run at normal priority, as the
@@ -27,7 +44,7 @@ pub(in crate::app::library) type Worker<J, R> = (J, Receiver<R>, JoinHandle<()>)
 pub(in crate::app::library) fn spawn(
     cache_path: PathBuf,
     ctx: egui::Context,
-) -> Worker<SyncSender<PathBuf>, PreviewResult> {
+) -> Worker<SyncSender<ThumbJob>, PreviewResult> {
     spawn_with(cache_path, ctx, super::super::thumbnail)
 }
 /// Thumbnails made side by side: enough to keep a disk and a few cores busy,
@@ -39,8 +56,8 @@ pub(super) fn spawn_with(
     cache_path: PathBuf,
     ctx: egui::Context,
     thumbnail: fn(&Path) -> anyhow::Result<image::RgbImage>,
-) -> Worker<SyncSender<PathBuf>, PreviewResult> {
-    let (tx, rx) = mpsc::sync_channel::<PathBuf>(24);
+) -> Worker<SyncSender<ThumbJob>, PreviewResult> {
+    let (tx, rx) = mpsc::sync_channel::<ThumbJob>(24);
     let (result_tx, result_rx) = mpsc::sync_channel(24);
     let thread = std::thread::spawn(move || {
         let threads = thumbnail_threads();
@@ -56,7 +73,7 @@ pub(super) fn spawn_with(
         let work = |opened: Option<(Option<PreviewCache>, Option<String>)>| {
             let mut opened = opened;
             loop {
-                let Ok(path) = rx
+                let Ok(ThumbJob { path, stand_in }) = rx
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .recv()
@@ -74,7 +91,9 @@ pub(super) fn spawn_with(
                         }
                     });
                     let image = cached.or_else(|| {
-                        let stamp = Stamp::read(&path).ok()?;
+                        let Ok(stamp) = Stamp::read(&path) else {
+                            return stand_in.as_deref().and_then(|j| thumbnail(j).ok());
+                        };
                         let image = thumbnail(&path).ok()?;
                         if let Some(cache) = cache.as_mut()
                             && let Err(error) = cache.store(&path, &stamp, &image)

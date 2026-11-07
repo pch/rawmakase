@@ -119,18 +119,44 @@ fn worker_persists_previews_and_reuses_them_when_original_is_offline() -> anyhow
     image::RgbImage::new(720, 480).save(&source)?;
     let cache_path = directory.path().join("previews.sqlite3");
     let (tx, rx, _) = spawn(cache_path.clone(), egui::Context::default());
-    tx.try_send(source.clone())?;
+    tx.try_send(source.clone().into())?;
     let result = rx.recv_timeout(Duration::from_secs(10))?;
     assert_eq!(result.image.unwrap().dimensions(), (640, 427));
     assert!(result.cache_error.is_none());
     // Reopen through another worker: a memory-only result cannot pass this.
     std::fs::remove_file(&source)?;
     let (tx, rx, _) = spawn(cache_path, egui::Context::default());
-    tx.try_send(source.clone())?;
+    tx.try_send(source.clone().into())?;
     let result = rx.recv_timeout(Duration::from_secs(10))?;
     assert_eq!(result.path, source);
     assert!(result.image.is_some());
     assert!(result.cache_error.is_none());
+    Ok(())
+}
+
+#[test]
+fn a_missing_file_shows_its_stand_in_and_its_own_thumbnail_once_it_arrives() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let source = directory.path().join("photo.png");
+    let stand_in = directory.path().join("lightroom.jpg");
+    image::RgbImage::new(300, 200).save(&stand_in)?;
+    let cache_path = directory.path().join("previews.sqlite3");
+    let (tx, rx, _) = spawn(cache_path, egui::Context::default());
+    let job = |stand_in: Option<PathBuf>| ThumbJob {
+        path: source.clone(),
+        stand_in,
+    };
+    tx.try_send(job(Some(stand_in.clone())))?;
+    let result = rx.recv_timeout(Duration::from_secs(10))?;
+    assert_eq!(result.image.unwrap().dimensions(), (300, 200));
+    // Nothing in its place: offline.
+    tx.try_send(job(None))?;
+    assert!(rx.recv_timeout(Duration::from_secs(10))?.image.is_none());
+    // The file arrives: its own thumbnail, as the stand-in was never cached.
+    image::RgbImage::new(720, 480).save(&source)?;
+    tx.try_send(job(Some(stand_in)))?;
+    let result = rx.recv_timeout(Duration::from_secs(10))?;
+    assert_eq!(result.image.unwrap().dimensions(), (640, 427));
     Ok(())
 }
 
@@ -150,8 +176,8 @@ fn a_panicking_preview_is_unavailable_and_the_next_one_is_made() -> anyhow::Resu
         egui::Context::default(),
         thumbnail,
     );
-    tx.try_send(panics.clone())?;
-    tx.try_send(works.clone())?;
+    tx.try_send(panics.clone().into())?;
+    tx.try_send(works.clone().into())?;
     // Made side by side, so in either order.
     let mut results = [
         rx.recv_timeout(Duration::from_secs(10))?,
@@ -474,7 +500,7 @@ fn cache_failure_does_not_stop_previews_or_completion() -> anyhow::Result<()> {
     let (tx, rx, _) = spawn(directory.path().into(), egui::Context::default());
     let mut progress = Progress::default();
     for path in [source.clone(), directory.path().join("missing.ARW")] {
-        tx.try_send(path)?;
+        tx.try_send(path.into())?;
         progress.queued();
     }
     // Made side by side, so in either order.
@@ -698,7 +724,7 @@ fn thumbnails_are_made_side_by_side() -> anyhow::Result<()> {
         thumbnail,
     );
     for name in ["1.png", "2.png"] {
-        tx.try_send(edited_png(directory.path(), name)?)?;
+        tx.try_send(edited_png(directory.path(), name)?.into())?;
     }
     for _ in 0..2 {
         assert!(rx.recv_timeout(Duration::from_secs(30))?.image.is_some());

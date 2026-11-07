@@ -574,6 +574,7 @@ fn photo_cells_preserve_texture_proportions_at_different_grid_widths() {
                     mark: selection::Mark::None,
                     number: 1,
                     available: true,
+                    cloud: false,
                     quick: false,
                     style: cell::Style::Compact,
                     details: String::new(),
@@ -5143,5 +5144,182 @@ fn a_failed_reread_after_a_change_leaves_nothing_to_change() -> Result<()> {
     assert!(library.selected_folders.is_empty());
     assert!(library.shown().is_empty());
     assert!(library.photo(a).is_none());
+    Ok(())
+}
+/// A catalog photo whose original is in Adobe's cloud, as imported from a
+/// Lightroom library: its file isn't there until Lightroom downloads it.
+#[test]
+fn a_photo_in_adobes_cloud_says_so_and_is_shown_from_its_file_once_it_arrives() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    let file = folder.join("a.jpg");
+    image::RgbImage::new(8, 8).save(&file)?;
+    let original = std::fs::read(&file)?;
+    let path = directory.path().join("library.rawmakase");
+    let mut catalog = Catalog::create(&path)?;
+    catalog.add_folder(&folder)?;
+    let id = catalog.photos()?[0].id;
+    catalog.db_for_tests().execute(
+        "INSERT INTO lightroom_library_photos(photo,asset,size,cloud) VALUES(?,'a',?,1)",
+        rusqlite::params![id.0, original.len() as i64],
+    )?;
+    // Its Lightroom edit, which can't be rendered while its file isn't there.
+    catalog.db_for_tests().execute(
+        "UPDATE photos SET lightroom_develop=? WHERE id=?",
+        rusqlite::params![
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:Exposure2012="-0.50"/></rdf:RDF></x:xmpmeta>"#,
+            id.0
+        ],
+    )?;
+    drop(catalog);
+    std::fs::remove_file(&file)?;
+
+    let ctx = egui::Context::default();
+    let mut library = Library::load(&path, ctx.clone())?;
+    library.wait_for_availability();
+    let photo = library.session.photos()[0].clone();
+    assert!(library.session.cloud(&photo).is_some());
+    assert_eq!(library.shown_refusal(&photo), Some(Refusal::InCloud));
+    assert!(
+        Refusal::InCloud
+            .detail()
+            .contains("Download from Lightroom")
+    );
+    let mut editor = crate::app::Editor::with_context(&ctx, None, Default::default(), None);
+    editor.library = Some(Box::new(library));
+    editor.develop_catalog_photo(photo.id);
+    assert!(editor.messages.has_entry_with("Adobe's cloud"));
+    let mut library = editor.library.take().unwrap();
+    library.request_previews(&photo, &ctx);
+    assert!(library.cache.edited_requested.contains_key(&photo.id));
+
+    // Still downloading: not yet.
+    std::fs::write(&file, &original[..original.len() / 2])?;
+    library.settle_downloads();
+    assert!(library.session.cloud(&photo).is_some());
+    // Arrived with its original's size: a photo like any other.
+    std::fs::write(&file, &original)?;
+    library.settle_downloads();
+    library.wait_for_availability();
+    assert!(library.session.cloud(&photo).is_none());
+    // Its edit is rendered afresh from the file, not left failed.
+    assert!(!library.cache.edited_requested.contains_key(&photo.id));
+    assert_eq!(library.shown_refusal(&photo), None);
+    Ok(())
+}
+/// Importing a Lightroom library with photos in Adobe's cloud goes on to
+/// choosing what Lightroom downloads; opening a catalog doesn't.
+#[test]
+fn a_lightroom_import_with_photos_in_the_cloud_goes_on_to_download_from_lightroom() -> Result<()> {
+    let ctx = egui::Context::default();
+    for offer in [false, true] {
+        let (_directory, mut library) = library_of(&["a.RAF"])?;
+        library.offer_lightroom_download = offer;
+        let mut editor = crate::app::Editor::with_context(&ctx, None, Default::default(), None);
+        editor.catalog_ready(Ok(Box::new(library)));
+        assert_eq!(editor.activity.is_busy(), offer, "offer {offer}");
+        assert!(!editor.library.as_ref().unwrap().offer_lightroom_download);
+    }
+    Ok(())
+}
+
+/// A Lightroom edit the library didn't have when the photo was imported is
+/// read once Lightroom has downloaded it, also with no photo left in the
+/// cloud to wait for.
+#[test]
+fn a_lightroom_edit_downloaded_later_is_read_without_photos_in_the_cloud() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    image::RgbImage::new(8, 8).save(folder.join("a.jpg"))?;
+    let edit = directory.path().join("settings-sha");
+    let path = directory.path().join("library.rawmakase");
+    let mut catalog = Catalog::create(&path)?;
+    catalog.add_folder(&folder)?;
+    let id = catalog.photos()?[0].id;
+    catalog.db_for_tests().execute(
+        "INSERT INTO lightroom_library_photos(photo,asset,size,cloud,edit) VALUES(?,'a',1,0,?)",
+        rusqlite::params![id.0, edit.to_string_lossy()],
+    )?;
+    drop(catalog);
+    let mut library = Library::load(&path, egui::Context::default())?;
+    assert_eq!(
+        library.session.pending_lightroom_edits(),
+        std::slice::from_ref(&edit)
+    );
+    let xmp = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:Exposure2012="-0.50"/></rdf:RDF></x:xmpmeta>"#;
+    std::fs::write(&edit, xmp)?;
+    // A look now, as every few seconds, until it has answered.
+    library.downloads.next = Some(std::time::Instant::now());
+    let start = std::time::Instant::now();
+    loop {
+        library.poll_downloads();
+        if library.downloads.looking.is_none()
+            && library.session.pending_lightroom_edits().is_empty()
+        {
+            break;
+        }
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(10),
+            "read in time"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let edit = library.session.catalog().edit_record(id)?;
+    assert_eq!(edit.lightroom.as_deref(), Some(xmp));
+    Ok(())
+}
+/// An arrival the catalog couldn't take (a write that failed) is taken on the
+/// next look, though the files found are the same.
+#[test]
+fn an_arrival_that_could_not_be_taken_is_taken_on_the_next_look() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().join("photos");
+    std::fs::create_dir(&folder)?;
+    let file = folder.join("a.jpg");
+    image::RgbImage::new(8, 8).save(&file)?;
+    let original = std::fs::read(&file)?;
+    let path = directory.path().join("library.rawmakase");
+    let mut catalog = Catalog::create(&path)?;
+    catalog.add_folder(&folder)?;
+    let id = catalog.photos()?[0].id;
+    catalog.db_for_tests().execute(
+        "INSERT INTO lightroom_library_photos(photo,asset,size,cloud) VALUES(?,'a',?,1)",
+        rusqlite::params![id.0, original.len() as i64],
+    )?;
+    drop(catalog);
+    std::fs::remove_file(&file)?;
+    let mut library = Library::load(&path, egui::Context::default())?;
+    let photo = library.session.photos()[0].clone();
+    std::fs::write(&file, &original)?;
+    let look = |library: &mut Library| {
+        library.downloads.next = Some(std::time::Instant::now());
+        library.poll_downloads();
+        let start = std::time::Instant::now();
+        while library.downloads.looking.is_some() {
+            assert!(start.elapsed() < std::time::Duration::from_secs(10));
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            library.poll_downloads();
+        }
+    };
+    // The catalog refuses the write.
+    library.session.catalog().db_for_tests().execute_batch(
+        "CREATE TRIGGER refuse BEFORE UPDATE ON lightroom_library_photos
+         BEGIN SELECT RAISE(ABORT, 'refused'); END;",
+    )?;
+    look(&mut library);
+    assert!(library.session.cloud(&photo).is_some());
+    assert!(library.messages.has_entry_with("couldn't be taken"));
+    library
+        .session
+        .catalog()
+        .db_for_tests()
+        .execute_batch("DROP TRIGGER refuse")?;
+    look(&mut library);
+    assert!(
+        library.session.cloud(&photo).is_none(),
+        "taken on the next look"
+    );
     Ok(())
 }

@@ -216,6 +216,8 @@ pub(crate) struct Library {
     /// Indices into `photos` of the ones shown, in display order.
     visible: Vec<usize>,
     availability: availability::Availability,
+    /// Originals in Adobe's cloud looked for as Lightroom downloads them.
+    downloads: downloads::Downloads,
     ctx: egui::Context,
     cache: textures::PreviewTextures,
     /// What the Library asked the editor to do, in order ([`outbox`]).
@@ -223,6 +225,9 @@ pub(crate) struct Library {
     /// After a synchronization added photos, the status bar offers to show
     /// them.
     pub(in crate::app) offer_previous_import: bool,
+    /// After importing a Lightroom library with photos in Adobe's cloud,
+    /// Download from Lightroom opens next.
+    pub(in crate::app) offer_lightroom_download: bool,
     copy_names: copy_name::CopyNames,
     /// Title, caption and the other descriptive fields being shown or typed.
     fields: metadata_fields::Fields,
@@ -325,9 +330,11 @@ impl Library {
             shown_version: 0,
             visible: Vec::new(),
             availability: Default::default(),
+            downloads: Default::default(),
             cache: textures::PreviewTextures::new(&ctx),
             ctx,
             offer_previous_import: false,
+            offer_lightroom_download: false,
             copy_names: Default::default(),
             fields: Default::default(),
             done: Vec::new(),
@@ -537,7 +544,8 @@ impl Library {
         match &self.refusal_shown {
             Some((shown, refusal)) if *shown == key => refusal.clone(),
             _ => {
-                let refusal = develop_refusal(photo, available);
+                let cloud = self.session.cloud(photo).is_some();
+                let refusal = develop_refusal(photo, available).map(|r| r.in_cloud(cloud));
                 self.refusal_shown = Some((key, refusal.clone()));
                 refusal
             }
@@ -596,7 +604,7 @@ impl Library {
     ) -> Option<Result<DevelopSource, Refusal>> {
         let photo = self.photo(id)?;
         if let Some(refusal) = develop_refusal(photo, photo.path.is_file()) {
-            return Some(Err(refusal));
+            return Some(Err(refusal.in_cloud(self.session.cloud(photo).is_some())));
         }
         let edit = match self.session.catalog().load_edit(id, &photo.path) {
             Ok(Some(saved)) => serde_json::to_string(&saved.recipe)
@@ -1291,6 +1299,7 @@ impl Library {
         self.poll_import_stacks();
         self.poll_checksums();
         self.poll_reread();
+        self.poll_downloads();
         self.cache.poll(ctx);
         self.screen.poll(ctx);
         for e in self.screen.take_failures() {
@@ -1320,10 +1329,13 @@ impl Library {
         self.cache.texture(photo)
     }
     /// Queues the previews a shown photo needs; its edit comes from the catalog.
+    /// A photo in Adobe's cloud shows Lightroom's preview of it until its
+    /// original is here.
     fn request_previews(&mut self, photo: &Photo, ctx: &egui::Context) {
         let catalog = self.session.catalog();
+        let stand_in = self.session.cloud(photo).and_then(|c| c.preview.as_deref());
         self.cache
-            .request(photo, ctx, || edit_source(catalog, photo.id));
+            .request(photo, stand_in, ctx, || edit_source(catalog, photo.id));
     }
     /// Replaces the edited-preview worker's queue with one nothing takes from:
     /// what is sent to it is read from the returned end.
@@ -1457,6 +1469,9 @@ impl Library {
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::app) enum Refusal {
     Offline,
+    /// Offline because its original is in Adobe's cloud: imported from a
+    /// Lightroom library and not downloaded yet.
+    InCloud,
     /// A JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL of a kind Develop can't edit: its `format` (e.g. "JPG")
     /// and the `reason` (e.g. "CMYK").
     Unsupported {
@@ -1481,10 +1496,19 @@ impl Refusal {
             reason: unsupported.0.clone(),
         }
     }
+    /// [`Self::InCloud`] for an offline photo whose original is in Adobe's
+    /// cloud (`cloud`), else this.
+    pub(in crate::app) fn in_cloud(self, cloud: bool) -> Self {
+        match self {
+            Self::Offline if cloud => Self::InCloud,
+            other => other,
+        }
+    }
     /// A word or two, shown beside a greyed-out Open in Develop.
     pub(in crate::app) fn label(&self) -> String {
         match self {
             Self::Offline => "Offline".into(),
+            Self::InCloud => "In Adobe's cloud".into(),
             Self::Unsupported { format, .. } => format!("{format} file"),
         }
     }
@@ -1493,6 +1517,10 @@ impl Refusal {
         match self {
             Self::Offline => {
                 "The photo is offline. Right-click it and choose Find on Disk… to pick its file, or relink its folder with Locate root folder or Locate this folder."
+                    .into()
+            }
+            Self::InCloud => {
+                "Its original is in Adobe's cloud. Choose Download from Lightroom… in the catalog menu to have Lightroom download it; it opens here once it has arrived."
                     .into()
             }
             Self::Unsupported { reason, .. } => format!("RAWmakase can't edit {reason} images"),
@@ -1550,6 +1578,7 @@ mod collections;
 mod compare;
 mod copy_name;
 mod descriptive;
+mod downloads;
 pub(crate) mod filmstrip;
 mod filter;
 mod filter_bar;
