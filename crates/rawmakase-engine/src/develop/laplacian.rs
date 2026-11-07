@@ -1,7 +1,27 @@
 //! One channel of a Laplacian pyramid: the 5-tap binomial reduce and expand that
-//! Texture and luminance noise reduction share.
+//! Texture and luminance noise reduction share, and the photo's level a reduced
+//! decode's pyramid starts at, which colour noise reduction uses too.
+use crate::camera_data::CameraImage;
 use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
+
+/// The photo's pyramid level that `im`'s finest level shows, `−log₂` of its
+/// [`photo_scale`](CameraImage::photo_scale): 0 for a photo decoded in full, 1 for a
+/// half-size decode. Within [`WHOLE_LEVEL`] of a whole level it is that level: a
+/// half-size decode of a photo with an odd side is a pixel more than half of it
+/// (`demosaic::half` rounds up), and its levels are still the photo's whole ones.
+pub(crate) fn photo_level_offset(im: &CameraImage) -> f32 {
+    let offset = -im.photo_scale().log2();
+    let whole = offset.round();
+    if (offset - whole).abs() < WHOLE_LEVEL {
+        whole
+    } else {
+        offset
+    }
+}
+/// How far from a whole level [`photo_level_offset`] still takes it: one pixel of
+/// rounding on a long edge of 72 pixels or more is less.
+const WHOLE_LEVEL: f32 = 0.02;
 
 /// One channel at one pyramid level.
 pub(crate) struct Plane {

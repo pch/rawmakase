@@ -27,6 +27,37 @@ GPU rendering sample the same denoised image. This is an approximation, not Adob
 algorithm: texture-only scenes can overestimate noise, and high amounts can lose
 faint detail.
 
+### Noise reduction on a reduced decode
+
+A reduced decode (such as the half-size draft) keeps its photo's
+metadata over fewer pixels (`CameraImage::photo_scale`). Both noise reductions treat
+its pyramid as the photo's from level `−log₂(photo_scale)` on: about level 1 for a
+half-size draft, 1.2 for 2560 pixels of a 6000-pixel photo. Colour noise reduction
+takes the photo's thresholds there (geometrically between two levels, the noise
+exponent linearly), luminance noise reduction its Detail and Contrast weights.
+Between two of the photo's levels a level's settings are interpolated; one up to a
+level past the photo's last takes the last's, and one that starts at the photo's
+unfiltered residual, or past it, is left alone. The noise each level is measured
+with is the decode's own. A full decode, whatever its metadata says, filters exactly
+as before.
+
+Measured on a synthetic photo (an RGGB mosaic of flats and texture with shot noise,
+demosaiced bilinearly) against the photo denoised and rendered at the reduced size,
+as the share of the noise each keeps at 1, 2, 4 and 8 output pixels relative to the
+share the photo keeps: for its half-size decode and for it reduced to 0.43 by area,
+the worst |log ratio| over six settings fell from 1.02 to 0.71 (mean 0.37 to 0.25);
+for colour at its default 25, from 0.47 to 0.13. At 2 output pixels and coarser the
+worst fell from 0.63 to 0.42 (mean 0.28 to 0.16), every setting closer than before
+but colour Amount 10 reduced to 0.43, as far as before (0.42 against 0.40) on the
+other side. At 1 pixel a reduced decode also holds noise aliased from the photo's
+finer scales, which the photo's finest level took out: at colour Amount 10 a decode
+keeps about twice the photo's share there, and with Luminance Detail 20 and Contrast
+50, 1.4 times. Starting the decode's levels half a level finer instead helped
+luminance and made low colour Amounts worse. Texture keeps its detail within 5% of
+the photo's (the test allows 10%). A half-size decode of a photo with an odd side, a
+pixel more than half of it, takes the photo's whole levels as an even photo's does.
+AI Denoise refuses reduced decodes.
+
 ## AI Denoise
 
 AI Denoise replaces the demosaic for a photo with RawNIND

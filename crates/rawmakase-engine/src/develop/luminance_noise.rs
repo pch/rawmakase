@@ -2,7 +2,11 @@
 //! pyramid and tone stage. A square-root luminance pyramid separates grain from
 //! multi-pixel blotches. Each band's smooth blocks estimate its noise; soft
 //! thresholding retains detail above that noise. This is not Adobe's algorithm.
-use super::laplacian::{Plane, mirror};
+//!
+//! The bands are the photo's: a reduced decode ([`CameraImage::photo_scale`]) is
+//! filtered with the settings of the photo's bands its own bands show, and stops where
+//! the photo does.
+use super::laplacian::{Plane, mirror, photo_level_offset};
 use crate::camera_data::CameraImage;
 use anyhow::{Result, ensure};
 use rawmakase_cancel::Cancel;
@@ -35,7 +39,8 @@ impl LuminanceDenoise {
         // Camera pixels carry the as-shot WB. Exclude near-clipped flats from the
         // estimate, where clipping suppresses noise without making the capture clean.
         let white = luma(im.metadata.wb.map(|v| v.max(0.001))) * 0.97;
-        let filtered = self.filter(&plane, 0, 0., white, cancel)?;
+        let offset = photo_level_offset(im);
+        let filtered = self.filter(&plane, 0, offset, 0., white, cancel)?;
         let mut out = im.clone();
         out.recovered = Default::default();
         out.pixels
@@ -59,16 +64,23 @@ impl LuminanceDenoise {
         Ok(out)
     }
 
+    /// Filters `plane` as band `level`, recursing to the coarser ones; `offset` is the
+    /// photo's band that this image's finest shows.
     fn filter(
         &self,
         plane: &Plane,
         level: usize,
+        offset: f32,
         finer_noise: f32,
         white: f32,
         cancel: Cancel<'_>,
     ) -> Result<Plane> {
         check(cancel)?;
-        if level == LEVELS || plane.w < 4 || plane.h < 4 {
+        // The photo's band this one shows. A band up to one past the photo's last is
+        // filtered with the last's settings. One that starts at the photo's
+        // unfiltered residual, or past it, is left alone, as the photo leaves it.
+        let photo_level = level as f32 + offset;
+        if photo_level >= LEVELS as f32 || plane.w < 4 || plane.h < 4 {
             return Ok(Plane {
                 w: plane.w,
                 h: plane.h,
@@ -84,12 +96,15 @@ impl LuminanceDenoise {
         let noise = band_noise(plane, &band, white, cancel)?.map_or(finer_noise * 0.6, |n| {
             if level == 0 { n } else { n.min(finer_noise) }
         });
-        let coarse = self.filter(&coarse, level + 1, noise, white, cancel)?;
+        let coarse = self.filter(&coarse, level + 1, offset, noise, white, cancel)?;
         let mut out = up(&coarse, plane.w, plane.h, cancel)?;
         // Amount grows the threshold instead of just blending a fixed blur. Detail
         // protects fine structures; Contrast protects coarser structure separately.
-        let detail = 2f32.powf((0.5 - self.detail) * if level == 0 { 1.5 } else { 0.5 });
-        let contrast = 1. - self.contrast * if level == 0 { 0. } else { 0.6 };
+        // Both change from the photo's finest band to the next: between them, a reduced
+        // decode's band takes them in proportion.
+        let coarse_share = photo_level.min(1.);
+        let detail = 2f32.powf((0.5 - self.detail) * (1.5 - coarse_share));
+        let contrast = 1. - self.contrast * 0.6 * coarse_share;
         let threshold = noise * 3.8 * self.amount.powf(1.3) * detail * contrast;
         out.data
             .par_chunks_mut(1024)
