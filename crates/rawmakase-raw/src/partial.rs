@@ -40,7 +40,8 @@ pub struct PartialPreview {
     /// Facts the readers take from the sensor data (black levels measured from
     /// masked pixels, a frame found in the data) are not to be relied on.
     pub info: RawInfo,
-    /// The preview, as [`crate::preview_reaching`] gives it: a JPEG.
+    /// The preview, as [`crate::preview_reaching`] gives it ([`preview_from_file`])
+    /// or [`crate::preview()`] does ([`largest_preview_from_file`]).
     pub preview: Vec<u8>,
     /// The bytes read from the file.
     pub read: u64,
@@ -58,6 +59,34 @@ pub fn preview_from_file(file: &mut (impl Read + Seek), edge: u32) -> Option<Par
     let reaches = crate::preview::jpeg_size(&partial.preview, 0, partial.preview.len() as u64)
         .is_some_and(|[w, h]| w.max(h) >= edge);
     reaches.then_some(partial)
+}
+
+/// The largest embedded preview of the RAW `file`, as [`crate::preview()`]
+/// gives it, read without its sensor data: for Develop's placeholder while
+/// the whole file is read. Read as [`preview_from_file`] reads one, for the
+/// formats [`checked`] accepts, with the file opened again once its
+/// candidates' frames are read, as a reader may size its candidates from
+/// them. `None` when it can't be read this way.
+pub fn largest_preview_from_file(file: &mut (impl Read + Seek)) -> Option<PartialPreview> {
+    largest_in_pieces(file, checked)
+}
+
+/// The preview [`largest_preview_from_file`] reads, for files whose variant
+/// `allow` accepts.
+fn largest_in_pieces(
+    file: &mut (impl Read + Seek),
+    allow: impl Fn(Variant) -> bool,
+) -> Option<PartialPreview> {
+    let mut f = Sparse::new(file)?;
+    let info = header_in_pieces(&mut f, allow)?;
+    let (at, len) = crate::preview::find(&info, &f.bytes).ok()?;
+    f.fill(at, len)?;
+    let preview = crate::embedded(&f.bytes, (at, len)).ok()?.into_owned();
+    Some(PartialPreview {
+        info,
+        preview,
+        read: f.read,
+    })
 }
 
 /// Whether a preview read in pieces is the one the whole file gives, for
@@ -111,6 +140,25 @@ fn in_pieces(
     allow: impl Fn(Variant) -> bool,
 ) -> Option<PartialPreview> {
     let mut f = Sparse::new(file)?;
+    let info = header_in_pieces(&mut f, allow)?;
+    let (at, len) = crate::preview::find_reaching(&info, &f.bytes, edge).ok()?;
+    f.fill(at, len)?;
+    let preview = crate::embedded(&f.bytes, (at, len)).ok()?.into_owned();
+    Some(PartialPreview {
+        info,
+        preview,
+        read: f.read,
+    })
+}
+
+/// The header facts of the file `f` reads, for files whose variant `allow`
+/// accepts: its start and end, then each preview candidate's start up to its
+/// JPEG frame header, at which it is opened again. `None` when they can't be
+/// read this way.
+fn header_in_pieces<R: Read + Seek>(
+    f: &mut Sparse<'_, R>,
+    allow: impl Fn(Variant) -> bool,
+) -> Option<RawInfo> {
     f.fill(0, HEAD)?;
     f.fill(f.len().saturating_sub(TAIL), TAIL)?;
     let info = crate::variant::open(&f.bytes).ok()?;
@@ -154,14 +202,7 @@ fn in_pieces(
     if !allow(info.variant) || !info.previews.iter().map(|c| (c.offset, c.len)).eq(first) {
         return None;
     }
-    let (at, len) = crate::preview::find_reaching(&info, &f.bytes, edge).ok()?;
-    f.fill(at, len)?;
-    let preview = crate::embedded(&f.bytes, (at, len)).ok()?.into_owned();
-    Some(PartialPreview {
-        info,
-        preview,
-        read: f.read,
-    })
+    Some(info)
 }
 
 /// A buffer the size of the file, filled where the file has been read.

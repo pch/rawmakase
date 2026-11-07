@@ -84,6 +84,29 @@ fn the_stored_preview_shows_before_or_after_the_embedded_one() {
     assert!(e.preview.stand_in.is_none());
 }
 
+/// A load that fails after the camera's preview was shown (a network share
+/// gone while the whole file is read) takes the preview and its "developing"
+/// status down, so the photo shows it couldn't be opened.
+#[test]
+fn a_failed_load_takes_the_embedded_preview_down() {
+    let (_dir, mut e, ids, _cache) = editor(&["a.ARW"]);
+    let load = open(&mut e, ids[0], None);
+    embedded(&mut e, load);
+    assert!(e.preview.texture.is_some() && e.preview.embedded);
+    e.tx.send(Event::Failed {
+        id: load,
+        task: crate::app::worker::TaskKind::Load,
+        error: "disconnected".into(),
+    })
+    .unwrap();
+    let ctx = e.context.clone();
+    e.events(&ctx);
+    assert_eq!(e.document.failed.as_deref(), Some("disconnected"));
+    assert!(e.preview.texture.is_none());
+    assert!(!e.preview.embedded);
+    assert!(e.preview.status.is_empty());
+}
+
 #[test]
 fn a_stored_preview_for_an_old_load_or_after_the_first_render_is_dropped() {
     let (_dir, mut e, ids, cache) = editor(&["a.ARW", "b.ARW"]);

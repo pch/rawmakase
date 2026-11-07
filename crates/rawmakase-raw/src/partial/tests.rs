@@ -1,4 +1,7 @@
-use super::{HEAD, Sparse, TAIL, checked, in_pieces, preview_from_file};
+use super::{
+    HEAD, Sparse, TAIL, checked, in_pieces, largest_in_pieces, largest_preview_from_file,
+    preview_from_file,
+};
 use crate::container::nef::tests::nef;
 use crate::container::pef::tests::{note, pef};
 use crate::container::test_tiff::{dir, long};
@@ -221,6 +224,42 @@ fn a_candidate_read_whole_without_a_frame_header_is_left_out() {
     assert_eq!(partial.preview, whole.as_ref());
 }
 
+/// The largest preview read in pieces is the one the whole file gives: past
+/// the head, behind a large EXIF segment, and where a smaller one of another
+/// shape sits within the head before it (whose size the first open knows,
+/// the largest's only once its frame is read).
+#[test]
+fn the_largest_preview_read_in_pieces_is_the_whole_file_s() {
+    let files = [
+        nef_with_previews(3 << 20, &sizes(), 0),
+        nef_with_jpegs(
+            3 << 20,
+            vec![
+                jpeg(640, 424, 40_000),
+                jpeg_after_app(4928, 3264, 65_533, 900_000),
+            ],
+            0,
+        ),
+        nef_with_previews(0, &[([640, 480], 600_000), ([4928, 3264], 900_000)], 0),
+    ];
+    for file in files {
+        let info = crate::open(&file).unwrap();
+        let whole = crate::preview(&info, &file).unwrap();
+        let partial = largest_preview_from_file(&mut Cursor::new(&file)).unwrap();
+        assert_eq!(partial.preview, whole.as_ref());
+        assert!(partial.read < file.len() as u64);
+    }
+    // Formats not checked are read whole, as for thumbnails.
+    let pef = pef(
+        ["PENTAX", "PENTAX K-TEST"],
+        [2, 2, 12, 32773],
+        &[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc],
+        vec![],
+        note(vec![]),
+    );
+    assert!(largest_preview_from_file(&mut Cursor::new(&pef)).is_none());
+}
+
 #[test]
 fn each_byte_is_read_once() {
     let file: Vec<u8> = (0..10_000u32).map(|i| i as u8).collect();
@@ -239,8 +278,9 @@ fn each_byte_is_read_once() {
 /// Every RAW in `RAWMAKASE_PARTIAL_FIXTURES` (searched recursively), of any
 /// format, read in pieces and whole for a 640-pixel thumbnail: prints for each
 /// variant how many gave the same preview and orientation, how many another
-/// and how many only read whole. Fails if a format [`checked`] accepts gives
-/// another; a format may be added there once none of its files does.
+/// and how many only read whole; and the largest preview, as Develop's
+/// placeholder reads it. Fails if a format [`checked`] accepts gives another;
+/// a format may be added there once none of its files does.
 #[test]
 #[ignore = "Set RAWMAKASE_PARTIAL_FIXTURES to a folder of RAWs"]
 fn real_files_give_the_same_preview_read_in_pieces() {
@@ -250,6 +290,7 @@ fn real_files_give_the_same_preview_read_in_pieces() {
     // Per variant: the same, another, read whole.
     let mut tally: BTreeMap<String, [u32; 3]> = BTreeMap::new();
     let mut differ = Vec::new();
+    let mut largest_same = 0;
     let (mut total, mut read) = (0u64, 0u64);
     while let Some(path) = todo.pop() {
         if path.is_dir() {
@@ -286,7 +327,21 @@ fn real_files_give_the_same_preview_read_in_pieces() {
             }
             None => counts[2] += 1,
         }
+        // The largest, as Develop's placeholder reads it, any format.
+        if let Ok(whole) = crate::preview(&info, &file) {
+            match largest_in_pieces(&mut Cursor::new(&file), |_| true) {
+                Some(p) if p.preview == whole.as_ref() => largest_same += 1,
+                Some(p) => {
+                    eprintln!("another largest: {} ({:?})", path.display(), info.variant);
+                    if checked(info.variant) || checked(p.info.variant) {
+                        differ.push(path.display().to_string());
+                    }
+                }
+                None => {}
+            }
+        }
     }
+    eprintln!("largest previews the same: {largest_same}");
     for (variant, [same, other, whole]) in &tally {
         eprintln!("{variant}: same {same}, another {other}, read whole {whole}");
     }
