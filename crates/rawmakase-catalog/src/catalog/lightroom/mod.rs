@@ -1,10 +1,18 @@
 //! Read-only Lightroom catalog import. Its Develop settings are converted by
 //! `lr_develop`.
+mod downloads;
 pub(super) mod history;
+mod library;
+mod library_db;
+#[cfg(test)]
+mod library_tests;
 use super::Catalog;
 use crate::catalog::db::{LightroomWrite, Reads, sql, sqlite_sql};
 use anyhow::{Context, Result, ensure};
+pub use downloads::{CloudPhoto, LibraryAlbum, Settled, mark_albums_for_download};
 pub use history::HistoryStep;
+pub use library::{LibraryImport, import_lightroom_library};
+pub use library_db::Marked;
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use std::path::{Path, PathBuf};
 
@@ -186,14 +194,22 @@ fn has_table(db: &Connection, name: &str) -> Result<bool> {
         .is_some())
 }
 
-/// Checks the snapshot is an intact Lightroom catalog with the tables an
-/// import needs.
-fn verify_snapshot(snapshot: &Path) -> Result<()> {
+/// Fails with `message` unless the SQLite file at `snapshot` passes SQLite's
+/// quick integrity check.
+fn check_intact(snapshot: &Path, message: &str) -> Result<()> {
     let db = Connection::open_with_flags(snapshot, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     ensure!(
         db.query_row("PRAGMA quick_check", [], |r| r.get::<_, String>(0))? == "ok",
-        "Source catalog failed SQLite integrity check"
+        "{message}"
     );
+    Ok(())
+}
+
+/// Checks the snapshot is an intact Lightroom catalog with the tables an
+/// import needs.
+fn verify_snapshot(snapshot: &Path) -> Result<()> {
+    check_intact(snapshot, "Source catalog failed SQLite integrity check")?;
+    let db = Connection::open_with_flags(snapshot, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     for table in [
         "Adobe_images",
         "AgLibraryFile",

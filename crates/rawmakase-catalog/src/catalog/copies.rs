@@ -116,6 +116,15 @@ impl Catalog {
                 sql!("UPDATE photo_import_facts SET photo=? WHERE photo=?"),
                 &[&id, &master],
             )?;
+            // And what Lightroom knows of its file.
+            w.execute(
+                sql!("DELETE FROM lightroom_library_photos WHERE photo=?"),
+                &[&id],
+            )?;
+            w.execute(
+                sql!("UPDATE lightroom_library_photos SET photo=? WHERE photo=?"),
+                &[&id, &master],
+            )?;
             // And what its camera numbered it.
             w.execute(
                 sql!("DELETE FROM photo_sequences WHERE photo=?"),
@@ -169,6 +178,7 @@ pub(super) fn delete_photo(w: &mut Write<'_>, id: PhotoId) -> Result<()> {
         sql!("DELETE FROM photo_import_facts WHERE photo=?"),
         sql!("DELETE FROM photo_imports WHERE photo=?"),
         sql!("DELETE FROM stack_photos WHERE photo=?"),
+        sql!("DELETE FROM lightroom_library_photos WHERE photo=?"),
     ]
     .into_iter()
     .chain(super::descriptive::DELETE_ROWS)

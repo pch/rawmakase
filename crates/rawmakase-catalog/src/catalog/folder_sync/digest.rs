@@ -15,7 +15,12 @@ use std::collections::HashMap;
 /// photo's rows and every row keyed by its photo, written out whole so the
 /// portable-SQL check reads them.
 /// `family_tables_cover_the_schema` checks it against `schema.sql`.
-pub(super) const PHOTO_TABLES: [(&str, Sql, Sql); 17] = [
+pub(super) const PHOTO_TABLES: [(&str, Sql, Sql); 18] = [
+    (
+        "lightroom_library_photos",
+        sql!("SELECT * FROM lightroom_library_photos WHERE photo=?"),
+        sql!("SELECT photo, * FROM lightroom_library_photos"),
+    ),
     (
         "photo_keywords",
         sql!("SELECT * FROM photo_keywords WHERE photo=?"),

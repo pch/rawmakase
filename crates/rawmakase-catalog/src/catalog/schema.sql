@@ -382,3 +382,21 @@ CREATE TABLE IF NOT EXISTS stack_photos (
     position INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS stack_photos_stack ON stack_photos(stack);
+
+-- Photos imported from a Lightroom (cloud) library: the asset each is in
+-- Lightroom and its original's size there. `cloud` is 1 for a photo whose
+-- original was in Adobe's cloud, added where Lightroom keeps it once it is
+-- downloaded, until its file is there and has that size; `preview` is
+-- Lightroom's JPEG of it, with its edit, to show until then; `edit` is where
+-- its edit's Camera Raw XMP will be when the library didn't have it yet,
+-- read once it is (Lightroom downloads it with the original) (see
+-- `lightroom::library`). Rows go with their photo.
+CREATE TABLE IF NOT EXISTS lightroom_library_photos (
+    photo INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+    asset TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    cloud INTEGER NOT NULL DEFAULT 0,
+    preview TEXT,
+    edit TEXT
+);
+CREATE INDEX IF NOT EXISTS lightroom_library_photos_asset ON lightroom_library_photos(asset);

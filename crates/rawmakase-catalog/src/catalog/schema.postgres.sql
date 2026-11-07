@@ -292,3 +292,13 @@ CREATE TABLE IF NOT EXISTS stack_photos (
     position BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS stack_photos_stack ON stack_photos(stack);
+
+CREATE TABLE IF NOT EXISTS lightroom_library_photos (
+    photo BIGINT PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+    asset TEXT NOT NULL,
+    size BIGINT NOT NULL,
+    cloud BIGINT NOT NULL DEFAULT 0,
+    preview TEXT,
+    edit TEXT
+);
+CREATE INDEX IF NOT EXISTS lightroom_library_photos_asset ON lightroom_library_photos(asset);
