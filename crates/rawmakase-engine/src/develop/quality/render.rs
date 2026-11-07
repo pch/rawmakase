@@ -146,12 +146,14 @@ pub(crate) fn render_level(
     stages: &mut Stages,
 ) -> Result<Output> {
     check_cancel(cancel)?;
-    let level_scale =
-        level.width.max(level.height) as f32 / full.image.width.max(full.image.height) as f32;
+    // The level's pixels per pixel of the photo, which a reduced decode is smaller than.
+    let level_scale = level.width.max(level.height) as f32
+        / full.image.width.max(full.image.height) as f32
+        * full.image.photo_scale();
     let mut g = Geometry::new(level, r, 0);
     let footprint = g.width.max(g.height) as f32 / size.0.max(size.1) as f32;
     (g.width, g.height) = size;
-    // Output pixels per full-resolution pixel.
+    // Output pixels per pixel of the photo.
     let scale = level_scale / footprint;
     let sigma = Sharpener::new(r).sigma * scale;
     let [x, y, w, h] = region;
@@ -332,6 +334,9 @@ pub(crate) fn render_preview(
     let source = resolved.source(im, ai, cancel, stages.as_mut().map(|s| &mut *s.retouch))?;
     let r = resolved.recipe.as_ref();
     let g = resolved.geometry;
+    // Output pixels per pixel of the photo: below 1 for a reduced decode.
+    let scale = im.photo_scale();
+    let sigma = Sharpener::new(r).sigma * scale;
     let [x, y, w, h] = region.unwrap_or([0, 0, g.width, g.height]);
     ensure!(
         w > 0
@@ -341,7 +346,7 @@ pub(crate) fn render_preview(
         "Invalid viewport region"
     );
     let halo = if r.sharpening > 0. {
-        (3. * Sharpener::new(r).sigma).ceil() as u32
+        (3. * sigma).ceil() as u32
     } else {
         0
     };
@@ -358,17 +363,17 @@ pub(crate) fn render_preview(
         region.is_some() || output_size(g.width, g.height, max_edge) == (g.width, g.height);
     if unresized && let Some(stages) = stages.as_mut() {
         let finish = develop::gpu::Finish {
-            sigma: Sharpener::new(r).sigma,
+            sigma,
             origin: [left, top],
             full: [g.width, g.height],
-            scale: 1.,
+            scale,
             crop: [x - left, y - top, w, h],
         };
         let frame = render_resident(
             &source.image,
             &source,
             r,
-            1.,
+            scale,
             &g,
             base,
             0.,
@@ -384,16 +389,16 @@ pub(crate) fn render_preview(
         &source.image,
         &source,
         r,
-        1.,
+        scale,
         cancel,
         stages.as_mut().map(|s| &mut *s.cache),
     )?;
     if unresized && let Some(stages) = stages.as_mut() {
         let finish = develop::gpu::Finish {
-            sigma: Sharpener::new(r).sigma,
+            sigma,
             origin: [left, top],
             full: [g.width, g.height],
-            scale: 1.,
+            scale,
             crop: [x - left, y - top, w, h],
         };
         let frame = develop::pipeline::render_display(
@@ -430,7 +435,7 @@ pub(crate) fn render_preview(
     if !spatial
         && let Some(finished) = stages
             .as_mut()
-            .and_then(|s| s.backend.finish(&out, r, edge, cancel))
+            .and_then(|s| s.backend.finish(&out, r, sigma, edge, cancel))
     {
         if region.is_none() {
             return Ok(Output::Pixels(finished));
@@ -440,7 +445,6 @@ pub(crate) fn render_preview(
     }
     ensure!(!cancel.is_cancelled(), "Render superseded");
     if !gpu_sharpened {
-        let sigma = Sharpener::new(r).sigma;
         sharpen_with_radius(&mut out, r, sigma, weights.as_deref(), space, cancel)?;
         local_noise(&mut out, weights.as_deref(), space);
     }
@@ -449,7 +453,7 @@ pub(crate) fn render_preview(
         r,
         [left, top],
         [g.width, g.height],
-        1.,
+        scale,
         space,
     );
     ensure!(!cancel.is_cancelled(), "Render superseded");
@@ -461,9 +465,10 @@ pub(crate) fn render_preview(
         if spatial {
             let mut finished_recipe = r.clone();
             finished_recipe.sharpening = 0.;
-            let finished = stages
-                .as_mut()
-                .and_then(|s| s.backend.finish(&out, &finished_recipe, max_edge, cancel));
+            let finished = stages.as_mut().and_then(|s| {
+                s.backend
+                    .finish(&out, &finished_recipe, sigma, max_edge, cancel)
+            });
             if let Some(finished) = finished {
                 return Ok(Output::Pixels(finished));
             }

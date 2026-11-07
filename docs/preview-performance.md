@@ -37,8 +37,13 @@ reduced to twice the output size (four times the pixels) and resized it afterwar
 
 Radius-based effects are scaled to the output: sharpening uses the full-resolution
 radius times the output scale (a three-tap kernel of the same variance below half a
-pixel), Clarity and Texture radii follow the level size, and grain keeps its
-full-resolution pattern with the amplitude a resized export would have. Fit is
+pixel), Texture radii follow the level size, Clarity's are fractions of the
+Shadows/Highlights map whatever the level, and grain keeps its full-resolution
+pattern with the amplitude a resized export would have. "Full-resolution" is the
+photo's: a reduced decode (the half-size draft, which keeps the photo's metadata;
+`CameraImage::photo_scale`) sharpens and grains as its photo resized, in Fit,
+whole renders and exports alike, where it used to be sharpened as if it were the
+photo, at about twice the radius. Fit is
 therefore an approximation of the export resized, not identical to it; a unit test
 bounds the mean difference on a textured image with sharpening, local and spatial
 effects, and the benchmark checks each photo. 100% regions and exports are

@@ -366,16 +366,19 @@ impl Processor {
         &self.name
     }
 
-    /// Sharpen, then resize. Does not mutate the CPU input on success or failure.
+    /// Sharpen with a blur of `sigma` (the recipe's, scaled to the image's pixels),
+    /// then resize. Does not mutate the CPU input on success or failure.
     pub fn finish(
         &mut self,
         image: &Rendered,
         recipe: &Recipe,
+        sigma: f32,
         max_edge: u32,
         cancel: Cancel<'_>,
     ) -> Result<Rendered> {
         ensure!(!cancel.is_cancelled(), "Render superseded");
         recipe.validate()?;
+        ensure!(sigma.is_finite() && sigma > 0., "Invalid sharpening radius");
         ensure!(
             image.width > 0
                 && image.height > 0
@@ -416,6 +419,7 @@ impl Processor {
         let result = self.finish_inner(
             image,
             recipe,
+            sigma,
             dimensions,
             [source_bytes, scratch_bytes, output_bytes],
             cancel,
@@ -433,6 +437,7 @@ impl Processor {
         &mut self,
         image: &Rendered,
         recipe: &Recipe,
+        sigma: f32,
         dimensions: [u32; 4],
         sizes: [u64; 3],
         cancel: Cancel<'_>,
@@ -477,9 +482,9 @@ impl Processor {
         }
         let b = self.buffers.as_ref().unwrap();
         let sharpener = crate::develop::sharpening::Sharpener::new(recipe);
-        let radius = (sharpener.sigma * 3.).ceil() as u32;
+        let radius = (sigma * 3.).ceil() as u32;
         let mut weights: Vec<f32> = (-(radius as i32)..=radius as i32)
-            .map(|x| (-0.5 * (x as f32 / sharpener.sigma).powi(2)).exp())
+            .map(|x| (-0.5 * (x as f32 / sigma).powi(2)).exp())
             .collect();
         let sum: f32 = weights.iter().sum();
         for v in &mut weights {

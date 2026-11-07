@@ -322,7 +322,13 @@ fn gpu_matches_cpu_finishing_and_reuses_buffers() -> Result<()> {
                         .unwrap();
                     let expected = crate::develop::quality::resize(expected, max_edge);
                     for _ in 0..2 {
-                        let actual = gpu.finish(&image, &recipe, max_edge, Cancel::new(&cancel))?;
+                        let actual = gpu.finish(
+                            &image,
+                            &recipe,
+                            crate::develop::sharpening::Sharpener::new(&recipe).sigma,
+                            max_edge,
+                            Cancel::new(&cancel),
+                        )?;
                         assert_eq!(
                             (actual.width, actual.height),
                             (expected.width, expected.height)
@@ -350,7 +356,7 @@ fn gpu_matches_cpu_finishing_and_reuses_buffers() -> Result<()> {
         pixels: vec![[0.5; 3]],
     };
     assert!(
-        gpu.finish(&image, &Recipe::default(), 1, Cancel::new(&cancel))
+        gpu.finish(&image, &Recipe::default(), 1., 1, Cancel::new(&cancel))
             .is_err()
     );
     Ok(())
@@ -443,7 +449,7 @@ fn gpu_preview_preserves_regions_spatial_effects_and_falls_back() -> Result<()> 
     };
     assert!(
         renderer
-            .finish(&invalid, &Recipe::default(), 0, Cancel::new(&cancel))
+            .finish(&invalid, &Recipe::default(), 1., 0, Cancel::new(&cancel))
             .is_none()
     );
     assert!(renderer.adapter_name().is_none());
