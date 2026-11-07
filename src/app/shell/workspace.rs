@@ -158,6 +158,18 @@ impl Editor {
             crate::app::library::Pace::Background
         }
     }
+    /// How fast editable previews are built: at full pace only with the Library
+    /// in front and nothing else rendering, as [`Self::preview_pace`] decides
+    /// but without counting the builds themselves, which edited previews make
+    /// way for.
+    pub(in crate::app) fn editable_build_pace(&self) -> crate::app::library::Pace {
+        let other = self.other_work_slows_previews(crate::app::work::Kind::EditableBuilds);
+        if self.module == Module::Library && !other {
+            crate::app::library::Pace::Full
+        } else {
+            crate::app::library::Pace::Background
+        }
+    }
     /// What goes on without the interface, including while the window is not
     /// drawn: control requests, worker results (a photo loading, an export
     /// finishing) and saving what they changed. Each only takes what is new,
@@ -203,6 +215,8 @@ impl Editor {
             }
         }
         self.poll_preview_builds();
+        let pace = self.editable_build_pace();
+        self.editable_builds.set_pace(pace);
         self.poll_editable_builds();
         // Entering a module draws its chrome: the whole-window mode belongs to
         // the module it was turned on in.

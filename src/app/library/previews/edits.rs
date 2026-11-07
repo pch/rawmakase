@@ -231,8 +231,9 @@ impl Sent {
             .collect()
     }
 }
-/// Threads the full pace renders on: every core but one.
-fn full_threads() -> usize {
+/// Threads the full pace renders on: every core but one. Editable preview
+/// builds take the same at their full pace.
+pub(in crate::app::library) fn full_threads() -> usize {
     std::thread::available_parallelism().map_or(2, |n| n.get().saturating_sub(1).max(2))
 }
 /// The most renders side by side at full pace. Each holds its file, its sensor

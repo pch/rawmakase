@@ -18,12 +18,16 @@ pub(super) fn encode(width: u32, height: u32, codes: &[[u16; 3]]) -> Result<Vec<
         .flatten()
         .flat_map(|c| c.to_ne_bytes())
         .collect();
+    // As many threads as the pool it runs in (the app's build pace), rather than
+    // zune's own four whatever that pace.
+    let threads = u8::try_from(rayon::current_num_threads()).unwrap_or(u8::MAX);
     let options = EncoderOptions::new(
         width as usize,
         height as usize,
         ColorSpace::RGB,
         BitDepth::Sixteen,
-    );
+    )
+    .set_num_threads(threads.max(1));
     let mut out = Vec::new();
     zune_jpegxl::JxlSimpleEncoder::new(&bytes, options)
         .encode(&mut out)

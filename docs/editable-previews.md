@@ -247,6 +247,28 @@ photo deleted, replaced or rebuilt meanwhile is dropped. Cancel, failure and
 panic clear the busy state. Preferences › Catalog shows the space they take.
 Automation and MCP get `build_editable_previews`.
 
+Builds take the computer as the Library's edited previews do
+(`Editor::editable_build_pace`): with the Library in front and nothing else
+rendering, each photo is built on every core but one, and the JPEG XL encoder
+takes as many threads as the pool it runs in; otherwise on two background
+threads. Unlike edited previews, the builds don't count themselves as work that
+slows them. A photo under way at full pace when the pace drops (Develop opened,
+an export started) is cancelled and built again on the two threads, counted once;
+one discarded, or builds cancelled, meanwhile is not. Photos are built one at a
+time.
+
+Measured 2026-11-07 (`editable_preview::pace`, release build, ten CC0 RAWs from
+raw.pixls.us, 20–61 MP, seven makes including X-Trans; a 4-core Xeon VM with
+16 GB, Linux): a photo takes about 13 thread-seconds, about half decoding and half
+building (CA, highlight recovery, reduction), with opening and writing under
+0.5 s, and both threads stay busy, so a build is CPU-bound. One at a time on two
+threads took 66.8 s for the ten (6.7 s a photo); on three threads 54.5 s (1.23×).
+Two or three side by side on the same three threads took 55.3 and 53.8 s, so
+they gained nothing there. One build peaks at 0.7–1.8 GB resident (the 61 MP
+ILCE-7RM4 the most), two at once at 2.8 GB and three at 3.0 GB. The X-Trans
+decode is the one step that hardly uses more threads (4.9 s on two, 4.6 on
+three); builds side by side would help it most, on a computer with spare cores.
+
 ### Stage 5: edit offline (app, catalog, interop)
 
 - `DevelopSource` names the original or its editable preview; `develop_refusal`

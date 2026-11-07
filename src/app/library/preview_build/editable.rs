@@ -22,13 +22,23 @@
 //! build of a photo discarded after it was queued records nothing, or, when its
 //! record raced the discard, discards it again (see [`State::discarded_since`]).
 //!
+//! Each photo is built on one of two pools, by the pace when it starts
+//! ([`Editor::editable_build_pace`]): two background threads, or, with the
+//! Library in front and nothing else rendering, every core but one, as the
+//! Library's edited previews take ([`Pace`]). A photo under way at full pace when
+//! the pace drops is stopped and waits at the front to be built again on the two
+//! threads, unless it was discarded or the builds were cancelled meanwhile; it is
+//! counted done once. One photo is built at a time at either pace: on the
+//! measured RAWs a build is CPU-bound throughout, so more threads speed it up and
+//! builds side by side did not (docs/editable-previews.md, Stage 4).
+//!
 //! The build never makes the editor busy. It stops between photos and inside the
 //! decode and the build when cancelled, and is joined at exit within the shutdown
 //! deadline (docs/shutdown.md). Quitting cancels it: nothing is lost, as the
 //! original it was built from is still there to build from again.
 use super::{Progress as PreviewProgress, Queued};
 use crate::app::Editor;
-use crate::app::library::Library;
+use crate::app::library::{Library, Pace};
 use crate::app::ui::widgets::plural;
 use crate::camera_data::{CameraImage, Demosaic, Metadata};
 use crate::camera_look::DefaultFit;
@@ -170,6 +180,13 @@ impl Progress {
 struct State {
     waiting: VecDeque<Item>,
     running: Option<PhotoId>,
+    /// The pace the next photo starts at.
+    pace: Pace,
+    /// The running photo started at full pace.
+    running_full: bool,
+    /// The running photo was stopped because the pace dropped: if it ends
+    /// cancelled, it waits at the front to be built again at the background pace.
+    gave_way: bool,
     /// The flag the running build stops on; replaced when it is set.
     cancel: Arc<AtomicBool>,
     closed: bool,
@@ -242,8 +259,9 @@ impl Shared {
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
-    /// The next photo to build; `None` once closed.
-    fn next(&self) -> Option<(Item, Arc<AtomicBool>)> {
+    /// The next photo to build, its cancel flag and whether it starts at full
+    /// pace; `None` once closed.
+    fn next(&self) -> Option<(Item, Arc<AtomicBool>, bool)> {
         let mut state = self.lock();
         loop {
             if state.closed {
@@ -251,14 +269,44 @@ impl Shared {
             }
             if let Some(item) = state.waiting.pop_front() {
                 state.running = Some(item.photo);
-                return Some((item, state.cancel.clone()));
+                state.running_full = state.pace == Pace::Full;
+                state.gave_way = false;
+                return Some((item, state.cancel.clone(), state.running_full));
             }
             state = self.wake.wait(state).unwrap_or_else(|e| e.into_inner());
         }
     }
-    fn finish(&self, finished: &Finished) {
+    /// The pace photos start at from now on. A photo under way at full pace when
+    /// it drops to the background is stopped, to be built again at the
+    /// background pace, as the Library's edited previews give way.
+    fn set_pace(&self, pace: Pace) {
+        let mut state = self.lock();
+        if state.pace == pace {
+            return;
+        }
+        state.pace = pace;
+        if pace == Pace::Background && state.running.is_some() && state.running_full {
+            state.gave_way = true;
+            state.cancel.store(true, Ordering::Relaxed);
+            state.cancel = Arc::default();
+        }
+    }
+    /// Counts `finished` done, unless it gave way to a lower pace and ended
+    /// without recording anything: then it waits at the front again, and `false`
+    /// is returned. A photo discarded meanwhile, or a queue cancelled or closed,
+    /// is done as usual.
+    fn finish(&self, finished: &Finished) -> bool {
         let mut state = self.lock();
         state.running = None;
+        let gave_way = std::mem::take(&mut state.gave_way);
+        if gave_way
+            && finished.outcome == Outcome::Cancelled
+            && !state.closed
+            && !state.discarded_since(finished.item.photo, finished.item.discards)
+        {
+            state.waiting.push_front(finished.item.clone());
+            return false;
+        }
         state.progress.done += 1;
         let name = || finished.item.name.clone();
         match &finished.outcome {
@@ -268,6 +316,7 @@ impl Shared {
             } => state.progress.without_look.push((name(), why.clone())),
             _ => {}
         }
+        true
     }
     fn close(&self) {
         let mut state = self.lock();
@@ -287,18 +336,27 @@ struct Builder {
 }
 
 impl Builder {
-    /// Starts the worker; `changed` is called after each photo.
-    fn start(steps: Steps, changed: impl Fn() + Send + 'static) -> Self {
+    /// Starts the worker at `pace`; `changed` is called after each photo.
+    fn start(steps: Steps, pace: Pace, changed: impl Fn() + Send + 'static) -> Self {
         let shared = Arc::new(Shared {
-            state: Mutex::new(State::default()),
+            state: Mutex::new(State {
+                pace,
+                ..State::default()
+            }),
             wake: Condvar::new(),
         });
         let (tx, results) = mpsc::channel();
         let worker = shared.clone();
         let thread = crate::raw::spawn_background(move || {
-            let pool = crate::raw::background_pool(2, "editable-previews").ok();
+            let background = crate::raw::background_pool(2, "editable-previews").ok();
+            let full = crate::raw::background_pool(
+                crate::app::library::previews::full_threads(),
+                "editable-previews-full",
+            )
+            .ok();
             let mut catalog: Option<Catalog> = None;
-            while let Some((item, cancel)) = worker.next() {
+            while let Some((item, cancel, at_full)) = worker.next() {
+                let pool = if at_full { &full } else { &background };
                 let discarded = || {
                     let state = worker.lock();
                     state.discarded_since(item.photo, item.discards)
@@ -311,7 +369,7 @@ impl Builder {
                     Err(e) => Outcome::Failed(format!("the catalog can't be opened: {e:#}")),
                 };
                 let caught =
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match &pool {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match pool {
                         Some(pool) => pool.install(build),
                         None => build(),
                     }));
@@ -322,7 +380,10 @@ impl Builder {
                     Outcome::Failed(format!("stopped unexpectedly: {message}"))
                 });
                 let finished = Finished { item, outcome };
-                worker.finish(&finished);
+                // A photo that gave way is built again, and reports then.
+                if !worker.finish(&finished) {
+                    continue;
+                }
                 if tx.send(finished).is_err() {
                     break;
                 }
@@ -348,6 +409,7 @@ impl Builder {
         let mut state = self.shared.lock();
         let dropped = state.waiting.len();
         state.waiting.clear();
+        state.gave_way = false;
         state.progress.total -= dropped;
         state.cancel.store(true, Ordering::Relaxed);
         state.cancel = Arc::default();
@@ -567,6 +629,9 @@ pub(in crate::app) struct EditableBuilds {
     /// The catalog the queued builds are for; another one cancels them.
     catalog: Option<CatalogLocation>,
     steps: Steps,
+    /// How much of the computer builds take, set every frame
+    /// ([`Editor::editable_build_pace`]).
+    pace: Pace,
     /// Preferences › Catalog's choice for the builds asked for from now on;
     /// each request captures it in its items ([`Item::precision`]).
     pub(in crate::app) precision: editable_preview::Precision,
@@ -585,6 +650,7 @@ impl EditableBuilds {
             builder: None,
             catalog: None,
             steps: Steps::REAL,
+            pace: Pace::Background,
             precision,
         }
     }
@@ -597,9 +663,18 @@ impl EditableBuilds {
         }
     }
     fn builder(&mut self, ctx: &eframe::egui::Context) -> &Builder {
-        let (steps, ctx) = (self.steps, ctx.clone());
+        let (steps, pace, ctx) = (self.steps, self.pace, ctx.clone());
         self.builder
-            .get_or_insert_with(|| Builder::start(steps, move || ctx.request_repaint()))
+            .get_or_insert_with(|| Builder::start(steps, pace, move || ctx.request_repaint()))
+    }
+    /// The pace builds take from now on: [`Pace::Full`] runs each photo on
+    /// every core but one, and a photo under way at it gives way when the pace
+    /// drops.
+    pub(in crate::app) fn set_pace(&mut self, pace: Pace) {
+        self.pace = pace;
+        if let Some(builder) = &self.builder {
+            builder.shared.set_pace(pace);
+        }
     }
     pub(in crate::app) fn progress(&self) -> Option<Progress> {
         self.builder

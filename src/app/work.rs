@@ -4,7 +4,8 @@
 //! reader, and its step of the exit sequence. Each reads the state that owns
 //! the work (a `Task`, `Activity`, a queue, a service); none keeps a busy flag of
 //! its own. The views of what is running (`Editor::closing_waits_for`,
-//! `running_work`, `preview_pace`, the checksum pause and `stop_workers`) are
+//! `running_work`, `preview_pace`, `editable_build_pace`, the checksum pause and
+//! `stop_workers`) are
 //! read from it, in its order: closing names the first that blocks it, the
 //! status line lists them in order, and the exit sequence stops them in order.
 //!
@@ -64,8 +65,8 @@ pub(in crate::app) const FILE_CHANGE: &str = "the file operation";
 
 /// One kind of work and its policy.
 struct Row {
-    /// Which kind of work this is, for the stop-order test.
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by the stop-order test"))]
+    /// Which kind of work this is: for the stop-order test, and so a kind's own
+    /// row can be left out of what slows previews.
     kind: Kind,
     /// Whether it is under way, read from the state that owns it; for the rows
     /// closing, preview pace or the checksum pause read.
@@ -435,6 +436,12 @@ impl Editor {
     pub(in crate::app) fn work_slows_previews(&self) -> bool {
         WORK.iter()
             .any(|row| row.slows_previews && running(self, row))
+    }
+    /// Whether such work runs besides `kind`'s own, which the editable preview
+    /// builds' full pace makes way for.
+    pub(in crate::app) fn other_work_slows_previews(&self, kind: Kind) -> bool {
+        WORK.iter()
+            .any(|row| row.kind != kind && row.slows_previews && running(self, row))
     }
     /// Whether heavier file reading runs, which the checksum reader pauses for.
     pub(in crate::app) fn work_pauses_checksums(&self) -> bool {

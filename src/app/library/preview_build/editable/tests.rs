@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 
 /// Every original the test steps opened, by file.
 static OPENED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+/// The thread each opening ran on, by file: which pool, so which pace.
+static OPENED_ON: Mutex<Vec<(PathBuf, String)>> = Mutex::new(Vec::new());
 /// "slow" builds that have started, and those let go.
 static STARTED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 static RELEASED: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
@@ -41,6 +43,8 @@ fn metadata(width: u32, height: u32, bare: bool) -> Metadata {
 /// data; anything else is a small full-size decode of a camera with a matrix.
 fn test_open(item: &Item, _: &Identity, cancel: Cancel<'_>) -> anyhow::Result<Original> {
     OPENED.lock().unwrap().push(item.path.clone());
+    let thread = std::thread::current().name().unwrap_or_default().to_owned();
+    OPENED_ON.lock().unwrap().push((item.path.clone(), thread));
     let name = item.path.file_name().unwrap().to_string_lossy().to_string();
     if name.starts_with("panic") {
         panic!("test panic");
@@ -117,6 +121,27 @@ fn release(path: &Path) {
 }
 fn opens_of(path: &Path) -> usize {
     OPENED.lock().unwrap().iter().filter(|p| *p == path).count()
+}
+/// Whether each opening of `path` so far ran on the full pace's pool.
+fn opened_at_full(path: &Path) -> Vec<bool> {
+    OPENED_ON
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(p, _)| p == path)
+        .map(|(_, thread)| thread.starts_with("editable-previews-full"))
+        .collect()
+}
+fn wait_opens(path: &Path, n: usize) {
+    let until = Instant::now() + Duration::from_secs(10);
+    while opens_of(path) < n {
+        assert!(
+            Instant::now() < until,
+            "opened {} times, not {n}",
+            opens_of(path)
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
 }
 fn wait_started(path: &Path) {
     let until = Instant::now() + Duration::from_secs(10);
@@ -941,4 +966,95 @@ fn a_build_uses_the_precision_chosen_when_it_was_asked_for() {
     e.build_editable_previews(&[b]).unwrap();
     settle(&mut e);
     assert_eq!(codec(&e, b), Codec::LosslessJxl16);
+}
+
+/// Builds go to every core but one with the Library in front and nothing else
+/// rendering. Unlike edited previews, they don't count themselves as such work.
+#[test]
+fn builds_take_the_computer_only_with_the_library_in_front_and_nothing_else_rendering() {
+    use crate::app::testing::{FocusedButton, panel_frame};
+    let (_dir, mut e, ids) = editor(&["slow-rule.ARW"]);
+    e.module = crate::app::Module::Library;
+    panel_frame(&mut e, Vec::new(), FocusedButton::No);
+    assert_eq!(e.editable_builds.pace, Pace::Full);
+    e.build_editable_previews(&ids).unwrap();
+    wait_started(&path_of(&e, ids[0]));
+    // Running, they send edited previews to the background but stay at full pace.
+    assert_eq!(e.preview_pace(), Pace::Background);
+    assert_eq!(e.editable_build_pace(), Pace::Full);
+    e.module = crate::app::Module::Develop;
+    assert_eq!(e.editable_build_pace(), Pace::Background);
+    e.module = crate::app::Module::Library;
+    e.automation.hold_running_output();
+    assert_eq!(e.editable_build_pace(), Pace::Background);
+    panel_frame(&mut e, Vec::new(), FocusedButton::No);
+    assert_eq!(e.editable_builds.pace, Pace::Background);
+    e.automation.cancel_outputs();
+    assert_eq!(e.editable_build_pace(), Pace::Full);
+    e.editable_builds.cancel();
+    settle(&mut e);
+}
+
+/// A photo under way at full pace when the pace drops stops and is built again
+/// on the background pool, counted once, failing nothing.
+#[test]
+fn a_photo_at_full_pace_gives_way_and_is_built_again_in_the_background() {
+    let (_dir, mut e, ids) = editor(&["slow-way.ARW", "z-next.ARW"]);
+    let (slow, next) = (
+        id_named(&e, &ids, "slow-way.ARW"),
+        id_named(&e, &ids, "z-next.ARW"),
+    );
+    let path = path_of(&e, slow);
+    e.editable_builds.set_pace(Pace::Full);
+    e.build_editable_previews(&[slow, next]).unwrap();
+    wait_started(&path);
+    assert_eq!(opened_at_full(&path), [true]);
+    e.editable_builds.set_pace(Pace::Background);
+    wait_opens(&path, 2);
+    assert_eq!(opened_at_full(&path), [true, false]);
+    assert!(e.editable_builds.running());
+    assert_eq!(
+        progress(&e).done,
+        0,
+        "the photo that gave way isn't counted done"
+    );
+    release(&path);
+    settle(&mut e);
+    assert!(recorded(&e, slow).is_some() && recorded(&e, next).is_some());
+    assert_eq!(files(&e).len(), 2);
+    assert_eq!(opened_at_full(&path_of(&e, next)), [false]);
+    let p = progress(&e);
+    assert_eq!((p.done, p.total), (2, 2));
+    assert!(p.failed.is_empty());
+}
+
+/// Giving way never brings back a photo the queue was told to drop: one
+/// discarded, or builds cancelled, while it was under way.
+#[test]
+fn a_photo_that_gave_way_after_a_discard_or_a_cancel_is_not_built_again() {
+    let (_dir, mut e, ids) = editor(&["slow-gone.ARW"]);
+    let path = path_of(&e, ids[0]);
+    e.editable_builds.set_pace(Pace::Full);
+    e.build_editable_previews(&ids).unwrap();
+    wait_started(&path);
+    e.discard_editable_previews(Some(&ids)).unwrap();
+    e.editable_builds.set_pace(Pace::Background);
+    settle(&mut e);
+    assert_eq!(opens_of(&path), 1);
+    assert!(recorded(&e, ids[0]).is_none() && files(&e).is_empty());
+
+    let (_dir, mut e, ids) = editor(&["slow-stop.ARW"]);
+    let path = path_of(&e, ids[0]);
+    e.editable_builds.set_pace(Pace::Full);
+    e.build_editable_previews(&ids).unwrap();
+    wait_started(&path);
+    e.editable_builds.set_pace(Pace::Background);
+    e.editable_builds.cancel();
+    settle(&mut e);
+    assert!(!e.editable_builds.running());
+    // At most the one restart that may begin before the cancel arrives, which
+    // the cancel then stops.
+    assert!(opens_of(&path) <= 2);
+    assert!(recorded(&e, ids[0]).is_none() && files(&e).is_empty());
+    assert!(progress(&e).failed.is_empty());
 }

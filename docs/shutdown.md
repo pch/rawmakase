@@ -48,7 +48,10 @@ The Library's edited previews use a wider pool while the Library is in front
 with nothing else rendering (up to four renders on every core but one, one per
 4 GB of memory; see
 `previews::Pace`), and drop back to one render on two threads, cancelling the
-wider renders under way, when it is not. Its thumbnail workers (two to four, by
+wider renders under way, when it is not. Build Editable Previews follows the same
+rule without counting itself (`Editor::editable_build_pace`): one photo at a time
+on every core but one, or on two threads, and a photo under way at the wider pace
+when it drops is cancelled and built again on the two. Its thumbnail workers (two to four, by
 core count) run at normal priority, as the one worker before them did, so the
 grid fills first.
 That pool belongs to the worker: dropping it, when the worker's work returns, lets
