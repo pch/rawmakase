@@ -531,3 +531,50 @@ fn a_cr3s_own_xmp_the_apps_reader_finds_is_read_below_its_sidecar() -> Result<()
     assert_eq!(read_file(&folder.join("A.CR3"), |_| None).0, None);
     Ok(())
 }
+
+/// A folder's listing finds the sidecars asking the file system name by name
+/// finds: exact names from the listing, another case, a folder or a link
+/// from the file system, and nothing where no name matches.
+#[test]
+fn a_listing_finds_the_sidecars_the_file_system_finds() {
+    use super::{Listing, sidecars, sidecars_listed};
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    for name in [
+        "a.NEF",
+        "a.NEF.xmp",
+        "b.NEF",
+        "b.XMP",
+        "c.jpg",
+        "c.jpg.Xmp",
+        "d.NEF",
+        "e.jpg",
+        "f.NEF",
+    ] {
+        std::fs::write(d.join(name), b"x").unwrap();
+    }
+    // A folder where a sidecar would be: not a sidecar.
+    std::fs::create_dir(d.join("e.jpg.xmp")).unwrap();
+    // A link to a sidecar: one, as `is_file` follows it.
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(d.join("a.NEF.xmp"), d.join("f.NEF.xmp")).unwrap();
+    let listing = Listing::read(d).unwrap();
+    for photo in ["a.NEF", "b.NEF", "c.jpg", "d.NEF", "e.jpg", "f.NEF"] {
+        let file = d.join(photo);
+        assert_eq!(
+            sidecars_listed(&file, Some(&listing)),
+            sidecars(&file),
+            "{photo}"
+        );
+    }
+    // Exact names settle; another case, a folder and a link leave it to the
+    // file system; no match at all is no file.
+    let settles = |name: &str| listing.settles(std::ffi::OsStr::new(name));
+    assert_eq!(settles("a.NEF.xmp"), Some(true));
+    assert_eq!(settles("A.nef.XMP"), None);
+    assert_eq!(settles("e.jpg.xmp"), None);
+    assert_eq!(settles("d.NEF.xmp"), Some(false));
+    #[cfg(unix)]
+    assert_eq!(settles("f.NEF.xmp"), None);
+    assert!(Listing::read(&d.join("missing")).is_none());
+}
