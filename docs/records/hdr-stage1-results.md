@@ -260,6 +260,7 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
   HDR files, Transform and Upright.
 - [ ] Stage 5: macOS HDR display: a float surface through RAWmakase's egui fork
   (`surface_format_selector`, offered upstream), extended sRGB with EDR while an HDR
-  photo shows, and the CPU master in Develop's Fit view held to the display's
-  headroom, with the Basic panel's note naming it. Checked on a MacBook Pro XDR
-  display with a CC0 Z 8 photo. Open: the rest of the stage (above).
+  photo shows, and the CPU master held to the display's headroom, with the Basic
+  panel's note naming it: in Fit (#915; checked on a MacBook Pro XDR display with a
+  CC0 Z 8 photo), and zoomed out, in 100% regions, Before Only, Before/After and
+  Reference View (#924). Open: the rest of the stage (above).
