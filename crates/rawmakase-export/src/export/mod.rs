@@ -438,6 +438,8 @@ pub fn stage_image(
 }
 
 #[cfg(test)]
+mod gain_map_input_tests;
+#[cfg(test)]
 mod hdr_tests;
 #[cfg(test)]
 mod srgb_fixtures;

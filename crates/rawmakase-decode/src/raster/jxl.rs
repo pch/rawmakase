@@ -31,12 +31,22 @@ impl JxlFile {
             None
         }
     }
+
+    /// Whether its codestream turns or mirrors it.
+    pub(super) fn turned(&self) -> bool {
+        self.header.turned
+    }
 }
 
 /// What a JPEG XL file's or codestream's headers say.
 pub(super) struct Header {
     pub(super) hdr: bool,
     pub(super) animated: bool,
+    /// Its orientation is not the identity.
+    pub(super) turned: bool,
+    /// Its size, upright.
+    pub(super) width: u32,
+    pub(super) height: u32,
 }
 
 impl Header {
@@ -62,6 +72,9 @@ impl Header {
                     return Ok(Self {
                         hdr: image.hdr_type().is_some(),
                         animated: metadata.animation.is_some(),
+                        turned: metadata.orientation != 1,
+                        width: image.width(),
+                        height: image.height(),
                     });
                 }
             }

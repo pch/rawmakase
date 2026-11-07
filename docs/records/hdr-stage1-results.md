@@ -215,14 +215,16 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
 - The SDR rendition sliders and Camera Raw's default SDR rendition.
 - Looks (Adobe Color and other enhanced profiles) in HDR: the most common profile in
   Lightroom edits, so the next measurement.
-- Fixtures: synthetic PQ, HLG and gain-map files from the tools above, plus a camera
-  HLG/PQ HEIF and an Apple gain-map HEIC/JPEG, which need a real capture. Synthetic
+- Fixtures: synthetic PQ, HLG and gain-map files from the tools above (libultrahdr's
+  Ultra HDR JPEGs are in `tests/data/formats`), plus a camera HLG/PQ HEIF and an Apple
+  gain-map HEIC/JPEG, which need a real capture. Synthetic
   ramps crossing white, saturated highlights and negative matrix results.
 - Frozen family: Lightroom and HDRMerge merges, a validation/holdout split, curves,
   masks and SDR rendition captures. Camera Raw's TIFF output carries no SDR
   rendition, so this needs a gain-map export path.
-- Opening defaults for unedited PQ, HLG and gain-map sources, and HDR toggling with
-  unavailable paired profiles.
+- Lightroom's opening defaults for unedited PQ, HLG and gain-map sources (RAWmakase
+  starts them as HDR edits; Lightroom's choice is not measured), and HDR toggling
+  with unavailable paired profiles.
 - HDR display beyond macOS Develop's Fit view: zoomed views, comparisons, a GPU
   HDR path, Windows Advanced Color, Linux, and highlights beyond the headroom.
 
@@ -253,8 +255,15 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
   BT.2020 or P3; identity-curve ICCs; float TIFFs) open as HDR edits
   ([design](hdr-stage4-design.md)): exact light, master identity at their own
   settings, Exposure and geometry. The SDR rendition is the Library's tone map.
-  Open: gain-map input, HDR HEIC, other adjustments on HDR files, Transform and
-  Upright.
+  ISO 21496-1 gain-map JPEG and JPEG XL files open as HDR edits too
+  ([Gain-map files](../hdr.md#gain-map-files)). Their light is the map at full weight,
+  independent of the display, and their base stays the SDR rendition. Damaged maps
+  are refused by reason. RAWmakase's own gain-map exports reopen with the master's
+  luminance (median 0.005 stop). libultrahdr 2.0.2's own Ultra HDR file opens with
+  the light its decoder gives at full headroom, to 0.019 stop
+  (`tests/data/formats/ultrahdr.jpg`, from `scripts/make-gain-map-fixtures.py`).
+  Open: XMP-only (`hdrgm`) gain maps, HEIC gain maps, HDR HEIC, other adjustments on
+  HDR files, Transform and Upright.
 - [ ] Stage 5: macOS HDR display: a float surface through RAWmakase's egui fork
   (`surface_format_selector`, offered upstream), extended sRGB with EDR while an HDR
   photo shows, and the CPU master in Develop's Fit view held to the display's

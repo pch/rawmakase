@@ -12,6 +12,7 @@ use std::path::Path;
 
 mod av1;
 mod avif;
+mod gain_map;
 mod heic;
 mod heif;
 mod hevc;
@@ -63,6 +64,9 @@ struct Prepared {
     hdr_white: Option<f32>,
     /// How its light decodes exactly, for an HDR file that opens as one.
     hdr: Option<HdrDecoding>,
+    /// Its ISO 21496-1 gain map, for an SDR JPEG or JPEG XL base that opens as an
+    /// HDR edit by it.
+    gain_map: Option<gain_map::GainMap>,
 }
 
 /// How an HDR file's samples decode exactly to its light: linear ProPhoto,
@@ -198,6 +202,8 @@ struct Decoder {
     /// Why Develop can't edit it, when it can't.
     refused: Option<Unsupported>,
     kind: Kind,
+    /// A JPEG XL whose codestream turns or mirrors it.
+    turned: bool,
 }
 
 /// The [`Decoder`] for the file at `path`. Applies no size limit.
@@ -224,31 +230,34 @@ fn open_decoder(path: &Path) -> Result<Decoder> {
                 .map_err(read_error(path))?,
         ))
     };
-    let opened = |decoder: Box<dyn ImageDecoder>, refused| Decoder {
+    let opened = |decoder: Box<dyn ImageDecoder>, refused, turned| Decoder {
         decoder,
         refused,
         kind,
+        turned,
     };
     Ok(match kind {
-        Kind::Webp { animated } => {
-            opened(generic()?, animated.then(|| Unsupported("animated".into())))
-        }
+        Kind::Webp { animated } => opened(
+            generic()?,
+            animated.then(|| Unsupported("animated".into())),
+            false,
+        ),
         Kind::Jxl => {
             let file = jxl::JxlFile::open(path)?;
-            let refused = file.refusal();
-            opened(Box::new(file), refused)
+            let (refused, turned) = (file.refusal(), file.turned());
+            opened(Box::new(file), refused, turned)
         }
         Kind::Avif => {
             let file = avif::AvifFile::open(path)?;
             let refused = file.refusal();
-            opened(Box::new(file), refused)
+            opened(Box::new(file), refused, false)
         }
         Kind::Heic => {
             let file = heic::HeicFile::open(path)?;
             let refused = file.refusal();
-            opened(Box::new(file), refused)
+            opened(Box::new(file), refused, false)
         }
-        _ => opened(generic()?, None),
+        _ => opened(generic()?, None, false),
     })
 }
 
@@ -257,6 +266,7 @@ fn prepare(path: &Path) -> Result<Prepared> {
         mut decoder,
         refused,
         kind,
+        turned,
     } = open_decoder(path)?;
     // The `image` crate's decoders, whose float samples are linear light (a 32-bit
     // TIFF); JPEG XL, AVIF and HEIC have readers of their own.
@@ -303,6 +313,37 @@ fn prepare(path: &Path) -> Result<Prepared> {
         refused => refused,
     }
     .or_else(|| (hdr_white.is_some() && hdr.is_none()).then(|| Unsupported("HDR".into())));
+    // An SDR JPEG or JPEG XL base with an ISO 21496-1 gain map opens as an HDR edit by
+    // it (docs/hdr.md#gain-map-files). A file whose own samples are HDR opens by them,
+    // as above, whatever map it carries.
+    let gain_map = match kind {
+        Kind::Jxl | Kind::Other if hdr_white.is_none() => {
+            gain_map::find(&mut std::fs::File::open(path)?, (w, h)).and_then(|found| {
+                let Some(found) = found else {
+                    return Ok(None);
+                };
+                // The map applies in the base's linear RGB, which a matrix profile's
+                // colorants describe; a grey base or a table profile has none.
+                let matrix = profile
+                    .as_ref()
+                    .is_none_or(|p| p.is_matrix_shaper() && !has_tables(p));
+                if turned {
+                    Err(Unsupported("turned JPEG XL gain-map".into()))
+                } else if !decoder.color_type().has_color() {
+                    Err(Unsupported("grey gain-map".into()))
+                } else if !matrix {
+                    Err(Unsupported("table-profile gain-map".into()))
+                } else {
+                    Ok(Some(found))
+                }
+            })
+        }
+        _ => Ok(None),
+    };
+    let (gain_map, refused) = match gain_map {
+        Ok(found) => (found, refused),
+        Err(why) => (None, refused.or(Some(why))),
+    };
     Ok(Prepared {
         decoder,
         orientation,
@@ -310,6 +351,7 @@ fn prepare(path: &Path) -> Result<Prepared> {
         refused,
         hdr_white,
         hdr,
+        gain_map,
     })
 }
 
@@ -493,6 +535,7 @@ pub(crate) fn open(path: &Path, cancel: Cancel<'_>) -> Result<CameraImage> {
         profile,
         refused,
         hdr,
+        gain_map,
         ..
     } = prepare(path)?;
     if let Some(refused) = refused {
@@ -502,8 +545,8 @@ pub(crate) fn open(path: &Path, cancel: Cancel<'_>) -> Result<CameraImage> {
     image.apply_orientation(orientation);
     let (width, height) = (image.width(), image.height());
     // An HDR file: its light, and the SDR rendition the Library shows of it.
-    let (light, pixels) = match hdr {
-        Some(hdr) => {
+    let (light, pixels) = match (hdr, gain_map) {
+        (Some(hdr), _) => {
             let light = rawmakase_model::camera_data::HdrLight::new(
                 width,
                 height,
@@ -514,7 +557,29 @@ pub(crate) fn open(path: &Path, cancel: Cancel<'_>) -> Result<CameraImage> {
             let sdr = light.pixels().par_iter().map(|p| hdr_sdr(*p)).collect();
             (Some(light), sdr)
         }
-        None => {
+        // A gain-map file: the alternate rendition its map makes of the base, and the
+        // base as its SDR rendition, decoded as any SDR file's pixels are.
+        (None, Some(map)) => {
+            let profile = profile.unwrap_or_else(ColorProfile::new_srgb);
+            let samples = map.decode(&mut std::fs::File::open(path)?, orientation)?;
+            let base = in_own_primaries(&profile, &image, cancel)?;
+            let alternate =
+                gain_map::reconstruct(&base, width, height, &samples, &map.metadata, cancel)?;
+            let to_pro_photo = colorants_to_pro_photo(&profile)
+                .ok_or_else(|| Unsupported("table-profile gain-map".into()))?;
+            let light = rawmakase_model::camera_data::HdrLight::from_gain_map(
+                width,
+                height,
+                alternate
+                    .par_iter()
+                    .map(|p| rawmakase_model::color::mul(to_pro_photo, *p))
+                    .collect(),
+            )
+            .context("Could not decode the gain map")?;
+            let linear = to_linear(&profile, image.color())?;
+            (Some(light), linear.apply(image, cancel)?)
+        }
+        (None, None) => {
             let profile = profile.unwrap_or_else(ColorProfile::new_srgb);
             let linear = to_linear(&profile, image.color())?;
             (None, linear.apply(image, cancel)?)
@@ -658,6 +723,47 @@ fn linear_in(profile: &ColorProfile) -> ColorProfile {
     linear.gray_trc = Some(ToneReprCurve::Lut(vec![]));
     linear.cicp = None;
     linear
+}
+
+/// Whether `profile` converts through tables (ICC A2B tags) rather than its
+/// colorants and curves alone.
+fn has_tables(profile: &ColorProfile) -> bool {
+    profile.lut_a_to_b_perceptual.is_some()
+        || profile.lut_a_to_b_colorimetric.is_some()
+        || profile.lut_a_to_b_saturation.is_some()
+}
+
+/// `image`'s RGB as linear light in `profile`'s own primaries: its curves undone,
+/// nothing else, a row at a time. A gain map applies there.
+fn in_own_primaries(
+    profile: &ColorProfile,
+    image: &DynamicImage,
+    cancel: Cancel<'_>,
+) -> Result<Vec<[f32; 3]>> {
+    let transform = profile
+        .create_transform_f32(
+            Layout::Rgb,
+            &linear_in(profile),
+            Layout::Rgb,
+            TransformOptions::default(),
+        )
+        .map_err(|e| anyhow!("Could not convert the gain map's base: {e}"))?;
+    let width = image.width() as usize;
+    let samples = image.to_rgb32f().into_raw();
+    let mut out = vec![[0f32; 3]; samples.len() / 3];
+    if out.is_empty() {
+        return Ok(out);
+    }
+    samples
+        .par_chunks(width * 3)
+        .zip(out.par_chunks_mut(width))
+        .try_for_each(|(from, to)| {
+            anyhow::ensure!(!cancel.is_cancelled(), "Opening cancelled");
+            transform
+                .transform(from, bytemuck::cast_slice_mut(to))
+                .map_err(|e| anyhow!("Could not convert the gain map's base: {e}"))
+        })?;
+    Ok(out)
 }
 
 /// Whether `profile`'s RGB curves are all the identity, however each is written.
