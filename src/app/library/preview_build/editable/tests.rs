@@ -39,8 +39,9 @@ fn metadata(width: u32, height: u32, bare: bool) -> Metadata {
 }
 
 /// Opens by the file's name: "panic…" panics, "fail…" (or one in [`FAIL`])
-/// fails, "slow…" waits until released or cancelled, "absent…" has no colour
-/// data; anything else is a small full-size decode of a camera with a matrix.
+/// fails, "slow…" waits until released or cancelled, "stubborn…" waits until
+/// released and only then sees a cancel, "absent…" has no colour data; anything
+/// else is a small full-size decode of a camera with a matrix.
 fn test_open(item: &Item, _: &Identity, cancel: Cancel<'_>) -> anyhow::Result<Original> {
     OPENED.lock().unwrap().push(item.path.clone());
     let thread = std::thread::current().name().unwrap_or_default().to_owned();
@@ -59,6 +60,15 @@ fn test_open(item: &Item, _: &Identity, cancel: Cancel<'_>) -> anyhow::Result<Or
             anyhow::ensure!(!cancel.is_cancelled(), "Cancelled");
             std::thread::sleep(Duration::from_millis(2));
         }
+    }
+    // Sees a cancel only once released, as a long decode does between its stages,
+    // so a test can order what happens while it runs.
+    if name.starts_with("stubborn") {
+        STARTED.lock().unwrap().push(item.path.clone());
+        while !in_set(&RELEASED, &item.path) {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        anyhow::ensure!(!cancel.is_cancelled(), "Cancelled");
     }
     let (w, h) = (48, 32);
     let image = CameraImage {
@@ -1057,4 +1067,34 @@ fn a_photo_that_gave_way_after_a_discard_or_a_cancel_is_not_built_again() {
     assert!(opens_of(&path) <= 2);
     assert!(recorded(&e, ids[0]).is_none() && files(&e).is_empty());
     assert!(progress(&e).failed.is_empty());
+}
+
+/// Stop wins over giving way, whichever comes first while the photo is still
+/// running: the pace dropping after Stop doesn't bring the photo back, and nor
+/// does one discarded after it gave way.
+#[test]
+fn a_photo_stopped_or_discarded_around_giving_way_is_not_built_again() {
+    let (_dir, mut e, ids) = editor(&["stubborn-stop.ARW"]);
+    let path = path_of(&e, ids[0]);
+    e.editable_builds.set_pace(Pace::Full);
+    e.build_editable_previews(&ids).unwrap();
+    wait_started(&path);
+    e.editable_builds.cancel();
+    e.editable_builds.set_pace(Pace::Background);
+    release(&path);
+    settle(&mut e);
+    assert_eq!(opens_of(&path), 1, "Stop was undone by the pace dropping");
+    assert!(recorded(&e, ids[0]).is_none() && files(&e).is_empty());
+
+    let (_dir, mut e, ids) = editor(&["stubborn-gone.ARW"]);
+    let path = path_of(&e, ids[0]);
+    e.editable_builds.set_pace(Pace::Full);
+    e.build_editable_previews(&ids).unwrap();
+    wait_started(&path);
+    e.editable_builds.set_pace(Pace::Background);
+    e.discard_editable_previews(Some(&ids)).unwrap();
+    release(&path);
+    settle(&mut e);
+    assert_eq!(opens_of(&path), 1, "a discarded photo was built again");
+    assert!(recorded(&e, ids[0]).is_none() && files(&e).is_empty());
 }

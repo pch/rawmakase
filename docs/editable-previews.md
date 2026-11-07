@@ -249,13 +249,14 @@ Automation and MCP get `build_editable_previews`.
 
 Builds take the computer as the Library's edited previews do
 (`Editor::editable_build_pace`): with the Library in front and nothing else
-rendering, each photo is built on every core but one, and the JPEG XL encoder
-takes as many threads as the pool it runs in; otherwise on two background
-threads. Unlike edited previews, the builds don't count themselves as work that
-slows them. A photo under way at full pace when the pace drops (Develop opened,
-an export started) is cancelled and built again on the two threads, counted once;
-one discarded, or builds cancelled, meanwhile is not. Photos are built one at a
-time.
+rendering, each photo is built on every core but one, and the JPEG XL encoder's
+threads are sized by that pool; otherwise on two background threads. Unlike
+edited previews, the builds don't count themselves as work that slows them. A
+photo under way at full pace when the pace drops (Develop opened, an export
+started) is cancelled and built again at the pace then, counted once; one
+discarded, or builds cancelled, meanwhile is not. With three cores or fewer
+every core but one is two threads, so nothing is built at full pace or gives way.
+Photos are built one at a time.
 
 Measured 2026-11-07 (`editable_preview::pace`, release build, ten CC0 RAWs from
 raw.pixls.us, 20–61 MP, seven makes including X-Trans; a 4-core Xeon VM with

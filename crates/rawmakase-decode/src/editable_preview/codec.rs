@@ -18,8 +18,9 @@ pub(super) fn encode(width: u32, height: u32, codes: &[[u16; 3]]) -> Result<Vec<
         .flatten()
         .flat_map(|c| c.to_ne_bytes())
         .collect();
-    // As many threads as the pool it runs in (the app's build pace), rather than
-    // zune's own four whatever that pace.
+    // Sized by the pool it runs in (the app's build pace) rather than zune's own
+    // four whatever that pace. zune starts a thread per group, up to one more
+    // than this at once, while the calling thread waits.
     let threads = u8::try_from(rayon::current_num_threads()).unwrap_or(u8::MAX);
     let options = EncoderOptions::new(
         width as usize,

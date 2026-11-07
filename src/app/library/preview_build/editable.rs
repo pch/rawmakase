@@ -26,9 +26,10 @@
 //! ([`Editor::editable_build_pace`]): two background threads, or, with the
 //! Library in front and nothing else rendering, every core but one, as the
 //! Library's edited previews take ([`Pace`]). A photo under way at full pace when
-//! the pace drops is stopped and waits at the front to be built again on the two
-//! threads, unless it was discarded or the builds were cancelled meanwhile; it is
-//! counted done once. One photo is built at a time at either pace: on the
+//! the pace drops is stopped and waits at the front to be built again at the
+//! pace then, unless it was discarded or the builds were cancelled meanwhile; it
+//! is counted done once. With three cores or fewer the two pools are the same,
+//! so nothing is built at full pace, nor gives way. One photo is built at a time at either pace: on the
 //! measured RAWs a build is CPU-bound throughout, so more threads speed it up and
 //! builds side by side did not (docs/editable-previews.md, Stage 4).
 //!
@@ -182,10 +183,14 @@ struct State {
     running: Option<PhotoId>,
     /// The pace the next photo starts at.
     pace: Pace,
-    /// The running photo started at full pace.
+    /// Whether the full pace's pool is wider than the background one; on a
+    /// computer with three cores or fewer the two are the same, and nothing
+    /// starts at full pace, so nothing gives way for no gain.
+    full_is_wider: bool,
+    /// The running photo started at full pace, and wasn't stopped since.
     running_full: bool,
     /// The running photo was stopped because the pace dropped: if it ends
-    /// cancelled, it waits at the front to be built again at the background pace.
+    /// cancelled, it waits at the front to be built again, at the pace then.
     gave_way: bool,
     /// The flag the running build stops on; replaced when it is set.
     cancel: Arc<AtomicBool>,
@@ -244,6 +249,7 @@ impl State {
         if self.running.as_ref().is_some_and(wanted) {
             self.cancel.store(true, Ordering::Relaxed);
             self.cancel = Arc::default();
+            self.running_full = false;
             stopped += 1;
         }
         stopped
@@ -269,7 +275,7 @@ impl Shared {
             }
             if let Some(item) = state.waiting.pop_front() {
                 state.running = Some(item.photo);
-                state.running_full = state.pace == Pace::Full;
+                state.running_full = state.pace == Pace::Full && state.full_is_wider;
                 state.gave_way = false;
                 return Some((item, state.cancel.clone(), state.running_full));
             }
@@ -277,8 +283,8 @@ impl Shared {
         }
     }
     /// The pace photos start at from now on. A photo under way at full pace when
-    /// it drops to the background is stopped, to be built again at the
-    /// background pace, as the Library's edited previews give way.
+    /// it drops to the background is stopped, to be built again at the pace
+    /// then, as the Library's edited previews give way.
     fn set_pace(&self, pace: Pace) {
         let mut state = self.lock();
         if state.pace == pace {
@@ -328,6 +334,9 @@ impl Shared {
     }
 }
 
+/// Threads a photo is built on at the background pace.
+const BACKGROUND_THREADS: usize = 2;
+
 /// The build queue and the thread that works through it.
 struct Builder {
     shared: Arc<Shared>,
@@ -336,11 +345,18 @@ struct Builder {
 }
 
 impl Builder {
-    /// Starts the worker at `pace`; `changed` is called after each photo.
-    fn start(steps: Steps, pace: Pace, changed: impl Fn() + Send + 'static) -> Self {
+    /// Starts the worker at `pace`, its full pace on `full_threads`; `changed`
+    /// is called after each photo.
+    fn start(
+        steps: Steps,
+        pace: Pace,
+        full_threads: usize,
+        changed: impl Fn() + Send + 'static,
+    ) -> Self {
         let shared = Arc::new(Shared {
             state: Mutex::new(State {
                 pace,
+                full_is_wider: full_threads > BACKGROUND_THREADS,
                 ..State::default()
             }),
             wake: Condvar::new(),
@@ -348,12 +364,9 @@ impl Builder {
         let (tx, results) = mpsc::channel();
         let worker = shared.clone();
         let thread = crate::raw::spawn_background(move || {
-            let background = crate::raw::background_pool(2, "editable-previews").ok();
-            let full = crate::raw::background_pool(
-                crate::app::library::previews::full_threads(),
-                "editable-previews-full",
-            )
-            .ok();
+            let background =
+                crate::raw::background_pool(BACKGROUND_THREADS, "editable-previews").ok();
+            let full = crate::raw::background_pool(full_threads, "editable-previews-full").ok();
             let mut catalog: Option<Catalog> = None;
             while let Some((item, cancel, at_full)) = worker.next() {
                 let pool = if at_full { &full } else { &background };
@@ -409,7 +422,10 @@ impl Builder {
         let mut state = self.shared.lock();
         let dropped = state.waiting.len();
         state.waiting.clear();
+        // Stopped, the photo under way can't give way to a lower pace, which
+        // would build it again.
         state.gave_way = false;
+        state.running_full = false;
         state.progress.total -= dropped;
         state.cancel.store(true, Ordering::Relaxed);
         state.cancel = Arc::default();
@@ -632,6 +648,8 @@ pub(in crate::app) struct EditableBuilds {
     /// How much of the computer builds take, set every frame
     /// ([`Editor::editable_build_pace`]).
     pace: Pace,
+    /// Threads at full pace: every core but one.
+    full_threads: usize,
     /// Preferences › Catalog's choice for the builds asked for from now on;
     /// each request captures it in its items ([`Item::precision`]).
     pub(in crate::app) precision: editable_preview::Precision,
@@ -651,21 +669,25 @@ impl EditableBuilds {
             catalog: None,
             steps: Steps::REAL,
             pace: Pace::Background,
+            full_threads: crate::app::library::previews::full_threads(),
             precision,
         }
     }
-    /// Builds through `steps`.
+    /// Builds through `steps`, at full pace on three threads, whatever this
+    /// computer's cores.
     #[cfg(test)]
     pub(in crate::app) fn for_tests(steps: Steps) -> Self {
         Self {
             steps,
+            full_threads: 3,
             ..Self::default()
         }
     }
     fn builder(&mut self, ctx: &eframe::egui::Context) -> &Builder {
-        let (steps, pace, ctx) = (self.steps, self.pace, ctx.clone());
-        self.builder
-            .get_or_insert_with(|| Builder::start(steps, pace, move || ctx.request_repaint()))
+        let (steps, pace, threads, ctx) = (self.steps, self.pace, self.full_threads, ctx.clone());
+        self.builder.get_or_insert_with(|| {
+            Builder::start(steps, pace, threads, move || ctx.request_repaint())
+        })
     }
     /// The pace builds take from now on: [`Pace::Full`] runs each photo on
     /// every core but one, and a photo under way at it gives way when the pace
