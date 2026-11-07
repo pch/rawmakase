@@ -199,6 +199,7 @@ fn an_hdr_jpeg_xl_carries_the_same_light_as_the_tiff() -> Result<()> {
     let tiff = export(&photo, &settings(Some(pq)), dir.path(), "pq")?;
     let mut jxl_settings = settings(Some(pq));
     jxl_settings.choose_format(Format::Jxl);
+    jxl_settings.jxl_lossy = false;
     let target = dir.path().join("pq.jxl");
     job::run(
         photo.clone(),
@@ -282,6 +283,102 @@ fn an_hdr_jpeg_xl_carries_the_same_light_as_the_tiff() -> Result<()> {
     assert_eq!(samples, png_samples);
     sdr.choose_color_space(crate::color::OutputSpace::AdobeRgb);
     assert!(sdr.output_space().is_err());
+    Ok(())
+}
+
+/// A lossy HDR JPEG XL export (the Export dialog's JPEG XL quality, without Lossless)
+/// decodes in jxl-oxide with its header's encoding (PQ in Display P3, HLG in Rec. 2020
+/// with HLG's 1,000 cd/m² reference display) and within a few hundredths of a stop of
+/// the TIFF's light, above graphics white too. Compared on the fixture's neutral rows:
+/// its other rows are camera primaries far outside BT.709, whose negative channels
+/// jxl-oxide clips when it converts XYB's light to the file's primaries (colour on a
+/// photo is measured in docs/records/hdr-stage1-results.md).
+#[test]
+fn a_lossy_hdr_jpeg_xl_carries_the_tiffs_light() -> Result<()> {
+    use crate::color::hdr_output::hlg_decode;
+    let dir = tempfile::tempdir()?;
+    let image = synthetic(96, 64);
+    let recipe = hdr_recipe(&image);
+    let photo = photo(image, &dir.path().join("in.dng"), dir.path(), recipe);
+    for (gamut, transfer, encoding, target_nits) in [
+        (HdrGamut::DisplayP3, HdrTransfer::Pq, ["P3", "Pq"], 10_000.),
+        (
+            HdrGamut::Rec2020,
+            HdrTransfer::Hlg,
+            ["Bt2100", "Hlg"],
+            1000.,
+        ),
+    ] {
+        let output = HdrOutput {
+            gamut,
+            transfer,
+            gain_map: false,
+        };
+        let name = format!("{}-{}", gamut.cicp(), transfer.cicp());
+        let tiff = export(&photo, &settings(Some(output)), dir.path(), &name)?;
+        let mut s = settings(Some(output));
+        s.choose_format(Format::Jxl);
+        s.jxl_lossy = true;
+        s.quality = 92;
+        let target = dir.path().join(format!("{name}.jxl"));
+        job::run(
+            photo.clone(),
+            &s,
+            &target,
+            Replace::NoClobber,
+            Cancel::NEVER,
+            |_| {},
+        )?;
+        let decoded = jxl_oxide::JxlImage::builder()
+            .read(std::io::Cursor::new(std::fs::read(&target)?))
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let header = decoded.image_header();
+        assert!(header.metadata.xyb_encoded, "{name}: lossy");
+        assert!((header.metadata.tone_mapping.intensity_target - target_nits).abs() < 1.);
+        let signalled = format!("{:?}", header.metadata.colour_encoding);
+        assert!(
+            encoding.iter().all(|e| signalled.contains(e)),
+            "{signalled}"
+        );
+        let frame = decoded
+            .render_frame(0)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let weights = gamut.luminance();
+        let light = |p: &[f32]| {
+            let p = [p[0], p[1], p[2]];
+            match transfer {
+                HdrTransfer::Hlg => hlg_decode(p.map(|v| v.clamp(0., 1.)), weights),
+                _ => p.map(|v| pq_decode(v) / GRAPHICS_WHITE_NITS),
+            }
+        };
+        // The neutral rows: the last sixth (`synthetic`).
+        let neutral = (96 * 64 - 96 * 64 / 6) * 3;
+        let ours: Vec<[f32; 3]> = frame.image_all_channels().buf()[neutral..]
+            .chunks(3)
+            .map(light)
+            .collect();
+        let (from_tiff, _) = read(&tiff)?;
+        let theirs: Vec<[f32; 3]> = from_tiff[neutral..].chunks(3).map(light).collect();
+        let y = |p: &[f32; 3]| (0..3).map(|c| weights[c] * p[c]).sum::<f32>();
+        let errors = |above: bool| {
+            let mut e: Vec<f32> = theirs
+                .iter()
+                .zip(&ours)
+                .filter(|(t, _)| if above { y(t) > 1. } else { y(t) > 0.05 })
+                .map(|(t, o)| (y(o).max(1e-6) / y(t)).log2().abs())
+                .collect();
+            e.sort_by(f32::total_cmp);
+            assert!(e.len() > 50, "{name}: {} pixels", e.len());
+            (e[e.len() / 2], e[e.len() * 95 / 100])
+        };
+        for above in [false, true] {
+            let (median, p95) = errors(above);
+            assert!(
+                median < 0.03 && p95 < 0.1,
+                "{name} above white {above}: {median} {p95}"
+            );
+        }
+    }
     Ok(())
 }
 
@@ -413,6 +510,15 @@ fn a_gain_map_jpeg_rebuilds_the_master_from_its_sdr_base() -> Result<()> {
 /// metadata and the map's codestream, which decodes to the map's size.
 #[test]
 fn a_gain_map_jpeg_xl_carries_its_base_and_map() -> Result<()> {
+    for lossy in [false, true] {
+        gain_map_jpeg_xl(lossy)?;
+    }
+    Ok(())
+}
+
+/// [`a_gain_map_jpeg_xl_carries_its_base_and_map`], lossless or lossy: a lossy one's
+/// base is the lossy SDR export, and its map is lossy too.
+fn gain_map_jpeg_xl(lossy: bool) -> Result<()> {
     let dir = tempfile::tempdir()?;
     let image = synthetic(48, 32);
     let recipe = hdr_recipe(&image);
@@ -424,6 +530,7 @@ fn a_gain_map_jpeg_xl_carries_its_base_and_map() -> Result<()> {
     };
     let mut s = settings(Some(gain));
     s.choose_format(Format::Jxl);
+    s.jxl_lossy = lossy;
     let target = dir.path().join("gm.jxl");
     job::run(
         photo.clone(),
@@ -435,6 +542,7 @@ fn a_gain_map_jpeg_xl_carries_its_base_and_map() -> Result<()> {
     )?;
     let mut sdr = settings(None);
     sdr.choose_format(Format::Jxl);
+    sdr.jxl_lossy = lossy;
     let plain = dir.path().join("sdr.jxl");
     job::run(
         photo,
@@ -472,5 +580,6 @@ fn a_gain_map_jpeg_xl_carries_its_base_and_map() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     let size = &map.image_header().size;
     assert_eq!((size.width, size.height), (48, 32));
+    assert_eq!(map.image_header().metadata.xyb_encoded, lossy);
     Ok(())
 }

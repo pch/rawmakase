@@ -251,13 +251,35 @@ reads the display or the editor. Gamut and transfer are separate choices
 | HLG (BT.2100) | 16-bit TIFF | 203 cd/m² on HLG's 1,000 cd/m² reference display: the inverse OOTF (system gamma 1.2 on the gamut's luminance), then the OETF; signal 0.75 |
 | Linear | 32-bit float TIFF | 1.0, as Photoshop's 32-bit documents |
 
-PQ and HLG are also written as lossless 16-bit JPEG XL (`export::jxl`): `zune-jpegxl`
-encodes the frame and RAWmakase writes the image header in place of zune's sRGB one,
-naming the primaries (JPEG XL's enumeration: P3 is 11 there, 12 in CICP) and the
-transfer, with the tone mapping's intensity target (10,000 cd/m² for PQ, 1,000 for
-HLG), in a container with `Exif` and `xml ` boxes. Lossless files are large (193 MB for
-the 45 MP Z 8 photo, as large as its 16-bit TIFF); lossy JPEG XL waits on #906.
-JPEG XL also exports SDR, losslessly in 8-bit sRGB only.
+PQ and HLG are also written as 16-bit JPEG XL (`export::jxl`), lossy at the Export
+dialog's quality or, with Lossless checked, lossless (`ExportSettings::jxl_lossy`,
+`render --jxl-quality`). The header names the primaries (JPEG XL's enumeration: P3 is
+11 there, 12 in CICP) and the transfer, with the tone mapping's intensity target
+(10,000 cd/m² for PQ, 1,000 for HLG), and the file is a container with `Exif` and
+`xml ` boxes. Settings saved before JPEG XL could be lossy read as lossless; new ones
+start lossy.
+
+- **Lossy:** `jixel` encodes a VarDCT frame in XYB at libjxl's distance for the quality
+  (`cjxl`'s mapping: 90 is distance 1, the default 92 is 0.82), at its fast effort.
+  XYB holds absolute display light and the header only says which signal to decode
+  it to. jixel reads PQ input correctly but takes HLG input for normalised scene
+  light, which decodes about two stops dark, so an HLG export is given to it as the PQ
+  of its light on HLG's 1,000 cd/m² reference display, and its header, checked
+  against the one RAWmakase writes for that frame, is replaced with one that says
+  HLG. The 45 MP Z 8 photo is about 9.1 MB at quality 92; libjxl's decoder gives back
+  its light to a median 0.006 stop above white (p95 0.03) for PQ and 0.002 stop for
+  HLG ([record](records/hdr-stage1-results.md#codecs)).
+- **Lossless:** `zune-jpegxl` encodes the frame and RAWmakase writes the image header in
+  place of zune's sRGB one. Lossless files are large (193 MB for the same photo, as
+  large as its 16-bit TIFF).
+
+JPEG XL also exports SDR, in 8-bit sRGB only, lossy or lossless as HDR is.
+
+jxl-oxide (RAWmakase's own JPEG XL reader too) converts a lossy file's XYB light to its
+primaries after clipping it, in BT.709 primaries, to the intensity target. A wide-gamut
+HLG export's saturated highlights near 1,000 cd/m² therefore read back clipped there,
+and some of its pixels as NaN, as they do from libjxl's own lossy HLG files; libjxl's
+decoder doesn't clip them.
 
 Gamuts: Rec. 2020, Display P3 and Rec. 709, all D65 (Bradford from the master's D50).
 Out-of-gamut channels clip at 0, and each channel is held to the HDR limit again in
@@ -284,14 +306,17 @@ the metadata in APP2. No XMP `hdrgm` metadata (Adobe's earlier gain-map format) 
 written. A gain map's gamut is the base's, Rec. 709.
 
 A JPEG XL export can carry the same gain map (the Export dialog's "As a gain map over
-the SDR rendition", or `--hdr-export gain-map` to a `.jxl`): the base is the lossless
-8-bit sRGB SDR JPEG XL, and a `jhgm` box (libjxl's gain-map bundle) holds version 0,
-the ISO 21496-1 metadata, no alternate colour encoding or ICC profile (the map applies
-in the base's colour space), and the map's lossless grayscale codestream. libjxl 0.12's
-`jxlinfo` reads the box as a version 0 bundle with its 61-byte metadata and the map's
-codestream, and `djxl` decodes the base; no local tool applies a JPEG XL gain map, so
-its reconstruction is checked only through the JPEG form, which shares the map and
-metadata.
+the SDR rendition", or `--hdr-export gain-map` to a `.jxl`): the base is the 8-bit
+sRGB SDR JPEG XL, and a `jhgm` box (libjxl's gain-map bundle) holds version 0, the
+ISO 21496-1 metadata, no alternate colour encoding or ICC profile (the map applies in
+the base's colour space), and the map's grayscale codestream. Both are lossy, at the
+same distance, as a gain-map JPEG's map has its quality, or both lossless. RAWmakase
+writes the bundle itself around jixel's or zune's codestreams. For the Z 8 photo at
+quality 92 the file is 10.3 MB (74 MB lossless), and the lossy map is within 2 of its
+256 codes at p95 (0.03 stop). libjxl 0.12's `jxlinfo` reads the box as a version 0
+bundle with its 61-byte metadata and the map's codestream, and `djxl` decodes the base
+and the map; no local tool applies a JPEG XL gain map, so its reconstruction is checked
+only through the JPEG form, which shares the map and metadata.
 
 libultrahdr 2.0.2 (`ultrahdr_app`) reads the Z 8 reference photo's gain-map export
 (2048 px) as Ultra HDR with this metadata, and its decode at full headroom matches
@@ -304,4 +329,4 @@ decoded by `tifffile` and the ST 2084 EOTF, scores against Camera Raw's own PQ T
 exactly as the master does (median 0.061 stop above white), and the master and the
 decoded export agree to 0.003. libjxl 0.12's `jxlinfo` reads the JPEG XL exports' header
 as written (P3 or Rec. 2100 primaries, PQ or HLG, intensity target), and `djxl`
-decodes the PQ export to exactly the TIFF's 16-bit samples.
+decodes the lossless PQ export to exactly the TIFF's 16-bit samples.

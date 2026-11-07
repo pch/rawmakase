@@ -345,8 +345,14 @@ fn a_malformed_gain_map_jpeg_is_refused_and_shows_its_base() -> Result<()> {
 fn a_malformed_gain_map_jpeg_xl_is_refused_and_shows_its_base() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let rgb = base(32, 16);
-    let codestream = jxl::codestream(32, 16, jxl::Samples::Eight(rgb.as_raw()), jxl::Colour::Srgb)?;
-    let grey = |w, h| jxl::gray_codestream(w, h, map(w, h).as_raw()).unwrap();
+    let codestream = jxl::codestream(
+        32,
+        16,
+        jxl::Samples::Eight(rgb.as_raw()),
+        jxl::Colour::Srgb,
+        None,
+    )?;
+    let grey = |w, h| jxl::gray_codestream(w, h, map(w, h).as_raw(), None).unwrap();
     let container = |bundle: &[u8]| jxl::container(&codestream, None, None, Some(bundle)).unwrap();
     let good = jxl::gain_map_bundle(&metadata(), &grey(16, 8))?;
     let intact = file(dir.path(), "intact.jxl", &container(&good));
@@ -421,8 +427,14 @@ fn a_malformed_gain_map_jpeg_xl_is_refused_and_shows_its_base() -> Result<()> {
 fn a_gain_map_box_cut_off_at_the_files_end_is_refused() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let rgb = base(32, 16);
-    let codestream = jxl::codestream(32, 16, jxl::Samples::Eight(rgb.as_raw()), jxl::Colour::Srgb)?;
-    let map = jxl::gray_codestream(16, 8, map(16, 8).as_raw())?;
+    let codestream = jxl::codestream(
+        32,
+        16,
+        jxl::Samples::Eight(rgb.as_raw()),
+        jxl::Colour::Srgb,
+        None,
+    )?;
+    let map = jxl::gray_codestream(16, 8, map(16, 8).as_raw(), None)?;
     let bundle = jxl::gain_map_bundle(&metadata(), &map)?;
     let mut whole = jxl::container(&codestream, None, None, None)?;
     whole.extend(((bundle.len() + 8) as u32).to_be_bytes());

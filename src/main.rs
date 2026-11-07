@@ -161,6 +161,10 @@ enum Command {
         /// The HDR export's gamut: rec2020, display-p3 or rec709.
         #[arg(long, value_enum, default_value = "rec2020", requires = "hdr_export")]
         hdr_gamut: HdrGamutArg,
+        /// Write a .jxl output lossy at this quality (1–100, as the Export dialog's;
+        /// 90 is libjxl's distance 1) instead of lossless.
+        #[arg(long, value_parser = clap::value_parser!(u8).range(1..=100), conflicts_with_all = ["tap", "hdr"])]
+        jxl_quality: Option<u8>,
     },
     /// Print each file's decode fingerprint as a line of JSON: what opening and
     /// unpacking it yields, for decode regression checks.
@@ -600,7 +604,19 @@ fn main() -> Result<()> {
             hdr,
             hdr_export,
             hdr_gamut,
+            jxl_quality,
         }) => {
+            anyhow::ensure!(
+                jxl_quality.is_none()
+                    || rawmakase::export_settings::Format::from_path(&output)
+                        == Some(rawmakase::export_settings::Format::Jxl),
+                "--jxl-quality is for a .jxl output"
+            );
+            let export_options = ExportOptions {
+                max_edge,
+                quality: jxl_quality.unwrap_or(ExportOptions::default().quality),
+                jxl_lossy: jxl_quality.is_some(),
+            };
             use rawmakase::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
             let hdr_output = hdr_export.map(|transfer| HdrOutput {
                 transfer: match transfer {
@@ -773,10 +789,7 @@ fn main() -> Result<()> {
                     &input,
                     &pixels,
                     &im.metadata,
-                    &ExportOptions {
-                        max_edge,
-                        ..Default::default()
-                    },
+                    &export_options,
                     &rawmakase::export::Embed::default(),
                     if overwrite {
                         rawmakase::export::Replace::Overwrite
@@ -830,10 +843,7 @@ fn main() -> Result<()> {
                 &input,
                 &out,
                 &im.metadata,
-                &ExportOptions {
-                    max_edge,
-                    ..Default::default()
-                },
+                &export_options,
                 &rawmakase::export::Embed {
                     camera: Some(
                         rawmakase::photo::camera_exif(&input).unwrap_or_else(|| {

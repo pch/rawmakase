@@ -1,5 +1,5 @@
 //! JPEG, 16-bit TIFF and 8-bit PNG encoding with an ICC profile, EXIF
-//! directories and XMP.
+//! directories and XMP, and JPEG XL with EXIF and XMP.
 use super::{Embed, metadata::Directories};
 use crate::{
     develop::ExportImage,
@@ -10,6 +10,7 @@ use crate::{
             XMP, Y_RESOLUTION,
         },
     },
+    export_settings::ExportOptions,
     tiff::kind::{ASCII, FLOAT, LONG, RATIONAL, SHORT, SLONG, SRATIONAL, SSHORT, UNDEFINED},
 };
 use anyhow::{Result, ensure};
@@ -171,10 +172,20 @@ where
     Ok(())
 }
 
-/// A lossless 8-bit sRGB JPEG XL, its EXIF and XMP in container boxes.
+/// The VarDCT distance of a JPEG XL export with `options`: `None` when it is
+/// lossless.
+fn jxl_distance(options: &ExportOptions) -> Option<f32> {
+    options
+        .jxl_lossy
+        .then(|| super::jxl::distance(options.quality))
+}
+
+/// An 8-bit sRGB JPEG XL, lossless or lossy as `options` say, its EXIF and XMP in
+/// container boxes.
 pub(super) fn jxl(
     out: &mut impl Write,
     image: &ExportImage,
+    options: &ExportOptions,
     directories: Directories,
     embed: &Embed,
 ) -> Result<()> {
@@ -187,6 +198,7 @@ pub(super) fn jxl(
         image.height(),
         super::jxl::Samples::Eight(&image.rgb8()),
         super::jxl::Colour::Srgb,
+        jxl_distance(options),
     )?;
     let exif = super::metadata::png_exif(directories);
     out.write_all(&super::jxl::container(
@@ -198,43 +210,64 @@ pub(super) fn jxl(
     Ok(())
 }
 
-/// An HDR export's lossless 16-bit JPEG XL: PQ or HLG signal values, the header naming
-/// the primaries and transfer, with the intensity target their maximum stands for
-/// (10,000 cd/m² for PQ, HLG's 1,000 cd/m² reference display).
+/// An HDR export's 16-bit JPEG XL: the header naming the primaries and transfer
+/// (PQ or HLG), with the intensity target their maximum stands for (10,000 cd/m² for
+/// PQ, HLG's 1,000 cd/m² reference display). Lossless, the PQ or HLG signal values;
+/// lossy as `options` say, the PQ of the light they stand for
+/// ([`super::jxl::lossy_hdr_codestream`]).
 pub(super) fn jxl_hdr(
     out: &mut impl Write,
     image: &super::HdrPixels,
+    options: &ExportOptions,
     directories: Directories,
     embed: &Embed,
 ) -> Result<()> {
-    use crate::color::hdr_output::{HLG_PEAK_NITS, HdrGamut, HdrTransfer};
+    use crate::color::hdr_output::{
+        GRAPHICS_WHITE_NITS, HLG_PEAK_NITS, HdrGamut, HdrTransfer, hlg_decode, pq_encode,
+    };
     let intensity_target = match image.output.transfer {
         HdrTransfer::Pq => 10_000.,
         HdrTransfer::Hlg => HLG_PEAK_NITS,
         HdrTransfer::Linear => anyhow::bail!("Linear HDR is written as TIFF only"),
     };
-    let samples: Vec<u16> = image
-        .pixels
-        .iter()
-        .flatten()
-        .map(|v| (v.clamp(0., 1.) * 65535. + 0.5) as u16)
-        .collect();
-    let codestream = super::jxl::codestream(
-        image.width,
-        image.height,
-        super::jxl::Samples::Sixteen(&samples),
-        super::jxl::Colour::Hdr {
-            // JPEG XL's own primaries enumeration: CICP's but for P3, which it numbers 11.
-            primaries: match image.output.gamut {
-                HdrGamut::Rec2020 => 9,
-                HdrGamut::DisplayP3 => 11,
-                HdrGamut::Rec709 => 1,
-            },
-            // Its transfer functions are numbered as CICP's.
-            transfer: image.output.transfer.cicp(),
-            intensity_target,
+    let colour = super::jxl::Colour::Hdr {
+        // JPEG XL's own primaries enumeration: CICP's but for P3, which it numbers 11.
+        primaries: match image.output.gamut {
+            HdrGamut::Rec2020 => 9,
+            HdrGamut::DisplayP3 => 11,
+            HdrGamut::Rec709 => 1,
         },
-    )?;
+        // Its transfer functions are numbered as CICP's.
+        transfer: image.output.transfer.cicp(),
+        intensity_target,
+    };
+    let sample = |v: f32| (v.clamp(0., 1.) * 65535. + 0.5) as u16;
+    let codestream = match jxl_distance(options) {
+        None => {
+            let samples: Vec<u16> = image.pixels.iter().flatten().map(|v| sample(*v)).collect();
+            super::jxl::codestream(
+                image.width,
+                image.height,
+                super::jxl::Samples::Sixteen(&samples),
+                colour,
+                None,
+            )?
+        }
+        Some(distance) => {
+            let weights = image.output.gamut.luminance();
+            let pq: Vec<u16> = image
+                .pixels
+                .iter()
+                .flat_map(|p| match image.output.transfer {
+                    HdrTransfer::Hlg => {
+                        hlg_decode(*p, weights).map(|v| sample(pq_encode(v * GRAPHICS_WHITE_NITS)))
+                    }
+                    _ => p.map(sample),
+                })
+                .collect();
+            super::jxl::lossy_hdr_codestream(image.width, image.height, &pq, colour, distance)?
+        }
+    };
     let exif = super::metadata::png_exif(directories);
     out.write_all(&super::jxl::container(
         &codestream,
@@ -246,10 +279,12 @@ pub(super) fn jxl_hdr(
 }
 
 /// A gain-map JPEG XL: the sRGB base as an SDR JPEG XL export is, with the map's
-/// grayscale codestream and its ISO 21496-1 metadata in a `jhgm` box.
+/// grayscale codestream and its ISO 21496-1 metadata in a `jhgm` box. A lossy export
+/// codes the map at the base's distance, as a gain-map JPEG's map has its quality.
 pub(super) fn jxl_gain_map(
     out: &mut impl Write,
     image: &super::GainMapPixels,
+    options: &ExportOptions,
     directories: Directories,
     embed: &Embed,
 ) -> Result<()> {
@@ -263,8 +298,14 @@ pub(super) fn jxl_gain_map(
         base.height(),
         super::jxl::Samples::Eight(&base.rgb8()),
         super::jxl::Colour::Srgb,
+        jxl_distance(options),
     )?;
-    let map = super::jxl::gray_codestream(base.width(), base.height(), &image.map)?;
+    let map = super::jxl::gray_codestream(
+        base.width(),
+        base.height(),
+        &image.map,
+        jxl_distance(options),
+    )?;
     let bundle = super::jxl::gain_map_bundle(&image.metadata.iso_21496(), &map)?;
     let exif = super::metadata::png_exif(directories);
     out.write_all(&super::jxl::container(
