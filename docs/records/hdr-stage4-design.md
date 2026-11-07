@@ -1,6 +1,6 @@
 # HDR stage 4: opening HDR files as HDR edits
 
-Status: Implemented (first increment). Agreed after three review rounds. It covers the first increment of stage 4 of the
+Status: Implemented (first increment; gain-map input in a second, [below](#gain-map-input-second-increment)). Agreed after three review rounds. It covers the first increment of stage 4 of the
 [HDR implementation plan](hdr-implementation-plan.md): an HDR file (PQ, HLG or
 linear light) opens in Develop as an HDR edit instead of being refused
 ([HDR files](../hdr.md#hdr-files)). Gain-map inputs, HEIC and adjustments other
@@ -223,8 +223,40 @@ reduction.
   - A light whose dimensions no longer match is refused.
 - **Lifecycle.** A replaced or deleted file, a late completion and a failure in the
   HDR preview; opening again decodes a new light.
-- **Refusals.** Gain maps, HDR HEIC, animation, unsupported primaries and HDR
-  without CICP stay refused.
+- **Refusals.** HDR HEIC, animation, unsupported primaries and HDR without CICP stay
+  refused. Gain maps were refused in the first increment and open since the second.
+
+## Gain-map input (second increment)
+
+ISO 21496-1 gain-map JPEG and JPEG XL files open as HDR edits
+([Gain-map files](../hdr.md#gain-map-files)), on the source contract above. The
+decisions this increment made:
+
+1. **Full weight, never the display's.** The light is the alternate rendition at the
+   map's full weight, as a display with the alternate's whole headroom shows it.
+   The headroom value itself never scales the light, and no display is read. This
+   keeps decoded pixels display-independent, as the plan asks.
+2. **The base is the SDR rendition.** The base is decoded as the same file without
+   its map. That keeps the authored SDR rendition at neutral settings, and keeps
+   catalog edits made while these files opened as SDR rendering as they did.
+3. **ISO 21496-1 only.** XMP-only (`hdrgm`) maps open as their SDR base, as before; a
+   reader for them is a follow-up.
+4. **Refuse what isn't applied exactly.** Each of these is refused by reason, not
+   approximated:
+   - a map in the alternate's colour space, with its own ICC or colour encoding;
+   - an HDR base;
+   - a grey or table-profile base;
+   - a turned JPEG XL;
+   - a `brob`-compressed bundle;
+   - any damage.
+5. **Centre-aligned bilinear sampling** of smaller maps, how libultrahdr's encoder
+   averages a block into each sample. libultrahdr's decoder samples corner-aligned,
+   which differs on a steep synthetic ramp by a median 0.08 stop with a quarter-size
+   map. With a full-size map, the two agree to a median 0.004 stop.
+6. **An HDR base's own samples win.** A JPEG XL that is PQ or HLG itself opens by them,
+   as in the first increment, whatever map it carries.
+7. **Provenance.** `HdrSource::gain_map` records that the light came from a map;
+   `transfer` is `Linear` for these files.
 
 ## Decisions on revision 1's open questions
 

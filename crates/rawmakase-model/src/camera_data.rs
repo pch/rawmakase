@@ -386,7 +386,14 @@ pub struct CameraImage {
 /// What an HDR file is, as its metadata records it.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct HdrSource {
+    /// The transfer its samples are encoded with; `Linear` for a gain map, whose
+    /// light is reconstructed as linear light.
     pub transfer: crate::color::hdr_output::HdrTransfer,
+    /// The light was reconstructed from an ISO 21496-1 gain map over the file's SDR
+    /// base image, which stays its SDR rendition (docs/hdr.md#gain-map-files).
+    /// Omitted when false, so the facts of other HDR files read as before.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gain_map: bool,
     /// The largest channel of the full-resolution light, 1 = graphics white.
     pub peak: f32,
 }
@@ -408,8 +415,23 @@ impl HdrLight {
     pub fn new(
         width: u32,
         height: u32,
+        pixels: Vec<[f32; 3]>,
+        transfer: crate::color::hdr_output::HdrTransfer,
+    ) -> Option<Self> {
+        Self::checked(width, height, pixels, transfer, false)
+    }
+    /// The light a gain map reconstructs over a `width` × `height` base image; as
+    /// [`HdrLight::new`], with the gain map recorded in its [`HdrSource`].
+    pub fn from_gain_map(width: u32, height: u32, pixels: Vec<[f32; 3]>) -> Option<Self> {
+        use crate::color::hdr_output::HdrTransfer;
+        Self::checked(width, height, pixels, HdrTransfer::Linear, true)
+    }
+    fn checked(
+        width: u32,
+        height: u32,
         mut pixels: Vec<[f32; 3]>,
         transfer: crate::color::hdr_output::HdrTransfer,
+        gain_map: bool,
     ) -> Option<Self> {
         if pixels.len() != width as usize * height as usize {
             return None;
@@ -427,7 +449,11 @@ impl HdrLight {
             width,
             height,
             pixels: pixels.into(),
-            source: HdrSource { transfer, peak },
+            source: HdrSource {
+                transfer,
+                gain_map,
+                peak,
+            },
         })
     }
     /// This light reduced to `width` × `height` by `reduce`, which averages it as the

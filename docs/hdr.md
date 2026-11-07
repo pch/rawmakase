@@ -107,7 +107,9 @@ These files qualify:
 - a TIFF of 32-bit float samples, through an ICC profile without CICP whose curves
   are the identity (Photoshop's 32-bit documents), or without a profile, read as
   linear sRGB primaries; 1.0 is graphics white. Integer samples with such a profile
-  stop at graphics white, so they open as SDR files.
+  stop at graphics white, so they open as SDR files;
+- a JPEG or JPEG XL with an ISO 21496-1 gain map over an SDR base, whose light the map
+  reconstructs and whose base stays its SDR rendition ([Gain-map files](#gain-map-files)).
 
 A PNG's own cICP chunk counts as its CICP and takes precedence over its ICC profile,
 as the PNG specification says; the `png` crate reads it, checking its CRC. A
@@ -131,11 +133,91 @@ there) and then limited. Anything else refuses the master by name
 it.
 
 Still refused, as Develop refused every HDR file before:
-- HDR HEIC, which ImageIO and libheif draw their own way;
-- gain-map files;
+- HDR HEIC, which ImageIO and libheif draw their own way, and HEIC gain maps
+  (Apple's own and ISO 21496-1 ones alike);
 - HDR in other primaries or a curved profile.
 
 The Library shows them with graphics white as white and says why.
+
+### Gain-map files
+
+A JPEG or JPEG XL with an ISO 21496-1 gain map opens as an HDR edit too
+(`raster::gain_map`). That covers RAWmakase's own gain-map exports, libultrahdr's
+Ultra HDR, and Adobe's and Apple's ISO form. The reader mirrors the exports
+([Gain maps](#gain-maps)):
+
+- **JPEG:** the base carries the APP2 version marker naming ISO 21496-1 and an MPF
+  index. The index's first secondary image whose own APP2 segment holds the metadata
+  is the map.
+- **JPEG XL:** the container's `jhgm` box holds the metadata and the map's
+  codestream.
+
+**The light** is the authored HDR rendition, reconstructed at the map's full weight:
+what a display with the alternate rendition's whole headroom shows. No display's
+headroom is read, so the light is the same on every monitor and in every export.
+The steps:
+
+1. The base is decoded through its ICC profile to linear light in its own primaries,
+   where 1 is its white, taken as graphics white.
+2. Each channel becomes (base + base offset) × 2^gain − alternate offset. The gain is
+   interpolated in stops between the map's minimum and maximum by the map's sample,
+   raised to 1/gamma.
+3. The result goes to linear ProPhoto through the profile's colorants.
+
+A single-channel map applies one gain to all three channels, a three-channel map one
+each. A map smaller than the base is interpolated bilinearly between its samples'
+centres, the edges held, as a GPU samples a texture. This matches how libultrahdr's
+encoder makes one: each sample is the average of its block. libultrahdr's own
+decoder samples corner-aligned instead.
+
+**The SDR rendition is the base,** decoded exactly as the same JPEG or JPEG XL
+without its map: the Library shows it, and Develop's SDR rendition and SDR exports
+render it. That makes it the authored SDR rendition at neutral settings, not
+RAWmakase's tone map. A catalog edit made before gain maps were read keeps its
+settings, HDR off included, and renders as it did. New files start as HDR edits,
+with the same defaults, master and refusals as the other HDR files above;
+`HdrSource::gain_map` records the provenance.
+
+**What is read.** Everything is read with bounds: segment, MPF, box and metadata
+lengths are checked against the file, and the map's size against its header.
+Refused for Develop, by reason (the Library shows the base):
+
+- **"damaged gain-map".** Any of these:
+  - a short or truncated payload, or a zero denominator;
+  - a maximum below its minimum, a gamma not above 0, or an offset outside 0–1;
+  - gains or headrooms beyond 16 stops;
+  - no MPF index, or one that points outside the file or at no map with metadata;
+  - a map larger than its base, or of another shape beyond a map sample's
+    rounding;
+  - a map that doesn't decode, or decodes to a size other than its header's.
+- **"version N gain-map":** a minimum version above 0, in the base's marker, the
+  metadata or the JPEG XL bundle.
+- **"HDR-base gain-map":** the base is the HDR rendition, by its flag or because its
+  headroom is at or above the alternate's.
+- **"alternate-colour gain-map":** the map applies in the alternate's colour space,
+  which an ICC profile or colour encoding of its own describes.
+- **"grey gain-map"** and **"table-profile gain-map":** a grey base, or a base whose
+  profile converts through tables, which give the map no linear RGB to apply in.
+- **"turned JPEG XL gain-map":** a JPEG XL whose base or map codestream is turned.
+  Which frame the map is in is not settled for JPEG XL. A JPEG's map is in the base's
+  stored frame and turns with its EXIF orientation.
+- **"compressed gain-map":** a `jhgm` box compressed in `brob`.
+
+Not read: gain maps described only by XMP (Adobe's and Android's earlier `hdrgm`
+metadata, without the ISO marker), which open as their SDR base, as before. A JPEG
+XL whose own samples are HDR opens by them as above, whatever map it carries.
+
+**Checks.**
+
+- RAWmakase's own gain-map exports of synthetic ramps reopen with the master's
+  luminance: median 0.005 stop for both JPEG and lossless JPEG XL, worst 0.03 and
+  0.015. That is the map's 8-bit steps; the single-channel maps carry luminance, and
+  colour is the base's.
+- libultrahdr 2.0.2's own Ultra HDR file (Display P3 base, three-channel map the
+  base's size) opens with the light libultrahdr decodes at full headroom, to 0.019
+  stop on the checked pixels: median 0.004 and p95 0.014 over the image.
+- With a quarter-size map, libultrahdr's corner-aligned sampling differs from
+  RAWmakase's by a median 0.08 stop on that steep ramp.
 
 ## HDR export
 

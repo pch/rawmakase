@@ -402,6 +402,7 @@ mod tests {
             source: Source::Rendered,
             hdr_source: Some(HdrSource {
                 transfer: HdrTransfer::Pq,
+                gain_map: false,
                 peak: 4.,
             }),
             ..Default::default()
