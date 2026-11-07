@@ -68,6 +68,8 @@ mod fields;
 #[cfg(test)]
 mod measure;
 #[cfg(test)]
+mod pace;
+#[cfg(test)]
 mod tests;
 
 use crate::storage::Identity;
