@@ -17,12 +17,66 @@ pub fn render_hdr(
     max_edge: u32,
     cancel: Cancel<'_>,
 ) -> Result<crate::rendered::HdrImage> {
+    master(im, r, ai, Part::Whole(max_edge), cancel)
+}
+
+/// The part `[x, y, w, h]` of the HDR master at 100%, in the pixels of the photo as
+/// its geometry lays it out (as a 100% region of the SDR rendition): what
+/// [`render_hdr`] renders there at full size, sharpening included.
+pub fn render_hdr_region(
+    im: &CameraImage,
+    r: &ValidRecipe,
+    region: [u32; 4],
+    cancel: Cancel<'_>,
+) -> Result<crate::rendered::HdrImage> {
+    master(im, r, None, Part::Region(region), cancel)
+}
+
+/// Which part of the master to render: the whole photo within a long edge (0 for
+/// full size), or a region at 100%.
+#[derive(Clone, Copy)]
+enum Part {
+    Whole(u32),
+    Region([u32; 4]),
+}
+impl Part {
+    /// The region `self` renders of a photo `g` lays out, checked to lie within it.
+    fn region(self, g: &Geometry) -> Result<[u32; 4]> {
+        let [x, y, w, h] = match self {
+            Part::Whole(_) => [0, 0, g.width, g.height],
+            Part::Region(region) => region,
+        };
+        ensure!(
+            w > 0
+                && h > 0
+                && x.checked_add(w).is_some_and(|v| v <= g.width)
+                && y.checked_add(h).is_some_and(|v| v <= g.height),
+            "Invalid viewport region"
+        );
+        Ok([x, y, w, h])
+    }
+    fn max_edge(self) -> u32 {
+        match self {
+            Part::Whole(edge) => edge,
+            Part::Region(_) => 0,
+        }
+    }
+}
+
+fn master(
+    im: &CameraImage,
+    r: &ValidRecipe,
+    ai: Option<&crate::develop::AiSource>,
+    part: Part,
+    cancel: Cancel<'_>,
+) -> Result<crate::rendered::HdrImage> {
     use crate::color::{srgb_decode, srgb_encode};
     ensure!(r.hdr.is_active(), "This edit has HDR off");
     crate::model::hdr::check_for(r, &im.metadata)?;
     if im.metadata.hdr_source.is_some() {
-        return render_hdr_light(im, r, max_edge, cancel);
+        return render_hdr_light(im, r, part, cancel);
     }
+    let max_edge = part.max_edge();
     let recipe = r.resolved_hdr(&im.metadata);
     ensure!(
         recipe
@@ -32,22 +86,31 @@ pub fn render_hdr(
         "This photo's camera profile does not render in HDR"
     );
     let geometry = Geometry::new(im, &recipe, 0);
+    let [x, y, w, h] = part.region(&geometry)?;
     let resolved = Resolved { recipe, geometry };
     let source = resolved.source(im, ai, cancel, None)?;
     let r = resolved.recipe.as_ref();
     let g = resolved.geometry;
+    // A region renders with the margin sharpening reads around it, as SDR regions do,
+    // and is cropped to it after.
+    let sigma = Sharpener::new(r).sigma;
+    let halo = if r.sharpening > 0. {
+        (3. * sigma).ceil() as u32
+    } else {
+        0
+    };
+    let left = x.saturating_sub(halo);
+    let top = y.saturating_sub(halo);
+    let base = [
+        left,
+        top,
+        (x + w + halo).min(g.width) - left,
+        (y + h + halo).min(g.height) - top,
+    ];
     let (toned, tonal_recipe) = local_stage(&source.image, &source, r, 1., cancel, None)?;
     let srgb = crate::color::OutputSpace::Srgb;
-    let (mut out, _) = develop::render_base(
-        &toned,
-        &tonal_recipe,
-        &g,
-        [0, 0, g.width, g.height],
-        0.,
-        cancel,
-        None,
-        srgb,
-    )?;
+    let (mut out, _) =
+        develop::render_base(&toned, &tonal_recipe, &g, base, 0., cancel, None, srgb)?;
     check_cancel(cancel)?;
     let peak = r.hdr.peak();
     let encode = |p: &mut [f32; 3]| *p = p.map(|v| srgb_encode(v.max(0.)));
@@ -57,17 +120,18 @@ pub fn render_hdr(
             sharpen_unbounded(
                 &mut out,
                 r,
-                Sharpener::new(r).sigma,
+                sigma,
                 crate::color::OutputSpace::ProPhoto,
                 cancel,
             )?;
+            let out = super::render::crop(out, [x - left, y - top, w, h]);
             let mut out = resize_unbounded(out, max_edge);
             out.pixels
                 .par_iter_mut()
                 .for_each(|p| *p = p.map(|v| srgb_decode(v.max(0.))));
             out
         } else {
-            out
+            super::render::crop(out, [x - left, y - top, w, h])
         };
     check_cancel(cancel)?;
     Ok(crate::rendered::HdrImage {
@@ -91,7 +155,7 @@ pub fn render_hdr(
 fn render_hdr_light(
     im: &CameraImage,
     r: &ValidRecipe,
-    max_edge: u32,
+    part: Part,
     cancel: Cancel<'_>,
 ) -> Result<crate::rendered::HdrImage> {
     use anyhow::Context;
@@ -113,7 +177,7 @@ fn render_hdr_light(
         (&source).into(),
         &recipe,
         &g,
-        [0, 0, g.width, g.height],
+        part.region(&g)?,
         0.,
         cancel,
     )?;
@@ -128,7 +192,7 @@ fn render_hdr_light(
             .map(|p| p.map(|v| v * gain))
             .collect(),
     };
-    let resized = resize_unbounded(out, max_edge);
+    let resized = resize_unbounded(out, part.max_edge());
     let peak = recipe.hdr.peak();
     Ok(crate::rendered::HdrImage {
         width: resized.width,
@@ -424,6 +488,54 @@ mod tests {
             "{} {}",
             peak(&small),
             peak(&full)
+        );
+        Ok(())
+    }
+
+    /// A region of the master at 100% is that part of the whole master, sharpening
+    /// included, for a photo and for an HDR file's light; an invalid region is refused.
+    #[test]
+    fn a_region_of_the_master_is_that_part_of_the_whole() -> Result<()> {
+        let same = |whole: &crate::rendered::HdrImage,
+                    part: &crate::rendered::HdrImage,
+                    [x, y, w, h]: [u32; 4]| {
+            assert_eq!((part.width, part.height), (w, h));
+            for row in 0..h {
+                for col in 0..w {
+                    let a = whole.pixels[((y + row) * whole.width + x + col) as usize];
+                    let b = part.pixels[(row * w + col) as usize];
+                    for c in 0..3 {
+                        assert!(
+                            (a[c] - b[c]).abs() <= 1e-4 * a[c].abs().max(1.),
+                            "{a:?} {b:?}"
+                        );
+                    }
+                }
+            }
+        };
+        let im = grays(&[0.05, 0.2, 1.2, 4.064, 0.4, 2.]);
+        let mut r = hdr_recipe(&im);
+        r.sharpening = 0.6;
+        let r = r.checked()?;
+        let whole = render_hdr(&im, &r, None, 0, Cancel::NEVER)?;
+        for region in [[0, 0, 48, 8], [8, 1, 9, 5], [31, 2, 17, 6]] {
+            same(
+                &whole,
+                &render_hdr_region(&im, &r, region, Cancel::NEVER)?,
+                region,
+            );
+        }
+        assert!(render_hdr_region(&im, &r, [40, 0, 9, 8], Cancel::NEVER).is_err());
+        assert!(render_hdr_region(&im, &r, [0, 0, 0, 8], Cancel::NEVER).is_err());
+
+        let file = hdr_file(6, 4, |x, y| [0.5 * x as f32, 0.1 * y as f32, 3.]);
+        let r = Recipe::for_new_rendered(&file.metadata);
+        let r = r.checked()?;
+        let whole = render_hdr(&file, &r, None, 0, Cancel::NEVER)?;
+        same(
+            &whole,
+            &render_hdr_region(&file, &r, [2, 1, 3, 2], Cancel::NEVER)?,
+            [2, 1, 3, 2],
         );
         Ok(())
     }

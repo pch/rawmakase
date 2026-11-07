@@ -110,7 +110,7 @@ mod prepare;
 mod render;
 mod samples;
 pub(crate) use detail::*;
-pub use hdr::render_hdr;
+pub use hdr::{render_hdr, render_hdr_region};
 pub use highlights::*;
 pub(crate) use local::*;
 pub(crate) use prepare::{Resolved, resolve};

@@ -378,8 +378,9 @@ impl Editor {
         if let (Some(region), Some(at)) = (&region_texture, region_rect) {
             painter.image(region.id(), at, uv, Color32::WHITE);
         }
-        if region_texture.is_none() {
-            self.hdr_preview_ui(&painter, rect);
+        if let Some(g) = &geometry {
+            let due = self.hdr_preview_due();
+            self.hdr_preview_ui(&painter, rect, g, due, false);
         }
         if self.view.compare.renders_before_alone() {
             before_after::badge(ui, area, "Before");
@@ -929,25 +930,56 @@ impl Editor {
     }
 }
 
-impl crate::app::Editor {
-    /// The HDR preview Develop's viewport is due to show in its Fit view: where the
-    /// display has headroom and the photo shown is an edit with HDR on whose master
-    /// renders, with nothing drawn into its SDR rendition. Otherwise why the SDR
-    /// rendition shows, for the Basic panel's note.
-    pub(in crate::app) fn hdr_preview_due(
+/// Why a side shows its SDR rendition when its settings have HDR off.
+pub(in crate::app) const HDR_OFF: &str = "HDR is off";
+
+/// An HDR preview due on one side of the viewport.
+pub(in crate::app) struct HdrDue {
+    pub(in crate::app) image: std::sync::Arc<crate::camera_data::CameraImage>,
+    /// What the side shows at its zoom: the whole photo, or a 100% region.
+    pub(in crate::app) key: crate::app::develop::hdr_preview::Key,
+    /// Under a region, the whole photo the SDR rendition draws there too; shown when
+    /// a preview of it is there (from Fit), never asked for while zoomed in.
+    pub(in crate::app) under: Option<crate::app::develop::hdr_preview::Key>,
+}
+impl std::fmt::Debug for HdrDue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HdrDue")
+            .field("key", &self.key)
+            .field("under", &self.under)
+            .finish_non_exhaustive()
+    }
+}
+impl HdrDue {
+    /// The slots of `key` and `under`, for the edit's side or Before's.
+    fn slots(
         &self,
-    ) -> Result<
-        (
-            crate::app::develop::hdr_preview::Key,
-            std::sync::Arc<crate::camera_data::CameraImage>,
-        ),
-        &'static str,
-    > {
-        let display = self.view.hdr_display;
-        let recipe = self.effective_recipe();
-        let image = self.document.full().ok_or("the photo is still opening")?;
+        before: bool,
+    ) -> (
+        crate::app::develop::hdr_preview::Slot,
+        crate::app::develop::hdr_preview::Slot,
+    ) {
+        use crate::app::develop::hdr_preview::Slot;
+        let (region, whole) = if before {
+            (Slot::BeforeRegion, Slot::BeforeWhole)
+        } else {
+            (Slot::Region, Slot::Whole)
+        };
+        match self.key.part() {
+            crate::app::develop::hdr_preview::Part::Region(_) => (region, whole),
+            crate::app::develop::hdr_preview::Part::Whole(_) => (whole, region),
+        }
+    }
+}
+
+impl crate::app::Editor {
+    /// Why no HDR preview shows anywhere in Develop's viewport, if none can.
+    fn hdr_refused(&self) -> Result<(), &'static str> {
         let refuse = |no: bool, why| if no { Err(why) } else { Ok(()) };
-        refuse(!display.available(), "this display shows no HDR")?;
+        refuse(
+            !self.view.hdr_display.available(),
+            "this display shows no HDR",
+        )?;
         // A chosen monitor profile converts the SDR rendition alone; the surface
         // then holds device RGB, which has no extended range.
         refuse(
@@ -955,10 +987,9 @@ impl crate::app::Editor {
             "HDR shows only with the system's display profile",
         )?;
         refuse(self.module != Module::Develop, "HDR shows in Develop")?;
-        refuse(self.view.zoom.on, "HDR shows in Fit")?;
         refuse(
-            self.view.compare != before_after::Compare::Off,
-            "HDR doesn't show in comparisons yet",
+            self.view.compare == before_after::Compare::CameraThumbnail,
+            "the camera's thumbnail is shown",
         )?;
         // Visualizations render into the SDR rendition: the clipping warning,
         // Remove's spots, a mask's overlay and Point Color's range.
@@ -967,64 +998,162 @@ impl crate::app::Editor {
                 || self.overlay() != crate::app::worker::Overlay::None
                 || self.visualized_swatch().is_some(),
             "a visualization is shown",
-        )?;
-        refuse(!recipe.hdr.is_active(), "HDR is off")?;
+        )
+    }
+    /// The HDR preview due for `recipe` of `image`, shown as `part` with `under` it
+    /// (see [`HdrDue`]), or why its SDR rendition shows.
+    fn hdr_due_for(
+        &self,
+        image: &std::sync::Arc<crate::camera_data::CameraImage>,
+        recipe: &crate::model::recipe::Recipe,
+        region: Option<[u32; 4]>,
+        max_edge: u32,
+    ) -> Result<HdrDue, &'static str> {
+        use crate::app::develop::hdr_preview::{Key, Part};
+        let refuse = |no: bool, why| if no { Err(why) } else { Ok(()) };
+        refuse(!recipe.hdr.is_active(), HDR_OFF)?;
         refuse(
-            crate::model::hdr::check_for(&recipe, &image.metadata).is_err(),
+            crate::model::hdr::check_for(recipe, &image.metadata).is_err(),
             "this edit doesn't render in HDR yet",
         )?;
-        // Its result is the full photo's; the preview renders a reduced copy.
+        // Its result is the full photo's, rendered on its own worker.
         refuse(
             recipe.ai_denoise.enabled,
             "AI Denoise isn't previewed in HDR yet",
         )?;
-        refuse(
-            self.preview.last_fit_edge == 0,
-            "the photo is still opening",
-        )?;
-        let key = crate::app::develop::hdr_preview::Key::new(
-            image,
-            &recipe,
-            self.preview.last_fit_edge,
-            display.headroom,
-        );
-        Ok((key, image.clone()))
+        refuse(max_edge == 0, "the photo is still opening")?;
+        let headroom = self.view.hdr_display.headroom;
+        let whole = Key::new(image, recipe, Part::Whole(max_edge), headroom);
+        Ok(match region {
+            Some(region) => HdrDue {
+                image: image.clone(),
+                key: Key::new(image, recipe, Part::Region(region), headroom),
+                under: Some(whole),
+            },
+            None => HdrDue {
+                image: image.clone(),
+                key: whole,
+                under: None,
+            },
+        })
+    }
+    /// The HDR preview Develop's viewport is due to show of the photo it renders
+    /// (the edit, or Before alone): where the display has headroom and the photo is
+    /// an edit with HDR on whose master renders, with nothing drawn into its SDR
+    /// rendition; the whole photo at its zoom, or the 100% region it renders.
+    /// Otherwise why the SDR rendition shows, for the Basic panel's note.
+    pub(in crate::app) fn hdr_preview_due(&self) -> Result<HdrDue, &'static str> {
+        self.hdr_refused()?;
+        let image = self.document.full().ok_or("the photo is still opening")?;
+        if self.preview.last_fit_edge == 0 {
+            return Err("the photo is still opening");
+        }
+        let recipe = self.effective_recipe();
+        let g = Geometry::new(image, &recipe, 0);
+        let max_edge = self.render_edges(&g).max_edge;
+        self.hdr_due_for(image, &recipe, self.region_in(&g), max_edge)
+    }
+    /// The HDR preview due beside the edit: of Before, or of the reference photo, as
+    /// its SDR rendition last asked for it.
+    pub(in crate::app) fn hdr_second_side_due(&self) -> Result<HdrDue, &'static str> {
+        self.hdr_refused()?;
+        let side = self
+            .second_side_submitted()
+            .ok_or("nothing is beside the edit")?;
+        self.hdr_due_for(side.image, side.recipe, side.region, side.max_edge)
     }
     /// What Develop shows of the open edit, for the Basic panel's note.
     pub(in crate::app) fn hdr_presentation(
         &self,
     ) -> crate::app::develop::hdr_preview::Presentation {
+        self.presentation_of(self.hdr_preview_due(), false)
+    }
+    /// What Develop shows of the side beside the edit, named (Before, or the
+    /// reference photo), while one is shown.
+    pub(in crate::app) fn hdr_second_side_presentation(
+        &self,
+    ) -> Option<(&'static str, crate::app::develop::hdr_preview::Presentation)> {
+        let compare = self.view.compare;
+        if !compare.two_up() || self.second_side_submitted().is_none() {
+            return None;
+        }
+        let side = if compare.reference() {
+            "Reference"
+        } else {
+            "Before"
+        };
+        Some((side, self.presentation_of(self.hdr_second_side_due(), true)))
+    }
+    fn presentation_of(
+        &self,
+        due: Result<HdrDue, &'static str>,
+        before: bool,
+    ) -> crate::app::develop::hdr_preview::Presentation {
         use crate::app::develop::hdr_preview::Presentation;
-        match self.hdr_preview_due() {
+        match due {
             Err(why) => Presentation::Sdr(why),
-            Ok((key, _)) => match self.hdr_preview.failure(&key) {
-                Some(e) => Presentation::Failed(e.to_owned()),
-                None if self.hdr_preview.shows(&key) => Presentation::Hdr {
-                    stops: self.view.hdr_display.headroom.log2(),
-                },
-                None => Presentation::Rendering,
-            },
+            Ok(due) => {
+                let (slot, _) = due.slots(before);
+                match self.hdr_preview.failure(slot, &due.key) {
+                    Some(e) => Presentation::Failed(e.to_owned()),
+                    None if self.hdr_preview.shows(slot, &due.key) => Presentation::Hdr {
+                        stops: self.view.hdr_display.headroom.log2(),
+                    },
+                    None => Presentation::Rendering,
+                }
+            }
         }
     }
-    /// Draws the HDR master over the photo when it is due ([`Self::hdr_preview_due`])
-    /// and its preview for exactly this edit, size and headroom is there; the SDR
-    /// rendition shows until then. Asks for EDR (`ViewState::hdr_shown`) whenever the
-    /// master is due and hasn't failed.
-    fn hdr_preview_ui(&mut self, painter: &egui::Painter, rect: Rect) {
-        let Some(state) = self.render_state.clone() else {
+    /// Draws the HDR master of one side of the viewport over its SDR rendition when
+    /// it is `due`: the photo drawn at `rect` with geometry `g`, and, over it, its
+    /// 100% region. Each draws once its preview for exactly this edit, part and
+    /// headroom is there; the SDR rendition shows until then. What a side leaves
+    /// unused is released when the frame ends ([`crate::app::develop::hdr_preview::HdrPreview::sweep`]). Asks for EDR (`ViewState::hdr_shown`) whenever a master is due and
+    /// hasn't failed.
+    pub(in crate::app) fn hdr_preview_ui(
+        &mut self,
+        painter: &egui::Painter,
+        rect: Rect,
+        g: &Geometry,
+        due: Result<HdrDue, &'static str>,
+        before: bool,
+    ) {
+        use crate::app::develop::hdr_preview::Part;
+        let state = self.render_state.clone();
+        let (Some(state), Ok(due)) = (state, due) else {
             return;
         };
-        let Ok((key, image)) = self.hdr_preview_due() else {
-            return;
+        let (slot, other) = due.slots(before);
+        self.hdr_preview
+            .request(slot, due.key.clone(), due.image.clone());
+        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
+        let draw = |preview: &mut crate::app::develop::hdr_preview::HdrPreview,
+                    slot,
+                    key: &crate::app::develop::hdr_preview::Key| {
+            let at = match key.part() {
+                Part::Whole(_) => rect,
+                Part::Region(region) => before_after::region_on(rect, g, region),
+            };
+            if let Some(id) = preview.texture(slot, key, &state) {
+                painter.image(id, at, uv, Color32::WHITE);
+            }
         };
-        self.hdr_preview.request(key.clone(), image);
-        if let Some((id, _)) = self.hdr_preview.texture(&key, &state) {
-            let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
-            painter.image(id, rect, uv, Color32::WHITE);
+        // The SDR rendition's own region is drawn over its whole photo; an HDR one
+        // under it would hide it. So the whole photo's preview shows under a region
+        // only with the region's.
+        let shown = self.hdr_preview.texture(slot, &due.key, &state).is_some();
+        if let Some(under) = &due.under {
+            self.hdr_preview.keep(other);
+            if shown {
+                draw(&mut self.hdr_preview, other, under);
+            }
         }
+        draw(&mut self.hdr_preview, slot, &due.key);
         // EDR stays on while an edit's preview is re-rendered: macOS ramps the
         // display's headroom when it is switched, and the next preview needs it.
-        self.view.hdr_shown = self.hdr_preview.failure(&key).is_none();
+        if self.hdr_preview.failure(slot, &due.key).is_none() {
+            self.view.hdr_shown = true;
+        }
     }
 }
 
