@@ -157,6 +157,7 @@ mod tests {
         let export = ExportOptions {
             quality: 80,
             max_edge: 0,
+            ..Default::default()
         };
         let (a, b, unedited) = (&photos[0], &photos[1], &photos[2]);
         c.save_edit(

@@ -84,17 +84,78 @@ reduction on both sides, per photo:
   The 16-bit TIFF is 273 MB. Lossless-only output is a valid interchange
   fallback, but not a credible replacement for the lossy JXL exports #894 asks for.
 
-Decision: no Rust encoder qualifies for lossy HDR JXL. The owner deferred the libjxl
-dependency on 2026-11-05. #906 records the proposal, its consequences and a build
-spike. Until #906 is decided, HDR JXL export is lossless only, through the Rust
-path. HDR editing, gain-map bundling and TIFF interchange continue.
+Decision, 2026-11-05: no Rust encoder qualified for lossy HDR JXL, and the libjxl
+dependency was deferred to #906. #906 then asked for `jixel` to be evaluated first,
+and libjxl used only if it didn't fit.
+
+**jixel evaluation (#906, 2026-11-07).** `jixel` 0.5.7 (BSD-3-Clause OR Apache-2.0,
+pure Rust, a port of libjxl-tiny with VarDCT and lossless modes) was measured on the
+45 MP Z 8 photo above. It was rendered with Adobe Standard, `HDRMaxValue` 4, as
+16-bit PQ and HLG masters in Display P3 and Rec. 2020 and encoded from the same
+samples. cjxl 0.12 (distance 1, effort 7) was the size and quality oracle. Decoding
+used libjxl 0.12's `djxl` and jxl-oxide 0.12.6. Errors are the stage 1 metrics of the
+decoded light against the master's: linear P3, graphics white 1 (203 cd/m²), "above"
+meaning luminance above white, "saturated" above white with one channel at least
+twice another. They are per pixel at full resolution, and after a 4× linear area
+reduction where marked. Encode times are on one Apple-silicon Mac (jixel with 16
+threads, cjxl with its default).
+
+| P3 PQ, 8256×5504 | Size | Encode | Above white, median / p95 (stops) | Saturated p95 (stops) | ΔE_ITP mean / p95 | ΔE_ITP mean, 4× |
+| --- | --- | --- | --- | --- | --- | --- |
+| Lossless (zune) | 197 MB | 1.7 s | exact | exact | 0 | 0 |
+| cjxl d=1, e7 | 10.9 MB | 9.1 s | 0.005 / 0.028 | 0.031 | 6.2 / 17.0 | 2.57 |
+| jixel d=1 | 8.0 MB | 2.9 s | 0.006 / 0.034 | 0.037 | 7.4 / 19.5 | 3.00 |
+| jixel d=0.82 (quality 92, the export) | 9.1 MB | – | 0.006 / 0.032 | 0.035 | 6.9 / 18.1 | 2.65 |
+| jixel d=0.6 | 11.6 MB | 2.7 s | 0.006 / 0.027 | 0.031 | 6.0 / 16.0 | 2.14 |
+
+- **Size and speed.** At distance 1 jixel's file is 0.73× cjxl's and its error a
+  little larger. At quality 92, the export's default, it is 0.84× the size and between
+  cjxl's d=1 and jixel's d=0.6. At d=0.6 it matches cjxl's d=1 at 1.06× the size. It
+  encodes 2–3× faster than cjxl e7. Rec. 2020 gives the same numbers to 0.001.
+  The full-resolution ΔE_ITP is dominated by the photo's shadow noise for both
+  encoders; the 4× reduction shows what remains.
+- **Signalling.** `jxlinfo` reads P3 or Rec. 2100 primaries, PQ and 10,000 nits. With
+  RAWmakase's header, it reads HLG and 1,000 nits. `djxl` and jxl-oxide decode PQ
+  files to the same light (ΔE_ITP mean 6.87 and 6.82).
+- **HLG is wrong as jixel 0.5.7 encodes it.** Its HLG input is linearised with the
+  inverse OETF alone, as scene light 0–1, where libjxl expects display light at the
+  intensity target (the OOTF, gamma 1.2 at 1,000 cd/m²). Both decoders then give back
+  light 1.96 stops dark above white (cjxl's HLG file: 0.0016). XYB holds absolute
+  light, so RAWmakase encodes an HLG export's display light as PQ, with the HLG
+  intensity target, and replaces the header with one that says HLG. jixel's header is
+  first checked against the one RAWmakase writes for that PQ frame, and refused if it
+  differs. Through the export path at quality 92, HLG in P3 and Rec. 2020 is 9.1 MB, 0.002
+  stop above white (median; p95 0.031), saturated p95 0.040–0.041, peak exact (`djxl`).
+- **jxl-oxide and lossy HLG.** jxl-oxide clips XYB's light, in BT.709 primaries, to
+  the intensity target before converting it to wider primaries. At HLG's 1,000 cd/m²
+  a saturated Rec. 2020 highlight near the peak reads back clipped (a red at 855
+  cd/m² as 581), where `djxl` gives it back; the codestream is the same at any
+  intensity target. It also gives NaN for about 8,500 of the photo's pixels, as it
+  does (15,400) for cjxl's own lossy HLG file. Both are decoder limits, not the
+  encoder's. RAWmakase's reader is jxl-oxide, so its own lossy HLG exports read back
+  that way.
+- **Gain maps.** RAWmakase's `jhgm` writer wraps jixel's codestreams: an 8-bit sRGB
+  base and a gray map, both lossy at the same distance. At quality 92 the file is
+  10.3 MB, against 74 MB lossless (a 67 MB base and a 7 MB map). The map is 0.85 MB,
+  within 2 codes at p95 (0.03 stop of its 3.75-stop range) and 3 at p99. `jxlinfo`
+  reads the bundle (version 0, 61-byte metadata, the map's codestream), and `djxl`
+  decodes the base and the map. jixel's own gain-map writer was not needed.
+- **Dependency hygiene.** It has no dependencies with `default-features = false`, no
+  build script and no C. Its licence is in cargo deny's allow-list. It needs Rust
+  1.94, and the workspace's MSRV is 1.98.1. The app binary grows 3.6 MB stripped
+  (51.8 to 55.4 MB, macOS arm64). Its `unsafe` was skimmed, not audited
+  ([dependencies](../dependencies.md)).
+
+Verdict: jixel fits, with the HLG workaround. Lossy JPEG XL (HDR PQ and HLG, gain
+maps, SDR) is exported through it, at the Export dialog's quality; lossless stays
+on zune. libjxl is not added.
 
 **Gain-map bundle.** libjxl's `lib/extras/gain_map.cc` defines the `jhgm` box:
 a version byte (0), a big-endian u16 size and the ISO 21496-1 metadata, a u8 size and
 a bit-packed `ColorEncoding` for the alternate rendition, a big-endian u32 size and a
 Brotli-compressed ICC, then the gain map as a naked codestream (the rest of the box).
-The writer and reader need no libjxl. The map's codestream needs the same encoder as
-the base image.
+The writer and reader need no libjxl. The map's codestream comes from the same
+encoder as the base image: zune for a lossless export, jixel for a lossy one.
 
 **Independent oracles available locally:** libjxl 0.12 (`cjxl`, `djxl`,
 `jxlinfo`), jxl-oxide, libultrahdr 2.0.2 (`ultrahdr_app`: ISO 21496-1 and Adobe
@@ -204,7 +265,6 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
 
 ## Open
 
-- Lossy HDR JXL: deferred to #906.
 - Positive Whites, Contrast, Highlights, Shadows and the colour stage in HDR.
 - The SDR rendition sliders and Camera Raw's default SDR rendition.
 - Looks (Adobe Color and other enhanced profiles) in HDR: the most common profile in
@@ -225,7 +285,7 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
 ## Progress
 
 - [ ] Stage 1: harness, Nikon measurements and codec spike done; fixtures, frozen
-  family and display prototype open. The libjxl decision is deferred to #906.
+  family and display prototype open. Lossy JPEG XL uses jixel, not libjxl (#906).
 - [x] Stage 2 (#905): HDR settings in the recipe (`model::hdr`), schema 14 and catalog
   version 6 for HDR on, values kept while off without a format change, XMP and
   Lightroom reading and writing, presets, the High Dynamic Range Copy/Sync group,
@@ -243,8 +303,9 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
   independent decoder; lossless JPEG XL PQ and HLG (and SDR sRGB), checked with
   libjxl's `jxlinfo` and `djxl` and jxl-oxide; gain-map JPEG (ISO 21496-1) checked with
   libultrahdr; JPEG XL gain maps (`jhgm`), the bundle read by libjxl's `jxlinfo`. A
-  resized master lost its light above white until #910. Open: lossy JPEG XL waits on
-  #906; AVIF and HEIC HDR are not planned for #894.
+  resized master lost its light above white until #910. Lossy JPEG XL (HDR, gain
+  maps and SDR) through jixel, checked with `djxl` and jxl-oxide (#906). Open: AVIF
+  and HEIC HDR are not planned for #894.
 - [ ] Stage 4: HDR TIFF, PNG, JPEG XL and AVIF files (PQ, HLG or linear in BT.709,
   BT.2020 or P3; identity-curve ICCs; float TIFFs) open as HDR edits
   ([design](hdr-stage4-design.md)): exact light, master identity at their own

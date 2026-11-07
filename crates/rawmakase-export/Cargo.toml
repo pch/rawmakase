@@ -37,6 +37,12 @@ unicode-normalization.workspace = true
 # image header (colour encoding, tone mapping) and the container itself.
 zune-jpegxl = { version = "0.5.2", default-features = false, features = ["std", "threads"] }
 zune-core = { version = "0.5.3", default-features = false, features = ["std"] }
+# Lossy JPEG XL exports: a pure-Rust VarDCT encoder (a port of libjxl-tiny).
+# Pinned exactly: it is young and its API changes between releases, so each
+# upgrade is reviewed (docs/dependencies.md). Without its default features it
+# leaves out the metric crates and the experimental splines; the SIMD paths are
+# chosen at run time.
+jixel = { version = "=0.5.7", default-features = false, features = ["neon", "sse", "avx"] }
 # Inter and the installed-font directories for text watermarks. It is built for
 # egui and brings egui along, though nothing here draws with it.
 fastframe-fonts.workspace = true
