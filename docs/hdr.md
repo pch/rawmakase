@@ -95,6 +95,8 @@ HDR reference family):
 | Blacks, default black | As in SDR, on values below 1; values above white are left alone. |
 | Profile look table | An HDR profile's 3D table on overrange-encoded values, as the DNG SDK applies it; an ordinary profile's keeps the values above white it scales. |
 | Profile tone curve | `camera_profiles::hdr_tone`: an HDR profile's curve by the DNG SDK's overrange rule; an ordinary curve by the measured extension (ACR3's measured HDR curve, and a fitted deviation for other curves); a curve that never brightens as the identity. RGBTone. |
+| Look table | A look's HSV table (Adobe Color's and the other Adobe Raw looks', RAWmakase Color's) after the profile's, on overrange-encoded values, as the DNG SDK applies an HDR profile's, unclipped. |
+| Look curve | `camera_profiles::hdr_look`, after the profile's curve: the look's curve in an encoding that is sRGB's up to graphics white and logarithmic above. A curve that ends at white follows itself up to its largest lift, then runs parallel to the identity at that lift, at most 16 (so a curve that never lifts renders as the identity); one that ends below white continues along its slope there. RGBTone. |
 | HDR limit | Each channel rolled off to 2^limit from 97% of it (`model::hdr::roll_off`), last. |
 | Sharpening, resizing | On sRGB-curve-encoded values of the master's primaries, unclipped, with ProPhoto luminance; the limit applies after them. |
 
@@ -108,9 +110,11 @@ something without a measured HDR rendering: Contrast, Highlights, Shadows, posit
 Whites, Levels, point and parametric curves, Presence (Clarity, Texture, Dehaze,
 Vibrance, Saturation), the colour mixer, Point Color, Color Grading, Calibration,
 Black & White, Defringe, grain and vignette, masks, Red Eye, the SDR rendition's
-sliders, looks (Lightroom's creative and Adobe looks, `.cube` looks and fitted
-Camera Looks), DCP tables encoded in sRGB, and ordinary tone curves unlike the
-measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
+sliders, looks other than a table and a curve at 100% (looks with an RGB table, such
+as `.cube` looks and Lightroom's creative looks; looks with their own sliders or
+settings, such as Adobe Vivid and Adobe Landscape; Black & White looks; fitted
+Camera Looks; any Profile Amount but 100%), DCP tables encoded in sRGB, and
+ordinary tone curves unlike the measured family. The edit stays valid and keeps HDR on, so nothing is downgraded:
 its SDR rendition renders all of it, and the reason is shown where the master is
 asked for.
 

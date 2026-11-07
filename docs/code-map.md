@@ -199,6 +199,7 @@ standalone `rawmakase-ctl`). The last two build without the app.
 | [reference.rs](../crates/rawmakase-model/src/camera_profiles/reference.rs) | A photo's baseline exposure (DNG tag or camera table) and verified neutral calibration data. |
 | [dng_tone.rs](../crates/rawmakase-model/src/camera_profiles/dng_tone.rs) | Adobe DNG default tone-curve data. |
 | [overrange.rs](../crates/rawmakase-model/src/camera_profiles/overrange.rs) | DNG 1.7's overrange encoding of HDR profiles' tables and curves. |
+| [hdr_look.rs](../crates/rawmakase-model/src/camera_profiles/hdr_look.rs) | A look's curve in HDR: Camera Raw's measured encoding and the rule that changes the curve above white ([HDR](hdr.md)). |
 | [hdr_tone.rs](../crates/rawmakase-model/src/camera_profiles/hdr_tone.rs) | A profile curve in HDR: the SDK's overrange rule for HDR profiles, Camera Raw's measured extension of ordinary curves (data in `hdr_tone_data.rs`), and the refusal of curves outside the measured family ([HDR](hdr.md)). |
 | [open.rs](../crates/rawmakase-model/src/camera_profiles/open.rs) | RAWmakase Standard and Color, our own profiles for every camera with a colour matrix. |
 

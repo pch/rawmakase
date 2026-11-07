@@ -415,11 +415,61 @@ mod tests {
         r.hdr.sdr.brightness = 0.2;
         assert!(master(&r).is_err());
         r.hdr.sdr.brightness = 0.;
+        // A look renders its master at 100%, and with an RGB table not at all.
         r.profile = Some(std::sync::Arc::new(CameraProfile::creative_for_test(
             &im.metadata,
         )));
+        master(&r)?;
+        r.profile_amount = 0.5;
         assert!(master(&r).is_err());
         crate::develop::render(&im, &r.checked()?, 0, Cancel::NEVER)?;
+        r.profile_amount = 1.;
+        let rgb = CameraProfile::creative_for_test(&im.metadata).with_test_rgb_tables();
+        r.profile = Some(std::sync::Arc::new(rgb[0].clone()));
+        assert!(master(&r).is_err());
+        crate::develop::render(&im, &r.checked()?, 0, Cancel::NEVER)?;
+        Ok(())
+    }
+
+    /// A look's table and curve render a gray ramp through the ACR3 curve as Camera
+    /// Raw 18.7 renders them at HDR limit 8: an S curve lifts values above white, and
+    /// a table that scales value by 1 − 0.3 v over eight divisions looks it up on
+    /// overrange-encoded values.
+    #[test]
+    fn a_looks_table_and_curve_render_as_camera_raw_renders_them() -> anyhow::Result<()> {
+        let levels = [0.183, 0.5055, 0.9785, 1.9928];
+        let im = grays(&levels);
+        let s = [
+            [0., 0.],
+            [64., 44.],
+            [128., 132.],
+            [192., 214.],
+            [255., 255.],
+        ]
+        .map(|p: [f32; 2]| p.map(|v| v / 255.));
+        let identity = [[0., 0.], [1., 1.]];
+        let base = hdr_recipe(&im).profile.unwrap().as_ref().clone();
+        for (look, measured) in [
+            (
+                base.clone().with_test_look(1, |_| 1., &s),
+                [0.4946, 1.3018, 3.2835, 10.3142],
+            ),
+            (
+                base.with_test_look(8, |v| 1. - 0.3 * v, &identity),
+                [0.3665, 0.9066, 1.6358, 3.3036],
+            ),
+        ] {
+            let mut r = hdr_recipe(&im);
+            r.profile = Some(std::sync::Arc::new(look));
+            let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+            for (i, expected) in measured.iter().enumerate() {
+                let got = centre(&out, i);
+                assert!(
+                    (got / expected).log2().abs() < 0.07,
+                    "{i}: {got} {expected}"
+                );
+            }
+        }
         Ok(())
     }
 

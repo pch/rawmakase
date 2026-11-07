@@ -1,6 +1,6 @@
 # HDR results: references, measurements and progress
 
-Status: in progress, 2026-11-06. The record of the
+Status: in progress, 2026-11-07. The record of the
 [HDR implementation plan](hdr-implementation-plan.md): what was measured, the
 decisions taken from it, validation results and what remains open. Stage 1 (references,
 codec and display feasibility) comes first; stage 3's rendering measurements follow
@@ -208,6 +208,48 @@ gammas and steep filmic curves the fit misses, and two of the 58.
 slope extension above encoded 1, 3D tables on encoded values) renders Camera Standard
 HDR within 0.01 stop median above white on six of six photos.
 
+### Looks
+
+Measured on gray ramps (sensor white +4 and +6 stops, a linear and the ACR3 profile
+curve, HDR limits 2, 4 and 8) and on colour patches (12 hues, saturations 0.3 to 0.9,
+0.25 to 8 times white), through synthetic looks read from the sidecar and Adobe Color.
+
+- **Table.** A look's HSV table applies in HDR as the DNG SDK applies an HDR
+  profile's: a table with value divisions looks up overrange-encoded values, linear
+  or sRGB-flagged, and a 2.5D table scales linear values. A synthetic table that
+  scales value by 1 − 0.3 v over eight divisions renders scene 15.2 as 2.24 (the
+  rule gives 2.25) and 0.98 as 0.729 (0.728); a 2.5D scale of 0.8 is a gain of 0.8
+  at every value.
+- **Curve.** A look's curve applies after the profile's curve, depending only on its
+  input (the linear and ACR3 profiles give the same mapping, as do limits 2, 4 and 8).
+  It works in an encoding that is sRGB's up to graphics white and
+  1 + (a/b) log2(1 + b log2 x) above it (a = 0.19207, b = 0.08544). A curve whose last
+  point is white follows itself up to where it lifts its input most, then runs
+  parallel to the identity at that lift, at most 16. A curve that never lifts its
+  input (one that only darkens) therefore renders as the identity, below white too.
+  A curve that ends below white keeps its shape to white and continues along its
+  slope. Sixteen synthetic curves (lines, clips, knees, lifted blacks, S curves)
+  and Adobe Color's render within 0.063 stop up to scene 15.5, median 0.006. The
+  encoding's constants were fitted on four of them; the rest hold within the same
+  error. Above 16, Camera Raw holds a curve that ends at white near 16, drifting
+  by up to 0.25 stop by scene 32; RAWmakase holds it at 16.
+- **Colour.** The curve applies RGBTone fashion on encoded values, as in SDR. On the
+  colour patches the effect of an S curve, a hue-and-saturation table and both
+  together match Camera Raw's to a median of 0.009 stop (p95 0.095) and a median
+  ΔE_ITP of 1.4 or less at every intensity.
+- **Photos.** Adobe Color on the twelve photos, and Adobe Neutral and Adobe Portrait
+  on the six validation photos, Adobe Standard DCPs, HDR limit 4, score as Adobe
+  Standard does without a look (median above white 0.007–0.081, the same photos
+  failing for the same reasons listed under [Validation](#validation)). Adobe
+  Neutral's curve never lifts: Camera Raw's HDR render departs from its SDR render
+  below 0.5 by a median of 0.02–0.24 stop, and RAWmakase's departs by the same
+  amount, to 0.004 stop.
+
+Refused until measured: looks with an RGB table (`.cube` looks, Lightroom's
+creative looks), looks with their own sliders or settings (Adobe Vivid and Adobe
+Landscape carry Clarity, Highlights and Shadows), Black & White looks, fitted Camera
+Looks (no Camera Raw counterpart) and Profile Amounts other than 100%.
+
 ### Validation
 
 `scripts/corpus/hdr_validate.py` renders each HDR job of the family with
@@ -267,8 +309,11 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
 
 - Positive Whites, Contrast, Highlights, Shadows and the colour stage in HDR.
 - The SDR rendition sliders and Camera Raw's default SDR rendition.
-- Looks (Adobe Color and other enhanced profiles) in HDR: the most common profile in
-  Lightroom edits, so the next measurement.
+- Looks with an RGB table, their own sliders, B&W, Profile Amount and Camera Looks in
+  HDR (looks of a table and a curve render: [Looks](#looks)).
+- Saturated colours: with no look, the colour patches at saturation 0.9 differ from
+  Camera Raw by a median ΔE_ITP of 24 at every intensity, below white too, while
+  those at 0.3 and 0.6 differ by 0.2; not HDR's.
 - Fixtures: synthetic PQ, HLG and gain-map files from the tools above (libultrahdr's
   Ultra HDR JPEGs are in `tests/data/formats`), plus a camera HLG/PQ HEIF and an Apple
   gain-map HEIC/JPEG, which need a real capture. Synthetic
@@ -295,8 +340,9 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
   importable, the ordinary-curve extension, Exposure, negative Whites, Blacks and the
   limit, measured and validated on the family (above); the SDR rendition everywhere
   else; the release guard lifted with Develop's HDR switch and SDR-rendition status;
-  `rawmakase render --hdr`. Open: positive Whites, Contrast, Highlights, Shadows,
-  the colour stage, looks, the SDR rendition sliders, 52552 grouping (library only,
+  `rawmakase render --hdr`; looks of a table and a curve, Adobe Color among them
+  ([Looks](#looks)). Open: positive Whites, Contrast, Highlights, Shadows,
+  the colour stage, the other looks, the SDR rendition sliders, 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display
   P3, Rec. 709; CICP-tagged ICC; #908), checked against Camera Raw's PQ TIFF through an

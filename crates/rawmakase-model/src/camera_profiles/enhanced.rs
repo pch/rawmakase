@@ -229,6 +229,50 @@ impl Enhanced {
             ..self.clone()
         }
     }
+    /// Refuses a look whose HDR rendering is not measured. A look of an HSV table and
+    /// a curve, as Lightroom's Adobe Color is, renders in HDR (`super::hdr_look`);
+    /// RGB tables, the look's own sliders and settings, B&W and fitted Camera Looks
+    /// do not yet.
+    pub(super) fn check_hdr(&self) -> Result<()> {
+        ensure!(
+            self.camera_look.is_none(),
+            "Camera Look is not supported in HDR yet"
+        );
+        ensure!(
+            self.rgb.is_none(),
+            "Looks with an RGB table, such as .cube looks and Lightroom's creative looks, are not supported in HDR yet"
+        );
+        ensure!(
+            !self.monochrome,
+            "Black & White looks are not supported in HDR yet"
+        );
+        ensure!(
+            [
+                self.highlights,
+                self.shadows,
+                self.clarity,
+                self.contrast,
+                self.blacks
+            ]
+            .iter()
+            .all(|v| *v == 0.)
+                && self.settings.is_default(),
+            "Looks with their own adjustments are not supported in HDR yet"
+        );
+        Ok(())
+    }
+    /// The look's HSV table in HDR, as Camera Raw 18.7 applies a look's table there:
+    /// as the DNG SDK applies an HDR profile's (a 3D table on overrange-encoded
+    /// values), unclipped.
+    pub(super) fn apply_table_hdr(&self, rgb: [f32; 3]) -> [f32; 3] {
+        match &self.table {
+            Some(table) => table.apply_overrange(rgb, None, 0.),
+            None => rgb,
+        }
+    }
+    pub(super) fn curve(&self) -> &CurveLut {
+        &self.curve
+    }
     pub(super) fn apply_table(&self, rgb: [f32; 3]) -> [f32; 3] {
         match &self.table {
             Some(table) => table.apply(rgb.map(|v| v.clamp(0., 1.)), None, 0.),
