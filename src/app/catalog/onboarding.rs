@@ -3,7 +3,7 @@
 //! Library's start while it has no photos.
 use crate::app::Editor;
 use crate::app::Module;
-use crate::app::presets::bulk_import::{ImportKind, Summary, find_files};
+use crate::app::presets::bulk_import::{ImportKind, LIGHTROOM_PRESETS, Summary, find_files};
 use crate::app::shell::dialogs::{CatalogDialog, FileDialog, FolderAction};
 use crate::app::task::Task;
 use crate::app::ui::design::{self, Tone, radius, space, text};
@@ -81,6 +81,9 @@ pub(crate) struct Found {
     models: Vec<String>,
     /// Makers of the catalog's cameras, e.g. "Sony".
     makers: BTreeSet<String>,
+    /// The folders presets are imported from: Camera Raw's, where Lightroom
+    /// Classic keeps them, then each Adobe account's in Lightroom's library.
+    preset_folders: Vec<PathBuf>,
     user_presets: Vec<PathBuf>,
     /// Lightroom catalogs where Lightroom keeps them, the latest used first.
     catalogs: Vec<PathBuf>,
@@ -107,14 +110,44 @@ impl Onboarding {
         self.results.iter().find(|r| r.kind == kind)
     }
 }
-/// The folder Lightroom Classic keeps its catalog in unless told otherwise.
-fn lightroom_folder() -> Option<PathBuf> {
+fn pictures() -> Option<PathBuf> {
     let home = if cfg!(windows) {
         std::env::var_os("USERPROFILE")?
     } else {
         std::env::var_os("HOME")?
     };
-    Some(PathBuf::from(home).join("Pictures").join("Lightroom"))
+    Some(PathBuf::from(home).join("Pictures"))
+}
+/// The folder Lightroom Classic keeps its catalog in unless told otherwise.
+fn lightroom_folder() -> Option<PathBuf> {
+    Some(pictures()?.join("Lightroom"))
+}
+/// The library Lightroom (not Classic) keeps unless it was moved in
+/// Lightroom's preferences. Lightroom doesn't say where it was moved to.
+fn lightroom_library() -> Option<PathBuf> {
+    Some(pictures()?.join("Lightroom Library.lrlibrary"))
+}
+/// The presets Lightroom syncs, one folder for each Adobe account's folder
+/// in `library`.
+fn lightroom_presets(library: &std::path::Path) -> Vec<PathBuf> {
+    let mut found: Vec<PathBuf> = std::fs::read_dir(library)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path().join(LIGHTROOM_PRESETS))
+        .filter(|p| p.is_dir())
+        .collect();
+    found.sort();
+    found
+}
+/// Where presets are imported from: Camera Raw's folder, then Lightroom's.
+fn preset_folders() -> Vec<PathBuf> {
+    let classic = user_camera_raw().map(|user| user.join("Settings"));
+    let synced = lightroom_library().map(|l| lightroom_presets(&l));
+    classic
+        .into_iter()
+        .chain(synced.into_iter().flatten())
+        .collect()
 }
 /// The Lightroom catalogs in Lightroom's folder, the latest used first.
 fn lightroom_catalogs() -> Vec<PathBuf> {
@@ -136,10 +169,13 @@ fn lightroom_catalogs() -> Vec<PathBuf> {
     found.into_iter().map(|(_, p)| p).collect()
 }
 /// Whether this computer has something of Lightroom's to bring over: its
-/// catalog or Camera Raw's profiles and presets. A first launch opens the
-/// setup view only then.
+/// catalog, Camera Raw's profiles and presets or Lightroom's synced presets.
+/// A first launch opens the setup view only then.
 pub(in crate::app) fn lightroom_here() -> bool {
-    shared_camera_raw().is_some() || user_camera_raw().is_some() || !lightroom_catalogs().is_empty()
+    shared_camera_raw().is_some()
+        || user_camera_raw().is_some()
+        || !lightroom_catalogs().is_empty()
+        || lightroom_library().is_some_and(|l| !lightroom_presets(&l).is_empty())
 }
 /// The full name `model` goes by among `names`, which spell out the maker:
 /// Lightroom records "ILCE-7M2" where Adobe's profiles say "Sony ILCE-7M2", but
@@ -299,10 +335,12 @@ impl Found {
                 cameras.is_empty() || cameras.iter().any(|c| names_camera(&name, c))
             })
             .collect();
-        self.user_presets = user
-            .as_ref()
-            .map(|d| find_files(&d.join("Settings"), &["xmp"], &["Defaults", "GPU"]))
-            .unwrap_or_default();
+        self.preset_folders = preset_folders();
+        self.user_presets = self
+            .preset_folders
+            .iter()
+            .flat_map(|d| find_files(d, &["xmp"], &["Defaults", "GPU"]))
+            .collect();
     }
 }
 
@@ -445,9 +483,7 @@ impl Editor {
                     ImportKind::LensProfiles => found.lens_profiles.clone(),
                     // The folder rather than its files, to skip Defaults and
                     // keep preset folders.
-                    ImportKind::Presets => user_camera_raw()
-                        .map(|user| vec![user.join("Settings")])
-                        .unwrap_or_default(),
+                    ImportKind::Presets => found.preset_folders.clone(),
                 };
                 self.onboarding.importing = Some(kind);
                 self.import(kind, paths, ctx);
@@ -553,7 +589,13 @@ impl Editor {
                 "Presets",
                 "Your develop presets, in their groups.",
                 found.user_presets.len(),
-                folders(&[&user], "Settings"),
+                looks_in(
+                    found
+                        .preset_folders
+                        .iter()
+                        .map(|d| pretty_path(d))
+                        .collect(),
+                ),
             ),
         };
         let noun = match kind {
@@ -994,11 +1036,15 @@ fn mark(ui: &mut egui::Ui, center: egui::Pos2, mark: Mark) {
 /// The folders of `subfolder` under each of `dirs` that exist, one a line,
 /// for a row's hover; None when there are none.
 fn folders(dirs: &[&Option<PathBuf>], subfolder: &str) -> Option<String> {
-    let lines: Vec<String> = dirs
-        .iter()
-        .filter_map(|dir| dir.as_ref())
-        .map(|dir| pretty_path(&dir.join(subfolder)))
-        .collect();
+    looks_in(
+        dirs.iter()
+            .filter_map(|dir| dir.as_ref())
+            .map(|dir| pretty_path(&dir.join(subfolder)))
+            .collect(),
+    )
+}
+/// A row's hover listing `lines`, the folders it looks in; None without any.
+fn looks_in(lines: Vec<String>) -> Option<String> {
     (!lines.is_empty()).then(|| format!("Looks in\n{}", lines.join("\n")))
 }
 /// The button that opens the default catalog, made on first use.
@@ -1173,6 +1219,26 @@ mod tests {
         let row = editor.catalog_row();
         assert!(row.mark == Mark::Done);
         assert_eq!(row.import, None);
+        Ok(())
+    }
+
+    #[test]
+    fn lightroom_s_presets_are_found_for_each_account() -> anyhow::Result<()> {
+        let library = tempfile::tempdir()?;
+        for account in ["b67b", "0a1c"] {
+            std::fs::create_dir_all(library.path().join(account).join("cr_settings"))?;
+        }
+        // An account folder without synced presets, and the library's own files.
+        std::fs::create_dir_all(library.path().join("9f3e/cr_defaults"))?;
+        std::fs::write(library.path().join("previews.db"), "")?;
+        assert_eq!(
+            lightroom_presets(library.path()),
+            [
+                library.path().join("0a1c/cr_settings"),
+                library.path().join("b67b/cr_settings"),
+            ]
+        );
+        assert!(lightroom_presets(&library.path().join("missing")).is_empty());
         Ok(())
     }
 
