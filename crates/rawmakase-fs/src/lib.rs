@@ -17,6 +17,10 @@
 //! partial copy is for) or an empty folder (which only one a copy made is
 //! for).
 //!
+//! Reading another program's SQLite database also needs one question of the
+//! system, whether that program has it open ([`sqlite_in_use`]), asked of a
+//! lock without opening anything to write.
+//!
 //! Each system's calls are in a file of their own (`unix.rs`, `windows.rs`);
 //! a system with neither answers [`FsError::Unsupported`].
 //!
@@ -525,6 +529,32 @@ pub fn created(path: &Path) -> Result<std::time::SystemTime, FsError> {
 pub fn volume_facts(path: &Path) -> Result<VolumeFacts, FsError> {
     os::volume_facts(path)
 }
+
+/// Whether a program has the SQLite database `db` open in WAL mode. Every
+/// connection to such a database holds a shared lock on one byte of its
+/// `-shm` file, SQLite's "dead man switch", for as long as it is open, idle
+/// or not. Only that lock is asked about: neither the database nor its
+/// `-wal` and `-shm` files are opened for writing or changed, so a program
+/// can be told apart from the files it leaves behind when it quits. A
+/// database without a `-shm` file has no WAL-mode connection; one in
+/// rollback-journal mode isn't seen. Not for a database this process has
+/// open: its own connection's lock counts as a program's on Windows, and on
+/// Unix the file opened to ask is closed again, which lets go of every POSIX
+/// lock this process holds on it.
+pub fn sqlite_in_use(db: &Path) -> Result<bool, FsError> {
+    let mut shm = db.as_os_str().to_owned();
+    shm.push("-shm");
+    match std::fs::metadata(&shm) {
+        Ok(_) => os::sqlite_shm_locked(Path::new(&shm)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// The byte of a `-shm` file each connection holds a shared lock on while
+/// open: `UNIX_SHM_DMS` in SQLite's `os_unix.c` and `WIN_SHM_DMS` in
+/// `os_win.c`, both 120 + `SQLITE_SHM_NLOCK` (8).
+const SQLITE_SHM_DMS: u64 = 128;
 
 #[cfg(test)]
 mod tests;

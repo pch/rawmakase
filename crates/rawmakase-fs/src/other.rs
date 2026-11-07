@@ -40,3 +40,7 @@ pub(super) fn write_extra(
 pub(super) fn reserves(_path: &Path) -> Result<bool, FsError> {
     Ok(false)
 }
+
+pub(super) fn sqlite_shm_locked(_shm: &Path) -> Result<bool, FsError> {
+    Err(FsError::Unsupported)
+}

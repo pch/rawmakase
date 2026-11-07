@@ -3,7 +3,7 @@ name = "rawmakase-fs"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "What moving a user's file needs of the file system, policy-free: exclusive renames, file ids, exact listings, name comparison, containment, volume facts and a copy's steps, one file per system"
+description = "What moving a user's file needs of the file system, policy-free: exclusive renames, file ids, exact listings, name comparison, containment, volume facts and a copy's steps, one file per system; and whether a program has a SQLite database open"
 license.workspace = true
 publish = false
 
@@ -24,8 +24,8 @@ libc.workspace = true
 rustix = { version = "1.1.6", features = ["fs"] }
 
 [target.'cfg(windows)'.dependencies]
-# MoveFileExW without replacing, file ids and volume facts.
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Storage_InstallableFileSystems", "Win32_System_SystemServices", "Win32_System_WindowsProgramming"] }
+# MoveFileExW without replacing, file ids, volume facts and LockFileEx.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Storage_InstallableFileSystems", "Win32_System_IO", "Win32_System_SystemServices", "Win32_System_WindowsProgramming"] }
 
 [dev-dependencies]
 tempfile.workspace = true

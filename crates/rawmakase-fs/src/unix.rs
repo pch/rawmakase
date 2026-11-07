@@ -412,3 +412,23 @@ fn unsupported(e: rustix::io::Errno) -> bool {
     use rustix::io::Errno;
     e == Errno::NOTSUP || e == Errno::OPNOTSUPP
 }
+
+/// Whether any process holds a lock on [`super::SQLITE_SHM_DMS`] of `shm`,
+/// asked with `F_GETLK`, which takes no lock. POSIX locks belong to a
+/// process, so one this process holds isn't seen.
+pub(super) fn sqlite_shm_locked(shm: &Path) -> Result<bool, FsError> {
+    use std::os::fd::AsRawFd as _;
+    let file = std::fs::File::open(shm)?;
+    // SAFETY: `flock` is plain data, for which all zeroes is a valid value.
+    let mut lock: libc::flock = unsafe { std::mem::zeroed() };
+    lock.l_type = libc::F_WRLCK as _;
+    lock.l_whence = libc::SEEK_SET as _;
+    lock.l_start = super::SQLITE_SHM_DMS as _;
+    lock.l_len = 1;
+    // SAFETY: the descriptor is open for the call, and `lock` is a valid
+    // `flock` that `F_GETLK` reads and overwrites.
+    if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETLK, &mut lock) } == -1 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(lock.l_type != libc::F_UNLCK as _)
+}

@@ -338,3 +338,53 @@ pub(super) fn write_extra(
 pub(super) fn reserves(_path: &Path) -> Result<bool, FsError> {
     Ok(false)
 }
+
+/// Whether another handle holds a lock on [`super::SQLITE_SHM_DMS`] of
+/// `shm`. Windows can't ask about a lock without taking one, so it tries an
+/// exclusive lock that fails at once where any other is held, and lets go
+/// of it straight away when it is had.
+pub(super) fn sqlite_shm_locked(shm: &Path) -> Result<bool, FsError> {
+    use windows_sys::Win32::Foundation::{ERROR_LOCK_VIOLATION, HANDLE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, LOCKFILE_EXCLUSIVE_LOCK,
+        LOCKFILE_FAIL_IMMEDIATELY, LockFileEx, UnlockFileEx,
+    };
+    use windows_sys::Win32::System::IO::OVERLAPPED;
+    // SQLite opens the file to share reads and writes; so must this.
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .open(shm)?;
+    let handle = file.as_raw_handle() as HANDLE;
+    let at = || {
+        // SAFETY: `OVERLAPPED` is plain data, for which all zeroes is a
+        // valid value: no event, offset 0.
+        let mut o: OVERLAPPED = unsafe { std::mem::zeroed() };
+        o.Anonymous.Anonymous.Offset = super::SQLITE_SHM_DMS as u32;
+        o
+    };
+    let mut lock = at();
+    // SAFETY: the handle is open for the call, and `lock` is a valid
+    // `OVERLAPPED` naming the byte, which the call only reads.
+    let had = unsafe {
+        LockFileEx(
+            handle,
+            LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+            0,
+            1,
+            0,
+            &mut lock,
+        )
+    };
+    if had == 0 {
+        let e = std::io::Error::last_os_error();
+        return match e.raw_os_error().map(|c| c as u32) {
+            Some(ERROR_LOCK_VIOLATION) => Ok(true),
+            _ => Err(e.into()),
+        };
+    }
+    let mut unlock = at();
+    // SAFETY: as for `LockFileEx`; the byte is locked by this handle.
+    unsafe { UnlockFileEx(handle, 0, 1, 0, &mut unlock) };
+    Ok(false)
+}

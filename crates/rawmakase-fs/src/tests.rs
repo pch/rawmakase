@@ -1221,3 +1221,112 @@ fn what_the_system_keeps_for_itself_is_neither_carried_nor_compared() {
         }
     }
 }
+
+#[test]
+fn a_database_without_shared_memory_is_in_use_by_nobody() {
+    let d = dir();
+    let db = d.path().join("catalog.db");
+    fs::write(&db, b"").unwrap();
+    assert!(!sqlite_in_use(&db).unwrap());
+}
+
+/// Run by [`a_lock_another_process_holds_on_shared_memory_is_seen`] as that
+/// other process: holds SQLite's shared lock on the `-shm` file named by the
+/// environment until its input closes. Does nothing as an ordinary test.
+#[cfg(unix)]
+#[test]
+fn holds_a_sqlite_shm_lock_for_another_test() {
+    use std::io::{BufRead as _, Write as _};
+    use std::os::fd::AsRawFd as _;
+    let Some(shm) = std::env::var_os("RAWMAKASE_FS_HOLD_SHM") else {
+        return;
+    };
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(shm)
+        .unwrap();
+    // SAFETY: plain data, for which all zeroes is valid.
+    let mut lock: libc::flock = unsafe { std::mem::zeroed() };
+    lock.l_type = libc::F_RDLCK as _;
+    lock.l_whence = libc::SEEK_SET as _;
+    lock.l_start = SQLITE_SHM_DMS as _;
+    lock.l_len = 1;
+    // SAFETY: the descriptor is open, and `lock` is a valid `flock`.
+    let set = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETLK, &lock) };
+    assert_eq!(set, 0);
+    println!("locked");
+    std::io::stdout().flush().unwrap();
+    for _ in std::io::stdin().lock().lines() {}
+}
+
+#[cfg(unix)]
+#[test]
+fn a_lock_another_process_holds_on_shared_memory_is_seen() {
+    use std::io::{BufRead as _, BufReader};
+    use std::process::{Command, Stdio};
+    let d = dir();
+    let db = d.path().join("catalog.db");
+    let shm = d.path().join("catalog.db-shm");
+    fs::write(&db, b"").unwrap();
+    fs::write(&shm, vec![0; 32 * 1024]).unwrap();
+    assert!(!sqlite_in_use(&db).unwrap(), "a file left behind");
+    let mut holder = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "tests::holds_a_sqlite_shm_lock_for_another_test",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("RAWMAKASE_FS_HOLD_SHM", &shm)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut out = BufReader::new(holder.stdout.take().unwrap());
+    let mut line = String::new();
+    while !line.contains("locked") {
+        line.clear();
+        assert_ne!(out.read_line(&mut line).unwrap(), 0, "the holder ended");
+    }
+    assert!(sqlite_in_use(&db).unwrap(), "held by another process");
+    drop(holder.stdin.take());
+    holder.wait().unwrap();
+    assert!(!sqlite_in_use(&db).unwrap(), "let go when it ended");
+}
+
+/// Windows locks belong to a handle, so one this process holds through
+/// another handle is seen.
+#[cfg(windows)]
+#[test]
+fn a_lock_another_handle_holds_on_shared_memory_is_seen() {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, LockFileEx, UnlockFileEx,
+    };
+    use windows_sys::Win32::System::IO::OVERLAPPED;
+    let d = dir();
+    let db = d.path().join("catalog.db");
+    let shm = d.path().join("catalog.db-shm");
+    fs::write(&db, b"").unwrap();
+    fs::write(&shm, vec![0; 32 * 1024]).unwrap();
+    assert!(!sqlite_in_use(&db).unwrap());
+    let other = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .open(&shm)
+        .unwrap();
+    // SAFETY: plain data, for which all zeroes is valid.
+    let mut at: OVERLAPPED = unsafe { std::mem::zeroed() };
+    at.Anonymous.Anonymous.Offset = SQLITE_SHM_DMS as u32;
+    let handle = other.as_raw_handle() as HANDLE;
+    // SAFETY: the handle is open and `at` names the byte. A shared lock.
+    assert_ne!(unsafe { LockFileEx(handle, 0, 0, 1, 0, &mut at) }, 0);
+    assert!(sqlite_in_use(&db).unwrap());
+    // SAFETY: as above; the byte is locked by this handle.
+    unsafe { UnlockFileEx(handle, 0, 1, 0, &mut at) };
+    assert!(!sqlite_in_use(&db).unwrap());
+}
