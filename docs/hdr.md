@@ -42,26 +42,44 @@ window asks for EDR (`wantsExtendedDynamicRangeContent`) only while it shows an 
 photo; until it does, macOS reports no current headroom.
 
 While the display can show HDR, an edit with HDR on whose master renders is shown
-as its master in Develop's Fit view (`app::develop::hdr_preview`). The master is
-rendered on the CPU from a reduced copy of the photo at the fit size, then converted
-to linear sRGB primaries, with negative values kept, as extended sRGB keeps them.
-Each channel is rolled off to the display's current headroom with the HDR limit's
-roll-off and sRGB-encoded into a half-float texture. A preview is drawn only while
-it matches the photo, the edit, the fit size and the headroom (to a tenth of a stop)
-it was rendered for; until then the SDR rendition stays. While it is due, the window
-reads the headroom again every two seconds, since macOS changes it with the display's
-brightness without waking the window. Display changes are view changes, never edits.
+as its master in Develop (`app::develop::hdr_preview`): in Fit, zoomed out, and
+zoomed in to 100% or more, and in Before Only and on each side of Before/After and
+Reference View, where each side shows its own settings' master or SDR rendition. A
+whole photo is rendered on the CPU from a reduced copy of it at the size shown; a
+100% region (the part of the photo the SDR rendition renders at 100%, with its
+margin) from the full photo, with the margin sharpening reads around it, so it is
+that part of the full-size master (`develop::render_hdr_region`). The master is
+converted to linear sRGB primaries, with negative values kept, as extended sRGB
+keeps them. Each channel is rolled off to the display's current headroom with the
+HDR limit's roll-off and sRGB-encoded into a half-float texture.
 
-Everything else shows the SDR rendition, and the Basic panel's note says why:
-zoomed views, Before/After, Reference View, visualizations drawn into the render (the
-clipping warning, Remove's spots), edits with AI Denoise (its result is the full
-photo's, and the preview renders a reduced copy), a monitor profile chosen in
-RAWmakase (it converts the SDR rendition into device RGB, which has no extended
-range), the Library, other platforms, an SDR display, and an 8-bit surface (when wgpu
-offers no float format). A failed render is that edit's alone: its reason shows
-until the edit changes. The window asks for EDR as long as the master is due, including while
-an edit's next preview renders, so the display's headroom doesn't ramp down and up
-with every slider move.
+Each place a master can show is a slot: the edit's whole photo and region, and the
+other side's. One worker renders them, the latest request of each slot only, the
+edit's region first; asking a slot for something else (a pan, an edit, a new
+headroom) cancels its render under way, and a result for anything but the slot's
+latest request is dropped. A preview is drawn only while it matches the photo, the
+settings, the part of the photo and the headroom (to a tenth of a stop) it was
+rendered for; until then the SDR rendition stays. Zoomed in, the whole photo's
+master shows under the region only with the region's, so a region still rendering
+shows the SDR rendition's sharp region rather than a blurred master. A preview of a
+view the frame didn't draw (a region after zooming out, a comparison closed, a
+reference photo removed) is freed and its render cancelled when the frame ends; only
+the edit's whole photo stays, to show again in Fit. While a master is due, the window reads the headroom again every two seconds,
+since macOS changes it with the display's brightness without waking the window.
+Display changes are view changes, never edits.
+
+Beside the edit, the Basic panel's note also says what the other side shows, named
+(Before or Reference), so a comparison of brightness says when one side is SDR.
+Everything else shows the SDR rendition, and the Basic panel's note says why: the
+camera's thumbnail, visualizations drawn into the render (the clipping warning,
+Remove's spots), edits with AI Denoise (its result is the full photo's, made on its
+own worker), a monitor profile chosen in RAWmakase (it converts the SDR rendition
+into device RGB, which has no extended range), the Library, other platforms, an SDR
+display, and an 8-bit surface (when wgpu offers no float format). A failed render is
+that edit's alone: its reason shows until the edit changes. The window asks for EDR
+as long as a master is due, including while an edit's next preview renders, so the
+display's headroom doesn't ramp down and up with every slider move. Slider drags
+wait for the CPU master; the SDR rendition shows meanwhile.
 
 ## What the master renders
 

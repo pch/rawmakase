@@ -219,7 +219,7 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
 - Lightroom's opening defaults for unedited PQ, HLG and gain-map sources (RAWmakase
   starts them as HDR edits; Lightroom's choice is not measured), and HDR toggling
   with unavailable paired profiles.
-- HDR display beyond macOS Develop's Fit view: zoomed views, comparisons, a GPU
+- HDR display beyond macOS Develop's views: a GPU
   HDR path, Windows Advanced Color, Linux, and highlights beyond the headroom.
 
 ## Progress
