@@ -42,8 +42,8 @@ Shadows/Highlights map whatever the level, and grain keeps its full-resolution
 pattern with the amplitude a resized export would have. Fit is
 therefore an approximation of the export resized, not identical to it; a unit test
 bounds the mean difference on a textured image with sharpening, local and spatial
-effects, and the benchmark checks each photo. 100% regions and exports are
-unchanged.
+effects, and the benchmark checks each photo. The pyramid leaves 100% regions and
+exports as they were.
 
 "Full-resolution" is the photo's. A reduced decode (the half-size draft, which keeps
 the photo's metadata; `CameraImage::photo_scale`) sharpens and grains as its photo
