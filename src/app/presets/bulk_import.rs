@@ -100,9 +100,21 @@ struct Found {
     chosen: bool,
 }
 
+/// The folder of an Adobe account's presets in Lightroom's library.
+pub(in crate::app) const LIGHTROOM_PRESETS: &str = "cr_settings";
+
+/// Where Lightroom's presets in `dir` are imported, if `dir` is an account's
+/// [`LIGHTROOM_PRESETS`]: Lightroom (not Classic) shows those without a group
+/// as User Presets, and a preset without a group takes its folder's name.
+fn lightroom_presets_folder(kind: ImportKind, dir: &Path) -> Option<PathBuf> {
+    (kind == ImportKind::Presets && dir.file_name().is_some_and(|n| n == LIGHTROOM_PRESETS))
+        .then(|| PathBuf::from("User Presets"))
+}
+
 fn gather(kind: ImportKind, picks: &[PathBuf]) -> Vec<Found> {
     let skip: &[&str] = match kind {
-        ImportKind::Presets => &["Defaults", "GPU"],
+        // Camera Raw's and Lightroom's own settings, not presets.
+        ImportKind::Presets => &["Defaults", "GPU", "cr_defaults"],
         _ => &[],
     };
     let mut found = Vec::new();
@@ -110,12 +122,11 @@ fn gather(kind: ImportKind, picks: &[PathBuf]) -> Vec<Found> {
         if pick.is_dir() {
             let root = pick.file_name().map(PathBuf::from).unwrap_or_default();
             for path in find_files(pick, kind.extensions(), skip) {
-                let under = path
-                    .parent()
-                    .and_then(|p| p.strip_prefix(pick).ok())
-                    .unwrap_or(Path::new(""));
+                let parent = path.parent().unwrap_or(Path::new(""));
+                let under = parent.strip_prefix(pick).unwrap_or(Path::new(""));
                 found.push(Found {
-                    folder: root.join(under),
+                    folder: lightroom_presets_folder(kind, parent)
+                        .unwrap_or_else(|| root.join(under)),
                     path,
                     chosen: false,
                 });
@@ -124,8 +135,10 @@ fn gather(kind: ImportKind, picks: &[PathBuf]) -> Vec<Found> {
             found.push(Found {
                 folder: pick
                     .parent()
-                    .and_then(|p| p.file_name())
-                    .map(PathBuf::from)
+                    .and_then(|p| {
+                        lightroom_presets_folder(kind, p)
+                            .or_else(|| p.file_name().map(PathBuf::from))
+                    })
                     .unwrap_or_default(),
                 path: pick.clone(),
                 chosen: true,
@@ -775,6 +788,60 @@ mod tests {
    crs:Exposure2012="+0.50"/>
  </rdf:RDF>
 </x:xmpmeta>"#;
+
+    #[test]
+    fn lightroom_s_synced_presets_without_a_group_are_user_presets() {
+        let temp = tempfile::tempdir().unwrap();
+        // Where Lightroom, not Classic, keeps them: named by UUID in an
+        // account's folder of its library.
+        let synced = temp
+            .path()
+            .join("Lightroom Library.lrlibrary/0123abcd/cr_settings");
+        std::fs::create_dir_all(&synced).unwrap();
+        std::fs::write(synced.join("1f2e.xmp"), PRESET).unwrap();
+        let grouped = PRESET.replace(
+            "crs:Exposure2012=\"+0.50\"/>",
+            "crs:Exposure2012=\"+0.30\">\n   <crs:Group><rdf:Alt><rdf:li xml:lang=\"x-default\">Travel</rdf:li></rdf:Alt></crs:Group>\n  </rdf:Description>",
+        );
+        std::fs::write(synced.join("3d4c.xmp"), grouped).unwrap();
+        // Lightroom's defaults beside them, not presets: passed over quietly.
+        let defaults = temp
+            .path()
+            .join("Lightroom Library.lrlibrary/0123abcd/cr_defaults");
+        std::fs::create_dir_all(&defaults).unwrap();
+        std::fs::write(defaults.join("RawDefaults.xmp"), "<x:xmpmeta/>").unwrap();
+        let library = temp.path().join("Lightroom Library.lrlibrary");
+        // The account's folder, the whole library, or the files themselves.
+        let picks = [
+            vec![synced.clone()],
+            vec![library],
+            vec![synced.join("1f2e.xmp"), synced.join("3d4c.xmp")],
+        ];
+        for (i, pick) in picks.iter().enumerate() {
+            let root = temp.path().join(format!("library-{i}"));
+            let summary = import_presets(
+                &gather(ImportKind::Presets, pick),
+                &ImportProgress::default(),
+                &root,
+                std::slice::from_ref(&root),
+                &temp.path().join("profiles"),
+            );
+            assert_eq!(summary.imported, 2, "{pick:?}: {summary:?}");
+            assert!(summary.failed.is_empty(), "{pick:?}: {summary:?}");
+            let groups: std::collections::BTreeSet<String> = find_files(&root, &["xmp"], &[])
+                .iter()
+                .map(|p| {
+                    let text = std::fs::read_to_string(p).unwrap();
+                    crate::xmp::parse(p, &text).unwrap().group
+                })
+                .collect();
+            assert_eq!(
+                groups,
+                ["Travel".into(), "User Presets".into()].into(),
+                "{pick:?}"
+            );
+        }
+    }
 
     #[test]
     fn folder_import_scans_recursively_keeps_folders_and_skips_duplicates() {
