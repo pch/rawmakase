@@ -192,9 +192,16 @@ fn inverse3(m: [[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
     Some(inv)
 }
 
-/// The decoder for the file's content (not its extension), with the reason
-/// it can't be edited if any, and what the content is. Applies no size limit.
-fn open_decoder(path: &Path) -> Result<(Box<dyn ImageDecoder>, Option<Unsupported>, Kind)> {
+/// A file's decoder, chosen by its content (not its extension).
+struct Decoder {
+    decoder: Box<dyn ImageDecoder>,
+    /// Why Develop can't edit it, when it can't.
+    refused: Option<Unsupported>,
+    kind: Kind,
+}
+
+/// The [`Decoder`] for the file at `path`. Applies no size limit.
+fn open_decoder(path: &Path) -> Result<Decoder> {
     let mut head = [0u8; 64];
     let n = {
         use std::io::Read;
@@ -209,47 +216,48 @@ fn open_decoder(path: &Path) -> Result<(Box<dyn ImageDecoder>, Option<Unsupporte
         n
     };
     let kind = sniff(&head[..n]);
+    let generic = || -> Result<Box<dyn ImageDecoder>> {
+        Ok(Box::new(
+            image::ImageReader::open(path)?
+                .with_guessed_format()?
+                .into_decoder()
+                .map_err(read_error(path))?,
+        ))
+    };
+    let opened = |decoder: Box<dyn ImageDecoder>, refused| Decoder {
+        decoder,
+        refused,
+        kind,
+    };
     Ok(match kind {
-        Kind::Webp { animated } => (
-            Box::new(
-                image::ImageReader::open(path)?
-                    .with_guessed_format()?
-                    .into_decoder()
-                    .map_err(read_error(path))?,
-            ),
-            animated.then(|| Unsupported("animated".into())),
-            kind,
-        ),
+        Kind::Webp { animated } => {
+            opened(generic()?, animated.then(|| Unsupported("animated".into())))
+        }
         Kind::Jxl => {
             let file = jxl::JxlFile::open(path)?;
             let refused = file.refusal();
-            (Box::new(file), refused, kind)
+            opened(Box::new(file), refused)
         }
         Kind::Avif => {
             let file = avif::AvifFile::open(path)?;
             let refused = file.refusal();
-            (Box::new(file), refused, kind)
+            opened(Box::new(file), refused)
         }
         Kind::Heic => {
             let file = heic::HeicFile::open(path)?;
             let refused = file.refusal();
-            (Box::new(file), refused, kind)
+            opened(Box::new(file), refused)
         }
-        _ => (
-            Box::new(
-                image::ImageReader::open(path)?
-                    .with_guessed_format()?
-                    .into_decoder()
-                    .map_err(read_error(path))?,
-            ),
-            None,
-            kind,
-        ),
+        _ => opened(generic()?, None),
     })
 }
 
 fn prepare(path: &Path) -> Result<Prepared> {
-    let (mut decoder, refused, kind) = open_decoder(path)?;
+    let Decoder {
+        mut decoder,
+        refused,
+        kind,
+    } = open_decoder(path)?;
     // The `image` crate's decoders, whose float samples are linear light (a 32-bit
     // TIFF); JPEG XL, AVIF and HEIC have readers of their own.
     let generic = matches!(kind, Kind::Webp { .. } | Kind::Other);
@@ -384,7 +392,7 @@ fn png_facts(path: &Path) -> Result<Option<PngFacts>> {
 /// The size of the image at `path` as shown, after its orientation, from its
 /// header alone; `None` when it can't be read.
 pub fn dimensions(path: &Path) -> Option<(u32, u32)> {
-    let (mut decoder, ..) = open_decoder(path).ok()?;
+    let mut decoder = open_decoder(path).ok()?.decoder;
     let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
     let (w, h) = decoder.dimensions();
     use Orientation::*;

@@ -99,11 +99,17 @@ const ISO_URN: &[u8] = b"urn:iso:std:iso:ts:21496:-1\0";
 /// version marker and an MPF index, followed by `gain_map` (a complete grayscale JPEG)
 /// with the metadata, as libultrahdr writes them.
 pub fn assemble(primary: &[u8], gain_map: &[u8], metadata: &Metadata) -> Result<Vec<u8>> {
+    assemble_iso(primary, gain_map, &metadata.iso_21496())
+}
+
+/// [`assemble`] with the metadata already serialised: `iso` is the map's ISO 21496-1
+/// payload after its URN, written as it is.
+pub(super) fn assemble_iso(primary: &[u8], gain_map: &[u8], iso: &[u8]) -> Result<Vec<u8>> {
     ensure!(
         primary.starts_with(&[0xff, 0xd8]) && gain_map.starts_with(&[0xff, 0xd8]),
         "Not a JPEG"
     );
-    let (gain_map, _) = insert_app2(gain_map, &[[ISO_URN, &metadata.iso_21496()].concat()])?;
+    let (gain_map, _) = insert_app2(gain_map, &[[ISO_URN, iso].concat()])?;
     // The primary's version marker: the versions alone.
     let marker = [ISO_URN, &[0, 0, 0, 0]].concat();
     let placeholder = mpf(0, 0, 0);
