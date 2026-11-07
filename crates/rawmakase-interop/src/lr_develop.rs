@@ -106,6 +106,7 @@ fn preset_record(value: &str) -> Option<crate::model::recipe::AppliedPreset> {
             .and_then(|a| a.parse::<f32>().ok())
             .filter(|a| a.is_finite()),
         uuid: text("UUID").unwrap_or_default(),
+        inferred: false,
     })
 }
 pub fn convert_develop(

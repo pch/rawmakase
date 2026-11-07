@@ -272,6 +272,7 @@ fn the_presets_panel_shows_the_preset_the_photo_was_made_with() {
             name: name.into(),
             amount: Some(amount),
             uuid: uuid.into(),
+            inferred: false,
         })
     };
     editor.document.edit.replace(Recipe {
@@ -295,4 +296,56 @@ fn the_presets_panel_shows_the_preset_the_photo_was_made_with() {
     );
     assert!(editor.is_applied_preset(&renamed));
     assert!(!editor.is_applied_preset(&warm));
+    // One found by its settings says so.
+    editor.document.edit.replace(Recipe {
+        applied_preset: Some(crate::model::recipe::AppliedPreset {
+            inferred: true,
+            ..made_with("Warm", 1., "").unwrap()
+        }),
+        ..Default::default()
+    });
+    assert_eq!(
+        editor.applied_preset_text().as_deref(),
+        Some("Looks like Warm")
+    );
+    assert!(editor.is_applied_preset(&warm));
+}
+
+/// A Lightroom edit that records no preset starts in Develop with the preset its
+/// settings match, marked as found, so saving the edit keeps it; a recorded one
+/// is kept as it is.
+#[test]
+fn a_lightroom_edit_starts_with_the_preset_it_looks_made_with() {
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    editor.presets.library = Arc::new(crate::presets::Library {
+        presets: vec![preset_from("Warm", r#"crs:Saturation="-10""#)],
+        errors: Vec::new(),
+    });
+    let edit = String::from(
+        r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:Exposure2012="0.5" crs:Saturation="-10"/></rdf:RDF></x:xmpmeta>"#,
+    );
+    let mut converted = Recipe::default();
+    editor.presets.infer_missing_preset(&mut converted, &edit);
+    assert_eq!(
+        converted.applied_preset.map(|p| (p.name, p.inferred)),
+        Some(("Warm".into(), true))
+    );
+    let recorded = Some(crate::model::recipe::AppliedPreset {
+        name: "Recorded".into(),
+        amount: Some(1.),
+        uuid: String::new(),
+        inferred: false,
+    });
+    let mut converted = Recipe {
+        applied_preset: recorded.clone(),
+        ..Default::default()
+    };
+    editor.presets.infer_missing_preset(&mut converted, &edit);
+    assert_eq!(converted.applied_preset, recorded);
 }

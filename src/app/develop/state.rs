@@ -490,6 +490,19 @@ pub(in crate::app) struct PresetBrowser {
 }
 
 impl PresetBrowser {
+    /// Gives `recipe`, converted from the Lightroom edit `text`, the preset the edit
+    /// looks made with when it records none: Lightroom drops its record from many
+    /// edits. Marked as found, it stays with the edit once saved.
+    pub(in crate::app) fn infer_missing_preset(
+        &self,
+        recipe: &mut crate::model::recipe::Recipe,
+        text: &str,
+    ) {
+        if recipe.applied_preset.is_none() {
+            recipe.applied_preset =
+                crate::presets::inferred::Fingerprints::of(&self.library.presets).infer_text(text);
+        }
+    }
     /// Starts counting a new library scan.
     pub(in crate::app) fn next_scan(&mut self) -> u64 {
         self.scans += 1;

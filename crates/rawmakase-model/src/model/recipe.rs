@@ -180,7 +180,9 @@ pub struct Recipe {
 }
 /// The last develop preset applied to an edit, as Lightroom records it in
 /// `crs:Preset` (and a Lightroom Classic catalog in its `Preset` table), or as
-/// RAWmakase's Presets panel and the Library's batch apply one. Provenance only:
+/// RAWmakase's Presets panel and the Library's batch apply one; or, for a
+/// Lightroom edit that records none, the preset its settings match
+/// ([`inferred`](Self::inferred)). Provenance only:
 /// settings changed after the preset are not told apart from the preset's, and an
 /// earlier preset's record is replaced by the next one.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -196,6 +198,11 @@ pub struct AppliedPreset {
     /// The preset's `crs:UUID`, when it has one.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub uuid: String,
+    /// Not recorded but found: the edit has most of this preset's settings, and no
+    /// other preset comes close (`presets::inferred`). Shown as "Looks like …",
+    /// never as the preset the edit was made with.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub inferred: bool,
 }
 
 /// A recipe's spot removal, red eye corrections and masks (experimental). They are saved beside the recipe,

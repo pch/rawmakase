@@ -561,10 +561,12 @@ impl Editor {
     /// for the Presets panel; `None` when the edit names none.
     pub(in crate::app) fn applied_preset_text(&self) -> Option<String> {
         let applied = self.document.edit.recipe().applied_preset.as_ref()?;
-        Some(format!(
-            "Made with {}",
-            crate::app::library::applied::shown(applied)
-        ))
+        let shown = crate::app::library::applied::shown(applied);
+        Some(if applied.inferred {
+            shown
+        } else {
+            format!("Made with {shown}")
+        })
     }
     /// Whether `p` is the preset the photo's edit was last made with: the same
     /// UUID when both have one, as a renamed Lightroom preset keeps it, else the
@@ -596,8 +598,21 @@ impl Editor {
             .truncate(),
         )
         .on_hover_text(
-            "The last preset applied to this photo, as Lightroom records it. Changes \
-             made after it are part of the edit too.",
+            if self
+                .document
+                .edit
+                .recipe()
+                .applied_preset
+                .as_ref()
+                .is_some_and(|p| p.inferred)
+            {
+                "Lightroom recorded no preset for this photo, but its edit has most of \
+             this preset's settings, and no other preset comes close. A guess, not a \
+             record."
+            } else {
+                "The last preset applied to this photo, as Lightroom records it. Changes \
+             made after it are part of the edit too."
+            },
         );
     }
     /// Ends the Amount once anything else has changed the photo, as Lightroom hides it.

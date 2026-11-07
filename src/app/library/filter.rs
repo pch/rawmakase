@@ -127,7 +127,7 @@ impl Filters {
         photos: &[Photo],
         available: impl Fn(&Path) -> bool,
         keys: &super::sort::Keys,
-        presets: Option<&HashMap<PhotoId, String>>,
+        presets: Option<&HashMap<PhotoId, super::applied::Shown>>,
     ) -> Vec<usize> {
         let query = self.query.to_lowercase();
         let mut visible: Vec<usize> = photos
@@ -167,13 +167,14 @@ impl Filters {
         &self,
         p: &Photo,
         query: &str,
-        presets: Option<&HashMap<PhotoId, String>>,
+        presets: Option<&HashMap<PhotoId, super::applied::Shown>>,
     ) -> bool {
         (self.flags.is_empty() || self.flags.contains(&p.flag))
-            && self
-                .preset
-                .as_ref()
-                .is_none_or(|name| presets.and_then(|presets| presets.get(&p.id)) == Some(name))
+            && self.preset.as_ref().is_none_or(|name| {
+                presets
+                    .and_then(|presets| presets.get(&p.id))
+                    .is_some_and(|shown| shown.name == *name)
+            })
             && self
                 .rating
                 .is_none_or(|limit| self.rating_op.holds(p.rating, limit))

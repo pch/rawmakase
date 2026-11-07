@@ -221,16 +221,28 @@ impl Library {
                 changed = true;
             }
             let names = self.preset_names();
-            if names.is_empty() {
+            if self.inferring_presets() {
+                ui.label(filter_caption(
+                    &palette,
+                    "Comparing edits with your presets…",
+                ));
+            }
+            if names.is_empty() && !self.inferring_presets() {
                 ui.label(filter_caption(&palette, "No edit names a preset"));
-            } else {
+            } else if !names.is_empty() {
                 ui.separator();
             }
             egui::ScrollArea::vertical()
                 .max_height(320.)
                 .show(ui, |ui| {
-                    for (name, count) in names {
+                    for (name, recorded, inferred) in names {
                         let on = self.filters.preset.as_ref() == Some(&name);
+                        // Photos that only look made with it are counted apart.
+                        let count = match (recorded, inferred) {
+                            (r, 0) => format!("{r}"),
+                            (0, i) => format!("{i} likely"),
+                            (r, i) => format!("{r} + {i} likely"),
+                        };
                         if ui
                             .selectable_label(on, format!("{name}  ({count})"))
                             .clicked()
@@ -244,7 +256,8 @@ impl Library {
         .response
         .on_hover_text(
             "Photos whose edit was last made with this preset. Changes made after \
-             it are not told apart from it.",
+             it are not told apart from it. \"Likely\": Lightroom recorded no preset, \
+             but the edit has most of this preset's settings and no other comes close.",
         );
         self.turn_on(changed)
     }

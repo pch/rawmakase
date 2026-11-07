@@ -45,9 +45,13 @@ impl Library {
     /// filmstrip hidden, before the view alone.
     pub(crate) fn prepare(&mut self, ctx: &egui::Context) {
         self.poll_previews(ctx);
+        // Photos found to look made with a preset join the Preset filter.
+        if self.applied.poll() && self.filters.preset.is_some() {
+            self.resort_in_place(|_| {});
+        }
         // Back from Develop, sorted by edit time: edits made there move
-        // their photos. A preset applied there is read again when asked, and
-        // at once for the Preset filter.
+        // their photos. The presets of the photos Develop opened are read
+        // again, and the Preset filter applied again.
         let pass = ctx.cumulative_pass_nr();
         let returned = std::mem::replace(&mut self.drawn_pass, pass) + 1 < pass;
         let presets_read = returned && self.returned_from_develop();

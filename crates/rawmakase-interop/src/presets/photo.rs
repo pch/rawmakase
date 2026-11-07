@@ -39,6 +39,7 @@ pub fn apply_to_photo(
         name: preset.name.clone(),
         amount: Some(1.),
         uuid: preset.settings.get("UUID").cloned().unwrap_or_default(),
+        inferred: false,
     });
     Ok(Applied {
         recipe,
@@ -106,6 +107,7 @@ mod tests {
                 name: "Earlier".into(),
                 amount: Some(0.4),
                 uuid: String::new(),
+                inferred: false,
             }),
             ..Recipe::default()
         };
@@ -116,6 +118,7 @@ mod tests {
                 name: "Warm".into(),
                 amount: Some(1.),
                 uuid: "F00D".into(),
+                inferred: false,
             })
         );
     }

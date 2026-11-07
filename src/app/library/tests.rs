@@ -5160,6 +5160,7 @@ fn the_preset_filter_shows_the_photos_made_with_a_preset() -> Result<()> {
                 name: name.into(),
                 amount: Some(1.),
                 uuid: String::new(),
+                inferred: false,
             }),
             ..Default::default()
         };
@@ -5184,8 +5185,8 @@ fn the_preset_filter_shows_the_photos_made_with_a_preset() -> Result<()> {
     assert_eq!(
         library.preset_names(),
         [
-            ("Kodak Ektachrome 64 Warm".to_string(), 1),
-            ("L&P Hochzeit".to_string(), 1)
+            ("Kodak Ektachrome 64 Warm".to_string(), 1, 0),
+            ("L&P Hochzeit".to_string(), 1, 0)
         ]
     );
     library.filters.preset = Some("Kodak Ektachrome 64 Warm".into());
@@ -5229,6 +5230,7 @@ fn only_the_photos_opened_in_develop_are_read_again() -> Result<()> {
                 name: preset.into(),
                 amount: Some(1.),
                 uuid: String::new(),
+                inferred: false,
             }),
             ..Default::default()
         };
@@ -5243,7 +5245,7 @@ fn only_the_photos_opened_in_develop_are_read_again() -> Result<()> {
     };
     save(&mut library, ids[0], "a.RAF", "Warm")?;
     save(&mut library, ids[1], "b.RAF", "Warm")?;
-    assert_eq!(library.preset_names(), [("Warm".to_string(), 2)]);
+    assert_eq!(library.preset_names(), [("Warm".to_string(), 2, 0)]);
     // Develop opens and changes a; b changes without Develop, as no edit can.
     library.opened_in_develop(ids[0]);
     save(&mut library, ids[0], "a.RAF", "Cool")?;
@@ -5251,7 +5253,7 @@ fn only_the_photos_opened_in_develop_are_read_again() -> Result<()> {
     library.returned_from_develop();
     assert_eq!(
         library.preset_names(),
-        [("Cool".to_string(), 1), ("Warm".to_string(), 1)]
+        [("Cool".to_string(), 1, 0), ("Warm".to_string(), 1, 0)]
     );
     assert_eq!(
         library.applied_preset_of(ids[0]).map(|p| p.name),
@@ -5268,7 +5270,62 @@ fn only_the_photos_opened_in_develop_are_read_again() -> Result<()> {
     );
     assert_eq!(
         library.preset_names(),
-        [("Mono".to_string(), 1), ("Warm".to_string(), 1)]
+        [("Mono".to_string(), 1, 0), ("Warm".to_string(), 1, 0)]
     );
+    Ok(())
+}
+
+/// A Lightroom edit that records no preset joins the Preset filter, counted apart
+/// and shown as "Looks like", once the background comparison finds that it has
+/// most of one of the user's presets' settings, with none other close.
+#[test]
+fn photos_that_look_made_with_a_preset_join_the_preset_filter() -> Result<()> {
+    let (directory, mut library) = library_of(&["a.RAF", "b.RAF"])?;
+    let ids = ids_of(&library);
+    let xmp = |attrs: &str, body: &str| {
+        format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="{}"><rdf:Description xmlns:crs="{}" {attrs}>{body}</rdf:Description></rdf:RDF></x:xmpmeta>"#,
+            crate::xml::ns::RDF,
+            crate::xml::ns::CRS
+        )
+    };
+    let curve = "<crs:ToneCurvePV2012Red><rdf:Seq><rdf:li>0, 10</rdf:li><rdf:li>128, 140</rdf:li><rdf:li>255, 250</rdf:li></rdf:Seq></crs:ToneCurvePV2012Red>";
+    let preset = crate::xmp::parse(
+        std::path::Path::new("Warm Curve.xmp"),
+        &xmp(
+            r#"crs:PresetType="Normal" crs:Name="Warm Curve" crs:Saturation="-10""#,
+            curve,
+        ),
+    )?;
+    rusqlite::Connection::open(directory.path().join("library.rawmakase"))?.execute(
+        "UPDATE photos SET lightroom_develop=? WHERE id=?",
+        rusqlite::params![
+            xmp(r#"crs:Exposure2012="+0.50" crs:Saturation="-10""#, curve),
+            ids[0].0
+        ],
+    )?;
+    library.set_presets(&std::sync::Arc::new(crate::presets::Library {
+        presets: vec![preset],
+        errors: Vec::new(),
+    }));
+    assert_eq!(
+        library
+            .applied_preset_of(ids[0])
+            .map(|p| (p.name, p.inferred)),
+        Some(("Warm Curve".into(), true))
+    );
+    assert_eq!(library.applied_preset_of(ids[1]), None);
+    library.filters.preset = Some("Warm Curve".into());
+    library.filter();
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while library.inferring_presets() && std::time::Instant::now() < until {
+        library.applied.poll();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    library.applied.poll();
+    assert!(!library.inferring_presets(), "the comparison finished");
+    library.filter();
+    assert_eq!(visible_names(&library), ["a.RAF"]);
+    assert_eq!(library.preset_names(), [("Warm Curve".to_string(), 0, 1)]);
     Ok(())
 }

@@ -155,6 +155,18 @@ impl Catalog {
             })
             .collect())
     }
+    /// The photos that develop with a Lightroom edit stored as Camera Raw XMP, as
+    /// a Lightroom library keeps each one, and have no RAWmakase edit yet.
+    pub fn lightroom_xmp_edits(&self) -> Result<Vec<PhotoId>> {
+        self.db.read(
+            sql!(
+                "SELECT id FROM photos
+                 WHERE recipe IS NULL AND lightroom_develop LIKE '%<x:xmpmeta%'
+                 ORDER BY id"
+            ),
+            &[],
+        )
+    }
     /// When each edited photo was last edited, as "YYYY-MM-DD HH:MM:SS"
     /// UTC: in RAWmakase, or else in Lightroom, whose history counts seconds
     /// from 2001.

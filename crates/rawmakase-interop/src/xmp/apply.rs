@@ -88,7 +88,7 @@ impl Settings<'_> {
         Ok(())
     }
 }
-const METADATA: &[&str] = &[
+pub(crate) const METADATA: &[&str] = &[
     "Version",
     "ProcessVersion",
     "HasSettings",

@@ -1008,6 +1008,7 @@ fn applied_presets_come_from_the_edit_each_photo_develops_with() -> Result<()> {
             name: "Kodak Ektachrome 64 Warm".into(),
             amount: Some(1.),
             uuid: String::new(),
+            inferred: false,
         }),
         ..Recipe::default()
     })?;
@@ -1049,6 +1050,8 @@ fn applied_presets_come_from_the_edit_each_photo_develops_with() -> Result<()> {
         ]
         .into()
     );
+    // The Lightroom library's edits, which a preset may be inferred for.
+    assert_eq!(c.lightroom_xmp_edits()?, [PhotoId(6)]);
     Ok(())
 }
 

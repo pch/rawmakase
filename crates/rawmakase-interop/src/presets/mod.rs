@@ -2,6 +2,7 @@
 pub mod amount;
 pub mod builtin;
 pub mod curves;
+pub mod inferred;
 mod library;
 mod native;
 mod photo;

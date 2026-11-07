@@ -1046,6 +1046,7 @@ impl Editor {
         // the views are still brought up to date.
         if let Some(library) = &mut self.library {
             library.shows_in_develop(self.document.catalog_photo);
+            library.set_presets(&self.presets.library);
             action.then(if filmstrip {
                 library.library_filmstrip(ui)
             } else {

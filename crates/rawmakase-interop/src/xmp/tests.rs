@@ -2496,6 +2496,7 @@ fn photo_sidecar_keeps_the_last_applied_presets_name() -> Result<()> {
             name: "Kodak Ektachrome 64 Warm".into(),
             amount: Some(0.8),
             uuid: "0A1B2C".into(),
+            inferred: false,
         })
     );
     // Nothing else changes: the preset's Parameters never render.
@@ -2530,6 +2531,7 @@ fn applying_a_preset_file_keeps_the_bases_record() -> Result<()> {
             name: "Earlier".into(),
             amount: Some(1.),
             uuid: String::new(),
+            inferred: false,
         }),
         ..Recipe::default()
     };
@@ -2555,6 +2557,7 @@ fn lightroom_catalog_settings_keep_the_last_applied_preset() -> Result<()> {
             name: "L&P Hochzeit".into(),
             amount: Some(1.),
             uuid: "AB12".into(),
+            inferred: false,
         })
     );
     assert_eq!(
@@ -2586,6 +2589,7 @@ fn a_lightroom_xmp_edit_names_its_preset_without_converting() {
             name: "Kodak Ektachrome 64 Warm".into(),
             amount: Some(1.),
             uuid: "0A1B".into(),
+            inferred: false,
         })
     );
     assert_eq!(

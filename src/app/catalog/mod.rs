@@ -688,10 +688,11 @@ impl Editor {
             crate::edits::Start::Lightroom(text.to_owned()).resolve(m, &self.document.profiles);
         match result {
             Ok(crate::edits::Resolved {
-                recipe: r,
+                recipe: mut r,
                 warnings,
                 ..
             }) => {
+                self.presets.infer_missing_preset(&mut r, text);
                 self.document.edit.replace(r);
                 // Short for the status bar; the full list shows on hover.
                 self.document.lightroom_notice = if warnings.is_empty() {

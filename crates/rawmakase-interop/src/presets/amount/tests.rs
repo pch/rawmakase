@@ -446,6 +446,7 @@ fn the_applied_presets_record_follows_the_amount() {
             name: "Test".into(),
             amount: Some(1.),
             uuid: String::new(),
+            inferred: false,
         }),
         ..Default::default()
     };

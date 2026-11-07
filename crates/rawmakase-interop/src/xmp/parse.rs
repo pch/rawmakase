@@ -57,6 +57,7 @@ fn preset_record(node: roxmltree::Node<'_, '_>) -> Option<crate::model::recipe::
             .and_then(|a| a.trim().parse::<f32>().ok())
             .filter(|a| a.is_finite()),
         uuid: field("UUID").unwrap_or_default(),
+        inferred: false,
     })
 }
 pub fn parse(path: &Path, text: &str) -> Result<Preset> {

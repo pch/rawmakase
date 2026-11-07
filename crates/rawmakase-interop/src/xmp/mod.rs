@@ -9,6 +9,8 @@ mod parse;
 pub mod preset_write;
 pub mod write;
 use crate::color::curve::ToneCurve;
+/// Keys that describe a preset or its file rather than a setting.
+pub(crate) use apply::METADATA;
 pub use parse::{applied_preset, parse};
 /// RAWmakase's own settings (`xml::ns::RAWMAKASE`) are read and written under this
 /// prefix among the Camera Raw settings.

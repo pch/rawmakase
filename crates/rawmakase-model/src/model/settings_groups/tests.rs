@@ -46,6 +46,7 @@ fn everything_changed() -> Recipe {
             name: "Film".into(),
             amount: Some(1.),
             uuid: String::new(),
+            inferred: false,
         }),
         sharpening_radius: 1.5,
         sharpening_detail: 0.6,

@@ -109,11 +109,21 @@ impl Library {
                         .map(super::applied::shown)
                         .unwrap_or_default();
                     let row = metadata_row(ui, "Preset", &shown);
-                    if !shown.is_empty() {
-                        row.on_hover_text(format!(
-                            "Last preset applied: {shown}. Changes made after it \
-                             are part of the edit too."
-                        ));
+                    match &preset {
+                        Some(p) if p.inferred => {
+                            row.on_hover_text(
+                                "Lightroom recorded no preset for this photo, but its \
+                                 edit has most of this preset's settings, and no other \
+                                 preset comes close. A guess, not a record.",
+                            );
+                        }
+                        Some(_) => {
+                            row.on_hover_text(format!(
+                                "Last preset applied: {shown}. Changes made after it \
+                                 are part of the edit too."
+                            ));
+                        }
+                        None => {}
                     }
                     for (key, value, hover) in [
                         (

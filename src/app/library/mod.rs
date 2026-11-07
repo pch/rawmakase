@@ -559,11 +559,12 @@ impl Library {
         }
         let keys = &self.sort_keys.as_ref().unwrap().1;
         // Read only while the Preset filter is set.
+        let wake = self.wake_fn();
         let presets = self
             .filters
             .preset
             .is_some()
-            .then(|| self.applied.all(self.session.catalog()));
+            .then(|| self.applied.all(self.session.catalog(), wake));
         self.shown_version += 1;
         // Filtering follows every change to the photos, so the count does too.
         self.availability.forget_count();
@@ -705,13 +706,42 @@ impl Library {
         self.applied.refresh_opened(self.session.catalog())
     }
     /// The presets the catalog's edits were last made with, by name, with how
-    /// many photos each, for the Preset filter's menu.
-    pub(super) fn preset_names(&mut self) -> Vec<(String, usize)> {
-        let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
-        for name in self.applied.all(self.session.catalog()).values() {
-            *counts.entry(name.clone()).or_default() += 1;
+    /// many photos record each and how many more look made with it, for the
+    /// Preset filter's menu.
+    pub(super) fn preset_names(&mut self) -> Vec<(String, usize, usize)> {
+        let mut counts: std::collections::BTreeMap<String, (usize, usize)> = Default::default();
+        let wake = self.wake_fn();
+        for shown in self.applied.all(self.session.catalog(), wake).values() {
+            let count = counts.entry(shown.name.clone()).or_default();
+            if shown.inferred {
+                count.1 += 1;
+            } else {
+                count.0 += 1;
+            }
         }
-        counts.into_iter().collect()
+        counts
+            .into_iter()
+            .map(|(name, (recorded, inferred))| (name, recorded, inferred))
+            .collect()
+    }
+    /// Whether photos are still being compared with the presets.
+    pub(super) fn inferring_presets(&self) -> bool {
+        self.applied.reading()
+    }
+    /// Compares edits with `presets`, the preset library Develop uses, from now
+    /// on; called before each frame, so a library imported or changed is taken up.
+    pub(in crate::app) fn set_presets(
+        &mut self,
+        presets: &std::sync::Arc<crate::presets::Library>,
+    ) {
+        if self.applied.set_presets(presets) && self.filters.preset.is_some() {
+            self.filter();
+        }
+    }
+    /// Asks for a frame, from any thread.
+    fn wake_fn(&self) -> impl Fn() + Send + 'static {
+        let ctx = self.ctx.clone();
+        move || ctx.request_repaint()
     }
     /// The last preset photo `id`'s edit was made with, for the info panel.
     pub(super) fn applied_preset_of(
