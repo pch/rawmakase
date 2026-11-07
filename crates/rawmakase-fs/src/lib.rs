@@ -5,7 +5,8 @@
 //! link or mount point between, and what a volume is. Policy-free: it knows
 //! no photo, catalog or rule of what may move. A rename never falls back to
 //! a hard link and unlink or to a copy, so a step either happened whole or
-//! did not happen.
+//! did not happen; where a volume can't rename without replacing (ntfs-3g),
+//! [`rename_reserving`] keeps the name with a placeholder first.
 //!
 //! For moving a file to another volume it also has the steps of a copy, each
 //! one on its own so its caller journals between them ([`copy`]): making an
@@ -39,6 +40,7 @@ pub use copy::{
     hash_file, hash_prefix, remove_file, sync_file,
 };
 
+mod placeholder;
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]
@@ -214,9 +216,74 @@ pub fn handle_id(file: &std::fs::File) -> Result<FileId, FsError> {
 /// rename would. Both must be on one volume ([`FsError::CrossDevice`]).
 /// A volume or system without such a rename answers
 /// [`FsError::Unsupported`] and nothing is changed: an SMB share among them
-/// ([`VolumeKind::exclusive_rename`]).
+/// ([`VolumeKind::exclusive_rename`]); [`rename_reserving`] renames a file
+/// on ntfs-3g all the same.
 pub fn rename_exclusive(from: &Path, to: &Path) -> Result<(), FsError> {
     os::rename_exclusive(from, to)
+}
+
+/// [`rename_exclusive`], or, for a file on a FUSE file system on a disk
+/// that can't rename exclusively (ntfs-3g on Linux, #914), a rename onto a
+/// placeholder that takes `to` first, only where nothing has the name: no
+/// file made at `to` is replaced, and one put in the placeholder's place
+/// before the rename is kept, the rename refused
+/// ([`FsError::AlreadyExists`]). Accepted there: a file another program
+/// puts at `to` by replacing the placeholder in the moment between checking
+/// it and the rename is replaced. A crash or a failure can leave the
+/// placeholder, or the file it is written to first, which
+/// [`settle_rename`] removes; callers journal the rename and call that
+/// whenever it didn't end as it should, and when they recover it. A folder
+/// there isn't renamed.
+pub fn rename_reserving(from: &Path, to: &Path) -> Result<(), FsError> {
+    match rename_exclusive(from, to) {
+        Err(FsError::Unsupported)
+            if os::reserves(from)? && entry(from)?.kind == EntryKind::File =>
+        {
+            placeholder::rename(from, to, &mut || Ok(()))
+        }
+        renamed => renamed,
+    }
+}
+
+/// Removes what a [`rename_reserving`] of `from` to `to` cut short left: a
+/// placeholder at `to` holding exactly what one for these two paths does,
+/// and the hidden file it was written to first, holding that or its start.
+/// Anything else, and anything where no placeholder is made (but on such a
+/// file system on Linux), is left as it is; a volume that can't be told
+/// what it is is an error, not settled.
+pub fn settle_rename(from: &Path, to: &Path) -> Result<(), FsError> {
+    // A volume that can't be told what it is isn't taken for settled; a
+    // folder that isn't there has no placeholder in it.
+    match os::reserves(to) {
+        Ok(true) => placeholder::settle(from, to),
+        Ok(false) | Err(FsError::NotFound) => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// [`rename_reserving`] by a placeholder on any volume, `reserved` running
+/// once it is made, an error from it taken for the rename's: for tests that
+/// stop it there.
+#[cfg(any(test, feature = "test-support"))]
+pub fn rename_by_placeholder(
+    from: &Path,
+    to: &Path,
+    reserved: &mut dyn FnMut() -> Result<(), FsError>,
+) -> Result<(), FsError> {
+    placeholder::rename(from, to, reserved)
+}
+
+/// [`settle_rename`] on any volume, for tests of [`rename_by_placeholder`].
+#[cfg(any(test, feature = "test-support"))]
+pub fn settle_placeholder(from: &Path, to: &Path) -> Result<(), FsError> {
+    placeholder::settle(from, to)
+}
+
+/// Where [`rename_by_placeholder`] writes its placeholder first, for tests
+/// that leave one there.
+#[cfg(any(test, feature = "test-support"))]
+pub fn placeholder_staged(from: &Path, to: &Path) -> PathBuf {
+    placeholder::staged(from, to)
 }
 
 /// Makes folder `path`, only if nothing has that name: a folder, file or

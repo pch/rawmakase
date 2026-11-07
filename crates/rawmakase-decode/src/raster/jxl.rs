@@ -8,61 +8,79 @@ use std::path::Path;
 
 pub(super) struct JxlFile {
     inner: jxl_oxide::integration::JxlDecoder<BufReader<std::fs::File>>,
-    hdr: bool,
-    animated: bool,
+    header: Header,
 }
 
 impl JxlFile {
     pub(super) fn open(path: &Path) -> Result<Self> {
-        let (hdr, animated) = header_facts(path)?;
+        let header = Header::read(&mut std::fs::File::open(path)?)?;
         let inner =
             jxl_oxide::integration::JxlDecoder::new(BufReader::new(std::fs::File::open(path)?))
                 .context("Could not read the JPEG XL file")?;
-        Ok(Self {
-            inner,
-            hdr,
-            animated,
-        })
+        Ok(Self { inner, header })
     }
 
     /// Why Develop refuses it. An animation is refused whatever else it is; HDR is
     /// last, as the reason `raster::prepare` lifts for HDR that decodes exactly.
     pub(super) fn refusal(&self) -> Option<Unsupported> {
-        if self.animated {
+        if self.header.animated {
             Some(Unsupported("animated".into()))
-        } else if self.hdr {
+        } else if self.header.hdr {
             Some(Unsupported("HDR".into()))
         } else {
             None
         }
     }
+
+    /// Whether its codestream turns or mirrors it.
+    pub(super) fn turned(&self) -> bool {
+        self.header.turned
+    }
 }
 
-/// Whether the file is HDR and whether it is animated, from its headers: fed
-/// in 64 KiB pieces until they are read, at most 16 MiB.
-fn header_facts(path: &Path) -> Result<(bool, bool)> {
-    use jxl_oxide::InitializeResult;
-    let mut file = std::fs::File::open(path)?;
-    let mut uninit = jxl_oxide::JxlImage::builder().build_uninit();
-    let mut buf = vec![0u8; 64 << 10];
-    for _ in 0..256 {
-        let n = file.read(&mut buf)?;
-        anyhow::ensure!(n > 0, "The JPEG XL file ends before its header");
-        uninit
-            .feed_bytes(&buf[..n])
-            .map_err(|e| anyhow::anyhow!("Could not read the JPEG XL header: {e}"))?;
-        match uninit
-            .try_init()
-            .map_err(|e| anyhow::anyhow!("Could not read the JPEG XL header: {e}"))?
-        {
-            InitializeResult::NeedMoreData(more) => uninit = more,
-            InitializeResult::Initialized(image) => {
-                let animated = image.image_header().metadata.animation.is_some();
-                return Ok((image.hdr_type().is_some(), animated));
+/// What a JPEG XL file's or codestream's headers say.
+pub(super) struct Header {
+    pub(super) hdr: bool,
+    pub(super) animated: bool,
+    /// Its orientation is not the identity.
+    pub(super) turned: bool,
+    /// Its size, upright.
+    pub(super) width: u32,
+    pub(super) height: u32,
+}
+
+impl Header {
+    /// The headers of the file or naked codestream `from` reads, fed in 64 KiB
+    /// pieces until they are read, at most 16 MiB.
+    pub(super) fn read(from: &mut impl Read) -> Result<Self> {
+        use jxl_oxide::InitializeResult;
+        let mut uninit = jxl_oxide::JxlImage::builder().build_uninit();
+        let mut buf = vec![0u8; 64 << 10];
+        for _ in 0..256 {
+            let n = from.read(&mut buf)?;
+            anyhow::ensure!(n > 0, "The JPEG XL file ends before its header");
+            uninit
+                .feed_bytes(&buf[..n])
+                .map_err(|e| anyhow::anyhow!("Could not read the JPEG XL header: {e}"))?;
+            match uninit
+                .try_init()
+                .map_err(|e| anyhow::anyhow!("Could not read the JPEG XL header: {e}"))?
+            {
+                InitializeResult::NeedMoreData(more) => uninit = more,
+                InitializeResult::Initialized(image) => {
+                    let metadata = &image.image_header().metadata;
+                    return Ok(Self {
+                        hdr: image.hdr_type().is_some(),
+                        animated: metadata.animation.is_some(),
+                        turned: metadata.orientation != 1,
+                        width: image.width(),
+                        height: image.height(),
+                    });
+                }
             }
         }
+        anyhow::bail!("The JPEG XL header is too large")
     }
-    anyhow::bail!("The JPEG XL header is too large")
 }
 
 impl ImageDecoder for JxlFile {

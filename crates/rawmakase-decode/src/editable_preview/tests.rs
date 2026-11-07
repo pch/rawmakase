@@ -338,6 +338,7 @@ fn reduced_decodes_and_hdr_light_are_refused() {
     let mut im = original(8, 8);
     im.metadata.hdr_source = Some(HdrSource {
         transfer: Default::default(),
+        gain_map: false,
         peak: 4.,
     });
     assert!(
@@ -498,6 +499,41 @@ fn missing_facts_take_their_defaults() {
         }
     );
     assert!(m.lateral_ca.get().is_none(), "not measured");
+}
+
+/// An HDR file's source fact keeps whether its light came from a gain map, which a
+/// record written before that fact existed reads as false.
+#[test]
+fn an_hdr_sources_gain_map_round_trips() {
+    use rawmakase_model::color::hdr_output::HdrTransfer;
+    let scale = facts::Scale {
+        factor: 1.,
+        clipped: 0,
+    };
+    let read = |m: &Metadata| {
+        let bytes = facts::write_metadata(m, scale).into_bytes();
+        let r = Record::parse(&bytes).unwrap();
+        facts::read_metadata(&r, [m.width, m.height]).unwrap().0
+    };
+    let mut m = every_fact(60, 40);
+    for (transfer, gain_map) in [(HdrTransfer::Linear, true), (HdrTransfer::Pq, false)] {
+        m.hdr_source = Some(HdrSource {
+            transfer,
+            gain_map,
+            peak: 3.5,
+        });
+        assert_eq!(read(&m).hdr_source, m.hdr_source);
+    }
+    // Without a gain map, the record is the one written before the fact existed.
+    let mut plain = Writer::default();
+    plain.u8(1, 0);
+    plain.f32(2, 3.5);
+    let mut record = Writer::default();
+    record.record(43, plain);
+    let bytes = record.into_bytes();
+    let r = Record::parse(&bytes).unwrap();
+    let (old, _) = facts::read_metadata(&r, [60, 40]).unwrap();
+    assert_eq!(old.hdr_source, m.hdr_source);
 }
 
 #[test]

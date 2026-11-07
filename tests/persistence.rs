@@ -113,14 +113,17 @@ fn invalid_export_defaults_never_replace_saved_edits() -> Result<()> {
         ExportOptions {
             quality: 0,
             max_edge: 0,
+            ..Default::default()
         },
         ExportOptions {
             quality: 101,
             max_edge: 0,
+            ..Default::default()
         },
         ExportOptions {
             quality: 92,
             max_edge: 30_001,
+            ..Default::default()
         },
     ] {
         assert!(legacy_sidecar::save(&raw, &recipe, &options).is_err());

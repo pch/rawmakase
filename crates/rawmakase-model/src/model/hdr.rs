@@ -163,7 +163,8 @@ impl HdrSettings {
 /// with HDR off, or with nothing but measured adjustments, passes.
 ///
 /// Measured: white balance, Exposure, negative Whites, Blacks, the HDR limit, camera profiles
-/// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), and what works
+/// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks of a table
+/// and a curve ([`crate::camera_profiles::hdr_look`]) at 100%, and what works
 /// on the camera's samples before tone: lens corrections, geometry, noise reduction,
 /// AI Denoise, Heal and Clone, and output sharpening.
 pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
@@ -175,6 +176,11 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
     // Without one, the camera matrix with the ACR3 curve renders it (`Recipe::resolved`).
     if let Some(profile) = &r.profile {
         profile.hdr_tone()?;
+        // A look's curve and table were measured at 100%.
+        ensure!(
+            !profile.supports_amount() || r.profile_amount == 1.,
+            "Profile Amount other than 100% is not supported in HDR yet"
+        );
     }
     ensure!(
         r.hdr.sdr == SdrRendition::default(),
@@ -402,6 +408,7 @@ mod tests {
             source: Source::Rendered,
             hdr_source: Some(HdrSource {
                 transfer: HdrTransfer::Pq,
+                gain_map: false,
                 peak: 4.,
             }),
             ..Default::default()
@@ -499,6 +506,54 @@ mod tests {
         r.curve = Default::default();
         r.effects.channels[1].points = vec![[0.2, 0.2], [0.8, 0.8]];
         assert!(check_recipe(&r).is_err());
+    }
+
+    /// A look of an HSV table and a curve, as Adobe Color is, renders its master; a
+    /// look with anything else (an RGB table, its own sliders or settings, B&W, a
+    /// Profile Amount away from 100%) refuses it, and the edit stays valid.
+    #[test]
+    fn looks_of_a_table_and_a_curve_render_in_hdr() {
+        use crate::camera_profiles::{CameraProfile, open};
+        use crate::model::recipe::Recipe;
+        use std::sync::Arc;
+        let m = crate::camera_data::Metadata {
+            make: "Fujifilm".into(),
+            model: "X100F".into(),
+            wb: [2., 1., 1.8],
+            daylight_wb: [2., 1., 1.8],
+            matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+            cam_xyz: [[0.9, -0.3, -0.1], [-0.4, 1.2, 0.2], [-0.1, 0.2, 0.6]],
+            ..Default::default()
+        };
+        let mut r = Recipe::default();
+        r.hdr.enabled = true;
+        let color = open::color(&m).unwrap();
+        r.profile = Some(Arc::new(color.clone()));
+        check_recipe(&r).unwrap();
+        let refused: [fn(&mut CameraProfile); 6] = [
+            |p| p.enhanced.as_mut().unwrap().clarity = 0.1,
+            |p| p.enhanced.as_mut().unwrap().highlights = -0.12,
+            |p| p.enhanced.as_mut().unwrap().monochrome = true,
+            |p| p.enhanced.as_mut().unwrap().settings.exposure = 0.3,
+            |p| p.enhanced.as_mut().unwrap().camera_look = Some("Velvia".into()),
+            |p| *p = p.clone().with_test_rgb_tables().remove(0),
+        ];
+        for change in refused {
+            let mut edit = r.clone();
+            let mut p = color.clone();
+            change(&mut p);
+            edit.profile = Some(Arc::new(p));
+            let error = check_recipe(&edit).unwrap_err().to_string();
+            assert!(error.contains("HDR"), "{error}");
+            edit.hdr.enabled = false;
+            assert!(check_recipe(&edit).is_ok());
+        }
+        // A look with Profile Amount renders at 100% only.
+        r.profile = Some(Arc::new(CameraProfile::creative_for_test(&m)));
+        check_recipe(&r).unwrap();
+        r.profile_amount = 0.5;
+        assert!(check_recipe(&r).is_err());
+        assert!(r.validate().is_ok());
     }
 
     #[test]

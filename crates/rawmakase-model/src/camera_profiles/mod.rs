@@ -582,14 +582,12 @@ impl CameraProfile {
     }
 }
 impl CameraProfile {
-    /// How this profile's tone curve renders in HDR, or why it cannot yet: looks
-    /// (Lightroom's creative and Adobe looks, `.cube` looks and fitted Camera Looks)
-    /// have no measured HDR rendering.
+    /// How this profile's tone curve renders in HDR, or why it cannot yet: a look
+    /// renders when it is a table and a curve (`Enhanced::check_hdr`).
     pub fn hdr_tone(&self) -> Result<hdr_tone::HdrTone> {
-        ensure!(
-            self.enhanced.is_none(),
-            "Looks and Camera Look are not supported in HDR yet"
-        );
+        if let Some(look) = &self.enhanced {
+            look.check_hdr()?;
+        }
         // An sRGB-encoded table's lookup above white is not measured.
         ensure!(
             [&self.hue1, &self.hue2, &self.look]
@@ -609,7 +607,15 @@ impl CameraProfile {
     /// values and its curve maps them, as the DNG SDK renders it; an ordinary
     /// profile's table keeps the values above white it scales, and its curve is the
     /// measured extension. Both curves apply DNG RGBTone fashion.
-    pub fn finish_hdr(&self, pro: [f32; 3], tone: &hdr_tone::HdrTone) -> [f32; 3] {
+    ///
+    /// A look's table applies after the profile's, on overrange-encoded values, and
+    /// its curve after the profile's, by `look` (from [`Self::hdr_look`]).
+    pub fn finish_hdr(
+        &self,
+        pro: [f32; 3],
+        tone: &hdr_tone::HdrTone,
+        look: Option<&hdr_look::LookTone>,
+    ) -> [f32; 3] {
         let mut p = pro.map(|v| v.max(0.));
         if let Some(table) = &self.look {
             p = if self.is_hdr() {
@@ -617,6 +623,9 @@ impl CameraProfile {
             } else {
                 table.apply(p, None, 0.)
             };
+        }
+        if let Some(enhanced) = &self.enhanced {
+            p = enhanced.apply_table_hdr(p);
         }
         let p = match tone {
             hdr_tone::HdrTone::Overrange => {
@@ -634,7 +643,15 @@ impl CameraProfile {
             }
             tone => rgb_tone(p.map(|v| v.max(0.)), |x| tone.evaluate(&self.tone, x)),
         };
+        let p = match (&self.enhanced, look) {
+            (Some(enhanced), Some(look)) => look.apply(enhanced.curve(), p),
+            _ => p,
+        };
         mul(PRO_TO_RGB, p)
+    }
+    /// How this profile's look curve renders in HDR; `None` without a look.
+    pub fn hdr_look(&self) -> Option<hdr_look::LookTone> {
+        Some(hdr_look::LookTone::of(self.enhanced.as_ref()?.curve()))
     }
 }
 /// DNG RGBTone: `curve` maps the brightest and darkest channel; the middle one keeps
@@ -722,6 +739,36 @@ impl CameraProfile {
     pub fn with_cube_for_test(&self, cube: &str) -> Result<Self> {
         let converted = cube_look::convert(cube.as_bytes(), LutSpace::Srgb)?;
         enhanced::LookFile::parse(&cube_look::look_xmp(&converted, "Cube", ""))?.compose(self)
+    }
+    /// This profile with a look of an HSV table that scales value by `scale` of the
+    /// value's place (0–1) over `values` divisions, linearly encoded, and the curve
+    /// through `points` (sRGB-encoded, 0–1), for tests.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_test_look(
+        mut self,
+        values: usize,
+        scale: impl Fn(f32) -> f32,
+        points: &[[f32; 2]],
+    ) -> Self {
+        let table = Table {
+            dims: [4, 2, values],
+            data: (0..values)
+                .flat_map(|v| {
+                    let place = v as f32 / (values - 1).max(1) as f32;
+                    [[0., 1., scale(place)]; 8]
+                })
+                .collect(),
+            srgb: false,
+        };
+        let mut look = enhanced::Enhanced::for_test(table);
+        look.curve = Box::new(crate::color::curve::CurveLut::new(
+            &crate::color::curve::ToneCurve {
+                points: points.to_vec(),
+                ..Default::default()
+            },
+        ));
+        self.enhanced = Some(look);
+        self
     }
     /// This profile marked HDR (`ProfileDynamicRange` 1), for tests.
     #[cfg(any(test, feature = "test-support"))]
@@ -889,6 +936,7 @@ mod cube_look;
 mod dcp;
 mod enhanced;
 pub mod fitted;
+pub mod hdr_look;
 pub mod hdr_tone;
 #[rustfmt::skip]
 #[allow(clippy::excessive_precision)]

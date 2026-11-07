@@ -106,6 +106,10 @@ def relative(reference, candidate, reference_sdr, candidate_sdr):
 
 
 def without_profile(xmp):
+    """The requested sidecar without its profile, which is passed as the job's DCP, and
+    without the look tables Camera Raw reads from it: RAWmakase takes a look from its
+    profile library (`RAWMAKASE_DATA_DIR`)."""
+    xmp = re.sub(r'\s*crs:Table_[0-9A-F]+="[^"]*"', '', xmp)
     return re.sub(r'\s*crs:CameraProfile="[^"]*"', '', xmp)
 
 
@@ -121,8 +125,12 @@ def validate(family, binary, out, split, tag):
     out.mkdir(parents=True, exist_ok=True)
     results = []
     manifest = json.loads((family / 'manifest.json').read_text())
-    # The SDR capture of each source and profile, for the relative metric.
-    sdr = {(r['job']['source'], r['job']['profile']): i for i, r in enumerate(manifest)
+    # The SDR capture of each source, profile and look, for the relative metric.
+    def pairing(job):
+        look = job.get('look')
+        return (job['source'], job['profile'],
+                (look['file'], float(look.get('amount', 1))) if look else None)
+    sdr = {pairing(r['job']): i for i, r in enumerate(manifest)
            if r['output_transfer'] == 'sRGB' and set(r['job']['settings']) <= {'CameraProfile', 'HDREditMode'}}
     for index, record in enumerate(manifest):
         job = record['job']
@@ -147,7 +155,7 @@ def validate(family, binary, out, split, tag):
         row = dict(index=index, source=Path(job['source']).name, tag=job.get('tag'), split=job['split'],
                    shape=[list(reference.shape[:2]), list(candidate.shape[:2])],
                    **metrics(reference[:h, :w], candidate[:h, :w]))
-        pair = sdr.get((job['source'], job['profile']))
+        pair = sdr.get(pairing(job))
         if pair is not None:
             # Our SDR render of the HDR job's settings with HDR off: its SDR rendition.
             plain = out / f'{index:03d}-sdr.tif'

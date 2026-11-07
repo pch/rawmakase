@@ -1016,7 +1016,7 @@ version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab8ecd87370524b461f8557c119c405552c396ed91fc0a8eec68679eab26f94a"
 dependencies = [
- "libloading 0.7.4",
+ "libloading 0.8.9",
 ]
 
 [[package]]
@@ -2158,6 +2158,12 @@ checksum = "09c46c1fe465c59b1474e665e85e1256c3893dd00927b8d55f63b09044c1e64f"
 dependencies = [
  "glob",
 ]
+
+[[package]]
+name = "jixel"
+version = "0.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13cd3bce0467732222e6f78045b40e72ead8723d236f8707211c4b2d75d1b403"
 
 [[package]]
 name = "jni"
@@ -3833,6 +3839,7 @@ dependencies = [
  "anyhow",
  "fastframe-fonts",
  "image",
+ "jixel",
  "jxl-oxide",
  "md-5",
  "memmap2",

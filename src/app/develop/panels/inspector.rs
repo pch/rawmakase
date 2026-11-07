@@ -511,6 +511,7 @@ impl Editor {
         let can_fit_camera_look = self.can_fit_camera_look();
         let fit_camera_look_unavailable = self.camera_look_unavailable();
         let hdr = self.hdr_presentation();
+        let hdr_second = self.hdr_second_side_presentation();
         // A conversion to black & white waiting for the photo to decode.
         let pending_treatment = self
             .document
@@ -536,6 +537,7 @@ impl Editor {
             can_fit_camera_look,
             fit_camera_look_unavailable,
             hdr: &hdr,
+            hdr_second: hdr_second.as_ref(),
         };
         let mut requests = panels::Requests::default();
         let view = &mut self.view;

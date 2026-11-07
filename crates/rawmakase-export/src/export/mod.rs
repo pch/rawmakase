@@ -300,7 +300,7 @@ pub fn stage_pixels(
 ) -> Result<Staged> {
     match pixels {
         Pixels::Sdr(image) => stage_image(path, image, m, options, embed),
-        Pixels::Hdr(image) => stage_hdr(path, image, m, embed),
+        Pixels::Hdr(image) => stage_hdr(path, image, m, options, embed),
         Pixels::GainMap(image) => stage_gain_map(path, image, m, options, embed),
     }
 }
@@ -328,7 +328,7 @@ pub fn stage_gain_map(
     let base = &image.base;
     let directories = metadata::directories(m, embed, base.width(), base.height(), base.space());
     if format == Format::Jxl {
-        encode::jxl_gain_map(&mut temp, image, directories, embed)?;
+        encode::jxl_gain_map(&mut temp, image, options, directories, embed)?;
         temp.as_file().sync_all()?;
         return Ok(Staged {
             file: temp,
@@ -364,10 +364,16 @@ pub fn stage_gain_map(
 }
 
 /// An HDR master as a TIFF, with its encoding's ICC profile (CICP and colorants):
-/// 16-bit PQ or HLG signal, or 32-bit float linear light; or as a lossless 16-bit
-/// JPEG XL naming its encoding in its header. Any other format is refused before
-/// anything is written.
-pub fn stage_hdr(path: &Path, image: &HdrPixels, m: &Metadata, embed: &Embed) -> Result<Staged> {
+/// 16-bit PQ or HLG signal, or 32-bit float linear light; or as a 16-bit JPEG XL
+/// naming its encoding in its header, lossless or lossy as `options` say. Any other
+/// format is refused before anything is written.
+pub fn stage_hdr(
+    path: &Path,
+    image: &HdrPixels,
+    m: &Metadata,
+    options: &ExportOptions,
+    embed: &Embed,
+) -> Result<Staged> {
     ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
     let format = Format::from_path(path)
         .filter(|f| matches!(f, Format::Tiff | Format::Jxl))
@@ -383,7 +389,7 @@ pub fn stage_hdr(path: &Path, image: &HdrPixels, m: &Metadata, embed: &Embed) ->
     let unfinished = WRITING.track(temp.path());
     let directories = metadata::directories_uncalibrated(m, embed, image.width, image.height);
     match format {
-        Format::Jxl => encode::jxl_hdr(&mut temp, image, directories, embed)?,
+        Format::Jxl => encode::jxl_hdr(&mut temp, image, options, directories, embed)?,
         _ => {
             let profile = crate::color_management::hdr_profile(image.output)?;
             encode::tiff_hdr(&mut temp, image, profile, &directories, embed)?
@@ -428,7 +434,7 @@ pub fn stage_image(
         )?,
         Format::Tiff => encode::tiff(&mut temp, image, profile, &directories, embed)?,
         Format::Png => encode::png(&mut temp, image, profile, directories, embed)?,
-        Format::Jxl => encode::jxl(&mut temp, image, directories, embed)?,
+        Format::Jxl => encode::jxl(&mut temp, image, options, directories, embed)?,
     }
     temp.as_file().sync_all()?;
     Ok(Staged {
@@ -437,6 +443,8 @@ pub fn stage_image(
     })
 }
 
+#[cfg(test)]
+mod gain_map_input_tests;
 #[cfg(test)]
 mod hdr_tests;
 #[cfg(test)]

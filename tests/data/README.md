@@ -33,3 +33,11 @@ The script writes the others around x265's HEVC: `rotated.heic` and
 `rotated-mirrored.heic` add `irot` 1 and `imir` 0 as their AVIF namesakes do, and `grid.heic` is a
 2×2 grid of 64×64 tiles cut to 120×100, laid out as an iPhone writes one: hidden tiles carrying the
 `nclx` (BT.709, limited range), an sRGB ICC profile on the grid, the grid's description in `idat`.
+
+The Ultra HDR fixtures are written by libultrahdr's `ultrahdr_app`, from renditions drawn by
+`python3 scripts/make-gain-map-fixtures.py tests/data/formats` (the script prints libultrahdr's
+version and the decoded pixels the decoder test checks). `ultrahdr.jpg` and
+`ultrahdr-quarter-map.jpg` are 64×48 ISO 21496-1 gain-map JPEGs: a Display P3 base with a
+three-channel map in the base's colour space, the base's size and a quarter of it (16×12). The
+HDR rendition is a ramp to 8× SDR white; the SDR one compresses each channel differently, so
+the map's channels differ. Made with libultrahdr 2.0.2.

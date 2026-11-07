@@ -263,39 +263,47 @@ fn a_zoomed_in_photo_sits_on_whole_screen_pixels() {
     }
 }
 
-/// Develop's Fit view is due to show an HDR edit's master on a display with headroom,
-/// and the SDR rendition where the display has none, the edit is SDR or refused in
-/// HDR, the view is zoomed or compares, or a visualization is drawn into the render.
+/// Develop is due to show an HDR edit's master on a display with headroom: the whole
+/// photo in Fit and zoomed out, a 100% region over it zoomed in, of Before alone, and
+/// of each side of Before/After. The SDR rendition shows where the display has none,
+/// the edit is SDR or refused in HDR, the camera's thumbnail shows, or a visualization
+/// is drawn into the render.
 #[test]
-fn the_hdr_master_is_due_only_in_the_plain_fit_view_of_an_hdr_edit() {
-    use crate::app::develop::before_after::Compare;
+fn the_hdr_master_is_due_in_every_view_of_an_hdr_edit() {
+    use crate::app::develop::before_after::{Axis, Compare};
     use crate::app::develop::clipping::ClipSide;
+    use crate::app::develop::hdr_preview::{Key, Part, Presentation};
     use crate::app::shell::display::HdrDisplay;
     let ctx = egui::Context::default();
     let (mut e, _) = crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), true);
     e.preview.last_fit_edge = 64;
+    e.view.viewport = egui::Vec2::new(16., 12.);
     let hdr = HdrDisplay {
         headroom: 4.,
         potential: 16.,
         float_surface: true,
     };
     e.view.hdr_display = hdr;
-    assert!(e.hdr_preview_due().is_err(), "an SDR edit");
+    assert_eq!(e.hdr_preview_due().unwrap_err(), "HDR is off");
     e.document.edit.setup_mut().hdr.enabled = true;
-    let (key, _) = e.hdr_preview_due().expect("an HDR edit in Fit");
-    assert_eq!(
-        e.hdr_presentation(),
-        crate::app::develop::hdr_preview::Presentation::Rendering
-    );
-    assert_eq!(
-        key,
-        crate::app::develop::hdr_preview::Key::new(
-            e.document.full().unwrap(),
-            &e.effective_recipe(),
-            64,
-            4.
-        )
-    );
+    let key = |e: &crate::app::Editor, part| {
+        Key::new(e.document.full().unwrap(), &e.effective_recipe(), part, 4.)
+    };
+    let due = e.hdr_preview_due().expect("an HDR edit in Fit");
+    assert_eq!(e.hdr_presentation(), Presentation::Rendering);
+    assert_eq!(due.key, key(&e, Part::Whole(16)));
+    assert!(due.under.is_none());
+
+    // Zoomed out, the whole photo at the zoomed size; at 100%, the region rendered
+    // over the whole photo at its Fit size.
+    e.view.zoom.set(0.75);
+    assert_eq!(e.hdr_preview_due().unwrap().key, key(&e, Part::Whole(24)));
+    e.view.zoom.set(1.);
+    let region = e.region().expect("a 100% region");
+    let due = e.hdr_preview_due().expect("an HDR edit at 100%");
+    assert_eq!(due.key, key(&e, Part::Region(region)));
+    assert_eq!(due.under, Some(key(&e, Part::Whole(16))));
+    e.view.zoom.set(0.);
 
     e.view.hdr_display = HdrDisplay {
         potential: 1.,
@@ -304,12 +312,38 @@ fn the_hdr_master_is_due_only_in_the_plain_fit_view_of_an_hdr_edit() {
     assert!(e.hdr_preview_due().is_err(), "an SDR display");
     e.view.hdr_display = hdr;
 
-    e.view.zoom.on = true;
-    assert!(e.hdr_preview_due().is_err(), "zoomed in");
-    e.view.zoom.on = false;
-
+    // Before alone is Before's own master, or its SDR rendition.
+    let mut before = e.document.edit.recipe().clone();
+    before.hdr.enabled = false;
+    e.document.before = Some(before.clone());
     e.view.compare = Compare::BeforeOnly;
-    assert!(e.hdr_preview_due().is_err(), "Before");
+    assert_eq!(e.hdr_preview_due().unwrap_err(), "HDR is off");
+    before.hdr.enabled = true;
+    e.document.before = Some(before.clone());
+    assert!(e.hdr_preview_due().is_ok(), "Before in HDR");
+
+    // Beside the edit, each side is its own.
+    e.view.compare = Compare::SideBySide(Axis::LeftRight);
+    assert!(e.hdr_preview_due().is_ok(), "After beside Before");
+    assert!(e.hdr_second_side_due().is_err(), "Before not yet asked for");
+    e.schedule_before();
+    let side = e.hdr_second_side_due().expect("Before beside the edit");
+    assert_eq!(side.key.part(), Part::Whole(16));
+    before.hdr.enabled = false;
+    e.document.before = Some(before);
+    e.schedule_before();
+    assert_eq!(e.hdr_second_side_due().unwrap_err(), "HDR is off");
+    assert!(e.hdr_preview_due().is_ok(), "After stays HDR");
+    // The Basic panel names the side showing its SDR rendition, and why.
+    assert_eq!(
+        e.hdr_second_side_presentation(),
+        Some(("Before", Presentation::Sdr("HDR is off")))
+    );
+    e.view.compare = Compare::BeforeOnly;
+    assert_eq!(e.hdr_second_side_presentation(), None);
+
+    e.view.compare = Compare::CameraThumbnail;
+    assert!(e.hdr_preview_due().is_err(), "the camera's thumbnail");
     e.view.compare = Compare::Off;
 
     e.view.clipping.toggle(ClipSide::Highlights);

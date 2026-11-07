@@ -237,7 +237,7 @@ pub(crate) fn render_level(
     check_cancel(cancel)?;
     Ok(Output::Pixels(crop(out, [x - left, y - top, w, h])))
 }
-fn crop(im: Rendered, [x, y, w, h]: [u32; 4]) -> Rendered {
+pub(super) fn crop(im: Rendered, [x, y, w, h]: [u32; 4]) -> Rendered {
     if (x, y, w, h) == (0, 0, im.width, im.height) {
         return im;
     }

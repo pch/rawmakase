@@ -46,6 +46,8 @@ pub(in crate::app::develop::panels::inspector) struct View<'a> {
     pub fit_camera_look_unavailable: Option<&'static str>,
     /// What the viewport shows of an HDR edit.
     pub hdr: &'a crate::app::develop::hdr_preview::Presentation,
+    /// What it shows of the side beside the edit, named: Before or the reference.
+    pub hdr_second: Option<&'a (&'static str, crate::app::develop::hdr_preview::Presentation)>,
 }
 
 /// Draws the panel.
@@ -71,6 +73,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
         can_fit_camera_look,
         fit_camera_look_unavailable,
         hdr,
+        hdr_second,
     } = *facts;
     // A JPEG, TIFF or PNG: its Embedded profile, and relative white balance.
     let rendered = metadata.is_some_and(|m| m.is_rendered());
@@ -122,8 +125,11 @@ pub(in crate::app::develop::panels::inspector) fn show(
         // its metadata is read, a photo is checked as a raw, as it was before.
         let raw = Metadata::default();
         match metadata {
-            Some(m) if m.is_rendered() && m.hdr_source.is_none() => {}
-            m => hdr_row(ui, r, m.unwrap_or(&raw), hdr),
+            // Beside a reference photo in HDR, still say what it shows.
+            Some(m) if m.is_rendered() && m.hdr_source.is_none() => {
+                second_side_note(ui, false, hdr_second);
+            }
+            m => hdr_row(ui, r, m.unwrap_or(&raw), hdr, hdr_second),
         }
         let old_profile = r.profile.clone();
         // Without a profile the matrix path renders through the DNG default look.
@@ -446,11 +452,14 @@ pub(in crate::app::develop::panels::inspector) fn show(
 /// High Dynamic Range: the edit's HDR switch, with what the photo shows: its HDR
 /// master where the viewport can show it (`shown`), else its SDR rendition and why;
 /// an edit whose HDR master can't render yet says why (`model::hdr::check_for`).
+/// Beside the edit, what the other side shows too (`second`), so a comparison of
+/// brightness says when one side is SDR.
 fn hdr_row(
     ui: &mut egui::Ui,
     r: &mut Recipe,
     metadata: &crate::camera_data::Metadata,
     shown: &crate::app::develop::hdr_preview::Presentation,
+    second: Option<&(&'static str, crate::app::develop::hdr_preview::Presentation)>,
 ) {
     control_row(ui, "HDR", |ui| {
         ui.checkbox(&mut r.hdr.enabled, "High Dynamic Range")
@@ -460,23 +469,92 @@ fn hdr_row(
             );
     });
     if r.hdr.is_active() {
-        use crate::app::develop::hdr_preview::Presentation;
-        let note = match (crate::model::hdr::check_for(r, metadata), shown) {
-            (Err(e), _) => format!("Showing the SDR rendition. HDR export unavailable: {e}"),
-            (Ok(()), Presentation::Hdr { stops }) => {
-                format!("Showing HDR, up to {stops:.1} stops above white on this display")
-            }
-            (Ok(()), Presentation::Rendering) => {
-                "Showing the SDR rendition while HDR renders".to_owned()
-            }
-            (Ok(()), Presentation::Failed(e)) => {
-                format!("Showing the SDR rendition. HDR preview failed: {e}")
-            }
-            (Ok(()), Presentation::Sdr(why)) => format!("Showing the SDR rendition: {why}"),
+        let text = match crate::model::hdr::check_for(r, metadata) {
+            Err(e) => format!("Showing the SDR rendition. HDR export unavailable: {e}"),
+            Ok(()) => presentation_note(shown),
         };
-        ui.horizontal(|ui| {
-            ui.add_space(control_left(ui));
-            ui.add(egui::Label::new(egui::RichText::new(note).small()).wrap());
+        hdr_note(ui, text);
+    }
+    second_side_note(ui, r.hdr.is_active(), second);
+}
+
+/// What the side beside the edit shows (`second`), named, unless neither side is in
+/// HDR: the edit (`edit_hdr`) or that side.
+fn second_side_note(
+    ui: &mut egui::Ui,
+    edit_hdr: bool,
+    second: Option<&(&'static str, crate::app::develop::hdr_preview::Presentation)>,
+) {
+    use crate::app::develop::hdr_preview::Presentation;
+    if let Some((side, shown)) = second
+        && (edit_hdr || *shown != Presentation::Sdr(crate::app::develop::viewport::HDR_OFF))
+    {
+        hdr_note(ui, format!("{side}: {}", presentation_note(shown)));
+    }
+}
+
+fn hdr_note(ui: &mut egui::Ui, note: String) {
+    ui.horizontal(|ui| {
+        ui.add_space(control_left(ui));
+        ui.add(egui::Label::new(egui::RichText::new(note).small()).wrap());
+    });
+}
+
+/// What `shown` says the viewport shows, as the note under the HDR switch.
+fn presentation_note(shown: &crate::app::develop::hdr_preview::Presentation) -> String {
+    use crate::app::develop::hdr_preview::Presentation;
+    match shown {
+        Presentation::Hdr { stops } => {
+            format!("Showing HDR, up to {stops:.1} stops above white on this display")
+        }
+        Presentation::Rendering => "Showing the SDR rendition while HDR renders".to_owned(),
+        Presentation::Failed(e) => format!("Showing the SDR rendition. HDR preview failed: {e}"),
+        Presentation::Sdr(why) => format!("Showing the SDR rendition: {why}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::develop::hdr_preview::Presentation;
+
+    /// The texts `second_side_note` draws for an edit in HDR or not (`edit_hdr`)
+    /// beside a side showing `shown`.
+    fn drawn(edit_hdr: bool, shown: Presentation) -> Vec<String> {
+        let ctx = egui::Context::default();
+        let side = ("Reference", shown);
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            second_side_note(ui, edit_hdr, Some(&side));
         });
+        output.textures_delta.clear();
+        fn walk(shape: &egui::Shape, out: &mut Vec<String>) {
+            match shape {
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+                egui::Shape::Text(t) => out.push(t.galley.text().to_owned()),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        output.shapes.iter().for_each(|s| walk(&s.shape, &mut out));
+        out
+    }
+
+    /// Beside an SDR edit, a reference in HDR still says what it shows and why, a
+    /// failure included; one with HDR off says nothing, as neither side is HDR.
+    #[test]
+    fn the_side_beside_an_sdr_edit_says_what_it_shows() {
+        let note = drawn(false, Presentation::Sdr("a visualization is shown"));
+        assert_eq!(
+            note,
+            ["Reference: Showing the SDR rendition: a visualization is shown"]
+        );
+        let failed = drawn(false, Presentation::Failed("out of memory".into()));
+        assert!(
+            failed[0].contains("HDR preview failed: out of memory"),
+            "{failed:?}"
+        );
+        let off = Presentation::Sdr(crate::app::develop::viewport::HDR_OFF);
+        assert!(drawn(false, off.clone()).is_empty());
+        assert_eq!(drawn(true, off).len(), 1, "beside an HDR edit");
     }
 }

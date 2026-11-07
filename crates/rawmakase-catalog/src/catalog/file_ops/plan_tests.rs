@@ -414,6 +414,13 @@ fn a_destination_created_just_before_the_rename_is_never_replaced() -> Result<()
         fn identity(&self, p: &std::path::Path) -> anyhow::Result<Identity> {
             self.0.identity(p)
         }
+        fn settle_rename(
+            &self,
+            a: &std::path::Path,
+            b: &std::path::Path,
+        ) -> Result<(), fsops::FsError> {
+            self.0.settle_rename(a, b)
+        }
         fn rename(&self, a: &std::path::Path, b: &std::path::Path) -> Result<(), fsops::FsError> {
             if b.ends_with("a.xmp") {
                 std::fs::write(self.1, b"raced").unwrap();

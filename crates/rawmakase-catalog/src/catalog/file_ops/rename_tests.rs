@@ -140,6 +140,41 @@ fn a_rename_keeps_the_file_object_its_time_identity_edit_and_checksum() -> Resul
     Ok(())
 }
 
+/// Linux's NTFS drivers (ntfs3 and `ntfs`) keep file ids and rename
+/// exclusively, so photos on an NTFS drive rename as on ext4 (#914).
+#[test]
+#[ignore = "needs RAWMAKASE_TEST_NTFS_VOLUME: a writable folder on an NTFS volume"]
+fn photos_on_an_ntfs_volume_rename() -> Result<()> {
+    let Some(volume) = std::env::var_os("RAWMAKASE_TEST_NTFS_VOLUME") else {
+        return Ok(());
+    };
+    // The catalog stays on this computer's disk; only the photos' folder
+    // is on the NTFS drive.
+    let mut fx = fixture(&[]);
+    let scratch = tempfile::tempdir_in(volume)?;
+    fx.root = scratch.path().canonicalize()?.join("trip");
+    std::fs::create_dir(&fx.root)?;
+    for f in ["DSC00001.ARW", "DSC00001.JPG", "DSC00002.ARW"] {
+        std::fs::write(fx.root.join(f), bytes(f))?;
+    }
+    fx.cat.add_folder(&fx.root)?;
+    let id = fsops::entry(&fx.root.join("DSC00001.ARW"))?.id;
+    let op = rename(
+        &fx,
+        &[("DSC00001.ARW", "Trip-1"), ("DSC00002.ARW", "Trip-2")],
+    );
+    let plan = fx.plan(op.clone());
+    assert_eq!(reasons(&plan), [], "{:?}", plan.skipped());
+    let outcome = fx.run(op, &NoTrash, &disk::Real);
+    assert_eq!(
+        results(&outcome),
+        [renamed("Trip-1.ARW"), renamed("Trip-2.ARW")]
+    );
+    assert_eq!(listing(&fx), ["DSC00001.JPG", "Trip-1.ARW", "Trip-2.ARW"]);
+    assert_eq!(fsops::entry(&fx.root.join("Trip-1.ARW"))?.id, id);
+    Ok(())
+}
+
 #[test]
 fn companions_keep_their_endings_case_and_a_shared_one_stays() -> Result<()> {
     // A.NEF.xmp is A.NEF's and A.NEF.DNG's (its stem sidecar).
@@ -488,6 +523,13 @@ fn a_name_taken_just_before_its_rename_is_never_replaced() -> Result<()> {
         fn identity(&self, p: &std::path::Path) -> anyhow::Result<Identity> {
             self.0.identity(p)
         }
+        fn settle_rename(
+            &self,
+            a: &std::path::Path,
+            b: &std::path::Path,
+        ) -> Result<(), fsops::FsError> {
+            self.0.settle_rename(a, b)
+        }
         fn rename(&self, a: &std::path::Path, b: &std::path::Path) -> Result<(), fsops::FsError> {
             if b == self.1 {
                 std::fs::write(self.1, b"raced").unwrap();
@@ -540,6 +582,13 @@ fn a_name_the_disk_spells_otherwise_is_journalled_as_the_disk_spells_it() -> Res
         }
         fn identity(&self, p: &std::path::Path) -> anyhow::Result<Identity> {
             self.0.identity(p)
+        }
+        fn settle_rename(
+            &self,
+            a: &std::path::Path,
+            b: &std::path::Path,
+        ) -> Result<(), fsops::FsError> {
+            self.0.settle_rename(a, b)
         }
         fn rename(&self, a: &std::path::Path, b: &std::path::Path) -> Result<(), fsops::FsError> {
             use unicode_normalization::UnicodeNormalization;
@@ -625,6 +674,16 @@ fn rename_op(fx: &Fx) -> FileOp {
 
 /// Plans `op`, runs it on `disk` (which may crash), restarts and recovers.
 fn scenario(fx: &mut Fx, op: FileOp, disk: &Faulty) -> (BatchId, Recovery) {
+    scenario_on(fx, op, disk, &disk::Real)
+}
+
+/// [`scenario`], recovering on `recover_on`.
+fn scenario_on(
+    fx: &mut Fx,
+    op: FileOp,
+    disk: &Faulty,
+    recover_on: &dyn disk::Disk,
+) -> (BatchId, Recovery) {
     let plan = fx.plan(op);
     let batch = plan.batch().clone();
     crashes(|| {
@@ -634,7 +693,7 @@ fn scenario(fx: &mut Fx, op: FileOp, disk: &Faulty) -> (BatchId, Recovery) {
         );
     });
     fx.reopen();
-    let recovery = fx.recover(&disk::Real);
+    let recovery = fx.recover(recover_on);
     (batch, recovery)
 }
 
@@ -681,6 +740,126 @@ fn every_fault_at_every_disk_step_of_a_rename_ends_proven() {
         }
     }
     assert_eq!(runs, 3 * (3 + 2));
+}
+
+/// A rename by placeholder, as on ntfs-3g (#914), cut short by any fault
+/// at any rename, before, once its placeholder is made, or after, ends
+/// proven: every file at one name, no placeholder left, recovered or put
+/// back, and the photos rename again.
+#[test]
+fn every_fault_at_every_step_of_a_rename_by_placeholder_ends_proven() {
+    let mut runs = 0;
+    // A failed rename whose placeholder can't be removed either, then.
+    for cleanup_fails in [false, true] {
+        for nth in 0..3 {
+            for fault in [
+                Fault::Fail,
+                Fault::CrashBefore,
+                Fault::CrashMid,
+                Fault::CrashAfter,
+            ] {
+                if cleanup_fails && fault != Fault::Fail {
+                    continue;
+                }
+                let shown = format!("{nth} {fault:?}, cleanup fails: {cleanup_fails}");
+                let mut fx = rename_files();
+                let was = before(&fx);
+                let disk = Faulty {
+                    by_placeholder: true,
+                    cleanup_fails,
+                    ..Faulty::at(Op::Rename, nth, fault)
+                };
+                // Recovered where renames are by placeholder.
+                let there = Faulty {
+                    by_placeholder: true,
+                    ..Faulty::default()
+                };
+                let op = rename_op(&fx);
+                let (batch, recovery) = scenario_on(&mut fx, op, &disk, &there);
+                check(&fx, &was, &recovery, &batch);
+                for u in &recovery.unfinished {
+                    let back = recover::resolve_with(
+                        &mut fx.cat,
+                        u.operation,
+                        Resolution::PutBack,
+                        &there,
+                        &NoTrash,
+                    )
+                    .unwrap();
+                    assert!(
+                        matches!(back.result, ItemResult::Unchanged(_)),
+                        "{shown}: {back:?}"
+                    );
+                }
+                check(&fx, &was, &Recovery::default(), &batch);
+                let names = listing(&fx);
+                assert!(
+                    names.iter().all(|n| !n.starts_with('.')),
+                    "{shown}: {names:?}"
+                );
+                for n in &names {
+                    let links = fsops::entry(&fx.root.join(n)).unwrap().links;
+                    assert_eq!(links, 1, "{shown}: {n}");
+                }
+                let a = names.contains(&"a.NEF".to_string()) && names.contains(&"a.xmp".into());
+                let x = names.contains(&"x.NEF".to_string()) && names.contains(&"x.xmp".into());
+                assert!(a != x, "{shown}: {names:?}");
+                // Whichever names they have, they rename again.
+                let p = if a { "a.NEF" } else { "x.NEF" };
+                let q = if names.contains(&"b.NEF".to_string()) {
+                    "b.NEF"
+                } else {
+                    "y.NEF"
+                };
+                let again = rename(&fx, &[(p, "p"), (q, "q")]);
+                let outcome = fx.run(again, &NoTrash, &Faulty::default());
+                let mut done = results(&outcome);
+                done.sort_by_key(|r| format!("{r:?}"));
+                assert_eq!(done, [renamed("p.NEF"), renamed("q.NEF")], "{shown}");
+                runs += 1;
+            }
+        }
+    }
+    assert_eq!(runs, 3 * 4 + 3);
+}
+
+/// A rename by placeholder that fails as its drive goes away isn't taken
+/// for put back: what it left there can't be told, so it stays for
+/// recovery, which finds the file where it was once the drive is back
+/// (#914 review).
+#[test]
+fn a_rename_by_placeholder_failing_with_its_drive_gone_stays_for_recovery() -> Result<()> {
+    let mut fx = rename_files();
+    let away = fx.dir.path().join("away");
+    let disk = Faulty {
+        by_placeholder: true,
+        gone_on_fail: Some((fx.root.clone(), away.clone())),
+        ..Faulty::at(Op::Rename, 0, Fault::Fail)
+    };
+    let plan = fx.plan(rename(&fx, &[("a.NEF", "x")]));
+    let batch = plan.batch().clone();
+    let outcome =
+        execute::execute_with(&mut fx.cat, plan.confirm(), &NoTrash, Cancel::NEVER, &disk)?;
+    assert!(
+        matches!(results(&outcome)[..], [ItemResult::NeedsRecovery(_)]),
+        "{outcome:?}"
+    );
+    // Back, with the placeholder.
+    std::fs::rename(&away, &fx.root)?;
+    assert_eq!(listing(&fx), ["a.NEF", "a.xmp", "b.NEF", "x.NEF"]);
+    let there = Faulty {
+        by_placeholder: true,
+        ..Faulty::default()
+    };
+    let recovery = fx.recover(&there);
+    assert!(recovery.unfinished.is_empty(), "{recovery:?}");
+    let items = super::outcome(&fx.cat, &batch)?.items;
+    assert!(
+        matches!(items[0].result, ItemResult::Unchanged(_)),
+        "{items:?}"
+    );
+    assert_eq!(listing(&fx), ["a.NEF", "a.xmp", "b.NEF"]);
+    Ok(())
 }
 
 #[test]

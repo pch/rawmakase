@@ -678,6 +678,17 @@ pub(super) struct Faulty {
     pub read_only: bool,
     /// Every volume says it is a network share.
     pub network: bool,
+    /// Photos' files are renamed by a placeholder, as on ntfs-3g (#914); a
+    /// [`Fault::CrashMid`] of a rename ends the process once it is made.
+    pub by_placeholder: bool,
+    /// With `by_placeholder`, a [`Fault::Fail`] of a rename fails once its
+    /// placeholder is made, and leaves it there, as a rename and its
+    /// cleanup failing both do; settling then fails too.
+    pub cleanup_fails: bool,
+    /// With `by_placeholder`, a [`Fault::Fail`] of a rename leaves its
+    /// placeholder and moves this folder (the first path) away (to the
+    /// second), as a drive pulled out then; settling finds nothing there.
+    pub gone_on_fail: Option<(PathBuf, PathBuf)>,
 }
 
 impl Faulty {
@@ -938,6 +949,53 @@ impl Disk for Faulty {
             self.renumber(to);
         }
         renamed
+    }
+    fn rename_file(&self, from: &Path, to: &Path) -> Result<(), FsError> {
+        if !self.by_placeholder {
+            return self.rename(from, to);
+        }
+        self.record(Call::Rename(from.into(), to.into()));
+        let (from, to) = (&self.found(from), &self.stored(to));
+        let (n, fault) = self.fault(Op::Rename);
+        let injected = || FsError::Io(std::io::Error::other("injected failure"));
+        match fault {
+            Some(Fault::Fail) => {
+                let mut left = None;
+                let failed = crate::fsops::rename_by_placeholder(from, to, &mut || {
+                    left = Some(std::fs::read(to).unwrap());
+                    Err(injected())
+                });
+                if (self.cleanup_fails || self.gone_on_fail.is_some())
+                    && let Some(bytes) = left
+                {
+                    std::fs::write(to, bytes).unwrap();
+                }
+                if let Some((here, away)) = &self.gone_on_fail {
+                    std::fs::rename(here, away).unwrap();
+                }
+                failed
+            }
+            Some(Fault::CrashBefore) => panic!("injected crash before rename {n}"),
+            Some(Fault::CrashMid) => {
+                let _ = crate::fsops::rename_by_placeholder(from, to, &mut || {
+                    panic!("injected crash with rename {n}'s placeholder made")
+                });
+                unreachable!()
+            }
+            Some(Fault::CrashAfter) => {
+                let _done = crate::fsops::rename_by_placeholder(from, to, &mut || Ok(()));
+                panic!("injected crash after rename {n}")
+            }
+            None => crate::fsops::rename_by_placeholder(from, to, &mut || Ok(())),
+        }
+    }
+    fn settle_rename(&self, from: &Path, to: &Path) -> Result<(), FsError> {
+        let (from, to) = (&self.found(from), &self.stored(to));
+        match (self.by_placeholder, self.cleanup_fails) {
+            (true, true) => Err(FsError::Io(std::io::Error::other("injected failure"))),
+            (true, false) => crate::fsops::settle_placeholder(from, to),
+            (false, _) => Real.settle_rename(from, to),
+        }
     }
     fn create_dir(&self, path: &Path) -> Result<(), FsError> {
         self.record(Call::CreateDir(path.into()));

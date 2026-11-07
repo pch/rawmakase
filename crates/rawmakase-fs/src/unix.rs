@@ -59,6 +59,38 @@ pub(super) fn rename_exclusive(from: &Path, to: &Path) -> Result<(), FsError> {
     renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE).map_err(errno)
 }
 
+/// Whether `path`'s folder is on a FUSE file system on a disk of this
+/// computer (`fuseblk`), where [`super::rename_reserving`] renames a file
+/// by a placeholder. ntfs-3g, how Linux Mint and Ubuntu mount an NTFS
+/// drive, is one; it answers `EINVAL` to `RENAME_NOREPLACE`, as FUSE does
+/// for a file system without `rename2` (#914).
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(super) fn reserves(path: &Path) -> Result<bool, FsError> {
+    let dir = path.parent().filter(|d| !d.as_os_str().is_empty());
+    let dir = dir.unwrap_or(Path::new("."));
+    let fs = rustix::fs::statfs(dir).map_err(|e| FsError::from(std::io::Error::from(e)))?;
+    #[allow(
+        clippy::unnecessary_cast,
+        reason = "the type differs between architectures"
+    )]
+    let magic = fs.f_type as u64;
+    Ok(on_disk_fuse(magic, std::fs::metadata(dir)?.dev()))
+}
+
+/// Elsewhere no rename is by a placeholder.
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+pub(super) fn reserves(_path: &Path) -> Result<bool, FsError> {
+    Ok(false)
+}
+
+/// Whether file system `magic` with a file of device number `dev` is FUSE
+/// on a disk (`fuseblk`) rather than one with an anonymous device (a
+/// network or virtual FUSE file system, GVFS's and sshfs's among them).
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(super) fn on_disk_fuse(magic: u64, dev: u64) -> bool {
+    magic == 0x6573_5546 && rustix::fs::major(dev) != 0
+}
+
 /// Other Unix systems have no exclusive rename rustix reaches.
 #[cfg(not(any(target_vendor = "apple", target_os = "linux", target_os = "android")))]
 pub(super) fn rename_exclusive(_from: &Path, _to: &Path) -> Result<(), FsError> {

@@ -27,12 +27,18 @@ pub const SIMPLE_COPYRIGHT: &str = "<simple-copyright>";
 pub struct ExportOptions {
     pub quality: u8,
     pub max_edge: u32,
+    /// A JPEG XL export is lossy at `quality` rather than lossless: the Export
+    /// dialog's choice ([`ExportSettings::jxl_lossy`]). Never saved with an edit, so
+    /// the catalog's records are unchanged; lossless otherwise.
+    #[serde(skip)]
+    pub jxl_lossy: bool,
 }
 impl Default for ExportOptions {
     fn default() -> Self {
         Self {
             quality: 92,
             max_edge: 0,
+            jxl_lossy: false,
         }
     }
 }
@@ -84,7 +90,8 @@ pub enum Format {
     Jpeg,
     Tiff,
     Png,
-    /// JPEG XL, lossless: 8-bit sRGB, or an HDR export's 16-bit PQ or HLG.
+    /// JPEG XL, lossy or lossless ([`ExportSettings::jxl_lossy`]): 8-bit sRGB, or
+    /// an HDR export's 16-bit PQ or HLG.
     Jxl,
 }
 impl Format {
@@ -590,6 +597,11 @@ pub struct ExportSettings {
     #[serde(skip)]
     pub later_hdr: LaterHdr,
     pub quality: u8,
+    /// A JPEG XL export is lossy, at `quality`, rather than lossless. New settings
+    /// start lossy; settings saved before JPEG XL could be lossy lack it and read as
+    /// lossless, as they exported then (the field's own default, not the struct's).
+    #[serde(default)]
+    pub jxl_lossy: bool,
     pub resize: bool,
     pub long_edge: u32,
     pub ppi: u32,
@@ -637,6 +649,7 @@ impl Default for ExportSettings {
             hdr: None,
             later_hdr: LaterHdr::default(),
             quality: 92,
+            jxl_lossy: true,
             resize: false,
             long_edge: 2048,
             ppi: 240,
@@ -968,6 +981,7 @@ impl ExportSettings {
         ExportOptions {
             quality: self.quality.clamp(1, 100),
             max_edge: if self.resize { self.long_edge } else { 0 },
+            jxl_lossy: self.jxl_lossy,
         }
     }
     pub fn mime_type(&self) -> &'static str {
@@ -1167,6 +1181,37 @@ mod tests {
         }
         Ok(())
     }
+    /// JPEG XL exports were lossless before they could be lossy, so settings saved
+    /// then still export lossless; new settings start lossy, at the JPEG quality.
+    #[test]
+    fn jpeg_xl_settings_saved_before_lossy_ones_stay_lossless() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("export.json");
+        std::fs::write(&file, r#"{"format":"Jxl","quality":80,"newer_flag":1}"#)?;
+        let mut read = ExportSettings::load_from(&file).unwrap();
+        assert!(!read.jxl_lossy);
+        assert!(!read.options().jxl_lossy);
+        assert_eq!(read.options().quality, 80);
+        read.save_to(&file)?;
+        let written: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file)?)?;
+        assert_eq!(written["jxl_lossy"], false);
+        assert_eq!(written["newer_flag"], 1);
+        read.jxl_lossy = true;
+        read.save_to(&file)?;
+        let lossy = ExportSettings::load_from(&file).unwrap();
+        assert!(lossy.jxl_lossy && lossy.options().jxl_lossy);
+        let fresh = ExportSettings::default();
+        assert!(fresh.jxl_lossy && fresh.options().jxl_lossy);
+        // An edit's own export options (saved in the catalog) never carry it, and read
+        // as lossless, as the command line exports.
+        let options: ExportOptions = serde_json::from_str(r#"{"quality":80,"max_edge":0}"#)?;
+        assert!(!options.jxl_lossy);
+        assert_eq!(
+            serde_json::to_value(&options)?,
+            serde_json::json!({"quality": 80, "max_edge": 0})
+        );
+        Ok(())
+    }
     #[test]
     fn settings_a_later_release_added_are_saved_back() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
@@ -1356,6 +1401,7 @@ mod tests {
             "format",
             "color_space",
             "quality",
+            "jxl_lossy",
             "resize",
             "long_edge",
             "ppi",

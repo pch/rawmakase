@@ -208,10 +208,20 @@ pub(super) fn write_metadata(m: &Metadata, scale: Scale) -> Writer {
         w.str(DNG_MATRIX_PROFILE_SIGNATURE, v);
     }
     w.u8(SOURCE, source_code(*source));
-    if let Some(HdrSource { transfer, peak }) = hdr_source {
+    if let Some(HdrSource {
+        transfer,
+        gain_map,
+        peak,
+    }) = hdr_source
+    {
         let mut h = Writer::default();
         h.u8(1, transfer_code(*transfer));
         h.f32(2, *peak);
+        // Written only when true, as the edit's own form omits it, so the facts of
+        // other HDR files are as before.
+        if *gain_map {
+            h.bool(3, true);
+        }
         w.record(HDR_SOURCE, h);
     }
     if let Some(v) = levels {
@@ -335,6 +345,7 @@ pub(super) fn read_metadata(r: &Record, size: [u32; 2]) -> Result<(Metadata, Sca
             .map(|h| -> Result<_> {
                 Ok(HdrSource {
                     transfer: h.u8(1)?.map(transfer_of).transpose()?.unwrap_or_default(),
+                    gain_map: h.bool(3)?.unwrap_or(false),
                     peak: h.f32(2)?.unwrap_or(1.),
                 })
             })

@@ -168,6 +168,14 @@ struct BeforeJob {
     monitor: Option<PathBuf>,
     clipping: ClipOverlay,
 }
+/// The photo the side beside the edit renders, its settings, the 100% region and
+/// the long edge of its whole photo.
+pub(in crate::app) struct SecondSide<'a> {
+    pub(in crate::app) image: &'a Arc<CameraImage>,
+    pub(in crate::app) recipe: &'a Recipe,
+    pub(in crate::app) region: Option<[u32; 4]>,
+    pub(in crate::app) max_edge: u32,
+}
 impl PartialEq for BeforeJob {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.image, &other.image)
@@ -451,7 +459,7 @@ impl Editor {
     /// Draws Before in its pane beside the edit, whose photo sits at `after` in
     /// `panes.after`, and labels both sides. Returns where Before's photo is drawn.
     pub(in crate::app) fn before_pane_ui(
-        &self,
+        &mut self,
         ui: &egui::Ui,
         panes: &Panes,
         after: Rect,
@@ -496,8 +504,10 @@ impl Editor {
     }
     /// Draws the render of the side beside the edit, the whole photo at `rect` and a
     /// 100% region over it, or a spinner while it has none.
+    /// Draws the side beside the edit, Before or the reference photo, at `rect` in
+    /// `pane`: its SDR rendition, and its HDR master over it when that is due.
     pub(in crate::app) fn paint_second_side(
-        &self,
+        &mut self,
         ui: &egui::Ui,
         pane: Pane,
         rect: Rect,
@@ -520,6 +530,18 @@ impl Editor {
         if let (TextureMode::Region(region), Some(texture)) = (before.mode, &before.region) {
             painter.image(texture.id(), region_on(rect, g, region), uv, Color32::WHITE);
         }
+        let due = self.hdr_second_side_due();
+        self.hdr_preview_ui(&painter, rect, g, due, true);
+    }
+    /// What the side beside the edit last asked its SDR rendition for.
+    pub(in crate::app) fn second_side_submitted(&self) -> Option<SecondSide<'_>> {
+        let job = self.preview.before.submitted.as_ref()?;
+        Some(SecondSide {
+            image: &job.image,
+            recipe: &job.recipe,
+            region: job.region,
+            max_edge: job.max_edge,
+        })
     }
     /// An edit is about to render: a Before render still running would hold it up
     /// on the renderer's one thread, so it is cancelled and asked for again behind it.

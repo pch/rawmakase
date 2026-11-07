@@ -276,7 +276,7 @@ impl Editor {
     /// Draws the Reference side: the reference photo at its own zoom, a stand-in
     /// while it is developed, or how to set one. Returns where the photo is drawn.
     pub(in crate::app) fn reference_pane_ui(
-        &self,
+        &mut self,
         ui: &egui::Ui,
         panes: &Panes,
         pane: Pane,

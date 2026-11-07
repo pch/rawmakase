@@ -394,11 +394,18 @@ impl Editor {
             Format::Png => form_row(ui, "Bit Depth", |ui| {
                 ui.label(egui::RichText::new("8 bits/component").color(palette.tone(Tone::TEXT)));
             }),
-            Format::Jxl => form_row(ui, "Compression", |ui| {
-                ui.label(
-                    egui::RichText::new("Lossless; 8 bits/component, 16 for HDR")
-                        .color(palette.tone(Tone::TEXT)),
-                );
+            // Lossy at the quality, as JPEG is, or lossless; 8 bits/component, 16 for HDR.
+            Format::Jxl => form_row(ui, "Quality", |ui| {
+                ui.spacing_mut().slider_width = 160.;
+                ui.add_enabled(s.jxl_lossy, egui::Slider::new(&mut s.quality, 1..=100));
+                let mut lossless = !s.jxl_lossy;
+                if ui
+                    .checkbox(&mut lossless, "Lossless")
+                    .on_hover_text("8 bits/component, 16 for HDR; much larger files")
+                    .changed()
+                {
+                    s.jxl_lossy = !lossless;
+                }
             }),
         }
         form_row(ui, "Color Space", |ui| {
