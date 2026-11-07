@@ -201,12 +201,6 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
 - **The release guard is lifted** (`model::hdr::renders`): every SDR caller receives
   the SDR rendition through `Recipe::resolved`, the GPU refuses HDR recipes, and the
   master is reached only through `render_hdr`.
-- **Measured Camera Raw data may ship** (Piotr, 2026-11-07). `hdr_tone_data.rs` (the
-  ACR3 curve's HDR rendering and the fitted extension of ordinary curves) and
-  `hdr_whites_data.rs` (negative Whites' HDR gain) are measured on Camera Raw 18.7's
-  renders of synthetic ramps. They hold no Adobe profile curve, and their release is
-  signed off. Later HDR measurements of the same kind (synthetic or CC0 inputs,
-  output behaviour only) follow the same decision.
 
 ## Open
 
