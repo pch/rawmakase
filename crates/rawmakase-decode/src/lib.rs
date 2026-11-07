@@ -2,7 +2,8 @@
 //! colour management of what is shown and exported ([`color_management`]) and colour
 //! difference ([`color_difference`]), RAWmakase's own demosaicing (`demosaic`),
 //! opening a photo ([`photo`]) and its full-size decode through the decode cache
-//! ([`decode`], [`decode_cache`]), and opening a JPEG, PNG, TIFF, WebP, AVIF, HEIF or
+//! ([`decode`], [`decode_cache`]), the editable previews a photo is developed from while
+//! its original is offline ([`editable_preview`]), and opening a JPEG, PNG, TIFF, WebP, AVIF, HEIF or
 //! JPEG XL, which is not developed ([`raster`]). It also holds what AI Denoise needs
 //! from a decode, with no model knowledge ([`ai`]), fitting Camera Look to a RAW's
 //! embedded JPEG ([`camera_look`]), and the command line's regression and diagnosis
@@ -23,6 +24,7 @@ pub mod decode;
 pub mod decode_cache;
 mod demosaic;
 pub mod dev;
+pub mod editable_preview;
 pub mod photo;
 pub mod raster;
 pub mod raw;

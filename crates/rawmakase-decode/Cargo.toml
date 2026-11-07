@@ -25,6 +25,9 @@ bytemuck.workspace = true
 image.workspace = true
 # JPEG XL, in pure Rust; through its `image` decoder.
 jxl-oxide = { version = "0.12.6", default-features = false, features = ["image", "rayon"] }
+# Editable previews' pixels, as lossless 16-bit JPEG XL; the encoder exports use.
+zune-jpegxl = { version = "0.5.2", default-features = false, features = ["std", "threads"] }
+zune-core = { version = "0.5.3", default-features = false, features = ["std"] }
 # AVIF: AV1 in pure Rust, with its assembly off so the build needs no nasm.
 rav1d = { version = "1.1.0", default-features = false, features = ["bitdepth_8", "bitdepth_16"] }
 # AV1's YUV to RGB, in pure Rust.

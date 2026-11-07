@@ -3806,6 +3806,8 @@ dependencies = [
  "windows",
  "windows-sys 0.61.2",
  "yuv",
+ "zune-core",
+ "zune-jpegxl",
 ]
 
 [[package]]

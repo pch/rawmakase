@@ -90,7 +90,9 @@ impl GainGrid {
     fn whole() -> [f32; 4] {
         [0., 0., 1., 1.]
     }
-    pub(crate) fn valid(&self) -> bool {
+    /// Whether this is a grid [`gain`](Self::gain) can evaluate: a reader of a
+    /// stored grid checks it, since `gain` indexes `gains` by `points` and `planes`.
+    pub fn valid(&self) -> bool {
         let [rows, columns] = self.points;
         let [top, left, bottom, right] = self.area;
         (0. ..1.).contains(&top)
