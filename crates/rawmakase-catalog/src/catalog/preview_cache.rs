@@ -10,6 +10,7 @@ use anyhow::{Result, ensure};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 const APP_ID: i64 = 0x4f4d5052;
@@ -43,7 +44,37 @@ const GENERATION: i64 = 12;
 // 5: an edited JPEG, PNG or TIFF renders from the scene its rendering is of.
 // 6: Highlights, as `GENERATION` 6.
 const RASTER_GENERATION: i64 = 6;
-const LIMIT: i64 = 512 * 1024 * 1024;
+/// Thumbnails a prune deletes in one write.
+const PRUNE_STEP: usize = 256;
+/// Pages, of 4 KiB, [`PreviewCache::release_free_space`] gives back in one
+/// write: at most about 150 ms on an SSD (measured), within the 250 ms another
+/// connection waits for a write.
+const RELEASE_STEP: u32 = 256;
+/// The shortest pause after each such write, which is otherwise as long as
+/// the write took. SQLite wakes a writer waiting for the lock after 1, 2, 5
+/// ... 50, 100 ms; with only a short pause between such writes, some found
+/// it taken each time and gave up after their 250 ms (measured).
+const RELEASE_PAUSE: Duration = Duration::from_millis(5);
+/// The thumbnails' budget when none is set, in bytes.
+pub const DEFAULT_THUMBNAIL_BUDGET: u64 = 512 * 1024 * 1024;
+/// The thumbnails' budget every connection prunes to, in bytes
+/// ([`set_thumbnail_budget`]).
+static THUMBNAIL_BUDGET: AtomicU64 = AtomicU64::new(DEFAULT_THUMBNAIL_BUDGET);
+/// Sets how many bytes of Library thumbnails the cache keeps, the least
+/// recently used going first (Preferences > Performance > Thumbnail cache). It
+/// holds for every connection of this process, from its next prune: when it
+/// is opened, and every 32 thumbnails stored. Standard and 1:1 previews keep
+/// their own budgets.
+pub fn set_thumbnail_budget(bytes: u64) {
+    THUMBNAIL_BUDGET.store(bytes, Ordering::Relaxed);
+}
+/// The budget [`set_thumbnail_budget`] set.
+pub fn thumbnail_budget() -> u64 {
+    THUMBNAIL_BUDGET.load(Ordering::Relaxed)
+}
+fn budget() -> i64 {
+    i64::try_from(thumbnail_budget()).unwrap_or(i64::MAX)
+}
 // 2: the one engine, as `GENERATION` 3.
 // 3: highlight recovery, as `GENERATION` 4.
 // 4: OpcodeList3 GainMaps, as `GENERATION` 5.
@@ -173,7 +204,7 @@ impl PreviewCache {
             writes: 0,
             sized_writes: 0,
         };
-        cache.prune(LIMIT)?;
+        cache.prune(budget())?;
         for kind in PreviewKind::ALL {
             cache.prune_sized(kind, kind.budget())?;
         }
@@ -258,7 +289,7 @@ impl PreviewCache {
         self.db.execute("INSERT INTO previews VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(source_path) DO UPDATE SET source_size=excluded.source_size,modified_ns=excluded.modified_ns,prefix_hash=excluded.prefix_hash,generation=excluded.generation,width=excluded.width,height=excluded.height,jpeg=excluded.jpeg,last_used=excluded.last_used",params![tagged(path, tag),stamp.size as i64,stamp.modified_ns.to_string(),"",generation(path),image.width(),image.height(),jpeg,now()])?;
         self.writes += 1;
         if self.writes.is_multiple_of(32) {
-            self.prune(LIMIT)?;
+            self.prune(budget())?;
         }
         Ok(())
     }
@@ -553,19 +584,81 @@ impl PreviewCache {
         self.db.execute_batch("PRAGMA incremental_vacuum(256);")?;
         Ok(())
     }
-    fn prune(&mut self, budget: i64) -> Result<()> {
-        loop {
-            let bytes: i64 = self.db.query_row(
-                "SELECT COALESCE(sum(length(jpeg)),0) FROM previews",
-                [],
-                |r| r.get(0),
-            )?;
-            if bytes <= budget {
+    /// Gives back to the disk the space dropped thumbnails and previews leave
+    /// in the file, which pruning releases only a little at a time: for a
+    /// smaller thumbnail budget to free the disk space it promises. The file is
+    /// shortened [`RELEASE_STEP`] pages at a time, each its own short write,
+    /// with a pause after each as long as the write took, so the connections
+    /// making thumbnails meanwhile get their writes in; for gigabytes it takes
+    /// a minute or more, on a thread of its own. It ends once a step gives
+    /// nothing back, as in a file made without incremental vacuum.
+    pub fn release_free_space(&mut self) -> Result<()> {
+        while self.free_pages()? > 0 {
+            let started = std::time::Instant::now();
+            if self.release_step()? == 0 {
                 break;
             }
-            self.db.execute("DELETE FROM previews WHERE source_path IN (SELECT source_path FROM previews ORDER BY last_used,source_path LIMIT 32)",[])?;
+            std::thread::sleep(RELEASE_PAUSE.max(started.elapsed()));
+        }
+        Ok(())
+    }
+    fn free_pages(&self) -> Result<i64> {
+        Ok(self
+            .db
+            .query_row("PRAGMA freelist_count", [], |r| r.get(0))?)
+    }
+    /// Gives back up to [`RELEASE_STEP`] pages; how many it gave back. The
+    /// pragma frees a page each time it is stepped, so it is stepped to its end.
+    fn release_step(&mut self) -> Result<usize> {
+        let mut step = self
+            .db
+            .prepare(&format!("PRAGMA incremental_vacuum({RELEASE_STEP})"))?;
+        let mut rows = step.query([])?;
+        let mut freed = 0;
+        while rows.next()?.is_some() {
+            freed += 1;
+        }
+        Ok(freed)
+    }
+    /// Drops the least recently used thumbnails until those left fit
+    /// `budget` bytes: the cache is read once, newest first, and the rest
+    /// deleted [`PRUNE_STEP`] at a time, each its own short write, so a large
+    /// cache cut down to a small budget neither takes time growing with the
+    /// square of its size nor keeps other connections waiting on one long
+    /// transaction.
+    fn prune(&mut self, budget: i64) -> Result<()> {
+        // The sum alone is cheap; the newest-first order is read only when
+        // there is something to drop.
+        let bytes: i64 = self.db.query_row(
+            "SELECT COALESCE(sum(length(jpeg)),0) FROM previews",
+            [],
+            |r| r.get(0),
+        )?;
+        if bytes > budget {
+            self.drop_beyond(budget)?;
         }
         self.db.execute_batch("PRAGMA incremental_vacuum(256);")?;
+        Ok(())
+    }
+    /// Deletes the thumbnails beyond the newest that fit `budget` bytes.
+    fn drop_beyond(&mut self, budget: i64) -> Result<()> {
+        let over: Vec<String> = self
+            .db
+            .prepare(
+                "SELECT source_path FROM (SELECT source_path, sum(length(jpeg)) OVER (ORDER BY last_used DESC, source_path DESC) AS kept FROM previews) WHERE kept > ?1",
+            )?
+            .query_map([budget], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut delete = self
+            .db
+            .prepare("DELETE FROM previews WHERE source_path=?1")?;
+        for step in over.chunks(PRUNE_STEP) {
+            let tx = self.db.unchecked_transaction()?;
+            for path in step {
+                delete.execute([path])?;
+            }
+            tx.commit()?;
+        }
         Ok(())
     }
 }
@@ -716,6 +809,95 @@ mod tests {
                 .prepare("SELECT * FROM precious")
                 .is_ok()
         );
+        Ok(())
+    }
+    /// A prune keeps the most recently used thumbnails that fit the budget,
+    /// and drops every one used before them, whatever their number.
+    #[test]
+    fn a_prune_keeps_the_newest_that_fit() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let mut cache = PreviewCache::open(&d.path().join("previews.sqlite3"))?;
+        for n in 0..3000i64 {
+            cache.db.execute(
+                "INSERT INTO previews VALUES(?1,0,'0','',0,1,1,zeroblob(100),?2)",
+                params![format!("{n}.ARW"), n],
+            )?;
+        }
+        cache.prune(100 * 1000 + 50)?;
+        let kept: Vec<i64> = cache
+            .db
+            .prepare("SELECT last_used FROM previews ORDER BY last_used")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        assert_eq!(kept, (2000..3000).collect::<Vec<_>>());
+        cache.prune(0)?;
+        let left: i64 = cache
+            .db
+            .query_row("SELECT count(*) FROM previews", [], |r| r.get(0))?;
+        assert_eq!(left, 0);
+        Ok(())
+    }
+    /// The space thumbnails dropped for a smaller budget leave in the file is
+    /// given back to the disk.
+    #[test]
+    fn released_space_shortens_the_file() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let path = d.path().join("previews.sqlite3");
+        let mut cache = PreviewCache::open(&path)?;
+        for n in 0..500i64 {
+            cache.db.execute(
+                "INSERT INTO previews VALUES(?1,0,'0','',0,1,1,zeroblob(20000),?2)",
+                params![format!("{n}.ARW"), n],
+            )?;
+        }
+        cache.db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        let full = std::fs::metadata(&path)?.len();
+        cache.prune(0)?;
+        cache.release_free_space()?;
+        cache.db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        let free: i64 = cache
+            .db
+            .query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
+        assert_eq!(free, 0);
+        assert!(std::fs::metadata(&path)?.len() < full / 10);
+        Ok(())
+    }
+    /// One step of giving space back frees up to [`RELEASE_STEP`] pages,
+    /// not one.
+    #[test]
+    fn a_release_step_frees_many_pages() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let mut cache = PreviewCache::open(&d.path().join("previews.sqlite3"))?;
+        for n in 0..500i64 {
+            cache.db.execute(
+                "INSERT INTO previews VALUES(?1,0,'0','',0,1,1,zeroblob(20000),?2)",
+                params![format!("{n}.ARW"), n],
+            )?;
+        }
+        cache.prune(0)?;
+        let before = cache.free_pages()?;
+        assert!(before > i64::from(RELEASE_STEP));
+        cache.release_step()?;
+        assert_eq!(before - cache.free_pages()?, i64::from(RELEASE_STEP));
+        Ok(())
+    }
+    /// A file whose space can't be given back page by page (made without
+    /// incremental vacuum) ends the release instead of trying for ever.
+    #[test]
+    fn a_release_ends_where_space_cannot_be_given_back() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let path = d.path().join("previews.sqlite3");
+        let mut cache = PreviewCache::open(&path)?;
+        cache.db.execute_batch("PRAGMA auto_vacuum=NONE; VACUUM;")?;
+        for n in 0..100i64 {
+            cache.db.execute(
+                "INSERT INTO previews VALUES(?1,0,'0','',0,1,1,zeroblob(20000),?2)",
+                params![format!("{n}.ARW"), n],
+            )?;
+        }
+        cache.prune(0)?;
+        assert!(cache.free_pages()? > 0);
+        cache.release_free_space()?;
         Ok(())
     }
     fn photo(d: &tempfile::TempDir) -> Result<(PathBuf, PreviewCache)> {

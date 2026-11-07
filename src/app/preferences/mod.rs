@@ -978,6 +978,51 @@ impl Editor {
         if default {
             self.move_decode_cache(None);
         }
+        gap(ui);
+        group(ui, "Thumbnail cache");
+        let thumbnail_budget = crate::catalog::preview_cache::thumbnail_budget();
+        let mut budget = thumbnail_budget;
+        form_row(ui, "Size limit", |ui| {
+            egui::ComboBox::from_id_salt("thumbnail-cache-size")
+                .width(120.)
+                .selected_text(bytes(budget))
+                .show_ui(ui, |ui| {
+                    // A size saved by another release, not offered here, stays
+                    // until another is chosen.
+                    let offered = session::THUMBNAIL_CACHE_SIZES.map(|mib| u64::from(mib) << 20);
+                    if !offered.contains(&thumbnail_budget) {
+                        ui.selectable_value(&mut budget, thumbnail_budget, bytes(thumbnail_budget));
+                    }
+                    for choice in offered {
+                        ui.selectable_value(&mut budget, choice, bytes(choice));
+                    }
+                });
+        });
+        form_row(ui, "", |ui| {
+            hint(
+                ui,
+                "The Library's thumbnails are kept up to this size, the least recently shown going first; one shown again is made again from its photo. For a large catalog on a network drive, choose more.",
+            );
+        });
+        if budget != thumbnail_budget {
+            crate::catalog::preview_cache::set_thumbnail_budget(budget);
+            let _ = self.save_session();
+            if budget < thumbnail_budget {
+                // Opening prunes to the budget, and the space freed is given
+                // back to the disk, off the UI thread: for gigabytes that takes
+                // a minute or more. Each step is its own write, so quitting
+                // meanwhile loses nothing; what is left is given back by later
+                // prunes. Nothing waits for this thread, and a failure leaves the
+                // file as large as it was.
+                std::thread::spawn(|| {
+                    let path = crate::catalog::preview_cache::PreviewCache::path();
+                    if let Ok(mut cache) = crate::catalog::preview_cache::PreviewCache::open(&path)
+                    {
+                        let _ = cache.release_free_space();
+                    }
+                });
+            }
+        }
     }
     /// Caches decoded images in `folder`, or the default directory for `None`,
     /// and removes those in the old location: moving is usually meant to free

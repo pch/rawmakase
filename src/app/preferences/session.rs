@@ -178,6 +178,15 @@ pub(crate) struct Session {
         skip_serializing_if = "Option::is_none"
     )]
     pub standard_preview_size: Option<u32>,
+    /// Preferences > Performance > Thumbnail cache: how many MiB of Library
+    /// thumbnails the preview cache keeps, one of [`THUMBNAIL_CACHE_SIZES`] or
+    /// another in [`THUMBNAIL_CACHE_SIZE_RANGE`] a later release offers.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub thumbnail_cache_size_mib: Option<u32>,
     /// Preferences > Catalog: decoded-image disk cache limit in GiB.
     #[serde(
         default,
@@ -245,6 +254,13 @@ impl Session {
         groups.set(SettingGroup::HighDynamicRange, inclusion);
         Some(groups)
     }
+    /// The Thumbnail Cache size in MiB, or the default when none in
+    /// [`THUMBNAIL_CACHE_SIZE_RANGE`] was saved.
+    pub(crate) fn thumbnail_cache_size_mib(&self) -> u32 {
+        self.thumbnail_cache_size_mib
+            .filter(|size| THUMBNAIL_CACHE_SIZE_RANGE.contains(size))
+            .unwrap_or((crate::catalog::preview_cache::DEFAULT_THUMBNAIL_BUDGET >> 20) as u32)
+    }
     pub(crate) fn decoded_cache_size_gib(&self) -> u32 {
         self.decoded_cache_size_gib
             .filter(|size| DECODED_CACHE_SIZE_RANGE.contains(size))
@@ -267,6 +283,14 @@ impl Session {
         }
     }
 }
+
+/// The Thumbnail Cache sizes offered, in MiB: the default 512 MiB holds about
+/// 6,000 thumbnails.
+pub(in crate::app) const THUMBNAIL_CACHE_SIZES: [u32; 6] = [512, 1024, 2048, 4096, 8192, 16384];
+/// The Thumbnail Cache sizes kept when read, in MiB: those offered and others
+/// a later release may offer, so that reading its session here and saving it
+/// again doesn't replace the user's choice.
+pub(in crate::app) const THUMBNAIL_CACHE_SIZE_RANGE: std::ops::RangeInclusive<u32> = 64..=1_048_576;
 
 pub(in crate::app) const DECODED_CACHE_SIZE_RANGE: std::ops::RangeInclusive<u32> = 1..=1_048_576;
 
@@ -489,6 +513,42 @@ mod raw_defaults_tests {
         // Saved again, it is RAWmakase's.
         let saved = serde_json::to_value(&session).unwrap();
         assert_eq!(saved["demosaic"], "Rawmakase");
+    }
+
+    #[test]
+    fn thumbnail_cache_size_round_trips_and_old_or_invalid_sizes_use_default() {
+        let old: Session = serde_json::from_str(r#"{"last_path":null,"monitor":null}"#).unwrap();
+        assert_eq!(old.thumbnail_cache_size_mib(), 512);
+        for size in super::THUMBNAIL_CACHE_SIZES {
+            let session = Session {
+                thumbnail_cache_size_mib: Some(size),
+                ..Default::default()
+            };
+            let back: Session =
+                serde_json::from_str(&serde_json::to_string(&session).unwrap()).unwrap();
+            assert_eq!(back.thumbnail_cache_size_mib(), size);
+        }
+        // One a later release offers is kept, so that saving doesn't replace it.
+        for size in [64, 3072, 32768] {
+            let session = Session {
+                thumbnail_cache_size_mib: Some(size),
+                ..Default::default()
+            };
+            assert_eq!(session.thumbnail_cache_size_mib(), size);
+        }
+        for size in [0, 63, 1_048_577, u32::MAX] {
+            let session = Session {
+                thumbnail_cache_size_mib: Some(size),
+                ..Default::default()
+            };
+            assert_eq!(session.thumbnail_cache_size_mib(), 512);
+        }
+        // A value of the wrong type reads as none, not as an unreadable session.
+        let typed: Session = serde_json::from_str(
+            r#"{"last_path":null,"monitor":null,"thumbnail_cache_size_mib":"big"}"#,
+        )
+        .unwrap();
+        assert_eq!(typed.thumbnail_cache_size_mib(), 512);
     }
 
     #[test]
