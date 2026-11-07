@@ -26,13 +26,22 @@ impl EditSource {
     ) -> anyhow::Result<Recipe> {
         let (profiles, _) = crate::camera_profiles::installed(m);
         let profiles = crate::camera_look::with_default(path, m, profiles, cancel);
+        Self::recipe_with(edit, m, &profiles)
+    }
+    /// The recipe `edit` gives a photo with metadata `m` and camera `profiles`,
+    /// as [`Self::recipe`] works it out once it has them.
+    pub(crate) fn recipe_with(
+        edit: Option<&Self>,
+        m: &crate::camera_data::Metadata,
+        profiles: &[std::sync::Arc<crate::camera_profiles::CameraProfile>],
+    ) -> anyhow::Result<Recipe> {
         let start = match edit {
             Some(Self::Recipe(json)) => Start::RecipeJson(json.clone()),
             Some(Self::Lightroom(text)) => Start::Lightroom(text.clone()),
             Some(Self::Defaults(defaults)) => Start::Defaults(defaults.clone()),
             None => Start::AdobeDefault,
         };
-        Ok(start.resolve(m, &profiles)?.recipe)
+        Ok(start.resolve(m, profiles)?.recipe)
     }
     /// Identifies this edit, developed by this build's RAW decoder
     /// (`raw::developed`), in the preview cache.

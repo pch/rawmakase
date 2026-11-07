@@ -76,6 +76,20 @@ impl EditablePreview {
     }
 }
 
+/// Whether a photo's editable preview can stand in for its offline original
+/// ([`Catalog::offline_editable_preview`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum OfflinePreview {
+    /// It has none.
+    None,
+    /// Its file is not in the store folder.
+    Missing(EditablePreview),
+    /// Its saved edit was made for another version of the photo than the one
+    /// the editable preview was built from.
+    Stale(EditablePreview),
+    Usable(EditablePreview),
+}
+
 /// The name of the file of an editable preview of `master` built from
 /// `original`: `<photo id>-<identity key>.rmep`, unique per photo and version
 /// of its original. The builder writes it under a temporary name, then
@@ -415,6 +429,33 @@ impl Catalog {
         stored
             .map(|s| s.read(&self.editable_preview_folder()))
             .transpose()
+    }
+
+    /// Whether photo `id`'s editable preview (its master's, for a virtual copy)
+    /// can stand in for its original while that is offline, by what the
+    /// catalog knows: a recorded file that is there, of the version of the photo
+    /// its saved edit, if any, was made for. Its contents are checked by whoever
+    /// opens it.
+    pub fn offline_editable_preview(&self, id: PhotoId) -> Result<OfflinePreview> {
+        let Some(preview) = self.editable_preview(id)? else {
+            return Ok(OfflinePreview::None);
+        };
+        if !preview.path.is_file() {
+            return Ok(OfflinePreview::Missing(preview));
+        }
+        // An edit saved since for another version of the photo (the original
+        // replaced while online, and this preview not rebuilt) says the preview
+        // is no longer of the photo being edited.
+        let record = self.edit_record(id)?;
+        if record.recipe.is_some()
+            && let Some(saved) = record.identity.as_deref()
+        {
+            let saved: Identity = serde_json::from_str(saved)?;
+            if preview.is_stale(&saved) {
+                return Ok(OfflinePreview::Stale(preview));
+            }
+        }
+        Ok(OfflinePreview::Usable(preview))
     }
 
     /// Every photo with an editable preview: the masters with one, and their

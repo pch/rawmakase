@@ -402,6 +402,12 @@ impl Editor {
             generation: self.document.load_id(),
             revision: self.automation.revision,
             loaded: develop && self.document.full().is_some() && !self.document.loading(),
+            opened_from: (develop && self.document.path.is_some()).then_some(
+                match self.document.from {
+                    crate::app::worker::OpenedFrom::Original => "original",
+                    crate::app::worker::OpenedFrom::EditablePreview(_) => "editable_preview",
+                },
+            ),
             open_failed: self.open_failed(),
             open_error: self
                 .open_failed()
@@ -849,6 +855,13 @@ impl Editor {
                 space,
             } => {
                 self.require_develop()?;
+                // Never from an editable preview (nor decoded again in its place).
+                if self.document.opened_from_preview() {
+                    return Err(Error::new(
+                        "not_ready",
+                        "The photo is open from its editable preview; open it again from its original to export it",
+                    ));
+                }
                 let photo = self
                     .export_photo()
                     .ok_or_else(|| Error::new("not_ready", "The photo is not ready to export"))?;
@@ -1202,7 +1215,7 @@ impl Editor {
             .photo(id)
             .cloned()
             .ok_or_else(|| Error::new("not_found", "No photo has this ID"))?;
-        if let Some(refusal) = crate::app::library::develop_refusal(&photo, photo.path.is_file()) {
+        if let Err(refusal) = library.develop_from(&photo, photo.path.is_file()) {
             return Err(Error::new("not_editable", refusal.detail()));
         }
         if !self.flush() {

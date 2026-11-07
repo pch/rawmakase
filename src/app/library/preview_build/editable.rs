@@ -1,7 +1,7 @@
 //! Build Editable Previews and Discard Editable Previews: a smaller copy of each
 //! chosen photo (2560 pixels on its long edge, [`editable_preview`]), built while
-//! its original is online, so that a later release can edit the photo while the
-//! original is offline. Editable previews are not a cache: once the original is
+//! its original is online, so that Develop can edit the photo while the original
+//! is offline (`Library::develop_from`). Editable previews are not a cache: once the original is
 //! offline one can't be built again, so the catalog keeps a row for each
 //! (`catalog::editable_previews`), and only RAWmakase's own files are ever deleted.
 //!

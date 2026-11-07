@@ -89,6 +89,9 @@ pub(super) struct Filters {
     /// Cmd+L: whether the bar's settings apply.
     pub enabled: bool,
     pub only_missing: bool,
+    /// Has Editable Preview: only photos with one (their masters', for virtual
+    /// copies).
+    pub only_editable_previews: bool,
     /// Previous Import: only the photos the last import added, in `members`.
     pub previous_import: bool,
     pub sort: super::sort::Sort,
@@ -108,6 +111,7 @@ impl Default for Filters {
             kind: Kind::default(),
             enabled: true,
             only_missing: false,
+            only_editable_previews: false,
             previous_import: false,
             sort: Default::default(),
             reverse: false,
@@ -121,6 +125,7 @@ impl Filters {
         &self,
         photos: &[Photo],
         available: impl Fn(&Path) -> bool,
+        editable_preview: impl Fn(PhotoId) -> bool,
         keys: &super::sort::Keys,
     ) -> Vec<usize> {
         let query = self.query.to_lowercase();
@@ -128,7 +133,9 @@ impl Filters {
             .iter()
             .enumerate()
             .filter(|(_, p)| {
-                self.source_holds(p, &available) && (!self.enabled || self.bar_shows(p, &query))
+                self.source_holds(p, &available)
+                    && (!self.only_editable_previews || editable_preview(p.id))
+                    && (!self.enabled || self.bar_shows(p, &query))
             })
             .map(|(i, _)| i)
             .collect();

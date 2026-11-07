@@ -56,7 +56,9 @@ pub use db::assert_shape as assert_sql_shape;
 pub use defaults::{CameraExifReader, ImportOptions, MetadataDefaults, NewPhotoDefaults};
 pub use descriptive::MetadataSnapshot;
 pub use develop_history::{HistoryUpdate, SavedHistory, SavedStep};
-pub use editable_previews::{BuiltEditablePreview, EditablePreview, editable_preview_file_name};
+pub use editable_previews::{
+    BuiltEditablePreview, EditablePreview, OfflinePreview, editable_preview_file_name,
+};
 pub use edits::{EditChange, EditToSave};
 pub use export_catalog::{CatalogExport, ExportScope, ExportedFolders};
 pub use ingest::{Ambiguity, Choice, Conflict, IMPORT_BURST_SECONDS, PendingBurstStacks};

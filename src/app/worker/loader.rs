@@ -246,6 +246,25 @@ fn opener(
 ) -> Latest<LoadJob> {
     Latest::new(move |mut job: LoadJob| {
         let prefetch = job.prefetch.take();
+        if let Some(source) = job.from.editable_preview().cloned() {
+            // Final as it is: no embedded JPEG, full-size stage or neighbour's
+            // prefetch follows it.
+            let result = caught(|| open_editable_preview(&job, &source, &tx, &ctx));
+            if let Err(e) = result
+                && !job.cancel.load(Ordering::Relaxed)
+            {
+                send(
+                    &tx,
+                    &ctx,
+                    Event::Failed {
+                        id: job.id,
+                        task: TaskKind::Load,
+                        error: format!("{e:#}"),
+                    },
+                );
+            }
+            return;
+        }
         let result = caught(|| -> anyhow::Result<()> {
             let path = job.path.clone();
             let started = Instant::now();
@@ -285,11 +304,12 @@ fn opener(
                 Event::Header(Box::new(LoadedHeader {
                     id: job.id,
                     path: path.clone(),
+                    from: super::OpenedFrom::Original,
                     file: file.clone(),
                     metadata,
                     recipe,
                     export: ExportOptions::default(),
-                    status: "Original".into(),
+                    status: super::OpenedFrom::Original.label().into(),
                 })),
             );
             send(
@@ -421,6 +441,83 @@ fn opener(
     })
 }
 
+/// Opens `job`'s photo from its editable preview `source`: the reduced image, its
+/// metadata the original's, with the default Camera Look the preview keeps. Its
+/// identity, for every image and for saving, is the one the editable preview was
+/// built from, as the catalog recorded it; a file that is no longer that preview
+/// (rebuilt, replaced or damaged since the photo was chosen) is refused.
+fn open_editable_preview(
+    job: &LoadJob,
+    source: &super::EditablePreviewSource,
+    tx: &Sender<Event>,
+    ctx: &egui::Context,
+) -> anyhow::Result<()> {
+    let started = Instant::now();
+    let cancel = Cancel::new(&job.cancel);
+    let preview = crate::editable_preview::read(&source.file, cancel)
+        .map_err(|e| anyhow::anyhow!("Its editable preview can't be read: {e:#}"))?;
+    anyhow::ensure!(
+        preview.identity().same_photo(&source.original),
+        "Its editable preview is not the one the catalog records; open it again"
+    );
+    if job.cancel.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+    let metadata = preview.image().metadata.clone();
+    let crate::camera_profiles::Listed {
+        profiles,
+        errors,
+        groups,
+    } = crate::camera_profiles::listed(&metadata);
+    let profiles = crate::camera_look::with_stored(&metadata, profiles, preview.camera_look());
+    let recipe = crate::edits::Start::Defaults(job.defaults.clone())
+        .resolve(&metadata, &profiles)?
+        .recipe;
+    let file = Some(source.original.clone());
+    send(
+        tx,
+        ctx,
+        Event::Header(Box::new(LoadedHeader {
+            id: job.id,
+            path: job.path.clone(),
+            from: job.from.clone(),
+            file: file.clone(),
+            metadata,
+            recipe,
+            export: ExportOptions::default(),
+            status: job.from.label().into(),
+        })),
+    );
+    send(
+        tx,
+        ctx,
+        Event::Profiles {
+            id: job.id,
+            profiles,
+            errors,
+            groups,
+            imported: false,
+        },
+    );
+    if job.cancel.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+    send(
+        tx,
+        ctx,
+        Event::Ready {
+            id: job.id,
+            full: Arc::new(preview.into_image()),
+            file,
+            status: format!(
+                "Opened its editable preview in {:.2}s",
+                started.elapsed().as_secs_f32()
+            ),
+        },
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 pub(in crate::app) mod tests {
     use super::*;
@@ -452,6 +549,7 @@ pub(in crate::app) mod tests {
             between,
         );
         loader.submit(LoadJob {
+            from: Default::default(),
             id: 7,
             path: path.into(),
             cancel: Default::default(),

@@ -60,8 +60,11 @@ impl CheckedNew {
 
 impl Catalog {
     /// Checks `change` before it is written: the recipe and export options
-    /// are valid, the photo's file is still the one the edit was made for,
-    /// and the edit it replaces was saved for that same file.
+    /// are valid, the photo's original is still the one the edit was made for,
+    /// and the edit it replaces was saved for that same photo. An original that
+    /// is offline is checked as its editable preview recorded it
+    /// ([`Original`](crate::edits::Original)), so a save made from a preview of
+    /// another version of the photo than the stored edit's is refused.
     pub(super) fn check_edit<'a>(&self, change: &EditChange<'_, 'a>) -> Result<CheckedChange<'a>> {
         let e = match change {
             EditChange::Clear { id } => {
@@ -72,17 +75,19 @@ impl Catalog {
             }
             EditChange::Save(e) => e,
         };
-        let now = Identity::read(e.path)?;
+        let now = e.original.identity()?;
         ensure!(
             now.same_photo(e.source),
             "{} changed since its edit was made; edit not saved",
-            e.path.display()
+            e.original.path.display()
         );
         // Stored for the file as it is, so a new modification time alone
-        // (issue #870) is taken up by the next save.
+        // (issue #870) is taken up by the next save. Offline, that is the
+        // identity the editable preview recorded: an ordinary one, which older
+        // releases read as they always have.
         let save = self.checked(&now, e.recipe, e.export, e.history)?;
         // Refuse replacing an edit after the underlying source changed.
-        let _ = self.load_edit(e.id, e.path)?;
+        let _ = self.load_edit(e.id, e.original)?;
         Ok(CheckedChange {
             id: e.id,
             save: Some(save),

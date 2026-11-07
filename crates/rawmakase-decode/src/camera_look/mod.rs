@@ -248,6 +248,25 @@ pub fn with_default(
     profiles
 }
 
+/// `profiles`, the listed profiles of a photo opened from its editable preview,
+/// with `stored`, the default Camera Look (fitted) the editable preview keeps,
+/// added as [`with_default`] adds a fit: only while it is still the photo's
+/// default (`fitted::Eligibility::Absent`; a camera profile imported for it since
+/// takes over, as it would online). The fit cache is keyed by the original's file,
+/// so it can't serve a photo whose original is offline, and nothing is fitted here.
+pub fn with_stored(
+    m: &Metadata,
+    mut profiles: Vec<Arc<CameraProfile>>,
+    stored: Option<&CameraProfile>,
+) -> Vec<Arc<CameraProfile>> {
+    if let Some(stored) = stored
+        && fitted::eligibility(m, &profiles) == fitted::Eligibility::Absent
+    {
+        profiles.push(Arc::new(stored.clone()));
+    }
+    profiles
+}
+
 /// What a photo's default Camera Look (fitted) came to.
 #[derive(Debug)]
 pub enum DefaultFit {

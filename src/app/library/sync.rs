@@ -404,7 +404,7 @@ pub(in crate::app) fn synchronize(
         .iter()
         .map(|p| EditToSave {
             id: p.synced.id,
-            path: &p.synced.path,
+            original: crate::edits::Original::file(&p.synced.path),
             source: &p.synced.identity,
             recipe: &p.synced.after,
             export: &p.export,
@@ -739,7 +739,7 @@ pub(in crate::app) fn restore(
         .iter()
         .map(|(id, path, source, recipe, export, history)| EditToSave {
             id: *id,
-            path,
+            original: crate::edits::Original::file(path),
             source,
             recipe,
             export,
@@ -994,7 +994,13 @@ impl Editor {
             && let Some(path) = self.document.path.clone()
         {
             self.document.edit.save_state_mut().saved();
-            self.load_raw(path, Some(open));
+            // Not opened again (its editable preview can't be used now, or what
+            // must be saved first could not be): the recipe on screen is the one
+            // from before, marked saved, so it is closed rather than left to be
+            // saved over what was written. The catalog has the photo's edit.
+            if !self.load_raw(path, Some(open)) {
+                self.close_removed_document();
+            }
         }
     }
     /// A finished Sync: one command for Undo, and the top bar naming what failed.

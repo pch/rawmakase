@@ -51,6 +51,15 @@ impl Library {
                         Some(super::Refusal::Offline) => {
                             "Offline: relink its folder to edit".into()
                         }
+                        Some(super::Refusal::EditablePreview(_)) => {
+                            "Offline: its editable preview can't be used".into()
+                        }
+                        None if photo.as_ref().is_some_and(|p| {
+                            self.has_editable_preview(p.id) && !self.is_available(&p.path)
+                        }) =>
+                        {
+                            "Offline: edits its editable preview".into()
+                        }
                         Some(super::Refusal::Unsupported { reason, .. }) => {
                             format!("{reason} images can't be edited in Develop")
                         }

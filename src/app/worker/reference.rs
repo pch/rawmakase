@@ -28,6 +28,8 @@ pub(in crate::app) struct ReferenceJob {
     /// Matches the results to this request.
     pub ticket: u64,
     pub path: PathBuf,
+    /// Its original, or its editable preview while that is offline.
+    pub from: super::OpenedFrom,
     pub edit: EditSource,
     pub cancel: Arc<AtomicBool>,
     /// The demosaic of the full-size decode and of its decode-cache key.
@@ -81,6 +83,26 @@ fn develop(
     cache: &DecodeCache,
     mut ready: impl FnMut(ReferenceImage),
 ) -> anyhow::Result<()> {
+    if let Some(source) = job.from.editable_preview() {
+        // Final as it is, as Develop opens it: nothing to cache or refine.
+        let preview = crate::editable_preview::read(&source.file, Cancel::new(&job.cancel))?;
+        anyhow::ensure!(
+            preview.identity().same_photo(&source.original),
+            "Its editable preview is not the one the catalog records"
+        );
+        let m = &preview.image().metadata;
+        let (profiles, _) = crate::camera_profiles::installed(m);
+        let profiles = crate::camera_look::with_stored(m, profiles, preview.camera_look());
+        let recipe = EditSource::recipe_with(Some(&job.edit), m, &profiles)?;
+        if !job.cancel.load(Ordering::Relaxed) {
+            ready(ReferenceImage {
+                image: Arc::new(preview.into_image()),
+                recipe,
+                resolution: Resolution::Full,
+            });
+        }
+        return Ok(());
+    }
     let raw = match crate::photo::open_source(&job.path, Cancel::new(&job.cancel))? {
         Opened::Raw(raw) => raw,
         // A JPEG, PNG or TIFF opens at full size: nothing to cache or refine.
@@ -158,6 +180,7 @@ mod tests {
         let job = |demosaic| ReferenceJob {
             ticket: 1,
             path: chart.clone(),
+            from: Default::default(),
             edit: EditSource::Defaults(Default::default()),
             cancel: Default::default(),
             demosaic,
@@ -194,6 +217,7 @@ mod tests {
         let job = ReferenceJob {
             ticket: 1,
             path: path.clone(),
+            from: Default::default(),
             edit: EditSource::Defaults(Default::default()),
             cancel: Default::default(),
             demosaic: Demosaic::default(),
@@ -226,6 +250,7 @@ mod tests {
         let job = ReferenceJob {
             ticket: 1,
             path,
+            from: Default::default(),
             edit: EditSource::Defaults(Default::default()),
             cancel: Default::default(),
             demosaic: Demosaic::default(),

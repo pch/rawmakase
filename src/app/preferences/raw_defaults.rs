@@ -431,6 +431,7 @@ mod tests {
             let (generation, _) = editor.document.start_load();
             for event in [
                 Event::Header(Box::new(LoadedHeader {
+                    from: Default::default(),
                     id: generation,
                     file: crate::storage::Identity::read(&raw.clone()).ok(),
                     path: raw.clone(),
@@ -515,6 +516,7 @@ mod tests {
         editor
             .tx
             .send(Event::Header(Box::new(LoadedHeader {
+                from: Default::default(),
                 id: generation,
                 file: crate::storage::Identity::read(&raw).ok(),
                 path: raw,
@@ -559,6 +561,7 @@ mod tests {
         let (generation, _) = editor.document.start_load();
         for event in [
             Event::Header(Box::new(LoadedHeader {
+                from: Default::default(),
                 id: generation,
                 file: crate::storage::Identity::read(&raw).ok(),
                 path: raw,
@@ -682,6 +685,7 @@ mod tests {
         );
         let defaults = Arc::new(crate::raw_defaults::brighter_defaults());
         loader.submit(crate::app::worker::LoadJob {
+            from: Default::default(),
             id: 1,
             path: chart,
             cancel: Default::default(),

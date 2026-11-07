@@ -407,7 +407,12 @@ Some features span several owners; each module's docs describe its part:
 - A photo's edit (its recipe, export options, identity and edit time, spots
   and masks, and History) is written only by `catalog::edit_rows`: a checked
   save or clear, an exact copy for a virtual copy, removal with one, and the
-  format upgrade's migration of every stored edit.
+  format upgrade's migration of every stored edit. Every check of an edit
+  against its photo goes through `edits::Original`: the file, read when
+  checked, or, for a photo opened from its editable preview, the identity that
+  preview recorded, standing in only while the file is certainly not there. So
+  an offline save is checked as any other, stores an ordinary `Identity`, and
+  is refused when the stored edit is of another version of the photo.
 - The settings earlier releases chose an engine or operator with are
   `model::saved_format::OBSOLETE_SETTINGS`, its one owner. Reading any `Recipe`
   drops them from its unknown settings (and nothing else), so catalog edits,

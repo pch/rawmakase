@@ -441,7 +441,13 @@ impl Editor {
         self.folder_sync.showing = false;
     }
     /// The open edit needs saving but can't be saved: its file is not found.
-    fn unsaved_on_missing_file(&self) -> bool {
+    /// Opened from its editable preview, the change can be saved without the
+    /// file, so it is saved first and is never offered for discarding unless
+    /// that save fails (said on the top bar, and still pending).
+    pub(in crate::app) fn unsaved_on_missing_file(&mut self) -> bool {
+        if self.document.opened_from_preview() && self.document.edit.save_state().needs_save() {
+            self.flush();
+        }
         self.document.edit.save_state().needs_save()
             && self.document.path.as_ref().is_some_and(|p| !p.exists())
     }

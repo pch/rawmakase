@@ -74,19 +74,77 @@ pub struct PhotoRecord {
     pub captured: String,
 }
 
+/// The photo an edit is checked against: the file at `path`, read when checked;
+/// or, for a photo opened from its editable preview, the `recorded` identity the
+/// editable preview was built from, which stands in for the file only while the
+/// file is not there. A file that is there is always read, so an original back
+/// online is checked as it is, even while its photo is still being edited from
+/// its editable preview.
+#[derive(Clone, Copy, Debug)]
+pub struct Original<'a> {
+    pub path: &'a Path,
+    pub recorded: Option<&'a Identity>,
+}
+impl<'a> Original<'a> {
+    /// The file at `path`, with nothing standing in for it.
+    pub fn file(path: &'a Path) -> Self {
+        Self {
+            path,
+            recorded: None,
+        }
+    }
+    /// The photo whose original is at `path`, opened from an editable preview
+    /// built from `recorded`.
+    pub fn recorded(path: &'a Path, recorded: &'a Identity) -> Self {
+        Self {
+            path,
+            recorded: Some(recorded),
+        }
+    }
+    /// The photo's identity: its file's, read now; else, only when the file is
+    /// certainly not there ([`Original::is_absent`]), the recorded one.
+    pub fn identity(&self) -> Result<Identity> {
+        match Identity::read(self.path) {
+            Ok(now) => Ok(now),
+            Err(e) => match self.recorded {
+                Some(recorded) if Self::is_absent(self.path) => Ok(recorded.clone()),
+                _ => Err(e),
+            },
+        }
+    }
+    /// Whether nothing is at `path`, as far as the file system can say: not
+    /// merely unreadable (a folder without permission, a network share that
+    /// stopped answering). The one rule for when an editable preview's identity
+    /// may stand in for its original, so a photo is opened from its editable
+    /// preview only when its saves could be checked that way too.
+    pub fn is_absent(path: &Path) -> bool {
+        matches!(path.try_exists(), Ok(false))
+    }
+}
+impl<'a> From<&'a Path> for Original<'a> {
+    fn from(path: &'a Path) -> Self {
+        Self::file(path)
+    }
+}
+impl<'a> From<&'a std::path::PathBuf> for Original<'a> {
+    fn from(path: &'a std::path::PathBuf) -> Self {
+        Self::file(path)
+    }
+}
+
 impl EditRecord {
     /// The saved RAWmakase edit, if there is one. An error when it can't be read, or
-    /// when the file at `path` is not the photo it was saved for
+    /// when `original` is not the photo it was saved for
     /// ([`Identity::same_photo`]): the edit is then protected, never replaced by
     /// another.
-    pub fn saved(&self, path: &Path) -> Result<Option<SavedEdit>> {
+    pub fn saved<'a>(&self, original: impl Into<Original<'a>>) -> Result<Option<SavedEdit>> {
         let Some(recipe) = &self.recipe else {
             return Ok(None);
         };
         let saved: Identity =
             serde_json::from_str(self.identity.as_deref().context("Missing photo identity")?)?;
         ensure!(
-            saved.same_photo(&Identity::read(path)?),
+            saved.same_photo(&original.into().identity()?),
             "Photo changed since this catalog edit was saved; catalog edit protected"
         );
         let recipe: Recipe = serde_json::from_str(recipe)?;
@@ -154,15 +212,15 @@ pub enum Start {
     AdobeDefault,
 }
 impl Start {
-    /// Photo `record` at `path`'s source, as [`resolve`] chooses it: its saved edit
+    /// Photo `record` of `original`'s source, as [`resolve`] chooses it: its saved edit
     /// (read and checked now; an error when it can't be), else its Lightroom edit,
     /// else `defaults`.
-    pub fn capture(
+    pub fn capture<'a>(
         record: &EditRecord,
-        path: &Path,
+        original: impl Into<Original<'a>>,
         defaults: Arc<DevelopDefaults>,
     ) -> Result<Self> {
-        if let Some(saved) = record.saved(path)? {
+        if let Some(saved) = record.saved(original)? {
             return Ok(Self::Saved(Box::new(saved)));
         }
         Ok(match record.lightroom() {

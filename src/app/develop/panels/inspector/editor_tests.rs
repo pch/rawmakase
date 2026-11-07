@@ -119,6 +119,7 @@ fn the_basic_panel_offers_relative_white_balance_for_a_jpeg() {
     let (generation, _) = editor.document.start_load();
     for event in [
         Event::Header(Box::new(worker::LoadedHeader {
+            from: Default::default(),
             id: generation,
             file: None,
             path: "photo.jpg".into(),

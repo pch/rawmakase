@@ -42,8 +42,12 @@ pub(in crate::app) struct Document {
     /// profiles arrive.
     pub(in crate::app) pending_lightroom: Option<String>,
     /// The photo's file as it was when it was opened: what an export of the edit
-    /// shown checks it still has.
+    /// shown checks it still has. For a photo opened from its editable preview,
+    /// the identity the preview recorded of its original.
     pub(in crate::app) file: Option<crate::storage::Identity>,
+    /// What the photo was opened from, once its header arrived: its original, or
+    /// its editable preview, which nothing replaces until the photo opens again.
+    pub(in crate::app) from: crate::app::worker::OpenedFrom,
     /// Where the edit on screen started from.
     pub(in crate::app) origin: EditOrigin,
     /// The raw defaults for this photo, once its profiles are known: what Reset
@@ -507,7 +511,15 @@ impl Document {
     /// whether it still needs saving; a save that failed on the old path is
     /// tried again on the new one.
     pub(in crate::app) fn relink(&mut self, path: PathBuf) {
-        self.file = crate::storage::Identity::read(&path).ok();
+        // Opened from its editable preview with its original still not there
+        // (its folder moved, say), the recorded identity stays what saves are
+        // checked against.
+        let recorded = self
+            .from
+            .editable_preview()
+            .filter(|_| crate::edits::Original::is_absent(&path))
+            .map(|preview| preview.original.clone());
+        self.file = crate::storage::Identity::read(&path).ok().or(recorded);
         self.path = Some(path);
         self.edit.save_state_mut().retry_now();
     }
@@ -822,6 +834,22 @@ impl PresetBrowser {
 }
 
 impl Document {
+    /// What the open photo's edit is saved and loaded against: its file at `path`,
+    /// or, opened from its editable preview, the identity that recorded, standing
+    /// in for the file while it is not there.
+    pub(in crate::app) fn original<'a>(
+        &'a self,
+        path: &'a std::path::Path,
+    ) -> crate::edits::Original<'a> {
+        match self.from.editable_preview() {
+            Some(source) => crate::edits::Original::recorded(path, &source.original),
+            None => crate::edits::Original::file(path),
+        }
+    }
+    /// Whether the photo was opened from its editable preview.
+    pub(in crate::app) fn opened_from_preview(&self) -> bool {
+        self.from.is_final_reduced()
+    }
     pub(crate) fn full(&self) -> Option<&Arc<CameraImage>> {
         self.image.as_ref()
     }

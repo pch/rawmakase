@@ -42,6 +42,8 @@ pub(in crate::app::develop::panels::inspector) struct View<'a> {
     pub auto_ready: bool,
     pub auto_in_effect: bool,
     pub can_fit_camera_look: bool,
+    /// Why Fit Camera Look is off for the open photo, said on its disabled item.
+    pub fit_camera_look_unavailable: Option<&'static str>,
     /// What the viewport shows of an HDR edit.
     pub hdr: &'a crate::app::develop::hdr_preview::Presentation,
 }
@@ -67,6 +69,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
         auto_ready,
         auto_in_effect,
         can_fit_camera_look,
+        fit_camera_look_unavailable,
         hdr,
     } = *facts;
     // A JPEG, TIFF or PNG: its Embedded profile, and relative white balance.
@@ -189,10 +192,13 @@ pub(in crate::app::develop::panels::inspector) fn show(
                         ui.close();
                     }
                     ui.separator();
-                    if ui
+                    let mut fit = ui
                         .add_enabled(can_fit_camera_look, egui::Button::new("Fit Camera Look"))
-                        .on_hover_text("Fits a look to this photo's own JPEG preview, the camera's rendering of it, and uses it as the profile: Camera Look (fitted). It is saved with the edit; fitting again makes a new one.")
-                        .clicked()
+                        .on_hover_text("Fits a look to this photo's own JPEG preview, the camera's rendering of it, and uses it as the profile: Camera Look (fitted). It is saved with the edit; fitting again makes a new one.");
+                    if let Some(why) = fit_camera_look_unavailable {
+                        fit = fit.on_disabled_hover_text(why);
+                    }
+                    if fit.clicked()
                     {
                         actions.push(Action::FitCameraLook);
                         ui.close();

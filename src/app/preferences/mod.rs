@@ -196,9 +196,12 @@ impl Editor {
         self.save_computer_name();
         self.preferences.locations = None;
     }
-    /// Editable previews were built or discarded: Preferences shows what they
-    /// take now, if it is open.
+    /// Editable previews were built or discarded: the Library reads which photos
+    /// have one again, and Preferences shows what they take now, if it is open.
     pub(in crate::app) fn editable_previews_changed(&mut self) {
+        if let Some(library) = &mut self.library {
+            library.editable_previews_changed();
+        }
         if self.preferences.open {
             self.preferences.usage.editable_previews = self
                 .library

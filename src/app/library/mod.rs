@@ -280,6 +280,14 @@ pub(crate) struct Library {
     loupe_stored: Option<(PhotoId, String)>,
     /// The photo whose refusal the right panel last showed, and that refusal.
     refusal_shown: Option<((PhotoId, std::path::PathBuf, bool), Option<Refusal>)>,
+    /// The photos with an editable preview (their masters', for virtual copies),
+    /// as the catalog recorded them when the Library last filtered or was told
+    /// of a build or discard.
+    editable_previews: std::collections::BTreeSet<PhotoId>,
+    /// The photo last asked whether Develop would open it from its editable
+    /// preview ([`Self::develops_from_preview`]), and the answer, so the Loupe
+    /// asks once each time it comes to a photo rather than every frame.
+    preview_usable: std::cell::RefCell<Option<(PhotoId, bool)>>,
     /// Read Metadata from Files while it reads.
     reread: Option<descriptive::Reread>,
     /// Read Metadata from Files finished since the editor last asked.
@@ -361,6 +369,8 @@ impl Library {
             reads_suspended: false,
             loupe_stored: None,
             refusal_shown: None,
+            editable_previews: Default::default(),
+            preview_usable: Default::default(),
             reread: None,
             reread_finished: false,
         };
@@ -541,16 +551,152 @@ impl Library {
         match &self.refusal_shown {
             Some((shown, refusal)) if *shown == key => refusal.clone(),
             _ => {
-                let refusal = develop_refusal(photo, available);
+                let refusal = self.develop_from(photo, available).err();
                 self.refusal_shown = Some((key, refusal.clone()));
                 refusal
             }
+        }
+    }
+    /// Reads again which photos have an editable preview.
+    pub(in crate::app) fn refresh_editable_previews(&mut self) {
+        // Unreadable, as having none: opening such a photo says why.
+        self.editable_previews = self
+            .session
+            .catalog()
+            .photos_with_editable_previews()
+            .unwrap_or_default();
+    }
+    /// Turns Has Editable Preview on or off, for tests.
+    #[cfg(test)]
+    pub(in crate::app) fn show_only_editable_previews(&mut self, on: bool) {
+        self.filters.only_editable_previews = on;
+        self.filter();
+    }
+    /// The photos shown, in order, for tests.
+    #[cfg(test)]
+    pub(in crate::app) fn visible_ids(&self) -> Vec<PhotoId> {
+        self.visible
+            .iter()
+            .map(|i| self.session.photos()[*i].id)
+            .collect()
+    }
+    /// The identity photo `id`'s editable preview recorded of its original, when
+    /// the original is offline and Develop would open the photo from it
+    /// ([`Self::develop_from`]): what stands in for the file when its edit is
+    /// changed without it being open (Undo).
+    pub(in crate::app) fn recorded_original(
+        &self,
+        id: PhotoId,
+    ) -> Option<crate::storage::Identity> {
+        let photo = self.photo(id)?;
+        match self.develop_from(photo, photo.path.is_file()) {
+            Ok(crate::app::worker::OpenedFrom::EditablePreview(preview)) => Some(preview.original),
+            _ => None,
+        }
+    }
+    /// Forgets the answer [`Self::develops_from_preview`] keeps unless it is
+    /// photo `id`'s: the Loupe calls this for every photo it shows, online ones
+    /// too, so coming back to a photo asks again, as its editable preview or
+    /// original may have changed meanwhile.
+    pub(in crate::app) fn forget_preview_answer_unless(&self, id: PhotoId) {
+        let kept = *self.preview_usable.borrow();
+        if kept.is_some_and(|(kept, _)| kept != id) {
+            self.preview_usable.replace(None);
+        }
+    }
+    /// Whether Develop would open offline `photo` from its editable preview
+    /// ([`Self::develop_from`]), checked once while it stays the photo asked
+    /// about: for the Loupe, which asks every frame.
+    pub(in crate::app) fn develops_from_preview(&self, photo: &Photo) -> bool {
+        self.forget_preview_answer_unless(photo.id);
+        if let Some((_, usable)) = *self.preview_usable.borrow() {
+            return usable;
+        }
+        if !self.has_editable_preview(photo.id) {
+            return false;
+        }
+        let usable = self.develop_from(photo, false).is_ok();
+        self.preview_usable.replace(Some((photo.id, usable)));
+        usable
+    }
+    /// How many photos have an editable preview, virtual copies included.
+    pub(in crate::app) fn editable_preview_count(&self) -> usize {
+        self.editable_previews.len()
+    }
+    /// Editable previews were built or discarded: reads which photos have one
+    /// again, and filters again when only those are shown.
+    pub(in crate::app) fn editable_previews_changed(&mut self) {
+        // What the right panel and the Loupe say of a photo may have changed.
+        self.refusal_shown = None;
+        self.preview_usable.replace(None);
+        if self.filters.only_editable_previews {
+            self.filter();
+        } else {
+            self.refresh_editable_previews();
+        }
+    }
+    /// Whether photo `id` has an editable preview recorded (its master's, for a
+    /// virtual copy), by what the Library last read; [`Self::develop_from`]
+    /// checks it can be used.
+    pub(in crate::app) fn has_editable_preview(&self, id: PhotoId) -> bool {
+        self.editable_previews.contains(&id)
+    }
+    /// What Develop opens `photo` from, given whether its file is `available`: its
+    /// original, as [`develop_refusal`] allows; or, offline, its editable preview,
+    /// when the catalog has a usable one ([`Catalog::offline_editable_preview`]) whose
+    /// file's header ([`editable_preview::read_header`](crate::editable_preview::read_header))
+    /// is of the original the catalog recorded. Why not, if neither. The preview's
+    /// header is read, so this is for one photo at a time.
+    pub(in crate::app) fn develop_from(
+        &self,
+        photo: &Photo,
+        available: bool,
+    ) -> Result<crate::app::worker::OpenedFrom, Refusal> {
+        use crate::app::worker::{EditablePreviewSource, OpenedFrom};
+        use crate::catalog::OfflinePreview;
+        if let Some(refusal) = develop_refusal(photo, available) {
+            if refusal != Refusal::Offline {
+                return Err(refusal);
+            }
+        } else {
+            return Ok(OpenedFrom::Original);
+        }
+        let unusable = |why: &str| Err(Refusal::EditablePreview(why.into()));
+        // Saves stand the recorded identity in only for a file certainly not
+        // there; one that is there but can't be read is never edited from its
+        // preview, as nothing it saved could be checked.
+        if !crate::edits::Original::is_absent(&photo.path) {
+            return match self.session.catalog().offline_editable_preview(photo.id) {
+                Ok(crate::catalog::OfflinePreview::None) => Err(Refusal::Offline),
+                _ => unusable("its original is there but can't be read"),
+            };
+        }
+        match self.session.catalog().offline_editable_preview(photo.id) {
+            Ok(OfflinePreview::None) => Err(Refusal::Offline),
+            Ok(OfflinePreview::Missing(_)) => unusable("its file is missing"),
+            Ok(OfflinePreview::Stale(_)) => {
+                unusable("it is of another version of the photo than its edit")
+            }
+            Ok(OfflinePreview::Usable(preview)) => {
+                match crate::editable_preview::read_header(&preview.path) {
+                    Ok(header) if header.identity.same_photo(&preview.original) => {
+                        Ok(OpenedFrom::EditablePreview(EditablePreviewSource {
+                            file: preview.path,
+                            original: preview.original,
+                        }))
+                    }
+                    Ok(_) => unusable("its file is of another version of the photo"),
+                    Err(e) => Err(Refusal::EditablePreview(format!("{e:#}"))),
+                }
+            }
+            Err(e) => Err(Refusal::EditablePreview(format!("{e:#}"))),
         }
     }
     pub(crate) fn available_count(&self) -> usize {
         self.availability.count(self.session.photos())
     }
     fn filter(&mut self) {
+        self.refresh_editable_previews();
         // What the order needs from the catalog, read once until it changes.
         let sort = self.filters.sort;
         if self.sort_keys.as_ref().is_none_or(|(of, _)| *of != sort) {
@@ -563,6 +709,7 @@ impl Library {
         self.visible = self.filters.visible(
             self.session.photos(),
             |path| self.availability.is_available(path),
+            |id| self.editable_previews.contains(&id),
             keys,
         );
         self.keep_shown_selected();
@@ -589,8 +736,9 @@ impl Library {
     pub(crate) fn photo(&self, id: PhotoId) -> Option<&Photo> {
         self.session.photos().iter().find(|p| p.id == id)
     }
-    /// What photo `id` is developed from, as Develop would open it: its saved edit
-    /// (checked as Develop checks it), else its Lightroom edit, else the defaults;
+    /// What photo `id` is developed from, as Develop would open it: its original or
+    /// editable preview ([`Self::develop_from`]) and its saved edit (checked as
+    /// Develop checks it), else its Lightroom edit, else the defaults;
     /// for Develop's Reference View. Why not, for a photo Develop cannot open; None
     /// for a photo no longer in the catalog.
     pub(in crate::app) fn develop_source(
@@ -599,10 +747,15 @@ impl Library {
         demosaic: crate::camera_data::Demosaic,
     ) -> Option<Result<DevelopSource, Refusal>> {
         let photo = self.photo(id)?;
-        if let Some(refusal) = develop_refusal(photo, photo.path.is_file()) {
-            return Some(Err(refusal));
-        }
-        let edit = match self.session.catalog().load_edit(id, &photo.path) {
+        let from = match self.develop_from(photo, photo.path.is_file()) {
+            Ok(from) => from,
+            Err(refusal) => return Some(Err(refusal)),
+        };
+        let original = match from.editable_preview() {
+            Some(preview) => crate::edits::Original::recorded(&photo.path, &preview.original),
+            None => crate::edits::Original::file(&photo.path),
+        };
+        let edit = match self.session.catalog().load_edit(id, original) {
             Ok(Some(saved)) => serde_json::to_string(&saved.recipe)
                 .ok()
                 .map(EditSource::Recipe),
@@ -618,11 +771,16 @@ impl Library {
         }
         .unwrap_or_else(|| EditSource::Defaults(self.defaults.clone()));
         // The file and the demosaic too: a RAW replaced in place, or decoded another
-        // way, is developed again.
-        let file = crate::storage::Stamp::read(&photo.path).ok();
+        // way, is developed again; and so is one opened from its editable preview
+        // once its original is back.
+        let file = match from.editable_preview() {
+            Some(preview) => format!("editable-preview-{}", preview.original.key()),
+            None => format!("{:?}", crate::storage::Stamp::read(&photo.path).ok()),
+        };
         Some(Ok(DevelopSource {
             path: photo.path.clone(),
-            tag: format!("{}-{file:?}-{demosaic:?}", edit.tag()),
+            from,
+            tag: format!("{}-{file}-{demosaic:?}", edit.tag()),
             edit,
         }))
     }
@@ -1280,6 +1438,7 @@ impl Library {
             self.filters.collection = None;
             self.filters.previous_import = false;
             self.filters.only_missing = false;
+            self.filters.only_editable_previews = false;
             self.selected_folders.clear();
             self.filter();
         }
@@ -1460,13 +1619,13 @@ impl Library {
 /// HEIF and JPEG XL files that are online and whose pixels it can read.
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::app) enum Refusal {
+    /// Offline, without an editable preview.
     Offline,
+    /// Offline, with an editable preview that can't be used: why.
+    EditablePreview(String),
     /// A JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL of a kind Develop can't edit: its `format` (e.g. "JPG")
     /// and the `reason` (e.g. "CMYK").
-    Unsupported {
-        format: String,
-        reason: String,
-    },
+    Unsupported { format: String, reason: String },
 }
 impl Refusal {
     /// What opening `path` failed with, when it is a refusal rather than an error:
@@ -1488,7 +1647,7 @@ impl Refusal {
     /// A word or two, shown beside a greyed-out Open in Develop.
     pub(in crate::app) fn label(&self) -> String {
         match self {
-            Self::Offline => "Offline".into(),
+            Self::Offline | Self::EditablePreview(_) => "Offline".into(),
             Self::Unsupported { format, .. } => format!("{format} file"),
         }
     }
@@ -1496,9 +1655,12 @@ impl Refusal {
     pub(in crate::app) fn detail(&self) -> String {
         match self {
             Self::Offline => {
-                "The photo is offline. Right-click it and choose Find on Disk… to pick its file, or relink its folder with Locate root folder or Locate this folder."
+                "The photo is offline and has no editable preview. Right-click it and choose Find on Disk… to pick its file, or relink its folder with Locate root folder or Locate this folder."
                     .into()
             }
+            Self::EditablePreview(why) => format!(
+                "The photo is offline, and its editable preview can't be used: {why}. Connect its original, or right-click it and choose Find on Disk… to pick its file."
+            ),
             Self::Unsupported { reason, .. } => format!("RAWmakase can't edit {reason} images"),
         }
     }
@@ -1507,6 +1669,8 @@ impl Refusal {
 #[derive(Clone)]
 pub(in crate::app) struct DevelopSource {
     pub path: std::path::PathBuf,
+    /// Its original, or its editable preview while that is offline.
+    pub from: crate::app::worker::OpenedFrom,
     pub edit: EditSource,
     /// Identifies `edit` (the defaults included), the file and the demosaic: it
     /// changes whenever any of them does.

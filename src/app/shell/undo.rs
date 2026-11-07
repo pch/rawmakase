@@ -401,16 +401,23 @@ impl Editor {
                         .warn(format!("{verb}: that photo is no longer in the catalog"));
                     return true;
                 };
+                // Offline, as it would open: from its editable preview, whose
+                // recorded identity stands in for the file.
+                let recorded = library.recorded_original(id);
+                let original = crate::edits::Original {
+                    path: &path,
+                    recorded: recorded.as_ref(),
+                };
                 let saved = library
                     .session
                     .catalog()
-                    .load_edit(id, &path)
+                    .load_edit(id, original)
                     .and_then(|edit| {
                         // A saved edit's identity, which a verified move of its
                         // file refreshes, protects the file; without one, the
                         // file the change was made on does.
                         let source = match &edit {
-                            Some(_) => crate::storage::Identity::read(&path)?,
+                            Some(_) => original.identity()?,
                             None => source.clone().ok_or_else(|| {
                                 anyhow::anyhow!("its file could not be read when it was edited")
                             })?,
@@ -418,7 +425,7 @@ impl Editor {
                         let export = edit.map(|e| e.export).unwrap_or_default();
                         library.session.save_edit(
                             id,
-                            &path,
+                            original,
                             &source,
                             target,
                             &export,

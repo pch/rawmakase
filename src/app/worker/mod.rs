@@ -14,6 +14,8 @@ use std::{
 pub(crate) struct LoadedHeader {
     pub id: u64,
     pub path: PathBuf,
+    /// What the photo was opened from: its original, or its editable preview.
+    pub from: OpenedFrom,
     /// The file as read before it was opened: what the header, and every image
     /// of this load, are of.
     pub file: Option<crate::storage::Identity>,
@@ -330,7 +332,10 @@ pub(crate) enum Preview {
 }
 pub(crate) struct LoadJob {
     pub id: u64,
+    /// The photo's original, which an editable preview stands in for.
     pub path: PathBuf,
+    /// What to open: the original, or its editable preview while it is offline.
+    pub from: OpenedFrom,
     pub cancel: Arc<AtomicBool>,
     /// The photo to decode ahead of time once this one is fully developed.
     pub prefetch: Option<Prefetch>,
@@ -338,6 +343,55 @@ pub(crate) struct LoadJob {
     pub defaults: Arc<crate::raw_defaults::DevelopDefaults>,
     /// The demosaic of the full-size decode and of its decode-cache key.
     pub demosaic: crate::camera_data::Demosaic,
+}
+/// What a photo in Develop was opened from.
+///
+/// An editable preview is a reduced image (`CameraImage::fast`, so that
+/// `CameraImage::photo_scale` sizes radius effects for the original), but unlike
+/// the half-size decode, which a full-size decode replaces, it is final: nothing
+/// is decoded after it. Which one a document is belongs to the document, not to
+/// its pixels, so the paths that replace a reduced draft (the full-size stage, a
+/// file operation's reopen, an export of the open photo) ask
+/// [`OpenedFrom::is_final_reduced`] rather than give `fast` a second meaning
+/// that every copy of a `CameraImage` would have to carry.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) enum OpenedFrom {
+    #[default]
+    Original,
+    EditablePreview(EditablePreviewSource),
+}
+impl OpenedFrom {
+    /// What opening from an editable preview means, for the badge and status line
+    /// that say so.
+    pub(crate) const EDITABLE_PREVIEW: &'static str = "Editable Preview";
+    pub(crate) const EDITABLE_PREVIEW_DETAIL: &'static str = "Editing its editable preview: the original is offline. Edits are saved for the original and render from it once it is back and the photo is opened again. AI masks, AI Denoise, Fit Camera Look and Export need the original.";
+    /// Whether the image opened is reduced and final: an editable preview.
+    pub(crate) fn is_final_reduced(&self) -> bool {
+        matches!(self, Self::EditablePreview(_))
+    }
+    /// The editable preview opened, if it was one.
+    pub(crate) fn editable_preview(&self) -> Option<&EditablePreviewSource> {
+        match self {
+            Self::Original => None,
+            Self::EditablePreview(source) => Some(source),
+        }
+    }
+    /// What Develop and the Loupe say the photo was opened from.
+    pub(crate) fn label(&self) -> &'static str {
+        match self {
+            Self::Original => "Original",
+            Self::EditablePreview(_) => Self::EDITABLE_PREVIEW,
+        }
+    }
+}
+/// A photo's editable preview, as the catalog recorded it when it was opened.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct EditablePreviewSource {
+    /// The editable preview's file.
+    pub file: PathBuf,
+    /// The original's identity when the editable preview was built: the photo's
+    /// identity for saving its edit while the original is offline.
+    pub original: crate::storage::Identity,
 }
 /// A photo to develop into the decode cache ahead of time, so opening it next
 /// skips decoding. It has its own cancel flag: the photo on screen finishing

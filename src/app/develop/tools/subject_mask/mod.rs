@@ -351,6 +351,11 @@ impl Editor {
         if self.library.is_none() || self.document.catalog_photo.is_none() {
             return Some("Add this photo to a catalog to use AI masks");
         }
+        // Decision 4 of the editable previews plan: masks already made keep
+        // rendering, but none is made from an editable preview.
+        if self.document.opened_from_preview() {
+            return Some("Connect the original to use AI masks");
+        }
         if self.document.full().is_none() {
             return Some("Available once the photo has finished developing");
         }

@@ -25,6 +25,10 @@ impl Editor {
     /// Fits the open photo's camera look; it arrives as [`Event::CameraLook`]. A fit
     /// already running for the photo is cancelled for this one.
     pub(in crate::app) fn start_camera_look(&mut self) {
+        if let Some(why) = self.camera_look_unavailable() {
+            self.messages.warn(why);
+            return;
+        }
         let Some(path) = self.document.path.clone() else {
             return;
         };
@@ -111,10 +115,21 @@ impl Editor {
         self.messages.done("Camera Look (fitted) applied");
     }
 
+    /// Why Profile → Fit Camera Look can't run for the open photo, when that is
+    /// worth saying: opened from its editable preview, which keeps no embedded
+    /// JPEG to fit to (decision 8 of the editable previews plan). A fit already
+    /// applied is part of the edit and keeps rendering.
+    pub(in crate::app) fn camera_look_unavailable(&self) -> Option<&'static str> {
+        self.document
+            .opened_from_preview()
+            .then_some("Connect the original to fit a Camera Look")
+    }
     /// Whether Profile → Fit Camera Look can run for the open photo: a RAW, decoded
-    /// far enough to know it is one, with no fit already running.
+    /// far enough to know it is one and opened from its original, with no fit
+    /// already running.
     pub(in crate::app) fn can_fit_camera_look(&self) -> bool {
-        self.document.path.is_some()
+        self.camera_look_unavailable().is_none()
+            && self.document.path.is_some()
             && self
                 .document
                 .metadata

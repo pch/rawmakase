@@ -9,6 +9,7 @@ use crate::app::ui::design::{self, Tone, inset, space, text};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::{TOP_BAR_SEGMENTS, segment_bar};
 use crate::app::work::{FILE_CHANGE, FOLDER_CHANGE, OUTPUT};
+use crate::app::worker::OpenedFrom;
 use crate::catalog::PhotoId;
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use std::time::{Duration, Instant};
@@ -915,6 +916,18 @@ impl Editor {
             });
     }
 
+    /// What the open catalog photo was opened from, once it has, and what that
+    /// means: for Develop's status line.
+    pub(in crate::app) fn opened_from(&self) -> Option<(&'static str, &'static str)> {
+        if self.document.path.is_none() || self.document.catalog_photo.is_none() {
+            return None;
+        }
+        let detail = match &self.document.from {
+            OpenedFrom::Original => "Opened from the photo's own file",
+            OpenedFrom::EditablePreview(_) => OpenedFrom::EDITABLE_PREVIEW_DETAIL,
+        };
+        Some((self.document.from.label(), detail))
+    }
     /// A RAW in the Library's Loupe: loaded as the document, as Develop
     /// does, and drawn by Develop's viewport without its tools, so it zooms
     /// the same way and D shows it in Develop at once.
@@ -982,6 +995,13 @@ impl Editor {
             return;
         };
         library.loupe_overlay(ui.painter(), area);
+        if self.document.opened_from_preview() {
+            crate::app::develop::viewport::source_badge(
+                ui,
+                area,
+                OpenedFrom::EDITABLE_PREVIEW_DETAIL,
+            );
+        }
         if self.view.zoom.on != before {
             library.loupe_zoom_toggled(before);
         }
@@ -1786,6 +1806,10 @@ impl Editor {
                         ui.separator();
                         ui.small(&self.preview.status);
                     }
+                    if let Some((label, detail)) = self.opened_from() {
+                        ui.separator();
+                        ui.small(label).on_hover_text(detail);
+                    }
                     self.preview_progress(ui);
                     if !self.document.lightroom_notice.is_empty() {
                         ui.separator();
@@ -1876,7 +1900,17 @@ impl Editor {
                     .fill(backdrop)
                     .inner_margin(design::margin_same(PHOTO_MARGIN)),
             )
-            .show(ui, |ui| self.viewport_ui(ui))
+            .show(ui, |ui| {
+                let response = self.viewport_ui(ui);
+                if self.document.opened_from_preview() {
+                    crate::app::develop::viewport::source_badge(
+                        ui,
+                        response.rect,
+                        OpenedFrom::EDITABLE_PREVIEW_DETAIL,
+                    );
+                }
+                response
+            })
             .response
             .rect;
         self.drop_area = Some(area);

@@ -191,6 +191,7 @@ impl Library {
                     let all = self.filters.folder_scope.is_none()
                         && self.filters.collection.is_none()
                         && !self.filters.only_missing
+                        && !self.filters.only_editable_previews
                         && !self.filters.previous_import;
                     if source_row(ui, "All Photographs", self.session.photos().len(), all).clicked()
                     {
@@ -198,6 +199,7 @@ impl Library {
                         self.selected_folders.clear();
                         self.filters.collection = None;
                         self.filters.only_missing = false;
+                        self.filters.only_editable_previews = false;
                         self.filters.previous_import = false;
                         self.filter()
                     }
@@ -237,6 +239,22 @@ impl Library {
                         .clicked()
                     {
                         self.filters.only_missing = !self.filters.only_missing;
+                        self.filter()
+                    }
+                    let previews = self.editable_preview_count();
+                    if (previews > 0 || self.filters.only_editable_previews)
+                        && source_row(
+                            ui,
+                            "Has Editable Preview",
+                            previews,
+                            self.filters.only_editable_previews,
+                        )
+                        .on_hover_text(
+                            "Photos that can be edited while their originals are offline",
+                        )
+                        .clicked()
+                    {
+                        self.filters.only_editable_previews = !self.filters.only_editable_previews;
                         self.filter()
                     }
                 });
@@ -449,6 +467,7 @@ impl Library {
         self.filters.collection = None;
         self.filters.folder_scope = None;
         self.filters.only_missing = false;
+        self.filters.only_editable_previews = false;
         self.selected_folders.clear();
         self.offer_previous_import = false;
         self.filter();
@@ -464,6 +483,7 @@ impl Library {
             .unwrap_or_default();
         self.filters.folder_scope = None;
         self.filters.only_missing = false;
+        self.filters.only_editable_previews = false;
         self.selected_folders.clear();
         self.filter();
     }
@@ -532,6 +552,7 @@ impl Library {
         }
         self.filters.clear_bar();
         self.filters.only_missing = false;
+        self.filters.only_editable_previews = false;
         self.filters.collection = None;
         self.filters.previous_import = false;
         self.filters.folder_scope = self.folders_scope(&self.selected_folders);

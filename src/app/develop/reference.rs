@@ -180,6 +180,7 @@ impl Editor {
         self.reference_loader.submit(ReferenceJob {
             ticket,
             path: source.path,
+            from: source.from,
             edit: source.edit,
             cancel,
             demosaic: self.session.demosaic,

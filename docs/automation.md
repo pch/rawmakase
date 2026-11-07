@@ -102,6 +102,10 @@ Dialog actions report that the action was applied, but require user interaction.
 `open_failed` names the photo Develop could not open (a cut-short or
 unreadable file), with the reason in `open_error`, which stays while `message`
 moves on; `open` and MCP `open_photo` stop waiting for it with that error.
+`opened_from` says what the open photo was opened from once its header is in:
+`original`, or `editable_preview` for an offline photo opened from its editable
+preview; `open` takes such a photo, and refuses an offline one without a usable
+editable preview with `not_editable`.
 Prefer the explicit `export` command for unattended output.
 
 ## Guard the target
@@ -138,7 +142,9 @@ revision before starting a background job. Later UI edits do not change that
 output. Preview defaults to a 1600-pixel long edge; use `--max-edge` to choose a
 size. Export defaults to full size. Both accept JPEG, TIFF and PNG paths and use the
 existing export pipeline. They never overwrite an existing file or change saved
-Export dialog settings.
+Export dialog settings. A photo open from its editable preview
+(`opened_from: editable_preview`) is never previewed or exported this way: both
+return `not_ready` until it is opened again from its original.
 
 `export` writes sRGB unless `color_space` is `adobe-rgb` or `prophoto`
 (`--color-space` for `rawmakase control export`), with that space's embedded
@@ -237,7 +243,7 @@ Common error codes include `invalid_request`, `unsupported_protocol`,
 `unauthorized`, `busy`, `stale_target`, `target_required`, `no_document`,
 `not_ready`, `unsupported_parameter`, `not_editable`, `protected`, `save_failed`,
 `already_exists` and `unknown_job`. `open` returns `not_editable` for a photo whose
-file is offline, or a JPEG, PNG or TIFF Develop can't edit (a CMYK JPEG, say);
+file is offline without a usable editable preview, or a JPEG, PNG or TIFF Develop can't edit (a CMYK JPEG, say);
 any other JPEG, PNG or TIFF opens as a RAW does. On a JPEG, PNG or TIFF,
 `temperature` and `tint` move its relative Temp and Tint (−100 to 100).
 

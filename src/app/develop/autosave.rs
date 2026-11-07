@@ -25,6 +25,9 @@ pub(in crate::app) struct Job {
     /// The file as it was when the photo was opened: a file replaced since gets
     /// none of the edit.
     pub source: Identity,
+    /// Whether the photo was opened from its editable preview: `source` is then
+    /// the identity that recorded, standing in for `raw` while it is not there.
+    pub from_editable_preview: bool,
     pub recipe: Recipe,
     pub export: ExportOptions,
     /// Its Develop History, saved in the same transaction.
@@ -189,9 +192,13 @@ fn save(catalog: &mut Option<Catalog>, job: &Job) -> anyhow::Result<CatalogLocat
         *catalog = Some(Catalog::open(location)?);
     }
     let c = catalog.as_mut().expect("opened above");
+    let original = crate::edits::Original {
+        path: &job.raw,
+        recorded: job.from_editable_preview.then_some(&job.source),
+    };
     c.save_edit(
         job.photo,
-        &job.raw,
+        original,
         &job.source,
         &job.recipe,
         &job.export,
@@ -230,6 +237,7 @@ mod tests {
                 modified_ns: 0,
                 prefix_hash: String::new(),
             },
+            from_editable_preview: false,
             recipe: Recipe::default(),
             export: ExportOptions::default(),
             history: SavedHistory {

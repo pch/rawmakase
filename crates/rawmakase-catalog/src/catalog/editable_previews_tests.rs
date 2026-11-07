@@ -558,3 +558,185 @@ fn an_unrecorded_build_is_removed_but_never_a_file_a_row_names() -> Result<()> {
     assert!(fx.dir.join("Photos.rawmakase").is_file());
     Ok(())
 }
+
+/// An edit with `exposure`, for the offline saves below.
+fn exposure(exposure: f32) -> crate::model::recipe::Recipe {
+    crate::model::recipe::Recipe {
+        exposure,
+        ..Default::default()
+    }
+}
+impl Fx {
+    /// Saves `photo`'s edit as Develop saves one opened from its editable
+    /// preview, built from `recorded`, while its original at `path` may be away.
+    fn save_offline(
+        &mut self,
+        photo: PhotoId,
+        path: &std::path::Path,
+        recorded: &Identity,
+        edit: f32,
+    ) -> Result<()> {
+        self.cat.save_edit(
+            photo,
+            crate::edits::Original::recorded(path, recorded),
+            recorded,
+            &exposure(edit),
+            &crate::export_settings::ExportOptions::default(),
+            HistoryUpdate::Keep,
+        )
+    }
+}
+
+#[test]
+fn an_offline_save_is_checked_against_the_recorded_identity_and_loads_back_online() -> Result<()> {
+    let mut fx = fixture()?;
+    let path = fx.source(fx.a);
+    let original = fx.original("a.dng")?;
+    let kept = std::fs::read(&path)?;
+    std::fs::remove_file(&path)?;
+    // Without anything standing in, the missing file can't be checked.
+    let refused = fx.cat.save_edit(
+        fx.a,
+        &path,
+        &original,
+        &exposure(0.4),
+        &Default::default(),
+        HistoryUpdate::Keep,
+    );
+    assert!(refused.is_err());
+    fx.save_offline(fx.a, &path, &original, 0.4)?;
+    // Stored as an ordinary identity: the recorded one.
+    let stored: Identity =
+        serde_json::from_str(&fx.cat.edit_record(fx.a)?.identity.context("an identity")?)?;
+    assert_eq!(stored, original);
+    // Offline, it loads against the recorded identity, not the missing file.
+    assert!(fx.cat.load_edit(fx.a, &path).is_err());
+    let back = fx
+        .cat
+        .load_edit(fx.a, crate::edits::Original::recorded(&path, &original))?
+        .context("saved")?;
+    assert_eq!(back.recipe.exposure, 0.4);
+    // The same file back: the edit loads as any photo's does.
+    std::fs::write(&path, &kept)?;
+    assert_eq!(
+        fx.cat
+            .load_edit(fx.a, &path)?
+            .context("saved")?
+            .recipe
+            .exposure,
+        0.4
+    );
+    Ok(())
+}
+
+#[test]
+fn a_replaced_original_protects_an_edit_saved_offline() -> Result<()> {
+    let mut fx = fixture()?;
+    let path = fx.source(fx.a);
+    let original = fx.original("a.dng")?;
+    std::fs::remove_file(&path)?;
+    fx.save_offline(fx.a, &path, &original, 0.4)?;
+    std::fs::write(&path, b"another photo entirely")?;
+    assert!(fx.cat.load_edit(fx.a, &path).is_err());
+    // A file that is there is read, even for a photo still open from its
+    // editable preview: the replaced one gets none of the edit.
+    assert!(fx.save_offline(fx.a, &path, &original, 0.7).is_err());
+    let stored: Identity =
+        serde_json::from_str(&fx.cat.edit_record(fx.a)?.identity.context("an identity")?)?;
+    assert_eq!(stored, original);
+    Ok(())
+}
+
+#[test]
+fn an_offline_save_from_a_preview_of_another_version_is_refused() -> Result<()> {
+    let mut fx = fixture()?;
+    let path = fx.source(fx.a);
+    let original = fx.original("a.dng")?;
+    // Edited online, then the file replaced and edited again, then taken offline:
+    // a preview still of the first version is not of the edit's photo.
+    std::fs::write(&path, b"a later version of a")?;
+    let later = fx.original("a.dng")?;
+    fx.cat.save_edit(
+        fx.a,
+        &path,
+        &later,
+        &exposure(0.2),
+        &Default::default(),
+        HistoryUpdate::Keep,
+    )?;
+    std::fs::remove_file(&path)?;
+    let error = fx
+        .save_offline(fx.a, &path, &original, 0.4)
+        .expect_err("refused");
+    assert!(format!("{error:#}").contains("changed"), "{error:#}");
+    assert_eq!(
+        fx.cat
+            .load_edit(fx.a, crate::edits::Original::recorded(&path, &later))?
+            .context("saved")?
+            .recipe
+            .exposure,
+        0.2
+    );
+    Ok(())
+}
+
+#[test]
+fn an_unreadable_original_that_is_there_is_never_stood_in_for() -> Result<()> {
+    let fx = fixture()?;
+    // A folder where the file should be: there, but not a readable file.
+    let path = fx.dir.join("photos/folder.dng");
+    std::fs::create_dir(&path)?;
+    let recorded = fx.original("a.dng")?;
+    let original = crate::edits::Original::recorded(&path, &recorded);
+    assert!(original.identity().is_err());
+    Ok(())
+}
+
+#[test]
+fn an_offline_preview_is_usable_missing_or_stale() -> Result<()> {
+    let mut fx = fixture()?;
+    assert_eq!(fx.cat.offline_editable_preview(fx.a)?, OfflinePreview::None);
+    let original = fx.original("a.dng")?;
+    let built = fx.build(fx.a, &original, b"x")?;
+    let recorded = fx
+        .cat
+        .record_editable_preview(fx.a, &fx.source(fx.a), &built)?;
+    assert_eq!(
+        fx.cat.offline_editable_preview(fx.a)?,
+        OfflinePreview::Usable(recorded.clone())
+    );
+    // A virtual copy uses its master's.
+    let copy = fx.cat.create_virtual_copy(fx.a)?;
+    assert!(matches!(
+        fx.cat.offline_editable_preview(copy)?,
+        OfflinePreview::Usable(_)
+    ));
+    // An edit saved for another version of the photo makes it stale.
+    let path = fx.source(fx.a);
+    std::fs::write(&path, b"a later version of a")?;
+    let later = fx.original("a.dng")?;
+    fx.cat.save_edit(
+        fx.a,
+        &path,
+        &later,
+        &exposure(0.2),
+        &Default::default(),
+        HistoryUpdate::Keep,
+    )?;
+    assert_eq!(
+        fx.cat.offline_editable_preview(fx.a)?,
+        OfflinePreview::Stale(recorded.clone())
+    );
+    // Its copy has no edit of its own yet: its preview is still usable for it.
+    assert!(matches!(
+        fx.cat.offline_editable_preview(copy)?,
+        OfflinePreview::Usable(_)
+    ));
+    // Deleted outside RAWmakase.
+    std::fs::remove_file(&recorded.path)?;
+    assert_eq!(
+        fx.cat.offline_editable_preview(copy)?,
+        OfflinePreview::Missing(recorded)
+    );
+    Ok(())
+}

@@ -19,6 +19,9 @@ pub(in crate::app) struct View {
     pub install_failure: Option<String>,
     pub megabytes: u64,
     pub status: Option<State>,
+    /// Why AI Denoise can't run for the open photo, if it can't: it needs the RAW's
+    /// sensor data, which an editable preview doesn't keep.
+    pub unavailable: Option<&'static str>,
 }
 
 /// What the user asked for that the panel can't do itself.
@@ -38,6 +41,19 @@ pub(super) fn controls(
 ) -> Option<Action> {
     let heading = subheading(ui, "AI Denoise");
     credit_button(ui, heading);
+    if let Some(why) = view.unavailable {
+        // The setting stays as saved, and renders once the photo opens from its
+        // original; nothing about it can change meanwhile.
+        ui.add_enabled_ui(false, |ui| {
+            control_row(ui, "", |ui| {
+                let mut on = r.ai_denoise.enabled;
+                ui.checkbox(&mut on, "AI Denoise")
+                    .on_disabled_hover_text(why);
+            });
+        });
+        status(ui, why);
+        return None;
+    }
     control_row(ui, "", |ui| {
         let mut on = r.ai_denoise.enabled;
         if ui

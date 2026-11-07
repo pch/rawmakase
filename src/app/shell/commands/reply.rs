@@ -15,6 +15,9 @@ pub(in crate::app) struct State {
     pub generation: u64,
     pub revision: u64,
     pub loaded: bool,
+    /// What the open photo was opened from, once its header is in: `original`, or
+    /// `editable_preview` while its original is offline.
+    pub opened_from: Option<&'static str>,
     /// The photo Develop could not open: it will not load, so a client waiting
     /// for `loaded` stops.
     pub open_failed: Option<PhotoId>,

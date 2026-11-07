@@ -1596,9 +1596,13 @@ impl Editor {
             // full-size decode after the half-size one shown) or failed
             // there, leaving no full-size image, is dropped, and the photo
             // opened again where it is now. Its edit was saved before the
-            // move, so nothing is lost.
+            // move, so nothing is lost. An editable preview is reduced but
+            // final, and reads nothing at the old path.
+            let draft = |image: &crate::camera_data::CameraImage| {
+                image.fast && !self.document.from.is_final_reduced()
+            };
             let unfinished =
-                self.document.loading() || self.document.full().is_none_or(|image| image.fast);
+                self.document.loading() || self.document.full().is_none_or(|image| draft(image));
             if unfinished && let Some(id) = self.document.catalog_photo {
                 self.document.invalidate_load();
                 self.file_ops.reopen = Some((id, path.clone()));

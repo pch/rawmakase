@@ -505,10 +505,15 @@ impl Editor {
 
     /// Why the open photo's edit is not final yet, if it is not: what it shows
     /// would not be what is exported.
-    fn open_photo_unready(&self) -> Option<&'static str> {
+    pub(in crate::app) fn open_photo_unready(&self) -> Option<&'static str> {
         let d = &self.document;
         if d.metadata.is_none() || d.full().is_none() {
             Some("it is still loading")
+        } else if d.opened_from_preview() {
+            // Editable previews are never exported (and never decoded again to
+            // export in their place): an original back online is exported once
+            // the photo is opened from it.
+            Some("it is open from its editable preview; open it again from its original")
         } else if d.pending_lightroom.is_some() {
             Some("its Lightroom edit is still being applied")
         } else if d.auto.is_running() {

@@ -48,6 +48,9 @@ pub(super) struct Shown {
     /// Its place in the grid, from 1.
     pub number: usize,
     pub available: bool,
+    /// It has an editable preview recorded, which Develop can open it from
+    /// while it is offline.
+    pub editable_preview: bool,
     /// In the Quick Collection.
     pub quick: bool,
     pub style: Style,
@@ -70,6 +73,7 @@ pub(super) fn photo_cell(
         mark,
         number,
         available,
+        editable_preview,
         quick,
         style,
         details,
@@ -253,7 +257,10 @@ pub(super) fn photo_cell(
     let action = photo_menu(
         &response,
         photo,
-        available,
+        Presence {
+            available,
+            editable_preview,
+        },
         single,
         super::Module::Library,
         stacks,
@@ -525,13 +532,21 @@ fn stacking_menu(
     }
     choice
 }
+/// Whether a photo's file is `available`, and whether it has an
+/// `editable_preview` recorded that Develop could open it from while it isn't.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) struct Presence {
+    pub available: bool,
+    pub editable_preview: bool,
+}
 /// Whether Find on Disk… is offered: for one photo, offline.
 pub(in crate::app) fn find_on_disk_enabled(available: bool, single: bool) -> bool {
     !available && single
 }
 /// The right-click menu shared by grid cells and the Develop filmstrip.
 /// Open in Develop is greyed out for a photo Develop cannot open, e.g. one
-/// not `available`, with the reason in place of its shortcut. In Develop's
+/// not `available` without an `editable_preview` recorded, with the reason in
+/// place of its shortcut. In Develop's
 /// filmstrip it starts with Set as Reference Photo, as in Lightroom. Find on
 /// Disk… is offered for a photo not `available` when the menu acts on it
 /// alone (`single`). Stacking is offered where the source shows stacks
@@ -539,16 +554,22 @@ pub(in crate::app) fn find_on_disk_enabled(available: bool, single: bool) -> boo
 pub(in crate::app) fn photo_menu(
     response: &egui::Response,
     photo: &Photo,
-    available: bool,
+    presence: Presence,
     single: bool,
     module: super::Module,
     stacks: bool,
 ) -> Option<PhotoAction> {
+    let Presence {
+        available,
+        editable_preview,
+    } = presence;
     use crate::app::library::photo_metadata::{Edit, LABELS};
     use crate::app::ui::widgets::{menu_item, menu_separator, submenu_style};
     let mut action = None;
     // Why Develop can't open the photo reads its file: once each time the menu opens.
-    let key = response.id.with(("develop-refusal", photo.id, available));
+    let key = response
+        .id
+        .with(("develop-refusal", photo.id, available, editable_preview));
     if crate::app::ui::widgets::context_clicked(response) {
         response
             .ctx
@@ -557,9 +578,14 @@ pub(in crate::app) fn photo_menu(
     crate::app::ui::widgets::context_menu(response, |ui| {
         ui.set_width(210.);
         ui.spacing_mut().item_spacing.y = 0.;
+        // Offline with an editable preview recorded, it can be opened from it;
+        // opening checks the preview and says why, if it can't.
         let refusal = ui.ctx().data_mut(|d| {
-            d.get_temp_mut_or_insert_with(key, || super::develop_refusal(photo, available))
-                .clone()
+            d.get_temp_mut_or_insert_with(key, || {
+                super::develop_refusal(photo, available)
+                    .filter(|r| !(*r == super::Refusal::Offline && editable_preview))
+            })
+            .clone()
         });
         if module == super::Module::Develop {
             if menu_item(ui, "Set as Reference Photo", "", refusal.is_none(), false) {

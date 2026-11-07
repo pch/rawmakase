@@ -3,11 +3,10 @@
 use super::db::{Reads, Write, sql};
 use super::value::row;
 use super::{Catalog, PhotoId};
-use crate::edits::{SavedEdit, local_edits};
+use crate::edits::{Original, SavedEdit, local_edits};
 use crate::storage::Identity;
 use crate::{export_settings::ExportOptions, model::recipe::Recipe};
 use anyhow::{Context, Result};
-use std::path::Path;
 
 /// One photo's change for [`Catalog::change_edits`].
 pub enum EditChange<'a, 'b> {
@@ -18,11 +17,13 @@ pub enum EditChange<'a, 'b> {
 /// One photo's edit for [`Catalog::save_edits`].
 pub struct EditToSave<'a> {
     pub id: PhotoId,
-    pub path: &'a Path,
+    /// The photo's original: its file, or for a photo opened from its editable
+    /// preview while the file is not there, the identity that preview recorded.
+    pub original: Original<'a>,
     /// The file the edit was made for, as read when its photo was opened or its
-    /// settings read: a save to a file at `path` that is no longer the same photo
-    /// ([`Identity::same_photo`]) is refused, even with no saved edit there to
-    /// protect.
+    /// settings read (or recorded by its editable preview): a save to an original
+    /// that is no longer the same photo ([`Identity::same_photo`]) is refused, even
+    /// with no saved edit there to protect.
     pub source: &'a Identity,
     pub recipe: &'a Recipe,
     pub export: &'a ExportOptions,
@@ -46,10 +47,10 @@ impl Catalog {
         data.map(|d| crate::storage::bitmaps::Bitmap::decompress(&d))
             .transpose()
     }
-    pub fn save_edit(
+    pub fn save_edit<'a>(
         &mut self,
         id: PhotoId,
-        path: &Path,
+        original: impl Into<Original<'a>>,
         source: &Identity,
         recipe: &Recipe,
         export: &ExportOptions,
@@ -57,7 +58,7 @@ impl Catalog {
     ) -> Result<()> {
         self.save_edits(&[EditToSave {
             id,
-            path,
+            original: original.into(),
             source,
             recipe,
             export,
@@ -118,9 +119,13 @@ impl Catalog {
         local_edits(local_text(&self.db, id)?.as_deref())
     }
     /// The photo's saved RAWmakase edit, if it has one; an error when it can't be
-    /// read or its file changed since it was saved.
-    pub fn load_edit(&self, id: PhotoId, path: &Path) -> Result<Option<SavedEdit>> {
-        self.edit_record(id)?.saved(path)
+    /// read or its original ([`Original`]) changed since it was saved.
+    pub fn load_edit<'a>(
+        &self,
+        id: PhotoId,
+        original: impl Into<Original<'a>>,
+    ) -> Result<Option<SavedEdit>> {
+        self.edit_record(id)?.saved(original)
     }
     /// When each edited photo was last edited, as "YYYY-MM-DD HH:MM:SS"
     /// UTC: in RAWmakase, or else in Lightroom, whose history counts seconds

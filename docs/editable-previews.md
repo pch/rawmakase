@@ -1,6 +1,6 @@
 # Editable previews
 
-Status: Plan (2026-11-06), partly built: stages 1a, 2, 3 and 4 are in (2026-11-07).
+Status: Plan (2026-11-06), partly built: stages 1a, 2, 3, 4 and 5 are in (2026-11-07).
 
 Proposed implementation, 2026-11-06. Repository inspected at `509dda0`
 (`pch/rawmakase` main). This is a plan, not a claim of implemented support.

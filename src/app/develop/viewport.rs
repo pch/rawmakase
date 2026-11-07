@@ -1031,3 +1031,27 @@ impl crate::app::Editor {
 #[cfg(test)]
 #[path = "viewport_editor_tests.rs"]
 mod editor_tests;
+
+/// "Editable Preview" in the top-left corner of `area`, the photo's view, with what
+/// it means on hover: Develop and the Loupe say when a photo is edited from its
+/// editable preview rather than its original.
+pub(in crate::app) fn source_badge(ui: &mut egui::Ui, area: Rect, detail: &str) {
+    let palette = theme::palette(ui.ctx());
+    let font = egui::FontId::proportional(text::SMALL);
+    let galley = ui.painter().layout_no_wrap(
+        crate::app::worker::OpenedFrom::EDITABLE_PREVIEW.to_string(),
+        font,
+        palette.tone(Tone::TEXT),
+    );
+    let pad = Vec2::new(6., 3.);
+    let rect = Rect::from_min_size(area.min + Vec2::splat(8.), galley.size() + pad * 2.);
+    ui.painter().rect_filled(
+        rect,
+        radius::CONTROL,
+        palette.tone(Tone::WINDOW).gamma_multiply(0.85),
+    );
+    ui.painter()
+        .galley(rect.min + pad, galley, palette.tone(Tone::TEXT));
+    ui.interact(rect, ui.id().with("editable-preview-badge"), Sense::hover())
+        .on_hover_text(detail);
+}

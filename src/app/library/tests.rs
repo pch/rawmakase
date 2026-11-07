@@ -574,6 +574,7 @@ fn photo_cells_preserve_texture_proportions_at_different_grid_widths() {
                     mark: selection::Mark::None,
                     number: 1,
                     available: true,
+                    editable_preview: false,
                     quick: false,
                     style: cell::Style::Compact,
                     details: String::new(),

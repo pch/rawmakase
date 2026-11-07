@@ -330,13 +330,18 @@ impl Library {
         }
         self.loupe.before_click = None;
         self.scroll_to_active = true;
+        // Opened again, whatever changed while it was closed is asked about.
+        self.preview_usable.replace(None);
     }
     /// The offline photo the Loupe shows that a stored preview can stand in for:
     /// one it would develop (see [`Self::loupe_develops`]).
     pub(in crate::app) fn loupe_offline_developed(&self) -> Option<PhotoId> {
         let photo = self.selection.active.and_then(|id| self.photo(id))?;
-        (self.loupe.open && !self.is_available(&photo.path) && self.develops(photo))
-            .then_some(photo.id)
+        (self.loupe.open
+            && !self.is_available(&photo.path)
+            && !self.develops_from_preview(photo)
+            && self.develops(photo))
+        .then_some(photo.id)
     }
     /// The identity of the stored preview the Loupe shows for an offline photo it
     /// would develop.
@@ -347,13 +352,15 @@ impl Library {
         self.loupe_stored.as_ref()
     }
     /// The photo the Loupe shows through Develop's pipeline: the active photo,
-    /// when it is online and a RAW or an edited JPEG, TIFF or PNG. An unedited
-    /// one, which its defaults reproduce, and offline photos are shown by the
+    /// when it is online and a RAW or an edited JPEG, TIFF or PNG, or offline
+    /// with a usable editable preview, which it is developed from. An unedited one,
+    /// which its defaults reproduce, and other offline photos are shown by the
     /// Loupe's own, quicker preview instead.
     pub(crate) fn loupe_develops(&self) -> Option<PhotoId> {
         let photo = self.selection.active.and_then(|id| self.photo(id))?;
-        (self.loupe.open && self.is_available(&photo.path) && self.develops(photo))
-            .then_some(photo.id)
+        self.forget_preview_answer_unless(photo.id);
+        let source = self.is_available(&photo.path) || self.develops_from_preview(photo);
+        (self.loupe.open && source && self.develops(photo)).then_some(photo.id)
     }
     /// Whether `photo` is shown developed: a RAW always, a JPEG, TIFF or PNG once
     /// it has an edit of its own.

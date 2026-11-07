@@ -572,6 +572,7 @@ impl Editor {
     fn header_ready(&mut self, header: LoadedHeader) {
         let LoadedHeader {
             path: p,
+            from,
             file,
             metadata: m,
             recipe: r,
@@ -580,6 +581,7 @@ impl Editor {
             ..
         } = header;
         self.document.file = file;
+        self.document.from = from;
         self.document.metadata = Some(m);
         self.document.edit.replace(r);
         self.document.export = ex;
@@ -600,7 +602,13 @@ impl Editor {
                 .catalog()
                 .edit_record(photo)
                 .map_err(|e| anyhow::anyhow!("{e:#}"))
-                .and_then(|r| crate::edits::Start::capture(&r, &p, self.raw_defaults.clone()));
+                .and_then(|r| {
+                    crate::edits::Start::capture(
+                        &r,
+                        self.document.original(&p),
+                        self.raw_defaults.clone(),
+                    )
+                });
             match start {
                 Ok(crate::edits::Start::Saved(saved)) => {
                     self.document.origin = crate::app::develop::state::EditOrigin::Saved;

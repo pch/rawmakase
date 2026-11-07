@@ -562,6 +562,7 @@ fn catalog_header_keeps_the_recipe_resolved_by_the_loader() -> anyhow::Result<()
     editor
         .tx
         .send(Event::Header(Box::new(LoadedHeader {
+            from: Default::default(),
             id: generation,
             file: Some(opened.clone()),
             path: raw,
