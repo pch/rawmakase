@@ -71,6 +71,12 @@ impl Request {
             Self::Previews(PreviewsRequest::Discard(ids, kinds)) => {
                 Self::Previews(PreviewsRequest::Discard(keep(ids)?, kinds))
             }
+            Self::Previews(PreviewsRequest::BuildEditable(ids)) => {
+                Self::Previews(PreviewsRequest::BuildEditable(keep(ids)?))
+            }
+            Self::Previews(PreviewsRequest::DiscardEditable(ids)) => {
+                Self::Previews(PreviewsRequest::DiscardEditable(keep(ids)?))
+            }
             Self::File(file) => Self::File(match file {
                 FileRequest::Remove(ids) => FileRequest::Remove(keep(ids)?),
                 FileRequest::Delete(ids) => FileRequest::Delete(keep(ids)?),

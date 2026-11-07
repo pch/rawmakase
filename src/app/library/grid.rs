@@ -284,6 +284,16 @@ impl Library {
                     super::PreviewsRequest::Discard(self.menu_scope(photo.id), kinds),
                 ));
             }
+            PhotoAction::BuildEditablePreviews => {
+                self.ask(super::outbox::Request::Previews(
+                    super::PreviewsRequest::BuildEditable(self.menu_scope(photo.id)),
+                ));
+            }
+            PhotoAction::DiscardEditablePreviews => {
+                self.ask(super::outbox::Request::Previews(
+                    super::PreviewsRequest::DiscardEditable(self.menu_scope(photo.id)),
+                ));
+            }
             PhotoAction::Remove => {
                 let ids = if whole_selection && self.selection.selected.contains(&photo.id) {
                     self.selected_ids()

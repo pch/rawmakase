@@ -141,6 +141,10 @@ fn command(request: &Value) -> commands::Result<Vec<Msg>> {
             wire::PreviewKind::Standard => crate::catalog::preview_cache::PreviewKind::Standard,
             wire::PreviewKind::OneToOne => crate::catalog::preview_cache::PreviewKind::OneToOne,
         }),
+        Request::BuildEditablePreviews => Operation::BuildEditablePreviews,
+        Request::DiscardEditablePreviews { include_offline } => {
+            Operation::DiscardEditablePreviews { include_offline }
+        }
         Request::Job { job_id } => Operation::Job(job_id),
         // Answered once the photo is loaded or the job finished, or after
         // timeout_ms, within clients' read timeout.
@@ -484,7 +488,21 @@ mod tests {
                 "{name}"
             );
         }
+        // Offline photos' editable previews are kept unless asked for.
+        assert!(matches!(
+            operation(json!({"cmd":"discard_editable_previews"})),
+            Operation::DiscardEditablePreviews {
+                include_offline: false
+            }
+        ));
+        assert!(matches!(
+            operation(json!({"cmd":"discard_editable_previews","include_offline":true})),
+            Operation::DiscardEditablePreviews {
+                include_offline: true
+            }
+        ));
         for value in [
+            json!({"cmd":"discard_editable_previews","include_offline":1}),
             json!({"cmd":"rename"}),
             json!({"cmd":"cc","cc":1,"value":1,"target":{}}),
             json!({"cmd":"turn","param":"band2","ticks":1}),

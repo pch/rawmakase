@@ -439,6 +439,10 @@ pub(in crate::app) enum PhotoAction {
     BuildPreviews(crate::catalog::preview_cache::PreviewKind),
     /// Library › Previews: Discard 1:1 Previews, or Standard and 1:1.
     DiscardPreviews(Vec<crate::catalog::preview_cache::PreviewKind>),
+    /// Library › Previews: Build Editable Previews.
+    BuildEditablePreviews,
+    /// Library › Previews: Discard Editable Previews.
+    DiscardEditablePreviews,
     /// Develop's Set as Reference Photo.
     SetReference,
     /// A Photo › Stacking command.
@@ -673,6 +677,15 @@ pub(in crate::app) fn photo_menu(
             }
             if menu_item(ui, "Discard Standard and 1:1 Previews", "", true, false) {
                 action = Some(PhotoAction::DiscardPreviews(PreviewKind::ALL.to_vec()));
+                ui.close();
+            }
+            menu_separator(ui);
+            if menu_item(ui, "Build Editable Previews", "", true, false) {
+                action = Some(PhotoAction::BuildEditablePreviews);
+                ui.close();
+            }
+            if menu_item(ui, "Discard Editable Previews", "", true, false) {
+                action = Some(PhotoAction::DiscardEditablePreviews);
                 ui.close();
             }
         });

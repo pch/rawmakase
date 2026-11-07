@@ -1046,79 +1046,104 @@ impl Editor {
         let Some(progress) = self.preview_builds.progress() else {
             return;
         };
-        let palette = theme::palette(ui.ctx());
         if !progress.running() {
             if progress.failed.is_empty() {
                 return;
             }
-            let line = egui::RichText::new(format!(
+            let line = format!(
                 "{} could not be built",
                 plural(progress.failed.len(), "preview", "previews")
-            ))
-            .size(text::SMALL)
-            .color(Color32::from_rgb(230, 170, 100));
+            );
             let reasons = progress
                 .failed
                 .iter()
                 .map(|(name, why)| format!("{name}: {why}"))
                 .collect::<Vec<_>>()
                 .join("\n");
-            if ui
-                .add(egui::Button::new(line).frame(false))
-                .on_hover_text(format!("{reasons}\n\nClick to dismiss"))
-                .clicked()
+            if report_line(ui, &line, &reasons)
                 && let Some(builder) = &self.preview_builds.builder
             {
                 builder.dismiss();
             }
             return;
         }
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(190., 28.), Sense::hover());
-        let painter = ui.painter();
-        let current = (progress.done + 1).min(progress.total);
-        painter.text(
-            egui::pos2(rect.left(), rect.top() + 7.),
-            egui::Align2::LEFT_CENTER,
-            format!("Building previews {current} / {}", progress.total),
-            egui::FontId::proportional(text::SMALL),
-            palette.tone(Tone::SOFT),
-        );
-        let fraction = progress.done as f32 / progress.total.max(1) as f32;
-        let bar = egui::Rect::from_min_size(
-            egui::pos2(rect.left(), rect.top() + 17.),
-            Vec2::new(rect.width() - 26., 4.),
-        );
-        painter.rect_filled(bar, radius::SMALL, palette.tone(Tone::OUTLINE));
-        painter.rect_filled(
-            egui::Rect::from_min_size(bar.min, Vec2::new(bar.width() * fraction.min(1.), 4.)),
-            2.,
-            Color32::from_rgb(110, 150, 190),
-        );
-        let close = egui::Rect::from_center_size(
-            egui::pos2(rect.right() - 9., rect.center().y),
-            Vec2::splat(18.),
-        );
-        let cancel = ui
-            .interact(close, ui.id().with("cancel-preview-build"), Sense::click())
-            .on_hover_text("Stop building previews");
-        let color = palette.tone(if cancel.hovered() {
-            Tone::STRONG
-        } else {
-            Tone::SECONDARY
-        });
-        crate::app::ui::icons::paint_at(
-            ui.painter(),
-            crate::app::ui::icons::Icon::Close,
-            close.center(),
-            13.,
-            color,
-        );
-        if cancel.clicked()
-            && let Some(builder) = &self.preview_builds.builder
+        if progress_bar(
+            ui,
+            &progress,
+            "Building previews",
+            "cancel-preview-build",
+            "Stop building previews",
+        ) && let Some(builder) = &self.preview_builds.builder
         {
             builder.cancel();
         }
     }
+}
+
+/// "`title` 12 / 150" over a bar of `progress`, with a button that stops it
+/// (`id`, explained by `stop`); whether it was clicked.
+pub(in crate::app) fn progress_bar(
+    ui: &mut egui::Ui,
+    progress: &Progress,
+    title: &str,
+    id: &str,
+    stop: &str,
+) -> bool {
+    let palette = theme::palette(ui.ctx());
+    // Room for the title, its count and the button.
+    let width = (80. + 6.5 * title.chars().count() as f32).max(190.);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 28.), Sense::hover());
+    let painter = ui.painter();
+    let current = (progress.done + 1).min(progress.total);
+    painter.text(
+        egui::pos2(rect.left(), rect.top() + 7.),
+        egui::Align2::LEFT_CENTER,
+        format!("{title} {current} / {}", progress.total),
+        egui::FontId::proportional(text::SMALL),
+        palette.tone(Tone::SOFT),
+    );
+    let fraction = progress.done as f32 / progress.total.max(1) as f32;
+    let bar = egui::Rect::from_min_size(
+        egui::pos2(rect.left(), rect.top() + 17.),
+        Vec2::new(rect.width() - 26., 4.),
+    );
+    painter.rect_filled(bar, radius::SMALL, palette.tone(Tone::OUTLINE));
+    painter.rect_filled(
+        egui::Rect::from_min_size(bar.min, Vec2::new(bar.width() * fraction.min(1.), 4.)),
+        2.,
+        Color32::from_rgb(110, 150, 190),
+    );
+    let close = egui::Rect::from_center_size(
+        egui::pos2(rect.right() - 9., rect.center().y),
+        Vec2::splat(18.),
+    );
+    let cancel = ui
+        .interact(close, ui.id().with(id), Sense::click())
+        .on_hover_text(stop);
+    let color = palette.tone(if cancel.hovered() {
+        Tone::STRONG
+    } else {
+        Tone::SECONDARY
+    });
+    crate::app::ui::icons::paint_at(
+        ui.painter(),
+        crate::app::ui::icons::Icon::Close,
+        close.center(),
+        13.,
+        color,
+    );
+    cancel.clicked()
+}
+
+/// What a finished build could not do, `line`, with `reasons` on hover; whether
+/// it was clicked, to dismiss it.
+pub(in crate::app) fn report_line(ui: &mut egui::Ui, line: &str, reasons: &str) -> bool {
+    let line = egui::RichText::new(line)
+        .size(text::SMALL)
+        .color(Color32::from_rgb(230, 170, 100));
+    ui.add(egui::Button::new(line).frame(false))
+        .on_hover_text(format!("{reasons}\n\nClick to dismiss"))
+        .clicked()
 }
 
 /// "Building 12 previews · 3 skipped (offline, not editable, or an unedited
@@ -1137,5 +1162,6 @@ pub(in crate::app) fn queued_message(queued: Queued) -> String {
     line
 }
 
+pub(in crate::app) mod editable;
 #[cfg(test)]
 mod tests;

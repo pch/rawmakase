@@ -208,6 +208,8 @@ use target guards for a sequence that must refer to the same edit.
 | `preview`, `export` | absolute `path`, optional `max_edge`, optional `target`; `export` also optional `color_space`: `srgb` (the default), `adobe-rgb` or `prophoto` (TIFF only) | Captured output job |
 | `job` | `job_id` | Output status |
 | `build_previews` | optional `kind`: `standard` (the default) or `one_to_one` | `queued` and `skipped` (offline or not RAW) counts for the selection, as the thumbnail menu's Build Standard-Sized Previews; state's `building_previews` (`done`, `total`) shows progress while they build |
+| `build_editable_previews` | none | `queued` and `skipped` (offline or not RAW) counts for the selection, a virtual copy counting as its master, as the thumbnail menu's Build Editable Previews; state's `building_editable_previews` (`done`, `total`) shows progress while they build |
+| `discard_editable_previews` | optional `include_offline` (default `false`) | `discarded`, how many photos' (masters') editable previews went, `stopped`, how many of their builds, waiting or under way, were stopped, and `kept_offline`, how many photos' were kept because their originals are offline, as none of those can be built again until its original is back (the thumbnail menu asks before discarding them); `include_offline: true` discards those too |
 | `wait` | `until`: `loaded` with `photo_id`, or `job` with `job_id`; optional `timeout_ms` (1…5000, default 1000) | State once the photo is loaded (or replaced by another, or could not be opened) or the job finished, status `applied`; or at `timeout_ms`, status `timed_out` |
 | `cc` | integer `cc`, `value` (0…127) | Legacy device mapping |
 | `note` | integer `note` (0…127), `press`: `click`, `down`, `up` | Legacy device mapping |

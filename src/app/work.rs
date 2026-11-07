@@ -26,6 +26,7 @@ pub(in crate::app) enum Kind {
     FolderChange,
     FileChange,
     PreviewBuilds,
+    EditableBuilds,
     StandIns,
     Selection,
     AiDenoise,
@@ -181,6 +182,18 @@ const WORK: &[Row] = &[
         slows_previews: true,
         pauses_checksums: true,
         stop: Some(|e| vec![task::Stopping::new(e.preview_builds.close())]),
+    },
+    // Its progress in the bar, beside the preview builds'. Closing doesn't wait:
+    // the photo being built is cancelled, recording nothing, and its original is
+    // still there to build from.
+    Row {
+        kind: Kind::EditableBuilds,
+        running: Some(|e| e.editable_builds.running()),
+        closing: None,
+        status: None,
+        slows_previews: true,
+        pauses_checksums: true,
+        stop: Some(|e| vec![task::Stopping::new(e.editable_builds.close())]),
     },
     // Stand-ins replace a preview where it shows.
     Row {

@@ -453,6 +453,31 @@ impl Catalog {
         })
     }
 
+    /// Deletes editable preview `file` from the store folder when no row names
+    /// it: a build [`record_editable_preview`](Self::record_editable_preview)
+    /// refused, or one its builder gave up on after writing it. The file goes
+    /// after the transaction commits. The transaction only reads, so it holds
+    /// against records made on this connection, which in RAWmakase is the one
+    /// worker that records editable previews, but not against another
+    /// connection's: two RAWmakase instances building the same photo at once
+    /// can leave a row without its file, which callers treat as missing and
+    /// build again. Returns whether there was a file to delete. Refused for a
+    /// name that isn't an editable preview's.
+    pub fn discard_unrecorded_editable_preview(&mut self, file: &str) -> Result<bool> {
+        let path = path_in(&self.editable_preview_folder(), file)?;
+        self.db.write(|w| {
+            let named: Option<PhotoId> = w.read_optional(
+                sql!("SELECT photo FROM editable_previews WHERE file=?"),
+                &[&file],
+            )?;
+            let there = named.is_none() && path.is_file();
+            if there {
+                w.delete_after_commit(path.clone());
+            }
+            Ok(there)
+        })
+    }
+
     /// The bytes every editable preview's file took when it was recorded.
     pub fn editable_previews_size(&self) -> Result<u64> {
         row! {

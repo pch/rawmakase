@@ -158,7 +158,8 @@ impl Editor {
     }
 
     /// Whether anything runs that a report should mention: a foreground
-    /// task, a catalog opening, an export, a preview build or a folder scan.
+    /// task, a catalog opening, an export, a preview build (editable or not) or
+    /// a folder scan.
     fn background_work(&self) -> bool {
         self.activity.is_busy()
             || self.catalog_work.is_some()
@@ -167,6 +168,7 @@ impl Editor {
                 .preview_builds
                 .progress()
                 .is_some_and(|progress| progress.running())
+            || self.editable_builds.running()
             || self.folder_sync.is_scanning()
     }
 

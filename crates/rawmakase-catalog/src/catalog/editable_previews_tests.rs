@@ -532,3 +532,29 @@ fn a_build_read_through_a_link_to_the_photos_file_is_recorded() -> Result<()> {
     assert_eq!(fx.rows()?, 1);
     Ok(())
 }
+
+/// A build the catalog refused (its photo left, moved or was replaced) removes
+/// its file through the catalog, which deletes it only while no row names it.
+#[test]
+fn an_unrecorded_build_is_removed_but_never_a_file_a_row_names() -> Result<()> {
+    let mut fx = fixture()?;
+    let original = fx.original("a.dng")?;
+    let built = fx.build(fx.a, &original, b"recorded")?;
+    fx.cat
+        .record_editable_preview(fx.a, &fx.source(fx.a), &built)?;
+    assert!(!fx.cat.discard_unrecorded_editable_preview(&built.file)?);
+    assert!(fx.file(&built.file).is_file());
+    assert!(fx.cat.editable_preview(fx.a)?.is_some());
+    let stray = fx.build(fx.b, &fx.original("b.dng")?, b"refused")?;
+    assert!(fx.cat.discard_unrecorded_editable_preview(&stray.file)?);
+    assert!(!fx.file(&stray.file).exists());
+    // Nothing there, and a name that isn't an editable preview's.
+    assert!(!fx.cat.discard_unrecorded_editable_preview(&stray.file)?);
+    assert!(
+        fx.cat
+            .discard_unrecorded_editable_preview("../Photos.rawmakase")
+            .is_err()
+    );
+    assert!(fx.dir.join("Photos.rawmakase").is_file());
+    Ok(())
+}

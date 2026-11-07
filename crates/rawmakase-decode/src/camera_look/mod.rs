@@ -231,44 +231,72 @@ fn stage(
 
 /// `profiles`, the photo's listed profiles, with Camera Look (fitted) added when
 /// it is the photo's default: a photo without colour data
-/// (`fitted::Eligibility::Absent`) whose fit is accepted. From the fit cache when
-/// it holds the file's result, else fitted now and stored (a failure to store is
-/// logged, the fit still used). Any other photo's list is returned as it is, at the
-/// cost of looking at its metadata. `Recipe::with_profile_preference` takes the
-/// fitted look only when nothing else applies, so the raw defaults, Reset,
-/// previews and exports all start from it alike.
-/// A fit stopped by `cancel` is neither used nor stored.
+/// (`fitted::Eligibility::Absent`) whose fit is accepted ([`default_fit`]). Any
+/// other photo's list is returned as it is, at the cost of looking at its
+/// metadata. `Recipe::with_profile_preference` takes the fitted look only when
+/// nothing else applies, so the raw defaults, Reset, previews and exports all
+/// start from it alike.
 pub fn with_default(
     path: &Path,
     m: &Metadata,
     mut profiles: Vec<Arc<CameraProfile>>,
     cancel: Cancel<'_>,
 ) -> Vec<Arc<CameraProfile>> {
-    if fitted::eligibility(m, &profiles) != fitted::Eligibility::Absent {
-        return profiles;
-    }
-    if let Some(p) = default_profile(path, m, &cache::dir(), cancel) {
-        profiles.push(Arc::new(p));
+    if let DefaultFit::Fitted(p) = default_fit(path, m, &profiles, cancel) {
+        profiles.push(Arc::new(*p));
     }
     profiles
 }
 
-/// The default fit of an `Absent` photo, through the fit cache in `dir`.
+/// What a photo's default Camera Look (fitted) came to.
+#[derive(Debug)]
+pub enum DefaultFit {
+    /// The photo has colour data of its own (or an imported profile for it): it
+    /// has no default fit.
+    NotDefault,
+    /// The fit [`with_default`] adds to the photo's profiles.
+    Fitted(Box<CameraProfile>),
+    /// The photo would start from a fit, but there is none: why.
+    Missing(String),
+}
+
+/// The default fit of the photo at `path`, as [`with_default`] adds it: only a
+/// photo without colour data (`fitted::Eligibility::Absent`, given `profiles`,
+/// its listed profiles) has one. From the fit cache when it holds the file's
+/// result, else fitted now and stored (a failure to store is logged, the fit
+/// still used). A fit stopped by `cancel` is neither used nor stored.
+pub fn default_fit(
+    path: &Path,
+    m: &Metadata,
+    profiles: &[Arc<CameraProfile>],
+    cancel: Cancel<'_>,
+) -> DefaultFit {
+    if fitted::eligibility(m, profiles) != fitted::Eligibility::Absent {
+        return DefaultFit::NotDefault;
+    }
+    match default_profile(path, m, &cache::dir(), cancel) {
+        Ok(p) => DefaultFit::Fitted(Box::new(p)),
+        Err(why) => DefaultFit::Missing(why),
+    }
+}
+
+/// The default fit of an `Absent` photo, through the fit cache in `dir`, or why
+/// there is none.
 fn default_profile(
     path: &Path,
     m: &Metadata,
     dir: &Path,
     cancel: Cancel<'_>,
-) -> Option<CameraProfile> {
-    let key = cache::FitKey::of(path).ok()?;
+) -> Result<CameraProfile, String> {
+    let key = cache::FitKey::of(path).map_err(|e| format!("{e:#}"))?;
     if let Some(result) = cache::load(dir, &key, m) {
-        return result.ok();
+        return result;
     }
     // One fit of a file at a time where waiting is safe: another caller's is
     // waited for, and its result read from the cache (see `claim`).
-    let _turn = claim(&key, cancel)?;
+    let _turn = claim(&key, cancel).ok_or("Fitting cancelled")?;
     if let Some(result) = cache::load(dir, &key, m) {
-        return result.ok();
+        return result;
     }
     // A fit that panics must not stop the photo opening: it starts from what it
     // would have without one, and is tried again next time.
@@ -280,13 +308,16 @@ fn default_profile(
             "Camera Look (fitted): fitting {} stopped unexpectedly",
             path.display()
         );
-        return None;
+        return Err("Fitting stopped unexpectedly".into());
     };
     let result = fitted.map(|f| f.profile).map_err(|e| e.reason);
     // A file replaced or changed while it was fitted: the result may be of either
     // file, so it is neither used nor stored.
-    if cancel.is_cancelled() || cache::FitKey::of(path).ok().as_ref() != Some(&key) {
-        return None;
+    if cancel.is_cancelled() {
+        return Err("Fitting cancelled".into());
+    }
+    if cache::FitKey::of(path).ok().as_ref() != Some(&key) {
+        return Err("The file changed while it was fitted".into());
     }
     if let Err(e) = cache::store(dir, &key, &result) {
         eprintln!(
@@ -294,7 +325,7 @@ fn default_profile(
             path.display()
         );
     }
-    result.ok()
+    result
 }
 
 /// The files being fitted, by fit key, and a wake-up for each fit that ends.
@@ -642,6 +673,10 @@ mod tests {
             with_default(&named, &m, profiles.clone(), Cancel::new(&cancel)),
             profiles
         );
+        assert!(matches!(
+            default_fit(&named, &m, &profiles, Cancel::new(&cancel)),
+            DefaultFit::NotDefault
+        ));
         // The chart with its colour tags renamed: no colour data at all.
         let dir = tempfile::tempdir().unwrap();
         let mut bytes = std::fs::read(&named).unwrap();
@@ -659,18 +694,26 @@ mod tests {
         let m = crate::photo::open(&bare).unwrap().metadata;
         assert_eq!(fitted::eligibility(&m, &[]), fitted::Eligibility::Absent);
         let cache = dir.path().join("cache");
-        assert!(default_profile(&bare, &m, &cache, Cancel::new(&cancel)).is_none());
+        assert!(default_profile(&bare, &m, &cache, Cancel::new(&cancel)).is_err());
         let key = cache::FitKey::of(&bare).unwrap();
         assert!(
             matches!(cache::load(&cache, &key, &m), Some(Err(_))),
             "the refusal is kept"
+        );
+        // Asked again, the kept refusal is the reason given.
+        assert_eq!(
+            default_profile(&bare, &m, &cache, Cancel::new(&cancel)),
+            cache::load(&cache, &key, &m).unwrap()
         );
         // Cancelled: nothing used, nothing stored (another file: the cache is keyed
         // by content, so a copy would share the first one's entry).
         let other = dir.path().join("other.dng");
         bytes.push(0);
         std::fs::write(&other, &bytes).unwrap();
-        assert!(default_profile(&other, &m, &cache, Cancel::new(&AtomicBool::new(true))).is_none());
+        assert_eq!(
+            default_profile(&other, &m, &cache, Cancel::new(&AtomicBool::new(true))),
+            Err("Fitting cancelled".into())
+        );
         assert!(cache::load(&cache, &cache::FitKey::of(&other).unwrap(), &m).is_none());
     }
 

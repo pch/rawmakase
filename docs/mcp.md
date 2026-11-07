@@ -122,6 +122,8 @@ there is no separate MCP authentication flow. MCP opens no network listener.
 | `export_photo` | Starts a JPEG, TIFF or PNG export to a new absolute output path, in sRGB unless `color_space` is `adobe-rgb` or `prophoto` (TIFF only; another path is refused) |
 | `get_job` | Reports export progress, completion or failure |
 | `build_previews` | Queues Standard-Sized (or, with `kind: one_to_one`, 1:1) previews of the selected photos; `get_state`'s `building_previews` shows progress |
+| `build_editable_previews` | Queues editable previews of the selected photos (a virtual copy's is its master's); returns `queued` and `skipped`; `get_state`'s `building_editable_previews` shows progress |
+| `discard_editable_previews` | Discards the selected photos' editable previews and stops their builds, keeping those of photos whose originals are offline unless `include_offline` is true; returns `discarded`, `stopped` and `kept_offline` |
 
 `set_parameter` uses displayed units: Exposure in EV, Temperature in kelvin,
 Tint in tint units, Straighten in degrees, other basic controls in percent.

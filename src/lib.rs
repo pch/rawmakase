@@ -34,7 +34,7 @@ pub use rawmakase_export::{export, watermark};
 pub use rawmakase_decode::ai::cache as ai_cache;
 pub use rawmakase_decode::dev::{decode_dump, fingerprint, half_check};
 pub use rawmakase_decode::{camera_look, color_management, decode_cache, photo, raw};
-pub(crate) use rawmakase_decode::{decode, raster};
+pub(crate) use rawmakase_decode::{decode, editable_preview, raster};
 // File formats and presets over the model, and which edit a photo develops with
 // (crates/rawmakase-interop).
 pub use rawmakase_interop::{

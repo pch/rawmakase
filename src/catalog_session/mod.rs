@@ -182,6 +182,21 @@ impl CatalogSession {
     ) -> Result<()> {
         self.catalog.save_sequences(read)
     }
+    /// Discards the editable previews of `photos` (their masters', for virtual
+    /// copies; [`Catalog::discard_editable_previews`]), returning the masters
+    /// whose went. Changes no list.
+    pub(crate) fn discard_editable_previews(&mut self, photos: &[PhotoId]) -> Result<Vec<PhotoId>> {
+        self.catalog.discard_editable_previews(photos)
+    }
+    /// Discards every editable preview of the catalog. Changes no list.
+    pub(crate) fn discard_all_editable_previews(&mut self) -> Result<Vec<PhotoId>> {
+        let photos: Vec<PhotoId> = self
+            .catalog
+            .photos_with_editable_previews()?
+            .into_iter()
+            .collect();
+        self.catalog.discard_editable_previews(&photos)
+    }
     /// Renames this computer for the folder locations
     /// ([`Catalog::rename_computer`]). Changes no list.
     pub(crate) fn rename_computer(&mut self, name: &str) -> Result<()> {

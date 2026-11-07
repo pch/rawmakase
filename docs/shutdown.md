@@ -63,6 +63,7 @@ that drops it.
 | Autosave | `app/develop/autosave.rs` | The job channel; one SQLite commit | Its job sender dropped | Yes, after the save at exit and dropping the job sender, which lets a save in flight finish |
 | Export queue | `export/queue.rs` | A batch: decodes, renders and file writes | `closed`, between batches; the running batch's cancel, between photos and stages | Yes, after cancelling the running batch |
 | Preview builds | `app/library/preview_build.rs` | A queue of photos: decodes, renders and one SQLite write each | `closed`, between photos; the running build's cancel, inside the decode and render | Yes, after cancelling |
+| Editable preview builds | `app/library/preview_build/editable.rs` | A queue of photos, each with its own catalog connection: a full decode, a default Camera Look fit for a photo without colour data, an editable preview build, a file write (about 16 MB, synced) and a few SQLite reads and writes | `closed`, between photos; the running build's cancel, inside the decode, the fit and the build, and before writing. A file already written is recorded, or removed if its record is refused | Yes, after cancelling |
 | Command output jobs | `app/shell/commands/output.rs` | One export or preview job | Each job's cancel, between stages | Yes, after cancelling; the close guard waits for them |
 | MIDI listener | `app/shell/automation/midi.rs` | A 2 s wait on its stop channel between port scans | The device dropped, which closes the channel | Yes; it stops at once |
 | Control socket listener | `app/shell/automation/socket.rs` | A blocking `accept`; then its connections, which it joins | The stop flag, seen after a wake-up connection | Yes, under the deadline: if the wake-up connection fails, `accept` never returns |
@@ -86,8 +87,8 @@ that drops it.
 | Installation probe | `diagnostics.rs` | `updates::installation()`, which can run the package manager | None; the system probe stops waiting for it after 10 s and reports it unavailable | No |
 | GVFS bridge reaper (Linux) | `platform/network.rs` | The bridge process, which outlives the app | None | Never |
 
-The Develop loader, Reference View, Library previews, preview builds, exports and
-Sync also fit the default Camera Look of a photo without colour data, once per file
+The Develop loader, Reference View, Library previews, preview builds (editable ones
+too), exports and Sync also fit the default Camera Look of a photo without colour data, once per file
 and build (seconds; a fit cache hit otherwise, and nothing for every other photo).
 The fit takes the job's cancel flag inside its renders and between its stages, so it
 stops as a decode does; a fit stopped that way is neither used nor cached. A job

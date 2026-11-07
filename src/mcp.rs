@@ -117,6 +117,13 @@ struct BuildPreviews {
 }
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct DiscardEditablePreviews {
+    /// true to discard those of photos whose originals are offline too, which
+    /// can't be built again until the originals are back; kept by default.
+    include_offline: Option<bool>,
+}
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct Job {
     job_id: u64,
 }
@@ -433,6 +440,23 @@ impl Server {
         self.send(Request::BuildPreviews { kind }, None).await
     }
     #[tool(
+        description = "Build editable previews of the selected photos (the Library selection, or in Develop the Filmstrip's) in the background: a smaller copy of each RAW (2560 pixels, about 16 MB), kept beside the catalog, for editing the photo while its original is offline in a later release. A virtual copy's is its master's. Returns how many were queued and skipped (offline or not RAW); a photo whose editable preview is of its original as it is costs nothing. Queueing is not completion: get_state's building_editable_previews shows progress."
+    )]
+    async fn build_editable_previews(&self) -> CallToolResult {
+        self.send(Request::BuildEditablePreviews, None).await
+    }
+    #[tool(
+        description = "Discard the editable previews of the selected photos (their masters', for virtual copies), stopping their builds. They can't be built again while an original is offline, so those of photos whose originals are offline are kept unless include_offline is true. Returns how many photos' editable previews were discarded (discarded), how many builds were stopped (stopped) and how many photos' were kept as their originals are offline (kept_offline)."
+    )]
+    async fn discard_editable_previews(
+        &self,
+        Parameters(p): Parameters<DiscardEditablePreviews>,
+    ) -> CallToolResult {
+        let include_offline = p.include_offline.unwrap_or(false);
+        self.send(Request::DiscardEditablePreviews { include_offline }, None)
+            .await
+    }
+    #[tool(
         description = "Save the current Develop edit to its catalog. Success confirms persistence; protected edits return an error."
     )]
     async fn save_photo(&self, Parameters(p): Parameters<Guarded>) -> CallToolResult {
@@ -609,6 +633,37 @@ mod tests {
         let schema = Value::Object((*tool.input_schema).clone()).to_string();
         assert!(
             schema.contains("adobe-rgb") && schema.contains("prophoto"),
+            "{schema}"
+        );
+    }
+
+    /// discard_editable_previews keeps offline photos' unless include_offline.
+    #[test]
+    fn discard_editable_previews_takes_an_optional_include_offline() {
+        let read = |value: Value| serde_json::from_value::<DiscardEditablePreviews>(value);
+        assert_eq!(read(json!({})).unwrap().include_offline, None);
+        assert_eq!(
+            read(json!({"include_offline": true}))
+                .unwrap()
+                .include_offline,
+            Some(true)
+        );
+        assert!(read(json!({"include_offline": "yes"})).is_err());
+        assert!(read(json!({"offline": true})).is_err());
+        let tools = Server::tool_router().list_all();
+        let tool = tools
+            .iter()
+            .find(|t| t.name == "discard_editable_previews")
+            .unwrap();
+        let schema = Value::Object((*tool.input_schema).clone());
+        assert!(
+            schema["properties"].get("include_offline").is_some(),
+            "{schema}"
+        );
+        assert!(
+            schema
+                .get("required")
+                .is_none_or(|r| !r.to_string().contains("include_offline")),
             "{schema}"
         );
     }

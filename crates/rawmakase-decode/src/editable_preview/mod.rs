@@ -19,10 +19,11 @@
 //!
 //! A section is a 4-byte ASCII tag, a `u64` payload length, the payload and the
 //! payload's 64-bit FNV-1a hash ([`crate::storage::fnv1a`]). Version 1 writes
-//! `HEAD`, `FACT`, `EXIF` and `PIXL`, in that order, each once; a reader refuses a
-//! file without them and skips a section it doesn't know (after checking its
-//! hash), so a later release can add one without a new version. Nothing follows
-//! the last section.
+//! `HEAD`, `FACT`, `EXIF`, `LOOK` when there is one, and `PIXL`, in that order,
+//! each once; a reader refuses a file without `HEAD`, `FACT`, `EXIF` and `PIXL`,
+//! and skips a section it doesn't know (after checking its hash), so a later
+//! release can add one without a new version, as `LOOK` was. Nothing follows the
+//! last section.
 //!
 //! - `HEAD`, a record (`fields`: `u16` id, `u32` length, value): the codec (1), the
 //!   pixel curve (2), the preview's width and height (3), the original's width and
@@ -34,6 +35,13 @@
 //! - `EXIF`, a record: the camera's EXIF ([`photo::camera_exif`](crate::photo::camera_exif)),
 //!   kept so that exporting from an editable preview can be added later; empty when the
 //!   original has none.
+//! - `LOOK`, optional, a record: the photo's default Camera Look (fitted), for a
+//!   photo without colour data of its own, whose default look is fitted to the
+//!   original's embedded JPEG and so can't be fitted while the original is
+//!   offline. Field 1 is the fitted profile as an XMP sidecar carries it
+//!   (`rawmakase:FittedProfile`, [`fitted::carried`]: versioned, about 100 KB),
+//!   checked when read as a sidecar's is ([`fitted::from_carried`]). Files
+//!   written before it have none; releases before it skip it.
 //! - `PIXL`: the pixels in the codec's encoding: camera-space values, highlights
 //!   recovered, on curve 1 (`curve`), which keeps 12 stops above white, as a
 //!   lossless JPEG XL codestream of three 16-bit channels (`codec`).
@@ -48,7 +56,8 @@
 //!   (`curve::dithered`) and nothing a reader needs.
 //!
 //! A file of a later version, or naming a codec, curve or fact code a later
-//! release introduced, is refused with an error that says so. Structs are never
+//! release introduced, or holding a Camera Look this release can't read, is
+//! refused with an error that says so. Structs are never
 //! serialised whole: they change between releases, and the file must not.
 mod codec;
 mod curve;
@@ -67,6 +76,7 @@ use fields::{Record, Writer};
 use rawmakase_cancel::Cancel;
 use rawmakase_interop::exif::CameraExif;
 use rawmakase_model::camera_data::{CameraImage, Metadata};
+use rawmakase_model::camera_profiles::{CameraProfile, fitted};
 use rayon::prelude::*;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -82,6 +92,7 @@ const HEAD: [u8; 4] = *b"HEAD";
 const FACT: [u8; 4] = *b"FACT";
 const EXIF: [u8; 4] = *b"EXIF";
 const PIXL: [u8; 4] = *b"PIXL";
+const LOOK: [u8; 4] = *b"LOOK";
 
 // HEAD record ids.
 const CODEC: u16 = 1;
@@ -89,6 +100,8 @@ const CURVE: u16 = 2;
 const PREVIEW_SIZE: u16 = 3;
 const ORIGINAL_SIZE: u16 = 4;
 const IDENTITY: [u16; 3] = [5, 6, 7];
+// LOOK record ids.
+const LOOK_PROFILE: u16 = 1;
 
 /// The log curve with headroom of `curve`.
 const CURVE_LOG: u8 = 1;
@@ -176,6 +189,8 @@ pub struct EditablePreview {
     identity: Identity,
     original: [u32; 2],
     exif: Option<CameraExif>,
+    /// The photo's default Camera Look (fitted), when it has one.
+    camera_look: Option<CameraProfile>,
     /// Reduced (`fast`), on the curve's codes, with its recovered image set to
     /// itself; its metadata is the original's.
     image: CameraImage,
@@ -199,6 +214,21 @@ impl EditablePreview {
     /// The camera's EXIF of the original, if it had one.
     pub fn exif(&self) -> Option<&CameraExif> {
         self.exif.as_ref()
+    }
+    /// The photo's default Camera Look (fitted), stored when it was built from an
+    /// original without colour data of its own. Its fit needs the original's
+    /// embedded JPEG, so offline it can come only from here.
+    pub fn camera_look(&self) -> Option<&CameraProfile> {
+        self.camera_look.as_ref()
+    }
+    /// Keeps `profile` as the photo's default Camera Look (fitted), to be written
+    /// with it. Refused, keeping none, unless it reads back as [`read`] reads it:
+    /// a fitted look for the photo's camera, whole.
+    pub fn set_camera_look(&mut self, profile: &CameraProfile) -> Result<()> {
+        self.camera_look = None;
+        let back = fitted::from_carried(&fitted::carried(profile), &self.image.metadata)?;
+        self.camera_look = Some(back);
+        Ok(())
     }
     pub fn header(&self) -> Header {
         Header {
@@ -282,6 +312,7 @@ pub fn build(
         identity: identity.clone(),
         original: [original.width, original.height],
         exif,
+        camera_look: None,
         image: image_of(
             reduced.width,
             reduced.height,
@@ -378,6 +409,11 @@ pub fn write(path: &Path, preview: &EditablePreview) -> Result<()> {
         },
     );
     let exif = facts::write_exif(preview.exif.as_ref());
+    let look = preview.camera_look.as_ref().map(|p| {
+        let mut look = Writer::default();
+        look.str(LOOK_PROFILE, &fitted::carried(p));
+        look
+    });
 
     let dir = crate::storage::parent_dir(path);
     let mut builder = tempfile::Builder::new();
@@ -391,12 +427,14 @@ pub fn write(path: &Path, preview: &EditablePreview) -> Result<()> {
         let mut out = std::io::BufWriter::new(file.as_file_mut());
         out.write_all(MAGIC)?;
         out.write_all(&VERSION.to_le_bytes())?;
-        for (tag, payload) in [
-            (HEAD, head.into_bytes()),
-            (FACT, fact.into_bytes()),
-            (EXIF, exif.into_bytes()),
-            (PIXL, pixels),
-        ] {
+        let sections = [
+            Some((HEAD, head.into_bytes())),
+            Some((FACT, fact.into_bytes())),
+            Some((EXIF, exif.into_bytes())),
+            look.map(|look| (LOOK, look.into_bytes())),
+            Some((PIXL, pixels)),
+        ];
+        for (tag, payload) in sections.into_iter().flatten() {
             out.write_all(&tag)?;
             out.write_all(&(payload.len() as u64).to_le_bytes())?;
             out.write_all(&payload)?;
@@ -556,6 +594,7 @@ pub fn read(path: &Path, cancel: Cancel<'_>) -> Result<EditablePreview> {
     let mut fact = None;
     let mut exif = None;
     let mut pixl = None;
+    let mut look = None;
     while !rest.is_empty() {
         let (tag, len) = read_section_start(&mut rest)?;
         let len = usize::try_from(len)
@@ -579,6 +618,7 @@ pub fn read(path: &Path, cancel: Cancel<'_>) -> Result<EditablePreview> {
             FACT => &mut fact,
             EXIF => &mut exif,
             PIXL => &mut pixl,
+            LOOK => &mut look,
             _ => continue,
         };
         ensure!(
@@ -593,6 +633,7 @@ pub fn read(path: &Path, cancel: Cancel<'_>) -> Result<EditablePreview> {
     let head = read_head(head)?;
     let (metadata, scale) = facts::read_metadata(&Record::parse(fact)?, head.original)?;
     let exif = facts::read_exif(&Record::parse(exif)?)?;
+    let camera_look = look.map(|look| read_look(look, &metadata)).transpose()?;
     ensure!(!cancel.is_cancelled(), "Editable preview cancelled");
     let [width, height] = head.preview;
     let codes = match head.codec {
@@ -613,6 +654,38 @@ pub fn read(path: &Path, cancel: Cancel<'_>) -> Result<EditablePreview> {
         identity: head.identity,
         original: head.original,
         exif,
+        camera_look,
         image: image_of(width, height, &codes, metadata, scale),
     })
+}
+
+/// The Camera Look a `LOOK` payload holds, for the photo `m` describes.
+fn read_look(payload: &[u8], m: &Metadata) -> Result<CameraProfile> {
+    let r = Record::parse(payload)?;
+    let text = r
+        .str(LOOK_PROFILE)?
+        .context("An editable preview's Camera Look section holds no profile")?;
+    fitted::from_carried(&text, m).map_err(|e| {
+        if look_from_a_later_release(&text, &e) {
+            e.context("This editable preview's Camera Look (fitted) was written by a later release of RAWmakase: update RAWmakase to open it")
+        } else {
+            e.context("This editable preview's Camera Look (fitted) can't be read")
+        }
+    })
+}
+
+/// Whether [`fitted::from_carried`] refused `text` as a later release would
+/// write it: a carried version above 1, or a profile field this release doesn't
+/// know (profiles refuse unknown fields).
+fn look_from_a_later_release(text: &str, refused: &anyhow::Error) -> bool {
+    let later_version = text
+        .strip_prefix('v')
+        .and_then(|rest| rest.split_once(':'))
+        .and_then(|(version, _)| version.parse::<u32>().ok())
+        .is_some_and(|version| version > 1);
+    later_version
+        || refused
+            .chain()
+            .filter_map(|e| e.downcast_ref::<serde_json::Error>())
+            .any(|e| e.to_string().starts_with("unknown field"))
 }

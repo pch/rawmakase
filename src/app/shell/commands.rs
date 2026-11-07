@@ -148,6 +148,14 @@ pub(in crate::app) enum Operation {
     Job(u64),
     /// Builds previews of the selection, as the thumbnail menu does.
     BuildPreviews(crate::catalog::preview_cache::PreviewKind),
+    /// Builds editable previews of the selection, as the thumbnail menu does.
+    BuildEditablePreviews,
+    /// Discards the selection's editable previews, as the thumbnail menu does,
+    /// keeping those of photos whose originals are offline unless
+    /// `include_offline`, as the menu asks before it discards them.
+    DiscardEditablePreviews {
+        include_offline: bool,
+    },
     /// Answers once `Until` holds, or after the time given, so a client waiting
     /// for a photo or an output is woken rather than polling.
     Wait(Until, std::time::Duration),
@@ -431,6 +439,14 @@ impl Editor {
                     done: p.done,
                     total: p.total,
                 }),
+            building_editable_previews: self
+                .editable_builds
+                .progress()
+                .filter(|p| p.running())
+                .map(|p| crate::app::shell::commands::reply::BuildProgress {
+                    done: p.done,
+                    total: p.total,
+                }),
             auto_running: self.document.auto.is_running(),
             treatment_pending: self.document.pending_treatment.is_some(),
             panels: self.shown_panels(),
@@ -555,6 +571,8 @@ impl Editor {
                         "job",
                         "wait",
                         "build_previews",
+                        "build_editable_previews",
+                        "discard_editable_previews",
                     ],
                     tone_curve: CurveCapabilities {
                         channels: ["rgb", "red", "green", "blue"],
@@ -616,6 +634,42 @@ impl Editor {
                     .map_err(|e| Error::new("not_queued", e))?;
                 self.messages
                     .note(crate::app::library::preview_build::queued_message(queued));
+                return Ok(Outcome::Previews {
+                    queued: queued.queued,
+                    skipped: queued.skipped,
+                });
+            }
+            Operation::BuildEditablePreviews | Operation::DiscardEditablePreviews { .. } => {
+                if self.activity.is_busy() || self.command_modal() {
+                    return Err(Error::new(
+                        "busy",
+                        "Close the dialog or wait for the current operation",
+                    ));
+                }
+                let ids = self.preview_command_scope();
+                if ids.is_empty() {
+                    return Err(Error::new(
+                        "no_selection",
+                        "Select photos for their editable previews",
+                    ));
+                }
+                use crate::app::library::preview_build::editable;
+                if let Operation::DiscardEditablePreviews { include_offline } = operation {
+                    let (done, kept_offline) = self
+                        .discard_editable_previews_online(&ids, include_offline)
+                        .map_err(|e| Error::new("not_discarded", e))?;
+                    self.messages
+                        .note(editable::discarded_online_message(done, kept_offline));
+                    return Ok(Outcome::EditablePreviewsDiscarded {
+                        discarded: done.discarded,
+                        stopped: done.stopped,
+                        kept_offline,
+                    });
+                }
+                let queued = self
+                    .build_editable_previews(&ids)
+                    .map_err(|e| Error::new("not_queued", e))?;
+                self.messages.note(editable::queued_message(queued));
                 return Ok(Outcome::Previews {
                     queued: queued.queued,
                     skipped: queued.skipped,
@@ -837,6 +891,8 @@ impl Editor {
             | Operation::Presets { .. }
             | Operation::Job(_)
             | Operation::BuildPreviews(_)
+            | Operation::BuildEditablePreviews
+            | Operation::DiscardEditablePreviews { .. }
             | Operation::Wait(..) => unreachable!(),
         }
         Ok(Outcome::Empty)
