@@ -9,7 +9,7 @@ mod parse;
 pub mod preset_write;
 pub mod write;
 use crate::color::curve::ToneCurve;
-pub use parse::parse;
+pub use parse::{applied_preset, parse};
 /// RAWmakase's own settings (`xml::ns::RAWMAKASE`) are read and written under this
 /// prefix among the Camera Raw settings.
 pub(crate) const RAWMAKASE_PREFIX: &str = "rawmakase:";

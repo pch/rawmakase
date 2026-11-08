@@ -2571,3 +2571,26 @@ fn lightroom_catalog_settings_keep_the_last_applied_preset() -> Result<()> {
     );
     Ok(())
 }
+
+/// Lightroom's library keeps each photo's edit as Camera Raw XMP, which the catalog
+/// stores as the photo's Lightroom settings: its last preset is read from
+/// `crs:Preset` without converting the edit, whether or not the packet says it is a
+/// sidecar.
+#[test]
+fn a_lightroom_xmp_edit_names_its_preset_without_converting() {
+    let preset = "<c:Preset><r:Description c:Name=\"Kodak Ektachrome 64 Warm\" c:Amount=\"1\" c:UUID=\"0A1B\"><c:Parameters><r:Description c:Exposure2012=\"2\"/></c:Parameters></r:Description></c:Preset>";
+    let text = xml(r#"c:Exposure2012="0.5""#, preset);
+    assert_eq!(
+        crate::lr_develop::applied_preset(&text),
+        Some(crate::model::recipe::AppliedPreset {
+            name: "Kodak Ektachrome 64 Warm".into(),
+            amount: Some(1.),
+            uuid: "0A1B".into(),
+        })
+    );
+    assert_eq!(
+        crate::lr_develop::applied_preset(&xml(r#"c:Exposure2012="0.5""#, "")),
+        None
+    );
+    assert_eq!(crate::lr_develop::applied_preset("<not xml"), None);
+}

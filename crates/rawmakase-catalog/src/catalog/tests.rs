@@ -1015,12 +1015,19 @@ fn applied_presets_come_from_the_edit_each_photo_develops_with() -> Result<()> {
     let lightroom = r#"s = { Preset = { Amount = 1, Name = "L&P Hochzeit", Parameters = { Exposure2012 = 2 } }, Exposure2012 = 0.5 }"#;
     c.db_for_tests()
         .execute_batch("PRAGMA foreign_keys = OFF;")?;
+    // An edit from Lightroom's library: Camera Raw XMP.
+    let xmp = format!(
+        r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="{}"><rdf:Description xmlns:crs="{}" crs:Exposure2012="0.5"><crs:Preset><rdf:Description crs:Name="Cloud Preset" crs:Amount="1"/></crs:Preset></rdf:Description></rdf:RDF></x:xmpmeta>"#,
+        crate::xml::ns::RDF,
+        crate::xml::ns::CRS
+    );
     for (id, recipe, develop) in [
         (1, Some(with.as_str()), Some(lightroom)),
         (2, None, Some(lightroom)),
         (3, Some(without.as_str()), Some(lightroom)),
         (4, None, Some("s = { Exposure2012 = 0.5 }")),
         (5, None, None),
+        (6, None, Some(xmp.as_str())),
     ] {
         c.db_for_tests().execute(
             "INSERT INTO photos(id, folder, filename, original_path, recipe, lightroom_develop)
@@ -1037,7 +1044,8 @@ fn applied_presets_come_from_the_edit_each_photo_develops_with() -> Result<()> {
         names,
         [
             (1, "Kodak Ektachrome 64 Warm".to_string()),
-            (2, "L&P Hochzeit".to_string())
+            (2, "L&P Hochzeit".to_string()),
+            (6, "Cloud Preset".to_string())
         ]
         .into()
     );

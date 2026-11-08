@@ -77,10 +77,18 @@ pub fn develop_fields(text: &str) -> Result<std::collections::BTreeMap<String, S
     insert(&body[start..])?;
     Ok(fields)
 }
-/// The last preset Lightroom applied to the photo whose Develop settings are
-/// `text`, read without converting them (the Library's Preset filter reads every
-/// photo's). `None` when there is none or the settings can't be read.
+/// The last preset Lightroom applied to the photo whose settings are `text`,
+/// read without converting them (the Library's Preset filter reads every
+/// photo's): Lightroom Classic's Lua or a Camera Raw XMP edit, as Lightroom's
+/// library keeps one. `None` when there is none or the settings can't be read.
 pub fn applied_preset(text: &str) -> Option<crate::model::recipe::AppliedPreset> {
+    if text
+        .trim_start_matches('\u{feff}')
+        .trim_start()
+        .starts_with('<')
+    {
+        return crate::xmp::applied_preset(text);
+    }
     preset_record(develop_fields(text).ok()?.get("Preset")?)
 }
 /// A `Preset` table's name, Amount and UUID; `None` without a name.

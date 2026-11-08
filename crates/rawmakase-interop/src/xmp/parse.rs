@@ -29,6 +29,36 @@ fn child_text(node: roxmltree::Node<'_, '_>, name: &str) -> Option<String> {
             .to_string(),
     )
 }
+/// The last preset applied to the photo whose edit `text` holds (`crs:Preset`),
+/// read without the rest of its settings; `None` without one, or when `text`
+/// isn't XMP that can be read.
+pub fn applied_preset(text: &str) -> Option<crate::model::recipe::AppliedPreset> {
+    let doc = roxmltree::Document::parse(text).ok()?;
+    // The first in the packet is the edit's own: a preset's Parameters hold none.
+    preset_record(
+        doc.descendants()
+            .find(|n| n.has_tag_name((CRS, "Preset")))?,
+    )
+}
+/// A `crs:Preset` element's name, Amount and UUID; `None` without a name.
+fn preset_record(node: roxmltree::Node<'_, '_>) -> Option<crate::model::recipe::AppliedPreset> {
+    let d = node
+        .children()
+        .find(|n| n.has_tag_name((RDF, "Description")))
+        .unwrap_or(node);
+    let field = |key: &str| {
+        d.attribute((CRS, key))
+            .map(str::to_string)
+            .or_else(|| child_text(d, key))
+    };
+    Some(crate::model::recipe::AppliedPreset {
+        name: field("Name").filter(|name| !name.is_empty())?,
+        amount: field("Amount")
+            .and_then(|a| a.trim().parse::<f32>().ok())
+            .filter(|a| a.is_finite()),
+        uuid: field("UUID").unwrap_or_default(),
+    })
+}
 pub fn parse(path: &Path, text: &str) -> Result<Preset> {
     ensure!(text.len() < 8_000_000, "XMP file too large");
     // A specific malformed export in this collection repeats the Group close tag.
@@ -180,24 +210,7 @@ pub fn parse(path: &Path, text: &str) -> Result<Preset> {
             // In a photo sidecar, the nested record of the last preset applied is
             // provenance: kept as such, while the resolved top-level settings
             // (including curves) alone render. Its Parameters are never read.
-            let d = node
-                .children()
-                .find(|n| n.has_tag_name((RDF, "Description")))
-                .unwrap_or(node);
-            let field = |key: &str| {
-                d.attribute((CRS, key))
-                    .map(str::to_string)
-                    .or_else(|| child_text(d, key))
-            };
-            applied = field("Name").filter(|name| !name.is_empty()).map(|name| {
-                crate::model::recipe::AppliedPreset {
-                    name,
-                    amount: field("Amount")
-                        .and_then(|a| a.trim().parse::<f32>().ok())
-                        .filter(|a| a.is_finite()),
-                    uuid: field("UUID").unwrap_or_default(),
-                }
-            });
+            applied = preset_record(node);
         } else if matches!(name, "PointColors" | "ColorVariance") {
             // Lightroom writes an empty selection as 19 values of -1 (and a variance
             // of -50); `apply` reads both as no swatches.
