@@ -250,10 +250,13 @@ decodes with 32-bit buffers, since Lightroom's tiles say 16-bit ones
 suffice and then hold larger coefficients (an HDR merge's sun), and a lossy
 tile, coded in XYB, is taken from jxl-oxide as linear sRGB and converted to
 the codestream's declared RGB (BT.2100 in Lightroom's) by matrix here,
-since jxl-oxide's own conversion gamut-maps values above one into 0–1.
-Integer samples are the codestream's 0–1 times 2^bits − 1. A tile larger
-than the DNG's tile, or a lossy one declared other than linear RGB with a D65
-white, is refused; a lossless one is taken as stored.
+since jxl-oxide's own conversion gamut-maps values above one into 0–1, and
+clips or gamut-maps colours outside sRGB. A tile declared on sRGB's curve
+(a panorama's, whose samples are integers) is then put back on that curve,
+so its samples are those it was made from. Integer samples are the
+codestream's 0–1 times 2^bits − 1. A tile larger than the DNG's tile, or a
+lossy one declared other than RGB with a D65 white, linear or on sRGB's
+curve, is refused; a lossless one is taken as stored.
 
 Linear raw in separate planes or of floating-point samples under Adobe's
 predictor (measured on HDRMerge's mosaics only), DNGs of interleaved rows or
