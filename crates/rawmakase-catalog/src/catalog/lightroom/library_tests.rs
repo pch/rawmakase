@@ -943,3 +943,119 @@ fn docs(db: &Path) -> Result<std::collections::HashMap<String, Doc>> {
     }
     Ok(out)
 }
+
+#[test]
+fn photos_in_no_album_are_downloaded_through_an_album_made_as_lightroom_makes_one() -> Result<()> {
+    use crate::catalog::lightroom::{NEW_ALBUM, mark_albums_for_download};
+    let l = library()?;
+    let destination = l.root.join("Lightroom.rawmakase");
+    import_lightroom_library(&l.library, &[], &destination, &Default::default())?;
+    let mut catalog = Catalog::open(&destination)?;
+    let albums = catalog.lightroom_library_albums()?;
+    let loose = albums.iter().find(|a| a.loose).expect("photos in no album");
+    // Every photo but the album's two, of which `cloud` is in the cloud.
+    let in_cloud = catalog.lightroom_cloud_photos()?.len();
+    assert_eq!(loose.in_cloud, in_cloud - 1, "{loose:?}");
+    assert!(loose.photos > loose.in_cloud, "local ones counted too");
+
+    let db = catalog_of(&l);
+    let before = docs(&db)?;
+    let marked = mark_albums_for_download(std::slice::from_ref(loose), &l.root.join("backups"))?;
+    let (album, photos) = marked.new_album.expect("an album made");
+    assert_eq!(photos, loose.in_cloud);
+    let after = docs(&db)?;
+    let made: Vec<&String> = after
+        .keys()
+        .filter(|id| !before.contains_key(*id))
+        .collect();
+    assert_eq!(
+        made.len(),
+        1 + photos,
+        "the album and one document per photo"
+    );
+
+    // As Lightroom makes them on this computer: one current revision, no
+    // parent, no label until Lightroom has uploaded it, content as TEXT.
+    let raw =
+        rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    for id in &made {
+        let doc = &after[*id];
+        assert_eq!(doc.revisions.len(), 1, "{id}");
+        let (sequence, rev, parent, current, content) = &doc.revisions[0];
+        assert_eq!((*sequence, *parent, *current), (doc.winning, None, true));
+        assert_eq!(rev.len(), 32, "a 128-bit id in hex");
+        assert!(content.is_some() && doc.labels.is_empty(), "{id}");
+        let (kind, storage, newest): (String, String, i64) = raw.query_row(
+            "SELECT type, typeof(annotation), mostRecentRevSequence FROM docs WHERE fullDocId=?",
+            [id.as_str()],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+        assert_eq!((storage.as_str(), newest), ("text", doc.winning));
+        match kind.as_str() {
+            "album" => {
+                assert_eq!(id.as_str(), album);
+                assert!(crate::lr_library::marked_for_download(
+                    doc.annotation.as_deref().unwrap()
+                ));
+                let Ok(Some(crate::lr_library::Document::Album(a))) = crate::lr_library::document(
+                    "album",
+                    "collection",
+                    id,
+                    content.as_deref().unwrap(),
+                ) else {
+                    panic!("an album")
+                };
+                assert_eq!((a.name.as_str(), a.parent), (NEW_ALBUM, None));
+            }
+            "album_asset" => {
+                assert_eq!(doc.annotation.as_deref(), Some(&[0x90][..]));
+                let Ok(Some(crate::lr_library::Document::AlbumAsset(m))) =
+                    crate::lr_library::document("album_asset", "", id, content.as_deref().unwrap())
+                else {
+                    panic!("a photo of the album")
+                };
+                assert_eq!(m.album, album);
+                // The photo is marked to download, as an album's are.
+                assert!(crate::lr_library::marked_for_download(
+                    after[&m.asset].annotation.as_deref().unwrap()
+                ));
+            }
+            other => panic!("{other}"),
+        }
+    }
+    // Closed first: on Windows a connection of this process's own counts as
+    // the library being open, as Lightroom's does.
+    raw.close().map_err(|(_, e)| e)?;
+    // Listed again: an album like any other, marked; nothing in the cloud
+    // left in no album.
+    let albums = catalog.lightroom_library_albums()?;
+    let new = albums.iter().find(|a| a.id == album).unwrap();
+    assert_eq!((new.marked, new.in_cloud, new.loose), (true, photos, false));
+    assert!(albums.iter().filter(|a| a.loose).all(|a| a.in_cloud == 0));
+
+    // Downloading photos in no album again adds them to that album rather
+    // than making another of its name; one Lightroom hasn't settled is put in
+    // it but counted apart.
+    let lr = rusqlite::Connection::open(&db)?;
+    lr.execute("UPDATE docs SET hasConflicts=1 WHERE fullDocId='local'", [])?;
+    drop(lr);
+    let mut again = loose.clone();
+    again.in_cloud_assets = vec![("local".into(), 19)];
+    let marked = mark_albums_for_download(&[again], &l.root.join("backups"))?;
+    assert_eq!(
+        (marked.new_album, marked.unsettled),
+        (Some((album.clone(), 0)), 1)
+    );
+    let later = docs(&db)?;
+    let added: Vec<&String> = later.keys().filter(|id| !after.contains_key(*id)).collect();
+    assert_eq!(added.len(), 1, "one photo document, no second album");
+    let raw =
+        rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let named: i64 = raw.query_row(
+        "SELECT count(*) FROM docs WHERE type='album' AND deleted=0",
+        [],
+        |r| r.get(0),
+    )?;
+    assert_eq!(named, 3, "the two of the library and the one made");
+    Ok(())
+}

@@ -403,3 +403,68 @@ fn a_damaged_annotation_is_refused_not_rewritten() {
     let odd = short(&map(vec![("_localOnly", s("x"))]));
     assert!(mark_for_download(Some(&odd)).is_err());
 }
+
+#[test]
+fn a_new_album_is_written_byte_for_byte_as_lightroom_writes_one() {
+    // The bytes of an album and one of its photos Lightroom made on this
+    // computer, before they synced, with made-up ids.
+    let now = "2026-11-08T10:22:05.786Z";
+    let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02X}")).collect::<String>();
+    let s = |t: &str| hex(t.as_bytes());
+    assert_eq!(
+        hex(&new_album("RAWmakase Test", now)),
+        format!(
+            "85AB{}B8{}A4{}A5{}A4{}AE{}A7{}AA{}AB{}B8{}",
+            s("userUpdated"),
+            s(now),
+            s("type"),
+            s("album"),
+            s("name"),
+            s("RAWmakase Test"),
+            s("subtype"),
+            s("collection"),
+            s("userCreated"),
+            s(now)
+        )
+    );
+    let album = "a7060b76f0474b318de64fc08d99b57e";
+    let asset = "c332ad5fb1cb462bb258119bc315d968";
+    assert_eq!(
+        hex(&new_album_asset(album, asset, now)),
+        format!(
+            "85A5{}81A2{}D920{}A4{}AB{}AB{}B8{}A5{}81A2{}D920{}AB{}B8{}",
+            s("album"),
+            s("id"),
+            s(album),
+            s("type"),
+            s("album_asset"),
+            s("userUpdated"),
+            s(now),
+            s("asset"),
+            s("id"),
+            s(asset),
+            s("userCreated"),
+            s(now)
+        )
+    );
+    let annotation = new_album_annotation(now);
+    assert!(marked_for_download(&annotation));
+    assert_eq!(
+        hex(&annotation),
+        format!(
+            "81AA{}82AF{}B8{}B5{}C3",
+            s("_localOnly"),
+            s("updateTimeStamp"),
+            s(now),
+            s("isMarkedForOfflineUse")
+        )
+    );
+    assert_eq!(
+        decode(NEW_ALBUM_ASSET_ANNOTATION).unwrap(),
+        Value::Array(vec![])
+    );
+    // A name too long for a short string takes a longer form, read back as it was.
+    let long = "A".repeat(40);
+    let doc = document("album", "collection", "x", &new_album(&long, now)).unwrap();
+    assert!(matches!(doc, Some(Document::Album(a)) if a.name == long));
+}

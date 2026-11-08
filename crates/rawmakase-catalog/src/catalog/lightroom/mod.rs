@@ -9,7 +9,7 @@ mod library_tests;
 use super::Catalog;
 use crate::catalog::db::{LightroomWrite, Reads, sql, sqlite_sql};
 use anyhow::{Context, Result, ensure};
-pub use downloads::{CloudPhoto, LibraryAlbum, Settled, mark_albums_for_download};
+pub use downloads::{CloudPhoto, LibraryAlbum, NEW_ALBUM, Settled, mark_albums_for_download};
 pub use history::HistoryStep;
 pub use library::{LibraryImport, import_lightroom_library};
 pub use library_db::Marked;

@@ -45,7 +45,14 @@ pub struct LibraryAlbum {
     /// The assets of its photos in the cloud with their originals' bytes,
     /// so photos in several albums are counted once.
     pub in_cloud_assets: Vec<(String, u64)>,
+    /// Not an album: the account's photos in no album. Downloading them
+    /// makes an album of those in the cloud ([`NEW_ALBUM`]), so Lightroom
+    /// downloads them as it does an album's.
+    pub loose: bool,
 }
+
+/// The name of the album made for photos in no album, to download them.
+pub const NEW_ALBUM: &str = "Downloaded by RAWmakase";
 
 /// What [`Catalog::settle_lightroom_downloads`] found.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -301,7 +308,7 @@ impl Catalog {
         for account in libraries.iter().flat_map(|l| lr_library::accounts(l)) {
             let snapshot =
                 library_db::snapshot(&account.join(lr_library::CATALOG), LIGHTROOM_OPEN)?;
-            let (docs, members): (Vec<AlbumDocRow>, Vec<MemberRow>) =
+            let (docs, members, assets): (Vec<AlbumDocRow>, Vec<MemberRow>, Vec<String>) =
                 self.db.with_lightroom(&snapshot.path, |lr| {
                     let docs = lr.read_sqlite(
                         sqlite_sql!(
@@ -319,7 +326,14 @@ impl Catalog {
                         ),
                         &[],
                     )?;
-                    Ok((docs, members))
+                    let assets = lr.read_sqlite(
+                        sqlite_sql!(
+                            "SELECT fullDocId FROM lr.docs
+                             WHERE deleted=0 AND type='asset' AND subtype='image'"
+                        ),
+                        &[],
+                    )?;
+                    Ok((docs, members, assets))
                 })?;
             let mut photos: HashMap<String, Vec<String>> = HashMap::new();
             for m in members {
@@ -353,6 +367,7 @@ impl Catalog {
                     in_cloud: 0,
                     in_cloud_bytes: 0,
                     in_cloud_assets: Vec::new(),
+                    loose: false,
                 };
                 for asset in photos.get(&entry.id).into_iter().flatten() {
                     if let Some(&(size, cloud)) = by_asset.get(asset) {
@@ -366,6 +381,44 @@ impl Catalog {
                 }
                 albums.push(entry);
             }
+            // The account's photos in no album, as one more to choose: in no
+            // album of the account's, as an album's photos are counted above.
+            let listed: HashSet<&str> = albums
+                .iter()
+                .filter(|a| a.account == account && !a.set)
+                .map(|a| a.id.as_str())
+                .collect();
+            let in_albums: HashSet<&String> = photos
+                .iter()
+                .filter(|(album, _)| listed.contains(album.as_str()))
+                .flat_map(|(_, assets)| assets)
+                .collect();
+            let mut loose = LibraryAlbum {
+                account: account.clone(),
+                id: String::new(),
+                name: "Photos in no album".into(),
+                parent: None,
+                set: false,
+                marked: false,
+                photos: 0,
+                in_cloud: 0,
+                in_cloud_bytes: 0,
+                in_cloud_assets: Vec::new(),
+                loose: true,
+            };
+            for asset in assets.iter().filter(|a| !in_albums.contains(a)) {
+                if let Some(&(size, cloud)) = by_asset.get(asset) {
+                    loose.photos += 1;
+                    if cloud {
+                        loose.in_cloud += 1;
+                        loose.in_cloud_bytes += size;
+                        loose.in_cloud_assets.push((asset.clone(), size));
+                    }
+                }
+            }
+            if loose.photos > 0 {
+                albums.push(loose);
+            }
         }
         Ok(albums)
     }
@@ -373,26 +426,31 @@ impl Catalog {
 
 /// Marks `albums` (of [`Catalog::lightroom_library_albums`]) Store Album
 /// Locally in their libraries, so Lightroom downloads their originals when
-/// it next runs; a copy of each account's catalog as it was is written to
+/// it next runs; the photos of a `loose` one, in no album, are put in album
+/// [`NEW_ALBUM`] (made the first time) marked the same way; a copy of each account's catalog as it was is written to
 /// `backups` first. Refused while Lightroom has a library open. Albums of one
 /// account are marked together or not at all.
 pub fn mark_albums_for_download(
     albums: &[LibraryAlbum],
     backups: &Path,
 ) -> Result<library_db::Marked> {
-    let mut by_account: HashMap<&Path, Vec<String>> = HashMap::new();
+    // By account: the albums to mark, and the photos in no album to make an
+    // album of.
+    let mut by_account: HashMap<&Path, (Vec<String>, Vec<String>)> = HashMap::new();
     for album in albums.iter().filter(|a| !a.set) {
-        by_account
-            .entry(&album.account)
-            .or_default()
-            .push(album.id.clone());
+        let (ids, loose) = by_account.entry(&album.account).or_default();
+        if album.loose {
+            loose.extend(album.in_cloud_assets.iter().map(|(asset, _)| asset.clone()));
+        } else {
+            ids.push(album.id.clone());
+        }
     }
     std::fs::create_dir_all(backups)?;
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
     let mut total = library_db::Marked::default();
-    for (account, ids) in by_account {
+    for (account, (ids, loose)) in by_account {
         let name = account
             .file_name()
             .unwrap_or_default()
@@ -406,15 +464,25 @@ pub fn mark_albums_for_download(
             })
             .find(|p| !p.exists())
             .expect("a free name");
+        let new_album = (!loose.is_empty()).then(|| library_db::NewAlbum {
+            name: NEW_ALBUM,
+            assets: &loose,
+        });
         let marked = library_db::mark_for_download(
             &account.join(lr_library::CATALOG),
             &ids,
+            new_album,
             &backup,
             "Lightroom has its library open. Quit Lightroom, then download again",
         )?;
         total.albums += marked.albums;
         total.photos += marked.photos;
         total.unsettled += marked.unsettled;
+        // Of several accounts, the photos of all; the first album's id.
+        total.new_album = match (total.new_album, marked.new_album) {
+            (Some((album, a)), Some((_, b))) => Some((album, a + b)),
+            (old, new) => old.or(new),
+        };
     }
     Ok(total)
 }

@@ -57,6 +57,45 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Value> {
     Ok(value)
 }
 
+/// `v` in MessagePack's shortest forms, as Lightroom writes its documents.
+/// Only what new documents hold: maps, strings and booleans.
+pub(super) fn encode(v: &Value) -> Vec<u8> {
+    let mut out = Vec::new();
+    encode_into(v, &mut out);
+    out
+}
+
+fn encode_into(v: &Value, out: &mut Vec<u8>) {
+    match v {
+        Value::Bool(b) => out.push(if *b { 0xc3 } else { 0xc2 }),
+        Value::Str(s) => {
+            let n = s.len();
+            match n {
+                0..=31 => out.push(0xa0 | n as u8),
+                32..=0xff => out.extend([0xd9, n as u8]),
+                0x100..=0xffff => {
+                    out.push(0xda);
+                    out.extend((n as u16).to_be_bytes());
+                }
+                _ => {
+                    out.push(0xdb);
+                    out.extend((n as u32).to_be_bytes());
+                }
+            }
+            out.extend(s.as_bytes());
+        }
+        Value::Map(entries) => {
+            out.extend(map_header(entries.len()));
+            for (k, v) in entries {
+                encode_into(k, out);
+                encode_into(v, out);
+            }
+        }
+        Value::Array(items) if items.is_empty() => out.push(0x90),
+        other => unreachable!("not written in new documents: {other:?}"),
+    }
+}
+
 /// `bytes`, a map, with `key` in its map `outer` set to true, every other
 /// byte as it was: the entry is moved to the end of `outer`, and `outer` is
 /// added at the end when it isn't there. None when it is true already.

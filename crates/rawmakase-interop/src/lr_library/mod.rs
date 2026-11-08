@@ -127,6 +127,57 @@ pub fn mark_for_download(annotation: Option<&[u8]>) -> Result<Option<Vec<u8>>> {
     msgpack::set_true(annotation.unwrap_or(&[0x80]), LOCAL_ONLY, MARKED)
 }
 
+/// A new album's document, as Lightroom writes one when an album is made on
+/// this computer: `now` is the time it is made, as Lightroom writes times
+/// (`2026-11-08T10:22:05.786Z`).
+pub fn new_album(name: &str, now: &str) -> Vec<u8> {
+    msgpack::encode(&entries(vec![
+        ("userUpdated", Value::Str(now.into())),
+        ("type", Value::Str("album".into())),
+        ("name", Value::Str(name.into())),
+        ("subtype", Value::Str("collection".into())),
+        ("userCreated", Value::Str(now.into())),
+    ]))
+}
+
+/// The document putting photo `asset` in album `album`, as Lightroom writes
+/// one.
+pub fn new_album_asset(album: &str, asset: &str, now: &str) -> Vec<u8> {
+    let id = |id: &str| entries(vec![("id", Value::Str(id.into()))]);
+    msgpack::encode(&entries(vec![
+        ("album", id(album)),
+        ("type", Value::Str("album_asset".into())),
+        ("userUpdated", Value::Str(now.into())),
+        ("asset", id(asset)),
+        ("userCreated", Value::Str(now.into())),
+    ]))
+}
+
+/// A new album's annotation: when it was made here, and that Lightroom is
+/// to keep its photos here (Store Album Locally), as Lightroom writes it.
+pub fn new_album_annotation(now: &str) -> Vec<u8> {
+    msgpack::encode(&entries(vec![(
+        LOCAL_ONLY,
+        entries(vec![
+            ("updateTimeStamp", Value::Str(now.into())),
+            (MARKED, Value::Bool(true)),
+        ]),
+    )]))
+}
+
+/// A new `album_asset` document's annotation: Lightroom writes an empty
+/// array.
+pub const NEW_ALBUM_ASSET_ANNOTATION: &[u8] = &[0x90];
+
+fn entries(pairs: Vec<(&str, Value)>) -> Value {
+    Value::Map(
+        pairs
+            .into_iter()
+            .map(|(k, v)| (Value::Str(k.into()), v))
+            .collect(),
+    )
+}
+
 /// The map of an annotation Lightroom keeps for this computer alone, and the
 /// key in it Store Album Locally sets.
 const LOCAL_ONLY: &str = "_localOnly";

@@ -1,6 +1,7 @@
 //! A Lightroom library's own SQLite files: a consistent copy of one to read,
 //! taken only while Lightroom has it closed, and Store Album Locally written
-//! into its catalog as Lightroom writes it.
+//! into its catalog as Lightroom writes it, with an album made as Lightroom
+//! makes one for photos in no album.
 //!
 //! Lightroom keeps its catalog in WAL mode and leaves the `-wal` file, often
 //! megabytes of it, when it quits, so neither a leftover WAL nor the main
@@ -83,16 +84,28 @@ pub(super) fn snapshot(db: &Path, message: &str) -> Result<Snapshot> {
 }
 
 /// What [`mark_for_download`] did: the albums marked and their photos now
-/// marked, and photos Lightroom hasn't settled, left as they were.
+/// marked, and photos Lightroom hasn't settled, left as they were; the album
+/// photos in no album were put in, if they were, with how many were marked.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Marked {
     pub albums: usize,
     pub photos: usize,
     pub unsettled: usize,
+    pub new_album: Option<(String, usize)>,
+}
+
+/// An album to make in the library for photos in no album, so Lightroom
+/// downloads them as it does an album's.
+pub(super) struct NewAlbum<'a> {
+    pub name: &'a str,
+    /// The photos' asset ids.
+    pub assets: &'a [String],
 }
 
 /// Marks the albums `albums` (Lightroom ids) of the catalog `db` and their
-/// photos Store Album Locally, as Lightroom marks them, after writing a copy
+/// photos Store Album Locally, as Lightroom marks them, and puts the photos
+/// of `new_album` in an album marked the same way ([`make_album`]), after
+/// writing a copy
 /// of the catalog as it was to `backup`; Lightroom downloads their originals
 /// when it next runs. Refused while a program has `db` open (`message`), for
 /// a catalog of a schema whose writes weren't seen, and when an album isn't
@@ -107,6 +120,7 @@ pub struct Marked {
 pub(super) fn mark_for_download(
     db: &Path,
     albums: &[String],
+    new_album: Option<NewAlbum<'_>>,
     backup: &Path,
     message: &str,
 ) -> Result<Marked> {
@@ -182,6 +196,11 @@ pub(super) fn mark_for_download(
             }
         }
     }
+    if let Some(new) = new_album {
+        let (album, photos, unsettled) = make_album(&tx, &new)?;
+        marked.unsettled += unsettled;
+        marked.new_album = Some((album, photos));
+    }
     let check: String = tx.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
     ensure!(
         check == "ok",
@@ -189,6 +208,141 @@ pub(super) fn mark_for_download(
     );
     tx.commit()?;
     Ok(marked)
+}
+
+/// Puts the photos of `new` in album `new.name` of the library, marked Store
+/// Album Locally, and marks them as [`mark_for_download`] does. The album is
+/// the one of that name already there, so downloading again adds to it
+/// rather than making another of the same name; or made as Lightroom makes
+/// one on this computer: a document for the album and one for each photo in
+/// it, each with one current revision and no label, as Lightroom's are until
+/// it has uploaded them (it labels them then). Photos the library no longer
+/// has are left out. Returns the album's id, how many photos were put in it
+/// and marked, and how many were put in it but not marked, as Lightroom
+/// hasn't settled them.
+fn make_album(
+    tx: &rusqlite::Transaction<'_>,
+    new: &NewAlbum<'_>,
+) -> Result<(String, usize, usize)> {
+    let now = lightroom_now();
+    let album = match album_named(tx, new.name)? {
+        Some((album, id)) => {
+            touch(tx, id)?;
+            album
+        }
+        None => {
+            let album = new_id()?;
+            insert_document(
+                tx,
+                &album,
+                "album",
+                Some("collection"),
+                &crate::lr_library::new_album_annotation(&now),
+                &crate::lr_library::new_album(new.name, &now),
+            )?;
+            album
+        }
+    };
+    let (mut photos, mut unsettled) = (0, 0);
+    for asset in new.assets {
+        let id: Option<i64> = tx
+            .query_row(
+                "SELECT localDocId FROM docs WHERE fullDocId=?1 AND type='asset' AND deleted=0",
+                [asset],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(id) = id else {
+            continue;
+        };
+        insert_document(
+            tx,
+            &new_id()?,
+            "album_asset",
+            None,
+            crate::lr_library::NEW_ALBUM_ASSET_ANNOTATION,
+            &crate::lr_library::new_album_asset(&album, asset, &now),
+        )?;
+        match touch(tx, id)? {
+            Touch::Unsettled => unsettled += 1,
+            Touch::Marked | Touch::Already => photos += 1,
+        }
+    }
+    Ok((album, photos, unsettled))
+}
+
+/// The album named `name` the library has, with its row: its id and
+/// `localDocId`.
+fn album_named(tx: &rusqlite::Transaction<'_>, name: &str) -> Result<Option<(String, i64)>> {
+    let mut albums = tx.prepare(
+        "SELECT d.fullDocId, d.localDocId, r.content FROM docs d
+         JOIN revs r ON r.sequence=d.winningRevSequence
+         WHERE d.type='album' AND d.subtype='collection' AND d.deleted=0 AND r.deleted=0",
+    )?;
+    let mut rows = albums.query([])?;
+    while let Some(row) = rows.next()? {
+        let id: String = row.get(0)?;
+        let Some(content) = bytes(row.get_ref(2)?) else {
+            continue;
+        };
+        if let Ok(Some(crate::lr_library::Document::Album(a))) =
+            crate::lr_library::document("album", "collection", &id, content)
+            && a.name == name
+        {
+            return Ok(Some((id, row.get(1)?)));
+        }
+    }
+    Ok(None)
+}
+
+/// A new document `id` of `kind`/`subtype` with its annotation and one
+/// current revision of `content`, both stored as TEXT, as Lightroom stores
+/// them.
+fn insert_document(
+    tx: &rusqlite::Transaction<'_>,
+    id: &str,
+    kind: &str,
+    subtype: Option<&str>,
+    annotation: &[u8],
+    content: &[u8],
+) -> Result<()> {
+    tx.execute(
+        "INSERT INTO docs(fullDocId, deleted, hasConflicts, annotation, spaceId, type, subtype)
+         VALUES(?1, 0, 0, CAST(?2 AS TEXT), NULL, ?3, ?4)",
+        params![id, annotation, kind, subtype],
+    )?;
+    let doc = tx.last_insert_rowid();
+    tx.execute(
+        "INSERT INTO revs(localDocId, revId, parentRevSequence, current, deleted, content)
+         VALUES(?1, ?2, NULL, 1, 0, CAST(?3 AS TEXT))",
+        params![doc, new_id()?, content],
+    )?;
+    let rev = tx.last_insert_rowid();
+    tx.execute(
+        "UPDATE docs SET winningRevSequence=?1, mostRecentRevSequence=?1 WHERE localDocId=?2",
+        params![rev, doc],
+    )?;
+    Ok(())
+}
+
+/// A new document or revision id as Lightroom makes them: 128 random bits in
+/// lowercase hex.
+fn new_id() -> Result<String> {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).map_err(|e| anyhow::anyhow!("{e}"))?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Now in UTC as Lightroom writes times: `2026-11-08T10:22:05.786Z`.
+fn lightroom_now() -> String {
+    let since = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let [y, mo, d, h, mi, s] = crate::time::utc(since.as_secs() as i64);
+    format!(
+        "{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}.{:03}Z",
+        since.subsec_millis()
+    )
 }
 
 /// The documents of the photos of album `album`, as its `album_asset`
