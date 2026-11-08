@@ -86,6 +86,9 @@ pub(super) struct Filters {
     /// The labels shown; none is every label.
     pub labels: BTreeSet<Label>,
     pub kind: Kind,
+    /// The preset the photos' edits were last made with, by the name shown;
+    /// None is any edit, or none.
+    pub preset: Option<String>,
     /// Cmd+L: whether the bar's settings apply.
     pub enabled: bool,
     pub only_missing: bool,
@@ -106,6 +109,7 @@ impl Default for Filters {
             rating_op: RatingOp::default(),
             labels: BTreeSet::new(),
             kind: Kind::default(),
+            preset: None,
             enabled: true,
             only_missing: false,
             previous_import: false,
@@ -116,19 +120,22 @@ impl Default for Filters {
 }
 impl Filters {
     /// Indices into `photos` of the ones shown, in display order; `keys`
-    /// are what the sort order needs (see `Sort::keys`).
+    /// are what the sort order needs (see `Sort::keys`), and `presets` the
+    /// preset each photo's edit was last made with, read while `preset` is set.
     pub(super) fn visible(
         &self,
         photos: &[Photo],
         available: impl Fn(&Path) -> bool,
         keys: &super::sort::Keys,
+        presets: Option<&HashMap<PhotoId, String>>,
     ) -> Vec<usize> {
         let query = self.query.to_lowercase();
         let mut visible: Vec<usize> = photos
             .iter()
             .enumerate()
             .filter(|(_, p)| {
-                self.source_holds(p, &available) && (!self.enabled || self.bar_shows(p, &query))
+                self.source_holds(p, &available)
+                    && (!self.enabled || self.bar_shows(p, &query, presets))
             })
             .map(|(i, _)| i)
             .collect();
@@ -156,8 +163,17 @@ impl Filters {
             && (!self.only_missing || !available(&p.path))
     }
     /// Whether the filter bar lets `p` through; `query` is in lower case.
-    fn bar_shows(&self, p: &Photo, query: &str) -> bool {
+    fn bar_shows(
+        &self,
+        p: &Photo,
+        query: &str,
+        presets: Option<&HashMap<PhotoId, String>>,
+    ) -> bool {
         (self.flags.is_empty() || self.flags.contains(&p.flag))
+            && self
+                .preset
+                .as_ref()
+                .is_none_or(|name| presets.and_then(|presets| presets.get(&p.id)) == Some(name))
             && self
                 .rating
                 .is_none_or(|limit| self.rating_op.holds(p.rating, limit))
@@ -182,6 +198,7 @@ impl Filters {
             || self.rating.is_some()
             || !self.labels.is_empty()
             || self.kind != Kind::All
+            || self.preset.is_some()
     }
     /// Filters Off: clears the filter bar, leaving the source as it is.
     pub(super) fn clear_bar(&mut self) {
@@ -191,6 +208,7 @@ impl Filters {
         self.rating_op = RatingOp::default();
         self.labels.clear();
         self.kind = Kind::All;
+        self.preset = None;
         self.enabled = true;
     }
 }

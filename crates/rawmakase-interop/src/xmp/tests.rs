@@ -2478,3 +2478,96 @@ fn hdr_settings_are_kept_while_off_and_refused_on() {
     let error = crate::model::hdr::check_recipe(&strict).unwrap_err();
     assert!(error.to_string().contains("HDR"), "{error}");
 }
+
+/// Lightroom records the last preset applied to a photo as `crs:Preset`, with the
+/// preset's own settings in `crs:Parameters`. The name, Amount and UUID are kept as
+/// the edit's applied preset; the top-level settings alone decide what renders.
+#[test]
+fn photo_sidecar_keeps_the_last_applied_presets_name() -> Result<()> {
+    let attrs = "xmlns:ps=\"http://ns.adobe.com/photoshop/1.0/\" ps:SidecarForExtension=\"NEF\" c:Exposure2012=\"0.5\"";
+    let preset = "<c:Preset><r:Description c:Name=\"Kodak Ektachrome 64 Warm\" c:Amount=\"0.8\" c:UUID=\"0A1B2C\"><c:Parameters><r:Description c:Exposure2012=\"2\"/></c:Parameters></r:Description></c:Preset>";
+    let with = parse(Path::new("photo.xmp"), &xml(attrs, preset))?;
+    let without = parse(Path::new("photo.xmp"), &xml(attrs, ""))?;
+    let r = with.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    let plain = without.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    assert_eq!(
+        r.applied_preset,
+        Some(crate::model::recipe::AppliedPreset {
+            name: "Kodak Ektachrome 64 Warm".into(),
+            amount: Some(0.8),
+            uuid: "0A1B2C".into(),
+        })
+    );
+    // Nothing else changes: the preset's Parameters never render.
+    assert_eq!(
+        Recipe {
+            applied_preset: None,
+            ..r
+        },
+        plain
+    );
+    // A photo's settings replace its edit, preset record included.
+    let base = Recipe {
+        applied_preset: r.applied_preset,
+        ..Recipe::default()
+    };
+    let again = without.apply(&base, &Metadata::default(), &[], None)?;
+    assert_eq!(again.applied_preset, None);
+    Ok(())
+}
+
+/// A preset applied over an edit leaves the edit's record alone here: the name of a
+/// preset chosen by the user is recorded by `presets::apply_to_photo`, not by every
+/// application of XMP settings (raw defaults apply presets too).
+#[test]
+fn applying_a_preset_file_keeps_the_bases_record() -> Result<()> {
+    let preset = parse(
+        Path::new("Warm.xmp"),
+        &xml(r#"c:PresetType="Normal" c:Exposure2012="0.3""#, ""),
+    )?;
+    let base = Recipe {
+        applied_preset: Some(crate::model::recipe::AppliedPreset {
+            name: "Earlier".into(),
+            amount: Some(1.),
+            uuid: String::new(),
+        }),
+        ..Recipe::default()
+    };
+    let r = preset.apply(&base, &Metadata::default(), &[], None)?;
+    assert_eq!(r.applied_preset, base.applied_preset);
+    Ok(())
+}
+
+/// A Lightroom Classic catalog's settings name the last preset in a `Preset`
+/// table, as its XMP does in `crs:Preset`: kept as the applied preset, never reported
+/// as a setting left out, and never rendered.
+#[test]
+fn lightroom_catalog_settings_keep_the_last_applied_preset() -> Result<()> {
+    let m = Metadata::default();
+    let preset = r#"Preset = { Amount = 1, Name = "L&P Hochzeit", Parameters = { Exposure2012 = 2 }, UUID = "AB12" }, "#;
+    let text = format!("s = {{ {preset}Exposure2012 = 0.5 }}");
+    let (r, warnings) = crate::lr_develop::convert_develop(&text, &m, &[], None)?;
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(r.exposure, 0.5);
+    assert_eq!(
+        r.applied_preset,
+        Some(crate::model::recipe::AppliedPreset {
+            name: "L&P Hochzeit".into(),
+            amount: Some(1.),
+            uuid: "AB12".into(),
+        })
+    );
+    assert_eq!(
+        crate::lr_develop::applied_preset(&text),
+        r.applied_preset,
+        "read without converting, for the Library"
+    );
+    let (plain, _) =
+        crate::lr_develop::convert_develop("s = { Exposure2012 = 0.5 }", &m, &[], None)?;
+    assert_eq!(plain.applied_preset, None);
+    assert_eq!(
+        crate::lr_develop::applied_preset("s = { Exposure2012 = 0.5 }"),
+        None
+    );
+    Ok(())
+}

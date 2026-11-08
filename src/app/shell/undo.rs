@@ -429,6 +429,11 @@ impl Editor {
                     self.messages.fail(format!("{verb} failed: {e}"));
                     return false;
                 }
+                // Its preset is read again when the Library shows next, even if
+                // Develop refuses to open it.
+                if let Some(library) = &mut self.library {
+                    library.opened_in_develop(id);
+                }
                 self.develop_catalog_photo(id);
                 true
             }

@@ -59,6 +59,7 @@ fn the_preset_list_is_kept_until_what_it_shows_changes() {
         blockers: Vec::new(),
         notes: Vec::new(),
         photo_settings: false,
+        applied: None,
         local: Default::default(),
         builtin: false,
     };

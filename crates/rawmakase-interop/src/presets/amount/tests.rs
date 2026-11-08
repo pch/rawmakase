@@ -13,6 +13,7 @@ fn preset(supports: &str) -> Preset {
         blockers: Vec::new(),
         notes: Vec::new(),
         photo_settings: false,
+        applied: None,
         local: Default::default(),
         builtin: false,
     }
@@ -431,4 +432,27 @@ fn an_amount_rounded_back_to_before_keeps_its_white_balance() {
     let tiny = amount(&before, &full).at(1e-9, &metadata());
     assert_eq!(tiny.temperature, before.temperature);
     assert_eq!(tiny.wb, before.wb);
+}
+
+/// The edit records the Amount the preset is at, as Lightroom's `crs:Preset` does;
+/// at 0% the photo is as before the preset, record included.
+#[test]
+fn the_applied_presets_record_follows_the_amount() {
+    let m = metadata();
+    let before = Recipe::default();
+    let full = Recipe {
+        exposure: 1.,
+        applied_preset: Some(crate::model::recipe::AppliedPreset {
+            name: "Test".into(),
+            amount: Some(1.),
+            uuid: String::new(),
+        }),
+        ..Default::default()
+    };
+    let scale = amount(&before, &full);
+    let at = |t: f32| scale.at(t, &m).applied_preset.and_then(|p| p.amount);
+    assert_eq!(at(1.), Some(1.));
+    assert_eq!(at(0.5), Some(0.5));
+    assert_eq!(at(2.), Some(2.));
+    assert_eq!(scale.at(0., &m).applied_preset, None);
 }

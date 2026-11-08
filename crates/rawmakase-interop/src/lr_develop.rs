@@ -77,6 +77,29 @@ pub fn develop_fields(text: &str) -> Result<std::collections::BTreeMap<String, S
     insert(&body[start..])?;
     Ok(fields)
 }
+/// The last preset Lightroom applied to the photo whose Develop settings are
+/// `text`, read without converting them (the Library's Preset filter reads every
+/// photo's). `None` when there is none or the settings can't be read.
+pub fn applied_preset(text: &str) -> Option<crate::model::recipe::AppliedPreset> {
+    preset_record(develop_fields(text).ok()?.get("Preset")?)
+}
+/// A `Preset` table's name, Amount and UUID; `None` without a name.
+fn preset_record(value: &str) -> Option<crate::model::recipe::AppliedPreset> {
+    let fields = develop_fields(&format!("s = {value}")).ok()?;
+    let text = |key: &str| {
+        fields
+            .get(key)
+            .and_then(|v| serde_json::from_str::<String>(v).ok())
+    };
+    Some(crate::model::recipe::AppliedPreset {
+        name: text("Name").filter(|n| !n.is_empty())?,
+        amount: fields
+            .get("Amount")
+            .and_then(|a| a.parse::<f32>().ok())
+            .filter(|a| a.is_finite()),
+        uuid: text("UUID").unwrap_or_default(),
+    })
+}
 pub fn convert_develop(
     text: &str,
     m: &crate::camera_data::Metadata,
@@ -86,6 +109,7 @@ pub fn convert_develop(
     let fields = develop_fields(text)?;
     let mut preset = crate::xmp::Preset {
         photo_settings: true,
+        applied: None,
         id: String::new(),
         name: "Imported Lightroom edit".into(),
         group: String::new(),
@@ -128,6 +152,10 @@ pub fn convert_develop(
                     Some(Err(e)) => warnings.push(format!("{e:#}; rendered at 100%")),
                     None => {}
                 }
+            } else if key == "Preset" {
+                // The last preset applied: a record, never rendered. Its
+                // Parameters are the preset's own settings, not the photo's.
+                preset.applied = preset_record(value);
             } else if crate::xmp::local::KEYS.contains(&key.as_str()) {
                 match crate::xmp::local::Node::from_lua(value) {
                     Ok(node) if !node.is_empty() => {

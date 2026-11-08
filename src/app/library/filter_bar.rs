@@ -1,7 +1,8 @@
 //! The filter bar above the grid: search, then Lightroom's Attribute
 //! filter. Flags and labels toggle in any combination, the rating is
 //! compared with the operator chosen from its menu, and Kind picks masters
-//! or virtual copies. Cmd+L turns it off and on; changing it turns it on.
+//! or virtual copies. Preset picks the photos whose edit was last made with
+//! one preset. Cmd+L turns it off and on; changing it turns it on.
 use super::Library;
 use super::filter::{Kind, Label, RatingOp, toggle};
 use super::grid::filter_caption;
@@ -45,6 +46,8 @@ impl Library {
                         ui.add_space(space::L);
                         changed |= ui.horizontal(|ui| self.kind_filter(ui, compact)).inner;
                     }
+                    ui.add_space(space::L);
+                    changed |= ui.horizontal(|ui| self.preset_filter(ui, compact)).inner;
                     ui.add_space(space::L);
                     ui.set_opacity(opacity);
                     changed |= self.filters_switch(ui);
@@ -196,6 +199,52 @@ impl Library {
                 (Kind::Copies, "Copies"),
             ],
             if compact { 150. } else { 180. },
+        );
+        self.turn_on(changed)
+    }
+    /// The preset the photos' edits were last made with. The catalog's
+    /// presets are read when the menu opens, not on every frame.
+    fn preset_filter(&mut self, ui: &mut egui::Ui, compact: bool) -> bool {
+        let palette = theme::palette(ui.ctx());
+        if !compact {
+            ui.label(filter_caption(&palette, "Preset"));
+        }
+        let mut changed = false;
+        let shown = self.filters.preset.clone().unwrap_or_else(|| "Any".into());
+        let button = egui::RichText::new(shown).size(text::LABEL);
+        ui.menu_button(button, |ui| {
+            if ui
+                .selectable_label(self.filters.preset.is_none(), "Any")
+                .clicked()
+            {
+                self.filters.preset = None;
+                changed = true;
+            }
+            let names = self.preset_names();
+            if names.is_empty() {
+                ui.label(filter_caption(&palette, "No edit names a preset"));
+            } else {
+                ui.separator();
+            }
+            egui::ScrollArea::vertical()
+                .max_height(320.)
+                .show(ui, |ui| {
+                    for (name, count) in names {
+                        let on = self.filters.preset.as_ref() == Some(&name);
+                        if ui
+                            .selectable_label(on, format!("{name}  ({count})"))
+                            .clicked()
+                        {
+                            self.filters.preset = Some(name);
+                            changed = true;
+                        }
+                    }
+                });
+        })
+        .response
+        .on_hover_text(
+            "Photos whose edit was last made with this preset. Changes made after \
+             it are not told apart from it.",
         );
         self.turn_on(changed)
     }

@@ -75,6 +75,23 @@ pub struct PhotoRecord {
 }
 
 impl EditRecord {
+    /// The last preset applied to the edit the photo develops with
+    /// ([`Recipe::applied_preset`]): the saved RAWmakase edit's, or, without one,
+    /// the one its Lightroom settings name. Only the record is read, without
+    /// checking the file or converting Lightroom's settings; an edit that can't be
+    /// read names none (opening it says why). Raw defaults name none.
+    pub fn applied_preset(&self) -> Option<crate::model::recipe::AppliedPreset> {
+        /// Just the record, so the rest of the recipe isn't built.
+        #[derive(serde::Deserialize)]
+        struct Record {
+            applied_preset: Option<crate::model::recipe::AppliedPreset>,
+        }
+        match (&self.recipe, &self.lightroom) {
+            (Some(recipe), _) => serde_json::from_str::<Record>(recipe).ok()?.applied_preset,
+            (None, Some(text)) => crate::lr_develop::applied_preset(text),
+            (None, None) => None,
+        }
+    }
     /// The saved RAWmakase edit, if there is one. An error when it can't be read, or
     /// when the file at `path` is not the photo it was saved for
     /// ([`Identity::same_photo`]): the edit is then protected, never replaced by

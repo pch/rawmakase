@@ -29,7 +29,7 @@ Right-click (or Control-click on macOS) a preset for its menu. A preset made her
 
 After a preset that supports it is applied, an **Amount** slider (0–200%, 100% to start) shows at the top of the Presets panel, under the preset's name, as in Lightroom. It scales the preset's changes: 0% is the photo as it was before the preset, 100% the preset as applied, 200% twice its changes. Each drag is one History step ("Preset Amount"). Applying another preset, any other edit, Undo or moving to another photo ends it, and the slider goes.
 
-The settings before the preset and the preset's result are kept once, when it is applied, and every Amount is worked out from those two again, so dragging back and forth never drifts. Nothing about the Amount is saved: the photo keeps the resulting settings, as Lightroom does. Likewise a Lightroom edit or sidecar is read from its settings alone; the preset it came from and its Amount are never applied again.
+The settings before the preset and the preset's result are kept once, when it is applied, and every Amount is worked out from those two again, so dragging back and forth never drifts. The photo keeps the resulting settings, as Lightroom does, and its edit records the Amount the preset was left at ([which preset a photo was made with](#which-preset-a-photo-was-made-with)); the before and after settings are not saved. Likewise a Lightroom edit or sidecar is read from its settings alone; the preset it came from and its Amount are never applied again.
 
 A preset offers an Amount when its file says so (`crs:SupportsAmount="True"`, as most of Adobe's do) and it changes nothing that doesn't scale: lens profile corrections, chromatic aberration, crop and straighten, Transform, Upright, spots, masks, and Point Color swatches added or taken away (a preset with Color Adjustments clears a photo's swatches, so it has no Amount on a photo that has some). Adobe's own presets with lens or chromatic aberration corrections don't offer one either. Built-in presets offer one, except Curve › Linear, which resets the curve as Adobe's “None” presets do. A preset made with New Develop Preset… offers one when none of those groups is among its settings.
 
@@ -41,6 +41,16 @@ Adobe doesn't document how each setting scales, and Camera Raw offers the slider
 - Point curves blend their outputs at the points of both curves. When the curve before is straight, as it usually is, that is exactly the blended curve.
 - Color Grading hues take the shorter way round the wheel, or the preset's hue straight away where there was no saturation before.
 - Settings that aren't numbers (profile, Color or Black & White, panel switches, vignette style, grain seed) take the preset's choice at any Amount above 0, so every Amount keeps the preset's character. A creative look with a [Profile Amount](lightroom-profiles.md#profile-amount) the photo didn't have fades in from 0 instead; the same look already chosen moves from its Amount before.
+
+## Which preset a photo was made with
+
+An edit records the last develop preset applied to it (`Recipe::applied_preset`: the name, the Amount, 1 = 100%, and the preset's UUID when it has one), as Lightroom records it in a photo's XMP as `crs:Preset`. The Library's info panel shows it in its **Preset** row ("Kodak Ektachrome 64 Warm", or "Kodak Ektachrome 64 Warm (80%)" at another Amount), and the filter bar's **Preset** menu shows only the photos whose edit was last made with the preset chosen, with how many photos each preset has.
+
+It is a record of where the edit started, not part of it: nothing renders from it. Only the last preset is kept: applying another replaces it, and settings changed after the preset are not told apart from the preset's. The panel and the menu's hover say so.
+
+- **Lightroom.** A photo's XMP settings (`crs:Preset` with `crs:Name`, `crs:Amount` and `crs:UUID`) and a Lightroom Classic catalog's Develop settings (a `Preset` table) carry the record into the edit; the preset's own settings in `crs:Parameters` are never read, as the photo's top-level settings already hold their result. A Classic photo not yet opened in RAWmakase shows the record its Lightroom settings carry, read without converting them.
+- **RAWmakase.** Applying a preset in Develop's Presets panel, or to the selection with Quick Develop's Saved Preset…, records it at 100%; the Amount slider updates the Amount, and 0% returns the photo, and its record, to what they were before the preset. Raw defaults (even a photo's Lightroom settings chosen as one), Copy Settings, Sync and Paste don't: the record stays with its photo, and a raw default preset is a photo's starting point, not a preset applied to it.
+- **Not yet.** XMP written by RAWmakase (sidecars, exports) does not write `crs:Preset` back, so Lightroom does not see a preset applied in RAWmakase. Edits saved before this record existed name no preset, whatever preset made them; releases before it keep the record of an edit they open but don't update it, so a preset applied there leaves the earlier one named.
 
 ## Raw defaults
 

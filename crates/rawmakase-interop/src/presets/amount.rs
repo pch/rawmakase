@@ -84,7 +84,12 @@ impl PresetAmount {
         if t == 0. {
             return self.before.clone();
         }
-        blend(&self.before, &self.full, t, m)
+        let mut r = blend(&self.before, &self.full, t, m);
+        // The edit's record of the preset says the Amount it is at.
+        if let Some(applied) = &mut r.applied_preset {
+            applied.amount = Some(t);
+        }
+        r
     }
 }
 
@@ -345,6 +350,7 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         effects: b_effects,
         preset_name,
         preset_settings,
+        applied_preset,
         profile,
         profile_amount,
         sharpening_radius,
@@ -446,6 +452,7 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         effects: effects(&a.effects, b_effects, t),
         preset_name: preset_name.clone(),
         preset_settings: preset_settings.clone(),
+        applied_preset: applied_preset.clone(),
         profile: profile.clone(),
         profile_amount,
         sharpening_radius: lerp(a.sharpening_radius, *sharpening_radius, t, 0.5, 3.),

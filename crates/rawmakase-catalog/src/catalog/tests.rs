@@ -996,6 +996,54 @@ fn edit_times_come_from_rawmakase_or_else_lightroom_history() -> Result<()> {
     Ok(())
 }
 
+/// The last preset applied to each photo's edit: its saved RAWmakase edit's, or,
+/// without one, its Lightroom settings'. A RAWmakase edit without a preset hides
+/// the one its Lightroom settings name, as it replaces them.
+#[test]
+fn applied_presets_come_from_the_edit_each_photo_develops_with() -> Result<()> {
+    let d = tempfile::tempdir()?;
+    let c = Catalog::create(&d.path().join("c.rawmakase"))?;
+    let with = serde_json::to_string(&Recipe {
+        applied_preset: Some(crate::model::recipe::AppliedPreset {
+            name: "Kodak Ektachrome 64 Warm".into(),
+            amount: Some(1.),
+            uuid: String::new(),
+        }),
+        ..Recipe::default()
+    })?;
+    let without = serde_json::to_string(&Recipe::default())?;
+    let lightroom = r#"s = { Preset = { Amount = 1, Name = "L&P Hochzeit", Parameters = { Exposure2012 = 2 } }, Exposure2012 = 0.5 }"#;
+    c.db_for_tests()
+        .execute_batch("PRAGMA foreign_keys = OFF;")?;
+    for (id, recipe, develop) in [
+        (1, Some(with.as_str()), Some(lightroom)),
+        (2, None, Some(lightroom)),
+        (3, Some(without.as_str()), Some(lightroom)),
+        (4, None, Some("s = { Exposure2012 = 0.5 }")),
+        (5, None, None),
+    ] {
+        c.db_for_tests().execute(
+            "INSERT INTO photos(id, folder, filename, original_path, recipe, lightroom_develop)
+             VALUES (?, 1, 'a.NEF', 'a.NEF', ?, ?)",
+            params![id, recipe, develop],
+        )?;
+    }
+    let names: std::collections::BTreeMap<i64, String> = c
+        .applied_presets()?
+        .into_iter()
+        .map(|(id, p)| (id.0, p.name))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            (1, "Kodak Ektachrome 64 Warm".to_string()),
+            (2, "L&P Hochzeit".to_string())
+        ]
+        .into()
+    );
+    Ok(())
+}
+
 /// A develop-history snapshot as Lightroom stores it: a 4-byte big-endian
 /// length and a zlib stream.
 fn compressed(text: &str) -> Vec<u8> {

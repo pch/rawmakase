@@ -101,6 +101,20 @@ impl Library {
                         }
                     }
                     self.metadata_fields(ui);
+                    // The last preset applied, as Lightroom records it; the
+                    // edit's later changes are not told apart from it.
+                    let preset = photo.as_ref().and_then(|p| self.applied_preset_of(p.id));
+                    let shown = preset
+                        .as_ref()
+                        .map(super::applied::shown)
+                        .unwrap_or_default();
+                    let row = metadata_row(ui, "Preset", &shown);
+                    if !shown.is_empty() {
+                        row.on_hover_text(format!(
+                            "Last preset applied: {shown}. Changes made after it \
+                             are part of the edit too."
+                        ));
+                    }
                     for (key, value, hover) in [
                         (
                             "Folder",

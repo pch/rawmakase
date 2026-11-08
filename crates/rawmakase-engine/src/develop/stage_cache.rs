@@ -215,6 +215,7 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         panels: _,
         preset_name: _,
         preset_settings: _,
+        applied_preset: _,
         unknown: _,
     } = r;
     let Effects {

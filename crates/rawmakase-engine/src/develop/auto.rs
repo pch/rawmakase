@@ -100,6 +100,7 @@ pub fn auto_tone_basis(r: &Recipe) -> Recipe {
         // Bookkeeping that does not render.
         preset_name: d.preset_name,
         preset_settings: d.preset_settings,
+        applied_preset: d.applied_preset,
         auto_white_balance: None,
         unknown: d.unknown,
         effects: crate::model::effects::Effects {

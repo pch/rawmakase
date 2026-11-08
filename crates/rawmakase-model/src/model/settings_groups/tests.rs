@@ -42,6 +42,11 @@ fn everything_changed() -> Recipe {
         lens_ca: true,
         preset_name: "Film".into(),
         preset_settings: [("Exposure2012".to_string(), "1".to_string())].into(),
+        applied_preset: Some(crate::model::recipe::AppliedPreset {
+            name: "Film".into(),
+            amount: Some(1.),
+            uuid: String::new(),
+        }),
         sharpening_radius: 1.5,
         sharpening_detail: 0.6,
         sharpening_masking: 0.7,
@@ -295,6 +300,8 @@ fn nothing_selected_changes_nothing_and_the_photos_own_settings_never_move() {
         "flip_y",
         "preset_name",
         "preset_settings",
+        // Which preset a photo was made with is its own: Sync copies settings.
+        "applied_preset",
         // Red eye corrections belong to their photo; Lightroom never copies them.
         "red_eye",
     ] {

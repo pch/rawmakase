@@ -101,6 +101,7 @@ pub fn parse(path: &Path, text: &str) -> Result<Preset> {
     let mut blockers = Vec::new();
     let mut look = String::new();
     let mut local = BTreeMap::new();
+    let mut applied = None;
     for node in description
         .children()
         .filter(|n| n.is_element() && n.tag_name().namespace() == Some(CRS))
@@ -176,8 +177,27 @@ pub fn parse(path: &Path, text: &str) -> Result<Preset> {
                 settings.insert("RAWmakaseLookUUID".into(), uuid);
             }
         } else if name == "Preset" && sidecar {
-            // In a photo sidecar, the nested preset-amount record is provenance.
-            // The resolved top-level edits (including curves) remain authoritative.
+            // In a photo sidecar, the nested record of the last preset applied is
+            // provenance: kept as such, while the resolved top-level settings
+            // (including curves) alone render. Its Parameters are never read.
+            let d = node
+                .children()
+                .find(|n| n.has_tag_name((RDF, "Description")))
+                .unwrap_or(node);
+            let field = |key: &str| {
+                d.attribute((CRS, key))
+                    .map(str::to_string)
+                    .or_else(|| child_text(d, key))
+            };
+            applied = field("Name").filter(|name| !name.is_empty()).map(|name| {
+                crate::model::recipe::AppliedPreset {
+                    name,
+                    amount: field("Amount")
+                        .and_then(|a| a.trim().parse::<f32>().ok())
+                        .filter(|a| a.is_finite()),
+                    uuid: field("UUID").unwrap_or_default(),
+                }
+            });
         } else if matches!(name, "PointColors" | "ColorVariance") {
             // Lightroom writes an empty selection as 19 values of -1 (and a variance
             // of -50); `apply` reads both as no swatches.
@@ -228,6 +248,7 @@ pub fn parse(path: &Path, text: &str) -> Result<Preset> {
     }
     let preset = Preset {
         photo_settings: sidecar,
+        applied,
         id,
         name,
         group,

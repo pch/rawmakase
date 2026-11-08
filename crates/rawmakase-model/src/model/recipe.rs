@@ -50,6 +50,11 @@ pub struct Recipe {
     pub effects: crate::model::effects::Effects,
     pub preset_name: String,
     pub preset_settings: std::collections::BTreeMap<String, String>,
+    /// The last develop preset applied to this edit ([`AppliedPreset`]), shown and
+    /// filtered by in the Library. Never rendered. Omitted when there is none, so
+    /// releases that predate it keep it among their unknown settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applied_preset: Option<AppliedPreset>,
     /// A saved Embedded profile loads with today's tone curve (`CameraProfile::loaded`),
     /// wherever a recipe is read: sessions, the catalog, History, presets and sidecars.
     #[serde(deserialize_with = "loaded_profile")]
@@ -173,6 +178,26 @@ pub struct Recipe {
     )]
     pub unknown: std::collections::BTreeMap<String, serde_json::Value>,
 }
+/// The last develop preset applied to an edit, as Lightroom records it in
+/// `crs:Preset` (and a Lightroom Classic catalog in its `Preset` table), or as
+/// RAWmakase's Presets panel and the Library's batch apply one. Provenance only:
+/// settings changed after the preset are not told apart from the preset's, and an
+/// earlier preset's record is replaced by the next one.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct AppliedPreset {
+    /// The preset's name as stored, which may be a Lightroom localization key
+    /// (`presets::display_name` shows it).
+    pub name: String,
+    /// Lightroom's preset Amount, 1 = 100% (0–2 in RAWmakase's slider); `None`
+    /// when the source gave none or one that isn't a number.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub amount: Option<f32>,
+    /// The preset's `crs:UUID`, when it has one.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub uuid: String,
+}
+
 /// A recipe's spot removal, red eye corrections and masks (experimental). They are saved beside the recipe,
 /// not in it, so releases that predate them still read every other setting.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -208,6 +233,7 @@ impl Default for Recipe {
             effects: Default::default(),
             preset_name: String::new(),
             preset_settings: Default::default(),
+            applied_preset: None,
             profile: None,
             sharpening_radius: 0.8,
             sharpening_detail: 0.25,
@@ -1234,6 +1260,7 @@ mod tests {
             "constrain_crop": true,
             "upright": {"mode": "auto"},
             "panels": {"off": ["detail"]},
+            "applied_preset": {"name": "Kodak Ektachrome 64 Warm", "amount": 0.5, "uuid": "AB12"},
         });
         let r: Recipe = serde_json::from_value(stored.clone()).unwrap();
         assert!(

@@ -22,7 +22,8 @@ pub struct Applied {
 /// one: everything that fits this photo, the rest reported (see
 /// `Preset::apply_lenient`). Its Auto settings are measured on `measures`, the
 /// decoded photo; without it they leave the settings as they are. Upright keeps this
-/// photo's own analysis, not one the preset carries from another photo.
+/// photo's own analysis, not one the preset carries from another photo. The edit
+/// records the preset as the last one applied ([`Recipe::applied_preset`]).
 pub fn apply_to_photo(
     preset: &crate::xmp::Preset,
     current: &Recipe,
@@ -33,6 +34,12 @@ pub fn apply_to_photo(
     let (mut recipe, skipped) = preset.apply_lenient(current, m, profiles, measures)?;
     let substitute = preset.profile_substitute(m, profiles).map(|(_, used)| used);
     this_photos_upright(&mut recipe, current);
+    // The last preset applied, as Lightroom records it in `crs:Preset`.
+    recipe.applied_preset = Some(crate::model::recipe::AppliedPreset {
+        name: preset.name.clone(),
+        amount: Some(1.),
+        uuid: preset.settings.get("UUID").cloned().unwrap_or_default(),
+    });
     Ok(Applied {
         recipe,
         skipped,
@@ -81,6 +88,35 @@ mod tests {
         assert_eq!(
             lens.upright.mode,
             crate::model::transform::UprightMode::Level
+        );
+    }
+
+    /// The edit records the preset chosen, at 100%, with its UUID when it has one,
+    /// replacing any earlier record: the last preset applied, as Lightroom keeps it.
+    #[test]
+    fn applying_a_preset_records_its_name() {
+        let text = format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><r:RDF xmlns:r="{}"><r:Description xmlns:c="{}" c:PresetType="Normal" c:UUID="F00D" c:Exposure2012="0.3"/></r:RDF></x:xmpmeta>"#,
+            crate::xml::ns::RDF,
+            crate::xml::ns::CRS
+        );
+        let preset = crate::xmp::parse(std::path::Path::new("Warm.xmp"), &text).unwrap();
+        let current = Recipe {
+            applied_preset: Some(crate::model::recipe::AppliedPreset {
+                name: "Earlier".into(),
+                amount: Some(0.4),
+                uuid: String::new(),
+            }),
+            ..Recipe::default()
+        };
+        let applied = apply_to_photo(&preset, &current, &Metadata::default(), &[], None).unwrap();
+        assert_eq!(
+            applied.recipe.applied_preset,
+            Some(crate::model::recipe::AppliedPreset {
+                name: "Warm".into(),
+                amount: Some(1.),
+                uuid: "F00D".into(),
+            })
         );
     }
 }

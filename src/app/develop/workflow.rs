@@ -72,6 +72,10 @@ impl Editor {
         if !self.flush() {
             return false;
         }
+        // Its edit, and so the preset it was made with, may change here.
+        if let (Some(library), Some(id)) = (&mut self.library, photo) {
+            library.opened_in_develop(id);
+        }
         // The photo left, saved with another edit: its built previews follow it.
         if let Some(left) = self.document.catalog_photo
             && self.left_edited(left)

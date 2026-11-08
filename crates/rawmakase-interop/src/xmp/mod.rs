@@ -69,6 +69,10 @@ pub struct Preset {
     /// built-in preset's Adobe profile falls back to RAWmakase's own profile when it
     /// isn't imported.
     pub builtin: bool,
+    /// In a photo's settings, the last preset Lightroom applied to it (`crs:Preset`,
+    /// or a Classic catalog's `Preset` table): the edit's record, which application
+    /// gives the recipe. Its `crs:Parameters` never apply.
+    pub applied: Option<crate::model::recipe::AppliedPreset>,
 }
 #[cfg(test)]
 mod key_table_tests;

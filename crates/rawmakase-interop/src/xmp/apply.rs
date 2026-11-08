@@ -177,10 +177,20 @@ impl Preset {
         ensure!(skipped.is_empty(), "{}", skipped.join("; "));
         self.validate_remaining(&mut settings, m)?;
         self.keep_upright_fitting(base, &mut recipe);
-        recipe.preset_name = self.name.clone();
-        recipe.preset_settings = self.settings.clone();
+        self.record_source(&mut recipe);
         recipe.validate()?;
         Ok(recipe)
+    }
+    /// Names where `recipe`'s settings came from. A photo's settings replace its
+    /// edit, so their record of the last preset applied replaces the edit's; a
+    /// preset leaves it, as `presets::apply_to_photo` records a preset the user
+    /// chose (raw defaults apply presets too).
+    fn record_source(&self, recipe: &mut Recipe) {
+        recipe.preset_name = self.name.clone();
+        recipe.preset_settings = self.settings.clone();
+        if self.photo_settings {
+            recipe.applied_preset = self.applied.clone();
+        }
     }
     /// Refuses settings with HDR on while it can't be rendered. Best-effort readers
     /// call it first, so HDR on is never dropped as one warning among others and the
@@ -284,8 +294,7 @@ impl Preset {
         let skipped = self.apply_local(&mut recipe, m);
         warnings.extend(skipped);
         self.keep_upright_fitting(base, &mut recipe);
-        recipe.preset_name = self.name.clone();
-        recipe.preset_settings = self.settings.clone();
+        self.record_source(&mut recipe);
         recipe.validate()?;
         Ok((recipe, warnings))
     }

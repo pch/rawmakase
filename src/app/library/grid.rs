@@ -46,13 +46,17 @@ impl Library {
     pub(crate) fn prepare(&mut self, ctx: &egui::Context) {
         self.poll_previews(ctx);
         // Back from Develop, sorted by edit time: edits made there move
-        // their photos.
+        // their photos. A preset applied there is read again when asked, and
+        // at once for the Preset filter.
         let pass = ctx.cumulative_pass_nr();
         let returned = std::mem::replace(&mut self.drawn_pass, pass) + 1 < pass;
+        let presets_read = returned && self.returned_from_develop();
         if returned && self.filters.sort == super::sort::Sort::EditTime {
             self.sort_keys = None;
             self.filter();
             self.scroll_to_active = true;
+        } else if presets_read && self.filters.preset.is_some() {
+            self.filter();
         }
         // Survey keeps every photo's preview it shows; other views the usual
         // number.

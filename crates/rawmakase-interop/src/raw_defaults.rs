@@ -289,6 +289,10 @@ impl DevelopDefaults {
                         // (which every view would have to wait for) or stored from
                         // the preset's own. A default leaves it off.
                         recipe.upright = Default::default();
+                        // A photo's settings chosen as a default bring Lightroom's
+                        // record of the preset applied to that photo: no preset is
+                        // applied to the photos that start from a default.
+                        recipe.applied_preset = None;
                         Resolved {
                             recipe,
                             name: choice.label(),
@@ -419,6 +423,28 @@ mod tests {
             Some(preset)
         });
         assert_ne!(load(edited.settings.clone()), edited);
+    }
+
+    /// A photo's Lightroom settings chosen as the raw default carry Lightroom's
+    /// record of the preset applied to that photo; a default is no preset applied
+    /// to the photos that start from it, so it names none.
+    #[test]
+    fn a_raw_default_names_no_preset_applied() {
+        let m = x100f();
+        let text = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/" photoshop:SidecarForExtension="RAF" crs:Exposure2012="+0.70"><crs:Preset><rdf:Description crs:Name="Kodak Ektachrome 64 Warm" crs:Amount="1"/></crs:Preset></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+        let mut sidecar = crate::xmp::parse(std::path::Path::new("photo.xmp"), text).unwrap();
+        sidecar.id = "sidecar".into();
+        assert!(sidecar.applied.is_some());
+        let defaults = DevelopDefaults::with_presets(
+            RawDefaults {
+                master: preset_choice("sidecar"),
+                ..Default::default()
+            },
+            |id| (id == "sidecar").then(|| sidecar.clone()),
+        );
+        let r = defaults.resolve(&m, &profiles(&m));
+        assert_eq!(r.recipe.exposure, 0.7);
+        assert_eq!(r.recipe.applied_preset, None);
     }
 
     #[test]

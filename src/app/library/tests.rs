@@ -5145,3 +5145,130 @@ fn a_failed_reread_after_a_change_leaves_nothing_to_change() -> Result<()> {
     assert!(library.photo(a).is_none());
     Ok(())
 }
+
+/// The Preset filter shows the photos whose edit was last made with the preset
+/// chosen, as their saved edits say, and follows edits written later.
+#[test]
+fn the_preset_filter_shows_the_photos_made_with_a_preset() -> Result<()> {
+    let (directory, mut library) = library_of(&["a.RAF", "b.RAF", "c.RAF"])?;
+    let ids = ids_of(&library);
+    let folder = directory.path().join("photos");
+    let save = |library: &mut Library, id: PhotoId, name: &str, preset: Option<&str>| {
+        let path = folder.join(name);
+        let recipe = crate::model::recipe::Recipe {
+            applied_preset: preset.map(|name| crate::model::recipe::AppliedPreset {
+                name: name.into(),
+                amount: Some(1.),
+                uuid: String::new(),
+            }),
+            ..Default::default()
+        };
+        library.session.catalog_mut_for_tests().save_edit(
+            id,
+            &path,
+            &crate::storage::Identity::read(&path).unwrap(),
+            &recipe,
+            &crate::export_settings::ExportOptions::default(),
+            crate::catalog::HistoryUpdate::Keep,
+        )
+    };
+    save(
+        &mut library,
+        ids[0],
+        "a.RAF",
+        Some("Kodak Ektachrome 64 Warm"),
+    )?;
+    save(&mut library, ids[1], "b.RAF", Some("L&P Hochzeit"))?;
+    save(&mut library, ids[2], "c.RAF", None)?;
+    library.wait_for_availability();
+    assert_eq!(
+        library.preset_names(),
+        [
+            ("Kodak Ektachrome 64 Warm".to_string(), 1),
+            ("L&P Hochzeit".to_string(), 1)
+        ]
+    );
+    library.filters.preset = Some("Kodak Ektachrome 64 Warm".into());
+    library.filter();
+    assert_eq!(visible_names(&library), ["a.RAF"]);
+    assert!(library.filters.bar_set());
+    assert_eq!(
+        library.applied_preset_of(ids[0]).map(|p| p.name),
+        Some("Kodak Ektachrome 64 Warm".into())
+    );
+    assert_eq!(library.applied_preset_of(ids[2]), None);
+    // An edit written elsewhere (Sync, a batch) is read again.
+    save(
+        &mut library,
+        ids[1],
+        "b.RAF",
+        Some("Kodak Ektachrome 64 Warm"),
+    )?;
+    library.edits_changed([ids[1]]);
+    assert_eq!(visible_names(&library), ["a.RAF", "b.RAF"]);
+    assert_eq!(
+        library.applied_preset_of(ids[1]).map(|p| p.name),
+        Some("Kodak Ektachrome 64 Warm".into())
+    );
+    library.filters.clear_bar();
+    assert_eq!(library.filters.preset, None);
+    Ok(())
+}
+
+/// Back from Develop, only the photos opened there are read again: the others
+/// keep what was read, so the whole catalog's edits aren't read on every return.
+#[test]
+fn only_the_photos_opened_in_develop_are_read_again() -> Result<()> {
+    let (directory, mut library) = library_of(&["a.RAF", "b.RAF"])?;
+    let ids = ids_of(&library);
+    let folder = directory.path().join("photos");
+    let save = |library: &mut Library, id: PhotoId, name: &str, preset: &str| {
+        let path = folder.join(name);
+        let recipe = crate::model::recipe::Recipe {
+            applied_preset: Some(crate::model::recipe::AppliedPreset {
+                name: preset.into(),
+                amount: Some(1.),
+                uuid: String::new(),
+            }),
+            ..Default::default()
+        };
+        library.session.catalog_mut_for_tests().save_edit(
+            id,
+            &path,
+            &crate::storage::Identity::read(&path).unwrap(),
+            &recipe,
+            &crate::export_settings::ExportOptions::default(),
+            crate::catalog::HistoryUpdate::Keep,
+        )
+    };
+    save(&mut library, ids[0], "a.RAF", "Warm")?;
+    save(&mut library, ids[1], "b.RAF", "Warm")?;
+    assert_eq!(library.preset_names(), [("Warm".to_string(), 2)]);
+    // Develop opens and changes a; b changes without Develop, as no edit can.
+    library.opened_in_develop(ids[0]);
+    save(&mut library, ids[0], "a.RAF", "Cool")?;
+    save(&mut library, ids[1], "b.RAF", "Cool")?;
+    library.returned_from_develop();
+    assert_eq!(
+        library.preset_names(),
+        [("Cool".to_string(), 1), ("Warm".to_string(), 1)]
+    );
+    assert_eq!(
+        library.applied_preset_of(ids[0]).map(|p| p.name),
+        Some("Cool".into())
+    );
+    // Back in Develop on the photo still open there, which isn't loaded again:
+    // its edit changes, and is read again on the way back too.
+    library.shows_in_develop(Some(ids[0]));
+    save(&mut library, ids[0], "a.RAF", "Mono")?;
+    library.returned_from_develop();
+    assert_eq!(
+        library.applied_preset_of(ids[0]).map(|p| p.name),
+        Some("Mono".into())
+    );
+    assert_eq!(
+        library.preset_names(),
+        [("Mono".to_string(), 1), ("Warm".to_string(), 1)]
+    );
+    Ok(())
+}

@@ -122,6 +122,39 @@ impl Catalog {
     pub fn load_edit(&self, id: PhotoId, path: &Path) -> Result<Option<SavedEdit>> {
         self.edit_record(id)?.saved(path)
     }
+    /// The last preset applied to each photo's edit that names one
+    /// ([`EditRecord::applied_preset`](crate::edits::EditRecord::applied_preset)).
+    /// Reads only the edits whose text mentions a preset.
+    pub fn applied_presets(
+        &self,
+    ) -> Result<std::collections::HashMap<PhotoId, crate::model::recipe::AppliedPreset>> {
+        row! {
+            struct Named {
+                id: PhotoId,
+                recipe: Option<String>,
+                lightroom: Option<String>,
+            }
+        }
+        let rows: Vec<Named> = self.db.read(
+            sql!(
+                "SELECT id, recipe, lightroom_develop FROM photos
+                 WHERE recipe LIKE '%\"applied_preset\"%'
+                    OR (recipe IS NULL AND lightroom_develop LIKE '%Preset%')"
+            ),
+            &[],
+        )?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| {
+                let record = crate::edits::EditRecord {
+                    recipe: row.recipe,
+                    lightroom: row.lightroom,
+                    ..Default::default()
+                };
+                Some((row.id, record.applied_preset()?))
+            })
+            .collect())
+    }
     /// When each edited photo was last edited, as "YYYY-MM-DD HH:MM:SS"
     /// UTC: in RAWmakase, or else in Lightroom, whose history counts seconds
     /// from 2001.

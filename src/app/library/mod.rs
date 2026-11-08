@@ -201,6 +201,9 @@ pub(crate) struct Library {
     /// The sort order's keys from the catalog (see `Sort::keys`), kept until
     /// edits or sizes change them.
     sort_keys: Option<(sort::Sort, sort::Keys)>,
+    /// Which preset each photo's edit was last made with, kept until edits
+    /// change it.
+    applied: applied::AppliedPresets,
     /// The frame the Library was last drawn in, to notice it showing again.
     drawn_pass: u64,
     /// The style the grid was last drawn with, to keep its rows in place
@@ -320,6 +323,7 @@ impl Library {
             drawn_style: Default::default(),
             drawn_pass: 0,
             sort_keys: None,
+            applied: Default::default(),
             cell_info: HashMap::new(),
             strip: filmstrip::State::default(),
             shown_version: 0,
@@ -427,6 +431,7 @@ impl Library {
     fn reloaded(&mut self) {
         self.cell_info.clear();
         self.sort_keys = None;
+        self.applied.forget();
         self.shown_version += 1;
         if self.filters.previous_import {
             self.filters.members = self.session.previous_import().clone();
@@ -553,6 +558,12 @@ impl Library {
             self.sort_keys = Some((sort, sort.keys(self.session.catalog())));
         }
         let keys = &self.sort_keys.as_ref().unwrap().1;
+        // Read only while the Preset filter is set.
+        let presets = self
+            .filters
+            .preset
+            .is_some()
+            .then(|| self.applied.all(self.session.catalog()));
         self.shown_version += 1;
         // Filtering follows every change to the photos, so the count does too.
         self.availability.forget_count();
@@ -560,6 +571,7 @@ impl Library {
             self.session.photos(),
             |path| self.availability.is_available(path),
             keys,
+            presets,
         );
         self.keep_shown_selected();
     }
@@ -666,11 +678,47 @@ impl Library {
     }
     /// Edits written elsewhere (Sync, its Undo): their previews render again.
     pub(in crate::app) fn edits_changed(&mut self, ids: impl IntoIterator<Item = PhotoId>) {
-        for id in ids {
+        let ids: Vec<PhotoId> = ids.into_iter().collect();
+        for &id in &ids {
             self.cache.forget(id);
         }
-        // Edit Time order reads when each photo was last edited.
-        self.resort_in_place(|l| l.sort_keys = None);
+        // Edit Time order reads when each photo was last edited, and the
+        // Preset filter which preset each was made with.
+        self.resort_in_place(|l| {
+            l.sort_keys = None;
+            l.applied.refresh(l.session.catalog(), ids);
+        });
+    }
+    /// Develop opened photo `id`: its preset is read again when the Library
+    /// shows next.
+    pub(in crate::app) fn opened_in_develop(&mut self, id: PhotoId) {
+        self.applied.note_opened(id);
+    }
+    /// The photo open in Develop (`None` without one): going back to it changes
+    /// its edit without opening it again. Told before each frame.
+    pub(in crate::app) fn shows_in_develop(&mut self, id: Option<PhotoId>) {
+        self.applied.set_in_develop(id);
+    }
+    /// Back from Develop: the presets of the photos opened there, and the one
+    /// open there, are read again; whether any were.
+    pub(super) fn returned_from_develop(&mut self) -> bool {
+        self.applied.refresh_opened(self.session.catalog())
+    }
+    /// The presets the catalog's edits were last made with, by name, with how
+    /// many photos each, for the Preset filter's menu.
+    pub(super) fn preset_names(&mut self) -> Vec<(String, usize)> {
+        let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+        for name in self.applied.all(self.session.catalog()).values() {
+            *counts.entry(name.clone()).or_default() += 1;
+        }
+        counts.into_iter().collect()
+    }
+    /// The last preset photo `id`'s edit was made with, for the info panel.
+    pub(super) fn applied_preset_of(
+        &mut self,
+        id: PhotoId,
+    ) -> Option<crate::model::recipe::AppliedPreset> {
+        self.applied.of(self.session.catalog(), id)
     }
     /// Whether `id` is selected, shown or hidden by the filters.
     pub(in crate::app) fn is_selected(&self, id: PhotoId) -> bool {
@@ -1540,6 +1588,7 @@ fn edit_source(catalog: &Catalog, id: PhotoId) -> Option<previews::EditSource> {
         .or(lightroom.map(previews::EditSource::Lightroom))
 }
 
+mod applied;
 mod availability;
 mod capture;
 /// Lightroom-style grid cells: the label tints the cell, while selection uses
