@@ -946,8 +946,11 @@ fn lightroom_import_copies_photo_info_from_apex_values() -> Result<()> {
     assert_eq!(info.iso_text().as_deref(), Some("ISO 1000"));
     // A quarter-turned photo shows taller than it is stored.
     assert_eq!(info.dimensions_text().as_deref(), Some("4000 × 6000"));
-    // A virtual copy has its master's info.
-    assert_eq!(cat.photo_info(PhotoId(41))?, Some(info));
+    // A virtual copy has its master's info, read one by one or all at once.
+    assert_eq!(cat.photo_info(PhotoId(41))?, Some(info.clone()));
+    let all = cat.photo_infos()?;
+    assert_eq!(all.get(&PhotoId(40)), Some(&info));
+    assert_eq!(all.get(&PhotoId(41)), Some(&info));
     Ok(())
 }
 #[test]

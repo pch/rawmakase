@@ -142,7 +142,7 @@ fn caseless(a: &str, b: &str) -> Ordering {
 }
 /// File names as people read them: case aside, and runs of digits by value,
 /// so IMG_9 comes before IMG_10. Compares in place, without allocating.
-fn natural(text_a: &str, text_b: &str) -> Ordering {
+pub(super) fn natural(text_a: &str, text_b: &str) -> Ordering {
     let (a, b) = (text_a.as_bytes(), text_b.as_bytes());
     let (mut i, mut j) = (0, 0);
     while i < a.len() && j < b.len() {

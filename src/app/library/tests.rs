@@ -1415,6 +1415,224 @@ fn filters_combine_and_a_hidden_selection_is_cleared() -> Result<()> {
     Ok(())
 }
 #[test]
+fn the_metadata_filter_picks_attributes_with_counts() -> Result<()> {
+    use super::facets::Attribute;
+    use crate::metadata::PhotoInfo;
+    let (_directory, mut library) = library_of(&["a.RAF", "b.RAF", "c.jpg"])?;
+    library.wait_for_availability();
+    // The synthetic files have no info; their read ends before ours is stored.
+    let started = std::time::Instant::now();
+    while library.session.reading_photo_info() {
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        library.poll_photo_info();
+        std::thread::yield_now();
+    }
+    let ids = ids_of(&library);
+    let info = |camera: &str, lens: Option<&str>, focal: f64, aperture: f64, iso: f64| {
+        Some(PhotoInfo {
+            camera: Some(camera.into()),
+            lens: lens.map(Into::into),
+            focal: Some(focal),
+            aperture: Some(aperture),
+            iso: Some(iso),
+            exposure: Some(1. / iso),
+            ..PhotoInfo::default()
+        })
+    };
+    let catalog = library.session.catalog_mut_for_tests();
+    catalog.fill_photo_info(&[
+        (ids[0], info("X-T5", Some("XF23mmF2"), 23., 2., 160.)),
+        (ids[1], info("X-T5", Some("XF56mmF1.2"), 56., 1.2, 800.)),
+        (ids[2], info("X100V", None, 23., 2., 3200.)),
+    ])?;
+    catalog.add_keywords(&[ids[0], ids[1]], &[vec!["City".into()]])?;
+    catalog.add_keywords(&[ids[1]], &[vec!["Night".into()]])?;
+    library.refresh()?;
+    library.wait_for_availability();
+    let copy = library.create_virtual_copy(ids[1])?.value;
+    library.filter();
+    let value = |v: &str| Some(v.to_string());
+    let choose = |library: &mut Library, attribute: Attribute, values: &[Option<String>]| {
+        library
+            .filters
+            .metadata
+            .insert(attribute, values.iter().cloned().collect());
+        library.filter();
+    };
+    // Each column counts the photos the rest of the bar shows, its own
+    // choice aside; a copy has its master's info.
+    assert_eq!(
+        library.metadata_counts(Attribute::Camera),
+        [(value("X-T5"), 3), (value("X100V"), 1)]
+    );
+    choose(&mut library, Attribute::Camera, &[value("X-T5")]);
+    assert_eq!(ids_of(&library), [ids[0], ids[1], copy]);
+    assert!(library.filters.bar_set());
+    assert_eq!(
+        library.metadata_counts(Attribute::Camera),
+        [(value("X-T5"), 3), (value("X100V"), 1)]
+    );
+    assert_eq!(
+        library.metadata_counts(Attribute::Lens),
+        [(value("XF23mmF2"), 1), (value("XF56mmF1.2"), 2)]
+    );
+    // Columns combine; values in one column are either.
+    choose(&mut library, Attribute::Lens, &[value("XF23mmF2")]);
+    assert_eq!(ids_of(&library), [ids[0]]);
+    library.filters.metadata.clear();
+    // Settings as the Metadata panel shows them, in numeric order; a photo
+    // without a lens is Unknown, listed last.
+    assert_eq!(
+        library.metadata_counts(Attribute::FocalLength),
+        [(value("23 mm"), 2), (value("56 mm"), 2)]
+    );
+    assert_eq!(
+        library.metadata_counts(Attribute::Iso),
+        [
+            (value("ISO 160"), 1),
+            (value("ISO 800"), 2),
+            (value("ISO 3200"), 1)
+        ]
+    );
+    assert_eq!(
+        library.metadata_counts(Attribute::ShutterSpeed),
+        [
+            (value("1/3200 sec"), 1),
+            (value("1/800 sec"), 2),
+            (value("1/160 sec"), 1)
+        ]
+    );
+    assert_eq!(
+        library.metadata_counts(Attribute::Aperture),
+        [(value("f/1.2"), 2), (value("f/2"), 2)]
+    );
+    assert_eq!(
+        library.metadata_counts(Attribute::Lens).last(),
+        Some(&(None, 1))
+    );
+    choose(&mut library, Attribute::Lens, &[None]);
+    assert_eq!(ids_of(&library), [ids[2]]);
+    library.filters.metadata.clear();
+    // File type from the file; a photo counts under each of its keywords.
+    assert_eq!(
+        library.metadata_counts(Attribute::FileType),
+        [(value("JPEG"), 1), (value("Raw"), 3)]
+    );
+    assert_eq!(
+        library.metadata_counts(Attribute::Keyword),
+        [(value("City"), 3), (value("Night"), 2), (None, 1)]
+    );
+    // All counts each photo once, however many keywords it has.
+    assert_eq!(library.metadata_total(Attribute::Keyword), 4);
+    choose(&mut library, Attribute::Keyword, &[value("Night"), None]);
+    assert_eq!(ids_of(&library), [ids[1], copy, ids[2]]);
+    library.filters.metadata.clear();
+    choose(&mut library, Attribute::Aperture, &[value("f/2")]);
+    choose(
+        &mut library,
+        Attribute::Iso,
+        &[value("ISO 160"), value("ISO 3200")],
+    );
+    assert_eq!(ids_of(&library), [ids[0], ids[2]]);
+    // With the other filters too.
+    library.filters.query = "x100".into();
+    library.filter();
+    assert_eq!(ids_of(&library), [ids[2]]);
+    // Cmd+L keeps it but doesn't apply it; Clear clears it.
+    library.filters.enabled = false;
+    library.filter();
+    assert_eq!(ids_of(&library).len(), 4);
+    library.filters.clear_bar();
+    library.filter();
+    assert!(library.filters.metadata.is_empty());
+    assert_eq!(ids_of(&library).len(), 4);
+    Ok(())
+}
+#[test]
+fn the_metadata_filter_follows_info_saved_later_and_keeps_its_choices() -> Result<()> {
+    use super::facets::Attribute;
+    use crate::metadata::PhotoInfo;
+    let (_directory, mut library) = library_of(&["a.RAF", "b.RAF"])?;
+    library.wait_for_availability();
+    let started = std::time::Instant::now();
+    while library.session.reading_photo_info() {
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        library.poll_photo_info();
+        std::thread::yield_now();
+    }
+    let ids = ids_of(&library);
+    let value = |v: &str| Some(v.to_string());
+    library
+        .filters
+        .metadata
+        .insert(Attribute::Camera, [value("X-T5")].into());
+    library.filter();
+    assert!(ids_of(&library).is_empty());
+    // A chosen value no photo has stays listed, to be unchosen.
+    assert_eq!(
+        library.metadata_counts(Attribute::Camera),
+        [(value("X-T5"), 0), (None, 2)]
+    );
+    // Info saved once the facets were read: they are read again when the
+    // background read is over, and the photos shown follow.
+    let x_t5 = PhotoInfo {
+        camera: Some("X-T5".into()),
+        ..PhotoInfo::default()
+    };
+    library
+        .session
+        .catalog_mut_for_tests()
+        .fill_photo_info(&[(ids[1], Some(x_t5))])?;
+    assert!(library.facets_after_info_saved(true));
+    library.filter();
+    assert_eq!(ids_of(&library), [ids[1]]);
+    // Two keywords of one name, under different parents, count once.
+    library.filters.metadata.clear();
+    library.session.catalog_mut_for_tests().add_keywords(
+        &[ids[0]],
+        &[
+            vec!["Places".into(), "Granada".into()],
+            vec!["Events".into(), "Granada".into()],
+        ],
+    )?;
+    library.refresh()?;
+    library.filter();
+    assert_eq!(
+        library.metadata_counts(Attribute::Keyword),
+        [(value("Granada"), 1), (None, 1)]
+    );
+    Ok(())
+}
+#[test]
+fn the_search_finds_camera_and_lens() -> Result<()> {
+    use crate::metadata::PhotoInfo;
+    let (_directory, mut library) = library_of(&["a.RAF", "b.RAF"])?;
+    library.wait_for_availability();
+    let started = std::time::Instant::now();
+    while library.session.reading_photo_info() {
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        library.poll_photo_info();
+        std::thread::yield_now();
+    }
+    let ids = ids_of(&library);
+    library.session.catalog_mut_for_tests().fill_photo_info(&[(
+        ids[1],
+        Some(PhotoInfo {
+            camera: Some("ILCE-7M4".into()),
+            lens: Some("FE 35mm F1.4 GM".into()),
+            ..PhotoInfo::default()
+        }),
+    )])?;
+    library.refresh()?;
+    library.filters.query = "ilce".into();
+    library.filter();
+    assert_eq!(ids_of(&library), [ids[1]]);
+    library.filters.query = "35mm f1.4".into();
+    library.filter();
+    assert_eq!(ids_of(&library), [ids[1]]);
+    Ok(())
+}
+#[test]
 fn attribute_filters_match_lightroom() -> Result<()> {
     let (_directory, mut library) = library_of(&["a.RAF", "b.RAF", "c.RAF", "d.RAF"])?;
     let ids = ids_of(&library);

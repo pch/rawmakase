@@ -94,15 +94,20 @@ impl Library {
             self.messages
                 .warn(format!("Photo info could not be saved: {e}"));
         }
+        // The Metadata filter and the search find the new cameras and
+        // lenses once the read ends.
+        let facets_forgotten = self.facets_after_info_saved(polled.saved > 0);
         if polled.saved > 0 {
             self.info_saves += 1;
             self.info = None;
             self.hover_info = None;
             self.cell_info.clear();
-            // Sorted by aspect ratio, the new sizes find their places.
-            if self.filters.sort == super::sort::Sort::AspectRatio {
-                self.resort_in_place(|library| library.sort_keys = None);
-            }
+        }
+        // Sorted by aspect ratio, the new sizes find their places.
+        if polled.saved > 0 && self.filters.sort == super::sort::Sort::AspectRatio {
+            self.resort_in_place(|library| library.sort_keys = None);
+        } else if facets_forgotten && self.filters.needs_facets() {
+            self.resort_in_place(|_| ());
         }
     }
 }

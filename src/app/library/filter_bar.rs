@@ -1,7 +1,10 @@
 //! The filter bar above the grid: search, then Lightroom's Attribute
 //! filter. Flags and labels toggle in any combination, the rating is
 //! compared with the operator chosen from its menu, and Kind picks masters
-//! or virtual copies. Cmd+L turns it off and on; changing it turns it on.
+//! or virtual copies. Metadata picks cameras, lenses, shooting settings,
+//! file types and keywords, from buttons in the bar or the strip under it
+//! (`metadata_bar.rs`), as Lightroom's Metadata filter does. Cmd+L turns the bar off and on; changing
+//! it turns it on.
 use super::Library;
 use super::filter::{Kind, Label, RatingOp, toggle};
 use super::grid::filter_caption;
@@ -46,10 +49,13 @@ impl Library {
                         changed |= ui.horizontal(|ui| self.kind_filter(ui, compact)).inner;
                     }
                     ui.add_space(space::L);
+                    changed |= ui.horizontal(|ui| self.metadata_buttons(ui, compact)).inner;
+                    ui.add_space(space::L);
                     ui.set_opacity(opacity);
                     changed |= self.filters_switch(ui);
                 });
             });
+        changed |= self.metadata_strip(ui);
         if changed {
             self.filter()
         }
@@ -70,7 +76,7 @@ impl Library {
                     .min_size(Vec2::new(0., COMPACT_SEGMENT_HEIGHT))
                     .vertical_align(egui::Align::Center),
             )
-            .on_hover_text("Search filename, keyword, capture date or label")
+            .on_hover_text("Search filename, keyword, capture date, label, camera or lens")
             .changed();
         self.turn_on(changed)
     }
