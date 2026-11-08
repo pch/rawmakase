@@ -978,24 +978,42 @@ impl Matcher {
         chosen: &Path,
         choices: &[Choice],
     ) -> Matched {
+        // The directory as the disk spells it, as the locations are compared.
+        let on_disk_dir = directory
+            .canonicalize()
+            .unwrap_or_else(|_| directory.to_path_buf());
         // (specificity, location, logical path, whether it resolves back here)
         let mut candidates = Vec::new();
         for (location, on_disk) in &self.locations {
-            let Ok(rest) = directory.strip_prefix(on_disk) else {
+            let root = &self.roots[&location.root];
+            // A directory is below a location as the disk spells both (Add
+            // Folder's, canonicalized), or as the catalog stores the location
+            // (Synchronize's and Find on Disk's, built from it). The two
+            // differ on Windows, where only the disk's has the `\\?\` prefix,
+            // and through symbolic links (issue #941). The names below the
+            // location stay as the caller has them where they can, as they
+            // are the catalog folder's; a location only the disk's spelling
+            // of the directory is below still counts, so the most specific
+            // one wins.
+            let (rest, original, rows, here) = if let Ok(rest) = directory.strip_prefix(on_disk) {
+                (rest, &root.original_on_disk, &root.rows_on_disk, directory)
+            } else if let Ok(rest) = directory.strip_prefix(&location.path) {
+                (rest, &root.original, &root.rows, directory)
+            } else if let Ok(rest) = on_disk_dir.strip_prefix(on_disk) {
+                (
+                    rest,
+                    &root.original_on_disk,
+                    &root.rows_on_disk,
+                    on_disk_dir.as_path(),
+                )
+            } else {
                 continue;
             };
             let logical = join(&location.relative, &logical_from_os(rest));
-            let root = &self.roots[&location.root];
             // The folder it would be must be found right here, not hidden by a
             // more specific location elsewhere.
-            let found = resolve_in(
-                &root.original_on_disk,
-                &root.rows_on_disk,
-                &logical,
-                cfg!(windows),
-            )
-            .as_deref()
-                == Some(directory);
+            let found =
+                resolve_in(original, rows, &logical, cfg!(windows)).as_deref() == Some(here);
             candidates.push((on_disk.components().count(), location, logical, found));
         }
         if candidates.is_empty() {
