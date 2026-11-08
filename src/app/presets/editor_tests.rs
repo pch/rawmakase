@@ -247,3 +247,52 @@ fn preset_amount_scales_the_preset_from_the_settings_before_it() {
     assert_eq!(editor.document.edit.recipe().vibrance, 0.3);
     assert!(editor.presets.amount.is_none());
 }
+
+/// Develop's Presets panel names the preset the photo's edit was last made with,
+/// with its Amount when it isn't 100%, and marks it in the list: by its UUID when
+/// both have one, else by its name.
+#[test]
+fn the_presets_panel_shows_the_preset_the_photo_was_made_with() {
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    let mut warm = preset_from("Warm", r#"crs:Exposure2012="0.3""#);
+    warm.id = "warm".into();
+    let mut renamed = preset_from("Kodak Renamed", r#"crs:UUID="AB12" crs:Exposure2012="0.3""#);
+    renamed.id = "kodak".into();
+    let other = preset_from("Cool", r#"crs:Exposure2012="-0.3""#);
+    assert_eq!(editor.applied_preset_text(), None);
+    assert!(!editor.is_applied_preset(&warm));
+    let made_with = |name: &str, amount: f32, uuid: &str| {
+        Some(crate::model::recipe::AppliedPreset {
+            name: name.into(),
+            amount: Some(amount),
+            uuid: uuid.into(),
+        })
+    };
+    editor.document.edit.replace(Recipe {
+        applied_preset: made_with("Warm", 0.8, ""),
+        ..Default::default()
+    });
+    assert_eq!(
+        editor.applied_preset_text().as_deref(),
+        Some("Made with Warm (80%)")
+    );
+    assert!(editor.is_applied_preset(&warm));
+    assert!(!editor.is_applied_preset(&other));
+    // Lightroom's record names the preset as it was then: its UUID still finds it.
+    editor.document.edit.replace(Recipe {
+        applied_preset: made_with("Kodak Ektachrome 64 Warm", 1., "AB12"),
+        ..Default::default()
+    });
+    assert_eq!(
+        editor.applied_preset_text().as_deref(),
+        Some("Made with Kodak Ektachrome 64 Warm")
+    );
+    assert!(editor.is_applied_preset(&renamed));
+    assert!(!editor.is_applied_preset(&warm));
+}

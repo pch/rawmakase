@@ -1588,7 +1588,7 @@ fn edit_source(catalog: &Catalog, id: PhotoId) -> Option<previews::EditSource> {
         .or(lightroom.map(previews::EditSource::Lightroom))
 }
 
-mod applied;
+pub(in crate::app) mod applied;
 mod availability;
 mod capture;
 /// Lightroom-style grid cells: the label tints the cell, while selection uses

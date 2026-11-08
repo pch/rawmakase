@@ -44,7 +44,7 @@ Adobe doesn't document how each setting scales, and Camera Raw offers the slider
 
 ## Which preset a photo was made with
 
-An edit records the last develop preset applied to it (`Recipe::applied_preset`: the name, the Amount, 1 = 100%, and the preset's UUID when it has one), as Lightroom records it in a photo's XMP as `crs:Preset`. The Library's info panel shows it in its **Preset** row ("Kodak Ektachrome 64 Warm", or "Kodak Ektachrome 64 Warm (80%)" at another Amount), and the filter bar's **Preset** menu shows only the photos whose edit was last made with the preset chosen, with how many photos each preset has.
+An edit records the last develop preset applied to it (`Recipe::applied_preset`: the name, the Amount, 1 = 100%, and the preset's UUID when it has one), as Lightroom records it in a photo's XMP as `crs:Preset`. The Library's info panel shows it in its **Preset** row ("Kodak Ektachrome 64 Warm", or "Kodak Ektachrome 64 Warm (80%)" at another Amount), and the filter bar's **Preset** menu shows only the photos whose edit was last made with the preset chosen, with how many photos each preset has. In Develop, the Presets panel says "Made with …" under its filters (the Amount slider names the preset instead while it shows) and marks that preset in the list, and its group while closed: by the preset's UUID when both have one, as a Lightroom preset renamed since keeps it, else by its name.
 
 It is a record of where the edit started, not part of it: nothing renders from it. Only the last preset is kept: applying another replaces it, and settings changed after the preset are not told apart from the preset's. The panel and the menu's hover say so.
 

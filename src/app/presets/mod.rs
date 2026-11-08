@@ -189,6 +189,7 @@ impl Editor {
                         self.presets.favorites_only = show == 1;
                         self.presets.compatible_only = show == 2;
                     }
+                    self.applied_preset_ui(ui);
                     self.preset_amount_ui(ui);
                     if !library.errors.is_empty() {
                         ui.label(
@@ -216,6 +217,8 @@ impl Editor {
                     }
                     ui.spacing_mut().item_spacing.y = 0.;
                     let force_open = !self.presets.filter.is_empty() || self.presets.favorites_only;
+                    // The photo's own preset is marked, else the one last clicked.
+                    let made_with = self.document.edit.recipe().applied_preset.is_some();
                     for PresetGroup {
                         imported,
                         name: group,
@@ -225,7 +228,12 @@ impl Editor {
                         let id = ui.make_persistent_id(("preset-group", imported, group));
                         let open = force_open
                             || ui.ctx().data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
-                        if list_row(ui, group, Some(presets.len()), 0, Some(open), false, true)
+                        // A closed group shows that it holds the photo's preset.
+                        let holds = made_with
+                            && presets
+                                .iter()
+                                .any(|(i, _)| self.is_applied_preset(&library.presets[*i]));
+                        if list_row(ui, group, Some(presets.len()), 0, Some(open), holds, true)
                             .clicked()
                             && !force_open
                         {
@@ -248,7 +256,11 @@ impl Editor {
                                 None,
                                 1,
                                 None,
-                                self.presets.selected == p.id,
+                                if made_with {
+                                    self.is_applied_preset(p)
+                                } else {
+                                    self.presets.selected == p.id
+                                },
                                 enabled && issue.is_none(),
                             );
                             // Off screen in the scrolled list: nothing more to draw.
@@ -543,6 +555,50 @@ impl Editor {
                 format!("{:.0}", amount * 100.),
             ));
         AmountChange::Changed
+    }
+    /// "Made with" the preset the photo's edit was last made with
+    /// ([`Recipe::applied_preset`](crate::model::recipe::Recipe::applied_preset)),
+    /// for the Presets panel; `None` when the edit names none.
+    pub(in crate::app) fn applied_preset_text(&self) -> Option<String> {
+        let applied = self.document.edit.recipe().applied_preset.as_ref()?;
+        Some(format!(
+            "Made with {}",
+            crate::app::library::applied::shown(applied)
+        ))
+    }
+    /// Whether `p` is the preset the photo's edit was last made with: the same
+    /// UUID when both have one, as a renamed Lightroom preset keeps it, else the
+    /// same name.
+    pub(in crate::app) fn is_applied_preset(&self, p: &crate::xmp::Preset) -> bool {
+        let Some(applied) = &self.document.edit.recipe().applied_preset else {
+            return false;
+        };
+        match p.settings.get("UUID") {
+            Some(uuid) if !uuid.is_empty() && !applied.uuid.is_empty() => *uuid == applied.uuid,
+            _ => p.name == applied.name,
+        }
+    }
+    /// The line under the filters naming the preset the photo was made with.
+    /// While the Amount slider shows, it names that preset already.
+    fn applied_preset_ui(&self, ui: &mut egui::Ui) {
+        if self.presets.amount.is_some() {
+            return;
+        }
+        let Some(text) = self.applied_preset_text() else {
+            return;
+        };
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(text)
+                    .size(text::SMALL)
+                    .color(theme::palette(ui.ctx()).tone(Tone::LABEL)),
+            )
+            .truncate(),
+        )
+        .on_hover_text(
+            "The last preset applied to this photo, as Lightroom records it. Changes \
+             made after it are part of the edit too.",
+        );
     }
     /// Ends the Amount once anything else has changed the photo, as Lightroom hides it.
     pub(in crate::app) fn end_stale_preset_amount(&mut self) {

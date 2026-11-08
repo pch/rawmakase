@@ -95,9 +95,9 @@ impl AppliedPresets {
     }
 }
 
-/// How the info panel names an applied preset: its name, then its Amount when it
-/// isn't 100%.
-pub(super) fn shown(preset: &AppliedPreset) -> String {
+/// How the Library's info panel and Develop's Presets panel name an applied
+/// preset: its name, then its Amount when it isn't 100%.
+pub(in crate::app) fn shown(preset: &AppliedPreset) -> String {
     let name = crate::presets::display_name(&preset.name);
     match preset.amount {
         Some(amount) if (amount - 1.).abs() > 0.005 => {
