@@ -15,6 +15,19 @@ use crate::catalog::lightroom::{LibraryAlbum, Marked};
 use eframe::egui::{self, Color32, Sense, Vec2};
 use std::collections::HashSet;
 
+/// The library's albums as read for the dialog: with the catalog's photos in
+/// the cloud and their bytes, and the bytes free on the library's disk, where
+/// Lightroom downloads them (None when that can't be told).
+pub(crate) struct Albums {
+    albums: Vec<LibraryAlbum>,
+    in_cloud: (usize, u64),
+    free: Option<u64>,
+}
+
+/// Room left on the library's disk after a download, beyond the 2 GB
+/// Lightroom keeps free itself: the disk is the user's system disk too.
+const SPARE: u64 = 10_000_000_000;
+
 /// The albums to choose from, by their folders, and those chosen.
 pub(crate) struct DownloadDialog {
     albums: Vec<Choice>,
@@ -24,6 +37,8 @@ pub(crate) struct DownloadDialog {
     /// The catalog's photos here, and in the cloud with their originals' bytes.
     here: usize,
     in_cloud: (usize, u64),
+    /// The bytes free on the library's disk, where Lightroom downloads.
+    free: Option<u64>,
 }
 
 /// An album as listed, under its folder's path ("2. Travel / Iceland").
@@ -76,7 +91,19 @@ impl Editor {
             move |tx| {
                 let result = crate::catalog::Catalog::open(&catalog)
                     .and_then(|mut c| c.lightroom_library_albums())
-                    .map(|albums| (albums, in_cloud, in_cloud_bytes))
+                    .map(|albums| {
+                        // The space Lightroom downloads into: the library's disk.
+                        let free = albums.first().and_then(|a| {
+                            rawmakase_fs::volume_facts(&a.account)
+                                .ok()
+                                .map(|f| f.available)
+                        });
+                        Box::new(Albums {
+                            albums,
+                            in_cloud: (in_cloud, in_cloud_bytes),
+                            free,
+                        })
+                    })
                     .map_err(|e| format!("{e:#}"));
                 let _ = tx.send(Event::LightroomAlbums(result));
             },
@@ -87,22 +114,24 @@ impl Editor {
     }
 
     /// Shows the albums read, or why they couldn't be.
-    pub(in crate::app) fn lightroom_albums(
-        &mut self,
-        result: Result<(Vec<LibraryAlbum>, usize, u64), String>,
-    ) {
+    pub(in crate::app) fn lightroom_albums(&mut self, result: Result<Box<Albums>, String>) {
         self.catalog_work = None;
         self.activity.finish_dialog();
         match result {
-            Ok((albums, in_cloud, bytes)) => {
+            Ok(read) => {
+                let Albums {
+                    albums,
+                    in_cloud,
+                    free,
+                } = *read;
                 // The catalog's other photos are here.
                 let here = self.library.as_ref().map_or(0, |l| {
                     let masters = l.session.photos().iter().filter(|p| p.master.is_none());
-                    masters.count().saturating_sub(in_cloud)
+                    masters.count().saturating_sub(in_cloud.0)
                 });
-                self.modal = Some(crate::app::Modal::LightroomDownload(Box::new(
-                    DownloadDialog::new(albums, here, (in_cloud, bytes)),
-                )))
+                let mut dialog = DownloadDialog::new(albums, here, in_cloud);
+                dialog.free = free;
+                self.modal = Some(crate::app::Modal::LightroomDownload(Box::new(dialog)));
             }
             Err(e) => self.messages.warn(format!("Download from Lightroom: {e}")),
         }
@@ -152,6 +181,21 @@ impl Editor {
                     });
                 ui.add_space(space::XL);
                 let (photos, bytes) = dialog.totals();
+                let fits = dialog.fits();
+                if let Err((needed, free)) = fits {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Too much for the library's disk: {} needed, {} free. Lightroom \
+                             downloads into its library; choose fewer albums, or move the \
+                             library to a larger disk in Lightroom first.",
+                            size(needed),
+                            size(free)
+                        ))
+                        .size(text::LABEL)
+                        .color(Color32::from_rgb(220, 120, 90)),
+                    );
+                    ui.add_space(space::S);
+                }
                 // One line, the summary centred on the buttons.
                 let line = Vec2::new(ui.available_width(), 34.);
                 ui.allocate_ui_with_layout(
@@ -189,8 +233,9 @@ impl Editor {
                                 .color(palette.tone(Tone::SOFT)),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let download =
-                                ui.add_enabled_ui(photos > 0, |ui| primary_button(ui, "Download"));
+                            let download = ui.add_enabled_ui(photos > 0 && fits.is_ok(), |ui| {
+                                primary_button(ui, "Download")
+                            });
                             if download.inner.clicked() {
                                 close = Some(Close::Download);
                             }
@@ -347,6 +392,7 @@ impl DownloadDialog {
             chosen: HashSet::new(),
             here,
             in_cloud,
+            free: None,
         }
     }
 
@@ -354,6 +400,16 @@ impl DownloadDialog {
     /// a photo in several of them once.
     fn totals(&self) -> (usize, u64) {
         totals(self.chosen.iter().map(|&i| &self.albums[i].album))
+    }
+
+    /// Whether the photos chosen fit on the library's disk, with room to
+    /// spare; and if not, what they need and what is free.
+    fn fits(&self) -> Result<(), (u64, u64)> {
+        let (_, bytes) = self.totals();
+        match self.free {
+            Some(free) if bytes.saturating_add(SPARE) > free => Err((bytes, free)),
+            _ => Ok(()),
+        }
     }
 
     /// Whether album `i` can be chosen: it has photos in the cloud.
@@ -771,6 +827,20 @@ mod tests {
             "2 photos · 30 MB"
         );
         assert_eq!(count(22951), "22,951");
+        // What doesn't fit on the library's disk, with room to spare, can't
+        // be downloaded; nor what fits only without it.
+        assert_eq!(dialog.fits(), Ok(()), "the disk unknown");
+        dialog.free = Some(SPARE + 35_000_000);
+        assert_eq!(dialog.fits(), Ok(()));
+        dialog.free = Some(SPARE + 34_000_000);
+        assert_eq!(dialog.fits(), Err((35_000_000, SPARE + 34_000_000)));
+        // 326 GB of photos in no album on a disk with 232 GB free.
+        let mut big = album("big", None, false, &[("x", 326_000_000_000)]);
+        big.loose = true;
+        let mut dialog = DownloadDialog::new(vec![big], 977, (1, 326_000_000_000));
+        dialog.free = Some(232_000_000_000);
+        dialog.chosen.insert(0);
+        assert!(dialog.fits().is_err());
         assert_eq!(count(999), "999");
     }
 }
