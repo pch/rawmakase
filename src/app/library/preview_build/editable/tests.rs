@@ -45,13 +45,14 @@ fn metadata(width: u32, height: u32, bare: bool) -> Metadata {
 /// released and only then sees a cancel, "absent…" has no colour data; anything
 /// else is a small full-size decode of a camera with a matrix.
 fn test_open(item: &Item, _: &Identity, cancel: Cancel<'_>) -> anyhow::Result<Original> {
-    OPENED.lock().unwrap().push(item.path.clone());
     let thread = std::thread::current().name().unwrap_or_default().to_owned();
     OPENED_ON.lock().unwrap().push((item.path.clone(), thread));
     OPENED_WIDTH
         .lock()
         .unwrap()
         .push((item.path.clone(), rayon::current_num_threads()));
+    // Last, so that once an opening is counted ([`wait_opens`]) its pool is too.
+    OPENED.lock().unwrap().push(item.path.clone());
     let name = item.path.file_name().unwrap().to_string_lossy().to_string();
     if name.starts_with("panic") {
         panic!("test panic");
@@ -1019,6 +1020,31 @@ fn builds_take_the_computer_only_with_the_library_in_front_and_nothing_else_rend
     assert_eq!(e.editable_build_pace(), Pace::Full);
     e.editable_builds.cancel();
     settle(&mut e);
+}
+
+/// The pace follows what runs while the window isn't drawn too: an output a
+/// command starts then (an export through automation) sends builds to the
+/// background, and the photo under way at full pace gives way.
+#[test]
+fn builds_give_way_while_the_window_is_not_drawn() {
+    use crate::app::testing::{FocusedButton, panel_frame};
+    let (_dir, mut e, ids) = editor(&["slow-hidden.ARW"]);
+    let path = path_of(&e, ids[0]);
+    e.module = crate::app::Module::Library;
+    panel_frame(&mut e, Vec::new(), FocusedButton::No);
+    e.build_editable_previews(&ids).unwrap();
+    wait_started(&path);
+    assert_eq!(opened_at_full(&path), [true]);
+    // Hidden: only the logic pass runs.
+    e.automation.hold_running_output();
+    e.background(&egui::Context::default());
+    assert_eq!(e.editable_builds.pace, Pace::Background);
+    wait_opens(&path, 2);
+    assert_eq!(opened_at_full(&path), [true, false]);
+    e.automation.cancel_outputs();
+    release(&path);
+    settle(&mut e);
+    assert!(recorded(&e, ids[0]).is_some());
 }
 
 /// A photo under way at full pace when the pace drops stops and is built again

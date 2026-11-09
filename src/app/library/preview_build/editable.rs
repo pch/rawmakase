@@ -653,7 +653,7 @@ pub(in crate::app) struct EditableBuilds {
     /// The catalog the queued builds are for; another one cancels them.
     catalog: Option<CatalogLocation>,
     steps: Steps,
-    /// How much of the computer builds take, set every frame
+    /// How much of the computer builds take, set every pass, drawn or not
     /// ([`Editor::editable_build_pace`]).
     pace: Pace,
     /// Threads at full pace: every core but one.

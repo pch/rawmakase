@@ -179,6 +179,11 @@ impl Editor {
         self.events(ctx);
         self.finish_paused_turn(ctx);
         self.save_when_due(ctx);
+        // Editable previews keep building while the window isn't drawn, so
+        // their pace follows an output started then (an export a command
+        // asked for) here, not only when the window is drawn.
+        let pace = self.editable_build_pace();
+        self.editable_builds.set_pace(pace);
     }
     pub(in crate::app) fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
@@ -215,8 +220,6 @@ impl Editor {
             }
         }
         self.poll_preview_builds();
-        let pace = self.editable_build_pace();
-        self.editable_builds.set_pace(pace);
         self.poll_editable_builds();
         // Entering a module draws its chrome: the whole-window mode belongs to
         // the module it was turned on in.
