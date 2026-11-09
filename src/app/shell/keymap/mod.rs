@@ -14,12 +14,17 @@
 //! text fields, popup-local keys, the hovered slider's Up and Down, the curve's
 //! Delete, and the keys the macOS menu injects for a text field.
 use eframe::egui::{self, Key, Modifiers};
+use std::{borrow::Cow, sync::Arc};
 
 pub(in crate::app) use chord::{Chord, Mods};
+pub(in crate::app) use effective::Effective;
 
 pub(in crate::app) mod chord;
+mod effective;
+pub(in crate::app) mod file;
 #[cfg(test)]
 mod owner_tests;
+pub(in crate::app) mod rules;
 #[cfg(test)]
 mod tests;
 
@@ -115,6 +120,25 @@ impl Default {
         self
     }
 
+    /// A chord of the user's for a binding whose chords `template` stands
+    /// for: matched by what the key types (the Basic panel's keys by their
+    /// place), with the template's repeats and rejected modifiers, on every
+    /// platform and on the card.
+    pub(in crate::app) fn user(chord: Chord, template: Option<&Default>) -> Self {
+        Self {
+            keys: one_key(chord.key),
+            mods: chord.mods,
+            rejects: template.map_or(Mods::NONE, |t| t.rejects),
+            matching: match template.map(|t| t.matching) {
+                Some(KeyMatch::Place) => KeyMatch::Place,
+                _ => KeyMatch::Typed,
+            },
+            repeats: template.is_none_or(|t| t.repeats),
+            platform: Platform::All,
+            card: true,
+        }
+    }
+
     /// Each key with this chord's modifiers.
     pub(in crate::app) fn chords(&self) -> impl Iterator<Item = Chord> + '_ {
         self.keys.iter().map(|k| Chord::new(*k, self.mods))
@@ -135,9 +159,13 @@ impl Default {
     }
 
     fn exists(&self) -> bool {
+        self.exists_on(cfg!(target_os = "macos"))
+    }
+    /// Whether the chord exists on a Mac (`macos`) or elsewhere.
+    pub(in crate::app) fn exists_on(&self, macos: bool) -> bool {
         match self.platform {
             Platform::All => true,
-            Platform::NotMacos => !cfg!(target_os = "macos"),
+            Platform::NotMacos => !macos,
         }
     }
     /// The key a press of `key` at `physical` stands for, as this chord reads keys.
@@ -264,19 +292,24 @@ impl Binding {
         self.variants = mods;
         self
     }
-    /// Whether `press` is one of this binding's chords.
+    /// Whether `press` is one of this binding's default chords.
+    #[cfg_attr(not(test), allow(dead_code, reason = "the tests read defaults alone"))]
     pub(in crate::app) fn matches(&self, press: &Press) -> bool {
-        self.defaults
-            .iter()
-            .any(|d| d.matches(press, self.variants))
+        matches_any(self.defaults, press, self.variants)
     }
-    /// Whether a press of `key` at `physical` is one of this binding's keys,
-    /// whatever the modifiers.
-    pub(in crate::app) fn has_key(&self, key: Key, physical: Option<Key>) -> bool {
-        self.defaults
-            .iter()
-            .any(|d| d.exists() && d.matches_key(key, physical))
-    }
+}
+
+fn matches_any(defaults: &[Default], press: &Press, variants: Mods) -> bool {
+    defaults.iter().any(|d| d.matches(press, variants))
+}
+
+/// The one key of a user's chord, as the `'static` slice a [`Default`](struct@Default) holds.
+fn one_key(key: Key) -> &'static [Key] {
+    let at = Key::ALL
+        .iter()
+        .position(|k| *k == key)
+        .expect("every egui key is in Key::ALL");
+    std::slice::from_ref(&Key::ALL[at])
 }
 
 /// A key press in this frame, with the modifiers held for it: a quick
@@ -312,9 +345,6 @@ impl Press {
             _ => None,
         }
     }
-    pub(in crate::app) fn is(&self, binding: &Binding) -> bool {
-        binding.matches(self)
-    }
     fn same_keys(&self, other: &Self) -> bool {
         (self.key, self.physical, self.modifiers, self.repeat)
             == (other.key, other.physical, other.modifiers, other.repeat)
@@ -331,6 +361,9 @@ struct Taken {
 fn taken_id() -> egui::Id {
     egui::Id::new("keymap-taken-presses")
 }
+fn effective_id() -> egui::Id {
+    egui::Id::new("keymap-effective")
+}
 
 /// The frame's key presses, for the handlers to take.
 ///
@@ -338,38 +371,69 @@ fn taken_id() -> egui::Id {
 /// already consumed (a text field's, a dialog's Enter) is not offered. What has
 /// been taken is kept in the context's memory for the pass: the handlers that
 /// read keys are on `Editor`, the Library and the message line, and a test may
-/// run one of them alone. Nothing here holds egui's lock while a command runs.
-#[derive(Clone, Copy)]
+/// run one of them alone. So are the chords in effect, which
+/// [`FrameKeys::begin`] puts there: the defaults until it has run. Nothing here
+/// holds egui's lock while a command runs.
+#[derive(Clone)]
 pub(in crate::app) struct FrameKeys<'a> {
     ctx: &'a egui::Context,
+    map: Arc<Effective>,
 }
 
 impl<'a> FrameKeys<'a> {
     pub(in crate::app) fn of(ctx: &'a egui::Context) -> Self {
-        Self { ctx }
+        let map = ctx
+            .data(|d| d.get_temp::<Arc<Effective>>(effective_id()))
+            .unwrap_or_default();
+        Self { ctx, map }
     }
-    /// Starts the frame: nothing taken yet. A new pass starts afresh anyway;
-    /// this marks where the frame's key handling begins.
-    pub(in crate::app) fn begin(self) {
-        self.set_taken(Vec::new());
+    /// Starts the frame with `map`'s chords in effect: nothing taken yet.
+    pub(in crate::app) fn begin(ctx: &'a egui::Context, map: Arc<Effective>) -> Self {
+        ctx.data_mut(|d| d.insert_temp(effective_id(), map.clone()));
+        let keys = Self { ctx, map };
+        keys.set_taken(Vec::new());
+        keys
+    }
+
+    /// `binding`'s chords in effect: the user's for its command, or its defaults.
+    pub(in crate::app) fn chords_of<'b>(&'b self, binding: &'b Binding) -> Cow<'b, [Default]> {
+        self.map.defaults_of(binding)
+    }
+    /// Whether `press` is one of `binding`'s chords in effect, and still to be
+    /// taken: for a handler that walks [`Self::presses`] and takes the press
+    /// it acts on.
+    pub(in crate::app) fn is(&self, press: &Press, binding: &Binding) -> bool {
+        matches_any(&self.chords_of(binding), press, binding.variants)
+    }
+    /// Whether a press of `key` at `physical` is one of `binding`'s keys in
+    /// effect, whatever the modifiers.
+    pub(in crate::app) fn has_key(
+        &self,
+        binding: &Binding,
+        key: Key,
+        physical: Option<Key>,
+    ) -> bool {
+        self.chords_of(binding)
+            .iter()
+            .any(|d| d.exists() && d.matches_key(key, physical))
     }
 
     /// The first press, in the binding's chord order, that `binding` matches
     /// and no handler has taken: taken now, and gone from egui's input as well
     /// when the binding consumes. Its modifiers.
-    pub(in crate::app) fn take(self, binding: &Binding) -> Option<Modifiers> {
+    pub(in crate::app) fn take(&self, binding: &Binding) -> Option<Modifiers> {
         let open = self.presses();
-        let press = binding.defaults.iter().find_map(|d| {
+        let chords = self.chords_of(binding);
+        let (default, press) = chords.iter().find_map(|d| {
             open.iter()
                 .find(|p| d.matches(p, binding.variants))
                 .map(|p| (d, *p))
-        });
-        let (default, press) = press?;
+        })?;
         let mut taken = match binding.per_frame {
             PerFrame::Each => vec![press],
             PerFrame::Once => open
                 .iter()
-                .filter(|p| binding.matches(p))
+                .filter(|p| matches_any(&chords, p, binding.variants))
                 .copied()
                 .collect(),
         };
@@ -385,7 +449,7 @@ impl<'a> FrameKeys<'a> {
     }
     /// The first of `bindings`, in their order, with a press to take, as a
     /// chain of `if`s over them: its index and the press's modifiers.
-    pub(in crate::app) fn take_any(self, bindings: &[&Binding]) -> Option<(usize, Modifiers)> {
+    pub(in crate::app) fn take_any(&self, bindings: &[&Binding]) -> Option<(usize, Modifiers)> {
         bindings
             .iter()
             .enumerate()
@@ -395,14 +459,13 @@ impl<'a> FrameKeys<'a> {
     /// `bindings` matches: taken by the first binding that does. That
     /// binding's index and the press's modifiers. For a key whose modifiers
     /// pick the command (Y, Option+Y and Shift+Y), as one read of the key.
-    pub(in crate::app) fn take_first(self, bindings: &[&Binding]) -> Option<(usize, Modifiers)> {
-        let press = self.presses().into_iter().find_map(|p| {
+    pub(in crate::app) fn take_first(&self, bindings: &[&Binding]) -> Option<(usize, Modifiers)> {
+        let (index, press) = self.presses().into_iter().find_map(|p| {
             bindings
                 .iter()
-                .position(|b| b.matches(&p))
+                .position(|b| self.is(&p, b))
                 .map(|index| (index, p))
         })?;
-        let (index, press) = press;
         debug_assert!(
             !bindings[index].consumes && bindings[index].per_frame == PerFrame::Each,
             "take_first is for bindings that take one press and leave it in the input"
@@ -413,7 +476,7 @@ impl<'a> FrameKeys<'a> {
 
     /// The presses no handler has taken yet, in the order they came, for a
     /// handler that walks them as the views' key loops do.
-    pub(in crate::app) fn presses(self) -> Vec<Press> {
+    pub(in crate::app) fn presses(&self) -> Vec<Press> {
         let taken = self.taken();
         self.read()
             .into_iter()
@@ -421,7 +484,7 @@ impl<'a> FrameKeys<'a> {
             .collect()
     }
     /// Takes `press`, one of [`Self::presses`], for a command.
-    pub(in crate::app) fn take_press(self, press: &Press) {
+    pub(in crate::app) fn take_press(&self, press: &Press) {
         let mut taken = self.taken();
         if !taken.contains(press) {
             taken.push(*press);
@@ -430,16 +493,16 @@ impl<'a> FrameKeys<'a> {
     }
     /// Takes `press` out of egui's input, that one event alone, so no widget
     /// drawn after sees it either.
-    pub(in crate::app) fn remove_press(self, press: &Press) {
+    pub(in crate::app) fn remove_press(&self, press: &Press) {
         self.remove(|p| p == press);
     }
 
     /// Every key press in the input now, numbered among identical ones.
-    fn read(self) -> Vec<Press> {
+    fn read(&self) -> Vec<Press> {
         self.ctx
             .input(|i| number(i.events.iter().filter_map(Press::of)))
     }
-    fn taken(self) -> Vec<Press> {
+    fn taken(&self) -> Vec<Press> {
         let pass = self.ctx.cumulative_pass_nr();
         self.ctx
             .data(|d| d.get_temp::<Taken>(taken_id()))
@@ -447,14 +510,14 @@ impl<'a> FrameKeys<'a> {
             .map(|t| t.presses)
             .unwrap_or_default()
     }
-    fn set_taken(self, presses: Vec<Press>) {
+    fn set_taken(&self, presses: Vec<Press>) {
         let pass = self.ctx.cumulative_pass_nr();
         self.ctx
             .data_mut(|d| d.insert_temp(taken_id(), Taken { pass, presses }));
     }
     /// Takes the presses `gone` picks out of egui's input. The presses left
     /// keep whether they were taken, numbered again among identical ones.
-    fn remove(self, gone: impl Fn(&Press) -> bool) {
+    fn remove(&self, gone: impl Fn(&Press) -> bool) {
         let before = self.read();
         let taken = self.taken();
         let keep: Vec<bool> = before.iter().map(|p| !gone(p)).collect();

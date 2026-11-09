@@ -75,17 +75,7 @@ fn no_chord_names_its_commands_variant() {
 
 /// Whether bindings in `a` and `b` can both be eligible for one press.
 fn overlap(a: Context, b: Context) -> bool {
-    use Context::*;
-    let library_view = |c| matches!(c, Grid | Loupe | Compare | Survey);
-    let develop = |c| matches!(c, Develop | Tool(_));
-    a == b
-        || a == Everywhere
-        || b == Everywhere
-        || (a == Library && library_view(b))
-        || (b == Library && library_view(a))
-        || (develop(a) && develop(b) && (a == Develop || b == Develop))
-        || (a == LoupeZoom && (b == Loupe || b == Library || develop(b)))
-        || (b == LoupeZoom && (a == Loupe || a == Library || develop(a)))
+    a.overlaps(b)
 }
 
 /// On a punctuation key, Shift and Alt are free unless a binding that can be

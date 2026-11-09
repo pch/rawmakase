@@ -36,6 +36,10 @@ impl Mods {
     pub(in crate::app) const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
+    /// The modifiers both hold.
+    pub(in crate::app) const fn and(self, other: Self) -> Self {
+        Self(self.0 & other.0)
+    }
 
     /// The modifiers held for a press, as a chord names them. Ctrl counts only
     /// where it is not the command key: on a Mac, or with ⌘ as well. ⌘ alone

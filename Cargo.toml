@@ -96,6 +96,9 @@ eframe = { version = "=0.36.2", default-features = false, features = ["default_f
 winit = { version = "0.30", default-features = false, features = ["wayland-csd-adwaita"] }
 # eframe reports a failure to open the window through log (see app::run).
 log = "0.4"
+# The user's keymap.toml, edited in place so its comments, its order and the
+# entries this release doesn't know survive a change (app::shell::keymap::file).
+toml_edit = { version = "0.25", default-features = false, features = ["parse", "display"] }
 rfd = "0.17.2"
 # The HTTP client behind fastframe-update; rustls with bundled roots needs no
 # system TLS library.

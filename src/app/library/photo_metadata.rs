@@ -81,10 +81,10 @@ fn is_flag_step(binding: &Binding) -> bool {
 
 /// Whether a press of `key` at `physical`, with neither Cmd, Ctrl nor Alt held,
 /// is a rating, flag or label key.
-pub(in crate::app) fn is_shortcut_key(key: Key, physical: Option<Key>) -> bool {
+pub(in crate::app) fn is_shortcut_key(keys: &FrameKeys, key: Key, physical: Option<Key>) -> bool {
     bindings::METADATA
         .iter()
-        .any(|b| !is_flag_step(b) && b.has_key(key, physical))
+        .any(|b| !is_flag_step(b) && keys.has_key(b, key, physical))
 }
 
 /// The frame's first rating, flag or label key: its edit, whether Shift was held
@@ -95,8 +95,9 @@ pub(in crate::app) fn shortcut(ctx: &egui::Context) -> Option<(Edit, bool, Press
     if ctx.text_edit_focused() {
         return None;
     }
-    FrameKeys::of(ctx).presses().into_iter().find_map(|press| {
-        let binding = bindings::METADATA.iter().find(|b| press.is(b))?;
+    let keys = FrameKeys::of(ctx);
+    keys.presses().into_iter().find_map(|press| {
+        let binding = bindings::METADATA.iter().find(|b| keys.is(&press, b))?;
         let edit = edit_for_command(binding.command)?;
         Some((edit, press.modifiers.shift && !is_flag_step(binding), press))
     })

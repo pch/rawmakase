@@ -171,7 +171,7 @@ impl Editor {
     pub(in crate::app) fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         // Every shortcut below takes its keys from here.
-        FrameKeys::of(&ctx).begin();
+        FrameKeys::begin(&ctx, self.keymap.effective());
         // Before any field takes this frame's keys, or gives them up.
         let typing = ctx.text_edit_focused();
         // Already done by `logic` this pass in the app; a pass run without it
@@ -1329,18 +1329,18 @@ impl Editor {
         for press in keys.presses() {
             // Cmd+0 (and Lightroom's Cmd+Option+0): 100%; Cmd+1 fits. The
             // number row goes by its place (`key_match`).
-            if press.is(&bindings::ZOOM_100) {
+            if keys.is(&press, &bindings::ZOOM_100) {
                 self.set_zoom(1.)
-            } else if press.is(&bindings::ZOOM_FIT) {
+            } else if keys.is(&press, &bindings::ZOOM_FIT) {
                 self.set_zoom(0.)
-            } else if press.is(&bindings::ZOOM_IN) {
+            } else if keys.is(&press, &bindings::ZOOM_IN) {
                 self.step_zoom(1)
-            } else if press.is(&bindings::ZOOM_OUT) {
+            } else if keys.is(&press, &bindings::ZOOM_OUT) {
                 self.step_zoom(-1)
-            } else if press.is(&bindings::ZOOM) {
+            } else if keys.is(&press, &bindings::ZOOM) {
                 // Once per press: a held Z must not flicker the zoom.
                 self.view.zoom.on = !self.view.zoom.on
-            } else if press.is(&bindings::MAGNIFIER) {
+            } else if keys.is(&press, &bindings::MAGNIFIER) {
                 self.toggle_magnifier()
             } else {
                 continue;
@@ -2241,3 +2241,7 @@ mod keymap_pins_editor_tests;
 #[cfg(test)]
 #[path = "keymap_golden_editor_tests.rs"]
 mod keymap_golden_editor_tests;
+
+#[cfg(test)]
+#[path = "keymap_editor_tests.rs"]
+mod keymap_editor_tests;

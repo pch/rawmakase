@@ -422,13 +422,15 @@ impl crate::app::Editor {
         // The modifiers held with each key press, which a quick release of Shift
         // before the frame does not change.
         for press in keys.presses() {
-            if press.is(&b::CROP_SWAP_ORIENTATION) {
+            if keys.is(&press, &b::CROP_SWAP_ORIENTATION) {
                 self.swap_crop_orientation();
-            } else if press.is(&b::CROP_ASPECT_LOCK) {
+            } else if keys.is(&press, &b::CROP_ASPECT_LOCK) {
                 self.toggle_aspect_lock();
-            } else if press.is(&b::CROP_NEXT_OVERLAY) || press.is(&b::CROP_TURN_OVERLAY) {
+            } else if keys.is(&press, &b::CROP_NEXT_OVERLAY)
+                || keys.is(&press, &b::CROP_TURN_OVERLAY)
+            {
                 let mut guides = self.view.crop_guides;
-                if press.is(&b::CROP_TURN_OVERLAY) {
+                if keys.is(&press, &b::CROP_TURN_OVERLAY) {
                     guides.turn();
                 } else {
                     guides.cycle();

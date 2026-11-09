@@ -124,27 +124,27 @@ impl Library {
     }
     pub(super) fn survey_keys(
         &mut self,
-        keys: crate::app::shell::keymap::FrameKeys,
+        keys: &crate::app::shell::keymap::FrameKeys,
         presses: &[crate::app::shell::keymap::Press],
     ) {
         use crate::app::shell::commands::registry::bindings as b;
         for press in presses {
             // B, Cmd+B and Cmd+Shift+B first, then the view's own keys.
-            if press.is(&b::SURVEY_QUICK_TOGGLE)
-                || press.is(&b::SURVEY_QUICK_SHOW)
-                || press.is(&b::SURVEY_QUICK_CLEAR)
+            if keys.is(press, &b::SURVEY_QUICK_TOGGLE)
+                || keys.is(press, &b::SURVEY_QUICK_SHOW)
+                || keys.is(press, &b::SURVEY_QUICK_CLEAR)
             {
                 let ids = self.selection.active.into_iter().collect();
                 self.quick_key(press.modifiers, ids)
-            } else if press.is(&b::SURVEY_PREVIOUS) {
+            } else if keys.is(press, &b::SURVEY_PREVIOUS) {
                 self.step_surveyed(-1)
-            } else if press.is(&b::SURVEY_NEXT) {
+            } else if keys.is(press, &b::SURVEY_NEXT) {
                 self.step_surveyed(1)
-            } else if press.is(&b::SURVEY_CLOSE) {
+            } else if keys.is(press, &b::SURVEY_CLOSE) {
                 self.close_survey()
-            } else if press.is(&b::SURVEY_LOUPE) {
+            } else if keys.is(press, &b::SURVEY_LOUPE) {
                 self.open_loupe()
-            } else if press.is(&b::SURVEY_COMPARE) {
+            } else if keys.is(press, &b::SURVEY_COMPARE) {
                 self.open_compare()
             } else {
                 continue;

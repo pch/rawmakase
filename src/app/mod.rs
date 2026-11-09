@@ -133,6 +133,9 @@ pub(crate) struct Editor {
     /// Shared automation queue and independently configured input adapters.
     controls: crate::app::shell::automation::Hub,
     automation: crate::app::shell::commands::Automation,
+    /// The user's keymap.toml and the chords in effect: the defaults in a
+    /// test editor, which never reads the data folder.
+    keymap: crate::app::shell::keymap::file::KeymapFile,
 }
 impl Editor {
     pub(crate) fn new(
@@ -162,6 +165,18 @@ impl Editor {
             worker::RenderBackend::Gpu(cc.wgpu_render_state.clone()),
         );
         editor.controls = crate::app::shell::automation::Hub::start(&cc.egui_ctx);
+        editor.keymap = crate::app::shell::keymap::file::KeymapFile::load(
+            crate::app::shell::keymap::file::KeymapFile::path_in_data_dir(),
+        );
+        // A file that isn't used at all stays said until dismissed; skipped
+        // entries are a warning.
+        if let Some(report) = editor.keymap.report() {
+            if editor.keymap.editable() {
+                editor.messages.warn(report);
+            } else {
+                editor.messages.fail(report);
+            }
+        }
         // 1:1 previews left unused past the chosen time go, as in Lightroom.
         editor.expire_previews();
         editor.updates.launched(launch, &mut editor.messages);
@@ -383,6 +398,7 @@ impl Editor {
             profile_library: crate::camera_profiles::library_fingerprint(),
             controls: crate::app::shell::automation::Hub::inactive(),
             automation: crate::app::shell::commands::Automation::default(),
+            keymap: crate::app::shell::keymap::file::KeymapFile::defaults(),
         };
         app.reload_presets(ctx);
         // A catalog passed on the command line opens instead of the last one;
