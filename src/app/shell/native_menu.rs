@@ -72,6 +72,15 @@ pub(in crate::app) fn menu_chord(map: &Effective, action: Action, macos: bool) -
         })
 }
 
+/// Whether `action`'s item has a key in `map` that isn't the one it had
+/// before its keys followed the key map
+/// ([`Action::native_key_equivalent`]).
+fn reassigned(map: &Effective, action: Action) -> bool {
+    menu_chord(map, action, true)
+        .and_then(Chord::key_equivalent)
+        .is_some_and(|k| Some(k) != action.native_key_equivalent())
+}
+
 impl Editor {
     /// Each keyed menu item's key equivalent in the key map in effect.
     pub(in crate::app) fn menu_keys(&self) -> Vec<(Action, Option<KeyEquivalent>)> {
@@ -133,11 +142,15 @@ impl Editor {
             Action::Library | Action::Sidebar | Action::Inspector | Action::Filmstrip => workspace,
         };
         // An item with a key runs its command where AppKit sees the key,
-        // before any guard of the command's bindings: it waits whenever none
-        // of them could take the key (a text field, a menu or a focused
-        // control has it, or its context isn't the one in front).
-        let keyed = command_of(action)
-            .filter(|_| menu_chord(&self.keymap.effective(), action, true).is_some());
+        // before any guard of the command's bindings. An item whose key is
+        // the one it always had keeps the availability it always had: Export…
+        // stays on while typing, as Cmd+Shift+E reached it through AppKit. An
+        // item the user gave another key waits whenever none of its
+        // command's bindings could take that key (a text field, a menu or a
+        // focused control has it, or its context isn't the one in front).
+        // [`Self::menu_chords`] holds the key from the bindings by the same
+        // answer, so a press is run once.
+        let keyed = command_of(action).filter(|_| reassigned(&self.keymap.effective(), action));
         let enabled = enabled
             && keyed.is_none_or(|id| {
                 let live = self.live_keys(ctx);
@@ -489,6 +502,99 @@ mod tests {
         // With no key of its own, an item stays clickable.
         editor.keymap.reset("library").expect("reset");
         assert!(editor.menu_state(Action::Library, &ctx).0);
+        Ok(())
+    }
+
+    #[test]
+    fn an_item_on_its_own_key_keeps_its_old_availability_while_typing() -> anyhow::Result<()> {
+        use crate::app::shell::commands::registry::bindings;
+        let (_dir, mut editor, ids) = editor_with_catalog(&["one.ARW"])?;
+        let ctx = editor.context.clone();
+        editor.onboarding.visible = false;
+        editor.library.as_mut().unwrap().select(Some(ids[0]));
+        let mut text = String::new();
+        let mut typing = || {
+            for _ in 0..2 {
+                let mut output = ctx.run_ui(Default::default(), |ui| {
+                    ui.text_edit_singleline(&mut text).request_focus();
+                });
+                output.textures_delta.clear();
+            }
+            assert!(ctx.text_edit_focused());
+        };
+        // What the menu and the bindings do with a press of `keys`: whether the
+        // item is enabled, the menu holds the key and the Library's binding
+        // runs it.
+        let press = |editor: &Editor, keys: &str| {
+            let enabled = editor.menu_state(Action::Export, &ctx).0;
+            let held = editor.menu_chords(&ctx, true);
+            let c = chord(keys);
+            let mut modifiers = egui::Modifiers::COMMAND;
+            modifiers.shift = c.mods.contains(Mods::SHIFT);
+            modifiers.alt = c.mods.contains(Mods::ALT);
+            let mut taken = None;
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    events: vec![egui::Event::Key {
+                        key: c.key,
+                        physical_key: Some(c.key),
+                        pressed: true,
+                        repeat: false,
+                        modifiers,
+                    }],
+                    ..Default::default()
+                },
+                |ui| {
+                    let keys = crate::app::shell::keymap::FrameKeys::begin(
+                        ui.ctx(),
+                        editor.keymap.effective(),
+                    );
+                    keys.set_live(editor.live_keys(ui.ctx()));
+                    keys.set_menu_chords(held.clone());
+                    // As the Library's handler asks: only while its guards let it.
+                    let export = &bindings::LIBRARY_EXPORT;
+                    taken = editor
+                        .live_keys(ui.ctx())
+                        .runs(export)
+                        .then(|| keys.take(export))
+                        .flatten();
+                },
+            );
+            output.textures_delta.clear();
+            (enabled, held.contains(&c), taken.is_some())
+        };
+        // The defaults: Cmd+Shift+E is the item's key on main, and AppKit
+        // runs Export… with it while typing, as a click does.
+        typing();
+        assert_eq!(press(&editor, "Cmd+Shift+E"), (true, true, false));
+        // A key the user gave it waits while typing, as its bindings do, and
+        // reaches neither.
+        editor
+            .keymap
+            .set("export_dialog", &[chord("Cmd+F9")])
+            .expect("bound");
+        typing();
+        assert_eq!(press(&editor, "Cmd+F9"), (false, false, false));
+        // Off the text field, which the last frame didn't show, the menu
+        // holds it and runs it, the bindings don't.
+        assert!(!ctx.text_edit_focused());
+        assert_eq!(press(&editor, "Cmd+F9"), (true, true, false));
+        // Every keyed item, in each state: enabled exactly when its key is held.
+        for typed in [false, true] {
+            if typed {
+                typing();
+            }
+            for action in KEYED {
+                let Some(c) = menu_chord(&editor.keymap.effective(), action, true) else {
+                    continue;
+                };
+                assert_eq!(
+                    editor.menu_state(action, &ctx).0,
+                    editor.menu_chords(&ctx, true).contains(&c),
+                    "{action:?} typing {typed}"
+                );
+            }
+        }
         Ok(())
     }
 

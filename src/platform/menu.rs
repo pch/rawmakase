@@ -70,9 +70,17 @@ impl Action {
     /// have these, on any platform's check, so a Mac never has two items on
     /// one key.
     pub(crate) fn fixed_key_equivalent(self) -> Option<KeyEquivalent> {
+        self.native_key_equivalent().filter(|_| self.fixed_key())
+    }
+
+    /// The key equivalent the item had before its keys followed the key map:
+    /// the fixed ones, and Preferences, Export and Keyboard Shortcuts'.
+    pub(crate) fn native_key_equivalent(self) -> Option<KeyEquivalent> {
         let (key, shift) = match self {
+            Self::Preferences => (",", false),
             Self::OpenCatalog => ("o", false),
             Self::AddFolder => ("o", true),
+            Self::Export => ("e", true),
             Self::Close => ("w", false),
             Self::Undo => ("z", false),
             Self::Redo => ("z", true),
@@ -80,6 +88,7 @@ impl Action {
             Self::Copy => ("c", false),
             Self::Paste => ("v", false),
             Self::SelectAll => ("a", false),
+            Self::Shortcuts => ("/", false),
             _ => return None,
         };
         Some(KeyEquivalent {
