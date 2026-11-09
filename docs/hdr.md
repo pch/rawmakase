@@ -240,6 +240,7 @@ HDR reference family):
 | Saturation, Vibrance, the colour mixer's Hue and Saturation | The SDR grids of `develop::color_mixer`, after Contrast, the tone curves and Levels, as in SDR, on unclipped linear values ([The colour stage](#the-colour-stage)): looked up at the colour's value up to 0.2 and at 0.2 above it; Vibrance's value change fades out from 0.5 to white. |
 | Black & White | The SDR mix's gray (`develop::black_white`) looked up as the colour mixer's, unclipped above white. |
 | Calibration | As in SDR: a matrix on scene colour before Exposure, and Shadows tint, which only reaches values below white. |
+| Shadows | The SDR local tone operator (`develop::local_tone`) on scene values, unclipped: its gain at a pixel's base level as in SDR, before S3. |
 | HDR limit | Each channel rolled off to 2^limit from 97% of it (`model::hdr::roll_off`), last. |
 | Sharpening, resizing | On sRGB-curve-encoded values of the master's primaries, unclipped, with ProPhoto luminance; the limit applies after them. |
 
@@ -272,7 +273,7 @@ Measurements and validation: [colour stage](records/hdr-stage1-results.md#colour
 ## What is refused
 
 `model::hdr::check_recipe` refuses the master, not the edit, when the edit uses
-something without a measured HDR rendering: Highlights, Shadows, Whites above
+something without a measured HDR rendering: Highlights, Whites above
 +50, a channel's point curve, Refine Saturation other than 100%, a point
 curve whose last point is left of white, Presence (Clarity, Dehaze), the
 colour mixer's Luminance, Point Color, Color Grading, Defringe, grain and vignette,
