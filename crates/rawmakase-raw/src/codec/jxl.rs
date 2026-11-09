@@ -1,6 +1,7 @@
 //! JPEG XL codestreams (ISO/IEC 18181-1) as DNG 1.7 stores tiles (compression
 //! 52546), decoded with jxl-oxide: one frame of one or three channels,
-//! integer or floating-point, lossless (modular) or lossy (VarDCT in XYB).
+//! integer or floating-point, lossless (modular) or lossy (VarDCT in XYB),
+//! a lossy one's samples linear or on sRGB's curve.
 use crate::error::{Error, Result, corrupt};
 use jxl_oxide::color::{ColourSpace, Customxy, Primaries, TransferFunction, WhitePoint};
 use jxl_oxide::image::BitDepth;
@@ -22,9 +23,10 @@ const MIN_BYTES: usize = 16 << 20;
 
 /// Decodes a tile of at most `max` (width, height) pixels of `channels`
 /// colour channels. A lossy tile is coded in XYB; it is converted to the
-/// codestream's linear RGB here, by matrix, so values above 1 (an HDR
-/// merge's) keep their scale: jxl-oxide's own conversion would gamut-map them
-/// into 0–1.
+/// codestream's RGB here, by matrix in linear light and then onto its curve
+/// (linear, or sRGB's), so values above 1 (an HDR merge's) keep their scale
+/// and colours outside sRGB theirs: jxl-oxide's own conversion would clip or
+/// gamut-map them into 0–1.
 pub(crate) fn decode(data: &[u8], max: [usize; 2], channels: usize) -> Result<Tile> {
     let limit = max[0]
         .saturating_mul(max[1])
@@ -67,15 +69,27 @@ pub(crate) fn decode(data: &[u8], max: [usize; 2], channels: usize) -> Result<Ti
                 "DNG JPEG XL tile with an ICC profile".into(),
             ));
         };
-        if grey || encoding.tf != TransferFunction::Linear {
-            return Err(Error::Unsupported(format!(
-                "DNG JPEG XL tile in {:?}",
-                encoding.colour_space
-            )));
+        // The samples are what the encoder was given, on the curve the
+        // codestream names: linear (an HDR merge's) or sRGB's (a panorama's).
+        let curve = match encoding.tf {
+            TransferFunction::Linear => false,
+            TransferFunction::Srgb => true,
+            tf => {
+                return Err(Error::Unsupported(format!(
+                    "DNG JPEG XL tile in {:?} with the {tf:?} transfer",
+                    encoding.colour_space
+                )));
+            }
+        };
+        if grey {
+            return Err(Error::Unsupported("DNG JPEG XL grey lossy tile".into()));
         }
+        // Decoded to linear sRGB, which jxl-oxide reaches from XYB by matrix
+        // alone, and taken to the encoding's primaries here: its own
+        // conversion would clip or gamut-map what lies outside sRGB.
         let matrix = srgb_to(encoding)?;
         image.request_color_encoding(EnumColourEncoding::srgb_linear(RenderingIntent::Relative));
-        Some(matrix)
+        Some((matrix, curve))
     } else {
         None
     };
@@ -102,11 +116,12 @@ pub(crate) fn decode(data: &[u8], max: [usize; 2], channels: usize) -> Result<Ti
     if stream.write_to_buffer(&mut samples) != samples.len() {
         return Err(corrupt("DNG JPEG XL tile"));
     }
-    if let Some(m) = to_rgb {
+    if let Some((m, curve)) = to_rgb {
         for p in samples.as_chunks_mut::<3>().0 {
             let [r, g, b] = p.map(f64::from);
             for (i, v) in p.iter_mut().enumerate() {
-                *v = (m[i][0] * r + m[i][1] * g + m[i][2] * b) as f32;
+                let linear = m[i][0] * r + m[i][1] * g + m[i][2] * b;
+                *v = if curve { srgb_encode(linear) } else { linear } as f32;
             }
         }
     }
@@ -116,6 +131,19 @@ pub(crate) fn decode(data: &[u8], max: [usize; 2], channels: usize) -> Result<Ti
         }
     }
     Ok(Tile { width, samples })
+}
+
+/// IEC 61966-2-1's sRGB curve, from linear light to the encoded value,
+/// mirrored for negative values (outside the gamut after the matrix), as
+/// libjxl extends it.
+fn srgb_encode(v: f64) -> f64 {
+    let a = v.abs();
+    let e = if a <= 0.0031308 {
+        12.92 * a
+    } else {
+        1.055 * a.powf(1. / 2.4) - 0.055
+    };
+    e.copysign(v)
 }
 
 /// Linear sRGB (D65) to the linear RGB of `encoding`, which must have a D65
@@ -184,6 +212,12 @@ mod tests {
     // pixel (x, y) is (x × 8191 + y × 3, y × 16000 + x, 65535 − x × 7000).
     const HDR: &[u8] = include_bytes!("../../tests/data/jxl-hdr-xyb.jxl");
     const INT16: &[u8] = include_bytes!("../../tests/data/jxl-int16-lossless.jxl");
+    // Made with jixel 0.5.7 (as RAWmakase's JPEG XL export), declaring BT.2100
+    // primaries with the sRGB transfer, as Lightroom's panorama DNGs do: 32 × 32
+    // 16-bit samples, distance 0.5, neutral grey: pixel (x, y) is x × 2000 +
+    // y × 50 + 300 in each channel. Neutral, because jixel converts its input
+    // to XYB as sRGB whatever primaries it names; grey is grey in both.
+    const SRGB_CURVE: &[u8] = include_bytes!("../../tests/data/jxl-int16-srgb-bt2100.jxl");
 
     fn pixel(tile: &Tile, x: usize, y: usize) -> [f32; 3] {
         let at = (y * tile.width + x) * 3;
@@ -227,6 +261,24 @@ mod tests {
                 assert_eq!(pixel(&tile, x, y), want, "({x}, {y})");
             }
         }
+    }
+
+    /// A lossy tile whose codestream declares a transfer curve (Lightroom's
+    /// panoramas: BT.2100 with sRGB's) decodes to the samples it was made
+    /// from, on that curve, as libjxl decodes it to the image's own encoding.
+    #[test]
+    fn lossy_tiles_on_a_transfer_curve_keep_their_samples() {
+        let tile = decode(SRGB_CURVE, [32, 32], 3).unwrap();
+        let mut worst = 0f32;
+        for y in 0..32 {
+            for x in 0..32 {
+                let want = [(x * 2000 + y * 50 + 300) as f32; 3];
+                for (g, w) in pixel(&tile, x, y).iter().zip(want) {
+                    worst = worst.max((g - w).abs() / 65535.);
+                }
+            }
+        }
+        assert!(worst < 0.01, "worst error {worst} of full scale");
     }
 
     /// A tile larger than the DNG's tile, or of other channels, is refused.
