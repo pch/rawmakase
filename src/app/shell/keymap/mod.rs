@@ -14,6 +14,8 @@
 use eframe::egui::{self, Key, Modifiers};
 
 #[cfg(test)]
+mod owner_tests;
+#[cfg(test)]
 mod tests;
 
 /// How a [`Default`](struct@Default)'s keys are compared with a press.
