@@ -49,10 +49,17 @@ const GENERATION: i64 = 14;
 const RASTER_GENERATION: i64 = 6;
 /// Thumbnails a prune deletes in one write.
 const PRUNE_STEP: usize = 256;
-/// Pages, of 4 KiB, [`PreviewCache::release_free_space`] gives back in one
-/// write: at most about 150 ms on an SSD (measured), within the 250 ms another
-/// connection waits for a write.
+/// The most pages, of 4 KiB, one step of giving space back to the disk gives
+/// back in one write ([`PreviewCache::release_step`]).
 const RELEASE_STEP: u32 = 256;
+/// How long one such step may write for, well within the 250 ms another
+/// connection waits for a write. Free pages at the end of the file are given
+/// back in microseconds each, but a page in use there has to be moved first,
+/// which took about 1 ms a page next to a 4 GiB free list (measured). Rows
+/// another connection writes meanwhile land in the free space, so such pages
+/// keep turning up: 256 of them made a step of 645 ms, and some writes beside
+/// it failed.
+const RELEASE_STEP_TIME: Duration = Duration::from_millis(25);
 /// The shortest pause after each such write, which is otherwise as long as
 /// the write took. SQLite wakes a writer waiting for the lock after 1, 2, 5
 /// ... 50, 100 ms; with only a short pause between such writes, some found
@@ -214,6 +221,7 @@ impl PreviewCache {
         for kind in PreviewKind::ALL {
             cache.prune_sized(kind, kind.budget())?;
         }
+        cache.tidy();
         Ok(cache)
     }
     pub fn load(&self, path: &Path) -> Result<Option<image::RgbImage>> {
@@ -296,6 +304,7 @@ impl PreviewCache {
         self.writes += 1;
         if self.writes.is_multiple_of(32) {
             self.prune(budget())?;
+            self.tidy();
         }
         Ok(())
     }
@@ -432,6 +441,7 @@ impl PreviewCache {
             for kind in PreviewKind::ALL {
                 self.prune_sized(kind, kind.budget())?;
             }
+            self.tidy();
         }
         Ok(())
     }
@@ -449,7 +459,8 @@ impl PreviewCache {
         })
     }
     /// Drops every built preview of `kind` for these files, whatever edit they
-    /// were built for.
+    /// were built for. The space they leave is given back by
+    /// [`Self::release_step`].
     pub fn discard(&mut self, paths: &[PathBuf], kind: PreviewKind) -> Result<()> {
         let tx = self.db.transaction()?;
         for path in paths {
@@ -462,12 +473,12 @@ impl PreviewCache {
         Ok(())
     }
     /// Drops every built preview of `kind`, and every request to keep one.
+    /// The space they leave is given back by [`Self::release_step`].
     pub fn clear(&mut self, kind: PreviewKind) -> Result<()> {
         let tx = self.db.transaction()?;
         tx.execute("DELETE FROM sized_previews WHERE kind=?", [kind.code()])?;
         tx.execute("DELETE FROM preview_intent WHERE kind=?", [kind.code()])?;
         tx.commit()?;
-        self.db.execute_batch("PRAGMA incremental_vacuum;")?;
         Ok(())
     }
     /// Counts a preview as used now, as when it is asked for again.
@@ -480,7 +491,8 @@ impl PreviewCache {
     }
     /// Lightroom's Automatically Discard 1:1 Previews: drops the previews of
     /// `kind` not shown or built for `unused`, and the requests for files left
-    /// without one, so an edit does not build them again. Returns how many went.
+    /// without one, so an edit does not build them again. Returns how many went;
+    /// the space they leave is given back by [`Self::release_step`].
     pub fn expire(&mut self, kind: PreviewKind, unused: Duration) -> Result<usize> {
         let before = now() - unused.as_secs() as i64;
         let tx = self.db.transaction()?;
@@ -493,9 +505,6 @@ impl PreviewCache {
             [kind.code()],
         )?;
         tx.commit()?;
-        if gone > 0 {
-            self.db.execute_batch("PRAGMA incremental_vacuum;")?;
-        }
         Ok(gone)
     }
     /// Records that the user asked for `kind` previews of this catalog photo,
@@ -587,35 +596,55 @@ impl PreviewCache {
                 [kind.code()],
             )?;
         }
-        self.db.execute_batch("PRAGMA incremental_vacuum(256);")?;
         Ok(())
     }
     /// Gives back to the disk the space dropped thumbnails and previews leave
     /// in the file, which pruning releases only a little at a time: for a
     /// smaller thumbnail budget to free the disk space it promises. The file is
-    /// shortened [`RELEASE_STEP`] pages at a time, each its own short write,
-    /// with a pause after each as long as the write took, so the connections
+    /// shortened up to [`RELEASE_STEP`] pages, or [`RELEASE_STEP_TIME`], at a
+    /// time, each its own short write, with a pause after each as long as the
+    /// write took, so the connections
     /// making thumbnails meanwhile get their writes in; for gigabytes it takes
     /// a minute or more, on a thread of its own. It ends once a step gives
     /// nothing back, as in a file made without incremental vacuum.
     pub fn release_free_space(&mut self) -> Result<()> {
-        while self.free_pages()? > 0 {
-            let started = std::time::Instant::now();
-            if self.release_step()? == 0 {
-                break;
-            }
-            std::thread::sleep(RELEASE_PAUSE.max(started.elapsed()));
+        while let Some(pause) = self.release_step()? {
+            std::thread::sleep(pause);
         }
         Ok(())
     }
+    /// One step of [`Self::release_free_space`], for a worker that gives the
+    /// space back between other work: up to [`RELEASE_STEP`] pages in one
+    /// short write. Returns how long to pause before the next step, so other
+    /// connections get their writes in, or `None` once nothing more can be
+    /// given back.
+    pub fn release_step(&mut self) -> Result<Option<Duration>> {
+        let started = std::time::Instant::now();
+        if self.vacuum_step(RELEASE_STEP_TIME)? == 0 {
+            return Ok(None);
+        }
+        Ok(Some(RELEASE_PAUSE.max(started.elapsed())))
+    }
+    /// After a prune, gives back one step of the space left in the file. At
+    /// the budget most of what a prune frees is filled again by the next rows,
+    /// so one step each time is enough. It is best effort, as another
+    /// connection may hold the database; a step not taken is taken after a
+    /// later prune.
+    fn tidy(&mut self) {
+        let _ = self.vacuum_step(RELEASE_STEP_TIME);
+    }
+    #[cfg(test)]
     fn free_pages(&self) -> Result<i64> {
         Ok(self
             .db
             .query_row("PRAGMA freelist_count", [], |r| r.get(0))?)
     }
-    /// Gives back up to [`RELEASE_STEP`] pages; how many it gave back. The
-    /// pragma frees a page each time it is stepped, so it is stepped to its end.
-    fn release_step(&mut self) -> Result<usize> {
+    /// Gives back up to [`RELEASE_STEP`] pages, stopping after the first
+    /// once `within` has passed; how many it gave back. The pragma frees a
+    /// page each time it is stepped (run once, as by `execute_batch`, it frees
+    /// a single page), and what it freed is committed when it is stopped early.
+    fn vacuum_step(&mut self, within: Duration) -> Result<usize> {
+        let started = std::time::Instant::now();
         let mut step = self
             .db
             .prepare(&format!("PRAGMA incremental_vacuum({RELEASE_STEP})"))?;
@@ -623,6 +652,9 @@ impl PreviewCache {
         let mut freed = 0;
         while rows.next()?.is_some() {
             freed += 1;
+            if started.elapsed() >= within {
+                break;
+            }
         }
         Ok(freed)
     }
@@ -643,7 +675,6 @@ impl PreviewCache {
         if bytes > budget {
             self.drop_beyond(budget)?;
         }
-        self.db.execute_batch("PRAGMA incremental_vacuum(256);")?;
         Ok(())
     }
     /// Deletes the thumbnails beyond the newest that fit `budget` bytes.
@@ -883,7 +914,50 @@ mod tests {
         cache.prune(0)?;
         let before = cache.free_pages()?;
         assert!(before > i64::from(RELEASE_STEP));
-        cache.release_step()?;
+        cache.vacuum_step(Duration::MAX)?;
+        assert_eq!(before - cache.free_pages()?, i64::from(RELEASE_STEP));
+        Ok(())
+    }
+    /// A step that runs out of time stops after the page it is on, and keeps
+    /// what it gave back.
+    #[test]
+    fn a_release_step_out_of_time_keeps_what_it_gave_back() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let path = d.path().join("previews.sqlite3");
+        let mut cache = PreviewCache::open(&path)?;
+        for n in 0..100i64 {
+            cache.db.execute(
+                "INSERT INTO previews VALUES(?1,0,'0','',0,1,1,zeroblob(20000),?2)",
+                params![format!("{n}.ARW"), n],
+            )?;
+        }
+        cache.prune(0)?;
+        let before = cache.free_pages()?;
+        assert_eq!(cache.vacuum_step(Duration::ZERO)?, 1);
+        drop(cache);
+        let other = Connection::open(&path)?;
+        let free: i64 = other.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
+        assert_eq!(before - free, 1);
+        Ok(())
+    }
+    /// Opening, as storing does every 32 thumbnails, gives back one step of
+    /// the space left in the file, not one page.
+    #[test]
+    fn opening_gives_back_a_step_of_the_space_left() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let path = d.path().join("previews.sqlite3");
+        let cache = PreviewCache::open(&path)?;
+        for n in 0..500i64 {
+            cache.db.execute(
+                "INSERT INTO previews VALUES(?1,0,'0','',0,1,1,zeroblob(20000),?2)",
+                params![format!("{n}.ARW"), n],
+            )?;
+        }
+        cache.db.execute("DELETE FROM previews", [])?;
+        let before = cache.free_pages()?;
+        assert!(before > i64::from(RELEASE_STEP));
+        drop(cache);
+        let cache = PreviewCache::open(&path)?;
         assert_eq!(before - cache.free_pages()?, i64::from(RELEASE_STEP));
         Ok(())
     }
