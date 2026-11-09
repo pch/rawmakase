@@ -165,7 +165,7 @@ const POSITIVE_WHITES_MEASURED: f32 = 0.5;
 /// been measured against Camera Raw (docs/records/hdr-stage1-results.md). An edit
 /// with HDR off, or with nothing but measured adjustments, passes.
 ///
-/// Measured: white balance, Exposure, Contrast, Whites up to +50, Blacks, the HDR limit,
+/// Measured: white balance, Exposure, Contrast, Shadows, Whites up to +50, Blacks, the HDR limit,
 /// the master point curve and the parametric curve, and Levels as a point curve of its
 /// shape ([`crate::color::hdr_curve`]), Texture (on the camera's samples, as in SDR),
 /// camera profiles
@@ -197,10 +197,9 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
         // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
         // tolerances (docs/records/hdr-stage1-results.md#whites).
         ("Whites above +50", r.whites > POSITIVE_WHITES_MEASURED),
-        (
-            "Highlights and Shadows",
-            r.highlights != 0. || r.shadows != 0.,
-        ),
+        // Camera Raw's HDR Highlights levels off (negative) or fades (positive) above
+        // white, unlike the SDR-trained rule; Shadows renders as in SDR.
+        ("Highlights", r.highlights != 0.),
         // Point curves were measured ending at white; one whose last point is left
         // of it holds its value beyond, which Camera Raw was not seen to do above
         // white.
@@ -481,6 +480,7 @@ mod tests {
         r.effects.texture = 0.5;
         assert!(check_recipe(&r).is_ok());
         r.contrast = -0.4;
+        r.shadows = 0.5;
         assert!(check_recipe(&r).is_ok());
         // Positive Whites follows the photo's level (`scene_tone::hdr_whites`), up to +50.
         r.whites = 0.5;
@@ -506,7 +506,7 @@ mod tests {
         let unmeasured: [fn(&mut Recipe); 7] = [
             |r| r.highlights = 0.1,
             |r| r.hsl[5][2] = -0.2,
-            |r| r.shadows = 0.1,
+            |r| r.effects.grain = 0.1,
             |r| r.effects.clarity = 0.1,
             |r| r.effects.dehaze = 0.1,
             |r| {

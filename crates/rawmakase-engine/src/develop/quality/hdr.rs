@@ -729,6 +729,32 @@ mod tests {
         Ok(())
     }
 
+    /// Shadows renders the master as in SDR: positive Shadows lifts the dark end and
+    /// leaves light above white nearly alone, as Camera Raw's does. Highlights, whose
+    /// HDR rendering above white is not the SDR rule's, still refuses it.
+    #[test]
+    fn shadows_render_the_hdr_master_and_highlights_do_not() -> anyhow::Result<()> {
+        let im = grays(&[0.01, 0.05, 4., 8.]);
+        let mut r = hdr_recipe(&im);
+        let plain = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        r.shadows = 0.5;
+        let lifted = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        assert!(centre(&lifted, 0) > centre(&plain, 0) * 1.1);
+        for i in 2..4 {
+            assert!(
+                (centre(&lifted, i) / centre(&plain, i)).log2().abs() < 0.1,
+                "{i}"
+            );
+        }
+        r.shadows = 0.;
+        r.highlights = -0.5;
+        let error = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("Highlights"), "{error}");
+        Ok(())
+    }
+
     /// The limit's roll-off applies once: a channel at the peak renders where
     /// `roll_off` puts it, not rolled off twice.
     #[test]

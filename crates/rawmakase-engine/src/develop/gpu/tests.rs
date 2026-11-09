@@ -1993,6 +1993,16 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
             incremental_tint: -10.,
             ..base.clone()
         },
+        // Shadows, the local tone map on scene values, unclipped above white.
+        Recipe {
+            shadows: 0.7,
+            ..base.clone()
+        },
+        Recipe {
+            shadows: -0.5,
+            exposure: 0.6,
+            ..base.clone()
+        },
     ];
     variants
         .into_iter()

@@ -1,6 +1,6 @@
 # HDR results: references, measurements and progress
 
-Status: in progress, 2026-11-08. The record of the
+Status: in progress, 2026-11-09. The record of the
 [HDR implementation plan](hdr-implementation-plan.md): what was measured, the
 decisions taken from it, validation results and what remains open. Stage 1 (references,
 codec and display feasibility) comes first; stage 3's rendering measurements follow
@@ -210,7 +210,8 @@ SDR render below 0.25 (0.001 stop) and leave values above white alone. Negative
 Whites is a gain over scene value, the same at sensor whites 4, 16 and 64, photo
 maxima 0.5 to 8 and limits 2.3 and 8. Positive Whites follows the photo
 ([Whites](#whites)). Highlights and Shadows depend on the photo (Highlights −100
-holds a ramp at 0.25–0.28 above 0.3); not fitted. Contrast follows the photo through
+holds a ramp at 0.25–0.28 above 0.3); they were measured on photos instead
+([Highlights and Shadows](#highlights-and-shadows)). Contrast follows the photo through
 its pivot only ([Contrast](#contrast)).
 
 **Ordinary profile curves.** Camera Raw does not extend an ordinary (SDR) profile's
@@ -501,6 +502,37 @@ rendition at Whites +50) to identical pixels, 240 of 240. The dataset gate (scor
 against Camera Raw) and render snapshots (about 1,800 photos, compared against earlier
 RAWmakase renders) were not run for this change.
 
+### Highlights and Shadows
+
+Measured on the six validation photos (Adobe Standard, HDR limit 4) at Highlights −100,
+−50 and +50 and Shadows −50, +50 and +100, and Shadows +50 on the six holdout photos,
+each against the photo's default HDR and SDR renders. Camera Raw's gain (adjusted
+over default, per pixel of the reduced renders) is the same in HDR and SDR below about
+half of white on every photo; above white SDR's shoulder hides it.
+
+- **Shadows** renders as RAWmakase's SDR operator does, its scene-value gain unclipped:
+  the gain per level agrees with Camera Raw's to about 0.1 stop, and at the top of
+  the range Camera Raw adds 0–0.02 stop, RAWmakase 0.02–0.05. All three settings stay
+  within the median and p95 tolerances above white where the default render does
+  (median 0.005–0.09 stop, p95 ≤ 0.28; the Panasonic fails as by default), and
+  RAWmakase's HDR and SDR renders agree below 0.5 as Camera Raw's do. Below white the
+  SDR operator's own error carries over (Canon 850D Shadows +100: 0.29 stop in SDR).
+  The peak tolerance (0.1 stop) fails on photos whose default peak passes: Sony A7R IV
+  +0.28 at Shadows +50 and Nikon Z 8 +0.22 at +100 (+0.03 and +0.08 by default), and
+  the Z6 III's +0.19 at +100 is further from it than its default +0.11. Each is a
+  small specular in dark surroundings, which positive Shadows lifts and Camera Raw's
+  base keeps; the brightest 0.01% of pixels agree to 0.03 stop. Shadows renders in HDR
+  with this limitation; the peak failures stay open.
+- **Highlights** stays refused. Above white Camera Raw's HDR gain changes shape:
+  negative Highlights levels off a stop or two above white (−100: about −2.3 stops on
+  the Z 8 and A7R III, −1.2 on the Z6 III and Panasonic, −1.8 on the 850D), and
+  positive Highlights peaks just above white and fades (+50: +1.4 stops at 1.4 times
+  white on the Z 8, +0.6 at 6 times). RAWmakase's negative-Highlights rule, trained
+  on SDR targets, is already 0.3–0.5 stop off at white on some photos (A7R III −0.89
+  against −1.37, Z6 III −1.23 against −0.74) and keeps growing above it, and positive
+  Highlights' table tail does not fade: median above white 0.26–0.68 stop at −100 and
+  −50, 0.09–0.83 at +50. It needs targets above white from more photos than these.
+
 ### Validation
 
 `scripts/corpus/hdr_validate.py` renders each HDR job of the family with
@@ -740,10 +772,12 @@ the SDR photo gate were not run: they score these same SDR renders.
 
 ## Open
 
-- Whites above +50, Highlights and Shadows in HDR; the colour mixer's Luminance
+- Whites above +50 and Highlights in HDR; the colour mixer's Luminance
   ([Colour stage](#colour-stage)), Point Color, Color Grading, Defringe.
 - A channel's point curve and Refine Saturation in HDR ([Tone curves](#tone-curves)).
 - Clarity and Dehaze in HDR, after their SDR parity ([Presence](#presence)).
+- Positive Shadows lifts small speculars in dark surroundings above Camera Raw's peak
+  (0.2–0.3 stop; [Highlights and Shadows](#highlights-and-shadows)).
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
   and its sliders.
 - Looks with an RGB table, their own sliders, B&W, Profile Amount and Camera Looks in
@@ -785,8 +819,9 @@ the SDR photo gate were not run: they score these same SDR renders.
   ([Looks](#looks)); Contrast ([Contrast](#contrast)); the master point curve, the
   parametric curve and Levels ([Tone curves](#tone-curves)); Texture ([Presence](#presence)); Saturation, Vibrance, the
   colour mixer's Hue and Saturation, Calibration and Black & White
-  ([Colour stage](#colour-stage)); Whites up to +50 ([Whites](#whites)). Open: Whites above
-  +50, Highlights, Shadows, the colour
+  ([Colour stage](#colour-stage)); Whites up to +50 ([Whites](#whites)); Shadows
+  ([Highlights and Shadows](#highlights-and-shadows)). Open: Whites above
+  +50, Highlights, the colour
   mixer's Luminance, the other looks, channel curves, the SDR rendition sliders, 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display
