@@ -1,5 +1,7 @@
 use crate::app::develop::clipping::{self, ClipSide};
+use crate::app::develop::hdr_histogram::{HdrHighlights, Source};
 use crate::app::develop::panels::tone_drag::tone_drag_ui;
+use crate::app::develop::readout::Shade;
 use crate::app::develop::state::Tool;
 use crate::app::develop::step_name::StepName;
 use crate::app::develop::tools::crop_tool::{Guide, GuideShow, Ruler};
@@ -64,27 +66,33 @@ impl Editor {
             ui.allocate_exact_size(Vec2::new(ui.available_width(), 96.), Sense::hover());
         let painter = ui.painter().clone();
         painter.rect_filled(rect, radius::SMALL, palette.tone(Tone::WELL));
-        for i in 1..5 {
-            let x = rect.left() + i as f32 / 5. * rect.width();
-            painter.line_segment(
-                [Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())],
-                Stroke::new(1., palette.tone(Tone::CARD)),
-            );
+        // An HDR edit's master, or the SDR rendition (with why, for an HDR edit).
+        let (hdr, sdr_reason) = match self.histogram_source() {
+            Source::Hdr(m) => (Some(m.histogram.clone()), None),
+            Source::Sdr(why) => (None, why),
+        };
+        let headroom = self.view.hdr_display.shown_headroom();
+        let x_at = |f: f32| rect.left() + f * rect.width();
+        let line = |x: f32| [Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())];
+        if hdr.is_none() {
+            for i in 1..5 {
+                painter.line_segment(
+                    line(x_at(i as f32 / 5.)),
+                    Stroke::new(1., palette.tone(Tone::CARD)),
+                );
+            }
         }
         let histogram = self.preview.histogram;
-        let h = histogram.bins;
-        // Light smoothing, and scaling that ignores the clipped end bins.
-        let smooth = |c: usize, i: usize| {
-            let at = |j: isize| h[c][j.clamp(0, 255) as usize] as f32;
-            let i = i as isize;
-            (at(i - 1) + 2. * at(i) + at(i + 1)) / 4.
+        let columns = match &hdr {
+            None => sdr_columns(&histogram.bins, 0., 1.),
+            Some(h) => hdr_columns(h),
         };
-        let max = (2..254)
-            .flat_map(|i| (0..3).map(move |c| (c, i)))
-            .map(|(c, i)| smooth(c, i))
+        let max = columns
+            .iter()
+            .filter(|c| c.scaled)
+            .flat_map(|c| c.counts)
             .fold(1., f32::max);
         let plot = rect.shrink2(Vec2::new(0., 4.));
-        let bar = plot.width() / 256.;
         let colors = [
             Color32::from_rgb(196, 58, 52),
             Color32::from_rgb(62, 170, 70),
@@ -95,18 +103,21 @@ impl Editor {
             (1, 2) => Color32::from_rgb(58, 168, 186),
             _ => Color32::from_rgb(170, 70, 170),
         };
-        for i in 0..256 {
+        for column in &columns {
             let mut v: Vec<(f32, usize)> = (0..3)
-                .map(|c| ((smooth(c, i) / max).sqrt().min(1.) * plot.height(), c))
+                .map(|c| ((column.counts[c] / max).sqrt().min(1.) * plot.height(), c))
                 .collect();
             v.sort_by(|a, b| a.0.total_cmp(&b.0));
-            let x = plot.left() + i as f32 * bar;
+            let (x0, x1) = (
+                plot.left() + column.from * plot.width(),
+                plot.left() + column.to * plot.width(),
+            );
             let segment = |from: f32, to: f32, color: Color32| {
                 if to > from {
                     painter.rect_filled(
                         Rect::from_min_max(
-                            Pos2::new(x, plot.bottom() - to),
-                            Pos2::new(x + bar + 0.5, plot.bottom() - from),
+                            Pos2::new(x0, plot.bottom() - to),
+                            Pos2::new(x1 + 0.5, plot.bottom() - from),
                         ),
                         0.,
                         color,
@@ -116,6 +127,48 @@ impl Editor {
             segment(0., v[0].0, palette.tone(Tone::SECONDARY));
             segment(v[0].0, v[1].0, pair(v[1].1, v[2].1));
             segment(v[1].0, v[2].0, colors[v[2].1]);
+        }
+        if let Some(h) = &hdr {
+            // A dashed line at each whole stop above white, over the bars.
+            let mut stop = 1.;
+            while stop < h.limit - 0.05 {
+                painter.extend(egui::Shape::dashed_line(
+                    &line(x_at(hdr_x(stop, h.limit))),
+                    Stroke::new(1., palette.tone(Tone::OUTLINE_STRONG)),
+                    3.,
+                    3.,
+                ));
+                stop += 1.;
+            }
+            // Graphics white, and what the display can't show now: dimmed, under a
+            // red bar, as Lightroom marks it.
+            painter.line_segment(
+                line(x_at(hdr_x(0., h.limit))),
+                Stroke::new(1., palette.tone(Tone::LABEL)),
+            );
+            let shown = headroom.log2();
+            if shown < h.limit {
+                let x = x_at(hdr_x(shown, h.limit));
+                let beyond = Rect::from_x_y_ranges(x..=rect.right(), rect.y_range());
+                painter.rect_filled(beyond, 0., Color32::from_black_alpha(110));
+                painter.rect_filled(
+                    Rect::from_x_y_ranges(x..=rect.right(), rect.top()..=rect.top() + 3.),
+                    0.,
+                    BEYOND_HEADROOM,
+                );
+                if shown > 0.05 {
+                    painter.line_segment(line(x), Stroke::new(1., Color32::from_white_alpha(140)));
+                }
+            }
+        }
+        if sdr_reason.is_some() {
+            painter.text(
+                rect.center_top() + Vec2::new(0., 4.),
+                egui::Align2::CENTER_TOP,
+                "SDR",
+                egui::FontId::proportional(text::SMALL),
+                palette.tone(Tone::LABEL),
+            );
         }
         // After the bars, so the region shows over them; before the triangles,
         // so their clicks stay theirs.
@@ -158,14 +211,26 @@ impl Editor {
                 self.view.clipping.set_hover(Some(side));
             }
             let on = self.view.clipping.is_on(side);
-            let color = clipping::indicator_color(clipping::clipped_channels(&histogram, side))
-                .unwrap_or_else(|| {
-                    palette.tone(if on || response.hovered() {
-                        Tone::SECONDARY
-                    } else {
-                        Tone::OUTLINE_STRONG
-                    })
-                });
+            let lit = match (&hdr, side) {
+                (None, _) => {
+                    clipping::indicator_color(clipping::clipped_channels(&histogram, side))
+                }
+                (Some(h), ClipSide::Shadows) => {
+                    clipping::indicator_color(clipping::clipped_share(h.shadows, h.total()))
+                }
+                (Some(h), ClipSide::Highlights) => match HdrHighlights::of(h, headroom) {
+                    HdrHighlights::None => None,
+                    HdrHighlights::Within => Some(WITHIN_HEADROOM),
+                    HdrHighlights::Beyond => Some(BEYOND_HEADROOM),
+                },
+            };
+            let color = lit.unwrap_or_else(|| {
+                palette.tone(if on || response.hovered() {
+                    Tone::SECONDARY
+                } else {
+                    Tone::OUTLINE_STRONG
+                })
+            });
             painter.add(egui::Shape::convex_polygon(
                 vec![
                     corner,
@@ -189,33 +254,67 @@ impl Editor {
             )
         });
         // So does the RGB readout while the pointer is over the photo.
-        let exif = region_text
-            .or_else(|| self.view.readout.text())
-            .unwrap_or_else(|| {
-                self.document
-                    .metadata
-                    .as_ref()
-                    .map_or_else(String::new, |m| {
-                        let info = crate::metadata::PhotoInfo::from_metadata(m);
-                        [
-                            info.iso_text(),
-                            info.focal_text(),
-                            info.aperture_text(),
-                            info.shutter_text(),
-                        ]
-                        .into_iter()
-                        .flatten()
-                        .collect::<Vec<_>>()
-                        .join("     ")
-                    })
-            });
+        let label = palette.tone(Tone::LABEL);
+        let readout = self.view.readout.segments().map(|parts| {
+            let mut job = egui::text::LayoutJob::default();
+            for (part, shade) in parts {
+                let color = match shade {
+                    Shade::Plain => label,
+                    Shade::Within => WITHIN_HEADROOM,
+                    Shade::Beyond => BEYOND_HEADROOM,
+                };
+                job.append(
+                    &part,
+                    0.,
+                    egui::TextFormat::simple(egui::FontId::proportional(text::SMALL), color),
+                );
+            }
+            job
+        });
+        let hover = match (&hdr, sdr_reason) {
+            (Some(h), _) => {
+                let display = if headroom > 1. {
+                    format!("this display's headroom now, {:.1} stops", headroom.log2())
+                } else {
+                    "what this display shows now: no HDR".to_owned()
+                };
+                format!(
+                    "HDR histogram of the whole photo: SDR up to graphics white (the solid \
+                     line), then a stop per dashed line up to the HDR limit, {:.1} stops. \
+                     Dimmed under the red bar: beyond {display}.",
+                    h.limit
+                )
+            }
+            (None, Some(why)) => format!("Output histogram of the whole photo, in SDR: {why}"),
+            (None, None) => "Output histogram of the whole photo".to_owned(),
+        };
+        if region_text.is_none()
+            && let Some(job) = readout
+        {
+            ui.vertical_centered(|ui| ui.label(job).on_hover_text(hover));
+            return;
+        }
+        let exif = region_text.unwrap_or_else(|| {
+            self.document
+                .metadata
+                .as_ref()
+                .map_or_else(String::new, |m| {
+                    let info = crate::metadata::PhotoInfo::from_metadata(m);
+                    [
+                        info.iso_text(),
+                        info.focal_text(),
+                        info.aperture_text(),
+                        info.shutter_text(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .join("     ")
+                })
+        });
         ui.vertical_centered(|ui| {
-            ui.label(
-                egui::RichText::new(exif)
-                    .size(text::SMALL)
-                    .color(palette.tone(Tone::LABEL)),
-            )
-            .on_hover_text("Output histogram of the whole photo");
+            ui.label(egui::RichText::new(exif).size(text::SMALL).color(label))
+                .on_hover_text(hover);
         });
     }
     /// The open tool's drawer, in place of Develop's adjustments: Crop's
@@ -1120,6 +1219,143 @@ fn setting_control(
     crate::model::edit::change_setting(r, id, photo, |r| {
         setting_slider(ui, step, id, id.value_mut(r), default)
     });
+}
+
+/// Light above white the display shows: the HDR readout's and the highlight
+/// triangle's colour, as Lightroom's.
+const WITHIN_HEADROOM: Color32 = Color32::from_rgb(235, 160, 40);
+/// Light beyond the display's headroom or at the HDR limit.
+const BEYOND_HEADROOM: Color32 = Color32::from_rgb(230, 56, 48);
+/// The share of an HDR histogram's width its SDR section takes, from black to
+/// graphics white; stops above white share the rest up to the HDR limit.
+const SDR_SHARE: f32 = 0.4;
+
+/// Where `stops` above graphics white falls across an HDR histogram of an HDR
+/// limit of `limit` stops: [`SDR_SHARE`] at white, 1 at the limit.
+fn hdr_x(stops: f32, limit: f32) -> f32 {
+    SDR_SHARE + (1. - SDR_SHARE) * (stops / limit.max(1e-3)).clamp(0., 1.)
+}
+
+/// One bar of the histogram: its span across it (0–1), its height per channel as a
+/// density (pixels per 1/256 of the width, so bars of any width compare), and
+/// whether it sets the scale.
+#[derive(Debug)]
+struct Column {
+    from: f32,
+    to: f32,
+    counts: [f32; 3],
+    scaled: bool,
+}
+
+/// Bins spread evenly from `from` to `to`, lightly smoothed. The two at each end
+/// (the clipped ones in SDR) don't set the scale.
+fn sdr_columns(bins: &[[u32; 256]; 3], from: f32, to: f32) -> Vec<Column> {
+    let step = (to - from) / 256.;
+    spread(
+        &bins.map(|c| c.to_vec()),
+        |i| (from + step * i as f32, from + step * (i + 1) as f32),
+        |i| (2..254).contains(&i),
+    )
+}
+
+/// An HDR histogram's bars: its SDR section, then each bin above white up to the
+/// HDR limit. Channels the conversion to sRGB primaries takes past the limit go in
+/// the last bin, which, holding the light the limit flattens, doesn't set the
+/// scale.
+fn hdr_columns(h: &crate::rendered::HdrHistogram) -> Vec<Column> {
+    use crate::rendered::HDR_BINS_PER_STOP;
+    let per = HDR_BINS_PER_STOP as f32;
+    let n = ((h.limit * per).ceil() as usize).clamp(1, h.hdr[0].len());
+    let bins = h.hdr.map(|c| {
+        let mut kept = c[..n].to_vec();
+        kept[n - 1] += c[n..].iter().sum::<u32>();
+        kept
+    });
+    let mut columns = sdr_columns(&h.sdr, 0., SDR_SHARE);
+    columns.extend(spread(
+        &bins,
+        |i| {
+            (
+                hdr_x(i as f32 / per, h.limit),
+                hdr_x(((i + 1) as f32 / per).min(h.limit), h.limit),
+            )
+        },
+        |i| i + 1 < n,
+    ));
+    columns
+}
+
+/// `bins` as columns at `span(i)`, smoothed over their neighbours, as densities.
+fn spread(
+    bins: &[Vec<u32>; 3],
+    span: impl Fn(usize) -> (f32, f32),
+    scaled: impl Fn(usize) -> bool,
+) -> Vec<Column> {
+    let n = bins[0].len();
+    (0..n)
+        .map(|i| {
+            let (from, to) = span(i);
+            let width = ((to - from) * 256.).max(1e-6);
+            let smooth = |c: usize| {
+                let at = |j: isize| bins[c][j.clamp(0, n as isize - 1) as usize] as f32;
+                let i = i as isize;
+                (at(i - 1) + 2. * at(i) + at(i + 1)) / 4.
+            };
+            Column {
+                from,
+                to,
+                counts: [0, 1, 2].map(|c| smooth(c) / width),
+                scaled: scaled(i),
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod histogram_tests {
+    use super::*;
+
+    /// The SDR histogram's bars are as before: 256 across, each its bin's count.
+    #[test]
+    fn sdr_bars_span_the_histogram() {
+        let mut bins = [[0u32; 256]; 3];
+        bins[1][128] = 40;
+        let columns = sdr_columns(&bins, 0., 1.);
+        assert_eq!(columns.len(), 256);
+        assert!((columns[255].to - 1.).abs() < 1e-6);
+        assert_eq!(columns[128].counts[1], 20.);
+        assert!(!columns[0].scaled && columns[2].scaled && !columns[254].scaled);
+    }
+
+    /// An HDR histogram is Lightroom's: SDR up to white, then stops above it to the
+    /// limit, with light past the limit in its last bar; bars of any width compare.
+    #[test]
+    fn hdr_bars_split_at_white_and_end_at_the_limit() {
+        let master = crate::rendered::HdrImage {
+            width: 3,
+            height: 1,
+            pixels: vec![[0.5; 3], [2.; 3], [3.9; 3]],
+            peak: 4.,
+        };
+        let h = master.histogram();
+        let columns = hdr_columns(&h);
+        let per = crate::rendered::HDR_BINS_PER_STOP;
+        assert_eq!(columns.len(), 256 + 2 * per);
+        assert!((columns[255].to - SDR_SHARE).abs() < 1e-6);
+        assert!((columns.last().unwrap().to - 1.).abs() < 1e-6);
+        assert!((hdr_x(1., 2.) - (SDR_SHARE + (1. - SDR_SHARE) / 2.)).abs() < 1e-6);
+        assert_eq!(hdr_x(5., 2.), 1.);
+        // One stop above white starts the second half of the HDR section.
+        let one_stop = &columns[256 + per];
+        assert!((one_stop.from - hdr_x(1., 2.)).abs() < 1e-6);
+        // Each HDR bin is wider than an SDR one, so its count stands for less.
+        let total: f32 = columns[256..]
+            .iter()
+            .map(|c| c.counts[1] * (c.to - c.from) * 256.)
+            .sum();
+        assert!((total - 2.).abs() < 1e-3, "{total}");
+        assert!(!columns.last().unwrap().scaled);
+    }
 }
 
 #[cfg(test)]

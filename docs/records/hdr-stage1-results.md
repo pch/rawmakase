@@ -424,6 +424,28 @@ compared by luminance in 8× linear blocks:
   the SDR rendition through `Recipe::resolved`, the GPU refuses HDR recipes, and the
   master is reached only through `render_hdr`.
 
+- **The HDR histogram describes the edit, not the display** (stage 5, 2026-11-09). It
+  is measured from the master wherever the master renders, an SDR display included,
+  as Lightroom shows the HDR range there and marks what the display can't show.
+  Headroom is applied when it is drawn, never in its key, so a headroom change renders
+  nothing. It is measured at a fixed 512-pixel long edge rather than the Fit preview's
+  size, so window size never renders it again; that costs one small CPU render per
+  edit beside the preview's.
+- **Lightroom's layout, not its look.** Adobe's help pages could not be fetched; the
+  behaviour follows secondary write-ups of Lightroom Classic 13 (Greg Benz, Computer
+  Darkroom, 2023): SDR on the left, a section per stop above white up to the HDR
+  limit, what the display can't show marked red, a yellow or red highlight triangle,
+  and readouts in stops over white (`+2.3`), orange or red. RAWmakase gives SDR a
+  fixed 40% of the width and spans exactly the limit, fractional limits included.
+- **The last HDR histogram of the same photo stays while the next renders**, so a
+  slider drag doesn't flicker between the SDR and HDR layouts. Results for older
+  requests are still dropped, and another photo's histogram never shows.
+- **The readout reads the master wherever it renders**: the shown HDR preview's own
+  pixels (kept as half floats, a few thousandths of a stop), else the histogram's
+  512-pixel master, so on an SDR display it is coarser at 100% than the SDR readout.
+- **The histogram's drag zones stay fifths of its width** in HDR, as they edit the
+  same sliders.
+
 ## Open
 
 - Positive Whites, Highlights, Shadows and the colour stage in HDR.
@@ -446,7 +468,9 @@ compared by luminance in 8× linear blocks:
   starts them as HDR edits; Lightroom's choice is not measured), and HDR toggling
   with unavailable paired profiles.
 - HDR display beyond macOS Develop's views: a GPU
-  HDR path, Windows Advanced Color, Linux, and highlights beyond the headroom.
+  HDR path, Windows Advanced Color, Linux. Lightroom's Visualize HDR overlay on the
+  photo (colour by stop above white) is not drawn; the histogram marks what lies
+  beyond the display's headroom.
 
 ## Progress
 
@@ -494,4 +518,6 @@ compared by luminance in 8× linear blocks:
   photo shows, and the CPU master held to the display's headroom, with the Basic
   panel's note naming it: in Fit (#915; checked on a MacBook Pro XDR display with a
   CC0 Z 8 photo), and zoomed out, in 100% regions, Before Only, Before/After and
-  Reference View (#924). Open: the rest of the stage (above).
+  Reference View (#924). The HDR histogram in stops above white, the HDR readout,
+  and what lies beyond the display's headroom marked in the histogram and its
+  highlight triangle. Open: the rest of the stage (above).

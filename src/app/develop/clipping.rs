@@ -75,7 +75,11 @@ pub(in crate::app) fn clipped_channels(histogram: &Histogram, side: ClipSide) ->
         ClipSide::Shadows => histogram.clipped.shadows,
         ClipSide::Highlights => histogram.clipped.highlights,
     };
-    let total = histogram.total().max(1) as f32;
+    clipped_share(counts, histogram.total())
+}
+/// Which channels of `total` pixels clip, `counts` clipping in each.
+pub(in crate::app) fn clipped_share(counts: [u32; 3], total: u32) -> [bool; 3] {
+    let total = total.max(1) as f32;
     counts.map(|n| n as f32 / total > CLIPPED_SHARE)
 }
 /// The triangle's colour: the clipping channels mixed, white when all three

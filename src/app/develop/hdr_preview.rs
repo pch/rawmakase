@@ -124,12 +124,30 @@ pub(in crate::app) enum Presentation {
 /// What the worker hands back for an attempt: the render, or why it failed.
 type Outcome = (u64, Result<Done, String>);
 
-/// A finished render: RGBA half floats, row by row.
+/// A finished render: RGBA half floats, row by row, and the master they show.
 struct Done {
     key: Key,
     width: u32,
     height: u32,
     rgba: Vec<u16>,
+    master: Master,
+}
+
+/// A shown preview's master, for the RGB readout: linear ProPhoto (1 = graphics
+/// white) as half floats, row by row, at the preview's size. Halves keep a fifth of a
+/// percent, a few thousandths of a stop, at half an `f32`'s memory.
+#[derive(Default)]
+struct Master(Vec<[u16; 3]>);
+
+/// A preview on the screen: its key, texture and master.
+struct Shown {
+    key: Key,
+    id: egui::TextureId,
+    /// Kept alive while egui draws it.
+    _texture: wgpu::Texture,
+    width: u32,
+    height: u32,
+    master: Master,
 }
 
 /// One slot's requests and what it shows.
@@ -139,7 +157,7 @@ struct State {
     requested: Option<Key>,
     attempt: u64,
     cancel: Option<Arc<AtomicBool>>,
-    shown: Option<(Key, egui::TextureId, wgpu::Texture)>,
+    shown: Option<Shown>,
     /// Why the render for this key failed.
     failure: Option<(Key, String)>,
 }
@@ -222,8 +240,8 @@ impl HdrPreview {
         // Attempts keep counting, so a result still on its way is never taken for
         // a later request's.
         self.slots[lane].attempt = slot_state.attempt;
-        if let (Some((_, id, _)), Some(state)) = (slot_state.shown, state) {
-            state.renderer.write().free_texture(&id);
+        if let (Some(shown), Some(state)) = (slot_state.shown, state) {
+            state.renderer.write().free_texture(&shown.id);
         }
     }
     /// Whether `slot` was asked for or shows anything.
@@ -259,8 +277,8 @@ impl HdrPreview {
         if let Some(done) = self.collect(slot) {
             self.upload(slot, done, state);
         }
-        let (shown, id, _) = self.slots[slot.lane()].shown.as_ref()?;
-        (shown == key).then_some(*id)
+        let shown = self.slots[slot.lane()].shown.as_ref()?;
+        (&shown.key == key).then_some(shown.id)
     }
     /// Takes the worker's result for `slot`: a finished render of its latest
     /// request, to be uploaded, or that request's failure, kept for its note. A
@@ -292,7 +310,25 @@ impl HdrPreview {
         self.slots[slot.lane()]
             .shown
             .as_ref()
-            .is_some_and(|(k, ..)| k == key)
+            .is_some_and(|shown| &shown.key == key)
+    }
+    /// The master's value (linear ProPhoto, 1 = graphics white) under `pos` of the
+    /// preview `slot` draws for `key` at `at`; `None` off it, or while it doesn't
+    /// draw that preview.
+    pub(in crate::app) fn master_at(
+        &self,
+        slot: Slot,
+        key: &Key,
+        at: egui::Rect,
+        pos: egui::Pos2,
+    ) -> Option<[f32; 3]> {
+        let shown = self.slots[slot.lane()]
+            .shown
+            .as_ref()
+            .filter(|s| &s.key == key)?;
+        let (x, y) = crate::app::develop::readout::index_at(shown.width, shown.height, at, pos)?;
+        let p = shown.master.0.get((y * shown.width + x) as usize)?;
+        Some(p.map(unhalf))
     }
     /// Why the render for `key` in `slot` failed, if it did.
     pub(in crate::app) fn failure(&self, slot: Slot, key: &Key) -> Option<&str> {
@@ -337,11 +373,16 @@ impl HdrPreview {
         let view = texture.create_view(&Default::default());
         let mut renderer = state.renderer.write();
         let id = renderer.register_native_texture(&state.device, &view, wgpu::FilterMode::Linear);
-        if let Some((_, old, _)) = self.slots[slot.lane()]
-            .shown
-            .replace((done.key, id, texture))
-        {
-            renderer.free_texture(&old);
+        let shown = Shown {
+            key: done.key,
+            id,
+            _texture: texture,
+            width: done.width,
+            height: done.height,
+            master: done.master,
+        };
+        if let Some(old) = self.slots[slot.lane()].shown.replace(shown) {
+            renderer.free_texture(&old.id);
         }
     }
 }
@@ -365,6 +406,7 @@ fn render(job: &Job) -> anyhow::Result<Done> {
         width: master.width,
         height: master.height,
         rgba: encode(&master.pixels, key.headroom()),
+        master: Master(master.pixels.iter().map(|p| p.map(half)).collect()),
     })
 }
 
@@ -406,19 +448,20 @@ fn half(v: f32) -> u16 {
     sign | rounded.min(0x7bff) as u16
 }
 
+/// Half-precision bits as the value they hold.
+fn unhalf(h: u16) -> f32 {
+    let sign = if h & 0x8000 != 0 { -1. } else { 1. };
+    let exponent = ((h >> 10) & 0x1f) as i32;
+    let mantissa = (h & 0x3ff) as f32;
+    if exponent == 0 {
+        return sign * mantissa * 2f32.powi(-24);
+    }
+    sign * (1. + mantissa / 1024.) * 2f32.powi(exponent - 15)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn unhalf(h: u16) -> f32 {
-        let sign = if h & 0x8000 != 0 { -1. } else { 1. };
-        let exponent = ((h >> 10) & 0x1f) as i32;
-        let mantissa = (h & 0x3ff) as f32;
-        if exponent == 0 {
-            return sign * mantissa * 2f32.powi(-24);
-        }
-        sign * (1. + mantissa / 1024.) * 2f32.powi(exponent - 15)
-    }
 
     /// Graphics white is extended sRGB 1, light above it encodes above 1 up to the
     /// display's headroom, and a neutral stays neutral.
@@ -587,6 +630,7 @@ mod tests {
             width: 1,
             height: 1,
             rgba: vec![0; 4],
+            master: Master::default(),
         };
         preview.done.lock().unwrap()[Slot::Region.lane()] = Some((1, Ok(done)));
         preview.request(Slot::Region, key, image);
@@ -641,6 +685,7 @@ mod tests {
             width: 1,
             height: 1,
             rgba: vec![0; 4],
+            master: Master::default(),
         };
         let slot = Slot::Whole;
         let set = |preview: &HdrPreview, outcome| {

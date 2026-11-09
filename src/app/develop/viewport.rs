@@ -952,7 +952,7 @@ impl std::fmt::Debug for HdrDue {
 }
 impl HdrDue {
     /// The slots of `key` and `under`, for the edit's side or Before's.
-    fn slots(
+    pub(in crate::app) fn slots(
         &self,
         before: bool,
     ) -> (
@@ -970,6 +970,41 @@ impl HdrDue {
             crate::app::develop::hdr_preview::Part::Whole(_) => (whole, region),
         }
     }
+}
+
+/// Where an HDR preview of `part` draws over the photo drawn at `rect` with geometry
+/// `g`: a region where its own key places it, which can differ from where the SDR
+/// rendition's last region sits until that region's render lands.
+pub(in crate::app) fn hdr_drawn_at(
+    rect: Rect,
+    g: &Geometry,
+    part: crate::app::develop::hdr_preview::Part,
+) -> Rect {
+    match part {
+        crate::app::develop::hdr_preview::Part::Whole(_) => rect,
+        crate::app::develop::hdr_preview::Part::Region(region) => {
+            before_after::region_on(rect, g, region)
+        }
+    }
+}
+
+/// Why Develop shows no master of `recipe` of `image`, wherever it is shown: HDR is
+/// off, the master is refused, or it can't be rendered for Develop yet.
+pub(in crate::app) fn hdr_master_refused(
+    recipe: &crate::model::recipe::Recipe,
+    image: &crate::camera_data::CameraImage,
+) -> Result<(), &'static str> {
+    let refuse = |no: bool, why| if no { Err(why) } else { Ok(()) };
+    refuse(!recipe.hdr.is_active(), HDR_OFF)?;
+    refuse(
+        crate::model::hdr::check_for(recipe, &image.metadata).is_err(),
+        "this edit doesn't render in HDR yet",
+    )?;
+    // Its result is the full photo's, rendered on its own worker.
+    refuse(
+        recipe.ai_denoise.enabled,
+        "AI Denoise isn't previewed in HDR yet",
+    )
 }
 
 impl crate::app::Editor {
@@ -1010,18 +1045,10 @@ impl crate::app::Editor {
         max_edge: u32,
     ) -> Result<HdrDue, &'static str> {
         use crate::app::develop::hdr_preview::{Key, Part};
-        let refuse = |no: bool, why| if no { Err(why) } else { Ok(()) };
-        refuse(!recipe.hdr.is_active(), HDR_OFF)?;
-        refuse(
-            crate::model::hdr::check_for(recipe, &image.metadata).is_err(),
-            "this edit doesn't render in HDR yet",
-        )?;
-        // Its result is the full photo's, rendered on its own worker.
-        refuse(
-            recipe.ai_denoise.enabled,
-            "AI Denoise isn't previewed in HDR yet",
-        )?;
-        refuse(max_edge == 0, "the photo is still opening")?;
+        hdr_master_refused(recipe, image)?;
+        if max_edge == 0 {
+            return Err("the photo is still opening");
+        }
         let headroom = self.view.hdr_display.headroom;
         let whole = Key::new(image, recipe, Part::Whole(max_edge), headroom);
         Ok(match region {
@@ -1118,7 +1145,6 @@ impl crate::app::Editor {
         due: Result<HdrDue, &'static str>,
         before: bool,
     ) {
-        use crate::app::develop::hdr_preview::Part;
         let state = self.render_state.clone();
         let (Some(state), Ok(due)) = (state, due) else {
             return;
@@ -1130,10 +1156,7 @@ impl crate::app::Editor {
         let draw = |preview: &mut crate::app::develop::hdr_preview::HdrPreview,
                     slot,
                     key: &crate::app::develop::hdr_preview::Key| {
-            let at = match key.part() {
-                Part::Whole(_) => rect,
-                Part::Region(region) => before_after::region_on(rect, g, region),
-            };
+            let at = hdr_drawn_at(rect, g, key.part());
             if let Some(id) = preview.texture(slot, key, &state) {
                 painter.image(id, at, uv, Color32::WHITE);
             }

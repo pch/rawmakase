@@ -82,6 +82,40 @@ as long as a master is due, including while an edit's next preview renders, so t
 display's headroom doesn't ramp down and up with every slider move. Slider drags
 wait for the CPU master; the SDR rendition shows meanwhile.
 
+### Histogram and readout
+
+With HDR on, Develop's histogram is the HDR master's (`app::develop::hdr_histogram`),
+laid out as Lightroom's: the left 40% is SDR, from black to graphics white by the
+sRGB-encoded value as the SDR histogram bins its rendition; a solid line marks
+graphics white, and the rest is stops above it up to the edit's HDR limit, with a
+dashed line at each whole stop (`rendered::HdrHistogram`, 32 bins a stop). Channels
+are the master's in linear sRGB primaries, as the preview shows them; bars of any
+width are drawn as densities, so the two sections compare.
+
+The histogram describes the edit, not the display, so it is measured wherever the
+master renders, on an SDR display too: from a master of the whole photo 512 pixels
+long, on a latest-only worker of its own, keyed by the photo and the settings as
+the HDR preview is. A result for anything but the latest request is dropped; while
+the next one renders, the last histogram of the same photo stays (another photo's
+never shows), as the SDR histogram stays until its next render. Where the master is
+refused (HDR off, an unmeasured adjustment, AI Denoise) or hasn't rendered yet for
+this photo, or failed, the SDR histogram shows, marked SDR, with the reason in its
+tooltip.
+
+The display's current headroom is applied only where the histogram is drawn, so a
+change shows at once and renders nothing: what lies beyond it (all light above
+white on a display without HDR, or while the window shows the SDR rendition) is
+dimmed under a red bar, as Lightroom marks what the display can't show. The
+highlight triangle is yellow when light above white is all within the headroom and
+red when some is beyond it or flattened at the HDR limit; the shadow triangle works
+as in SDR.
+
+The RGB readout under the histogram reads the master too: from the HDR preview shown
+there (its 100% region, or the whole photo, kept as half floats), otherwise from the
+histogram's master of the edit as it is now. A channel up to graphics white reads as
+its Melissa RGB percentage, one above it as its stops above white (`+1.3`), orange
+where the display shows it and red beyond its headroom or at the HDR limit.
+
 ## What the master renders
 
 The pipeline is the SDR one up to the scene tone stage's output (S3), with these

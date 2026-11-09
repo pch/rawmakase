@@ -374,3 +374,43 @@ fn the_hdr_master_is_due_in_every_view_of_an_hdr_edit() {
     e.document.edit.setup_mut().highlights = 0.;
     assert!(e.hdr_preview_due().is_ok());
 }
+
+/// The HDR readout reads a 100% region where the HDR preview draws it, by its own
+/// key's region, not where the SDR rendition's last region sits: the two workers
+/// finish in either order, so after a pan the HDR region can land first.
+#[test]
+fn the_hdr_readout_reads_the_region_where_the_hdr_preview_draws_it() {
+    use crate::app::develop::hdr_preview::{Part, Slot};
+    use crate::app::develop::state::TextureMode;
+    use crate::app::shell::display::HdrDisplay;
+    let ctx = egui::Context::default();
+    let (mut e, _) = crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), true);
+    e.preview.last_fit_edge = 64;
+    e.view.viewport = egui::Vec2::new(16., 12.);
+    e.view.hdr_display = HdrDisplay {
+        headroom: 4.,
+        potential: 16.,
+        float_surface: true,
+    };
+    e.document.edit.setup_mut().hdr.enabled = true;
+    e.view.zoom.set(1.);
+    let region = e.region().expect("a 100% region");
+    assert_ne!(region, [0, 0, 4, 4]);
+    // The SDR rendition's last region is elsewhere: it hasn't caught up with a pan.
+    e.preview.mode = TextureMode::Region([0, 0, 4, 4]);
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(64., 48.));
+    let g = crate::develop::Geometry::new(e.document.full().unwrap(), &e.effective_recipe(), 0);
+    let reads = e.hdr_preview_reads(rect);
+    assert_eq!(reads.len(), 1, "the whole photo only with the region shown");
+    let (slot, key, at) = &reads[0];
+    assert_eq!((*slot, key.part()), (Slot::Region, Part::Region(region)));
+    assert_eq!(
+        *at,
+        crate::app::develop::before_after::region_on(rect, &g, region)
+    );
+    // In Fit, the whole photo where the photo is.
+    e.view.zoom.set(0.);
+    let reads = e.hdr_preview_reads(rect);
+    assert_eq!(reads.len(), 1);
+    assert_eq!((reads[0].0, reads[0].2), (Slot::Whole, rect));
+}
