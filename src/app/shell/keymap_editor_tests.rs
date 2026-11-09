@@ -332,3 +332,18 @@ fn the_basic_keys_give_way_only_to_a_metadata_chord_the_press_is() {
     assert!(touches(&changed, "slider"), "{changed:?}");
     assert_ne!(f.photo(3).rating, 3);
 }
+
+#[test]
+fn a_command_that_acts_once_a_frame_leaves_a_press_a_higher_command_owns() {
+    // Chrome takes all its presses in a frame; X is the crop's orientation key.
+    let mut f = Fixture::new(Place::Crop);
+    rebind(&mut f, "chrome", &["F9", "X"]);
+    let before = f.fingerprint();
+    f.taps(&[(Key::F9, NONE), (Key::X, NONE)]);
+    let changed = changes(&before, &f.fingerprint());
+    assert!(touches(&changed, "chrome"), "F9 ran Chrome: {changed:?}");
+    assert!(
+        touches(&changed, "aspect"),
+        "X swapped the crop: {changed:?}"
+    );
+}

@@ -601,9 +601,15 @@ impl<'a> FrameKeys<'a> {
         })?;
         let mut taken = match binding.per_frame {
             PerFrame::Each => vec![press],
+            // Each further press goes through the same arbitration as the
+            // first: a press reserved for, or owned by, another binding stays
+            // theirs, and a conflict is reported and runs neither.
             PerFrame::Once => open
                 .iter()
-                .filter(|p| matches_any(&chords, p, binding.variants))
+                .filter(|p| {
+                    **p == press
+                        || (matches_any(&chords, p, binding.variants) && self.runs(p, binding))
+                })
                 .copied()
                 .collect(),
         };

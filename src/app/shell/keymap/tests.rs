@@ -565,3 +565,38 @@ fn a_press_two_commands_share_is_reported_once_and_runs_neither() {
         "{reports:?}"
     );
 }
+
+#[test]
+fn a_binding_that_acts_once_takes_its_other_presses_by_precedence_too() {
+    use crate::app::shell::commands::registry::bindings as b;
+    let x = Chord::new(Key::X, Mods::NONE);
+    let map = std::sync::Arc::new(Effective::new(
+        [
+            ("chrome", vec![Chord::new(Key::F9, Mods::NONE), x]),
+            ("panels:sides", vec![x]),
+        ]
+        .into_iter()
+        .collect(),
+    ));
+    let ctx = egui::Context::default();
+    let (chrome, sides, reports) = frame(
+        &ctx,
+        vec![
+            press(Key::F9, Modifiers::NONE),
+            press(Key::X, Modifiers::NONE),
+        ],
+        |ctx| {
+            let keys = FrameKeys::begin(ctx, map.clone());
+            keys.set_live(Live::new(vec![Context::Everywhere, Context::Develop]));
+            let chrome = keys.take(&F_ONCE);
+            (chrome, keys.take(&b::PANELS_SIDES), keys.take_reports())
+        },
+    );
+    assert_eq!(chrome, Some(Modifiers::NONE), "F9 runs Chrome");
+    assert_eq!(sides, None, "X, shared, runs neither");
+    assert_eq!(reports.len(), 1, "{reports:?}");
+    assert!(
+        reports[0].starts_with("X is the key of both"),
+        "{reports:?}"
+    );
+}
