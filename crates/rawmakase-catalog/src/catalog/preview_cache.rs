@@ -941,7 +941,8 @@ mod tests {
         Ok(())
     }
     /// Opening, as storing does every 32 thumbnails, gives back one step of
-    /// the space left in the file, not one page.
+    /// the space left in the file, not one page per prune. A step also ends
+    /// on time, so a slow machine may give back fewer than [`RELEASE_STEP`].
     #[test]
     fn opening_gives_back_a_step_of_the_space_left() -> Result<()> {
         let d = tempfile::tempdir()?;
@@ -958,7 +959,8 @@ mod tests {
         assert!(before > i64::from(RELEASE_STEP));
         drop(cache);
         let cache = PreviewCache::open(&path)?;
-        assert_eq!(before - cache.free_pages()?, i64::from(RELEASE_STEP));
+        let freed = before - cache.free_pages()?;
+        assert!(freed > 16 && freed <= i64::from(RELEASE_STEP), "{freed}");
         Ok(())
     }
     /// A file whose space can't be given back page by page (made without

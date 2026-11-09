@@ -366,7 +366,9 @@ impl Builder {
                             .ok()?
                             .ok()?
                         });
-                        // A failed step leaves the rest to the cache's prunes.
+                        // A failed step leaves the rest for the next Discard,
+                        // Clear or expiry (run at launch), and a step after
+                        // each prune.
                         match step {
                             Some(pause) => std::thread::sleep(pause),
                             None => release = false,
