@@ -15,6 +15,8 @@ pub(in crate::app) struct HdrDisplay {
     pub(in crate::app) float_surface: bool,
     /// The display can show HDR, but Windows' HDR switch is off for it.
     pub(in crate::app) hdr_switched_off: bool,
+    /// The surface holds floats, but the backend presents them as plain sRGB.
+    pub(in crate::app) sdr_float_surface: bool,
 }
 impl Default for HdrDisplay {
     fn default() -> Self {
@@ -23,6 +25,7 @@ impl Default for HdrDisplay {
             potential: 1.,
             float_surface: false,
             hdr_switched_off: false,
+            sdr_float_surface: false,
         }
     }
 }
@@ -45,6 +48,10 @@ impl HdrDisplay {
     pub(in crate::app) fn unavailable(&self) -> Option<&'static str> {
         if self.available() {
             None
+        } else if self.sdr_float_surface {
+            // wgpu's OpenGL, or a Vulkan driver without extended sRGB: neither a
+            // restart nor Windows' HDR switch changes that.
+            Some("the graphics backend shows no HDR")
         } else if self.hdr_switched_off {
             Some("HDR is off in Windows' display settings")
         } else if cfg!(any(target_os = "linux", windows)) && self.potential > 1.05 {
@@ -56,9 +63,11 @@ impl HdrDisplay {
     }
     /// The display as the window sees it now.
     pub(in crate::app) fn of(frame: &eframe::Frame, reader: &mut HeadroomReader) -> Self {
-        let float_surface = frame
-            .wgpu_render_state()
-            .is_some_and(|s| extended_surface(s.target_format, s.target_color_space));
+        let state = frame.wgpu_render_state();
+        let float_surface =
+            state.is_some_and(|s| extended_surface(s.target_format, s.target_color_space));
+        let sdr_float_surface = !float_surface
+            && state.is_some_and(|s| s.target_format == wgpu::TextureFormat::Rgba16Float);
         #[cfg(target_os = "macos")]
         let (headroom, potential) = {
             let _ = reader;
@@ -96,6 +105,7 @@ impl HdrDisplay {
             potential,
             float_surface,
             hdr_switched_off,
+            sdr_float_surface,
         }
     }
 }
@@ -359,6 +369,29 @@ mod tests {
         assert_eq!(
             HdrDisplay::default().unavailable(),
             Some("this display shows no HDR")
+        );
+    }
+
+    /// A backend that presents a float surface only as plain sRGB (wgpu's OpenGL, or a
+    /// Vulkan driver without extended sRGB) can't show HDR however often RAWmakase
+    /// restarts, nor with Windows' switch on: it says so instead.
+    #[test]
+    fn a_backend_presenting_floats_as_sdr_says_so() {
+        let sdr_backend = HdrDisplay {
+            headroom: 4.,
+            potential: 4.,
+            sdr_float_surface: true,
+            ..HdrDisplay::default()
+        };
+        let why = Some("the graphics backend shows no HDR");
+        assert_eq!(sdr_backend.unavailable(), why);
+        assert_eq!(
+            HdrDisplay {
+                hdr_switched_off: true,
+                ..sdr_backend
+            }
+            .unavailable(),
+            why
         );
     }
 }

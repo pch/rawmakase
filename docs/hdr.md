@@ -88,7 +88,10 @@ Windows shows 1.0 as the display's white and nothing is scaled. HDR is on when t
 display's DXGI output is in BT.2100 PQ (`IDXGIOutput6::GetDesc1`, as Microsoft's
 guidance has it), and the headroom is that output's peak luminance over the SDR white.
 A display that can show HDR with its switch off says HDR is off in Windows' display
-settings. Windows changes the switch and the SDR content brightness without a
+settings. A backend that presents a float surface only as plain sRGB (wgpu's OpenGL,
+which RAWmakase falls back to where DirectX 12 and Vulkan don't start, or a Vulkan
+driver without extended sRGB) says the graphics backend shows no HDR, on any
+platform but macOS. Windows changes the switch and the SDR content brightness without a
 message winit passes on, so with a float surface the window reads them again every
 two seconds and when it reaches another display (a read costs about a millisecond).
 Measured in a virtual machine whose display shows no HDR: the interface on the scRGB
