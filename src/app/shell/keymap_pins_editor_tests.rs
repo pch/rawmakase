@@ -1786,3 +1786,30 @@ fn layouts_that_type_punctuation_with_shift_or_alt_keep_their_shortcuts() {
     assert!(o.is("compare", "CameraThumbnail"), "{o:?}");
     assert!(o.get("photos").is_none(), "{o:?}");
 }
+
+#[test]
+fn a_press_that_is_a_basic_key_by_its_place_runs_only_the_letter_it_types() {
+    // Dvorak types V on the `.` key and W on the `,` key: B&W and the White
+    // Balance selector, no longer also a Basic slider chosen.
+    let o = tap_typed(Place::Develop, Key::V, Key::Period, NONE);
+    assert!(
+        o.get("recipe").is_some() && o.get("slider").is_none(),
+        "{o:?}"
+    );
+    let o = tap_typed(Place::Develop, Key::W, Key::Comma, NONE);
+    assert!(
+        o.get("tool").is_some() && o.get("slider").is_none(),
+        "{o:?}"
+    );
+}
+
+#[test]
+fn a_refused_delete_leaves_the_next_delete_in_the_frame_to_delete() {
+    // Shift+Delete does nothing in Develop; a Delete after it in the same frame
+    // still asks to delete the open photo.
+    let o = taps(Place::Develop, &[(Key::Delete, SHIFT), (Key::Delete, NONE)]);
+    assert!(
+        o.get("dialog").is_some_and(|d| d.contains("Delete")),
+        "{o:?}"
+    );
+}
