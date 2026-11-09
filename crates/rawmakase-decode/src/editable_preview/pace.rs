@@ -15,6 +15,10 @@
 //! It prints each photo's steps and, at the end, the batch's wall time and the
 //! process's peak resident memory (Linux only), with what it held before the
 //! first photo. With one build at a time it also prints each photo's own peak.
+//! With `RAWMAKASE_EDITABLE_PREVIEW_DIGEST=1` it also prints each photo's digest,
+//! of the built pixels and the Auto CA measured, so a change meant only to make
+//! building faster can be checked to build the same previews; hashing them takes
+//! time inside the batch, so leave it off when timing.
 //! The Camera Look fit is left out: only photos without colour data of their own
 //! have one, and its result is cached.
 use super::*;
@@ -66,9 +70,16 @@ struct Timed {
     decode: f64,
     build: f64,
     write: f64,
+    /// The preview's pixels and Auto CA measurement, hashed, when asked for.
+    digest: Option<u64>,
 }
 
-fn one(path: &Path, out: &Path, cache: &crate::decode_cache::DecodeCache) -> Result<Timed> {
+fn one(
+    path: &Path,
+    out: &Path,
+    cache: &crate::decode_cache::DecodeCache,
+    digest: bool,
+) -> Result<Timed> {
     let name = path.file_name().unwrap().to_string_lossy().to_string();
     let t = Instant::now();
     let identity = Identity::read(path)?;
@@ -98,6 +109,20 @@ fn one(path: &Path, out: &Path, cache: &crate::decode_cache::DecodeCache) -> Res
     )?;
     drop(original);
     let build_s = t.elapsed().as_secs_f64();
+    let digest = digest.then(|| {
+        let image = preview.image();
+        let bytes: Vec<u8> = image
+            .pixels
+            .iter()
+            .flatten()
+            .flat_map(|v| v.to_bits().to_le_bytes())
+            .collect();
+        let ca = format!("{:?}", image.metadata.lateral_ca.get());
+        crate::storage::fnv1a(
+            crate::storage::fnv1a(crate::storage::FNV_OFFSET, &bytes),
+            ca.as_bytes(),
+        )
+    });
     let t = Instant::now();
     write(&out.join(format!("{name}.rmep")), &preview)?;
     let write_s = t.elapsed().as_secs_f64();
@@ -108,6 +133,7 @@ fn one(path: &Path, out: &Path, cache: &crate::decode_cache::DecodeCache) -> Res
         decode,
         build: build_s,
         write: write_s,
+        digest,
     })
 }
 
@@ -124,6 +150,7 @@ fn pace() {
         .and_then(|(b, t)| Some((b.parse::<usize>().ok()?, t.parse::<usize>().ok()?)))
         .filter(|&(b, t)| b > 0 && t > 0)
         .expect("RAWMAKASE_EDITABLE_PREVIEW_PACE is <builds>x<threads>, such as 2x3");
+    let digest = std::env::var_os("RAWMAKASE_EDITABLE_PREVIEW_DIGEST").is_some_and(|v| v == "1");
     let mut paths: Vec<_> = std::fs::read_dir(dir)
         .unwrap()
         .flatten()
@@ -149,7 +176,7 @@ fn pace() {
                     if builds == 1 {
                         reset_peak();
                     }
-                    let timed = pool.install(|| one(path, out.path(), &cache));
+                    let timed = pool.install(|| one(path, out.path(), &cache, digest));
                     let peak = (builds == 1).then(memory).flatten().map(|(_, peak)| peak);
                     results.lock().unwrap().push((i, timed, peak));
                 }
@@ -162,14 +189,14 @@ fn pace() {
     results.sort_by_key(|(i, ..)| *i);
     println!("Pace {builds}x{threads}: {builds} built side by side on {threads} threads");
     println!(
-        "| File | Pixels | Open (s) | Decode (s) | Build (s) | Write (s) | Total (s) | Peak (GB) |"
+        "| File | Pixels | Open (s) | Decode (s) | Build (s) | Write (s) | Total (s) | Peak (GB) | Digest |"
     );
-    println!("| --- | --- | --- | --- | --- | --- | --- | --- |");
+    println!("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
     let mut failed = 0;
     for (i, timed, photo_peak) in &results {
         match timed {
             Ok(t) => println!(
-                "| {} | {}×{} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {} |",
+                "| {} | {}×{} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {} | {} |",
                 t.name,
                 t.pixels.0,
                 t.pixels.1,
@@ -178,7 +205,8 @@ fn pace() {
                 t.build,
                 t.write,
                 t.open + t.decode + t.build + t.write,
-                photo_peak.map_or("–".into(), |p| format!("{:.2}", gb(p)))
+                photo_peak.map_or("–".into(), |p| format!("{:.2}", gb(p))),
+                t.digest.map_or("–".into(), |d| format!("{d:016x}"))
             ),
             Err(e) => {
                 failed += 1;
