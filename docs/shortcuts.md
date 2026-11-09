@@ -27,7 +27,8 @@ shown under the row:
 
 - the keys the system and text fields keep: Cmd+C, Cmd+V, Cmd+X, Cmd+A, Cmd+Z,
   Cmd+Shift+Z, and Ctrl+Y on Windows and Linux; on a Mac also Cmd+Q, Cmd+W,
-  Cmd+H and Cmd+M;
+  Cmd+H and Cmd+M, and the menu's own Cmd+O (Open Catalog…) and Cmd+Shift+O (Add
+  Folder…);
 - a modifier that already means something for that command: Shift after a rating
   goes on to the next photo, so a rating's key can't hold Shift;
 - a plain key for a command that works while you type in a field (Preferences,
@@ -139,12 +140,14 @@ command comes first.
 
 ## macOS menu
 
-The menu bar shows a command's key when the command works everywhere and its key
-holds Cmd and is no other command's: Preferences… (Cmd+,) and Keyboard Shortcuts
-(Cmd+/) by default, and whatever you give them. Plain keys, and keys that work in
-one place only (Export…'s Cmd+Shift+E, which is the Library's and Develop's), are
-not shown in the menu but work as listed. The Edit menu's Undo, Redo, Cut, Copy,
-Paste and Select All keep their keys.
+The menu bar shows a command's key when it holds Cmd, every place the command
+works has it, and no other command shares it: Preferences… (Cmd+,), Export…
+(Cmd+Shift+E, the Library's and Develop's) and Keyboard Shortcuts (Cmd+/) by
+default, and whatever you give them. The item then waits whenever the key itself
+wouldn't run the command, as while you type in a field, a menu is open or a
+control has the focus. Plain keys aren't shown in the menu but work as listed.
+The File menu's Open Catalog…, Add Folder… and Close Window and the Edit menu's
+Undo, Redo, Cut, Copy, Paste and Select All keep their keys.
 
 ## Windows
 

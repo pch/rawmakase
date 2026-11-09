@@ -602,9 +602,11 @@ Preferences > Shortcuts (`app::preferences::shortcuts`) edits the key map throug
 `KeymapFile`, and while it waits for a key no binding sees a press. The reference
 card (`app::shell::shortcuts`) and the macOS menu (`app::shell::native_menu`) show
 the chords in effect; `platform::menu` takes only plain key-equivalent data. A menu
-item shows a Cmd chord of its command's binding that works everywhere and that no
-other binding shares, and the dispatcher skips a chord only while the installed
-menu's item that holds it is enabled.
+item shows a Cmd chord that every binding of its command has and that no other
+binding shares, and is enabled only while one of those bindings could take it
+(`Live::runs`); the dispatcher skips a chord only while the installed menu's item
+that holds it is enabled. The items with fixed keys (`platform::menu::Action::fixed_key_equivalent`)
+are reserved in `keymap::rules` on every platform's check.
 
 The key map file is new: older releases don't read it, and `session.json` is
 unchanged. Automation and MIDI keep their names and output; a command with no

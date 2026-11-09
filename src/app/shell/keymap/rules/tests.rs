@@ -23,7 +23,7 @@ fn the_text_editing_keys_are_everyones_and_the_systems_are_the_macs() {
         Some(Refusal::Reserved)
     );
     assert_eq!(refused("crop", "Cmd+Y", Os::Other), Some(Refusal::Reserved));
-    for keys in ["Cmd+Q", "Cmd+W", "Cmd+H", "Cmd+M"] {
+    for keys in ["Cmd+Q", "Cmd+W", "Cmd+H", "Cmd+M", "Cmd+O", "Cmd+Shift+O"] {
         assert_eq!(refused("crop", keys, Os::Macos), Some(Refusal::Reserved));
         assert_eq!(refused("crop", keys, Os::Other), None);
     }

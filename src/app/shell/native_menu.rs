@@ -1,5 +1,5 @@
 //! Routes native menu choices through the same editor operations as the UI.
-use crate::app::shell::keymap::{Chord, Context, Effective, Mods, conflicts};
+use crate::app::shell::keymap::{Chord, Effective, Mods, conflicts, rules};
 use crate::app::{
     Editor, Module,
     shell::dialogs::{CatalogDialog, FolderAction},
@@ -39,65 +39,37 @@ pub(in crate::app) const KEYED: [Action; 8] = [
 ];
 
 /// The chord `action`'s item shows in `map`, on a Mac (`macos`) or elsewhere:
-/// the first chord with Cmd of its command's binding that works everywhere,
-/// that no other binding shares. A shared chord would let AppKit run the
-/// item's command where a tool's binding should win, or pick one of two
-/// conflicting commands; it is left to the keys. A plain key would be taken
-/// from a text field, and a binding of one context would run everywhere.
+/// the first chord with Cmd that every binding of its command has, in every
+/// context it has one in, and that no other binding shares. A shared chord
+/// would let AppKit run the item's command where a tool's binding should win,
+/// or pick one of two conflicting commands; it is left to the keys. A plain
+/// key would be taken from a text field. The item holds it only while one of
+/// those bindings could take it ([`Editor::menu_state`]): Export…'s
+/// Cmd+Shift+E is the Library's and Develop's.
 pub(in crate::app) fn menu_chord(map: &Effective, action: Action, macos: bool) -> Option<Chord> {
     let id = command_of(action)?;
-    let binding = crate::app::shell::keymap::rules::bindings_of(id)
-        .into_iter()
-        .find(|b| b.context == Context::Everywhere)?;
-    map.defaults_of(binding)
+    let bindings = rules::bindings_of(id);
+    let chords: Vec<Vec<(crate::app::shell::keymap::Default, Chord)>> = bindings
         .iter()
-        .filter(|d| d.exists_on(macos))
-        .flat_map(|d| d.chords().map(move |c| (*d, c)))
-        .find(|(d, c)| c.mods.contains(Mods::CMD) && !conflicts::shared(map, binding, d, *c, macos))
-        .map(|(_, c)| c)
-}
-
-/// `chord` as an AppKit key equivalent.
-pub(in crate::app) fn key_equivalent(chord: Chord) -> Option<KeyEquivalent> {
-    // AppKit's function-key characters (NSUpArrowFunctionKey and the rest).
-    let function = |code: u32| char::from_u32(code).map(String::from);
-    let key = match chord.key {
-        Key::ArrowUp => function(0xF700)?,
-        Key::ArrowDown => function(0xF701)?,
-        Key::ArrowLeft => function(0xF702)?,
-        Key::ArrowRight => function(0xF703)?,
-        Key::Insert => function(0xF727)?,
-        Key::Delete => function(0xF728)?,
-        Key::Home => function(0xF729)?,
-        Key::End => function(0xF72B)?,
-        Key::PageUp => function(0xF72C)?,
-        Key::PageDown => function(0xF72D)?,
-        Key::Backspace => "\u{8}".into(),
-        Key::Enter => "\r".into(),
-        Key::Tab => "\t".into(),
-        Key::Escape => "\u{1b}".into(),
-        Key::Space => " ".into(),
-        // egui names it with a minus sign.
-        Key::Minus => "-".into(),
-        key => {
-            let name = key.name();
-            match name.strip_prefix('F').and_then(|n| n.parse::<u32>().ok()) {
-                Some(n) if (1..=35).contains(&n) => function(0xF704 + n - 1)?,
-                _ => key.symbol_or_name().to_lowercase(),
-            }
-        }
-    };
-    // A Num key's name is its digit; anything longer is no character.
-    if key.chars().count() != 1 {
-        return None;
-    }
-    Some(KeyEquivalent {
-        key,
-        command: chord.mods.contains(Mods::CMD),
-        shift: chord.mods.contains(Mods::SHIFT),
-        option: chord.mods.contains(Mods::ALT),
-        control: chord.mods.contains(Mods::CTRL),
-    })
+        .map(|b| {
+            map.defaults_of(b)
+                .iter()
+                .filter(|d| d.exists_on(macos))
+                .flat_map(|d| d.chords().map(move |c| (*d, c)))
+                .collect()
+        })
+        .collect();
+    chords
+        .first()?
+        .iter()
+        .map(|(_, c)| *c)
+        .filter(|c| c.mods.contains(Mods::CMD))
+        .find(|c| {
+            bindings.iter().zip(&chords).all(|(binding, own)| {
+                own.iter()
+                    .any(|(d, o)| o == c && !conflicts::shared(map, binding, d, *c, macos))
+            })
+        })
 }
 
 impl Editor {
@@ -106,7 +78,12 @@ impl Editor {
         let map = self.keymap.effective();
         KEYED
             .iter()
-            .map(|a| (*a, menu_chord(&map, *a, true).and_then(key_equivalent)))
+            .map(|a| {
+                (
+                    *a,
+                    menu_chord(&map, *a, true).and_then(Chord::key_equivalent),
+                )
+            })
             .collect()
     }
     /// The chords AppKit takes for an item before egui sees them: those of
@@ -155,14 +132,17 @@ impl Editor {
             }
             Action::Library | Action::Sidebar | Action::Inspector | Action::Filmstrip => workspace,
         };
-        // A key the menu shows runs its item while a text field has the keys,
-        // where the command's own binding would not: the item waits too.
-        let keyed_while_typing = text
-            && command_of(action).is_some_and(|id| {
-                !crate::app::shell::keymap::rules::runs_while_typing(id)
-                    && menu_chord(&self.keymap.effective(), action, true).is_some()
+        // An item with a key runs its command where AppKit sees the key,
+        // before any guard of the command's bindings: it waits whenever none
+        // of them could take the key (a text field, a menu or a focused
+        // control has it, or its context isn't the one in front).
+        let keyed = command_of(action)
+            .filter(|_| menu_chord(&self.keymap.effective(), action, true).is_some());
+        let enabled = enabled
+            && keyed.is_none_or(|id| {
+                let live = self.live_keys(ctx);
+                rules::bindings_of(id).iter().any(|b| live.runs(b))
             });
-        let enabled = enabled && !keyed_while_typing;
         let checked = match action {
             Action::Library => self.module == Module::Library && !self.onboarding.visible,
             Action::Develop => self.module == Module::Develop && !self.onboarding.visible,
@@ -295,7 +275,7 @@ mod tests {
         )
     }
     fn equivalent(text: &str) -> KeyEquivalent {
-        key_equivalent(chord(text)).expect("a key equivalent")
+        chord(text).key_equivalent().expect("a key equivalent")
     }
 
     #[test]
@@ -312,7 +292,9 @@ mod tests {
         let f9 = equivalent("Cmd+Alt+F9");
         assert_eq!(f9.key, "\u{F70C}");
         assert!(f9.command && f9.option && !f9.shift);
-        let ctrl = key_equivalent(Chord::new(Key::K, Mods::CMD.with(Mods::CTRL))).unwrap();
+        let ctrl = Chord::new(Key::K, Mods::CMD.with(Mods::CTRL))
+            .key_equivalent()
+            .unwrap();
         assert!(ctrl.command && ctrl.control);
     }
 
@@ -333,8 +315,8 @@ mod tests {
             ] {
                 assert_eq!(shown(a), None, "{a:?}");
             }
-            // Export's keys are the Library's and Develop's, not everywhere.
-            assert_eq!(shown(Action::Export), None);
+            // Export's keys are the Library's and Develop's, both Cmd+Shift+E.
+            assert_eq!(shown(Action::Export).as_deref(), Some("Cmd+Shift+E"));
             // The Edit menu's and the items that are no command keep theirs.
             for a in [
                 Action::Undo,
@@ -423,7 +405,7 @@ mod tests {
                 .map(|k| k.key)
         };
         assert_eq!(key(&editor, Action::Preferences).as_deref(), Some(","));
-        assert_eq!(key(&editor, Action::Export), None);
+        assert_eq!(key(&editor, Action::Export).as_deref(), Some("e"));
         editor
             .keymap
             .set("preferences", &[chord("Cmd+Alt+P")])
@@ -507,6 +489,96 @@ mod tests {
         // With no key of its own, an item stays clickable.
         editor.keymap.reset("library").expect("reset");
         assert!(editor.menu_state(Action::Library, &ctx).0);
+        Ok(())
+    }
+
+    /// With the defaults, every item has the key it had before the key map
+    /// (`platform/menu/macos.rs`'s table at 03d50b81).
+    #[test]
+    fn with_the_defaults_every_item_keeps_its_key() -> anyhow::Result<()> {
+        let (_dir, editor, _) = editor_with_catalog(&[])?;
+        let keyed = editor.menu_keys();
+        let shown = |action: Action| {
+            if action.fixed_key() {
+                action.fixed_key_equivalent()
+            } else {
+                keyed
+                    .iter()
+                    .find(|(a, _)| *a == action)
+                    .and_then(|(_, k)| k.clone())
+            }
+            .map(|k| {
+                assert!(k.command && !k.option && !k.control, "{action:?}");
+                (k.key, k.shift)
+            })
+        };
+        let main: &[(Action, &str, bool)] = &[
+            (Action::Preferences, ",", false),
+            (Action::OpenCatalog, "o", false),
+            (Action::AddFolder, "o", true),
+            (Action::Export, "e", true),
+            (Action::Close, "w", false),
+            (Action::Undo, "z", false),
+            (Action::Redo, "z", true),
+            (Action::Cut, "x", false),
+            (Action::Copy, "c", false),
+            (Action::Paste, "v", false),
+            (Action::SelectAll, "a", false),
+            (Action::Shortcuts, "/", false),
+        ];
+        for action in Action::ALL {
+            let expected = main
+                .iter()
+                .find(|(a, _, _)| *a == action)
+                .map(|(_, key, shift)| (key.to_string(), *shift));
+            assert_eq!(shown(action), expected, "{action:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_menu_items_fixed_key_is_no_commands() -> anyhow::Result<()> {
+        use crate::app::shell::keymap::rules::{Os, Refusal, refusal};
+        let library = crate::app::shell::commands::registry::command_by_id("library").unwrap();
+        let bindings = rules::bindings_of("library");
+        for keys in ["Cmd+O", "Cmd+Shift+O", "Cmd+W"] {
+            assert_eq!(
+                refusal(library, &bindings, chord(keys), Os::Macos),
+                Some(Refusal::Reserved),
+                "{keys}"
+            );
+            assert_eq!(refusal(library, &bindings, chord(keys), Os::Other), None);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn an_item_with_a_key_waits_while_its_commands_bindings_would() -> anyhow::Result<()> {
+        let (_dir, mut editor, _) = editor_with_catalog(&["one.ARW"])?;
+        let ctx = editor.context.clone();
+        editor.onboarding.visible = false;
+        editor
+            .keymap
+            .set("panels:left", &[chord("Cmd+F9")])
+            .expect("bound");
+        assert!(editor.menu_state(Action::Sidebar, &ctx).0);
+        // A focused button: the panel keys leave Tab and the rest to it.
+        for _ in 0..2 {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                ui.button("focused").request_focus();
+            });
+            output.textures_delta.clear();
+        }
+        assert!(
+            !editor.menu_state(Action::Sidebar, &ctx).0,
+            "a focused control"
+        );
+        ctx.memory_mut(|m| m.surrender_focus(m.focused().expect("focused")));
+        assert!(editor.menu_state(Action::Sidebar, &ctx).0);
+        // A menu open over the workspace.
+        egui::Popup::open_id(&ctx, egui::Id::new("a menu"));
+        assert!(egui::Popup::is_any_open(&ctx));
+        assert!(!editor.menu_state(Action::Sidebar, &ctx).0, "a menu open");
         Ok(())
     }
 

@@ -37,7 +37,8 @@ pub(in crate::app) enum Refusal {
     /// keys, and the Edit menu's on macOS.
     Fixed,
     /// Cut, Copy, Paste, Select All, Undo and Redo in text fields, and on
-    /// macOS the system's Quit, Close, Hide and Minimize.
+    /// macOS the system's Quit, Hide and Minimize and the menu's fixed keys:
+    /// Open Catalog…, Add Folder… and Close Window.
     Reserved,
     /// egui-winit turns it into Cut, Copy or Paste on Windows and drops the key,
     /// or its Cut can't be told apart from Ctrl+Shift+Delete's.
@@ -133,9 +134,19 @@ pub(in crate::app) fn reserved(chord: Chord, os: Os) -> bool {
     match os {
         // Ctrl+Y redoes in text fields; Ctrl is written Cmd there.
         Os::Windows | Os::Other if chord == Chord::new(Key::Y, cmd) => true,
-        Os::Macos => [Key::Q, Key::W, Key::H, Key::M]
-            .iter()
-            .any(|k| chord == Chord::new(*k, cmd)),
+        // The system's Quit, Hide and Minimize, and the menu's own fixed
+        // keys (Open Catalog…, Add Folder…, Close Window), which no command
+        // shares, on any platform's check.
+        Os::Macos => {
+            [Key::Q, Key::H, Key::M]
+                .iter()
+                .any(|k| chord == Chord::new(*k, cmd))
+                || chord.key_equivalent().is_some_and(|key| {
+                    crate::platform::menu::Action::ALL
+                        .iter()
+                        .any(|a| a.fixed_key_equivalent() == Some(key.clone()))
+                })
+        }
         _ => false,
     }
 }

@@ -165,6 +165,49 @@ impl Chord {
     pub(in crate::app) fn accepts(&self, key: Key, held: Mods, free: Mods) -> bool {
         key == self.key && held.without(free) == self.mods
     }
+
+    /// The chord as an AppKit key equivalent, if it has one.
+    pub(in crate::app) fn key_equivalent(self) -> Option<crate::platform::menu::KeyEquivalent> {
+        // AppKit's function-key characters (NSUpArrowFunctionKey and the rest).
+        let function = |code: u32| char::from_u32(code).map(String::from);
+        let key = match self.key {
+            Key::ArrowUp => function(0xF700)?,
+            Key::ArrowDown => function(0xF701)?,
+            Key::ArrowLeft => function(0xF702)?,
+            Key::ArrowRight => function(0xF703)?,
+            Key::Insert => function(0xF727)?,
+            Key::Delete => function(0xF728)?,
+            Key::Home => function(0xF729)?,
+            Key::End => function(0xF72B)?,
+            Key::PageUp => function(0xF72C)?,
+            Key::PageDown => function(0xF72D)?,
+            Key::Backspace => "\u{8}".into(),
+            Key::Enter => "\r".into(),
+            Key::Tab => "\t".into(),
+            Key::Escape => "\u{1b}".into(),
+            Key::Space => " ".into(),
+            // egui names it with a minus sign.
+            Key::Minus => "-".into(),
+            key => {
+                let name = key.name();
+                match name.strip_prefix('F').and_then(|n| n.parse::<u32>().ok()) {
+                    Some(n) if (1..=35).contains(&n) => function(0xF704 + n - 1)?,
+                    _ => key.symbol_or_name().to_lowercase(),
+                }
+            }
+        };
+        // A Num key's name is its digit; anything longer is no character.
+        if key.chars().count() != 1 {
+            return None;
+        }
+        Some(crate::platform::menu::KeyEquivalent {
+            key,
+            command: self.mods.contains(Mods::CMD),
+            shift: self.mods.contains(Mods::SHIFT),
+            option: self.mods.contains(Mods::ALT),
+            control: self.mods.contains(Mods::CTRL),
+        })
+    }
 }
 
 impl fmt::Display for Chord {
