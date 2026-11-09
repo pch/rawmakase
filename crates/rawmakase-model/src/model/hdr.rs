@@ -157,12 +157,15 @@ impl HdrSettings {
     }
 }
 
+/// The highest Whites (−1 to 1) the HDR master renders.
+const POSITIVE_WHITES_MEASURED: f32 = 0.5;
+
 /// Refuses the HDR master of an active HDR edit that this release can render only in
 /// SDR: an adjustment, look or profile whose rendering above graphics white has not
 /// been measured against Camera Raw (docs/records/hdr-stage1-results.md). An edit
 /// with HDR off, or with nothing but measured adjustments, passes.
 ///
-/// Measured: white balance, Exposure, Contrast, negative Whites, Blacks, the HDR limit,
+/// Measured: white balance, Exposure, Contrast, Whites up to +50, Blacks, the HDR limit,
 /// the master point curve and the parametric curve, and Levels as a point curve of its
 /// shape ([`crate::color::hdr_curve`]), Texture (on the camera's samples, as in SDR),
 /// camera profiles
@@ -190,10 +193,10 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
         "The SDR rendition's adjustments are not supported in HDR yet"
     );
     let unmeasured: [(&str, bool); 13] = [
-        // Camera Raw stretches a photo whose brightest areas are below about twice
-        // graphics white much further than the measured gain (+3.8 stops at scene 0.3
-        // on a ramp peaking at 0.5); negative Whites follows no photo statistic.
-        ("Positive Whites", r.whites > 0.),
+        // Camera Raw's positive Whites follows the photo's level, which twice the 99th
+        // percentile predicts to 0.17 stop; above +50 that error grows past the HDR
+        // tolerances (docs/records/hdr-stage1-results.md#whites).
+        ("Whites above +50", r.whites > POSITIVE_WHITES_MEASURED),
         (
             "Highlights and Shadows",
             r.highlights != 0. || r.shadows != 0.,
@@ -479,6 +482,17 @@ mod tests {
         assert!(check_recipe(&r).is_ok());
         r.contrast = -0.4;
         assert!(check_recipe(&r).is_ok());
+        // Positive Whites follows the photo's level (`scene_tone::hdr_whites`), up to +50.
+        r.whites = 0.5;
+        assert!(check_recipe(&r).is_ok());
+        r.whites = 0.51;
+        assert!(
+            check_recipe(&r)
+                .unwrap_err()
+                .to_string()
+                .contains("Whites above +50")
+        );
+        r.whites = -0.5;
         // The colour stage renders in HDR (docs/hdr.md#the-colour-stage).
         let mut colour = r.clone();
         colour.saturation = 0.3;

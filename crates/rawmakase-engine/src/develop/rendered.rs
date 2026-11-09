@@ -107,7 +107,7 @@ const HDR_IDENTITY_FROM: f32 = 0.5;
 pub(crate) fn hdr_default_rendering(s: f32) -> f32 {
     static WHITE: OnceLock<GlobalTone> = OnceLock::new();
     WHITE
-        .get_or_init(|| GlobalTone::hdr(0., 0., -12., -12., false))
+        .get_or_init(|| GlobalTone::hdr(0., 0., 0., -12., -12., false))
         .white_curve(s)
 }
 

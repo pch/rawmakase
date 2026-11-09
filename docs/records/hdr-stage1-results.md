@@ -208,12 +208,10 @@ top: scene 16 renders as 15.84 at limit 4; peaks above 49.26 are PQ's 10,000-nit
 ceiling, not the limit. Exposure ±1 and ±2 are gains. Blacks −100 to +100 match the
 SDR render below 0.25 (0.001 stop) and leave values above white alone. Negative
 Whites is a gain over scene value, the same at sensor whites 4, 16 and 64, photo
-maxima 0.5 to 8 and limits 2.3 and 8. Positive Whites is not: on ramps whose maximum
-is below about 2, Camera Raw stretches much further (+3.8 stops at scene 0.3 on a
-ramp peaking at 0.5, +0.9 on one peaking at 8), and on photos it follows their
-bright end. It is refused in HDR until measured. Highlights and Shadows depend on the
-photo (Highlights −100 holds a ramp at 0.25–0.28 above 0.3); not fitted. Contrast
-follows the photo through its pivot only ([Contrast](#contrast)).
+maxima 0.5 to 8 and limits 2.3 and 8. Positive Whites follows the photo
+([Whites](#whites)). Highlights and Shadows depend on the photo (Highlights −100
+holds a ramp at 0.25–0.28 above 0.3); not fitted. Contrast follows the photo through
+its pivot only ([Contrast](#contrast)).
 
 **Ordinary profile curves.** Camera Raw does not extend an ordinary (SDR) profile's
 curve by the DNG SDK's slope rule or the overrange rule. Measured on the ramp:
@@ -428,6 +426,81 @@ deep shadows of positive Contrast are the SDR render's to 0.001 stop).
   pivot on this synthetic image, not the HDR rendering (the pivot fit follows photos,
   not synthetic scenes; see `basic_tone::RENDERED_PIVOT_OFFSET`).
 
+### Whites
+
+Positive Whites, measured on 158 renders of gray ramps (linear profile, HDR limit 8
+unless stated) and on the twelve photos of [Validation](#validation):
+
+- **One level.** Positive Whites is a gain over the scene value that depends on one
+  photo level. Ramps peaking at 0.25 to 32 at sensor whites 16 and 64, and ramps whose
+  sensor white is their peak (0.5 and 4), give one family: from a peak of 4 up it no
+  longer changes (+100 brightens scene 1 by 1.32 stops and scene 8 by 1.88, as the
+  earlier single-ramp measurement had it); below, it stretches further, +3.9 stops at
+  scene 0.3 on a ramp peaking at 0.5 and +5.4 at 0.2 on one peaking at 0.25. Fitted
+  by that one level, ramps with bright patches added (one to 36 at 0.6 to 8, a flat
+  top, a background of 0.01 to 0.4) render as the family does: below the level to a
+  median of 0.000–0.009 stop, above it within 0.15 stop (where the PQ output is below
+  10,000 cd/m²). The HDR limit only rolls the result off (limits 2.3 and 4 give the
+  same gains below them), and Exposure moves the level: a ramp peaking at 0.5 at
+  Exposure +1 renders as one peaking at 1.
+- **The table.** `scene_tone::hdr_whites` holds the gains over the Whites 0 render
+  at +25, +50, +75 and +100, at levels 1/8 to 4 in quarter stops, over scene values
+  2^−14 to 2^7. Above the brightest value a level's ramps measured (Camera Raw's PQ
+  output reaches 10,000 cd/m² there) the gain stays at its last value; the output
+  never decreases.
+- **The photo's level.** On the ramps it is rank-based: patches at 1, 2 and 8 that
+  cover the same area give the same render, and a background covering half the frame
+  does not count. No single percentile of the ramps reproduces it (the best pair of
+  percentiles misses by up to 1.3 stops): their level is their peak when it is sparse,
+  and at most about 0.75–0.95 stop above the ramp's top when bright patches are added.
+  On photos, the level that reproduces Camera Raw's Whites +100 was found by
+  rendering each photo at forced levels: twice the 99th percentile of luminance (the
+  level SDR's Whites stretches toward) predicts it with a standard deviation of 0.17
+  stop and a largest error of 0.35 (Nikon Z5 II); the 98th percentile does as well
+  (0.17), the 99.5th worse (0.19), the 99.9th much worse (0.51). RAWmakase uses twice
+  the 99th percentile, without SDR's limit at the sensor's white. On sparse synthetic
+  ramps it therefore stretches less than Camera Raw (a ramp peaking at 0.5 is given
+  level 0.82 where Camera Raw's is 0.5).
+- **Validation.** Twelve photos at Whites +25, +50, +75 and +100 (Adobe Standard,
+  limit 4): median and p95 above white and the peak, in stops, outside the
+  tolerances in bold.
+
+  | Photo (split) | +25 | +50 | +75 | +100 |
+  | --- | --- | --- | --- | --- |
+  | Nikon Z 8 (validation) | 0.060 / 0.095 / +0.081 | 0.059 / 0.093 / +0.081 | 0.060 / 0.092 / +0.013 | 0.000 / 0.096 / +0.050 |
+  | Nikon Z f (validation) | 0.001 / 0.003 / +0.011 | 0.017 / 0.019 / +0.013 | 0.064 / 0.071 / -0.004 | 0.114 / 0.122 / +0.049 |
+  | Nikon Z6 III (validation) | 0.011 / 0.085 / +0.064 | 0.030 / 0.107 / +0.000 | 0.113 / 0.204 / **+0.157** | **0.183** / 0.323 / **+0.308** |
+  | Panasonic S1M2 (validation) | 0.077 / **0.442** / +0.005 | 0.116 / **0.580** / +0.029 | **0.152** / **0.777** / **+0.230** | **0.168** / **1.027** / **+0.219** |
+  | Sony A7R III (validation) | 0.026 / 0.070 / +0.001 | 0.029 / 0.035 / +0.038 | 0.066 / 0.120 / +0.034 | 0.115 / 0.194 / +0.042 |
+  | Canon 850D (validation) | 0.037 / 0.041 / +0.032 | 0.048 / 0.053 / +0.045 | 0.062 / 0.070 / +0.061 | 0.079 / 0.091 / +0.079 |
+  | Nikon Z50 II (holdout) | 0.034 / 0.053 / **+0.161** | 0.096 / 0.131 / **+0.133** | **0.198** / 0.230 / **+0.245** | **0.301** / 0.337 / **+0.125** |
+  | Nikon Z5 II (holdout) | 0.047 / 0.074 / +0.052 | **0.185** / 0.258 / **+0.222** | **0.640** / **0.775** / **+0.104** | **0.751** / **1.220** / **+0.324** |
+  | Panasonic S1M2ES (holdout) | 0.089 / **1.707** / -0.028 | 0.120 / **2.044** / -0.033 | **0.172** / **2.955** / +0.009 | **0.200** / **3.952** / +0.023 |
+  | Fujifilm X100V (holdout) | 0.036 / 0.099 / **+0.405** | 0.127 / 0.218 / +0.004 | **0.272** / 0.343 / **+0.147** | **0.337** / **0.498** / **+0.312** |
+  | Sony A7R IV (holdout) | 0.050 / 0.080 / +0.043 | 0.052 / 0.093 / +0.069 | 0.036 / 0.066 / **+0.141** | 0.025 / 0.078 / +0.020 |
+  | Pentax K-1 II (holdout) | 0.029 / 0.037 / +0.037 | 0.067 / 0.172 / +0.037 | **0.203** / **0.492** / -0.024 | 0.124 / **0.871** / +0.096 |
+
+  The level's error is amplified by Whites: at +100 a 0.17-stop error in the level
+  is 0.3–0.4 stop above white. At +50, eight of twelve photos pass every luminance
+  tolerance, as many as at Whites 0. The two Panasonics fail as they do at Whites 0
+  (their SDR gap). Two holdout photos fail because of Whites: the Z50 II's peak is
+  0.133 stop high (0.082 at Whites 0), and the Z5 II, with 0.1% of its pixels above
+  white, is 0.185 stop off (median) where its level is 0.35 stop from Camera Raw's.
+  At +75, five photos fail on Whites.
+
+Decision, 2026-11-09: the HDR master renders Whites up to +50 and refuses higher
+values (`model::hdr::check_recipe`) with the reason. Raising the limit needs a better
+predictor of Camera Raw's level than twice the 99th percentile.
+
+SDR renders do not change: positive Whites' table and level are read only in the HDR
+branch of the scene tone stage (`SceneTone::new`, `GlobalTone::hdr`), which SDR
+renders, the SDR rendition among them, never take. As a targeted regression check,
+builds of the change and of the main commit it was made on rendered 60 dataset
+photos with four sidecars (defaults, SDR Whites +50 and +100, and an HDR edit's SDR
+rendition at Whites +50) to identical pixels, 240 of 240. The dataset gate (scored
+against Camera Raw) and render snapshots (about 1,800 photos, compared against earlier
+RAWmakase renders) were not run for this change.
+
 ### Validation
 
 `scripts/corpus/hdr_validate.py` renders each HDR job of the family with
@@ -609,7 +682,7 @@ the SDR photo gate were not run: they score these same SDR renders.
   map of the HDR master ([SDR rendition](#sdr-rendition)); the SDR rendition sliders
   refuse the master until it is matched.
 - **Unmeasured adjustments refuse the HDR master, not the edit.** An imported or
-  edited HDR edit with Clarity, a look or positive Whites keeps HDR on and stays
+  edited HDR edit with Clarity, a look or Whites above +50 keeps HDR on and stays
   valid; its SDR rendition renders it, and the master (HDR export) is refused with
   the reason, shown in Develop under the HDR switch. Refusing the edit itself would
   make Develop's ordinary sliders fail to render whenever HDR is on.
@@ -657,7 +730,7 @@ the SDR photo gate were not run: they score these same SDR renders.
 
 ## Open
 
-- Positive Whites, Highlights and Shadows in HDR; the colour mixer's Luminance
+- Whites above +50, Highlights and Shadows in HDR; the colour mixer's Luminance
   ([Colour stage](#colour-stage)), Point Color, Color Grading, Defringe.
 - A channel's point curve and Refine Saturation in HDR ([Tone curves](#tone-curves)).
 - Clarity and Dehaze in HDR, after their SDR parity ([Presence](#presence)).
@@ -702,7 +775,8 @@ the SDR photo gate were not run: they score these same SDR renders.
   ([Looks](#looks)); Contrast ([Contrast](#contrast)); the master point curve, the
   parametric curve and Levels ([Tone curves](#tone-curves)); Texture ([Presence](#presence)); Saturation, Vibrance, the
   colour mixer's Hue and Saturation, Calibration and Black & White
-  ([Colour stage](#colour-stage)). Open: positive Whites, Highlights, Shadows, the colour
+  ([Colour stage](#colour-stage)); Whites up to +50 ([Whites](#whites)). Open: Whites above
+  +50, Highlights, Shadows, the colour
   mixer's Luminance, the other looks, channel curves, the SDR rendition sliders, 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display

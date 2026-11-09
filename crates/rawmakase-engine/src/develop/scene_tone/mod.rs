@@ -51,6 +51,7 @@ impl SceneTone {
             return Self {
                 global: GlobalTone::hdr(
                     r.whites,
+                    measures.hdr_whites_level(r.exposure),
                     r.blacks,
                     measures.black_key(r.exposure),
                     measures.dark_key(r.exposure),
@@ -201,5 +202,35 @@ mod tests {
         };
         let (specular, bulk) = (gray(1.), gray(-2.));
         assert!((specular / bulk - 1.).abs() < 0.01, "{specular} {bulk}");
+    }
+
+    /// In HDR, positive Whites stretches a photo whose 99th percentile is darker much
+    /// further, and the level moves with Exposure (Camera Raw 18.7, gray ramps: a ramp
+    /// peaking at 0.5 at Exposure +1 renders as one peaking at 1). Negative Whites
+    /// follows no photo level.
+    #[test]
+    fn hdr_whites_follows_the_photo_level() {
+        let render = |whites: f32, p99: f32, exposure: f32, x: f32| {
+            let measures = PhotoMeasures {
+                p99,
+                ..Default::default()
+            };
+            let mut r = Recipe {
+                whites,
+                exposure,
+                ..Default::default()
+            };
+            r.hdr.enabled = true;
+            SceneTone::new(&r, &measures, None).apply([x; 3], [0.; 2], 1., None)[1]
+        };
+        // Levels 0 and 4 (p99 −1 and 3): +100 at scene 0.3 (log2 gains 2.08 and 0.75).
+        let dark = render(1., -1., 0., 0.3) / render(0., -1., 0., 0.3);
+        let bright = render(1., 3., 0., 0.3) / render(0., 3., 0., 0.3);
+        assert!((dark.log2() - 2.08).abs() < 0.03, "{dark}");
+        assert!((bright.log2() - 0.755).abs() < 0.03, "{bright}");
+        // Exposure +1 moves the level as a 99th percentile a stop brighter does.
+        let exposed = render(0.5, -2., 1., 0.3);
+        assert!((exposed / render(0.5, -1., 0., 0.3) - 1.).abs() < 1e-4);
+        assert_eq!(render(-1., -1., 0., 0.3), render(-1., 3., 0., 0.3));
     }
 }

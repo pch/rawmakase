@@ -286,10 +286,13 @@ impl GlobalTone {
     /// with the default black point's toe below it (the default curve at a white point
     /// of 1, which is that toe), whatever the photo's sensor white and maximum. Whites
     /// is a measured gain over scene value that follows neither of them nor the HDR
-    /// limit. Blacks and the default black follow the photo as in SDR: below 0.25
-    /// Camera Raw's HDR and SDR renders of Blacks ±100 agree to 0.001 stop.
+    /// limit; positive Whites follows the photo's level `whites_level` (log2, at the
+    /// render's Exposure; [`super::PhotoMeasures::hdr_whites_level`]). Blacks and the
+    /// default black follow the photo as in SDR: below 0.25 Camera Raw's HDR and SDR
+    /// renders of Blacks ±100 agree to 0.001 stop.
     pub(crate) fn hdr(
         whites: f32,
+        whites_level: f32,
         blacks: f32,
         black_key: f32,
         dark_key: f32,
@@ -297,7 +300,7 @@ impl GlobalTone {
     ) -> Self {
         let mut tone = Self::new([0.; 4], 0., blacks, black_key, dark_key, black_point);
         tone.whites = whites;
-        tone.hdr = Some(Box::new(super::hdr_whites::gains(whites)));
+        tone.hdr = Some(Box::new(super::hdr_whites::gains(whites, whites_level)));
         tone
     }
     /// The white curve at Whites `whites`, between the two rows around it.

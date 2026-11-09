@@ -157,7 +157,7 @@ HDR reference family):
 | --- | --- |
 | S3 default | Identity from scene 0.5 up (`scene_tone::hdr_whites::IDENTITY_FROM`), with the default black point's toe below, whatever the sensor's white or the photo's maximum. SDR's shoulder to the white point is not applied. |
 | Exposure | A gain before S3, as in SDR. |
-| Whites (negative) | A measured gain over scene value (`scene_tone::hdr_whites`), the same at every sensor white, photo maximum and HDR limit. |
+| Whites | A measured gain over scene value (`scene_tone::hdr_whites`), the same at every sensor white and HDR limit. Negative Whites is the same at every photo maximum too. Positive Whites follows the photo's level, twice its 99th percentile of luminance with Exposure (`PhotoMeasures::hdr_whites_level`): the darker it is, the further Whites stretches, and from a level of 4 up the gain no longer changes. Rendered up to +50. |
 | Blacks, default black | As in SDR, on values below 1; values above white are left alone. |
 | Profile look table | An HDR profile's 3D table on overrange-encoded values, as the DNG SDK applies it; an ordinary profile's keeps the values above white it scales. |
 | Profile tone curve | `camera_profiles::hdr_tone`: an HDR profile's curve by the DNG SDK's overrange rule; an ordinary curve by the measured extension (ACR3's measured HDR curve, and a fitted deviation for other curves); a curve that never brightens as the identity. RGBTone. |
@@ -202,8 +202,8 @@ Measurements and validation: [colour stage](records/hdr-stage1-results.md#colour
 ## What is refused
 
 `model::hdr::check_recipe` refuses the master, not the edit, when the edit uses
-something without a measured HDR rendering: Highlights, Shadows, positive
-Whites, a channel's point curve, Refine Saturation other than 100%, a point
+something without a measured HDR rendering: Highlights, Shadows, Whites above
++50, a channel's point curve, Refine Saturation other than 100%, a point
 curve whose last point is left of white, Presence (Clarity, Dehaze), the
 colour mixer's Luminance, Point Color, Color Grading, Defringe, grain and vignette,
 masks, Red Eye, the SDR rendition's

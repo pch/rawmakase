@@ -129,7 +129,8 @@ Exposure, and parts of the cool magenta corner of Temp and Tint.
   on average (median 0.06), twice the 99th percentile of the photo's luminance, at most
   its sensor's white; its maximum misses by 1.0 stops on average, the 99.9th
   percentile by 0.6. RAWmakase stretches toward that level; the white point keeps the
-  maximum.
+  maximum. An HDR render's positive Whites follows the same level, without the limit
+  at the sensor's white ([HDR](hdr.md#what-the-master-renders)).
 - **Blacks** composes after the white point and Whites exactly (encoded error 0.0000:
   Blacks maps their output). Negative Blacks maps the photo's darkest level to black
   when it lies above a fixed black point (about 0.016 scene); even a 4-pixel dark spot
