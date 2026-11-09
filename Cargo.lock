@@ -3804,6 +3804,7 @@ dependencies = [
  "rawmakase-model",
  "rawmakase-raw",
  "rayon",
+ "roxmltree 0.21.2",
  "serde",
  "serde_json",
  "sha2",

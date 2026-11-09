@@ -260,8 +260,8 @@ decisions this increment made:
 2. **The base is the SDR rendition.** The base is decoded as the same file without
    its map. That keeps the authored SDR rendition at neutral settings, and keeps
    catalog edits made while these files opened as SDR rendering as they did.
-3. **ISO 21496-1 only.** XMP-only (`hdrgm`) maps open as their SDR base, as before; a
-   reader for them is a follow-up.
+3. **ISO 21496-1 first.** XMP-only (`hdrgm`) maps opened as their SDR base in this
+   increment; they open as HDR edits since the next ([Decisions](hdr-stage1-results.md#decisions)).
 4. **Refuse what isn't applied exactly.** Each of these is refused by reason, not
    approximated:
    - a map in the alternate's colour space, with its own ICC or colour encoding;

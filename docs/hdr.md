@@ -134,8 +134,9 @@ These files qualify:
   are the identity (Photoshop's 32-bit documents), or without a profile, read as
   linear sRGB primaries; 1.0 is graphics white. Integer samples with such a profile
   stop at graphics white, so they open as SDR files;
-- a JPEG or JPEG XL with an ISO 21496-1 gain map over an SDR base, whose light the map
-  reconstructs and whose base stays its SDR rendition ([Gain-map files](#gain-map-files)).
+- a JPEG or JPEG XL with an ISO 21496-1 gain map over an SDR base, or a JPEG with one
+  described by Adobe's earlier `hdrgm` XMP, whose light the map reconstructs and whose
+  base stays its SDR rendition ([Gain-map files](#gain-map-files)).
 
 A PNG's own cICP chunk counts as its CICP and takes precedence over its ICC profile,
 as the PNG specification says; the `png` crate reads it, checking its CRC. A
@@ -216,6 +217,25 @@ Ultra HDR, and Adobe's and Apple's ISO form. The reader mirrors the exports
   is the map.
 - **JPEG XL:** the container's `jhgm` box holds the metadata and the map's
   codestream.
+- **JPEG, XMP only:** Adobe's earlier gain-map format (`hdrgm` 1.0, which Lightroom and
+  Camera Raw wrote before ISO 21496-1 and Android's Ultra HDR 1.0 adopted). The base's
+  XMP says `hdrgm:Version="1.0"`, and the MPF index's first secondary image whose own
+  XMP holds `hdrgm` metadata is the map. A file with both forms is read by its ISO
+  metadata, as libultrahdr reads it. Ultra HDR's GContainer directory isn't read:
+  its writers must write the MPF index too.
+
+`hdrgm` metadata is read as Android's Ultra HDR 1.0 specification lists it: the
+image's own properties (those of each top-level `rdf:Description`, not of a resource
+nested in one), from the map's XMP packet and the extended packet it names
+(`xmpNote:HasExtendedXMP`), whose chunks must be there and fill it once. Each value is
+an attribute or an element of text alone, one for every channel or an ordered array
+(`rdf:Seq`) of three such items; an `rdf:Bag`, an `rdf:Alt` or an item holding
+anything but text is refused:
+`GainMapMin` (0 when absent) and `GainMapMax` in stops, `Gamma` (1), `OffsetSDR` and
+`OffsetHDR` (1/64 each), `HDRCapacityMin` (0) and `HDRCapacityMax`, and
+`BaseRenditionIsHDR` ("False"). It applies by the same formula as ISO 21496-1's, at
+full weight, always in the base's colour space: the map's own profile isn't used. The
+capacities only weigh the map for a display, so they are checked, not applied.
 
 **The light** is the authored HDR rendition, reconstructed at the map's full weight:
 what a display with the alternate rendition's whole headroom shows. No display's
@@ -254,11 +274,16 @@ Refused for Develop, by reason (the Library shows the base):
   - no MPF index, or one that points outside the file or at no map with metadata;
   - a map larger than its base, or of another shape beyond a map sample's
     rounding;
-  - a map that doesn't decode, or decodes to a size other than its header's.
+  - a map that doesn't decode, or decodes to a size other than its header's;
+  - for `hdrgm`: no `GainMapMax` or `HDRCapacityMax`, a value that isn't a number, an
+    array of two or more than three, an offset below 0, a capacity below 0, or a
+    maximum capacity not above the minimum.
 - **"version N gain-map":** a minimum version above 0, in the base's marker, the
-  metadata or the JPEG XL bundle.
-- **"HDR-base gain-map":** the base is the HDR rendition, by its flag or because its
-  headroom is at or above the alternate's.
+  metadata or the JPEG XL bundle, or an `hdrgm:Version` other than 1.0, in the base's
+  XMP or the map's.
+- **"HDR-base gain-map":** the base is the HDR rendition, by its flag (ISO's, or
+  `hdrgm:BaseRenditionIsHDR="True"`) or because its headroom is at or above the
+  alternate's.
 - **"alternate-colour gain-map":** the map applies in the alternate's colour space,
   which an ICC profile or colour encoding of its own describes.
 - **"grey gain-map"** and **"table-profile gain-map":** a grey base, or a base whose
@@ -268,9 +293,7 @@ Refused for Develop, by reason (the Library shows the base):
   stored frame and turns with its EXIF orientation.
 - **"compressed gain-map":** a `jhgm` box compressed in `brob`.
 
-Not read: gain maps described only by XMP (Adobe's and Android's earlier `hdrgm`
-metadata, without the ISO marker), which open as their SDR base, as before. A JPEG
-XL whose own samples are HDR opens by them as above, whatever map it carries.
+A JPEG XL whose own samples are HDR opens by them as above, whatever map it carries.
 
 **Checks.**
 

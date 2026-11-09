@@ -1,9 +1,11 @@
-//! ISO 21496-1 gain maps over a JPEG or JPEG XL base (docs/hdr.md#gain-map-files),
-//! read as RAWmakase's own gain-map exports write them (`export::gain_map`,
-//! `export::jxl`):
+//! Gain maps over a JPEG or JPEG XL base (docs/hdr.md#gain-map-files), read as
+//! RAWmakase's own gain-map exports write them (`export::gain_map`, `export::jxl`):
 //! - **JPEG:** the base carries an APP2 version marker naming ISO 21496-1 and an MPF
 //!   index. The index's secondary image is the map, a JPEG whose own APP2 segment
 //!   holds the metadata. This is the form libultrahdr, Android, Apple and Adobe write.
+//! - **JPEG, XMP only:** Adobe's earlier gain-map format (`hdrgm`, which Android's
+//!   Ultra HDR 1.0 adopted): the base's XMP says `hdrgm:Version`, the MPF index finds
+//!   the map, and the map's own XMP holds the metadata.
 //! - **JPEG XL:** a `jhgm` box (libjxl's gain-map bundle) holds the metadata, the
 //!   alternate rendition's colour, and the map's own codestream.
 //!
@@ -20,6 +22,12 @@ use std::io::{Read, Seek, SeekFrom};
 
 /// The APP2 payload that names ISO 21496-1, before its versions or metadata.
 const ISO_URN: &[u8] = b"urn:iso:std:iso:ts:21496:-1\0";
+/// The APP1 payload of a JPEG's XMP packet, before the packet.
+const XMP_URN: &[u8] = b"http://ns.adobe.com/xap/1.0/\0";
+/// The APP1 payload of a chunk of a JPEG's extended XMP, before its GUID.
+const XMP_EXTENSION: &[u8] = b"http://ns.adobe.com/xmp/extension/\0";
+/// Adobe's gain-map XMP namespace (`hdrgm`).
+const HDRGM: &str = "http://ns.adobe.com/hdr-gain-map/1.0/";
 /// The most a JPEG's segments before its image data may take, read in full.
 const MAX_HEADER: u64 = 16 << 20;
 /// The most segments a JPEG may have before its image data.
@@ -49,6 +57,30 @@ struct Channel {
 }
 
 impl Channel {
+    /// A channel of `[min, max, gamma, base offset, alternate offset]`, checked:
+    /// gains within [`MAX_STOPS`] and the maximum not below the minimum, a gamma above
+    /// 0, and offsets from 0 to `offset_max`. [`damaged`] otherwise.
+    fn checked(
+        [min, max, gamma, base_offset, alternate_offset]: [f64; 5],
+        offset_max: f64,
+    ) -> Result<Self, Unsupported> {
+        let stops = |v: f64| v.abs() <= MAX_STOPS;
+        let offset = |v: f64| (0. ..=offset_max).contains(&v);
+        if !(stops(min) && stops(max) && max >= min)
+            || !(gamma > 0. && gamma <= MAX_STOPS)
+            || !(offset(base_offset) && offset(alternate_offset))
+        {
+            return Err(damaged());
+        }
+        Ok(Self {
+            min: min as f32,
+            max: max as f32,
+            gamma: gamma as f32,
+            base_offset: base_offset as f32,
+            alternate_offset: alternate_offset as f32,
+        })
+    }
+
     /// The alternate rendition of linear base value `base`, where the map's sample
     /// is `sample` (0–1), at the map's full weight.
     fn apply(&self, base: f32, sample: f32) -> f32 {
@@ -152,21 +184,10 @@ impl Metadata {
             let gamma = rational(false)?;
             let base_offset = rational(true)?;
             let alternate_offset = rational(true)?;
-            let stops = |v: f64| v.abs() <= MAX_STOPS;
-            let offset = |v: f64| (0. ..=1.).contains(&v);
-            if !(stops(min) && stops(max) && max >= min)
-                || !(gamma > 0. && gamma <= MAX_STOPS)
-                || !(offset(base_offset) && offset(alternate_offset))
-            {
-                return Err(damaged());
-            }
-            *channel = Some(Channel {
-                min: min as f32,
-                max: max as f32,
-                gamma: gamma as f32,
-                base_offset: base_offset as f32,
-                alternate_offset: alternate_offset as f32,
-            });
+            *channel = Some(Channel::checked(
+                [min, max, gamma, base_offset, alternate_offset],
+                1.,
+            )?);
         }
         if !(base_headroom <= MAX_STOPS && alternate_headroom <= MAX_STOPS) {
             return Err(damaged());
@@ -180,6 +201,190 @@ impl Metadata {
             base_colour_space: flags & 0x40 != 0,
         })
     }
+
+    /// The metadata of Adobe's gain-map XMP (`hdrgm`, version 1.0), from a map's XMP
+    /// packet, as Android's Ultra HDR 1.0 specification lists it:
+    /// - `Version`, which must be "1.0";
+    /// - `BaseRenditionIsHDR`, "False" when absent;
+    /// - `GainMapMin` (0 when absent) and `GainMapMax`, log2 of the gains;
+    /// - `Gamma` (1), `OffsetSDR` and `OffsetHDR` (1/64 each), linear;
+    /// - `HDRCapacityMin` (0) and `HDRCapacityMax`, log2 of the display headroom
+    ///   between which a display weighs the map in. The map is applied at full weight
+    ///   whatever they are, so they are only checked.
+    ///
+    /// The five per-channel values are each one value for every channel or three, one
+    /// a channel. The map applies in the base's colour space: hdrgm has no other.
+    ///
+    /// Refused: a version other than 1.0 by its number, an HDR base, and as damaged:
+    /// a missing `GainMapMax` or `HDRCapacityMax`, a value that isn't a number, two
+    /// values or more than three, a capacity below 0 or a maximum not above its
+    /// minimum, and the channel checks of [`Channel::checked`] (offsets only below 0:
+    /// hdrgm sets them no upper bound, so theirs is [`MAX_STOPS`] stops).
+    pub(super) fn from_hdrgm(xmp: &Hdrgm) -> Result<Self, Unsupported> {
+        match xmp.get("Version").map(Vec::as_slice) {
+            Some([v]) if v == "1.0" => {}
+            Some([v]) => return Err(Unsupported(format!("version {v} gain-map"))),
+            _ => return Err(damaged()),
+        }
+        match xmp.get("BaseRenditionIsHDR").map(Vec::as_slice) {
+            None => {}
+            Some([v]) if v.eq_ignore_ascii_case("false") => {}
+            Some([v]) if v.eq_ignore_ascii_case("true") => return Err(hdr_base()),
+            Some(_) => return Err(damaged()),
+        }
+        let values = |name: &str, default: Option<f64>| -> Result<Vec<f64>, Unsupported> {
+            match xmp.get(name) {
+                None => default.map(|d| vec![d]).ok_or_else(damaged),
+                Some(v) if v.len() == 1 || v.len() == 3 => v
+                    .iter()
+                    .map(|v| v.trim().parse::<f64>().ok().filter(|v| v.is_finite()))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(damaged),
+                Some(_) => Err(damaged()),
+            }
+        };
+        let single = |name: &str, default: Option<f64>| -> Result<f64, Unsupported> {
+            match values(name, default)?.as_slice() {
+                [v] => Ok(*v),
+                _ => Err(damaged()),
+            }
+        };
+        let fields = [
+            values("GainMapMin", Some(0.))?,
+            values("GainMapMax", None)?,
+            values("Gamma", Some(1.))?,
+            values("OffsetSDR", Some(1. / 64.))?,
+            values("OffsetHDR", Some(1. / 64.))?,
+        ];
+        let capacity_min = single("HDRCapacityMin", Some(0.))?;
+        let capacity_max = single("HDRCapacityMax", None)?;
+        if !(capacity_min >= 0. && capacity_max > capacity_min && capacity_max <= MAX_STOPS) {
+            return Err(damaged());
+        }
+        let mut channels = [None; 3];
+        for (c, channel) in channels.iter_mut().enumerate() {
+            let v = fields
+                .each_ref()
+                .map(|f| if f.len() == 3 { f[c] } else { f[0] });
+            *channel = Some(Channel::checked(v, MAX_STOPS.exp2())?);
+        }
+        Ok(Self {
+            channels: channels.map(|c| c.unwrap_or_else(|| unreachable!("every channel is set"))),
+            base_colour_space: true,
+        })
+    }
+}
+
+/// The key in [`Hdrgm`] of `xmpNote:HasExtendedXMP`, the GUID of the extended packet
+/// that holds the rest of the properties; no hdrgm name has a colon.
+const EXTENDED: &str = "xmpNote:HasExtendedXMP";
+
+/// The `hdrgm` properties of an XMP packet: each one's value, or the items of its
+/// ordered array, as text. Properties are attributes of an `rdf:Description` or
+/// elements of their own, as XMP allows either.
+pub(super) type Hdrgm = std::collections::HashMap<String, Vec<String>>;
+
+/// The `hdrgm` properties of the XMP `packet`; `None` for a packet that isn't XML.
+/// Only the image's own properties are read: those of each `rdf:Description` of the
+/// packet's `rdf:RDF`, not those of a resource nested in one. An array is an
+/// `rdf:Seq` of `rdf:li` items, ordered as hdrgm asks; any other structure (an
+/// `rdf:Bag`, an `rdf:Alt`) is kept with no value, which no field accepts.
+fn hdrgm(packet: &[u8]) -> Option<Hdrgm> {
+    const RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+    const NOTE: &str = "http://ns.adobe.com/xmp/note/";
+    let text = std::str::from_utf8(packet).ok()?;
+    // An XMP packet's wrapper (`<?xpacket ...?>`) is a processing instruction, which
+    // XML allows; trailing padding after it is whitespace.
+    let doc = roxmltree::Document::parse(text.trim_end_matches('\0')).ok()?;
+    let mut found = Hdrgm::new();
+    let Some(rdf) = doc.descendants().find(|n| n.has_tag_name((RDF, "RDF"))) else {
+        return Some(found);
+    };
+    // A literal: an element of text alone (its comments aside), no resource.
+    let literal = |n: roxmltree::Node<'_, '_>| -> Option<String> {
+        let plain = !n.children().any(|c| c.is_element())
+            && !n.attributes().any(|a| a.namespace() == Some(RDF));
+        plain.then(|| {
+            n.children()
+                .filter(|c| c.is_text())
+                .filter_map(|c| c.text())
+                .collect()
+        })
+    };
+    let blank = |n: roxmltree::Node<'_, '_>| {
+        n.children()
+            .filter(|c| c.is_text())
+            .all(|c| c.text().unwrap_or_default().trim().is_empty())
+    };
+    for description in rdf
+        .children()
+        .filter(|n| n.has_tag_name((RDF, "Description")))
+    {
+        for a in description.attributes() {
+            if a.namespace() == Some(HDRGM) {
+                found.insert(a.name().to_owned(), vec![a.value().to_owned()]);
+            } else if a.namespace() == Some(NOTE) && a.name() == "HasExtendedXMP" {
+                found.insert(EXTENDED.into(), vec![a.value().to_owned()]);
+            }
+        }
+        for property in description.children().filter(|n| n.is_element()) {
+            let name = property.tag_name();
+            if name.namespace() == Some(NOTE) && name.name() == "HasExtendedXMP" {
+                let guid = literal(property).unwrap_or_default();
+                found.insert(EXTENDED.into(), vec![guid]);
+                continue;
+            }
+            if name.namespace() != Some(HDRGM) {
+                continue;
+            }
+            let inner: Vec<_> = property.children().filter(|n| n.is_element()).collect();
+            let value = match inner.as_slice() {
+                [] => literal(property).map(|v| vec![v]).unwrap_or_default(),
+                [seq] if seq.has_tag_name((RDF, "Seq")) && blank(property) && blank(*seq) => seq
+                    .children()
+                    .filter(|n| n.is_element())
+                    .map(|li| li.has_tag_name((RDF, "li")).then(|| literal(li)).flatten())
+                    .collect::<Option<Vec<_>>>()
+                    .unwrap_or_default(),
+                _ => Vec::new(),
+            };
+            found.insert(name.name().to_owned(), value);
+        }
+    }
+    Some(found)
+}
+
+/// The extended XMP packet `guid` of a JPEG from its APP1 `chunks` (each after its
+/// URN): a 32-character GUID, the packet's length and the chunk's offset in it (u32
+/// each, big-endian), then the chunk. Those of `guid` must agree on its length and
+/// together fill it once, in any order; anything else, none among them, is
+/// [`damaged`].
+fn extended(chunks: &[Vec<u8>], guid: &[u8]) -> Result<Vec<u8>, Unsupported> {
+    let mut parts = Vec::with_capacity(chunks.len());
+    for chunk in chunks {
+        let mut r = Bytes(chunk);
+        let id = r.take::<32>()?;
+        let (len, offset) = (r.u32()?, r.u32()?);
+        if id.as_slice() == guid {
+            parts.push((len, offset, r.0));
+        }
+    }
+    let len = parts.first().ok_or_else(damaged)?.0;
+    if u64::from(len) > MAX_HEADER || parts.iter().any(|p| p.0 != len) {
+        return Err(damaged());
+    }
+    parts.sort_by_key(|p| p.1);
+    let mut packet = Vec::with_capacity(len as usize);
+    for (_, offset, data) in parts {
+        if offset as usize != packet.len() {
+            return Err(damaged());
+        }
+        packet.extend_from_slice(data);
+    }
+    if packet.len() != len as usize {
+        return Err(damaged());
+    }
+    Ok(packet)
 }
 
 fn hdr_base() -> Unsupported {
@@ -204,9 +409,8 @@ pub(super) struct GainMap {
 /// without one, which opens as an SDR file. A file whose base says it has an ISO
 /// 21496-1 map but whose map can't be applied is [`Unsupported`].
 ///
-/// Only the ISO 21496-1 form is read: a JPEG whose map is described by XMP alone
-/// (Adobe's and Android's earlier `hdrgm` metadata) opens as its SDR base, as
-/// before.
+/// A JPEG's map is described by ISO 21496-1 or, without it, by Adobe's `hdrgm` XMP;
+/// either way the MPF index locates it.
 pub(super) fn find(file: &mut File, base: (u32, u32)) -> Result<Option<GainMap>, Unsupported> {
     let len = file.seek(SeekFrom::End(0)).map_err(|_| damaged())?;
     let mut head = [0u8; 12];
@@ -314,7 +518,8 @@ fn payload(file: &mut File, s: &Segment, end: u64) -> Result<Vec<u8>, Unsupporte
 }
 
 /// The gain map of a JPEG of `len` bytes, from the ISO 21496-1 version marker on its
-/// primary image and its MPF index.
+/// primary image, or the `hdrgm:Version` of its XMP, and its MPF index: the first
+/// secondary image whose own metadata of that form reads.
 fn jpeg(file: &mut File, len: u64) -> Result<Option<GainMap>, Unsupported> {
     // Only a primary whose segments read can be a gain map's base; one whose don't
     // is left to the JPEG decoder to say what is wrong.
@@ -323,23 +528,36 @@ fn jpeg(file: &mut File, len: u64) -> Result<Option<GainMap>, Unsupported> {
     };
     let mut marker = None;
     let mut mpf = None;
-    for s in primary.iter().filter(|s| s.marker == 0xe2) {
+    let mut xmp_version = None;
+    for s in primary.iter().filter(|s| [0xe1, 0xe2].contains(&s.marker)) {
         let p = payload(file, s, len)?;
-        if let Some(versions) = p.strip_prefix(ISO_URN) {
+        if s.marker == 0xe1 {
+            if let Some(packet) = p.strip_prefix(XMP_URN) {
+                xmp_version = xmp_version.or_else(|| hdrgm(packet)?.remove("Version"));
+            }
+        } else if let Some(versions) = p.strip_prefix(ISO_URN) {
             marker = Some(versions.to_vec());
         } else if p.starts_with(b"MPF\0") {
             // Its offsets count from the TIFF header, after "MPF\0".
             mpf = Some((p, s.start + 4));
         }
     }
-    let Some(versions) = marker else {
-        return Ok(None);
+    // ISO 21496-1 wins over the XMP that writers such as libultrahdr add beside it.
+    let iso = match (marker, xmp_version) {
+        (Some(versions), _) => {
+            let minimum = Bytes(&versions).u16()?;
+            if minimum != 0 {
+                return Err(Unsupported(format!("version {minimum} gain-map")));
+            }
+            true
+        }
+        (None, Some(version)) => match version.as_slice() {
+            [v] if v == "1.0" => false,
+            [v] => return Err(Unsupported(format!("version {v} gain-map"))),
+            _ => return Err(damaged()),
+        },
+        (None, None) => return Ok(None),
     };
-    let mut r = Bytes(&versions);
-    let minimum = r.u16()?;
-    if minimum != 0 {
-        return Err(Unsupported(format!("version {minimum} gain-map")));
-    }
     let (mpf, tiff) = mpf.ok_or_else(damaged)?;
     for (offset, size) in mpf_images(&mpf[4..])? {
         let Some(start) = tiff.checked_add(u64::from(offset)) else {
@@ -360,14 +578,26 @@ fn jpeg(file: &mut File, len: u64) -> Result<Option<GainMap>, Unsupported> {
         let mut metadata = None;
         let mut icc = false;
         let mut frame = None;
+        // An hdrgm map's XMP: its standard packet's properties and its extended
+        // packet's chunks.
+        let mut xmp = Hdrgm::new();
+        let mut extension = Vec::new();
         for s in &map {
             match s.marker {
                 0xe2 => {
                     let p = payload(file, s, end)?;
-                    if let Some(m) = p.strip_prefix(ISO_URN) {
+                    if let Some(m) = p.strip_prefix(ISO_URN).filter(|_| iso) {
                         metadata = Some(Metadata::parse(m)?);
                     }
                     icc |= p.starts_with(b"ICC_PROFILE\0");
+                }
+                0xe1 if !iso => {
+                    let p = payload(file, s, end)?;
+                    if let Some(packet) = p.strip_prefix(XMP_URN) {
+                        xmp.extend(hdrgm(packet).unwrap_or_default());
+                    } else if let Some(chunk) = p.strip_prefix(XMP_EXTENSION) {
+                        extension.push(chunk.to_vec());
+                    }
                 }
                 // Start of frame, any but the DHT, JPG and DAC markers among them.
                 0xc0..=0xcf if ![0xc4, 0xc8, 0xcc].contains(&s.marker) => {
@@ -385,11 +615,26 @@ fn jpeg(file: &mut File, len: u64) -> Result<Option<GainMap>, Unsupported> {
                 _ => {}
             }
         }
+        // The extended packet the standard one names, which must be there whole;
+        // chunks it doesn't name are another's, as XMP's storage in JPEG says.
+        if let Some(guid) = xmp.remove(EXTENDED) {
+            let [guid] = guid.as_slice() else {
+                return Err(damaged());
+            };
+            let packet = extended(&extension, guid.as_bytes())?;
+            let mut more = hdrgm(&packet).ok_or_else(damaged)?;
+            more.remove(EXTENDED);
+            xmp.extend(more);
+        }
+        if !iso && !xmp.is_empty() {
+            metadata = Some(Metadata::from_hdrgm(&xmp)?);
+        }
         let Some(metadata) = metadata else {
             continue;
         };
         let (width, height) = frame.ok_or_else(damaged)?;
-        // A map in the alternate's colour space, which its ICC profile describes.
+        // A map in the alternate's colour space, which its ICC profile describes. An
+        // hdrgm map's profile isn't used: it applies in the base's.
         if !metadata.base_colour_space && icc {
             return Err(Unsupported("alternate-colour gain-map".into()));
         }
@@ -789,5 +1034,546 @@ mod tests {
         }
         assert_eq!(full.hdr().unwrap().source().transfer, HdrTransfer::Linear);
         assert!(full.hdr().unwrap().source().gain_map);
+    }
+
+    /// A JPEG segment: `marker`, its length and `payload`.
+    fn segment(marker: u8, payload: &[u8]) -> Vec<u8> {
+        let mut out = vec![0xff, marker];
+        out.extend(((payload.len() + 2) as u16).to_be_bytes());
+        out.extend(payload);
+        out
+    }
+
+    /// An XMP APP1 segment whose `rdf:Description` holds `body` (attributes, then
+    /// `>` and elements).
+    fn xmp(body: &str) -> Vec<u8> {
+        let packet = format!(
+            r#"<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" {body}</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>"#
+        );
+        segment(0xe1, &[XMP_URN, packet.as_bytes()].concat())
+    }
+
+    /// An 8-bit JPEG of `pixels`, `channels` (1 or 3) a pixel.
+    fn encoded(pixels: &[u8], width: u32, height: u32, channels: usize) -> Vec<u8> {
+        use image::ImageEncoder;
+        let color = match channels {
+            1 => image::ExtendedColorType::L8,
+            _ => image::ExtendedColorType::Rgb8,
+        };
+        let mut out = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 100)
+            .write_image(pixels, width, height, color)
+            .unwrap();
+        out
+    }
+
+    /// An MPF APP2 segment, big-endian, listing the primary (`primary` bytes) and a
+    /// map of `map` bytes at `offset` from its TIFF header.
+    fn mpf(primary: u32, map: u32, offset: u32) -> Vec<u8> {
+        let mut t = b"MPF\0MM\0\x2a\0\0\0\x08".to_vec();
+        t.extend(3u16.to_be_bytes());
+        // Version, number of images, then the MP entries after the IFD.
+        t.extend([0xb0, 0x00, 0, 7, 0, 0, 0, 4]);
+        t.extend(b"0100");
+        t.extend([0xb0, 0x01, 0, 4, 0, 0, 0, 1, 0, 0, 0, 2]);
+        t.extend([0xb0, 0x02, 0, 7, 0, 0, 0, 32]);
+        t.extend((8u32 + 2 + 3 * 12 + 4).to_be_bytes());
+        t.extend(0u32.to_be_bytes());
+        for (size, at) in [(primary, 0), (map, offset)] {
+            t.extend(0u32.to_be_bytes());
+            t.extend(size.to_be_bytes());
+            t.extend(at.to_be_bytes());
+            t.extend([0; 4]);
+        }
+        segment(0xe2, &t)
+    }
+
+    /// A gain-map JPEG: `base` with `primary_xmp` (and `exif`, an APP1 payload, when
+    /// given) and an MPF index, then `map` with `map_xmp`.
+    fn hdrgm_jpeg(
+        base: &[u8],
+        map: &[u8],
+        primary_xmp: &str,
+        map_xmp: &str,
+        exif: Option<&[u8]>,
+    ) -> Vec<u8> {
+        hdrgm_jpeg_with(base, map, primary_xmp, &xmp(map_xmp), exif)
+    }
+
+    /// [`hdrgm_jpeg`] with the map's XMP segments given whole.
+    fn hdrgm_jpeg_with(
+        base: &[u8],
+        map: &[u8],
+        primary_xmp: &str,
+        map_segments: &[u8],
+        exif: Option<&[u8]>,
+    ) -> Vec<u8> {
+        let map = [&map[..2], map_segments, &map[2..]].concat();
+        let mut head = exif.map(|e| segment(0xe1, e)).unwrap_or_default();
+        head.extend(xmp(primary_xmp));
+        // The MPF segment's own size doesn't depend on its values.
+        let mpf_len = mpf(0, 0, 0).len();
+        let primary_len = 2 + head.len() + mpf_len + base.len() - 2;
+        // The TIFF header is 4 bytes into the MPF segment's payload.
+        let tiff = 2 + head.len() + 4 + 4;
+        let index = mpf(
+            primary_len as u32,
+            map.len() as u32,
+            (primary_len - tiff) as u32,
+        );
+        [&base[..2], &head, &index, &base[2..], &map].concat()
+    }
+
+    /// Adobe's gain-map decoding at full weight, as the Ultra HDR 1.0 specification
+    /// writes it, for one channel: the sample linear 0–1, then raised to 1/gamma,
+    /// the gain interpolated in stops between the map's minimum and maximum, applied
+    /// to the base with the offsets.
+    fn adobe(sdr: f64, sample: u8, min: f64, max: f64, gamma: f64, offsets: (f64, f64)) -> f64 {
+        let recovery = (f64::from(sample) / 255.).powf(1. / gamma);
+        let boost = min * (1. - recovery) + max * recovery;
+        (sdr + offsets.0) * boost.exp2() - offsets.1
+    }
+
+    /// The reader's error against the formulas in f64, relative: moxcms's f32 sRGB
+    /// curve, measured at 3e-4 at most, f32 arithmetic and the ProPhoto round trip.
+    const TOLERANCE: f64 = 1e-3;
+
+    fn srgb_eotf(v: u8) -> f64 {
+        let v = f64::from(v) / 255.;
+        if v <= 0.04045 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    /// The light of `file` in linear sRGB primaries.
+    fn light_of(path: &std::path::Path) -> anyhow::Result<(u32, u32, Vec<[f64; 3]>)> {
+        use rawmakase_model::color::{hdr_output::HdrGamut, mul};
+        let image = super::super::open(path, rawmakase_cancel::Cancel::NEVER)?;
+        let hdr = image.hdr().ok_or_else(|| anyhow::anyhow!("no HDR"))?;
+        assert!(hdr.source().gain_map);
+        let to_srgb = HdrGamut::Rec709.prophoto_to_rgb();
+        Ok((
+            image.width,
+            image.height,
+            hdr.pixels()
+                .iter()
+                .map(|p| mul(to_srgb, *p).map(f64::from))
+                .collect(),
+        ))
+    }
+
+    /// A ramp of grey and colour patches a channel each, with the decoded samples the
+    /// file holds (the JPEG decoder's, as the reader's).
+    fn base_ramp(width: u32, height: u32) -> Vec<u8> {
+        (0..width * height)
+            .flat_map(|i| {
+                let (x, y) = (i % width, i / width);
+                let v = (x * 255 / (width - 1)) as u8;
+                match y * 3 / height {
+                    0 => [v, v, v],
+                    1 => [v, v / 2, 40],
+                    _ => [30, v / 3, v],
+                }
+            })
+            .collect()
+    }
+
+    fn decoded(jpeg: &[u8]) -> image::DynamicImage {
+        image::load_from_memory_with_format(jpeg, image::ImageFormat::Jpeg).unwrap()
+    }
+
+    /// A JPEG whose map is described only by Adobe's `hdrgm` XMP (Lightroom's and
+    /// Android's earlier form) opens with the light the specification's formula gives,
+    /// whether its values are attributes or elements, one for every channel or three.
+    #[test]
+    fn an_hdrgm_gain_map_opens_with_the_light_its_formula_gives() -> anyhow::Result<()> {
+        let (w, h) = (32, 24);
+        let base = encoded(&base_ramp(w, h), w, h, 3);
+        let map_pixels: Vec<u8> = (0..w * h)
+            .map(|i| ((i % w) * 255 / (w - 1)) as u8)
+            .collect();
+        let map = encoded(&map_pixels, w, h, 1);
+        let (sdr, gains) = (decoded(&base).into_rgb8(), decoded(&map).into_luma8());
+        let dir = tempfile::tempdir()?;
+        let forms = [
+            // Lightroom's attributes, one value each, the defaults left out but two.
+            (
+                r#"hdrgm:Version="1.0" hdrgm:GainMapMin="-0.5" hdrgm:GainMapMax="2.5" hdrgm:Gamma="1.4" hdrgm:HDRCapacityMax="2.5">"#,
+                [(-0.5, 2.5, 1.4, (1. / 64., 1. / 64.)); 3],
+            ),
+            // Elements, an ordered array a channel.
+            (
+                r#"hdrgm:Version="1.0" hdrgm:HDRCapacityMin="0" hdrgm:HDRCapacityMax="3"><hdrgm:GainMapMin><rdf:Seq><rdf:li>0</rdf:li><rdf:li>-1</rdf:li><rdf:li>0.25</rdf:li></rdf:Seq></hdrgm:GainMapMin><hdrgm:GainMapMax><rdf:Seq><rdf:li>3</rdf:li><rdf:li>2</rdf:li><rdf:li>1</rdf:li></rdf:Seq></hdrgm:GainMapMax><hdrgm:OffsetSDR>0</hdrgm:OffsetSDR><hdrgm:OffsetHDR>0.03125</hdrgm:OffsetHDR>"#,
+                [
+                    (0., 3., 1., (0., 0.03125)),
+                    (-1., 2., 1., (0., 0.03125)),
+                    (0.25, 1., 1., (0., 0.03125)),
+                ],
+            ),
+        ];
+        for (i, (metadata, channels)) in forms.into_iter().enumerate() {
+            let path = dir.path().join(format!("{i}.jpg"));
+            std::fs::write(
+                &path,
+                hdrgm_jpeg(&base, &map, r#"hdrgm:Version="1.0">"#, metadata, None),
+            )?;
+            let (width, height, light) = light_of(&path)?;
+            assert_eq!((width, height), (w, h));
+            for (at, got) in light.iter().enumerate() {
+                let (x, y) = (at as u32 % w, at as u32 / w);
+                let px = sdr.get_pixel(x, y).0;
+                for c in 0..3 {
+                    let (min, max, gamma, offsets) = channels[c];
+                    let want = adobe(
+                        srgb_eotf(px[c]),
+                        gains.get_pixel(x, y).0[0],
+                        min,
+                        max,
+                        gamma,
+                        offsets,
+                    );
+                    assert!(
+                        (got[c] - want).abs() <= TOLERANCE * want.abs().max(1.),
+                        "form {i} ({x}, {y}) channel {c}: {} against {want}",
+                        got[c]
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The map turns with the base's EXIF orientation: it is in the base's stored
+    /// frame, as a JPEG's ISO 21496-1 map is. A map smaller than the base spreads over
+    /// it, and a flat one gives every pixel its gain.
+    #[test]
+    fn an_hdrgm_map_turns_with_its_base_and_spreads_over_it() -> anyhow::Result<()> {
+        let (w, h) = (16, 8);
+        let base = encoded(&base_ramp(w, h), w, h, 3);
+        // Left half of the stored frame gains nothing, the right half its maximum.
+        let map_pixels: Vec<u8> = (0..w * h)
+            .map(|i| if i % w < w / 2 { 0 } else { 255 })
+            .collect();
+        let map = encoded(&map_pixels, w, h, 1);
+        let metadata = r#"hdrgm:Version="1.0" hdrgm:GainMapMax="2" hdrgm:OffsetSDR="0" hdrgm:OffsetHDR="0" hdrgm:HDRCapacityMax="2">"#;
+        // Orientation 6: the stored frame turned 90° clockwise.
+        let mut exif = b"Exif\0\0MM\0\x2a\0\0\0\x08\0\x01".to_vec();
+        exif.extend([0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0]);
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("turned.jpg");
+        std::fs::write(
+            &path,
+            hdrgm_jpeg(
+                &base,
+                &map,
+                r#"hdrgm:Version="1.0">"#,
+                metadata,
+                Some(&exif),
+            ),
+        )?;
+        let turn = |mut image: image::DynamicImage| {
+            image.apply_orientation(image::metadata::Orientation::Rotate90);
+            image
+        };
+        let sdr = turn(decoded(&base)).into_rgb8();
+        let gains = turn(decoded(&map)).into_luma8();
+        let (width, height, light) = light_of(&path)?;
+        assert_eq!((width, height), (h, w));
+        for (at, got) in light.iter().enumerate() {
+            let (x, y) = (at as u32 % width, at as u32 / width);
+            let sample = gains.get_pixel(x, y).0[0];
+            // The stored frame's right half is the turned image's bottom half.
+            assert_eq!(sample > 128, y >= height / 2, "({x}, {y})");
+            for c in 0..3 {
+                let want = adobe(
+                    srgb_eotf(sdr.get_pixel(x, y).0[c]),
+                    sample,
+                    0.,
+                    2.,
+                    1.,
+                    (0., 0.),
+                );
+                assert!(
+                    (got[c] - want).abs() <= TOLERANCE * want.max(1.),
+                    "({x}, {y}): {got:?}"
+                );
+            }
+        }
+        // A flat map a quarter of the base's size.
+        let small = encoded(&[128; 4 * 2], 4, 2, 1);
+        let path = dir.path().join("small.jpg");
+        std::fs::write(
+            &path,
+            hdrgm_jpeg(&base, &small, r#"hdrgm:Version="1.0">"#, metadata, None),
+        )?;
+        let sample = decoded(&small).into_luma8().get_pixel(0, 0).0[0];
+        let sdr = decoded(&base).into_rgb8();
+        let (_, _, light) = light_of(&path)?;
+        for (at, got) in light.iter().enumerate() {
+            let (x, y) = (at as u32 % w, at as u32 / w);
+            for c in 0..3 {
+                let want = adobe(
+                    srgb_eotf(sdr.get_pixel(x, y).0[c]),
+                    sample,
+                    0.,
+                    2.,
+                    1.,
+                    (0., 0.),
+                );
+                assert!(
+                    (got[c] - want).abs() <= TOLERANCE * want.max(1.),
+                    "({x}, {y}): {got:?}"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// What isn't hdrgm 1.0, or isn't whole, is refused by reason; a JPEG whose XMP
+    /// names no hdrgm version is an SDR file.
+    #[test]
+    fn hdrgm_maps_that_cannot_be_applied_are_refused_by_reason() -> anyhow::Result<()> {
+        let (w, h) = (8, 8);
+        let base = encoded(&base_ramp(w, h), w, h, 3);
+        let map = encoded(&[200; 64], w, h, 1);
+        let ok = r#"hdrgm:Version="1.0" hdrgm:GainMapMax="2" hdrgm:HDRCapacityMax="2">"#;
+        let primary = r#"hdrgm:Version="1.0">"#;
+        let cases = [
+            (
+                primary,
+                r#"hdrgm:Version="1.0" hdrgm:HDRCapacityMax="2">"#,
+                "damaged gain-map",
+            ),
+            (
+                primary,
+                r#"hdrgm:Version="1.0" hdrgm:GainMapMax="2">"#,
+                "damaged gain-map",
+            ),
+            (
+                primary,
+                r#"hdrgm:Version="1.0" hdrgm:GainMapMax="two" hdrgm:HDRCapacityMax="2">"#,
+                "damaged gain-map",
+            ),
+            (
+                primary,
+                r#"hdrgm:Version="1.0" hdrgm:GainMapMin="3" hdrgm:GainMapMax="2" hdrgm:HDRCapacityMax="2">"#,
+                "damaged gain-map",
+            ),
+            (
+                primary,
+                r#"hdrgm:Version="1.0" hdrgm:Gamma="0" hdrgm:GainMapMax="2" hdrgm:HDRCapacityMax="2">"#,
+                "damaged gain-map",
+            ),
+            (
+                primary,
+                r#"hdrgm:Version="1.0" hdrgm:OffsetSDR="-0.1" hdrgm:GainMapMax="2" hdrgm:HDRCapacityMax="2">"#,
+                "damaged gain-map",
+            ),
+            (
+                primary,
+                r#"hdrgm:Version="1.0" hdrgm:GainMapMax="2" hdrgm:HDRCapacityMin="2" hdrgm:HDRCapacityMax="2">"#,
+                "damaged gain-map",
+            ),
+            (
+                primary,
+                r#"hdrgm:Version="1.0" hdrgm:HDRCapacityMax="2"><hdrgm:GainMapMax><rdf:Seq><rdf:li>1</rdf:li><rdf:li>2</rdf:li></rdf:Seq></hdrgm:GainMapMax>"#,
+                "damaged gain-map",
+            ),
+            (
+                primary,
+                r#"hdrgm:Version="1.0" hdrgm:GainMapMax="20" hdrgm:HDRCapacityMax="2">"#,
+                "damaged gain-map",
+            ),
+            (
+                primary,
+                r#"hdrgm:Version="1.0" hdrgm:BaseRenditionIsHDR="True" hdrgm:GainMapMax="2" hdrgm:HDRCapacityMax="2">"#,
+                "HDR-base gain-map",
+            ),
+            (
+                primary,
+                r#"hdrgm:Version="2.0" hdrgm:GainMapMax="2" hdrgm:HDRCapacityMax="2">"#,
+                "version 2.0 gain-map",
+            ),
+            (r#"hdrgm:Version="2.0">"#, ok, "version 2.0 gain-map"),
+            // A map whose hdrgm XMP has no version.
+            (primary, r#"hdrgm:Other="1">"#, "damaged gain-map"),
+        ];
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("refused.jpg");
+        for (primary, metadata, why) in cases {
+            std::fs::write(&path, hdrgm_jpeg(&base, &map, primary, metadata, None))?;
+            assert_eq!(super::super::probe(&path).unwrap_err().0, why, "{metadata}");
+        }
+        // No MPF index.
+        std::fs::write(&path, [&base[..2], &xmp(primary), &base[2..]].concat())?;
+        assert_eq!(
+            super::super::probe(&path).unwrap_err().0,
+            "damaged gain-map"
+        );
+        // XMP without an hdrgm version: an SDR JPEG, as before.
+        std::fs::write(
+            &path,
+            [
+                &base[..2],
+                &xmp(r#"xmlns:dc="http://purl.org/dc/elements/1.1/">"#),
+                &base[2..],
+            ]
+            .concat(),
+        )?;
+        super::super::probe(&path).unwrap();
+        assert!(
+            super::super::open(&path, rawmakase_cancel::Cancel::NEVER)?
+                .hdr()
+                .is_none()
+        );
+        Ok(())
+    }
+
+    /// Only the image's own XMP properties count: an `hdrgm:Version` of a resource
+    /// nested in its description doesn't make an SDR JPEG a gain-map one, nor does a
+    /// nested map field change a map. An array of channels must be ordered: a Bag or
+    /// an Alt of three is refused.
+    #[test]
+    fn hdrgm_properties_are_the_images_own_and_arrays_are_ordered() -> anyhow::Result<()> {
+        let (w, h) = (8, 8);
+        let base = encoded(&base_ramp(w, h), w, h, 3);
+        let map = encoded(&[255; 64], w, h, 1);
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("nested.jpg");
+        let nested = r#"xmlns:test="urn:test:"><test:source rdf:parseType="Resource"><hdrgm:Version>1.0</hdrgm:Version></test:source>"#;
+        std::fs::write(&path, [&base[..2], &xmp(nested), &base[2..]].concat())?;
+        super::super::probe(&path).unwrap();
+        assert!(
+            super::super::open(&path, rawmakase_cancel::Cancel::NEVER)?
+                .hdr()
+                .is_none()
+        );
+        // A nested GainMapMax of 4 stops is not the map's 2.
+        let metadata = r#"xmlns:test="urn:test:" hdrgm:Version="1.0" hdrgm:GainMapMax="2" hdrgm:OffsetSDR="0" hdrgm:OffsetHDR="0" hdrgm:HDRCapacityMax="2"><test:other rdf:parseType="Resource"><hdrgm:GainMapMax>4</hdrgm:GainMapMax></test:other>"#;
+        std::fs::write(
+            &path,
+            hdrgm_jpeg(&base, &map, r#"hdrgm:Version="1.0">"#, metadata, None),
+        )?;
+        let sdr = decoded(&base).into_rgb8();
+        let (_, _, light) = light_of(&path)?;
+        let want = srgb_eotf(sdr.get_pixel(3, 3).0[0]) * 4.;
+        assert!((light[3 * 8 + 3][0] - want).abs() <= TOLERANCE * want.max(1.));
+        // A literal's text is all of it, a comment aside.
+        let split = r#"hdrgm:Version="1.0" hdrgm:OffsetSDR="0" hdrgm:OffsetHDR="0" hdrgm:HDRCapacityMax="2"><hdrgm:GainMapMax>1<!-- -->.5</hdrgm:GainMapMax>"#;
+        std::fs::write(
+            &path,
+            hdrgm_jpeg(&base, &map, r#"hdrgm:Version="1.0">"#, split, None),
+        )?;
+        let (_, _, light) = light_of(&path)?;
+        let want = srgb_eotf(sdr.get_pixel(3, 3).0[0]) * 1.5f64.exp2();
+        assert!((light[3 * 8 + 3][0] - want).abs() <= TOLERANCE * want.max(1.));
+        // Items that aren't literals, and text beside an array.
+        for items in [
+            "<rdf:Seq><rdf:li>2<rdf:Description/></rdf:li></rdf:Seq>",
+            r#"<rdf:Seq><rdf:li rdf:resource="urn:x">2</rdf:li></rdf:Seq>"#,
+            "3<rdf:Seq><rdf:li>2</rdf:li></rdf:Seq>",
+        ] {
+            let metadata = format!(
+                r#"hdrgm:Version="1.0" hdrgm:HDRCapacityMax="2"><hdrgm:GainMapMax>{items}</hdrgm:GainMapMax>"#
+            );
+            std::fs::write(
+                &path,
+                hdrgm_jpeg(&base, &map, r#"hdrgm:Version="1.0">"#, &metadata, None),
+            )?;
+            assert_eq!(
+                super::super::probe(&path).unwrap_err().0,
+                "damaged gain-map",
+                "{items}"
+            );
+        }
+        for container in ["Bag", "Alt"] {
+            let metadata = format!(
+                r#"hdrgm:Version="1.0" hdrgm:HDRCapacityMax="2"><hdrgm:GainMapMax><rdf:{container}><rdf:li>1</rdf:li><rdf:li>2</rdf:li><rdf:li>3</rdf:li></rdf:{container}></hdrgm:GainMapMax>"#
+            );
+            std::fs::write(
+                &path,
+                hdrgm_jpeg(&base, &map, r#"hdrgm:Version="1.0">"#, &metadata, None),
+            )?;
+            assert_eq!(
+                super::super::probe(&path).unwrap_err().0,
+                "damaged gain-map",
+                "{container}"
+            );
+        }
+        Ok(())
+    }
+
+    /// A map whose hdrgm fields are partly in its extended XMP (split across APP1
+    /// chunks, in any order) reads them, as one packet: its gamma applies. Chunks
+    /// that don't fill the packet are damaged.
+    #[test]
+    fn an_hdrgm_maps_extended_xmp_is_read() -> anyhow::Result<()> {
+        let (w, h) = (8, 8);
+        let base = encoded(&base_ramp(w, h), w, h, 3);
+        let map = encoded(&[64; 64], w, h, 1);
+        let guid = b"0123456789ABCDEF0123456789ABCDEF";
+        let standard = xmp(&format!(
+            r#"xmlns:xmpNote="http://ns.adobe.com/xmp/note/" xmpNote:HasExtendedXMP="{}" hdrgm:Version="1.0" hdrgm:GainMapMax="2" hdrgm:OffsetSDR="0" hdrgm:OffsetHDR="0" hdrgm:HDRCapacityMax="2">"#,
+            std::str::from_utf8(guid)?
+        ));
+        let packet = br#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" hdrgm:Gamma="2"/></rdf:RDF></x:xmpmeta>"#;
+        let chunk = |from: usize, to: usize, len: usize| {
+            let payload = [
+                XMP_EXTENSION,
+                guid,
+                &(len as u32).to_be_bytes(),
+                &(from as u32).to_be_bytes(),
+                &packet[from..to],
+            ]
+            .concat();
+            segment(0xe1, &payload)
+        };
+        let half = packet.len() / 2;
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("extended.jpg");
+        // The second half first.
+        let segments = [
+            standard.clone(),
+            chunk(half, packet.len(), packet.len()),
+            chunk(0, half, packet.len()),
+        ]
+        .concat();
+        std::fs::write(
+            &path,
+            hdrgm_jpeg_with(&base, &map, r#"hdrgm:Version="1.0">"#, &segments, None),
+        )?;
+        let sample = decoded(&map).into_luma8().get_pixel(0, 0).0[0];
+        let sdr = decoded(&base).into_rgb8();
+        let (_, _, light) = light_of(&path)?;
+        let want = adobe(
+            srgb_eotf(sdr.get_pixel(3, 3).0[0]),
+            sample,
+            0.,
+            2.,
+            2.,
+            (0., 0.),
+        );
+        assert!(
+            (light[3 * 8 + 3][0] - want).abs() <= TOLERANCE * want.max(1.),
+            "{} against {want}",
+            light[3 * 8 + 3][0]
+        );
+        // A chunk missing, or every chunk: the standard packet names one.
+        for segments in [
+            [standard.clone(), chunk(0, half, packet.len())].concat(),
+            standard,
+        ] {
+            std::fs::write(
+                &path,
+                hdrgm_jpeg_with(&base, &map, r#"hdrgm:Version="1.0">"#, &segments, None),
+            )?;
+            assert_eq!(
+                super::super::probe(&path).unwrap_err().0,
+                "damaged gain-map"
+            );
+        }
+        Ok(())
     }
 }
