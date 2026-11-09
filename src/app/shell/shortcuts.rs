@@ -389,8 +389,8 @@ fn filtered<'a>(
 
 /// The search's words, lower case. "+" separates words as a space does, and
 /// the macOS modifier symbols are words of their own, so "cmd+z" and "⌘Z"
-/// both find Cmd+Z.
-fn tokens(query: &str) -> Vec<String> {
+/// both find Cmd+Z. Preferences > Shortcuts searches the same way.
+pub(in crate::app) fn tokens(query: &str) -> Vec<String> {
     let mut spaced = String::new();
     for c in query.chars() {
         if matches!(c, '⌘' | '⌥' | '⇧' | '+') {
@@ -410,6 +410,17 @@ fn tokens(query: &str) -> Vec<String> {
 /// names a key; a longer word may also start a word of what it does or of its
 /// group's title.
 fn matches(tokens: &[String], title: &str, (keys, action): &Shortcut) -> bool {
+    search_matches(tokens, title, keys, action)
+}
+/// Whether a shortcut with `keys` (written "Cmd+Shift+Z", " / " between
+/// alternatives) that does `action`, in the group `title`, has every word of
+/// the search ([`tokens`]).
+pub(in crate::app) fn search_matches(
+    tokens: &[String],
+    title: &str,
+    keys: &str,
+    action: &str,
+) -> bool {
     tokens.iter().all(|token| {
         let key = keys
             .split(" / ")
@@ -627,7 +638,7 @@ pub(in crate::app) fn icon_button(ui: &mut egui::Ui, icon: Icon, hover: &str) ->
 }
 
 /// A key as the platform names it: ⌘ ⌥ ⇧ on macOS.
-fn cap_label(cap: &str) -> String {
+pub(in crate::app) fn cap_label(cap: &str) -> String {
     let mac = cfg!(target_os = "macos");
     match cap {
         "Cmd" if mac => "⌘".into(),

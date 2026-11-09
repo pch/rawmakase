@@ -1,12 +1,5 @@
 //! The chords in effect: the user's for the commands their key map names, the
 //! defaults for the rest.
-#![cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "conflicts, Preferences and the card read the user's chords (#963)"
-    )
-)]
 use super::{Binding, Chord, Default};
 use std::{borrow::Cow, collections::BTreeMap};
 

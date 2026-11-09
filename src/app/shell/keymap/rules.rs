@@ -6,13 +6,6 @@
 //! it names a modifier the command reads as a variant, when the command runs
 //! while typing and the chord would type, or when a fixed key (one read in
 //! place by a widget or a gesture) has it where the command acts.
-#![cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "conflicts and Preferences > Shortcuts read the rules (#963)"
-    )
-)]
 use super::{Binding, Chord, Context, Mods};
 use crate::app::shell::commands::registry::{Command, bindings};
 use eframe::egui::Key;

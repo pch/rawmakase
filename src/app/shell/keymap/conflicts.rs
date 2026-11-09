@@ -6,13 +6,6 @@
 //! conflict: a press of it runs neither command. Across levels it is
 //! shadowing: the higher one (a tool over Develop, a Library view over the
 //! Library, a module over everywhere) takes the press, as Crop takes X.
-#![cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "Preferences > Shortcuts and the macOS menu read the clashes (#963)"
-    )
-)]
 use super::rules::level;
 use super::{Binding, Chord, Default, Effective, Mods};
 use crate::app::shell::commands::registry::bindings;
@@ -26,21 +19,6 @@ pub(in crate::app) struct Clash {
     pub chord: Chord,
     /// On one level: a press runs neither. Otherwise the higher one runs.
     pub conflict: bool,
-}
-
-impl Clash {
-    /// Of the two, the one that is `binding`'s other.
-    pub(in crate::app) fn other(&self, binding: &Binding) -> &'static Binding {
-        if std::ptr::eq(self.a, binding) {
-            self.b
-        } else {
-            self.a
-        }
-    }
-    /// Whether `binding` is one of the two.
-    pub(in crate::app) fn involves(&self, binding: &Binding) -> bool {
-        std::ptr::eq(self.a, binding) || std::ptr::eq(self.b, binding)
-    }
 }
 
 /// Every pair of bindings of different commands that share a chord in

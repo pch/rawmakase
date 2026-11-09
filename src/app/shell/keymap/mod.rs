@@ -359,6 +359,8 @@ struct Taken {
     pass: u64,
     presses: Vec<Press>,
     reserved: Vec<(Press, usize)>,
+    /// Preferences is waiting for a key to bind: no binding takes any.
+    capturing: bool,
 }
 
 /// A binding's identity: bindings are statics.
@@ -441,6 +443,25 @@ impl<'a> FrameKeys<'a> {
     /// with one of the same, only in an active context.
     pub(in crate::app) fn set_live(&self, live: Live) {
         self.ctx.data_mut(|d| d.insert_temp(live_id(), live));
+    }
+    /// While `on`, no binding sees a press, so a key pressed for Preferences
+    /// to bind runs nothing; [`Self::capture`] hands it over instead.
+    pub(in crate::app) fn set_capturing(&self, on: bool) {
+        let mut state = self.state();
+        state.capturing = on;
+        self.set_state(state);
+    }
+    /// The first press of a key that isn't a modifier, which Preferences
+    /// binds, out of egui's input so nothing else sees it. A modifier pressed
+    /// alone (egui-winit sends Shift, Control, Alt and Super as keys of their
+    /// own) is left, and the capture waits for the key it is held with.
+    pub(in crate::app) fn capture(&self) -> Option<Press> {
+        let press = self
+            .read()
+            .into_iter()
+            .find(|p| !p.repeat && !is_modifier(p.key))?;
+        self.remove_press(&press);
+        Some(press)
     }
     /// The messages about conflicting chords since the last call: one for
     /// each press that ran neither of two commands.
@@ -613,7 +634,11 @@ impl<'a> FrameKeys<'a> {
     /// The presses no handler has taken yet, in the order they came, for a
     /// handler that walks them as the views' key loops do.
     pub(in crate::app) fn presses(&self) -> Vec<Press> {
-        let taken = self.taken();
+        let state = self.state();
+        if state.capturing {
+            return Vec::new();
+        }
+        let taken = state.presses;
         self.read()
             .into_iter()
             .filter(|p| !taken.contains(p))
@@ -703,8 +728,37 @@ impl<'a> FrameKeys<'a> {
             pass: state.pass,
             presses,
             reserved,
+            capturing: state.capturing,
         });
     }
+}
+
+/// Whether `key` is a modifier pressed as a key of its own.
+pub(in crate::app) fn is_modifier(key: Key) -> bool {
+    matches!(
+        key,
+        Key::ShiftLeft
+            | Key::ShiftRight
+            | Key::ControlLeft
+            | Key::ControlRight
+            | Key::AltLeft
+            | Key::AltRight
+            | Key::SuperLeft
+            | Key::SuperRight
+    )
+}
+
+/// The chord a captured press stands for: its key as a shortcut reads it
+/// (the number row by its place), with the modifiers held for it, except
+/// that on a punctuation key Shift and Alt are left out, as a layout may need
+/// them to type the symbol at all ([`Chord::free`]).
+pub(in crate::app) fn chord_of(press: &Press) -> Chord {
+    let key = crate::app::shell::key_match::shortcut_key(press.key, press.physical);
+    let mut mods = Mods::of(press.modifiers);
+    if chord::is_punctuation(key) {
+        mods = mods.without(Mods::SHIFT.with(Mods::ALT));
+    }
+    Chord::new(key, mods)
 }
 
 /// `presses` with each numbered among the identical ones before it.

@@ -222,7 +222,9 @@ impl Editor {
     pub(in crate::app) fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         // Every shortcut below takes its keys from here.
-        FrameKeys::begin(&ctx, self.keymap.effective());
+        let keys = FrameKeys::begin(&ctx, self.keymap.effective());
+        // A key Preferences waits for runs nothing; the page takes it.
+        keys.set_capturing(self.capturing_keys());
         // Before any field takes this frame's keys, or gives them up.
         let typing = ctx.text_edit_focused();
         // Already done by `logic` this pass in the app; a pass run without it

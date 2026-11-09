@@ -122,11 +122,10 @@ fn ctrl_is_a_modifier_of_its_own_only_on_a_mac() {
 }
 
 #[test]
-fn a_clash_names_the_other_binding() {
+fn a_clash_names_both_bindings_and_the_chord() {
     let map = user(&[("clipping", &["F9"]), ("basic:next", &["F9"])]);
     let found = between(&map, false, "clipping", "basic:next");
     let clash = found.first().expect("a clash");
-    assert!(clash.involves(&b::CLIPPING));
-    assert!(std::ptr::eq(clash.other(&b::CLIPPING), &b::BASIC_NEXT));
-    assert!(!clash.involves(&b::CROP));
+    assert!(std::ptr::eq(clash.a, &b::CLIPPING) && std::ptr::eq(clash.b, &b::BASIC_NEXT));
+    assert_eq!(clash.chord.to_string(), "F9");
 }

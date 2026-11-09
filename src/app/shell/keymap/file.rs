@@ -24,10 +24,6 @@
 //! Memory never runs chords the file doesn't hold: after a failed write the
 //! file is read back, because [`crate::storage::write_atomic`] can fail after
 //! the new file is in place (syncing the folder).
-#![cfg_attr(
-    not(test),
-    allow(dead_code, reason = "Preferences > Shortcuts edits the key map (#963)")
-)]
 use super::rules::{self, Os};
 use super::{Chord, Effective};
 use crate::app::shell::commands::registry::command_by_id;
