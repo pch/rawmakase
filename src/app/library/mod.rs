@@ -209,6 +209,11 @@ pub(crate) struct Library {
     /// Grid cells' photo info, read once per photo while expanded cells
     /// show it.
     cell_info: HashMap<PhotoId, Option<crate::metadata::PhotoInfo>>,
+    /// Every photo's camera, lens and settings for the Metadata filter and
+    /// the search, read once they are needed.
+    facets: facets::Cache,
+    /// The Metadata filter's strip and Find fields.
+    metadata_bar: metadata_bar::MetadataBar,
     strip: filmstrip::State,
     /// Counts changes to the photos shown, their order or their metadata,
     /// so the filmstrip notices a change made after it was drawn.
@@ -321,6 +326,8 @@ impl Library {
             drawn_pass: 0,
             sort_keys: None,
             cell_info: HashMap::new(),
+            facets: Default::default(),
+            metadata_bar: Default::default(),
             strip: filmstrip::State::default(),
             shown_version: 0,
             visible: Vec::new(),
@@ -426,6 +433,7 @@ impl Library {
     /// Brings what the Library shows in step with a catalog just read.
     fn reloaded(&mut self) {
         self.cell_info.clear();
+        self.forget_facets();
         self.sort_keys = None;
         self.shown_version += 1;
         if self.filters.previous_import {
@@ -552,6 +560,9 @@ impl Library {
         if self.sort_keys.as_ref().is_none_or(|(of, _)| *of != sort) {
             self.sort_keys = Some((sort, sort.keys(self.session.catalog())));
         }
+        if self.filters.needs_facets() {
+            self.load_facets();
+        }
         let keys = &self.sort_keys.as_ref().unwrap().1;
         self.shown_version += 1;
         // Filtering follows every change to the photos, so the count does too.
@@ -560,6 +571,7 @@ impl Library {
             self.session.photos(),
             |path| self.availability.is_available(path),
             keys,
+            self.facets(),
         );
         self.keep_shown_selected();
     }
@@ -1550,6 +1562,7 @@ mod collections;
 mod compare;
 mod copy_name;
 mod descriptive;
+mod facets;
 pub(crate) mod filmstrip;
 mod filter;
 mod filter_bar;
@@ -1563,6 +1576,7 @@ mod kinetic;
 mod layout;
 mod loupe;
 mod metadata;
+mod metadata_bar;
 mod metadata_fields;
 pub(in crate::app) mod outbox;
 mod photo_info;

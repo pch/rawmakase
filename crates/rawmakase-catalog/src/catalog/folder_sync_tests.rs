@@ -311,7 +311,10 @@ mod scenarios {
         assert_eq!((applied.moved, applied.protected), (vec![id], vec![]));
         assert_eq!(f.path_of(id), to);
         let photo = f.cat.photos()?.into_iter().find(|p| p.id == id).unwrap();
-        assert_eq!((photo.rating, photo.keywords.as_str()), (3, "Trip"));
+        assert_eq!(
+            (photo.rating, photo.keywords.as_slice()),
+            (3, &["Trip".to_string()][..])
+        );
         // The edit opens at the new path, its identity refreshed.
         assert_eq!(f.cat.load_edit(id, &to)?.unwrap().recipe, recipe);
         // A second sync finds nothing to do.

@@ -476,6 +476,14 @@ pub(crate) struct LibraryLayout {
     pub filters_off: bool,
     /// Show Photos in Subfolders turned off.
     pub subfolders_hidden: bool,
+    /// The Metadata filter's choices, by attribute key ("camera", "lens",
+    /// "focal_length", "aperture", "shutter_speed", "iso", "file_type",
+    /// "keyword"); null is the photos without a value.
+    pub metadata: std::collections::BTreeMap<String, Vec<Option<String>>>,
+    /// Whether the Metadata strip shows under the filter bar.
+    pub metadata_strip: bool,
+    /// The attribute keys of the strip's four columns, left to right.
+    pub metadata_columns: Vec<String>,
 }
 pub(crate) fn load_session() -> Session {
     read_json_or_default(&data_dir().join("session.json"))

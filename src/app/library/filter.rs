@@ -2,11 +2,16 @@
 //! filter bar, the offline filter and the sort order. The bar follows
 //! Lightroom's Attribute filter: any combination of flags, a rating compared
 //! with ≥, ≤ or =, any set of color labels, and masters or virtual copies.
+//! Its Metadata menu follows Lightroom's Metadata filter: a column per
+//! attribute (camera, lens, settings, file type, keyword), any of a column's
+//! values, and every column chosen in.
 //! Cmd+L turns the bar off and on without losing what is set in it.
+use super::facets::{Attribute, Counts, PhotoFacets, facets_of};
 use crate::app::library::photo_metadata::LABELS;
 use crate::catalog::{Photo, PhotoId};
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     path::Path,
 };
 
@@ -86,6 +91,9 @@ pub(super) struct Filters {
     /// The labels shown; none is every label.
     pub labels: BTreeSet<Label>,
     pub kind: Kind,
+    /// The Metadata filter: the values chosen for each attribute, None for
+    /// photos without one; an attribute left out, or empty, is every value.
+    pub metadata: BTreeMap<Attribute, BTreeSet<Option<String>>>,
     /// Cmd+L: whether the bar's settings apply.
     pub enabled: bool,
     pub only_missing: bool,
@@ -106,6 +114,7 @@ impl Default for Filters {
             rating_op: RatingOp::default(),
             labels: BTreeSet::new(),
             kind: Kind::default(),
+            metadata: BTreeMap::new(),
             enabled: true,
             only_missing: false,
             previous_import: false,
@@ -116,19 +125,23 @@ impl Default for Filters {
 }
 impl Filters {
     /// Indices into `photos` of the ones shown, in display order; `keys`
-    /// are what the sort order needs (see `Sort::keys`).
+    /// are what the sort order needs (see [`super::sort::Sort::keys`]), and
+    /// `facets` the photos' camera, lens and settings, read while
+    /// [`Self::needs_facets`].
     pub(super) fn visible(
         &self,
         photos: &[Photo],
         available: impl Fn(&Path) -> bool,
         keys: &super::sort::Keys,
+        facets: Option<&PhotoFacets>,
     ) -> Vec<usize> {
         let query = self.query.to_lowercase();
         let mut visible: Vec<usize> = photos
             .iter()
             .enumerate()
             .filter(|(_, p)| {
-                self.source_holds(p, &available) && (!self.enabled || self.bar_shows(p, &query))
+                self.source_holds(p, &available)
+                    && (!self.enabled || self.bar_shows(p, &query, facets, None))
             })
             .map(|(i, _)| i)
             .collect();
@@ -155,8 +168,75 @@ impl Filters {
                 || self.members.contains(&p.id))
             && (!self.only_missing || !available(&p.path))
     }
-    /// Whether the filter bar lets `p` through; `query` is in lower case.
-    fn bar_shows(&self, p: &Photo, query: &str) -> bool {
+    /// Whether filtering needs the photos' facets: the Metadata filter on
+    /// photo info, and the search, which finds camera and lens too.
+    pub(super) fn needs_facets(&self) -> bool {
+        self.enabled
+            && (!self.query.is_empty()
+                || self
+                    .metadata
+                    .iter()
+                    .any(|(attribute, chosen)| attribute.needs_info() && !chosen.is_empty()))
+    }
+    /// How many of the photos in the source, that the rest of the bar
+    /// lets through, have each of `attribute`'s values; a photo with
+    /// several keywords counts once under each. Counted as if the bar were
+    /// on, so the menu shows what choosing a value would show. A value chosen
+    /// that no such photo has is listed at 0, so it can be unchosen.
+    pub(super) fn counts(
+        &self,
+        photos: &[Photo],
+        available: impl Fn(&Path) -> bool,
+        facets: Option<&PhotoFacets>,
+        attribute: Attribute,
+    ) -> Counts {
+        let query = self.query.to_lowercase();
+        // Borrowed from the photos and their facets until the end: no
+        // allocation per keyword.
+        let mut known: HashMap<Cow<'_, str>, usize> = HashMap::new();
+        let mut unknown = 0;
+        let mut total = 0;
+        for p in photos {
+            if !self.source_holds(p, &available)
+                || !self.bar_shows(p, &query, facets, Some(attribute))
+            {
+                continue;
+            }
+            total += 1;
+            let mut values = attribute.values(p, facets.and_then(|f| facets_of(f, p)));
+            // Two keywords may share a name, under different parents.
+            values.sort_unstable();
+            values.dedup();
+            if values.is_empty() {
+                unknown += 1;
+            }
+            for value in values {
+                *known.entry(value).or_default() += 1;
+            }
+        }
+        let mut counts: HashMap<Option<String>, usize> = known
+            .into_iter()
+            .map(|(value, count)| (Some(value.into_owned()), count))
+            .collect();
+        if unknown > 0 {
+            counts.insert(None, unknown);
+        }
+        for chosen in self.metadata.get(&attribute).into_iter().flatten() {
+            counts.entry(chosen.clone()).or_default();
+        }
+        Counts::sorted(attribute, total, counts)
+    }
+    /// Whether the filter bar lets `p` through, `except` a Metadata
+    /// attribute left out for its counts; `query` is in lower case.
+    fn bar_shows(
+        &self,
+        p: &Photo,
+        query: &str,
+        facets: Option<&PhotoFacets>,
+        except: Option<Attribute>,
+    ) -> bool {
+        let facets = facets.and_then(|f| facets_of(f, p));
+        let one = |attribute: Attribute| attribute.values(p, facets).into_iter().next();
         (self.flags.is_empty() || self.flags.contains(&p.flag))
             && self
                 .rating
@@ -167,10 +247,26 @@ impl Filters {
                 Kind::Masters => p.master.is_none(),
                 Kind::Copies => p.master.is_some(),
             }
+            && self.metadata.iter().all(|(attribute, chosen)| {
+                if Some(*attribute) == except || chosen.is_empty() {
+                    return true;
+                }
+                let values = attribute.values(p, facets);
+                chosen.iter().any(|c| match c {
+                    Some(c) => values.iter().any(|v| v == c),
+                    None => values.is_empty(),
+                })
+            })
             && (query.is_empty()
                 || format!(
-                    "{} {} {} {} {}",
-                    p.filename, p.copy_name, p.keywords, p.captured, p.label
+                    "{} {} {} {} {} {} {}",
+                    p.filename,
+                    p.copy_name,
+                    p.keywords.join(", "),
+                    p.captured,
+                    p.label,
+                    one(Attribute::Camera).unwrap_or_default(),
+                    one(Attribute::Lens).unwrap_or_default(),
                 )
                 .to_lowercase()
                 .contains(query))
@@ -182,6 +278,7 @@ impl Filters {
             || self.rating.is_some()
             || !self.labels.is_empty()
             || self.kind != Kind::All
+            || self.metadata.values().any(|v| !v.is_empty())
     }
     /// Filters Off: clears the filter bar, leaving the source as it is.
     pub(super) fn clear_bar(&mut self) {
@@ -191,6 +288,7 @@ impl Filters {
         self.rating_op = RatingOp::default();
         self.labels.clear();
         self.kind = Kind::All;
+        self.metadata.clear();
         self.enabled = true;
     }
 }

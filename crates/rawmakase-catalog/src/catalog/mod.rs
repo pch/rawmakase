@@ -129,8 +129,13 @@ impl Catalog {
                 format: String,
                 copy_name: String,
                 master: Option<PhotoId>,
-                keywords: String,
                 has_lightroom_edits: bool,
+            }
+        }
+        row! {
+            struct KeywordRow {
+                photo: PhotoId,
+                name: String,
             }
         }
         let mappings = self.folders()?;
@@ -139,13 +144,24 @@ impl Catalog {
             mappings.into_iter().map(|f| (f.id, f.path)).collect();
         let rows: Vec<PhotoRow> = self.db.read(
             sql!(
-                "SELECT p.id,p.folder,p.filename,p.captured,p.rating,p.flag,p.label,p.format,p.copy_name,p.master_id, COALESCE((SELECT string_agg(k.name, ', ')
-                 FROM photo_keywords pk JOIN keywords k ON k.id=pk.keyword WHERE pk.photo=p.id AND k.name<>''),''),length(COALESCE(p.lightroom_develop,''))>0
+                "SELECT p.id,p.folder,p.filename,p.captured,p.rating,p.flag,p.label,p.format,p.copy_name,p.master_id,length(COALESCE(p.lightroom_develop,''))>0
                  FROM photos p
                  ORDER BY p.captured,p.filename,p.id"
             ),
             &[],
         )?;
+        let mut keywords: std::collections::HashMap<PhotoId, Vec<String>> =
+            std::collections::HashMap::new();
+        let names: Vec<KeywordRow> = self.db.read(
+            sql!(
+                "SELECT pk.photo, k.name FROM photo_keywords pk JOIN keywords k ON k.id=pk.keyword
+                 WHERE k.name<>'' ORDER BY pk.photo, k.name, k.id"
+            ),
+            &[],
+        )?;
+        for k in names {
+            keywords.entry(k.photo).or_default().push(k.name);
+        }
         Ok(rows
             .into_iter()
             .map(|r| Photo {
@@ -166,7 +182,7 @@ impl Catalog {
                 copy_name: r.copy_name,
                 master: r.master,
                 stack: stacks.get(&r.id).copied(),
-                keywords: r.keywords,
+                keywords: keywords.remove(&r.id).unwrap_or_default(),
                 has_lightroom_edits: r.has_lightroom_edits,
             })
             .collect())

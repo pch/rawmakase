@@ -210,7 +210,7 @@ fn a_catalog_too_large_to_archive_imports_without_its_archive() -> Result<()> {
     let photos = cat.photos()?;
     assert_eq!(photos.len(), 2);
     assert_eq!(photos[0].rating, 4);
-    assert_eq!(photos[0].keywords, "City");
+    assert_eq!(photos[0].keywords, ["City"]);
     // Opening it has nothing to backfill from.
     assert_eq!(cat.backfill_lightroom_history()?, 0);
     assert_eq!(cat.backfill_keyword_export()?, 0);
@@ -235,7 +235,7 @@ fn import_is_lossless_atomic_and_virtual_copies_are_independent() -> Result<()> 
     let photos = cat.photos()?;
     assert_eq!(photos.len(), 2);
     assert_eq!(photos[0].rating, 4);
-    assert_eq!(photos[0].keywords, "City");
+    assert_eq!(photos[0].keywords, ["City"]);
     assert_eq!(photos[1].copy_name, "B&W");
     assert_eq!(cat.collection_members(CollectionId(50))?.len(), 2);
     let local = dir.path().join("local");
@@ -830,7 +830,7 @@ fn virtual_copies_are_created_promoted_renamed_and_removed() -> Result<()> {
     assert_eq!(copy.master, Some(original.id));
     assert_eq!(copy.copy_name, "Copy 1");
     assert_eq!((copy.rating, copy.flag, copy.label.as_str()), (3, 1, "Red"));
-    assert_eq!(copy.keywords, "City");
+    assert_eq!(copy.keywords, ["City"]);
     let copy = photos.iter().find(|p| p.id == second).unwrap();
     assert_eq!(
         (copy.master, copy.copy_name.as_str()),
@@ -946,8 +946,11 @@ fn lightroom_import_copies_photo_info_from_apex_values() -> Result<()> {
     assert_eq!(info.iso_text().as_deref(), Some("ISO 1000"));
     // A quarter-turned photo shows taller than it is stored.
     assert_eq!(info.dimensions_text().as_deref(), Some("4000 × 6000"));
-    // A virtual copy has its master's info.
-    assert_eq!(cat.photo_info(PhotoId(41))?, Some(info));
+    // A virtual copy has its master's info, read one by one or all at once.
+    assert_eq!(cat.photo_info(PhotoId(41))?, Some(info.clone()));
+    let all = cat.photo_infos()?;
+    assert_eq!(all.get(&PhotoId(40)), Some(&info));
+    assert_eq!(all.get(&PhotoId(41)), Some(&info));
     Ok(())
 }
 #[test]
@@ -1266,7 +1269,10 @@ fn lightroom_root_keyword_is_left_out_and_holds_the_top_level() -> Result<()> {
     cat.add_keyword(&[PhotoId(40)], 59)?;
     assert_eq!(paths(&cat, PhotoId(40))?.len(), 2);
     let photo = cat.photos()?.into_iter().find(|p| p.id == PhotoId(40));
-    assert_eq!(photo.map(|p| p.keywords), Some("City, City".into()));
+    assert_eq!(
+        photo.map(|p| p.keywords),
+        Some(vec!["City".to_string(), "City".into()])
+    );
     Ok(())
 }
 #[test]

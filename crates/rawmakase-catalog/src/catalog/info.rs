@@ -71,6 +71,46 @@ impl Catalog {
             .map(|s| (s.id, (s.width / s.height) as f32))
             .collect())
     }
+    /// Every photo's info that is stored, read at once for the Library's
+    /// Metadata filter; a virtual copy has its master's.
+    pub fn photo_infos(&self) -> Result<std::collections::HashMap<PhotoId, PhotoInfo>> {
+        row! {
+            struct Info {
+                id: PhotoId,
+                camera: Option<String>,
+                lens: Option<String>,
+                focal: Option<f64>,
+                aperture: Option<f64>,
+                exposure: Option<f64>,
+                iso: Option<f64>,
+                width: Option<u32>,
+                height: Option<u32>,
+            }
+        }
+        let infos: Vec<Info> = self.db.read(
+            sql!(
+                "SELECT p.id, i.camera, i.lens, i.focal, i.aperture, i.exposure, i.iso,
+                        i.width, i.height
+                 FROM photos p JOIN photo_info i ON i.photo = COALESCE(p.master_id, p.id)"
+            ),
+            &[],
+        )?;
+        Ok(infos
+            .into_iter()
+            .map(|i| {
+                let info = PhotoInfo {
+                    camera: i.camera,
+                    lens: i.lens,
+                    focal: i.focal,
+                    aperture: i.aperture,
+                    exposure: i.exposure,
+                    iso: i.iso,
+                    dimensions: i.width.zip(i.height),
+                };
+                (i.id, info)
+            })
+            .collect())
+    }
     /// A photo's info; a virtual copy has its master's.
     pub fn photo_info(&self, id: PhotoId) -> Result<Option<PhotoInfo>> {
         read(&self.db, id)

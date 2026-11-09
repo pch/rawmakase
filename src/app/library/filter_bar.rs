@@ -1,15 +1,19 @@
 //! The filter bar above the grid: search, then Lightroom's Attribute
 //! filter. Flags and labels toggle in any combination, the rating is
 //! compared with the operator chosen from its menu, and Kind picks masters
-//! or virtual copies. Cmd+L turns it off and on; changing it turns it on.
+//! or virtual copies. Metadata picks cameras, lenses, shooting settings,
+//! file types and keywords, from buttons in the bar or the strip under it
+//! (`metadata_bar.rs`), as Lightroom's Metadata filter does. Cmd+L turns the bar off and on; changing
+//! it turns it on.
 use super::Library;
 use super::filter::{Kind, Label, RatingOp, toggle};
 use super::grid::filter_caption;
+use super::metadata_bar::bar_button;
 use crate::app::library::photo_metadata::{LABELS, flag_icon, label_color};
 use crate::app::shell::shortcuts::keys_text;
 use crate::app::ui::design::{Tone, inset, radius, size, space, text};
 use crate::app::ui::theme;
-use crate::app::ui::widgets::{COMPACT_SEGMENT_HEIGHT, segmented};
+use crate::app::ui::widgets::{COMPACT_SEGMENT_HEIGHT, menu_item, menu_separator, segmented};
 use eframe::egui::{self, Rect, Vec2};
 
 /// The height of the bar's toggles and stars.
@@ -27,7 +31,9 @@ impl Library {
                 // window is narrow.
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = space::XS;
-                    ui.spacing_mut().interact_size.y = TOGGLE_HEIGHT;
+                    // Every control is centred on one 22-point line: the
+                    // toggles are 20 points, the fields, menus and buttons 22.
+                    ui.spacing_mut().interact_size.y = size::CONTROL;
                     let compact = ui.available_width() < 640.;
                     let opacity = ui.opacity();
                     if !self.filters.enabled {
@@ -46,10 +52,15 @@ impl Library {
                         changed |= ui.horizontal(|ui| self.kind_filter(ui, compact)).inner;
                     }
                     ui.add_space(space::L);
+                    // Each Metadata button wraps on its own, the bar being
+                    // short of room for all of them before the others.
+                    changed |= self.metadata_buttons(ui, compact);
+                    ui.add_space(space::L);
                     ui.set_opacity(opacity);
                     changed |= self.filters_switch(ui);
                 });
             });
+        changed |= self.metadata_strip(ui);
         if changed {
             self.filter()
         }
@@ -70,7 +81,7 @@ impl Library {
                     .min_size(Vec2::new(0., COMPACT_SEGMENT_HEIGHT))
                     .vertical_align(egui::Align::Center),
             )
-            .on_hover_text("Search filename, keyword, capture date or label")
+            .on_hover_text("Search filename, keyword, capture date, label, camera or lens")
             .changed();
         self.turn_on(changed)
     }
@@ -104,10 +115,14 @@ impl Library {
         } else {
             filters.rating_op.symbol()
         };
-        ui.menu_button(egui::RichText::new(shown).size(text::LABEL), |ui| {
+        // A bar button, so it lines up with the bar's other controls.
+        let menu = bar_button(ui, shown, false).on_hover_text("How the rating compares");
+        egui::Popup::menu(&menu).show(|ui| {
+            ui.set_width(250.);
+            ui.spacing_mut().item_spacing.y = 0.;
             for op in RatingOp::ALL {
                 let on = !unrated && filters.rating_op == op;
-                if ui.selectable_label(on, op.name()).clicked() {
+                if menu_item(ui, op.name(), "", true, on) {
                     filters.rating_op = op;
                     if unrated {
                         filters.rating = None;
@@ -115,18 +130,13 @@ impl Library {
                     changed = true;
                 }
             }
-            ui.separator();
-            if ui
-                .selectable_label(unrated, "Unrated photos only")
-                .clicked()
-            {
+            menu_separator(ui);
+            if menu_item(ui, "Unrated photos only", "", true, unrated) {
                 filters.rating = Some(0);
                 filters.rating_op = RatingOp::Exactly;
                 changed = true;
             }
-        })
-        .response
-        .on_hover_text("How the rating compares");
+        });
         for star in 1..=5 {
             let response = star_toggle(ui, filters.rating.is_some_and(|r| r >= star));
             let hover = format!(
@@ -201,11 +211,9 @@ impl Library {
     }
     /// Clear when the bar applies; when Cmd+L turned it off, a way back on.
     fn filters_switch(&mut self, ui: &mut egui::Ui) -> bool {
-        let palette = theme::palette(ui.ctx());
         let toggle_keys = keys_text("Cmd+L");
         if !self.filters.enabled {
-            let clicked = ui
-                .add(egui::Button::new(filter_caption(&palette, "Filters Off")).small())
+            let clicked = bar_button(ui, "Filters Off", true)
                 .on_hover_text(format!("Turn the filters back on ({toggle_keys})"))
                 .clicked();
             if clicked {
@@ -216,12 +224,7 @@ impl Library {
         if !self.filters.bar_set() {
             return false;
         }
-        let clicked = ui
-            .add(
-                egui::Button::new(filter_caption(&palette, "Clear"))
-                    .small()
-                    .frame(false),
-            )
+        let clicked = bar_button(ui, "Clear", false)
             .on_hover_text(format!(
                 "Clear every filter in the bar · {toggle_keys} turns them off for now"
             ))
