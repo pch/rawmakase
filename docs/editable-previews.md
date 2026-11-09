@@ -270,6 +270,28 @@ ILCE-7RM4 the most), two at once at 2.8 GB and three at 3.0 GB. The X-Trans
 decode is the one step that hardly uses more threads (4.9 s on two, 4.6 on
 three); builds side by side would help it most, on a computer with spare cores.
 
+Measured again 2026-11-08 on an Apple M5 Pro (6 performance and 12 efficiency
+cores, 48 GB, macOS), the same ten RAWs, the median of three runs of each build
+taken in turn. The Bayer demosaic, the black subtraction before it and Auto CA's
+coarse search were made faster without changing a value: away from the
+borders the demosaic reads the samples its border search would, in the same
+order (a unit test compares the two on every pixel), and every preview's pixels
+and Auto CA came out the same bit for bit (`editable_preview::pace`'s digest).
+On two threads the ten took 12.3 s instead of 15.1 (−18%), on every core but
+one 3.6 s instead of 4.2 (−14%), with about 20% less CPU time. Three side by
+side on that pool took 3.3 s, 8% less than one at a time, for about 0.5 GB
+more, so photos are still built one at a time.
+
+Set aside: building from the half-size decode (`Decode::Half`), with Auto CA
+measured on it. On two threads it took 0.35 of the time (the Bayer photos 0.2–0.4,
+the X-Trans one 0.8, as its half size is the full demosaic reduced), but its
+previews differed from those built from the full decode by a mean of 0.4–7.6
+ΔE2000 and, over 16 px blocks, a 99th percentile of 1.1–3.6, against the bar of
+0.35 and 1 that Smaller was held to, and rendered further from the original
+than today's do. A 2 × 2 block's red and blue sit half a sensor pixel from its
+green, and nothing smooths the detail before the reduction; a half-size decode
+that kept up would be a demosaic of its own to measure.
+
 ### Stage 5: edit offline (app, catalog, interop)
 
 - `DevelopSource` names the original or its editable preview; `develop_refusal`

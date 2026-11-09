@@ -6,6 +6,7 @@ use super::{Cfa, Header, Sensor};
 use anyhow::{Result, ensure};
 use rawmakase_cancel::Cancel;
 use rawmakase_raw::RawInfo;
+use rayon::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -206,7 +207,7 @@ impl Own {
 /// (raw − black) / (white − black), negative below black (noise is clipped only
 /// after demosaicing, where interpolated samples carry less of it), each sample's black that of
 /// channel `channel(y, x)` plus its position's in the black pattern.
-fn visible(s: &rawmakase_raw::Sensor, channel: impl Fn(usize, usize) -> usize) -> Vec<f32> {
+fn visible(s: &rawmakase_raw::Sensor, channel: impl Fn(usize, usize) -> usize + Sync) -> Vec<f32> {
     let [left, top, w, h] = s.area.map(|v| v as usize);
     let (rows, cols, ref values) = s.black_pattern;
     let pattern_black = |y: usize, x: usize| {
@@ -221,14 +222,16 @@ fn visible(s: &rawmakase_raw::Sensor, channel: impl Fn(usize, usize) -> usize) -
     };
     let white = s.white as f32;
     let mut data = vec![0f32; w * h];
-    for y in 0..h {
-        let src = &s.data[(y + top) * s.width as usize + left..][..w];
-        for (x, (dst, &v)) in data[y * w..(y + 1) * w].iter_mut().zip(src).enumerate() {
-            let mut black = s.black[channel(y, x)] as f32;
-            black += pattern_black(y, x) as f32;
-            *dst = (f32::from(v) - black) / (white - black).max(1.);
-        }
-    }
+    data.par_chunks_mut(w.max(1))
+        .enumerate()
+        .for_each(|(y, row)| {
+            let src = &s.data[(y + top) * s.width as usize + left..][..w];
+            for (x, (dst, &v)) in row.iter_mut().zip(src).enumerate() {
+                let mut black = s.black[channel(y, x)] as f32;
+                black += pattern_black(y, x) as f32;
+                *dst = (f32::from(v) - black) / (white - black).max(1.);
+            }
+        });
     data
 }
 

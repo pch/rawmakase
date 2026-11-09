@@ -168,8 +168,9 @@ fn measure(pixels: &[[f32; 3]], w: usize, h: usize, half: f32, centre: [f32; 2])
                 size: tile,
                 u,
             };
-            let red = window.shift(0, search)?;
-            let blue = window.shift(2, search)?;
+            let [red_costs, blue_costs] = window.costs(search);
+            let red = window.shift(0, &red_costs, search)?;
+            let blue = window.shift(2, &blue_costs, search)?;
             Some(Shift {
                 r: rho / half,
                 rho,
@@ -208,34 +209,46 @@ impl Window<'_> {
         (self.y0..self.y0 + self.size)
             .flat_map(move |y| (self.x0..self.x0 + self.size).map(move |x| (x, y)))
     }
-    /// Least squares of channel ≈ a·green(s) + b: the fraction of the channel's
-    /// variance left unexplained.
-    fn residual(&self, c: usize, s: f32) -> f32 {
+    /// Red's and blue's [`residual`](Self::residual) at each whole shift from
+    /// `-search` to `search`.
+    fn costs(&self, search: i32) -> [Vec<f32>; 2] {
+        let (red, blue) = (-search..=search)
+            .map(|s| self.residual(s as f32))
+            .map(|[r, b]| (r, b))
+            .unzip();
+        [red, blue]
+    }
+    /// For red and blue, least squares of channel ≈ a·green(s) + b: the fraction
+    /// of the channel's variance left unexplained. Both read the same greens.
+    fn residual(&self, s: f32) -> [f32; 2] {
         let n = (self.size * self.size) as f32;
-        let (mut sg, mut sv, mut sgg, mut svv, mut sgv) = (0f32, 0f32, 0f32, 0f32, 0f32);
+        let (mut sg, mut sgg) = (0f32, 0f32);
+        let (mut sv, mut svv, mut sgv) = ([0f32; 2], [0f32; 2], [0f32; 2]);
         for (x, y) in self.points() {
             let g = self.green(x, y, s);
-            let v = self.pixels[y * self.w + x][c];
+            let p = self.pixels[y * self.w + x];
             sg += g;
-            sv += v;
             sgg += g * g;
-            svv += v * v;
-            sgv += g * v;
+            for (k, v) in [p[0], p[2]].into_iter().enumerate() {
+                sv[k] += v;
+                svv[k] += v * v;
+                sgv[k] += g * v;
+            }
         }
-        let vg = sgg - sg * sg / n;
-        let vv = svv - sv * sv / n;
-        let cov = sgv - sg * sv / n;
-        if vg <= 0. || vv <= 0. {
-            return 1.;
-        }
-        1. - cov * cov / (vg * vv)
+        std::array::from_fn(|k| {
+            let vg = sgg - sg * sg / n;
+            let vv = svv[k] - sv[k] * sv[k] / n;
+            let cov = sgv[k] - sg * sv[k] / n;
+            if vg <= 0. || vv <= 0. {
+                return 1.;
+            }
+            1. - cov * cov / (vg * vv)
+        })
     }
     /// Where channel `c` is displaced along the radius relative to green, in pixels,
-    /// and the measurement's weight, or `None` when the tile gives no clear answer.
-    fn shift(&self, c: usize, search: i32) -> Option<(f32, f32)> {
-        let costs: Vec<f32> = (-search..=search)
-            .map(|s| self.residual(c, s as f32))
-            .collect();
+    /// and the measurement's weight, or `None` when the tile gives no clear answer;
+    /// `costs` are its residuals at each whole shift ([`costs`](Self::costs)).
+    fn shift(&self, c: usize, costs: &[f32], search: i32) -> Option<(f32, f32)> {
         let best = (0..costs.len()).min_by(|a, b| costs[*a].total_cmp(&costs[*b]))?;
         if best == 0 || best == costs.len() - 1 {
             return None;
