@@ -174,16 +174,16 @@ which the CPU preview uses too). The HDR tone curve is sampled every 1/32 stop o
 log2 scene value from 2^-16 to 2^12, linear below and a power above; Whites' gains
 are read as the CPU reads them.
 
-It covers what `pixel_params::supported_hdr` accepts: a master that renders without
-Texture (Exposure, Whites, Blacks, white balance, Contrast, Levels and the tone
-curves, the colour stage, sharpening and what the SDR port samples), through any
-profile and look whose HDR rendering is measured (`CameraProfile::hdr_tone`).
-Texture, an HDR file's light, AI Denoise, and anything the SDR port leaves to the
-CPU (`quality::HdrNotOnGpu`) give no GPU frame, and the CPU master is shown instead. Measured on an Apple M1 Pro
+It covers what `pixel_params::supported_hdr` accepts: a master that renders
+(Exposure, Whites, Blacks, Shadows, white balance, Contrast, Levels and the tone
+curves, the colour stage, Texture, sharpening and what the SDR port samples), through
+any profile and look whose HDR rendering is measured (`CameraProfile::hdr_tone`).
+An HDR file's light, AI Denoise, and anything the SDR port leaves to the CPU
+(`quality::HdrNotOnGpu`) give no GPU frame, and the CPU master is shown instead. Measured on an Apple M1 Pro
 against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
 "GPU matches CPU" workflow), with ordinary and HDR profiles, 3D tables, looks whose
 curves end at white and below it, positive and negative Contrast, Levels, point and
-parametric curves, Saturation, Vibrance, the colour mixer and black & white (neutral
+parametric curves, Saturation, Vibrance, the colour mixer, black & white and Texture (neutral
 colours, whose hue is undefined, left out of the colour stage's comparison): the per-pixel stage agrees to 2×10^-4 of the value,
 the presented texture to 1.3×10^-3 (half-float steps), at full size and in a
 region, at headrooms 4 and 40, sharpened and not.

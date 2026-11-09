@@ -2040,6 +2040,22 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
         },
         bands,
         mono,
+        // Texture: its image made on the CPU, as for the SDR rendition, then sampled on
+        // the device (it changes this fixture's master by up to 0.8 of a value).
+        Recipe {
+            effects: crate::model::effects::Effects {
+                texture: 0.5,
+                ..base.effects.clone()
+            },
+            ..base.clone()
+        },
+        Recipe {
+            effects: crate::model::effects::Effects {
+                texture: -0.6,
+                ..base.effects.clone()
+            },
+            ..base.clone()
+        },
         Recipe {
             contrast: 0.45,
             ..base.clone()
@@ -2308,10 +2324,10 @@ fn presented_hdr_previews_match_the_cpu_master() -> Result<()> {
     // A master the port doesn't render, and an SDR edit, are left to the CPU.
     let mut sdr = recipes[0].clone();
     sdr.hdr.enabled = false;
-    // Texture's image is made on the CPU, which the port leaves the master to.
-    let mut textured = recipes[0].clone();
-    textured.effects.texture = 0.3;
-    for recipe in [sdr, textured] {
+    // AI Denoise's master renders on the CPU, from the full photo's result.
+    let mut denoised = recipes[0].clone();
+    denoised.ai_denoise.enabled = true;
+    for recipe in [sdr, denoised] {
         let none = renderer.render_hdr_to(
             &image,
             &recipe,
