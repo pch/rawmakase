@@ -30,6 +30,11 @@ impl Library {
     fn ensure_quick(&mut self) -> Result<crate::catalog::CollectionId> {
         self.session.ensure_quick_collection()
     }
+    /// Whether `id` is in the Quick Collection, for the keyboard shortcut pins.
+    #[cfg(test)]
+    pub(in crate::app) fn in_quick_collection(&self, id: PhotoId) -> bool {
+        self.in_quick(id)
+    }
     pub(super) fn in_quick(&self, id: PhotoId) -> bool {
         self.quick()
             .and_then(|q| self.session.collection_photos().get(&q))

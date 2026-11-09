@@ -294,6 +294,26 @@ impl FileOps {
     }
     /// Whether a dialog of a file operation with a field or a list is
     /// open: keys go to it, not to the photos behind.
+    /// The operation's state by name, with its verb where it has one, for the
+    /// keyboard shortcut pins to tell Delete from Remove or Rename.
+    #[cfg(test)]
+    pub(in crate::app) fn state_name(&self) -> String {
+        match &self.state {
+            State::Idle => "Idle".into(),
+            State::Choosing(_) => "Choosing".into(),
+            State::Naming(_) => "Naming".into(),
+            State::Ordering { .. } => "Ordering".into(),
+            State::Renaming(_) => "Renaming".into(),
+            State::RenamingFolder(_) => "RenamingFolder".into(),
+            State::ChoosingParent(_) => "ChoosingParent".into(),
+            State::Planning { verb, .. } => format!("Planning {verb:?}"),
+            State::Confirming { verb, .. } => format!("Confirming {verb:?}"),
+            State::Running { verb, .. } => format!("Running {verb:?}"),
+            State::Recovering { .. } => "Recovering".into(),
+            State::Unfinished { .. } => "Unfinished".into(),
+            State::Resolving { .. } => "Resolving".into(),
+        }
+    }
     pub(in crate::app) fn dialog_open(&self) -> bool {
         matches!(
             self.state,

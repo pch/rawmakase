@@ -2332,3 +2332,15 @@ mod editor_tests;
 #[cfg(test)]
 #[path = "keys_editor_tests.rs"]
 mod keys_editor_tests;
+
+#[cfg(test)]
+#[path = "keymap_pins_harness.rs"]
+mod keymap_pins_harness;
+
+#[cfg(test)]
+#[path = "keymap_pins_editor_tests.rs"]
+mod keymap_pins_editor_tests;
+
+#[cfg(test)]
+#[path = "keymap_golden_editor_tests.rs"]
+mod keymap_golden_editor_tests;

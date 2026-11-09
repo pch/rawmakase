@@ -56,6 +56,16 @@ impl Library {
     }
     /// C: the active photo as the select, beside the next photo selected
     /// with it, or else the next one shown.
+    /// Compare's select and candidate, and which is active, for the keyboard
+    /// shortcut pins.
+    #[cfg(test)]
+    pub(in crate::app) fn compared(&self) -> (Option<PhotoId>, Option<PhotoId>, &'static str) {
+        (
+            self.compare.select,
+            self.compare.candidate,
+            self.compare.active.name(),
+        )
+    }
     pub(crate) fn open_compare(&mut self) {
         let Some(select) = self
             .selection

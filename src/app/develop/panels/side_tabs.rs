@@ -117,6 +117,12 @@ impl Editor {
     }
     /// Whether the tab panel shows its tab: not folded, and with room beside
     /// the photo as last laid out, or asked for in a narrow window.
+    /// Whether Develop's tab panel shows, peeking into a narrow window too, for
+    /// the keyboard shortcut pins.
+    #[cfg(test)]
+    pub(in crate::app) fn develop_tabs_shown(&self) -> bool {
+        self.develop_tabs_open()
+    }
     fn develop_tabs_open(&self) -> bool {
         let (room, peek) = self.context.data(|d| {
             (
