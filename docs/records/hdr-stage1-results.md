@@ -250,6 +250,40 @@ creative looks), looks with their own sliders or settings (Adobe Vivid and Adobe
 Landscape carry Clarity, Highlights and Shadows), Black & White looks, fitted Camera
 Looks (no Camera Raw counterpart) and Profile Amounts other than 100%.
 
+### HDR files
+
+Measured with Camera Raw 18.7 (Process Version 15.4) on a synthetic 16-bit PQ TIFF in
+BT.2020 primaries, with a CICP-tagged ICC profile (9/16/0/1): 25 greys from 0.01 to
+40.96 in half stops and four colours, as 64-pixel patches on a 0.18 surround,
+captured as P3 PQ. Settings reach Camera Raw only through Open As: an ordinary open
+of a TIFF skips Camera Raw, and Camera Raw ignores the file's own and a sidecar's
+XMP. Each capture's settings were checked in the XMP Camera Raw wrote. Probe files
+and captures are local.
+
+| Setting (HDR on, limit 6 unless stated) | Camera Raw's render, against the file's light |
+| --- | --- |
+| None | The light, ×1.0028 at every level and on every channel (×1.0002 to ×1.0023 on other files) |
+| Limit 2.3 | Each channel clipped at 2^2.3; limit 6 clips only at PQ's 49.26 |
+| Exposure ±1, +2 | Gains of ±1 and +2 stops at every level and colour, below the clip |
+| Temp +20 (Custom; As Shot ignores it) | A gain per channel at every level: ProPhoto +0.459, +0.379, +0.003 stop |
+| Whites −50 | −0.006 stop at 0.01, −0.25 at 0.9, −0.46 at 10, −0.50 at 41; flat fields agree |
+| Blacks −50 | Crushes below 0.03 (−0.94 stop at 0.04), nothing above 1 |
+| Contrast +50 | −1.05 stop at 0.01, a pivot near 0.11, +0.2 to +0.27 from 0.16 to 15, +0.10 at 41 |
+| Highlights −50, Shadows +50, Clarity +50 | Local: no change on flat fields at 2, 8 and 30 |
+| Saturation +50 | Greys unchanged, chroma ×1.3 to ×1.5 |
+| HDR off | Greys as they are to about 0.23, then rolled off by the content (0.9 → 0.66, 41 → 0.9997) |
+
+A perfectly flat file below white decodes as about twice its light squared in Camera
+Raw (0.1 → 0.02); one bright spot restores a linear decode, so the flat-field
+controls at 0.02, 0.1 and 0.5 are left out.
+
+This is how the raw HDR master renders a scene through a linear profile
+([above](#hdr-rendering)): the scene itself from 0.5 up and Exposure as a gain. The
+raw HDR Whites −50, measured on raw ramps through a linear profile, gives the file's
+greys within 0.005 stop up to 10 and within 0.021 stop above (the raw ramps end at
+scene 12). Temp +20's gains are those of the rendered-file white balance measured on
+Lightroom's SDR renders (`rendered_gains`: +0.458, +0.378, +0.003 stop) to 0.002 stop.
+
 ### Validation
 
 `scripts/corpus/hdr_validate.py` renders each HDR job of the family with

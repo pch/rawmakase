@@ -841,6 +841,17 @@ impl CameraProfile {
             dynamic_range: DynamicRange::Standard,
         }
     }
+    /// This profile as an HDR file's master renders it: with a linear tone curve, which
+    /// renders in HDR as the identity ([`hdr_tone::HdrTone::Identity`]), so the file's
+    /// light is its scene. Camera Raw 18.7 renders an HDR PQ file at its own settings
+    /// as its light, and its Exposure and Temp as gains of the light at every level
+    /// (docs/records/hdr-stage1-results.md#hdr-files), as a linear curve renders a
+    /// scene. A look keeps its own table and curve.
+    pub fn for_hdr_light(&self) -> Self {
+        let mut p = self.clone();
+        p.tone = vec![[0., 0.], [1., 1.]];
+        p
+    }
     pub fn is_embedded(&self) -> bool {
         self.name == EMBEDDED && self.color1.is_none() && self.look.is_none()
     }

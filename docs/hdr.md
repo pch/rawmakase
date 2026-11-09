@@ -149,9 +149,24 @@ A new HDR file starts with HDR on (`Recipe::for_new_rendered`), at the fewest wh
 stops of limit whose roll-off starts at or above its peak
 (`model::hdr::limit_containing`). A saved edit keeps its own settings; one that says
 nothing of HDR, a Lightroom edit made before, reads HDR off, as it did when HDR
-files didn't open. Its master is its light, with Exposure (a gain), crop,
-straighten, Rotate and Flip, resized in linear light (negative light clamps to 0
-there) and then limited. Anything else refuses the master by name
+files didn't open.
+
+Its master renders through the same stages as a raw's HDR master
+(`develop::render_hdr`), from the HDR pseudo-scene of its light
+(`develop::rendered::scene_from_light`), through the Embedded profile with a linear
+curve (`CameraProfile::for_hdr_light`), which renders in HDR as the identity. The
+pseudo-scene inverts what those stages render a scene as at a new file's settings,
+DNG RGBTone fashion: the scene tone stage's HDR white curve at Whites 0, the identity
+from 0.5 up and within 0.0015 stop of it below. At the file's own settings the
+master is its light again, exactly from 0.5 up and within 0.0001 stop below, and
+within 1e-5 of a pixel's brightest channel, the precision of the colour matrices
+the stages convert through, as a raw master's do; negative channels render as 0, as
+no HDR master renders them. An edit without a profile renders with the Embedded
+one. Exposure is a gain of the
+light, applied before the pseudo-scene. That is how Camera Raw 18.7 renders a PQ
+TIFF it opens as an HDR edit: its light at the file's settings, and Exposure ±1 and
++2 as gains of it at every level ([HDR files](records/hdr-stage1-results.md#hdr-files)). The master takes crop, straighten, Rotate and Flip, sharpening and
+resizing as a raw's does, and then the limit. Anything else refuses the master by name
 (`model::hdr::check_hdr_file`); the edit keeps it, and its SDR rendition renders
 it.
 

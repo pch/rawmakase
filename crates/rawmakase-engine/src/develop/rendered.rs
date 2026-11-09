@@ -6,6 +6,12 @@
 //! through `F⁻¹` once, when it opens, and then render through the raw path like any
 //! scene; at default settings that path is `F`, so the file comes back as it is
 //! (docs/scene-tone-stage.md, rendered files).
+//!
+//! An HDR file's master renders from an HDR pseudo-scene of its light in the same way:
+//! [`scene_from_light`] inverts `F_hdr`, what the HDR master renders a scene as at a
+//! new file's settings, so that master renders the light again. `F_hdr` is the
+//! identity from 0.5 up, as Camera Raw renders an HDR file's light as a scene through
+//! a linear curve (docs/records/hdr-stage4-design.md).
 use crate::camera_data::CameraImage;
 use crate::develop::scene_tone::{GlobalTone, rgb_tone};
 use rayon::prelude::*;
@@ -85,6 +91,78 @@ pub fn to_scene(mut image: CameraImage) -> CameraImage {
     image
 }
 
+/// log2 scene values `F_hdr` is tabulated over below [`HDR_IDENTITY_FROM`], and its
+/// samples: 512 per stop.
+const HDR_FIRST: f32 = -24.;
+const HDR_SAMPLES: usize = 11777;
+/// Light from here up is its own scene: `F_hdr` is the identity there.
+const HDR_IDENTITY_FROM: f32 = 0.5;
+
+/// `F_hdr`, an HDR file's default rendering on one value: what its HDR master renders
+/// a gray of scene value `s` as at a new file's settings. That is the scene tone
+/// stage's HDR white curve at Whites 0, the default curve's toe below scene 0.5 and the
+/// identity above, then the Embedded profile's curve, linear for an HDR file
+/// ([`crate::camera_profiles::CameraProfile::for_hdr_light`]), which renders in HDR as
+/// the identity. The toe is within 0.0015 stop of the identity.
+pub(crate) fn hdr_default_rendering(s: f32) -> f32 {
+    static WHITE: OnceLock<GlobalTone> = OnceLock::new();
+    WHITE
+        .get_or_init(|| GlobalTone::hdr(0., 0., -12., -12., false))
+        .white_curve(s)
+}
+
+fn hdr_log_at(k: usize) -> f32 {
+    HDR_FIRST + (HDR_IDENTITY_FROM.log2() - HDR_FIRST) * k as f32 / (HDR_SAMPLES - 1) as f32
+}
+
+/// `F_hdr` in log2 at log2 scene values from `HDR_FIRST` to 0.5, made non-decreasing.
+fn hdr_table() -> &'static [f32] {
+    static TABLE: OnceLock<Vec<f32>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut previous = f32::NEG_INFINITY;
+        (0..HDR_SAMPLES)
+            .map(|k| {
+                let y = hdr_default_rendering(hdr_log_at(k).exp2()).max(f32::MIN_POSITIVE);
+                previous = previous.max(y.log2());
+                previous
+            })
+            .collect()
+    })
+}
+
+/// `F_hdr⁻¹` on one value of light (1 = graphics white): the light itself from 0.5 up;
+/// below, the smallest scene value `F_hdr` takes to `y`, interpolated in log2 on both
+/// axes, and linear below the table.
+fn hdr_scene_value(y: f32) -> f32 {
+    if y.is_nan() || y <= 0. {
+        return 0.;
+    }
+    if y >= HDR_IDENTITY_FROM {
+        return y;
+    }
+    let outputs = hdr_table();
+    let ly = y.log2();
+    let k = outputs.partition_point(|&v| v < ly);
+    if k == 0 {
+        return (HDR_FIRST + ly - outputs[0]).exp2();
+    }
+    if k == outputs.len() {
+        return HDR_IDENTITY_FROM;
+    }
+    let (y0, y1) = (outputs[k - 1], outputs[k]);
+    let t = if y1 > y0 { (ly - y0) / (y1 - y0) } else { 1. };
+    (hdr_log_at(k - 1) + (hdr_log_at(k) - hdr_log_at(k - 1)) * t).exp2()
+}
+
+/// The pseudo-scene of one pixel of an HDR file's light (linear ProPhoto, 1 = graphics
+/// white): `F_hdr⁻¹` DNG RGBTone fashion, so that an HDR master of it at the file's
+/// own settings is the light again: exactly from 0.5 up, within 0.0001 stop below. Negative channels are taken as 0, as an HDR
+/// master never renders them; values that are not finite as 0.
+pub fn scene_from_light(p: [f32; 3]) -> [f32; 3] {
+    let p = p.map(|v| if v.is_finite() { v.max(0.) } else { 0. });
+    rgb_tone(p, hdr_scene_value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,6 +179,29 @@ mod tests {
             let back = default_rendering(scene_value(y));
             assert!((back - y).abs() <= 1e-4_f32.max(y * 1e-3), "{y}: {back}");
         }
+    }
+
+    /// `F_hdr(F_hdr⁻¹(y)) = y`: within 0.0001 stop from deep shadows to 0.5, and exactly
+    /// above, as far as light goes.
+    #[test]
+    fn the_hdr_default_rendering_of_the_hdr_pseudo_scene_is_the_light() {
+        let mut worst = 0f32;
+        for k in 0..=8192 {
+            let y = (-16. + 15. * k as f32 / 8192.).exp2();
+            let back = hdr_default_rendering(hdr_scene_value(y));
+            worst = worst.max((back / y).log2().abs());
+        }
+        assert!(worst < 1e-4, "{worst} stop");
+        for y in [0.5, 0.5001, 1., 7.3, 49.26, 1e4, f32::MAX] {
+            assert_eq!(hdr_default_rendering(hdr_scene_value(y)), y, "{y}");
+        }
+        let mut previous = 0.;
+        for k in 0..=65535 {
+            let s = hdr_scene_value(k as f32 / 1024.);
+            assert!(s >= previous, "{k}: {s} < {previous}");
+            previous = s;
+        }
+        assert_eq!(scene_from_light([-1., f32::NAN, 0.]), [0.; 3]);
     }
 
     #[test]
