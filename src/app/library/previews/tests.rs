@@ -118,14 +118,18 @@ fn worker_persists_previews_and_reuses_them_when_original_is_offline() -> anyhow
     let source = directory.path().join("photo.png");
     image::RgbImage::new(720, 480).save(&source)?;
     let cache_path = directory.path().join("previews.sqlite3");
-    let (tx, rx, _) = spawn(cache_path.clone(), egui::Context::default());
+    let (tx, rx, _) = spawn(
+        cache_path.clone(),
+        egui::Context::default(),
+        ShownFiles::default(),
+    );
     tx.try_send(source.clone())?;
     let result = rx.recv_timeout(Duration::from_secs(10))?;
     assert_eq!(result.image.unwrap().dimensions(), (640, 427));
     assert!(result.cache_error.is_none());
     // Reopen through another worker: a memory-only result cannot pass this.
     std::fs::remove_file(&source)?;
-    let (tx, rx, _) = spawn(cache_path, egui::Context::default());
+    let (tx, rx, _) = spawn(cache_path, egui::Context::default(), ShownFiles::default());
     tx.try_send(source.clone())?;
     let result = rx.recv_timeout(Duration::from_secs(10))?;
     assert_eq!(result.path, source);
@@ -149,6 +153,7 @@ fn a_panicking_preview_is_unavailable_and_the_next_one_is_made() -> anyhow::Resu
         directory.path().join("previews.sqlite3"),
         egui::Context::default(),
         thumbnail,
+        ShownFiles::default(),
     );
     tx.try_send(panics.clone())?;
     tx.try_send(works.clone())?;
@@ -471,7 +476,11 @@ fn cache_failure_does_not_stop_previews_or_completion() -> anyhow::Result<()> {
     let source = directory.path().join("photo.png");
     image::RgbImage::new(16, 16).save(&source)?;
     // A directory cannot be opened as a SQLite database.
-    let (tx, rx, _) = spawn(directory.path().into(), egui::Context::default());
+    let (tx, rx, _) = spawn(
+        directory.path().into(),
+        egui::Context::default(),
+        ShownFiles::default(),
+    );
     let mut progress = Progress::default();
     for path in [source.clone(), directory.path().join("missing.ARW")] {
         tx.try_send(path)?;
@@ -696,6 +705,7 @@ fn thumbnails_are_made_side_by_side() -> anyhow::Result<()> {
         directory.path().join("previews.sqlite3"),
         egui::Context::default(),
         thumbnail,
+        ShownFiles::default(),
     );
     for name in ["1.png", "2.png"] {
         tx.try_send(edited_png(directory.path(), name)?)?;
@@ -752,5 +762,53 @@ fn closing_cancels_the_edited_preview_under_way() -> anyhow::Result<()> {
         Ok(EditResult::Skipped(PhotoId(1), 0))
     ));
     assert!(rx.try_recv().is_err());
+    Ok(())
+}
+
+/// A thumbnail asked for and no longer shown when a worker comes to it (the
+/// grid moved on to another folder) is skipped, not made and not failed; one
+/// still shown is made. Before the views have said what they show, every one
+/// is made.
+#[test]
+fn thumbnails_no_longer_shown_are_skipped() -> anyhow::Result<()> {
+    static MADE: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+    fn thumbnail(path: &Path) -> anyhow::Result<image::RgbImage> {
+        MADE.lock().unwrap().push(path.to_path_buf());
+        Ok(image::open(path)?.to_rgb8())
+    }
+    let directory = tempfile::tempdir()?;
+    let [left, shown, first] = ["left.png", "shown.png", "first.png"]
+        .map(|name| edited_png(directory.path(), name))
+        .map(Result::unwrap);
+    let wanted = ShownFiles::default();
+    let (tx, rx, _) = spawn_with(
+        directory.path().join("previews.sqlite3"),
+        egui::Context::default(),
+        thumbnail,
+        wanted.clone(),
+    );
+    // Nothing said yet: made.
+    tx.try_send(first)?;
+    let made = rx.recv_timeout(Duration::from_secs(30))?;
+    assert!(made.image.is_some() && !made.skipped);
+    *wanted.lock().unwrap() = Some([shown.clone()].into_iter().collect());
+    tx.try_send(left.clone())?;
+    tx.try_send(shown.clone())?;
+    let mut results = [
+        rx.recv_timeout(Duration::from_secs(30))?,
+        rx.recv_timeout(Duration::from_secs(30))?,
+    ];
+    results.sort_by(|a, b| a.path.cmp(&b.path));
+    let [skipped, made] = results;
+    assert_eq!(skipped.path, left);
+    assert!(skipped.skipped && skipped.image.is_none());
+    assert_eq!(made.path, shown);
+    assert!(made.image.is_some() && !made.skipped);
+    assert!(!MADE.lock().unwrap().contains(&left));
+    // A skipped thumbnail is neither done nor failed for the progress line.
+    let mut progress = Progress::default();
+    progress.queued();
+    progress.finish(&skipped);
+    assert_eq!(progress.failed, 0);
     Ok(())
 }

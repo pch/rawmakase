@@ -3,9 +3,10 @@
 use crate::catalog::preview_cache::{PreviewCache, Stamp};
 use eframe::egui;
 use std::{
+    collections::HashSet,
     path::{Path, PathBuf},
     sync::{
-        Mutex,
+        Arc, Mutex,
         mpsc::{self, Receiver, SyncSender},
     },
     thread::JoinHandle,
@@ -15,6 +16,23 @@ pub(in crate::app::library) struct PreviewResult {
     pub path: PathBuf,
     pub image: Option<image::RgbImage>,
     pub cache_error: Option<String>,
+    /// No longer shown when a worker came to it: not made, and asked for again
+    /// once it is shown.
+    pub skipped: bool,
+}
+
+/// The files the views showed in the last frame, which the thumbnail workers
+/// make; `None` until the views have said, when every one asked for is made.
+pub(in crate::app::library) type ShownFiles = Arc<Mutex<Option<HashSet<PathBuf>>>>;
+
+/// Whether a worker makes the thumbnail of `path`: shown in the last frame,
+/// or nothing said yet.
+fn wanted(shown: &ShownFiles, path: &Path) -> bool {
+    shown
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .is_none_or(|shown| shown.contains(path))
 }
 
 /// A preview worker: where its jobs go, where its results come back, and its thread.
@@ -27,8 +45,9 @@ pub(in crate::app::library) type Worker<J, R> = (J, Receiver<R>, JoinHandle<()>)
 pub(in crate::app::library) fn spawn(
     cache_path: PathBuf,
     ctx: egui::Context,
+    shown: ShownFiles,
 ) -> Worker<SyncSender<PathBuf>, PreviewResult> {
-    spawn_with(cache_path, ctx, super::super::thumbnail)
+    spawn_with(cache_path, ctx, super::super::thumbnail, shown)
 }
 /// Thumbnails made side by side: enough to keep a disk and a few cores busy,
 /// leaving the rest to the edited previews and Develop.
@@ -39,6 +58,7 @@ pub(super) fn spawn_with(
     cache_path: PathBuf,
     ctx: egui::Context,
     thumbnail: fn(&Path) -> anyhow::Result<image::RgbImage>,
+    shown: ShownFiles,
 ) -> Worker<SyncSender<PathBuf>, PreviewResult> {
     let (tx, rx) = mpsc::sync_channel::<PathBuf>(24);
     let (result_tx, result_rx) = mpsc::sync_channel(24);
@@ -63,6 +83,23 @@ pub(super) fn spawn_with(
                 else {
                     break;
                 };
+                // Asked for in a folder the grid has left: not made, so the
+                // one shown now isn't kept waiting behind it.
+                if !wanted(&shown, &path) {
+                    let skipped = PreviewResult {
+                        path,
+                        image: None,
+                        cache_error: None,
+                        skipped: true,
+                    };
+                    if result_tx.send(skipped).is_err() {
+                        break;
+                    }
+                    // The UI clears it from what is pending and asks again
+                    // once it is shown, which takes a frame.
+                    ctx.request_repaint();
+                    continue;
+                }
                 let (cache, open_error) = opened.get_or_insert_with(open);
                 let prepared = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let mut cache_error = open_error.clone();
@@ -96,6 +133,7 @@ pub(super) fn spawn_with(
                         path,
                         image,
                         cache_error,
+                        skipped: false,
                     })
                     .is_err()
                 {
