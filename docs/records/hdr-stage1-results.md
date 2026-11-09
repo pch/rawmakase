@@ -821,6 +821,9 @@ the SDR photo gate were not run: they score these same SDR renders.
   photo shows, and the CPU master held to the display's headroom, with the Basic
   panel's note naming it: in Fit (#915; checked on a MacBook Pro XDR display with a
   CC0 Z 8 photo), and zoomed out, in 100% regions, Before Only, Before/After and
-  Reference View (#924). The HDR histogram in stops above white, the HDR readout,
+  Reference View (#924). The master's preview on the GPU during slider drags (#983),
+  for ordinary and HDR profiles and looks (#984), checked against the CPU master in
+  float space; Texture, Contrast, the tone curves and the colour stage still show the
+  CPU master. The HDR histogram in stops above white, the HDR readout,
   and what lies beyond the display's headroom marked in the histogram and its
   highlight triangle. Open: the rest of the stage (above).
