@@ -188,7 +188,7 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
         r.hdr.sdr == SdrRendition::default(),
         "The SDR rendition's adjustments are not supported in HDR yet"
     );
-    let unmeasured: [(&str, bool); 15] = [
+    let unmeasured: [(&str, bool); 13] = [
         // Camera Raw stretches a photo whose brightest areas are below about twice
         // graphics white much further than the measured gain (+3.8 stops at scene 0.3
         // on a ramp peaking at 0.5); negative Whites follows no photo statistic.
@@ -216,23 +216,20 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
         ),
         (
             "Presence",
-            r.saturation != 0.
-                || r.vibrance != 0.
-                || r.effects.clarity != 0.
-                || r.effects.texture != 0.
-                || r.effects.dehaze != 0.,
+            r.effects.clarity != 0. || r.effects.texture != 0. || r.effects.dehaze != 0.,
         ),
-        ("The Color Mixer", r.hsl != [[0.; 3]; 8]),
+        // Camera Raw keeps band Luminance's change below white, but not as a gain
+        // above it: it changes channels above about white less, one by one, which
+        // turns a colour at white gray (docs/records/hdr-stage1-results.md#colour-stage).
+        (
+            "The Color Mixer's Luminance",
+            r.hsl.iter().any(|band| band[2] != 0.),
+        ),
         ("Point Color", !r.point_colors.is_empty()),
         (
             "Color Grading",
             r.grading != [[0.; 3]; 3] || r.effects.global_grade != [0.; 3],
         ),
-        (
-            "Calibration",
-            r.effects.calibration != [[0.; 2]; 3] || r.effects.shadow_tint != 0.,
-        ),
-        ("Black & White", r.effects.monochrome),
         ("Defringe", r.effects.defringe != [0.; 2]),
         ("Effects", r.effects.grain != 0. || r.effects.vignette != 0.),
         (
@@ -480,11 +477,22 @@ mod tests {
         assert!(check_recipe(&r).is_ok());
         r.contrast = -0.4;
         assert!(check_recipe(&r).is_ok());
-        let unmeasured: [fn(&mut Recipe); 6] = [
+        // The colour stage renders in HDR (docs/hdr.md#the-colour-stage).
+        let mut colour = r.clone();
+        colour.saturation = 0.3;
+        colour.vibrance = -0.2;
+        colour.hsl[2] = [0.1, -0.4, 0.];
+        colour.effects.calibration[1] = [0.2, 0.3];
+        colour.effects.shadow_tint = 0.1;
+        colour.effects.monochrome = true;
+        colour.effects.gray_mix = [0.2; 8];
+        assert!(check_recipe(&colour).is_ok());
+        let unmeasured: [fn(&mut Recipe); 7] = [
             |r| r.highlights = 0.1,
+            |r| r.hsl[5][2] = -0.2,
             |r| r.shadows = 0.1,
             |r| r.effects.clarity = 0.1,
-            |r| r.saturation = 0.1,
+            |r| r.effects.texture = 0.1,
             |r| {
                 r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
                 r.curve_saturation = 0.5;

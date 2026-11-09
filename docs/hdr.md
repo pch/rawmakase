@@ -136,20 +136,46 @@ HDR reference family):
 | Levels | RAWmakase's own (Camera Raw has none), after Contrast: as a point curve of its shape renders, as in SDR up to white and along its slope at white above it (none when the white point is below white). |
 | Parametric curve | After Levels, RGBTone on the same encoding, its regions and splits laid over black to four stops above white (16); values above 16 are left alone. |
 | Point curve | `color::hdr_curve`, after the parametric curve: the master curve, RGBTone on the look curve's encoding, as in SDR up to white; above it, along the curve's slope at its last point (a natural spline's own derivative there, before clamping). |
+| Saturation, Vibrance, the colour mixer's Hue and Saturation | The SDR grids of `develop::color_mixer`, after Contrast, the tone curves and Levels, as in SDR, on unclipped linear values ([The colour stage](#the-colour-stage)): looked up at the colour's value up to 0.2 and at 0.2 above it; Vibrance's value change fades out from 0.5 to white. |
+| Black & White | The SDR mix's gray (`develop::black_white`) looked up as the colour mixer's, unclipped above white. |
+| Calibration | As in SDR: a matrix on scene colour before Exposure, and Shadows tint, which only reaches values below white. |
 | HDR limit | Each channel rolled off to 2^limit from 97% of it (`model::hdr::roll_off`), last. |
 | Sharpening, resizing | On sRGB-curve-encoded values of the master's primaries, unclipped, with ProPhoto luminance; the limit applies after them. |
 
 Lens corrections, geometry, noise reduction, AI Denoise and Heal and Clone work on
 camera samples before tone and render as in SDR.
 
+### The colour stage
+
+Camera Raw 18.7's HDR renders of synthetic colour patches (12 hues, saturations 0.3
+to 0.9, 0.125 to 8 times white, a linear and the ACR3 profile curve) show:
+
+- Hue and saturation changes don't depend on brightness. Saturation +100 multiplies
+  saturation by 1.73–1.74 from 0.125 to 8 times white, and its value change (×1.15 at
+  saturation 0.3) is the same at every brightness. Its SDR render gives 1.78 at 0.5,
+  because SDR rolls off from there; the colour mixer's grids, fitted on SDR renders,
+  carry that roll-off at high values. An HDR master therefore looks them up at the
+  colour's value only up to 0.2 (`color_mixer::HDR_VALUE`) and keeps the change found
+  there above it.
+- Vibrance's value change applies below white and fades out by white (value ×1.06 at
+  0.5, ×1.01 from 1 to 8); its saturation change does not.
+- The colour mixer's Luminance changes value below white but not above it as a gain:
+  Luminance +100 of every band gives ×1.67 at 0.5 and ×1.00 at 1, 2, 4 and 8, where a
+  colour at white turns almost gray. It is refused (below).
+- Black & White's gray is the mix's, unclipped above white.
+- Calibration renders as in SDR: its matrix works on scene colour, and Shadows tint
+  fades out below white.
+
+Measurements and validation: [colour stage](records/hdr-stage1-results.md#colour-stage).
+
 ## What is refused
 
 `model::hdr::check_recipe` refuses the master, not the edit, when the edit uses
 something without a measured HDR rendering: Highlights, Shadows, positive
 Whites, a channel's point curve, Refine Saturation other than 100%, a point
-curve whose last point is left of white, Presence (Clarity, Texture, Dehaze,
-Vibrance, Saturation), the colour mixer, Point Color, Color Grading, Calibration,
-Black & White, Defringe, grain and vignette, masks, Red Eye, the SDR rendition's
+curve whose last point is left of white, Presence (Clarity, Texture, Dehaze), the
+colour mixer's Luminance, Point Color, Color Grading, Defringe, grain and vignette,
+masks, Red Eye, the SDR rendition's
 sliders, looks other than a table and a curve at 100% (looks with an RGB table, such
 as `.cube` looks and Lightroom's creative looks; looks with their own sliders or
 settings, such as Adobe Vivid and Adobe Landscape; Black & White looks; fitted

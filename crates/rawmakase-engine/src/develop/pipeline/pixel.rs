@@ -29,7 +29,7 @@ pub(super) fn process_pixel(
         return scene;
     }
     if let Some(hdr) = &lut.hdr {
-        return hdr.finish(scene, r);
+        return hdr.finish(scene, r, lut);
     }
     let rgb = profile_stage(scene, r);
     color_stage(rgb, r, lut, local.map(|l| l.delta))
