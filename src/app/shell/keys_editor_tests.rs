@@ -188,8 +188,40 @@ fn escape_in_masking_first_drops_the_mask_not_yet_drawn() {
     tap(&mut e, Key::Escape, Modifiers::NONE);
     assert!(e.view.is(Tool::None), "the next Escape closes Masking");
     // Escape with a modifier closes Masking at once, leaving nothing behind.
-    tap(&mut e, Key::M, Modifiers::NONE);
-    tap(&mut e, Key::Escape, command(Modifiers::NONE));
-    assert!(e.view.is(Tool::None));
-    assert!(!e.view.masking.is_placing());
+    for modifiers in [command(Modifiers::NONE), Modifiers::ALT] {
+        tap(&mut e, Key::M, Modifiers::NONE);
+        tap(&mut e, Key::Escape, modifiers);
+        assert!(e.view.is(Tool::None));
+        assert!(!e.view.masking.is_placing());
+    }
+}
+
+#[test]
+fn a_keypad_arrow_moves_without_labelling() -> anyhow::Result<()> {
+    // With Num Lock off the keypad's 6 types ArrowRight at the place of Num6.
+    let (_d, mut e, ids) = library_editor(3)?;
+    let next = e.library.as_ref().unwrap().navigate(ids[0], 1);
+    tap_typed(&mut e, Key::ArrowRight, Key::Num6, Modifiers::NONE);
+    let library = e.library.as_ref().unwrap();
+    assert_eq!(library.selected(), next);
+    assert!(
+        library.photo(ids[0]).unwrap().label.is_empty(),
+        "no Red label"
+    );
+    Ok(())
+}
+
+#[test]
+fn shift_o_then_o_in_one_frame_still_turns_the_mask_overlay() {
+    use crate::app::develop::state::Tool;
+    let mut e = develop_editor();
+    tap(&mut e, Key::W, Modifiers::SHIFT);
+    assert!(e.view.is(Tool::Mask));
+    let overlay = e.view.masking.overlay;
+    let mut events = vec![egui::Event::ModifiersChanged(Modifiers::SHIFT)];
+    events.extend(typed(Key::O, Key::O, Modifiers::SHIFT));
+    events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
+    events.extend(typed(Key::O, Key::O, Modifiers::NONE));
+    frame(&mut e, events);
+    assert!(e.view.masking.overlay != overlay);
 }

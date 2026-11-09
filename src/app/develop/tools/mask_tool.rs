@@ -317,7 +317,9 @@ impl Editor {
             }
             return;
         }
-        if press(&[Key::O]).is_some_and(|m| !m.shift) {
+        if crate::app::shell::key_match::press(i, &[Key::O], |m| !m.command && !m.alt && !m.shift)
+            .is_some()
+        {
             t.overlay ^= true;
         }
         if press(&[Key::Slash, Key::Questionmark]).is_some() {

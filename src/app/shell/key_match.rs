@@ -11,9 +11,39 @@
 use eframe::egui::{InputState, Key, Modifiers};
 
 /// The key a press with `key` typed at `physical` stands for: the digit of a
-/// number-row key, otherwise the typed key.
+/// number-row key typing a digit or a symbol, otherwise the typed key. A key that
+/// types a named key is that key: with Num Lock off the keypad's 6 types
+/// ArrowRight, and egui-winit reports its place as Num6.
 pub(in crate::app) fn shortcut_key(key: Key, physical: Option<Key>) -> Key {
-    physical.filter(|&p| is_digit(p)).unwrap_or(key)
+    match physical {
+        Some(p) if is_digit(p) && (is_digit(key) || is_symbol(key)) => p,
+        _ => key,
+    }
+}
+
+/// Punctuation egui names, as a digit-row key may type it.
+fn is_symbol(key: Key) -> bool {
+    matches!(
+        key,
+        Key::Colon
+            | Key::Comma
+            | Key::Backslash
+            | Key::Slash
+            | Key::Pipe
+            | Key::Questionmark
+            | Key::Exclamationmark
+            | Key::OpenBracket
+            | Key::CloseBracket
+            | Key::OpenCurlyBracket
+            | Key::CloseCurlyBracket
+            | Key::Backtick
+            | Key::Minus
+            | Key::Period
+            | Key::Plus
+            | Key::Equals
+            | Key::Semicolon
+            | Key::Quote
+    )
 }
 
 pub(in crate::app) fn is_digit(key: Key) -> bool {
@@ -91,6 +121,11 @@ mod tests {
             Key::CloseBracket
         );
         assert_eq!(shortcut_key(Key::F, Some(Key::Y)), Key::F);
+        // The keypad's 6 with Num Lock off.
+        assert_eq!(
+            shortcut_key(Key::ArrowRight, Some(Key::Num6)),
+            Key::ArrowRight
+        );
         // No place reported.
         assert_eq!(shortcut_key(Key::Num3, None), Key::Num3);
     }
