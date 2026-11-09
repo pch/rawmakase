@@ -109,6 +109,13 @@ pub(crate) mod slot {
         // An HDR master's look curve (`hdr_look::LookTone`): 0 without a look, 1 Lifted
         // (until, lift), 2 Extended (slope, 0).
         HDR_LOOK: 3,
+        // An HDR master's Contrast (`basic_tone::HdrContrast`): its table, or -1, the
+        // output at its top and the slope beyond.
+        HDR_CONTRAST: 3,
+        // An HDR master's tone curves (`tone::HdrCurves`): 1 when they apply, 1 when
+        // Levels do (from `LEVELS`), and the master curve's value at white and slope
+        // beyond it (its samples are `MASTER`'s; the parametric curve's `PARAMETRIC_LUT`).
+        HDR_CURVES: 4,
     }
 }
 pub(crate) fn wgsl_prelude() -> String {
@@ -143,13 +150,17 @@ pub(crate) fn wgsl_prelude() -> String {
                 "const SCENE_H: vec3<f32> = vec3({first:?}, {step:?}, {SAMPLES}.0);\n\
                  const HDR_IDENTITY_FROM: f32 = {IDENTITY_FROM:?};\n\
                  const HDR_TONE: vec3<f32> = vec3({:?}, {:?}, {}.0);\n\
-                 const LOOK_SLOPE: f32 = {:?};\nconst LOOK_BEND: f32 = {:?};\nconst LOOK_PEAK: f32 = {:?};\n",
+                 const LOOK_SLOPE: f32 = {:?};\nconst LOOK_BEND: f32 = {:?};\nconst LOOK_PEAK: f32 = {:?};\n\
+                 const HDR_CONTRAST_SAMPLES: f32 = {}.0;\nconst HDR_CONTRAST_TOP: f32 = {:?};\nconst HDR_CURVE_CEILING: f32 = {:?};\n",
                 HDR_TONE_FIRST,
                 HDR_TONE_STEP,
                 HDR_TONE_SAMPLES,
                 crate::camera_profiles::hdr_look::SLOPE,
                 crate::camera_profiles::hdr_look::BEND,
                 crate::camera_profiles::hdr_look::PEAK,
+                crate::develop::basic_tone::HDR_CONTRAST_SAMPLES,
+                crate::develop::basic_tone::HDR_CONTRAST_TOP,
+                crate::color::hdr_curve::CEILING,
             )
         }
 }
@@ -218,19 +229,18 @@ pub(crate) fn supported(r: &Recipe) -> bool {
 }
 /// Whether the GPU port renders the HDR master of this recipe (resolved with HDR on,
 /// `Recipe::resolved_hdr`) of a photo with `metadata`: one whose master renders
-/// (`model::hdr::check_for`) and needs nothing after the profile's finish (no Texture,
-/// Contrast, tone curve or colour stage): an ordinary profile's tables and HDR tone
-/// curve, an HDR profile's overrange-encoded ones, and a look's table and curve
-/// (`CameraProfile::finish_hdr`). An HDR file's light (`render_hdr`'s own path) renders
-/// on the CPU.
+/// (`model::hdr::check_for`) without Texture or the colour stage: an ordinary
+/// profile's tables and HDR tone curve, an HDR profile's overrange-encoded ones, a
+/// look's table and curve (`CameraProfile::finish_hdr`), then Contrast and the tone
+/// curves (`tone::HdrFinish`). An HDR file's light (`render_hdr`'s own path) renders on
+/// the CPU.
 pub(crate) fn supported_hdr(r: &Recipe, metadata: &crate::camera_data::Metadata) -> bool {
     r.hdr.is_active()
         && metadata.hdr_source.is_none()
         && crate::model::hdr::check_for(r, metadata).is_ok()
-        // Texture's image, Contrast, the tone curves and the colour stage aren't
-        // ported to the HDR variant.
+        // Texture's image and the colour stage aren't ported to the HDR variant.
         && crate::develop::texture::measured(r) == 0.
-        && !super::tone::hdr_finishes_past_the_profile(r)
+        && !super::tone::hdr_colour_stage(r)
         && r.profile.as_ref().is_some_and(|p| p.hdr_tone().is_ok())
 }
 /// The HDR tone curve's samples over log2 scene value: from 2^-16, a 32nd of a stop
@@ -263,7 +273,22 @@ pub(crate) fn pixel_params_hdr(im: Source, r: &Recipe) -> Option<PixelParams> {
     let camera = camera_stage(&im.metadata, r);
     let lut = CurveSet::for_image(im, r, camera, false);
     let gains: Vec<f32> = lut.scene.global.hdr_gains()?.to_vec();
+    let finish = lut.hdr.as_ref()?.gpu();
+    let contrast = finish
+        .contrast
+        .map(|(table, top, slope)| (table.to_vec(), top, slope));
+    let curves = finish.curves;
     let mut p = fill(r, lut, camera)?;
+    let contrast = match contrast {
+        Some((table, top, slope)) => [p.push(table), top, slope],
+        None => [-1., 0., 0.],
+    };
+    p.set(slot::HDR_CONTRAST, &contrast);
+    let curves = match curves {
+        Some((levels, [white, slope])) => [1., levels as u8 as f32, white, slope],
+        None => [0.; 4],
+    };
+    p.set(slot::HDR_CURVES, &curves);
     let gains = p.push(gains);
     // An HDR profile's curve is applied as it is, on encoded values (`hdr_finish`).
     let curve = match tone {
@@ -512,6 +537,8 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     p.set(slot::HDR, &[-1., -1.]);
     p.set(slot::HDR_PROFILE, &[profile.is_hdr() as u8 as f32]);
     p.set(slot::HDR_LOOK, &[0., 0., 0.]);
+    p.set(slot::HDR_CONTRAST, &[-1., 0., 0.]);
+    p.set(slot::HDR_CURVES, &[0.; 4]);
     Some(p)
 }
 impl PixelParams {

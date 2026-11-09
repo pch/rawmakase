@@ -323,6 +323,83 @@ fn look_apply(rgb: vec3<f32>) -> vec3<f32> {
     }
     return vec3(look_decode(out.x), look_decode(out.y), look_decode(out.z));
 }
+// RGBTone on look-encoded values (`hdr_look::encode`), the darkest and brightest
+// channels through `curve` (0 Contrast, 1 the parametric curve, 2 the master curve).
+fn encoded_tone(q: vec3<f32>, curve: u32) -> vec3<f32> {
+    let lo = min(min(q.x, q.y), q.z);
+    let hi = max(max(max(q.x, q.y), q.z), 0.0);
+    let a = encoded_curve(curve, lo);
+    let b = encoded_curve(curve, hi);
+    if hi - lo > 1e-8 {
+        return a + (b - a) * (q - lo) / (hi - lo);
+    }
+    return vec3(b);
+}
+fn encoded_curve(curve: u32, e: f32) -> f32 {
+    if curve == 0u {
+        // HdrContrast::evaluate: its table up to four stops above white, then on along
+        // its slope in linear light.
+        let end = look_encode(HDR_CONTRAST_TOP);
+        if e > end {
+            return look_encode(p(P_HDR_CONTRAST + 1u) + p(P_HDR_CONTRAST + 2u) * (look_decode(e) - HDR_CONTRAST_TOP));
+        }
+        let f = max(e, 0.0) / end * HDR_CONTRAST_SAMPLES;
+        let i = min(floor(f), HDR_CONTRAST_SAMPLES - 1.0);
+        let base = offset(P_HDR_CONTRAST) + i32(i);
+        return mix(table(base), table(base + 1), f - i);
+    }
+    if curve == 1u {
+        // hdr_curve::parametric: the curve over 0–encode(16), the identity above.
+        let top = look_encode(LOOK_PEAK);
+        if e >= top {
+            return e;
+        }
+        return lut(offset(P_PARAMETRIC_LUT), 1024u, max(e, 0.0) / top) * top;
+    }
+    // HdrPointCurve::evaluate: the curve up to white, then on along its end slope.
+    if e <= 1.0 {
+        return lut(offset(P_MASTER), 4096u, e);
+    }
+    return p(P_HDR_CURVES + 2u) + p(P_HDR_CURVES + 3u) * (e - 1.0);
+}
+// hdr_curve::levels on a look-encoded value: the SDR Levels up to white, then on
+// along their slope there.
+fn hdr_levels(e: f32) -> f32 {
+    let black = p(P_LEVELS);
+    let white = p(P_LEVELS + 1u);
+    let midtone = p(P_LEVELS + 2u);
+    let at = min(e, 1.0);
+    let sdr = pow(clamp((at - black) / (white - black), 0.0, 1.0), 1.0 / midtone);
+    if e <= 1.0 {
+        return sdr;
+    }
+    var slope = 0.0;
+    if white >= 1.0 {
+        slope = 1.0 / (midtone * (1.0 - black));
+    }
+    return sdr + slope * (e - 1.0);
+}
+// HdrContrast::apply, then HdrCurves::apply: linear ProPhoto, not negative, in and out.
+fn hdr_tone_controls(rgb: vec3<f32>) -> vec3<f32> {
+    var out = rgb;
+    if offset(P_HDR_CONTRAST) >= 0 {
+        let q = vec3(look_encode(out.x), look_encode(out.y), look_encode(out.z));
+        let c = encoded_tone(q, 0u);
+        out = max(vec3(look_decode(c.x), look_decode(c.y), look_decode(c.z)), vec3(0.0));
+    }
+    if p(P_HDR_CURVES) != 0.0 {
+        var q = vec3(look_encode(out.x), look_encode(out.y), look_encode(out.z));
+        if p(P_HDR_CURVES + 1u) != 0.0 {
+            q = vec3(hdr_levels(q.x), hdr_levels(q.y), hdr_levels(q.z));
+        }
+        if offset(P_PARAMETRIC_LUT) >= 0 {
+            q = encoded_tone(q, 1u);
+        }
+        q = encoded_tone(q, 2u);
+        out = min(vec3(look_decode(q.x), look_decode(q.y), look_decode(q.z)), vec3(HDR_CURVE_CEILING));
+    }
+    return out;
+}
 // The HDR tone curve (`HdrTone::evaluate`) from its samples over log2 scene value
 // (`pixel_params::hdr_tone_table`): log2–log2 interpolation, linear below the first
 // sample, and the last samples' slope above the last.
@@ -387,7 +464,8 @@ fn hdr_finish(pro: vec3<f32>) -> vec3<f32> {
     if p(P_HDR_LOOK) != 0.0 {
         out = look_apply(out);
     }
-    return max(out, vec3(0.0));
+    // Contrast and the tone curves follow the profile and its look.
+    return max(hdr_tone_controls(max(out, vec3(0.0))), vec3(0.0));
 }
 // CameraProfile::finish: linear ProPhoto in, linear sRGB primaries out.
 fn profile_finish(pro: vec3<f32>) -> vec3<f32> {

@@ -58,6 +58,11 @@ impl HdrPointCurve {
     }
     /// The encoded output for the encoded input `e`: the curve up to white, its slope
     /// at white above it. The result can fall below 0, which [`decode`] reads as 0.
+    /// The curve's value at white and its slope beyond, for the GPU port, which reads
+    /// the curve's samples from its own copy of the same [`CurveLut`].
+    pub fn extension(&self) -> [f32; 2] {
+        [self.white, self.slope]
+    }
     pub fn evaluate(&self, e: f32) -> f32 {
         if e <= 1. {
             self.lut.evaluate(e)

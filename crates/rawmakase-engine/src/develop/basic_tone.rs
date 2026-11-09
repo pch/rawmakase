@@ -125,6 +125,9 @@ const HDR_FLAT_PIVOT: f32 = 1.671;
 /// Where Contrast in HDR takes graphics white: four stops above it.
 const HDR_TOP: f32 = 16.;
 const HDR_SAMPLES: usize = 2048;
+/// [`HDR_SAMPLES`] and [`HDR_TOP`], for the GPU port's reading of the table.
+pub(crate) const HDR_CONTRAST_SAMPLES: usize = HDR_SAMPLES;
+pub(crate) const HDR_CONTRAST_TOP: f32 = HDR_TOP;
 impl HdrContrast {
     /// Contrast `contrast` at the photo's pivot; `None` at 0.
     pub(crate) fn new(contrast: f32, photo: &PhotoTone) -> Option<Self> {
@@ -186,6 +189,10 @@ impl HdrContrast {
             ((top - render(HDR_TOP * 0.99)) / (HDR_TOP * 0.01)).max(0.)
         };
         Self { table, top, slope }
+    }
+    /// The table, the output at [`HDR_TOP`] and the slope beyond, for the GPU port.
+    pub(crate) fn gpu(&self) -> (&[f32], f32, f32) {
+        (&self.table, self.top, self.slope)
     }
     /// The encoded output for an encoded input.
     fn evaluate(&self, e: f32) -> f32 {
