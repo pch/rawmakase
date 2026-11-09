@@ -413,3 +413,87 @@ fn the_shortcuts_guide_matches_the_key_map() {
         );
     }
 }
+
+#[test]
+fn two_owners_of_one_file_keep_each_others_changes() {
+    let setup = Setup::new(None);
+    let mut first = setup.open();
+    let mut second = setup.open();
+    first.set("crop", &[chord("F9")]).expect("saved");
+    second.set("clipping", &[chord("F10")]).expect("saved");
+    let text = setup.text().expect("a file");
+    assert!(text.contains("crop = [\"F9\"]"), "{text}");
+    assert!(text.contains("clipping = [\"F10\"]"), "{text}");
+    // The second owner runs what the file holds, the first's change too.
+    assert_eq!(keys_of(&second, &bindings::CROP), ["F9"]);
+    first.reset("clipping").expect("saved");
+    assert!(!setup.text().unwrap().contains("clipping"));
+    assert!(setup.text().unwrap().contains("crop = [\"F9\"]"));
+}
+
+#[test]
+fn an_entry_added_after_start_up_survives_a_change() {
+    let setup = Setup::new(Some("version = 1\n[bindings]\ncrop = [\"F9\"]\n"));
+    let mut file = setup.open();
+    std::fs::write(
+        setup.path(),
+        "version = 1\n[bindings]\ncrop = [\"F9\"]\n\"someone/extension\" = [\"F10\"]\n",
+    )
+    .unwrap();
+    file.set("clipping", &[chord("F11")]).expect("saved");
+    let text = setup.text().unwrap();
+    assert!(text.contains("\"someone/extension\" = [\"F10\"]"), "{text}");
+    assert_eq!(file.unknown(), ["someone/extension"]);
+}
+
+#[test]
+fn a_newer_file_written_after_start_up_is_left_alone_and_read_only() {
+    let setup = Setup::new(Some("version = 1\n[bindings]\ncrop = [\"F9\"]\n"));
+    let mut file = setup.open();
+    let newer = "version = 2\n[bindings]\ncrop = [\"F9\"]\n\"someone/extension\" = [\"F10\"]\n";
+    std::fs::write(setup.path(), newer).unwrap();
+    let refused = file.set("clipping", &[chord("F11")]);
+    assert!(
+        refused.is_err_and(|e| e.contains("changed since it was read")),
+        "refused"
+    );
+    assert_eq!(setup.text().as_deref(), Some(newer), "byte for byte");
+    assert_eq!(*file.state(), State::Unreadable(Unreadable::Newer(2)));
+    assert!(!file.editable());
+    assert_eq!(keys_of(&file, &bindings::CROP), ["C", "R"]);
+}
+
+#[test]
+fn a_fixed_commands_keys_cant_be_emptied() {
+    let text = "version = 1\n[bindings]\nundo = []\nredo = []\nselect_all = []\n";
+    let setup = Setup::new(Some(text));
+    let mut file = setup.open();
+    let skipped: Vec<&str> = file.skipped().iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(skipped, ["undo", "redo", "select_all"]);
+    assert!(file.effective().is_default());
+    assert_eq!(keys_of(&file, &bindings::LIBRARY_UNDO), ["Cmd+Z"]);
+    assert_eq!(keys_of(&file, &bindings::GRID_SELECT_ALL), ["Cmd+A"]);
+    for id in ["undo", "redo", "select_all"] {
+        assert!(file.set(id, &[]).is_err(), "{id}");
+    }
+    assert_eq!(setup.text().as_deref(), Some(text));
+}
+
+#[test]
+fn giving_a_command_other_keys_keeps_its_comments() {
+    let text = "\
+version = 1
+[bindings]
+# Crop where my hand is.
+crop = [\"F9\"] # since 2026
+clipping = [\"F10\"]
+";
+    let setup = Setup::new(Some(text));
+    let mut file = setup.open();
+    file.set("crop", &[chord("F11")]).expect("saved");
+    assert_eq!(
+        setup.text().unwrap(),
+        text.replace("[\"F9\"]", "[\"F11\"]"),
+        "the comments stay"
+    );
+}

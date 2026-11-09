@@ -571,7 +571,10 @@ changed, each with its whole list of chords; the others keep this release's
 defaults (`keymap::Effective`). The desktop editor reads it at start-up; test
 editors use the defaults and never touch the data folder. It is edited in place
 with `toml_edit`, so comments, order and entries this release doesn't know survive
-a change, and written with `storage::write_atomic`. A file that doesn't read is
+a change, and written with `storage::write_atomic`. Each change is applied to the
+file as it is then, read again first, so another instance's changes survive; a file
+that no longer reads, or a newer release's, is then left alone as at start-up.
+A file that doesn't read is
 never written but by Reset All, which moves it aside first; a bad entry skips its
 command alone. After a failed write the file is read back and what it holds is in
 effect: memory never runs chords the file doesn't have. `keymap::rules` refuses

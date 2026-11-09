@@ -96,9 +96,17 @@ shortcuts:
   Shortcuts shows a banner and changes nothing. Fix it and restart, or click
   **Reset All**, which keeps it as `keymap.toml.broken` and starts a new one.
 - If one command's entry is wrong (`crop = "R"` instead of `["R"]`, a key with a
-  typo, a refused key), that command keeps its defaults, Preferences lists the
+  typo, a refused key, or any entry for a fixed command, even `undo = []`), that
+  command keeps its defaults, Preferences lists the
   entry as skipped, and the entry stays in the file until you give the command
   new keys.
+
+Each change is saved on top of what the file holds at that moment, so a second
+RAWmakase running at the same time, or an entry added by hand, keeps its changes;
+a RAWmakase picks up the other's keys when it saves one of its own, or at its next
+start. If the file was changed meanwhile so that it no longer reads, or a newer
+release rewrote it, the change isn't saved, the file is left as it is, and the
+default shortcuts apply as above.
 
 If saving the file fails, the shortcuts in effect are whatever the file holds
 afterwards, and the message line says what happened.

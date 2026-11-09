@@ -21,6 +21,12 @@
 //! doesn't read skips that command alone; it is kept as written until the user
 //! gives the command other keys.
 //!
+//! Each change is made to the file as it is when the change is saved, read
+//! again first, so a second RAWmakase's changes, or entries a newer release
+//! or an extension added since start-up, are kept. A file that no longer
+//! reads then (or that a newer release wrote) is left as it is, as at
+//! start-up.
+//!
 //! Memory never runs chords the file doesn't hold: after a failed write the
 //! file is read back, because [`crate::storage::write_atomic`] can fail after
 //! the new file is in place (syncing the folder).
@@ -217,6 +223,10 @@ impl KeymapFile {
     /// fails changes nothing and says why.
     pub(in crate::app) fn set(&mut self, id: &str, chords: &[Chord]) -> Result<Saved, String> {
         let command = command_by_id(id).ok_or_else(|| format!("no command {id}"))?;
+        // Before the chords: an empty list would take a fixed command's keys.
+        if !command.rebindable {
+            return Err(format!("{}: {}", command.title, rules::Refusal::Fixed));
+        }
         let bindings = rules::bindings_of(id);
         for chord in chords {
             if let Some(why) = rules::refusal(command, &bindings, *chord, Os::CURRENT) {
@@ -232,7 +242,18 @@ impl KeymapFile {
             }
         }
         self.change(|doc| {
-            bindings_table(doc).insert(id, Item::Value(Value::Array(list)));
+            let table = bindings_table(doc);
+            // In place, so the comment before the entry and after it stay.
+            match table.get_mut(id).and_then(Item::as_value_mut) {
+                Some(value) => {
+                    let decor = value.decor().clone();
+                    *value = Value::Array(list);
+                    *value.decor_mut() = decor;
+                }
+                None => {
+                    table.insert(id, Item::Value(Value::Array(list)));
+                }
+            }
         })
     }
     /// Gives `id` its default keys again.
@@ -285,14 +306,30 @@ impl KeymapFile {
     }
 
     /// Edits the file with `edit` and writes it. In memory alone without a
-    /// file. After a failed write, whatever the file then holds is in effect.
+    /// file. The edit applies to the file as it is now, read again first:
+    /// another RAWmakase may have changed it, or a newer release written it,
+    /// since it was read. A file that no longer reads is left as it is, and
+    /// the key map becomes read-only. After a failed write, whatever the file
+    /// then holds is in effect.
     fn change(&mut self, edit: impl FnOnce(&mut DocumentMut)) -> Result<Saved, String> {
         if let State::Unreadable(why) = &self.state {
             return Err(format!(
                 "keymap.toml isn't used ({why}), so it is left as it is. Reset All replaces it."
             ));
         }
-        let mut doc = self.doc.clone();
+        let mut doc = match &self.path {
+            None => self.doc.clone(),
+            Some(_) => {
+                self.reread();
+                if let State::Unreadable(why) = &self.state {
+                    return Err(format!(
+                        "keymap.toml changed since it was read and isn't used now ({why}), \
+                         so it is left as it is. The default shortcuts apply."
+                    ));
+                }
+                self.doc.clone()
+            }
+        };
         edit(&mut doc);
         let text = doc.to_string();
         let parsed = parse(&text).map_err(|e| format!("The key map would not read back: {e}"))?;
@@ -444,6 +481,10 @@ fn chords(
     command: &'static crate::app::shell::commands::registry::Command,
     item: &Item,
 ) -> Result<Vec<Chord>, String> {
+    // Before the list: an empty one would take a fixed command's keys too.
+    if !command.rebindable {
+        return Err(rules::Refusal::Fixed.to_string());
+    }
     let array = item
         .as_array()
         .ok_or_else(|| "not a list of keys".to_string())?;
