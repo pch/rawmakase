@@ -348,11 +348,18 @@ pub(crate) fn read_info(path: &Path) -> Option<Option<PhotoInfo>> {
         if let Some(undecoded) = crate::raw::undecoded(path) {
             return (undecoded.info != PhotoInfo::default()).then_some(Some(undecoded.info));
         }
-        // A RAW that cannot be opened now (still copying, a network error) is
-        // tried again later.
-        Some(PhotoInfo::from_metadata(
-            &crate::photo::open(path).ok()?.metadata,
-        ))
+        // On a network volume, from the header alone: the whole RAW is most of
+        // the cost and none of the info. Else, or when that can't be read,
+        // from the file opened whole. A RAW that cannot be opened now (still
+        // copying, a network error) is tried again later.
+        let header = crate::platform::preview_reads::previews_only(path)
+            .then(|| crate::photo::header_metadata(path).ok())
+            .flatten();
+        let metadata = match header {
+            Some(metadata) => metadata,
+            None => crate::photo::open(path).ok()?.metadata,
+        };
+        Some(PhotoInfo::from_metadata(&metadata))
     } else {
         let mut info = crate::exif::photo_info(path).unwrap_or_default();
         // A rendered file's size as shown, after its orientation, from its

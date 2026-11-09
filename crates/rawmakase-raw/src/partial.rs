@@ -1,4 +1,5 @@
-//! The embedded preview read from a file in pieces, without its sensor data:
+//! The embedded preview, and the header facts, read from a file in pieces,
+//! without its sensor data:
 //! for files on network volumes, where reading the whole file to show its
 //! preview costs most of the time.
 //!
@@ -66,7 +67,10 @@ pub fn preview_from_file(file: &mut (impl Read + Seek), edge: u32) -> Option<Par
 /// candidate without an error and choose another. For these formats the
 /// comparison with whole-file reads over the raw.pixls.us archive found no
 /// difference; a format is added once `real_files_give_the_same_preview_read_in_pieces`
-/// finds none for it.
+/// finds none for it. [`header_from_file`] reads photo info by the same list:
+/// for it, `rawmakase-decode`'s `photo_info_from_the_header_is_the_whole_file_s`
+/// is the comparison, as photo info can come from parts of the file a preview
+/// doesn't need (an EXIF directory between the parts read reads as empty).
 fn checked(variant: Variant) -> bool {
     use Variant::*;
     matches!(
@@ -103,6 +107,29 @@ fn checked(variant: Variant) -> bool {
     )
 }
 
+/// A RAW's header facts read in pieces ([`header_from_file`]). The parts of
+/// the file read aren't kept: nothing is to be decoded from them.
+pub struct PartialHeader {
+    /// The header facts, as [`crate::open`] reads them from the parts read;
+    /// as [`PartialPreview::info`], facts taken from the sensor data are not
+    /// to be relied on.
+    pub info: RawInfo,
+    /// The bytes read from the file.
+    pub read: u64,
+}
+
+/// The header facts of the RAW `file`, read without its sensor data, as
+/// [`preview_from_file`] reads them before choosing a preview: its start and
+/// end, each preview candidate's start up to its frame header (a file whose
+/// EXIF gives no image size takes its frame from the largest preview's), and
+/// only for the formats [`checked`] accepts. `None` when it can't be read this
+/// way; the caller then reads the whole file.
+pub fn header_from_file(file: &mut (impl Read + Seek)) -> Option<PartialHeader> {
+    let mut f = Sparse::new(file)?;
+    let info = header_in_pieces(&mut f, checked)?;
+    Some(PartialHeader { info, read: f.read })
+}
+
 /// The preview [`preview_from_file`] reads, for files whose variant `allow`
 /// accepts, without its check of the preview's size.
 fn in_pieces(
@@ -111,6 +138,25 @@ fn in_pieces(
     allow: impl Fn(Variant) -> bool,
 ) -> Option<PartialPreview> {
     let mut f = Sparse::new(file)?;
+    let info = header_in_pieces(&mut f, allow)?;
+    let (at, len) = crate::preview::find_reaching(&info, &f.bytes, edge).ok()?;
+    f.fill(at, len)?;
+    let preview = crate::embedded(&f.bytes, (at, len)).ok()?.into_owned();
+    Some(PartialPreview {
+        info,
+        preview,
+        read: f.read,
+    })
+}
+
+/// The header facts of the file `f` reads, for files whose variant `allow`
+/// accepts: its start and end, then each preview candidate's start up to its
+/// JPEG frame header, at which it is opened again. `None` when they can't be
+/// read this way.
+fn header_in_pieces<R: Read + Seek>(
+    f: &mut Sparse<'_, R>,
+    allow: impl Fn(Variant) -> bool,
+) -> Option<RawInfo> {
     f.fill(0, HEAD)?;
     f.fill(f.len().saturating_sub(TAIL), TAIL)?;
     let info = crate::variant::open(&f.bytes).ok()?;
@@ -154,14 +200,7 @@ fn in_pieces(
     if !allow(info.variant) || !info.previews.iter().map(|c| (c.offset, c.len)).eq(first) {
         return None;
     }
-    let (at, len) = crate::preview::find_reaching(&info, &f.bytes, edge).ok()?;
-    f.fill(at, len)?;
-    let preview = crate::embedded(&f.bytes, (at, len)).ok()?.into_owned();
-    Some(PartialPreview {
-        info,
-        preview,
-        read: f.read,
-    })
+    Some(info)
 }
 
 /// A buffer the size of the file, filled where the file has been read.

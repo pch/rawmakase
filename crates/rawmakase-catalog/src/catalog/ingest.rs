@@ -7,6 +7,7 @@ use super::{Catalog, FolderId, PhotoId, RootId};
 use anyhow::{Result, ensure};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 /// What adding a folder did.
 #[derive(Debug, Default)]
@@ -365,15 +366,33 @@ impl Catalog {
     /// by side, as one after another leaves a slow disk or a network share
     /// waiting on each; the checks against the catalog follow in order.
     /// `place` travels with each photo for its caller.
+    ///
+    /// Each folder's names are read once, by the first reader to come to one
+    /// of its photos, so that whether a sidecar exists beside each photo needn't
+    /// be asked of the file system name by name (`sidecar::Listing`).
     pub(in crate::catalog) fn read_new_photos<P: Send>(
         &self,
         files: Vec<(PathBuf, P)>,
         defaults: &super::NewPhotoDefaults,
     ) -> Vec<NewPhoto<P>> {
-        side_by_side(files, |(file, place)| read_new_photo(file, place, defaults))
-            .into_iter()
-            .map(|read| self.new_photo(read))
-            .collect()
+        let readers = readers(files.first().and_then(|(file, _)| file.parent()));
+        let listings: HashMap<PathBuf, OnceLock<Option<super::sidecar::Listing>>> = files
+            .iter()
+            .filter_map(|(file, _)| file.parent())
+            .map(|folder| (folder.to_path_buf(), OnceLock::new()))
+            .collect();
+        side_by_side(files, readers, |(file, place)| {
+            let listing = file.parent().and_then(|folder| {
+                listings
+                    .get(folder)?
+                    .get_or_init(|| super::sidecar::Listing::read(folder))
+                    .as_ref()
+            });
+            read_new_photo(file, place, defaults, listing)
+        })
+        .into_iter()
+        .map(|read| self.new_photo(read))
+        .collect()
     }
     /// Runs `write` in one transaction, with a [`PhotoWriter`] for the
     /// photos it inserts, then tells the edits it stored that they were
@@ -497,11 +516,16 @@ impl Catalog {
 /// What a new photo's files hold: the edit an older release saved beside it
 /// (a RAW's only), its sidecar's and its own XMP metadata, and the defaults
 /// where neither has a value. Nothing of the catalog is read.
-fn read_new_photo<P>(file: PathBuf, place: P, defaults: &super::NewPhotoDefaults) -> FilesRead<P> {
+fn read_new_photo<P>(
+    file: PathBuf,
+    place: P,
+    defaults: &super::NewPhotoDefaults,
+    listing: Option<&super::sidecar::Listing>,
+) -> FilesRead<P> {
     // Its masks compressed as they are read, so a folder of them is never
     // held decompressed at once.
     let legacy = crate::storage::is_raw(&file).then(|| {
-        let Some((sidecar, bitmaps)) = super::legacy_sidecar::import(&file)? else {
+        let Some((sidecar, bitmaps)) = super::legacy_sidecar::import(&file, listing)? else {
             return Ok(None);
         };
         let bitmaps = bitmaps
@@ -510,7 +534,7 @@ fn read_new_photo<P>(file: PathBuf, place: P, defaults: &super::NewPhotoDefaults
             .collect::<Result<_>>()?;
         Ok(Some((sidecar, bitmaps)))
     });
-    let (metadata, report) = super::sidecar::read_file(&file, defaults.raw_xmp());
+    let (metadata, report) = super::sidecar::read_file_listed(&file, defaults.raw_xmp(), listing);
     let defaults = defaults.for_file(&file, metadata.as_ref());
     let facts = ImportFacts::of_file(&file);
     FilesRead {
@@ -539,15 +563,38 @@ struct FilesRead<P> {
 
 /// Threads that read files side by side.
 const READERS: usize = 4;
-/// `read` of each of `items`, in their order, on up to [`READERS`] threads
+/// Threads that read files side by side on a network volume, where each
+/// read mostly waits on round trips to the server rather than on the disk
+/// or the processor.
+const NETWORK_READERS: usize = 16;
+/// How many threads read new photos' files from `folder`, the first's: on a
+/// network volume [`NETWORK_READERS`], else one a core, up to [`READERS`].
+/// Asking the volume can wait on a stalled mount, so this runs off the UI
+/// thread, as reading the files does.
+fn readers(folder: Option<&Path>) -> usize {
+    let local = folder
+        .is_none_or(|folder| rawmakase_fs::volume_facts(folder).map_or(true, |facts| facts.local));
+    if local {
+        local_readers()
+    } else {
+        NETWORK_READERS
+    }
+}
+fn local_readers() -> usize {
+    std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .clamp(1, READERS)
+}
+/// `read` of each of `items`, in their order, on up to `readers` threads
 /// side by side. A panic in one stops the others before their next item and
 /// is the caller's, as it would be read in turn; items no thread could be
 /// started for are read on the caller's.
-fn side_by_side<T: Send, R: Send>(items: Vec<T>, read: impl Fn(T) -> R + Sync) -> Vec<R> {
-    let threads = std::thread::available_parallelism()
-        .map_or(1, |n| n.get())
-        .clamp(1, READERS)
-        .min(items.len());
+fn side_by_side<T: Send, R: Send>(
+    items: Vec<T>,
+    readers: usize,
+    read: impl Fn(T) -> R + Sync,
+) -> Vec<R> {
+    let threads = readers.max(1).min(items.len());
     if threads <= 1 {
         return items.into_iter().map(read).collect();
     }
@@ -978,24 +1025,42 @@ impl Matcher {
         chosen: &Path,
         choices: &[Choice],
     ) -> Matched {
+        // The directory as the disk spells it, as the locations are compared.
+        let on_disk_dir = directory
+            .canonicalize()
+            .unwrap_or_else(|_| directory.to_path_buf());
         // (specificity, location, logical path, whether it resolves back here)
         let mut candidates = Vec::new();
         for (location, on_disk) in &self.locations {
-            let Ok(rest) = directory.strip_prefix(on_disk) else {
+            let root = &self.roots[&location.root];
+            // A directory is below a location as the disk spells both (Add
+            // Folder's, canonicalized), or as the catalog stores the location
+            // (Synchronize's and Find on Disk's, built from it). The two
+            // differ on Windows, where only the disk's has the `\\?\` prefix,
+            // and through symbolic links (issue #941). The names below the
+            // location stay as the caller has them where they can, as they
+            // are the catalog folder's; a location only the disk's spelling
+            // of the directory is below still counts, so the most specific
+            // one wins.
+            let (rest, original, rows, here) = if let Ok(rest) = directory.strip_prefix(on_disk) {
+                (rest, &root.original_on_disk, &root.rows_on_disk, directory)
+            } else if let Ok(rest) = directory.strip_prefix(&location.path) {
+                (rest, &root.original, &root.rows, directory)
+            } else if let Ok(rest) = on_disk_dir.strip_prefix(on_disk) {
+                (
+                    rest,
+                    &root.original_on_disk,
+                    &root.rows_on_disk,
+                    on_disk_dir.as_path(),
+                )
+            } else {
                 continue;
             };
             let logical = join(&location.relative, &logical_from_os(rest));
-            let root = &self.roots[&location.root];
             // The folder it would be must be found right here, not hidden by a
             // more specific location elsewhere.
-            let found = resolve_in(
-                &root.original_on_disk,
-                &root.rows_on_disk,
-                &logical,
-                cfg!(windows),
-            )
-            .as_deref()
-                == Some(directory);
+            let found =
+                resolve_in(original, rows, &logical, cfg!(windows)).as_deref() == Some(here);
             candidates.push((on_disk.components().count(), location, logical, found));
         }
         if candidates.is_empty() {
@@ -1116,12 +1181,16 @@ mod tests {
 
     #[test]
     fn new_photos_files_are_read_side_by_side_and_kept_in_order() {
-        let readers = std::thread::available_parallelism()
-            .map_or(1, |n| n.get())
-            .min(super::READERS);
+        for readers in [super::local_readers(), super::NETWORK_READERS] {
+            reads_side_by_side(readers);
+        }
+        assert!(super::side_by_side(Vec::<u32>::new(), 4, |n| n).is_empty());
+    }
+
+    fn reads_side_by_side(readers: usize) {
         let running = AtomicUsize::new(0);
         let most = AtomicUsize::new(0);
-        let read = super::side_by_side((0..40).collect(), |n: u32| {
+        let read = super::side_by_side((0..40).collect(), readers, |n: u32| {
             let now = running.fetch_add(1, Ordering::SeqCst) + 1;
             most.fetch_max(now, Ordering::SeqCst);
             // Waits a little for the others, as a slow disk would.
@@ -1136,14 +1205,13 @@ mod tests {
         });
         assert_eq!(read, (0..40).map(|n| n * 2).collect::<Vec<_>>());
         assert_eq!(most.load(Ordering::SeqCst), readers);
-        assert!(super::side_by_side(Vec::<u32>::new(), |n| n).is_empty());
     }
 
     #[test]
     fn a_panicking_read_stops_the_others() {
         let reads = AtomicUsize::new(0);
         let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            super::side_by_side((0..1000).collect(), |n: u32| {
+            super::side_by_side((0..1000).collect(), super::local_readers(), |n: u32| {
                 reads.fetch_add(1, Ordering::SeqCst);
                 assert_ne!(n, 3, "unreadable");
                 std::thread::sleep(Duration::from_millis(10));

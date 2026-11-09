@@ -755,19 +755,25 @@ fn published_catalogue_files_match_their_pins() {
 fn reopening_the_offer_rechecks_a_resolved_file_conflict() {
     const CHILD: &str = "RAWMAKASE_TEST_PROFILE_RECHECK";
     if std::env::var_os(CHILD).is_none() {
+        // libtest names a test by its path without the crate name.
+        let (_crate, module) = module_path!().split_once("::").unwrap();
+        let name = format!("{module}::reopening_the_offer_rechecks_a_resolved_file_conflict");
         let dir = tempfile::tempdir().unwrap();
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "app::profile_download::tests::reopening_the_offer_rechecks_a_resolved_file_conflict",
-                "--nocapture",
-            ])
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &name, "--nocapture"])
             .env(CHILD, "1")
             .env("RAWMAKASE_DATA_DIR", dir.path())
             .env("XDG_DATA_HOME", dir.path().join("xdg"))
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success(), "isolated profile conflict recovery");
+        // libtest exits 0 when `--exact` matches nothing, so a stale name would
+        // pass without running the recheck. Require that the child ran it.
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains(" 1 passed;"),
+            "isolated profile conflict recovery\n{stdout}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         return;
     }
     let dir = tempfile::tempdir().unwrap();

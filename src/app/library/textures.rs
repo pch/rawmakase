@@ -47,6 +47,9 @@ pub(super) struct PreviewTextures {
     /// as the worker sees them.
     pub(super) edit_seen: HashSet<PhotoId>,
     edit_wanted: Wanted,
+    /// Last frame's [`Self::thumb_seen`] as the thumbnail workers see them:
+    /// a request for a file no longer shown is skipped.
+    pub(super) thumb_shown: previews::ShownFiles,
     /// Edited previews of photos shown queued and not yet back.
     pub(super) edits_pending: usize,
     /// How fast edited previews are rendered, as last told the worker.
@@ -81,7 +84,9 @@ impl PreviewTextures {
     /// Starts both preview workers on the shared disk cache.
     pub(super) fn new(ctx: &egui::Context) -> Self {
         let cache = crate::catalog::preview_cache::PreviewCache::path();
-        let (thumb_tx, thumb_rx, thumbs) = previews::spawn(cache.clone(), ctx.clone());
+        let thumb_shown = previews::ShownFiles::default();
+        let (thumb_tx, thumb_rx, thumbs) =
+            previews::spawn(cache.clone(), ctx.clone(), thumb_shown.clone());
         let edit_wanted = Wanted::default();
         // A library replaced by another catalog closes its queue as it is
         // dropped, which cancels its edited previews; the thumbnail workers
@@ -102,6 +107,7 @@ impl PreviewTextures {
             next_ticket: 0,
             edit_seen: HashSet::new(),
             edit_wanted,
+            thumb_shown,
             edits_pending: 0,
             pace: Pace::Background,
             ahead: HashSet::new(),
@@ -135,7 +141,10 @@ impl PreviewTextures {
         while let Ok(result) = self.thumb_rx.try_recv() {
             self.progress.finish(&result);
             let PreviewResult {
-                path, image: im, ..
+                path,
+                image: im,
+                skipped,
+                ..
             } = result;
             self.pending.remove(&path);
             if self.superseded.remove(&path) {
@@ -143,6 +152,8 @@ impl PreviewTextures {
             }
             match im {
                 Some(im) => self.insert_thumb(ctx, path, &im),
+                // Asked for again once it is shown again.
+                None if skipped => {}
                 None => {
                     self.failed.insert(path);
                 }
@@ -188,6 +199,10 @@ impl PreviewTextures {
     /// Hands the worker the photos shown last frame. Call once per frame.
     pub(super) fn publish_shown(&mut self) {
         self.shown_files = std::mem::take(&mut self.thumb_seen);
+        *self
+            .thumb_shown
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(self.shown_files.clone());
         self.shown_photos = std::mem::take(&mut self.edit_seen);
         *self.edit_wanted.lock().unwrap() = self.shown_photos.clone();
     }
@@ -322,9 +337,21 @@ impl PreviewTextures {
         ctx: &egui::Context,
     ) {
         self.thumb_seen.insert(path.to_path_buf());
-        if !self.thumbs.contains_key(path)
-            && !self.pending.contains(path)
-            && !self.failed.contains(path)
+        if self.thumbs.contains_key(path) || self.failed.contains(path) {
+            return;
+        }
+        // The files shown this frame are published only at the next: a
+        // worker taking this one before then, queued now or earlier, makes
+        // it, not skips it.
+        if let Some(shown) = self
+            .thumb_shown
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_mut()
+        {
+            shown.insert(path.to_path_buf());
+        }
+        if !self.pending.contains(path)
             && self
                 .thumb_tx
                 .try_send(previews::ThumbJob {

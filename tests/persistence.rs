@@ -17,10 +17,12 @@ fn relative_paths_roundtrip() -> Result<()> {
         .env("RAWMAKASE_RELATIVE_PATH_TEST", "1")
         .env("RAWMAKASE_DATA_DIR", dir.path().join("data"))
         .output()?;
+    // libtest exits 0 when `--exact` matches nothing, so a renamed child would
+    // pass without running. Require that it ran.
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        output.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
+        output.status.success() && stdout.contains(" 1 passed;"),
+        "{stdout}\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
     Ok(())

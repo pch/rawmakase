@@ -496,14 +496,23 @@ mod tests {
         }
         let plugins = tempfile::tempdir().unwrap();
         std::fs::write(plugins.path().join("libheif-broken.so"), b"").unwrap();
-        let name = "raster::heic::libheif::tests::a_plugin_that_wont_load_is_not_libheif_missing";
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", name])
+        // libtest names a test by its path without the crate name.
+        let (_crate, module) = module_path!().split_once("::").unwrap();
+        let name = format!("{module}::a_plugin_that_wont_load_is_not_libheif_missing");
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &name])
             .env(CHILD, "1")
             .env("LIBHEIF_PLUGIN_PATH", plugins.path())
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success());
+        // libtest exits 0 when `--exact` matches nothing, so a stale name would
+        // pass without checking anything. Require that the child ran the test.
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains(" 1 passed;"),
+            "{stdout}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     /// Exiting while a decode runs past [`EXIT_WAIT`] ends the process then,

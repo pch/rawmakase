@@ -644,6 +644,107 @@ mod scenarios {
         Ok(())
     }
 
+    /// Issue #941: a root stored under another spelling of its path than
+    /// the disk's own, as a Lightroom catalog or an earlier release may have
+    /// it. Here that is a symbolic link; on Windows, the path without the
+    /// `\\?\` prefix that the disk's own spelling has.
+    #[test]
+    fn a_root_stored_under_another_spelling_gets_its_new_and_moved_photos() -> Result<()> {
+        let mut f = fixture()?;
+        #[cfg(unix)]
+        let spelled = {
+            let link = f._dir.path().join("link");
+            std::os::unix::fs::symlink(&f.root, &link)?;
+            link
+        };
+        #[cfg(windows)]
+        let spelled = PathBuf::from(
+            f.root
+                .to_string_lossy()
+                .strip_prefix(r"\\?\")
+                .expect("a canonical path")
+                .to_string(),
+        );
+        assert_ne!(spelled, f.root);
+        f.cat.db_for_tests().execute(
+            "UPDATE roots SET original_path=?",
+            [spelled.to_string_lossy()],
+        )?;
+        let moved = f.id("IMG_2001.dng");
+        copy_then_delete(
+            &f.root.join("Porto/IMG_2001.dng"),
+            &f.root.join("Lisbon/IMG_2001.dng"),
+        )?;
+        std::fs::write(f.root.join("Lisbon/IMG_1003.dng"), bytes(7))?;
+        std::fs::create_dir(f.root.join("Lisbon/new"))?;
+        std::fs::write(f.root.join("Lisbon/new/IMG_3001.dng"), bytes(8))?;
+        let plan = f.plan(SyncScope::All)?;
+        assert!(plan.not_checked.is_empty(), "{:?}", plan.not_checked);
+        assert_eq!(plan.additions.len(), 2, "{:?}", plan.additions);
+        let applied = f.apply(&plan, &plan.default_accepted())?;
+        assert!(applied.skipped.is_empty(), "{:?}", applied.skipped);
+        assert_eq!((applied.added, applied.moved), (2, vec![moved]));
+        assert_eq!(f.path_of(moved), spelled.join("Lisbon/IMG_2001.dng"));
+        assert_eq!(
+            f.path_of(f.id("IMG_3001.dng")),
+            spelled.join("Lisbon/new/IMG_3001.dng")
+        );
+        Ok(())
+    }
+
+    /// A directory spelled through the root's stored link, below a folder
+    /// located apart at the link's target, goes to that folder: the more
+    /// specific location wins whichever spelling matched.
+    #[cfg(unix)]
+    #[test]
+    fn a_location_found_only_as_the_disk_spells_it_still_wins() -> Result<()> {
+        use crate::catalog::ingest::{Matched, Matcher, Place};
+        let mut f = fixture()?;
+        let link = f._dir.path().join("link");
+        std::os::unix::fs::symlink(&f.root, &link)?;
+        std::fs::create_dir_all(f.root.join("Other/new"))?;
+        let porto = f.folder("Porto");
+        f.cat.relink_folder(porto, &f.root.join("Other"))?;
+        f.cat
+            .db_for_tests()
+            .execute("UPDATE roots SET original_path=?", [link.to_string_lossy()])?;
+        let directory = link.join("Other/new");
+        let placed = Matcher::new(&f.cat)?.place(&directory, &directory, &[]);
+        assert!(
+            matches!(&placed, Matched::Place(Place::Folder(_, logical)) if logical == "Porto/new"),
+            "{}",
+            match placed {
+                Matched::Place(Place::Folder(_, l)) => l,
+                _ => "not a folder".into(),
+            }
+        );
+        Ok(())
+    }
+
+    /// A catalog folder reached through a symbolic link keeps the photos
+    /// synchronized into it: the folder is the one the catalog names, not
+    /// the one the link points to.
+    #[cfg(unix)]
+    #[test]
+    fn a_new_photo_in_a_folder_behind_a_link_joins_that_folder() -> Result<()> {
+        let mut f = fixture()?;
+        let old = f.id("IMG_1001.dng");
+        std::fs::rename(f.root.join("Lisbon"), f.root.join("Actual"))?;
+        std::os::unix::fs::symlink(f.root.join("Actual"), f.root.join("Lisbon"))?;
+        std::fs::write(f.root.join("Lisbon/IMG_1003.dng"), bytes(7))?;
+        let lisbon = f.folder("Lisbon");
+        let plan = f.plan(SyncScope::Folder(lisbon))?;
+        assert_eq!(plan.additions.len(), 1, "{:?}", plan.additions);
+        let applied = f.apply(&plan, &plan.default_accepted())?;
+        assert!(applied.skipped.is_empty(), "{:?}", applied.skipped);
+        assert_eq!(applied.added, 1);
+        let photos = f.cat.photos()?;
+        let folder_of = |id| photos.iter().find(|p| p.id == id).unwrap().folder;
+        assert_eq!(folder_of(f.id("IMG_1003.dng")), lisbon);
+        assert_eq!(folder_of(old), lisbon);
+        Ok(())
+    }
+
     #[test]
     fn a_checksum_replaced_after_the_scan_skips_the_move() -> Result<()> {
         let mut f = fixture()?;

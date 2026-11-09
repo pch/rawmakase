@@ -12,6 +12,7 @@ use crate::xml::ns::JPEG_HEADER;
 use crate::xmp::descriptive::{self, Read};
 use crate::{isobmff, riff};
 use anyhow::{Context, Result};
+use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
@@ -60,8 +61,9 @@ impl SidecarReport {
 /// The suffix a sidecar's name adds, in the case lookup tries first.
 const SUFFIX: &str = ".xmp";
 
-/// `base` with [`SUFFIX`] added, in lower or upper case, if it exists.
-fn existing(base: &Path) -> Option<PathBuf> {
+/// `base` with [`SUFFIX`] added, in lower or upper case, if it exists: as
+/// `listing` says where it settles it, else as the file system says.
+fn existing(base: &Path, listing: Option<&Listing>) -> Option<PathBuf> {
     [SUFFIX.to_ascii_lowercase(), SUFFIX.to_ascii_uppercase()]
         .into_iter()
         .map(|s| {
@@ -69,7 +71,62 @@ fn existing(base: &Path) -> Option<PathBuf> {
             name.push(s);
             PathBuf::from(name)
         })
-        .find(|p| p.is_file())
+        .find(|p| is_file(p, listing))
+}
+
+/// A folder's names, read once: whether a file exists beside a photo is then
+/// answered without asking the file system for each name, which on a network
+/// share is a round trip each. It is as old as the read: a sidecar another
+/// program adds or removes afterwards is missed, or reported unreadable, as
+/// one changed between asking the file system and reading it would be, only
+/// over a longer time.
+pub(in crate::catalog) struct Listing {
+    /// The regular files, by their exact names.
+    files: HashSet<OsString>,
+    /// Every entry, files, folders and links, as [`caseless`] compares them.
+    loose: HashSet<String>,
+}
+
+impl Listing {
+    /// The names in `folder`; `None` when it can't be listed.
+    pub(in crate::catalog) fn read(folder: &Path) -> Option<Self> {
+        let mut listing = Self {
+            files: HashSet::new(),
+            loose: HashSet::new(),
+        };
+        for entry in std::fs::read_dir(folder).ok()? {
+            let entry = entry.ok()?;
+            let name = entry.file_name();
+            listing.loose.insert(caseless(&name));
+            if entry.file_type().ok()?.is_file() {
+                listing.files.insert(name);
+            }
+        }
+        Some(listing)
+    }
+    /// Whether the entry `name` of this folder is a regular file, when the
+    /// listing settles it: `true` for a file of exactly that name, `false`
+    /// when no entry matches it even loosely. `None` otherwise (only another
+    /// case or form matches, or the entry is a link or a folder), where only
+    /// the file system can say, as the volume compares names its own way.
+    pub(in crate::catalog) fn settles(&self, name: &OsStr) -> Option<bool> {
+        if self.files.contains(name) {
+            Some(true)
+        } else if self.loose.contains(&caseless(name)) {
+            None
+        } else {
+            Some(false)
+        }
+    }
+}
+
+/// Whether `path` is a file, as `listing` of its folder settles it, else as
+/// [`Path::is_file`] answers.
+fn is_file(path: &Path, listing: Option<&Listing>) -> bool {
+    match (listing, path.file_name()) {
+        (Some(listing), Some(name)) => listing.settles(name).unwrap_or_else(|| path.is_file()),
+        _ => path.is_file(),
+    }
 }
 
 /// What the sidecars `file` could have are named after, in the order lookup
@@ -131,9 +188,13 @@ pub(super) fn sidecar_names_caseless(file: &Path) -> Vec<String> {
 
 /// The sidecars of `file`, the one used first (see [`sidecar_candidates`]).
 pub fn sidecars(file: &Path) -> Vec<PathBuf> {
+    sidecars_listed(file, None)
+}
+/// [`sidecars`], with `listing` of `file`'s folder answering where it can.
+fn sidecars_listed(file: &Path, listing: Option<&Listing>) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = sidecar_candidates(file)
         .iter()
-        .filter_map(|base| existing(base))
+        .filter_map(|base| existing(base, listing))
         .collect();
     found.dedup();
     found
@@ -317,8 +378,17 @@ fn decode(bytes: &[u8]) -> Result<String> {
 /// one, an explicitly empty value included, else the file's. `None` when
 /// neither has any.
 pub fn read_file(file: &Path, raw_xmp: RawXmpReader) -> (Option<Read>, SidecarReport) {
+    read_file_listed(file, raw_xmp, None)
+}
+/// [`read_file`], with `listing` of `file`'s folder saying which sidecars
+/// exist where it can.
+pub(in crate::catalog) fn read_file_listed(
+    file: &Path,
+    raw_xmp: RawXmpReader,
+    listing: Option<&Listing>,
+) -> (Option<Read>, SidecarReport) {
     let mut report = SidecarReport::default();
-    let mut found = sidecars(file).into_iter();
+    let mut found = sidecars_listed(file, listing).into_iter();
     let first = found.next();
     report.ignored.extend(found);
     let sidecar = first.and_then(|path| {

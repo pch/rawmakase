@@ -297,6 +297,16 @@ impl Raw {
     /// lens profiles are `crate::photo::open`'s.
     pub fn open_file(path: &Path) -> Result<Self> {
         let (own, h) = own::Own::open(path)?;
+        Self::of(own, h)
+    }
+    /// The photo's facts from its header alone, read in pieces without its
+    /// sensor data, for its metadata only: crate-private, as such a `Raw` must
+    /// never be developed (see `photo::header_metadata`).
+    pub(crate) fn open_header(path: &Path) -> Result<Self> {
+        let (own, h) = own::Own::open_header(path)?;
+        Self::of(own, h)
+    }
+    fn of(own: own::Own, h: Header) -> Result<Self> {
         let adobe_names = rawmakase_model::cameras::adobe_names(
             &h.make,
             &h.model,
