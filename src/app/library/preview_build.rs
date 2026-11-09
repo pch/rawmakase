@@ -337,7 +337,10 @@ impl Builder {
         let thread = crate::raw::spawn_background(move || {
             let pool = crate::raw::background_pool(2, "preview-build").ok();
             let mut cache = PreviewCache::open(&cache_path).ok();
-            while let Some(next) = worker.next() {
+            // Discarded previews leave space in the file, given back while
+            // nothing else is waiting, a short write at a time.
+            let mut release = false;
+            while let Some(next) = worker.next(release) {
                 let (item, cancel) = match next {
                     Next::Op(Op::Refresh(items), generation) => {
                         if let Some(cache) = &cache {
@@ -346,11 +349,29 @@ impl Builder {
                         continue;
                     }
                     Next::Op(op, _) => {
+                        release |= matches!(op, Op::Discard(..) | Op::Clear(_) | Op::Expire(..));
                         if let Some(cache) = &mut cache {
                             // Best effort, and never worth ending the worker for.
                             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                                 maintain(cache, op)
                             }));
+                        }
+                        continue;
+                    }
+                    Next::Release => {
+                        let step = cache.as_mut().and_then(|cache| {
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                cache.release_step()
+                            }))
+                            .ok()?
+                            .ok()?
+                        });
+                        // A failed step leaves the rest for the next Discard,
+                        // Clear or expiry (run at launch), and a step after
+                        // each prune.
+                        match step {
+                            Some(pause) => std::thread::sleep(pause),
+                            None => release = false,
                         }
                         continue;
                     }
@@ -505,6 +526,8 @@ enum Next {
     /// Upkeep, with the generation it was taken in.
     Op(Op, u64),
     Build(Item, Arc<AtomicBool>),
+    /// A step of giving back the space discarded previews left.
+    Release,
 }
 
 impl State {
@@ -574,8 +597,9 @@ impl Shared {
             state.enqueue(stale);
         }
     }
-    /// Upkeep first, then the next photo; `None` once closed.
-    fn next(&self) -> Option<Next> {
+    /// Upkeep first, then the next photo, then, when `release`, a step of
+    /// giving space back; `None` once closed.
+    fn next(&self, release: bool) -> Option<Next> {
         let mut state = self.state.lock().ok()?;
         loop {
             // Upkeep asked for goes through even at exit: a Discard already
@@ -590,6 +614,9 @@ impl Shared {
                 state.running = Some((item.photo, item.kind));
                 let cancel = state.cancel.clone();
                 return Some(Next::Build(item, cancel));
+            }
+            if release {
+                return Some(Next::Release);
             }
             state = self.wake.wait(state).ok()?;
         }

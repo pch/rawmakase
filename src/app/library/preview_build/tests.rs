@@ -968,6 +968,79 @@ fn clearing_a_kind_stops_its_build_under_way() {
     );
 }
 
+/// The cache's 1:1 previews and the pages its file has free, which it could
+/// give back to the disk; read without opening a [`PreviewCache`], which gives
+/// some back.
+fn rows_and_free_pages(cache: &Path) -> (i64, i64) {
+    let db = rusqlite::Connection::open(cache).unwrap();
+    let count = |sql| db.query_row(sql, [], |r| r.get(0)).unwrap();
+    (
+        count("SELECT count(*) FROM sized_previews"),
+        count("PRAGMA freelist_count"),
+    )
+}
+
+/// Stores `n` 1:1 previews of 100 KB each, 25 pages of the file apiece.
+fn fill_one_to_one(cache: &Path, n: usize) {
+    drop(PreviewCache::open(cache).unwrap());
+    let db = rusqlite::Connection::open(cache).unwrap();
+    for n in 0..n {
+        db.execute(
+            "INSERT INTO sized_previews VALUES(?1,'','one_to_one',0,'0',0,0,1,1,zeroblob(100000),0)",
+            [format!("{n}.ARW")],
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn clearing_previews_gives_their_space_back_to_the_disk() {
+    let (_dir, mut e, _, cache) = editor(&["a.ARW"]);
+    fill_one_to_one(&cache, 300);
+    e.clear_previews(PreviewKind::OneToOne);
+    let until = Instant::now() + Duration::from_secs(20);
+    loop {
+        let (rows, free) = rows_and_free_pages(&cache);
+        if rows == 0 && free == 0 {
+            break;
+        }
+        assert!(
+            Instant::now() < until,
+            "{rows} previews left, {free} pages never given back"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Giving space back takes a short write at a time, so quitting waits for one
+/// at most; what is left is given back later.
+#[test]
+fn quitting_while_space_is_given_back_ends_in_time() {
+    let (_dir, mut e, _, cache) = editor(&["a.ARW"]);
+    // About 25,000 pages: a hundred steps, each with its pause.
+    fill_one_to_one(&cache, 1000);
+    e.clear_previews(PreviewKind::OneToOne);
+    let until = Instant::now() + Duration::from_secs(20);
+    while rows_and_free_pages(&cache).0 > 0 {
+        assert!(Instant::now() < until, "the previews were never cleared");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    // Timed on its own: the rest of quitting (the catalog's save, the other
+    // workers) is no faster for it, and slow on a busy Windows runner.
+    let started = Instant::now();
+    let worker = crate::app::task::Stopping::new(e.preview_builds.close());
+    let stopped = crate::app::task::wait_for(vec![worker], Duration::from_secs(3));
+    let worker = started.elapsed();
+    let waited = e.exit_within(Duration::from_secs(3));
+    assert_eq!((stopped.detached, waited.detached), (0, 0));
+    assert!(
+        worker < Duration::from_secs(1),
+        "the worker took {worker:?} to stop, quitting {:?} in all",
+        started.elapsed()
+    );
+    assert!(rows_and_free_pages(&cache).1 > 0);
+}
+
 #[test]
 fn a_build_keeps_its_request_through_an_expiry_while_it_waited() {
     let (_dir, mut e, ids, cache) = editor(&["a.ARW"]);
