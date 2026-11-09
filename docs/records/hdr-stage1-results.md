@@ -23,9 +23,41 @@ The references below are local diagnostics on a CC0 Nikon Z 8 NEF from raw.pixls
 (8256×5504, Camera Standard and Camera Standard HDR DCPs). They were made with
 Camera Raw 18.7 (2743), Process Version 15.4, lens and detail processing off, As
 Shot white balance, and output to 16-bit P3 PQ (HDR) or Display P3 (SDR). They are
-not frozen parity references. The frozen family needs the validation/holdout split
-the plan asks for, and the merges and synthetic fixtures listed under
-[Open](#open).
+diagnostics. The frozen references are in the dataset ([Frozen references](#frozen-references)).
+
+### Frozen references
+
+The HDR stages' captures were frozen in the test dataset on 2026-11-09
+([HDR references](../../tests/corpus/README.md#hdr-references)); none was re-rendered:
+
+- **Family:** 1,003 distinct jobs. The twelve photos of [Validation](#validation) at
+  neutral HDR and every measured setting, with their SDR captures; the six HDRMerge
+  floating-point DNGs of a Canon EOS 5D Mark III (CC0, 16, 24 and 32 bit, compressed
+  and not) at neutral HDR and SDR; and 565 synthetic ramp, scene and patch jobs. The
+  factor-8 linear arrays of photos are stored as float16, which moves every stage 1
+  metric by at most 0.0006 stop and 0.006 ΔE_ITP. Read back with `hdr_validate.py`,
+  the neutral renders of `main` f7d7ee9a reproduce the [Validation](#validation) table
+  within 0.01 stop and 0.1 ΔE_ITP on eleven photos. The Nikon Z5 II now measures ΔE_ITP 4.0 / 8.2 and SDR
+  0.030 (the table's 2.2 / 4.5 and 0.010). The Lightroom merge of #525 is not CC0 and
+  has no capture.
+- **Gate set:** Camera Raw's neutral HDR render (Adobe Standard, limit 4) of 194 CC0
+  photos from 176 camera models of 16 makes announced 2016 or later, chosen for
+  highlights above white (190 have factor-8 blocks above white; median 3.2% of the
+  area), 51 validation, 47 holdout and 96 training, kept as 48-across block means.
+  `hdr_gate.py` scores a build.
+
+`main` f7d7ee9a on the gate set, the baseline (blocks; peak from factor 8):
+
+| Split | Scored | Within every tolerance | Median above white, median / p90 (stops) | Peak over 0.1 stop | ΔE_ITP mean over 5 |
+| --- | --- | --- | --- | --- | --- |
+| Validation | 51 of 51 | 34 | 0.018 / 0.144 | 14 | 9 |
+| Holdout | 45 of 47 | 31 | 0.024 / 0.130 | 11 | 9 |
+| Training | 89 of 96 | 61 | 0.031 / 0.220 | 19 | 18 |
+
+Nine photos do not render. Eight have no Adobe Standard in the profile library the
+gate used: three Samsung phones, the DJI FC9287, the Panasonic DC-G100D and DC-TZ95D
+and the Sony ZV-1. The Leica D-Lux 7's profile has sRGB-encoded tables, which HDR
+refuses. The peak is the most frequent miss, as for the X100V and Z6 III above.
 
 ## Measurements
 
@@ -512,8 +544,9 @@ compared by luminance in 8× linear blocks:
   Ultra HDR JPEGs are in `tests/data/formats`), plus a camera HLG/PQ HEIF and an Apple
   gain-map HEIC/JPEG, which need a real capture. Synthetic
   ramps crossing white, saturated highlights and negative matrix results.
-- Frozen family: Lightroom and HDRMerge merges, a validation/holdout split, curves,
-  masks and SDR rendition captures. Camera Raw's TIFF output carries no SDR
+- Frozen family: curves, masks and SDR rendition captures (the family and the gate
+  set are frozen: [Frozen references](#frozen-references)), and the Lightroom merge,
+  which needs a CC0 sample. Camera Raw's TIFF output carries no SDR
   rendition; its Save Image gain-map JPEG does, through the dialog only (no
   scripting route was found).
 - Lightroom's opening defaults for unedited PQ, HLG and gain-map sources (RAWmakase
@@ -526,8 +559,8 @@ compared by luminance in 8× linear blocks:
 
 ## Progress
 
-- [ ] Stage 1: harness, Nikon measurements and codec spike done; fixtures, frozen
-  family and display prototype open. Lossy JPEG XL uses jixel, not libjxl (#906).
+- [ ] Stage 1: harness, Nikon measurements, codec spike, the frozen family and the
+  broad gate set done; fixtures and display prototype open. Lossy JPEG XL uses jixel, not libjxl (#906).
 - [x] Stage 2 (#905): HDR settings in the recipe (`model::hdr`), schema 14 and catalog
   version 6 for HDR on, values kept while off without a format change, XMP and
   Lightroom reading and writing, presets, the High Dynamic Range Copy/Sync group,

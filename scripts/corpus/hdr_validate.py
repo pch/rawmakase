@@ -1,8 +1,9 @@
 """Compares RAWmakase's HDR masters with a captured Camera Raw HDR reference family.
 
-Run `validate FAMILY BINARY OUT [--split validation|holdout] [--tag TAG]`. FAMILY is a
-folder written by `hdr_reference.py capture`; BINARY is a RAWmakase build. Each HDR
-job is rendered with `rawmakase render --hdr` from the job's source, its requested
+Run `validate FAMILY BINARY OUT [--split validation|holdout] [--tag TAG] [--dataset DIR]`.
+FAMILY is a folder written by `hdr_reference.py capture`, or the dataset's frozen
+family (its arrays stored once by content, its sources relative to `--dataset`);
+BINARY is a RAWmakase build. Each HDR job is rendered with `rawmakase render --hdr` from the job's source, its requested
 settings (without CameraProfile, which is passed as the job's DCP) and written to OUT,
 then reduced and compared as the reference was: linear Display P3, graphics white 1,
 area mean in linear light. Nothing in FAMILY is written.
@@ -113,6 +114,22 @@ def without_profile(xmp):
     return re.sub(r'\s*crs:CameraProfile="[^"]*"', '', xmp)
 
 
+def load_reference(family, index, record):
+    """A job's reduced reference as float64: a frozen family's stored array (float16
+    or float64, compressed, shared by jobs with the same pixels), else the capture's own
+    `linear-p3.npy`."""
+    if record.get('stored_array'):
+        with np.load(family / record['stored_array']) as data:
+            return data['linear'].astype(np.float64)
+    return np.load(family / f'{index:03d}' / 'linear-p3.npy')
+
+
+def source(job, dataset):
+    """A job's source: a frozen family names it relative to the dataset folder."""
+    path = Path(job['source'])
+    return str(path if path.is_absolute() or dataset is None else dataset / path)
+
+
 def render(binary, job, xmp, output, hdr):
     command = [str(binary), 'render', job['source'], '--xmp', str(xmp)]
     if job['profile'] != 'embedded':
@@ -121,10 +138,12 @@ def render(binary, job, xmp, output, hdr):
     return subprocess.run(command, capture_output=True, text=True)
 
 
-def validate(family, binary, out, split, tag):
+def validate(family, binary, out, split, tag, dataset=None):
     out.mkdir(parents=True, exist_ok=True)
     results = []
     manifest = json.loads((family / 'manifest.json').read_text())
+    for record in manifest:
+        record['job'] = dict(record['job'], source=source(record['job'], dataset))
     # The SDR capture of each source, profile, look and settings but HDR's, for the
     # relative metric.
     def pairing(job):
@@ -150,7 +169,7 @@ def validate(family, binary, out, split, tag):
                 results.append(dict(index=index, tag=job.get('tag'), error=done.stderr.strip()[-300:]))
                 print(index, job.get('tag'), 'error', done.stderr.strip()[-200:], flush=True)
                 continue
-        reference = np.load(folder / 'linear-p3.npy')
+        reference = load_reference(family, index, record)
         factor = record['resampling']['factor']
         candidate = hdr_reference.reduce_linear(read_master(master), factor)
         h, w = min(reference.shape[0], candidate.shape[0]), min(reference.shape[1], candidate.shape[1])
@@ -166,7 +185,7 @@ def validate(family, binary, out, split, tag):
                 off.write_text(xmp.read_text().replace('crs:HDREditMode="1"', 'crs:HDREditMode="0"'))
                 render(binary, job, off, plain, False).check_returncode()
             ours_sdr = hdr_reference.reduce_linear(read_sdr(plain), factor)[:h, :w]
-            theirs_sdr = np.load(family / f'{pair:03d}' / 'linear-p3.npy')[:h, :w]
+            theirs_sdr = load_reference(family, pair, manifest[pair])[:h, :w]
             row.update(relative(reference[:h, :w], candidate[:h, :w], theirs_sdr, ours_sdr))
             y = lambda a: np.maximum(a @ P3_LUMA, 1e-6)
             if 'Exposure' not in (job.get('tag') or '') and 'Whites' not in (job.get('tag') or '') \
@@ -192,8 +211,10 @@ def main():
     v.add_argument('out', type=Path)
     v.add_argument('--split')
     v.add_argument('--tag')
+    v.add_argument('--dataset', type=Path, help='the dataset folder a frozen family\'s sources are relative to')
     args = parser.parse_args()
-    validate(args.family.resolve(), args.binary.resolve(), args.out.resolve(), args.split, args.tag)
+    validate(args.family.resolve(), args.binary.resolve(), args.out.resolve(), args.split, args.tag,
+             args.dataset.resolve() if args.dataset else None)
 
 
 if __name__ == '__main__':
