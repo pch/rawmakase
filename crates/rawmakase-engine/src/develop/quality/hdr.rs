@@ -73,11 +73,27 @@ fn master(
     use crate::color::{srgb_decode, srgb_encode};
     ensure!(r.hdr.is_active(), "This edit has HDR off");
     crate::model::hdr::check_for(r, &im.metadata)?;
-    if im.metadata.hdr_source.is_some() {
-        return render_hdr_light(im, r, part, cancel);
-    }
     let max_edge = part.max_edge();
-    let recipe = r.resolved_hdr(&im.metadata);
+    let mut recipe = r.resolved_hdr(&im.metadata);
+    // An HDR file renders through the same stages as a raw, from the pseudo-scene of
+    // its light, through its profile with a linear curve; an edit without a profile
+    // has the Embedded profile, as a rendered file has no camera matrix to default
+    // to. Its Exposure is a gain of that light, applied before, as Camera Raw
+    // renders it.
+    let scene;
+    let (im, ai) = if im.metadata.hdr_source.is_some() {
+        scene = hdr_file_scene(im, recipe.exposure.exp2())?;
+        let recipe = recipe.to_mut();
+        recipe.exposure = 0.;
+        let profile = match recipe.profile.as_deref() {
+            Some(p) => p.for_hdr_light(),
+            None => crate::camera_profiles::CameraProfile::embedded(&im.metadata).for_hdr_light(),
+        };
+        recipe.profile = Some(std::sync::Arc::new(profile));
+        (&scene, None)
+    } else {
+        (im, ai)
+    };
     ensure!(
         recipe
             .profile
@@ -146,63 +162,30 @@ fn master(
     })
 }
 
-/// The HDR master of an HDR file (docs/records/hdr-stage4-design.md): its own light,
-/// which no profile, white balance or tone stage applies to, through Exposure (a gain),
-/// the geometry its SDR rendition renders with, a resize in linear light, and the
-/// limit. `im` is the decoded photo or its preview reduction, which hold the light;
-/// a working image doesn't, and a fact in its metadata alone renders nothing.
-/// Resizing clamps negative light to 0; at full size it stays signed.
-fn render_hdr_light(
-    im: &CameraImage,
-    r: &ValidRecipe,
-    part: Part,
-    cancel: Cancel<'_>,
-) -> Result<crate::rendered::HdrImage> {
+/// An HDR file as the scene its HDR master renders (docs/records/hdr-stage4-design.md):
+/// its light through [`crate::develop::rendered::scene_from_light`], which the master
+/// at the file's own settings (`Recipe::for_rendered`, the Embedded profile with a
+/// linear curve) renders as the light again. `im` is the decoded photo or its preview reduction, which hold
+/// the light; a working image doesn't, and a fact in its metadata alone renders
+/// nothing. The scene carries no light of its own, so no stage can reach it. `gain`
+/// scales the light first.
+fn hdr_file_scene(im: &CameraImage, gain: f32) -> Result<CameraImage> {
     use anyhow::Context;
     let light = im.hdr().context("This HDR file's light was not decoded")?;
-    let recipe = r.resolved_hdr(&im.metadata);
-    let source = CameraImage {
+    Ok(CameraImage {
         width: light.width(),
         height: light.height(),
         recovered: Default::default(),
-        pixels: light.pixels().to_vec(),
+        pixels: light
+            .pixels()
+            .par_iter()
+            .map(|p| crate::develop::rendered::scene_from_light(p.map(|v| v * gain)))
+            .collect(),
         metadata: im.metadata.clone(),
         fast: im.fast,
         scale_factor: 1.,
         scale_clipped: 0,
         hdr: Default::default(),
-    };
-    let g = Geometry::new(&source, &recipe, 0);
-    let samples = crate::develop::pipeline::sample_region(
-        (&source).into(),
-        &recipe,
-        &g,
-        part.region(&g)?,
-        0.,
-        cancel,
-    )?;
-    check_cancel(cancel)?;
-    let gain = recipe.exposure.exp2();
-    let out = crate::rendered::Rendered {
-        width: samples.width,
-        height: samples.height,
-        pixels: samples
-            .pixels
-            .into_iter()
-            .map(|p| p.map(|v| v * gain))
-            .collect(),
-    };
-    let resized = resize_unbounded(out, part.max_edge());
-    let peak = recipe.hdr.peak();
-    Ok(crate::rendered::HdrImage {
-        width: resized.width,
-        height: resized.height,
-        pixels: resized
-            .pixels
-            .into_iter()
-            .map(|p| p.map(|v| crate::model::hdr::roll_off(v, peak)))
-            .collect(),
-        peak,
     })
 }
 
@@ -251,8 +234,10 @@ mod tests {
         .unwrap()
     }
 
-    /// An HDR file's master at its own settings is its light: above white, signed and
-    /// coloured alike. Exposure is a gain; Rotate turns it as the SDR rendition turns.
+    /// An HDR file's master at its own settings is its light, above white and coloured
+    /// alike, within the pseudo-scene's precision (0.0001 stop); a negative channel
+    /// renders as 0, as an HDR master never renders one. Exposure is a gain; Rotate
+    /// turns it as the SDR rendition turns.
     #[test]
     fn an_hdr_files_master_is_its_light() -> Result<()> {
         let light = |x: u32, y: u32| match (x, y) {
@@ -267,9 +252,9 @@ mod tests {
         let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
         assert_eq!((out.width, out.height), (6, 4));
         for (i, p) in out.pixels.iter().enumerate() {
-            let want = light(i as u32 % 6, i as u32 / 6);
+            let want = light(i as u32 % 6, i as u32 / 6).map(|v| v.max(0.));
             assert!(
-                (0..3).all(|c| (p[c] - want[c]).abs() < 1e-5),
+                (0..3).all(|c| (p[c] - want[c]).abs() <= 2e-4 * want[c].max(0.05)),
                 "{i}: {p:?} against {want:?}"
             );
         }
@@ -277,7 +262,11 @@ mod tests {
         brighter.exposure = 1.;
         brighter.hdr.limit = 4.;
         let out = render_hdr(&im, &brighter.checked()?, None, 0, Cancel::NEVER)?;
-        assert!((out.pixels[0][0] - 12.).abs() < 1e-4, "{:?}", out.pixels[0]);
+        assert!(
+            (out.pixels[0][0] / 12. - 1.).abs() < 2e-4,
+            "{:?}",
+            out.pixels[0]
+        );
         let mut turned = r;
         turned.rotation = 1;
         let out = render_hdr(&im, &turned.checked()?, None, 0, Cancel::NEVER)?;
@@ -291,6 +280,37 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(brightest(&out.pixels), brightest(&sdr.pixels));
+        Ok(())
+    }
+
+    /// Saturated light renders as itself too, within the precision of the colour
+    /// matrices the master's stages convert through, as a raw's do (f32, and published
+    /// pairs inverse to about 1e-5): 1e-5 of the pixel's brightest channel. An edit
+    /// without a profile renders as one with the Embedded profile.
+    #[test]
+    fn saturated_light_and_an_edit_without_a_profile_render_as_the_light() -> Result<()> {
+        let colours = [
+            [40., 1e-4, 1e-4],
+            [0., 0., 40.],
+            [3., 0.02, 0.4],
+            [0.001, 0.3, 0.0002],
+            [12., 11., 0.],
+            [0.2, 0.2, 0.2],
+        ];
+        let im = hdr_file(6, 1, |x, _| colours[x as usize]);
+        let r = Recipe::for_new_rendered(&im.metadata);
+        let mut none = r.clone();
+        none.profile = None;
+        for r in [r, none] {
+            let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+            for (p, want) in out.pixels.iter().zip(colours) {
+                let top = want.iter().copied().fold(0f32, f32::max);
+                assert!(
+                    (0..3).all(|c| (p[c] - want[c]).abs() <= 2e-4 * want[c] + 1e-5 * top),
+                    "{p:?} against {want:?}"
+                );
+            }
+        }
         Ok(())
     }
 

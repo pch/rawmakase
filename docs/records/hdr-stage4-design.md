@@ -19,7 +19,11 @@ Revision 2's review asked for:
 ## Goals
 
 - **Master identity.** At neutral settings, an HDR file's master is its light
-  decoded by an exact transfer and matrix path, within float rounding. That light
+  decoded by an exact transfer and matrix path, within float rounding (since the
+  paths were unified: the pseudo-scene inverts exactly from 0.5 up and within
+  0.0001 stop below, and the stages' colour matrices hold a pixel to 1e-5 of its
+  brightest channel, with negative channels at 0;
+  [below](#the-master-of-an-hdr-file)). That light
   is linear ProPhoto with 1.0 at graphics white (203 cd/m²), signed values kept. It
   is tested against an independent decoder of the same signal, not against
   RAWmakase's own decoding.
@@ -119,16 +123,32 @@ existing refusals are unchanged.
 
 ## The master of an HDR file
 
-`render_hdr_light`:
+The first increment rendered it on a path of its own (`render_hdr_light`):
+Exposure as a gain of 2^EV, the geometry, `resize_unbounded` in linear light and
+`roll_off` to 2^limit. Since the follow-up that unified the paths, an HDR file's
+master renders through the raw HDR master's stages (`render_hdr`), so every
+adjustment those stages render reaches HDR files too:
 
-1. Exposure as a gain of 2^EV.
-2. Geometry: the same `Geometry`, frame and output-size rounding the SDR rendition
-   uses for that recipe and metadata, so the two line up.
-   - Supported: orientation, crop and its aspect constraint, straighten, Rotate
-     and Flip.
-   - Refused: Transform and Upright, until they are shared.
-3. Resizing with `resize_unbounded`.
-4. `roll_off` to 2^limit.
+1. Exposure as a gain of 2^EV of the light. The recipe the stages read then has
+   Exposure 0.
+2. The profile with a linear curve (`CameraProfile::for_hdr_light`), which renders
+   in HDR as the identity, so the light is the scene. Camera Raw 18.7 renders an HDR
+   PQ TIFF this way: its light at the file's settings, Exposure and Temp as gains of
+   it at every level, and Whites as the raw HDR Whites measured through a linear
+   profile ([HDR files](hdr-stage1-results.md#hdr-files)).
+3. The light's HDR pseudo-scene, `develop::rendered::scene_from_light`: `F_hdr⁻¹`
+   DNG RGBTone fashion, where `F_hdr` is what the stages render a gray of scene
+   value `s` as at `Recipe::for_rendered`'s settings: the scene tone stage's HDR
+   white curve at Whites 0, which is the identity from 0.5 up and the default
+   curve's toe, within 0.0015 stop of it, below. From 0.5 up the pseudo-scene is the
+   light; below, `F_hdr` is tabulated at 512 samples a stop from 2^−24 and inverted
+   in log2, to within 0.0001 stop. Negative channels are taken as 0.
+4. The raw HDR master's stages on that scene: the same `Geometry`, frame and
+   output-size rounding the SDR rendition uses, so the two line up; sharpening and
+   resizing on sRGB-curve-encoded values; `roll_off` to 2^limit last.
+
+The pseudo-scene is built for each master render from the decoded light; it carries
+no light of its own, so no working image derived from it holds one.
 
 `model::hdr::check_recipe` takes the source facts. For an HDR file it compares the
 effective recipe (`as_rendered`, so a switched-off panel counts as off) with
