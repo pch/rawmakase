@@ -308,13 +308,16 @@ impl CatalogSession {
     pub(crate) fn refresh_keywords(&mut self, ids: &[PhotoId]) -> Result<()> {
         let mut names = HashMap::new();
         for id in ids {
-            let keywords: Vec<String> = self
+            let mut keywords: Vec<String> = self
                 .catalog
                 .keywords(*id)?
                 .into_iter()
                 .map(|k| k.name)
+                .filter(|name| !name.is_empty())
                 .collect();
-            names.insert(*id, keywords.join(", "));
+            // In the order the catalog lists them in.
+            keywords.sort();
+            names.insert(*id, keywords);
         }
         for p in &mut self.photos {
             if let Some(n) = names.remove(&p.id) {
@@ -1060,10 +1063,10 @@ mod tests {
         )?;
         assert!(change.listed.is_ok());
         assert_ne!(change.before, change.after);
-        assert_eq!(session.photos[0].keywords, "Kraków");
+        assert_eq!(session.photos[0].keywords, ["Kraków"]);
         // Undone: the lists follow the catalog back.
         session.restore_descriptive(&change.before, &[(a, 3, -1, "Blue".into())])?;
-        assert_eq!(session.photos[0].keywords, "");
+        assert!(session.photos[0].keywords.is_empty());
         assert_eq!(session.photos[0].rating, 3);
         assert_eq!(session.catalog.photos()?[0].label, "Blue");
         assert_eq!(session.catalog.metadata_snapshot(&[a])?, change.before);

@@ -315,8 +315,12 @@ fn keywords_are_found_by_path_in_nfc_and_read_with_their_ancestors() -> Result<(
             vec!["places".into()],
         ]
     );
-    // The display string is still one entry per keyword.
-    assert!(cat.photos()?[0].keywords.contains("Smith, John"));
+    // A name with a comma is one keyword.
+    assert!(
+        cat.photos()?[0]
+            .keywords
+            .contains(&"Smith, John".to_string())
+    );
     cat.remove_keyword(&ids, d)?;
     assert_eq!(cat.keywords(ids[0])?.len(), 3);
     Ok(())

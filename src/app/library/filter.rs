@@ -262,7 +262,7 @@ impl Filters {
                     "{} {} {} {} {} {} {}",
                     p.filename,
                     p.copy_name,
-                    p.keywords,
+                    p.keywords.join(", "),
                     p.captured,
                     p.label,
                     one(Attribute::Camera).unwrap_or_default(),

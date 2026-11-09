@@ -38,6 +38,23 @@ impl Attribute {
         Self::FileType,
         Self::Keyword,
     ];
+    /// The attribute's key in the saved layout, kept when its name changes.
+    pub(super) fn key(self) -> &'static str {
+        match self {
+            Self::Camera => "camera",
+            Self::Lens => "lens",
+            Self::FocalLength => "focal_length",
+            Self::Aperture => "aperture",
+            Self::ShutterSpeed => "shutter_speed",
+            Self::Iso => "iso",
+            Self::FileType => "file_type",
+            Self::Keyword => "keyword",
+        }
+    }
+    /// The attribute saved as `key`; None for one this version doesn't know.
+    pub(super) fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|a| a.key() == key)
+    }
     pub(super) fn name(self) -> &'static str {
         match self {
             Self::Camera => "Camera",
@@ -164,12 +181,11 @@ fn file_type(filename: &str) -> Option<Cow<'static, str>> {
     }))
 }
 
-/// `p`'s keywords. The catalog joins their names with ", ", and Lightroom
-/// keeps commas out of keyword names.
+/// `p`'s keyword names, each whole.
 fn keywords(p: &Photo) -> impl Iterator<Item = &str> {
     p.keywords
-        .split(", ")
-        .map(str::trim)
+        .iter()
+        .map(|k| k.trim())
         .filter(|k| !k.is_empty())
 }
 

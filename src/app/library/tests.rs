@@ -560,7 +560,7 @@ fn photo_cells_preserve_texture_proportions_at_different_grid_widths() {
         copy_name: String::new(),
         master: None,
         stack: None,
-        keywords: String::new(),
+        keywords: Vec::new(),
         has_lightroom_edits: false,
     };
     for size in [[360, 240], [160, 240], [240, 240], [360, 90]] {
@@ -1601,6 +1601,27 @@ fn the_metadata_filter_follows_info_saved_later_and_keeps_its_choices() -> Resul
         library.metadata_counts(Attribute::Keyword),
         [(value("Granada"), 1), (None, 1)]
     );
+    // A keyword read from XMP may have a comma in its name: it is one value.
+    library.session.catalog_mut_for_tests().add_keywords(
+        &[ids[1]],
+        &[vec!["Washington, D.C.".into()], vec!["Washington".into()]],
+    )?;
+    library.refresh()?;
+    library.filter();
+    assert_eq!(
+        library.metadata_counts(Attribute::Keyword),
+        [
+            (value("Granada"), 1),
+            (value("Washington"), 1),
+            (value("Washington, D.C."), 1),
+        ]
+    );
+    library
+        .filters
+        .metadata
+        .insert(Attribute::Keyword, [value("Washington, D.C.")].into());
+    library.filter();
+    assert_eq!(ids_of(&library), [ids[1]]);
     Ok(())
 }
 #[test]
@@ -2791,7 +2812,7 @@ fn flag_steps_up_and_down_and_stops_at_the_ends() {
         copy_name: String::new(),
         master: None,
         stack: None,
-        keywords: String::new(),
+        keywords: Vec::new(),
         has_lightroom_edits: false,
     };
     assert_eq!(Edit::FlagDelta(1).values(&photo(-1)).1, 0);
@@ -3542,7 +3563,7 @@ fn a_descriptive_edit_is_one_command_that_restores_each_photo() -> Result<()> {
             .session
             .photos()
             .iter()
-            .all(|p| p.keywords == "City")
+            .all(|p| p.keywords == ["City"])
     );
     for command in done.iter().rev() {
         library.restore_descriptive(&command.before, &command.ratings_before)?;
