@@ -57,15 +57,73 @@ pub(crate) fn system_display(monitor: Monitor) -> SystemDisplay {
     }
 }
 
+/// What Windows reports about HDR on a display. Only the query is Windows's; the
+/// arithmetic here is plain, so it is tested on every platform.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) struct WindowsHdr {
+    /// HDR is on (Windows' "Use HDR"): the desktop is composed in scRGB and sent
+    /// to the display as HDR10, so the output's colour space is BT.2100 PQ.
+    pub(crate) on: bool,
+    /// HDR could be turned on for the display in Windows' settings.
+    pub(crate) supported: bool,
+    /// Where SDR content's white sits, in cd/m² (Windows' "SDR content
+    /// brightness"); 80 with HDR off.
+    pub(crate) sdr_white_nits: f32,
+    /// The display's peak luminance, in cd/m², as its EDID gives it to DXGI; 0
+    /// when it gives none.
+    pub(crate) peak_nits: f32,
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+impl WindowsHdr {
+    /// scRGB's 1.0, in cd/m².
+    const SCRGB_ONE_NITS: f32 = 80.;
+    /// How far above SDR white the display shows light, as a linear factor (1 with
+    /// HDR off, or when the display gives no usable peak).
+    pub(crate) fn headroom(&self) -> f32 {
+        let (peak, white) = (self.peak_nits, self.sdr_white_nits);
+        if self.on && white > 0. && peak.is_finite() && white.is_finite() {
+            (peak / white).max(1.)
+        } else {
+            1.
+        }
+    }
+    /// The scRGB value SDR white is presented at. With HDR on, scRGB 1.0 is 80
+    /// cd/m², not the user's SDR white, which is usually brighter; with HDR off,
+    /// Windows shows scRGB 1.0 as the display's white.
+    pub(crate) fn scrgb_white(&self) -> f32 {
+        let white = self.sdr_white_nits;
+        if self.on && white > 0. && white.is_finite() {
+            white / Self::SCRGB_ONE_NITS
+        } else {
+            1.
+        }
+    }
+}
+
+/// What Windows reports about HDR on `monitor`, or `None` when it can't be asked.
+#[cfg(windows)]
+pub(crate) fn windows_hdr(monitor: Monitor) -> Option<WindowsHdr> {
+    windows::hdr(monitor.0)
+}
+
+/// Whether any display the desktop shows on can show HDR, its switch on or not.
+#[cfg(windows)]
+pub(crate) fn any_display_supports_hdr() -> bool {
+    windows::any_display_supports_hdr()
+}
+
 #[cfg(windows)]
 mod windows {
-    use super::SystemDisplay;
+    use super::{SystemDisplay, WindowsHdr};
     use std::os::windows::ffi::OsStringExt;
     use windows_sys::Win32::Devices::Display::{
         DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
-        DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER,
-        DISPLAYCONFIG_DEVICE_INFO_TYPE, DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO,
-        DISPLAYCONFIG_MODE_INFO, DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SOURCE_DEVICE_NAME,
+        DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL, DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME,
+        DISPLAYCONFIG_DEVICE_INFO_HEADER, DISPLAYCONFIG_DEVICE_INFO_TYPE,
+        DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO, DISPLAYCONFIG_MODE_INFO, DISPLAYCONFIG_PATH_INFO,
+        DISPLAYCONFIG_SDR_WHITE_LEVEL, DISPLAYCONFIG_SOURCE_DEVICE_NAME,
         DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes, QDC_ONLY_ACTIVE_PATHS,
         QueryDisplayConfig,
     };
@@ -76,22 +134,55 @@ mod windows {
     use windows_sys::Win32::UI::ColorSystem::GetICMProfileW;
 
     pub(super) fn system_display(monitor: isize) -> SystemDisplay {
-        let monitor = monitor as HMONITOR;
-        if monitor.is_null() {
+        let Some(device) = gdi_device(monitor) else {
             return SystemDisplay::Unknown;
-        }
-        let mut info = MONITORINFOEXW::default();
-        info.monitorInfo.cbSize = size_of::<MONITORINFOEXW>() as u32;
-        // SAFETY: `info` is a MONITORINFOEXW with its size set, as asked.
-        if unsafe { GetMonitorInfoW(monitor, (&raw mut info).cast::<MONITORINFO>()) } == 0 {
-            return SystemDisplay::Unknown;
-        }
-        let device = info.szDevice;
-        if advanced_color(&device) {
+        };
+        if target(&device)
+            .and_then(advanced_color)
+            .is_some_and(|c| c.active)
+        {
             SystemDisplay::Managed
         } else {
             profile(&device).map_or(SystemDisplay::Unknown, SystemDisplay::Profile)
         }
+    }
+
+    pub(super) fn hdr(monitor: isize) -> Option<WindowsHdr> {
+        let device = gdi_device(monitor)?;
+        let target = target(&device)?;
+        let color = advanced_color(target);
+        let sdr_white_nits = sdr_white_nits(target).unwrap_or(80.);
+        // Microsoft's guidance: the output's colour space says whether HDR is on.
+        let output = dxgi::output(monitor);
+        let on = output.is_some_and(|o| o.hdr);
+        Some(WindowsHdr {
+            on,
+            supported: on || color.is_some_and(|c| c.hdr_supported),
+            sdr_white_nits,
+            peak_nits: output.map_or(0., |o| o.peak_nits),
+        })
+    }
+
+    pub(super) fn any_display_supports_hdr() -> bool {
+        active_paths().is_some_and(|paths| {
+            paths.iter().any(|path| {
+                let target = Target(path.targetInfo.adapterId, path.targetInfo.id);
+                advanced_color(target).is_some_and(|c| c.hdr_supported)
+            })
+        })
+    }
+
+    /// The GDI name of `monitor`'s display, e.g. `\\.\DISPLAY1`.
+    fn gdi_device(monitor: isize) -> Option<[u16; 32]> {
+        let monitor = monitor as HMONITOR;
+        if monitor.is_null() {
+            return None;
+        }
+        let mut info = MONITORINFOEXW::default();
+        info.monitorInfo.cbSize = size_of::<MONITORINFOEXW>() as u32;
+        // SAFETY: `info` is a MONITORINFOEXW with its size set, as asked.
+        (unsafe { GetMonitorInfoW(monitor, (&raw mut info).cast::<MONITORINFO>()) } != 0)
+            .then_some(info.szDevice)
     }
 
     /// The ICC profile Windows assigns to the display `device`, e.g. `\\.\DISPLAY1`.
@@ -133,20 +224,28 @@ mod windows {
     }
     const GET_ADVANCED_COLOR_INFO_2: DISPLAYCONFIG_DEVICE_INFO_TYPE = 15;
 
-    /// Whether Windows converts sRGB to `device` itself: automatic color
-    /// management or HDR, on a display in advanced color.
-    fn advanced_color(device: &[u16; 32]) -> bool {
-        let Some(paths) = active_paths() else {
-            return false;
-        };
-        let name = |s: &[u16]| s[..s.iter().position(|&c| c == 0).unwrap_or(s.len())].to_vec();
-        let header = |kind, size: usize, adapter: LUID, id| DISPLAYCONFIG_DEVICE_INFO_HEADER {
+    /// A display path's target: its adapter and id.
+    #[derive(Clone, Copy)]
+    struct Target(LUID, u32);
+
+    fn header(
+        kind: DISPLAYCONFIG_DEVICE_INFO_TYPE,
+        size: usize,
+        adapter: LUID,
+        id: u32,
+    ) -> DISPLAYCONFIG_DEVICE_INFO_HEADER {
+        DISPLAYCONFIG_DEVICE_INFO_HEADER {
             r#type: kind,
             size: size as u32,
             adapterId: adapter,
             id,
-        };
-        for path in paths {
+        }
+    }
+
+    /// The target of the active path whose source is the display `device`.
+    fn target(device: &[u16; 32]) -> Option<Target> {
+        let name = |s: &[u16]| s[..s.iter().position(|&c| c == 0).unwrap_or(s.len())].to_vec();
+        active_paths()?.into_iter().find_map(|path| {
             let source = &path.sourceInfo;
             let mut source_name = DISPLAYCONFIG_SOURCE_DEVICE_NAME {
                 header: header(
@@ -158,41 +257,75 @@ mod windows {
                 ..Default::default()
             };
             // SAFETY: each request is the structure its header names, with its size.
-            if unsafe { DisplayConfigGetDeviceInfo(&mut source_name.header) } != 0
-                || name(&source_name.viewGdiDeviceName) != name(device)
-            {
-                continue;
-            }
-            let target = &path.targetInfo;
-            let mut info = AdvancedColor2 {
-                header: header(
-                    GET_ADVANCED_COLOR_INFO_2,
-                    size_of::<AdvancedColor2>(),
-                    target.adapterId,
-                    target.id,
-                ),
-                ..Default::default()
-            };
-            // SAFETY: as above.
-            if unsafe { DisplayConfigGetDeviceInfo(&mut info.header) } == 0 {
-                // advancedColorActive: the display is in WCG or HDR mode.
-                return info.value & 0b10 != 0;
-            }
-            // Before 24H2: advancedColorEnabled (HDR) or wideColorEnforced (ACM).
-            let mut info = DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO {
-                header: header(
-                    DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
-                    size_of::<DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO>(),
-                    target.adapterId,
-                    target.id,
-                ),
-                ..Default::default()
-            };
-            // SAFETY: as above; the union is a plain bit field.
-            return unsafe { DisplayConfigGetDeviceInfo(&mut info.header) } == 0
-                && unsafe { info.Anonymous.value } & 0b110 != 0;
+            (unsafe { DisplayConfigGetDeviceInfo(&mut source_name.header) } == 0
+                && name(&source_name.viewGdiDeviceName) == name(device))
+            .then_some(Target(path.targetInfo.adapterId, path.targetInfo.id))
+        })
+    }
+
+    struct AdvancedColor {
+        /// Windows converts sRGB to the display itself: automatic color
+        /// management, or HDR.
+        active: bool,
+        /// The display can show HDR, on or not.
+        hdr_supported: bool,
+    }
+
+    fn advanced_color(Target(adapter, id): Target) -> Option<AdvancedColor> {
+        let mut info = AdvancedColor2 {
+            header: header(
+                GET_ADVANCED_COLOR_INFO_2,
+                size_of::<AdvancedColor2>(),
+                adapter,
+                id,
+            ),
+            ..Default::default()
+        };
+        // SAFETY: as above.
+        if unsafe { DisplayConfigGetDeviceInfo(&mut info.header) } == 0 {
+            // advancedColorActive; highDynamicRangeSupported.
+            return Some(AdvancedColor {
+                active: info.value & 0b10 != 0,
+                hdr_supported: info.value & 0b1_0000 != 0,
+            });
         }
-        false
+        // Before 24H2: advancedColorSupported, then advancedColorEnabled (HDR) or
+        // wideColorEnforced (ACM).
+        let mut info = DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO {
+            header: header(
+                DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
+                size_of::<DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO>(),
+                adapter,
+                id,
+            ),
+            ..Default::default()
+        };
+        // SAFETY: as above; the union is a plain bit field.
+        if unsafe { DisplayConfigGetDeviceInfo(&mut info.header) } != 0 {
+            return None;
+        }
+        let value = unsafe { info.Anonymous.value };
+        Some(AdvancedColor {
+            active: value & 0b110 != 0,
+            hdr_supported: value & 0b1 != 0,
+        })
+    }
+
+    /// Windows' SDR content white for the target, in cd/m².
+    fn sdr_white_nits(Target(adapter, id): Target) -> Option<f32> {
+        let mut white = DISPLAYCONFIG_SDR_WHITE_LEVEL {
+            header: header(
+                DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL,
+                size_of::<DISPLAYCONFIG_SDR_WHITE_LEVEL>(),
+                adapter,
+                id,
+            ),
+            ..Default::default()
+        };
+        // SAFETY: as above.
+        (unsafe { DisplayConfigGetDeviceInfo(&mut white.header) } == 0)
+            // In thousandths of 80 cd/m².
+            .then(|| white.SDRWhiteLevel as f32 / 1000. * 80.)
     }
 
     fn active_paths() -> Option<Vec<DISPLAYCONFIG_PATH_INFO>> {
@@ -219,6 +352,49 @@ mod windows {
             }
             paths.truncate(path_count as usize);
             Some(paths)
+        }
+    }
+
+    /// DXGI's description of a display, through the COM interfaces windows-sys
+    /// has no vtables for.
+    mod dxgi {
+        use windows::Win32::Graphics::Dxgi::Common::DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
+        use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1, IDXGIOutput6};
+        use windows::core::Interface;
+
+        #[derive(Clone, Copy)]
+        pub(super) struct Output {
+            pub(super) hdr: bool,
+            pub(super) peak_nits: f32,
+        }
+
+        /// The output showing `monitor`, among every adapter's.
+        pub(super) fn output(monitor: isize) -> Option<Output> {
+            // SAFETY: plain COM calls on interfaces this function owns.
+            unsafe {
+                let factory: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
+                for a in 0.. {
+                    let adapter = factory.EnumAdapters1(a).ok()?;
+                    for o in 0.. {
+                        let Ok(output) = adapter.EnumOutputs(o) else {
+                            break;
+                        };
+                        let Ok(output) = output.cast::<IDXGIOutput6>() else {
+                            continue;
+                        };
+                        let Ok(desc) = output.GetDesc1() else {
+                            continue;
+                        };
+                        if desc.Monitor.0 as isize == monitor {
+                            return Some(Output {
+                                hdr: desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020,
+                                peak_nits: desc.MaxLuminance,
+                            });
+                        }
+                    }
+                }
+                None
+            }
         }
     }
 }
@@ -983,5 +1159,70 @@ mod tests {
         // A window that is gone leaves nothing to tag.
         drop((root, metal));
         prepare_again();
+    }
+}
+
+#[cfg(test)]
+mod windows_hdr_tests {
+    use super::WindowsHdr;
+
+    const OFF: WindowsHdr = WindowsHdr {
+        on: false,
+        supported: true,
+        sdr_white_nits: 80.,
+        peak_nits: 270.,
+    };
+
+    /// With HDR off Windows shows scRGB 1.0 as the display's white, and an SDR
+    /// display's peak over its white is no headroom anything can drive.
+    #[test]
+    fn hdr_off_shows_scrgb_one_as_white_with_no_headroom() {
+        assert_eq!(OFF.scrgb_white(), 1.);
+        assert_eq!(OFF.headroom(), 1.);
+        // ACM or an odd SDR white level change nothing while HDR is off.
+        let brighter = WindowsHdr {
+            sdr_white_nits: 240.,
+            ..OFF
+        };
+        assert_eq!(brighter.scrgb_white(), 1.);
+        assert_eq!(brighter.headroom(), 1.);
+    }
+
+    /// With HDR on, scRGB 1.0 is 80 cd/m²: SDR white is the user's SDR content
+    /// brightness over 80, and the headroom is the peak over that white.
+    #[test]
+    fn hdr_on_scales_white_to_the_sdr_content_brightness() {
+        let on = WindowsHdr {
+            on: true,
+            sdr_white_nits: 240.,
+            peak_nits: 960.,
+            ..OFF
+        };
+        assert_eq!(on.scrgb_white(), 3.);
+        assert_eq!(on.headroom(), 4.);
+        // The SDR content brightness slider moves both.
+        let dimmer = WindowsHdr {
+            sdr_white_nits: 120.,
+            ..on
+        };
+        assert_eq!(dimmer.scrgb_white(), 1.5);
+        assert_eq!(dimmer.headroom(), 8.);
+    }
+
+    /// A display without a usable peak, or with white at or above it, has none.
+    #[test]
+    fn a_missing_or_low_peak_gives_no_headroom() {
+        let on = WindowsHdr { on: true, ..OFF };
+        for peak_nits in [0., 60., f32::NAN, f32::INFINITY] {
+            assert_eq!(WindowsHdr { peak_nits, ..on }.headroom(), 1., "{peak_nits}");
+        }
+        assert_eq!(
+            WindowsHdr {
+                sdr_white_nits: 0.,
+                ..on
+            }
+            .scrgb_white(),
+            1.
+        );
     }
 }

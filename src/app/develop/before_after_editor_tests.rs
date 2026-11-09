@@ -62,6 +62,7 @@ fn before_asks_for_its_own_hdr_master() {
         headroom: 4.,
         potential: 16.,
         float_surface: true,
+        ..HdrDisplay::default()
     };
     e.document.edit.setup_mut().hdr.enabled = true;
     let mut before = e.document.edit.recipe().clone();
