@@ -1500,9 +1500,9 @@ impl Editor {
             }
             // egui lets go of a text field on Escape before this runs; a mask's
             // name field still takes that Escape to keep the old name.
-            // Masking takes a plain Escape itself, step by step (`mask_keys`):
-            // stop aiming, drop the mask not yet drawn, then close. With Cmd or
-            // Alt, which its keys refuse, it closes at once, leaving nothing.
+            // Masking takes Escape itself, step by step (`mask_keys`): stop
+            // aiming, drop the mask not yet drawn, then close. `CLOSE_MASKING`
+            // closes it at once, leaving nothing; it has no key by default.
             if !self.view.masking.is_renaming() {
                 if !self.view.is(Tool::Mask) {
                     if keys.take(&b::CLOSE_TOOL).is_some() {

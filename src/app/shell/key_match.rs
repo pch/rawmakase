@@ -22,7 +22,7 @@ pub(in crate::app) fn shortcut_key(key: Key, physical: Option<Key>) -> Key {
 }
 
 /// Punctuation egui names, as a digit-row key may type it.
-fn is_symbol(key: Key) -> bool {
+pub(in crate::app) fn is_symbol(key: Key) -> bool {
     matches!(
         key,
         Key::Colon

@@ -1,6 +1,7 @@
 use super::bindings::ALL;
 use super::*;
 use crate::app::shell::commands::Action;
+use crate::app::shell::keymap::Mods;
 
 #[test]
 fn ids_are_unique_and_never_hold_a_slash() {
@@ -26,14 +27,101 @@ fn every_binding_runs_a_command_and_has_a_chord() {
             "no command {}",
             b.command
         );
-        assert!(!b.defaults.is_empty(), "{} has no keys", b.command);
+        // Masking's at-once close has no key by default: Escape steps back.
+        assert!(
+            !b.defaults.is_empty() || std::ptr::eq(*b, &bindings::CLOSE_MASKING),
+            "{} has no keys",
+            b.command
+        );
         for d in b.defaults {
             assert!(!d.keys.is_empty(), "{} has a chord with no key", b.command);
-            assert!(!d.label.is_empty(), "{} has an unnamed chord", b.command);
+            assert!(!d.label().is_empty(), "{} has an unnamed chord", b.command);
         }
     }
     for b in bindings::METADATA {
         assert!(ALL.iter().any(|a| std::ptr::eq(*a, b)));
+    }
+}
+
+#[test]
+fn every_label_reads_back_as_its_chord() {
+    use crate::app::shell::keymap::Chord;
+    for b in ALL {
+        for d in b.defaults {
+            let first = d.chords().next().expect("a key");
+            assert_eq!(Chord::parse(&d.label()), Ok(first), "{}", b.command);
+        }
+    }
+}
+
+#[test]
+fn no_chord_names_its_commands_variant() {
+    for b in ALL {
+        for d in b.defaults {
+            assert!(
+                d.mods.without(b.variants) == d.mods,
+                "{} names its variant in {}",
+                b.command,
+                d.label()
+            );
+            assert!(
+                [Mods::NONE, Mods::SHIFT, Mods::SHIFT.with(Mods::ALT)].contains(&b.variants),
+                "{}: only Shift, and Alt with it, are variants",
+                b.command
+            );
+        }
+    }
+}
+
+/// Whether bindings in `a` and `b` can both be eligible for one press.
+fn overlap(a: Context, b: Context) -> bool {
+    use Context::*;
+    let library_view = |c| matches!(c, Grid | Loupe | Compare | Survey);
+    let develop = |c| matches!(c, Develop | Tool(_));
+    a == b
+        || a == Everywhere
+        || b == Everywhere
+        || (a == Library && library_view(b))
+        || (b == Library && library_view(a))
+        || (develop(a) && develop(b) && (a == Develop || b == Develop))
+        || (a == LoupeZoom && (b == Loupe || b == Library || develop(b)))
+        || (b == LoupeZoom && (a == Loupe || a == Library || develop(a)))
+}
+
+/// On a punctuation key, Shift and Alt are free unless a binding that can be
+/// eligible names that modifier with that key, or rejects it. The bindings
+/// carry the result as their `rejects`: a chord leaves no modifier free that
+/// another chord on its key, with the same Cmd and Ctrl, names.
+#[test]
+fn the_punctuation_rule_holds_across_bindings() {
+    use crate::app::shell::keymap::chord::is_punctuation;
+    let cmd_ctrl = Mods::CMD.with(Mods::CTRL);
+    for a in ALL {
+        for da in a.defaults {
+            for ca in da.chords().filter(|c| is_punctuation(c.key)) {
+                let free = ca.free(a.variants, da.rejects);
+                for b in ALL.iter().filter(|b| overlap(a.context, b.context)) {
+                    for cb in b.defaults.iter().flat_map(|d| d.chords()) {
+                        if cb.key != ca.key
+                            || cb.mods.without(Mods::SHIFT.with(Mods::ALT))
+                                != ca.mods.without(Mods::SHIFT.with(Mods::ALT))
+                            || cb == ca
+                        {
+                            continue;
+                        }
+                        let named = cb.mods.without(cmd_ctrl).without(ca.mods);
+                        for m in [Mods::SHIFT, Mods::ALT] {
+                            assert!(
+                                !(named.contains(m) && free.contains(m) && !a.variants.contains(m)),
+                                "{} ({ca}) leaves free what {} ({cb}) names",
+                                a.command,
+                                b.command
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

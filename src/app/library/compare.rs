@@ -323,7 +323,6 @@ impl Library {
         use crate::app::shell::commands::registry::bindings as b;
         for press in presses {
             // B, Cmd+B and Cmd+Shift+B, for the active photo, once per press.
-            // The rest refuse Cmd and Alt.
             if press.is(&b::COMPARE_QUICK_TOGGLE)
                 || press.is(&b::COMPARE_QUICK_SHOW)
                 || press.is(&b::COMPARE_QUICK_CLEAR)

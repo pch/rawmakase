@@ -340,7 +340,10 @@ Some features span several owners; each module's docs describe its part:
 - Shortcuts: `app::shell::commands::registry` lists every command a key runs and its
   bindings, and `app::shell::keymap::FrameKeys` is the one reader of the frame's key
   presses. Each handler keeps its place in the frame and its guards, and takes its
-  bindings' presses from it; a press runs one command. Held modifiers, gestures,
+  bindings' presses from it; a press runs one command. A chord's modifiers match
+  exactly, except a command's variants (Shift to go on to the next photo, extend
+  the selection or feather; Shift and Alt for a Basic step) and Shift and Alt on a
+  punctuation key, which layouts need to type it. Held modifiers, gestures,
   text fields, dialogs' Enter and Escape and other widget-local keys are read where
   they are used.
 - `app::shell::messages` owns what the app says to the user, and the running-work line

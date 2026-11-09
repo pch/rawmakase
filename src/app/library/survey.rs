@@ -129,7 +129,7 @@ impl Library {
     ) {
         use crate::app::shell::commands::registry::bindings as b;
         for press in presses {
-            // B first, with any modifiers; the rest refuse Cmd and Alt.
+            // B, Cmd+B and Cmd+Shift+B first, then the view's own keys.
             if press.is(&b::SURVEY_QUICK_TOGGLE)
                 || press.is(&b::SURVEY_QUICK_SHOW)
                 || press.is(&b::SURVEY_QUICK_CLEAR)

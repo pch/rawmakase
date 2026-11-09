@@ -1,7 +1,9 @@
 //! The frame's key presses and the one place shortcuts read them.
 //!
 //! Every shortcut is a [`Binding`]: a command in a context, with the chords
-//! ([`Default`](struct@Default)s) that run it. The handlers keep their place in the frame and
+//! ([`Default`](struct@Default)s) that run it. A press is a [`Chord`] when its
+//! modifiers are the chord's, except the command's variants and, on a
+//! punctuation key, Shift and Alt ([`Chord::free`]). The handlers keep their place in the frame and
 //! their guards, and ask [`FrameKeys`] for their bindings' presses instead of
 //! reading egui's events themselves. A press runs one command: once a binding
 //! takes it, no later binding sees it in that frame. The bindings themselves are
@@ -13,6 +15,9 @@
 //! Delete, and the keys the macOS menu injects for a text field.
 use eframe::egui::{self, Key, Modifiers};
 
+pub(in crate::app) use chord::{Chord, Mods};
+
+pub(in crate::app) mod chord;
 #[cfg(test)]
 mod owner_tests;
 #[cfg(test)]
@@ -39,18 +44,25 @@ pub(in crate::app) enum Platform {
     NotMacos,
 }
 
-/// One chord a binding runs on by default.
+/// The chords a binding runs on by default: each of `keys` with exactly
+/// `mods` held, the binding's variants and the punctuation rule aside
+/// ([`Chord::free`]).
 #[derive(Clone, Copy)]
 pub(in crate::app) struct Default {
+    /// The key and its aliases: `{` beside `[`, Backspace beside Delete. The
+    /// first is the one the card shows.
     pub keys: &'static [Key],
+    pub mods: Mods,
+    /// Shift or Alt that a press of a punctuation key must not hold, though
+    /// layouts that need them to type the symbol would otherwise have them
+    /// ignored: the Basic panel's `,` and `.` refuse Shift, and `\` leaves
+    /// Shift+`\` to the camera thumbnail.
+    pub rejects: Mods,
     pub matching: KeyMatch,
-    /// The modifiers held for the press that this chord accepts. Each is
-    /// today's exact predicate, extra modifiers it tolerates included.
-    pub mods: fn(Modifiers) -> bool,
     /// Whether a held key's repeats run it too.
     pub repeats: bool,
     pub platform: Platform,
-    /// The chord as the reference card writes it ("Cmd+Shift+E").
+    /// Whether the reference card shows this chord.
     #[cfg_attr(
         not(test),
         allow(
@@ -58,26 +70,20 @@ pub(in crate::app) struct Default {
             reason = "Preferences and the generated card read it (#963)"
         )
     )]
-    pub label: &'static str,
-    /// Whether the reference card shows this chord.
     pub card: bool,
 }
 
 impl Default {
-    /// A chord on `keys`, matched as egui reports them, with repeats, shown on
-    /// the card.
-    pub(in crate::app) const fn new(
-        keys: &'static [Key],
-        mods: fn(Modifiers) -> bool,
-        label: &'static str,
-    ) -> Self {
+    /// `keys` with exactly `mods`, matched as egui reports them, with repeats,
+    /// shown on the card.
+    pub(in crate::app) const fn new(keys: &'static [Key], mods: Mods) -> Self {
         Self {
             keys,
-            matching: KeyMatch::Logical,
             mods,
+            rejects: Mods::NONE,
+            matching: KeyMatch::Logical,
             repeats: true,
             platform: Platform::All,
-            label,
             card: true,
         }
     }
@@ -103,6 +109,30 @@ impl Default {
         self.card = false;
         self
     }
+    /// Refuses `mods` on a punctuation key ([`Default::rejects`]).
+    pub(in crate::app) const fn rejecting(mut self, mods: Mods) -> Self {
+        self.rejects = mods;
+        self
+    }
+
+    /// Each key with this chord's modifiers.
+    pub(in crate::app) fn chords(&self) -> impl Iterator<Item = Chord> + '_ {
+        self.keys.iter().map(|k| Chord::new(*k, self.mods))
+    }
+    /// The chord as the reference card writes it ("Cmd+Shift+E"): its first key's.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "Preferences and the generated card read it (#963)"
+        )
+    )]
+    pub(in crate::app) fn label(&self) -> String {
+        self.chords()
+            .next()
+            .map(|c| c.to_string())
+            .unwrap_or_default()
+    }
 
     fn exists(&self) -> bool {
         match self.platform {
@@ -110,26 +140,38 @@ impl Default {
             Platform::NotMacos => !cfg!(target_os = "macos"),
         }
     }
-    fn matches_key(&self, key: Key, physical: Option<Key>) -> bool {
-        let key = match self.matching {
+    /// The key a press of `key` at `physical` stands for, as this chord reads keys.
+    fn read_key(&self, key: Key, physical: Option<Key>) -> Key {
+        match self.matching {
             KeyMatch::Typed => crate::app::shell::key_match::shortcut_key(key, physical),
             KeyMatch::Logical => key,
             KeyMatch::Place => physical.unwrap_or(key),
-        };
-        self.keys.contains(&key)
+        }
     }
-    /// Whether `press` is this chord.
-    pub(in crate::app) fn matches(&self, press: &Press) -> bool {
+    fn matches_key(&self, key: Key, physical: Option<Key>) -> bool {
+        self.keys.contains(&self.read_key(key, physical))
+    }
+    /// Whether a press of `key` at `physical` with `modifiers` is one of these
+    /// chords, `variants` being free: repeats aside.
+    fn takes_key(
+        &self,
+        key: Key,
+        physical: Option<Key>,
+        modifiers: Modifiers,
+        variants: Mods,
+    ) -> bool {
+        let key = self.read_key(key, physical);
+        let held = Mods::of(modifiers);
         self.exists()
-            && (self.repeats || !press.repeat)
-            && self.matches_key(press.key, press.physical)
-            && (self.mods)(press.modifiers)
+            && self.chords().any(|c| {
+                let free = c.free(variants, self.rejects);
+                c.accepts(key, held, free)
+            })
     }
-    /// Whether this chord is the press of `key` at `physical` with any
-    /// modifiers and repeat: what `consume_key` takes once the chord's
-    /// modifiers pass.
-    fn takes_key(&self, key: Key, physical: Option<Key>, modifiers: Modifiers) -> bool {
-        self.exists() && self.matches_key(key, physical) && (self.mods)(modifiers)
+    /// Whether `press` is one of these chords, `variants` being free.
+    fn matches(&self, press: &Press, variants: Mods) -> bool {
+        (self.repeats || !press.repeat)
+            && self.takes_key(press.key, press.physical, press.modifiers, variants)
     }
 }
 
@@ -184,6 +226,10 @@ pub(in crate::app) struct Binding {
     /// Tried in order: the first chord with a press not yet taken wins, as a
     /// chain of `consume_key` calls tries its patterns.
     pub defaults: &'static [Default],
+    /// The modifiers passed to the command rather than matched: Shift goes on
+    /// to the next photo after a rating, extends the Grid's selection, or
+    /// feathers a brush; Shift and Alt pick a Basic slider's step.
+    pub variants: Mods,
     /// Whether a press this binding takes leaves egui's input, as
     /// `consume_key` takes it, so no widget sees it either.
     pub consumes: bool,
@@ -200,6 +246,7 @@ impl Binding {
             command,
             context,
             defaults,
+            variants: Mods::NONE,
             consumes: false,
             per_frame: PerFrame::Each,
         }
@@ -212,9 +259,16 @@ impl Binding {
         self.per_frame = PerFrame::Once;
         self
     }
+    /// Passes `mods` to the command ([`Binding::variants`]).
+    pub(in crate::app) const fn variant(mut self, mods: Mods) -> Self {
+        self.variants = mods;
+        self
+    }
     /// Whether `press` is one of this binding's chords.
     pub(in crate::app) fn matches(&self, press: &Press) -> bool {
-        self.defaults.iter().any(|d| d.matches(press))
+        self.defaults
+            .iter()
+            .any(|d| d.matches(press, self.variants))
     }
     /// Whether a press of `key` at `physical` is one of this binding's keys,
     /// whatever the modifiers.
@@ -305,10 +359,11 @@ impl<'a> FrameKeys<'a> {
     /// when the binding consumes. Its modifiers.
     pub(in crate::app) fn take(self, binding: &Binding) -> Option<Modifiers> {
         let open = self.presses();
-        let press = binding
-            .defaults
-            .iter()
-            .find_map(|d| open.iter().find(|p| d.matches(p)).map(|p| (d, *p)));
+        let press = binding.defaults.iter().find_map(|d| {
+            open.iter()
+                .find(|p| d.matches(p, binding.variants))
+                .map(|p| (d, *p))
+        });
         let (default, press) = press?;
         let mut taken = match binding.per_frame {
             PerFrame::Each => vec![press],
@@ -322,9 +377,9 @@ impl<'a> FrameKeys<'a> {
         all.append(&mut taken);
         self.set_taken(all);
         if binding.consumes {
-            // As `consume_key` with this chord: every press of the key whose
-            // modifiers pass, repeats included.
-            self.remove(|p| default.takes_key(p.key, p.physical, p.modifiers));
+            // Every press of this chord, repeats included, as `consume_key`
+            // takes every press its pattern matches.
+            self.remove(|p| default.takes_key(p.key, p.physical, p.modifiers, binding.variants));
         }
         Some(press.modifiers)
     }
@@ -443,69 +498,4 @@ fn number(presses: impl Iterator<Item = Press>) -> Vec<Press> {
         out.push(p);
     }
     out
-}
-
-/// The modifier rules many bindings share. Each reproduces a predicate the
-/// handlers used before the key map, extra modifiers it tolerates included.
-pub(in crate::app) mod rules {
-    use eframe::egui::Modifiers;
-
-    /// Any modifiers.
-    pub(in crate::app) fn any(_: Modifiers) -> bool {
-        true
-    }
-    /// No modifier at all.
-    pub(in crate::app) fn none(m: Modifiers) -> bool {
-        !m.any()
-    }
-    /// `consume_key(Modifiers::NONE, …)`: neither Cmd nor Ctrl; Shift and Alt
-    /// are ignored.
-    pub(in crate::app) fn logically_none(m: Modifiers) -> bool {
-        m.matches_logically(Modifiers::NONE)
-    }
-    /// `consume_key(Modifiers::SHIFT, …)`.
-    pub(in crate::app) fn logically_shift(m: Modifiers) -> bool {
-        m.matches_logically(Modifiers::SHIFT)
-    }
-    /// `consume_key(Modifiers::COMMAND, …)`: Cmd, with Shift and Alt ignored.
-    pub(in crate::app) fn logically_command(m: Modifiers) -> bool {
-        m.matches_logically(Modifiers::COMMAND)
-    }
-    /// `consume_key(Modifiers::COMMAND | Modifiers::SHIFT, …)`.
-    pub(in crate::app) fn logically_command_shift(m: Modifiers) -> bool {
-        m.matches_logically(Modifiers::COMMAND | Modifiers::SHIFT)
-    }
-    /// Cmd, whatever else.
-    pub(in crate::app) fn command(m: Modifiers) -> bool {
-        m.command
-    }
-    /// Cmd and Shift, whatever else.
-    pub(in crate::app) fn command_shift(m: Modifiers) -> bool {
-        m.command && m.shift
-    }
-    /// Cmd, Option and Shift: Lightroom's Develop chords.
-    pub(in crate::app) fn command_alt_shift(m: Modifiers) -> bool {
-        m.command && m.alt && m.shift
-    }
-    /// Neither Cmd, Ctrl nor Alt: G, E and D, with Shift tolerated.
-    pub(in crate::app) fn plain(m: Modifiers) -> bool {
-        !(m.command || m.ctrl || m.alt)
-    }
-    /// Neither Cmd nor Alt: a tool's keys, Shift being their variant.
-    pub(in crate::app) fn no_command_alt(m: Modifiers) -> bool {
-        !m.command && !m.alt
-    }
-    /// Neither Cmd nor Alt nor Shift.
-    pub(in crate::app) fn no_command_alt_shift(m: Modifiers) -> bool {
-        !m.command && !m.alt && !m.shift
-    }
-    /// Without Cmd: the Library views' keys, Shift extending the selection.
-    pub(in crate::app) fn no_command(m: Modifiers) -> bool {
-        !m.command
-    }
-    /// The rating, flag and label keys: none of Cmd, Ctrl and Alt, Shift
-    /// going on to the next photo.
-    pub(in crate::app) fn metadata(m: Modifiers) -> bool {
-        !(m.command || m.ctrl || m.alt || m.mac_cmd)
-    }
 }

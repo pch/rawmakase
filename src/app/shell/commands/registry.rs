@@ -7,8 +7,8 @@
 //! says where a key runs the command and how its press is matched; the handler
 //! that runs it names it (`bindings::CLIPPING`) and takes its press from
 //! [`FrameKeys`](crate::app::shell::keymap::FrameKeys).
-use crate::app::shell::keymap::{Binding, Context, Default, Tool, rules};
-use eframe::egui::{Key, Modifiers};
+use crate::app::shell::keymap::{Binding, Context, Default, Mods, Tool};
+use eframe::egui::Key;
 
 /// A command: its id and what it does.
 #[cfg_attr(
@@ -256,587 +256,419 @@ macro_rules! bindings {
     };
 }
 
-/// The bindings, named for the handler that takes their presses. Each chord's
-/// modifier rule is the one that handler applied before the key map, extra
-/// modifiers it tolerates included.
+/// The bindings, named for the handler that takes their presses. Each chord
+/// names its modifiers exactly. A binding's variants are passed to its
+/// command, and on a punctuation key Shift and Alt are free unless the chord
+/// names or rejects them ([`Chord::free`](crate::app::shell::keymap::Chord::free)).
 pub(in crate::app) mod bindings {
     use super::*;
     use Context::{
         Compare, Develop, Everywhere, Grid, Library, Loupe, LoupeZoom, ShortcutSheet, Survey,
     };
 
-    const fn d(keys: &'static [Key], mods: fn(Modifiers) -> bool, label: &'static str) -> Default {
-        Default::new(keys, mods, label)
+    const NONE: Mods = Mods::NONE;
+    const CMD: Mods = Mods::CMD;
+    const ALT: Mods = Mods::ALT;
+    const SHIFT: Mods = Mods::SHIFT;
+    const CMD_SHIFT: Mods = CMD.with(SHIFT);
+    const CMD_ALT: Mods = CMD.with(ALT);
+    const CMD_ALT_SHIFT: Mods = CMD_ALT.with(SHIFT);
+    const ALT_SHIFT: Mods = ALT.with(SHIFT);
+
+    const fn d(keys: &'static [Key], mods: Mods) -> Default {
+        Default::new(keys, mods)
     }
     const fn b(command: &'static str, context: Context, defaults: &'static [Default]) -> Binding {
         Binding::new(command, context, defaults)
     }
-    /// A metadata key: by what it types, the number row by its place, once per
-    /// press, Shift going on to the next photo.
-    const fn rate(key: &'static [Key], label: &'static str) -> Default {
-        Default::new(key, rules::metadata, label)
+    /// A rating, flag or label key: by what it types, the number row by its
+    /// place, once per press. Alt types other symbols on the punctuation keys.
+    /// Its binding passes Shift on, to go on to the next photo.
+    const fn rate(keys: &'static [Key]) -> Default {
+        Default::new(keys, NONE)
             .typed()
             .once_per_press()
+            .rejecting(ALT)
+    }
+    /// The rating, flag and label keys' binding, Shift going on to the next photo.
+    const fn rating(command: &'static str, defaults: &'static [Default]) -> Binding {
+        b(command, Everywhere, defaults).variant(SHIFT)
     }
     const DELETE_KEYS: &[Key] = &[Key::Delete, Key::Backspace];
     const OPEN_BRACKETS: &[Key] = &[Key::OpenBracket, Key::OpenCurlyBracket];
     const CLOSE_BRACKETS: &[Key] = &[Key::CloseBracket, Key::CloseCurlyBracket];
     const SLASHES: &[Key] = &[Key::Slash, Key::Questionmark];
-    fn not_all(m: Modifiers) -> bool {
-        !rules::command_alt_shift(m)
-    }
-    /// Delete and Backspace's chords, as `Library::delete_press` reads them.
-    fn delete(m: Modifiers) -> bool {
-        !m.command && !m.alt && !m.shift && !m.ctrl
-    }
-    fn remove_from_catalog(m: Modifiers) -> bool {
-        !m.command && m.alt && !m.shift && !m.ctrl
-    }
-    fn delete_rejected(m: Modifiers) -> bool {
-        m.command && !m.alt && !m.shift
-    }
-    /// B, Cmd+B and Cmd+Shift+B, as `Library::quick_key` reads them: Option, and
-    /// Control on a Mac, make other keys.
-    fn quick(m: Modifiers) -> bool {
-        !(m.alt || (m.ctrl && (m.mac_cmd || !m.command)))
-    }
-    /// The Library's S and Shift+S.
-    fn stack_key(m: Modifiers) -> bool {
-        !m.command && !m.alt && !m.ctrl
-    }
-    /// The Crop tool's keys.
-    fn crop_key(m: Modifiers) -> bool {
-        !(m.command || m.alt || m.ctrl)
-    }
 
     bindings! {
         // The message line and the window (`Editor::draw`).
         DISMISS_MESSAGES = b("messages:dismiss_all", Everywhere, &[
-            d(&[Key::Escape], rules::logically_shift, "Shift+Esc"),
+            d(&[Key::Escape], SHIFT),
         ]).consuming();
-        SHOW_CHROME = b("chrome:show", Everywhere, &[
-            d(&[Key::Escape], rules::logically_none, "Esc"),
-        ]).consuming();
+        SHOW_CHROME = b("chrome:show", Everywhere, &[d(&[Key::Escape], NONE)]).consuming();
 
         // Rating, flag and label keys (`photo_metadata::shortcut`), in the
         // order they are matched.
-        FLAG_RAISE = b("flag:raise", Everywhere, &[
-            d(&[Key::ArrowUp], |m| m.command && !m.shift && !m.alt, "Cmd+Up").once_per_press(),
-        ]);
-        FLAG_LOWER = b("flag:lower", Everywhere, &[
-            d(&[Key::ArrowDown], |m| m.command && !m.shift && !m.alt, "Cmd+Down").once_per_press(),
-        ]);
-        RATING_0 = b("rating:0", Everywhere, &[rate(&[Key::Num0], "0")]);
-        RATING_1 = b("rating:1", Everywhere, &[rate(&[Key::Num1], "1")]);
-        RATING_2 = b("rating:2", Everywhere, &[rate(&[Key::Num2], "2")]);
-        RATING_3 = b("rating:3", Everywhere, &[rate(&[Key::Num3], "3")]);
-        RATING_4 = b("rating:4", Everywhere, &[rate(&[Key::Num4], "4")]);
-        RATING_5 = b("rating:5", Everywhere, &[rate(&[Key::Num5], "5")]);
-        LABEL_RED = b("toggle_label:red", Everywhere, &[rate(&[Key::Num6], "6")]);
-        LABEL_YELLOW = b("toggle_label:yellow", Everywhere, &[rate(&[Key::Num7], "7")]);
-        LABEL_GREEN = b("toggle_label:green", Everywhere, &[rate(&[Key::Num8], "8")]);
-        LABEL_BLUE = b("toggle_label:blue", Everywhere, &[rate(&[Key::Num9], "9")]);
-        PICK = b("pick", Everywhere, &[rate(&[Key::P], "P")]);
-        UNFLAG = b("unflag", Everywhere, &[rate(&[Key::U], "U")]);
-        REJECT = b("reject", Everywhere, &[rate(&[Key::X], "X")]);
-        TOGGLE_PICK = b("toggle_pick", Everywhere, &[rate(&[Key::Backtick], "`")]);
+        FLAG_RAISE = b("flag:raise", Everywhere, &[d(&[Key::ArrowUp], CMD).once_per_press()]);
+        FLAG_LOWER = b("flag:lower", Everywhere, &[d(&[Key::ArrowDown], CMD).once_per_press()]);
+        RATING_0 = rating("rating:0", &[rate(&[Key::Num0])]);
+        RATING_1 = rating("rating:1", &[rate(&[Key::Num1])]);
+        RATING_2 = rating("rating:2", &[rate(&[Key::Num2])]);
+        RATING_3 = rating("rating:3", &[rate(&[Key::Num3])]);
+        RATING_4 = rating("rating:4", &[rate(&[Key::Num4])]);
+        RATING_5 = rating("rating:5", &[rate(&[Key::Num5])]);
+        LABEL_RED = rating("toggle_label:red", &[rate(&[Key::Num6])]);
+        LABEL_YELLOW = rating("toggle_label:yellow", &[rate(&[Key::Num7])]);
+        LABEL_GREEN = rating("toggle_label:green", &[rate(&[Key::Num8])]);
+        LABEL_BLUE = rating("toggle_label:blue", &[rate(&[Key::Num9])]);
+        PICK = rating("pick", &[rate(&[Key::P])]);
+        UNFLAG = rating("unflag", &[rate(&[Key::U])]);
+        REJECT = rating("reject", &[rate(&[Key::X])]);
+        TOGGLE_PICK = rating("toggle_pick", &[rate(&[Key::Backtick])]);
         // Shift+[ and Shift+] type `{` and `}` on US layouts.
-        RATING_LOWER = b("rating:lower", Everywhere, &[rate(OPEN_BRACKETS, "[")]);
-        RATING_RAISE = b("rating:raise", Everywhere, &[rate(CLOSE_BRACKETS, "]")]);
+        RATING_LOWER = rating("rating:lower", &[rate(OPEN_BRACKETS)]);
+        RATING_RAISE = rating("rating:raise", &[rate(CLOSE_BRACKETS)]);
 
         // The Library's views (`Library::selection_keys`).
-        FILTERS = b("filters", Library, &[
-            d(&[Key::L], |m| m.matches_exact(Modifiers::COMMAND), "Cmd+L").once_per_press(),
-        ]);
-        GRID_LOUPE = b("loupe", Grid, &[
-            d(&[Key::E], rules::no_command, "E"),
-            d(&[Key::Enter], rules::no_command, "Return"),
-        ]);
-        GRID_COMPARE = b("library:compare", Grid, &[d(&[Key::C], rules::none, "C")]);
-        GRID_SURVEY = b("library:survey", Grid, &[d(&[Key::N], rules::none, "N")]);
-        GRID_CELL_STYLE = b("grid:cell_style", Grid, &[
-            d(&[Key::J], rules::none, "J").once_per_press(),
-        ]);
-        GRID_QUICK_TOGGLE = b("quick:toggle", Grid, &[
-            d(&[Key::B], |m| quick(m) && !m.command && !m.shift, "B").once_per_press(),
-        ]);
-        GRID_QUICK_SHOW = b("quick:show", Grid, &[
-            d(&[Key::B], |m| quick(m) && m.command && !m.shift, "Cmd+B").once_per_press(),
-        ]);
-        GRID_QUICK_CLEAR = b("quick:clear", Grid, &[
-            d(&[Key::B], |m| quick(m) && m.command && m.shift, "Cmd+Shift+B").once_per_press(),
-        ]);
-        GRID_DELETE = b("delete", Grid, &[d(DELETE_KEYS, delete, "Delete").once_per_press()]);
+        FILTERS = b("filters", Library, &[d(&[Key::L], CMD).once_per_press()]);
+        GRID_LOUPE = b("loupe", Grid, &[d(&[Key::E], NONE), d(&[Key::Enter], NONE)]);
+        GRID_COMPARE = b("library:compare", Grid, &[d(&[Key::C], NONE)]);
+        GRID_SURVEY = b("library:survey", Grid, &[d(&[Key::N], NONE)]);
+        GRID_CELL_STYLE = b("grid:cell_style", Grid, &[d(&[Key::J], NONE).once_per_press()]);
+        GRID_QUICK_TOGGLE = b("quick:toggle", Grid, &[d(&[Key::B], NONE).once_per_press()]);
+        GRID_QUICK_SHOW = b("quick:show", Grid, &[d(&[Key::B], CMD).once_per_press()]);
+        GRID_QUICK_CLEAR = b("quick:clear", Grid, &[d(&[Key::B], CMD_SHIFT).once_per_press()]);
+        GRID_DELETE = b("delete", Grid, &[d(DELETE_KEYS, NONE).once_per_press()]);
         GRID_REMOVE_FROM_CATALOG = b("remove_from_catalog", Grid, &[
-            d(DELETE_KEYS, remove_from_catalog, "Alt+Delete").once_per_press(),
+            d(DELETE_KEYS, ALT).once_per_press(),
         ]);
         GRID_DELETE_REJECTED = b("delete_rejected", Grid, &[
-            d(DELETE_KEYS, delete_rejected, "Cmd+Delete").once_per_press(),
+            d(DELETE_KEYS, CMD).once_per_press(),
         ]);
-        GRID_TRASH = b("trash", Grid, &[
-            d(DELETE_KEYS, rules::command_alt_shift, "Cmd+Alt+Shift+Delete").once_per_press(),
-        ]);
-        GRID_RENAME = b("rename", Grid, &[d(&[Key::F2], rules::none, "F2").once_per_press()]);
-        STACK_GROUP = b("stack:group", Grid, &[
-            d(&[Key::G], |m| m.command && !m.alt && !m.shift, "Cmd+G").once_per_press(),
-        ]);
-        STACK_UNSTACK = b("stack:unstack", Grid, &[
-            d(&[Key::G], |m| m.command && !m.alt && m.shift, "Cmd+Shift+G").once_per_press(),
-        ]);
-        GRID_STACK_TOGGLE = b("stack:toggle", Grid, &[
-            d(&[Key::S], |m| stack_key(m) && !m.shift, "S").once_per_press(),
-        ]);
-        GRID_STACK_TO_TOP = b("stack:to_top", Grid, &[
-            d(&[Key::S], |m| stack_key(m) && m.shift, "Shift+S").once_per_press(),
-        ]);
-        GRID_SELECT_ALL = b("select_all", Grid, &[d(&[Key::A], rules::command, "Cmd+A")]);
-        GRID_SELECT_NONE = b("select_none", Grid, &[d(&[Key::D], rules::command, "Cmd+D")]);
-        GRID_DESELECT_ACTIVE = b("deselect_active", Grid, &[
-            d(&[Key::Slash], rules::no_command, "/"),
-        ]);
+        GRID_TRASH = b("trash", Grid, &[d(DELETE_KEYS, CMD_ALT_SHIFT).once_per_press()]);
+        GRID_RENAME = b("rename", Grid, &[d(&[Key::F2], NONE).once_per_press()]);
+        STACK_GROUP = b("stack:group", Grid, &[d(&[Key::G], CMD).once_per_press()]);
+        STACK_UNSTACK = b("stack:unstack", Grid, &[d(&[Key::G], CMD_SHIFT).once_per_press()]);
+        GRID_STACK_TOGGLE = b("stack:toggle", Grid, &[d(&[Key::S], NONE).once_per_press()]);
+        GRID_STACK_TO_TOP = b("stack:to_top", Grid, &[d(&[Key::S], SHIFT).once_per_press()]);
+        GRID_SELECT_ALL = b("select_all", Grid, &[d(&[Key::A], CMD)]);
+        GRID_SELECT_NONE = b("select_none", Grid, &[d(&[Key::D], CMD)]);
+        GRID_DESELECT_ACTIVE = b("deselect_active", Grid, &[d(&[Key::Slash], NONE)]);
         // Shift extends the selection.
-        GRID_PREVIOUS = b("previous", Grid, &[d(&[Key::ArrowLeft], rules::no_command, "Left")]);
-        GRID_NEXT = b("next", Grid, &[d(&[Key::ArrowRight], rules::no_command, "Right")]);
-        GRID_ROW_UP = b("grid:row_up", Grid, &[d(&[Key::ArrowUp], rules::no_command, "Up")]);
-        GRID_ROW_DOWN = b("grid:row_down", Grid, &[
-            d(&[Key::ArrowDown], rules::no_command, "Down"),
-        ]);
-        GRID_PAGE_UP = b("grid:page_up", Grid, &[
-            d(&[Key::PageUp], rules::no_command, "Page Up"),
-        ]);
-        GRID_PAGE_DOWN = b("grid:page_down", Grid, &[
-            d(&[Key::PageDown], rules::no_command, "Page Down"),
-        ]);
-        GRID_FIRST = b("first_photo", Grid, &[d(&[Key::Home], rules::no_command, "Home")]);
-        GRID_LAST = b("last_photo", Grid, &[d(&[Key::End], rules::no_command, "End")]);
+        GRID_PREVIOUS = b("previous", Grid, &[d(&[Key::ArrowLeft], NONE)]).variant(SHIFT);
+        GRID_NEXT = b("next", Grid, &[d(&[Key::ArrowRight], NONE)]).variant(SHIFT);
+        GRID_ROW_UP = b("grid:row_up", Grid, &[d(&[Key::ArrowUp], NONE)]).variant(SHIFT);
+        GRID_ROW_DOWN = b("grid:row_down", Grid, &[d(&[Key::ArrowDown], NONE)]).variant(SHIFT);
+        GRID_PAGE_UP = b("grid:page_up", Grid, &[d(&[Key::PageUp], NONE)]).variant(SHIFT);
+        GRID_PAGE_DOWN = b("grid:page_down", Grid, &[d(&[Key::PageDown], NONE)]).variant(SHIFT);
+        GRID_FIRST = b("first_photo", Grid, &[d(&[Key::Home], NONE)]).variant(SHIFT);
+        GRID_LAST = b("last_photo", Grid, &[d(&[Key::End], NONE)]).variant(SHIFT);
 
         LOUPE_PREVIOUS = b("previous", Loupe, &[
-            d(&[Key::ArrowLeft, Key::ArrowUp], rules::no_command, "Left").off_card(),
+            d(&[Key::ArrowLeft, Key::ArrowUp], NONE).off_card(),
         ]);
         LOUPE_NEXT = b("next", Loupe, &[
-            d(&[Key::ArrowRight, Key::ArrowDown], rules::no_command, "Right").off_card(),
+            d(&[Key::ArrowRight, Key::ArrowDown], NONE).off_card(),
         ]);
-        LOUPE_FIRST = b("first_photo", Loupe, &[
-            d(&[Key::Home], rules::no_command, "Home").off_card(),
-        ]);
-        LOUPE_LAST = b("last_photo", Loupe, &[
-            d(&[Key::End], rules::no_command, "End").off_card(),
-        ]);
-        LOUPE_CLOSE = b("close_view", Loupe, &[d(&[Key::Escape], rules::any, "Esc")]);
-        LOUPE_DELETE = b("delete", Loupe, &[
-            d(DELETE_KEYS, delete, "Delete").once_per_press().off_card(),
-        ]);
+        LOUPE_FIRST = b("first_photo", Loupe, &[d(&[Key::Home], NONE).off_card()]);
+        LOUPE_LAST = b("last_photo", Loupe, &[d(&[Key::End], NONE).off_card()]);
+        LOUPE_CLOSE = b("close_view", Loupe, &[d(&[Key::Escape], NONE)]);
+        LOUPE_DELETE = b("delete", Loupe, &[d(DELETE_KEYS, NONE).once_per_press().off_card()]);
         LOUPE_REMOVE_FROM_CATALOG = b("remove_from_catalog", Loupe, &[
-            d(DELETE_KEYS, remove_from_catalog, "Alt+Delete").once_per_press().off_card(),
+            d(DELETE_KEYS, ALT).once_per_press().off_card(),
         ]);
         LOUPE_DELETE_REJECTED = b("delete_rejected", Loupe, &[
-            d(DELETE_KEYS, delete_rejected, "Cmd+Delete").once_per_press().off_card(),
+            d(DELETE_KEYS, CMD).once_per_press().off_card(),
         ]);
         LOUPE_TRASH = b("trash", Loupe, &[
-            d(DELETE_KEYS, rules::command_alt_shift, "Cmd+Alt+Shift+Delete")
-                .once_per_press()
-                .off_card(),
+            d(DELETE_KEYS, CMD_ALT_SHIFT).once_per_press().off_card(),
         ]);
-        LOUPE_RENAME = b("rename", Loupe, &[
-            d(&[Key::F2], rules::none, "F2").once_per_press().off_card(),
-        ]);
-        LOUPE_COMPARE = b("library:compare", Loupe, &[
-            d(&[Key::C], rules::none, "C").off_card(),
-        ]);
-        LOUPE_SURVEY = b("library:survey", Loupe, &[d(&[Key::N], rules::none, "N").off_card()]);
+        LOUPE_RENAME = b("rename", Loupe, &[d(&[Key::F2], NONE).once_per_press().off_card()]);
+        LOUPE_COMPARE = b("library:compare", Loupe, &[d(&[Key::C], NONE).off_card()]);
+        LOUPE_SURVEY = b("library:survey", Loupe, &[d(&[Key::N], NONE).off_card()]);
         LOUPE_QUICK_TOGGLE = b("quick:toggle", Loupe, &[
-            d(&[Key::B], |m| quick(m) && !m.command && !m.shift, "B").once_per_press().off_card(),
+            d(&[Key::B], NONE).once_per_press().off_card(),
         ]);
         LOUPE_QUICK_SHOW = b("quick:show", Loupe, &[
-            d(&[Key::B], |m| quick(m) && m.command && !m.shift, "Cmd+B")
-                .once_per_press()
-                .off_card(),
+            d(&[Key::B], CMD).once_per_press().off_card(),
         ]);
         LOUPE_QUICK_CLEAR = b("quick:clear", Loupe, &[
-            d(&[Key::B], |m| quick(m) && m.command && m.shift, "Cmd+Shift+B")
-                .once_per_press()
-                .off_card(),
+            d(&[Key::B], CMD_SHIFT).once_per_press().off_card(),
         ]);
-        LOUPE_INFO = b("info", Loupe, &[d(&[Key::I], rules::none, "I").once_per_press()]);
+        LOUPE_INFO = b("info", Loupe, &[d(&[Key::I], NONE).once_per_press()]);
         LOUPE_STACK_TOGGLE = b("stack:toggle", Loupe, &[
-            d(&[Key::S], |m| stack_key(m) && !m.shift, "S").once_per_press().off_card(),
+            d(&[Key::S], NONE).once_per_press().off_card(),
         ]);
         LOUPE_STACK_TO_TOP = b("stack:to_top", Loupe, &[
-            d(&[Key::S], |m| stack_key(m) && m.shift, "Shift+S").once_per_press().off_card(),
+            d(&[Key::S], SHIFT).once_per_press().off_card(),
         ]);
 
-        // Compare and Survey take B with any modifiers first, then nothing
-        // with Cmd or Alt.
+        // Compare and Survey take B first.
         COMPARE_QUICK_TOGGLE = b("quick:toggle", Compare, &[
-            d(&[Key::B], |m| quick(m) && !m.command && !m.shift, "B").once_per_press().off_card(),
+            d(&[Key::B], NONE).once_per_press().off_card(),
         ]);
         COMPARE_QUICK_SHOW = b("quick:show", Compare, &[
-            d(&[Key::B], |m| quick(m) && m.command && !m.shift, "Cmd+B")
-                .once_per_press()
-                .off_card(),
+            d(&[Key::B], CMD).once_per_press().off_card(),
         ]);
         COMPARE_QUICK_CLEAR = b("quick:clear", Compare, &[
-            d(&[Key::B], |m| quick(m) && m.command && m.shift, "Cmd+Shift+B")
-                .once_per_press()
-                .off_card(),
+            d(&[Key::B], CMD_SHIFT).once_per_press().off_card(),
         ]);
         COMPARE_PREVIOUS = b("compare_view:previous_candidate", Compare, &[
-            d(&[Key::ArrowLeft], rules::no_command_alt, "Left"),
+            d(&[Key::ArrowLeft], NONE),
         ]);
-        COMPARE_NEXT = b("compare_view:next_candidate", Compare, &[
-            d(&[Key::ArrowRight], rules::no_command_alt, "Right"),
-        ]);
+        COMPARE_NEXT = b("compare_view:next_candidate", Compare, &[d(&[Key::ArrowRight], NONE)]);
         COMPARE_MAKE_SELECT = b("compare_view:make_select", Compare, &[
-            d(&[Key::ArrowUp], rules::no_command_alt, "Up").once_per_press(),
+            d(&[Key::ArrowUp], NONE).once_per_press(),
         ]);
         COMPARE_SWAP = b("compare_view:swap", Compare, &[
-            d(&[Key::ArrowDown], rules::no_command_alt, "Down").once_per_press(),
+            d(&[Key::ArrowDown], NONE).once_per_press(),
         ]);
-        COMPARE_CLOSE = b("close_view", Compare, &[
-            d(&[Key::Escape], rules::no_command_alt, "Esc"),
-        ]);
-        COMPARE_LOUPE = b("loupe", Compare, &[
-            d(&[Key::E, Key::Enter], rules::no_command_alt, "E").off_card(),
-        ]);
-        COMPARE_SURVEY = b("library:survey", Compare, &[
-            d(&[Key::N], rules::none, "N").off_card(),
-        ]);
+        COMPARE_CLOSE = b("close_view", Compare, &[d(&[Key::Escape], NONE)]);
+        COMPARE_LOUPE = b("loupe", Compare, &[d(&[Key::E, Key::Enter], NONE).off_card()]);
+        COMPARE_SURVEY = b("library:survey", Compare, &[d(&[Key::N], NONE).off_card()]);
 
         SURVEY_QUICK_TOGGLE = b("quick:toggle", Survey, &[
-            d(&[Key::B], |m| quick(m) && !m.command && !m.shift, "B").once_per_press().off_card(),
+            d(&[Key::B], NONE).once_per_press().off_card(),
         ]);
         SURVEY_QUICK_SHOW = b("quick:show", Survey, &[
-            d(&[Key::B], |m| quick(m) && m.command && !m.shift, "Cmd+B")
-                .once_per_press()
-                .off_card(),
+            d(&[Key::B], CMD).once_per_press().off_card(),
         ]);
         SURVEY_QUICK_CLEAR = b("quick:clear", Survey, &[
-            d(&[Key::B], |m| quick(m) && m.command && m.shift, "Cmd+Shift+B")
-                .once_per_press()
-                .off_card(),
+            d(&[Key::B], CMD_SHIFT).once_per_press().off_card(),
         ]);
         SURVEY_PREVIOUS = b("previous", Survey, &[
-            d(&[Key::ArrowLeft, Key::ArrowUp], rules::no_command_alt, "Left").off_card(),
+            d(&[Key::ArrowLeft, Key::ArrowUp], NONE).off_card(),
         ]);
         SURVEY_NEXT = b("next", Survey, &[
-            d(&[Key::ArrowRight, Key::ArrowDown], rules::no_command_alt, "Right").off_card(),
+            d(&[Key::ArrowRight, Key::ArrowDown], NONE).off_card(),
         ]);
-        SURVEY_CLOSE = b("close_view", Survey, &[
-            d(&[Key::Escape], rules::no_command_alt, "Esc"),
-        ]);
-        SURVEY_LOUPE = b("loupe", Survey, &[
-            d(&[Key::E, Key::Enter], rules::no_command_alt, "E").off_card(),
-        ]);
-        SURVEY_COMPARE = b("library:compare", Survey, &[
-            d(&[Key::C], rules::none, "C").off_card(),
-        ]);
+        SURVEY_CLOSE = b("close_view", Survey, &[d(&[Key::Escape], NONE)]);
+        SURVEY_LOUPE = b("loupe", Survey, &[d(&[Key::E, Key::Enter], NONE).off_card()]);
+        SURVEY_COMPARE = b("library:compare", Survey, &[d(&[Key::C], NONE).off_card()]);
 
         // Undo and redo in the Library (`Editor::workspace_shortcuts`); Develop
-        // has its own. Redo's chords before Undo's: `consume_key` ignores an
-        // extra Shift.
+        // has its own.
         LIBRARY_REDO = b("redo", Library, &[
-            d(&[Key::Z], rules::logically_command_shift, "Cmd+Shift+Z"),
-            d(&[Key::Y], rules::logically_command, "Cmd+Y").not_macos().off_card(),
+            d(&[Key::Z], CMD_SHIFT),
+            d(&[Key::Y], CMD).not_macos().off_card(),
         ]).consuming();
-        LIBRARY_UNDO = b("undo", Library, &[
-            d(&[Key::Z], rules::logically_command, "Cmd+Z"),
-        ]).consuming();
+        LIBRARY_UNDO = b("undo", Library, &[d(&[Key::Z], CMD)]).consuming();
         // The workspace's keys (`Editor::workspace_shortcuts`).
-        LIBRARY = b("library", Everywhere, &[d(&[Key::G], rules::plain, "G")]);
-        LOUPE_FROM_DEVELOP = b("loupe", Develop, &[d(&[Key::E], rules::plain, "E")]);
-        VIRTUAL_COPY = b("virtual_copy", Everywhere, &[
-            d(&[Key::Quote], rules::command, "Cmd+'").once_per_press(),
-        ]);
-        CHROME = b("chrome", Everywhere, &[
-            d(&[Key::F], rules::none, "F").once_per_press(),
-        ]).once();
-        DEVELOP = b("develop", Everywhere, &[d(&[Key::D], rules::plain, "D")]);
+        LIBRARY = b("library", Everywhere, &[d(&[Key::G], NONE)]);
+        LOUPE_FROM_DEVELOP = b("loupe", Develop, &[d(&[Key::E], NONE)]);
+        VIRTUAL_COPY = b("virtual_copy", Everywhere, &[d(&[Key::Quote], CMD).once_per_press()]);
+        CHROME = b("chrome", Everywhere, &[d(&[Key::F], NONE).once_per_press()]).once();
+        DEVELOP = b("develop", Everywhere, &[d(&[Key::D], NONE)]);
 
         // `Editor::preferences_shortcut` and the reference card's window.
-        PREFERENCES = b("preferences", Everywhere, &[
-            d(&[Key::Comma], rules::logically_command, "Cmd+,"),
-        ]).consuming();
-        SHORTCUTS = b("shortcuts", Everywhere, &[
-            d(&[Key::Slash], rules::logically_command, "Cmd+/"),
-        ]).consuming();
+        PREFERENCES = b("preferences", Everywhere, &[d(&[Key::Comma], CMD)]).consuming();
+        SHORTCUTS = b("shortcuts", Everywhere, &[d(&[Key::Slash], CMD)]).consuming();
         SHORTCUTS_CLOSE = b("shortcuts", ShortcutSheet, &[
-            d(&[Key::Slash], rules::logically_command, "Cmd+/").off_card(),
+            d(&[Key::Slash], CMD).off_card(),
         ]).consuming();
         SHORTCUTS_CLEAR_SEARCH = b("shortcuts:clear_search", ShortcutSheet, &[
-            d(&[Key::Escape], rules::logically_none, "Esc").off_card(),
+            d(&[Key::Escape], NONE).off_card(),
         ]).consuming();
 
-        // `Editor::panel_keys`, in its order: Shift+Tab before Tab, Shift+F8
-        // before F8, as their plain patterns also match with Shift held.
-        PANELS_ALL = b("panels:all", Everywhere, &[
-            d(&[Key::Tab], rules::logically_shift, "Shift+Tab"),
-        ]).consuming();
-        PANELS_SIDES = b("panels:sides", Everywhere, &[
-            d(&[Key::Tab], rules::logically_none, "Tab"),
-        ]).consuming();
-        PANELS_PRESETS = b("panels:presets", Everywhere, &[
-            d(&[Key::F8], rules::logically_shift, "Shift+F8"),
-        ]).consuming();
-        PANELS_LEFT = b("panels:left", Everywhere, &[
-            d(&[Key::F7], rules::logically_none, "F7"),
-        ]).consuming();
-        PANELS_RIGHT = b("panels:right", Everywhere, &[
-            d(&[Key::F8], rules::logically_none, "F8"),
-        ]).consuming();
-        PANELS_FILMSTRIP = b("panels:filmstrip", Everywhere, &[
-            d(&[Key::F6], rules::logically_none, "F6"),
-        ]).consuming();
+        // `Editor::panel_keys`, in its order.
+        PANELS_ALL = b("panels:all", Everywhere, &[d(&[Key::Tab], SHIFT)]).consuming();
+        PANELS_SIDES = b("panels:sides", Everywhere, &[d(&[Key::Tab], NONE)]).consuming();
+        PANELS_PRESETS = b("panels:presets", Everywhere, &[d(&[Key::F8], SHIFT)]).consuming();
+        PANELS_LEFT = b("panels:left", Everywhere, &[d(&[Key::F7], NONE)]).consuming();
+        PANELS_RIGHT = b("panels:right", Everywhere, &[d(&[Key::F8], NONE)]).consuming();
+        PANELS_FILMSTRIP = b("panels:filmstrip", Everywhere, &[d(&[Key::F6], NONE)]).consuming();
 
         // `Editor::library_workspace`: on the Library's selection.
-        LIBRARY_EXPORT = b("export_dialog", Library, &[
-            d(&[Key::E], |m| m.command && m.shift && !m.alt, "Cmd+Shift+E").once_per_press(),
-        ]);
+        LIBRARY_EXPORT = b("export_dialog", Library, &[d(&[Key::E], CMD_SHIFT).once_per_press()]);
         LIBRARY_EXPORT_PREVIOUS = b("export_previous", Library, &[
-            d(&[Key::E], rules::command_alt_shift, "Cmd+Alt+Shift+E").once_per_press(),
+            d(&[Key::E], CMD_ALT_SHIFT).once_per_press(),
         ]);
-        LIBRARY_SYNC = b("sync", Library, &[
-            d(&[Key::S], rules::logically_command_shift, "Cmd+Shift+S"),
-        ]).consuming();
-        LIBRARY_AUTO = b("auto_tone", Library, &[
-            d(&[Key::U], rules::logically_command_shift, "Cmd+Shift+U"),
-        ]).consuming();
+        LIBRARY_SYNC = b("sync", Library, &[d(&[Key::S], CMD_SHIFT)]).consuming();
+        LIBRARY_AUTO = b("auto_tone", Library, &[d(&[Key::U], CMD_SHIFT)]).consuming();
 
         // `Editor::zoom_keys`, in the Library's Loupe and in Develop.
+        // Cmd+Option+0 is Lightroom's 100%.
         ZOOM_100 = b("zoom:100", LoupeZoom, &[
-            d(&[Key::Num0], |m| m.command && !m.shift, "Cmd+0").typed(),
+            d(&[Key::Num0], CMD).typed(),
+            d(&[Key::Num0], CMD_ALT).typed().off_card(),
         ]);
-        ZOOM_FIT = b("fit", LoupeZoom, &[
-            d(&[Key::Num1], |m| m.command_only(), "Cmd+1").typed(),
-        ]);
-        ZOOM_IN = b("zoom:in", LoupeZoom, &[
-            d(&[Key::Plus, Key::Equals], rules::command, "Cmd+="),
-        ]);
-        ZOOM_OUT = b("zoom:out", LoupeZoom, &[d(&[Key::Minus], rules::command, "Cmd+-")]);
-        ZOOM = b("zoom", LoupeZoom, &[d(&[Key::Z], rules::none, "Z").once_per_press()]);
-        MAGNIFIER = b("magnifier", LoupeZoom, &[
-            d(&[Key::Z], |m| m.shift_only(), "Shift+Z").once_per_press(),
-        ]);
+        ZOOM_FIT = b("fit", LoupeZoom, &[d(&[Key::Num1], CMD).typed()]);
+        // Cmd++ for a layout with a key of its own for `+`; US layouts type it
+        // as Cmd+Shift+=, which is Cmd+= on a punctuation key.
+        ZOOM_IN = b("zoom:in", LoupeZoom, &[d(&[Key::Equals, Key::Plus], CMD)]);
+        ZOOM_OUT = b("zoom:out", LoupeZoom, &[d(&[Key::Minus], CMD)]);
+        ZOOM = b("zoom", LoupeZoom, &[d(&[Key::Z], NONE).once_per_press()]);
+        MAGNIFIER = b("magnifier", LoupeZoom, &[d(&[Key::Z], SHIFT).once_per_press()]);
 
         // Develop (`Editor::develop_delete_key`, `Editor::develop_shortcuts`).
         DEVELOP_DELETE = b("delete", Develop, &[
-            d(DELETE_KEYS, delete, "Delete").once_per_press().off_card(),
+            d(DELETE_KEYS, NONE).once_per_press().off_card(),
         ]);
         DEVELOP_REMOVE_FROM_CATALOG = b("remove_from_catalog", Develop, &[
-            d(DELETE_KEYS, remove_from_catalog, "Alt+Delete").once_per_press().off_card(),
+            d(DELETE_KEYS, ALT).once_per_press().off_card(),
         ]);
         DEVELOP_DELETE_REJECTED = b("delete_rejected", Develop, &[
-            d(DELETE_KEYS, delete_rejected, "Cmd+Delete").once_per_press().off_card(),
+            d(DELETE_KEYS, CMD).once_per_press().off_card(),
         ]);
         DEVELOP_TRASH = b("trash", Develop, &[
-            d(DELETE_KEYS, rules::command_alt_shift, "Cmd+Alt+Shift+Delete")
-                .once_per_press()
-                .off_card(),
+            d(DELETE_KEYS, CMD_ALT_SHIFT).once_per_press().off_card(),
         ]);
         COPY_TO_BEFORE = b("before_after:copy_to_before", Develop, &[
-            d(&[Key::ArrowLeft], rules::command_alt_shift, "Cmd+Alt+Shift+Left"),
+            d(&[Key::ArrowLeft], CMD_ALT_SHIFT),
         ]);
         COPY_TO_AFTER = b("before_after:copy_to_after", Develop, &[
-            d(&[Key::ArrowRight], rules::command_alt_shift, "Cmd+Alt+Shift+Right"),
+            d(&[Key::ArrowRight], CMD_ALT_SHIFT),
         ]);
-        SWAP_BEFORE_AFTER = b("before_after:swap", Develop, &[
-            d(&[Key::ArrowUp], rules::command_alt_shift, "Cmd+Alt+Shift+Up"),
-        ]);
-        NEXT = b("next", Develop, &[d(&[Key::ArrowRight], not_all, "Right")]);
-        PREVIOUS = b("previous", Develop, &[d(&[Key::ArrowLeft], not_all, "Left")]);
+        SWAP_BEFORE_AFTER = b("before_after:swap", Develop, &[d(&[Key::ArrowUp], CMD_ALT_SHIFT)]);
+        NEXT = b("next", Develop, &[d(&[Key::ArrowRight], NONE)]);
+        PREVIOUS = b("previous", Develop, &[d(&[Key::ArrowLeft], NONE)]);
         BEFORE_AFTER_LEFT_RIGHT = b("before_after:left_right", Develop, &[
-            d(&[Key::Y], |m| !m.command && !m.alt && !m.shift, "Y").once_per_press(),
+            d(&[Key::Y], NONE).once_per_press(),
         ]);
         BEFORE_AFTER_TOP_BOTTOM = b("before_after:top_bottom", Develop, &[
-            d(&[Key::Y], |m| !m.command && m.alt, "Alt+Y").once_per_press(),
+            d(&[Key::Y], ALT).once_per_press(),
         ]);
         BEFORE_AFTER_SPLIT = b("before_after:split", Develop, &[
-            d(&[Key::Y], |m| !m.command && !m.alt && m.shift, "Shift+Y").once_per_press(),
+            d(&[Key::Y], SHIFT).once_per_press(),
         ]);
-        COPY_SETTINGS = b("copy", Develop, &[d(&[Key::C], rules::command_shift, "Cmd+Shift+C")]);
-        PASTE_SETTINGS = b("paste", Develop, &[
-            d(&[Key::V], rules::command_shift, "Cmd+Shift+V"),
-        ]);
-        PASTE_PREVIOUS = b("paste_previous", Develop, &[
-            d(&[Key::V], |m| m.command && m.alt && !m.shift, "Cmd+Alt+V").once_per_press(),
-        ]);
+        COPY_SETTINGS = b("copy", Develop, &[d(&[Key::C], CMD_SHIFT)]);
+        PASTE_SETTINGS = b("paste", Develop, &[d(&[Key::V], CMD_SHIFT)]);
+        PASTE_PREVIOUS = b("paste_previous", Develop, &[d(&[Key::V], CMD_ALT).once_per_press()]);
         MATCH_EXPOSURES = b("match_exposures", Develop, &[
-            d(&[Key::M], rules::command_alt_shift, "Cmd+Alt+Shift+M").once_per_press(),
+            d(&[Key::M], CMD_ALT_SHIFT).once_per_press(),
         ]);
-        NEW_PRESET = b("new_preset", Develop, &[
-            d(&[Key::N], rules::command_shift, "Cmd+Shift+N"),
-        ]);
+        NEW_PRESET = b("new_preset", Develop, &[d(&[Key::N], CMD_SHIFT)]);
         TARGETED_TONE_CURVE = b("targeted:tone_curve", Develop, &[
-            d(&[Key::T], rules::command_alt_shift, "Cmd+Alt+Shift+T").once_per_press(),
+            d(&[Key::T], CMD_ALT_SHIFT).once_per_press(),
         ]);
         TARGETED_HUE = b("targeted:hue", Develop, &[
-            d(&[Key::H], rules::command_alt_shift, "Cmd+Alt+Shift+H").once_per_press(),
+            d(&[Key::H], CMD_ALT_SHIFT).once_per_press(),
         ]);
         TARGETED_SATURATION = b("targeted:saturation", Develop, &[
-            d(&[Key::S], rules::command_alt_shift, "Cmd+Alt+Shift+S").once_per_press(),
+            d(&[Key::S], CMD_ALT_SHIFT).once_per_press(),
         ]);
         TARGETED_LUMINANCE = b("targeted:luminance", Develop, &[
-            d(&[Key::L], rules::command_alt_shift, "Cmd+Alt+Shift+L").once_per_press(),
+            d(&[Key::L], CMD_ALT_SHIFT).once_per_press(),
         ]);
         TARGETED_BLACK_WHITE = b("targeted:black_white", Develop, &[
-            d(&[Key::G], rules::command_alt_shift, "Cmd+Alt+Shift+G").once_per_press(),
+            d(&[Key::G], CMD_ALT_SHIFT).once_per_press(),
         ]);
-        DEVELOP_SYNC = b("sync", Develop, &[
-            d(&[Key::S], |m| m.command && m.shift && !m.alt, "Cmd+Shift+S"),
-        ]);
-        RESET = b("reset", Develop, &[d(&[Key::R], rules::command_shift, "Cmd+Shift+R")]);
-        TOGGLE_BLACK_WHITE = b("toggle:bw", Develop, &[
-            d(&[Key::V], rules::none, "V").once_per_press(),
-        ]);
-        DEVELOP_AUTO = b("auto_tone", Develop, &[
-            d(&[Key::U], rules::command_shift, "Cmd+Shift+U"),
-        ]);
-        DEVELOP_EXPORT = b("export_dialog", Develop, &[
-            d(&[Key::E], |m| m.command && m.shift && !m.alt, "Cmd+Shift+E").once_per_press(),
-        ]);
+        DEVELOP_SYNC = b("sync", Develop, &[d(&[Key::S], CMD_SHIFT)]);
+        RESET = b("reset", Develop, &[d(&[Key::R], CMD_SHIFT)]);
+        TOGGLE_BLACK_WHITE = b("toggle:bw", Develop, &[d(&[Key::V], NONE).once_per_press()]);
+        DEVELOP_AUTO = b("auto_tone", Develop, &[d(&[Key::U], CMD_SHIFT)]);
+        DEVELOP_EXPORT = b("export_dialog", Develop, &[d(&[Key::E], CMD_SHIFT).once_per_press()]);
         DEVELOP_EXPORT_PREVIOUS = b("export_previous", Develop, &[
-            d(&[Key::E], rules::command_alt_shift, "Cmd+Alt+Shift+E").once_per_press(),
+            d(&[Key::E], CMD_ALT_SHIFT).once_per_press(),
         ]);
-        DEVELOP_SELECT_ALL = b("select_all", Develop, &[d(&[Key::A], rules::command, "Cmd+A")]);
-        DEVELOP_SELECT_NONE = b("select_none", Develop, &[
-            d(&[Key::D], rules::command, "Cmd+D"),
-        ]);
-        DEVELOP_UNDO = b("undo", Develop, &[
-            d(&[Key::Z], |m| m.command && !m.shift, "Cmd+Z").off_card(),
-        ]);
-        DEVELOP_REDO = b("redo", Develop, &[
-            d(&[Key::Z], rules::command_shift, "Cmd+Shift+Z").off_card(),
-        ]);
+        DEVELOP_SELECT_ALL = b("select_all", Develop, &[d(&[Key::A], CMD)]);
+        DEVELOP_SELECT_NONE = b("select_none", Develop, &[d(&[Key::D], CMD)]);
+        DEVELOP_UNDO = b("undo", Develop, &[d(&[Key::Z], CMD).off_card()]);
+        DEVELOP_REDO = b("redo", Develop, &[d(&[Key::Z], CMD_SHIFT).off_card()]);
         /// Ctrl+Y, read apart from Cmd+Z: both in one frame undo and redo.
-        DEVELOP_REDO_Y = b("redo", Develop, &[
-            d(&[Key::Y], |m| m.command && !m.shift, "Cmd+Y").not_macos().off_card(),
-        ]);
-        CROP = b("crop", Develop, &[
-            d(&[Key::C], rules::no_command, "C").off_card(),
-            d(&[Key::R], |m| !m.shift && !m.command, "R"),
-        ]).once();
-        REFERENCE_VIEW = b("reference_view", Develop, &[
-            d(&[Key::R], |m| m.shift && !m.command && !m.alt, "Shift+R"),
-        ]);
-        DEVELOP_INFO = b("info", Develop, &[d(&[Key::I], rules::none, "I").once_per_press()]);
-        CLIPPING = b("clipping", Develop, &[d(&[Key::J], rules::none, "J")]);
-        // Shift+\ arrives as | on most layouts.
+        DEVELOP_REDO_Y = b("redo", Develop, &[d(&[Key::Y], CMD).not_macos().off_card()]);
+        CROP = b("crop", Develop, &[d(&[Key::C], NONE).off_card(), d(&[Key::R], NONE)]).once();
+        REFERENCE_VIEW = b("reference_view", Develop, &[d(&[Key::R], SHIFT)]);
+        DEVELOP_INFO = b("info", Develop, &[d(&[Key::I], NONE).once_per_press()]);
+        CLIPPING = b("clipping", Develop, &[d(&[Key::J], NONE)]);
+        // Shift+\ arrives as | on most layouts. A German Mac types | with
+        // Option+7 and \ with Option+Shift+7: Alt is free on punctuation.
         CAMERA_THUMBNAIL = b("camera_thumbnail", Develop, &[
-            d(&[Key::Pipe], rules::any, "|").off_card(),
-            d(&[Key::Backslash], |m| m.shift, "Shift+\\"),
+            d(&[Key::Pipe], NONE).off_card(),
+            d(&[Key::Backslash], SHIFT),
         ]);
-        BEFORE_ONLY = b("compare", Develop, &[d(&[Key::Backslash], |m| !m.shift, "\\")]);
-        FINISH_CROP = b("tool:finish", Context::Tool(Tool::Crop), &[
-            d(&[Key::Enter], rules::any, "Return"),
-        ]);
+        // Shift+\ is the camera thumbnail's.
+        BEFORE_ONLY = b("compare", Develop, &[d(&[Key::Backslash], NONE).rejecting(SHIFT)]);
+        FINISH_CROP = b("tool:finish", Context::Tool(Tool::Crop), &[d(&[Key::Enter], NONE)]);
         FINISH_GUIDED = b("tool:finish", Context::Tool(Tool::Guided), &[
-            d(&[Key::Enter], rules::any, "Return").off_card(),
+            d(&[Key::Enter], NONE).off_card(),
         ]);
-        WHITE_BALANCE = b("white_balance", Develop, &[d(&[Key::W], rules::none, "W")]);
-        REMOVE = b("remove", Develop, &[d(&[Key::Q], rules::none, "Q")]);
-        MASK = b("mask", Develop, &[d(&[Key::W], |m| m.shift && !m.command, "Shift+W")]);
-        GUIDED_UPRIGHT = b("guided_upright", Develop, &[
-            d(&[Key::T], |m| m.shift && !m.command, "Shift+T"),
-        ]);
-        /// Any tool but Masking, which takes a plain Escape itself.
-        CLOSE_TOOL = b("tool:close", Develop, &[d(&[Key::Escape], rules::any, "Esc")]);
-        /// Escape with Cmd or Alt, which Masking's own keys refuse: it closes at once.
-        CLOSE_MASKING = b("tool:close", Context::Tool(Tool::Mask), &[
-            d(&[Key::Escape], |m| m.command || m.alt, "Cmd+Esc").off_card(),
-        ]);
-        NEW_BRUSH_MASK = b("mask:new_brush", Develop, &[
-            d(&[Key::K], rules::no_command_alt_shift, "K"),
-        ]);
-        NEW_LINEAR_MASK = b("mask:new_linear", Develop, &[
-            d(&[Key::M], rules::no_command_alt_shift, "M"),
-        ]);
-        NEW_RADIAL_MASK = b("mask:new_radial", Develop, &[
-            d(&[Key::M], |m| !m.command && !m.alt && m.shift, "Shift+M"),
-        ]);
-        NEW_COLOR_RANGE_MASK = b("mask:new_color_range", Develop, &[
-            d(&[Key::J], |m| !m.command && !m.alt && m.shift, "Shift+J"),
-        ]);
+        WHITE_BALANCE = b("white_balance", Develop, &[d(&[Key::W], NONE)]);
+        REMOVE = b("remove", Develop, &[d(&[Key::Q], NONE)]);
+        MASK = b("mask", Develop, &[d(&[Key::W], SHIFT)]);
+        GUIDED_UPRIGHT = b("guided_upright", Develop, &[d(&[Key::T], SHIFT)]);
+        /// Any tool but Masking, which takes Escape itself.
+        CLOSE_TOOL = b("tool:close", Develop, &[d(&[Key::Escape], NONE)]);
+        /// Puts Masking away at once, leaving nothing behind. No key by default:
+        /// Escape goes back step by step (`MASK_BACK`).
+        CLOSE_MASKING = b("tool:close", Context::Tool(Tool::Mask), &[]);
+        NEW_BRUSH_MASK = b("mask:new_brush", Develop, &[d(&[Key::K], NONE)]);
+        NEW_LINEAR_MASK = b("mask:new_linear", Develop, &[d(&[Key::M], NONE)]);
+        NEW_RADIAL_MASK = b("mask:new_radial", Develop, &[d(&[Key::M], SHIFT)]);
+        NEW_COLOR_RANGE_MASK = b("mask:new_color_range", Develop, &[d(&[Key::J], SHIFT)]);
 
         // The tools' keys (`Editor::crop_keys` and the rest).
         CROP_SWAP_ORIENTATION = b("crop:swap_orientation", Context::Tool(Tool::Crop), &[
-            d(&[Key::X], |m| crop_key(m) && !m.shift, "X"),
+            d(&[Key::X], NONE),
         ]);
-        CROP_ASPECT_LOCK = b("crop:aspect_lock", Context::Tool(Tool::Crop), &[
-            d(&[Key::A], |m| crop_key(m) && !m.shift, "A"),
-        ]);
+        CROP_ASPECT_LOCK = b("crop:aspect_lock", Context::Tool(Tool::Crop), &[d(&[Key::A], NONE)]);
         CROP_NEXT_OVERLAY = b("crop:next_overlay", Context::Tool(Tool::Crop), &[
-            d(&[Key::O], |m| crop_key(m) && !m.shift, "O"),
+            d(&[Key::O], NONE),
         ]);
         CROP_TURN_OVERLAY = b("crop:turn_overlay", Context::Tool(Tool::Crop), &[
-            d(&[Key::O], |m| crop_key(m) && m.shift, "Shift+O"),
+            d(&[Key::O], SHIFT),
         ]);
-        // Shift: feather.
+        // Shift feathers; Alt types other symbols.
         REMOVE_SMALLER = b("brush:smaller", Context::Tool(Tool::Remove), &[
-            d(OPEN_BRACKETS, rules::no_command_alt, "["),
-        ]);
+            d(OPEN_BRACKETS, NONE).rejecting(ALT),
+        ]).variant(SHIFT);
         REMOVE_LARGER = b("brush:larger", Context::Tool(Tool::Remove), &[
-            d(CLOSE_BRACKETS, rules::no_command_alt, "]"),
-        ]);
+            d(CLOSE_BRACKETS, NONE).rejecting(ALT),
+        ]).variant(SHIFT);
         REMOVE_NEW_SOURCE = b("remove:new_source", Context::Tool(Tool::Remove), &[
-            d(SLASHES, rules::no_command_alt, "/"),
+            d(SLASHES, NONE).rejecting(ALT),
         ]);
-        REMOVE_DELETE = b("tool:delete", Context::Tool(Tool::Remove), &[
-            d(DELETE_KEYS, rules::no_command_alt, "Delete"),
-        ]);
+        REMOVE_DELETE = b("tool:delete", Context::Tool(Tool::Remove), &[d(DELETE_KEYS, NONE)]);
         REMOVE_HIDE_PINS = b("remove:hide_pins", Context::Tool(Tool::Remove), &[
-            d(&[Key::H], rules::no_command_alt_shift, "H"),
+            d(&[Key::H], NONE),
         ]);
         /// Not a quick Cmd+A, Select All, released within the frame.
         REMOVE_VISUALIZE = b("remove:visualize", Context::Tool(Tool::Remove), &[
-            d(&[Key::A], rules::none, "A"),
+            d(&[Key::A], NONE),
         ]);
         RED_EYE_DELETE = b("tool:delete", Context::Tool(Tool::RedEye), &[
-            d(DELETE_KEYS, rules::no_command_alt, "Delete").off_card(),
+            d(DELETE_KEYS, NONE).off_card(),
         ]);
         RED_EYE_SMALLER = b("brush:smaller", Context::Tool(Tool::RedEye), &[
-            d(OPEN_BRACKETS, rules::no_command_alt, "[").off_card(),
+            d(OPEN_BRACKETS, NONE).rejecting(ALT).off_card(),
         ]);
         RED_EYE_LARGER = b("brush:larger", Context::Tool(Tool::RedEye), &[
-            d(CLOSE_BRACKETS, rules::no_command_alt, "]").off_card(),
+            d(CLOSE_BRACKETS, NONE).rejecting(ALT).off_card(),
         ]);
         MASK_SMALLER = b("brush:smaller", Context::Tool(Tool::Mask), &[
-            d(OPEN_BRACKETS, rules::no_command_alt, "[").off_card(),
-        ]);
+            d(OPEN_BRACKETS, NONE).rejecting(ALT).off_card(),
+        ]).variant(SHIFT);
         MASK_LARGER = b("brush:larger", Context::Tool(Tool::Mask), &[
-            d(CLOSE_BRACKETS, rules::no_command_alt, "]").off_card(),
-        ]);
+            d(CLOSE_BRACKETS, NONE).rejecting(ALT).off_card(),
+        ]).variant(SHIFT);
         MASK_BACK = b("mask:back", Context::Tool(Tool::Mask), &[
-            d(&[Key::Escape], rules::no_command_alt, "Esc").off_card(),
+            d(&[Key::Escape], NONE).off_card(),
         ]);
         MASK_OVERLAY = b("mask:overlay", Context::Tool(Tool::Mask), &[
-            d(&[Key::O], rules::no_command_alt_shift, "O").off_card(),
+            d(&[Key::O], NONE).off_card(),
         ]);
         MASK_SWITCH_BRUSH = b("mask:switch_brush", Context::Tool(Tool::Mask), &[
-            d(SLASHES, rules::no_command_alt, "/").off_card(),
+            d(SLASHES, NONE).rejecting(ALT).off_card(),
         ]);
         MASK_DELETE = b("tool:delete", Context::Tool(Tool::Mask), &[
-            d(DELETE_KEYS, rules::no_command_alt, "Delete").off_card(),
+            d(DELETE_KEYS, NONE).off_card(),
         ]);
         GUIDED_DELETE = b("tool:delete", Context::Tool(Tool::Guided), &[
-            d(DELETE_KEYS, rules::no_command_alt, "Delete").off_card(),
+            d(DELETE_KEYS, NONE).off_card(),
         ]);
 
         // The Basic panel's keys (`Editor::develop_key_steps`), by their place.
-        BASIC_NEXT = b("basic:next", Develop, &[d(&[Key::Period], rules::none, ".").placed()]);
+        // `.` and `,` refuse Shift and Alt; Shift steps `=` and `-` more, Alt less.
+        BASIC_NEXT = b("basic:next", Develop, &[
+            d(&[Key::Period], NONE).placed().rejecting(ALT_SHIFT),
+        ]);
         BASIC_PREVIOUS = b("basic:previous", Develop, &[
-            d(&[Key::Comma], rules::none, ",").placed(),
+            d(&[Key::Comma], NONE).placed().rejecting(ALT_SHIFT),
         ]);
         BASIC_INCREASE = b("basic:increase", Develop, &[
-            d(&[Key::Equals, Key::Plus], basic_step, "=").placed(),
-        ]);
-        BASIC_DECREASE = b("basic:decrease", Develop, &[
-            d(&[Key::Minus], basic_step, "-").placed(),
-        ]);
-    }
-
-    /// A Basic slider step: never with Cmd or Ctrl, which make other keys;
-    /// Shift steps more, Option less.
-    fn basic_step(m: Modifiers) -> bool {
-        !(m.command || m.ctrl || m.mac_cmd)
+            d(&[Key::Equals, Key::Plus], NONE).placed(),
+        ]).variant(ALT_SHIFT);
+        BASIC_DECREASE = b("basic:decrease", Develop, &[d(&[Key::Minus], NONE).placed()])
+            .variant(ALT_SHIFT);
     }
 
     /// The rating, flag and label keys, in the order a press is matched.

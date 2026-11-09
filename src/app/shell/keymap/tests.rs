@@ -57,51 +57,47 @@ fn key_events(ctx: &egui::Context) -> Vec<Event> {
 static F: Binding = Binding::new(
     "chrome",
     Context::Everywhere,
-    &[Default::new(&[Key::F], rules::none, "F").once_per_press()],
+    &[Default::new(&[Key::F], Mods::NONE).once_per_press()],
 );
 static F_ONCE: Binding = Binding::new(
     "chrome",
     Context::Everywhere,
-    &[Default::new(&[Key::F], rules::none, "F").once_per_press()],
+    &[Default::new(&[Key::F], Mods::NONE).once_per_press()],
 )
 .once();
 static ANY_F: Binding = Binding::new(
     "chrome",
     Context::Everywhere,
-    &[Default::new(&[Key::F], rules::any, "F")],
+    &[Default::new(&[Key::F], Mods::NONE)],
 );
 static TAB: Binding = Binding::new(
     "panels:sides",
     Context::Everywhere,
-    &[Default::new(&[Key::Tab], rules::logically_none, "Tab")],
+    &[Default::new(&[Key::Tab], Mods::NONE)],
 )
 .consuming();
 static SHIFT_TAB: Binding = Binding::new(
     "panels:all",
     Context::Everywhere,
-    &[Default::new(
-        &[Key::Tab],
-        rules::logically_shift,
-        "Shift+Tab",
-    )],
+    &[Default::new(&[Key::Tab], Mods::SHIFT)],
 )
 .consuming();
 static Y: Binding = Binding::new(
     "before_after:left_right",
     Context::Develop,
-    &[Default::new(&[Key::Y], rules::none, "Y")],
+    &[Default::new(&[Key::Y], Mods::NONE)],
 );
 static SHIFT_Y: Binding = Binding::new(
     "before_after:split",
     Context::Develop,
-    &[Default::new(&[Key::Y], |m| m.shift_only(), "Shift+Y")],
+    &[Default::new(&[Key::Y], Mods::SHIFT)],
 );
 static REDO: Binding = Binding::new(
     "redo",
     Context::Library,
     &[
-        Default::new(&[Key::Z], rules::logically_command_shift, "Cmd+Shift+Z"),
-        Default::new(&[Key::Y], rules::logically_command, "Cmd+Y"),
+        Default::new(&[Key::Z], Mods::CMD.with(Mods::SHIFT)),
+        Default::new(&[Key::Y], Mods::CMD),
     ],
 )
 .consuming();
@@ -152,30 +148,45 @@ fn a_press_a_widget_consumed_is_not_offered() {
 }
 
 #[test]
-fn a_consuming_binding_takes_out_what_consume_key_takes_out() {
-    let events = || {
-        vec![
-            press(Key::Tab, Modifiers::ALT),
-            repeat(Key::Tab, Modifiers::NONE),
-            press(Key::Tab, Modifiers::COMMAND),
-            press(Key::Tab, Modifiers::SHIFT),
-            release(Key::Tab),
-            press(Key::F, Modifiers::NONE),
-            press(Key::Tab, Modifiers::NONE),
-        ]
-    };
-    // A context each: egui counts a key still down from a frame before as
-    // repeating.
-    let expected = frame(&egui::Context::default(), events(), |ctx| {
-        ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab));
-        key_events(ctx)
-    });
+fn a_consuming_binding_takes_out_every_press_of_its_chord() {
+    let events = vec![
+        press(Key::Tab, Modifiers::ALT),
+        repeat(Key::Tab, Modifiers::NONE),
+        press(Key::Tab, Modifiers::COMMAND),
+        press(Key::Tab, Modifiers::SHIFT),
+        release(Key::Tab),
+        press(Key::F, Modifiers::NONE),
+        press(Key::Tab, Modifiers::NONE),
+    ];
     let ctx = egui::Context::default();
-    let (taken, left) = frame(&ctx, events(), |ctx| {
+    let (taken, left) = frame(&ctx, events, |ctx| {
         (FrameKeys::of(ctx).take(&TAB), key_events(ctx))
     });
-    assert_eq!(taken, Some(Modifiers::ALT), "the first press it matches");
-    assert_eq!(left, expected);
+    assert_eq!(taken, Some(Modifiers::NONE), "the first press it matches");
+    // Tab's repeat and its second press go; Tab with other modifiers stays.
+    // (egui counts the presses after the first as repeats.)
+    let left: Vec<(Key, bool, Modifiers)> = left
+        .iter()
+        .filter_map(|e| match e {
+            Event::Key {
+                key,
+                pressed,
+                modifiers,
+                ..
+            } => Some((*key, *pressed, *modifiers)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        left,
+        vec![
+            (Key::Tab, true, Modifiers::ALT),
+            (Key::Tab, true, Modifiers::COMMAND),
+            (Key::Tab, true, Modifiers::SHIFT),
+            (Key::Tab, false, Modifiers::NONE),
+            (Key::F, true, Modifiers::NONE),
+        ]
+    );
     // With nothing for it, nothing is taken out.
     let left = frame(
         &egui::Context::default(),
@@ -307,19 +318,20 @@ fn chords_match_by_key_place_or_what_the_key_types() {
         repeat: false,
         modifiers: Modifiers::NONE,
     };
-    let typed = Default::new(&[Key::Num4], rules::any, "4").typed();
-    let logical = Default::new(&[Key::Quote], rules::any, "'");
-    let placed = Default::new(&[Key::Equals], rules::any, "=").placed();
+    let none = Mods::NONE;
+    let typed = Default::new(&[Key::Num4], none).typed();
+    let logical = Default::new(&[Key::Quote], none);
+    let placed = Default::new(&[Key::Equals], none).placed();
     let quote = Press::of(&quote_on_4).expect("a press");
     let bracket = Press::of(&bracket_on_equals).expect("a press");
-    assert!(typed.matches(&quote));
-    assert!(logical.matches(&quote));
-    assert!(placed.matches(&bracket));
-    assert!(!Default::new(&[Key::Equals], rules::any, "=").matches(&bracket));
+    assert!(typed.matches(&quote, none));
+    assert!(logical.matches(&quote, none));
+    assert!(placed.matches(&bracket, none));
+    assert!(!Default::new(&[Key::Equals], none).matches(&bracket, none));
     assert!(
-        Default::new(&[Key::CloseBracket], rules::any, "]")
+        Default::new(&[Key::CloseBracket], none)
             .typed()
-            .matches(&bracket)
+            .matches(&bracket, none)
     );
     // Repeats only where the chord takes them.
     let held = Press::of(&repeat(Key::F, Modifiers::NONE)).expect("a press");
@@ -328,35 +340,129 @@ fn chords_match_by_key_place_or_what_the_key_types() {
     let _ = ctx;
 }
 
+fn typed(key: Key, physical: Key, modifiers: Modifiers) -> Press {
+    Press::of(&Event::Key {
+        key,
+        physical_key: Some(physical),
+        pressed: true,
+        repeat: false,
+        modifiers,
+    })
+    .expect("a press")
+}
+
+static RATE_UP: Binding = Binding::new(
+    "rating:raise",
+    Context::Everywhere,
+    &[Default::new(&[Key::CloseBracket, Key::CloseCurlyBracket], Mods::NONE).rejecting(Mods::ALT)],
+)
+.variant(Mods::SHIFT);
+static CLIPPING: Binding = Binding::new(
+    "clipping",
+    Context::Develop,
+    &[Default::new(&[Key::J], Mods::NONE)],
+);
+static SHORTCUTS: Binding = Binding::new(
+    "shortcuts",
+    Context::Everywhere,
+    &[Default::new(&[Key::Slash], Mods::CMD)],
+);
+static BEFORE: Binding = Binding::new(
+    "compare",
+    Context::Develop,
+    &[Default::new(&[Key::Backslash], Mods::NONE).rejecting(Mods::SHIFT)],
+);
+static THUMBNAIL: Binding = Binding::new(
+    "camera_thumbnail",
+    Context::Develop,
+    &[
+        Default::new(&[Key::Pipe], Mods::NONE),
+        Default::new(&[Key::Backslash], Mods::SHIFT),
+    ],
+);
+static NEXT_SLIDER: Binding = Binding::new(
+    "basic:next",
+    Context::Develop,
+    &[Default::new(&[Key::Period], Mods::NONE)
+        .placed()
+        .rejecting(Mods::ALT.with(Mods::SHIFT))],
+);
+static STEP_UP: Binding = Binding::new(
+    "basic:increase",
+    Context::Develop,
+    &[Default::new(&[Key::Equals, Key::Plus], Mods::NONE).placed()],
+)
+.variant(Mods::ALT.with(Mods::SHIFT));
+
 #[test]
-fn the_logical_rules_are_eguis() {
-    let all = [
+fn modifiers_match_exactly_on_a_letter() {
+    let (shift, alt) = (Modifiers::SHIFT, Modifiers::ALT);
+    assert!(CLIPPING.matches(&typed(Key::J, Key::J, Modifiers::NONE)));
+    for extra in [shift, alt, Modifiers::COMMAND, Modifiers::CTRL, shift | alt] {
+        assert!(
+            !CLIPPING.matches(&typed(Key::J, Key::J, extra)),
+            "J with {extra:?}"
+        );
+    }
+}
+
+#[test]
+fn variants_are_passed_on_not_matched() {
+    // Shift goes on to the next photo; Alt is not a variant and refused.
+    assert!(RATE_UP.matches(&typed(
+        Key::CloseBracket,
+        Key::CloseBracket,
+        Modifiers::NONE
+    )));
+    assert!(RATE_UP.matches(&typed(
+        Key::CloseCurlyBracket,
+        Key::CloseBracket,
+        Modifiers::SHIFT
+    )));
+    assert!(!RATE_UP.matches(&typed(Key::CloseBracket, Key::CloseBracket, Modifiers::ALT)));
+    assert!(!RATE_UP.matches(&typed(
+        Key::CloseBracket,
+        Key::CloseBracket,
+        Modifiers::COMMAND
+    )));
+    // Shift and Alt pick the step; Cmd is another key.
+    for m in [
         Modifiers::NONE,
         Modifiers::SHIFT,
         Modifiers::ALT,
-        Modifiers::COMMAND,
-        Modifiers::CTRL,
-        Modifiers::MAC_CMD | Modifiers::COMMAND,
-        Modifiers::COMMAND | Modifiers::SHIFT,
-        Modifiers::COMMAND | Modifiers::ALT | Modifiers::SHIFT,
         Modifiers::SHIFT | Modifiers::ALT,
-    ];
-    for m in all {
-        assert_eq!(
-            rules::logically_none(m),
-            m.matches_logically(Modifiers::NONE)
-        );
-        assert_eq!(
-            rules::logically_shift(m),
-            m.matches_logically(Modifiers::SHIFT)
-        );
-        assert_eq!(
-            rules::logically_command(m),
-            m.matches_logically(Modifiers::COMMAND)
-        );
-        assert_eq!(
-            rules::logically_command_shift(m),
-            m.matches_logically(Modifiers::COMMAND | Modifiers::SHIFT)
+    ] {
+        assert!(
+            STEP_UP.matches(&typed(Key::Equals, Key::Equals, m)),
+            "= with {m:?}"
         );
     }
+    assert!(!STEP_UP.matches(&typed(Key::Equals, Key::Equals, Modifiers::COMMAND)));
+}
+
+#[test]
+fn shift_and_alt_on_punctuation_are_free_unless_named_or_rejected() {
+    let cmd = Modifiers::COMMAND;
+    let (shift, alt) = (Modifiers::SHIFT, Modifiers::ALT);
+    // German Cmd+/ is Cmd+Shift+7; a Mac types other symbols with Option.
+    assert!(SHORTCUTS.matches(&typed(Key::Slash, Key::Num7, cmd | shift)));
+    assert!(SHORTCUTS.matches(&typed(Key::Slash, Key::Slash, cmd | alt)));
+    assert!(!SHORTCUTS.matches(&typed(Key::Slash, Key::Slash, Modifiers::NONE)));
+    // Ctrl is never free: on a Mac Cmd+Ctrl+/ is another chord.
+    assert!(!SHORTCUTS.matches(&typed(Key::Slash, Key::Slash, Modifiers::CTRL)));
+    // `\` rejects Shift, which Shift+`\` names.
+    assert!(BEFORE.matches(&typed(Key::Backslash, Key::Backslash, Modifiers::NONE)));
+    assert!(BEFORE.matches(&typed(Key::Backslash, Key::Backslash, alt)));
+    assert!(!BEFORE.matches(&typed(Key::Backslash, Key::Backslash, shift)));
+    assert!(!BEFORE.matches(&typed(Key::Backslash, Key::Backslash, cmd)));
+    assert!(THUMBNAIL.matches(&typed(Key::Backslash, Key::Backslash, shift)));
+    // German macOS: Option+7 types |, Option+Shift+7 types \.
+    assert!(THUMBNAIL.matches(&typed(Key::Pipe, Key::Num7, alt)));
+    assert!(THUMBNAIL.matches(&typed(Key::Backslash, Key::Num7, alt | shift)));
+    assert!(!THUMBNAIL.matches(&typed(Key::Backslash, Key::Backslash, alt)));
+    assert!(!THUMBNAIL.matches(&typed(Key::Pipe, Key::Backslash, cmd | shift)));
+    // The Basic panel's `.` refuses Shift and Alt.
+    assert!(NEXT_SLIDER.matches(&typed(Key::Period, Key::Period, Modifiers::NONE)));
+    assert!(!NEXT_SLIDER.matches(&typed(Key::Period, Key::Period, shift)));
+    assert!(!NEXT_SLIDER.matches(&typed(Key::Period, Key::Period, alt)));
 }

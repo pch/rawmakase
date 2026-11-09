@@ -155,12 +155,16 @@ fn shift_escape_dismisses_every_message_before_anything_else_reads_escape() {
     // Behind a window the messages stay.
     let o = tap(Place::GridModal, Key::Escape, SHIFT);
     assert!(o.get("messages").is_none(), "{o:?}");
-    // With no message it is not taken, and Escape goes on: the Loupe closes.
+    // With no message it is not taken, and nothing else takes Shift+Escape:
+    // the Loupe's Escape is plain (#963).
     let mut f = Fixture::new(Place::Loupe);
     f.tap(Key::Escape, SHIFT);
     let o = tap_in(&mut f, Key::Escape, SHIFT);
-    assert!(o.is("view", "grid"), "{o:?}");
+    assert!(o.nothing() && !o.taken, "{o:?}");
     assert_eq!(f.e.messages.entry_count(), 0);
+    // Shift+Escape with Alt is no longer Shift+Escape.
+    let o = tap(Place::Grid, Key::Escape, ALT | SHIFT);
+    assert!(o.get("messages").is_none() && !o.taken, "{o:?}");
 }
 
 #[test]
@@ -199,10 +203,13 @@ fn escape_brings_the_hidden_chrome_back_before_it_closes_anything() {
 #[test]
 fn escape_closes_the_innermost_thing_in_each_view() {
     assert!(tap(Place::Loupe, Key::Escape, NONE).is("view", "grid"));
-    assert!(
-        tap(Place::Loupe, Key::Escape, cmd()).is("view", "grid"),
-        "any modifiers"
-    );
+    // Escape alone (#963): it took any modifiers.
+    for m in [cmd(), ALT] {
+        assert!(
+            tap(Place::Loupe, Key::Escape, m).get("view").is_none(),
+            "{m:?}"
+        );
+    }
     assert!(tap(Place::Compare, Key::Escape, NONE).is("view", "grid"));
     assert!(
         tap(Place::Compare, Key::Escape, cmd())
@@ -215,15 +222,22 @@ fn escape_closes_the_innermost_thing_in_each_view() {
             tap(place, Key::Escape, NONE).is("tool", "None"),
             "{place:?}"
         );
-        assert!(
-            tap(place, Key::Escape, cmd()).is("tool", "None"),
-            "{place:?}"
-        );
+        // Escape alone (#963): it took any modifiers.
+        for m in [cmd(), ALT] {
+            assert!(
+                tap(place, Key::Escape, m).get("tool").is_none(),
+                "{place:?} {m:?}"
+            );
+        }
     }
-    // Masking with nothing aimed or pending: its own chain closes it, and with
-    // Cmd or Alt it closes at once.
-    for m in [NONE, cmd(), ALT] {
-        assert!(tap(Place::Mask, Key::Escape, m).is("tool", "None"), "{m:?}");
+    // Masking with nothing aimed or pending: its own chain closes it. With Cmd
+    // or Alt it closed at once; now Escape is Escape alone there too (#963).
+    assert!(tap(Place::Mask, Key::Escape, NONE).is("tool", "None"));
+    for m in [cmd(), ALT] {
+        assert!(
+            tap(Place::Mask, Key::Escape, m).get("tool").is_none(),
+            "{m:?}"
+        );
     }
     // A text field gives Escape up; behind a window the window takes it.
     let o = tap(Place::DevelopTyping, Key::Escape, NONE);
@@ -231,11 +245,12 @@ fn escape_closes_the_innermost_thing_in_each_view() {
 }
 
 #[test]
-fn g_shows_the_grid_from_anywhere_shift_too_but_not_cmd_or_alt() {
+fn g_shows_the_grid_from_anywhere_alone() {
     for place in [Place::Develop, Place::Crop] {
         let o = tap(place, Key::G, NONE);
         assert!(o.is("module", "Library"), "{place:?} {o:?}");
-        assert!(tap(place, Key::G, SHIFT).is("module", "Library"));
+        // G alone (#963): it took Shift.
+        assert!(tap(place, Key::G, SHIFT).get("module").is_none());
         assert!(
             repeat(place, Key::G, NONE).is("module", "Library"),
             "repeats"
@@ -245,6 +260,7 @@ fn g_shows_the_grid_from_anywhere_shift_too_but_not_cmd_or_alt() {
     }
     for place in [Place::Loupe, Place::Compare, Place::Survey] {
         assert!(tap(place, Key::G, NONE).is("view", "grid"), "{place:?}");
+        assert!(tap(place, Key::G, SHIFT).get("view").is_none(), "{place:?}");
     }
     assert_inert_behind_a_window_and_while_typing(Key::G, NONE, "G");
     assert!(tap(Place::DevelopButton, Key::G, NONE).is("module", "Library"));
@@ -256,7 +272,8 @@ fn e_in_develop_shows_the_open_photo_in_the_loupe() {
     let o = tap_in(&mut f, Key::E, NONE);
     assert!(o.is("module", "Library") && o.is("view", "loupe"), "{o:?}");
     assert_eq!(f.active(), Some(f.ids[3]));
-    assert!(tap(Place::Develop, Key::E, SHIFT).is("view", "loupe"));
+    // E alone (#963): it took Shift.
+    assert!(tap(Place::Develop, Key::E, SHIFT).get("module").is_none());
     assert!(repeat(Place::Develop, Key::E, NONE).is("view", "loupe"));
     assert!(tap(Place::Develop, Key::E, ALT).get("module").is_none());
     assert!(tap(Place::Develop, Key::E, cmd()).get("module").is_none());
@@ -308,7 +325,8 @@ fn f_hides_and_shows_the_chrome_once_per_press_and_alone() {
 fn d_develops_the_active_photo_and_cmd_d_selects_none() {
     let o = tap(Place::Grid, Key::D, NONE);
     assert!(o.is("module", "Develop") && o.is("open", "3"), "{o:?}");
-    assert!(tap(Place::Grid, Key::D, SHIFT).is("module", "Develop"));
+    // D alone (#963): it took Shift.
+    assert!(tap(Place::Grid, Key::D, SHIFT).get("module").is_none());
     assert!(repeat(Place::Grid, Key::D, NONE).is("module", "Develop"));
     assert!(tap(Place::Loupe, Key::D, NONE).is("module", "Develop"));
     let o = tap(Place::Grid, Key::D, cmd());
@@ -426,9 +444,9 @@ fn panel_keys_change_panels_unless_a_control_has_the_focus() {
         let o = tap(Place::Develop, key, m);
         assert!(changes(&o) && o.taken, "{key:?} {m:?} {o:?}");
         assert!(changes(&tap(Place::Crop, key, m)), "a tool open");
-        // Alt held too, as the keys match loosely.
+        // Not with Alt held too (#963): the keys matched loosely.
         let o = tap(Place::Develop, key, m | ALT);
-        assert!(changes(&o), "{key:?} with Alt: {o:?}");
+        assert!(o.nothing() && !o.taken, "{key:?} with Alt: {o:?}");
         for place in [
             Place::GridButton,
             Place::DevelopButton,
@@ -602,7 +620,6 @@ fn only_a_frames_first_metadata_key_applies() {
 fn grid_keys_open_views_cycle_cells_and_act_on_the_selection() {
     for (key, m, field, value) in [
         (Key::E, NONE, "view", "loupe"),
-        (Key::E, SHIFT, "view", "loupe"),
         (Key::Enter, NONE, "view", "loupe"),
         (Key::C, NONE, "view", "compare"),
         (Key::N, NONE, "view", "survey"),
@@ -679,7 +696,33 @@ fn grid_keys_open_views_cycle_cells_and_act_on_the_selection() {
         assert!(repeat(Place::Grid, key, NONE).nothing(), "{key:?}");
     }
     assert!(repeat(Place::Grid, Key::ArrowRight, NONE).is("active", "4"));
-    // Modifiers the keys refuse.
+    // Modifiers the keys refuse. E and Return alone (#963), and the arrows,
+    // Page keys, Home and End with Shift only, which extends the selection.
+    for m in [SHIFT, ALT] {
+        assert!(tap(Place::Grid, Key::E, m).get("view").is_none(), "E {m:?}");
+        assert!(
+            tap(Place::Grid, Key::Enter, m).get("view").is_none(),
+            "Return {m:?}"
+        );
+    }
+    for key in [
+        Key::ArrowLeft,
+        Key::ArrowRight,
+        Key::ArrowUp,
+        Key::ArrowDown,
+        Key::PageUp,
+        Key::PageDown,
+        Key::Home,
+        Key::End,
+    ] {
+        for m in [ALT, ALT | SHIFT] {
+            assert!(tap(Place::Grid, key, m).nothing(), "{key:?} {m:?}");
+        }
+    }
+    for m in [cmd_shift(), cmd_alt()] {
+        assert!(tap(Place::Grid, Key::A, m).nothing(), "Cmd+A {m:?}");
+        assert!(tap(Place::Grid, Key::D, m).nothing(), "Cmd+D {m:?}");
+    }
     assert!(tap(Place::Grid, Key::C, SHIFT).get("view").is_none());
     assert!(tap(Place::Grid, Key::J, SHIFT).get("cells").is_none());
     assert!(tap(Place::Grid, Key::E, cmd()).get("view").is_none());
@@ -772,13 +815,23 @@ fn loupe_keys_move_one_photo_and_act_on_the_photo_shown() {
     }
     let o = tap(Place::Loupe, Key::B, NONE);
     assert!(o.is("photos", &photos_with(&[(3, "r0f0_q")])), "{o:?}");
-    // Shift does not extend in the Loupe, and Cmd does not move.
-    assert!(tap(Place::Loupe, Key::ArrowRight, SHIFT).is("selected", "4"));
-    assert!(
-        tap(Place::Loupe, Key::ArrowRight, cmd())
-            .get("active")
-            .is_none()
-    );
+    // The arrows, Home and End alone (#963): Shift, which extends in the
+    // Grid, and Alt moved here too. Cmd does not move.
+    for key in [
+        Key::ArrowLeft,
+        Key::ArrowRight,
+        Key::ArrowUp,
+        Key::ArrowDown,
+        Key::Home,
+        Key::End,
+    ] {
+        for m in [SHIFT, ALT, cmd()] {
+            assert!(
+                tap(Place::Loupe, key, m).get("active").is_none(),
+                "{key:?} {m:?}"
+            );
+        }
+    }
     assert!(repeat(Place::Loupe, Key::I, NONE).nothing());
     assert!(repeat(Place::Loupe, Key::Z, NONE).nothing());
 }
@@ -923,7 +976,6 @@ fn develop_keys_change_the_view() {
         (Key::I, NONE, "info", "Info1"),
         (Key::J, NONE, "clipping", "shadows true highlights true"),
         (Key::C, NONE, "tool", "Crop"),
-        (Key::C, SHIFT, "tool", "Crop"),
         (Key::R, NONE, "tool", "Crop"),
         (Key::W, NONE, "tool", "WhiteBalance"),
         (Key::Q, NONE, "tool", "Remove"),
@@ -931,7 +983,6 @@ fn develop_keys_change_the_view() {
         (Key::T, SHIFT, "tool", "Guided"),
         (Key::ArrowRight, NONE, "open", "4"),
         (Key::ArrowLeft, NONE, "open", "2"),
-        (Key::ArrowRight, SHIFT, "open", "4"),
         (Key::A, cmd(), "selected", "0,1,2,3,4,5,6,7"),
         (Key::D, cmd(), "selected", ""),
         (
@@ -1075,7 +1126,15 @@ fn develop_keys_open_windows_and_tools() {
 #[test]
 fn enter_puts_crop_and_guided_away() {
     assert!(tap(Place::Crop, Key::Enter, NONE).is("tool", "None"));
-    assert!(tap(Place::Crop, Key::Enter, cmd()).is("tool", "None"));
+    // Return alone (#963): it took any modifiers.
+    for place in [Place::Crop, Place::Guided] {
+        for m in [cmd(), SHIFT, ALT] {
+            assert!(
+                tap(place, Key::Enter, m).get("tool").is_none(),
+                "{place:?} {m:?}"
+            );
+        }
+    }
     assert!(tap(Place::Guided, Key::Enter, NONE).is("tool", "None"));
     assert!(tap(Place::Remove, Key::Enter, NONE).get("tool").is_none());
 }
@@ -1526,4 +1585,204 @@ fn busy_work_holds_the_keyboard_shortcuts() {
         let o = tap_in(&mut f, key, m);
         assert!(o.nothing(), "{key:?} {m:?} while busy: {o:?}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Exact modifiers (#963): the default chords match their modifiers exactly,
+// except for a command's variants and Shift and Alt on punctuation keys.
+
+/// The extra modifiers the defaults used to accept and no longer do. Each
+/// press changes nothing that the chord without them changes.
+#[test]
+fn extra_modifiers_no_longer_run_a_command() {
+    use Place::*;
+    let alt_shift = ALT | SHIFT;
+    let mut cases: Vec<(Place, Key, Modifiers, &str)> = vec![
+        // C and R toggle Crop alone.
+        (Develop, Key::C, SHIFT, "tool"),
+        (Develop, Key::C, ALT, "tool"),
+        (Develop, Key::R, ALT, "tool"),
+        // Develop's Left and Right alone.
+        (Develop, Key::ArrowLeft, SHIFT, "open"),
+        (Develop, Key::ArrowRight, ALT, "open"),
+        (Develop, Key::ArrowRight, cmd(), "open"),
+        // `\\`, `|` and Shift+`\\` without Cmd.
+        (Develop, Key::Backslash, cmd(), "compare"),
+        (Develop, Key::Backslash, cmd_shift(), "compare"),
+        (Develop, Key::Pipe, cmd(), "compare"),
+        // Cmd+A and Cmd+D in Develop with Shift or Alt.
+        (Develop, Key::A, cmd_shift(), "selected"),
+        (Develop, Key::D, cmd_alt(), "selected"),
+        // Cmd+Shift+S and Cmd+Shift+U in the Library, Cmd+Shift+U in Develop,
+        // with Alt.
+        (Grid, Key::S, cmd_alt_shift(), "dialog"),
+        (Grid, Key::U, cmd_alt_shift(), "busy"),
+        (Develop, Key::U, cmd_alt_shift(), "busy"),
+        // Cmd+Shift+N, R, C and V with Alt.
+        (Develop, Key::N, cmd_alt_shift(), "dialog"),
+        (Develop, Key::R, cmd_alt_shift(), "recipe"),
+        (Develop, Key::C, cmd_alt_shift(), "dialog"),
+        (Develop, Key::V, cmd_alt_shift(), "recipe"),
+        // Shift+W and Shift+T with Alt.
+        (Develop, Key::W, alt_shift, "tool"),
+        (Develop, Key::T, alt_shift, "tool"),
+        // Compare's and Survey's keys with Shift.
+        (Compare, Key::E, SHIFT, "view"),
+        (Compare, Key::Enter, SHIFT, "view"),
+        (Survey, Key::E, SHIFT, "view"),
+        (Compare, Key::ArrowLeft, SHIFT, "compared"),
+        (Compare, Key::ArrowUp, SHIFT, "compared"),
+        (Compare, Key::ArrowDown, SHIFT, "compared"),
+        (Survey, Key::ArrowLeft, SHIFT, "active"),
+        (Survey, Key::ArrowUp, SHIFT, "active"),
+        // Not on the plan's list: Option+Shift+Y, Delete with Shift in a tool,
+        // and Undo and Redo with Alt.
+        (Develop, Key::Y, alt_shift, "compare"),
+        (Remove, Key::Delete, SHIFT, "recipe"),
+        (RedEye, Key::Backspace, SHIFT, "recipe"),
+        (Mask, Key::Delete, SHIFT, "recipe"),
+        (Guided, Key::Delete, SHIFT, "recipe"),
+        (Grid, Key::Z, cmd_alt(), "photos"),
+        (Grid, Key::Z, cmd_alt_shift(), "photos"),
+        (Develop, Key::Z, cmd_alt(), "photos"),
+        (Develop, Key::Z, cmd_alt_shift(), "photos"),
+        // F6 and F7 with Shift or Alt, Shift+F8 with Alt.
+        (Grid, Key::F6, SHIFT, "panels"),
+        (Grid, Key::F7, ALT, "panels"),
+        (Develop, Key::F8, alt_shift, "tab panel"),
+    ];
+    if !cfg!(target_os = "macos") {
+        // Ctrl+Y redoes alone.
+        cases.extend([
+            (Grid, Key::Y, cmd_shift(), "photos"),
+            (Grid, Key::Y, cmd_alt(), "photos"),
+            (Develop, Key::Y, cmd_alt(), "photos"),
+        ]);
+    }
+    for (place, key, m, field) in cases {
+        let o = tap(place, key, m);
+        assert!(o.get(field).is_none(), "{place:?} {key:?} {m:?}: {o:?}");
+    }
+}
+
+/// The aliases and variants the defaults keep.
+#[test]
+fn kept_aliases_and_variants_still_run_their_command() {
+    use Place::*;
+    let undone = photos_with(&[(0, "r2f0_q")]);
+    let redone = photos_with(&[(0, "r2f1Gq")]);
+    for place in [Grid, Develop] {
+        assert!(tap(place, Key::Z, cmd()).is("photos", &undone), "{place:?}");
+        assert!(
+            tap(place, Key::Z, cmd_shift()).is("photos", &redone),
+            "{place:?}"
+        );
+        if !cfg!(target_os = "macos") {
+            assert!(tap(place, Key::Y, cmd()).is("photos", &redone), "{place:?}");
+        }
+    }
+    // Lightroom's Cmd+Option+0.
+    assert!(
+        tap(Develop, Key::Num0, cmd_alt())
+            .get("zoom")
+            .is_some_and(|z| z.starts_with("on"))
+    );
+    // `{` `}` and `?` beside `[` `]` and `/`.
+    assert!(tap(Develop, Key::CloseCurlyBracket, NONE).is("photos", &edited(&[3], "r1f0_")));
+    assert!(
+        tap(Remove, Key::OpenCurlyBracket, NONE)
+            .get("remove")
+            .is_some()
+    );
+    assert!(
+        tap(RedEye, Key::CloseCurlyBracket, NONE)
+            .get("red eye")
+            .is_some()
+    );
+    assert!(
+        tap(Mask, Key::Questionmark, SHIFT)
+            .get("mask")
+            .is_some_and(|m| m.starts_with("brush 1"))
+    );
+    assert!(
+        tap(Remove, Key::Questionmark, SHIFT)
+            .get("recipe")
+            .is_some()
+    );
+    // `|` beside Shift+`\\`; Delete beside Backspace; Shift+Tab before Tab.
+    assert!(tap(Develop, Key::Pipe, SHIFT).is("compare", "CameraThumbnail"));
+    for key in [Key::Delete, Key::Backspace] {
+        assert!(tap(Remove, key, NONE).get("recipe").is_some(), "{key:?}");
+        assert!(tap(Develop, key, NONE).get("dialog").is_some(), "{key:?}");
+    }
+    assert!(tap(Grid, Key::Tab, SHIFT).is("panels", "develop LRFPA library lrfPA tab Presets"));
+    // Shift goes on to the next photo, extends the Grid's selection and
+    // feathers a brush; Shift and Alt pick the Basic slider's step.
+    let o = tap(Develop, Key::CloseBracket, SHIFT);
+    assert!(
+        o.get("photos").is_some() && o.get("open").is_some(),
+        "{o:?}"
+    );
+    for key in [Key::ArrowDown, Key::PageDown, Key::End] {
+        let o = tap(Grid, key, SHIFT);
+        assert!(o.get("selected").is_some(), "{key:?} {o:?}");
+    }
+    let o = tap(Remove, Key::OpenCurlyBracket, SHIFT);
+    assert!(
+        o.get("remove").is_some_and(|r| r.contains("feather 0.4")),
+        "{o:?}"
+    );
+    let step = |m| {
+        tap(Develop, Key::Minus, m)
+            .get("recipe")
+            .map(str::to_string)
+    };
+    let normal = step(NONE);
+    for m in [SHIFT, ALT, ALT | SHIFT] {
+        assert!(
+            step(m).is_some_and(|r| Some(&r) != normal.as_ref()),
+            "{m:?}"
+        );
+    }
+    // Cmd+Shift+= is US Cmd++, as `+` with Shift held; Cmd+= with Alt too.
+    for (key, m) in [
+        (Key::Plus, cmd_shift()),
+        (Key::Equals, cmd_shift()),
+        (Key::Equals, cmd_alt()),
+    ] {
+        assert!(tap(Develop, key, m).get("zoom").is_some(), "{key:?} {m:?}");
+    }
+}
+
+/// Punctuation as layouts that need Shift or Alt to type it send it, the
+/// events as egui-winit makes them: the key typed, its place, and the
+/// modifiers held.
+#[test]
+fn layouts_that_type_punctuation_with_shift_or_alt_keep_their_shortcuts() {
+    use Place::*;
+    // German: `/` is Shift+7, so Cmd+/ is Cmd+Shift+7.
+    let o = tap_typed(Grid, Key::Slash, Key::Num7, cmd_shift());
+    assert!(o.is("dialog", "Shortcuts") && o.taken, "{o:?}");
+    // German: `'` is Shift and the `#` key, at the US `\\` key's place.
+    let o = tap_typed(Grid, Key::Quote, Key::Backslash, cmd_shift());
+    assert!(o.get("photos").is_some_and(|p| p.contains("new")), "{o:?}");
+    // AZERTY: `/` is Shift and the `:` key, at the US `.` key's place.
+    let o = tap_typed(Grid, Key::Slash, Key::Period, SHIFT);
+    assert!(o.is("active", "2"), "{o:?}");
+    // Shift+`\\` arriving as Backslash with Shift.
+    let o = tap_typed(Develop, Key::Backslash, Key::Backslash, SHIFT);
+    assert!(o.is("compare", "CameraThumbnail"), "{o:?}");
+    // US Shift+, and Shift+. type `<` and `>`, which egui doesn't name:
+    // egui-winit sends the key's place. Neither selects a Basic slider.
+    for key in [Key::Comma, Key::Period] {
+        let o = tap_typed(Develop, key, key, SHIFT);
+        assert!(o.get("slider").is_none(), "{key:?} {o:?}");
+    }
+    // German macOS: Option+7 types `|`, Option+Shift+7 types `\\`.
+    let o = tap_typed(Develop, Key::Pipe, Key::Num7, ALT);
+    assert!(o.is("compare", "CameraThumbnail"), "{o:?}");
+    assert!(o.get("photos").is_none(), "not the 7 key's label: {o:?}");
+    let o = tap_typed(Develop, Key::Backslash, Key::Num7, ALT | SHIFT);
+    assert!(o.is("compare", "CameraThumbnail"), "{o:?}");
+    assert!(o.get("photos").is_none(), "{o:?}");
 }
