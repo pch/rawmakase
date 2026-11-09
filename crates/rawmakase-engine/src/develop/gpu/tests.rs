@@ -2004,6 +2004,32 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
             ..base.clone()
         },
     ];
+    // Contrast, positive and negative, Levels, the point and parametric curves, and all
+    // of them together, after the profile's finish.
+    let mut parametric = base.clone();
+    parametric.effects.parametric = [0.3, -0.2, 0.25, -0.15];
+    let mut curves = base.clone();
+    curves.curve.points = vec![[0., 0.04], [0.3, 0.26], [0.7, 0.78], [1., 0.95]];
+    let mut levels = base.clone();
+    (levels.black_point, levels.white_point, levels.midtone) = (0.04, 1., 1.15);
+    let mut together = curves.clone();
+    together.contrast = 0.35;
+    together.effects.parametric = parametric.effects.parametric;
+    (together.black_point, together.white_point, together.midtone) = (0.02, 1., 0.9);
+    let variants = variants.into_iter().chain([
+        Recipe {
+            contrast: 0.45,
+            ..base.clone()
+        },
+        Recipe {
+            contrast: -0.6,
+            ..base.clone()
+        },
+        levels,
+        curves,
+        parametric,
+        together,
+    ]);
     // Looks, a table and a curve: one that lifts and ends at white (Lifted), one that
     // ends below it (Extended); and an HDR profile with 3D tables.
     let profile = base.profile.as_deref().unwrap().clone();
@@ -2067,7 +2093,7 @@ fn gpu_develop_matches_cpu_hdr_master() -> Result<()> {
             .flatten()
             .copied()
             .fold(0f32, f32::max);
-        assert!(top > 4., "recipe {i}: the master reaches {top}");
+        assert!(top > 2., "recipe {i}: the master reaches {top}");
         let (max, p999, mean) = hdr_differences(&actual.pixels, &expected.pixels);
         eprintln!("recipe {i}: max {max:.6}, 99.9% {p999:.6}, mean {mean:.8}");
         assert!(
@@ -2228,12 +2254,12 @@ fn presented_hdr_previews_match_the_cpu_master() -> Result<()> {
     // A master the port doesn't render, and an SDR edit, are left to the CPU.
     let mut sdr = recipes[0].clone();
     sdr.hdr.enabled = false;
-    // Contrast renders after the profile's finish, which the port leaves to the CPU.
-    let contrast = Recipe {
-        contrast: 0.3,
+    // Saturation is the colour stage, which the port leaves to the CPU.
+    let saturated = Recipe {
+        saturation: 0.3,
         ..recipes[0].clone()
     };
-    for recipe in [sdr, contrast] {
+    for recipe in [sdr, saturated] {
         let none = renderer.render_hdr_to(
             &image,
             &recipe,
