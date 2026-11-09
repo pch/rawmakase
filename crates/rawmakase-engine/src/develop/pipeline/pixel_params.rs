@@ -236,8 +236,8 @@ pub(crate) fn supported(r: &Recipe) -> bool {
 }
 /// Whether the GPU port renders the HDR master of this recipe (resolved with HDR on,
 /// `Recipe::resolved_hdr`) of a photo with `metadata`: one whose master renders
-/// (`model::hdr::check_for`) without Texture: an ordinary profile's tables and HDR
-/// tone curve, an HDR profile's overrange-encoded ones, a look's table and curve
+/// (`model::hdr::check_for`): what the SDR port samples (Texture's image among it), an
+/// ordinary profile's tables and HDR tone curve, an HDR profile's overrange-encoded ones, a look's table and curve
 /// (`CameraProfile::finish_hdr`), then Contrast, the tone curves and the colour stage
 /// (`tone::HdrFinish`). An HDR file's light (`render_hdr`'s own path) renders on the
 /// CPU.
@@ -245,8 +245,6 @@ pub(crate) fn supported_hdr(r: &Recipe, metadata: &crate::camera_data::Metadata)
     r.hdr.is_active()
         && metadata.hdr_source.is_none()
         && crate::model::hdr::check_for(r, metadata).is_ok()
-        // Texture's image isn't ported to the HDR variant.
-        && crate::develop::texture::measured(r) == 0.
         && r.profile.as_ref().is_some_and(|p| p.hdr_tone().is_ok())
 }
 /// The HDR tone curve's samples over log2 scene value: from 2^-16, a 32nd of a stop
