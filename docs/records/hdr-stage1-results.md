@@ -209,6 +209,51 @@ gammas and steep filmic curves the fit misses, and two of the 58.
 slope extension above encoded 1, 3D tables on encoded values) renders Camera Standard
 HDR within 0.01 stop median above white on six of six photos.
 
+### Tone curves
+
+Measured on gray ramps (sensor white +4 stops, a linear and the ACR3 profile curve,
+HDR limits 2, 4 and 8), on the colour patches of [Looks](#looks), and on the twelve
+photos of [Validation](#validation), through point curves and parametric settings in
+the sidecar (`ToneCurvePV2012`, `Parametric*`).
+
+- **Point curve.** Below white, the master curve renders exactly as in SDR on
+  sRGB-encoded values (to 0.001 stop), also between 0.5 and white, where HDR's input
+  differs from SDR's. Above white it continues along its slope at the last point, in
+  the encoding a look's curve works in, and that slope is the natural spline's own
+  derivative there before clamping: 1.33 for a curve through (128, 100), which
+  brightens highlights; −0.054 for one through (230, 255), which overshoots white and
+  so takes scene 15 down to 0.89. Nine curves (S curves, brightening, darkening,
+  lifted and crushed blacks, knees, clips) render within a median 0.004–0.046 stop
+  above white up to scene 16, worst 0.05, but for curves that end much steeper than
+  the identity: Camera Raw holds their output back far above 16 (a curve through
+  (128, 100) renders scene 11.8 as 25.8; the rule gives 31.2, 0.27 stop). Above
+  scene 16, Camera Raw drifts toward the input, as for looks.
+- **Parametric curve.** Its regions and splits are laid over black to four stops
+  above white: the SDR curve over 0–1, scaled to the encoding of 16. Nine settings
+  (each region ±50, Highlights +100 with its split at 60) render within a median
+  0.016 stop, worst 0.063, below and above white; an axis to 22.6 or 32 is worse
+  (median 0.07 and 0.13 above white). Values above 16 are left alone.
+- **Order and limit.** The parametric curve applies before the point curve, as in SDR
+  (an S curve with Lights +50: median 0.002 stop; the other order 0.20). Neither
+  depends on the HDR limit (limits 2 and 4 as 8, within 0.05 stop below the limit's
+  roll-off).
+- **Colour.** On the colour patches, an S curve's and Highlights +50's effect matches
+  Camera Raw's to a median 0.015 stop or less (p95 0.040) at saturations 0.3 and 0.6,
+  ΔE_ITP 1.0 or less. At 0.9 the patches differ by ΔE_ITP 24 without a curve too
+  ([Open](#open)).
+- **Channel curves.** A single channel's curve renders by neither rule above white: a
+  red curve through (128, 160), which brightens red in SDR, takes red from 4.1 to 1.2
+  at scene 3.9 and to 0 by scene 12, while a blue curve through (128, 100) brightens
+  blue and moves red and green too. They stay refused, as do Refine Saturation other
+  than 100% and a point curve whose last point is left of white (not measured).
+- **Photos.** A soft S curve with Highlights −20, Lights +15, Darks +10 and Shadows −10,
+  and a brightening curve through (128, 160), Adobe Standard DCPs, HDR limit 4, score
+  as the default render does on the same photos: median above white 0.004–0.076 stop,
+  and the same eight of twelve pass every tolerance. The four that fail fail by the
+  reasons under [Validation](#validation) (the Panasonics' p95 0.24–1.48 and ΔE_ITP,
+  the X100V's rebuilt highlight peak +0.22–0.24, the Pentax's ΔE_ITP); the Z6 III's
+  peak, +0.108 by default, is +0.056 and +0.070.
+
 ### Looks
 
 Measured on gray ramps (sensor white +4 and +6 stops, a linear and the ACR3 profile
@@ -427,6 +472,7 @@ compared by luminance in 8× linear blocks:
 ## Open
 
 - Positive Whites, Highlights, Shadows and the colour stage in HDR.
+- A channel's point curve and Refine Saturation in HDR ([Tone curves](#tone-curves)).
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
   and its sliders.
 - Looks with an RGB table, their own sliders, B&W, Profile Amount and Camera Looks in
@@ -462,8 +508,9 @@ compared by luminance in 8× linear blocks:
   limit, measured and validated on the family (above); the SDR rendition everywhere
   else; the release guard lifted with Develop's HDR switch and SDR-rendition status;
   `rawmakase render --hdr`; looks of a table and a curve, Adobe Color among them
-  ([Looks](#looks)); Contrast ([Contrast](#contrast)). Open: positive Whites, Highlights, Shadows,
-  the colour stage, the other looks, the SDR rendition sliders, 52552 grouping (library only,
+  ([Looks](#looks)); Contrast ([Contrast](#contrast)); the master point curve and the
+  parametric curve ([Tone curves](#tone-curves)). Open: positive Whites, Highlights, Shadows,
+  the colour stage, the other looks, channel curves, the SDR rendition sliders, 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display
   P3, Rec. 709; CICP-tagged ICC; #908), checked against Camera Raw's PQ TIFF through an

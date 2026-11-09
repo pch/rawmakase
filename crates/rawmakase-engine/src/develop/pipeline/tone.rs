@@ -40,13 +40,58 @@ pub(super) struct CurveSet {
 }
 /// How an HDR render finishes after the scene tone stage: the profile's tables and
 /// curve, and its look's, unclipped ([`crate::camera_profiles::CameraProfile::finish_hdr`]),
-/// then Contrast ([`crate::develop::basic_tone::HdrContrast`]). The colour stage's controls are not rendered: an HDR
-/// edit that uses them does not validate (`model::hdr::check_recipe`).
+/// then Contrast ([`crate::develop::basic_tone::HdrContrast`]) and the tone curves
+/// ([`HdrCurves`]). The colour stage's controls are not rendered: an HDR edit that uses
+/// them does not validate (`model::hdr::check_recipe`).
 pub(super) struct HdrFinish {
     tone: crate::camera_profiles::hdr_tone::HdrTone,
     look: Option<crate::camera_profiles::hdr_look::LookTone>,
     /// Contrast at the photo's pivot, set once the pivot is measured.
     contrast: Option<crate::develop::basic_tone::HdrContrast>,
+    /// `None` when every curve is the identity, so the master is the profile's.
+    curves: Option<HdrCurves>,
+}
+/// The user's tone curves as they render in HDR (`color::hdr_curve`): the parametric
+/// curve, then the master point curve, as in SDR. A channel's own curve refuses the
+/// master (`model::hdr::check_recipe`).
+struct HdrCurves {
+    parametric: Option<crate::develop::tone_lut::ToneLut>,
+    master: crate::color::hdr_curve::HdrPointCurve,
+}
+impl HdrCurves {
+    fn new(r: &Recipe) -> Option<Self> {
+        use crate::color::hdr_curve::HdrPointCurve;
+        let parametric = parametric_curve(r);
+        if parametric.is_none() && r.curve.is_identity() {
+            return None;
+        }
+        Some(Self {
+            parametric,
+            master: HdrPointCurve::new(&r.curve),
+        })
+    }
+    /// Linear ProPhoto RGB (1 = graphics white, not negative) through the curves.
+    fn apply(&self, pro: [f32; 3]) -> [f32; 3] {
+        use crate::color::hdr_curve::{CEILING, decode, encode, parametric};
+        let p = pro.map(encode);
+        let p = match &self.parametric {
+            Some(curve) => rgb_tone(p, |e| parametric(e, |x| curve.eval(x))),
+            None => p,
+        };
+        rgb_tone(p, |e| self.master.evaluate(e)).map(|e| decode(e).min(CEILING))
+    }
+}
+/// DNG RGBTone with `curve`: it maps the largest and smallest channel, and the middle
+/// one keeps its relative position, as the SDR curves apply.
+fn rgb_tone(p: [f32; 3], curve: impl Fn(f32) -> f32) -> [f32; 3] {
+    let lo = p.into_iter().fold(f32::INFINITY, f32::min);
+    let hi = p.into_iter().fold(0f32, f32::max);
+    let (a, b) = (curve(lo), curve(hi));
+    if hi - lo > 1e-8 {
+        p.map(|v| a + (b - a) * (v - lo) / (hi - lo))
+    } else {
+        [b; 3]
+    }
 }
 impl HdrFinish {
     /// For a recipe with HDR on and a profile whose curve renders in HDR.
@@ -59,6 +104,7 @@ impl HdrFinish {
             tone: profile.hdr_tone().ok()?,
             look: profile.hdr_look(),
             contrast: None,
+            curves: HdrCurves::new(r),
         })
     }
     /// Linear ProPhoto RGB from the scene tone stage to the HDR master before its
@@ -69,13 +115,15 @@ impl HdrFinish {
             None => mul(crate::camera_profiles::PRO_TO_RGB, scene),
         };
         let pro = mul(crate::camera_profiles::RGB_TO_PRO, rgb);
-        // Contrast follows the profile and its look, as in SDR's colour stage.
+        // Contrast follows the profile and its look, as in SDR's colour stage, and the
+        // curves follow Contrast, as SDR's `curve_input` applies them.
         let pro = match &self.contrast {
             Some(contrast) => contrast.apply(pro.map(|v| v.max(0.))),
             None => pro,
-        };
+        }
+        .map(|v| v.max(0.));
         // The limit applies once, after sharpening and resizing (`render_hdr`).
-        pro.map(|v| v.max(0.))
+        self.curves.as_ref().map_or(pro, |c| c.apply(pro))
     }
     #[cfg(test)]
     pub(super) fn has_contrast(&self) -> bool {
