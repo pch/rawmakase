@@ -104,12 +104,6 @@ fn rgb_tone(p: [f32; 3], curve: impl Fn(f32) -> f32) -> [f32; 3] {
         [b; 3]
     }
 }
-/// Whether an HDR master of `r` renders its colour stage: the colour mixer (Saturation
-/// and Vibrance among it) or the black & white mix, which the GPU port's HDR master
-/// leaves to the CPU (`pixel_params::supported_hdr`).
-pub(crate) fn hdr_colour_stage(r: &Recipe) -> bool {
-    crate::develop::color_mixer::ColorMixer::new(r).is_some() || r.effects.monochrome
-}
 /// What the GPU port's HDR master reads of [`HdrFinish`] past the profile: Contrast's
 /// table, output at its top and slope beyond; and, with tone curves, whether Levels
 /// apply and the master curve's value at white and slope beyond it.

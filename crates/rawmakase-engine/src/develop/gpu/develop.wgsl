@@ -400,6 +400,97 @@ fn hdr_tone_controls(rgb: vec3<f32>) -> vec3<f32> {
     }
     return out;
 }
+// color_mixer::lookup_with on a grid of changes (three floats a cell) at HSV `h`, `s`,
+// `v`, or of value factors (`scalar`, one float a cell, in the third component).
+fn mixer_lookup(base: i32, h: f32, s: f32, v: f32, scalar: bool) -> vec3<f32> {
+    let fh = rem_euclid(h, 1.0) * 36.0 - 0.5;
+    let fs = clamp(sqrt(clamp(s, 0.0, 1.0)) * 6.0 - 0.5, 0.0, 5.0);
+    let fv = clamp(powf(clamp(v, 0.0, 1.0), 0.45) * 6.0 - 0.5, 0.0, 5.0);
+    let h0 = floor(fh);
+    let th = fh - h0;
+    let ts = fract(fs);
+    let tv = fract(fv);
+    let s0 = u32(fs);
+    let v0 = u32(fv);
+    let s1 = min(s0 + 1u, 5u);
+    let v1 = min(v0 + 1u, 5u);
+    var out = vec3(0.0);
+    for (var dh = 0; dh < 2; dh++) {
+        let hi = u32(rem_euclid(h0 + f32(dh), 36.0));
+        let wh = select(1.0 - th, th, dh == 1);
+        for (var k = 0u; k < 2u; k++) {
+            let si = select(s0, s1, k == 1u);
+            let ws = select(1.0 - ts, ts, k == 1u);
+            for (var m = 0u; m < 2u; m++) {
+                let vi = select(v0, v1, m == 1u);
+                let wv = select(1.0 - tv, tv, m == 1u);
+                let cell = i32((hi * 6u + si) * 6u + vi);
+                if scalar {
+                    out.z += table(base + cell) * (wh * ws * wv);
+                } else {
+                    out += table3(base + cell * 3) * (wh * ws * wv);
+                }
+            }
+        }
+    }
+    return out;
+}
+// color_mixer::tables_in with `Lookup::Hdr`: the changes looked up at the colour's
+// value up to HDR_MIX_VALUE, and the same above it; with `fading` (a grid of Vibrance's
+// value factors, or -1) those factors at the colour's own value, faded out from
+// HDR_MIX_FADE to white. Linear sRGB primaries in and out.
+fn mixer_hdr(rgb: vec3<f32>, base: i32, fading: i32) -> vec3<f32> {
+    let q = max(RGB_TO_PRO * rgb, vec3(0.0));
+    let max_v = max(max(max(q.x, q.y), q.z), 0.0);
+    let min_v = min(min(q.x, q.y), q.z);
+    if max_v <= 1e-6 {
+        return rgb;
+    }
+    let d = max_v - min_v;
+    let h = hue_of(q, max_v, d);
+    let s = d / max_v;
+    let low = min(max_v, HDR_MIX_VALUE);
+    var delta = mixer_lookup(base, h, s, low, false);
+    if fading >= 0 {
+        let fade = clamp((1.0 - max_v) / (1.0 - HDR_MIX_FADE), 0.0, 1.0);
+        delta.z = delta.z - mixer_lookup(fading, h, s, low, true).z
+            + fade * mixer_lookup(fading, h, s, max_v, true).z;
+    }
+    let h2 = rem_euclid(h + delta.x, 1.0) * 6.0;
+    let s2 = clamp(s * exp2(delta.y), 0.0, 1.0);
+    let v = max_v * exp2(delta.z);
+    let c = v * s2;
+    return PRO_TO_RGB * (hsv_to_rgb(h2, v, s2) + (v - c));
+}
+// HdrFinish::finish's colour stage: the colour mixer (with Saturation's fade to the
+// gray source's luminance), then the black & white mix's gray, unclipped above white.
+// Linear ProPhoto, not negative, in and out.
+fn hdr_colour_stage(pro: vec3<f32>) -> vec3<f32> {
+    let grid = offset(P_MIXER);
+    let gray = offset(P_GRAY_GRID);
+    if grid < 0 && gray < 0 {
+        return pro;
+    }
+    var rgb = PRO_TO_RGB * pro;
+    if grid >= 0 {
+        var mixed = mixer_hdr(rgb, grid, offset(P_HDR_MIXER));
+        let fade = p(P_SATURATION_GRAY);
+        if fade != 0.0 {
+            var source = rgb;
+            if offset(P_GRAY_SOURCE) >= 0 {
+                source = mixer_hdr(rgb, offset(P_GRAY_SOURCE), offset(P_HDR_MIXER + 1u));
+            }
+            let y = dot(source, vec3(0.2126, 0.7152, 0.0722));
+            mixed = mixed + fade * (y - mixed);
+        }
+        rgb = mixed;
+    }
+    if gray >= 0 {
+        let scaled = mixer_hdr(max(rgb, vec3(0.0)), gray, -1);
+        rgb = vec3(max(dot(scaled, vec3(0.2126, 0.7152, 0.0722)), 0.0));
+    }
+    return max(RGB_TO_PRO * rgb, vec3(0.0));
+}
 // The HDR tone curve (`HdrTone::evaluate`) from its samples over log2 scene value
 // (`pixel_params::hdr_tone_table`): log2–log2 interpolation, linear below the first
 // sample, and the last samples' slope above the last.
@@ -464,8 +555,9 @@ fn hdr_finish(pro: vec3<f32>) -> vec3<f32> {
     if p(P_HDR_LOOK) != 0.0 {
         out = look_apply(out);
     }
-    // Contrast and the tone curves follow the profile and its look.
-    return max(hdr_tone_controls(max(out, vec3(0.0))), vec3(0.0));
+    // Contrast and the tone curves follow the profile and its look, and the colour
+    // stage follows them.
+    return hdr_colour_stage(max(hdr_tone_controls(max(out, vec3(0.0))), vec3(0.0)));
 }
 // CameraProfile::finish: linear ProPhoto in, linear sRGB primaries out.
 fn profile_finish(pro: vec3<f32>) -> vec3<f32> {

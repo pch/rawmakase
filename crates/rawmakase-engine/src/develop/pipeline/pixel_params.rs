@@ -116,6 +116,10 @@ pub(crate) mod slot {
         // Levels do (from `LEVELS`), and the master curve's value at white and slope
         // beyond it (its samples are `MASTER`'s; the parametric curve's `PARAMETRIC_LUT`).
         HDR_CURVES: 4,
+        // An HDR master's colour mixer (`ColorMixer::hdr_fading`): the fading Vibrance
+        // value factors of its changes' grid and of its gray source, or -1 each; its grids
+        // are `MIXER`'s and `GRAY_SOURCE`'s, and black & white's `GRAY_GRID`.
+        HDR_MIXER: 2,
     }
 }
 pub(crate) fn wgsl_prelude() -> String {
@@ -151,7 +155,8 @@ pub(crate) fn wgsl_prelude() -> String {
                  const HDR_IDENTITY_FROM: f32 = {IDENTITY_FROM:?};\n\
                  const HDR_TONE: vec3<f32> = vec3({:?}, {:?}, {}.0);\n\
                  const LOOK_SLOPE: f32 = {:?};\nconst LOOK_BEND: f32 = {:?};\nconst LOOK_PEAK: f32 = {:?};\n\
-                 const HDR_CONTRAST_SAMPLES: f32 = {}.0;\nconst HDR_CONTRAST_TOP: f32 = {:?};\nconst HDR_CURVE_CEILING: f32 = {:?};\n",
+                 const HDR_CONTRAST_SAMPLES: f32 = {}.0;\nconst HDR_CONTRAST_TOP: f32 = {:?};\nconst HDR_CURVE_CEILING: f32 = {:?};\n\
+                 const HDR_MIX_VALUE: f32 = {:?};\nconst HDR_MIX_FADE: f32 = {:?};\n",
                 HDR_TONE_FIRST,
                 HDR_TONE_STEP,
                 HDR_TONE_SAMPLES,
@@ -161,6 +166,8 @@ pub(crate) fn wgsl_prelude() -> String {
                 crate::develop::basic_tone::HDR_CONTRAST_SAMPLES,
                 crate::develop::basic_tone::HDR_CONTRAST_TOP,
                 crate::color::hdr_curve::CEILING,
+                crate::develop::color_mixer::HDR_VALUE,
+                crate::develop::color_mixer::HDR_FADE,
             )
         }
 }
@@ -229,18 +236,17 @@ pub(crate) fn supported(r: &Recipe) -> bool {
 }
 /// Whether the GPU port renders the HDR master of this recipe (resolved with HDR on,
 /// `Recipe::resolved_hdr`) of a photo with `metadata`: one whose master renders
-/// (`model::hdr::check_for`) without Texture or the colour stage: an ordinary
-/// profile's tables and HDR tone curve, an HDR profile's overrange-encoded ones, a
-/// look's table and curve (`CameraProfile::finish_hdr`), then Contrast and the tone
-/// curves (`tone::HdrFinish`). An HDR file's light (`render_hdr`'s own path) renders on
-/// the CPU.
+/// (`model::hdr::check_for`) without Texture: an ordinary profile's tables and HDR
+/// tone curve, an HDR profile's overrange-encoded ones, a look's table and curve
+/// (`CameraProfile::finish_hdr`), then Contrast, the tone curves and the colour stage
+/// (`tone::HdrFinish`). An HDR file's light (`render_hdr`'s own path) renders on the
+/// CPU.
 pub(crate) fn supported_hdr(r: &Recipe, metadata: &crate::camera_data::Metadata) -> bool {
     r.hdr.is_active()
         && metadata.hdr_source.is_none()
         && crate::model::hdr::check_for(r, metadata).is_ok()
-        // Texture's image and the colour stage aren't ported to the HDR variant.
+        // Texture's image isn't ported to the HDR variant.
         && crate::develop::texture::measured(r) == 0.
-        && !super::tone::hdr_colour_stage(r)
         && r.profile.as_ref().is_some_and(|p| p.hdr_tone().is_ok())
 }
 /// The HDR tone curve's samples over log2 scene value: from 2^-16, a 32nd of a stop
@@ -278,7 +284,13 @@ pub(crate) fn pixel_params_hdr(im: Source, r: &Recipe) -> Option<PixelParams> {
         .contrast
         .map(|(table, top, slope)| (table.to_vec(), top, slope));
     let curves = finish.curves;
+    let fading = lut.mixer.as_ref().and_then(|m| m.hdr_fading()).cloned();
     let mut p = fill(r, lut, camera)?;
+    let fading = match fading {
+        Some([grid, source]) => [p.push(grid), p.push(source)],
+        None => [-1., -1.],
+    };
+    p.set(slot::HDR_MIXER, &fading);
     let contrast = match contrast {
         Some((table, top, slope)) => [p.push(table), top, slope],
         None => [-1., 0., 0.],
@@ -539,6 +551,7 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     p.set(slot::HDR_LOOK, &[0., 0., 0.]);
     p.set(slot::HDR_CONTRAST, &[-1., 0., 0.]);
     p.set(slot::HDR_CURVES, &[0.; 4]);
+    p.set(slot::HDR_MIXER, &[-1., -1.]);
     Some(p)
 }
 impl PixelParams {
