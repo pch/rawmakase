@@ -130,6 +130,14 @@ impl Default for PhotoMeasures {
     }
 }
 impl PhotoMeasures {
+    /// The level positive Whites follows in an HDR render (log2) at `exposure` stops:
+    /// twice the 99th percentile of luminance, as in SDR, but not limited by the sensor's
+    /// white ([`super::hdr_whites`]). On the twelve HDR validation photos it predicts the
+    /// level Camera Raw's Whites +100 renders at to 0.17 stop (standard deviation); the
+    /// 98th and 99.5th percentiles do no better.
+    pub(crate) fn hdr_whites_level(&self, exposure: f32) -> f32 {
+        self.p99 + 1. + exposure
+    }
     /// The white point (log2 W*) at `exposure` stops: the sensor's white, limited to
     /// twice the photo's maximum but not below 1; with the sensor's white below 1
     /// (negative Exposure), that white but not below 0.5, so highlights expand by at
