@@ -25,6 +25,42 @@ pub(crate) fn configure(
     appkit::configure(window, ctx);
 }
 
+/// Corrects the window's maximized and minimized state in `raw_input` from
+/// AppKit. egui reads them on macOS only when the window opens (emilk/egui#3494),
+/// so a window zoomed or unzoomed later would otherwise keep its launch state,
+/// and the session would save that. Before the header has registered the window,
+/// egui's launch state stands.
+#[cfg(target_os = "macos")]
+pub(crate) fn refresh_window_state(
+    ctx: &eframe::egui::Context,
+    raw_input: &mut eframe::egui::RawInput,
+) {
+    if let Some(state) = appkit::window_state(ctx, raw_input.viewport_id) {
+        state.apply(raw_input);
+    }
+}
+
+/// A native window's state, as AppKit reports it.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Clone, Copy, Debug)]
+struct WindowState {
+    zoomed: bool,
+    minimized: bool,
+    fullscreen: bool,
+}
+
+#[cfg(any(target_os = "macos", test))]
+impl WindowState {
+    /// In full screen whether the window is maximized is unknown: the session
+    /// keeps what it was.
+    fn apply(self, raw_input: &mut eframe::egui::RawInput) {
+        if let Some(info) = raw_input.viewports.get_mut(&raw_input.viewport_id) {
+            info.minimized = Some(self.minimized);
+            info.maximized = (!self.fullscreen).then_some(self.zoomed);
+        }
+    }
+}
+
 /// The header's drag area. Off macOS this is fastframe's own widget.
 pub(crate) fn drag(ui: &mut eframe::egui::Ui, rect: eframe::egui::Rect) {
     #[cfg(not(target_os = "macos"))]
@@ -89,7 +125,7 @@ mod appkit {
     use objc2_foundation::{NSObjectNSDelayedPerforming, NSString, NSUserDefaults};
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-    use super::Press;
+    use super::{Press, WindowState};
 
     /// Only registered header windows retain input. A newer press replaces an
     /// unhandled one; taking it prevents replay in another widget or egui pass.
@@ -117,8 +153,24 @@ mod appkit {
         static PRESSES: RefCell<MouseDowns> = RefCell::default();
     }
 
-    fn window_id(ctx: &eframe::egui::Context) -> eframe::egui::Id {
-        eframe::egui::Id::new("rawmakase-titlebar-window").with(ctx.viewport_id())
+    fn window_id(viewport: eframe::egui::ViewportId) -> eframe::egui::Id {
+        eframe::egui::Id::new("rawmakase-titlebar-window").with(viewport)
+    }
+
+    /// The registered window's state. `isZoomed` only asks AppKit: unlike
+    /// winit's `is_maximized`, it never changes the window's style mask.
+    pub(super) fn window_state(
+        ctx: &eframe::egui::Context,
+        viewport: eframe::egui::ViewportId,
+    ) -> Option<WindowState> {
+        let number = ctx.data(|data| data.get_temp::<isize>(window_id(viewport)))?;
+        let mtm = MainThreadMarker::new()?;
+        let window = NSApplication::sharedApplication(mtm).windowWithWindowNumber(number)?;
+        Some(WindowState {
+            zoomed: window.isZoomed(),
+            minimized: window.isMiniaturized(),
+            fullscreen: window.styleMask().contains(NSWindowStyleMask::FullScreen),
+        })
     }
 
     pub(super) fn configure(window: &impl HasWindowHandle, ctx: &eframe::egui::Context) {
@@ -134,7 +186,7 @@ mod appkit {
             return;
         };
         let number = window.windowNumber();
-        let id = window_id(ctx);
+        let id = window_id(ctx.viewport_id());
         ctx.data_mut(|data| data.insert_temp(id, number));
         let app = NSApplication::sharedApplication(MainThreadMarker::from(&*window));
         PRESSES.with_borrow_mut(|presses| {
@@ -165,7 +217,7 @@ mod appkit {
     }
 
     pub(super) fn press(ctx: &eframe::egui::Context, down: bool) {
-        let id = window_id(ctx);
+        let id = window_id(ctx.viewport_id());
         let Some(number) = ctx.data(|data| data.get_temp::<isize>(id)) else {
             return;
         };
@@ -298,5 +350,52 @@ mod tests {
         ] {
             assert_eq!(press(2, action, legacy), expected, "{action:?} {legacy}");
         }
+    }
+
+    /// egui on macOS keeps the state the window opened with; AppKit's replaces it,
+    /// so a window zoomed back out is saved as such and reopens unzoomed.
+    #[test]
+    fn appkit_replaces_the_window_state_egui_read_at_launch() {
+        let launched = |maximized, minimized| {
+            let mut input = eframe::egui::RawInput::default();
+            input.viewports.insert(
+                input.viewport_id,
+                eframe::egui::ViewportInfo {
+                    maximized: Some(maximized),
+                    minimized: Some(minimized),
+                    ..Default::default()
+                },
+            );
+            input
+        };
+        let state = |zoomed, minimized, fullscreen| WindowState {
+            zoomed,
+            minimized,
+            fullscreen,
+        };
+        let applied = |mut input: eframe::egui::RawInput, state: WindowState| {
+            state.apply(&mut input);
+            let info = &input.viewports[&input.viewport_id];
+            (info.maximized, info.minimized)
+        };
+        // Opened zoomed, then zoomed back out; and the reverse.
+        assert_eq!(
+            applied(launched(true, false), state(false, false, false)),
+            (Some(false), Some(false))
+        );
+        assert_eq!(
+            applied(launched(false, false), state(true, false, false)),
+            (Some(true), Some(false))
+        );
+        // Minimized later.
+        assert_eq!(
+            applied(launched(false, false), state(true, true, false)),
+            (Some(true), Some(true))
+        );
+        // In full screen whether it is zoomed is not known.
+        assert_eq!(
+            applied(launched(true, false), state(false, false, true)),
+            (None, Some(false))
+        );
     }
 }
