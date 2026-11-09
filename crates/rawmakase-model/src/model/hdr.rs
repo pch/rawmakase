@@ -162,7 +162,7 @@ impl HdrSettings {
 /// been measured against Camera Raw (docs/records/hdr-stage1-results.md). An edit
 /// with HDR off, or with nothing but measured adjustments, passes.
 ///
-/// Measured: white balance, Exposure, negative Whites, Blacks, the HDR limit, camera profiles
+/// Measured: white balance, Exposure, Contrast, negative Whites, Blacks, the HDR limit, camera profiles
 /// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks of a table
 /// and a curve ([`crate::camera_profiles::hdr_look`]) at 100%, and what works
 /// on the camera's samples before tone: lens corrections, geometry, noise reduction,
@@ -194,8 +194,7 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
             && c.points.iter().all(|p| p[0] == p[1])
     };
     let defaults = super::recipe::Recipe::default();
-    let unmeasured: [(&str, bool); 15] = [
-        ("Contrast", r.contrast != 0.),
+    let unmeasured: [(&str, bool); 14] = [
         // Camera Raw stretches a photo whose brightest areas are below about twice
         // graphics white much further than the measured gain (+3.8 stops at scene 0.3
         // on a ramp peaking at 0.5); negative Whites follows no photo statistic.
@@ -480,8 +479,10 @@ mod tests {
         r.blacks = -0.3;
         r.sharpening = 0.4;
         assert!(check_recipe(&r).is_ok());
+        r.contrast = -0.4;
+        assert!(check_recipe(&r).is_ok());
         let unmeasured: [fn(&mut Recipe); 6] = [
-            |r| r.contrast = 0.1,
+            |r| r.highlights = 0.1,
             |r| r.shadows = 0.1,
             |r| r.effects.clarity = 0.1,
             |r| r.saturation = 0.1,

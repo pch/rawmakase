@@ -1869,6 +1869,39 @@ fn contrast_and_the_scene_stage_are_measured_on_the_photo_alone() {
     assert_eq!(textured.measures, plain.measures);
 }
 
+/// An HDR edit's Contrast pivots where its SDR rendition's does, as Camera Raw's does:
+/// the pivot is measured on the default SDR rendering, never on the HDR master.
+#[test]
+fn hdr_contrast_pivots_where_its_sdr_rendition_does() {
+    let mut im = fixture();
+    im.metadata.cam_xyz = [
+        [1.1434, -0.4948, -0.121],
+        [-0.3746, 1.2042, 0.1903],
+        [-0.0666, 0.1479, 0.52],
+    ];
+    for (i, p) in im.pixels.iter_mut().enumerate() {
+        *p = if i % 7 == 0 {
+            [0.95; 3]
+        } else {
+            p.map(|v| v * 0.4)
+        };
+    }
+    let profile =
+        crate::camera_profiles::CameraProfile::camera_matrix_default(&im.metadata).unwrap();
+    let mut r = Recipe {
+        profile: Some(std::sync::Arc::new(profile)),
+        contrast: -0.6,
+        ..Default::default()
+    };
+    let camera = camera_stage(&im.metadata, &r);
+    let sdr = CurveSet::for_image((&im).into(), &r, camera, false);
+    r.hdr.enabled = true;
+    r.hdr.limit = 4.;
+    let hdr = CurveSet::for_image((&im).into(), &r, camera, false);
+    assert_eq!(hdr.photo, sdr.photo);
+    assert!(hdr.hdr.as_ref().is_some_and(|h| h.has_contrast()));
+}
+
 /// A rendered file's Contrast pivots higher than a raw photo's of the same scene, as
 /// Lightroom's does on JPEGs (`basic_tone::RENDERED_PIVOT_OFFSET`).
 #[test]

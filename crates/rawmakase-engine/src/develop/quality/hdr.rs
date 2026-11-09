@@ -495,6 +495,26 @@ mod tests {
         Ok(())
     }
 
+    /// Contrast renders the master: positive Contrast lifts the light above white and
+    /// negative Contrast pulls it toward the pivot, up to four stops above white (the
+    /// ACR3 curve renders scene 0.5 and 2 at about 1 and 8).
+    #[test]
+    fn contrast_renders_the_hdr_master() -> anyhow::Result<()> {
+        let im = grays(&[0.05, 0.5, 2.]);
+        let mut r = hdr_recipe(&im);
+        let plain = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        r.contrast = 0.5;
+        let more = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        r.contrast = -0.5;
+        let less = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+        for i in 1..3 {
+            assert!(centre(&more, i) > centre(&plain, i) * 1.05, "{i}");
+            assert!(centre(&less, i) < centre(&plain, i) * 0.95, "{i}");
+        }
+        assert!(centre(&less, 0) > centre(&plain, 0));
+        Ok(())
+    }
+
     /// The limit's roll-off applies once: a channel at the peak renders where
     /// `roll_off` puts it, not rolled off twice.
     #[test]

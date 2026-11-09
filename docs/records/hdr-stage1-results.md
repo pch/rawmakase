@@ -1,6 +1,6 @@
 # HDR results: references, measurements and progress
 
-Status: in progress, 2026-11-07. The record of the
+Status: in progress, 2026-11-08. The record of the
 [HDR implementation plan](hdr-implementation-plan.md): what was measured, the
 decisions taken from it, validation results and what remains open. Stage 1 (references,
 codec and display feasibility) comes first; stage 3's rendering measurements follow
@@ -179,8 +179,9 @@ Whites is a gain over scene value, the same at sensor whites 4, 16 and 64, photo
 maxima 0.5 to 8 and limits 2.3 and 8. Positive Whites is not: on ramps whose maximum
 is below about 2, Camera Raw stretches much further (+3.8 stops at scene 0.3 on a
 ramp peaking at 0.5, +0.9 on one peaking at 8), and on photos it follows their
-bright end. It is refused in HDR until measured. Contrast, Highlights and Shadows
-depend on the photo (Highlights −100 holds a ramp at 0.25–0.28 above 0.3); not fitted.
+bright end. It is refused in HDR until measured. Highlights and Shadows depend on the
+photo (Highlights −100 holds a ramp at 0.25–0.28 above 0.3); not fitted. Contrast
+follows the photo through its pivot only ([Contrast](#contrast)).
 
 **Ordinary profile curves.** Camera Raw does not extend an ordinary (SDR) profile's
 curve by the DNG SDK's slope rule or the overrange rule. Measured on the ramp:
@@ -284,6 +285,43 @@ greys within 0.005 stop up to 10 and within 0.021 stop above (the raw ramps end 
 scene 12). Temp +20's gains are those of the rendered-file white balance measured on
 Lightroom's SDR renders (`rendered_gains`: +0.458, +0.378, +0.003 stop) to 0.002 stop.
 
+### Contrast
+
+Measured on gray ramps (sensor white +4 and +6 stops, ramps topping at scene 1, 4,
+16 and 64, a linear and the ACR3 profile curve, HDR limits 2, 4 and 8) at Contrast
+−100, −75, −50, −25, +25, +50 and +100, against the SDR render of the same ramp.
+Contrast in HDR depends neither on the HDR limit nor on the profile's curve: it maps
+the profile's output, as SDR Contrast does, at the pivot of the SDR rendering (the
+deep shadows of positive Contrast are the SDR render's to 0.001 stop).
+
+- **Positive Contrast** renders as a look's curve does ([Looks](#looks)), from its
+  SDR curve: the curve up to where it lifts its input most, then parallel to the
+  identity at that lift, in the look curve's encoding, but with no ceiling. Within
+  0.01 stop up to scene 8 and 0.1 stop up to 15.5. Above 16 Camera Raw adds a
+  constant in linear light (+3.0 at +50, +6.1 at +100).
+- **Negative Contrast** is not the look rule (which would lift highlights it pulls
+  down), nor the inverse of positive Contrast in HDR, though it is in SDR. It is its
+  SDR curve stretched in stops around the curve's fixed point: the fixed point moves
+  up by a factor of 1.671 and graphics white goes to 16, so the HDR range is
+  flattened as the SDR range is, and the shadows are lifted more than in SDR (×6.0
+  at scene 0.005 at −100, against ×3.6). The factor is the same on every ramp and
+  slider value; fitted on eleven cases it renders them within a median of 0.019 stop
+  (p95 0.07; the largest error is −100 at scene 1–2, 0.11 stop dark). Above 16 it
+  continues along its slope.
+- **Photos.** Contrast −100, −50, +50 and +100 on the six validation photos and ±50
+  on the six holdout photos (Adobe Standard, HDR limit 4) stay within the tolerances
+  where the default render does: median above white 0.007–0.13 stop, p95 0.03–0.26,
+  and the same photos fail for the same reasons as the default (the Panasonics'
+  and Pentax's SDR gap, the X100V's and Z6 III's rebuilt speculars). Below 0.5 the
+  master follows Camera Raw's to a median 0.02–0.13 stop, as far as SDR Contrast
+  itself does (the Sony A7R III's SDR Contrast is 0.17–0.27 stop off at ±100, and its
+  HDR inherits it). At −100 Camera Raw's HDR lifts the shadows over its SDR render by
+  a median 0.34–0.44 stop, RAWmakase's by 0.40–0.47.
+- **Colour.** On the colour patches Contrast's effect differs from Camera Raw's by a
+  median of 0.24 stop at a quarter of white in SDR and HDR alike: SDR Contrast's
+  pivot on this synthetic image, not the HDR rendering (the pivot fit follows photos,
+  not synthetic scenes; see `basic_tone::RENDERED_PIVOT_OFFSET`).
+
 ### Validation
 
 `scripts/corpus/hdr_validate.py` renders each HDR job of the family with
@@ -372,7 +410,7 @@ compared by luminance in 8× linear blocks:
 
 ## Open
 
-- Positive Whites, Contrast, Highlights, Shadows and the colour stage in HDR.
+- Positive Whites, Highlights, Shadows and the colour stage in HDR.
 - Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
   and its sliders.
 - Looks with an RGB table, their own sliders, B&W, Profile Amount and Camera Looks in
@@ -408,7 +446,7 @@ compared by luminance in 8× linear blocks:
   limit, measured and validated on the family (above); the SDR rendition everywhere
   else; the release guard lifted with Develop's HDR switch and SDR-rendition status;
   `rawmakase render --hdr`; looks of a table and a curve, Adobe Color among them
-  ([Looks](#looks)). Open: positive Whites, Contrast, Highlights, Shadows,
+  ([Looks](#looks)); Contrast ([Contrast](#contrast)). Open: positive Whites, Highlights, Shadows,
   the colour stage, the other looks, the SDR rendition sliders, 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display
