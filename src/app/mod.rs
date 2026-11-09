@@ -57,6 +57,8 @@ pub(crate) struct Editor {
     hdr_histogram: crate::app::develop::hdr_histogram::HdrHistograms,
     /// The window's wgpu state this frame, for the HDR preview's texture.
     render_state: Option<eframe::egui_wgpu::RenderState>,
+    /// Reads the window's display's HDR headroom.
+    headroom: crate::app::shell::display::HeadroomReader,
     clipboard: Option<crate::app::develop::settings_transfer::Clipboard>,
     /// The settings of the photo open before this one, for Paste from Previous.
     previous_settings: Option<crate::app::develop::settings_transfer::Settings>,
@@ -322,6 +324,7 @@ impl Editor {
             hdr_preview: crate::app::develop::hdr_preview::HdrPreview::new(ctx.clone()),
             hdr_histogram: crate::app::develop::hdr_histogram::HdrHistograms::new(ctx.clone()),
             render_state: None,
+            headroom: Default::default(),
             clipboard: None,
             previous_settings: None,
             curves: Default::default(),
@@ -542,7 +545,8 @@ impl eframe::App for Editor {
         );
         #[cfg(windows)]
         crate::platform::taskbar_icon(frame);
-        self.view.hdr_display = crate::app::shell::display::HdrDisplay::of(frame);
+        self.view.hdr_display =
+            crate::app::shell::display::HdrDisplay::of(frame, &mut self.headroom);
         self.render_state = frame.wgpu_render_state().cloned();
         self.view.hdr_shown = false;
         self.draw(ui);
@@ -851,6 +855,20 @@ fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
                 .contains(&wgpu::TextureFormat::Rgba16Float)
                 .then_some(wgpu::TextureFormat::Rgba16Float)
         }));
+    }
+    // On Linux the same, where an output shows HDR when the window opens: the surface
+    // is presented as linear extended sRGB (Wayland has no gamma-encoded extended
+    // sRGB), which Mesa's Vulkan WSI declares to the compositor; egui-wgpu decodes its
+    // gamma-encoded output to linear when presenting, so `1.0` stays SDR white. An SDR
+    // display keeps the 8-bit surface, with no extra pass or compositor conversion.
+    #[cfg(target_os = "linux")]
+    {
+        options.surface_format_selector = Some(std::sync::Arc::new(|formats| {
+            (formats.contains(&wgpu::TextureFormat::Rgba16Float)
+                && crate::platform::display::wayland::any_output_has_headroom())
+            .then_some(wgpu::TextureFormat::Rgba16Float)
+        }));
+        options.linear_float_surface = true;
     }
     // A surface whose configuration failed reports `Validation` until it is
     // configured again; the default would skip frames until the next resize.

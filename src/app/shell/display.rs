@@ -38,21 +38,91 @@ impl HdrDisplay {
             1.
         }
     }
+    /// Why an HDR photo shows as its SDR rendition here, if it does.
+    pub(in crate::app) fn unavailable(&self) -> Option<&'static str> {
+        if self.available() {
+            None
+        } else if cfg!(target_os = "linux") && self.potential > 1.05 {
+            // The window's surface format was chosen while no display showed HDR.
+            Some("HDR shows after RAWmakase restarts")
+        } else {
+            Some("this display shows no HDR")
+        }
+    }
     /// The display as the window sees it now.
-    pub(in crate::app) fn of(frame: &eframe::Frame) -> Self {
+    pub(in crate::app) fn of(frame: &eframe::Frame, reader: &mut HeadroomReader) -> Self {
         let float_surface = frame
             .wgpu_render_state()
-            .is_some_and(|s| s.target_format == wgpu::TextureFormat::Rgba16Float);
+            .is_some_and(|s| extended_surface(s.target_format, s.target_color_space));
         #[cfg(target_os = "macos")]
-        let (headroom, potential) = crate::platform::display::Surface::from_window(frame)
-            .map_or((1., 1.), |s| s.headroom());
-        #[cfg(not(target_os = "macos"))]
-        let (headroom, potential) = (1., 1.);
+        let (headroom, potential) = {
+            let _ = reader;
+            crate::platform::display::Surface::from_window(frame).map_or((1., 1.), |s| s.headroom())
+        };
+        // A Wayland output's description is what it shows now: turning HDR on or
+        // off changes it, so the potential headroom is the current one.
+        #[cfg(target_os = "linux")]
+        let (headroom, potential) = {
+            let anchor = crate::platform::display::wayland::Anchor::of_session();
+            let headroom = reader.read(frame).map_or(1., |d| d.headroom(anchor));
+            (headroom, headroom)
+        };
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        let (headroom, potential) = {
+            let _ = reader;
+            (1., 1.)
+        };
         Self {
             headroom,
             potential,
             float_surface,
         }
+    }
+}
+
+/// Whether a surface of `format` presented in `color_space` shows values above 1:
+/// a float surface, which macOS tags extended sRGB itself (`platform::display::Layer`)
+/// and other platforms only when it is linear extended sRGB (wgpu's `Auto` may be
+/// plain sRGB, which clips).
+fn extended_surface(format: wgpu::TextureFormat, color_space: wgpu::SurfaceColorSpace) -> bool {
+    format == wgpu::TextureFormat::Rgba16Float
+        && (cfg!(target_os = "macos") || color_space == wgpu::SurfaceColorSpace::ExtendedSrgbLinear)
+}
+
+/// Reads the window's display's headroom where that needs state kept between frames:
+/// on Wayland, the compositor's preferred image description of the window's surface.
+#[derive(Default)]
+pub(in crate::app) struct HeadroomReader {
+    /// `None` until the first read; then the window's surface, if it is on a Wayland
+    /// compositor with color management.
+    #[cfg(target_os = "linux")]
+    wayland: Option<Option<crate::platform::display::wayland::Surface>>,
+}
+
+impl HeadroomReader {
+    #[cfg(target_os = "linux")]
+    fn read(
+        &mut self,
+        frame: &eframe::Frame,
+    ) -> Option<crate::platform::display::wayland::Description> {
+        let description = self
+            .wayland
+            .get_or_insert_with(|| crate::platform::display::wayland::Surface::from_window(frame))
+            .as_mut()?
+            .description()?;
+        // A linear surface's black is lifted to where the display shows an sRGB
+        // window's; SDR white stays at 1 (the compositor anchors it to reference white).
+        if let Some(state) = frame.wgpu_render_state() {
+            let output = eframe::egui_wgpu::LinearOutput {
+                white: 1.,
+                black: description.black(crate::platform::display::wayland::Anchor::of_session()),
+            };
+            let mut current = state.linear_output.write();
+            if *current != output {
+                *current = output;
+            }
+        }
+        Some(description)
     }
 }
 
@@ -107,7 +177,65 @@ pub(in crate::app) fn paint(
 
 #[cfg(test)]
 mod tests {
-    use super::HdrDisplay;
+    use super::{HdrDisplay, extended_surface};
+
+    /// Off macOS a float surface shows values above 1 only when it is presented as
+    /// linear extended sRGB: wgpu's `Auto` may resolve to plain sRGB, which clips.
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn only_a_linear_float_surface_reaches_above_sdr_white() {
+        use wgpu::{SurfaceColorSpace as Space, TextureFormat as Format};
+        assert!(extended_surface(
+            Format::Rgba16Float,
+            Space::ExtendedSrgbLinear
+        ));
+        assert!(!extended_surface(Format::Rgba16Float, Space::Auto));
+        assert!(!extended_surface(Format::Rgba16Float, Space::Srgb));
+        assert!(!extended_surface(
+            Format::Bgra8Unorm,
+            Space::ExtendedSrgbLinear
+        ));
+    }
+
+    /// On Linux the surface's format is chosen when the window opens, by whether a
+    /// display shows HDR then: a display that shows it later needs a restart, and
+    /// says so rather than that it can't.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn an_hdr_display_on_an_8_bit_surface_asks_for_a_restart() {
+        let hdr = HdrDisplay {
+            headroom: 4.,
+            potential: 4.,
+            float_surface: true,
+        };
+        assert_eq!(hdr.unavailable(), None);
+        assert_eq!(
+            HdrDisplay {
+                float_surface: false,
+                ..hdr
+            }
+            .unavailable(),
+            Some("HDR shows after RAWmakase restarts")
+        );
+        assert_eq!(
+            HdrDisplay {
+                headroom: 1.,
+                potential: 1.,
+                ..hdr
+            }
+            .unavailable(),
+            Some("this display shows no HDR")
+        );
+    }
+
+    /// macOS tags the float surface's layer extended sRGB itself.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn a_macos_float_surface_reaches_above_sdr_white() {
+        use wgpu::{SurfaceColorSpace as Space, TextureFormat as Format};
+        assert!(extended_surface(Format::Rgba16Float, Space::Auto));
+        assert!(!extended_surface(Format::Bgra8Unorm, Space::Auto));
+    }
 
     /// macOS reports no current headroom until a window asks for EDR, and the window
     /// asks only while it shows HDR: availability has to come from the display's

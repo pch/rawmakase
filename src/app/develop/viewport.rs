@@ -1011,10 +1011,9 @@ impl crate::app::Editor {
     /// Why no HDR preview shows anywhere in Develop's viewport, if none can.
     fn hdr_refused(&self) -> Result<(), &'static str> {
         let refuse = |no: bool, why| if no { Err(why) } else { Ok(()) };
-        refuse(
-            !self.view.hdr_display.available(),
-            "this display shows no HDR",
-        )?;
+        if let Some(why) = self.view.hdr_display.unavailable() {
+            return Err(why);
+        }
         // A chosen monitor profile converts the SDR rendition alone; the surface
         // then holds device RGB, which has no extended range.
         refuse(
