@@ -268,6 +268,8 @@ These files qualify:
 - a HEIC whose `nclx` says PQ or HLG in BT.709, BT.2020 or Display P3, with a matrix
   of BT.709, BT.601 or BT.2020's non-constant luminance, and no ICC profile, on macOS
   and where libheif decodes it ([HDR HEIC](#hdr-heic));
+- on macOS, a HEIC with a gain map over an SDR base: an iPhone's own (Apple's
+  auxiliary image) or an ISO 21496-1 `tmap` ([HEIC gain maps](#heic-gain-maps));
 - a TIFF of 32-bit float samples, through an ICC profile without CICP whose curves
   are the identity (Photoshop's 32-bit documents), or without a profile, read as
   linear sRGB primaries; 1.0 is graphics white. Integer samples with such a profile
@@ -313,8 +315,9 @@ resizing as a raw's does, and then the limit. Anything else refuses the master b
 it.
 
 Still refused, as Develop refused every HDR file before:
-- HEIC gain maps (Apple's own and ISO 21496-1 ones alike), and the HDR HEICs listed
-  under [HDR HEIC](#hdr-heic);
+- HEIC gain maps on Windows and Linux, which open as their SDR base, and the HDR
+  HEICs and HEIC gain maps listed under [HDR HEIC](#hdr-heic) and
+  [HEIC gain maps](#heic-gain-maps);
 - HDR in other primaries or a curved profile.
 
 The Library shows them with graphics white as white and says why.
@@ -342,6 +345,59 @@ preview is RAWmakase's tone map. Refused for Develop:
   `nclx`, which ImageIO draws through that profile; and in other primaries;
 - **"HDR matrix N"** for a matrix that isn't one: constant luminance (10, 13) and
   ICtCp (14).
+
+### HEIC gain maps
+
+On macOS, a HEIC with a gain map opens as an HDR edit, its base its SDR rendition and
+its light the map at full weight, as for [gain-map files](#gain-map-files)
+(`raster::heic`). ImageIO decodes the map with the image (its auxiliary data,
+`kCGImageAuxiliaryDataTypeISOGainMap` or `HDRGainMap`); the map is in the image's
+stored frame and turns with its `irot` and `imir`. Two forms are read, the first when
+a file has both:
+
+- **ISO 21496-1:** a `tmap` item whose `dimg` references are the primary image and
+  the map, as iPhones write since iOS 18. Its data is a version byte (0) and the ISO
+  21496-1 metadata, read and applied as a JPEG's is.
+- **Apple's own:** the primary image's auxiliary image of type
+  `urn:com:apple:photo:2020:aux:hdrgainmap`, as iPhones wrote from iOS 14. It applies
+  as Apple's [Applying Apple HDR effect to your photos](https://developer.apple.com/documentation/appkit/applying-apple-hdr-effect-to-your-photos)
+  says, the formulas written out in `gain_map::Formula::Apple` and
+  `gain_map::apple_headroom`:
+  - the headroom, from the maker note's tags 33 and 48, is 2 raised to stops on one of
+    four lines (−20 × t48 + 1.8 or −0.101 × t48 + 1.601 when t33 is below 1, else
+    −70 × t48 + 3 or −0.303 × t48 + 2.303, the first of each where t48 is at most
+    0.01), at least 0;
+  - the map's sample is Rec. 709-encoded: it is made linear by that transfer;
+  - each channel of the base, linear in its own primaries, becomes
+    `base × (1 + (headroom − 1) × sample)`.
+
+  An Apple map is applied only as its documentation calls it valid: with
+  `HDRGainMap:HDRGainMapVersion` in the XMP describing it and both maker-note
+  values, read from the file's own items as it was opened. Without them, or with a
+  headroom of 1 (no stops), it isn't applied and the photo opens as its SDR base, as
+  it did before; nothing about such a map refuses the photo. ImageIO renders Apple's maps its own
+  way (a synthetic map decoded at full headroom comes out 0.3 to 0.4 stop darker
+  than the documented formula gives above white), so the documentation, not ImageIO, is the reference.
+
+A map smaller than the base (an iPhone's is half its size each way) is spread over it
+between its samples' centres, as for JPEG. Refused for Develop, by reason:
+- **"damaged gain-map"**: a `tmap` not over the primary image and one other, a map
+  that isn't an HEVC picture or grid, larger than the image or not its shape, whose
+  data isn't all in the file or whose pictures, as their SPS code them, take the image
+  beyond 150 MP (checked before ImageIO is asked for it), or that ImageIO doesn't
+  decode to its header's size in 8-bit grey or RGB;
+- **"version N gain-map"**, **"HDR-base gain-map"** and the other refusals of ISO
+  21496-1 metadata above, and **"alternate-colour gain-map"** for a `tmap` in the
+  alternate's colour space, which its own `colr` describes;
+- **"cropped HEIC gain-map"**: an image its `clap` crops, which the map, of the whole
+  picture, isn't checked against.
+
+Checked on synthetic files ImageIO writes (scripts/make-heic-gain-map-fixtures.swift):
+an Apple map against the documented formulas written out in the test, a turned one
+against the same file unturned, and an ISO 21496-1 one against ImageIO's own decode at
+full headroom (0.02 stop, 0.032 at the darkest pixel). Windows and Linux don't read
+HEIC gain maps: their decoders' maps aren't reached, so the photo opens as its SDR
+base, as before.
 
 ### Gain-map files
 

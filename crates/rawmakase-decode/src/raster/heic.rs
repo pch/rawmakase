@@ -22,21 +22,25 @@
 //! decoder gives back its signal as coded: ImageIO drawn into CoreGraphics' space
 //! of that name, and libheif, which converts by the `nclx` and nothing else
 //! (docs/hdr.md#hdr-files). [`Nclx::hdr_refusal`] says when it doesn't.
-//! Alpha, depth maps, gain maps and thumbnails are not shown; an alpha image,
-//! which a system decoder decodes with the image, is held to the image's
-//! limits with it.
+//! Alpha, depth maps and thumbnails are not shown; an alpha image, which a
+//! system decoder decodes with the image, is held to the image's limits with it.
+//!
+//! On macOS, a gain map ([`Map`]) makes the photo an HDR edit: an ISO 21496-1
+//! `tmap` item over the primary image and its map, or else Apple's own auxiliary
+//! image (`urn:com:apple:photo:2020:aux:hdrgainmap`). ImageIO decodes the map with
+//! the image. Elsewhere it is not read, and the photo opens as its SDR base.
 // Every unsafe operation here crosses into a C API: each one says why it is
 // sound, and an unsafe function's body is no unsafe block of its own.
 #![deny(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
 use super::heif::{self, Nclx};
-use super::{Unsupported, hevc};
+use super::{Unsupported, gain_map, hevc};
 use anyhow::{Result, anyhow, bail, ensure};
 use image::ImageDecoder;
 use image::metadata::Orientation;
 use rawmakase_interop::isobmff::{Heif, Property};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 #[cfg(target_os = "macos")]
 mod imageio;
@@ -115,6 +119,149 @@ fn alpha(heif: &Heif, id: u32) -> Vec<u32> {
         .collect()
 }
 
+/// The `auxC` type of Apple's HDR gain map.
+const APPLE_GAIN_MAP: &str = "urn:com:apple:photo:2020:aux:hdrgainmap";
+/// The XMP namespace of its version, which Apple's documentation says a valid one has.
+const APPLE_GAIN_MAP_NS: &str = "http://ns.apple.com/HDRGainMap/1.0/";
+
+/// Which form a HEIC's gain map takes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum MapKind {
+    /// An ISO 21496-1 `tmap` item, its metadata validated.
+    Iso(gain_map::Metadata),
+    /// Apple's auxiliary image, with the headroom the photo's maker note gives.
+    Apple { headroom: f32 },
+}
+
+/// A HEIC's gain map, from its header (docs/hdr.md#heic-gain-maps).
+#[derive(Clone, Debug)]
+pub(super) struct Map {
+    pub(super) kind: MapKind,
+    /// Its size, from its header, which the decoded map must have. Only macOS's
+    /// decoder reads maps.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub(super) size: (u32, u32),
+    /// The decoded map, where the system decoder leaves it while it decodes the
+    /// image, from the same bytes.
+    pub(super) decoded: Arc<OnceLock<std::result::Result<gain_map::Samples, Unsupported>>>,
+}
+
+/// The gain map of a HEIC whose primary image is laid out as `layout` and cropped
+/// to `crop`: its `tmap` item, else Apple's auxiliary image with the version XMP and
+/// the maker-note headroom its documentation asks for, read from this file's own
+/// items. `None` for none, or for an Apple map without them, or with no headroom,
+/// which isn't applied: the photo opens as its SDR base, before any refusal of the
+/// map. Refused:
+/// - "damaged gain-map": a `tmap` not over the primary image and one other, a map
+///   that isn't an HEVC picture or grid, or larger than the image, or not its shape;
+/// - "version N gain-map", "HDR-base gain-map" and the other refusals of an ISO
+///   21496-1 metadata ([`gain_map::Metadata::parse`]), after the `tmap`'s own
+///   version byte (0);
+/// - "alternate-colour gain-map": a `tmap` in the alternate's colour space, which its
+///   own `colr` describes;
+/// - "cropped HEIC gain-map": a primary image its `clap` crops, which the map, of the
+///   whole picture, isn't checked against.
+fn gain_map_of(
+    heif: &Heif,
+    file: &mut std::fs::File,
+    layout: &Layout,
+    crop: Crop,
+) -> std::result::Result<Option<(Map, Layout)>, Unsupported> {
+    let damaged = gain_map::damaged;
+    let tmap = heif.items.iter().find(|item| {
+        &item.kind == b"tmap" && heif.referenced(*b"dimg", item.id).first() == Some(&heif.primary)
+    });
+    let (kind, id) = match tmap {
+        Some(tmap) => {
+            let refs = heif.referenced(*b"dimg", tmap.id);
+            let [_, map] = refs.as_slice() else {
+                return Err(damaged());
+            };
+            let data = heif.data_up_to(file, tmap.id, 4096).ok_or_else(damaged)?;
+            let (version, metadata) = data.split_first().ok_or_else(damaged)?;
+            if *version != 0 {
+                return Err(Unsupported(format!("version {version} gain-map")));
+            }
+            let metadata = gain_map::Metadata::parse(metadata)?;
+            let colour = heif
+                .properties(tmap.id)
+                .iter()
+                .any(|p| matches!(p, Property::Colour(_)));
+            if !metadata.base_colour_space() && colour {
+                return Err(Unsupported("alternate-colour gain-map".into()));
+            }
+            (MapKind::Iso(metadata), *map)
+        }
+        None => {
+            let Some(aux) = heif
+                .describing(*b"auxl", heif.primary)
+                .into_iter()
+                .find(|aux| {
+                    heif.properties(*aux)
+                        .iter()
+                        .any(|p| matches!(p, Property::Auxiliary(kind) if kind == APPLE_GAIN_MAP))
+                })
+            else {
+                return Ok(None);
+            };
+            if !apple_version(heif, file, aux) {
+                return Ok(None);
+            }
+            let exif = heif
+                .describing(*b"cdsc", heif.primary)
+                .into_iter()
+                .find(|id| heif.item(*id).is_some_and(|i| &i.kind == b"Exif"))
+                .and_then(|id| heif.data_up_to(file, id, 16 << 20));
+            let Some(headroom) = exif
+                .and_then(rawmakase_interop::exif::apple_hdr)
+                .and_then(gain_map::apple_headroom)
+            else {
+                return Ok(None);
+            };
+            (MapKind::Apple { headroom }, aux)
+        }
+    };
+    let map = layout_of(heif, file, id).map_err(|_| damaged())?;
+    if (crop.width, crop.height) != (layout.width, layout.height) {
+        return Err(Unsupported("cropped HEIC gain-map".into()));
+    }
+    if !gain_map::covers((layout.width, layout.height), (map.width, map.height)) {
+        return Err(damaged());
+    }
+    Ok(Some((
+        Map {
+            kind,
+            size: (map.width, map.height),
+            decoded: Default::default(),
+        },
+        map,
+    )))
+}
+
+/// Whether Apple's gain map `aux` has an XMP item describing it that holds
+/// `HDRGainMap:HDRGainMapVersion`.
+fn apple_version(heif: &Heif, file: &mut std::fs::File, aux: u32) -> bool {
+    heif.describing(*b"cdsc", aux).into_iter().any(|id| {
+        heif.item(id)
+            .is_some_and(|i| &i.kind == b"mime" && i.content_type == "application/rdf+xml")
+            && heif.data_up_to(file, id, 1 << 20).is_some_and(|xmp| {
+                std::str::from_utf8(&xmp)
+                    .ok()
+                    .and_then(|t| roxmltree::Document::parse(t.trim_end_matches('\0')).ok())
+                    .is_some_and(|doc| {
+                        doc.descendants().any(|n| {
+                            (n.tag_name().namespace() == Some(APPLE_GAIN_MAP_NS)
+                                && n.tag_name().name() == "HDRGainMapVersion")
+                                || n.attributes().any(|a| {
+                                    a.namespace() == Some(APPLE_GAIN_MAP_NS)
+                                        && a.name() == "HDRGainMapVersion"
+                                })
+                        })
+                    })
+            })
+    })
+}
+
 /// Where the image is in the decoded picture: its clean aperture.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Crop {
@@ -153,6 +300,11 @@ pub(super) struct HeicFile {
     nclx: Option<Nclx>,
     orientation: Orientation,
     refused: Option<Unsupported>,
+    /// Its gain map, read on macOS, or why it is refused.
+    map: std::result::Result<Option<Map>, Unsupported>,
+    /// The map's pictures, which ImageIO decodes with the image's when asked for
+    /// the map.
+    map_pictures: Vec<(u32, Arc<hevc::Config>)>,
 }
 
 impl HeicFile {
@@ -187,6 +339,22 @@ impl HeicFile {
             .collect();
         let props = heif.properties(heif.primary);
         let crop = crop(&props, layout.width, layout.height)?;
+        // The map's pictures are held to the limits too, as ImageIO decodes them
+        // with the image; a map beyond them is damaged, and the image still opens.
+        let mut map_pictures = Vec::new();
+        let map = match cfg!(target_os = "macos") {
+            true => gain_map_of(&heif, &mut file, &layout, crop).and_then(|found| match found {
+                Some((map, pictures))
+                    if within_limit([&layout, &pictures].into_iter().chain(&alphas)) =>
+                {
+                    map_pictures = pictures.tiles;
+                    Ok(Some(map))
+                }
+                Some(_) => Err(gain_map::damaged()),
+                None => Ok(None),
+            }),
+            false => Ok(None),
+        };
         let (icc, nclx) = heif::colour(&props);
         let (tile_icc, tile_nclx) = heif::colour(&heif.properties(layout.tiles[0].0));
         let (icc, nclx) = (icc.or(tile_icc), nclx.or(tile_nclx));
@@ -219,6 +387,8 @@ impl HeicFile {
             icc,
             nclx,
             refused,
+            map,
+            map_pictures,
         })
     }
 
@@ -234,12 +404,27 @@ impl HeicFile {
             .is_some_and(|n| n.hdr() && n.hdr_refusal(self.icc.is_some()).is_none())
     }
 
+    /// Its gain map, as [`gain_map_of`] reads it; refused or not, the image opens
+    /// in the Library.
+    pub(super) fn gain_map(&self) -> std::result::Result<Option<Map>, Unsupported> {
+        match &self.map {
+            Ok(map) => Ok(map.clone()),
+            Err(why) => Err(Unsupported(why.0.clone())),
+        }
+    }
+
     /// Whether every picture's data is in the file, before any decoder reads
     /// it: the header, not the decoder, says a file cut short is one, whose
     /// pixels a system decoder might make up for.
     fn stored(&mut self) -> Result<()> {
+        let pictures = self.pictures.clone();
+        self.stored_in(&pictures)
+    }
+
+    /// [`HeicFile::stored`] of `pictures`.
+    fn stored_in(&mut self, pictures: &[(u32, Arc<hevc::Config>)]) -> Result<()> {
         let mut checked = std::collections::HashSet::new();
-        for (id, _) in &self.pictures {
+        for (id, _) in pictures {
             ensure!(
                 !checked.insert(*id) || self.heif.stored_within(&mut self.file, *id),
                 "The HEIF image data is missing or cut off"
@@ -255,10 +440,16 @@ impl HeicFile {
     /// is not refused itself: encoders pad (Apple's codes a 64×64 picture as
     /// 160×64), and the decoded image is still held to the header's size.
     fn coded_within(&mut self) -> Result<()> {
+        let pictures = self.pictures.clone();
+        self.coded_in(&pictures)
+    }
+
+    /// [`HeicFile::coded_within`] of `pictures`.
+    fn coded_in(&mut self, pictures: &[(u32, Arc<hevc::Config>)]) -> Result<()> {
         let too_large = || anyhow!("The HEVC image is coded at more than 150 megapixels");
         // Each distinct picture, and how often it is placed.
         let mut placed: Vec<(u32, u128, &hevc::Config)> = Vec::new();
-        for (id, config) in &self.pictures {
+        for (id, config) in pictures {
             match placed.iter_mut().find(|(placed, ..)| placed == id) {
                 Some((_, count, _)) => *count += 1,
                 None => placed.push((*id, 1, config)),
@@ -533,6 +724,17 @@ impl ImageDecoder for HeicFile {
         let full = (self.layout.width, self.layout.height);
         self.stored().map_err(failed)?;
         self.coded_within().map_err(failed)?;
+        // The map's pictures pass the same checks, with the image's, before ImageIO
+        // is asked for them; a map that doesn't is damaged, and the image still
+        // decodes without it.
+        if let Ok(Some(map)) = &self.map {
+            let (map, ours) = (map.clone(), self.map_pictures.clone());
+            let all: Vec<_> = self.pictures.iter().chain(&ours).cloned().collect();
+            if self.stored_in(&ours).is_err() || self.coded_in(&all).is_err() {
+                let _ = map.decoded.set(Err(gain_map::damaged()));
+                self.map = Ok(None);
+            }
+        }
         let Pixels { width, height, rgb } = pixels(self).map_err(failed)?;
         // The whole picture, cropped here, or the crop alone: any other size
         // is not the image the header describes (a system decoder that turned
@@ -615,6 +817,41 @@ mod tests {
                 height: 7
             }
         );
+    }
+
+    /// An Apple map that isn't applied (no maker-note headroom, or no version
+    /// XMP) is no map: nothing about it, a crop among them, refuses the photo.
+    #[test]
+    fn an_apple_map_without_its_headroom_refuses_nothing() {
+        let fixture = |name: &str| {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/data/formats")
+                .join(name)
+        };
+        // A crop smaller than the image, which refuses an applied map.
+        let cropped = |layout: &Layout| Crop {
+            left: 0,
+            top: 0,
+            width: layout.width - 2,
+            height: layout.height,
+        };
+        for (name, applied) in [
+            ("apple-gain-map.heic", true),
+            ("apple-gain-map-no-headroom.heic", false),
+            ("apple-gain-map-unversioned.heic", false),
+        ] {
+            let mut file = std::fs::File::open(fixture(name)).unwrap();
+            let heif = Heif::read(&mut file).unwrap();
+            let layout = layout_of(&heif, &mut file, heif.primary).unwrap();
+            let found = gain_map_of(&heif, &mut file, &layout, cropped(&layout));
+            match applied {
+                true => assert_eq!(
+                    found.err().map(|e| e.0).as_deref(),
+                    Some("cropped HEIC gain-map")
+                ),
+                false => assert!(found.unwrap().is_none(), "{name}"),
+            }
+        }
     }
 
     /// The tiles, decoded whole, are held to 150 MP, without overflowing

@@ -40,7 +40,7 @@ const MAX_IMAGES: u32 = 32;
 /// bound; 16 stops is beyond any display, and keeps every gain finite in f32.
 const MAX_STOPS: f64 = 16.;
 
-fn damaged() -> Unsupported {
+pub(super) fn damaged() -> Unsupported {
     Unsupported("damaged gain-map".into())
 }
 
@@ -125,6 +125,11 @@ impl Bytes<'_> {
 }
 
 impl Metadata {
+    /// Whether the map applies in the base image's colour space.
+    pub(super) fn base_colour_space(&self) -> bool {
+        self.base_colour_space
+    }
+
     /// The metadata ISO 21496-1 serialises, as libultrahdr 2.0 reads it:
     /// - minimum and writer versions (u16 each);
     /// - flags: multichannel (0x80), base colour space (0x40), common denominator
@@ -428,15 +433,19 @@ pub(super) fn find(file: &mut File, base: (u32, u32)) -> Result<Option<GainMap>,
     let Some(found) = found else {
         return Ok(None);
     };
-    // The map covers the base: at most its size, at least one sample, and the same
-    // shape to within a map sample's rounding, as libultrahdr's downsampled maps are.
-    let (w, h) = (u64::from(base.0), u64::from(base.1));
-    let (mw, mh) = (u64::from(found.width), u64::from(found.height));
-    let shaped = mw >= 1 && mh >= 1 && mw <= w && mh <= h && (w * mh).abs_diff(h * mw) <= w + h;
-    if !shaped {
+    if !covers(base, (found.width, found.height)) {
         return Err(damaged());
     }
     Ok(Some(found))
+}
+
+/// Whether a `map` (width, height) covers its `base`: at most its size, at least one
+/// sample, and the same shape to within a map sample's rounding, as libultrahdr's
+/// downsampled maps are.
+pub(super) fn covers(base: (u32, u32), map: (u32, u32)) -> bool {
+    let (w, h) = (u64::from(base.0), u64::from(base.1));
+    let (mw, mh) = (u64::from(map.0), u64::from(map.1));
+    mw >= 1 && mh >= 1 && mw <= w && mh <= h && (w * mh).abs_diff(h * mw) <= w + h
 }
 
 /// A JPEG segment before the image data: its marker and where its payload is.
@@ -780,11 +789,24 @@ fn jxl(file: &mut File, len: u64) -> Result<Option<GainMap>, Unsupported> {
 }
 
 /// A decoded map: `channels` (1 or 3) samples a pixel, 0–1.
+#[derive(Clone, Debug)]
 pub(super) struct Samples {
     width: u32,
     height: u32,
     channels: usize,
     data: Vec<f32>,
+}
+
+#[cfg(test)]
+impl Samples {
+    pub(super) fn size(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+    /// Channel `c` (the one channel of a grey map) of the sample at (`x`, `y`).
+    pub(super) fn get(&self, x: u32, y: u32, c: usize) -> f32 {
+        self.data[(y as usize * self.width as usize + x as usize) * self.channels
+            + c.min(self.channels - 1)]
+    }
 }
 
 impl GainMap {
@@ -809,22 +831,27 @@ impl GainMap {
             return Err(damaged());
         }
         image.apply_orientation(orientation);
+        Ok(Samples::from_image(image))
+    }
+}
+
+impl Samples {
+    /// A decoded map's samples as they are: grey, or colour a channel each.
+    pub(super) fn from_image(image: image::DynamicImage) -> Self {
         let (width, height) = (image.width(), image.height());
         let (channels, data) = if image.color().has_color() {
             (3, image.into_rgb32f().into_raw())
         } else {
             (1, image.to_luma32f().into_raw())
         };
-        Ok(Samples {
+        Samples {
             width,
             height,
             channels,
             data,
-        })
+        }
     }
-}
 
-impl Samples {
     /// Channel `c` of the map at the centre of base pixel (`x`, `y`) of a `width` ×
     /// `height` base: bilinear between the map's sample centres, which are spread
     /// over the base, the edges held. A map the base's size is read as it is.
@@ -849,6 +876,54 @@ impl Samples {
     }
 }
 
+/// How a map's samples make the alternate rendition of its base.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Formula {
+    /// ISO 21496-1's (and Adobe's `hdrgm`): a gain in stops a channel.
+    Iso(Metadata),
+    /// Apple's HDR gain map in a HEIC, as Apple's "Applying Apple HDR effect to your
+    /// photos" applies it: the sample, Rec. 709-encoded, made linear, then
+    /// `sdr × (1 + (headroom − 1) × sample)` on each channel, `headroom` above 1.
+    Apple { headroom: f32 },
+}
+
+impl Formula {
+    /// Channel `c` of the alternate of linear base value `base`, where the map's
+    /// sample is `sample` (0–1).
+    fn apply(&self, c: usize, base: f32, sample: f32) -> f32 {
+        match self {
+            Self::Iso(m) => m.channels[c].apply(base, sample),
+            Self::Apple { headroom } => {
+                let v = sample.clamp(0., 1.);
+                // BT.709's OETF inverted.
+                let linear = if v < 0.081 {
+                    v / 4.5
+                } else {
+                    ((v + 0.099) / 1.099).powf(1. / 0.45)
+                };
+                base * (1. + (headroom - 1.) * linear)
+            }
+        }
+    }
+}
+
+/// The headroom of an Apple HDR gain map, from its photo's maker-note tags 33 and 48
+/// (`maker`), by the formula in Apple's "Applying Apple HDR effect to your photos"
+/// (developer.apple.com/documentation/appkit/applying-apple-hdr-effect-to-your-photos):
+/// a number of stops by which of four lines the two values fall on, at least 0.
+/// `None` when that headroom is 1 (no stops): such a map brightens nothing.
+pub(super) fn apple_headroom([maker33, maker48]: [f64; 2]) -> Option<f32> {
+    let stops = match (maker33 < 1., maker48 <= 0.01) {
+        (true, true) => -20. * maker48 + 1.8,
+        (true, false) => -0.101 * maker48 + 1.601,
+        (false, true) => -70. * maker48 + 3.,
+        (false, false) => -0.303 * maker48 + 2.303,
+    };
+    // At most MAX_STOPS, as for ISO maps, which keeps the light finite.
+    let stops = stops.clamp(0., MAX_STOPS);
+    (stops > 0.).then(|| stops.exp2() as f32)
+}
+
 /// The alternate rendition of `base` (linear RGB of a `width` × `height` image in
 /// the base's own primaries, 1 = its white, already upright), by `map` at its full
 /// weight, in the same primaries.
@@ -857,7 +932,7 @@ pub(super) fn reconstruct(
     width: u32,
     height: u32,
     map: &Samples,
-    metadata: &Metadata,
+    formula: &Formula,
     cancel: rawmakase_cancel::Cancel<'_>,
 ) -> anyhow::Result<Vec<[f32; 3]>> {
     use rayon::prelude::*;
@@ -877,7 +952,7 @@ pub(super) fn reconstruct(
             for (x, (to, from)) in to.iter_mut().zip(from).enumerate() {
                 for c in 0..3 {
                     let sample = map.at(x as u32, y as u32, width, height, c);
-                    to[c] = metadata.channels[c].apply(from[c], sample);
+                    to[c] = formula.apply(c, from[c], sample);
                 }
             }
             Ok(())
@@ -961,6 +1036,34 @@ mod tests {
         assert_eq!(c.apply(0.75, 1.), 8. - 0.125);
         // 0.25 raised to 1/2 is half way: 1 stop.
         assert!((c.apply(0.75, 0.25) - (2. - 0.125)).abs() < 1e-6);
+    }
+
+    /// Apple's headroom: the line of the four that its maker-note values fall on,
+    /// never below 0 stops; none at 0, where the map brightens nothing.
+    #[test]
+    fn an_apple_maps_headroom_follows_apples_four_lines() {
+        let stops = |maker33, maker48| apple_headroom([maker33, maker48]).map(|h| h.log2());
+        let near = |got: Option<f32>, want: f32| got.is_some_and(|g| (g - want).abs() < 1e-5);
+        assert!(near(stops(0.5, 0.005), -20. * 0.005 + 1.8));
+        assert!(near(stops(0.5, 0.5), -0.101 * 0.5 + 1.601));
+        assert!(near(stops(1.01, 0.0089), -70. * 0.0089 + 3.));
+        assert!(near(stops(1.5, 2.), -0.303 * 2. + 2.303));
+        // Beyond the last line's zero.
+        assert_eq!(stops(1.5, 8.), None);
+        assert_eq!(stops(0.5, 16.), None);
+    }
+
+    /// Apple's formula: the Rec. 709-encoded sample made linear, then
+    /// `sdr × (1 + (headroom − 1) × sample)`.
+    #[test]
+    fn an_apple_map_applies_its_headroom_by_its_linear_sample() {
+        let apple = Formula::Apple { headroom: 4. };
+        assert_eq!(apple.apply(0, 0.5, 0.), 0.5);
+        assert_eq!(apple.apply(1, 0.5, 1.), 2.);
+        // 0.0405 encodes 0.009 below Rec. 709's knee; 0.5 encodes 0.26 above it.
+        assert!((apple.apply(2, 1., 0.0405) - (1. + 3. * 0.009)).abs() < 1e-6);
+        let linear = ((0.5f32 + 0.099) / 1.099).powf(1. / 0.45);
+        assert!((apple.apply(0, 1., 0.5) - (1. + 3. * linear)).abs() < 1e-6);
     }
 
     /// A map half the base's size is sampled between its centres, and holds its

@@ -27,7 +27,7 @@ use super::{
 use crate::isobmff::{BoxHeader, boxes, file_len, read_body};
 use crate::tiff::{
     Entry,
-    kind::{ASCII, BYTE, IFD, LONG, SHORT, SSHORT},
+    kind::{ASCII, BYTE, FLOAT, IFD, LONG, RATIONAL, SHORT, SRATIONAL, SSHORT},
 };
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -75,6 +75,44 @@ pub fn sequence(path: &Path) -> Option<Sequence> {
             .or_else(|| in_adobe_pano(path)),
         Source::Memory(t) => sequence_of(t),
     }
+}
+
+/// The two values of an iPhone photo's maker note that its HDR gain map's headroom
+/// is computed from: tags 33 (0x0021) and 48 (0x0030), as Apple's "Applying Apple HDR
+/// effect to your photos" names them, in that order, from `item`, a HEIF's Exif item
+/// (the big-endian offset to the TIFF header, then the TIFF). The HEIC reader passes
+/// the item it read from its own open file, so the values are that file's. `None`
+/// when it has no Apple maker note with both, each a single number (signed or
+/// unsigned rational, as iPhones write them, or a float).
+pub fn apple_hdr(item: Vec<u8>) -> Option<[f64; 2]> {
+    apple_hdr_of(super::exif_in_memory(item)?)
+}
+
+/// [`apple_hdr`] of the EXIF in `t`.
+fn apple_hdr_of<R: Read + Seek>(mut t: Tiff<R>) -> Option<[f64; 2]> {
+    let main = t.ifd(t.first)?;
+    let exif = main
+        .get(&EXIF_IFD)
+        .and_then(|e| t.offset(e))
+        .and_then(|at| t.ifd(at))?;
+    let e = exif.get(&MAKER_NOTE)?;
+    let len = (e.count as u64).checked_mul(e.type_size()? as u64)?;
+    if len <= 4 {
+        return None;
+    }
+    let at = t.u32(&e.value) as u64;
+    let mut note = Note {
+        tiff: t.part(0, None, t.little)?,
+        start: at,
+        len,
+        origin: at,
+    };
+    let head = note.head(14)?;
+    if !head.starts_with(b"Apple iOS\0") || head.get(12..14) != Some(b"MM") {
+        return None;
+    }
+    let d = note.directory(14, Some(false), note.shift_from(0)?)?;
+    Some([note.number(&d, 0x0021)?, note.number(&d, 0x0030)?])
 }
 
 /// Whether the file at `path` is a CR3; `None` when it can't be read.
@@ -454,6 +492,33 @@ impl<R: Read + Seek> Note<'_, R> {
             LONG => Some(b.as_chunks::<4>().0.iter().map(|c| t.u32(c)).collect()),
             _ => None,
         }
+    }
+
+    /// The value of entry `tag` of `d` when it holds one number: a RATIONAL or
+    /// SRATIONAL with a denominator other than 0, a FLOAT, or an integer. Finite.
+    fn number(&mut self, d: &Directory, tag: u16) -> Option<f64> {
+        let e = d.entries.get(&tag)?;
+        if e.count != 1 {
+            return None;
+        }
+        let v = match e.kind {
+            RATIONAL | SRATIONAL => {
+                self.tiff.little = d.little;
+                let at = Self::at(d, self.tiff.u32(&e.value))?;
+                let b = self.tiff.bytes(at, 8)?;
+                let (n, m) = (self.tiff.u32(&b[..4]), self.tiff.u32(&b[4..]));
+                match e.kind {
+                    RATIONAL => (m != 0).then(|| f64::from(n) / f64::from(m))?,
+                    _ => (m != 0).then(|| f64::from(n as i32) / f64::from(m as i32))?,
+                }
+            }
+            FLOAT => {
+                self.tiff.little = d.little;
+                f64::from(f32::from_bits(self.tiff.u32(&e.value)))
+            }
+            _ => f64::from(self.int(d, tag)?),
+        };
+        v.is_finite().then_some(v)
     }
 
     /// The first value of BYTE, SHORT, SSHORT or LONG entry `tag` of `d`.
@@ -918,6 +983,54 @@ mod tests {
         );
         let single = jpeg(&tiff(false, "Apple", "iPhone 15 Pro", "", &note(None)));
         assert_eq!(read(&single, "a.jpg").unwrap().mark, Mark::Single);
+    }
+
+    /// An iPhone's HDR gain-map values, maker-note tags 33 and 48: signed rationals,
+    /// as iPhones and ImageIO write them, or unsigned; a note without both says none.
+    #[test]
+    fn an_iphones_hdr_gain_map_values_are_read_from_its_maker_note() {
+        let note = |kind: u16, tags: &[u16]| {
+            let mut note = b"Apple iOS\0\0\x01MM".to_vec();
+            let entries_len = 2 + tags.len() * 12 + 4;
+            let at = (14 + entries_len) as u32;
+            let entries: Vec<_> = tags
+                .iter()
+                .enumerate()
+                .map(|(i, tag)| (*tag, kind, 1, at + 8 * i as u32))
+                .collect();
+            // 1.01 and 0.0089 as ImageIO writes them, then -1/2.
+            let data = [1_058_986u32, 1_048_501, 4030, 452_809]
+                .iter()
+                .flat_map(|v| v.to_be_bytes())
+                .collect::<Vec<_>>();
+            note.extend(note_ifd(false, &entries, &data));
+            note
+        };
+        // A HEIF's Exif item: the offset to the TIFF header (0), then the TIFF.
+        let values = |note: &[u8]| {
+            let tiff = tiff(false, "Apple", "iPhone 15 Pro", "", note);
+            super::apple_hdr([&[0u8; 4][..], &tiff].concat())
+        };
+        for kind in [5, 10] {
+            let [a, b] = values(&note(kind, &[0x0021, 0x0030])).unwrap();
+            assert!(
+                (a - 1.01).abs() < 1e-6 && (b - 0.0089).abs() < 1e-6,
+                "{a} {b}"
+            );
+        }
+        assert_eq!(values(&note(10, &[0x0021])), None);
+        // The fixture ImageIO wrote (scripts/make-heic-gain-map-fixtures.swift).
+        let mut heic = std::fs::File::open(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/data/formats/apple-gain-map.heic"),
+        )
+        .unwrap();
+        let item = super::super::exif_in_heif(&mut heic).unwrap();
+        let [a, b] = super::apple_hdr(item).unwrap();
+        assert!(
+            (a - 1.01).abs() < 1e-6 && (b - 0.0089).abs() < 1e-6,
+            "{a} {b}"
+        );
     }
 
     #[test]

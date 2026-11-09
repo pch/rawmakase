@@ -64,9 +64,16 @@ struct Prepared {
     hdr_white: Option<f32>,
     /// How its light decodes exactly, for an HDR file that opens as one.
     hdr: Option<HdrDecoding>,
-    /// Its ISO 21496-1 gain map, for an SDR JPEG or JPEG XL base that opens as an
-    /// HDR edit by it.
-    gain_map: Option<gain_map::GainMap>,
+    /// Its gain map, for an SDR base that opens as an HDR edit by it.
+    gain_map: Option<GainMap>,
+}
+
+/// Where a gain map comes from, and how it applies.
+enum GainMap {
+    /// A JPEG's or JPEG XL's, decoded from the file.
+    File(gain_map::GainMap),
+    /// A HEIC's, which the system decoder decodes with the image.
+    Heic(heic::Map, gain_map::Formula),
 }
 
 /// How an HDR file's samples decode exactly to its light: linear ProPhoto,
@@ -207,6 +214,8 @@ struct Decoder {
     /// For a HEIC, whether its HDR light decodes exactly
     /// ([`heic::HeicFile::hdr_decodes`]).
     heic_hdr: bool,
+    /// A HEIC's gain map, or why it is refused.
+    heic_map: std::result::Result<Option<heic::Map>, Unsupported>,
 }
 
 /// The [`Decoder`] for the file at `path`. Applies no size limit.
@@ -239,6 +248,7 @@ fn open_decoder(path: &Path) -> Result<Decoder> {
         kind,
         turned,
         heic_hdr: false,
+        heic_map: Ok(None),
     };
     Ok(match kind {
         Kind::Webp { animated } => opened(
@@ -258,9 +268,11 @@ fn open_decoder(path: &Path) -> Result<Decoder> {
         }
         Kind::Heic => {
             let file = heic::HeicFile::open(path)?;
-            let (refused, heic_hdr) = (file.refusal(), file.hdr_decodes());
+            let (refused, heic_hdr, heic_map) =
+                (file.refusal(), file.hdr_decodes(), file.gain_map());
             Decoder {
                 heic_hdr,
+                heic_map,
                 ..opened(Box::new(file), refused, false)
             }
         }
@@ -275,6 +287,7 @@ fn prepare(path: &Path) -> Result<Prepared> {
         kind,
         turned,
         heic_hdr,
+        heic_map,
     } = open_decoder(path)?;
     // The `image` crate's decoders, whose float samples are linear light (a 32-bit
     // TIFF); JPEG XL, AVIF and HEIC have readers of their own.
@@ -322,33 +335,44 @@ fn prepare(path: &Path) -> Result<Prepared> {
         refused => refused,
     }
     .or_else(|| (hdr_white.is_some() && hdr.is_none()).then(|| Unsupported("HDR".into())));
-    // An SDR JPEG or JPEG XL base with an ISO 21496-1 gain map opens as an HDR edit by
-    // it (docs/hdr.md#gain-map-files). A file whose own samples are HDR opens by them,
-    // as above, whatever map it carries.
-    let gain_map = match kind {
-        Kind::Jxl | Kind::Other if hdr_white.is_none() => {
-            gain_map::find(&mut std::fs::File::open(path)?, (w, h)).and_then(|found| {
-                let Some(found) = found else {
-                    return Ok(None);
-                };
-                // The map applies in the base's linear RGB, which a matrix profile's
-                // colorants describe; a grey base or a table profile has none.
-                let matrix = profile
-                    .as_ref()
-                    .is_none_or(|p| p.is_matrix_shaper() && !has_tables(p));
-                if turned {
-                    Err(Unsupported("turned JPEG XL gain-map".into()))
-                } else if !decoder.color_type().has_color() {
-                    Err(Unsupported("grey gain-map".into()))
-                } else if !matrix {
-                    Err(Unsupported("table-profile gain-map".into()))
-                } else {
-                    Ok(Some(found))
-                }
-            })
+    // An SDR base with a gain map opens as an HDR edit by it
+    // (docs/hdr.md#gain-map-files): a JPEG's or JPEG XL's ISO 21496-1 or hdrgm map, or
+    // a HEIC's on macOS. A file whose own samples are HDR opens by them, as above,
+    // whatever map it carries.
+    let found = match kind {
+        _ if hdr_white.is_some() => Ok(None),
+        Kind::Jxl | Kind::Other => {
+            gain_map::find(&mut std::fs::File::open(path)?, (w, h)).map(|m| m.map(GainMap::File))
         }
+        Kind::Heic => heic_map.map(|map| {
+            let map = map?;
+            let formula = match map.kind {
+                heic::MapKind::Iso(metadata) => gain_map::Formula::Iso(metadata),
+                heic::MapKind::Apple { headroom } => gain_map::Formula::Apple { headroom },
+            };
+            Some(GainMap::Heic(map, formula))
+        }),
         _ => Ok(None),
     };
+    let gain_map = found.and_then(|found| {
+        let Some(found) = found else {
+            return Ok(None);
+        };
+        // The map applies in the base's linear RGB, which a matrix profile's
+        // colorants describe; a grey base or a table profile has none.
+        let matrix = profile
+            .as_ref()
+            .is_none_or(|p| p.is_matrix_shaper() && !has_tables(p));
+        if turned {
+            Err(Unsupported("turned JPEG XL gain-map".into()))
+        } else if !decoder.color_type().has_color() {
+            Err(Unsupported("grey gain-map".into()))
+        } else if !matrix {
+            Err(Unsupported("table-profile gain-map".into()))
+        } else {
+            Ok(Some(found))
+        }
+    });
     let (gain_map, refused) = match gain_map {
         Ok(found) => (found, refused),
         Err(why) => (None, refused.or(Some(why))),
@@ -552,6 +576,16 @@ pub(crate) fn open(path: &Path, cancel: Cancel<'_>) -> Result<CameraImage> {
     }
     let mut image = DynamicImage::from_decoder(decoder).map_err(read_error(path))?;
     image.apply_orientation(orientation);
+    // The map: a HEIC's decoded with the image, turned as it is.
+    let samples = match &gain_map {
+        Some(GainMap::File(map)) => Some(map.decode(&mut std::fs::File::open(path)?, orientation)?),
+        Some(GainMap::Heic(map, _)) => Some(match map.decoded.get() {
+            Some(Ok(samples)) => Ok(samples.clone()),
+            Some(Err(why)) => Err(Unsupported(why.0.clone())),
+            None => Err(gain_map::damaged()),
+        }?),
+        None => None,
+    };
     let (width, height) = (image.width(), image.height());
     // An HDR file: its light, and the SDR rendition the Library shows of it.
     let (light, pixels) = match (hdr, gain_map) {
@@ -570,10 +604,14 @@ pub(crate) fn open(path: &Path, cancel: Cancel<'_>) -> Result<CameraImage> {
         // base as its SDR rendition, decoded as any SDR file's pixels are.
         (None, Some(map)) => {
             let profile = profile.unwrap_or_else(ColorProfile::new_srgb);
-            let samples = map.decode(&mut std::fs::File::open(path)?, orientation)?;
+            let samples = samples.ok_or_else(gain_map::damaged)?;
+            let formula = match &map {
+                GainMap::File(map) => gain_map::Formula::Iso(map.metadata),
+                GainMap::Heic(_, formula) => *formula,
+            };
             let base = in_own_primaries(&profile, &image, cancel)?;
             let alternate =
-                gain_map::reconstruct(&base, width, height, &samples, &map.metadata, cancel)?;
+                gain_map::reconstruct(&base, width, height, &samples, &formula, cancel)?;
             let to_pro_photo = colorants_to_pro_photo(&profile)
                 .ok_or_else(|| Unsupported("table-profile gain-map".into()))?;
             let light = rawmakase_model::camera_data::HdrLight::from_gain_map(
@@ -2542,6 +2580,223 @@ mod tests {
         );
         // libheif's own PQ file, the matrix BT.2020's, opens.
         super::probe(&fixture("pq.heic")).unwrap();
+    }
+
+    /// The light of a HEIC gain-map fixture in linear Display P3, and its base (its
+    /// SDR rendition) the same way, as `open` gives them.
+    fn heic_light(name: &str) -> (u32, u32, Vec<[f64; 3]>, Vec<[f64; 3]>) {
+        use rawmakase_model::color::{hdr_output::HdrGamut, mul};
+        let image = super::open(&fixture(name), Cancel::NEVER).unwrap();
+        let to_p3 = HdrGamut::DisplayP3.prophoto_to_rgb();
+        let p3 = |p: &[f32; 3]| mul(to_p3, *p).map(f64::from);
+        let light = image.hdr().expect("an HDR edit");
+        assert!(light.source().gain_map);
+        let (light, base) = (
+            light.pixels().iter().map(p3).collect(),
+            image.pixels.iter().map(p3).collect(),
+        );
+        (image.width, image.height, light, base)
+    }
+
+    /// A HEIC fixture's gain map as the system decoder decodes it, before any turn.
+    fn heic_map(name: &str) -> super::gain_map::Samples {
+        let file = super::heic::HeicFile::open(&fixture(name)).unwrap();
+        let map = file.gain_map().unwrap().expect("a map");
+        image::DynamicImage::from_decoder(file).unwrap();
+        map.decoded.get().unwrap().as_ref().unwrap().clone()
+    }
+
+    /// An iPhone's gain map (Apple's auxiliary image, its headroom in the maker
+    /// note) opens as an HDR edit with the light Apple's documentation gives:
+    /// "Applying Apple HDR effect to your photos" (developer.apple.com, AppKit), its
+    /// headroom formula and `sdr × (1 + (headroom − 1) × map)` written out here, the
+    /// map Rec. 709-decoded and a quarter of the base, spread over it between its
+    /// samples' centres. On other systems it opens as its SDR base, as before.
+    #[test]
+    fn an_apple_gain_map_heic_opens_with_the_light_apples_formula_gives() {
+        let name = "apple-gain-map.heic";
+        if !cfg!(target_os = "macos") {
+            super::probe(&fixture(name)).unwrap();
+            if heic_decodes() {
+                assert!(
+                    super::open(&fixture(name), Cancel::NEVER)
+                        .unwrap()
+                        .hdr()
+                        .is_none()
+                );
+            }
+            return;
+        }
+        // The fixture's maker-note tags 33 and 48: 1.01 and 0.0089, so the fourth of
+        // Apple's lines, -70 × 0.0089 + 3 stops.
+        let headroom = (-70. * 0.0089f64 + 3.).exp2();
+        let (w, h, light, base) = heic_light(name);
+        let map = heic_map(name);
+        assert_eq!(((w, h), map.size()), ((64, 48), (32, 24)));
+        let rec709 = |v: f64| {
+            if v < 0.081 {
+                v / 4.5
+            } else {
+                ((v + 0.099) / 1.099).powf(1. / 0.45)
+            }
+        };
+        // Bilinear between the map's sample centres, the edges held.
+        let spread = |x: u32, y: u32| {
+            let at = |v: u32, base: u32, map: u32| {
+                let p = ((f64::from(v) + 0.5) * f64::from(map) / f64::from(base) - 0.5)
+                    .clamp(0., f64::from(map - 1));
+                let low = p.floor();
+                (low as u32, (low as u32 + 1).min(map - 1), p - low)
+            };
+            let ((x0, x1, fx), (y0, y1, fy)) = (at(x, w, 32), at(y, h, 24));
+            let s = |x, y| f64::from(map.get(x, y, 0));
+            let top = s(x0, y0) * (1. - fx) + s(x1, y0) * fx;
+            let bottom = s(x0, y1) * (1. - fx) + s(x1, y1) * fx;
+            top * (1. - fy) + bottom * fy
+        };
+        let mut peak = 0f64;
+        for (i, (got, sdr)) in light.iter().zip(&base).enumerate() {
+            let (x, y) = (i as u32 % w, i as u32 / w);
+            let gain = 1. + (headroom - 1.) * rec709(spread(x, y));
+            for c in 0..3 {
+                let want = sdr[c] * gain;
+                peak = peak.max(got[c]);
+                // moxcms's f32 curves and the ProPhoto round trip.
+                assert!(
+                    (got[c] - want).abs() <= 1e-3 * want.abs().max(1.),
+                    "({x}, {y}) channel {c}: {} against {want}",
+                    got[c]
+                );
+            }
+        }
+        assert!(peak > 2. && peak <= headroom * 1.001, "{peak}");
+    }
+
+    /// The map turns with its image: a HEIC whose `irot` turns it opens as the same
+    /// photo, the same map applied, turned. Without the maker note's headroom, or
+    /// without the version XMP Apple's documentation asks of a valid map, the map
+    /// isn't applied, and the photo opens as its SDR base.
+    #[test]
+    fn an_apple_gain_map_turns_with_its_image_and_needs_its_headroom() {
+        if !cfg!(target_os = "macos") {
+            return;
+        }
+        let (w, h, plain, _) = heic_light("apple-gain-map.heic");
+        let (tw, th, turned, _) = heic_light("apple-gain-map-turned.heic");
+        assert_eq!((tw, th), (h, w));
+        // irot 3 (three anticlockwise quarter turns): one clockwise.
+        for (i, got) in turned.iter().enumerate() {
+            let (x, y) = (i as u32 % tw, i as u32 / tw);
+            let want = plain[((tw - 1 - x) * w + y) as usize];
+            assert!(
+                (0..3).all(|c| (got[c] - want[c]).abs() <= 1e-5 * want[c].abs().max(1.)),
+                "({x}, {y}): {got:?} against {want:?}"
+            );
+        }
+        for name in [
+            "apple-gain-map-no-headroom.heic",
+            "apple-gain-map-unversioned.heic",
+        ] {
+            super::probe(&fixture(name)).unwrap();
+            let image = super::open(&fixture(name), Cancel::NEVER).unwrap();
+            assert!(image.hdr().is_none(), "{name}");
+        }
+    }
+
+    /// ImageIO's own decode of `iso-gain-map.heic` at its full headroom
+    /// (`kCGImageSourceDecodeToHDR`, content headroom 4), drawn as extended linear
+    /// Display P3 floats on macOS 27.2: (x, y, light).
+    const IMAGEIO_ISO: [(u32, u32, [f64; 3]); 8] = [
+        (0, 0, [0.020516593, 0.012492286, 0.009568255]),
+        (16, 10, [0.083402015, 0.057007145, 0.044631816]),
+        (32, 24, [0.5319656, 0.4457238, 0.29232663]),
+        (48, 30, [1.7095926, 1.5427992, 1.1005186]),
+        (56, 40, [2.7330034, 2.6258056, 1.8257574]),
+        (63, 47, [3.392541, 3.3864233, 2.399263]),
+        (63, 0, [3.4028633, 2.611367, 2.369064]),
+        (60, 24, [3.2051, 2.8340719, 2.1960595]),
+    ];
+
+    /// An ISO 21496-1 gain map in a HEIC (a `tmap` item over the primary image and
+    /// its map, as iPhones write since iOS 18, and ImageIO here from an HDR ramp to
+    /// 4× SDR white) opens as an HDR edit with the light ImageIO itself decodes at
+    /// its full headroom. Measured: 0.02 stop at most, where the half-size map's
+    /// sampling differs on the steep ramp, but 0.032 at the darkest pixel, where
+    /// ImageIO's and moxcms's decodes of the 8-bit base's lowest codes differ. On
+    /// other systems it opens as its base.
+    #[test]
+    fn an_iso_gain_map_heic_opens_as_imageio_decodes_it() {
+        let name = "iso-gain-map.heic";
+        if !cfg!(target_os = "macos") {
+            super::probe(&fixture(name)).unwrap();
+            if heic_decodes() {
+                assert!(
+                    super::open(&fixture(name), Cancel::NEVER)
+                        .unwrap()
+                        .hdr()
+                        .is_none()
+                );
+            }
+            return;
+        }
+        let (w, _, light, _) = heic_light(name);
+        let k = 1. / 64.;
+        for (x, y, want) in IMAGEIO_ISO {
+            let got = light[(y * w + x) as usize];
+            for c in 0..3 {
+                let stops = ((got[c] + k) / (want[c] + k)).log2().abs();
+                assert!(stops <= 0.04, "({x}, {y}): {got:?} against {want:?}");
+            }
+        }
+    }
+
+    /// A HEIC's ISO 21496-1 map that can't be applied is refused for Develop by
+    /// reason, from the header: a `tmap` of another version, or metadata of one.
+    #[test]
+    fn an_iso_heic_map_of_another_version_is_refused() {
+        if !cfg!(target_os = "macos") {
+            return;
+        }
+        let bytes = std::fs::read(fixture("iso-gain-map.heic")).unwrap();
+        // The `tmap` item's data: its version byte, then ISO 21496-1's minimum
+        // version (0), its writer version (0) and its flags (base colour space).
+        // Then the base's headroom, 0/1, and the alternate's, 2/1.
+        let tmap = [0, 0, 0, 0, 0, 0x40, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2];
+        let at = bytes.windows(tmap.len()).position(|w| w == tmap).unwrap();
+        assert_eq!(bytes.windows(tmap.len()).filter(|w| *w == tmap).count(), 1);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("refused.heic");
+        for (offset, value, why) in [(0, 1, "version 1 gain-map"), (2, 2, "version 2 gain-map")] {
+            let mut patched = bytes.clone();
+            patched[at + offset] = value;
+            std::fs::write(&path, &patched).unwrap();
+            assert_eq!(super::probe(&path).unwrap_err().0, why);
+        }
+    }
+
+    /// A map whose data isn't all in the file is damaged, found before ImageIO is
+    /// asked for it: Develop refuses the photo by that reason, and the Library still
+    /// shows the image, which is whole.
+    #[test]
+    fn a_heic_map_cut_off_is_damaged_and_its_image_still_shows() {
+        if !cfg!(target_os = "macos") {
+            return;
+        }
+        let bytes = std::fs::read(fixture("apple-gain-map.heic")).unwrap();
+        // The map's data is the file's last 0x6d bytes (ImageIO's layout).
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cut.heic");
+        std::fs::write(&path, &bytes[..bytes.len() - 0x40]).unwrap();
+        let Err(err) = super::open(&path, Cancel::NEVER) else {
+            panic!("a cut-off map opened");
+        };
+        assert_eq!(
+            err.downcast_ref::<super::Unsupported>()
+                .map(|u| u.0.as_str()),
+            Some("damaged gain-map"),
+            "{err:#}"
+        );
+        assert_eq!(decode(&path).unwrap().dimensions(), (64, 48));
     }
 
     /// A HEIC with alpha (an auxiliary image) is listed by its size; on macOS

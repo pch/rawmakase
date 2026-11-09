@@ -21,7 +21,7 @@ use tag::*;
 mod sequence;
 #[cfg(any(test, feature = "test-support"))]
 pub use sequence::fixture as sequence_fixture;
-pub use sequence::{Mark, SEQUENCE_VERSION, Sequence, sequence};
+pub use sequence::{Mark, SEQUENCE_VERSION, Sequence, apple_hdr, sequence};
 
 /// The tags RAWmakase reads or writes, by their EXIF names: of the main
 /// directory, the EXIF directory and the GPS directory.

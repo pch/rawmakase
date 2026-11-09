@@ -50,3 +50,13 @@ BT.2020 primaries (PQ and HLG) or Display P3 (PQ), BT.2020's matrix, full range,
 `hdr-pq-icc.heic` is the PQ signal with no `nclx`, its transfer named only by the `cicp` tag of a
 minimal ICC v4 profile the script writes (BT.2020 colorants, linear curves). Made with libheif
 1.23.6 and x265 4.3.
+
+The HEIC gain-map fixtures are written by macOS's ImageIO with
+`swift scripts/make-heic-gain-map-fixtures.swift tests/data/formats` (macOS 15 or later; the
+script prints the system version; made on macOS 27.2). Each base is 64×48 8-bit Display P3, red
+ramping left to right and green top to bottom. `apple-gain-map.heic` has Apple's auxiliary map
+(32×24 grey, a ramp) with its `HDRGainMapVersion` XMP and maker-note tags 33 = 1.01 and 48 =
+0.0089; `apple-gain-map-turned.heic` is the same with EXIF orientation 6 (`irot` 3);
+`apple-gain-map-no-headroom.heic` has no maker note and `apple-gain-map-unversioned.heic` no
+version XMP. `iso-gain-map.heic` is ImageIO's ISO 21496-1 (`tmap`) encoding of an HDR ramp to 4×
+SDR white.
