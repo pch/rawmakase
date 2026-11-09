@@ -437,11 +437,13 @@ impl Editor {
                 // Consumed, with the modifiers held for the key, so an undo
                 // that opens Develop is not run again by Develop's keys.
                 use egui::{Key, Modifiers};
+                // Redo first: `consume_key` ignores an extra Shift, so the plain
+                // Cmd+Z pattern would also take Cmd+Shift+Z.
                 let (undo, redo) = ctx.input_mut(|i| {
-                    let undo = i.consume_key(Modifiers::COMMAND, Key::Z);
                     let redo = i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z)
                         || (!cfg!(target_os = "macos")
                             && i.consume_key(Modifiers::COMMAND, Key::Y));
+                    let undo = i.consume_key(Modifiers::COMMAND, Key::Z);
                     (undo, redo)
                 });
                 if undo {
@@ -2369,3 +2371,7 @@ mod tests {
 #[cfg(test)]
 #[path = "workspace_editor_tests.rs"]
 mod editor_tests;
+
+#[cfg(test)]
+#[path = "keys_editor_tests.rs"]
+mod keys_editor_tests;

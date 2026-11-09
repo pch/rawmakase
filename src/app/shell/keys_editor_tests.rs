@@ -1,0 +1,84 @@
+//! Editor tests of the keyboard shortcuts, driven through whole frames as a
+//! keyboard sends them: modifiers changed first, then the key pressed and
+//! released.
+use crate::app::testing::*;
+use crate::app::*;
+use eframe::egui::{Key, Modifiers, Pos2, Rect};
+
+/// Cmd on macOS, Ctrl elsewhere, as egui-winit reports it, with `extra` held too.
+fn command(extra: Modifiers) -> Modifiers {
+    Modifiers {
+        command: true,
+        mac_cmd: cfg!(target_os = "macos"),
+        ctrl: !cfg!(target_os = "macos"),
+        ..Default::default()
+    } | extra
+}
+
+/// One frame of `events` through the whole editor.
+fn frame(e: &mut Editor, events: Vec<egui::Event>) {
+    let ctx = e.context.clone();
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1200., 800.))),
+            events,
+            ..Default::default()
+        },
+        |ui| e.draw(ui),
+    );
+    output.textures_delta.clear();
+}
+
+/// A key as egui-winit sends it: `key` is what it types, `physical` where it sits.
+fn typed(key: Key, physical: Key, modifiers: Modifiers) -> Vec<egui::Event> {
+    [true, false]
+        .map(|pressed| egui::Event::Key {
+            key,
+            physical_key: Some(physical),
+            pressed,
+            repeat: false,
+            modifiers,
+        })
+        .into()
+}
+
+/// A key pressed with `modifiers` held, then released with them, in one frame.
+fn tap(e: &mut Editor, key: Key, modifiers: Modifiers) {
+    tap_typed(e, key, key, modifiers);
+}
+
+fn tap_typed(e: &mut Editor, key: Key, physical: Key, modifiers: Modifiers) {
+    let mut events = vec![egui::Event::ModifiersChanged(modifiers)];
+    events.extend(typed(key, physical, modifiers));
+    events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
+    frame(e, events);
+}
+
+fn library_editor(
+    count: usize,
+) -> anyhow::Result<(tempfile::TempDir, Editor, Vec<crate::catalog::PhotoId>)> {
+    let names: Vec<String> = (0..count).map(|i| format!("{i}.RAF")).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let (d, mut e, ids) = editor_with_catalog(&names)?;
+    e.onboarding.visible = false;
+    e.library.as_mut().unwrap().select(Some(ids[0]));
+    frame(&mut e, vec![]);
+    Ok((d, e, ids))
+}
+
+#[test]
+fn library_redo_key_redoes_rather_than_undoing() -> anyhow::Result<()> {
+    let (_d, mut e, ids) = library_editor(2)?;
+    tap(&mut e, Key::Num3, Modifiers::NONE);
+    assert_eq!(rating(&e, ids[0]), 3);
+    tap(&mut e, Key::Z, command(Modifiers::NONE));
+    assert_eq!(rating(&e, ids[0]), 0, "Cmd+Z undoes");
+    tap(&mut e, Key::Z, command(Modifiers::SHIFT));
+    assert_eq!(rating(&e, ids[0]), 3, "Cmd+Shift+Z redoes");
+    if !cfg!(target_os = "macos") {
+        tap(&mut e, Key::Z, command(Modifiers::NONE));
+        tap(&mut e, Key::Y, command(Modifiers::NONE));
+        assert_eq!(rating(&e, ids[0]), 3, "Ctrl+Y redoes");
+    }
+    Ok(())
+}
