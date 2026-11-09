@@ -414,3 +414,24 @@ fn the_hdr_readout_reads_the_region_where_the_hdr_preview_draws_it() {
     assert_eq!(reads.len(), 1);
     assert_eq!((reads[0].0, reads[0].2), (Slot::Whole, rect));
 }
+
+/// An HDR edit shown as its SDR rendition because of the display waits for the
+/// display: a Wayland display that turns HDR on wakes no idle window, so the window
+/// keeps rechecking while one is open, and only then.
+#[test]
+fn an_hdr_edit_refused_by_the_display_waits_for_it() {
+    use crate::app::shell::display::HdrDisplay;
+    let ctx = egui::Context::default();
+    let (mut e, _) = crate::app::testing::editor_with_blue_photo(&ctx, Default::default(), true);
+    e.preview.last_fit_edge = 64;
+    e.view.hdr_display = HdrDisplay::default();
+    assert!(!e.hdr_awaits_display(), "HDR is off");
+    e.document.edit.setup_mut().hdr.enabled = true;
+    assert!(e.hdr_awaits_display(), "an HDR edit on an SDR display");
+    e.view.hdr_display = HdrDisplay {
+        headroom: 4.,
+        potential: 4.,
+        float_surface: true,
+    };
+    assert!(!e.hdr_awaits_display(), "shown in HDR");
+}

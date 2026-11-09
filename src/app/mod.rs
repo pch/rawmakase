@@ -563,8 +563,10 @@ impl eframe::App for Editor {
             }
         }
         // The display's headroom follows its brightness, and nothing repaints an idle
-        // window when it moves: read it again while an HDR photo is due.
-        if self.view.hdr_shown {
+        // window when it moves: read it again while an HDR photo is due. A Wayland
+        // display that turns HDR on wakes no window either, so on Linux also while an
+        // HDR edit waits for one.
+        if self.view.hdr_shown || (cfg!(target_os = "linux") && self.hdr_awaits_display()) {
             ui.ctx()
                 .request_repaint_after(crate::app::preferences::monitor::RECHECK);
         }

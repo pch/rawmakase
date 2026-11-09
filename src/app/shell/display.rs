@@ -150,7 +150,9 @@ pub(in crate::app) fn paint(
             self.surface.prepare(self.layer);
         }
     }
-    let extended = HdrDisplay::of(frame).float_surface;
+    let extended = frame
+        .wgpu_render_state()
+        .is_some_and(|s| extended_surface(s.target_format, s.target_color_space));
     if let Some(surface) = Surface::from_window(frame) {
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
             ui.clip_rect(),
