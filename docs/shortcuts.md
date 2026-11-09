@@ -136,9 +136,11 @@ shortcut names them, so Cmd+/ works on German and French keyboards as it does on
 US one. When you capture a symbol key in Preferences, it is saved without the
 Shift or Alt you needed to type it, and as the command reads keys: a Basic
 panel key by its place, anything else by what it types. A key you write in the
-file goes by what it types too, except a digit, which goes by its place; when a
-number-row key could be either (AZERTY types `'` on the 4 key), the digit's
-command comes first.
+file is read the same way. For the Basic panel's slider commands (select the
+next or previous slider, raise or lower it) every key goes by its place, as their
+default keys do. For any other command a key goes by what it types, except a
+digit, which goes by its place; when a number-row key could be either (AZERTY
+types `'` on the 4 key), the digit's command comes first.
 
 ## macOS menu
 
