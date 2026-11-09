@@ -202,3 +202,15 @@ fn embedded(
 pub fn decode(info: &RawInfo, bytes: &[u8], cancel: Cancel<'_>) -> Result<Sensor> {
     variant::decode(info, bytes, cancel)
 }
+
+/// How much of each stored pixel of [`decode`]'s sensor data the image
+/// covers, 0 (transparent) to 255, row by row at its stored size (`width` ×
+/// `height` of [`Sensor`]), from a DNG's transparency mask: Lightroom's
+/// panoramas mark the empty corners their stitch leaves. `None` for a file
+/// without one.
+pub fn transparency(info: &RawInfo, bytes: &[u8], cancel: Cancel<'_>) -> Result<Option<Vec<u8>>> {
+    match &info.plan {
+        variant::Plan::Dng(plan) => container::dng::transparency(plan, bytes, cancel),
+        _ => Ok(None),
+    }
+}

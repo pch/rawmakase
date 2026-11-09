@@ -21,8 +21,9 @@ pub fn version() -> String {
 /// demosaic and associated lens sampling, bumped when these change the output.
 /// 2: Directional X-Trans blending, stripe chromaticity reconstruction and
 /// matching lens-CA sampling protection (#547).
+/// 3: A DNG's transparency mask renders white (a panorama's empty corners).
 pub fn developed() -> String {
-    "rawmakase-raw 2".into()
+    "rawmakase-raw 3".into()
 }
 /// Runs `work` on a thread of its own at background priority: a lower
 /// scheduling priority, and parallel work (RAWmakase's decoders) on two
@@ -297,7 +298,9 @@ impl Raw {
     /// lens profiles are `crate::photo::open`'s.
     pub fn open_file(path: &Path) -> Result<Self> {
         let (own, h) = own::Own::open(path)?;
-        Self::of(own, h)
+        let mut raw = Self::of(own, h)?;
+        raw.metadata.coverage = raw.own.coverage().map(std::sync::Arc::new);
+        Ok(raw)
     }
     /// The photo's facts from its header alone, read in pieces without its
     /// sensor data, for its metadata only: crate-private, as such a `Raw` must
@@ -375,6 +378,7 @@ impl Raw {
             lens_profiles: Default::default(),
             lateral_ca: Default::default(),
             embedded_dcp: None,
+            coverage: None,
             levels: h.levels,
             make: h.make,
             model: h.model,

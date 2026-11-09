@@ -3,7 +3,10 @@
 //! straight into the develop stage's input.
 use super::sampling;
 use super::{Processor, develop::DeviceSamples};
-use crate::{camera_data::CameraImage, develop::stage_cache::SampleKey};
+use crate::{
+    camera_data::{CameraImage, Coverage},
+    develop::stage_cache::SampleKey,
+};
 use anyhow::{Result, ensure};
 use rawmakase_cancel::Cancel;
 use std::sync::Arc;
@@ -16,6 +19,9 @@ pub(super) struct Resident {
     /// sample_region, with its layout.
     pipelines: Vec<(wgpu::BindGroupLayout, wgpu::ComputePipeline)>,
     photo: Option<(Arc<CameraImage>, wgpu::Buffer)>,
+    /// The photo's transparency mask, four values to a `u32`, kept by the mask
+    /// it was made of: a pyramid level shares the photo's.
+    coverage: Option<(Arc<Coverage>, wgpu::Buffer)>,
     pub(super) samples: Vec<(SampleKey, Arc<DeviceSamples>)>,
     /// The other image's state (Fit renders a pyramid level, 100% the photo), so
     /// switching views does not upload again.
@@ -73,6 +79,7 @@ impl Resident {
             "sample_region",
             vec![
                 storage(10, true),
+                storage(11, true),
                 storage(12, true),
                 storage(14, false),
                 storage(15, false),
@@ -89,12 +96,14 @@ impl Resident {
         Self {
             pipelines,
             photo: None,
+            coverage: None,
             samples: Vec::new(),
             parked: None,
         }
     }
     fn release(&mut self) {
         self.photo = None;
+        self.coverage = None;
         self.samples.clear();
         self.parked = None;
     }
@@ -165,7 +174,52 @@ impl Processor {
         // Four values per pixel, the limit this path has always kept to (the photo's
         // buffer holds three).
         let bytes = image.pixels.len() as u64 * 16;
-        bytes <= limits.max_storage_buffer_binding_size && bytes <= limits.max_buffer_size
+        let mask = image
+            .metadata
+            .coverage
+            .as_ref()
+            .map_or(0, |c| c.values.len() as u64);
+        bytes <= limits.max_storage_buffer_binding_size
+            && bytes <= limits.max_buffer_size
+            && mask <= limits.max_storage_buffer_binding_size
+    }
+    /// The buffer of `image`'s transparency mask, uploaded once while it stays
+    /// the photo's; a small empty one for a photo without one, which the shader
+    /// never reads (`S_COVERAGE` is 0).
+    fn coverage(&mut self, image: &CameraImage) -> wgpu::Buffer {
+        let device = self.device.clone();
+        let resident = self.resident();
+        let Some(mask) = &image.metadata.coverage else {
+            // Another photo's mask need not stay alive.
+            resident.coverage = None;
+            return device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("No transparency mask"),
+                size: 16,
+                usage: wgpu::BufferUsages::STORAGE,
+                mapped_at_creation: false,
+            });
+        };
+        if let Some((kept, buffer)) = &resident.coverage
+            && Arc::ptr_eq(kept, mask)
+        {
+            return buffer.clone();
+        }
+        let packed: Vec<u32> = mask
+            .values
+            .chunks(4)
+            .map(|c| {
+                let mut b = [0u8; 4];
+                b[..c.len()].copy_from_slice(c);
+                u32::from_le_bytes(b)
+            })
+            .collect();
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Transparency mask"),
+            contents: bytemuck::cast_slice(&packed),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        resident.coverage = Some((mask.clone(), buffer.clone()));
+        buffer
     }
     /// The photo's buffer, uploaded once while it stays the current photo.
     fn photo(&mut self, image: &Arc<CameraImage>) -> wgpu::Buffer {
@@ -230,9 +284,14 @@ impl Processor {
             resident.samples.insert(0, entry);
             return Ok(samples);
         }
+        let coverage = self.coverage(image);
         let device = self.device.clone();
         params[sampling::WIDTH.start] = image.width as f32;
         params[sampling::HEIGHT.start] = image.height as f32;
+        if let Some(c) = &image.metadata.coverage {
+            params[sampling::COVERAGE.start] = c.width as f32;
+            params[sampling::COVERAGE.start + 1] = c.height as f32;
+        }
         let (gx, gy) = groups(&device, n);
         params[sampling::COUNT.start] = gx as f32;
         let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -255,6 +314,7 @@ impl Processor {
             layout,
             &[
                 (10, &photo),
+                (11, &coverage),
                 (12, &params),
                 (14, &samples.pixels),
                 (15, &samples.positions),

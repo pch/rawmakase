@@ -51,6 +51,25 @@ impl Own {
             rawmakase_raw::PreviewSpace::AdobeRgb => super::MakerPreviewSpace::AdobeRgb,
         })
     }
+    /// Where the image is empty, from a DNG's transparency mask, over the
+    /// visible area development reads (see [`rawmakase_raw::transparency`]);
+    /// `None` for a file without one, or whose mask can't be read, which then
+    /// opens as before.
+    pub(super) fn coverage(&self) -> Option<rawmakase_model::camera_data::Coverage> {
+        let stored = rawmakase_raw::transparency(&self.info, &self.bytes, Cancel::NEVER)
+            .ok()
+            .flatten()?;
+        let [left, top] = self.info.margins.map(|v| v as usize);
+        let (w, h) = (self.info.width as usize, self.info.height as usize);
+        let stride = self.info.raw_width as usize;
+        let rows = stored.chunks(stride.max(1));
+        let values: Vec<u8> = rows
+            .skip(top)
+            .take(h)
+            .flat_map(|row| row.get(left..left + w).unwrap_or_default().iter().copied())
+            .collect();
+        rawmakase_model::camera_data::Coverage::new(w as u32, h as u32, values)
+    }
     pub(super) fn thumbnail(&self) -> Result<Vec<u8>> {
         Ok(rawmakase_raw::preview(&self.info, &self.bytes)?.to_vec())
     }

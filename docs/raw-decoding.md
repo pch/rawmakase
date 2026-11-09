@@ -260,6 +260,18 @@ codestream's 0–1 times 2^bits − 1. A tile larger than the DNG's tile, or a
 lossy one declared other than RGB with a D65 white, linear or on sRGB's
 curve, is refused; a lossless one is taken as stored.
 
+A DNG's transparency mask (DNG 1.4: the directory of NewSubFileType bit 2 and
+PhotometricInterpretation 4, which Lightroom writes for a panorama whose stitch
+leaves empty corners, as lossless JPEG XL tiles) is read beside the image when
+the file opens (`rawmakase_raw::transparency`), for a mask of one 8- or 16-bit
+sample a pixel at the image's size, stored in a way the image's decoders read;
+another is passed over and the image opens as before. Over the visible area it
+is the metadata's `coverage`, read again on open and not saved, so a decode
+cache hit has it too. Rendering shows white where the nearest mask pixel is
+less than half covered, as Lightroom does and as for an area a transform leaves
+uncovered (see [Transform](transform.md)): the empty corners hold whatever the
+writer filled them with, smeared edge pixels in Lightroom's.
+
 Linear raw in separate planes or of floating-point samples under Adobe's
 predictor (measured on HDRMerge's mosaics only), DNGs of interleaved rows or
 columns (RowInterleaveFactor or ColumnInterleaveFactor over 1) and Adobe's lossy linear DNGs
