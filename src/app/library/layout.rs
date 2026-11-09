@@ -1,8 +1,11 @@
-//! The Library's layout kept across launches: its view, filter bar, sort,
-//! grid and whether folders show their subfolders' photos (see `app::preferences::session::LibraryLayout`). Each setting is saved under a
-//! stable key, so renaming one in the interface keeps what was saved.
+//! The Library's layout kept across launches and when the catalog is read
+//! again: its view, filter bar (with the Metadata filter's choices, strip and
+//! columns), sort, grid and whether folders show their subfolders' photos
+//! (see [`LibraryLayout`]). Each setting is saved under a stable key, so
+//! renaming one in the interface keeps what was saved.
 use super::Library;
 use super::cell::Style;
+use super::facets::Attribute;
 use super::filter::{Kind, Label, RatingOp};
 use super::sort::Sort;
 use super::views::View;
@@ -112,6 +115,21 @@ impl Library {
             kind: filters.kind.key().into(),
             filters_off: !filters.enabled,
             subfolders_hidden: !self.subfolders_shown,
+            metadata: filters
+                .metadata
+                .iter()
+                .filter(|(_, chosen)| !chosen.is_empty())
+                .map(|(attribute, chosen)| {
+                    (attribute.key().into(), chosen.iter().cloned().collect())
+                })
+                .collect(),
+            metadata_strip: self.metadata_bar.open,
+            metadata_columns: self
+                .metadata_bar
+                .columns()
+                .iter()
+                .map(|a| a.key().into())
+                .collect(),
         }
     }
     /// Returns to a layout kept from last time, after the source and
@@ -132,6 +150,17 @@ impl Library {
         filters.labels = layout.labels.iter().map(|l| label_from_key(l)).collect();
         filters.kind = Kind::from_key(&layout.kind);
         filters.enabled = !layout.filters_off;
+        // An attribute this version doesn't know is left out.
+        filters.metadata = layout
+            .metadata
+            .iter()
+            .filter_map(|(key, chosen)| {
+                let chosen: std::collections::BTreeSet<_> = chosen.iter().cloned().collect();
+                Some((Attribute::from_key(key)?, chosen)).filter(|(_, c)| !c.is_empty())
+            })
+            .collect();
+        self.metadata_bar.open = layout.metadata_strip;
+        self.metadata_bar.set_columns(&layout.metadata_columns);
         self.cell_style = Style::from_key(&layout.cell_style);
         if let Some(size) = layout.thumb_size.filter(|s| (110. ..=360.).contains(s)) {
             self.thumb_size = size;

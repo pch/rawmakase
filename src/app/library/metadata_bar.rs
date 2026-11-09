@@ -30,7 +30,9 @@ const COLUMN_WIDTH: f32 = 190.;
 /// The width of a bar button's list.
 const POPUP_WIDTH: f32 = 260.;
 
-/// The strip and the lists' Find fields, kept while RAWmakase runs.
+/// The strip and the lists' Find fields. Whether the strip shows and its
+/// columns are saved with the layout; the Find fields last while RAWmakase
+/// runs.
 pub(super) struct MetadataBar {
     /// Whether the strip shows.
     pub open: bool,
@@ -55,6 +57,25 @@ impl Default for MetadataBar {
             find: HashMap::new(),
             focus_find: None,
         }
+    }
+}
+
+impl MetadataBar {
+    /// Each strip column's attribute, left to right.
+    pub(super) fn columns(&self) -> [Attribute; 4] {
+        self.columns
+    }
+    /// The strip's columns as a saved layout names them; the default ones
+    /// unless it names four attributes this version knows.
+    pub(super) fn set_columns(&mut self, keys: &[String]) {
+        let columns: Option<Vec<Attribute>> = keys.iter().map(|k| Attribute::from_key(k)).collect();
+        self.columns = columns
+            .and_then(|c| c.try_into().ok())
+            .unwrap_or(Self::default().columns);
+    }
+    #[cfg(test)]
+    pub(super) fn set_column(&mut self, column: usize, attribute: Attribute) {
+        self.columns[column] = attribute;
     }
 }
 

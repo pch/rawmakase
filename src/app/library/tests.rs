@@ -1625,6 +1625,51 @@ fn the_metadata_filter_follows_info_saved_later_and_keeps_its_choices() -> Resul
     Ok(())
 }
 #[test]
+fn the_metadata_filter_and_strip_come_back_with_the_layout() -> Result<()> {
+    use super::facets::Attribute;
+    let (_directory, mut library) = library_of(&["a.RAF", "b.RAF"])?;
+    let value = |v: &str| Some(v.to_string());
+    library
+        .filters
+        .metadata
+        .insert(Attribute::Camera, [value("X-T5"), None].into());
+    library
+        .filters
+        .metadata
+        .insert(Attribute::Keyword, [value("Washington, D.C.")].into());
+    library.metadata_bar.open = true;
+    library.metadata_bar.set_column(1, Attribute::Iso);
+    // A Library read again, as after a folder sync, or at the next launch.
+    let saved: crate::app::preferences::session::LibraryLayout =
+        serde_json::from_str(&serde_json::to_string(&library.layout())?)?;
+    let (_other, mut restored) = library_of(&["a.RAF", "b.RAF"])?;
+    restored.apply_layout(&saved);
+    assert_eq!(restored.filters.metadata, library.filters.metadata);
+    assert!(restored.metadata_bar.open);
+    assert_eq!(
+        restored.metadata_bar.columns(),
+        [
+            Attribute::Camera,
+            Attribute::Iso,
+            Attribute::FocalLength,
+            Attribute::Keyword
+        ]
+    );
+    // A layout from before the filter, or naming an attribute this version
+    // doesn't know, keeps the default columns and chooses nothing.
+    let old: crate::app::preferences::session::LibraryLayout = serde_json::from_str(
+        r#"{"metadata": {"location": ["Kraków"]}, "metadata_columns": ["camera", "location"]}"#,
+    )?;
+    restored.apply_layout(&old);
+    assert!(restored.filters.metadata.is_empty());
+    assert!(!restored.metadata_bar.open);
+    assert_eq!(
+        restored.metadata_bar.columns(),
+        super::metadata_bar::MetadataBar::default().columns()
+    );
+    Ok(())
+}
+#[test]
 fn the_search_finds_camera_and_lens() -> Result<()> {
     use crate::metadata::PhotoInfo;
     let (_directory, mut library) = library_of(&["a.RAF", "b.RAF"])?;
