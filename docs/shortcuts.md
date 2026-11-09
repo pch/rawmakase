@@ -147,9 +147,10 @@ types `'` on the 4 key), the digit's command comes first.
 The menu bar shows a command's key when it holds Cmd, every place the command
 works has it, and no other command shares it: Preferences… (Cmd+,), Export…
 (Cmd+Shift+E, the Library's and Develop's) and Keyboard Shortcuts (Cmd+/) by
-default, and whatever you give them. The item then waits whenever the key itself
-wouldn't run the command, as while you type in a field, a menu is open or a
-control has the focus. Plain keys aren't shown in the menu but work as listed.
+default, and whatever you give them. An item on a key you gave it waits
+whenever the key itself wouldn't run the command, as while you type in a field,
+a menu is open or a control has the focus. An item still on its own menu key
+(Cmd+Shift+E, Cmd+, or Cmd+/) works as it always has, while you type too. Plain keys aren't shown in the menu but work as listed.
 The File menu's Open Catalog…, Add Folder… and Close Window and the Edit menu's
 Undo, Redo, Cut, Copy, Paste and Select All keep their keys.
 
