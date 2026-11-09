@@ -127,14 +127,16 @@ impl Editor {
         if shortcut.is_some() {
             self.finish_wheel_gesture();
         }
-        if let Some((edit, advance)) = shortcut {
-            if self.library.is_some()
-                && let Err(error) = self.command_metadata(edit, None, advance)
-            {
-                self.messages
-                    .fail(format!("Metadata could not be saved: {}", error.message));
-            }
-        } else if self.module == Module::Library
+        if let Some((edit, advance)) = shortcut
+            && self.library.is_some()
+            && let Err(error) = self.command_metadata(edit, None, advance)
+        {
+            self.messages
+                .fail(format!("Metadata could not be saved: {}", error.message));
+        }
+        // The frame's other keys still move and select: no selection key is
+        // also a metadata key.
+        if self.module == Module::Library
             && let Some(library) = &mut self.library
         {
             library.selection_keys(ctx);

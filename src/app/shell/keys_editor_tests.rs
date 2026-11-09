@@ -82,3 +82,17 @@ fn library_redo_key_redoes_rather_than_undoing() -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn a_rating_key_leaves_the_frames_other_library_keys_working() -> anyhow::Result<()> {
+    let (_d, mut e, ids) = library_editor(3)?;
+    let next = e.library.as_ref().unwrap().navigate(ids[0], 1);
+    assert!(next.is_some());
+    // A rating and a move arriving in one frame, as a fast typist sends them.
+    let mut events = typed(Key::Num3, Key::Num3, Modifiers::NONE);
+    events.extend(typed(Key::ArrowRight, Key::ArrowRight, Modifiers::NONE));
+    frame(&mut e, events);
+    assert_eq!(rating(&e, ids[0]), 3);
+    assert_eq!(e.library.as_ref().unwrap().selected(), next);
+    Ok(())
+}
