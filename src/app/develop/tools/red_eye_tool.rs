@@ -313,13 +313,13 @@ impl Editor {
     /// corrects within, as they size the Remove brush.
     pub(in crate::app) fn red_eye_keys(&mut self, i: &egui::InputState) {
         use egui::Key;
-        if i.modifiers.command || i.modifiers.alt {
-            return;
-        }
-        if i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace) {
+        // Each key with the modifiers held for it.
+        let pressed = |keys: &[Key]| {
+            crate::app::shell::key_match::press(i, keys, |m| !m.command && !m.alt).is_some()
+        };
+        if pressed(&[Key::Delete, Key::Backspace]) {
             self.delete_red_eye();
         }
-        let pressed = |keys: &[Key]| keys.iter().any(|k| i.key_pressed(*k));
         if pressed(&[Key::OpenBracket, Key::OpenCurlyBracket]) {
             self.view.red_eye.resize(SizeStep::Smaller);
         }

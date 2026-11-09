@@ -8,7 +8,7 @@
 //! matched by its place as well as by what it types could run two shortcuts at
 //! once: Dvorak's `U` key types G, which once unflagged the photo and went to the
 //! grid.
-use eframe::egui::Key;
+use eframe::egui::{InputState, Key, Modifiers};
 
 /// The key a press with `key` typed at `physical` stands for: the digit of a
 /// number-row key, otherwise the typed key.
@@ -30,6 +30,45 @@ pub(in crate::app) fn is_digit(key: Key) -> bool {
             | Key::Num8
             | Key::Num9
     )
+}
+
+/// The modifiers held for a press of one of `keys` this frame whose own
+/// modifiers pass `want`, repeats included (as `InputState::key_pressed` counts
+/// them). A shortcut reads the modifiers held for its key, not the frame's: a
+/// quick Cmd+Shift+R can release both before the frame ends.
+pub(in crate::app) fn press(
+    i: &InputState,
+    keys: &[Key],
+    want: impl Fn(Modifiers) -> bool,
+) -> Option<Modifiers> {
+    presses(i, keys, true, want)
+}
+
+/// As [`press`], without repeats: a held key acts once.
+pub(in crate::app) fn fresh_press(
+    i: &InputState,
+    keys: &[Key],
+    want: impl Fn(Modifiers) -> bool,
+) -> Option<Modifiers> {
+    presses(i, keys, false, want)
+}
+
+fn presses(
+    i: &InputState,
+    keys: &[Key],
+    repeats: bool,
+    want: impl Fn(Modifiers) -> bool,
+) -> Option<Modifiers> {
+    i.events.iter().find_map(|event| match event {
+        eframe::egui::Event::Key {
+            key,
+            pressed: true,
+            repeat,
+            modifiers,
+            ..
+        } if keys.contains(key) && (repeats || !repeat) && want(*modifiers) => Some(*modifiers),
+        _ => None,
+    })
 }
 
 #[cfg(test)]

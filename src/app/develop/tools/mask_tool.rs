@@ -279,27 +279,29 @@ impl Editor {
     /// removes the selected mask, `/` switches between brushes A and B.
     pub(in crate::app) fn mask_keys(&mut self, i: &egui::InputState) {
         use egui::Key;
-        if i.modifiers.command || i.modifiers.alt || self.view.masking.renaming.is_some() {
+        if self.view.masking.renaming.is_some() {
             return;
         }
-        let pressed = |keys: &[Key]| keys.iter().any(|k| i.key_pressed(*k));
+        // Each key with the modifiers held for it.
+        let press =
+            |keys: &[Key]| crate::app::shell::key_match::press(i, keys, |m| !m.command && !m.alt);
         let t = &mut self.view.masking;
         let brush = &mut t.brushes[t.brush];
-        if pressed(&[Key::OpenBracket, Key::OpenCurlyBracket]) {
-            if i.modifiers.shift {
+        if let Some(m) = press(&[Key::OpenBracket, Key::OpenCurlyBracket]) {
+            if m.shift {
                 brush.feather = (brush.feather - 0.1).max(0.);
             } else {
                 brush.size = (brush.size / 1.15).max(0.002);
             }
         }
-        if pressed(&[Key::CloseBracket, Key::CloseCurlyBracket]) {
-            if i.modifiers.shift {
+        if let Some(m) = press(&[Key::CloseBracket, Key::CloseCurlyBracket]) {
+            if m.shift {
                 brush.feather = (brush.feather + 0.1).min(1.);
             } else {
                 brush.size = (brush.size * 1.15).min(0.5);
             }
         }
-        if pressed(&[Key::Escape]) {
+        if press(&[Key::Escape]).is_some() {
             // First Escape stops aiming; the next closes Masking.
             if self.selection.prompting.is_some() {
                 self.selection.end_prompting();
@@ -310,13 +312,13 @@ impl Editor {
             }
             return;
         }
-        if pressed(&[Key::O]) && !i.modifiers.shift {
+        if press(&[Key::O]).is_some_and(|m| !m.shift) {
             t.overlay ^= true;
         }
-        if pressed(&[Key::Slash, Key::Questionmark]) {
+        if press(&[Key::Slash, Key::Questionmark]).is_some() {
             t.brush = if t.brush == 0 { 1 } else { 0 };
         }
-        if pressed(&[Key::Delete, Key::Backspace])
+        if press(&[Key::Delete, Key::Backspace]).is_some()
             && let Some(m) = self.selected_mask()
         {
             self.document.edit.recipe_mut().masks.remove(m);

@@ -124,3 +124,54 @@ fn f_typed_on_the_y_key_hides_the_chrome_without_comparing() {
     assert!(e.chrome.hidden(e.module));
     assert!(e.view.compare == compare, "F@Y is no Before/After");
 }
+
+fn develop_editor() -> Editor {
+    let ctx = egui::Context::default();
+    let (mut e, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    e.onboarding.visible = false;
+    frame(&mut e, vec![]);
+    e
+}
+
+#[test]
+fn develop_keys_read_the_modifiers_held_for_them() {
+    use crate::app::develop::state::Tool;
+    // Each tap releases its modifiers within the frame, as a quick hand does.
+    let mut e = develop_editor();
+    tap(&mut e, Key::W, Modifiers::SHIFT);
+    assert!(e.view.is(Tool::Mask), "Shift+W opens Masking");
+    tap(&mut e, Key::W, Modifiers::SHIFT);
+    tap(&mut e, Key::T, Modifiers::SHIFT);
+    assert!(e.view.is(Tool::Guided), "Shift+T opens Guided Upright");
+    tap(&mut e, Key::T, Modifiers::SHIFT);
+    tap(&mut e, Key::R, Modifiers::SHIFT);
+    assert!(
+        !e.view.is(Tool::Crop),
+        "Shift+R is Reference View, not Crop"
+    );
+    tap(&mut e, Key::Q, Modifiers::NONE);
+    assert!(e.view.is(Tool::Remove));
+    let (size, feather) = (e.view.retouch.size, e.view.retouch.feather);
+    let key = if feather > 0. {
+        Key::OpenBracket
+    } else {
+        Key::CloseBracket
+    };
+    tap(&mut e, key, Modifiers::SHIFT);
+    assert_eq!(e.view.retouch.size, size, "Shift+bracket is not the size");
+    assert!(e.view.retouch.feather != feather, "Shift+bracket feathers");
+}
+
+#[test]
+fn a_virtual_copy_is_made_with_the_command_held_for_its_key() -> anyhow::Result<()> {
+    let (_d, mut e, _) = library_editor(1)?;
+    let count = |e: &Editor| e.library.as_ref().unwrap().session.photos().len();
+    let before = count(&e);
+    tap(&mut e, Key::Quote, command(Modifiers::NONE));
+    assert_eq!(count(&e), before + 1);
+    Ok(())
+}

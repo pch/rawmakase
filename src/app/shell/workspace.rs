@@ -473,18 +473,8 @@ impl Editor {
             // Lightroom's Create Virtual Copy, in Library and Develop.
             // Only the first key-down: a held key must not make copy after copy.
             let create = ctx.input(|i| {
-                i.modifiers.command
-                    && i.events.iter().any(|e| {
-                        matches!(
-                            e,
-                            egui::Event::Key {
-                                key: egui::Key::Quote,
-                                pressed: true,
-                                repeat: false,
-                                ..
-                            }
-                        )
-                    })
+                crate::app::shell::key_match::fresh_press(i, &[egui::Key::Quote], |m| m.command)
+                    .is_some()
             });
             if create {
                 let id = if self.module == Module::Library {
@@ -1425,54 +1415,44 @@ impl Editor {
         if !self.activity.is_busy() && !ctx.text_edit_focused() {
             self.zoom_keys(ctx);
             self.develop_delete_key(ctx);
-            let (copy, paste, previous, treatment);
-            let mut reset = false;
-            let mut sync = false;
-            let mut match_exposures = false;
-            let mut new_preset = false;
-            let mut auto = false;
+            let (copy, paste, previous, treatment, reset, sync, match_exposures);
+            let (new_preset, auto, export, transfer);
             let mut select_all = false;
             let mut select_none = false;
-            let mut export = None;
-            let mut transfer = None;
             let mut targeted = None;
             {
                 // A copy: `ctx.input` holds the context's lock, and a shortcut that
                 // opens a photo uploads a texture, which waits for it forever.
                 let i = &ctx.input(|i| i.clone());
+                // Every key is read with the modifiers held for it, not the frame's,
+                // which a quick shortcut can release before the frame ends.
+                use crate::app::shell::key_match::{fresh_press, press};
+                use egui::Key;
+                let all = |m: egui::Modifiers| m.command && m.alt && m.shift;
                 // Lightroom's Copy After's Settings to Before (←), Copy Before's to
                 // After (→) and Swap (↑), with Cmd+Option+Shift.
-                let m = i.modifiers;
-                if m.command && m.alt && m.shift {
+                {
                     use crate::app::develop::before_after::Transfer;
                     transfer = [
-                        (egui::Key::ArrowLeft, Transfer::AfterToBefore),
-                        (egui::Key::ArrowRight, Transfer::BeforeToAfter),
-                        (egui::Key::ArrowUp, Transfer::Swap),
+                        (Key::ArrowLeft, Transfer::AfterToBefore),
+                        (Key::ArrowRight, Transfer::BeforeToAfter),
+                        (Key::ArrowUp, Transfer::Swap),
                     ]
                     .into_iter()
-                    .find(|(key, _)| i.key_pressed(*key))
+                    .find(|(key, _)| press(i, &[*key], all).is_some())
                     .map(|(_, t)| t);
-                } else if i.key_pressed(egui::Key::ArrowRight) {
-                    self.navigate(1);
-                } else if i.key_pressed(egui::Key::ArrowLeft) {
-                    self.navigate(-1);
+                }
+                if transfer.is_none() {
+                    if press(i, &[Key::ArrowRight], |m| !all(m)).is_some() {
+                        self.navigate(1);
+                    } else if press(i, &[Key::ArrowLeft], |m| !all(m)).is_some() {
+                        self.navigate(-1);
+                    }
                 }
                 // Y: Before/After left and right, Option+Y top and bottom, Shift+Y
                 // split. By what the key types: egui-winit gives the key's place when
                 // Option types a character it can't name (`key_match`).
-                let y = i.events.iter().any(|event| {
-                    matches!(
-                        event,
-                        egui::Event::Key {
-                            key: egui::Key::Y,
-                            pressed: true,
-                            repeat: false,
-                            ..
-                        }
-                    )
-                });
-                if y && !m.command {
+                if let Some(m) = fresh_press(i, &[Key::Y], |m| !m.command) {
                     use crate::app::develop::before_after::{Axis, Compare};
                     let view = if m.alt {
                         Compare::SideBySide(Axis::TopBottom)
@@ -1500,56 +1480,29 @@ impl Editor {
                         if modifiers.command && modifiers.alt && !modifiers.shift)
                 });
                 // Lightroom's Match Total Exposures.
-                let m = i.events.iter().any(|event| {
-                    matches!(
-                        event,
-                        egui::Event::Key {
-                            key: egui::Key::M,
-                            pressed: true,
-                            repeat: false,
-                            ..
-                        }
-                    )
-                });
-                if m && i.modifiers.command && i.modifiers.shift && i.modifiers.alt {
-                    match_exposures = true;
-                }
+                match_exposures = fresh_press(i, &[Key::M], all).is_some();
                 // Lightroom's New Develop Preset.
-                if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::N) {
-                    new_preset = true;
-                }
+                new_preset = press(i, &[Key::N], |m| m.command && m.shift).is_some();
                 // Lightroom's Targeted Adjustment Tools: Cmd+Option+Shift and T (Tone
                 // Curve), H, S, L (the Color Mixer's Hue, Saturation, Luminance) or G
                 // (B&W).
-                if i.modifiers.command && i.modifiers.alt && i.modifiers.shift {
+                {
                     use crate::develop::targeted::{HslChannel, Target};
                     for (key, target) in [
-                        (egui::Key::T, Target::ToneCurve),
-                        (egui::Key::H, Target::Hsl(HslChannel::Hue)),
-                        (egui::Key::S, Target::Hsl(HslChannel::Saturation)),
-                        (egui::Key::L, Target::Hsl(HslChannel::Luminance)),
-                        (egui::Key::G, Target::BlackWhite),
+                        (Key::T, Target::ToneCurve),
+                        (Key::H, Target::Hsl(HslChannel::Hue)),
+                        (Key::S, Target::Hsl(HslChannel::Saturation)),
+                        (Key::L, Target::Hsl(HslChannel::Luminance)),
+                        (Key::G, Target::BlackWhite),
                     ] {
-                        let pressed = i.events.iter().any(|event| {
-                            matches!(event, egui::Event::Key { key: k, pressed: true, repeat: false, .. }
-                                if *k == key)
-                        });
-                        if pressed {
+                        if fresh_press(i, &[key], all).is_some() {
                             targeted = Some(target);
                         }
                     }
                 }
                 // Lightroom's Sync Settings.
-                if i.modifiers.command
-                    && i.modifiers.shift
-                    && !i.modifiers.alt
-                    && i.key_pressed(egui::Key::S)
-                {
-                    sync = true;
-                }
-                if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::R) {
-                    reset = true;
-                }
+                sync = press(i, &[Key::S], |m| m.command && m.shift && !m.alt).is_some();
+                reset = press(i, &[Key::R], |m| m.command && m.shift).is_some();
                 // Lightroom's Convert to Black & White.
                 // Once per press: holding V does not flip it back and forth. With the
                 // key's own modifiers: Shift+Cmd+V released in the same frame pastes.
@@ -1558,25 +1511,10 @@ impl Editor {
                         if !modifiers.any())
                 });
                 // Lightroom's Auto Settings.
-                if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::U) {
-                    auto = true;
-                }
+                auto = press(i, &[Key::U], |m| m.command && m.shift).is_some();
                 // Shift+Cmd+E exports, Option+Shift+Cmd+E exports with the previous
                 // choices.
-                let e = i.events.iter().any(|event| {
-                    matches!(
-                        event,
-                        egui::Event::Key {
-                            key: egui::Key::E,
-                            pressed: true,
-                            repeat: false,
-                            ..
-                        }
-                    )
-                });
-                if e && i.modifiers.command && i.modifiers.shift {
-                    export = Some(i.modifiers.alt);
-                }
+                export = fresh_press(i, &[Key::E], |m| m.command && m.shift).map(|m| m.alt);
                 // Lightroom's Select All, as in the Library grid: every photo in
                 // the filmstrip joins the selection so Sync reaches them all. Read
                 // from the event, whose modifiers are those held for the press,
@@ -1595,17 +1533,15 @@ impl Editor {
                     select_none = true;
                 }
                 // Cmd+Z / Cmd+Shift+Z on macOS, Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y elsewhere.
-                if i.modifiers.command && i.key_pressed(egui::Key::Z) {
-                    if i.modifiers.shift {
+                if let Some(m) = press(i, &[Key::Z], |m| m.command) {
+                    if m.shift {
                         self.redo();
                     } else {
                         self.undo();
                     }
                 }
                 if !cfg!(target_os = "macos")
-                    && i.modifiers.command
-                    && !i.modifiers.shift
-                    && i.key_pressed(egui::Key::Y)
+                    && press(i, &[Key::Y], |m| m.command && !m.shift).is_some()
                 {
                     self.redo();
                 }
@@ -1615,14 +1551,10 @@ impl Editor {
                     matches!(event, egui::Event::Key { key: egui::Key::C, pressed: true, modifiers, .. }
                         if !modifiers.command)
                 });
-                if c || i.key_pressed(egui::Key::R) && !i.modifiers.shift && !i.modifiers.command {
+                if c || press(i, &[Key::R], |m| !m.shift && !m.command).is_some() {
                     self.view.toggle(Tool::Crop);
                 }
-                if i.key_pressed(egui::Key::R)
-                    && i.modifiers.shift
-                    && !i.modifiers.command
-                    && !i.modifiers.alt
-                {
+                if press(i, &[Key::R], |m| m.shift && !m.command && !m.alt).is_some() {
                     self.toggle_reference_view();
                 }
                 // Lightroom's I: the photo info overlay, Info 1, Info 2 or off.
@@ -1636,14 +1568,15 @@ impl Editor {
                     library.cycle_loupe_info();
                 }
                 // Shift+J makes a colour range mask, below.
-                if i.key_pressed(egui::Key::J) && !i.modifiers.any() {
+                if press(i, &[Key::J], |m| !m.any()).is_some() {
                     self.view.clipping.toggle_both();
                 }
                 // Shift+\\ arrives as | on most layouts.
-                let backslash = i.key_pressed(egui::Key::Backslash);
-                if i.key_pressed(egui::Key::Pipe) || (backslash && i.modifiers.shift) {
+                let backslash = press(i, &[Key::Backslash], |_| true);
+                if press(i, &[Key::Pipe], |_| true).is_some() || backslash.is_some_and(|m| m.shift)
+                {
                     self.toggle_camera_thumbnail();
-                } else if backslash {
+                } else if backslash.is_some() {
                     let view = self
                         .view
                         .compare
@@ -1655,16 +1588,16 @@ impl Editor {
                 {
                     self.view.tool = Tool::None;
                 }
-                if i.key_pressed(egui::Key::W) && !i.modifiers.any() {
+                if press(i, &[Key::W], |m| !m.any()).is_some() {
                     self.view.toggle(Tool::WhiteBalance);
                 }
-                if i.key_pressed(egui::Key::Q) && !i.modifiers.any() {
+                if press(i, &[Key::Q], |m| !m.any()).is_some() {
                     self.view.toggle(Tool::Remove);
                 }
-                if i.key_pressed(egui::Key::W) && i.modifiers.shift && !i.modifiers.command {
+                if press(i, &[Key::W], |m| m.shift && !m.command).is_some() {
                     self.view.toggle(Tool::Mask);
                 }
-                if i.key_pressed(egui::Key::T) && i.modifiers.shift && !i.modifiers.command {
+                if press(i, &[Key::T], |m| m.shift && !m.command).is_some() {
                     self.toggle_guided_tool();
                 }
                 // egui lets go of a text field on Escape before this runs; a mask's
@@ -1688,17 +1621,14 @@ impl Editor {
                     self.guided_keys(i);
                 }
                 // New masks: K brush, M linear, Shift+M radial, Shift+J colour range.
-                if !i.modifiers.command && !i.modifiers.alt {
+                {
                     use crate::app::develop::tools::mask_tool::Kind;
-                    let kind = if i.key_pressed(egui::Key::K) && !i.modifiers.shift {
+                    let plain = |m: egui::Modifiers| !m.command && !m.alt;
+                    let kind = if press(i, &[Key::K], |m| plain(m) && !m.shift).is_some() {
                         Some(Kind::Brush)
-                    } else if i.key_pressed(egui::Key::M) {
-                        Some(if i.modifiers.shift {
-                            Kind::Radial
-                        } else {
-                            Kind::Linear
-                        })
-                    } else if i.key_pressed(egui::Key::J) && i.modifiers.shift {
+                    } else if let Some(m) = press(i, &[Key::M], plain) {
+                        Some(if m.shift { Kind::Radial } else { Kind::Linear })
+                    } else if press(i, &[Key::J], |m| plain(m) && m.shift).is_some() {
                         Some(Kind::Color)
                     } else {
                         None
