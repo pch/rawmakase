@@ -67,6 +67,29 @@ impl HdrPointCurve {
     }
 }
 
+/// Levels (RAWmakase's black point, white point and midtone, which Camera Raw doesn't
+/// have) on the encoded value `e` in HDR, rendered as Camera Raw renders a point curve
+/// of the same shape ([`HdrPointCurve`]): as in SDR up to white, and along its slope
+/// at white above it. That slope is 0 when the white point is below white, as a point
+/// curve that reaches white early stays near it, and `1 / (midtone (1 − black))`
+/// otherwise.
+pub fn levels(e: f32, black: f32, white: f32, midtone: f32) -> f32 {
+    let sdr = |e: f32| {
+        ((e - black) / (white - black))
+            .clamp(0., 1.)
+            .powf(1. / midtone)
+    };
+    if e <= 1. {
+        return sdr(e);
+    }
+    let slope = if white < 1. {
+        0.
+    } else {
+        1. / (midtone * (1. - black))
+    };
+    sdr(1.) + slope * (e - 1.)
+}
+
 /// The parametric curve's HDR rendering of the encoded value `e`, given the curve
 /// `curve` over 0–1 as SDR applies it: the curve laid over 0 to
 /// [`encode`]`(`[`PARAMETRIC_TOP`]`)`, and `e` itself above that.
@@ -204,6 +227,24 @@ mod tests {
             natural: false,
         };
         assert_eq!(linear.end_slope(), 1.5);
+    }
+
+    /// Levels renders as in SDR below white and continues along its slope at white
+    /// without a step; with its white point below white it holds white above it.
+    #[test]
+    fn levels_continue_along_their_slope_at_white() {
+        let sdr = |e: f32, b: f32, w: f32, m: f32| ((e - b) / (w - b)).clamp(0., 1.).powf(1. / m);
+        for (b, w, m) in [(0., 1., 1.), (0.1, 1., 1.), (0., 1., 1.5), (0.05, 0.9, 0.8)] {
+            for i in 0..=100 {
+                let e = i as f32 / 100.;
+                assert_eq!(levels(e, b, w, m), sdr(e, b, w, m));
+            }
+            assert!((levels(1.0001, b, w, m) - levels(1., b, w, m)).abs() < 1e-3);
+        }
+        assert_eq!(levels(1.5, 0., 1., 1.), 1.5);
+        // Black 0.1, midtone 1.5: slope 1 / (1.5 × 0.9) above white.
+        assert!((levels(2., 0.1, 1., 1.5) - (1. + 1. / 1.35)).abs() < 1e-5);
+        assert_eq!(levels(1.8, 0.05, 0.9, 0.8), 1.);
     }
 
     #[test]

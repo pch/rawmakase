@@ -254,6 +254,12 @@ the sidecar (`ToneCurvePV2012`, `Parametric*`).
   the X100V's rebuilt highlight peak +0.22–0.24, the Pentax's ΔE_ITP); the Z6 III's
   peak, +0.108 by default, is +0.056 and +0.070.
 
+**Levels.** RAWmakase's black point, white point and midtone have no Camera Raw
+counterpart to measure. Decision: they render in HDR as Camera Raw renders a point
+curve of the same shape, by the rule above: as in SDR up to white, then along the
+slope at white, 1 / (midtone (1 − black)); a white point below white leaves a slope of
+0, as Camera Raw's curve through (230, 255) holds white (0.89 by scene 15).
+
 ### Looks
 
 Measured on gray ramps (sensor white +4 and +6 stops, a linear and the ACR3 profile
@@ -508,8 +514,8 @@ compared by luminance in 8× linear blocks:
   limit, measured and validated on the family (above); the SDR rendition everywhere
   else; the release guard lifted with Develop's HDR switch and SDR-rendition status;
   `rawmakase render --hdr`; looks of a table and a curve, Adobe Color among them
-  ([Looks](#looks)); Contrast ([Contrast](#contrast)); the master point curve and the
-  parametric curve ([Tone curves](#tone-curves)). Open: positive Whites, Highlights, Shadows,
+  ([Looks](#looks)); Contrast ([Contrast](#contrast)); the master point curve, the
+  parametric curve and Levels ([Tone curves](#tone-curves)). Open: positive Whites, Highlights, Shadows,
   the colour stage, the other looks, channel curves, the SDR rendition sliders, 52552 grouping (library only,
   needed when toggling HDR pairs profiles).
 - [ ] Stage 6: HDR TIFF export (PQ and HLG 16-bit, linear float; Rec. 2020, Display

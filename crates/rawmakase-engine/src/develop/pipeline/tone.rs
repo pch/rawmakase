@@ -51,10 +51,12 @@ pub(super) struct HdrFinish {
     /// `None` when every curve is the identity, so the master is the profile's.
     curves: Option<HdrCurves>,
 }
-/// The user's tone curves as they render in HDR (`color::hdr_curve`): the parametric
-/// curve, then the master point curve, as in SDR. A channel's own curve refuses the
-/// master (`model::hdr::check_recipe`).
+/// The user's tone curves as they render in HDR (`color::hdr_curve`): Levels, the
+/// parametric curve, then the master point curve, as in SDR. A channel's own curve
+/// refuses the master (`model::hdr::check_recipe`).
 struct HdrCurves {
+    /// Black point, white point and midtone, when they are not the default.
+    levels: Option<[f32; 3]>,
     parametric: Option<crate::develop::tone_lut::ToneLut>,
     master: crate::color::hdr_curve::HdrPointCurve,
 }
@@ -62,18 +64,25 @@ impl HdrCurves {
     fn new(r: &Recipe) -> Option<Self> {
         use crate::color::hdr_curve::HdrPointCurve;
         let parametric = parametric_curve(r);
-        if parametric.is_none() && r.curve.is_identity() {
+        let levels = [r.black_point, r.white_point, r.midtone];
+        let levels = (levels != [0., 1., 1.]).then_some(levels);
+        if levels.is_none() && parametric.is_none() && r.curve.is_identity() {
             return None;
         }
         Some(Self {
+            levels,
             parametric,
             master: HdrPointCurve::new(&r.curve),
         })
     }
     /// Linear ProPhoto RGB (1 = graphics white, not negative) through the curves.
     fn apply(&self, pro: [f32; 3]) -> [f32; 3] {
-        use crate::color::hdr_curve::{CEILING, decode, encode, parametric};
+        use crate::color::hdr_curve::{CEILING, decode, encode, levels, parametric};
         let p = pro.map(encode);
+        let p = match self.levels {
+            Some([black, white, midtone]) => p.map(|e| levels(e, black, white, midtone)),
+            None => p,
+        };
         let p = match &self.parametric {
             Some(curve) => rgb_tone(p, |e| parametric(e, |x| curve.eval(x))),
             None => p,

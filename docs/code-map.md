@@ -175,7 +175,7 @@ standalone `rawmakase-ctl`). The last two build without the app.
 | [gpu/weights.rs](../crates/rawmakase-engine/src/develop/gpu/weights.rs) | CPU-generated resampling coefficients matching reference boundaries and normalization. |
 | [rendered.rs](../crates/rawmakase-model/src/rendered.rs) | Float RGB output buffers, integer pixel conversion, histogram generation with per-channel clipping counts, the clipping thresholds and the clipping overlay. |
 | [color/curve.rs](../crates/rawmakase-model/src/color/curve.rs) | Tone-curve points, validation, interpolation and lookup tables. |
-| [color/hdr_curve.rs](../crates/rawmakase-model/src/color/hdr_curve.rs) | The point and parametric curves in HDR: the point curve continued along its end slope above white, the parametric curve over an axis to four stops above it ([HDR](hdr.md)). |
+| [color/hdr_curve.rs](../crates/rawmakase-model/src/color/hdr_curve.rs) | The point and parametric curves in HDR: the point curve continued along its end slope above white, the parametric curve over an axis to four stops above it, Levels as a point curve of its shape ([HDR](hdr.md)). |
 | [effects.rs](../crates/rawmakase-engine/src/develop/effects.rs) | Additional recipe controls used by XMP and spatial finishing such as grain and vignette. |
 | [color.rs](../crates/rawmakase-engine/src/develop/color.rs) | The colour wheels' hues (`hue_rgb`), shared by mask tints and the Color Grading panel. |
 | [calibration.rs](../crates/rawmakase-engine/src/develop/calibration.rs) | Camera-primary calibration and shadow tint. |
