@@ -21,7 +21,7 @@ impl Progress {
 
     pub(crate) fn finish(&mut self, result: &PreviewResult) {
         self.completed += 1;
-        self.failed += usize::from(result.image.is_none());
+        self.failed += usize::from(result.image.is_none() && !result.skipped);
         if let Some(error) = &result.cache_error {
             self.cache_error = Some(error.clone());
         }

@@ -96,7 +96,7 @@ pub fn load(raw: &Path) -> Result<Option<Sidecar>> {
     load_at(raw, &data_dir())
 }
 fn load_at(raw: &Path, store: &Path) -> Result<Option<Sidecar>> {
-    Ok(chosen(raw, store)?.map(|(mut sidecar, companion)| {
+    Ok(chosen(raw, store, None)?.map(|(mut sidecar, companion)| {
         if let Some(companion) = companion {
             sidecar.recipe = sidecar.recipe.with_local(companion.local);
         }
@@ -105,11 +105,21 @@ fn load_at(raw: &Path, store: &Path) -> Result<Option<Sidecar>> {
 }
 /// A photo's sidecar edit and the bitmaps its spots and masks refer to, both from
 /// the store `load` chooses, for importing into the catalog.
-pub(crate) fn import(raw: &Path) -> Result<Option<(Sidecar, Vec<bitmaps::Bitmap>)>> {
-    import_at(raw, &data_dir())
+///
+/// `listing` of `raw`'s folder says whether the edit beside it exists, where it
+/// can, without asking the file system.
+pub(in crate::catalog) fn import(
+    raw: &Path,
+    listing: Option<&super::sidecar::Listing>,
+) -> Result<Option<(Sidecar, Vec<bitmaps::Bitmap>)>> {
+    import_at(raw, &data_dir(), listing)
 }
-fn import_at(raw: &Path, store: &Path) -> Result<Option<(Sidecar, Vec<bitmaps::Bitmap>)>> {
-    let Some((mut sidecar, companion)) = chosen(raw, store)? else {
+fn import_at(
+    raw: &Path,
+    store: &Path,
+    listing: Option<&super::sidecar::Listing>,
+) -> Result<Option<(Sidecar, Vec<bitmaps::Bitmap>)>> {
+    let Some((mut sidecar, companion)) = chosen(raw, store, listing)? else {
         return Ok(None);
     };
     let mut bitmaps = Vec::new();
@@ -124,12 +134,21 @@ fn import_at(raw: &Path, store: &Path) -> Result<Option<(Sidecar, Vec<bitmaps::B
     Ok(Some((sidecar, bitmaps)))
 }
 /// The newer of the photo's two sidecar stores, and the spots and masks saved there.
-fn chosen(raw: &Path, store: &Path) -> Result<Option<(Sidecar, Option<Companion>)>> {
+fn chosen(
+    raw: &Path,
+    store: &Path,
+    listing: Option<&super::sidecar::Listing>,
+) -> Result<Option<(Sidecar, Option<Companion>)>> {
     let id = Identity::read(raw)?;
     let primary = sidecar_path(raw);
     let backup = fallback_at(&id, store, "json");
+    // Beside the photo, on its volume: the folder's listing answers where it can.
+    let primary_exists = match (listing, primary.file_name()) {
+        (Some(listing), Some(name)) => listing.settles(name).unwrap_or_else(|| primary.exists()),
+        _ => primary.exists(),
+    };
     // Validate both stores before choosing newest; never hide a conflicting primary.
-    let a = if primary.exists() {
+    let a = if primary_exists {
         Some(parse_sidecar(&primary, &id)?)
     } else {
         None

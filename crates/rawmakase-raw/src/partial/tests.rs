@@ -1,4 +1,4 @@
-use super::{HEAD, Sparse, TAIL, checked, in_pieces, preview_from_file};
+use super::{HEAD, Sparse, TAIL, checked, header_from_file, in_pieces, preview_from_file};
 use crate::container::nef::tests::nef;
 use crate::container::pef::tests::{note, pef};
 use crate::container::test_tiff::{dir, long};
@@ -219,6 +219,79 @@ fn a_candidate_read_whole_without_a_frame_header_is_left_out() {
     let whole = crate::preview_reaching(&info, &file, 640).unwrap();
     let partial = preview_from_file(&mut Cursor::new(&file), 640).unwrap();
     assert_eq!(partial.preview, whole.as_ref());
+}
+
+/// The header facts read alone are those read from the whole file: camera,
+/// variant, size, crop and orientation, the frame taken from the largest
+/// preview's size included; a little of the file is read. This NEF has no
+/// exposure or lens tags, so those compare empty: real files are compared by
+/// `rawmakase-decode`'s `photo_info_from_the_header_is_the_whole_file_s`.
+#[test]
+fn header_facts_read_in_pieces_are_the_whole_file_s() {
+    let file = nef_with_previews(3 << 20, &sizes(), 0);
+    let whole = crate::open(&file).unwrap();
+    let partial = header_from_file(&mut Cursor::new(&file)).unwrap();
+    let p = &partial.info;
+    assert_eq!(
+        (
+            p.variant,
+            &p.make,
+            &p.model,
+            &p.file_make,
+            &p.file_model,
+            &p.lens
+        ),
+        (
+            whole.variant,
+            &whole.make,
+            &whole.model,
+            &whole.file_make,
+            &whole.file_model,
+            &whole.lens
+        )
+    );
+    assert_eq!(
+        (p.width, p.height, p.margins, p.frame, p.aspect, p.flip),
+        (
+            whole.width,
+            whole.height,
+            whole.margins,
+            whole.frame,
+            whole.aspect,
+            whole.flip
+        )
+    );
+    assert_eq!(
+        [p.iso, p.shutter, p.aperture, p.focal, p.focal_35mm],
+        [
+            whole.iso,
+            whole.shutter,
+            whole.aperture,
+            whole.focal,
+            whole.focal_35mm
+        ]
+    );
+    assert_eq!((p.lens_id, p.lens_info), (whole.lens_id, whole.lens_info));
+    assert!(partial.read < HEAD + TAIL + 3 * (64 << 10) + 1);
+    assert!(header_from_file(&mut Cursor::new(Vec::<u8>::new())).is_none());
+}
+
+#[test]
+fn headers_of_formats_not_checked_are_none() {
+    // The packed PEF of `formats_not_checked_against_whole_reads_are_none`,
+    // whose header is well within the parts read.
+    let file = pef(
+        ["PENTAX", "PENTAX K-TEST"],
+        [2, 2, 12, 32773],
+        &[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc],
+        vec![],
+        note(vec![]),
+    );
+    assert_eq!(
+        crate::open(&file).unwrap().variant,
+        crate::Variant::PefPacked
+    );
+    assert!(header_from_file(&mut Cursor::new(&file)).is_none());
 }
 
 #[test]

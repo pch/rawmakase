@@ -90,6 +90,11 @@ none. In either case, and whenever a part needed isn't found, the caller
 reads the whole file.
 The ignored test `real_files_give_the_same_preview_read_in_pieces` compares
 the two reads on a folder of RAWs; it is how a variant is added.
+`header_from_file(file)` reads the header the same way, stopping before
+the preview, for the photo info of RAWs on network volumes (`rawmakase-decode`'s
+`photo::header_metadata`), by the same list of variants; its comparison with
+whole-file reads is `photo_info_from_the_header_is_the_whole_file_s`, as photo
+info can come from parts a preview doesn't need.
 
 Modules, each with a small `pub(crate)` surface:
 

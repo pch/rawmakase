@@ -246,6 +246,9 @@ impl Editor {
         let copy_groups = session.copy_groups();
         let decode_cache = crate::decode_cache::DecodeCache::default();
         decode_cache.set_limit(u64::from(session.decoded_cache_size_gib()) << 30);
+        crate::catalog::preview_cache::set_thumbnail_budget(
+            u64::from(session.thumbnail_cache_size_mib()) << 20,
+        );
         decode_cache.set_folder(session.decoded_cache_folder.as_deref());
         let ai_cache = crate::ai_cache::AiCache::default();
         ai_cache.set_folder(session.decoded_cache_folder.as_deref());
@@ -415,6 +418,9 @@ impl Editor {
                 raw_defaults: self.raw_defaults.settings().clone(),
                 standard_preview_size: Some(self.preview_builds.standard_size),
                 decoded_cache_size_gib: Some((self.decode_cache.limit() >> 30) as u32),
+                thumbnail_cache_size_mib: Some(
+                    (crate::catalog::preview_cache::thumbnail_budget() >> 20) as u32,
+                ),
                 decoded_cache_folder: self.decode_cache.folder(),
                 one_to_one_discard_days: Some(
                     self.preview_builds.discard_one_to_one_after.unwrap_or(0),
