@@ -152,6 +152,29 @@ impl ToneCurve {
         let w1 = h1 + 2. * h0;
         (w0 + w1) / (w0 / a + w1 / b)
     }
+    /// The identity over the whole domain: points on the diagonal from black to white.
+    /// A curve whose ends are inside 0–1 clamps the rest, so it is not one.
+    pub fn is_identity(&self) -> bool {
+        self.points.first() == Some(&[0., 0.])
+            && self.points.last() == Some(&[1., 1.])
+            && self.points.iter().all(|p| p[0] == p[1])
+    }
+    /// The curve's slope at its last point, before the output is clamped to 0–1: a
+    /// natural spline's own derivative there (which is negative where the spline
+    /// overshoots white), a legacy monotone curve's end tangent, a linear curve's last
+    /// segment. Camera Raw continues a point curve above white along it in HDR
+    /// ([`super::hdr_curve`]).
+    pub fn end_slope(&self) -> f32 {
+        if self.natural && self.smooth {
+            return NaturalSpline::new(&self.points).end_slope() as f32;
+        }
+        let last = self.points.len() - 1;
+        if self.smooth {
+            self.tangent(last)
+        } else {
+            self.slope(last - 1)
+        }
+    }
     pub fn evaluate(&self, x: f32) -> f32 {
         if self.natural && self.smooth {
             return NaturalSpline::new(&self.points).evaluate(x);
@@ -205,6 +228,13 @@ impl NaturalSpline {
             second[i] -= upper[i] * second[i + 1];
         }
         Self { points, second }
+    }
+    /// The derivative at the last point, where the second derivative is 0.
+    fn end_slope(&self) -> f64 {
+        let n = self.points.len();
+        let [a, b] = [self.points[n - 2], self.points[n - 1]];
+        let h = b[0] - a[0];
+        (b[1] - a[1]) / h + h * self.second[n - 2] / 6.
     }
     fn evaluate(&self, x: f32) -> f32 {
         let x = x as f64;

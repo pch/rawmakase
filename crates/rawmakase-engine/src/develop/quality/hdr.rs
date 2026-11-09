@@ -515,6 +515,84 @@ mod tests {
         Ok(())
     }
 
+    /// The point and parametric curves render a gray ramp through the ACR3 curve as
+    /// Camera Raw 18.7 renders them at HDR limit 8: the point curve on encoded values,
+    /// continued along its end slope above white, and the parametric curve over an
+    /// axis that ends four stops above white.
+    #[test]
+    fn tone_curves_render_as_camera_raw_renders_them() -> anyhow::Result<()> {
+        let levels = [0.183, 0.5055, 0.9785, 1.9928];
+        let im = grays(&levels);
+        let curve = |points: &[[f32; 2]]| crate::color::curve::ToneCurve {
+            points: points.iter().map(|p| p.map(|v| v / 255.)).collect(),
+            ..Default::default()
+        };
+        type Edit = Box<dyn Fn(&mut Recipe)>;
+        let cases: [(Edit, [f32; 4]); 6] = [
+            (Box::new(|_| {}), [0.3874, 1.0562, 2.5542, 7.8706]),
+            (
+                Box::new(move |r| {
+                    r.curve = curve(&[
+                        [0., 0.],
+                        [64., 44.],
+                        [128., 132.],
+                        [192., 214.],
+                        [255., 255.],
+                    ])
+                }),
+                [0.4944, 1.0277, 1.5596, 2.6163],
+            ),
+            (
+                Box::new(move |r| r.curve = curve(&[[0., 0.], [128., 100.], [255., 255.]])),
+                [0.2739, 1.0757, 3.6125, 16.8747],
+            ),
+            (
+                Box::new(|r| r.effects.parametric[3] = 0.5),
+                [0.3874, 1.0601, 3.2286, 11.704],
+            ),
+            (
+                Box::new(|r| r.effects.parametric[1] = 0.5),
+                [0.6632, 1.5458, 3.2201, 8.1988],
+            ),
+            (
+                Box::new(|r| r.effects.parametric[2] = -0.5),
+                [0.3021, 0.7113, 1.4565, 5.1187],
+            ),
+        ];
+        for (n, (edit, measured)) in cases.into_iter().enumerate() {
+            let mut r = hdr_recipe(&im);
+            edit(&mut r);
+            let out = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
+            for (i, expected) in measured.iter().enumerate() {
+                let got = centre(&out, i);
+                assert!(
+                    (got / expected).log2().abs() < 0.07,
+                    "case {n}, {i}: {got} {expected}"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// A curve that ends steeply extends far past every limit; the master stays finite
+    /// through sharpening and resizing and rolls off to the limit, not to black.
+    #[test]
+    fn a_steep_curve_rolls_off_to_the_limit_through_sharpening_and_resizing() -> anyhow::Result<()>
+    {
+        // All above white after the ACR3 curve, so on the curve's extension.
+        let im = grays(&[0.5, 2., 8.]);
+        let mut r = hdr_recipe(&im);
+        r.curve.points = vec![[0.99, 0.], [1., 1.]];
+        r.sharpening = 0.5;
+        for max_edge in [0, 12] {
+            let out = render_hdr(&im, &r.checked()?, None, max_edge, Cancel::NEVER)?;
+            // Every gray renders past the limit's knee: none is lost to NaN.
+            let darkest = out.pixels.iter().flatten().fold(f32::MAX, |a, v| a.min(*v));
+            assert!(darkest > out.peak * 0.9, "{max_edge}: {darkest}");
+        }
+        Ok(())
+    }
+
     /// The limit's roll-off applies once: a channel at the peak renders where
     /// `roll_off` puts it, not rolled off twice.
     #[test]
@@ -556,9 +634,9 @@ mod tests {
         use crate::model::panels::{Panel, PanelState};
         let im = grays(&[0.5]);
         let mut r = hdr_recipe(&im);
-        r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
+        r.effects.vignette = -0.3;
         assert!(render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER).is_err());
-        r.panels.set(Panel::ToneCurve, PanelState::Off);
+        r.panels.set(Panel::Effects, PanelState::Off);
         render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER)?;
         Ok(())
     }

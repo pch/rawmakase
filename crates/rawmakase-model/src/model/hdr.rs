@@ -162,7 +162,9 @@ impl HdrSettings {
 /// been measured against Camera Raw (docs/records/hdr-stage1-results.md). An edit
 /// with HDR off, or with nothing but measured adjustments, passes.
 ///
-/// Measured: white balance, Exposure, Contrast, negative Whites, Blacks, the HDR limit, camera profiles
+/// Measured: white balance, Exposure, Contrast, negative Whites, Blacks, the HDR limit,
+/// the master point curve and the parametric curve ([`crate::color::hdr_curve`]), camera
+/// profiles
 /// (their curves within [`crate::camera_profiles::hdr_tone`]'s family), looks of a table
 /// and a curve ([`crate::camera_profiles::hdr_look`]) at 100%, and what works
 /// on the camera's samples before tone: lens corrections, geometry, noise reduction,
@@ -186,15 +188,8 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
         r.hdr.sdr == SdrRendition::default(),
         "The SDR rendition's adjustments are not supported in HDR yet"
     );
-    // The identity over the whole domain: points on the diagonal from black to white.
-    // A curve whose ends are inside 0–1 clamps the rest, so it is not one.
-    let identity = |c: &crate::color::curve::ToneCurve| {
-        c.points.first() == Some(&[0., 0.])
-            && c.points.last() == Some(&[1., 1.])
-            && c.points.iter().all(|p| p[0] == p[1])
-    };
     let defaults = super::recipe::Recipe::default();
-    let unmeasured: [(&str, bool); 14] = [
+    let unmeasured: [(&str, bool); 16] = [
         // Camera Raw stretches a photo whose brightest areas are below about twice
         // graphics white much further than the measured gain (+3.8 stops at scene 0.3
         // on a ramp peaking at 0.5); negative Whites follows no photo statistic.
@@ -209,11 +204,22 @@ pub fn check_recipe(r: &super::recipe::Recipe) -> Result<()> {
                 || r.white_point != defaults.white_point
                 || r.midtone != defaults.midtone,
         ),
+        // Point curves were measured ending at white; one whose last point is left
+        // of it holds its value beyond, which Camera Raw was not seen to do above
+        // white.
         (
-            "The Tone Curve",
-            !identity(&r.curve)
-                || !r.effects.channels.iter().all(identity)
-                || r.effects.parametric != [0.; 4],
+            "A point curve that ends left of white",
+            r.curve.points.last().is_some_and(|p| p[0] < 1.),
+        ),
+        // Camera Raw renders a channel's curve above white by neither curve rule:
+        // a red curve that brightens takes red down to 0 by scene 12.
+        (
+            "A channel's point curve",
+            !r.effects.channels.iter().all(|c| c.is_identity()),
+        ),
+        (
+            "Refine Saturation",
+            r.curve_saturation != 1. && !r.curve.is_identity(),
         ),
         (
             "Presence",
@@ -486,7 +492,10 @@ mod tests {
             |r| r.shadows = 0.1,
             |r| r.effects.clarity = 0.1,
             |r| r.saturation = 0.1,
-            |r| r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]],
+            |r| {
+                r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
+                r.curve_saturation = 0.5;
+            },
             |r| r.hdr.sdr.brightness = 0.1,
         ];
         for change in unmeasured {
@@ -498,14 +507,19 @@ mod tests {
             edit.hdr.enabled = false;
             assert!(check_recipe(&edit).is_ok());
         }
-        // A curve with extra points on the diagonal is still the identity; one whose
-        // ends stop short of black and white clamps, so it is not.
-        r.curve.points = vec![[0., 0.], [0.5, 0.5], [1., 1.]];
+        // Point and parametric curves render, with Refine Saturation at 100%, and so
+        // does a curve whose first point is right of black; one whose last point is
+        // left of white does not.
+        r.curve.points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
+        r.effects.parametric = [0.1, -0.2, 0.3, -0.4];
+        assert!(check_recipe(&r).is_ok());
+        r.curve.points = vec![[0.2, 0.], [1., 1.]];
         assert!(check_recipe(&r).is_ok());
         r.curve.points = vec![[0.2, 0.2], [0.8, 0.8]];
         assert!(check_recipe(&r).is_err());
+        // A channel's own curve is refused, whatever its shape.
         r.curve = Default::default();
-        r.effects.channels[1].points = vec![[0.2, 0.2], [0.8, 0.8]];
+        r.effects.channels[1].points = vec![[0., 0.], [0.5, 0.6], [1., 1.]];
         assert!(check_recipe(&r).is_err());
     }
 

@@ -99,6 +99,8 @@ HDR reference family):
 | Look table | A look's HSV table (Adobe Color's and the other Adobe Raw looks', RAWmakase Color's) after the profile's, on overrange-encoded values, as the DNG SDK applies an HDR profile's, unclipped. |
 | Look curve | `camera_profiles::hdr_look`, after the profile's curve: the look's curve in an encoding that is sRGB's up to graphics white and logarithmic above. A curve that ends at white follows itself up to its largest lift, then runs parallel to the identity at that lift, at most 16 (so a curve that never lifts renders as the identity); one that ends below white continues along its slope there. RGBTone. |
 | Contrast | `develop::basic_tone::HdrContrast`, after the look, from the SDR Contrast curve at the photo's pivot (measured on the SDR rendering), in the look curve's encoding. Positive Contrast follows its curve up to its largest lift, then runs parallel to the identity at that lift; negative Contrast is its curve stretched in stops, its fixed point 1.671 times higher and white at 16. Above 16 positive Contrast adds a constant and negative continues along its slope. RGBTone. |
+| Parametric curve | After Contrast, RGBTone on the same encoding, its regions and splits laid over black to four stops above white (16); values above 16 are left alone. |
+| Point curve | `color::hdr_curve`, after the parametric curve: the master curve, RGBTone on the look curve's encoding, as in SDR up to white; above it, along the curve's slope at its last point (a natural spline's own derivative there, before clamping). |
 | HDR limit | Each channel rolled off to 2^limit from 97% of it (`model::hdr::roll_off`), last. |
 | Sharpening, resizing | On sRGB-curve-encoded values of the master's primaries, unclipped, with ProPhoto luminance; the limit applies after them. |
 
@@ -109,7 +111,8 @@ camera samples before tone and render as in SDR.
 
 `model::hdr::check_recipe` refuses the master, not the edit, when the edit uses
 something without a measured HDR rendering: Highlights, Shadows, positive
-Whites, Levels, point and parametric curves, Presence (Clarity, Texture, Dehaze,
+Whites, Levels, a channel's point curve, Refine Saturation other than 100%, a point
+curve whose last point is left of white, Presence (Clarity, Texture, Dehaze,
 Vibrance, Saturation), the colour mixer, Point Color, Color Grading, Calibration,
 Black & White, Defringe, grain and vignette, masks, Red Eye, the SDR rendition's
 sliders, looks other than a table and a curve at 100% (looks with an RGB table, such
