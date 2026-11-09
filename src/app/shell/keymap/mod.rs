@@ -361,6 +361,8 @@ struct Taken {
     reserved: Vec<(Press, usize)>,
     /// Preferences is waiting for a key to bind: no binding takes any.
     capturing: bool,
+    /// The chords the macOS menu takes before egui sees them.
+    menu: Vec<Chord>,
 }
 
 /// A binding's identity: bindings are statics.
@@ -449,6 +451,17 @@ impl<'a> FrameKeys<'a> {
     pub(in crate::app) fn set_capturing(&self, on: bool) {
         let mut state = self.state();
         state.capturing = on;
+        self.set_state(state);
+    }
+    /// The chords the installed macOS menu's enabled items take: no binding
+    /// takes a press of one, which AppKit has already run.
+    #[cfg_attr(
+        not(any(target_os = "macos", test)),
+        allow(dead_code, reason = "the macOS menu's alone")
+    )]
+    pub(in crate::app) fn set_menu_chords(&self, chords: Vec<Chord>) {
+        let mut state = self.state();
+        state.menu = chords;
         self.set_state(state);
     }
     /// The first press of a key that isn't a modifier, which Preferences
@@ -638,10 +651,16 @@ impl<'a> FrameKeys<'a> {
         if state.capturing {
             return Vec::new();
         }
-        let taken = state.presses;
+        let menu = |p: &Press| {
+            let key = crate::app::shell::key_match::shortcut_key(p.key, p.physical);
+            state
+                .menu
+                .iter()
+                .any(|c| c.key == key && c.mods == Mods::of(p.modifiers))
+        };
         self.read()
             .into_iter()
-            .filter(|p| !taken.contains(p))
+            .filter(|p| !state.presses.contains(p) && !menu(p))
             .collect()
     }
     /// Takes `press`, one of [`Self::presses`], for a command.
@@ -729,6 +748,7 @@ impl<'a> FrameKeys<'a> {
             presses,
             reserved,
             capturing: state.capturing,
+            menu: state.menu,
         });
     }
 }

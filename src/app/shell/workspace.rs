@@ -225,6 +225,9 @@ impl Editor {
         let keys = FrameKeys::begin(&ctx, self.keymap.effective());
         // A key Preferences waits for runs nothing; the page takes it.
         keys.set_capturing(self.capturing_keys());
+        // AppKit runs an enabled menu item's key before egui sees it.
+        #[cfg(target_os = "macos")]
+        keys.set_menu_chords(self.menu_chords(&ctx, self.native_menu));
         // Before any field takes this frame's keys, or gives them up.
         let typing = ctx.text_edit_focused();
         // Already done by `logic` this pass in the app; a pass run without it

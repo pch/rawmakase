@@ -1,4 +1,4 @@
-use super::Action;
+use super::{Action, KeyEquivalent};
 use objc2::{
     DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, rc::Retained, sel,
 };
@@ -47,6 +47,8 @@ struct Menu {
     target: Retained<MenuTarget>,
     items: Vec<(Action, Retained<NSMenuItem>)>,
     receive: Receiver<Action>,
+    /// The key equivalents last set on the items that follow the key map.
+    keys: Vec<(Action, Option<KeyEquivalent>)>,
 }
 
 impl Menu {
@@ -67,7 +69,7 @@ impl Menu {
                     (Action::NewCatalog, "New Catalog…", "", false),
                     (Action::OpenCatalog, "Open Catalog…", "o", false),
                     (Action::AddFolder, "Add Folder…", "o", true),
-                    (Action::Export, "Export…", "e", true),
+                    (Action::Export, "Export…", "", false),
                     (Action::Close, "Close Window", "w", false),
                 ],
             ),
@@ -104,7 +106,7 @@ impl Menu {
                 "Help",
                 None,
                 &[
-                    (Action::Shortcuts, "Keyboard Shortcuts", "/", false),
+                    (Action::Shortcuts, "Keyboard Shortcuts", "", false),
                     (Action::ReportIssue, "Report an Issue…", "", false),
                 ],
             ),
@@ -127,8 +129,10 @@ impl Menu {
             target,
             items: Vec::new(),
             receive,
+            keys: Vec::new(),
         };
-        let preferences = menu.item(Action::Preferences, "Preferences…", ",", false);
+        // The key map's items get their keys from `set_key_equivalents`.
+        let preferences = menu.item(Action::Preferences, "Preferences…", "", false);
         application.insertItem_atIndex(&preferences, 2);
         application.insertItem_atIndex(&NSMenuItem::separatorItem(mtm), 3);
         // The winit application menu and its guarded Quit action stay in place.
@@ -215,6 +219,36 @@ impl Menu {
         item
     }
 
+    /// Sets the key equivalents of the items that follow the key map, where
+    /// they changed. None leaves an item with no key.
+    fn set_keys(&mut self, keys: &[(Action, Option<KeyEquivalent>)]) {
+        if self.keys == keys {
+            return;
+        }
+        for (action, key) in keys {
+            if action.fixed_key() {
+                continue;
+            }
+            for (_, item) in self.items.iter().filter(|(a, _)| a == action) {
+                let key = key.clone().unwrap_or_default();
+                item.setKeyEquivalent(&NSString::from_str(&key.key));
+                let mut mask = NSEventModifierFlags::empty();
+                for (on, flag) in [
+                    (key.command, NSEventModifierFlags::Command),
+                    (key.shift, NSEventModifierFlags::Shift),
+                    (key.option, NSEventModifierFlags::Option),
+                    (key.control, NSEventModifierFlags::Control),
+                ] {
+                    if on {
+                        mask |= flag;
+                    }
+                }
+                item.setKeyEquivalentModifierMask(mask);
+            }
+        }
+        self.keys = keys.to_vec();
+    }
+
     fn take_actions(&self) -> Vec<Action> {
         self.receive.try_iter().collect()
     }
@@ -270,6 +304,13 @@ pub(crate) fn install(wake: impl Fn() + 'static) -> bool {
 }
 pub(crate) fn take_actions() -> Vec<Action> {
     MENU.with_borrow(|menu| menu.as_ref().map(Menu::take_actions).unwrap_or_default())
+}
+pub(crate) fn set_key_equivalents(keys: &[(Action, Option<KeyEquivalent>)]) {
+    MENU.with_borrow_mut(|menu| {
+        if let Some(menu) = menu {
+            menu.set_keys(keys);
+        }
+    });
 }
 pub(crate) fn update(state: impl Fn(Action) -> (bool, bool)) {
     MENU.with_borrow(|menu| {

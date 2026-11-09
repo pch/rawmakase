@@ -1,13 +1,130 @@
 //! Routes native menu choices through the same editor operations as the UI.
+use crate::app::shell::keymap::{Chord, Context, Effective, Mods, conflicts};
 use crate::app::{
     Editor, Module,
     shell::dialogs::{CatalogDialog, FolderAction},
     shell::panels::{PanelChange, WorkspacePanel},
 };
-use crate::platform::menu::Action;
-use eframe::egui;
+use crate::platform::menu::{Action, KeyEquivalent};
+use eframe::egui::{self, Key};
+
+/// The key map's command a menu item runs, whose keys it shows. The Edit
+/// menu's text keys, Close Window and the items that are no key map command
+/// keep the keys `platform::menu` gives them.
+pub(in crate::app) fn command_of(action: Action) -> Option<&'static str> {
+    Some(match action {
+        _ if action.fixed_key() => return None,
+        Action::Preferences => "preferences",
+        Action::Export => "export_dialog",
+        Action::Library => "library",
+        Action::Develop => "develop",
+        Action::Sidebar => "panels:left",
+        Action::Inspector => "panels:right",
+        Action::Filmstrip => "panels:filmstrip",
+        Action::Shortcuts => "shortcuts",
+        _ => return None,
+    })
+}
+
+/// Every menu item whose key follows the key map.
+pub(in crate::app) const KEYED: [Action; 8] = [
+    Action::Preferences,
+    Action::Export,
+    Action::Library,
+    Action::Develop,
+    Action::Sidebar,
+    Action::Inspector,
+    Action::Filmstrip,
+    Action::Shortcuts,
+];
+
+/// The chord `action`'s item shows in `map`, on a Mac (`macos`) or elsewhere:
+/// the first chord with Cmd of its command's binding that works everywhere,
+/// that no other binding shares. A shared chord would let AppKit run the
+/// item's command where a tool's binding should win, or pick one of two
+/// conflicting commands; it is left to the keys. A plain key would be taken
+/// from a text field, and a binding of one context would run everywhere.
+pub(in crate::app) fn menu_chord(map: &Effective, action: Action, macos: bool) -> Option<Chord> {
+    let id = command_of(action)?;
+    let binding = crate::app::shell::keymap::rules::bindings_of(id)
+        .into_iter()
+        .find(|b| b.context == Context::Everywhere)?;
+    map.defaults_of(binding)
+        .iter()
+        .filter(|d| d.exists_on(macos))
+        .flat_map(|d| d.chords().map(move |c| (*d, c)))
+        .find(|(d, c)| c.mods.contains(Mods::CMD) && !conflicts::shared(map, binding, d, *c, macos))
+        .map(|(_, c)| c)
+}
+
+/// `chord` as an AppKit key equivalent.
+pub(in crate::app) fn key_equivalent(chord: Chord) -> Option<KeyEquivalent> {
+    // AppKit's function-key characters (NSUpArrowFunctionKey and the rest).
+    let function = |code: u32| char::from_u32(code).map(String::from);
+    let key = match chord.key {
+        Key::ArrowUp => function(0xF700)?,
+        Key::ArrowDown => function(0xF701)?,
+        Key::ArrowLeft => function(0xF702)?,
+        Key::ArrowRight => function(0xF703)?,
+        Key::Insert => function(0xF727)?,
+        Key::Delete => function(0xF728)?,
+        Key::Home => function(0xF729)?,
+        Key::End => function(0xF72B)?,
+        Key::PageUp => function(0xF72C)?,
+        Key::PageDown => function(0xF72D)?,
+        Key::Backspace => "\u{8}".into(),
+        Key::Enter => "\r".into(),
+        Key::Tab => "\t".into(),
+        Key::Escape => "\u{1b}".into(),
+        Key::Space => " ".into(),
+        // egui names it with a minus sign.
+        Key::Minus => "-".into(),
+        key => {
+            let name = key.name();
+            match name.strip_prefix('F').and_then(|n| n.parse::<u32>().ok()) {
+                Some(n) if (1..=35).contains(&n) => function(0xF704 + n - 1)?,
+                _ => key.symbol_or_name().to_lowercase(),
+            }
+        }
+    };
+    // A Num key's name is its digit; anything longer is no character.
+    if key.chars().count() != 1 {
+        return None;
+    }
+    Some(KeyEquivalent {
+        key,
+        command: chord.mods.contains(Mods::CMD),
+        shift: chord.mods.contains(Mods::SHIFT),
+        option: chord.mods.contains(Mods::ALT),
+        control: chord.mods.contains(Mods::CTRL),
+    })
+}
 
 impl Editor {
+    /// Each keyed menu item's key equivalent in the key map in effect.
+    pub(in crate::app) fn menu_keys(&self) -> Vec<(Action, Option<KeyEquivalent>)> {
+        let map = self.keymap.effective();
+        KEYED
+            .iter()
+            .map(|a| (*a, menu_chord(&map, *a, true).and_then(key_equivalent)))
+            .collect()
+    }
+    /// The chords AppKit takes for an item before egui sees them: those of
+    /// the installed menu's items that are enabled now. A disabled item leaves
+    /// its key to the keys: with the reference card open, Shortcuts is
+    /// disabled, so Cmd+/ reaches the card and closes it.
+    pub(in crate::app) fn menu_chords(&self, ctx: &egui::Context, installed: bool) -> Vec<Chord> {
+        if !installed {
+            return Vec::new();
+        }
+        let map = self.keymap.effective();
+        KEYED
+            .iter()
+            .filter(|a| self.menu_state(**a, ctx).0)
+            .filter_map(|a| menu_chord(&map, *a, cfg!(target_os = "macos")))
+            .collect()
+    }
+
     pub(in crate::app) fn menu_state(&self, action: Action, ctx: &egui::Context) -> (bool, bool) {
         let free = !self.activity.is_busy() && !self.workspace_modal() && !self.close_confirm;
         let text = ctx.text_edit_focused();
@@ -38,6 +155,14 @@ impl Editor {
             }
             Action::Library | Action::Sidebar | Action::Inspector | Action::Filmstrip => workspace,
         };
+        // A key the menu shows runs its item while a text field has the keys,
+        // where the command's own binding would not: the item waits too.
+        let keyed_while_typing = text
+            && command_of(action).is_some_and(|id| {
+                !crate::app::shell::keymap::rules::runs_while_typing(id)
+                    && menu_chord(&self.keymap.effective(), action, true).is_some()
+            });
+        let enabled = enabled && !keyed_while_typing;
         let checked = match action {
             Action::Library => self.module == Module::Library && !self.onboarding.visible,
             Action::Develop => self.module == Module::Develop && !self.onboarding.visible,
@@ -147,6 +272,7 @@ impl Editor {
     pub(in crate::app) fn update_native_menu(&mut self, ctx: &egui::Context) {
         if self.native_menu {
             self.sync_undo();
+            crate::platform::menu::set_key_equivalents(&self.menu_keys());
             crate::platform::menu::update(|action| self.menu_state(action, ctx));
         }
     }
@@ -156,6 +282,233 @@ impl Editor {
 mod tests {
     use super::*;
     use crate::app::testing::editor_with_catalog;
+
+    fn chord(text: &str) -> Chord {
+        Chord::parse(text).expect("a chord")
+    }
+    fn user(entries: &[(&'static str, &[&str])]) -> Effective {
+        Effective::new(
+            entries
+                .iter()
+                .map(|(id, keys)| (*id, keys.iter().map(|k| chord(k)).collect()))
+                .collect(),
+        )
+    }
+    fn equivalent(text: &str) -> KeyEquivalent {
+        key_equivalent(chord(text)).expect("a key equivalent")
+    }
+
+    #[test]
+    fn a_chord_becomes_appkits_character_and_modifiers() {
+        let e = equivalent("Cmd+Shift+E");
+        assert_eq!(e.key, "e");
+        assert!(e.command && e.shift && !e.option && !e.control);
+        assert_eq!(equivalent("Cmd+,").key, ",");
+        assert_eq!(equivalent("Cmd+/").key, "/");
+        assert_eq!(equivalent("Cmd+-").key, "-");
+        assert_eq!(equivalent("Cmd+1").key, "1");
+        assert_eq!(equivalent("Cmd+Up").key, "\u{F700}");
+        assert_eq!(equivalent("Cmd+Delete").key, "\u{F728}");
+        let f9 = equivalent("Cmd+Alt+F9");
+        assert_eq!(f9.key, "\u{F70C}");
+        assert!(f9.command && f9.option && !f9.shift);
+        let ctrl = key_equivalent(Chord::new(Key::K, Mods::CMD.with(Mods::CTRL))).unwrap();
+        assert!(ctrl.command && ctrl.control);
+    }
+
+    #[test]
+    fn the_menu_shows_the_defaults_cmd_chords_that_work_everywhere() {
+        let defaults = Effective::default();
+        for macos in [true, false] {
+            let shown = |a| menu_chord(&defaults, a, macos).map(|c| c.to_string());
+            assert_eq!(shown(Action::Preferences).as_deref(), Some("Cmd+,"));
+            assert_eq!(shown(Action::Shortcuts).as_deref(), Some("Cmd+/"));
+            // Plain keys would be taken from a text field.
+            for a in [
+                Action::Library,
+                Action::Develop,
+                Action::Sidebar,
+                Action::Inspector,
+                Action::Filmstrip,
+            ] {
+                assert_eq!(shown(a), None, "{a:?}");
+            }
+            // Export's keys are the Library's and Develop's, not everywhere.
+            assert_eq!(shown(Action::Export), None);
+            // The Edit menu's and the items that are no command keep theirs.
+            for a in [
+                Action::Undo,
+                Action::Copy,
+                Action::SelectAll,
+                Action::OpenCatalog,
+            ] {
+                assert_eq!(command_of(a), None, "{a:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_first_cmd_chord_no_other_binding_shares_is_shown() {
+        let map = user(&[("preferences", &["F9", "Cmd+P", "Cmd+Shift+P"])]);
+        assert_eq!(
+            menu_chord(&map, Action::Preferences, true),
+            Some(chord("Cmd+P"))
+        );
+        // A user's key for the grid view, everywhere.
+        let map = user(&[("library", &["G", "Cmd+F1"])]);
+        assert_eq!(
+            menu_chord(&map, Action::Library, true),
+            Some(chord("Cmd+F1"))
+        );
+        // Shared with another command everywhere: a conflict.
+        let map = user(&[("shortcuts", &["Cmd+K"]), ("virtual_copy", &["Cmd+K"])]);
+        assert_eq!(menu_chord(&map, Action::Shortcuts, true), None);
+        // Shadowed: Cmd+G groups a stack in the grid.
+        let map = user(&[("preferences", &["Cmd+G", "Cmd+F2"])]);
+        assert_eq!(
+            menu_chord(&map, Action::Preferences, true),
+            Some(chord("Cmd+F2"))
+        );
+        let map = user(&[("preferences", &["Cmd+G"])]);
+        assert_eq!(menu_chord(&map, Action::Preferences, true), None);
+    }
+
+    #[test]
+    fn the_menu_holds_its_keys_only_while_installed_and_enabled() -> anyhow::Result<()> {
+        let (_dir, mut editor, _) = editor_with_catalog(&["one.ARW"])?;
+        let ctx = editor.context.clone();
+        editor.onboarding.visible = false;
+        assert!(editor.menu_chords(&ctx, false).is_empty(), "not installed");
+        let held = editor.menu_chords(&ctx, true);
+        assert!(held.contains(&chord("Cmd+/")) && held.contains(&chord("Cmd+,")));
+        // With the card open, Shortcuts is disabled: Cmd+/ reaches the card.
+        editor.view.shortcuts = true;
+        let held = editor.menu_chords(&ctx, true);
+        assert!(!held.contains(&chord("Cmd+/")));
+        let cmd = egui::Modifiers::COMMAND;
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: Key::Slash,
+                    physical_key: Some(Key::Slash),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: cmd,
+                }],
+                ..Default::default()
+            },
+            |ui| {
+                let keys = crate::app::shell::keymap::FrameKeys::begin(
+                    ui.ctx(),
+                    editor.keymap.effective(),
+                );
+                keys.set_menu_chords(held.clone());
+                editor.shortcuts_window(ui.ctx());
+            },
+        );
+        output.textures_delta.clear();
+        assert!(!editor.view.shortcuts, "Cmd+/ closed the card");
+        Ok(())
+    }
+
+    #[test]
+    fn the_menus_keys_follow_the_key_map() -> anyhow::Result<()> {
+        let (_dir, mut editor, _) = editor_with_catalog(&[])?;
+        let key = |editor: &Editor, action| {
+            editor
+                .menu_keys()
+                .into_iter()
+                .find(|(a, _)| *a == action)
+                .and_then(|(_, k)| k)
+                .map(|k| k.key)
+        };
+        assert_eq!(key(&editor, Action::Preferences).as_deref(), Some(","));
+        assert_eq!(key(&editor, Action::Export), None);
+        editor
+            .keymap
+            .set("preferences", &[chord("Cmd+Alt+P")])
+            .expect("bound");
+        assert_eq!(key(&editor, Action::Preferences).as_deref(), Some("p"));
+        editor.keymap.set("preferences", &[]).expect("unbound");
+        assert_eq!(key(&editor, Action::Preferences), None);
+        assert!(
+            editor.menu_keys().iter().all(|(a, _)| !a.fixed_key()),
+            "the Edit menu keeps its keys"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_chord_the_menu_holds_reaches_no_binding() {
+        use crate::app::shell::commands::registry::bindings;
+        let ctx = egui::Context::default();
+        let press = |held: Vec<Chord>| {
+            let mut taken = None;
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    events: vec![
+                        egui::Event::Key {
+                            key: Key::Comma,
+                            physical_key: Some(Key::Comma),
+                            pressed: true,
+                            repeat: false,
+                            modifiers: egui::Modifiers::COMMAND,
+                        },
+                        egui::Event::Key {
+                            key: Key::Comma,
+                            physical_key: Some(Key::Comma),
+                            pressed: false,
+                            repeat: false,
+                            modifiers: egui::Modifiers::COMMAND,
+                        },
+                    ],
+                    ..Default::default()
+                },
+                |ui| {
+                    let keys =
+                        crate::app::shell::keymap::FrameKeys::begin(ui.ctx(), Default::default());
+                    keys.set_menu_chords(held.clone());
+                    taken = keys.take(&bindings::PREFERENCES);
+                },
+            );
+            output.textures_delta.clear();
+            taken
+        };
+        assert!(press(Vec::new()).is_some());
+        assert!(press(vec![chord("Cmd+,")]).is_none(), "AppKit ran it");
+        assert!(press(vec![chord("Cmd+/")]).is_some());
+    }
+
+    #[test]
+    fn an_item_whose_key_the_command_refuses_while_typing_waits_while_typing() -> anyhow::Result<()>
+    {
+        let (_dir, mut editor, _) = editor_with_catalog(&["one.ARW"])?;
+        let ctx = editor.context.clone();
+        editor.onboarding.visible = false;
+        editor
+            .keymap
+            .set("library", &[chord("Cmd+F1")])
+            .expect("bound");
+        assert!(editor.menu_state(Action::Library, &ctx).0);
+        let mut text = String::new();
+        for _ in 0..2 {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                ui.text_edit_singleline(&mut text).request_focus();
+            });
+            output.textures_delta.clear();
+        }
+        assert!(ctx.text_edit_focused());
+        assert!(
+            !editor.menu_state(Action::Library, &ctx).0,
+            "Cmd+F1 would type-skip"
+        );
+        // Preferences runs while typing, as its key does.
+        assert!(editor.menu_state(Action::Preferences, &ctx).0);
+        // With no key of its own, an item stays clickable.
+        editor.keymap.reset("library").expect("reset");
+        assert!(editor.menu_state(Action::Library, &ctx).0);
+        Ok(())
+    }
 
     #[test]
     fn menu_commands_recheck_busy_and_modal_state() -> anyhow::Result<()> {

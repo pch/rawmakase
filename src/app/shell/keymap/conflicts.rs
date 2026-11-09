@@ -9,6 +9,7 @@
 use super::rules::level;
 use super::{Binding, Chord, Default, Effective, Mods};
 use crate::app::shell::commands::registry::bindings;
+use eframe::egui::Key;
 
 /// Two bindings on one chord.
 #[derive(Clone, Copy)]
@@ -57,6 +58,37 @@ pub(in crate::app) fn clashes(map: &Effective, macos: bool) -> Vec<Clash> {
         }
     }
     out
+}
+
+/// Whether another command's binding shares `chord`, one of `binding`'s
+/// `default`'s, where both can be active: as a conflict or by shadowing.
+#[cfg_attr(
+    not(any(target_os = "macos", test)),
+    allow(dead_code, reason = "the macOS menu's alone")
+)]
+pub(in crate::app) fn shared(
+    map: &Effective,
+    binding: &Binding,
+    default: &Default,
+    chord: Chord,
+    macos: bool,
+) -> bool {
+    let mut one = *default;
+    one.keys = std::slice::from_ref(
+        Key::ALL
+            .iter()
+            .find(|k| **k == chord.key)
+            .expect("every egui key is in Key::ALL"),
+    );
+    bindings::ALL.iter().any(|other| {
+        other.command != binding.command
+            && other.context.overlaps(binding.context)
+            && map
+                .defaults_of(other)
+                .iter()
+                .filter(|d| d.exists_on(macos))
+                .any(|d| overlap(&one, binding.variants, d, other.variants, macos).is_some())
+    })
 }
 
 /// A chord of `a` that some press shares with a chord of `b`: the same key,
