@@ -148,11 +148,11 @@ fn develop_keys_read_the_modifiers_held_for_them() {
     tap(&mut e, Key::T, Modifiers::SHIFT);
     assert!(e.view.is(Tool::Guided), "Shift+T opens Guided Upright");
     tap(&mut e, Key::T, Modifiers::SHIFT);
+    let compare = e.view.compare;
     tap(&mut e, Key::R, Modifiers::SHIFT);
-    assert!(
-        !e.view.is(Tool::Crop),
-        "Shift+R is Reference View, not Crop"
-    );
+    assert!(!e.view.is(Tool::Crop), "Shift+R is not Crop");
+    assert!(e.view.compare != compare, "Shift+R is Reference View");
+    tap(&mut e, Key::R, Modifiers::SHIFT);
     tap(&mut e, Key::Q, Modifiers::NONE);
     assert!(e.view.is(Tool::Remove));
     let (size, feather) = (e.view.retouch.size, e.view.retouch.feather);
@@ -224,4 +224,17 @@ fn shift_o_then_o_in_one_frame_still_turns_the_mask_overlay() {
     events.extend(typed(Key::O, Key::O, Modifiers::NONE));
     frame(&mut e, events);
     assert!(e.view.masking.overlay != overlay);
+}
+
+#[test]
+fn a_label_typed_as_a_symbol_is_not_also_that_symbols_key() -> anyhow::Result<()> {
+    // German Shift+7 types `/` on the 7 key: Yellow and on to the next photo,
+    // not also `/`, which deselects in the grid.
+    let (_d, mut e, ids) = library_editor(3)?;
+    let next = e.library.as_ref().unwrap().navigate(ids[0], 1);
+    tap_typed(&mut e, Key::Slash, Key::Num7, Modifiers::SHIFT);
+    let library = e.library.as_ref().unwrap();
+    assert_eq!(library.photo(ids[0]).unwrap().label, "Yellow");
+    assert_eq!(library.selected(), next);
+    Ok(())
 }

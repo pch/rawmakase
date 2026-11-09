@@ -77,12 +77,15 @@ pub(in crate::app) fn is_shortcut_key(key: Key, physical: Option<Key>) -> bool {
     edit_for_key(crate::app::shell::key_match::shortcut_key(key, physical)).is_some()
 }
 
-pub(crate) fn shortcut(ctx: &egui::Context) -> Option<(Edit, bool)> {
+/// The frame's first rating, flag or label key: its edit, whether Shift was held
+/// for it (to go on to the next photo), and the index of its event in the frame's
+/// input, for the caller to take once it applies the edit.
+pub(crate) fn shortcut(ctx: &egui::Context) -> Option<(Edit, bool, usize)> {
     if ctx.text_edit_focused() {
         return None;
     }
     ctx.input(|i| {
-        i.events.iter().find_map(|event| {
+        i.events.iter().enumerate().find_map(|(index, event)| {
             let egui::Event::Key {
                 key,
                 physical_key,
@@ -95,8 +98,8 @@ pub(crate) fn shortcut(ctx: &egui::Context) -> Option<(Edit, bool)> {
             };
             if modifiers.command && !modifiers.shift && !modifiers.alt {
                 return match key {
-                    Key::ArrowUp => Some((Edit::FlagDelta(1), false)),
-                    Key::ArrowDown => Some((Edit::FlagDelta(-1), false)),
+                    Key::ArrowUp => Some((Edit::FlagDelta(1), false, index)),
+                    Key::ArrowDown => Some((Edit::FlagDelta(-1), false, index)),
                     _ => None,
                 };
             }
@@ -106,7 +109,7 @@ pub(crate) fn shortcut(ctx: &egui::Context) -> Option<(Edit, bool)> {
             // The number row by its place, so Shift+5's `%` and AZERTY's
             // unshifted digit row still rate; anything else by what it types.
             let key = crate::app::shell::key_match::shortcut_key(*key, *physical_key);
-            edit_for_key(key).map(|edit| (edit, modifiers.shift))
+            edit_for_key(key).map(|edit| (edit, modifiers.shift, index))
         })
     })
 }
@@ -312,7 +315,7 @@ mod tests {
                     ..Default::default()
                 },
                 |ui| {
-                    actual = shortcut(ui.ctx());
+                    actual = shortcut(ui.ctx()).map(|(edit, shift, _)| (edit, shift));
                 },
             );
             output.textures_delta.clear();

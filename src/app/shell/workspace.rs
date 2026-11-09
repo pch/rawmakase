@@ -115,27 +115,30 @@ impl Editor {
         let cropping = self.module == Module::Develop && self.view.is(Tool::Crop);
         let auto_advance = self.session.auto_advance;
         let shortcut = crate::app::library::photo_metadata::shortcut(ctx)
-            .filter(|(e, _)| {
+            .filter(|(e, _, _)| {
                 !(brushing
                     && matches!(e, crate::app::library::photo_metadata::Edit::RatingDelta(_)))
                     && !(cropping
                         && matches!(e, crate::app::library::photo_metadata::Edit::Flag(-1)))
             })
             // Photo > Auto Advance: every key moves on, as Shift does.
-            .map(|(edit, shift)| (edit, shift || auto_advance));
+            .map(|(edit, shift, index)| (edit, shift || auto_advance, index));
         // A spot resize still being grouped is logged before the rating it precedes.
         if shortcut.is_some() {
             self.finish_wheel_gesture();
         }
-        if let Some((edit, advance)) = shortcut
+        if let Some((edit, advance, index)) = shortcut
             && self.library.is_some()
-            && let Err(error) = self.command_metadata(edit, None, advance)
         {
-            self.messages
-                .fail(format!("Metadata could not be saved: {}", error.message));
+            // The press is the edit's alone: German Shift+7 types `/`, which
+            // would also deselect in the grid, or pick the next spot source.
+            ctx.input_mut(|i| i.events.remove(index));
+            if let Err(error) = self.command_metadata(edit, None, advance) {
+                self.messages
+                    .fail(format!("Metadata could not be saved: {}", error.message));
+            }
         }
-        // The frame's other keys still move and select: no selection key is
-        // also a metadata key.
+        // The frame's other keys still move and select.
         if self.module == Module::Library
             && let Some(library) = &mut self.library
         {
