@@ -337,15 +337,7 @@ Some features span several owners; each module's docs describe its part:
   owns the data, its validation, matching and verification and never reaches the
   network; `app::develop::profile_download` owns the request, the task and the offer, and
   `app::develop::panels::inspector::profile_offer` draws it.
-- Shortcuts: `app::shell::commands::registry` lists every command a key runs and its
-  bindings, and `app::shell::keymap::FrameKeys` is the one reader of the frame's key
-  presses. Each handler keeps its place in the frame and its guards, and takes its
-  bindings' presses from it; a press runs one command. A chord's modifiers match
-  exactly, except a command's variants (Shift to go on to the next photo, extend
-  the selection or feather; Shift and Alt for a Basic step) and Shift and Alt on a
-  punctuation key, which layouts need to type it. Held modifiers, gestures,
-  text fields, dialogs' Enter and Escape and other widget-local keys are read where
-  they are used.
+- Shortcuts: see [Commands and keys](#commands-and-keys).
 - `app::shell::messages` owns what the app says to the user, and the running-work line
   is read each frame from the state that owns the work, so nothing starts or ends it
   by hand.
@@ -557,6 +549,58 @@ cached under a key holding the model's SHA-256 and the adapter version.
 Photographic checks and measured results live in the per-stage pages and in dated
 [records](records/); see the [documentation index](README.md).
 
+## Commands and keys
+
+`app::shell::commands::registry` lists every command a key runs (`COMMANDS`, the
+automation actions first, in their order) and its bindings: one per command and
+context, each with its default chords, its variants and how its presses are
+matched. A command's id names it to the key map, automation and MIDI.
+
+`app::shell::keymap::FrameKeys` is the one reader of the frame's key presses. Each
+handler keeps its place in the frame and its guards, and takes its bindings'
+presses from it; a press runs one command. A chord's modifiers match exactly,
+except a command's variants (Shift to go on to the next photo, extend the selection
+or feather; Shift and Alt for a Basic step) and Shift and Alt on a punctuation key,
+which layouts need to type it. Held modifiers, gestures, text fields, dialogs'
+Enter and Escape and other widget-local keys are read where they are used; the
+fixed ones a user's chord could collide with are listed in `keymap::rules`.
+
+The user's key map is `<data dir>/keymap.toml`, owned by `keymap::file::KeymapFile`,
+the only reader and writer of the file. It holds only the commands the user
+changed, each with its whole list of chords; the others keep this release's
+defaults (`keymap::Effective`). The desktop editor reads it at start-up; test
+editors use the defaults and never touch the data folder. It is edited in place
+with `toml_edit`, so comments, order and entries this release doesn't know survive
+a change, and written with `storage::write_atomic`. A file that doesn't read is
+never written but by Reset All, which moves it aside first; a bad entry skips its
+command alone. After a failed write the file is read back and what it holds is in
+effect: memory never runs chords the file doesn't have. `keymap::rules` refuses
+the chords the system or a text field owns, those egui-winit turns into Cut, Copy
+or Paste on Windows, a command's variants, plain keys for commands that run while
+typing, and the fixed keys' chords.
+
+Precedence is by context level (`rules::level`): a tool's bindings over Develop's,
+a Library view's over the Library's, a module's over everywhere. With a user's
+chords involved, a step leaves a press to a binding of a higher level whose
+context is active, as the editor says while it goes through the frame
+(`Editor::keys`); the press is then that binding's alone, and runs nothing if the
+binding no longer runs in the frame. Two bindings of one level that share a chord
+where both can be active conflict (`keymap::conflicts`), whatever their step: a
+press of it runs neither, and the message line names both. The defaults have no
+conflicts on any platform; their explicit order in the code stays as it was.
+
+Preferences > Shortcuts (`app::preferences::shortcuts`) edits the key map through
+`KeymapFile`, and while it waits for a key no binding sees a press. The reference
+card (`app::shell::shortcuts`) and the macOS menu (`app::shell::native_menu`) show
+the chords in effect; `platform::menu` takes only plain key-equivalent data. A menu
+item shows a Cmd chord of its command's binding that works everywhere and that no
+other binding shares, and the dispatcher skips a chord only while the installed
+menu's item that holds it is enabled.
+
+The key map file is new: older releases don't read it, and `session.json` is
+unchanged. Automation and MIDI keep their names and output; a command with no
+default key that the user gives one runs as automation runs it.
+
 ## Live application control
 
 `app::shell::commands` defines transport-independent application operations, target
@@ -599,8 +643,9 @@ application command layer, with separate MIDI and socket scopes.
 
 The automation owner manages the bounded queue and local socket independently
 of MIDI. Each MIDI device owns its mapping and connection state, using a shared
-profile registry. Further work can route remaining UI shortcuts through these
-operations and share parameter descriptors with all editing panels.
+profile registry. Keys run commands through the registry ([Commands and
+keys](#commands-and-keys)); further work can share parameter descriptors with all
+editing panels.
 The protocol crate can also hold the request types, so MCP schemas reuse
 them instead of declaring their own. These follow-ups do not require a new editing engine or MIDI-specific commands.
 

@@ -384,3 +384,32 @@ fn a_test_editors_key_map_never_touches_a_file() {
         Some(&[Chord::new(Key::F9, Mods::NONE)][..])
     );
 }
+
+/// The user's guide, docs/shortcuts.md: its example reads as it says, and it
+/// lists every command's id.
+#[test]
+fn the_shortcuts_guide_matches_the_key_map() {
+    let guide = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/shortcuts.md"),
+    )
+    .expect("the guide");
+    let example = guide
+        .split("```toml\n")
+        .nth(1)
+        .and_then(|rest| rest.split("```").next())
+        .expect("an example");
+    let parsed = match parse(example) {
+        Ok(parsed) => parsed,
+        Err(why) => panic!("the example doesn't read: {why}"),
+    };
+    assert_eq!(parsed.skipped, Vec::<Skipped>::new());
+    assert!(parsed.unknown.is_empty(), "{:?}", parsed.unknown);
+    assert_eq!(parsed.user["crop"], [chord("R")]);
+    for command in crate::app::shell::commands::registry::COMMANDS {
+        assert!(
+            guide.contains(&format!("| `{}` |", command.id)),
+            "{} is not in the guide's list",
+            command.id
+        );
+    }
+}
