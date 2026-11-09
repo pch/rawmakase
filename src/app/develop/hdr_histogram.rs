@@ -500,6 +500,7 @@ mod tests {
             headroom: 4.,
             potential: 16.,
             float_surface: true,
+            ..HdrDisplay::default()
         };
         assert_eq!(
             e.hdr_histogram_due().unwrap().0,

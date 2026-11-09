@@ -75,6 +75,28 @@ or off). A Hyprland `sdr_max_luminance` or `sdrbrightness` other than its defaul
 isn't visible through the protocol and is not followed. Light above SDR white on a
 Wayland HDR display has not been seen yet: no HDR display was available.
 
+On Windows the surface is 16-bit float when a display can show HDR as the window
+opens, its HDR switch on or not (`DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2`'s
+`highDynamicRangeSupported`, or before Windows 11 24H2 `advancedColorSupported`); a
+PC with no such display keeps the 8-bit surface, and one connected later says HDR
+shows after RAWmakase restarts. The float surface is scRGB (wgpu's
+`ExtendedSrgbLinear`, DXGI's `RGB_FULL_G10_NONE_P709`), decoded to linear by the same
+last pass as on Wayland. With HDR on, scRGB's 1.0 is 80 cd/m², not the user's SDR
+white, so the last pass multiplies by the SDR content brightness over 80 cd/m²
+(`DISPLAYCONFIG_SDR_WHITE_LEVEL`) and the interface stays at SDR white; with HDR off,
+Windows shows 1.0 as the display's white and nothing is scaled. HDR is on when the
+display's DXGI output is in BT.2100 PQ (`IDXGIOutput6::GetDesc1`, as Microsoft's
+guidance has it), and the headroom is that output's peak luminance over the SDR white.
+A display that can show HDR with its switch off says HDR is off in Windows' display
+settings. Windows changes the switch and the SDR content brightness without a
+message winit passes on, so with a float surface the window reads them again every
+two seconds and when it reaches another display (a read costs about a millisecond).
+Measured in a virtual machine whose display shows no HDR: the interface on the scRGB
+surface matches the 8-bit surface to two code values, and with SDR white and the
+headroom forced, the HDR preview's light above white keeps its ratio to the
+interface's white. Light above SDR white on a real Windows HDR display has not been
+seen yet.
+
 While the display can show HDR, an edit with HDR on whose master renders is shown
 as its master in Develop: in Fit, zoomed out, and
 zoomed in to 100% or more, and in Before Only and on each side of Before/After and

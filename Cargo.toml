@@ -158,8 +158,9 @@ wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 windows-sys = { version = "0.61", features = ["Win32_Devices_Display", "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_WindowsProgramming", "Win32_UI_ColorSystem", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 # The Recycle Bin (src/platform/trash/windows.rs): IFileOperation and its
 # progress sink, COM interfaces windows-sys has no vtables for; the sink's
-# #[implement] names windows-core.
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
+# #[implement] names windows-core. DXGI (src/platform/display.rs): the HDR
+# state and peak luminance of the window's display.
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_UI_Shell"] }
 windows-core = "0.62"
 
 # The model's fixtures, for the app's tests.

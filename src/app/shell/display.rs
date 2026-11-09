@@ -13,6 +13,8 @@ pub(in crate::app) struct HdrDisplay {
     pub(in crate::app) potential: f32,
     /// The window surface holds floats, so values above white reach the display.
     pub(in crate::app) float_surface: bool,
+    /// The display can show HDR, but Windows' HDR switch is off for it.
+    pub(in crate::app) hdr_switched_off: bool,
 }
 impl Default for HdrDisplay {
     fn default() -> Self {
@@ -20,6 +22,7 @@ impl Default for HdrDisplay {
             headroom: 1.,
             potential: 1.,
             float_surface: false,
+            hdr_switched_off: false,
         }
     }
 }
@@ -42,7 +45,9 @@ impl HdrDisplay {
     pub(in crate::app) fn unavailable(&self) -> Option<&'static str> {
         if self.available() {
             None
-        } else if cfg!(target_os = "linux") && self.potential > 1.05 {
+        } else if self.hdr_switched_off {
+            Some("HDR is off in Windows' display settings")
+        } else if cfg!(any(target_os = "linux", windows)) && self.potential > 1.05 {
             // The window's surface format was chosen while no display showed HDR.
             Some("HDR shows after RAWmakase restarts")
         } else {
@@ -67,7 +72,21 @@ impl HdrDisplay {
             let headroom = reader.read(frame).map_or(1., |d| d.headroom(anchor));
             (headroom, headroom)
         };
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        // Windows' HDR switch is a display setting, not something a window asks for:
+        // the potential headroom is the current one.
+        #[cfg(windows)]
+        let (headroom, potential, hdr_switched_off) = {
+            let hdr = reader.read(frame);
+            let headroom = hdr.map_or(1., |h| h.headroom());
+            (
+                headroom,
+                headroom,
+                hdr.is_some_and(|h| h.supported && !h.on),
+            )
+        };
+        #[cfg(not(windows))]
+        let hdr_switched_off = false;
+        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
         let (headroom, potential) = {
             let _ = reader;
             (1., 1.)
@@ -76,6 +95,7 @@ impl HdrDisplay {
             headroom,
             potential,
             float_surface,
+            hdr_switched_off,
         }
     }
 }
@@ -90,13 +110,61 @@ fn extended_surface(format: wgpu::TextureFormat, color_space: wgpu::SurfaceColor
 }
 
 /// Reads the window's display's headroom where that needs state kept between frames:
-/// on Wayland, the compositor's preferred image description of the window's surface.
+/// on Wayland, the compositor's preferred image description of the window's surface;
+/// on Windows, what Windows last said about the window's display.
 #[derive(Default)]
 pub(in crate::app) struct HeadroomReader {
     /// `None` until the first read; then the window's surface, if it is on a Wayland
     /// compositor with color management.
     #[cfg(target_os = "linux")]
     wayland: Option<Option<crate::platform::display::wayland::Surface>>,
+    /// The display Windows was last asked about, when, and what it said.
+    #[cfg(windows)]
+    windows: Option<(
+        crate::platform::display::Monitor,
+        std::time::Instant,
+        Option<crate::platform::display::WindowsHdr>,
+    )>,
+}
+
+#[cfg(windows)]
+impl HeadroomReader {
+    /// What Windows says about the window's display, asked again when the window
+    /// reaches another display and every [`RECHECK`]: the HDR switch and the SDR
+    /// content brightness change without a message winit passes on. Each read
+    /// presents SDR white where Windows shows it (`WindowsHdr::scrgb_white`).
+    ///
+    /// [`RECHECK`]: crate::app::preferences::monitor::RECHECK
+    fn read(&mut self, frame: &eframe::Frame) -> Option<crate::platform::display::WindowsHdr> {
+        use crate::platform::display;
+        let monitor = display::monitor(frame);
+        let now = std::time::Instant::now();
+        let hdr = match self.windows {
+            Some((m, at, hdr))
+                if m == monitor
+                    && now.duration_since(at) < crate::app::preferences::monitor::RECHECK =>
+            {
+                hdr
+            }
+            _ => {
+                let hdr = display::windows_hdr(monitor);
+                self.windows = Some((monitor, now, hdr));
+                hdr
+            }
+        };
+        // scRGB's 1.0 is 80 cd/m² with HDR on, darker than SDR white.
+        if let Some(state) = frame.wgpu_render_state() {
+            let output = eframe::egui_wgpu::LinearOutput {
+                white: hdr.map_or(1., |h| h.scrgb_white()),
+                black: 0.,
+            };
+            let mut current = state.linear_output.write();
+            if *current != output {
+                *current = output;
+            }
+        }
+        hdr
+    }
 }
 
 impl HeadroomReader {
@@ -209,6 +277,7 @@ mod tests {
             headroom: 4.,
             potential: 4.,
             float_surface: true,
+            ..HdrDisplay::default()
         };
         assert_eq!(hdr.unavailable(), None);
         assert_eq!(
@@ -248,6 +317,7 @@ mod tests {
             headroom: 1.,
             potential: 16.,
             float_surface: true,
+            ..HdrDisplay::default()
         };
         assert!(before_edr.available());
         assert!(
@@ -263,6 +333,32 @@ mod tests {
                 ..before_edr
             }
             .available()
+        );
+    }
+
+    /// A display that could show HDR with Windows' HDR switch off says where to turn
+    /// it on, whether or not the window's surface could show it yet.
+    #[test]
+    fn a_display_with_hdr_switched_off_says_so() {
+        let off = HdrDisplay {
+            hdr_switched_off: true,
+            ..HdrDisplay::default()
+        };
+        assert_eq!(
+            off.unavailable(),
+            Some("HDR is off in Windows' display settings")
+        );
+        assert_eq!(
+            HdrDisplay {
+                float_surface: true,
+                ..off
+            }
+            .unavailable(),
+            Some("HDR is off in Windows' display settings")
+        );
+        assert_eq!(
+            HdrDisplay::default().unavailable(),
+            Some("this display shows no HDR")
         );
     }
 }

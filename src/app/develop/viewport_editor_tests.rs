@@ -282,6 +282,7 @@ fn the_hdr_master_is_due_in_every_view_of_an_hdr_edit() {
         headroom: 4.,
         potential: 16.,
         float_surface: true,
+        ..HdrDisplay::default()
     };
     e.view.hdr_display = hdr;
     assert_eq!(e.hdr_preview_due().unwrap_err(), "HDR is off");
@@ -391,6 +392,7 @@ fn the_hdr_readout_reads_the_region_where_the_hdr_preview_draws_it() {
         headroom: 4.,
         potential: 16.,
         float_surface: true,
+        ..HdrDisplay::default()
     };
     e.document.edit.setup_mut().hdr.enabled = true;
     e.view.zoom.set(1.);
@@ -432,6 +434,7 @@ fn an_hdr_edit_refused_by_the_display_waits_for_it() {
         headroom: 4.,
         potential: 4.,
         float_surface: true,
+        ..HdrDisplay::default()
     };
     assert!(!e.hdr_awaits_display(), "shown in HDR");
 }
@@ -446,6 +449,7 @@ fn hdr_editor(ctx: &egui::Context) -> crate::app::Editor {
         headroom: 4.,
         potential: 16.,
         float_surface: true,
+        ..HdrDisplay::default()
     };
     e.document.edit.setup_mut().hdr.enabled = true;
     e

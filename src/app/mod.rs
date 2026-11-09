@@ -566,8 +566,14 @@ impl eframe::App for Editor {
         // The display's headroom follows its brightness, and nothing repaints an idle
         // window when it moves: read it again while an HDR photo is due. A Wayland
         // display that turns HDR on wakes no window either, so on Linux also while an
-        // HDR edit waits for one.
-        if self.view.hdr_shown || (cfg!(target_os = "linux") && self.hdr_awaits_display()) {
+        // HDR edit waits for one. On Windows a float surface's whole window follows
+        // the HDR switch and the SDR content brightness (`HeadroomReader`), which
+        // change without waking it.
+        let windows_float = cfg!(windows) && self.view.hdr_display.float_surface;
+        if self.view.hdr_shown
+            || windows_float
+            || (cfg!(target_os = "linux") && self.hdr_awaits_display())
+        {
             ui.ctx()
                 .request_repaint_after(crate::app::preferences::monitor::RECHECK);
         }
@@ -869,6 +875,19 @@ fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
         options.surface_format_selector = Some(std::sync::Arc::new(|formats| {
             (formats.contains(&wgpu::TextureFormat::Rgba16Float)
                 && crate::platform::display::wayland::any_output_has_headroom())
+            .then_some(wgpu::TextureFormat::Rgba16Float)
+        }));
+        options.linear_float_surface = true;
+    }
+    // On Windows the same, where a display can show HDR when the window opens, its
+    // switch on or not: the surface is scRGB (linear extended sRGB, 1.0 at 80 cd/m²
+    // with HDR on), and egui-wgpu's last pass puts SDR white where Windows shows it
+    // (`HeadroomReader`). A PC with no HDR display keeps the 8-bit surface.
+    #[cfg(windows)]
+    {
+        options.surface_format_selector = Some(std::sync::Arc::new(|formats| {
+            (formats.contains(&wgpu::TextureFormat::Rgba16Float)
+                && crate::platform::display::any_display_supports_hdr())
             .then_some(wgpu::TextureFormat::Rgba16Float)
         }));
         options.linear_float_surface = true;
