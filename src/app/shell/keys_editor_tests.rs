@@ -96,3 +96,31 @@ fn a_rating_key_leaves_the_frames_other_library_keys_working() -> anyhow::Result
     assert_eq!(e.library.as_ref().unwrap().selected(), next);
     Ok(())
 }
+
+#[test]
+fn a_key_typing_a_letter_is_never_also_the_key_at_its_place() -> anyhow::Result<()> {
+    // Dvorak types G on the U key: Library, not unflag.
+    let (_d, mut e, ids) = library_editor(2)?;
+    tap(&mut e, Key::P, Modifiers::NONE);
+    let flag = |e: &Editor| e.library.as_ref().unwrap().photo(ids[0]).unwrap().flag;
+    assert_eq!(flag(&e), 1);
+    tap_typed(&mut e, Key::G, Key::U, Modifiers::NONE);
+    assert_eq!(flag(&e), 1, "G@U leaves the flag alone");
+    Ok(())
+}
+
+#[test]
+fn f_typed_on_the_y_key_hides_the_chrome_without_comparing() {
+    let ctx = egui::Context::default();
+    let (mut e, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    e.onboarding.visible = false;
+    frame(&mut e, vec![]);
+    let compare = e.view.compare;
+    tap_typed(&mut e, Key::F, Key::Y, Modifiers::NONE);
+    assert!(e.chrome.hidden(e.module));
+    assert!(e.view.compare == compare, "F@Y is no Before/After");
+}

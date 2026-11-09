@@ -47,6 +47,36 @@ impl Edit {
     }
 }
 
+/// The metadata edit a key stands for, held with no modifier but Shift.
+fn edit_for_key(key: Key) -> Option<Edit> {
+    Some(match key {
+        Key::Num0 => Edit::Rating(0),
+        Key::Num1 => Edit::Rating(1),
+        Key::Num2 => Edit::Rating(2),
+        Key::Num3 => Edit::Rating(3),
+        Key::Num4 => Edit::Rating(4),
+        Key::Num5 => Edit::Rating(5),
+        Key::Num6 => Edit::ToggleLabel("Red".into()),
+        Key::Num7 => Edit::ToggleLabel("Yellow".into()),
+        Key::Num8 => Edit::ToggleLabel("Green".into()),
+        Key::Num9 => Edit::ToggleLabel("Blue".into()),
+        Key::P => Edit::Flag(1),
+        Key::U => Edit::Flag(0),
+        Key::X => Edit::Flag(-1),
+        Key::Backtick => Edit::TogglePick,
+        // Shift+[ and Shift+] type `{` and `}` on US layouts.
+        Key::OpenBracket | Key::OpenCurlyBracket => Edit::RatingDelta(-1),
+        Key::CloseBracket | Key::CloseCurlyBracket => Edit::RatingDelta(1),
+        _ => return None,
+    })
+}
+
+/// Whether a press of `key` at `physical`, with neither Cmd, Ctrl nor Alt held,
+/// is a rating, flag or label key.
+pub(in crate::app) fn is_shortcut_key(key: Key, physical: Option<Key>) -> bool {
+    edit_for_key(crate::app::shell::key_match::shortcut_key(key, physical)).is_some()
+}
+
 pub(crate) fn shortcut(ctx: &egui::Context) -> Option<(Edit, bool)> {
     if ctx.text_edit_focused() {
         return None;
@@ -73,31 +103,10 @@ pub(crate) fn shortcut(ctx: &egui::Context) -> Option<(Edit, bool)> {
             if modifiers.command || modifiers.ctrl || modifiers.alt || modifiers.mac_cmd {
                 return None;
             }
-            let map = |key| {
-                Some(match key {
-                    Key::Num0 => Edit::Rating(0),
-                    Key::Num1 => Edit::Rating(1),
-                    Key::Num2 => Edit::Rating(2),
-                    Key::Num3 => Edit::Rating(3),
-                    Key::Num4 => Edit::Rating(4),
-                    Key::Num5 => Edit::Rating(5),
-                    Key::Num6 => Edit::ToggleLabel("Red".into()),
-                    Key::Num7 => Edit::ToggleLabel("Yellow".into()),
-                    Key::Num8 => Edit::ToggleLabel("Green".into()),
-                    Key::Num9 => Edit::ToggleLabel("Blue".into()),
-                    Key::P => Edit::Flag(1),
-                    Key::U => Edit::Flag(0),
-                    Key::X => Edit::Flag(-1),
-                    Key::Backtick => Edit::TogglePick,
-                    Key::OpenBracket => Edit::RatingDelta(-1),
-                    Key::CloseBracket => Edit::RatingDelta(1),
-                    _ => return None,
-                })
-            };
-            // Shift-number may arrive as punctuation; retain the physical number key.
-            map(*key)
-                .or_else(|| physical_key.and_then(map))
-                .map(|edit| (edit, modifiers.shift))
+            // The number row by its place, so Shift+5's `%` and AZERTY's
+            // unshifted digit row still rate; anything else by what it types.
+            let key = crate::app::shell::key_match::shortcut_key(*key, *physical_key);
+            edit_for_key(key).map(|edit| (edit, modifiers.shift))
         })
     })
 }
@@ -345,6 +354,51 @@ mod tests {
             run(key(Key::Num5, modifiers, false), None);
         }
         run(key(Key::Num6, egui::Modifiers::NONE, true), None);
+        // What the key types decides, but the number row goes by its place.
+        let typed = |key, physical, modifiers| egui::Event::Key {
+            key,
+            physical_key: Some(physical),
+            pressed: true,
+            repeat: false,
+            modifiers,
+        };
+        for (event, expected) in [
+            // AZERTY's 4 and 6 type `'` and `-`.
+            (
+                typed(Key::Quote, Key::Num4, egui::Modifiers::NONE),
+                Some((Edit::Rating(4), false)),
+            ),
+            (
+                typed(Key::Minus, Key::Num6, egui::Modifiers::NONE),
+                Some((Edit::ToggleLabel("Red".into()), false)),
+            ),
+            // US Shift+1 types `!`, Shift+] and Shift+[ type `}` and `{`.
+            (
+                typed(Key::Exclamationmark, Key::Num1, egui::Modifiers::SHIFT),
+                Some((Edit::Rating(1), true)),
+            ),
+            (
+                typed(
+                    Key::CloseCurlyBracket,
+                    Key::CloseBracket,
+                    egui::Modifiers::SHIFT,
+                ),
+                Some((Edit::RatingDelta(1), true)),
+            ),
+            (
+                typed(
+                    Key::OpenCurlyBracket,
+                    Key::OpenBracket,
+                    egui::Modifiers::SHIFT,
+                ),
+                Some((Edit::RatingDelta(-1), true)),
+            ),
+            // Dvorak types G on U and Q on X: neither is a metadata key.
+            (typed(Key::G, Key::U, egui::Modifiers::NONE), None),
+            (typed(Key::Q, Key::X, egui::Modifiers::NONE), None),
+        ] {
+            run(event, expected);
+        }
         let mut text = String::new();
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             ui.text_edit_singleline(&mut text).request_focus();

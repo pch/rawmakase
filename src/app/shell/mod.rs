@@ -6,6 +6,7 @@ pub(in crate::app) mod crash_log;
 pub(in crate::app) mod dialogs;
 pub(in crate::app) mod display;
 pub(in crate::app) mod exit;
+pub(in crate::app) mod key_match;
 pub(in crate::app) mod messages;
 #[cfg(any(target_os = "macos", test))]
 pub(in crate::app) mod native_menu;

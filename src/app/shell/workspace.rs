@@ -997,14 +997,11 @@ impl Editor {
                 i.events.iter().find_map(|event| match event {
                     egui::Event::Key {
                         key,
-                        physical_key,
                         pressed: true,
                         repeat: false,
                         modifiers,
-                    } if (*key == egui::Key::E || *physical_key == Some(egui::Key::E))
-                        && modifiers.command
-                        && modifiers.shift =>
-                    {
+                        ..
+                    } if *key == egui::Key::E && modifiers.command && modifiers.shift => {
                         Some(modifiers.alt)
                     }
                     _ => None,
@@ -1382,6 +1379,7 @@ impl Editor {
     /// step through the zoom levels, Z toggles Fit and the last zoom. F is not
     /// here: it hides the chrome (see `chrome`), as Lightroom's does.
     pub(in crate::app) fn zoom_keys(&mut self, ctx: &egui::Context) {
+        use crate::app::shell::key_match::shortcut_key;
         use egui::Key;
         // Each key with the modifiers held for it, which a quick shortcut
         // can release in the same frame.
@@ -1402,15 +1400,15 @@ impl Editor {
         });
         for (key, physical, modifiers, repeat) in presses {
             match key {
-                // Cmd+0 (and Lightroom's Cmd+Option+0): 100%; Cmd+1 fits. By the
-                // physical key: Option changes the typed one on macOS.
-                _ if physical.unwrap_or(key) == Key::Num0
+                // Cmd+0 (and Lightroom's Cmd+Option+0): 100%; Cmd+1 fits. The
+                // number row goes by its place (`key_match`).
+                _ if shortcut_key(key, physical) == Key::Num0
                     && modifiers.command
                     && !modifiers.shift =>
                 {
                     self.set_zoom(1.)
                 }
-                _ if physical.unwrap_or(key) == Key::Num1 && modifiers.command_only() => {
+                _ if shortcut_key(key, physical) == Key::Num1 && modifiers.command_only() => {
                     self.set_zoom(0.)
                 }
                 Key::Plus | Key::Equals if modifiers.command => self.step_zoom(1),
@@ -1461,11 +1459,18 @@ impl Editor {
                     self.navigate(-1);
                 }
                 // Y: Before/After left and right, Option+Y top and bottom, Shift+Y
-                // split. Option changes the typed letter on macOS, so match the
-                // physical key too.
+                // split. By what the key types: egui-winit gives the key's place when
+                // Option types a character it can't name (`key_match`).
                 let y = i.events.iter().any(|event| {
-                    matches!(event, egui::Event::Key { key, physical_key, pressed: true, repeat: false, .. }
-                        if *key == egui::Key::Y || *physical_key == Some(egui::Key::Y))
+                    matches!(
+                        event,
+                        egui::Event::Key {
+                            key: egui::Key::Y,
+                            pressed: true,
+                            repeat: false,
+                            ..
+                        }
+                    )
                 });
                 if y && !m.command {
                     use crate::app::develop::before_after::{Axis, Compare};
@@ -1488,18 +1493,23 @@ impl Editor {
                 };
                 copy = shift_command(egui::Key::C);
                 paste = shift_command(egui::Key::V);
-                // Lightroom's Paste Settings from Previous. Option changes the typed
-                // letter on macOS, so match the physical key too.
+                // Lightroom's Paste Settings from Previous. With Cmd held, macOS types
+                // the letter Option would change.
                 previous = i.events.iter().any(|event| {
-                    matches!(event, egui::Event::Key { key, physical_key, pressed: true, repeat: false, modifiers }
-                        if (*key == egui::Key::V || *physical_key == Some(egui::Key::V))
-                            && modifiers.command && modifiers.alt && !modifiers.shift)
+                    matches!(event, egui::Event::Key { key: egui::Key::V, pressed: true, repeat: false, modifiers, .. }
+                        if modifiers.command && modifiers.alt && !modifiers.shift)
                 });
-                // Lightroom's Match Total Exposures; Option changes the typed letter
-                // on macOS, so match the physical key too.
+                // Lightroom's Match Total Exposures.
                 let m = i.events.iter().any(|event| {
-                    matches!(event, egui::Event::Key { key, physical_key, pressed: true, repeat: false, .. }
-                        if *key == egui::Key::M || *physical_key == Some(egui::Key::M))
+                    matches!(
+                        event,
+                        egui::Event::Key {
+                            key: egui::Key::M,
+                            pressed: true,
+                            repeat: false,
+                            ..
+                        }
+                    )
                 });
                 if m && i.modifiers.command && i.modifiers.shift && i.modifiers.alt {
                     match_exposures = true;
@@ -1510,8 +1520,7 @@ impl Editor {
                 }
                 // Lightroom's Targeted Adjustment Tools: Cmd+Option+Shift and T (Tone
                 // Curve), H, S, L (the Color Mixer's Hue, Saturation, Luminance) or G
-                // (B&W). Option changes the typed letter on macOS, so match the
-                // physical key too.
+                // (B&W).
                 if i.modifiers.command && i.modifiers.alt && i.modifiers.shift {
                     use crate::develop::targeted::{HslChannel, Target};
                     for (key, target) in [
@@ -1522,8 +1531,8 @@ impl Editor {
                         (egui::Key::G, Target::BlackWhite),
                     ] {
                         let pressed = i.events.iter().any(|event| {
-                            matches!(event, egui::Event::Key { key: k, physical_key, pressed: true, repeat: false, .. }
-                                if *k == key || *physical_key == Some(key))
+                            matches!(event, egui::Event::Key { key: k, pressed: true, repeat: false, .. }
+                                if *k == key)
                         });
                         if pressed {
                             targeted = Some(target);
@@ -1553,11 +1562,17 @@ impl Editor {
                     auto = true;
                 }
                 // Shift+Cmd+E exports, Option+Shift+Cmd+E exports with the previous
-                // choices. Option changes the typed letter on macOS, so match the
-                // physical key too.
+                // choices.
                 let e = i.events.iter().any(|event| {
-                    matches!(event, egui::Event::Key { key, physical_key, pressed: true, repeat: false, .. }
-                        if *key == egui::Key::E || *physical_key == Some(egui::Key::E))
+                    matches!(
+                        event,
+                        egui::Event::Key {
+                            key: egui::Key::E,
+                            pressed: true,
+                            repeat: false,
+                            ..
+                        }
+                    )
                 });
                 if e && i.modifiers.command && i.modifiers.shift {
                     export = Some(i.modifiers.alt);
