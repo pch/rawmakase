@@ -4,7 +4,8 @@ Status: Current.
 
 RAWmakase's shortcuts follow Lightroom's. Press **Cmd+/** (Ctrl+/ on Windows and
 Linux) for the reference card of every shortcut, or open **Preferences >
-Shortcuts** to change them. In this page **Cmd** is ⌘ on a Mac and Ctrl elsewhere,
+Shortcuts** to change them. The card shows your keys too; a key you give a command
+the card has no row for is listed under **Your keys**. In this page **Cmd** is ⌘ on a Mac and Ctrl elsewhere,
 **Ctrl** is the Mac's Control key, and **Alt** is Option on a Mac.
 
 ## Changing a shortcut
@@ -14,7 +15,8 @@ reference card groups them. Type in the search field to find a command by what i
 does or by its keys: `crop`, `cmd shift e` and `⌘⇧E` all work.
 
 - Click a key to change it, then press the new key with its modifiers. Escape
-  keeps the keys as they were; Delete (or Backspace) takes that key away.
+  keeps the keys as they were; Delete (or Backspace) takes that key away; a
+  click anywhere else stops waiting for the key.
 - Click **+** to give a command another key.
 - **Reset** gives one command its default keys back; **Reset All** does it for
   every command.

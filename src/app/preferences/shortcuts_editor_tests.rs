@@ -300,7 +300,7 @@ fn a_conflict_is_marked_on_both_rows_and_can_be_shown_alone() {
     ));
     let badge = |page: &Page, other: &str| {
         page.shows(&format!(
-            "Conflicts with \u{201c}{other}\u{201d}: neither runs on this key"
+            "Conflicts with \u{201c}{other}\u{201d} on F9 in Develop: neither runs"
         ))
     };
     assert!(badge(&page, "Select the next Basic slider"));
@@ -375,4 +375,23 @@ fn a_captured_key_is_saved_as_its_command_reads_keys() {
     page.click(&format!("Keyboard shortcuts: {}", cmd_text("/")));
     page.press_at(Key::Slash, Key::Num7, cmd() | Modifiers::SHIFT);
     assert_eq!(page.keys("shortcuts"), [cmd_text("/")]);
+}
+
+#[test]
+fn a_click_elsewhere_stops_a_key_cap_waiting() {
+    let mut page = Page::new(None);
+    page.query("straighten");
+    page.click("Crop & Straighten: R");
+    assert!(page.e.preferences.shortcuts.capturing());
+    // Back into the search field, to type in it.
+    page.click("straighten");
+    assert!(!page.e.preferences.shortcuts.capturing());
+    page.press(Key::J, Modifiers::NONE);
+    assert_eq!(page.keys("crop"), ["C", "R"]);
+    // A click on the waiting cap itself keeps it waiting.
+    page.click("Crop & Straighten: R");
+    page.click("Crop & Straighten: R");
+    assert!(page.e.preferences.shortcuts.capturing());
+    page.press(Key::J, Modifiers::NONE);
+    assert_eq!(page.keys("crop"), ["C", "J"]);
 }

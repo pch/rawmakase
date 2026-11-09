@@ -13,7 +13,7 @@ use crate::app::shell::keymap::rules::{self, FIXED_KEYS};
 use crate::app::shell::keymap::{
     Binding, Chord, Context, Effective, FrameKeys, Mods, Press, Tool, chord_of,
 };
-use crate::app::shell::shortcuts::{cap_label, search_matches, tokens};
+use crate::app::shell::shortcuts::{cap_label, search_matches, split_caps, tokens};
 use crate::app::ui::design::{Tone, radius, space, text};
 use crate::app::ui::icons::{self, Icon};
 use crate::app::ui::theme;
@@ -26,6 +26,9 @@ pub(in crate::app) struct Page {
     query: String,
     conflicts_only: bool,
     capture: Option<Capture>,
+    /// Where the cap waiting for a key was last drawn: a press anywhere else
+    /// gives up waiting.
+    capture_at: Option<Rect>,
     /// The command whose change was refused, and why: said under its row.
     refused: Option<(&'static str, String)>,
 }
@@ -121,8 +124,9 @@ struct Row {
     overridden: bool,
     /// Shown, not changed: the text-editing commands and the fixed keys.
     locked: bool,
-    /// The commands whose keys this one shares where both run: neither does.
-    conflicts: Vec<&'static str>,
+    /// The commands whose keys this one shares where both run, neither of
+    /// which does: each with the chord and where.
+    conflicts: Vec<(&'static str, Chord, Context)>,
     /// What runs instead where a binding of higher precedence has its key.
     shadows: Vec<String>,
 }
@@ -155,7 +159,7 @@ fn rows(map: &Effective, clashes: &[Clash]) -> Vec<Row> {
     for command in COMMANDS {
         let bindings = rules::bindings_of(command.id);
         let mine = |c: &&Clash| c.a.command == command.id || c.b.command == command.id;
-        let mut conflicts: Vec<&'static str> = Vec::new();
+        let mut conflicts: Vec<(&'static str, Chord, Context)> = Vec::new();
         let mut shadows = Vec::new();
         for clash in clashes.iter().filter(mine) {
             let (me, other) = if clash.a.command == command.id {
@@ -164,8 +168,17 @@ fn rows(map: &Effective, clashes: &[Clash]) -> Vec<Row> {
                 (clash.b, clash.a)
             };
             if clash.conflict {
-                if !conflicts.contains(&other.command) {
-                    conflicts.push(other.command);
+                if !conflicts
+                    .iter()
+                    .any(|(id, chord, _)| *id == other.command && *chord == clash.chord)
+                {
+                    // The narrower of the two places is where both run.
+                    let at = if rules::level(other.context) > rules::level(me.context) {
+                        other.context
+                    } else {
+                        me.context
+                    };
+                    conflicts.push((other.command, clash.chord, at));
                 }
             } else if (map.overrides(me.command) || map.overrides(other.command))
                 && rules::level(other.context) > rules::level(me.context)
@@ -235,6 +248,23 @@ impl Editor {
     pub(super) fn shortcuts_page(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let palette = theme::palette(&ctx);
+        // A click anywhere but on the waiting cap meant something else (the
+        // search field, another row): the cap stops waiting, before the key
+        // that follows the click is taken for it.
+        if self.preferences.shortcuts.capture.is_some() {
+            let pressed = ctx.input(|i| i.pointer.any_pressed().then(|| i.pointer.press_origin()));
+            if let Some(at) = pressed
+                && !at.is_some_and(|at| {
+                    self.preferences
+                        .shortcuts
+                        .capture_at
+                        .is_some_and(|cap| cap.contains(at))
+                })
+            {
+                self.preferences.shortcuts.capture = None;
+            }
+        }
+        self.preferences.shortcuts.capture_at = None;
         if let Some(capture) = self.preferences.shortcuts.capture
             && let Some(press) = FrameKeys::of(&ctx).capture()
         {
@@ -281,6 +311,13 @@ impl Editor {
                     if self.preferences.shortcuts.capture.is_some() {
                         field.surrender_focus();
                     }
+                    // Focus gone to another control: the keys are its now.
+                    if ui
+                        .ctx()
+                        .memory(|m| m.focused().is_some_and(|f| f != field.id))
+                    {
+                        self.preferences.shortcuts.capture = None;
+                    }
                 },
             );
             ui.checkbox(
@@ -318,6 +355,7 @@ impl Editor {
             })
             .collect();
         let capture = self.preferences.shortcuts.capture;
+        let mut capture_at = None;
         let refused = self.preferences.shortcuts.refused.clone();
         let unknown = self.keymap.unknown().to_vec();
         let skipped = self.keymap.skipped().to_vec();
@@ -335,7 +373,15 @@ impl Editor {
                         }
                         group(ui, name);
                         for row in rows {
-                            row_ui(ui, row, editable, capture, refused.as_ref(), &mut asks);
+                            row_ui(
+                                ui,
+                                row,
+                                editable,
+                                capture,
+                                refused.as_ref(),
+                                &mut asks,
+                                &mut capture_at,
+                            );
                         }
                         gap(ui);
                     }
@@ -358,6 +404,7 @@ impl Editor {
                     }
                 });
             });
+        self.preferences.shortcuts.capture_at = capture_at;
         for ask in asks {
             match ask {
                 Ask::Capture(capture) => {
@@ -434,6 +481,7 @@ fn row_ui(
     capture: Option<Capture>,
     refused: Option<&(&'static str, String)>,
     asks: &mut Vec<Ask>,
+    capture_at: &mut Option<Rect>,
 ) {
     let palette = theme::palette(ui.ctx());
     let changeable = editable && !row.locked && row.id.is_some();
@@ -475,6 +523,9 @@ fn row_ui(
                         chord_text(chord)
                     };
                     let response = key_cap(ui, &label, this, !row.locked);
+                    if this {
+                        *capture_at = Some(response.rect);
+                    }
                     let name = format!("{}: {}", row.title, chord);
                     response.widget_info(|| {
                         egui::WidgetInfo::labeled(egui::WidgetType::Button, changeable, &name)
@@ -494,7 +545,7 @@ fn row_ui(
                     );
                 }
                 if waiting && capture.is_some_and(|c| c.replacing.is_none()) {
-                    key_cap(ui, "Press a key…", true, true);
+                    *capture_at = Some(key_cap(ui, "Press a key…", true, true).rect);
                 }
                 if changeable {
                     let title = row.title;
@@ -546,12 +597,13 @@ fn row_ui(
             palette.tone(Tone::MUTED),
         );
     }
-    for other in &row.conflicts {
+    for (other, chord, at) in &row.conflicts {
         note(
             ui,
             format!(
-                "Conflicts with \u{201c}{}\u{201d}: neither runs on this key",
-                title(other)
+                "Conflicts with \u{201c}{}\u{201d} on {chord} in {}: neither runs",
+                title(other),
+                place(*at)
             ),
             palette.warning(),
         );
@@ -577,19 +629,6 @@ fn chord_text(chord: &Chord) -> String {
     }
 }
 
-/// A chord's text in its caps: the modifiers, then the key, which may be `+`.
-fn split_caps(text: &str) -> Vec<&str> {
-    if let Some(mods) = text.strip_suffix("++") {
-        let mut caps: Vec<&str> = mods.split('+').filter(|m| !m.is_empty()).collect();
-        caps.push("+");
-        return caps;
-    }
-    if text == "+" {
-        return vec!["+"];
-    }
-    text.split('+').collect()
-}
-
 /// A key cap as the reference card draws one, which a click on starts a
 /// capture; `waiting` while it waits for the key.
 fn key_cap(ui: &mut egui::Ui, label: &str, waiting: bool, live: bool) -> egui::Response {
@@ -603,6 +642,15 @@ fn key_cap(ui: &mut egui::Ui, label: &str, waiting: bool, live: bool) -> egui::R
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let hovered = live && response.hovered();
     let cap = Rect::from_min_size(rect.min, size);
+    // The keyboard's focus, outlined as the app's fields outline it.
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            cap.expand(2.),
+            6.,
+            Stroke::new(1., palette.accent()),
+            egui::StrokeKind::Outside,
+        );
+    }
     ui.painter().rect_filled(
         cap.translate(Vec2::new(0., 1.5)),
         4.,

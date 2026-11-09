@@ -521,6 +521,33 @@ fn row_keys(row: &Row, map: &Effective) -> String {
     alternatives.join(" / ")
 }
 
+/// Every table of the card.
+const TABLES: [&[Row]; 9] = [
+    &LIBRARY, &STACKS, &LOUPE, &COMPARE, &SURVEY, &RATING, &QUICK, &GENERAL, &DEVELOP,
+];
+
+/// The commands the user gave keys that no row of the card shows: a row
+/// each, by its title, so every key of the user's is on the card. None
+/// with the defaults.
+fn yours(map: &Effective) -> Vec<Shortcut> {
+    let shown = |id: &str| {
+        TABLES.iter().flat_map(|t| t.iter()).any(|row| {
+            row.parts
+                .iter()
+                .any(|p| matches!(p, Keys(b) | EveryKey(b) if b.command == id))
+        })
+    };
+    crate::app::shell::commands::registry::COMMANDS
+        .iter()
+        .filter(|c| !shown(c.id))
+        .filter_map(|c| {
+            let chords = map.user_chords(c.id).filter(|k| !k.is_empty())?;
+            let keys: Vec<String> = chords.iter().map(Chord::to_string).collect();
+            Some((keys.join(" / "), c.title))
+        })
+        .collect()
+}
+
 /// The card's rows with their keys in `map`.
 fn shortcuts(rows: &[Row], map: &Effective) -> Vec<Shortcut> {
     rows.iter()
@@ -599,11 +626,15 @@ impl Editor {
             ("Compare", &compare),
             ("Survey", &survey),
         ];
-        let common: [Group; 3] = [
+        let yours = yours(&map);
+        let mut common: Vec<Group> = vec![
             ("Rating, flags and labels", &rating),
             ("Quick Collection", &quick),
             ("Everywhere", &general),
         ];
+        if !yours.is_empty() {
+            common.push(("Your keys", &yours));
+        }
         let develop: [Group; 1] = [("Develop", &develop)];
         // The current module's shortcuts come first, in the left column.
         let (left, right): (Vec<Group>, Vec<Group>) = if self.module == Module::Library {
@@ -799,7 +830,7 @@ pub(in crate::app) fn search_matches(
     tokens.iter().all(|token| {
         let key = keys
             .split(" / ")
-            .flat_map(|alternative| alternative.split('+'))
+            .flat_map(split_caps)
             .any(|cap| key_matches(cap, token));
         key || token.chars().count() > 1
             && words(title)
@@ -908,7 +939,7 @@ fn paint_keys(ui: &egui::Ui, keys: &str, right: Pos2, paint: bool) -> f32 {
         alternatives = vec![alternatives[0], alternatives[alternatives.len() - 1]];
     }
     for (i, alternative) in alternatives.iter().enumerate().rev() {
-        for cap in alternative.split('+').collect::<Vec<_>>().into_iter().rev() {
+        for cap in split_caps(alternative).into_iter().rev() {
             x = key_cap(ui, cap, Pos2::new(x, right.y), paint) - 3.;
         }
         if i > 0 {
@@ -1033,7 +1064,21 @@ pub(in crate::app) fn cap_label(cap: &str) -> String {
 
 /// Keys as text, e.g. for a hover: "⌘/".
 pub(in crate::app) fn keys_text(keys: &str) -> String {
-    keys.split('+').map(cap_label).collect()
+    split_caps(keys).into_iter().map(cap_label).collect()
+}
+
+/// A chord's text in its caps: the modifiers, then the key, which may be
+/// `+` ("Cmd++").
+pub(in crate::app) fn split_caps(text: &str) -> Vec<&str> {
+    if let Some(mods) = text.strip_suffix("++") {
+        let mut caps: Vec<&str> = mods.split('+').filter(|m| !m.is_empty()).collect();
+        caps.push("+");
+        return caps;
+    }
+    if text == "+" {
+        return vec!["+"];
+    }
+    text.split('+').collect()
 }
 
 #[cfg(test)]
@@ -1112,6 +1157,45 @@ mod tests {
         ));
         let survey = shortcuts(&SURVEY, &map);
         assert!(has(&survey, "F10 / Right / Down", "Move the active photo"));
+    }
+
+    #[test]
+    fn a_users_key_for_a_command_no_row_shows_gets_a_row_of_its_own() {
+        assert!(yours(&Effective::default()).is_empty());
+        let chord = |t: &str| Chord::parse(t).expect("a chord");
+        let map = Effective::new(
+            [
+                ("auto_white_balance", vec![chord("F9"), chord("Cmd+F9")]),
+                ("crop", vec![chord("F10")]),
+                ("curve:linear", vec![]),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        // Crop has its row; a command left with no key needs none.
+        assert_eq!(
+            yours(&map),
+            [("F9 / Cmd+F9".to_string(), "Auto white balance")]
+        );
+    }
+
+    #[test]
+    fn a_plus_key_paints_as_its_cap() {
+        let ctx = egui::Context::default();
+        let mut widths = Vec::new();
+        for _ in 0..2 {
+            widths.clear();
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                for keys in ["Cmd++", "Cmd+=", "+"] {
+                    widths.push(paint_keys(ui, keys, Pos2::ZERO, false));
+                }
+            });
+            output.textures_delta.clear();
+        }
+        // Two caps, as wide as Cmd and =; and one.
+        assert!((widths[0] - widths[1]).abs() < 0.5, "{widths:?}");
+        assert!(widths[2] < widths[1], "{widths:?}");
+        assert_eq!(keys_text("Cmd++"), format!("{}+", cap_label("Cmd")));
     }
 
     #[test]
