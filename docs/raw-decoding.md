@@ -95,6 +95,8 @@ the preview, for the photo info of RAWs on network volumes (`rawmakase-decode`'s
 `photo::header_metadata`), by the same list of variants; its comparison with
 whole-file reads is `photo_info_from_the_header_is_the_whole_file_s`, as photo
 info can come from parts a preview doesn't need.
+`largest_preview_from_file(file)` reads the largest preview, as `preview`
+chooses it, the same way, for Develop's placeholder on network volumes.
 
 Modules, each with a small `pub(crate)` surface:
 

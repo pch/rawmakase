@@ -1,9 +1,9 @@
 //! Whether a RAW is shown from its embedded preview read alone, without its
-//! sensor data (Library thumbnails), and its photo info read from its header
-//! alone (the backfill): on network volumes (SMB, NFS, WebDAV, FUSE; see
-//! `rawmakase_fs::VolumeFacts::local`), where reading the whole file to show
-//! its preview takes most of the time. On local volumes one read of the whole
-//! file is as fast, and stays as it was.
+//! sensor data (Library thumbnails, Develop's placeholder), and its photo info
+//! read from its header alone (the backfill): on network volumes (SMB, NFS,
+//! WebDAV, FUSE; see `rawmakase_fs::VolumeFacts::local`), where reading the
+//! whole file to show its preview takes most of the time. On local volumes one
+//! read of the whole file is as fast, and stays as it was.
 //!
 //! `RAWMAKASE_PREVIEW_READS` overrides it: `always`, `never`, or `auto` (the
 //! default), e.g. to compare the two on one volume.
