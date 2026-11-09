@@ -1602,8 +1602,15 @@ impl Editor {
                 }
                 // egui lets go of a text field on Escape before this runs; a mask's
                 // name field still takes that Escape to keep the old name.
+                // Masking takes a plain Escape itself, step by step (`mask_keys`):
+                // stop aiming, drop the mask not yet drawn, then close. With Cmd or
+                // Alt, which its keys refuse, it closes at once, leaving nothing.
                 if i.key_pressed(egui::Key::Escape) && !self.view.masking.is_renaming() {
-                    self.view.tool = Tool::None;
+                    if !self.view.is(Tool::Mask) {
+                        self.view.tool = Tool::None;
+                    } else if press(i, &[Key::Escape], |m| m.command || m.alt).is_some() {
+                        self.close_masking();
+                    }
                 }
                 if self.view.is(Tool::Crop) {
                     self.crop_keys(i);

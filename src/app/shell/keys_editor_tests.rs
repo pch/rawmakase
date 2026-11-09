@@ -175,3 +175,21 @@ fn a_virtual_copy_is_made_with_the_command_held_for_its_key() -> anyhow::Result<
     assert_eq!(count(&e), before + 1);
     Ok(())
 }
+
+#[test]
+fn escape_in_masking_first_drops_the_mask_not_yet_drawn() {
+    use crate::app::develop::state::Tool;
+    let mut e = develop_editor();
+    tap(&mut e, Key::M, Modifiers::NONE);
+    assert!(e.view.is(Tool::Mask) && e.view.masking.is_placing());
+    tap(&mut e, Key::Escape, Modifiers::NONE);
+    assert!(!e.view.masking.is_placing(), "Escape drops the linear mask");
+    assert!(e.view.is(Tool::Mask), "and leaves Masking open");
+    tap(&mut e, Key::Escape, Modifiers::NONE);
+    assert!(e.view.is(Tool::None), "the next Escape closes Masking");
+    // Escape with a modifier closes Masking at once, leaving nothing behind.
+    tap(&mut e, Key::M, Modifiers::NONE);
+    tap(&mut e, Key::Escape, command(Modifiers::NONE));
+    assert!(e.view.is(Tool::None));
+    assert!(!e.view.masking.is_placing());
+}

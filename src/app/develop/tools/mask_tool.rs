@@ -157,6 +157,11 @@ impl MaskTool {
     pub(in crate::app) fn is_renaming(&self) -> bool {
         self.renaming.is_some()
     }
+    /// A mask chosen to be drawn next, not yet drawn.
+    #[cfg(test)]
+    pub(in crate::app) fn is_placing(&self) -> bool {
+        self.pending.is_some()
+    }
     /// Ends a rename whose field the last pass did not draw, keeping the old name.
     pub(in crate::app) fn expire_rename(&mut self, pass: u64) {
         if self.renaming.as_ref().is_some_and(|r| r.shown + 1 < pass) {
