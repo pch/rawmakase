@@ -238,3 +238,97 @@ fn the_clipboard_hook_turns_cut_back_into_x_where_only_x_sends_it() {
     f.frame(input.events);
     assert!(touches(&changes(&before, &f.fingerprint()), "clipping"));
 }
+
+#[test]
+fn a_press_two_higher_commands_share_runs_none_of_the_three() {
+    // Pick is P everywhere; Crop and the clipping, both Develop's, are on it too.
+    let mut f = Fixture::new(Place::Develop);
+    rebind(&mut f, "crop", &["P"]);
+    rebind(&mut f, "clipping", &["P"]);
+    let changed = tap(&mut f, Key::P, NONE);
+    assert!(!touches(&changed, "tool"), "{changed:?}");
+    assert!(!touches(&changed, "clipping"), "{changed:?}");
+    assert!(!touches(&changed, "photos"), "no pick: {changed:?}");
+    let line = f.e.messages.line().to_string();
+    assert!(
+        line.contains("Crop & Straighten") && line.contains("Show shadow and highlight clipping"),
+        "{line}"
+    );
+}
+
+#[test]
+fn the_highest_binding_that_has_a_press_takes_it() {
+    // Reject (everywhere), Crop (Develop) and the crop's orientation (Crop)
+    // all on X: the tool's own key wins.
+    let mut f = Fixture::new(Place::Crop);
+    rebind(&mut f, "crop", &["X"]);
+    let changed = tap(&mut f, Key::X, NONE);
+    assert!(touches(&changed, "aspect"), "the crop swapped: {changed:?}");
+    assert!(!touches(&changed, "tool"), "Crop stays open: {changed:?}");
+    assert!(!touches(&changed, "photos"), "no reject: {changed:?}");
+}
+
+#[test]
+fn a_press_is_left_only_to_a_binding_that_runs_now() {
+    // Crop refuses keys while a field has them; Preferences doesn't.
+    let mut f = Fixture::new(Place::DevelopTyping);
+    rebind(&mut f, "crop", &["Cmd+,"]);
+    let changed = tap(&mut f, Key::Comma, command(NONE));
+    assert!(has(&changed, "dialog", "Preferences"), "{changed:?}");
+}
+
+#[test]
+fn a_users_punctuation_chord_is_matched_as_the_binding_matches_its_own() {
+    // German Cmd+Shift+7 types /, egui-winit giving the 7 key's place.
+    let german = |f: &mut Fixture| {
+        f.frame(tap_events(Key::Slash, Key::Num7, command(Modifiers::SHIFT)));
+        f.e.view.shortcuts
+    };
+    let mut f = Fixture::new(Place::Grid);
+    assert!(german(&mut f), "the default opens the shortcuts");
+    let mut f = Fixture::new(Place::Grid);
+    rebind(&mut f, "shortcuts", &["Cmd+/"]);
+    assert!(german(&mut f), "so does the user's Cmd+/");
+}
+
+#[test]
+fn on_the_number_row_a_digits_binding_comes_before_the_symbols() {
+    // AZERTY types ' on the 4 key. The grid's selection ends on the fourth photo.
+    let azerty_4 = |f: &mut Fixture| {
+        let before = f.fingerprint();
+        f.frame(tap_events(Key::Quote, Key::Num4, NONE));
+        changes(&before, &f.fingerprint())
+    };
+    let mut f = Fixture::new(Place::Grid);
+    rebind(&mut f, "pick", &["'"]);
+    let changed = azerty_4(&mut f);
+    assert!(
+        f.photo(3).rating == 4 && f.photo(3).flag == 0,
+        "{changed:?}"
+    );
+    // With no binding of the 4, the key is its symbol.
+    let mut f = Fixture::new(Place::Grid);
+    rebind(&mut f, "pick", &["'"]);
+    rebind(&mut f, "rating:4", &[]);
+    azerty_4(&mut f);
+    assert!(f.photo(3).flag == 1 && f.photo(3).rating == 0);
+}
+
+#[test]
+fn a_tool_takes_away_only_the_metadata_keys_it_has() {
+    // Crop's X takes Reject's X; Reject on F9 still rejects in Crop.
+    let mut f = Fixture::new(Place::Crop);
+    rebind(&mut f, "reject", &["F9"]);
+    tap(&mut f, Key::F9, NONE);
+    assert_eq!(f.photo(3).flag, -1);
+}
+
+#[test]
+fn the_basic_keys_give_way_only_to_a_metadata_chord_the_press_is() {
+    let mut f = Fixture::new(Place::Develop);
+    rebind(&mut f, "rating:3", &["Cmd+F9"]);
+    rebind(&mut f, "basic:next", &["F9"]);
+    let changed = tap(&mut f, Key::F9, NONE);
+    assert!(touches(&changed, "slider"), "{changed:?}");
+    assert_ne!(f.photo(3).rating, 3);
+}

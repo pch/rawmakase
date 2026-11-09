@@ -100,11 +100,10 @@ fn decode(event: &egui::Event) -> Option<Action> {
 fn decode_press(keys: &FrameKeys, press: &Press) -> Option<Action> {
     use crate::app::shell::commands::registry::bindings as b;
     let modifiers = press.modifiers;
-    // A key that rates, flags or labels the photo is that, not a step: Dvorak
-    // types `]` on the `=` key.
-    if !modifiers.alt
-        && crate::app::library::photo_metadata::is_shortcut_key(keys, press.key, press.physical)
-    {
+    // A press that rates, flags or labels the photo is that, not a step:
+    // Dvorak types `]` on the `=` key. With other modifiers than the rating
+    // key's (Option+`]`), it is a step.
+    if crate::app::library::photo_metadata::is_shortcut(keys, press) {
         return None;
     }
     let size = if modifiers.alt {

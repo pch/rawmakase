@@ -4,7 +4,7 @@ use crate::app::shell::keymap::{Binding, FrameKeys, Press};
 use crate::app::ui::design::{Tone, size, space, text};
 use crate::app::ui::theme;
 use crate::catalog::Photo;
-use eframe::egui::{self, Color32, Key};
+use eframe::egui::{self, Color32};
 
 pub(crate) const LABELS: [&str; 5] = ["Red", "Yellow", "Green", "Blue", "Purple"];
 #[derive(Clone, Debug, PartialEq)]
@@ -80,12 +80,12 @@ fn is_flag_step(binding: &Binding) -> bool {
     matches!(binding.command, "flag:raise" | "flag:lower")
 }
 
-/// Whether a press of `key` at `physical`, with neither Cmd, Ctrl nor Alt held,
-/// is a rating, flag or label key.
-pub(in crate::app) fn is_shortcut_key(keys: &FrameKeys, key: Key, physical: Option<Key>) -> bool {
+/// Whether `press`, with its modifiers, is a rating, flag or label key's
+/// chord, whether or not it is a repeat those keys leave alone.
+pub(in crate::app) fn is_shortcut(keys: &FrameKeys, press: &Press) -> bool {
     bindings::METADATA
         .iter()
-        .any(|b| !is_flag_step(b) && keys.has_key(b, key, physical))
+        .any(|b| keys.has_chord(press, b, crate::app::shell::keymap::Mods::NONE))
 }
 
 /// The frame's first rating, flag or label key: its edit, whether Shift was held
@@ -281,6 +281,7 @@ pub(in crate::app) fn flag_icon(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::egui::Key;
     #[test]
     fn shortcuts_respect_modifiers_repeat_and_text_focus() {
         let ctx = egui::Context::default();

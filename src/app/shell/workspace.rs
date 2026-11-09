@@ -107,11 +107,40 @@ impl Editor {
         self.library.as_ref().is_some_and(|l| l.auto_stack_open())
     }
 
+    /// The open Develop tool with keys of its own.
+    pub(in crate::app) fn key_tool(&self) -> Option<crate::app::shell::keymap::Tool> {
+        use crate::app::shell::keymap::Tool as KeyTool;
+        if self.module != Module::Develop {
+            return None;
+        }
+        match self.view.tool {
+            Tool::Crop => Some(KeyTool::Crop),
+            Tool::Remove => Some(KeyTool::Remove),
+            Tool::RedEye => Some(KeyTool::RedEye),
+            Tool::Mask => Some(KeyTool::Mask),
+            Tool::Guided => Some(KeyTool::Guided),
+            _ => None,
+        }
+    }
     /// The contexts whose bindings can take a key now: everywhere, the module
     /// and the Library's view or Develop's tool, the zoom keys' and the
-    /// reference card's.
-    pub(in crate::app) fn live_keys(&self) -> crate::app::shell::keymap::Live {
-        use crate::app::shell::keymap::{Context, Tool as KeyTool};
+    /// reference card's; and the states of the window some bindings don't run
+    /// in ([`crate::app::shell::keymap::Guards`]).
+    pub(in crate::app) fn live_keys(&self, ctx: &egui::Context) -> crate::app::shell::keymap::Live {
+        use crate::app::shell::keymap::{Context, Guards};
+        let popup = egui::Popup::is_any_open(ctx);
+        let mut now = Guards::NONE;
+        for (on, guard) in [
+            (ctx.text_edit_focused(), Guards::TYPING),
+            (popup, Guards::POPUP),
+            (ctx.memory(|m| m.focused().is_some()), Guards::FOCUS),
+            (self.activity.is_busy(), Guards::BUSY),
+            (self.workspace_modal(), Guards::MODAL),
+        ] {
+            if on {
+                now = now.with(guard);
+            }
+        }
         let mut live = vec![Context::Everywhere];
         if self.view.shortcuts {
             live.push(Context::ShortcutSheet);
@@ -129,31 +158,24 @@ impl Editor {
                     } else {
                         Context::Grid
                     });
-                    if library.loupe_open() {
+                    // The Loupe's zoom keys wait for a menu to close.
+                    if library.loupe_open() && !popup {
                         live.push(Context::LoupeZoom);
                     }
                 }
             }
             Module::Develop => {
                 live.extend([Context::Develop, Context::LoupeZoom]);
-                let tool = match self.view.tool {
-                    Tool::Crop => Some(KeyTool::Crop),
-                    Tool::Remove => Some(KeyTool::Remove),
-                    Tool::RedEye => Some(KeyTool::RedEye),
-                    Tool::Mask => Some(KeyTool::Mask),
-                    Tool::Guided => Some(KeyTool::Guided),
-                    _ => None,
-                };
-                live.extend(tool.map(Context::Tool));
+                live.extend(self.key_tool().map(Context::Tool));
             }
         }
-        crate::app::shell::keymap::Live::new(live)
+        crate::app::shell::keymap::Live::new(live).during(now)
     }
     /// The frame's keys, told first which contexts are active: a step's
     /// commands can change the module, the view or the tool for the next.
     pub(in crate::app) fn keys<'c>(&self, ctx: &'c egui::Context) -> FrameKeys<'c> {
         let keys = FrameKeys::of(ctx);
-        keys.set_live(self.live_keys());
+        keys.set_live(self.live_keys(ctx));
         keys
     }
 
@@ -162,17 +184,29 @@ impl Editor {
         if self.activity.is_busy() {
             return;
         }
-        // With a brush tool open, [ and ] size the brush instead of rating the photo.
+        // With a brush tool open, [ and ] size the brush instead of rating the
+        // photo; with the Crop tool open, X swaps the crop's orientation
+        // instead of rejecting, and Shift+X does neither. Only a press the
+        // tool's own keys have, Shift aside: Reject on F9 still rejects.
         let brushing = self.module == Module::Develop && self.tool_has_size();
-        // With the Crop tool open, X swaps the crop's orientation instead of rejecting.
         let cropping = self.module == Module::Develop && self.view.is(Tool::Crop);
+        let tool = self.key_tool();
+        let tools_key = |press: &crate::app::shell::keymap::Press| {
+            let keys = FrameKeys::of(ctx);
+            tool.is_some_and(|tool| {
+                bindings::ALL
+                    .iter()
+                    .filter(|b| b.context == crate::app::shell::keymap::Context::Tool(tool))
+                    .any(|b| keys.has_chord(press, b, crate::app::shell::keymap::Mods::SHIFT))
+            })
+        };
         let auto_advance = self.session.auto_advance;
         let shortcut = crate::app::library::photo_metadata::shortcut(ctx)
-            .filter(|(e, _, _)| {
-                !(brushing
-                    && matches!(e, crate::app::library::photo_metadata::Edit::RatingDelta(_)))
-                    && !(cropping
-                        && matches!(e, crate::app::library::photo_metadata::Edit::Flag(-1)))
+            .filter(|(e, _, press)| {
+                use crate::app::library::photo_metadata::Edit;
+                let suppressed = (brushing && matches!(e, Edit::RatingDelta(_)))
+                    || (cropping && matches!(e, Edit::Flag(-1)));
+                !(suppressed && tools_key(press))
             })
             // Photo > Auto Advance: every key moves on, as Shift does.
             .map(|(edit, shift, index)| (edit, shift || auto_advance, index));

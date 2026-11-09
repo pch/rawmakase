@@ -162,3 +162,28 @@ fn every_refusal_says_why() {
         "Alt+Shift is held for this command's other form"
     );
 }
+
+#[test]
+fn a_fixed_key_is_refused_with_every_modifier_its_reader_lets_through() {
+    // The hovered slider takes Up and Down with Shift or Alt held too; Space
+    // pans whatever is held.
+    for keys in [
+        "Up",
+        "Alt+Up",
+        "Shift+Down",
+        "Alt+Shift+Down",
+        "Space",
+        "Cmd+Space",
+        "Shift+Space",
+    ] {
+        assert!(
+            matches!(
+                refused("clipping", keys, Os::Other),
+                Some(Refusal::Taken(_))
+            ),
+            "{keys}"
+        );
+    }
+    // Cmd+Up is no nudge: the slider's reader refuses Cmd.
+    assert_eq!(refused("clipping", "Cmd+Alt+Up", Os::Other), None);
+}

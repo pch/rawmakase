@@ -42,6 +42,22 @@ pub(in crate::app) enum KeyMatch {
     Place,
 }
 
+impl KeyMatch {
+    /// How a user's chord on `key` is matched for a binding whose chords
+    /// `template` stands for: the Basic panel's keys by their place; a digit
+    /// by the number row's place, so AZERTY's digit row still reaches it;
+    /// anything else by what it types, so German Cmd+Shift+7 (`/`) is the
+    /// user's Cmd+/ as it is the default's. Where a press could be either, a
+    /// binding of its digit wins ([`FrameKeys::is`]).
+    fn for_user(template: Option<&Default>, key: Key) -> Self {
+        match template.map(|t| t.matching) {
+            Some(Self::Place) => Self::Place,
+            _ if crate::app::shell::key_match::is_digit(key) => Self::Typed,
+            _ => Self::Logical,
+        }
+    }
+}
+
 /// The platforms a [`Default`](struct@Default) exists on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::app) enum Platform {
@@ -115,18 +131,15 @@ impl Default {
     }
 
     /// A chord of the user's for a binding whose chords `template` stands
-    /// for: matched by what the key types (the Basic panel's keys by their
-    /// place), with the template's repeats and rejected modifiers, on every
-    /// platform and on the card.
+    /// for, with the template's repeats and rejected modifiers, on every
+    /// platform and on the card. It is matched as the binding's own keys are
+    /// ([`KeyMatch::for_user`]).
     pub(in crate::app) fn user(chord: Chord, template: Option<&Default>) -> Self {
         Self {
             keys: one_key(chord.key),
             mods: chord.mods,
             rejects: template.map_or(Mods::NONE, |t| t.rejects),
-            matching: match template.map(|t| t.matching) {
-                Some(KeyMatch::Place) => KeyMatch::Place,
-                _ => KeyMatch::Typed,
-            },
+            matching: KeyMatch::for_user(template, chord.key),
             repeats: template.is_none_or(|t| t.repeats),
             platform: Platform::All,
             card: true,
@@ -162,9 +175,6 @@ impl Default {
             KeyMatch::Logical => key,
             KeyMatch::Place => physical.unwrap_or(key),
         }
-    }
-    fn matches_key(&self, key: Key, physical: Option<Key>) -> bool {
-        self.keys.contains(&self.read_key(key, physical))
     }
     /// Whether a press of `key` at `physical` with `modifiers` is one of these
     /// chords, `variants` being free: repeats aside.
@@ -229,6 +239,35 @@ pub(in crate::app) enum PerFrame {
     Once,
 }
 
+/// The states of the window in which a binding's handler doesn't run, beside
+/// its context: what each handler checks before it takes its keys. They say
+/// which bindings a press can be left to, or conflict with
+/// ([`FrameKeys::set_live`]), and when the macOS menu holds a key.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::app) struct Guards(u8);
+
+impl Guards {
+    pub(in crate::app) const NONE: Self = Self(0);
+    /// A text field has the keys.
+    pub(in crate::app) const TYPING: Self = Self(1);
+    /// A menu or popup is open.
+    pub(in crate::app) const POPUP: Self = Self(2);
+    /// A control or field has the keyboard focus.
+    pub(in crate::app) const FOCUS: Self = Self(4);
+    /// A file dialog or a Sync runs.
+    pub(in crate::app) const BUSY: Self = Self(8);
+    /// A window over the workspace (Preferences, the reference card, a dialog).
+    pub(in crate::app) const MODAL: Self = Self(16);
+
+    pub(in crate::app) const fn with(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+    /// Whether any state of `other` is one of these.
+    pub(in crate::app) const fn meets(self, other: Self) -> bool {
+        self.0 & other.0 != 0
+    }
+}
+
 /// A command's keys in one context.
 pub(in crate::app) struct Binding {
     /// The command's id in [`crate::app::shell::commands::registry::COMMANDS`].
@@ -245,6 +284,10 @@ pub(in crate::app) struct Binding {
     /// `consume_key` takes it, so no widget sees it either.
     pub consumes: bool,
     pub per_frame: PerFrame,
+    /// When its handler doesn't run. By default: while typing, while busy and
+    /// behind a window, and in a Library view with a menu open too; nothing
+    /// stops the reference card's keys, which only run while it is open.
+    pub guards: Guards,
 }
 
 impl Binding {
@@ -253,6 +296,7 @@ impl Binding {
         context: Context,
         defaults: &'static [Default],
     ) -> Self {
+        let usual = Guards::TYPING.with(Guards::BUSY).with(Guards::MODAL);
         Self {
             command,
             context,
@@ -260,7 +304,19 @@ impl Binding {
             variants: Mods::NONE,
             consumes: false,
             per_frame: PerFrame::Each,
+            guards: match context {
+                Context::ShortcutSheet => Guards::NONE,
+                Context::Grid | Context::Loupe | Context::Compare | Context::Survey => {
+                    usual.with(Guards::POPUP)
+                }
+                _ => usual,
+            },
         }
+    }
+    /// Runs except in the states `guards` names, instead of the usual ones.
+    pub(in crate::app) const fn guarded(mut self, guards: Guards) -> Self {
+        self.guards = guards;
+        self
     }
     pub(in crate::app) const fn consuming(mut self) -> Self {
         self.consumes = true;
@@ -356,24 +412,66 @@ fn address(binding: &Binding) -> usize {
 /// frame ([`FrameKeys::set_live`]): what a press can be left to, or conflict
 /// with.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(in crate::app) struct Live(Vec<Context>);
+pub(in crate::app) struct Live {
+    contexts: Vec<Context>,
+    /// The states the window is in, which some bindings don't run in.
+    now: Guards,
+}
 
 impl Live {
     pub(in crate::app) fn new(contexts: Vec<Context>) -> Self {
-        Self(contexts)
+        Self {
+            contexts,
+            now: Guards::NONE,
+        }
+    }
+    /// With the window in the states `now`.
+    pub(in crate::app) fn during(mut self, now: Guards) -> Self {
+        self.now = now;
+        self
     }
     pub(in crate::app) fn has(&self, context: Context) -> bool {
-        self.0.contains(&context)
+        self.contexts.contains(&context)
+    }
+    /// Whether `binding`'s handler can take a press now: its context is
+    /// active and none of its guards holds.
+    pub(in crate::app) fn runs(&self, binding: &Binding) -> bool {
+        self.has(binding.context) && !binding.guards.meets(self.now)
     }
 }
 
 /// What becomes of a press a binding matches.
-enum Verdict {
+enum Verdict<'b> {
     Run,
     /// Left to a binding of higher precedence, which may take it later.
     Leave,
-    /// Another binding of the same precedence has it too: neither runs.
-    Conflict(&'static Binding),
+    /// Two bindings of the highest precedence that can take it have it: neither
+    /// runs, nor anything below them.
+    Conflict(&'b Binding, &'b Binding),
+}
+
+/// How a binding reads a press of a number-row key that types a symbol
+/// (AZERTY's `'` on the 4 key): as the digit, or as the symbol.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reading {
+    Digit,
+    Symbol,
+    /// Not a number-row key that types a symbol.
+    Plain,
+}
+
+/// How the first of `chords` that `press` is reads it, if one is.
+fn reading(chords: &[Default], press: &Press, variants: Mods) -> Option<Reading> {
+    let default = chords.iter().find(|d| d.matches(press, variants))?;
+    let symbol_on_digit_row =
+        crate::app::shell::key_match::shortcut_key(press.key, press.physical) != press.key;
+    Some(if !symbol_on_digit_row {
+        Reading::Plain
+    } else if default.read_key(press.key, press.physical) == press.key {
+        Reading::Symbol
+    } else {
+        Reading::Digit
+    })
 }
 
 fn taken_id() -> egui::Id {
@@ -476,17 +574,18 @@ impl<'a> FrameKeys<'a> {
     pub(in crate::app) fn is(&self, press: &Press, binding: &Binding) -> bool {
         matches_any(&self.chords_of(binding), press, binding.variants) && self.runs(press, binding)
     }
-    /// Whether a press of `key` at `physical` is one of `binding`'s keys in
-    /// effect, whatever the modifiers.
-    pub(in crate::app) fn has_key(
-        &self,
-        binding: &Binding,
-        key: Key,
-        physical: Option<Key>,
-    ) -> bool {
-        self.chords_of(binding)
-            .iter()
-            .any(|d| d.exists() && d.matches_key(key, physical))
+    /// Whether `press` is one of `binding`'s chords in effect, `free`
+    /// modifiers aside as well as its variants, whatever its repeats and
+    /// whoever takes it: for a handler that gives way to another's key.
+    pub(in crate::app) fn has_chord(&self, press: &Press, binding: &Binding, free: Mods) -> bool {
+        self.chords_of(binding).iter().any(|d| {
+            d.takes_key(
+                press.key,
+                press.physical,
+                press.modifiers,
+                binding.variants.with(free),
+            )
+        })
     }
 
     /// The first press, in the binding's chord order, that `binding` matches
@@ -546,16 +645,19 @@ impl<'a> FrameKeys<'a> {
     }
 
     /// Whether `binding`, which matches `press`, runs it, by the user's chords'
-    /// precedence: a press another binding has been left is that binding's;
-    /// one a binding of higher precedence matches in an active context is
-    /// left to it; and one a binding of the same precedence matches too runs
-    /// neither, is taken, and is reported. Only where the user's chords are
-    /// involved: the defaults keep their explicit order.
+    /// precedence. Among the bindings that can take the press now (their
+    /// context active, none of their guards holding), the highest level
+    /// owns it: a lower binding leaves it, and it is reserved for that owner
+    /// alone. Two commands on that level that both have it conflict: neither
+    /// runs, the press is taken, and it is reported. On the number row, a
+    /// binding of the digit comes before one of the symbol the key types.
+    /// Only where the user's chords are involved: the defaults keep their
+    /// explicit order.
     fn runs(&self, press: &Press, binding: &Binding) -> bool {
         match self.verdict(press, binding) {
             Verdict::Run => true,
             Verdict::Leave => false,
-            Verdict::Conflict(other) => {
+            Verdict::Conflict(a, b) => {
                 self.take_press(press);
                 let chord = self
                     .chords_of(binding)
@@ -570,8 +672,8 @@ impl<'a> FrameKeys<'a> {
                 let report = format!(
                     "{chord} is the key of both \u{201c}{}\u{201d} and \u{201c}{}\u{201d}, so neither ran. \
                      Change one in Preferences > Shortcuts.",
-                    title(binding),
-                    title(other)
+                    title(a),
+                    title(b)
                 );
                 self.ctx.data_mut(|d| {
                     d.get_temp_mut_or_default::<Vec<String>>(reports_id())
@@ -581,7 +683,7 @@ impl<'a> FrameKeys<'a> {
             }
         }
     }
-    fn verdict(&self, press: &Press, binding: &Binding) -> Verdict {
+    fn verdict<'b>(&self, press: &Press, binding: &'b Binding) -> Verdict<'b> {
         let state = self.state();
         // Taken by a conflict earlier in a handler's walk of the presses.
         if state.presses.contains(press) {
@@ -600,29 +702,64 @@ impl<'a> FrameKeys<'a> {
         let Some(live) = self.ctx.data(|d| d.get_temp::<Live>(live_id())) else {
             return Verdict::Run;
         };
-        let mine = rules::level(binding.context);
-        let others = || {
+        let Some(mine) = reading(&self.chords_of(binding), press, binding.variants) else {
+            return Verdict::Run;
+        };
+        let mut rivals: Vec<(&'static Binding, Reading)> =
             crate::app::shell::commands::registry::bindings::ALL
                 .iter()
                 .copied()
                 .filter(|other| {
                     other.command != binding.command
-                        && live.has(other.context)
+                        && live.runs(other)
                         && other.context.overlaps(binding.context)
-                        && (self.map.overrides(other.command)
-                            || self.map.overrides(binding.command))
-                        && matches_any(&self.chords_of(other), press, other.variants)
                 })
-        };
-        if let Some(higher) = others().find(|o| rules::level(o.context) > mine) {
-            let mut state = state;
-            state.reserved.push((*press, address(higher)));
-            self.set_state(state);
-            return Verdict::Leave;
+                .filter_map(|other| {
+                    reading(&self.chords_of(other), press, other.variants).map(|r| (other, r))
+                })
+                .collect();
+        let users = self.map.overrides(binding.command)
+            || rivals.iter().any(|(o, _)| self.map.overrides(o.command));
+        if !users {
+            return Verdict::Run;
         }
-        match others().find(|o| rules::level(o.context) == mine) {
-            Some(other) => Verdict::Conflict(other),
-            None => Verdict::Run,
+        // The number row's digit comes first.
+        let outranked = match mine {
+            Reading::Digit => {
+                rivals.retain(|(_, r)| *r != Reading::Symbol);
+                false
+            }
+            Reading::Symbol if rivals.iter().any(|(_, r)| *r == Reading::Digit) => {
+                rivals.retain(|(_, r)| *r == Reading::Digit);
+                true
+            }
+            _ => false,
+        };
+        let level = rules::level(binding.context);
+        let top = rivals.iter().map(|(o, _)| rules::level(o.context)).max();
+        match top {
+            Some(top) if outranked || top > level => {
+                let owners: Vec<&'static Binding> = rivals
+                    .iter()
+                    .map(|(o, _)| *o)
+                    .filter(|o| rules::level(o.context) == top)
+                    .collect();
+                let owner = owners[0];
+                if let Some(other) = owners.iter().find(|o| o.command != owner.command) {
+                    return Verdict::Conflict(owner, other);
+                }
+                let mut state = state;
+                state.reserved.push((*press, address(owner)));
+                self.set_state(state);
+                Verdict::Leave
+            }
+            _ => match rivals
+                .iter()
+                .find(|(o, _)| rules::level(o.context) == level)
+            {
+                Some((other, _)) => Verdict::Conflict(binding, other),
+                None => Verdict::Run,
+            },
         }
     }
 
@@ -750,12 +887,20 @@ pub(in crate::app) fn is_modifier(key: Key) -> bool {
     )
 }
 
-/// The chord a captured press stands for: its key as a shortcut reads it
-/// (the number row by its place), with the modifiers held for it, except
-/// that on a punctuation key Shift and Alt are left out, as a layout may need
-/// them to type the symbol at all ([`Chord::free`]).
-pub(in crate::app) fn chord_of(press: &Press) -> Chord {
-    let key = crate::app::shell::key_match::shortcut_key(press.key, press.physical);
+/// The chord a captured press stands for, for a command whose chords
+/// `template` stands for: its key as that command reads keys (the Basic
+/// panel's by their place, the number row by its place where the command goes
+/// by what keys type), with the modifiers held for it, except that on a
+/// punctuation key Shift and Alt are left out, as a layout may need them to
+/// type the symbol at all ([`Chord::free`]).
+pub(in crate::app) fn chord_of(press: &Press, template: Option<&Default>) -> Chord {
+    let key = match template.map(|t| t.matching) {
+        Some(KeyMatch::Place) => press.physical.unwrap_or(press.key),
+        Some(KeyMatch::Logical) => press.key,
+        Some(KeyMatch::Typed) | None => {
+            crate::app::shell::key_match::shortcut_key(press.key, press.physical)
+        }
+    };
     let mut mods = Mods::of(press.modifiers);
     if chord::is_punctuation(key) {
         mods = mods.without(Mods::SHIFT.with(Mods::ALT));

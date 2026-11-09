@@ -7,7 +7,7 @@
 //! says where a key runs the command and how its press is matched; the handler
 //! that runs it names it (`bindings::CLIPPING`) and takes its press from
 //! [`FrameKeys`](crate::app::shell::keymap::FrameKeys).
-use crate::app::shell::keymap::{Binding, Context, Default, Mods, Tool};
+use crate::app::shell::keymap::{Binding, Context, Default, Guards, Mods, Tool};
 use eframe::egui::Key;
 
 /// A command: its id and what it does.
@@ -259,6 +259,13 @@ pub(in crate::app) mod bindings {
     const fn rating(command: &'static str, defaults: &'static [Default]) -> Binding {
         b(command, Everywhere, defaults).variant(SHIFT)
     }
+    /// Develop's Delete and the panel keys stop with a menu open as well;
+    /// the panel keys also while a control has the focus, where Tab moves it.
+    const NO_POPUP: Guards = Guards::TYPING
+        .with(Guards::POPUP)
+        .with(Guards::BUSY)
+        .with(Guards::MODAL);
+    const PANEL: Guards = NO_POPUP.with(Guards::FOCUS);
     const DELETE_KEYS: &[Key] = &[Key::Delete, Key::Backspace];
     const OPEN_BRACKETS: &[Key] = &[Key::OpenBracket, Key::OpenCurlyBracket];
     const CLOSE_BRACKETS: &[Key] = &[Key::CloseBracket, Key::CloseCurlyBracket];
@@ -268,8 +275,10 @@ pub(in crate::app) mod bindings {
         // The message line and the window (`Editor::draw`).
         DISMISS_MESSAGES = b("messages:dismiss_all", Everywhere, &[
             d(&[Key::Escape], SHIFT),
-        ]).consuming();
-        SHOW_CHROME = b("chrome:show", Everywhere, &[d(&[Key::Escape], NONE)]).consuming();
+        ]).consuming().guarded(Guards::MODAL);
+        SHOW_CHROME = b("chrome:show", Everywhere, &[d(&[Key::Escape], NONE)])
+            .consuming()
+            .guarded(Guards::MODAL.with(Guards::POPUP));
 
         // Rating, flag and label keys (`photo_metadata::shortcut`), in the
         // order they are matched.
@@ -302,7 +311,9 @@ pub(in crate::app) mod bindings {
         LABEL_PURPLE = rating("toggle_label:purple", &[]);
 
         // The Library's views (`Library::selection_keys`).
-        FILTERS = b("filters", Library, &[d(&[Key::L], CMD).once_per_press()]);
+        // From the search field too, but not with a menu open.
+        FILTERS = b("filters", Library, &[d(&[Key::L], CMD).once_per_press()])
+            .guarded(Guards::POPUP.with(Guards::BUSY).with(Guards::MODAL));
         GRID_LOUPE = b("loupe", Grid, &[d(&[Key::E], NONE), d(&[Key::Enter], NONE)]);
         GRID_COMPARE = b("library:compare", Grid, &[d(&[Key::C], NONE)]);
         GRID_SURVEY = b("library:survey", Grid, &[d(&[Key::N], NONE)]);
@@ -433,8 +444,13 @@ pub(in crate::app) mod bindings {
         DEVELOP = b("develop", Everywhere, &[d(&[Key::D], NONE)]);
 
         // `Editor::preferences_shortcut` and the reference card's window.
-        PREFERENCES = b("preferences", Everywhere, &[d(&[Key::Comma], CMD)]).consuming();
-        SHORTCUTS = b("shortcuts", Everywhere, &[d(&[Key::Slash], CMD)]).consuming();
+        // Both work while typing.
+        PREFERENCES = b("preferences", Everywhere, &[d(&[Key::Comma], CMD)])
+            .consuming()
+            .guarded(Guards::BUSY.with(Guards::MODAL));
+        SHORTCUTS = b("shortcuts", Everywhere, &[d(&[Key::Slash], CMD)])
+            .consuming()
+            .guarded(Guards::MODAL);
         SHORTCUTS_CLOSE = b("shortcuts", ShortcutSheet, &[
             d(&[Key::Slash], CMD).off_card(),
         ]).consuming();
@@ -443,12 +459,24 @@ pub(in crate::app) mod bindings {
         ]).consuming();
 
         // `Editor::panel_keys`, in its order.
-        PANELS_ALL = b("panels:all", Everywhere, &[d(&[Key::Tab], SHIFT)]).consuming();
-        PANELS_SIDES = b("panels:sides", Everywhere, &[d(&[Key::Tab], NONE)]).consuming();
-        PANELS_PRESETS = b("panels:presets", Everywhere, &[d(&[Key::F8], SHIFT)]).consuming();
-        PANELS_LEFT = b("panels:left", Everywhere, &[d(&[Key::F7], NONE)]).consuming();
-        PANELS_RIGHT = b("panels:right", Everywhere, &[d(&[Key::F8], NONE)]).consuming();
-        PANELS_FILMSTRIP = b("panels:filmstrip", Everywhere, &[d(&[Key::F6], NONE)]).consuming();
+        PANELS_ALL = b("panels:all", Everywhere, &[d(&[Key::Tab], SHIFT)])
+            .consuming()
+            .guarded(PANEL);
+        PANELS_SIDES = b("panels:sides", Everywhere, &[d(&[Key::Tab], NONE)])
+            .consuming()
+            .guarded(PANEL);
+        PANELS_PRESETS = b("panels:presets", Everywhere, &[d(&[Key::F8], SHIFT)])
+            .consuming()
+            .guarded(PANEL);
+        PANELS_LEFT = b("panels:left", Everywhere, &[d(&[Key::F7], NONE)])
+            .consuming()
+            .guarded(PANEL);
+        PANELS_RIGHT = b("panels:right", Everywhere, &[d(&[Key::F8], NONE)])
+            .consuming()
+            .guarded(PANEL);
+        PANELS_FILMSTRIP = b("panels:filmstrip", Everywhere, &[d(&[Key::F6], NONE)])
+            .consuming()
+            .guarded(PANEL);
 
         // `Editor::library_workspace`: on the Library's selection.
         LIBRARY_EXPORT = b("export_dialog", Library, &[d(&[Key::E], CMD_SHIFT).once_per_press()]);
@@ -475,16 +503,16 @@ pub(in crate::app) mod bindings {
         // Develop (`Editor::develop_delete_key`, `Editor::develop_shortcuts`).
         DEVELOP_DELETE = b("delete", Develop, &[
             d(DELETE_KEYS, NONE).once_per_press().off_card(),
-        ]);
+        ]).guarded(NO_POPUP);
         DEVELOP_REMOVE_FROM_CATALOG = b("remove_from_catalog", Develop, &[
             d(DELETE_KEYS, ALT).once_per_press().off_card(),
-        ]);
+        ]).guarded(NO_POPUP);
         DEVELOP_DELETE_REJECTED = b("delete_rejected", Develop, &[
             d(DELETE_KEYS, CMD).once_per_press().off_card(),
-        ]);
+        ]).guarded(NO_POPUP);
         DEVELOP_TRASH = b("trash", Develop, &[
             d(DELETE_KEYS, CMD_ALT_SHIFT).once_per_press().off_card(),
-        ]);
+        ]).guarded(NO_POPUP);
         COPY_TO_BEFORE = b("before_after:copy_to_before", Develop, &[
             d(&[Key::ArrowLeft], CMD_ALT_SHIFT),
         ]);

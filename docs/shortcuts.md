@@ -33,7 +33,9 @@ shown under the row:
 - a plain key for a command that works while you type in a field (Preferences,
   these shortcuts, the filters, dismissing the messages): it needs Cmd, or an F
   key;
-- a key a control keeps where the command works, such as Up or Down in Develop;
+- a key a control keeps where the command works: Up or Down in Develop, alone or
+  with Shift or Alt, which nudge the slider under the pointer, and Space with any
+  modifier, which pans while a tool is open;
 - on Windows, the keys Windows turns into Cut, Copy or Paste before RAWmakase sees
   them (see [Windows](#windows)).
 
@@ -48,7 +50,10 @@ list them alone. The default shortcuts have no conflicts.
 A key of a tool or a Library view comes before the same key everywhere else, as X
 swaps the crop's orientation in Crop instead of rejecting the photo. When you give a
 key to a tool's command that Develop also uses, the tool's command runs while the
-tool is open, and Develop's otherwise; Preferences says so under the row.
+tool is open, and Develop's otherwise; Preferences says so under the row. Only a
+command that can run at that moment counts: with a text field holding the keys,
+Crop doesn't, so Preferences keeps Cmd+, even if Crop has it too. When two commands
+share a key there and something else has it below them, none of them runs.
 
 ## The key map file
 
@@ -126,7 +131,11 @@ Many layouts need Shift or Alt (Option, AltGr) to type a symbol: German types `/
 with Shift+7. On a symbol key Shift and Alt are therefore ignored unless the
 shortcut names them, so Cmd+/ works on German and French keyboards as it does on a
 US one. When you capture a symbol key in Preferences, it is saved without the
-Shift or Alt you needed to type it.
+Shift or Alt you needed to type it, and as the command reads keys: a Basic
+panel key by its place, anything else by what it types. A key you write in the
+file goes by what it types too, except a digit, which goes by its place; when a
+number-row key could be either (AZERTY types `'` on the 4 key), the digit's
+command comes first.
 
 ## macOS menu
 

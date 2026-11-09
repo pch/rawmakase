@@ -392,7 +392,11 @@ impl Editor {
                 None => return,
             }
         } else {
-            let chord = chord_of(press);
+            // As the command reads keys: the Basic panel's by their place.
+            let template = rules::bindings_of(capture.command)
+                .first()
+                .and_then(|b| b.defaults.first());
+            let chord = chord_of(press, template);
             match capture
                 .replacing
                 .and_then(|old| keys.iter().position(|k| *k == old))

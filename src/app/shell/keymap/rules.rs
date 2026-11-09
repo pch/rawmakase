@@ -80,8 +80,11 @@ pub(in crate::app) struct FixedKey {
     pub title: &'static str,
     pub context: Context,
     pub keys: &'static [Key],
-    /// The modifiers it is read with; any one of them makes the chord its.
+    /// The modifiers Preferences shows it with.
     pub mods: &'static [Mods],
+    /// The modifiers its reader lets a press hold or not: a chord on one of
+    /// `keys` holding no others is its, whatever it holds of these.
+    pub ignores: Mods,
 }
 
 /// The fixed keys a command's chord could collide with.
@@ -91,12 +94,16 @@ pub(in crate::app) static FIXED_KEYS: &[FixedKey] = &[
         context: Context::Develop,
         keys: &[Key::ArrowUp, Key::ArrowDown],
         mods: &[Mods::NONE, Mods::SHIFT],
+        // `count_and_consume_key` matches logically: extra Shift and Alt pass.
+        ignores: Mods::SHIFT.with(Mods::ALT),
     },
     FixedKey {
         title: "Panning while a tool is open",
         context: Context::Develop,
         keys: &[Key::Space],
         mods: &[Mods::NONE],
+        // Read as held down, whatever else is held.
+        ignores: Mods::CMD.with(Mods::CTRL).with(Mods::ALT).with(Mods::SHIFT),
     },
 ];
 
@@ -182,7 +189,10 @@ pub(in crate::app) fn refusal(
     }
     for fixed in FIXED_KEYS {
         let here = bindings.iter().any(|b| b.context.overlaps(fixed.context));
-        if here && fixed.keys.contains(&chord.key) && fixed.mods.contains(&chord.mods) {
+        if here
+            && fixed.keys.contains(&chord.key)
+            && chord.mods.without(fixed.ignores) == Mods::NONE
+        {
             return Some(Refusal::Taken(fixed.title));
         }
     }

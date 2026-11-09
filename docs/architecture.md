@@ -584,13 +584,19 @@ typing, and the fixed keys' chords.
 
 Precedence is by context level (`rules::level`): a tool's bindings over Develop's,
 a Library view's over the Library's, a module's over everywhere. With a user's
-chords involved, a step leaves a press to a binding of a higher level whose
-context is active, as the editor says while it goes through the frame
-(`Editor::keys`); the press is then that binding's alone, and runs nothing if the
-binding no longer runs in the frame. Two bindings of one level that share a chord
-where both can be active conflict (`keymap::conflicts`), whatever their step: a
-press of it runs neither, and the message line names both. The defaults have no
-conflicts on any platform; their explicit order in the code stays as it was.
+chords involved, a press belongs to the highest level among the bindings that can
+take it now: their context active and none of their guards (`keymap::Guards`:
+typing, a menu open, a focused control, busy, a window over the workspace)
+holding, as the editor says while it goes through the frame (`Editor::keys`). A
+lower step leaves the press, which is reserved for that one owner and runs
+nothing if the owner no longer runs in the frame. Two commands on that level that
+share it conflict (`keymap::conflicts`), whatever their step: a press of it runs
+neither, nor anything below, and the message line names both. On the number row a
+binding of the digit comes before one of the symbol the key types. A user's chord
+is matched as its binding's own chords are, except that a digit goes by its place.
+The defaults have no conflicts on any platform; their explicit order in the code
+stays as it was, and a tool takes away a rating or Reject key only on the keys it
+has itself.
 
 Preferences > Shortcuts (`app::preferences::shortcuts`) edits the key map through
 `KeymapFile`, and while it waits for a key no binding sees a press. The reference

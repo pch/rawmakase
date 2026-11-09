@@ -87,10 +87,21 @@ impl Page {
     }
     /// `key` pressed and released with `m`, as egui-winit sends it.
     fn press(&mut self, key: Key, m: Modifiers) {
+        self.press_at(key, key, m);
+    }
+    /// `key` typed by the key at `physical`, with `m`.
+    fn press_at(&mut self, key: Key, physical: Key, m: Modifiers) {
+        let event = |pressed| Event::Key {
+            key,
+            physical_key: Some(physical),
+            pressed,
+            repeat: false,
+            modifiers: m,
+        };
         self.frame(vec![
             Event::ModifiersChanged(m),
-            key_event(key, true, m),
-            key_event(key, false, m),
+            event(true),
+            event(false),
             Event::ModifiersChanged(Modifiers::NONE),
         ]);
         self.frame(Vec::new());
@@ -346,4 +357,22 @@ fn commands_this_release_doesnt_know_are_listed() {
     assert!(page.shows("No shortcuts match."));
     assert!(page.shows("someone/extension"));
     assert!(page.shows("crop: 1 isn't a key in quotes. Its default keys apply."));
+}
+
+#[test]
+fn a_captured_key_is_saved_as_its_command_reads_keys() {
+    // The Basic keys go by their place: Dvorak types = on the ] key, which
+    // is then the key to press, not whatever types =.
+    let mut page = Page::new(None);
+    page.query("raise the selected basic");
+    let title = "Raise the selected Basic slider (Shift: more, Option: less)";
+    page.click(&format!("{title}: +"));
+    page.press_at(Key::Equals, Key::CloseBracket, Modifiers::NONE);
+    assert_eq!(page.keys("basic:increase"), ["=", "]"]);
+    // A command that goes by what keys type saves the typed key: German
+    // Cmd+Shift+7 is Cmd+/.
+    page.query("keyboard shortcuts");
+    page.click(&format!("Keyboard shortcuts: {}", cmd_text("/")));
+    page.press_at(Key::Slash, Key::Num7, cmd() | Modifiers::SHIFT);
+    assert_eq!(page.keys("shortcuts"), [cmd_text("/")]);
 }
