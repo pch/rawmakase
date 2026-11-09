@@ -366,6 +366,13 @@ compared by luminance in 8× linear blocks:
   valid; its SDR rendition renders it, and the master (HDR export) is refused with
   the reason, shown in Develop under the HDR switch. Refusing the edit itself would
   make Develop's ordinary sliders fail to render whenever HDR is on.
+- **HDR HEIC (stage 4)** opens as an HDR edit where the system decoder was measured
+  to give its signal back as coded: macOS's ImageIO drawn into CoreGraphics' space of
+  the file's CICP (every patch of the synthetic fixtures within one 10-bit code value),
+  and libheif, which converts by the `nclx` alone. Windows' decoder isn't checked
+  here, so an HDR HEIC stays refused there; so does one with an ICC profile beside its
+  `nclx`, which ImageIO would draw through, or with a matrix that isn't a matrix
+  (constant luminance, ICtCp).
 - **The release guard is lifted** (`model::hdr::renders`): every SDR caller receives
   the SDR rendition through `Recipe::resolved`, the GPU refuses HDR recipes, and the
   master is reached only through `render_hdr`.
@@ -430,8 +437,10 @@ compared by luminance in 8× linear blocks:
   luminance (median 0.005 stop). libultrahdr 2.0.2's own Ultra HDR file opens with
   the light its decoder gives at full headroom, to 0.019 stop
   (`tests/data/formats/ultrahdr.jpg`, from `scripts/make-gain-map-fixtures.py`).
-  Open: XMP-only (`hdrgm`) gain maps, HEIC gain maps, HDR HEIC, other adjustments on
-  HDR files, Transform and Upright.
+  PQ and HLG HEICs open as HDR edits on macOS and with libheif
+  ([HDR HEIC](../hdr.md#hdr-heic)), checked against BT.2100 on synthetic patches.
+  Open: XMP-only (`hdrgm`) gain maps, HEIC gain maps, HDR HEIC on Windows, other
+  adjustments on HDR files, Transform and Upright.
 - [ ] Stage 5: macOS HDR display: a float surface through RAWmakase's egui fork
   (`surface_format_selector`, offered upstream), extended sRGB with EDR while an HDR
   photo shows, and the CPU master held to the display's headroom, with the Basic

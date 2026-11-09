@@ -204,6 +204,9 @@ struct Decoder {
     kind: Kind,
     /// A JPEG XL whose codestream turns or mirrors it.
     turned: bool,
+    /// For a HEIC, whether its HDR light decodes exactly
+    /// ([`heic::HeicFile::hdr_decodes`]).
+    heic_hdr: bool,
 }
 
 /// The [`Decoder`] for the file at `path`. Applies no size limit.
@@ -235,6 +238,7 @@ fn open_decoder(path: &Path) -> Result<Decoder> {
         refused,
         kind,
         turned,
+        heic_hdr: false,
     };
     Ok(match kind {
         Kind::Webp { animated } => opened(
@@ -254,8 +258,11 @@ fn open_decoder(path: &Path) -> Result<Decoder> {
         }
         Kind::Heic => {
             let file = heic::HeicFile::open(path)?;
-            let refused = file.refusal();
-            opened(Box::new(file), refused, false)
+            let (refused, heic_hdr) = (file.refusal(), file.hdr_decodes());
+            Decoder {
+                heic_hdr,
+                ..opened(Box::new(file), refused, false)
+            }
         }
         _ => opened(generic()?, None, false),
     })
@@ -267,6 +274,7 @@ fn prepare(path: &Path) -> Result<Prepared> {
         refused,
         kind,
         turned,
+        heic_hdr,
     } = open_decoder(path)?;
     // The `image` crate's decoders, whose float samples are linear light (a 32-bit
     // TIFF); JPEG XL, AVIF and HEIC have readers of their own.
@@ -298,11 +306,12 @@ fn prepare(path: &Path) -> Result<Prepared> {
         );
     let hdr_white = hdr_white(profile.as_ref(), float);
     // An HDR file opens as an HDR edit where its light decodes exactly
-    // (docs/records/hdr-stage4-design.md); others stay refused, as HDR HEIC files
-    // are: ImageIO and libheif draw them their own way.
+    // (docs/records/hdr-stage4-design.md); others stay refused. A HEIC's reader
+    // says when its system decoder gives the signal back as coded; otherwise it stays
+    // refused, whatever its profile says.
     let hdr = hdr_white
         .and_then(|_| hdr_decoding(profile.as_ref(), float))
-        .filter(|_| kind != Kind::Heic);
+        .filter(|_| kind != Kind::Heic || heic_hdr);
     // An APNG is an animation, and narrow-range samples aren't expanded: both are
     // refused whatever else the file is.
     let refused = refused
@@ -2378,21 +2387,11 @@ mod tests {
         assert!((profile.red_colorant.x - p3.red_colorant.x).abs() < 1e-3);
     }
 
-    /// A PQ HEIC is shown, its reference white as white, but not edited; nor
-    /// is a still in a file whose brands say it holds a sequence. The
-    /// refusals come from the header, wherever the pixels come from; how an
-    /// HDR picture's preview looks, and whether a system decoder shows a still
-    /// it takes for a sequence, are its own.
+    /// A still in a file whose brands say it holds a sequence is refused for
+    /// Develop, from the header, wherever the pixels come from; whether a system
+    /// decoder shows a still it takes for a sequence is its own.
     #[test]
-    fn hdr_and_sequence_heics_are_refused_for_develop() {
-        assert_eq!(super::probe(&fixture("pq.heic")).unwrap_err().0, "HDR");
-        if cfg!(target_os = "macos") {
-            // ImageIO's HDR decoding is its own, but the grey is shown neither
-            // black nor clipped.
-            let image = decode(&fixture("pq.heic")).unwrap();
-            let centre = image.get_pixel(8, 6).0;
-            assert!(centre.iter().all(|v| (16..=250).contains(v)), "{centre:?}");
-        }
+    fn sequence_heics_are_refused_for_develop() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("sequence.heic");
         let mut bytes = std::fs::read(fixture("metadata.heic")).unwrap();
@@ -2400,6 +2399,149 @@ mod tests {
         bytes[at..at + 4].copy_from_slice(b"msf1");
         std::fs::write(&path, bytes).unwrap();
         assert_eq!(super::probe(&path).unwrap_err().0, "animated");
+    }
+
+    /// The 10-bit signal of each patch of `hdr-*.heic`, row by row
+    /// (scripts/make-hdr-heic-fixtures.py).
+    const HEIC_PATCHES: [[u16; 3]; 8] = [
+        [64, 64, 64],
+        [300, 300, 300],
+        [594, 594, 594],
+        [800, 800, 800],
+        [700, 200, 150],
+        [200, 650, 180],
+        [160, 220, 720],
+        [900, 880, 860],
+    ];
+
+    /// BT.2100's display light of an RGB signal, 1 = graphics white (203 cd/m²),
+    /// written out apart from RAWmakase's decoder: ST 2084's EOTF a channel; or HLG's
+    /// inverse OETF a channel, then its OOTF on a 1,000 cd/m² display (system gamma
+    /// 1.2) with the luminance of the primaries' `weights`.
+    fn bt2100(transfer: &str, signal: [f64; 3], weights: [f64; 3]) -> [f64; 3] {
+        if transfer == "pq" {
+            return signal.map(|s| bt2100_grey("pq", s));
+        }
+        let (a, b, c) = (0.17883277, 0.28466892, 0.55991073);
+        let scene = signal.map(|s| {
+            if s <= 0.5 {
+                s * s / 3.
+            } else {
+                (((s - c) / a).exp() + b) / 12.
+            }
+        });
+        let y: f64 = (0..3).map(|i| weights[i] * scene[i]).sum();
+        scene.map(|e| 1000. * y.powf(0.2) * e / 203.)
+    }
+
+    /// An HDR HEIC (PQ or HLG, its CICP in an `nclx`) opens as an HDR edit with the
+    /// light BT.2100 gives its signal, in its primaries, at each patch's centre: to
+    /// within 1.5 of its 10-bit code values, the HEVC coding's error on flat patches.
+    /// Where the system can't decode a HEIC, or on Windows, whose decoder isn't
+    /// checked, it is refused.
+    #[test]
+    fn an_hdr_heic_opens_with_its_light() {
+        use rawmakase_model::color::{hdr_output::HdrGamut, mul};
+        // BT.2020's and Display P3's luminance weights, from their published matrices.
+        let bt2020 = [0.2627, 0.6780, 0.0593];
+        let p3 = [0.228975, 0.691739, 0.079287];
+        for (name, transfer, gamut, weights) in [
+            ("hdr-pq.heic", "pq", HdrGamut::Rec2020, bt2020),
+            ("hdr-hlg.heic", "hlg", HdrGamut::Rec2020, bt2020),
+            ("hdr-pq-p3.heic", "pq", HdrGamut::DisplayP3, p3),
+        ] {
+            if cfg!(windows) {
+                assert_eq!(super::probe(&fixture(name)).unwrap_err().0, "HDR");
+                continue;
+            }
+            super::probe(&fixture(name)).unwrap();
+            if !heic_decodes() {
+                continue;
+            }
+            let image = super::open(&fixture(name), Cancel::NEVER).unwrap();
+            let light = image.hdr().expect("an HDR edit");
+            assert_eq!((light.width(), light.height()), (64, 32));
+            let to_file = gamut.prophoto_to_rgb();
+            for (i, code) in HEIC_PATCHES.iter().enumerate() {
+                let (x, y) = ((i % 4) * 16 + 8, (i / 4) * 16 + 8);
+                let got = mul(to_file, light.pixels()[y * 64 + x]).map(f64::from);
+                let at = |offset: f64| {
+                    bt2100(
+                        transfer,
+                        code.map(|c| (f64::from(c) + offset) / 1023.),
+                        weights,
+                    )
+                };
+                let (want, low, high) = (at(0.), at(-1.5), at(1.5));
+                for c in 0..3 {
+                    assert!(
+                        (low[c]..=high[c]).contains(&got[c]),
+                        "{name} patch {i} channel {c}: {} against {}",
+                        got[c],
+                        want[c]
+                    );
+                }
+            }
+            // The Library's SDR rendition puts graphics white (PQ's patch 2) at 0.926
+            // of white, as for every HDR file: sRGB 247.
+            if transfer == "pq" {
+                let white = decode(&fixture(name)).unwrap().get_pixel(40, 8).0;
+                assert!(
+                    white.iter().all(|v| v.abs_diff(247) <= 2),
+                    "{name}: {white:?}"
+                );
+            }
+        }
+    }
+
+    /// What the system decoders don't give back as coded stays refused by reason: an
+    /// ICC profile beside an HDR `nclx`, a matrix that isn't one, and primaries
+    /// RAWmakase doesn't decode HDR in.
+    #[test]
+    fn hdr_heics_that_dont_decode_exactly_are_refused() {
+        use super::heif::Nclx;
+        let nclx = |primaries, transfer, matrix| Nclx {
+            primaries,
+            transfer,
+            matrix,
+            full_range: true,
+        };
+        let why = |n: Nclx, icc| n.hdr_refusal(icc).map(|u| u.0);
+        assert_eq!(why(nclx(9, 13, 14), false), None, "SDR is the decoder's");
+        // A PQ HEIC whose transfer only its ICC profile's `cicp` names, without an
+        // `nclx`: ImageIO would draw it through the profile, so it stays refused
+        // on every system.
+        let profile = super::prepare(&fixture("hdr-pq-icc.heic")).unwrap().profile;
+        assert!(
+            profile.and_then(|p| p.cicp).is_some(),
+            "the profile names PQ"
+        );
+        assert_eq!(
+            super::probe(&fixture("hdr-pq-icc.heic")).unwrap_err().0,
+            "HDR"
+        );
+        if cfg!(windows) {
+            assert_eq!(why(nclx(9, 16, 9), false).as_deref(), Some("HDR"));
+            return;
+        }
+        for matrix in [1, 5, 6, 9] {
+            assert_eq!(why(nclx(9, 16, matrix), false), None);
+            assert_eq!(why(nclx(12, 18, matrix), false), None);
+        }
+        assert_eq!(why(nclx(1, 16, 1), false), None);
+        assert_eq!(why(nclx(9, 16, 9), true).as_deref(), Some("HDR"));
+        assert_eq!(why(nclx(2, 16, 9), false).as_deref(), Some("HDR"));
+        assert_eq!(why(nclx(11, 16, 9), false).as_deref(), Some("HDR"));
+        assert_eq!(
+            why(nclx(9, 16, 10), false).as_deref(),
+            Some("HDR matrix 10")
+        );
+        assert_eq!(
+            why(nclx(9, 18, 14), false).as_deref(),
+            Some("HDR matrix 14")
+        );
+        // libheif's own PQ file, the matrix BT.2020's, opens.
+        super::probe(&fixture("pq.heic")).unwrap();
     }
 
     /// A HEIC with alpha (an auxiliary image) is listed by its size; on macOS

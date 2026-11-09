@@ -41,3 +41,12 @@ version and the decoded pixels the decoder test checks). `ultrahdr.jpg` and
 three-channel map in the base's colour space, the base's size and a quarter of it (16×12). The
 HDR rendition is a ramp to 8× SDR white; the SDR one compresses each channel differently, so
 the map's channels differ. Made with libultrahdr 2.0.2.
+
+The HDR HEIC fixtures are written by libheif's `heif-enc` (x265) from a 16-bit PNG drawn by
+`python3 scripts/make-hdr-heic-fixtures.py tests/data/formats`. `hdr-pq.heic`, `hdr-hlg.heic` and
+`hdr-pq-p3.heic` are 64×32: eight flat 16×16 patches of known 10-bit signal (the script's
+`PATCHES`, repeated in the decoder test), deep shadow to highlights and saturated colours, in
+BT.2020 primaries (PQ and HLG) or Display P3 (PQ), BT.2020's matrix, full range, 4:2:0.
+`hdr-pq-icc.heic` is the PQ signal with no `nclx`, its transfer named only by the `cicp` tag of a
+minimal ICC v4 profile the script writes (BT.2020 colorants, linear curves). Made with libheif
+1.23.6 and x265 4.3.

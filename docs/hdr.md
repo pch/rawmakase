@@ -127,6 +127,9 @@ These files qualify:
 - a TIFF, PNG, JPEG XL or AVIF whose CICP (in the file or its ICC profile) says PQ,
   HLG or linear light, at full range, in BT.709, BT.2020 or Display P3 (RAWmakase's
   own HDR exports among them);
+- a HEIC whose `nclx` says PQ or HLG in BT.709, BT.2020 or Display P3, with a matrix
+  of BT.709, BT.601 or BT.2020's non-constant luminance, and no ICC profile, on macOS
+  and where libheif decodes it ([HDR HEIC](#hdr-heic));
 - a TIFF of 32-bit float samples, through an ICC profile without CICP whose curves
   are the identity (Photoshop's 32-bit documents), or without a profile, read as
   linear sRGB primaries; 1.0 is graphics white. Integer samples with such a profile
@@ -171,11 +174,35 @@ resizing as a raw's does, and then the limit. Anything else refuses the master b
 it.
 
 Still refused, as Develop refused every HDR file before:
-- HDR HEIC, which ImageIO and libheif draw their own way, and HEIC gain maps
-  (Apple's own and ISO 21496-1 ones alike);
+- HEIC gain maps (Apple's own and ISO 21496-1 ones alike), and the HDR HEICs listed
+  under [HDR HEIC](#hdr-heic);
 - HDR in other primaries or a curved profile.
 
 The Library shows them with graphics white as white and says why.
+
+### HDR HEIC
+
+RAWmakase has no HEVC decoder ([dependencies](dependencies.md)), so an HDR HEIC's
+light decodes exactly only where the system's decoder gives its signal back as coded,
+converted to RGB by the file's matrix and range and nothing else:
+
+- **macOS:** ImageIO decodes the file into CoreGraphics' own space of its CICP
+  (`kCGColorSpaceITUR_2100_PQ`, `DisplayP3_HLG` and the others), and RAWmakase draws
+  it into a bitmap of that same space, which CoreGraphics leaves as it is. On
+  `tests/data/formats/hdr-*.heic` (scripts/make-hdr-heic-fixtures.py: flat patches of
+  known 10-bit signal, PQ and HLG in BT.2020, PQ in Display P3) it gives back every
+  patch to within one code value.
+- **Linux and other systems:** libheif converts by the `nclx` itself; the same
+  fixtures are checked where it is installed (CI's Arch job).
+
+The signal then decodes as any HDR file's does, by BT.2100, in f32, and its Library
+preview is RAWmakase's tone map. Refused for Develop:
+- **"HDR"** on Windows, whose decoder (Windows Imaging Component with Microsoft's
+  extensions) isn't checked; with an ICC profile beside the `nclx`, which then describes
+  the pixels instead; with HDR named only by an ICC profile's `cicp` tag, without an
+  `nclx`, which ImageIO draws through that profile; and in other primaries;
+- **"HDR matrix N"** for a matrix that isn't one: constant luminance (10, 13) and
+  ICtCp (14).
 
 ### Gain-map files
 

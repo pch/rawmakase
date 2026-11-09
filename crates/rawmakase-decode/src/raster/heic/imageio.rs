@@ -6,8 +6,11 @@
 //! from its CICP, or sRGB) at the depth the header says, so the pixels are
 //! what [`HeicFile`]'s colour type and profile promise whatever colour ImageIO
 //! itself makes of the file: CoreGraphics converts them when the two differ.
-//! An HDR file's CICP (PQ or HLG, BT.2020) is drawn into CoreGraphics' own
-//! space of that name, the one it knows the transfer of. A profile is used
+//! An HDR file's CICP (PQ or HLG in BT.709, BT.2020 or Display P3) is drawn into
+//! CoreGraphics' own space of that name, the one it knows the transfer of. ImageIO
+//! decodes such a file into that same space, so CoreGraphics leaves the signal as
+//! coded: measured to within a 10-bit code value at every patch of
+//! `hdr-pq.heic`, `hdr-hlg.heic` and `hdr-pq-p3.heic`, the light Develop decodes. A profile is used
 //! only when moxcms, which reads it for the rest of RAWmakase, finds it an RGB
 //! one, and CoreGraphics reads it as RGB too; otherwise the pixels are drawn
 //! as sRGB. That is how RAWmakase takes a profile moxcms can't read; one only
@@ -39,8 +42,9 @@ use objc2_core_foundation::{
 };
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGColorSpace, CGColorSpaceModel, CGContext, CGDataProvider, CGImage,
-    CGImageAlphaInfo, CGImageByteOrderInfo, CGInterpolationQuality, kCGColorSpaceITUR_2100_HLG,
-    kCGColorSpaceITUR_2100_PQ, kCGColorSpaceSRGB,
+    CGImageAlphaInfo, CGImageByteOrderInfo, CGInterpolationQuality, kCGColorSpaceDisplayP3_HLG,
+    kCGColorSpaceDisplayP3_PQ, kCGColorSpaceITUR_709_HLG, kCGColorSpaceITUR_709_PQ,
+    kCGColorSpaceITUR_2100_HLG, kCGColorSpaceITUR_2100_PQ, kCGColorSpaceSRGB,
 };
 use objc2_image_io::{CGImageSource, CGImageSourceStatus, kCGImageSourceShouldCacheImmediately};
 
@@ -57,16 +61,26 @@ pub(super) fn pixels(mut file: HeicFile) -> Result<Pixels> {
 fn space(file: &HeicFile) -> Option<CFRetained<CGColorSpace>> {
     let named = |name: &CFString| CGColorSpace::with_name(Some(name));
     // SAFETY: constants CoreGraphics defines.
-    let (pq, hlg, srgb) = unsafe {
+    let (srgb, hdr) = unsafe {
         (
-            kCGColorSpaceITUR_2100_PQ,
-            kCGColorSpaceITUR_2100_HLG,
             kCGColorSpaceSRGB,
+            [
+                ((1, 16), kCGColorSpaceITUR_709_PQ),
+                ((1, 18), kCGColorSpaceITUR_709_HLG),
+                ((9, 16), kCGColorSpaceITUR_2100_PQ),
+                ((9, 18), kCGColorSpaceITUR_2100_HLG),
+                ((12, 16), kCGColorSpaceDisplayP3_PQ),
+                ((12, 18), kCGColorSpaceDisplayP3_HLG),
+            ],
         )
     };
-    let space = match (&file.icc, file.nclx.map(|n| (n.primaries, n.transfer))) {
-        (None, Some((9, 16))) => named(pq),
-        (None, Some((9, 18))) => named(hlg),
+    let named_hdr = file.nclx.and_then(|n| {
+        hdr.iter()
+            .find(|(cicp, _)| *cicp == (n.primaries, n.transfer))
+            .map(|(_, name)| *name)
+    });
+    let space = match (&file.icc, named_hdr) {
+        (None, Some(name)) => named(name),
         _ => heif::profile(file.icc.as_ref(), file.nclx)
             .filter(|icc| {
                 ColorProfile::new_from_slice(icc)
