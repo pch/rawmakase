@@ -766,6 +766,8 @@ impl winit::application::ApplicationHandler<eframe::UserEvent> for SurfaceGate<'
     ) {
         let _held = reconfigures_surface(&event).then(crate::develop::gpu::reconfiguring_surface);
         self.0.window_event(event_loop, window_id, event);
+        #[cfg(target_os = "macos")]
+        crate::platform::display::prepare_again();
     }
     fn new_events(
         &mut self,
