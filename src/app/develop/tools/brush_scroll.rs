@@ -45,10 +45,11 @@ impl Scroll {
     /// turns a Shift+wheel into; a plain sideways trackpad swipe changes nothing. While
     /// a button is held (a stroke, a moved spot or correction) or in a frame that also
     /// has a click or a key, the wheel is left alone, so it never mixes into another
-    /// gesture or History step.
+    /// gesture or History step. A key a shortcut already took counts too: the frame's
+    /// raw input still has it.
     pub(in crate::app) fn read(i: &egui::InputState) -> Vec<Self> {
         let busy = i.pointer.any_down()
-            || i.events.iter().any(|e| {
+            || i.raw.events.iter().any(|e| {
                 matches!(
                     e,
                     egui::Event::PointerButton { .. } | egui::Event::Key { pressed: true, .. }

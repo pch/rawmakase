@@ -489,8 +489,9 @@ fn wheel(ui: &mut egui::Ui, step: &mut StepName, rect: Rect, grade: &mut [f32; 3
     let now = ui.input(|i| i.time);
     // A hidden panel or another edit must not replay a stale click later.
     click = click.filter(|c| c.frame + 1 >= frame && c.before == *grade);
+    // The raw input, which still has a key a shortcut took.
     if ui.input(|i| {
-        i.events.iter().any(|e| match e {
+        i.raw.events.iter().any(|e| match e {
             egui::Event::PointerButton {
                 pos, pressed: true, ..
             } => !on_disc(*pos),
@@ -704,8 +705,9 @@ fn luminance_rail(
     let frame = ui.ctx().cumulative_frame_nr();
     let now = ui.input(|i| i.time);
     click = click.filter(|c| c.frame + 1 >= frame && c.before == *value);
+    // The raw input, which still has a key a shortcut took.
     if ui.input(|i| {
-        i.events.iter().any(|e| match e {
+        i.raw.events.iter().any(|e| match e {
             egui::Event::PointerButton {
                 pos, pressed: true, ..
             } => !area.contains(*pos),
@@ -921,6 +923,8 @@ mod tests {
         rect: Rect,
         luminance: bool,
         step: StepName,
+        /// A shortcut took this frame's keys before the wheel is drawn.
+        keys_taken: bool,
     }
     impl Harness {
         fn new() -> Self {
@@ -932,6 +936,7 @@ mod tests {
                 time: 0.,
                 luminance: false,
                 step: StepName::default(),
+                keys_taken: false,
                 rect: Rect::from_min_size(corner + Vec2::splat(10.), Vec2::splat(200.)),
             }
         }
@@ -952,6 +957,11 @@ mod tests {
                     ..Default::default()
                 },
                 |ui| {
+                    if self.keys_taken {
+                        ui.input_mut(|i| {
+                            i.events.retain(|e| !matches!(e, egui::Event::Key { .. }))
+                        });
+                    }
                     if self.luminance {
                         luminance_rail(ui, &mut self.step, rect, &mut grade[2], Region::Shadows);
                     } else {
@@ -1235,5 +1245,41 @@ mod tests {
         let mut typed = Recipe::default();
         typed.grading[0] = [40. / 360., 0.25, 0.];
         assert_eq!(dragged, typed);
+    }
+
+    #[test]
+    fn a_key_a_shortcut_took_still_cancels_a_pending_click() {
+        // A rating key takes its press out of the frame before the panels draw;
+        // the click waiting for a double-click must still be dropped.
+        let mut h = Harness::new();
+        let mut grade = [0., 0., 0.];
+        let left = h.at(Vec2::new(-0.3, 0.));
+        let press = |pressed| egui::Event::PointerButton {
+            pos: left,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        h.frame(
+            &mut grade,
+            vec![egui::Event::PointerMoved(left)],
+            egui::Modifiers::NONE,
+        );
+        h.frame(&mut grade, vec![press(true)], egui::Modifiers::NONE);
+        h.time -= 0.45;
+        h.frame(&mut grade, vec![press(false)], egui::Modifiers::NONE);
+        h.time -= 0.45;
+        h.keys_taken = true;
+        let key = egui::Event::Key {
+            key: egui::Key::Num3,
+            physical_key: Some(egui::Key::Num3),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        h.frame(&mut grade, vec![key], egui::Modifiers::NONE);
+        h.keys_taken = false;
+        h.frame(&mut grade, vec![], egui::Modifiers::NONE);
+        assert_eq!((grade[0], grade[1]), (0., 0.));
     }
 }
