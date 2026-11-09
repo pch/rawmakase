@@ -1008,13 +1008,19 @@ pub(in crate::app) fn hdr_master_refused(
 }
 
 impl crate::app::Editor {
+    /// Whether Develop shows an HDR edit as its SDR rendition only because of the
+    /// display, which may come to show HDR without anything waking the window.
+    pub(in crate::app) fn hdr_awaits_display(&self) -> bool {
+        self.module == Module::Develop
+            && self.effective_recipe().hdr.is_active()
+            && self.view.hdr_display.unavailable().is_some()
+    }
     /// Why no HDR preview shows anywhere in Develop's viewport, if none can.
     fn hdr_refused(&self) -> Result<(), &'static str> {
         let refuse = |no: bool, why| if no { Err(why) } else { Ok(()) };
-        refuse(
-            !self.view.hdr_display.available(),
-            "this display shows no HDR",
-        )?;
+        if let Some(why) = self.view.hdr_display.unavailable() {
+            return Err(why);
+        }
         // A chosen monitor profile converts the SDR rendition alone; the surface
         // then holds device RGB, which has no extended range.
         refuse(

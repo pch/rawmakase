@@ -142,6 +142,14 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1.1", features = ["fs", "process", "system"] }
 
+# The Wayland display's HDR headroom (src/platform/display.rs), read through
+# the color-management protocol on winit's own connection. winit and
+# smithay-client-toolkit build these already; `staging` adds the protocol.
+[target.'cfg(target_os = "linux")'.dependencies]
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+
 [target.'cfg(windows)'.dependencies]
 # Win32_Storage_FileSystem and Win32_System_WindowsProgramming: the drive
 # type of a volume, for whether it has a Recycle Bin (src/platform/trash/
@@ -182,16 +190,16 @@ workspace = true
 # winit forks"), among them file drops on Wayland. Move egui and winit
 # together, to the revisions that guide lists.
 [patch.crates-io]
-ecolor = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
-eframe = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
-egui = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
-egui-wgpu = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
-egui-winit = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
-egui_extras = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
-egui_glow = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
-emath = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
-epaint = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
-epaint_default_fonts = { git = "https://github.com/pch/egui", rev = "25a61b8d60e71b40b896a1e1ace3c9254e59d7d4" }
+ecolor = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
+eframe = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
+egui = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
+egui-wgpu = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
+egui-winit = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
+egui_extras = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
+egui_glow = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
+emath = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
+epaint = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
+epaint_default_fonts = { git = "https://github.com/pch/egui", rev = "d31e9fdd6d068da6cc169aa3f4fea2152a07bf56" }
 winit = { git = "https://github.com/crmne/winit", rev = "ed7caa9023f10b397f5b6ec8284a840cbd8a6f65" }
 
 [profile.release]

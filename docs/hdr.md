@@ -42,6 +42,37 @@ it stays at SDR white. A display can show HDR when its potential headroom
 window asks for EDR (`wantsExtendedDynamicRangeContent`) only while it shows an HDR
 photo; until it does, macOS reports no current headroom.
 
+On Linux under Wayland, the window's surface is 16-bit float only when an output
+already shows HDR as the window opens (an output's image description, from the
+color-management protocol, gives it headroom); an SDR display keeps the 8-bit
+surface, and a display that shows HDR only later says HDR shows after RAWmakase
+restarts. Wayland has no gamma-encoded extended sRGB, so the float surface is
+linear extended sRGB (wgpu's `ExtendedSrgbLinear`), which Mesa's Vulkan WSI declares
+to the compositor itself, with no luminances. Mesa holds the surface's colour
+management object for the swapchain's whole life, so RAWmakase can't declare
+anything of its own: a second one is a protocol error that ends the connection.
+egui still renders the same sRGB-encoded values, and the egui fork's last pass
+decodes them to linear (`egui_wgpu::WgpuConfiguration::linear_float_surface`), so
+the HDR preview needs no other encoding.
+
+Where a compositor shows that surface's 1.0 decides the headroom and the black
+level (`platform::display::wayland::Anchor`). Hyprland 0.56 (by its source) reads an
+undescribed linear surface as Windows' scRGB: 1.0 is 80 cd/m², absolute, on any
+output, and 0 is no light. Its sRGB windows' white is the monitor's
+`sdr_max_luminance`, 80 cd/m² unless set, so the interface matches them then; the
+headroom is the display's target luminance over 80 cd/m², not over the 203 cd/m²
+reference its HDR outputs describe; and the last pass lifts black to the output's
+minimum over 80 cd/m², or the interface's dark greys sink below its sRGB windows'
+(measured on an SDR output, the interface then matches the 8-bit surface to one code
+value). Other compositors are assumed to anchor 1.0 to the output's reference
+white, as the protocol's default luminances have it. A PQ output that names no
+target luminance (nor a maximum of its own) shows no HDR. The headroom is the
+window's surface's preferred image description, read on winit's own connection and
+read again when the compositor changes it (a move to another output, HDR turned on
+or off). A Hyprland `sdr_max_luminance` or `sdrbrightness` other than its default
+isn't visible through the protocol and is not followed. Light above SDR white on a
+Wayland HDR display has not been seen yet: no HDR display was available.
+
 While the display can show HDR, an edit with HDR on whose master renders is shown
 as its master in Develop (`app::develop::hdr_preview`): in Fit, zoomed out, and
 zoomed in to 100% or more, and in Before Only and on each side of Before/After and
