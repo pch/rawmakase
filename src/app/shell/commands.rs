@@ -3,6 +3,7 @@
 mod output;
 mod parameter;
 mod preset;
+pub(in crate::app) mod registry;
 mod reply;
 use crate::app::Module;
 use crate::app::shell::panels::{PanelChange, WorkspacePanel};
