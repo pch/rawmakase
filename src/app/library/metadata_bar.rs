@@ -20,8 +20,11 @@ use std::collections::HashMap;
 const QUICK: [Attribute; 3] = [Attribute::Camera, Attribute::Lens, Attribute::Keyword];
 /// A list longer than this has a Find field.
 const FIND_FROM: usize = 12;
-/// The height of the strip's lists.
-const STRIP_LIST: f32 = 150.;
+/// The tallest the strip's lists get, eight whole rows; shorter, they fit
+/// their rows.
+const STRIP_LIST: f32 = 8. * size::ROW;
+/// How much a list's Find field adds to its height.
+const FIND_HEIGHT: f32 = size::CONTROL + space::XS;
 /// The narrowest a strip column gets; narrower, the strip scrolls sideways.
 const COLUMN_WIDTH: f32 = 190.;
 /// The width of a bar button's list.
@@ -35,6 +38,9 @@ pub(super) struct MetadataBar {
     columns: [Attribute; 4],
     /// What each attribute's list is narrowed to, by its Find field.
     find: HashMap<Attribute, String>,
+    /// The attribute whose Find field takes the keyboard focus once its list
+    /// opens from the bar, so typing narrows it at once.
+    focus_find: Option<Attribute>,
 }
 impl Default for MetadataBar {
     fn default() -> Self {
@@ -47,6 +53,7 @@ impl Default for MetadataBar {
                 Attribute::Keyword,
             ],
             find: HashMap::new(),
+            focus_find: None,
         }
     }
 }
@@ -56,7 +63,8 @@ impl Library {
     /// button per quick attribute and per other attribute with a choice.
     pub(super) fn metadata_buttons(&mut self, ui: &mut egui::Ui, compact: bool) -> bool {
         let open = self.metadata_bar.open;
-        if bar_button(ui, "Metadata", open)
+        // Filled while the strip is open, as the bar's other toggles are.
+        if bar_button(ui, "Metadata ▾", open)
             .on_hover_text(if open {
                 "Hide the metadata columns"
             } else {
@@ -87,6 +95,23 @@ impl Library {
         self.update_metadata_counts();
         let palette = theme::palette(ui.ctx());
         let mut changed = false;
+        // The lists are as tall as the longest needs, up to STRIP_LIST, and
+        // the hairlines between them as tall as that.
+        let lengths = self.metadata_bar.columns.map(|attribute| {
+            self.facets
+                .counts(attribute)
+                .map_or(0, |counts| counts.values.len())
+        });
+        let longest = lengths.iter().copied().max().unwrap_or(0);
+        let list_height = (longest as f32 * size::ROW).clamp(size::ROW, STRIP_LIST);
+        let find = lengths.iter().any(|n| *n > FIND_FROM);
+        let column_height =
+            size::CONTROL + size::ROW + list_height + if find { FIND_HEIGHT } else { 0. };
+        let opacity = ui.opacity();
+        if !self.filters.enabled {
+            // Off with Cmd+L, as the bar above it.
+            ui.multiply_opacity(0.45);
+        }
         let frame = egui::Frame::new()
             .fill(palette.tone(Tone::FIELD))
             .inner_margin(egui::Margin {
@@ -112,19 +137,20 @@ impl Library {
                             ui.spacing_mut().item_spacing.x = 0.;
                             for column in 0..4 {
                                 if column > 0 {
-                                    divider(ui, gap);
+                                    divider(ui, gap, column_height);
                                 }
                                 ui.vertical(|ui| {
                                     ui.set_width(width);
                                     ui.spacing_mut().item_spacing.y = 0.;
                                     self.column_header(ui, column, width);
                                     let attribute = self.metadata_bar.columns[column];
-                                    changed |= self.value_list(ui, attribute, width, STRIP_LIST);
+                                    changed |= self.value_list(ui, attribute, width, list_height);
                                 });
                             }
                         });
                     });
             });
+        ui.set_opacity(opacity);
         // A hairline under the strip, as under the bar.
         let bottom = frame.response.rect.bottom();
         ui.painter().hline(
@@ -199,6 +225,9 @@ impl Library {
             } else {
                 format!("Filter by {}", attribute.name().to_lowercase())
             });
+        if response.clicked() {
+            self.metadata_bar.focus_find = Some(attribute);
+        }
         let mut changed = false;
         egui::Popup::menu(&response)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -207,6 +236,9 @@ impl Library {
                 ui.spacing_mut().item_spacing.y = 0.;
                 self.update_metadata_counts();
                 changed = self.value_list(ui, attribute, POPUP_WIDTH, 280.);
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    ui.close();
+                }
             });
         changed
     }
@@ -223,14 +255,23 @@ impl Library {
         let counts = self.facets.counts(attribute).unwrap_or(&empty);
         let chosen = &mut self.filters.metadata;
         let mut changed = false;
+        let focus = self.metadata_bar.focus_find.take() == Some(attribute);
         if counts.values.len() > FIND_FROM {
             let find = self.metadata_bar.find.entry(attribute).or_default();
-            ui.add(
+            let field = ui.add(
                 egui::TextEdit::singleline(find)
-                    .hint_text("Find")
+                    .hint_text(format!("Find {}", attribute.name().to_lowercase()))
                     .font(egui::FontId::proportional(text::LABEL))
-                    .desired_width(width),
+                    // The width is the text's; the field's margins come on top.
+                    .desired_width(width - 2. * space::XS)
+                    .margin(egui::Margin::symmetric(space::XS as i8, 0))
+                    .min_size(Vec2::new(0., size::CONTROL))
+                    .vertical_align(egui::Align::Center),
             );
+            if focus {
+                field.request_focus();
+            }
+            ui.add_space(space::XS);
         }
         let find = self
             .metadata_bar
@@ -239,7 +280,7 @@ impl Library {
             .map(|f| f.trim().to_lowercase())
             .filter(|f| !f.is_empty() && counts.values.len() > FIND_FROM);
         let all = chosen.get(&attribute).is_none_or(|c| c.is_empty());
-        if value_row(ui, width, "All", counts.total, all).clicked() {
+        if value_row(ui, width, "All", counts.total, Row::All(all)).clicked() {
             chosen.remove(&attribute);
             changed = true;
         }
@@ -264,7 +305,7 @@ impl Library {
                 for (value, count) in &shown[rows] {
                     let on = chosen.get(&attribute).is_some_and(|c| c.contains(value));
                     let name = value.as_deref().unwrap_or(attribute.unknown());
-                    if value_row(ui, width, name, *count, on).clicked() {
+                    if value_row(ui, width, name, *count, Row::Value(on)).clicked() {
                         let values = chosen.entry(attribute).or_default();
                         toggle(values, value.clone());
                         if values.is_empty() {
@@ -300,10 +341,9 @@ pub(super) fn bar_button(ui: &mut egui::Ui, label: &str, on: bool) -> egui::Resp
     toolbar_action_sized(ui, label, Vec2::new(width, size::CONTROL), on, true, 0)
 }
 
-/// A hairline between strip columns, with `gap` around it.
-fn divider(ui: &mut egui::Ui, gap: f32) {
+/// A hairline between strip columns, `height` tall, with `gap` around it.
+fn divider(ui: &mut egui::Ui, gap: f32, height: f32) {
     let palette = theme::palette(ui.ctx());
-    let height = size::CONTROL + STRIP_LIST + size::ROW;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(gap, height), egui::Sense::hover());
     ui.painter().vline(
         rect.center().x,
@@ -312,41 +352,79 @@ fn divider(ui: &mut egui::Ui, gap: f32) {
     );
 }
 
-/// A list row: the value on one line, cut short with its full text on hover,
-/// and its count aligned right; highlighted when chosen.
-fn value_row(ui: &mut egui::Ui, width: f32, name: &str, count: usize, on: bool) -> egui::Response {
+/// What a list row stands for, and whether it is chosen.
+#[derive(Clone, Copy)]
+enum Row {
+    /// All, chosen while no value is: checked, but not filled, so the value
+    /// someone did choose is what stands out.
+    All(bool),
+    /// A value: checked and filled when chosen.
+    Value(bool),
+}
+
+/// A list row: a check mark when chosen, the value on one line (cut short,
+/// with its full text on hover) and its count aligned right. It takes the
+/// keyboard focus with Tab and toggles with Space or Enter, showing a ring
+/// while focused.
+fn value_row(ui: &mut egui::Ui, width: f32, name: &str, count: usize, row: Row) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(width, size::ROW), egui::Sense::click());
-    let fill = if on {
-        Some(palette.tone(Tone::PRESSED))
-    } else if response.hovered() {
+    let (checked, filled) = match row {
+        Row::All(on) => (on, false),
+        Row::Value(on) => (on, on),
+    };
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, checked, name)
+    });
+    let fill = if response.hovered() {
         Some(palette.tone(Tone::HOVER))
+    } else if filled {
+        Some(palette.tone(Tone::OUTLINE))
     } else {
         None
     };
     if let Some(fill) = fill {
         ui.painter().rect_filled(rect, radius::CONTROL, fill);
     }
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            rect.shrink(0.5),
+            radius::CONTROL,
+            egui::Stroke::new(1., palette.tone(Tone::OUTLINE_STRONG)),
+            egui::StrokeKind::Inside,
+        );
+    }
+    let ink = palette.tone(if checked { Tone::TEXT } else { Tone::SOFT });
+    let check = space::XL;
+    if checked {
+        icons::paint_at(
+            ui.painter(),
+            Icon::Check,
+            egui::pos2(rect.left() + check / 2. + 1., rect.center().y),
+            11.,
+            ink,
+        );
+    }
     let font = egui::FontId::proportional(text::LABEL);
     let count =
         ui.painter()
             .layout_no_wrap(count.to_string(), font.clone(), palette.tone(Tone::FAINT));
-    let inner = rect.shrink2(Vec2::new(space::S, 0.));
+    let inner = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + check + 2., rect.top()),
+        egui::pos2(rect.right() - space::S, rect.bottom()),
+    );
     let room = (inner.width() - count.size().x - space::S).max(0.);
     let mut job = egui::text::LayoutJob::single_section(
         name.to_string(),
-        egui::TextFormat::simple(font, palette.tone(if on { Tone::TEXT } else { Tone::SOFT })),
+        egui::TextFormat::simple(font, ink),
     );
     job.wrap = egui::text::TextWrapping::truncate_at_width(room);
     let galley = ui.painter().layout_job(job);
     let cut = galley.elided;
     let y = |h: f32| inner.center().y - h / 2.;
-    ui.painter().galley(
-        egui::pos2(inner.left(), y(galley.size().y)),
-        galley,
-        palette.tone(Tone::SOFT),
-    );
+    ui.painter()
+        .galley(egui::pos2(inner.left(), y(galley.size().y)), galley, ink);
     ui.painter().galley(
         egui::pos2(inner.right() - count.size().x, y(count.size().y)),
         count,
