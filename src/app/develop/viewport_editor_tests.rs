@@ -365,8 +365,12 @@ fn the_hdr_master_is_due_in_every_view_of_an_hdr_edit() {
     assert!(e.hdr_preview_due().is_err(), "AI Denoise");
     e.document.edit.setup_mut().ai_denoise.enabled = false;
 
+    // Contrast renders in HDR; Highlights does not yet.
     e.document.edit.setup_mut().contrast = 20.;
-    assert!(e.hdr_preview_due().is_err(), "refused in HDR");
+    assert!(e.hdr_preview_due().is_ok(), "Contrast");
     e.document.edit.setup_mut().contrast = 0.;
+    e.document.edit.setup_mut().highlights = 20.;
+    assert!(e.hdr_preview_due().is_err(), "refused in HDR");
+    e.document.edit.setup_mut().highlights = 0.;
     assert!(e.hdr_preview_due().is_ok());
 }

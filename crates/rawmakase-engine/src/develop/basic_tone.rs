@@ -96,6 +96,125 @@ pub(crate) fn contrast_curve(contrast: f32, photo: &PhotoTone) -> Option<ToneLut
     }))
 }
 
+/// Contrast in an HDR render, as Camera Raw 18.7 renders it
+/// (docs/records/hdr-stage1-results.md#contrast). It is built from the SDR Contrast
+/// curve at the photo's pivot, and works in the encoding of a look's curve in HDR
+/// ([`crate::camera_profiles::hdr_look::encode`]):
+///
+/// - Positive Contrast follows its SDR curve up to where the curve lifts its input
+///   most, then runs parallel to the identity at that lift, as a look's curve does,
+///   with no ceiling.
+/// - Negative Contrast is its SDR curve stretched in stops: the curve's fixed point
+///   moves up by [`HDR_FLAT_PIVOT`] and graphics white to [`HDR_TOP`], four stops
+///   above it, so it flattens the HDR range as it flattens the SDR one.
+///
+/// Above [`HDR_TOP`] positive Contrast adds a constant and negative Contrast continues
+/// along its slope there, as Camera Raw renders them. Measured on gray ramps
+/// whose Contrast pivots differ, both profile curves and HDR limits 2, 4 and 8 (the
+/// limit does not change it); colours take it RGBTone fashion.
+pub(crate) struct HdrContrast {
+    /// Encoded output at encoded inputs evenly spaced from 0 to `encode(HDR_TOP)`.
+    table: Vec<f32>,
+    /// The linear output at [`HDR_TOP`] and the slope there, for brighter inputs.
+    top: f32,
+    slope: f32,
+}
+/// How far up negative Contrast moves its fixed point in HDR, as a factor of linear
+/// value (fitted on 11 ramp and slider cases; median error 0.019 stop).
+const HDR_FLAT_PIVOT: f32 = 1.671;
+/// Where Contrast in HDR takes graphics white: four stops above it.
+const HDR_TOP: f32 = 16.;
+const HDR_SAMPLES: usize = 2048;
+impl HdrContrast {
+    /// Contrast `contrast` at the photo's pivot; `None` at 0.
+    pub(crate) fn new(contrast: f32, photo: &PhotoTone) -> Option<Self> {
+        (contrast != 0.).then(|| {
+            Self::from_sdr(contrast > 0., |e| {
+                contrast_at(contrast, photo.contrast_pivot, e)
+            })
+        })
+    }
+    /// From the SDR Contrast curve `sdr` (encoded, 0–1 in and out), positive or not.
+    fn from_sdr(positive: bool, sdr: impl Fn(f32) -> f32) -> Self {
+        use crate::camera_profiles::hdr_look::{decode, encode};
+        let render: Box<dyn Fn(f32) -> f32> = if positive {
+            // The first point of the largest lift.
+            let (mut until, mut lift) = (0f32, 0f32);
+            for i in 0..=4096 {
+                let e = i as f32 / 4096.;
+                if sdr(e) - e > lift + 1e-6 {
+                    (until, lift) = (e, sdr(e) - e);
+                }
+            }
+            let sdr = &sdr;
+            Box::new(move |x: f32| {
+                let e = encode(x);
+                decode(if e <= until { sdr(e) } else { e + lift })
+            })
+        } else {
+            let linear = |x: f32| srgb_decode(sdr(srgb_encode(x)));
+            // The curve's fixed point: where it stops lifting the shadows.
+            let mut fixed = 1f32;
+            for i in 1..=2000 {
+                let x = (i as f32 / 2000. * 12. - 12.).exp2();
+                if linear(x) <= x {
+                    fixed = x;
+                    break;
+                }
+            }
+            let pivot = HDR_FLAT_PIVOT * fixed;
+            let stretch = (HDR_TOP / pivot).log2() / (1. / fixed).log2().max(1e-6);
+            Box::new(move |x: f32| {
+                let sdr_x = fixed * ((x.max(0.) / pivot).log2() / stretch).exp2();
+                if sdr_x >= 1. {
+                    x
+                } else {
+                    pivot * (stretch * (linear(sdr_x).max(1e-9) / fixed).log2()).exp2()
+                }
+            })
+        };
+        let end = encode(HDR_TOP);
+        let table = (0..=HDR_SAMPLES)
+            .map(|i| encode(render(decode(end * i as f32 / HDR_SAMPLES as f32))))
+            .collect();
+        let top = render(HDR_TOP);
+        // Positive Contrast adds a constant above it (+6.1 at +100), negative goes on
+        // along its slope.
+        let slope = if positive {
+            1.
+        } else {
+            ((top - render(HDR_TOP * 0.99)) / (HDR_TOP * 0.01)).max(0.)
+        };
+        Self { table, top, slope }
+    }
+    /// The encoded output for an encoded input.
+    fn evaluate(&self, e: f32) -> f32 {
+        use crate::camera_profiles::hdr_look::{decode, encode};
+        let end = encode(HDR_TOP);
+        if e > end {
+            return encode(self.top + self.slope * (decode(e) - HDR_TOP));
+        }
+        let f = (e.max(0.) / end) * HDR_SAMPLES as f32;
+        let i = (f as usize).min(HDR_SAMPLES - 1);
+        self.table[i] + (self.table[i + 1] - self.table[i]) * (f - i as f32)
+    }
+    /// Linear ProPhoto RGB (1 = graphics white, unbounded) through Contrast: the
+    /// brightest and darkest channels through the curve, the middle one keeping its
+    /// encoded place between them (DNG RGBTone), as SDR Contrast applies.
+    pub(crate) fn apply(&self, rgb: [f32; 3]) -> [f32; 3] {
+        use crate::camera_profiles::hdr_look::{decode, encode};
+        let p = rgb.map(|v| encode(if v.is_nan() { 0. } else { v }));
+        let lo = p.into_iter().fold(f32::INFINITY, f32::min);
+        let hi = p.into_iter().fold(0., f32::max);
+        let (a, b) = (self.evaluate(lo), self.evaluate(hi));
+        if hi - lo > 1e-8 && hi.is_finite() {
+            p.map(|v| decode(a + (b - a) * (v - lo) / (hi - lo)))
+        } else {
+            [decode(b); 3]
+        }
+    }
+}
+
 /// The measured tables in the order `develop.wgsl`'s local Contrast reads them: the
 /// slider positions, the chart's Contrast (6 × 64) and its pivot.
 pub(crate) fn gpu_tables() -> Vec<f32> {
@@ -225,6 +344,99 @@ mod tests {
         assert!(photo_pivot(&dark) < photo_pivot(&flat(0.3)) - 0.15);
         assert_eq!(photo_pivot(&[]), TYPICAL_PIVOT);
         assert_eq!(blocks(&vec![[0.5; 3]; 960 * 640], 960, 640).len(), 48 * 32);
+    }
+
+    /// Camera Raw 18.7's gray ramp (sensor white +6 stops, a linear profile, HDR limit
+    /// 8) at Contrast −100 and +100: its SDR Contrast curve (encoded, at i / 16), and
+    /// the HDR render of inputs from the profile's curve.
+    #[test]
+    fn hdr_contrast_renders_as_camera_raw_renders_it() {
+        /// Positive or not, the SDR curve, and measured (input, HDR render) pairs.
+        type Case = (bool, [f32; 17], [(f32, f32); 9]);
+        let cases: [Case; 2] = [
+            (
+                false,
+                [
+                    0.0554, 0.1379, 0.2065, 0.2623, 0.3091, 0.3490, 0.3837, 0.4159, 0.4514, 0.4912,
+                    0.5360, 0.5869, 0.6453, 0.7131, 0.7924, 0.8866, 1.0000,
+                ],
+                [
+                    (0.05, 0.0963),
+                    (0.1, 0.1400),
+                    (0.5, 0.3426),
+                    (1., 0.5922),
+                    (2., 1.0419),
+                    (4., 1.9828),
+                    (8., 4.8158),
+                    (12., 9.3095),
+                    (24., 31.8785),
+                ],
+            ),
+            (
+                true,
+                [
+                    0.0008, 0.0084, 0.0415, 0.1018, 0.1755, 0.2623, 0.3622, 0.4693, 0.5682, 0.6572,
+                    0.7362, 0.8050, 0.8637, 0.9124, 0.9512, 0.9803, 1.0000,
+                ],
+                [
+                    (0.05, 0.0252),
+                    (0.1, 0.0832),
+                    (0.5, 0.6975),
+                    (1., 1.3256),
+                    (2., 2.7882),
+                    (4., 5.7132),
+                    (8., 11.5636),
+                    (12., 17.3772),
+                    (24., 30.0821),
+                ],
+            ),
+        ];
+        for (positive, sdr, measured) in cases {
+            let curve = |e: f32| {
+                let f = e.clamp(0., 1.) * 16.;
+                let i = (f as usize).min(15);
+                sdr[i] + (sdr[i + 1] - sdr[i]) * (f - i as f32)
+            };
+            let hdr = HdrContrast::from_sdr(positive, curve);
+            for (x, expected) in measured {
+                let got = hdr.apply([x; 3])[1];
+                // At −100 the stretch is 0.11 stop dark at scene 1–2, within 0.03
+                // elsewhere; above four stops the extension is a straight line.
+                let tolerance = if x > 16. { 0.2 } else { 0.12 };
+                assert!(
+                    (got / expected).log2().abs() < tolerance,
+                    "{positive} {x}: {got} against {expected}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hdr_contrast_is_finite_and_rising_and_none_at_zero() {
+        let photo = PhotoTone {
+            contrast_pivot: TYPICAL_PIVOT,
+        };
+        assert!(HdrContrast::new(0., &photo).is_none());
+        for c in [-1., -0.3, -0.01, 0.01, 0.4, 1.] {
+            let hdr = HdrContrast::new(c, &photo).unwrap();
+            let mut last = -1.;
+            for i in 0..=400 {
+                let x = (i as f32 / 400. * 16. - 10.).exp2();
+                let y = hdr.apply([x; 3])[0];
+                assert!(y.is_finite() && y >= last - 1e-4, "{c} {x} {y}");
+                last = y;
+            }
+            assert!(
+                hdr.apply([f32::INFINITY, 1., 0.])
+                    .iter()
+                    .all(|v| !v.is_nan())
+            );
+        }
+        // Nearly no Contrast is nearly no change.
+        let slight = HdrContrast::new(-0.01, &photo).unwrap();
+        for x in [0.05, 0.5, 3., 12.] {
+            assert!((slight.apply([x; 3])[0] / x).log2().abs() < 0.02, "{x}");
+        }
     }
 
     /// On 32 photos saved as JPEG, Lightroom's Contrast pivot is the raw formula's plus

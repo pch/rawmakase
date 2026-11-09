@@ -39,11 +39,14 @@ pub(super) struct CurveSet {
     pub(super) hdr: Option<HdrFinish>,
 }
 /// How an HDR render finishes after the scene tone stage: the profile's tables and
-/// curve, and its look's, unclipped ([`crate::camera_profiles::CameraProfile::finish_hdr`]). The colour stage's controls are not rendered: an HDR
+/// curve, and its look's, unclipped ([`crate::camera_profiles::CameraProfile::finish_hdr`]),
+/// then Contrast ([`crate::develop::basic_tone::HdrContrast`]). The colour stage's controls are not rendered: an HDR
 /// edit that uses them does not validate (`model::hdr::check_recipe`).
 pub(super) struct HdrFinish {
     tone: crate::camera_profiles::hdr_tone::HdrTone,
     look: Option<crate::camera_profiles::hdr_look::LookTone>,
+    /// Contrast at the photo's pivot, set once the pivot is measured.
+    contrast: Option<crate::develop::basic_tone::HdrContrast>,
 }
 impl HdrFinish {
     /// For a recipe with HDR on and a profile whose curve renders in HDR.
@@ -55,6 +58,7 @@ impl HdrFinish {
         Some(Self {
             tone: profile.hdr_tone().ok()?,
             look: profile.hdr_look(),
+            contrast: None,
         })
     }
     /// Linear ProPhoto RGB from the scene tone stage to the HDR master before its
@@ -64,8 +68,18 @@ impl HdrFinish {
             Some(profile) => profile.finish_hdr(scene, &self.tone, self.look.as_ref()),
             None => mul(crate::camera_profiles::PRO_TO_RGB, scene),
         };
+        let pro = mul(crate::camera_profiles::RGB_TO_PRO, rgb);
+        // Contrast follows the profile and its look, as in SDR's colour stage.
+        let pro = match &self.contrast {
+            Some(contrast) => contrast.apply(pro.map(|v| v.max(0.))),
+            None => pro,
+        };
         // The limit applies once, after sharpening and resizing (`render_hdr`).
-        mul(crate::camera_profiles::RGB_TO_PRO, rgb).map(|v| v.max(0.))
+        pro.map(|v| v.max(0.))
+    }
+    #[cfg(test)]
+    pub(super) fn has_contrast(&self) -> bool {
+        self.contrast.is_some()
     }
 }
 impl CurveSet {
@@ -180,6 +194,9 @@ impl CurveSet {
                 None => measure(),
             };
             lut.basic = basic_tone(r, &lut.photo);
+            if let Some(hdr) = &mut lut.hdr {
+                hdr.contrast = crate::develop::basic_tone::HdrContrast::new(r.contrast, &lut.photo);
+            }
         }
         (lut, measured)
     }
@@ -505,12 +522,14 @@ pub(super) fn contrast_pivot(
     haze: Option<Arc<crate::develop::scene_tone::Haze>>,
 ) -> f32 {
     let small = measured_copy(im);
-    let default = Recipe {
+    // Measured on the SDR rendering, HDR or not, as Camera Raw measures it.
+    let mut default = Recipe {
         exposure: 0.,
         whites: 0.,
         blacks: 0.,
         ..r.clone()
     };
+    default.hdr.enabled = false;
     let mut lut = CurveSet::new(&default);
     let haze = haze.map(|haze| {
         crate::develop::scene_tone::Dehazing::new(haze, [small.width, small.height], 0.)

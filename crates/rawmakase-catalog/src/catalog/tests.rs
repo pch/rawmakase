@@ -1580,7 +1580,7 @@ fn lightroom_15_controls_at_rest_are_not_reported() -> Result<()> {
     assert!(r.hdr.is_active());
     assert_eq!(r.hdr.limit, 5.);
     assert!(crate::model::hdr::check_recipe(&r).is_ok());
-    let text = "s = { Exposure2012 = 0.5, Contrast2012 = 20, HDREditMode = 1, HDRMaxValue = 5 }";
+    let text = "s = { Exposure2012 = 0.5, Highlights2012 = -20, HDREditMode = 1, HDRMaxValue = 5 }";
     let (r, _) = convert_develop(text, &crate::camera_data::Metadata::default(), &[], None)?;
     assert!(r.hdr.is_active());
     let error = crate::model::hdr::check_recipe(&r).unwrap_err().to_string();

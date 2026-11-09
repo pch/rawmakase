@@ -125,13 +125,15 @@ def validate(family, binary, out, split, tag):
     out.mkdir(parents=True, exist_ok=True)
     results = []
     manifest = json.loads((family / 'manifest.json').read_text())
-    # The SDR capture of each source, profile and look, for the relative metric.
+    # The SDR capture of each source, profile, look and settings but HDR's, for the
+    # relative metric.
     def pairing(job):
         look = job.get('look')
-        return (job['source'], job['profile'],
+        settings = tuple(sorted((k, str(v)) for k, v in job['settings'].items()
+                                if k not in ('HDREditMode', 'HDRMaxValue')))
+        return (job['source'], job['profile'], settings,
                 (look['file'], float(look.get('amount', 1))) if look else None)
-    sdr = {pairing(r['job']): i for i, r in enumerate(manifest)
-           if r['output_transfer'] == 'sRGB' and set(r['job']['settings']) <= {'CameraProfile', 'HDREditMode'}}
+    sdr = {pairing(r['job']): i for i, r in enumerate(manifest) if r['output_transfer'] == 'sRGB'}
     for index, record in enumerate(manifest):
         job = record['job']
         if (split and job['split'] != split) or (tag and job.get('tag') != tag):
