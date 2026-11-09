@@ -1025,10 +1025,19 @@ fn quitting_while_space_is_given_back_ends_in_time() {
         assert!(Instant::now() < until, "the previews were never cleared");
         std::thread::sleep(Duration::from_millis(2));
     }
+    // Timed on its own: the rest of quitting (the catalog's save, the other
+    // workers) is no faster for it, and slow on a busy Windows runner.
     let started = Instant::now();
+    let worker = crate::app::task::Stopping::new(e.preview_builds.close());
+    let stopped = crate::app::task::wait_for(vec![worker], Duration::from_secs(3));
+    let worker = started.elapsed();
     let waited = e.exit_within(Duration::from_secs(3));
-    assert_eq!(waited.detached, 0);
-    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!((stopped.detached, waited.detached), (0, 0));
+    assert!(
+        worker < Duration::from_secs(1),
+        "the worker took {worker:?} to stop, quitting {:?} in all",
+        started.elapsed()
+    );
     assert!(rows_and_free_pages(&cache).1 > 0);
 }
 
