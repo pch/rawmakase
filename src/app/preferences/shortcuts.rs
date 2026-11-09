@@ -264,6 +264,17 @@ impl Editor {
                 self.preferences.shortcuts.capture = None;
             }
         }
+        // Leaving the window stops the cap waiting too, so a key pressed on
+        // coming back (by Cmd+Tab, say) isn't taken for the shortcut.
+        let unfocused = ctx.input(|i| {
+            i.viewport().focused == Some(false)
+                || i.events
+                    .iter()
+                    .any(|e| matches!(e, egui::Event::WindowFocused(false)))
+        });
+        if unfocused {
+            self.preferences.shortcuts.capture = None;
+        }
         self.preferences.shortcuts.capture_at = None;
         if let Some(capture) = self.preferences.shortcuts.capture
             && let Some(press) = FrameKeys::of(&ctx).capture()

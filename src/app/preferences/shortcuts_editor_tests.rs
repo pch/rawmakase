@@ -395,3 +395,28 @@ fn a_click_elsewhere_stops_a_key_cap_waiting() {
     page.press(Key::J, Modifiers::NONE);
     assert_eq!(page.keys("crop"), ["C", "J"]);
 }
+
+#[test]
+fn leaving_the_window_stops_a_key_cap_waiting() {
+    let mut page = Page::new(None);
+    page.query("straighten");
+    page.click("Crop & Straighten: R");
+    assert!(page.e.preferences.shortcuts.capturing());
+    // Away to another window and back by the keyboard.
+    page.frame(vec![Event::WindowFocused(false)]);
+    assert!(!page.e.preferences.shortcuts.capturing());
+    page.frame(vec![Event::WindowFocused(true)]);
+    page.press(Key::J, Modifiers::NONE);
+    assert_eq!(page.keys("crop"), ["C", "R"]);
+    // A key in the frame the window lost focus in isn't taken either.
+    page.click("Crop & Straighten: R");
+    assert!(page.e.preferences.shortcuts.capturing());
+    page.frame(vec![
+        Event::WindowFocused(false),
+        key_event(Key::J, true, Modifiers::NONE),
+        key_event(Key::J, false, Modifiers::NONE),
+    ]);
+    assert!(!page.e.preferences.shortcuts.capturing());
+    assert_eq!(page.keys("crop"), ["C", "R"]);
+    assert!(!page.e.keymap.path().unwrap().exists(), "nothing written");
+}
