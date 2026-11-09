@@ -133,8 +133,11 @@ meanwhile.
 drag preview) presents an HDR master's preview on the GPU, from the SDR rendition's
 own samples, pyramid and caches, into a half-float texture of the view's HDR slot.
 The develop pass's HDR variant (`develop.wgsl`, `V_HDR`) renders the scene tone
-stage's HDR Whites and Blacks and an ordinary profile's look table and HDR tone
-curve, and writes linear ProPhoto unclipped; `present_hdr.wgsl` sharpens it on
+stage's HDR Whites and Blacks and the profile's finish (`CameraProfile::finish_hdr`):
+an ordinary profile's look table and HDR tone curve; an HDR profile's hue and look
+tables on overrange-encoded values and its curve on them, as the DNG SDK applies
+them; and a look's table (on overrange-encoded values) and curve (`hdr_look`, on
+its own encoding). It writes linear ProPhoto unclipped; `present_hdr.wgsl` sharpens it on
 sRGB-curve-encoded values with ProPhoto luminance, applies the limit, and encodes
 extended sRGB held to the display's headroom (`color::hdr_output::extended_srgb`,
 which the CPU preview uses too). The HDR tone curve is sampled every 1/32 stop over
@@ -143,14 +146,14 @@ are read as the CPU reads them.
 
 It covers what `pixel_params::supported_hdr` accepts: a master that renders and
 needs nothing after its profile's finish (Exposure, Whites, Blacks, white balance,
-sharpening and what the SDR port samples), through an ordinary profile without a
-look whose HDR curve is the identity or the measured extension. Texture, Contrast,
-Levels and the tone curves, the colour stage (`pipeline::tone::hdr_finishes_past_the_profile`),
-an HDR profile (overrange-encoded tables and curve), a look, an HDR file's light, AI
-Denoise, and anything the SDR port leaves to the CPU (`quality::HdrNotOnGpu`) give
-no GPU frame, and the CPU master is shown instead. Measured on an Apple M1 Pro
+sharpening and what the SDR port samples), through any profile and look whose HDR
+rendering is measured (`CameraProfile::hdr_tone`). Texture, Contrast, Levels and the
+tone curves, the colour stage (`pipeline::tone::hdr_finishes_past_the_profile`), an
+HDR file's light, AI Denoise, and anything the SDR port leaves to the CPU
+(`quality::HdrNotOnGpu`) give no GPU frame, and the CPU master is shown instead. Measured on an Apple M1 Pro
 against `render_hdr` and `render_hdr_region` (`develop::gpu::tests`, run by the
-"GPU matches CPU" workflow): the per-pixel stage agrees to 2×10^-4 of the value,
+"GPU matches CPU" workflow), with ordinary and HDR profiles, 3D tables, and looks
+whose curves end at white and below it: the per-pixel stage agrees to 2×10^-4 of the value,
 the presented texture to 1.3×10^-3 (half-float steps), at full size and in a
 region, at headrooms 4 and 40, sharpened and not.
 

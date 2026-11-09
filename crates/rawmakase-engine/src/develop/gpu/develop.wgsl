@@ -252,6 +252,77 @@ fn enhanced_curve(rgb: vec3<f32>) -> vec3<f32> {
     let r = rgb_tone_values(q, lut(base, 4096u, lo), lut(base, 4096u, hi), lo, hi);
     return vec3(srgb_decode(r.x), srgb_decode(r.y), srgb_decode(r.z));
 }
+// camera_profiles::overrange: DNG 1.7's encoding of linear values, white at about
+// 0.502 and 16 at 1, which an HDR profile's tables and curve read.
+fn overrange_encode(x_in: f32) -> f32 {
+    let x = max(x_in, 0.0);
+    return x * (256.0 + x) / (256.0 * (1.0 + x));
+}
+fn overrange_decode(y_in: f32) -> f32 {
+    let y = max(y_in, 0.0);
+    return 16.0 * y / (sqrt(64.0 * y * y - 127.0 * y + 64.0) + 8.0 - 8.0 * y);
+}
+// Table::apply_overrange: a 3D table looks up overrange-encoded values; a 2D one
+// (a single value division) the values as they are, not negative.
+fn table_apply_overrange(t: Table, rgb: vec3<f32>, other: i32, weight: f32) -> vec3<f32> {
+    if t.dims.z > 1u {
+        let e = vec3(overrange_encode(rgb.x), overrange_encode(rgb.y), overrange_encode(rgb.z));
+        let out = table_apply(t, e, other, weight);
+        return vec3(overrange_decode(out.x), overrange_decode(out.y), overrange_decode(out.z));
+    }
+    return table_apply(t, max(rgb, vec3(0.0)), other, weight);
+}
+// An HDR profile's curve on an overrange-encoded value: the profile's curve up to 1,
+// and on with its slope at 1 above it (`CameraProfile::finish_hdr`).
+fn overrange_tone(x: f32) -> f32 {
+    if x <= 1.0 {
+        return tone_eval(x);
+    }
+    let top = tone_eval(1.0);
+    return top + (x - 1.0) * (top - tone_eval(0.999)) / 0.001;
+}
+// hdr_look::encode and decode: the sRGB curve up to white, a log curve above it.
+fn look_encode(x: f32) -> f32 {
+    if x <= 1.0 {
+        return srgb_encode(max(x, 0.0));
+    }
+    return 1.0 + LOOK_SLOPE / LOOK_BEND * log2(1.0 + LOOK_BEND * log2(x));
+}
+fn look_decode(e: f32) -> f32 {
+    if e <= 1.0 {
+        return srgb_decode(max(e, 0.0));
+    }
+    return exp2((exp2((e - 1.0) * LOOK_BEND / LOOK_SLOPE) - 1.0) / LOOK_BEND);
+}
+// LookTone::evaluate: the look's curve (`evaluate_as_look`) on an encoded value, and
+// above where it ends, its lift held or its last slope.
+fn look_eval(e: f32) -> f32 {
+    let curve = offset(P_ENH_CURVE);
+    let kind = p(P_HDR_LOOK);
+    if kind == 1.0 {
+        if e <= p(P_HDR_LOOK + 1u) {
+            return lut(curve, 4096u, e);
+        }
+        return min(e + p(P_HDR_LOOK + 2u), look_encode(LOOK_PEAK));
+    }
+    if e <= 1.0 {
+        return lut(curve, 4096u, e);
+    }
+    return lut(curve, 4096u, 1.0) + p(P_HDR_LOOK + 1u) * (e - 1.0);
+}
+// LookTone::apply: DNG RGBTone with the look's curve on encoded values.
+fn look_apply(rgb: vec3<f32>) -> vec3<f32> {
+    let q = vec3(look_encode(rgb.x), look_encode(rgb.y), look_encode(rgb.z));
+    let lo = min(min(q.x, q.y), q.z);
+    let hi = max(max(max(q.x, q.y), q.z), 0.0);
+    let a = look_eval(lo);
+    let b = look_eval(hi);
+    var out = vec3(b);
+    if hi - lo > 1e-8 {
+        out = a + (b - a) * (q - lo) / (hi - lo);
+    }
+    return vec3(look_decode(out.x), look_decode(out.y), look_decode(out.z));
+}
 // The HDR tone curve (`HdrTone::evaluate`) from its samples over log2 scene value
 // (`pixel_params::hdr_tone_table`): log2–log2 interpolation, linear below the first
 // sample, and the last samples' slope above the last.
@@ -273,22 +344,48 @@ fn hdr_curve(x: f32) -> f32 {
     let i = floor(f);
     return exp2(mix(table(base + i32(i)), table(base + i32(i) + 1), f - i));
 }
-// CameraProfile::finish_hdr for an ordinary profile, then `HdrFinish::finish`: the look
-// table on unclipped values, the HDR tone curve DNG RGBTone fashion; linear ProPhoto
-// in and out, not negative.
+// CameraProfile::finish_hdr, then `HdrFinish::finish` without what follows the
+// profile: the profile's look table (on overrange-encoded values for an HDR profile),
+// a look's table (always so), the HDR tone curve DNG RGBTone fashion (an HDR profile's
+// own on encoded values, else the measured extension), then the look's curve; linear
+// ProPhoto in and out, not negative.
 fn hdr_finish(pro: vec3<f32>) -> vec3<f32> {
+    let hdr_profile = p(P_HDR_PROFILE) != 0.0;
     var q = max(pro, vec3(0.0));
     if offset(P_LOOK) >= 0 {
-        q = table_apply(table_at(P_LOOK), q, -1, 0.0);
+        if hdr_profile {
+            q = table_apply_overrange(table_at(P_LOOK), q, -1, 0.0);
+        } else {
+            q = table_apply(table_at(P_LOOK), q, -1, 0.0);
+        }
+    }
+    if offset(P_ENH) >= 0 {
+        q = table_apply_overrange(table_at(P_ENH), q, -1, 0.0);
     }
     q = max(q, vec3(0.0));
+    if hdr_profile {
+        q = vec3(overrange_encode(q.x), overrange_encode(q.y), overrange_encode(q.z));
+    }
     let low = min(min(q.x, q.y), q.z);
     let high = max(max(q.x, q.y), q.z);
-    let a = hdr_curve(low);
-    let b = hdr_curve(high);
+    var a: f32;
+    var b: f32;
+    if hdr_profile {
+        a = overrange_tone(low);
+        b = overrange_tone(high);
+    } else {
+        a = hdr_curve(low);
+        b = hdr_curve(high);
+    }
     var out = vec3(b);
     if high - low > 1e-8 {
         out = a + (b - a) * (q - low) / (high - low);
+    }
+    if hdr_profile {
+        out = vec3(overrange_decode(out.x), overrange_decode(out.y), overrange_decode(out.z));
+    }
+    if p(P_HDR_LOOK) != 0.0 {
+        out = look_apply(out);
     }
     return max(out, vec3(0.0));
 }
@@ -1153,7 +1250,12 @@ fn scene_color(sample: vec3<f32>, apply_local: bool) -> vec3<f32> {
     var pro = matrix(P_CAMERA) * c;
     let hue = offset(P_HUE);
     if hue >= 0 {
-        pro = table_apply(table_at(P_HUE), pro, offset(P_HUE2), p(P_HUE_WEIGHT));
+        // An HDR profile's tables look up overrange-encoded values (`camera_color`).
+        if p(P_HDR_PROFILE) != 0.0 {
+            pro = table_apply_overrange(table_at(P_HUE), pro, offset(P_HUE2), p(P_HUE_WEIGHT));
+        } else {
+            pro = table_apply(table_at(P_HUE), pro, offset(P_HUE2), p(P_HUE_WEIGHT));
+        }
     }
     return calibrate(PRO_TO_RGB * pro * p(P_PROFILE_SCALE));
 }

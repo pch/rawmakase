@@ -1994,8 +1994,39 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
             ..base.clone()
         },
     ];
+    // Looks, a table and a curve: one that lifts and ends at white (Lifted), one that
+    // ends below it (Extended); and an HDR profile with 3D tables.
+    let profile = base.profile.as_deref().unwrap().clone();
+    let with = |profile: CameraProfile| Recipe {
+        profile: Some(std::sync::Arc::new(profile)),
+        ..base.clone()
+    };
+    let variants = variants.into_iter().chain([
+        with(profile.clone().with_test_look(
+            8,
+            |v| 0.9 + 0.25 * v,
+            &[[0., 0.06], [0.5, 0.62], [1., 1.]],
+        )),
+        with(profile.clone().with_test_look(
+            8,
+            |v| 1.1 - 0.2 * v,
+            &[[0., 0.], [0.4, 0.45], [1., 0.86]],
+        )),
+        with(profile.clone().as_hdr_for_test()),
+        with(profile.clone().with_test_hdr_tables()),
+        Recipe {
+            exposure: 0.6,
+            ..with(profile.clone().with_test_hdr_tables().as_hdr_for_test())
+        },
+        // An HDR profile with a look: the look's table and curve after its own.
+        with(
+            profile
+                .with_test_hdr_tables()
+                .as_hdr_for_test()
+                .with_test_look(8, |v| 0.95 + 0.1 * v, &[[0., 0.], [0.5, 0.55], [1., 0.9]]),
+        ),
+    ]);
     variants
-        .into_iter()
         .map(|mut r| {
             if r.whites < -0.9 {
                 r.hdr.limit = 8.;
@@ -2187,16 +2218,12 @@ fn presented_hdr_previews_match_the_cpu_master() -> Result<()> {
     // A master the port doesn't render, and an SDR edit, are left to the CPU.
     let mut sdr = recipes[0].clone();
     sdr.hdr.enabled = false;
-    let mut hdr_profile = recipes[0].clone();
-    hdr_profile.profile = Some(std::sync::Arc::new(
-        hdr_profile
-            .profile
-            .as_deref()
-            .unwrap()
-            .clone()
-            .as_hdr_for_test(),
-    ));
-    for recipe in [sdr, hdr_profile] {
+    // Contrast renders after the profile's finish, which the port leaves to the CPU.
+    let contrast = Recipe {
+        contrast: 0.3,
+        ..recipes[0].clone()
+    };
+    for recipe in [sdr, contrast] {
         let none = renderer.render_hdr_to(
             &image,
             &recipe,

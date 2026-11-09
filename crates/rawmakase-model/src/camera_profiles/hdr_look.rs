@@ -22,9 +22,9 @@
 use crate::color::{curve::CurveLut, srgb_decode, srgb_encode};
 
 /// The encoding's slope above white, in encoded units per stop at white.
-const SLOPE: f32 = 0.19207;
+pub const SLOPE: f32 = 0.19207;
 /// How fast that slope falls with each stop above white.
-const BEND: f32 = 0.08544;
+pub const BEND: f32 = 0.08544;
 /// The brightest value a curve that ends at white renders: four stops above white.
 pub const PEAK: f32 = 16.;
 
