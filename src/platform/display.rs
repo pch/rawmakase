@@ -258,7 +258,7 @@ impl Surface {
         };
         // Look up the current layer; surface recovery can replace it.
         if let Some(root) = self.0.get(main_thread).layer() {
-            prepare_layer(&root, layer);
+            prepare_and_remember(&root, layer);
         }
     }
     /// How far above SDR white the window's display can show light, as linear
@@ -281,6 +281,40 @@ impl Surface {
                 )
             })
     }
+}
+
+#[cfg(target_os = "macos")]
+thread_local! {
+    /// The root layer and declaration [`Surface::prepare`] last applied, for
+    /// [`prepare_again`]. Weak, so a closed window's layers are not kept alive.
+    static LAST_PREPARED: std::cell::Cell<
+        Option<(objc2::rc::Weak<objc2_quartz_core::CALayer>, Layer)>,
+    > = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(target_os = "macos")]
+fn prepare_and_remember(root: &objc2::rc::Retained<objc2_quartz_core::CALayer>, layer: Layer) {
+    prepare_layer(root, layer);
+    LAST_PREPARED.set(Some((objc2::rc::Weak::from_retained(root), layer)));
+}
+
+/// Applies the last declaration [`Surface::prepare`] made again. Called right
+/// after eframe handles a window event, before control returns to AppKit.
+///
+/// egui-wgpu reconfigures the surface on every resize with wgpu's `Auto` colour
+/// space. For a float surface wgpu resolves that to extended *linear* sRGB and
+/// turns EDR on. The paint callback puts the declaration back only in the next
+/// frame, and during a live resize Core Animation can show the window in
+/// between: once, with its sRGB-encoded pixels read as linear, so washed out.
+#[cfg(target_os = "macos")]
+pub(crate) fn prepare_again() {
+    let Some((root, layer)) = LAST_PREPARED.take() else {
+        return;
+    };
+    if let Some(live) = root.load() {
+        prepare_layer(&live, layer);
+    }
+    LAST_PREPARED.set(Some((root, layer)));
 }
 
 /// How the window surface's pixels are read on macOS.
@@ -348,7 +382,7 @@ fn tag_layers(
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::{Layer, prepare_layer};
+    use super::{Layer, prepare_again, prepare_and_remember, prepare_layer};
     const SDR: Layer = Layer {
         device_rgb: false,
         extended: false,
@@ -435,5 +469,38 @@ mod tests {
         );
         assert!(!metal.wantsExtendedDynamicRangeContent());
         assert!(metal.colorspace().is_none());
+    }
+
+    /// egui-wgpu reconfigures the surface on every resize with wgpu's `Auto`
+    /// colour space, which tags a float surface extended linear sRGB and turns
+    /// EDR on. Applying the declaration again after the window event has to undo
+    /// both before Core Animation shows the window washed out.
+    #[test]
+    fn a_resize_reconfigure_is_undone_before_the_next_paint() {
+        use objc2_core_graphics::{
+            CGColorSpace, kCGColorSpaceExtendedLinearSRGB, kCGColorSpaceExtendedSRGB,
+        };
+        let root = CALayer::new();
+        let metal = CAMetalLayer::new();
+        root.addSublayer(&metal);
+        let extended = Layer {
+            extended: true,
+            ..SDR
+        };
+        prepare_and_remember(&root, extended);
+        // What wgpu-hal 30.0.1's `configure` does for `ExtendedSrgbLinear`.
+        // SAFETY: this framework constant is available on every supported macOS.
+        let linear =
+            CGColorSpace::with_name(Some(unsafe { kCGColorSpaceExtendedLinearSRGB })).unwrap();
+        metal.setColorspace(Some(&linear));
+        metal.setWantsExtendedDynamicRangeContent(true);
+        prepare_again();
+        let name = CGColorSpace::name(metal.colorspace().as_deref()).unwrap();
+        // SAFETY: as above.
+        assert_eq!(&*name, unsafe { kCGColorSpaceExtendedSRGB });
+        assert!(!metal.wantsExtendedDynamicRangeContent());
+        // A window that is gone leaves nothing to tag.
+        drop((root, metal));
+        prepare_again();
     }
 }
