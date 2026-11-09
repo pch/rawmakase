@@ -291,11 +291,42 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
   clip. SDR clips them at white, HDR shows the reconstruction's values (known to
   differ from Camera Raw's; decode, not tone).
 
+### SDR rendition
+
+Camera Raw's TIFF output carries no SDR rendition, but its Save Image dialog does: a
+JPEG saved with HDR Output on (Maximize Compatibility is then always on) is an 8-bit
+sRGB base with an ISO 21496-1 gain map, and the base is the SDR rendition. Measured on
+the CC0 Z 8 photo (Adobe Color, HDR limit 6, sliders at 0 unless stated), the bases
+compared by luminance in 8× linear blocks:
+
+| SDR base against the HDR-off render | Median | p05 | p95 |
+| --- | --- | --- | --- |
+| Luminance below 0.05 (41% of the photo) | +0.17 stop | −0.44 | +0.76 |
+| 0.05–0.18 (26%) | +0.18 | −0.12 | +0.52 |
+| 0.18–0.5 (20%) | −0.02 | −0.39 | +0.25 |
+| 0.5–0.9 (3%) | −0.22 | −0.73 | −0.09 |
+| 0.9–1 (11%) | −0.19 | −0.44 | −0.13 |
+
+- **The default SDR rendition is not the HDR-off render.** It lifts shadows and holds
+  the top below white: median 0.20 stop from the HDR-off render, p95 0.67. After the
+  best curve of luminance alone is taken out, a median 0.12 stop (p95 0.49) remains:
+  it is a local tone map of the HDR master, not a global curve.
+- **The sliders adjust that tone map.** `SDRBrightness` +50 brightens the base by a
+  median 0.44 stop (+0.68 below 0.05 luminance, −0.08 at white), and that change is a
+  curve of luminance to 0.010 stop (p95 0.051). Camera Raw 18.7 also has an Auto SDR
+  that searches these sliders per photo.
+- **Decision: the sliders stay refused.** Rendering them on RAWmakase's SDR rendition
+  (the HDR-off render) would move it further from Camera Raw's, not closer: the base
+  they adjust is the unmatched part. Matching Camera Raw's default SDR rendition needs
+  its local tone map measured on many photos first. The SDR rendition stays the
+  HDR-off render, a median 0.2 stop from Camera Raw's on this photo; gain-map exports
+  carry it as their base.
+
 ### Decisions
 
-- **The SDR rendition is the edit with HDR off.** Camera Raw's own default SDR
-  rendition is unmeasured (its TIFF output has none); the SDR rendition sliders refuse
-  the master until measured.
+- **The SDR rendition is the edit with HDR off.** Camera Raw's own is a local tone
+  map of the HDR master ([SDR rendition](#sdr-rendition)); the SDR rendition sliders
+  refuse the master until it is matched.
 - **Unmeasured adjustments refuse the HDR master, not the edit.** An imported or
   edited HDR edit with Clarity, a look or positive Whites keeps HDR on and stays
   valid; its SDR rendition renders it, and the master (HDR export) is refused with
@@ -308,7 +339,8 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
 ## Open
 
 - Positive Whites, Contrast, Highlights, Shadows and the colour stage in HDR.
-- The SDR rendition sliders and Camera Raw's default SDR rendition.
+- Camera Raw's default SDR rendition (a local tone map, [SDR rendition](#sdr-rendition))
+  and its sliders.
 - Looks with an RGB table, their own sliders, B&W, Profile Amount and Camera Looks in
   HDR (looks of a table and a curve render: [Looks](#looks)).
 - Saturated colours: with no look, the colour patches at saturation 0.9 differ from
@@ -320,7 +352,8 @@ Eight of twelve photos pass every tolerance. The failures are not the HDR extens
   ramps crossing white, saturated highlights and negative matrix results.
 - Frozen family: Lightroom and HDRMerge merges, a validation/holdout split, curves,
   masks and SDR rendition captures. Camera Raw's TIFF output carries no SDR
-  rendition, so this needs a gain-map export path.
+  rendition; its Save Image gain-map JPEG does, through the dialog only (no
+  scripting route was found).
 - Lightroom's opening defaults for unedited PQ, HLG and gain-map sources (RAWmakase
   starts them as HDR edits; Lightroom's choice is not measured), and HDR toggling
   with unavailable paired profiles.

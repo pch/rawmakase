@@ -19,12 +19,13 @@ An edit with HDR on has two renderings:
   exports, and the GPU, which never sees HDR on (`Recipe::resolved` turns it off;
   `Recipe::resolved_hdr` keeps it for the master).
 
-Camera Raw's SDR rendition has its own sliders (`SDRBrightness` and the others); their
-rendering is not measured, so a master is refused while any of them is set. Whether
-Camera Raw's default SDR rendition equals its HDR-off render is not measured either
-(its TIFF output carries no SDR rendition): RAWmakase defines it as the HDR-off
-render, which below 0.5 agrees with the HDR master as closely as Camera Raw's two
-renders do.
+RAWmakase defines the SDR rendition as the HDR-off render, which below 0.5 agrees with
+the HDR master as closely as Camera Raw's two renders do. Camera Raw's own is not
+that: the SDR base of its gain-map JPEG is a local tone map of the HDR master, which
+departs from its HDR-off render by a median 0.2 stop on a photo
+([record](records/hdr-stage1-results.md#sdr-rendition)). Its SDR rendition sliders
+(`SDRBrightness` and the others) adjust that tone map; RAWmakase doesn't render them,
+so a master is refused while any of them is set.
 
 Develop shows the HDR master on a display with headroom ([Display](#display)) and
 the SDR rendition everywhere else, and says which under the Basic panel's HDR switch,
