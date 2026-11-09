@@ -373,6 +373,15 @@ compared by luminance in 8× linear blocks:
   here, so an HDR HEIC stays refused there; so does one with an ICC profile beside its
   `nclx`, which ImageIO would draw through, or with a matrix that isn't a matrix
   (constant luminance, ICtCp).
+- **`hdrgm` gain maps (stage 4)** are read like ISO 21496-1 ones, with these choices:
+  - Located by the MPF index, as for ISO; Ultra HDR's GContainer item lengths alone are
+    not read, since its specification requires writers to add the MPF index.
+  - ISO 21496-1 metadata wins when a file has both forms, as libultrahdr decides.
+  - Offsets below 0 are damaged, as hdrgm forbids; hdrgm sets them no upper bound, so
+    one up to 2^16 is accepted (ISO 21496-1 maps keep their 0–1 check).
+  - A map whose XMP fails a check refuses the file for Develop by reason, as a damaged
+    ISO map does, rather than open its SDR base as Android's specification lets a
+    viewer: an edit of the base alone would be lost when the map is read correctly.
 - **The release guard is lifted** (`model::hdr::renders`): every SDR caller receives
   the SDR rendition through `Recipe::resolved`, the GPU refuses HDR recipes, and the
   master is reached only through `render_hdr`.
@@ -439,8 +448,9 @@ compared by luminance in 8× linear blocks:
   (`tests/data/formats/ultrahdr.jpg`, from `scripts/make-gain-map-fixtures.py`).
   PQ and HLG HEICs open as HDR edits on macOS and with libheif
   ([HDR HEIC](../hdr.md#hdr-heic)), checked against BT.2100 on synthetic patches.
-  Open: XMP-only (`hdrgm`) gain maps, HEIC gain maps, HDR HEIC on Windows, other
-  adjustments on HDR files, Transform and Upright.
+  JPEGs whose map is described only by Adobe's `hdrgm` XMP open the same way as ISO
+  ones, checked against the Ultra HDR 1.0 formula on synthetic files. Open: HEIC gain
+  maps, HDR HEIC on Windows, other adjustments on HDR files, Transform and Upright.
 - [ ] Stage 5: macOS HDR display: a float surface through RAWmakase's egui fork
   (`surface_format_selector`, offered upstream), extended sRGB with EDR while an HDR
   photo shows, and the CPU master held to the display's headroom, with the Basic
